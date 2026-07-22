@@ -1,5 +1,5 @@
 IF
-  Global("flSqueaked","GLOBAL",0)
+  Global("flSqueaked%BG2Area%","GLOBAL",0)
   Global("flToBC","LOCALS",0)
 THEN
   RESPONSE #100
@@ -21,16 +21,16 @@ IF
   Global("fl11tDone","GLOBAL",1)
   Global("fl12tDone","GLOBAL",1)
   Global("fl13tDone","GLOBAL",1)
-  Global("flSqueaked","GLOBAL",0)
+  Global("flSqueaked%BG2Area%","GLOBAL",0)
 THEN
   RESPONSE #100
-    SetGlobal("flSqueaked","GLOBAL",1)
+    SetGlobal("flSqueaked%BG2Area%","GLOBAL",1)
     DisplayString(Myself,~Squeak!~)
     DestroySelf()
 END
 
 IF
-  Global("flSqueaked","GLOBAL",1)
+  Global("flSqueaked%BG2Area%","GLOBAL",1)
 THEN
   RESPONSE #100
     DestroySelf()

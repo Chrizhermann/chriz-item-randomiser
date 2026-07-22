@@ -3,3 +3,4 @@ ssl/compile/*.baf
 ssl/ssl_out/*.baf
 *.DELETE.*
 fl-inlined/
+ssl/*.baf

@@ -88,5 +88,5 @@ ACTION_IF BG1 = 0 OR BGT = 1 BEGIN //Provide for starting a ToB game with Mode 1
     LPF insert_actor STR_VAR actor = flrtobc END
   BUT_ONLY
 
-  COMPILE "randomiser/baf/flrtobc.baf"
+  COMPILE "randomiser/baf/flrtobc.baf" EVAL
 END
