@@ -1,0 +1,153 @@
+
+IF
+  Exists("Garan")
+  Global("flsdt01","GLOBAL",3)
+THEN RESPONSE #100
+  GiveItemCreate("scrl1u","Garan",1,0,0)
+  SetGlobal("flsdt01","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Garan")
+  Global("flsdt02","GLOBAL",3)
+THEN RESPONSE #100
+  GiveItemCreate("scrl1u","Garan",1,0,0)
+  SetGlobal("flsdt02","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Garan")
+  Global("flsdt03","GLOBAL",3)
+THEN RESPONSE #100
+  GiveItemCreate("scrl1u","Garan",1,0,0)
+  SetGlobal("flsdt03","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Garan")
+  Global("flsdt07","GLOBAL",3)
+THEN RESPONSE #100
+  GiveItemCreate("scrl5l","Garan",1,1,0)
+  SetGlobal("flsdt07","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Garan")
+  Global("flsdt08","GLOBAL",3)
+THEN RESPONSE #100
+  GiveItemCreate("scrl1z","Garan",1,0,0)
+  SetGlobal("flsdt08","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Garan")
+  Global("flsdt09","GLOBAL",3)
+THEN RESPONSE #100
+  GiveItemCreate("scrl1z","Garan",1,0,0)
+  SetGlobal("flsdt09","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Garan")
+  Global("flsdt10","GLOBAL",3)
+THEN RESPONSE #100
+  GiveItemCreate("scrl2a","Garan",1,0,0)
+  SetGlobal("flsdt10","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Garan")
+  Global("flsdt11","GLOBAL",3)
+THEN RESPONSE #100
+  GiveItemCreate("scrl2a","Garan",1,0,0)
+  SetGlobal("flsdt11","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Garan")
+  Global("flsdt12","GLOBAL",3)
+THEN RESPONSE #100
+  GiveItemCreate("scrl2a","Garan",1,0,0)
+  SetGlobal("flsdt12","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Garan")
+  Global("flsdt13","GLOBAL",3)
+THEN RESPONSE #100
+  GiveItemCreate("scrl5g","Garan",1,0,0)
+  SetGlobal("flsdt13","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Garan")
+  Global("flsdt14","GLOBAL",3)
+THEN RESPONSE #100
+  GiveItemCreate("scrl5g","Garan",1,0,0)
+  SetGlobal("flsdt14","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Garan")
+  Global("flsdt15","GLOBAL",3)
+THEN RESPONSE #100
+  GiveItemCreate("scrl5h","Garan",1,0,0)
+  SetGlobal("flsdt15","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Garan")
+  Global("flsdt16","GLOBAL",3)
+THEN RESPONSE #100
+  GiveItemCreate("scrl5h","Garan",1,0,0)
+  SetGlobal("flsdt16","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Garan")
+  Global("flsdt17","GLOBAL",3)
+THEN RESPONSE #100
+  GiveItemCreate("scrl5i","Garan",1,0,0)
+  SetGlobal("flsdt17","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Garan")
+  Global("flsdt18","GLOBAL",3)
+THEN RESPONSE #100
+  GiveItemCreate("scrl5j","Garan",1,0,0)
+  SetGlobal("flsdt18","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Garan")
+  Global("flsdt19","GLOBAL",3)
+THEN RESPONSE #100
+  GiveItemCreate("scrl5k","Garan",1,0,0)
+  SetGlobal("flsdt19","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Garan")
+  Global("flsdt20","GLOBAL",3)
+THEN RESPONSE #100
+  GiveItemCreate("scrl5m","Garan",1,0,0)
+  SetGlobal("flsdt20","GLOBAL",-1)
+  DestroySelf()
+END

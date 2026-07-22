@@ -1,0 +1,63 @@
+
+IF
+  Exists("firmag01")
+  Global("fls8t01","GLOBAL",6)
+THEN RESPONSE #100
+  GiveItemCreate("scrl9h","firmag01",1,0,0)
+  SetGlobal("fls8t01","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("firmag01")
+  Global("fls8t02","GLOBAL",6)
+THEN RESPONSE #100
+  GiveItemCreate("scrl9g","firmag01",1,1,0)
+  SetGlobal("fls8t02","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("firmag01")
+  Global("fls8t03","GLOBAL",6)
+THEN RESPONSE #100
+  GiveItemCreate("scrl9g","firmag01",1,1,0)
+  SetGlobal("fls8t03","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("firmag01")
+  Global("fls8t04","GLOBAL",6)
+THEN RESPONSE #100
+  GiveItemCreate("scrl9f","firmag01",1,1,0)
+  SetGlobal("fls8t04","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("firmag01")
+  Global("fls8t05","GLOBAL",6)
+THEN RESPONSE #100
+  GiveItemCreate("scrl9d","firmag01",1,1,0)
+  SetGlobal("fls8t05","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("firmag01")
+  Global("fls8t06","GLOBAL",6)
+THEN RESPONSE #100
+  GiveItemCreate("scrl8z","firmag01",1,0,0)
+  SetGlobal("fls8t06","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("firmag01")
+  Global("fls8t07","GLOBAL",6)
+THEN RESPONSE #100
+  GiveItemCreate("scrl9a","firmag01",1,1,0)
+  SetGlobal("fls8t07","GLOBAL",-1)
+  DestroySelf()
+END

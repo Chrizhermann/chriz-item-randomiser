@@ -1,0 +1,162 @@
+
+IF
+  Exists("NATASHA")
+  Global("flsat01","GLOBAL",14)
+THEN RESPONSE #100
+  GiveItemCreate("scrl66","NATASHA",1,0,0)
+  SetGlobal("flsat01","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("NATASHA")
+  Global("flsat02","GLOBAL",14)
+THEN RESPONSE #100
+  GiveItemCreate("scrl66","NATASHA",1,0,0)
+  SetGlobal("flsat02","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("NATASHA")
+  Global("flsat03","GLOBAL",14)
+THEN RESPONSE #100
+  GiveItemCreate("scrl66","NATASHA",1,0,0)
+  SetGlobal("flsat03","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("NATASHA")
+  Global("flsat04","GLOBAL",14)
+THEN RESPONSE #100
+  GiveItemCreate("scrl66","NATASHA",1,0,0)
+  SetGlobal("flsat04","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("NATASHA")
+  Global("flsat05","GLOBAL",14)
+THEN RESPONSE #100
+  GiveItemCreate("scrl67","NATASHA",1,0,0)
+  SetGlobal("flsat05","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("NATASHA")
+  Global("flsat06","GLOBAL",14)
+THEN RESPONSE #100
+  GiveItemCreate("scrl67","NATASHA",1,0,0)
+  SetGlobal("flsat06","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("NATASHA")
+  Global("flsat07","GLOBAL",14)
+THEN RESPONSE #100
+  GiveItemCreate("scrl67","NATASHA",1,0,0)
+  SetGlobal("flsat07","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("NATASHA")
+  Global("flsat08","GLOBAL",14)
+THEN RESPONSE #100
+  GiveItemCreate("scrl67","NATASHA",1,0,0)
+  SetGlobal("flsat08","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("NATASHA")
+  Global("flsat09","GLOBAL",14)
+THEN RESPONSE #100
+  GiveItemCreate("scrl67","NATASHA",1,0,0)
+  SetGlobal("flsat09","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("NATASHA")
+  Global("flsat10","GLOBAL",14)
+THEN RESPONSE #100
+  GiveItemCreate("scrl68","NATASHA",1,0,0)
+  SetGlobal("flsat10","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("NATASHA")
+  Global("flsat11","GLOBAL",14)
+THEN RESPONSE #100
+  GiveItemCreate("scrl68","NATASHA",1,0,0)
+  SetGlobal("flsat11","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("NATASHA")
+  Global("flsat12","GLOBAL",14)
+THEN RESPONSE #100
+  GiveItemCreate("scrl68","NATASHA",1,0,0)
+  SetGlobal("flsat12","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("NATASHA")
+  Global("flsat13","GLOBAL",14)
+THEN RESPONSE #100
+  GiveItemCreate("scrl71","NATASHA",1,0,0)
+  SetGlobal("flsat13","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("NATASHA")
+  Global("flsat14","GLOBAL",14)
+THEN RESPONSE #100
+  GiveItemCreate("scrl71","NATASHA",1,0,0)
+  SetGlobal("flsat14","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("NATASHA")
+  Global("flsat15","GLOBAL",14)
+THEN RESPONSE #100
+  GiveItemCreate("scrl81","NATASHA",1,0,0)
+  SetGlobal("flsat15","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("NATASHA")
+  Global("flsat16","GLOBAL",14)
+THEN RESPONSE #100
+  GiveItemCreate("scrl81","NATASHA",1,0,0)
+  SetGlobal("flsat16","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("NATASHA")
+  Global("flsat18","GLOBAL",14)
+THEN RESPONSE #100
+  GiveItemCreate("scrl83","NATASHA",1,0,0)
+  SetGlobal("flsat18","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("NATASHA")
+  Global("flsat19","GLOBAL",14)
+THEN RESPONSE #100
+  GiveItemCreate("scrl83","NATASHA",1,0,0)
+  SetGlobal("flsat19","GLOBAL",-1)
+  DestroySelf()
+END

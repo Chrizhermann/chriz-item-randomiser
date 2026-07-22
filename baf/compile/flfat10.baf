@@ -1,0 +1,27 @@
+
+IF
+  Exists("container5")
+  Global("flfat01","GLOBAL",10)
+THEN RESPONSE #100
+  ActionOverride("container5",CreateItem("blun14a",0,0,0))
+  SetGlobal("flfat01","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("container5")
+  Global("flfat02","GLOBAL",10)
+THEN RESPONSE #100
+  ActionOverride("container5",CreateItem("blun14b",0,0,0))
+  SetGlobal("flfat02","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("container5")
+  Global("flfat03","GLOBAL",10)
+THEN RESPONSE #100
+  ActionOverride("container5",CreateItem("blun14c",0,0,0))
+  SetGlobal("flfat03","GLOBAL",-1)
+  DestroySelf()
+END

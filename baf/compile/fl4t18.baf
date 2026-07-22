@@ -1,0 +1,171 @@
+
+IF
+  Exists("sahramb3")
+  Global("fl4t01","GLOBAL",18)
+THEN RESPONSE #100
+  GiveItemCreate("amul25","sahramb3",0,0,0)
+  SetGlobal("fl4t01","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("sahramb3")
+  Global("fl4t02","GLOBAL",18)
+THEN RESPONSE #100
+  GiveItemCreate("sw1h33","sahramb3",0,1,0)
+  SetGlobal("fl4t02","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("sahramb3")
+  Global("fl4t03","GLOBAL",18)
+THEN RESPONSE #100
+  GiveItemCreate("staf16","sahramb3",0,30,30)
+  SetGlobal("fl4t03","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("sahramb3")
+  Global("fl4t04","GLOBAL",18)
+THEN RESPONSE #100
+  GiveItemCreate("staf17","sahramb3",1,20,20)
+  SetGlobal("fl4t04","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("sahramb3")
+  Global("fl4t05","GLOBAL",18)
+THEN RESPONSE #100
+  GiveItemCreate("brac06","sahramb3",0,0,0)
+  SetGlobal("fl4t05","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("sahramb3")
+  Global("fl4t06","GLOBAL",18)
+THEN RESPONSE #100
+  GiveItemCreate("brac15","sahramb3",0,0,0)
+  SetGlobal("fl4t06","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("sahramb3")
+  Global("fl4t07","GLOBAL",18)
+THEN RESPONSE #100
+  GiveItemCreate("halb04","sahramb3",0,0,0)
+  SetGlobal("fl4t07","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("sahramb3")
+  Global("fl4t08","GLOBAL",18)
+THEN RESPONSE #100
+  GiveItemCreate("sw1h35","sahramb3",0,0,0)
+  SetGlobal("fl4t08","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("sahramb3")
+  Global("fl4t09","GLOBAL",18)
+THEN RESPONSE #100
+  GiveItemCreate("sw1h54a","sahramb3",0,0,0)
+  SetGlobal("fl4t09","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("sahramb3")
+  Global("fl4t10","GLOBAL",18)
+THEN RESPONSE #100
+  GiveItemCreate("bow19a","sahramb3",0,0,0)
+  SetGlobal("fl4t10","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("sahramb3")
+  Global("fl4t12","GLOBAL",18)
+THEN RESPONSE #100
+  GiveItemCreate("dagg13","sahramb3",0,0,0)
+  SetGlobal("fl4t12","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("sahramb3")
+  Global("fl4t13","GLOBAL",18)
+THEN RESPONSE #100
+  GiveItemCreate("brac08","sahramb3",0,0,0)
+  SetGlobal("fl4t13","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("sahramb3")
+  Global("fl4t14","GLOBAL",18)
+THEN RESPONSE #100
+  GiveItemCreate("shld22","sahramb3",0,0,0)
+  SetGlobal("fl4t14","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("sahramb3")
+  Global("fl4t15","GLOBAL",18)
+THEN RESPONSE #100
+  GiveItemCreate("bow09","sahramb3",0,0,0)
+  SetGlobal("fl4t15","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("sahramb3")
+  Global("fl4t16","GLOBAL",18)
+THEN RESPONSE #100
+  GiveItemCreate("boot04","sahramb3",0,0,0)
+  SetGlobal("fl4t16","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("sahramb3")
+  Global("fl4t17","GLOBAL",18)
+THEN RESPONSE #100
+  GiveItemCreate("sw1h52","sahramb3",0,0,0)
+  SetGlobal("fl4t17","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("sahramb3")
+  Global("fl4t18","GLOBAL",18)
+THEN RESPONSE #100
+  GiveItemCreate("blun22","sahramb3",0,0,0)
+  SetGlobal("fl4t18","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("sahramb3")
+  Global("fl4t19","GLOBAL",18)
+THEN RESPONSE #100
+  GiveItemCreate("sw1h36","sahramb3",0,3,0)
+  SetGlobal("fl4t19","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("sahramb3")
+  Global("fl4t20","GLOBAL",18)
+THEN RESPONSE #100
+  GiveItemCreate("misc3a","sahramb3",1,0,0)
+  SetGlobal("fl4t20","GLOBAL",-1)
+  DestroySelf()
+END

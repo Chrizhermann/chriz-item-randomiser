@@ -1,0 +1,117 @@
+
+IF
+  Exists("altar1")
+  Global("fl7t01","GLOBAL",12)
+THEN RESPONSE #100
+  ActionOverride("altar1",CreateItem("brac10",0,0,0))
+  SetGlobal("fl7t01","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("altar1")
+  Global("fl7t02","GLOBAL",12)
+THEN RESPONSE #100
+  ActionOverride("altar1",CreateItem("clck26",0,0,0))
+  SetGlobal("fl7t02","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("altar1")
+  Global("fl7t03","GLOBAL",12)
+THEN RESPONSE #100
+  ActionOverride("altar1",CreateItem("wa2helm",1,0,0))
+  SetGlobal("fl7t03","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("altar1")
+  Global("fl7t04","GLOBAL",12)
+THEN RESPONSE #100
+  ActionOverride("altar1",CreateItem("wa2robe",0,0,0))
+  SetGlobal("fl7t04","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("altar1")
+  Global("fl7t05","GLOBAL",12)
+THEN RESPONSE #100
+  ActionOverride("altar1",CreateItem("wa2shiel",0,0,0))
+  SetGlobal("fl7t05","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("altar1")
+  Global("fl7t06","GLOBAL",12)
+THEN RESPONSE #100
+  ActionOverride("altar1",CreateItem("waflail",0,0,0))
+  SetGlobal("fl7t06","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("altar1")
+  Global("fl7t07","GLOBAL",12)
+THEN RESPONSE #100
+  ActionOverride("altar1",CreateItem("chan16",0,0,0))
+  SetGlobal("fl7t07","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("altar1")
+  Global("fl7t08","GLOBAL",12)
+THEN RESPONSE #100
+  ActionOverride("altar1",CreateItem("staf11",0,3,1))
+  SetGlobal("fl7t08","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("altar1")
+  Global("fl7t09","GLOBAL",12)
+THEN RESPONSE #100
+  ActionOverride("altar1",CreateItem("belt08",0,0,0))
+  SetGlobal("fl7t09","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("altar1")
+  Global("fl7t10","GLOBAL",12)
+THEN RESPONSE #100
+  ActionOverride("altar1",CreateItem("plat16",0,0,0))
+  SetGlobal("fl7t10","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("altar1")
+  Global("fl7t11","GLOBAL",12)
+THEN RESPONSE #100
+  ActionOverride("altar1",CreateItem("sw2h08",0,0,0))
+  SetGlobal("fl7t11","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("altar1")
+  Global("fl7t12","GLOBAL",12)
+THEN RESPONSE #100
+  ActionOverride("altar1",CreateItem("halb05",0,0,0))
+  SetGlobal("fl7t12","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("altar1")
+  Global("fl7t13","GLOBAL",12)
+THEN RESPONSE #100
+  ActionOverride("altar1",CreateItem("sw1h51",0,1,1))
+  SetGlobal("fl7t13","GLOBAL",-1)
+  DestroySelf()
+END

@@ -1,0 +1,171 @@
+
+IF
+  Exists("udsilver")
+  Global("fl4t01","GLOBAL",5)
+THEN RESPONSE #100
+  GiveItemCreate("amul25","udsilver",0,0,0)
+  SetGlobal("fl4t01","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("udsilver")
+  Global("fl4t02","GLOBAL",5)
+THEN RESPONSE #100
+  GiveItemCreate("sw1h33","udsilver",0,1,0)
+  SetGlobal("fl4t02","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("udsilver")
+  Global("fl4t03","GLOBAL",5)
+THEN RESPONSE #100
+  GiveItemCreate("staf16","udsilver",0,30,30)
+  SetGlobal("fl4t03","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("udsilver")
+  Global("fl4t04","GLOBAL",5)
+THEN RESPONSE #100
+  GiveItemCreate("staf17","udsilver",1,20,20)
+  SetGlobal("fl4t04","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("udsilver")
+  Global("fl4t05","GLOBAL",5)
+THEN RESPONSE #100
+  GiveItemCreate("brac06","udsilver",0,0,0)
+  SetGlobal("fl4t05","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("udsilver")
+  Global("fl4t06","GLOBAL",5)
+THEN RESPONSE #100
+  GiveItemCreate("brac15","udsilver",0,0,0)
+  SetGlobal("fl4t06","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("udsilver")
+  Global("fl4t07","GLOBAL",5)
+THEN RESPONSE #100
+  GiveItemCreate("halb04","udsilver",0,0,0)
+  SetGlobal("fl4t07","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("udsilver")
+  Global("fl4t08","GLOBAL",5)
+THEN RESPONSE #100
+  GiveItemCreate("sw1h35","udsilver",0,0,0)
+  SetGlobal("fl4t08","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("udsilver")
+  Global("fl4t09","GLOBAL",5)
+THEN RESPONSE #100
+  GiveItemCreate("sw1h54a","udsilver",0,0,0)
+  SetGlobal("fl4t09","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("udsilver")
+  Global("fl4t10","GLOBAL",5)
+THEN RESPONSE #100
+  GiveItemCreate("bow19a","udsilver",0,0,0)
+  SetGlobal("fl4t10","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("udsilver")
+  Global("fl4t12","GLOBAL",5)
+THEN RESPONSE #100
+  GiveItemCreate("dagg13","udsilver",0,0,0)
+  SetGlobal("fl4t12","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("udsilver")
+  Global("fl4t13","GLOBAL",5)
+THEN RESPONSE #100
+  GiveItemCreate("brac08","udsilver",0,0,0)
+  SetGlobal("fl4t13","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("udsilver")
+  Global("fl4t14","GLOBAL",5)
+THEN RESPONSE #100
+  GiveItemCreate("shld22","udsilver",0,0,0)
+  SetGlobal("fl4t14","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("udsilver")
+  Global("fl4t15","GLOBAL",5)
+THEN RESPONSE #100
+  GiveItemCreate("bow09","udsilver",0,0,0)
+  SetGlobal("fl4t15","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("udsilver")
+  Global("fl4t16","GLOBAL",5)
+THEN RESPONSE #100
+  GiveItemCreate("boot04","udsilver",0,0,0)
+  SetGlobal("fl4t16","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("udsilver")
+  Global("fl4t17","GLOBAL",5)
+THEN RESPONSE #100
+  GiveItemCreate("sw1h52","udsilver",0,0,0)
+  SetGlobal("fl4t17","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("udsilver")
+  Global("fl4t18","GLOBAL",5)
+THEN RESPONSE #100
+  GiveItemCreate("blun22","udsilver",0,0,0)
+  SetGlobal("fl4t18","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("udsilver")
+  Global("fl4t19","GLOBAL",5)
+THEN RESPONSE #100
+  GiveItemCreate("sw1h36","udsilver",0,3,0)
+  SetGlobal("fl4t19","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("udsilver")
+  Global("fl4t20","GLOBAL",5)
+THEN RESPONSE #100
+  GiveItemCreate("misc3a","udsilver",1,0,0)
+  SetGlobal("fl4t20","GLOBAL",-1)
+  DestroySelf()
+END

@@ -1,0 +1,198 @@
+
+IF
+  Exists("suadsaan")
+  Global("fl6t01","GLOBAL",5)
+THEN RESPONSE #100
+  GiveItemCreate("sw1h25","suadsaan",0,0,0)
+  SetGlobal("fl6t01","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("suadsaan")
+  Global("fl6t02","GLOBAL",5)
+THEN RESPONSE #100
+  GiveItemCreate("sw1h30","suadsaan",0,0,0)
+  SetGlobal("fl6t02","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("suadsaan")
+  Global("fl6t03","GLOBAL",5)
+THEN RESPONSE #100
+  GiveItemCreate("sw1h31","suadsaan",1,1,0)
+  SetGlobal("fl6t03","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("suadsaan")
+  Global("fl6t04","GLOBAL",5)
+THEN RESPONSE #100
+  GiveItemCreate("ring09","suadsaan",0,0,0)
+  SetGlobal("fl6t04","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("suadsaan")
+  Global("fl6t05","GLOBAL",5)
+THEN RESPONSE #100
+  GiveItemCreate("bow14","suadsaan",0,0,0)
+  SetGlobal("fl6t05","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("suadsaan")
+  Global("fl6t06","GLOBAL",5)
+THEN RESPONSE #100
+  GiveItemCreate("brac16","suadsaan",1,0,0)
+  SetGlobal("fl6t06","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("suadsaan")
+  Global("fl6t07","GLOBAL",5)
+THEN RESPONSE #100
+  GiveItemCreate("rods03","suadsaan",10,0,0)
+  SetGlobal("fl6t07","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("suadsaan")
+  Global("fl6t08","GLOBAL",5)
+THEN RESPONSE #100
+  GiveItemCreate("scrl07","suadsaan",1,0,0)
+  SetGlobal("fl6t08","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("suadsaan")
+  Global("fl6tx0","GLOBAL",5)
+THEN RESPONSE #100
+  GiveItemCreate("scrl07","suadsaan",0,0,0)
+  SetGlobal("fl6tx0","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("suadsaan")
+  Global("fl6t09","GLOBAL",5)
+THEN RESPONSE #100
+  GiveItemCreate("sw2h09","suadsaan",0,0,0)
+  SetGlobal("fl6t09","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("suadsaan")
+  Global("fl6t10","GLOBAL",5)
+THEN RESPONSE #100
+  GiveItemCreate("wasling","suadsaan",0,0,0)
+  SetGlobal("fl6t10","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("suadsaan")
+  Global("fl6t12","GLOBAL",5)
+THEN RESPONSE #100
+  GiveItemCreate("shld24","suadsaan",0,0,0)
+  SetGlobal("fl6t12","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("suadsaan")
+  Global("fl6t13","GLOBAL",5)
+THEN RESPONSE #100
+  GiveItemCreate("scrlag","suadsaan",0,0,0)
+  SetGlobal("fl6t13","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("suadsaan")
+  Global("fl6t14","GLOBAL",5)
+THEN RESPONSE #100
+  GiveItemCreate("sw1h54b","suadsaan",0,0,0)
+  SetGlobal("fl6t14","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("suadsaan")
+  Global("fl6t15","GLOBAL",5)
+THEN RESPONSE #100
+  GiveItemCreate("sper10","suadsaan",0,0,0)
+  SetGlobal("fl6t15","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("suadsaan")
+  Global("fl6t16","GLOBAL",5)
+THEN RESPONSE #100
+  GiveItemCreate("dagg12","suadsaan",0,0,0)
+  SetGlobal("fl6t16","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("suadsaan")
+  Global("fl6t17","GLOBAL",5)
+THEN RESPONSE #100
+  GiveItemCreate("helm16","suadsaan",1,1,1)
+  SetGlobal("fl6t17","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("suadsaan")
+  Global("fl6t18","GLOBAL",5)
+THEN RESPONSE #100
+  GiveItemCreate("dagg14","suadsaan",0,0,0)
+  SetGlobal("fl6t18","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("suadsaan")
+  Global("fl6t19","GLOBAL",5)
+THEN RESPONSE #100
+  GiveItemCreate("helm04","suadsaan",0,0,0)
+  SetGlobal("fl6t19","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("suadsaan")
+  Global("fl6t20","GLOBAL",5)
+THEN RESPONSE #100
+  GiveItemCreate("sw1h28","suadsaan",0,0,0)
+  SetGlobal("fl6t20","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("suadsaan")
+  Global("fl6t21","GLOBAL",5)
+THEN RESPONSE #100
+  GiveItemCreate("plat17","suadsaan",0,0,0)
+  SetGlobal("fl6t21","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("suadsaan")
+  Global("fl6t22","GLOBAL",5)
+THEN RESPONSE #100
+  GiveItemCreate("ring04","suadsaan",0,0,0)
+  SetGlobal("fl6t22","GLOBAL",-1)
+  DestroySelf()
+END

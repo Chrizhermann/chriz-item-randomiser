@@ -1,0 +1,180 @@
+
+IF
+  Exists("GorChr")
+  Global("fl12t01","GLOBAL",14)
+THEN RESPONSE #100
+  GiveItemCreate("compon01","GorChr",1,0,0)
+  SetGlobal("fl12t01","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("GorChr")
+  Global("fl12t02","GLOBAL",14)
+THEN RESPONSE #100
+  GiveItemCreate("compon02","GorChr",0,0,0)
+  SetGlobal("fl12t02","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("GorChr")
+  Global("fl12t03","GLOBAL",14)
+THEN RESPONSE #100
+  GiveItemCreate("compon03","GorChr",0,0,0)
+  SetGlobal("fl12t03","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("GorChr")
+  Global("fl12t04","GLOBAL",14)
+THEN RESPONSE #100
+  GiveItemCreate("compon04","GorChr",0,0,0)
+  SetGlobal("fl12t04","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("GorChr")
+  Global("fl12t05","GLOBAL",14)
+THEN RESPONSE #100
+  GiveItemCreate("compon05","GorChr",0,0,0)
+  SetGlobal("fl12t05","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("GorChr")
+  Global("fl12t06","GLOBAL",14)
+THEN RESPONSE #100
+  GiveItemCreate("compon06","GorChr",0,0,0)
+  SetGlobal("fl12t06","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("GorChr")
+  Global("fl12t07","GLOBAL",14)
+THEN RESPONSE #100
+  GiveItemCreate("compon07","GorChr",0,0,0)
+  SetGlobal("fl12t07","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("GorChr")
+  Global("fl12t08","GLOBAL",14)
+THEN RESPONSE #100
+  GiveItemCreate("compon08","GorChr",0,0,0)
+  SetGlobal("fl12t08","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("GorChr")
+  Global("fl12t09","GLOBAL",14)
+THEN RESPONSE #100
+  GiveItemCreate("compon09","GorChr",0,0,0)
+  SetGlobal("fl12t09","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("GorChr")
+  Global("fl12t10","GLOBAL",14)
+THEN RESPONSE #100
+  GiveItemCreate("compon10","GorChr",0,0,0)
+  SetGlobal("fl12t10","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("GorChr")
+  Global("fl12t11","GLOBAL",14)
+THEN RESPONSE #100
+  GiveItemCreate("compon11","GorChr",0,0,0)
+  SetGlobal("fl12t11","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("GorChr")
+  Global("fl12t12","GLOBAL",14)
+THEN RESPONSE #100
+  GiveItemCreate("compon12","GorChr",0,0,0)
+  SetGlobal("fl12t12","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("GorChr")
+  Global("fl12t13","GLOBAL",14)
+THEN RESPONSE #100
+  GiveItemCreate("compon13","GorChr",0,0,0)
+  SetGlobal("fl12t13","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("GorChr")
+  Global("fl12t14","GLOBAL",14)
+THEN RESPONSE #100
+  GiveItemCreate("compon14","GorChr",0,0,0)
+  SetGlobal("fl12t14","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("GorChr")
+  Global("fl12t15","GLOBAL",14)
+THEN RESPONSE #100
+  GiveItemCreate("compon15","GorChr",0,0,0)
+  SetGlobal("fl12t15","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("GorChr")
+  Global("fl12t16","GLOBAL",14)
+THEN RESPONSE #100
+  GiveItemCreate("compon17","GorChr",0,0,0)
+  SetGlobal("fl12t16","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("GorChr")
+  Global("fl12t17","GLOBAL",14)
+THEN RESPONSE #100
+  GiveItemCreate("compon18","GorChr",1,0,0)
+  SetGlobal("fl12t17","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("GorChr")
+  Global("fl12t18","GLOBAL",14)
+THEN RESPONSE #100
+  GiveItemCreate("tome02a","GorChr",0,0,0)
+  SetGlobal("fl12t18","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("GorChr")
+  Global("fl12t19","GLOBAL",14)
+THEN RESPONSE #100
+  GiveItemCreate("tome03a","GorChr",0,0,0)
+  SetGlobal("fl12t19","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("GorChr")
+  Global("fl12t20","GLOBAL",14)
+THEN RESPONSE #100
+  GiveItemCreate("tome04a","GorChr",1,0,0)
+  SetGlobal("fl12t20","GLOBAL",-1)
+  DestroySelf()
+END

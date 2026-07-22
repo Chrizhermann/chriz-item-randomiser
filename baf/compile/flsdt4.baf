@@ -1,0 +1,153 @@
+
+IF
+  Exists("KING")
+  Global("flsdt01","GLOBAL",4)
+THEN RESPONSE #100
+  GiveItemCreate("scrl1u","KING",1,0,0)
+  SetGlobal("flsdt01","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("KING")
+  Global("flsdt02","GLOBAL",4)
+THEN RESPONSE #100
+  GiveItemCreate("scrl1u","KING",1,0,0)
+  SetGlobal("flsdt02","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("KING")
+  Global("flsdt03","GLOBAL",4)
+THEN RESPONSE #100
+  GiveItemCreate("scrl1u","KING",1,0,0)
+  SetGlobal("flsdt03","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("KING")
+  Global("flsdt07","GLOBAL",4)
+THEN RESPONSE #100
+  GiveItemCreate("scrl5l","KING",1,1,0)
+  SetGlobal("flsdt07","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("KING")
+  Global("flsdt08","GLOBAL",4)
+THEN RESPONSE #100
+  GiveItemCreate("scrl1z","KING",1,0,0)
+  SetGlobal("flsdt08","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("KING")
+  Global("flsdt09","GLOBAL",4)
+THEN RESPONSE #100
+  GiveItemCreate("scrl1z","KING",1,0,0)
+  SetGlobal("flsdt09","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("KING")
+  Global("flsdt10","GLOBAL",4)
+THEN RESPONSE #100
+  GiveItemCreate("scrl2a","KING",1,0,0)
+  SetGlobal("flsdt10","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("KING")
+  Global("flsdt11","GLOBAL",4)
+THEN RESPONSE #100
+  GiveItemCreate("scrl2a","KING",1,0,0)
+  SetGlobal("flsdt11","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("KING")
+  Global("flsdt12","GLOBAL",4)
+THEN RESPONSE #100
+  GiveItemCreate("scrl2a","KING",1,0,0)
+  SetGlobal("flsdt12","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("KING")
+  Global("flsdt13","GLOBAL",4)
+THEN RESPONSE #100
+  GiveItemCreate("scrl5g","KING",1,0,0)
+  SetGlobal("flsdt13","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("KING")
+  Global("flsdt14","GLOBAL",4)
+THEN RESPONSE #100
+  GiveItemCreate("scrl5g","KING",1,0,0)
+  SetGlobal("flsdt14","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("KING")
+  Global("flsdt15","GLOBAL",4)
+THEN RESPONSE #100
+  GiveItemCreate("scrl5h","KING",1,0,0)
+  SetGlobal("flsdt15","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("KING")
+  Global("flsdt16","GLOBAL",4)
+THEN RESPONSE #100
+  GiveItemCreate("scrl5h","KING",1,0,0)
+  SetGlobal("flsdt16","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("KING")
+  Global("flsdt17","GLOBAL",4)
+THEN RESPONSE #100
+  GiveItemCreate("scrl5i","KING",1,0,0)
+  SetGlobal("flsdt17","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("KING")
+  Global("flsdt18","GLOBAL",4)
+THEN RESPONSE #100
+  GiveItemCreate("scrl5j","KING",1,0,0)
+  SetGlobal("flsdt18","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("KING")
+  Global("flsdt19","GLOBAL",4)
+THEN RESPONSE #100
+  GiveItemCreate("scrl5k","KING",1,0,0)
+  SetGlobal("flsdt19","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("KING")
+  Global("flsdt20","GLOBAL",4)
+THEN RESPONSE #100
+  GiveItemCreate("scrl5m","KING",1,0,0)
+  SetGlobal("flsdt20","GLOBAL",-1)
+  DestroySelf()
+END

@@ -1,0 +1,180 @@
+
+IF
+  Exists("gromnir")
+  Global("fl12t01","GLOBAL",7)
+THEN RESPONSE #100
+  GiveItemCreate("compon01","gromnir",1,0,0)
+  SetGlobal("fl12t01","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("gromnir")
+  Global("fl12t02","GLOBAL",7)
+THEN RESPONSE #100
+  GiveItemCreate("compon02","gromnir",0,0,0)
+  SetGlobal("fl12t02","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("gromnir")
+  Global("fl12t03","GLOBAL",7)
+THEN RESPONSE #100
+  GiveItemCreate("compon03","gromnir",0,0,0)
+  SetGlobal("fl12t03","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("gromnir")
+  Global("fl12t04","GLOBAL",7)
+THEN RESPONSE #100
+  GiveItemCreate("compon04","gromnir",0,0,0)
+  SetGlobal("fl12t04","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("gromnir")
+  Global("fl12t05","GLOBAL",7)
+THEN RESPONSE #100
+  GiveItemCreate("compon05","gromnir",0,0,0)
+  SetGlobal("fl12t05","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("gromnir")
+  Global("fl12t06","GLOBAL",7)
+THEN RESPONSE #100
+  GiveItemCreate("compon06","gromnir",0,0,0)
+  SetGlobal("fl12t06","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("gromnir")
+  Global("fl12t07","GLOBAL",7)
+THEN RESPONSE #100
+  GiveItemCreate("compon07","gromnir",0,0,0)
+  SetGlobal("fl12t07","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("gromnir")
+  Global("fl12t08","GLOBAL",7)
+THEN RESPONSE #100
+  GiveItemCreate("compon08","gromnir",0,0,0)
+  SetGlobal("fl12t08","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("gromnir")
+  Global("fl12t09","GLOBAL",7)
+THEN RESPONSE #100
+  GiveItemCreate("compon09","gromnir",0,0,0)
+  SetGlobal("fl12t09","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("gromnir")
+  Global("fl12t10","GLOBAL",7)
+THEN RESPONSE #100
+  GiveItemCreate("compon10","gromnir",0,0,0)
+  SetGlobal("fl12t10","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("gromnir")
+  Global("fl12t11","GLOBAL",7)
+THEN RESPONSE #100
+  GiveItemCreate("compon11","gromnir",0,0,0)
+  SetGlobal("fl12t11","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("gromnir")
+  Global("fl12t12","GLOBAL",7)
+THEN RESPONSE #100
+  GiveItemCreate("compon12","gromnir",0,0,0)
+  SetGlobal("fl12t12","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("gromnir")
+  Global("fl12t13","GLOBAL",7)
+THEN RESPONSE #100
+  GiveItemCreate("compon13","gromnir",0,0,0)
+  SetGlobal("fl12t13","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("gromnir")
+  Global("fl12t14","GLOBAL",7)
+THEN RESPONSE #100
+  GiveItemCreate("compon14","gromnir",0,0,0)
+  SetGlobal("fl12t14","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("gromnir")
+  Global("fl12t15","GLOBAL",7)
+THEN RESPONSE #100
+  GiveItemCreate("compon15","gromnir",0,0,0)
+  SetGlobal("fl12t15","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("gromnir")
+  Global("fl12t16","GLOBAL",7)
+THEN RESPONSE #100
+  GiveItemCreate("compon17","gromnir",0,0,0)
+  SetGlobal("fl12t16","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("gromnir")
+  Global("fl12t17","GLOBAL",7)
+THEN RESPONSE #100
+  GiveItemCreate("compon18","gromnir",1,0,0)
+  SetGlobal("fl12t17","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("gromnir")
+  Global("fl12t18","GLOBAL",7)
+THEN RESPONSE #100
+  GiveItemCreate("tome02a","gromnir",0,0,0)
+  SetGlobal("fl12t18","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("gromnir")
+  Global("fl12t19","GLOBAL",7)
+THEN RESPONSE #100
+  GiveItemCreate("tome03a","gromnir",0,0,0)
+  SetGlobal("fl12t19","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("gromnir")
+  Global("fl12t20","GLOBAL",7)
+THEN RESPONSE #100
+  GiveItemCreate("tome04a","gromnir",1,0,0)
+  SetGlobal("fl12t20","GLOBAL",-1)
+  DestroySelf()
+END

@@ -1,0 +1,189 @@
+
+IF
+  Exists("NARCIL")
+  Global("flsct01","GLOBAL",5)
+THEN RESPONSE #100
+  GiveItemCreate("scrl1e","NARCIL",1,0,0)
+  SetGlobal("flsct01","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("NARCIL")
+  Global("flsct02","GLOBAL",5)
+THEN RESPONSE #100
+  GiveItemCreate("scrl1e","NARCIL",1,0,0)
+  SetGlobal("flsct02","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("NARCIL")
+  Global("flsct03","GLOBAL",5)
+THEN RESPONSE #100
+  GiveItemCreate("scrl1f","NARCIL",1,0,0)
+  SetGlobal("flsct03","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("NARCIL")
+  Global("flsct04","GLOBAL",5)
+THEN RESPONSE #100
+  GiveItemCreate("scrl1f","NARCIL",1,0,0)
+  SetGlobal("flsct04","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("NARCIL")
+  Global("flsct05","GLOBAL",5)
+THEN RESPONSE #100
+  GiveItemCreate("scrl1g","NARCIL",1,0,0)
+  SetGlobal("flsct05","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("NARCIL")
+  Global("flsct06","GLOBAL",5)
+THEN RESPONSE #100
+  GiveItemCreate("scrl1g","NARCIL",1,0,0)
+  SetGlobal("flsct06","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("NARCIL")
+  Global("flsct07","GLOBAL",5)
+THEN RESPONSE #100
+  GiveItemCreate("scrl1h","NARCIL",1,0,0)
+  SetGlobal("flsct07","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("NARCIL")
+  Global("flsct08","GLOBAL",5)
+THEN RESPONSE #100
+  GiveItemCreate("scrl1i","NARCIL",1,0,0)
+  SetGlobal("flsct08","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("NARCIL")
+  Global("flsct09","GLOBAL",5)
+THEN RESPONSE #100
+  GiveItemCreate("scrl1k","NARCIL",1,0,0)
+  SetGlobal("flsct09","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("NARCIL")
+  Global("flsct10","GLOBAL",5)
+THEN RESPONSE #100
+  GiveItemCreate("scrl1k","NARCIL",1,0,0)
+  SetGlobal("flsct10","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("NARCIL")
+  Global("flsct11","GLOBAL",5)
+THEN RESPONSE #100
+  GiveItemCreate("scrl1k","NARCIL",1,0,0)
+  SetGlobal("flsct11","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("NARCIL")
+  Global("flsct12","GLOBAL",5)
+THEN RESPONSE #100
+  GiveItemCreate("scrl1l","NARCIL",1,0,0)
+  SetGlobal("flsct12","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("NARCIL")
+  Global("flsct13","GLOBAL",5)
+THEN RESPONSE #100
+  GiveItemCreate("scrl1m","NARCIL",1,0,0)
+  SetGlobal("flsct13","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("NARCIL")
+  Global("flsct14","GLOBAL",5)
+THEN RESPONSE #100
+  GiveItemCreate("scrl1n","NARCIL",1,0,0)
+  SetGlobal("flsct14","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("NARCIL")
+  Global("flsct15","GLOBAL",5)
+THEN RESPONSE #100
+  GiveItemCreate("scrl1n","NARCIL",1,0,0)
+  SetGlobal("flsct15","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("NARCIL")
+  Global("flsct16","GLOBAL",5)
+THEN RESPONSE #100
+  GiveItemCreate("scrl1n","NARCIL",1,0,0)
+  SetGlobal("flsct16","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("NARCIL")
+  Global("flsct17","GLOBAL",5)
+THEN RESPONSE #100
+  GiveItemCreate("scrl1o","NARCIL",1,0,0)
+  SetGlobal("flsct17","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("NARCIL")
+  Global("flsct18","GLOBAL",5)
+THEN RESPONSE #100
+  GiveItemCreate("scrl1s","NARCIL",1,0,0)
+  SetGlobal("flsct18","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("NARCIL")
+  Global("flsct19","GLOBAL",5)
+THEN RESPONSE #100
+  GiveItemCreate("scrl1s","NARCIL",1,0,0)
+  SetGlobal("flsct19","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("NARCIL")
+  Global("flsct20","GLOBAL",5)
+THEN RESPONSE #100
+  GiveItemCreate("scrl1t","NARCIL",1,0,0)
+  SetGlobal("flsct20","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("NARCIL")
+  Global("flsct21","GLOBAL",5)
+THEN RESPONSE #100
+  GiveItemCreate("scrl1t","NARCIL",1,0,0)
+  SetGlobal("flsct21","GLOBAL",-1)
+  DestroySelf()
+END

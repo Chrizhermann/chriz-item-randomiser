@@ -1,0 +1,45 @@
+
+IF
+  Exists("KING")
+  Global("fl31t01","GLOBAL",6)
+THEN RESPONSE #100
+  GiveItemCreate("clck03","KING",0,0,0)
+  SetGlobal("fl31t01","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("KING")
+  Global("fl31t02","GLOBAL",6)
+THEN RESPONSE #100
+  GiveItemCreate("plat08","KING",0,0,0)
+  SetGlobal("fl31t02","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("KING")
+  Global("fl31t03","GLOBAL",6)
+THEN RESPONSE #100
+  GiveItemCreate("sw1h24","KING",0,0,0)
+  SetGlobal("fl31t03","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("KING")
+  Global("fl31t04","GLOBAL",6)
+THEN RESPONSE #100
+  GiveItemCreate("sw2h07_","KING",0,0,0)
+  SetGlobal("fl31t04","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("KING")
+  Global("fl31t05","GLOBAL",6)
+THEN RESPONSE #100
+  GiveItemCreate("staf05","KING",20,0,0)
+  SetGlobal("fl31t05","GLOBAL",-1)
+  DestroySelf()
+END

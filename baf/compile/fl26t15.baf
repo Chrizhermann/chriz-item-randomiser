@@ -1,0 +1,180 @@
+
+IF
+  Exists("KIRIAN")
+  Global("fl26t01","GLOBAL",15)
+THEN RESPONSE #100
+  GiveItemCreate("amul14","KIRIAN",0,0,0)
+  SetGlobal("fl26t01","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("KIRIAN")
+  Global("fl26t02","GLOBAL",15)
+THEN RESPONSE #100
+  GiveItemCreate("book07","KIRIAN",1,0,0)
+  SetGlobal("fl26t02","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("KIRIAN")
+  Global("fl26t03","GLOBAL",15)
+THEN RESPONSE #100
+  GiveItemCreate("brac07","KIRIAN",0,0,0)
+  SetGlobal("fl26t03","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("KIRIAN")
+  Global("fl26t04","GLOBAL",15)
+THEN RESPONSE #100
+  GiveItemCreate("brac08","KIRIAN",0,0,0)
+  SetGlobal("fl26t04","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("KIRIAN")
+  Global("fl26t05","GLOBAL",15)
+THEN RESPONSE #100
+  GiveItemCreate("misc41","KIRIAN",0,0,0)
+  SetGlobal("fl26t05","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("KIRIAN")
+  Global("fl26t06","GLOBAL",15)
+THEN RESPONSE #100
+  GiveItemCreate("ring04","KIRIAN",0,0,0)
+  SetGlobal("fl26t06","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("KIRIAN")
+  Global("fl26t07","GLOBAL",15)
+THEN RESPONSE #100
+  GiveItemCreate("leat07","KIRIAN",0,0,0)
+  SetGlobal("fl26t07","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("KIRIAN")
+  Global("fl26t08","GLOBAL",15)
+THEN RESPONSE #100
+  GiveItemCreate("scrl09","KIRIAN",1,0,0)
+  SetGlobal("fl26t08","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("KIRIAN")
+  Global("fl26t09","GLOBAL",15)
+THEN RESPONSE #100
+  GiveItemCreate("clck01","KIRIAN",0,0,0)
+  SetGlobal("fl26t09","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("KIRIAN")
+  Global("fl26t10","GLOBAL",15)
+THEN RESPONSE #100
+  GiveItemCreate("wand05","KIRIAN",8,8,0)
+  SetGlobal("fl26t10","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("KIRIAN")
+  Global("fl26t11","GLOBAL",15)
+THEN RESPONSE #100
+  GiveItemCreate("wand05","KIRIAN",12,12,0)
+  SetGlobal("fl26t11","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("KIRIAN")
+  Global("fl26t12","GLOBAL",15)
+THEN RESPONSE #100
+  GiveItemCreate("wand05","KIRIAN",16,16,0)
+  SetGlobal("fl26t12","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("KIRIAN")
+  Global("fl26t13","GLOBAL",15)
+THEN RESPONSE #100
+  GiveItemCreate("ring06","KIRIAN",0,0,0)
+  SetGlobal("fl26t13","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("KIRIAN")
+  Global("fl26t14","GLOBAL",15)
+THEN RESPONSE #100
+  GiveItemCreate("belt04","KIRIAN",0,0,0)
+  SetGlobal("fl26t14","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("KIRIAN")
+  Global("fl26t15","GLOBAL",15)
+THEN RESPONSE #100
+  GiveItemCreate("belt02","KIRIAN",0,0,0)
+  SetGlobal("fl26t15","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("KIRIAN")
+  Global("fl26t16","GLOBAL",15)
+THEN RESPONSE #100
+  GiveItemCreate("boot01","KIRIAN",0,0,0)
+  SetGlobal("fl26t16","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("KIRIAN")
+  Global("fl26t17","GLOBAL",15)
+THEN RESPONSE #100
+  GiveItemCreate("belt03","KIRIAN",0,0,0)
+  SetGlobal("fl26t17","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("KIRIAN")
+  Global("fl26t18","GLOBAL",15)
+THEN RESPONSE #100
+  GiveItemCreate("boot05","KIRIAN",0,0,0)
+  SetGlobal("fl26t18","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("KIRIAN")
+  Global("fl26t19","GLOBAL",15)
+THEN RESPONSE #100
+  GiveItemCreate("brac03","KIRIAN",0,0,0)
+  SetGlobal("fl26t19","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("KIRIAN")
+  Global("fl26t20","GLOBAL",15)
+THEN RESPONSE #100
+  GiveItemCreate("brac04","KIRIAN",0,0,0)
+  SetGlobal("fl26t20","GLOBAL",-1)
+  DestroySelf()
+END

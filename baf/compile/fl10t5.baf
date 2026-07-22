@@ -1,0 +1,162 @@
+
+IF
+  Exists("gorlic01")
+  Global("fl10t01","GLOBAL",5)
+THEN RESPONSE #100
+  GiveItemCreate("ax1h16","gorlic01",0,0,0)
+  SetGlobal("fl10t01","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("gorlic01")
+  Global("fl10t02","GLOBAL",5)
+THEN RESPONSE #100
+  GiveItemCreate("blun26","gorlic01",0,0,0)
+  SetGlobal("fl10t02","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("gorlic01")
+  Global("fl10t03","GLOBAL",5)
+THEN RESPONSE #100
+  GiveItemCreate("sw1h67","gorlic01",0,0,0)
+  SetGlobal("fl10t03","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("gorlic01")
+  Global("fl10t04","GLOBAL",5)
+THEN RESPONSE #100
+  GiveItemCreate("brac21","gorlic01",0,0,0)
+  SetGlobal("fl10t04","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("gorlic01")
+  Global("fl10t05","GLOBAL",5)
+THEN RESPONSE #100
+  GiveItemCreate("dagg21","gorlic01",0,0,0)
+  SetGlobal("fl10t05","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("gorlic01")
+  Global("fl10t06","GLOBAL",5)
+THEN RESPONSE #100
+  GiveItemCreate("halb10","gorlic01",0,2,0)
+  SetGlobal("fl10t06","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("gorlic01")
+  Global("fl10t07","GLOBAL",5)
+THEN RESPONSE #100
+  GiveItemCreate("helm27","gorlic01",0,0,0)
+  SetGlobal("fl10t07","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("gorlic01")
+  Global("fl10t08","GLOBAL",5)
+THEN RESPONSE #100
+  GiveItemCreate("sw1h60","gorlic01",0,1,0)
+  SetGlobal("fl10t08","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("gorlic01")
+  Global("fl10t09","GLOBAL",5)
+THEN RESPONSE #100
+  GiveItemCreate("plat21","gorlic01",0,0,0)
+  SetGlobal("fl10t09","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("gorlic01")
+  Global("fl10t10","GLOBAL",5)
+THEN RESPONSE #100
+  GiveItemCreate("ax1h14","gorlic01",0,0,0)
+  SetGlobal("fl10t10","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("gorlic01")
+  Global("fl10t11","GLOBAL",5)
+THEN RESPONSE #100
+  GiveItemCreate("sw1h62","gorlic01",0,0,0)
+  SetGlobal("fl10t11","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("gorlic01")
+  Global("fl10t12","GLOBAL",5)
+THEN RESPONSE #100
+  GiveItemCreate("sper11","gorlic01",0,0,0)
+  SetGlobal("fl10t12","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("gorlic01")
+  Global("fl10t13","GLOBAL",5)
+THEN RESPONSE #100
+  GiveItemCreate("staf21","gorlic01",0,0,0)
+  SetGlobal("fl10t13","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("gorlic01")
+  Global("fl10t14","GLOBAL",5)
+THEN RESPONSE #100
+  GiveItemCreate("sw1h58","gorlic01",0,0,0)
+  SetGlobal("fl10t14","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("gorlic01")
+  Global("fl10t15","GLOBAL",5)
+THEN RESPONSE #100
+  GiveItemCreate("sw1h66","gorlic01",0,0,0)
+  SetGlobal("fl10t15","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("gorlic01")
+  Global("fl10t16","GLOBAL",5)
+THEN RESPONSE #100
+  GiveItemCreate("sw1h70","gorlic01",0,1,0)
+  SetGlobal("fl10t16","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("gorlic01")
+  Global("fl10t17","GLOBAL",5)
+THEN RESPONSE #100
+  GiveItemCreate("sw2h21","gorlic01",0,0,0)
+  SetGlobal("fl10t17","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("gorlic01")
+  Global("fl10t18","GLOBAL",5)
+THEN RESPONSE #100
+  GiveItemCreate("xbow15","gorlic01",0,0,0)
+  SetGlobal("fl10t18","GLOBAL",-1)
+  DestroySelf()
+END

@@ -1,0 +1,81 @@
+
+IF
+  Exists("KIRINHALE")
+  Global("fl30t01","GLOBAL",11)
+THEN RESPONSE #100
+  GiveItemCreate("amul17","KIRINHALE",10,0,0)
+  SetGlobal("fl30t01","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("KIRINHALE")
+  Global("fl30t02","GLOBAL",11)
+THEN RESPONSE #100
+  GiveItemCreate("blun11","KIRINHALE",0,0,0)
+  SetGlobal("fl30t02","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("KIRINHALE")
+  Global("fl30t03","GLOBAL",11)
+THEN RESPONSE #100
+  GiveItemCreate("ring05","KIRINHALE",7,0,0)
+  SetGlobal("fl30t03","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("KIRINHALE")
+  Global("fl30t05","GLOBAL",11)
+THEN RESPONSE #100
+  GiveItemCreate("leat09","KIRINHALE",0,0,0)
+  SetGlobal("fl30t05","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("KIRINHALE")
+  Global("fl30t07","GLOBAL",11)
+THEN RESPONSE #100
+  GiveItemCreate("staf06","KIRINHALE",0,0,0)
+  SetGlobal("fl30t07","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("KIRINHALE")
+  Global("fl30t08","GLOBAL",11)
+THEN RESPONSE #100
+  GiveItemCreate("sw1h23","KIRINHALE",0,0,0)
+  SetGlobal("fl30t08","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("KIRINHALE")
+  Global("fl30t09","GLOBAL",11)
+THEN RESPONSE #100
+  GiveItemCreate("wand10","KIRINHALE",5,0,0)
+  SetGlobal("fl30t09","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("KIRINHALE")
+  Global("fl30t10","GLOBAL",11)
+THEN RESPONSE #100
+  GiveItemCreate("wand10","KIRINHALE",6,0,0)
+  SetGlobal("fl30t10","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("KIRINHALE")
+  Global("fl30t11","GLOBAL",11)
+THEN RESPONSE #100
+  GiveItemCreate("staf07","KIRINHALE",0,0,0)
+  SetGlobal("fl30t11","GLOBAL",-1)
+  DestroySelf()
+END

@@ -1,0 +1,135 @@
+
+IF
+  Exists("lendar")
+  Global("flset01","GLOBAL",1)
+THEN RESPONSE #100
+  GiveItemCreate("scrl2d","lendar",1,1,0)
+  SetGlobal("flset01","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("lendar")
+  Global("flset02","GLOBAL",1)
+THEN RESPONSE #100
+  GiveItemCreate("scrl2f","lendar",1,1,0)
+  SetGlobal("flset02","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("lendar")
+  Global("flset03","GLOBAL",1)
+THEN RESPONSE #100
+  GiveItemCreate("scrl2h","lendar",1,1,0)
+  SetGlobal("flset03","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("lendar")
+  Global("flset04","GLOBAL",1)
+THEN RESPONSE #100
+  GiveItemCreate("scrl2e","lendar",1,0,0)
+  SetGlobal("flset04","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("lendar")
+  Global("flset05","GLOBAL",1)
+THEN RESPONSE #100
+  GiveItemCreate("scrl2e","lendar",1,0,0)
+  SetGlobal("flset05","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("lendar")
+  Global("flset06","GLOBAL",1)
+THEN RESPONSE #100
+  GiveItemCreate("scrl2e","lendar",1,0,0)
+  SetGlobal("flset06","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("lendar")
+  Global("flset07","GLOBAL",1)
+THEN RESPONSE #100
+  GiveItemCreate("scrl2g","lendar",1,0,0)
+  SetGlobal("flset07","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("lendar")
+  Global("flset08","GLOBAL",1)
+THEN RESPONSE #100
+  GiveItemCreate("scrl5n","lendar",1,0,0)
+  SetGlobal("flset08","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("lendar")
+  Global("flset09","GLOBAL",1)
+THEN RESPONSE #100
+  GiveItemCreate("scrl5n","lendar",1,0,0)
+  SetGlobal("flset09","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("lendar")
+  Global("flset10","GLOBAL",1)
+THEN RESPONSE #100
+  GiveItemCreate("scrl5o","lendar",1,0,0)
+  SetGlobal("flset10","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("lendar")
+  Global("flset11","GLOBAL",1)
+THEN RESPONSE #100
+  GiveItemCreate("scrl5o","lendar",1,0,0)
+  SetGlobal("flset11","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("lendar")
+  Global("flset12","GLOBAL",1)
+THEN RESPONSE #100
+  GiveItemCreate("scrl5p","lendar",1,0,0)
+  SetGlobal("flset12","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("lendar")
+  Global("flset13","GLOBAL",1)
+THEN RESPONSE #100
+  GiveItemCreate("scrl5p","lendar",1,0,0)
+  SetGlobal("flset13","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("lendar")
+  Global("flset14","GLOBAL",1)
+THEN RESPONSE #100
+  GiveItemCreate("scrl5p","lendar",1,0,0)
+  SetGlobal("flset14","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("lendar")
+  Global("flset15","GLOBAL",1)
+THEN RESPONSE #100
+  GiveItemCreate("scrl5q","lendar",1,0,0)
+  SetGlobal("flset15","GLOBAL",-1)
+  DestroySelf()
+END

@@ -1,0 +1,171 @@
+
+IF
+  Exists("spectatorchest")
+  Global("fl4t01","GLOBAL",12)
+THEN RESPONSE #100
+  ActionOverride("spectatorchest",CreateItem("amul25",0,0,0))
+  SetGlobal("fl4t01","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("spectatorchest")
+  Global("fl4t02","GLOBAL",12)
+THEN RESPONSE #100
+  ActionOverride("spectatorchest",CreateItem("sw1h33",0,1,0))
+  SetGlobal("fl4t02","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("spectatorchest")
+  Global("fl4t03","GLOBAL",12)
+THEN RESPONSE #100
+  ActionOverride("spectatorchest",CreateItem("staf16",0,30,30))
+  SetGlobal("fl4t03","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("spectatorchest")
+  Global("fl4t04","GLOBAL",12)
+THEN RESPONSE #100
+  ActionOverride("spectatorchest",CreateItem("staf17",1,20,20))
+  SetGlobal("fl4t04","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("spectatorchest")
+  Global("fl4t05","GLOBAL",12)
+THEN RESPONSE #100
+  ActionOverride("spectatorchest",CreateItem("brac06",0,0,0))
+  SetGlobal("fl4t05","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("spectatorchest")
+  Global("fl4t06","GLOBAL",12)
+THEN RESPONSE #100
+  ActionOverride("spectatorchest",CreateItem("brac15",0,0,0))
+  SetGlobal("fl4t06","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("spectatorchest")
+  Global("fl4t07","GLOBAL",12)
+THEN RESPONSE #100
+  ActionOverride("spectatorchest",CreateItem("halb04",0,0,0))
+  SetGlobal("fl4t07","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("spectatorchest")
+  Global("fl4t08","GLOBAL",12)
+THEN RESPONSE #100
+  ActionOverride("spectatorchest",CreateItem("sw1h35",0,0,0))
+  SetGlobal("fl4t08","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("spectatorchest")
+  Global("fl4t09","GLOBAL",12)
+THEN RESPONSE #100
+  ActionOverride("spectatorchest",CreateItem("sw1h54a",0,0,0))
+  SetGlobal("fl4t09","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("spectatorchest")
+  Global("fl4t10","GLOBAL",12)
+THEN RESPONSE #100
+  ActionOverride("spectatorchest",CreateItem("bow19a",0,0,0))
+  SetGlobal("fl4t10","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("spectatorchest")
+  Global("fl4t12","GLOBAL",12)
+THEN RESPONSE #100
+  ActionOverride("spectatorchest",CreateItem("dagg13",0,0,0))
+  SetGlobal("fl4t12","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("spectatorchest")
+  Global("fl4t13","GLOBAL",12)
+THEN RESPONSE #100
+  ActionOverride("spectatorchest",CreateItem("brac08",0,0,0))
+  SetGlobal("fl4t13","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("spectatorchest")
+  Global("fl4t14","GLOBAL",12)
+THEN RESPONSE #100
+  ActionOverride("spectatorchest",CreateItem("shld22",0,0,0))
+  SetGlobal("fl4t14","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("spectatorchest")
+  Global("fl4t15","GLOBAL",12)
+THEN RESPONSE #100
+  ActionOverride("spectatorchest",CreateItem("bow09",0,0,0))
+  SetGlobal("fl4t15","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("spectatorchest")
+  Global("fl4t16","GLOBAL",12)
+THEN RESPONSE #100
+  ActionOverride("spectatorchest",CreateItem("boot04",0,0,0))
+  SetGlobal("fl4t16","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("spectatorchest")
+  Global("fl4t17","GLOBAL",12)
+THEN RESPONSE #100
+  ActionOverride("spectatorchest",CreateItem("sw1h52",0,0,0))
+  SetGlobal("fl4t17","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("spectatorchest")
+  Global("fl4t18","GLOBAL",12)
+THEN RESPONSE #100
+  ActionOverride("spectatorchest",CreateItem("blun22",0,0,0))
+  SetGlobal("fl4t18","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("spectatorchest")
+  Global("fl4t19","GLOBAL",12)
+THEN RESPONSE #100
+  ActionOverride("spectatorchest",CreateItem("sw1h36",0,3,0))
+  SetGlobal("fl4t19","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("spectatorchest")
+  Global("fl4t20","GLOBAL",12)
+THEN RESPONSE #100
+  ActionOverride("spectatorchest",CreateItem("misc3a",1,0,0))
+  SetGlobal("fl4t20","GLOBAL",-1)
+  DestroySelf()
+END

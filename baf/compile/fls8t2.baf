@@ -1,0 +1,63 @@
+
+IF
+  Exists("vase2")
+  Global("fls8t01","GLOBAL",2)
+THEN RESPONSE #100
+  ActionOverride("vase2",CreateItem("scrl9h",1,0,0))
+  SetGlobal("fls8t01","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("vase2")
+  Global("fls8t02","GLOBAL",2)
+THEN RESPONSE #100
+  ActionOverride("vase2",CreateItem("scrl9g",1,1,0))
+  SetGlobal("fls8t02","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("vase2")
+  Global("fls8t03","GLOBAL",2)
+THEN RESPONSE #100
+  ActionOverride("vase2",CreateItem("scrl9g",1,1,0))
+  SetGlobal("fls8t03","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("vase2")
+  Global("fls8t04","GLOBAL",2)
+THEN RESPONSE #100
+  ActionOverride("vase2",CreateItem("scrl9f",1,1,0))
+  SetGlobal("fls8t04","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("vase2")
+  Global("fls8t05","GLOBAL",2)
+THEN RESPONSE #100
+  ActionOverride("vase2",CreateItem("scrl9d",1,1,0))
+  SetGlobal("fls8t05","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("vase2")
+  Global("fls8t06","GLOBAL",2)
+THEN RESPONSE #100
+  ActionOverride("vase2",CreateItem("scrl8z",1,0,0))
+  SetGlobal("fls8t06","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("vase2")
+  Global("fls8t07","GLOBAL",2)
+THEN RESPONSE #100
+  ActionOverride("vase2",CreateItem("scrl9a",1,1,0))
+  SetGlobal("fls8t07","GLOBAL",-1)
+  DestroySelf()
+END

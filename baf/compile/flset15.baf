@@ -1,0 +1,135 @@
+
+IF
+  Exists("Droth")
+  Global("flset01","GLOBAL",15)
+THEN RESPONSE #100
+  GiveItemCreate("scrl2d","Droth",1,1,0)
+  SetGlobal("flset01","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Droth")
+  Global("flset02","GLOBAL",15)
+THEN RESPONSE #100
+  GiveItemCreate("scrl2f","Droth",1,1,0)
+  SetGlobal("flset02","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Droth")
+  Global("flset03","GLOBAL",15)
+THEN RESPONSE #100
+  GiveItemCreate("scrl2h","Droth",1,1,0)
+  SetGlobal("flset03","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Droth")
+  Global("flset04","GLOBAL",15)
+THEN RESPONSE #100
+  GiveItemCreate("scrl2e","Droth",1,0,0)
+  SetGlobal("flset04","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Droth")
+  Global("flset05","GLOBAL",15)
+THEN RESPONSE #100
+  GiveItemCreate("scrl2e","Droth",1,0,0)
+  SetGlobal("flset05","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Droth")
+  Global("flset06","GLOBAL",15)
+THEN RESPONSE #100
+  GiveItemCreate("scrl2e","Droth",1,0,0)
+  SetGlobal("flset06","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Droth")
+  Global("flset07","GLOBAL",15)
+THEN RESPONSE #100
+  GiveItemCreate("scrl2g","Droth",1,0,0)
+  SetGlobal("flset07","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Droth")
+  Global("flset08","GLOBAL",15)
+THEN RESPONSE #100
+  GiveItemCreate("scrl5n","Droth",1,0,0)
+  SetGlobal("flset08","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Droth")
+  Global("flset09","GLOBAL",15)
+THEN RESPONSE #100
+  GiveItemCreate("scrl5n","Droth",1,0,0)
+  SetGlobal("flset09","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Droth")
+  Global("flset10","GLOBAL",15)
+THEN RESPONSE #100
+  GiveItemCreate("scrl5o","Droth",1,0,0)
+  SetGlobal("flset10","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Droth")
+  Global("flset11","GLOBAL",15)
+THEN RESPONSE #100
+  GiveItemCreate("scrl5o","Droth",1,0,0)
+  SetGlobal("flset11","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Droth")
+  Global("flset12","GLOBAL",15)
+THEN RESPONSE #100
+  GiveItemCreate("scrl5p","Droth",1,0,0)
+  SetGlobal("flset12","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Droth")
+  Global("flset13","GLOBAL",15)
+THEN RESPONSE #100
+  GiveItemCreate("scrl5p","Droth",1,0,0)
+  SetGlobal("flset13","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Droth")
+  Global("flset14","GLOBAL",15)
+THEN RESPONSE #100
+  GiveItemCreate("scrl5p","Droth",1,0,0)
+  SetGlobal("flset14","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Droth")
+  Global("flset15","GLOBAL",15)
+THEN RESPONSE #100
+  GiveItemCreate("scrl5q","Droth",1,0,0)
+  SetGlobal("flset15","GLOBAL",-1)
+  DestroySelf()
+END

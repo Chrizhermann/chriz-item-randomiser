@@ -1,0 +1,144 @@
+
+IF
+  Exists("tolmag02")
+  Global("fls4t01","GLOBAL",13)
+THEN RESPONSE #100
+  GiveItemCreate("scrl6t","tolmag02",1,0,0)
+  SetGlobal("fls4t01","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("tolmag02")
+  Global("fls4t02","GLOBAL",13)
+THEN RESPONSE #100
+  GiveItemCreate("scrl6t","tolmag02",1,0,0)
+  SetGlobal("fls4t02","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("tolmag02")
+  Global("fls4t03","GLOBAL",13)
+THEN RESPONSE #100
+  GiveItemCreate("scrl6t","tolmag02",1,0,0)
+  SetGlobal("fls4t03","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("tolmag02")
+  Global("fls4t04","GLOBAL",13)
+THEN RESPONSE #100
+  GiveItemCreate("scrl6r","tolmag02",1,0,0)
+  SetGlobal("fls4t04","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("tolmag02")
+  Global("fls4t05","GLOBAL",13)
+THEN RESPONSE #100
+  GiveItemCreate("scrl6p","tolmag02",1,0,0)
+  SetGlobal("fls4t05","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("tolmag02")
+  Global("fls4t06","GLOBAL",13)
+THEN RESPONSE #100
+  GiveItemCreate("scrl6o","tolmag02",1,0,0)
+  SetGlobal("fls4t06","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("tolmag02")
+  Global("fls4t07","GLOBAL",13)
+THEN RESPONSE #100
+  GiveItemCreate("scrl6n","tolmag02",1,0,0)
+  SetGlobal("fls4t07","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("tolmag02")
+  Global("fls4t08","GLOBAL",13)
+THEN RESPONSE #100
+  GiveItemCreate("scrl6m","tolmag02",1,0,0)
+  SetGlobal("fls4t08","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("tolmag02")
+  Global("fls4t09","GLOBAL",13)
+THEN RESPONSE #100
+  GiveItemCreate("scrl1w","tolmag02",1,1,0)
+  SetGlobal("fls4t09","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("tolmag02")
+  Global("fls4t10","GLOBAL",13)
+THEN RESPONSE #100
+  GiveItemCreate("scrl1v","tolmag02",1,0,0)
+  SetGlobal("fls4t10","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("tolmag02")
+  Global("fls4t11","GLOBAL",13)
+THEN RESPONSE #100
+  GiveItemCreate("scrl5k","tolmag02",1,0,0)
+  SetGlobal("fls4t11","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("tolmag02")
+  Global("fls4t12","GLOBAL",13)
+THEN RESPONSE #100
+  GiveItemCreate("scrl5k","tolmag02",1,0,0)
+  SetGlobal("fls4t12","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("tolmag02")
+  Global("fls4t13","GLOBAL",13)
+THEN RESPONSE #100
+  GiveItemCreate("scrl5k","tolmag02",1,1,0)
+  SetGlobal("fls4t13","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("tolmag02")
+  Global("fls4t14","GLOBAL",13)
+THEN RESPONSE #100
+  GiveItemCreate("scrl5m","tolmag02",1,0,0)
+  SetGlobal("fls4t14","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("tolmag02")
+  Global("fls4t15","GLOBAL",13)
+THEN RESPONSE #100
+  GiveItemCreate("scrl1z","tolmag02",1,0,0)
+  SetGlobal("fls4t15","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("tolmag02")
+  Global("fls4t16","GLOBAL",13)
+THEN RESPONSE #100
+  GiveItemCreate("scrl1y","tolmag02",1,0,0)
+  SetGlobal("fls4t16","GLOBAL",-1)
+  DestroySelf()
+END

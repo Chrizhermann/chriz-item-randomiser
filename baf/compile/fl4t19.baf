@@ -1,0 +1,171 @@
+
+IF
+  Exists("bhcrypt")
+  Global("fl4t01","GLOBAL",19)
+THEN RESPONSE #100
+  GiveItemCreate("amul25","bhcrypt",0,0,0)
+  SetGlobal("fl4t01","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("bhcrypt")
+  Global("fl4t02","GLOBAL",19)
+THEN RESPONSE #100
+  GiveItemCreate("sw1h33","bhcrypt",0,1,0)
+  SetGlobal("fl4t02","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("bhcrypt")
+  Global("fl4t03","GLOBAL",19)
+THEN RESPONSE #100
+  GiveItemCreate("staf16","bhcrypt",0,30,30)
+  SetGlobal("fl4t03","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("bhcrypt")
+  Global("fl4t04","GLOBAL",19)
+THEN RESPONSE #100
+  GiveItemCreate("staf17","bhcrypt",1,20,20)
+  SetGlobal("fl4t04","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("bhcrypt")
+  Global("fl4t05","GLOBAL",19)
+THEN RESPONSE #100
+  GiveItemCreate("brac06","bhcrypt",0,0,0)
+  SetGlobal("fl4t05","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("bhcrypt")
+  Global("fl4t06","GLOBAL",19)
+THEN RESPONSE #100
+  GiveItemCreate("brac15","bhcrypt",0,0,0)
+  SetGlobal("fl4t06","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("bhcrypt")
+  Global("fl4t07","GLOBAL",19)
+THEN RESPONSE #100
+  GiveItemCreate("halb04","bhcrypt",0,0,0)
+  SetGlobal("fl4t07","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("bhcrypt")
+  Global("fl4t08","GLOBAL",19)
+THEN RESPONSE #100
+  GiveItemCreate("sw1h35","bhcrypt",0,0,0)
+  SetGlobal("fl4t08","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("bhcrypt")
+  Global("fl4t09","GLOBAL",19)
+THEN RESPONSE #100
+  GiveItemCreate("sw1h54a","bhcrypt",0,0,0)
+  SetGlobal("fl4t09","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("bhcrypt")
+  Global("fl4t10","GLOBAL",19)
+THEN RESPONSE #100
+  GiveItemCreate("bow19a","bhcrypt",0,0,0)
+  SetGlobal("fl4t10","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("bhcrypt")
+  Global("fl4t12","GLOBAL",19)
+THEN RESPONSE #100
+  GiveItemCreate("dagg13","bhcrypt",0,0,0)
+  SetGlobal("fl4t12","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("bhcrypt")
+  Global("fl4t13","GLOBAL",19)
+THEN RESPONSE #100
+  GiveItemCreate("brac08","bhcrypt",0,0,0)
+  SetGlobal("fl4t13","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("bhcrypt")
+  Global("fl4t14","GLOBAL",19)
+THEN RESPONSE #100
+  GiveItemCreate("shld22","bhcrypt",0,0,0)
+  SetGlobal("fl4t14","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("bhcrypt")
+  Global("fl4t15","GLOBAL",19)
+THEN RESPONSE #100
+  GiveItemCreate("bow09","bhcrypt",0,0,0)
+  SetGlobal("fl4t15","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("bhcrypt")
+  Global("fl4t16","GLOBAL",19)
+THEN RESPONSE #100
+  GiveItemCreate("boot04","bhcrypt",0,0,0)
+  SetGlobal("fl4t16","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("bhcrypt")
+  Global("fl4t17","GLOBAL",19)
+THEN RESPONSE #100
+  GiveItemCreate("sw1h52","bhcrypt",0,0,0)
+  SetGlobal("fl4t17","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("bhcrypt")
+  Global("fl4t18","GLOBAL",19)
+THEN RESPONSE #100
+  GiveItemCreate("blun22","bhcrypt",0,0,0)
+  SetGlobal("fl4t18","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("bhcrypt")
+  Global("fl4t19","GLOBAL",19)
+THEN RESPONSE #100
+  GiveItemCreate("sw1h36","bhcrypt",0,3,0)
+  SetGlobal("fl4t19","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("bhcrypt")
+  Global("fl4t20","GLOBAL",19)
+THEN RESPONSE #100
+  GiveItemCreate("misc3a","bhcrypt",1,0,0)
+  SetGlobal("fl4t20","GLOBAL",-1)
+  DestroySelf()
+END

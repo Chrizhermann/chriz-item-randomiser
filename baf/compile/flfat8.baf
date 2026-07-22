@@ -1,0 +1,27 @@
+
+IF
+  Exists("kpglai01")
+  Global("flfat01","GLOBAL",8)
+THEN RESPONSE #100
+  GiveItemCreate("blun14a","kpglai01",0,0,0)
+  SetGlobal("flfat01","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("kpglai01")
+  Global("flfat02","GLOBAL",8)
+THEN RESPONSE #100
+  GiveItemCreate("blun14b","kpglai01",0,0,0)
+  SetGlobal("flfat02","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("kpglai01")
+  Global("flfat03","GLOBAL",8)
+THEN RESPONSE #100
+  GiveItemCreate("blun14c","kpglai01",0,0,0)
+  SetGlobal("flfat03","GLOBAL",-1)
+  DestroySelf()
+END

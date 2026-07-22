@@ -1,0 +1,117 @@
+
+IF
+  Exists("Tuth")
+  Global("fl28t01","GLOBAL",12)
+THEN RESPONSE #100
+  GiveItemCreate("book04","Tuth",1,0,0)
+  SetGlobal("fl28t01","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Tuth")
+  Global("fl28t02","GLOBAL",12)
+THEN RESPONSE #100
+  GiveItemCreate("clck02","Tuth",0,0,0)
+  SetGlobal("fl28t02","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Tuth")
+  Global("fl28t03","GLOBAL",12)
+THEN RESPONSE #100
+  GiveItemCreate("leat08","Tuth",0,0,0)
+  SetGlobal("fl28t03","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Tuth")
+  Global("fl28t04","GLOBAL",12)
+THEN RESPONSE #100
+  GiveItemCreate("helm06","Tuth",0,0,0)
+  SetGlobal("fl28t04","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Tuth")
+  Global("fl28t05","GLOBAL",12)
+THEN RESPONSE #100
+  GiveItemCreate("misc75","Tuth",0,0,0)
+  SetGlobal("fl28t05","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Tuth")
+  Global("fl28t06","GLOBAL",12)
+THEN RESPONSE #100
+  GiveItemCreate("ring08_","Tuth",0,0,0)
+  SetGlobal("fl28t06","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Tuth")
+  Global("fl28t07","GLOBAL",12)
+THEN RESPONSE #100
+  GiveItemCreate("brac10","Tuth",0,0,0)
+  SetGlobal("fl28t07","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Tuth")
+  Global("fl28t08","GLOBAL",12)
+THEN RESPONSE #100
+  GiveItemCreate("sw1h06","Tuth",0,0,0)
+  SetGlobal("fl28t08","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Tuth")
+  Global("fl28t09","GLOBAL",12)
+THEN RESPONSE #100
+  GiveItemCreate("wand04","Tuth",13,0,0)
+  SetGlobal("fl28t09","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Tuth")
+  Global("fl28t10","GLOBAL",12)
+THEN RESPONSE #100
+  GiveItemCreate("wand10","Tuth",8,0,0)
+  SetGlobal("fl28t10","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Tuth")
+  Global("fl28t11","GLOBAL",12)
+THEN RESPONSE #100
+  GiveItemCreate("wand10","Tuth",20,0,0)
+  SetGlobal("fl28t11","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Tuth")
+  Global("fl28t12","GLOBAL",12)
+THEN RESPONSE #100
+  GiveItemCreate("xbow06","Tuth",0,0,0)
+  SetGlobal("fl28t12","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Tuth")
+  Global("fl28t13","GLOBAL",12)
+THEN RESPONSE #100
+  GiveItemCreate("ring07","Tuth",0,0,0)
+  SetGlobal("fl28t13","GLOBAL",-1)
+  DestroySelf()
+END

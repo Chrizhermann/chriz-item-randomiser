@@ -1,0 +1,180 @@
+
+IF
+  Exists("MUTAMIN")
+  Global("fl26t01","GLOBAL",9)
+THEN RESPONSE #100
+  GiveItemCreate("amul14","MUTAMIN",0,0,0)
+  SetGlobal("fl26t01","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("MUTAMIN")
+  Global("fl26t02","GLOBAL",9)
+THEN RESPONSE #100
+  GiveItemCreate("book07","MUTAMIN",1,0,0)
+  SetGlobal("fl26t02","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("MUTAMIN")
+  Global("fl26t03","GLOBAL",9)
+THEN RESPONSE #100
+  GiveItemCreate("brac07","MUTAMIN",0,0,0)
+  SetGlobal("fl26t03","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("MUTAMIN")
+  Global("fl26t04","GLOBAL",9)
+THEN RESPONSE #100
+  GiveItemCreate("brac08","MUTAMIN",0,0,0)
+  SetGlobal("fl26t04","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("MUTAMIN")
+  Global("fl26t05","GLOBAL",9)
+THEN RESPONSE #100
+  GiveItemCreate("misc41","MUTAMIN",0,0,0)
+  SetGlobal("fl26t05","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("MUTAMIN")
+  Global("fl26t06","GLOBAL",9)
+THEN RESPONSE #100
+  GiveItemCreate("ring04","MUTAMIN",0,0,0)
+  SetGlobal("fl26t06","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("MUTAMIN")
+  Global("fl26t07","GLOBAL",9)
+THEN RESPONSE #100
+  GiveItemCreate("leat07","MUTAMIN",0,0,0)
+  SetGlobal("fl26t07","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("MUTAMIN")
+  Global("fl26t08","GLOBAL",9)
+THEN RESPONSE #100
+  GiveItemCreate("scrl09","MUTAMIN",1,0,0)
+  SetGlobal("fl26t08","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("MUTAMIN")
+  Global("fl26t09","GLOBAL",9)
+THEN RESPONSE #100
+  GiveItemCreate("clck01","MUTAMIN",0,0,0)
+  SetGlobal("fl26t09","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("MUTAMIN")
+  Global("fl26t10","GLOBAL",9)
+THEN RESPONSE #100
+  GiveItemCreate("wand05","MUTAMIN",8,8,0)
+  SetGlobal("fl26t10","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("MUTAMIN")
+  Global("fl26t11","GLOBAL",9)
+THEN RESPONSE #100
+  GiveItemCreate("wand05","MUTAMIN",12,12,0)
+  SetGlobal("fl26t11","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("MUTAMIN")
+  Global("fl26t12","GLOBAL",9)
+THEN RESPONSE #100
+  GiveItemCreate("wand05","MUTAMIN",16,16,0)
+  SetGlobal("fl26t12","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("MUTAMIN")
+  Global("fl26t13","GLOBAL",9)
+THEN RESPONSE #100
+  GiveItemCreate("ring06","MUTAMIN",0,0,0)
+  SetGlobal("fl26t13","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("MUTAMIN")
+  Global("fl26t14","GLOBAL",9)
+THEN RESPONSE #100
+  GiveItemCreate("belt04","MUTAMIN",0,0,0)
+  SetGlobal("fl26t14","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("MUTAMIN")
+  Global("fl26t15","GLOBAL",9)
+THEN RESPONSE #100
+  GiveItemCreate("belt02","MUTAMIN",0,0,0)
+  SetGlobal("fl26t15","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("MUTAMIN")
+  Global("fl26t16","GLOBAL",9)
+THEN RESPONSE #100
+  GiveItemCreate("boot01","MUTAMIN",0,0,0)
+  SetGlobal("fl26t16","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("MUTAMIN")
+  Global("fl26t17","GLOBAL",9)
+THEN RESPONSE #100
+  GiveItemCreate("belt03","MUTAMIN",0,0,0)
+  SetGlobal("fl26t17","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("MUTAMIN")
+  Global("fl26t18","GLOBAL",9)
+THEN RESPONSE #100
+  GiveItemCreate("boot05","MUTAMIN",0,0,0)
+  SetGlobal("fl26t18","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("MUTAMIN")
+  Global("fl26t19","GLOBAL",9)
+THEN RESPONSE #100
+  GiveItemCreate("brac03","MUTAMIN",0,0,0)
+  SetGlobal("fl26t19","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("MUTAMIN")
+  Global("fl26t20","GLOBAL",9)
+THEN RESPONSE #100
+  GiveItemCreate("brac04","MUTAMIN",0,0,0)
+  SetGlobal("fl26t20","GLOBAL",-1)
+  DestroySelf()
+END

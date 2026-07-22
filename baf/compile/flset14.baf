@@ -1,0 +1,135 @@
+
+IF
+  Exists("QUEEN")
+  Global("flset01","GLOBAL",14)
+THEN RESPONSE #100
+  GiveItemCreate("scrl2d","QUEEN",1,1,0)
+  SetGlobal("flset01","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("QUEEN")
+  Global("flset02","GLOBAL",14)
+THEN RESPONSE #100
+  GiveItemCreate("scrl2f","QUEEN",1,1,0)
+  SetGlobal("flset02","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("QUEEN")
+  Global("flset03","GLOBAL",14)
+THEN RESPONSE #100
+  GiveItemCreate("scrl2h","QUEEN",1,1,0)
+  SetGlobal("flset03","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("QUEEN")
+  Global("flset04","GLOBAL",14)
+THEN RESPONSE #100
+  GiveItemCreate("scrl2e","QUEEN",1,0,0)
+  SetGlobal("flset04","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("QUEEN")
+  Global("flset05","GLOBAL",14)
+THEN RESPONSE #100
+  GiveItemCreate("scrl2e","QUEEN",1,0,0)
+  SetGlobal("flset05","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("QUEEN")
+  Global("flset06","GLOBAL",14)
+THEN RESPONSE #100
+  GiveItemCreate("scrl2e","QUEEN",1,0,0)
+  SetGlobal("flset06","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("QUEEN")
+  Global("flset07","GLOBAL",14)
+THEN RESPONSE #100
+  GiveItemCreate("scrl2g","QUEEN",1,0,0)
+  SetGlobal("flset07","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("QUEEN")
+  Global("flset08","GLOBAL",14)
+THEN RESPONSE #100
+  GiveItemCreate("scrl5n","QUEEN",1,0,0)
+  SetGlobal("flset08","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("QUEEN")
+  Global("flset09","GLOBAL",14)
+THEN RESPONSE #100
+  GiveItemCreate("scrl5n","QUEEN",1,0,0)
+  SetGlobal("flset09","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("QUEEN")
+  Global("flset10","GLOBAL",14)
+THEN RESPONSE #100
+  GiveItemCreate("scrl5o","QUEEN",1,0,0)
+  SetGlobal("flset10","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("QUEEN")
+  Global("flset11","GLOBAL",14)
+THEN RESPONSE #100
+  GiveItemCreate("scrl5o","QUEEN",1,0,0)
+  SetGlobal("flset11","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("QUEEN")
+  Global("flset12","GLOBAL",14)
+THEN RESPONSE #100
+  GiveItemCreate("scrl5p","QUEEN",1,0,0)
+  SetGlobal("flset12","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("QUEEN")
+  Global("flset13","GLOBAL",14)
+THEN RESPONSE #100
+  GiveItemCreate("scrl5p","QUEEN",1,0,0)
+  SetGlobal("flset13","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("QUEEN")
+  Global("flset14","GLOBAL",14)
+THEN RESPONSE #100
+  GiveItemCreate("scrl5p","QUEEN",1,0,0)
+  SetGlobal("flset14","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("QUEEN")
+  Global("flset15","GLOBAL",14)
+THEN RESPONSE #100
+  GiveItemCreate("scrl5q","QUEEN",1,0,0)
+  SetGlobal("flset15","GLOBAL",-1)
+  DestroySelf()
+END

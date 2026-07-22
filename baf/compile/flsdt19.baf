@@ -1,0 +1,153 @@
+
+IF
+  Exists("Cythan")
+  Global("flsdt01","GLOBAL",19)
+THEN RESPONSE #100
+  GiveItemCreate("scrl1u","Cythan",1,0,0)
+  SetGlobal("flsdt01","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Cythan")
+  Global("flsdt02","GLOBAL",19)
+THEN RESPONSE #100
+  GiveItemCreate("scrl1u","Cythan",1,0,0)
+  SetGlobal("flsdt02","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Cythan")
+  Global("flsdt03","GLOBAL",19)
+THEN RESPONSE #100
+  GiveItemCreate("scrl1u","Cythan",1,0,0)
+  SetGlobal("flsdt03","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Cythan")
+  Global("flsdt07","GLOBAL",19)
+THEN RESPONSE #100
+  GiveItemCreate("scrl5l","Cythan",1,1,0)
+  SetGlobal("flsdt07","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Cythan")
+  Global("flsdt08","GLOBAL",19)
+THEN RESPONSE #100
+  GiveItemCreate("scrl1z","Cythan",1,0,0)
+  SetGlobal("flsdt08","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Cythan")
+  Global("flsdt09","GLOBAL",19)
+THEN RESPONSE #100
+  GiveItemCreate("scrl1z","Cythan",1,0,0)
+  SetGlobal("flsdt09","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Cythan")
+  Global("flsdt10","GLOBAL",19)
+THEN RESPONSE #100
+  GiveItemCreate("scrl2a","Cythan",1,0,0)
+  SetGlobal("flsdt10","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Cythan")
+  Global("flsdt11","GLOBAL",19)
+THEN RESPONSE #100
+  GiveItemCreate("scrl2a","Cythan",1,0,0)
+  SetGlobal("flsdt11","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Cythan")
+  Global("flsdt12","GLOBAL",19)
+THEN RESPONSE #100
+  GiveItemCreate("scrl2a","Cythan",1,0,0)
+  SetGlobal("flsdt12","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Cythan")
+  Global("flsdt13","GLOBAL",19)
+THEN RESPONSE #100
+  GiveItemCreate("scrl5g","Cythan",1,0,0)
+  SetGlobal("flsdt13","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Cythan")
+  Global("flsdt14","GLOBAL",19)
+THEN RESPONSE #100
+  GiveItemCreate("scrl5g","Cythan",1,0,0)
+  SetGlobal("flsdt14","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Cythan")
+  Global("flsdt15","GLOBAL",19)
+THEN RESPONSE #100
+  GiveItemCreate("scrl5h","Cythan",1,0,0)
+  SetGlobal("flsdt15","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Cythan")
+  Global("flsdt16","GLOBAL",19)
+THEN RESPONSE #100
+  GiveItemCreate("scrl5h","Cythan",1,0,0)
+  SetGlobal("flsdt16","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Cythan")
+  Global("flsdt17","GLOBAL",19)
+THEN RESPONSE #100
+  GiveItemCreate("scrl5i","Cythan",1,0,0)
+  SetGlobal("flsdt17","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Cythan")
+  Global("flsdt18","GLOBAL",19)
+THEN RESPONSE #100
+  GiveItemCreate("scrl5j","Cythan",1,0,0)
+  SetGlobal("flsdt18","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Cythan")
+  Global("flsdt19","GLOBAL",19)
+THEN RESPONSE #100
+  GiveItemCreate("scrl5k","Cythan",1,0,0)
+  SetGlobal("flsdt19","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Cythan")
+  Global("flsdt20","GLOBAL",19)
+THEN RESPONSE #100
+  GiveItemCreate("scrl5m","Cythan",1,0,0)
+  SetGlobal("flsdt20","GLOBAL",-1)
+  DestroySelf()
+END

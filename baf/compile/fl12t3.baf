@@ -1,0 +1,180 @@
+
+IF
+  Exists("senill01")
+  Global("fl12t01","GLOBAL",3)
+THEN RESPONSE #100
+  GiveItemCreate("compon01","senill01",1,0,0)
+  SetGlobal("fl12t01","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("senill01")
+  Global("fl12t02","GLOBAL",3)
+THEN RESPONSE #100
+  GiveItemCreate("compon02","senill01",0,0,0)
+  SetGlobal("fl12t02","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("senill01")
+  Global("fl12t03","GLOBAL",3)
+THEN RESPONSE #100
+  GiveItemCreate("compon03","senill01",0,0,0)
+  SetGlobal("fl12t03","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("senill01")
+  Global("fl12t04","GLOBAL",3)
+THEN RESPONSE #100
+  GiveItemCreate("compon04","senill01",0,0,0)
+  SetGlobal("fl12t04","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("senill01")
+  Global("fl12t05","GLOBAL",3)
+THEN RESPONSE #100
+  GiveItemCreate("compon05","senill01",0,0,0)
+  SetGlobal("fl12t05","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("senill01")
+  Global("fl12t06","GLOBAL",3)
+THEN RESPONSE #100
+  GiveItemCreate("compon06","senill01",0,0,0)
+  SetGlobal("fl12t06","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("senill01")
+  Global("fl12t07","GLOBAL",3)
+THEN RESPONSE #100
+  GiveItemCreate("compon07","senill01",0,0,0)
+  SetGlobal("fl12t07","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("senill01")
+  Global("fl12t08","GLOBAL",3)
+THEN RESPONSE #100
+  GiveItemCreate("compon08","senill01",0,0,0)
+  SetGlobal("fl12t08","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("senill01")
+  Global("fl12t09","GLOBAL",3)
+THEN RESPONSE #100
+  GiveItemCreate("compon09","senill01",0,0,0)
+  SetGlobal("fl12t09","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("senill01")
+  Global("fl12t10","GLOBAL",3)
+THEN RESPONSE #100
+  GiveItemCreate("compon10","senill01",0,0,0)
+  SetGlobal("fl12t10","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("senill01")
+  Global("fl12t11","GLOBAL",3)
+THEN RESPONSE #100
+  GiveItemCreate("compon11","senill01",0,0,0)
+  SetGlobal("fl12t11","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("senill01")
+  Global("fl12t12","GLOBAL",3)
+THEN RESPONSE #100
+  GiveItemCreate("compon12","senill01",0,0,0)
+  SetGlobal("fl12t12","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("senill01")
+  Global("fl12t13","GLOBAL",3)
+THEN RESPONSE #100
+  GiveItemCreate("compon13","senill01",0,0,0)
+  SetGlobal("fl12t13","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("senill01")
+  Global("fl12t14","GLOBAL",3)
+THEN RESPONSE #100
+  GiveItemCreate("compon14","senill01",0,0,0)
+  SetGlobal("fl12t14","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("senill01")
+  Global("fl12t15","GLOBAL",3)
+THEN RESPONSE #100
+  GiveItemCreate("compon15","senill01",0,0,0)
+  SetGlobal("fl12t15","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("senill01")
+  Global("fl12t16","GLOBAL",3)
+THEN RESPONSE #100
+  GiveItemCreate("compon17","senill01",0,0,0)
+  SetGlobal("fl12t16","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("senill01")
+  Global("fl12t17","GLOBAL",3)
+THEN RESPONSE #100
+  GiveItemCreate("compon18","senill01",1,0,0)
+  SetGlobal("fl12t17","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("senill01")
+  Global("fl12t18","GLOBAL",3)
+THEN RESPONSE #100
+  GiveItemCreate("tome02a","senill01",0,0,0)
+  SetGlobal("fl12t18","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("senill01")
+  Global("fl12t19","GLOBAL",3)
+THEN RESPONSE #100
+  GiveItemCreate("tome03a","senill01",0,0,0)
+  SetGlobal("fl12t19","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("senill01")
+  Global("fl12t20","GLOBAL",3)
+THEN RESPONSE #100
+  GiveItemCreate("tome04a","senill01",1,0,0)
+  SetGlobal("fl12t20","GLOBAL",-1)
+  DestroySelf()
+END

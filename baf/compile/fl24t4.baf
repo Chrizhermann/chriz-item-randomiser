@@ -1,0 +1,81 @@
+
+IF
+  Exists("NEIRA")
+  Global("fl24t01","GLOBAL",4)
+THEN RESPONSE #100
+  GiveItemCreate("brac01","NEIRA",1,0,0)
+  SetGlobal("fl24t01","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("NEIRA")
+  Global("fl24t02","GLOBAL",4)
+THEN RESPONSE #100
+  GiveItemCreate("brac01","NEIRA",0,0,0)
+  SetGlobal("fl24t02","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("NEIRA")
+  Global("fl24t03","GLOBAL",4)
+THEN RESPONSE #100
+  GiveItemCreate("bow06","NEIRA",0,0,0)
+  SetGlobal("fl24t03","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("NEIRA")
+  Global("fl24t04","GLOBAL",4)
+THEN RESPONSE #100
+  GiveItemCreate("chan02","NEIRA",0,0,0)
+  SetGlobal("fl24t04","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("NEIRA")
+  Global("fl24t05","GLOBAL",4)
+THEN RESPONSE #100
+  GiveItemCreate("chan02","NEIRA",0,0,0)
+  SetGlobal("fl24t05","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("NEIRA")
+  Global("fl24t06","GLOBAL",4)
+THEN RESPONSE #100
+  GiveItemCreate("chan02","NEIRA",0,0,0)
+  SetGlobal("fl24t06","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("NEIRA")
+  Global("fl24t07","GLOBAL",4)
+THEN RESPONSE #100
+  GiveItemCreate("leat02","NEIRA",0,0,0)
+  SetGlobal("fl24t07","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("NEIRA")
+  Global("fl24t08","GLOBAL",4)
+THEN RESPONSE #100
+  GiveItemCreate("leat06","NEIRA",0,0,0)
+  SetGlobal("fl24t08","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("NEIRA")
+  Global("fl24t09","GLOBAL",4)
+THEN RESPONSE #100
+  GiveItemCreate("ring20","NEIRA",19,0,0)
+  SetGlobal("fl24t09","GLOBAL",-1)
+  DestroySelf()
+END

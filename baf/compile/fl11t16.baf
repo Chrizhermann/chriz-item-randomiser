@@ -1,0 +1,180 @@
+
+IF
+  Exists("gorsta05")
+  Global("fl11t01","GLOBAL",16)
+THEN RESPONSE #100
+  GiveItemCreate("blun30a","gorsta05",0,0,0)
+  SetGlobal("fl11t01","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("gorsta07")
+  Global("fl11t02","GLOBAL",16)
+THEN RESPONSE #100
+  GiveItemCreate("blun30b","gorsta07",0,0,0)
+  SetGlobal("fl11t02","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("gorsta05")
+  Global("fl11t03","GLOBAL",16)
+THEN RESPONSE #100
+  GiveItemCreate("brac22","gorsta05",0,0,0)
+  SetGlobal("fl11t03","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("gorsta04")
+  Global("fl11t04","GLOBAL",16)
+THEN RESPONSE #100
+  GiveItemCreate("figure01","gorsta04",1,0,0)
+  SetGlobal("fl11t04","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("gorsta11")
+  Global("fl11t05","GLOBAL",16)
+THEN RESPONSE #100
+  GiveItemCreate("quiver01","gorsta11",0,0,0)
+  SetGlobal("fl11t05","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("gorsta05")
+  Global("fl11t06","GLOBAL",16)
+THEN RESPONSE #100
+  GiveItemCreate("quiver02","gorsta05",0,0,0)
+  SetGlobal("fl11t06","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("gorsta05")
+  Global("fl11t07","GLOBAL",16)
+THEN RESPONSE #100
+  GiveItemCreate("quiver05","gorsta05",0,0,0)
+  SetGlobal("fl11t07","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("gorsta07")
+  Global("fl11t08","GLOBAL",16)
+THEN RESPONSE #100
+  GiveItemCreate("ring42","gorsta07",1,0,0)
+  SetGlobal("fl11t08","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("gorsta01")
+  Global("fl11t09","GLOBAL",16)
+THEN RESPONSE #100
+  GiveItemCreate("ring46","gorsta01",0,0,0)
+  SetGlobal("fl11t09","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("gorsta05")
+  Global("fl11t10","GLOBAL",16)
+THEN RESPONSE #100
+  GiveItemCreate("rods06","gorsta05",10,0,0)
+  SetGlobal("fl11t10","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("gorsta11")
+  Global("fl11t11","GLOBAL",16)
+THEN RESPONSE #100
+  GiveItemCreate("tome01","gorsta11",1,0,0)
+  SetGlobal("fl11t11","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("gorsta11")
+  Global("fl11t12","GLOBAL",16)
+THEN RESPONSE #100
+  GiveItemCreate("wand18","gorsta11",6,5,0)
+  SetGlobal("fl11t12","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("gorsta11")
+  Global("fl11t13","GLOBAL",16)
+THEN RESPONSE #100
+  GiveItemCreate("wand18","gorsta11",6,5,0)
+  SetGlobal("fl11t13","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("gorsta05")
+  Global("fl11t14","GLOBAL",16)
+THEN RESPONSE #100
+  GiveItemCreate("wand19","gorsta05",1,0,0)
+  SetGlobal("fl11t14","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("gorsta03")
+  Global("fl11t15","GLOBAL",16)
+THEN RESPONSE #100
+  GiveItemCreate("wand19","gorsta03",1,0,0)
+  SetGlobal("fl11t15","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("gorsta04")
+  Global("fl11t16","GLOBAL",16)
+THEN RESPONSE #100
+  GiveItemCreate("helm23","gorsta04",0,0,0)
+  SetGlobal("fl11t16","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("gorsta05")
+  Global("fl11t17","GLOBAL",16)
+THEN RESPONSE #100
+  GiveItemCreate("amul28","gorsta05",0,0,0)
+  SetGlobal("fl11t17","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("gorsta09")
+  Global("fl11t18","GLOBAL",16)
+THEN RESPONSE #100
+  GiveItemCreate("brac24","gorsta09",0,0,0)
+  SetGlobal("fl11t18","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("gorsta05")
+  Global("fl11t19","GLOBAL",16)
+THEN RESPONSE #100
+  GiveItemCreate("helm24","gorsta05",0,0,0)
+  SetGlobal("fl11t19","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("gorsta07")
+  Global("fl11t20","GLOBAL",16)
+THEN RESPONSE #100
+  GiveItemCreate("helm25","gorsta07",0,0,0)
+  SetGlobal("fl11t20","GLOBAL",-1)
+  DestroySelf()
+END

@@ -1,0 +1,81 @@
+
+IF
+  Exists("container6")
+  Global("fl24t01","GLOBAL",7)
+THEN RESPONSE #100
+  ActionOverride("container6",CreateItem("brac01",1,0,0))
+  SetGlobal("fl24t01","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("container6")
+  Global("fl24t02","GLOBAL",7)
+THEN RESPONSE #100
+  ActionOverride("container6",CreateItem("brac01",0,0,0))
+  SetGlobal("fl24t02","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("container6")
+  Global("fl24t03","GLOBAL",7)
+THEN RESPONSE #100
+  ActionOverride("container6",CreateItem("bow06",0,0,0))
+  SetGlobal("fl24t03","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("container6")
+  Global("fl24t04","GLOBAL",7)
+THEN RESPONSE #100
+  ActionOverride("container6",CreateItem("chan02",0,0,0))
+  SetGlobal("fl24t04","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("container6")
+  Global("fl24t05","GLOBAL",7)
+THEN RESPONSE #100
+  ActionOverride("container6",CreateItem("chan02",0,0,0))
+  SetGlobal("fl24t05","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("container6")
+  Global("fl24t06","GLOBAL",7)
+THEN RESPONSE #100
+  ActionOverride("container6",CreateItem("chan02",0,0,0))
+  SetGlobal("fl24t06","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("container6")
+  Global("fl24t07","GLOBAL",7)
+THEN RESPONSE #100
+  ActionOverride("container6",CreateItem("leat02",0,0,0))
+  SetGlobal("fl24t07","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("container6")
+  Global("fl24t08","GLOBAL",7)
+THEN RESPONSE #100
+  ActionOverride("container6",CreateItem("leat06",0,0,0))
+  SetGlobal("fl24t08","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("container6")
+  Global("fl24t09","GLOBAL",7)
+THEN RESPONSE #100
+  ActionOverride("container6",CreateItem("ring20",19,0,0))
+  SetGlobal("fl24t09","GLOBAL",-1)
+  DestroySelf()
+END

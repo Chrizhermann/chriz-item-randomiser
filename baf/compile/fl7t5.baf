@@ -1,0 +1,117 @@
+
+IF
+  Exists("hlrevan")
+  Global("fl7t01","GLOBAL",5)
+THEN RESPONSE #100
+  GiveItemCreate("brac10","hlrevan",0,0,0)
+  SetGlobal("fl7t01","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("hlrevan")
+  Global("fl7t02","GLOBAL",5)
+THEN RESPONSE #100
+  GiveItemCreate("clck26","hlrevan",0,0,0)
+  SetGlobal("fl7t02","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("hlshang")
+  Global("fl7t03","GLOBAL",5)
+THEN RESPONSE #100
+  GiveItemCreate("wa2helm","hlshang",1,0,0)
+  SetGlobal("fl7t03","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("hllayen")
+  Global("fl7t04","GLOBAL",5)
+THEN RESPONSE #100
+  GiveItemCreate("wa2robe","hllayen",0,0,0)
+  SetGlobal("fl7t04","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("hlshang")
+  Global("fl7t05","GLOBAL",5)
+THEN RESPONSE #100
+  GiveItemCreate("wa2shiel","hlshang",0,0,0)
+  SetGlobal("fl7t05","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("hlrevan")
+  Global("fl7t06","GLOBAL",5)
+THEN RESPONSE #100
+  GiveItemCreate("waflail","hlrevan",0,0,0)
+  SetGlobal("fl7t06","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("hlshang")
+  Global("fl7t07","GLOBAL",5)
+THEN RESPONSE #100
+  GiveItemCreate("chan16","hlshang",0,0,0)
+  SetGlobal("fl7t07","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("hllayen")
+  Global("fl7t08","GLOBAL",5)
+THEN RESPONSE #100
+  GiveItemCreate("staf11","hllayen",0,3,1)
+  SetGlobal("fl7t08","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("hllayen")
+  Global("fl7t09","GLOBAL",5)
+THEN RESPONSE #100
+  GiveItemCreate("belt08","hllayen",0,0,0)
+  SetGlobal("fl7t09","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("hllayen")
+  Global("fl7t10","GLOBAL",5)
+THEN RESPONSE #100
+  GiveItemCreate("plat16","hllayen",0,0,0)
+  SetGlobal("fl7t10","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("hlshang")
+  Global("fl7t11","GLOBAL",5)
+THEN RESPONSE #100
+  GiveItemCreate("sw2h08","hlshang",0,0,0)
+  SetGlobal("fl7t11","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("hlshang")
+  Global("fl7t12","GLOBAL",5)
+THEN RESPONSE #100
+  GiveItemCreate("halb05","hlshang",0,0,0)
+  SetGlobal("fl7t12","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("hlrevan")
+  Global("fl7t13","GLOBAL",5)
+THEN RESPONSE #100
+  GiveItemCreate("sw1h51","hlrevan",0,1,1)
+  SetGlobal("fl7t13","GLOBAL",-1)
+  DestroySelf()
+END

@@ -1,0 +1,180 @@
+
+IF
+  Exists("Garock")
+  Global("fl11t01","GLOBAL",8)
+THEN RESPONSE #100
+  GiveItemCreate("blun30a","Garock",0,0,0)
+  SetGlobal("fl11t01","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Garock")
+  Global("fl11t02","GLOBAL",8)
+THEN RESPONSE #100
+  GiveItemCreate("blun30b","Garock",0,0,0)
+  SetGlobal("fl11t02","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Garock")
+  Global("fl11t03","GLOBAL",8)
+THEN RESPONSE #100
+  GiveItemCreate("brac22","Garock",0,0,0)
+  SetGlobal("fl11t03","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Garock")
+  Global("fl11t04","GLOBAL",8)
+THEN RESPONSE #100
+  GiveItemCreate("figure01","Garock",1,0,0)
+  SetGlobal("fl11t04","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Garock")
+  Global("fl11t05","GLOBAL",8)
+THEN RESPONSE #100
+  GiveItemCreate("quiver01","Garock",0,0,0)
+  SetGlobal("fl11t05","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Garock")
+  Global("fl11t06","GLOBAL",8)
+THEN RESPONSE #100
+  GiveItemCreate("quiver02","Garock",0,0,0)
+  SetGlobal("fl11t06","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Garock")
+  Global("fl11t07","GLOBAL",8)
+THEN RESPONSE #100
+  GiveItemCreate("quiver05","Garock",0,0,0)
+  SetGlobal("fl11t07","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Garock")
+  Global("fl11t08","GLOBAL",8)
+THEN RESPONSE #100
+  GiveItemCreate("ring42","Garock",1,0,0)
+  SetGlobal("fl11t08","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Garock")
+  Global("fl11t09","GLOBAL",8)
+THEN RESPONSE #100
+  GiveItemCreate("ring46","Garock",0,0,0)
+  SetGlobal("fl11t09","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Garock")
+  Global("fl11t10","GLOBAL",8)
+THEN RESPONSE #100
+  GiveItemCreate("rods06","Garock",10,0,0)
+  SetGlobal("fl11t10","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Garock")
+  Global("fl11t11","GLOBAL",8)
+THEN RESPONSE #100
+  GiveItemCreate("tome01","Garock",1,0,0)
+  SetGlobal("fl11t11","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Garock")
+  Global("fl11t12","GLOBAL",8)
+THEN RESPONSE #100
+  GiveItemCreate("wand18","Garock",6,5,0)
+  SetGlobal("fl11t12","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Garock")
+  Global("fl11t13","GLOBAL",8)
+THEN RESPONSE #100
+  GiveItemCreate("wand18","Garock",6,5,0)
+  SetGlobal("fl11t13","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Garock")
+  Global("fl11t14","GLOBAL",8)
+THEN RESPONSE #100
+  GiveItemCreate("wand19","Garock",1,0,0)
+  SetGlobal("fl11t14","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Garock")
+  Global("fl11t15","GLOBAL",8)
+THEN RESPONSE #100
+  GiveItemCreate("wand19","Garock",1,0,0)
+  SetGlobal("fl11t15","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Garock")
+  Global("fl11t16","GLOBAL",8)
+THEN RESPONSE #100
+  GiveItemCreate("helm23","Garock",0,0,0)
+  SetGlobal("fl11t16","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Garock")
+  Global("fl11t17","GLOBAL",8)
+THEN RESPONSE #100
+  GiveItemCreate("amul28","Garock",0,0,0)
+  SetGlobal("fl11t17","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Garock")
+  Global("fl11t18","GLOBAL",8)
+THEN RESPONSE #100
+  GiveItemCreate("brac24","Garock",0,0,0)
+  SetGlobal("fl11t18","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Garock")
+  Global("fl11t19","GLOBAL",8)
+THEN RESPONSE #100
+  GiveItemCreate("helm24","Garock",0,0,0)
+  SetGlobal("fl11t19","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Garock")
+  Global("fl11t20","GLOBAL",8)
+THEN RESPONSE #100
+  GiveItemCreate("helm25","Garock",0,0,0)
+  SetGlobal("fl11t20","GLOBAL",-1)
+  DestroySelf()
+END

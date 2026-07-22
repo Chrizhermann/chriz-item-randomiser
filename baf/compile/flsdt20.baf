@@ -1,0 +1,153 @@
+
+IF
+  Exists("Resar")
+  Global("flsdt01","GLOBAL",20)
+THEN RESPONSE #100
+  GiveItemCreate("scrl1u","Resar",1,0,0)
+  SetGlobal("flsdt01","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Resar")
+  Global("flsdt02","GLOBAL",20)
+THEN RESPONSE #100
+  GiveItemCreate("scrl1u","Resar",1,0,0)
+  SetGlobal("flsdt02","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Resar")
+  Global("flsdt03","GLOBAL",20)
+THEN RESPONSE #100
+  GiveItemCreate("scrl1u","Resar",1,0,0)
+  SetGlobal("flsdt03","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Resar")
+  Global("flsdt07","GLOBAL",20)
+THEN RESPONSE #100
+  GiveItemCreate("scrl5l","Resar",1,1,0)
+  SetGlobal("flsdt07","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Resar")
+  Global("flsdt08","GLOBAL",20)
+THEN RESPONSE #100
+  GiveItemCreate("scrl1z","Resar",1,0,0)
+  SetGlobal("flsdt08","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Resar")
+  Global("flsdt09","GLOBAL",20)
+THEN RESPONSE #100
+  GiveItemCreate("scrl1z","Resar",1,0,0)
+  SetGlobal("flsdt09","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Resar")
+  Global("flsdt10","GLOBAL",20)
+THEN RESPONSE #100
+  GiveItemCreate("scrl2a","Resar",1,0,0)
+  SetGlobal("flsdt10","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Resar")
+  Global("flsdt11","GLOBAL",20)
+THEN RESPONSE #100
+  GiveItemCreate("scrl2a","Resar",1,0,0)
+  SetGlobal("flsdt11","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Resar")
+  Global("flsdt12","GLOBAL",20)
+THEN RESPONSE #100
+  GiveItemCreate("scrl2a","Resar",1,0,0)
+  SetGlobal("flsdt12","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Resar")
+  Global("flsdt13","GLOBAL",20)
+THEN RESPONSE #100
+  GiveItemCreate("scrl5g","Resar",1,0,0)
+  SetGlobal("flsdt13","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Resar")
+  Global("flsdt14","GLOBAL",20)
+THEN RESPONSE #100
+  GiveItemCreate("scrl5g","Resar",1,0,0)
+  SetGlobal("flsdt14","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Resar")
+  Global("flsdt15","GLOBAL",20)
+THEN RESPONSE #100
+  GiveItemCreate("scrl5h","Resar",1,0,0)
+  SetGlobal("flsdt15","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Resar")
+  Global("flsdt16","GLOBAL",20)
+THEN RESPONSE #100
+  GiveItemCreate("scrl5h","Resar",1,0,0)
+  SetGlobal("flsdt16","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Resar")
+  Global("flsdt17","GLOBAL",20)
+THEN RESPONSE #100
+  GiveItemCreate("scrl5i","Resar",1,0,0)
+  SetGlobal("flsdt17","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Resar")
+  Global("flsdt18","GLOBAL",20)
+THEN RESPONSE #100
+  GiveItemCreate("scrl5j","Resar",1,0,0)
+  SetGlobal("flsdt18","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Resar")
+  Global("flsdt19","GLOBAL",20)
+THEN RESPONSE #100
+  GiveItemCreate("scrl5k","Resar",1,0,0)
+  SetGlobal("flsdt19","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Resar")
+  Global("flsdt20","GLOBAL",20)
+THEN RESPONSE #100
+  GiveItemCreate("scrl5m","Resar",1,0,0)
+  SetGlobal("flsdt20","GLOBAL",-1)
+  DestroySelf()
+END

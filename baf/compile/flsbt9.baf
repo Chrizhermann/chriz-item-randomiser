@@ -1,0 +1,225 @@
+
+IF
+  Exists("MUTAMIN")
+  Global("flsbt01","GLOBAL",9)
+THEN RESPONSE #100
+  GiveItemCreate("scrl1b","MUTAMIN",1,0,0)
+  SetGlobal("flsbt01","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("MUTAMIN")
+  Global("flsbt02","GLOBAL",9)
+THEN RESPONSE #100
+  GiveItemCreate("scrl1b","MUTAMIN",1,0,0)
+  SetGlobal("flsbt02","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("MUTAMIN")
+  Global("flsbt03","GLOBAL",9)
+THEN RESPONSE #100
+  GiveItemCreate("scrl1b","MUTAMIN",1,0,0)
+  SetGlobal("flsbt03","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("MUTAMIN")
+  Global("flsbt04","GLOBAL",9)
+THEN RESPONSE #100
+  GiveItemCreate("scrl1c","MUTAMIN",1,0,0)
+  SetGlobal("flsbt04","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("MUTAMIN")
+  Global("flsbt05","GLOBAL",9)
+THEN RESPONSE #100
+  GiveItemCreate("scrl1c","MUTAMIN",1,0,0)
+  SetGlobal("flsbt05","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("MUTAMIN")
+  Global("flsbt06","GLOBAL",9)
+THEN RESPONSE #100
+  GiveItemCreate("scrl3g","MUTAMIN",1,0,0)
+  SetGlobal("flsbt06","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("MUTAMIN")
+  Global("flsbt07","GLOBAL",9)
+THEN RESPONSE #100
+  GiveItemCreate("scrl85","MUTAMIN",1,0,0)
+  SetGlobal("flsbt07","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("MUTAMIN")
+  Global("flsbt08","GLOBAL",9)
+THEN RESPONSE #100
+  GiveItemCreate("scrl85","MUTAMIN",1,0,0)
+  SetGlobal("flsbt08","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("MUTAMIN")
+  Global("flsbt09","GLOBAL",9)
+THEN RESPONSE #100
+  GiveItemCreate("scrl87","MUTAMIN",1,0,0)
+  SetGlobal("flsbt09","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("MUTAMIN")
+  Global("flsbt10","GLOBAL",9)
+THEN RESPONSE #100
+  GiveItemCreate("scrl87","MUTAMIN",1,0,0)
+  SetGlobal("flsbt10","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("MUTAMIN")
+  Global("flsbt11","GLOBAL",9)
+THEN RESPONSE #100
+  GiveItemCreate("scrl87","MUTAMIN",1,0,0)
+  SetGlobal("flsbt11","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("MUTAMIN")
+  Global("flsbt12","GLOBAL",9)
+THEN RESPONSE #100
+  GiveItemCreate("scrl89","MUTAMIN",1,0,0)
+  SetGlobal("flsbt12","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("MUTAMIN")
+  Global("flsbt13","GLOBAL",9)
+THEN RESPONSE #100
+  GiveItemCreate("scrl89","MUTAMIN",1,0,0)
+  SetGlobal("flsbt13","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("MUTAMIN")
+  Global("flsbt14","GLOBAL",9)
+THEN RESPONSE #100
+  GiveItemCreate("scrl89","MUTAMIN",1,0,0)
+  SetGlobal("flsbt14","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("MUTAMIN")
+  Global("flsbt15","GLOBAL",9)
+THEN RESPONSE #100
+  GiveItemCreate("scrl91","MUTAMIN",1,0,0)
+  SetGlobal("flsbt15","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("MUTAMIN")
+  Global("flsbt16","GLOBAL",9)
+THEN RESPONSE #100
+  GiveItemCreate("scrl93","MUTAMIN",1,0,0)
+  SetGlobal("flsbt16","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("MUTAMIN")
+  Global("flsbt17","GLOBAL",9)
+THEN RESPONSE #100
+  GiveItemCreate("scrl93","MUTAMIN",1,0,0)
+  SetGlobal("flsbt17","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("MUTAMIN")
+  Global("flsbt18","GLOBAL",9)
+THEN RESPONSE #100
+  GiveItemCreate("scrl94","MUTAMIN",1,0,0)
+  SetGlobal("flsbt18","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("MUTAMIN")
+  Global("flsbt19","GLOBAL",9)
+THEN RESPONSE #100
+  GiveItemCreate("scrl95","MUTAMIN",1,0,0)
+  SetGlobal("flsbt19","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("MUTAMIN")
+  Global("flsbt20","GLOBAL",9)
+THEN RESPONSE #100
+  GiveItemCreate("scrl95","MUTAMIN",1,0,0)
+  SetGlobal("flsbt20","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("MUTAMIN")
+  Global("flsbt21","GLOBAL",9)
+THEN RESPONSE #100
+  GiveItemCreate("scrl96","MUTAMIN",1,0,0)
+  SetGlobal("flsbt21","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("MUTAMIN")
+  Global("flsbt22","GLOBAL",9)
+THEN RESPONSE #100
+  GiveItemCreate("scrl96","MUTAMIN",1,0,0)
+  SetGlobal("flsbt22","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("MUTAMIN")
+  Global("flsbt23","GLOBAL",9)
+THEN RESPONSE #100
+  GiveItemCreate("scrl97","MUTAMIN",1,0,0)
+  SetGlobal("flsbt23","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("MUTAMIN")
+  Global("flsbt24","GLOBAL",9)
+THEN RESPONSE #100
+  GiveItemCreate("scrl99","MUTAMIN",1,0,0)
+  SetGlobal("flsbt24","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("MUTAMIN")
+  Global("flsbt25","GLOBAL",9)
+THEN RESPONSE #100
+  GiveItemCreate("scrl99","MUTAMIN",1,0,0)
+  SetGlobal("flsbt25","GLOBAL",-1)
+  DestroySelf()
+END

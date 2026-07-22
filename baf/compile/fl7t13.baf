@@ -1,0 +1,117 @@
+
+IF
+  Exists("Jarlich")
+  Global("fl7t01","GLOBAL",13)
+THEN RESPONSE #100
+  GiveItemCreate("brac10","Jarlich",0,0,0)
+  SetGlobal("fl7t01","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Jarlich")
+  Global("fl7t02","GLOBAL",13)
+THEN RESPONSE #100
+  GiveItemCreate("clck26","Jarlich",0,0,0)
+  SetGlobal("fl7t02","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Jarlich")
+  Global("fl7t03","GLOBAL",13)
+THEN RESPONSE #100
+  GiveItemCreate("wa2helm","Jarlich",1,0,0)
+  SetGlobal("fl7t03","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Jarlich")
+  Global("fl7t04","GLOBAL",13)
+THEN RESPONSE #100
+  GiveItemCreate("wa2robe","Jarlich",0,0,0)
+  SetGlobal("fl7t04","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Jarlich")
+  Global("fl7t05","GLOBAL",13)
+THEN RESPONSE #100
+  GiveItemCreate("wa2shiel","Jarlich",0,0,0)
+  SetGlobal("fl7t05","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Jarlich")
+  Global("fl7t06","GLOBAL",13)
+THEN RESPONSE #100
+  GiveItemCreate("waflail","Jarlich",0,0,0)
+  SetGlobal("fl7t06","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Jarlich")
+  Global("fl7t07","GLOBAL",13)
+THEN RESPONSE #100
+  GiveItemCreate("chan16","Jarlich",0,0,0)
+  SetGlobal("fl7t07","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Jarlich")
+  Global("fl7t08","GLOBAL",13)
+THEN RESPONSE #100
+  GiveItemCreate("staf11","Jarlich",0,3,1)
+  SetGlobal("fl7t08","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Jarlich")
+  Global("fl7t09","GLOBAL",13)
+THEN RESPONSE #100
+  GiveItemCreate("belt08","Jarlich",0,0,0)
+  SetGlobal("fl7t09","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Jarlich")
+  Global("fl7t10","GLOBAL",13)
+THEN RESPONSE #100
+  GiveItemCreate("plat16","Jarlich",0,0,0)
+  SetGlobal("fl7t10","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Jarlich")
+  Global("fl7t11","GLOBAL",13)
+THEN RESPONSE #100
+  GiveItemCreate("sw2h08","Jarlich",0,0,0)
+  SetGlobal("fl7t11","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Jarlich")
+  Global("fl7t12","GLOBAL",13)
+THEN RESPONSE #100
+  GiveItemCreate("halb05","Jarlich",0,0,0)
+  SetGlobal("fl7t12","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Jarlich")
+  Global("fl7t13","GLOBAL",13)
+THEN RESPONSE #100
+  GiveItemCreate("sw1h51","Jarlich",0,1,1)
+  SetGlobal("fl7t13","GLOBAL",-1)
+  DestroySelf()
+END

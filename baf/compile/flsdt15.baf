@@ -1,0 +1,153 @@
+
+IF
+  Exists("krystin")
+  Global("flsdt01","GLOBAL",15)
+THEN RESPONSE #100
+  GiveItemCreate("scrl1u","krystin",1,0,0)
+  SetGlobal("flsdt01","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("krystin")
+  Global("flsdt02","GLOBAL",15)
+THEN RESPONSE #100
+  GiveItemCreate("scrl1u","krystin",1,0,0)
+  SetGlobal("flsdt02","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("krystin")
+  Global("flsdt03","GLOBAL",15)
+THEN RESPONSE #100
+  GiveItemCreate("scrl1u","krystin",1,0,0)
+  SetGlobal("flsdt03","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("krystin")
+  Global("flsdt07","GLOBAL",15)
+THEN RESPONSE #100
+  GiveItemCreate("scrl5l","krystin",1,1,0)
+  SetGlobal("flsdt07","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("krystin")
+  Global("flsdt08","GLOBAL",15)
+THEN RESPONSE #100
+  GiveItemCreate("scrl1z","krystin",1,0,0)
+  SetGlobal("flsdt08","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("krystin")
+  Global("flsdt09","GLOBAL",15)
+THEN RESPONSE #100
+  GiveItemCreate("scrl1z","krystin",1,0,0)
+  SetGlobal("flsdt09","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("krystin")
+  Global("flsdt10","GLOBAL",15)
+THEN RESPONSE #100
+  GiveItemCreate("scrl2a","krystin",1,0,0)
+  SetGlobal("flsdt10","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("krystin")
+  Global("flsdt11","GLOBAL",15)
+THEN RESPONSE #100
+  GiveItemCreate("scrl2a","krystin",1,0,0)
+  SetGlobal("flsdt11","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("krystin")
+  Global("flsdt12","GLOBAL",15)
+THEN RESPONSE #100
+  GiveItemCreate("scrl2a","krystin",1,0,0)
+  SetGlobal("flsdt12","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("krystin")
+  Global("flsdt13","GLOBAL",15)
+THEN RESPONSE #100
+  GiveItemCreate("scrl5g","krystin",1,0,0)
+  SetGlobal("flsdt13","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("krystin")
+  Global("flsdt14","GLOBAL",15)
+THEN RESPONSE #100
+  GiveItemCreate("scrl5g","krystin",1,0,0)
+  SetGlobal("flsdt14","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("krystin")
+  Global("flsdt15","GLOBAL",15)
+THEN RESPONSE #100
+  GiveItemCreate("scrl5h","krystin",1,0,0)
+  SetGlobal("flsdt15","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("krystin")
+  Global("flsdt16","GLOBAL",15)
+THEN RESPONSE #100
+  GiveItemCreate("scrl5h","krystin",1,0,0)
+  SetGlobal("flsdt16","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("krystin")
+  Global("flsdt17","GLOBAL",15)
+THEN RESPONSE #100
+  GiveItemCreate("scrl5i","krystin",1,0,0)
+  SetGlobal("flsdt17","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("krystin")
+  Global("flsdt18","GLOBAL",15)
+THEN RESPONSE #100
+  GiveItemCreate("scrl5j","krystin",1,0,0)
+  SetGlobal("flsdt18","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("krystin")
+  Global("flsdt19","GLOBAL",15)
+THEN RESPONSE #100
+  GiveItemCreate("scrl5k","krystin",1,0,0)
+  SetGlobal("flsdt19","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("krystin")
+  Global("flsdt20","GLOBAL",15)
+THEN RESPONSE #100
+  GiveItemCreate("scrl5m","krystin",1,0,0)
+  SetGlobal("flsdt20","GLOBAL",-1)
+  DestroySelf()
+END

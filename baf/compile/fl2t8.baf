@@ -1,0 +1,162 @@
+
+IF
+  Exists("decret1")
+  Global("fl2t01","GLOBAL",8)
+THEN RESPONSE #100
+  ActionOverride("decret1",CreateItem("shld07",0,0,0))
+  SetGlobal("fl2t01","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("decret1")
+  Global("fl2t02","GLOBAL",8)
+THEN RESPONSE #100
+  ActionOverride("decret1",CreateItem("sw2h03",0,0,0))
+  SetGlobal("fl2t02","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("decret1")
+  Global("fl2t03","GLOBAL",8)
+THEN RESPONSE #100
+  ActionOverride("decret1",CreateItem("ring28",1,1,0))
+  SetGlobal("fl2t03","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("decret1")
+  Global("fl2t04","GLOBAL",8)
+THEN RESPONSE #100
+  ActionOverride("decret1",CreateItem("ring29",1,1,0))
+  SetGlobal("fl2t04","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("decret1")
+  Global("fl2t05","GLOBAL",8)
+THEN RESPONSE #100
+  ActionOverride("decret1",CreateItem("leat08",0,0,0))
+  SetGlobal("fl2t05","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("decret1")
+  Global("fl2t06","GLOBAL",8)
+THEN RESPONSE #100
+  ActionOverride("decret1",CreateItem("dagg17",0,0,0))
+  SetGlobal("fl2t06","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("decret1")
+  Global("fl2t07","GLOBAL",8)
+THEN RESPONSE #100
+  ActionOverride("decret1",CreateItem("brac07",0,0,0))
+  SetGlobal("fl2t07","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("decret1")
+  Global("fl2t08","GLOBAL",8)
+THEN RESPONSE #100
+  ActionOverride("decret1",CreateItem("amul22",1,0,0))
+  SetGlobal("fl2t08","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("decret1")
+  Global("fl2t09","GLOBAL",8)
+THEN RESPONSE #100
+  ActionOverride("decret1",CreateItem("chan17",0,0,0))
+  SetGlobal("fl2t09","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("decret1")
+  Global("fl2t10","GLOBAL",8)
+THEN RESPONSE #100
+  ActionOverride("decret1",CreateItem("clck06",0,0,0))
+  SetGlobal("fl2t10","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("decret1")
+  Global("fl2t11","GLOBAL",8)
+THEN RESPONSE #100
+  ActionOverride("decret1",CreateItem("leat16",0,0,0))
+  SetGlobal("fl2t11","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("decret1")
+  Global("fl2t12","GLOBAL",8)
+THEN RESPONSE #100
+  ActionOverride("decret1",CreateItem("leat18",0,0,0))
+  SetGlobal("fl2t12","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("decret1")
+  Global("fl2t14","GLOBAL",8)
+THEN RESPONSE #100
+  ActionOverride("decret1",CreateItem("sw2h12",0,0,0))
+  SetGlobal("fl2t14","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("decret1")
+  Global("fl2t15","GLOBAL",8)
+THEN RESPONSE #100
+  ActionOverride("decret1",CreateItem("leat17",1,0,0))
+  SetGlobal("fl2t15","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("decret1")
+  Global("fl2t16","GLOBAL",8)
+THEN RESPONSE #100
+  ActionOverride("decret1",CreateItem("helm06",0,0,0))
+  SetGlobal("fl2t16","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("decret1")
+  Global("fl2t17","GLOBAL",8)
+THEN RESPONSE #100
+  ActionOverride("decret1",CreateItem("wand12",50,0,0))
+  SetGlobal("fl2t17","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("decret1")
+  Global("fl2t18","GLOBAL",8)
+THEN RESPONSE #100
+  ActionOverride("decret1",CreateItem("sw1h54c",0,0,0))
+  SetGlobal("fl2t18","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("decret1")
+  Global("fl2t19","GLOBAL",8)
+THEN RESPONSE #100
+  ActionOverride("decret1",CreateItem("clck27",1,1,1))
+  SetGlobal("fl2t19","GLOBAL",-1)
+  DestroySelf()
+END

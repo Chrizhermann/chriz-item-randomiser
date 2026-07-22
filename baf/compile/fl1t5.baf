@@ -1,0 +1,207 @@
+
+IF
+  Exists("gaius")
+  Global("fl1t01","GLOBAL",5)
+THEN RESPONSE #100
+  GiveItemCreate("amul16","gaius",0,0,0)
+  SetGlobal("fl1t01","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("rengaa")
+  Global("fl1t02","GLOBAL",5)
+THEN RESPONSE #100
+  GiveItemCreate("boot02","rengaa",0,0,0)
+  SetGlobal("fl1t02","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("gall")
+  Global("fl1t03","GLOBAL",5)
+THEN RESPONSE #100
+  GiveItemCreate("belt09","gall",1,0,0)
+  SetGlobal("fl1t03","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("gall")
+  Global("fl1t04","GLOBAL",5)
+THEN RESPONSE #100
+  GiveItemCreate("misc3h","gall",1,0,0)
+  SetGlobal("fl1t04","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("gall")
+  Global("fl1t05","GLOBAL",5)
+THEN RESPONSE #100
+  GiveItemCreate("ring26","gall",1,0,0)
+  SetGlobal("fl1t05","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("berkref")
+  Global("fl1t06","GLOBAL",5)
+THEN RESPONSE #100
+  GiveItemCreate("misc3l","berkref",3,0,0)
+  SetGlobal("fl1t06","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("gaius")
+  Global("fl1t07","GLOBAL",5)
+THEN RESPONSE #100
+  GiveItemCreate("blun23","gaius",0,0,0)
+  SetGlobal("fl1t07","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("berkref")
+  Global("fl1t08","GLOBAL",5)
+THEN RESPONSE #100
+  GiveItemCreate("brac09","berkref",0,0,0)
+  SetGlobal("fl1t08","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("tarnor")
+  Global("fl1t09","GLOBAL",5)
+THEN RESPONSE #100
+  GiveItemCreate("rods05","tarnor",0,0,0)
+  SetGlobal("fl1t09","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("draug")
+  Global("fl1t10","GLOBAL",5)
+THEN RESPONSE #100
+  GiveItemCreate("misc3i","draug",1,0,0)
+  SetGlobal("fl1t10","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("tarnor")
+  Global("fl1t11","GLOBAL",5)
+THEN RESPONSE #100
+  GiveItemCreate("ring35","tarnor",0,0,0)
+  SetGlobal("fl1t11","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("tarnor")
+  Global("fl1t12","GLOBAL",5)
+THEN RESPONSE #100
+  GiveItemCreate("scrl16","tarnor",1,0,0)
+  SetGlobal("fl1t12","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("gall")
+  Global("fl1t13","GLOBAL",5)
+THEN RESPONSE #100
+  GiveItemCreate("xbow03","gall",0,0,0)
+  SetGlobal("fl1t13","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("gall")
+  Global("fl1t14","GLOBAL",5)
+THEN RESPONSE #100
+  GiveItemCreate("leat06","gall",0,0,0)
+  SetGlobal("fl1t14","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("tarnor")
+  Global("fl1t15","GLOBAL",5)
+THEN RESPONSE #100
+  GiveItemCreate("ring36","tarnor",0,0,0)
+  SetGlobal("fl1t15","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("rengaa")
+  Global("fl1t16","GLOBAL",5)
+THEN RESPONSE #100
+  GiveItemCreate("staf10","rengaa",0,10,0)
+  SetGlobal("fl1t16","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("rengaa")
+  Global("fl1t17","GLOBAL",5)
+THEN RESPONSE #100
+  GiveItemCreate("misc3p","rengaa",3,0,0)
+  SetGlobal("fl1t17","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("gall")
+  Global("fl1t18","GLOBAL",5)
+THEN RESPONSE #100
+  GiveItemCreate("sper03","gall",0,0,0)
+  SetGlobal("fl1t18","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("draug")
+  Global("fl1t19","GLOBAL",5)
+THEN RESPONSE #100
+  GiveItemCreate("ring30","draug",1,0,0)
+  SetGlobal("fl1t19","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("gaius")
+  Global("fl1t20","GLOBAL",5)
+THEN RESPONSE #100
+  GiveItemCreate("boot01","gaius",0,0,0)
+  SetGlobal("fl1t20","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("draug")
+  Global("fl1t21","GLOBAL",5)
+THEN RESPONSE #100
+  GiveItemCreate("brac04","draug",0,0,0)
+  SetGlobal("fl1t21","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("draug")
+  Global("fl1t22","GLOBAL",5)
+THEN RESPONSE #100
+  GiveItemCreate("brac17","draug",0,0,0)
+  SetGlobal("fl1t22","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("tarnor")
+  Global("fl1t23","GLOBAL",5)
+THEN RESPONSE #100
+  GiveItemCreate("helm18","tarnor",0,0,0)
+  SetGlobal("fl1t23","GLOBAL",-1)
+  DestroySelf()
+END

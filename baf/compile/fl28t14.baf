@@ -1,0 +1,117 @@
+
+IF
+  Exists("GRETEK")
+  Global("fl28t01","GLOBAL",14)
+THEN RESPONSE #100
+  GiveItemCreate("book04","GRETEK",1,0,0)
+  SetGlobal("fl28t01","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("GRETEK")
+  Global("fl28t02","GLOBAL",14)
+THEN RESPONSE #100
+  GiveItemCreate("clck02","GRETEK",0,0,0)
+  SetGlobal("fl28t02","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("GRETEK")
+  Global("fl28t03","GLOBAL",14)
+THEN RESPONSE #100
+  GiveItemCreate("leat08","GRETEK",0,0,0)
+  SetGlobal("fl28t03","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("GRETEK")
+  Global("fl28t04","GLOBAL",14)
+THEN RESPONSE #100
+  GiveItemCreate("helm06","GRETEK",0,0,0)
+  SetGlobal("fl28t04","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("GRETEK")
+  Global("fl28t05","GLOBAL",14)
+THEN RESPONSE #100
+  GiveItemCreate("misc75","GRETEK",0,0,0)
+  SetGlobal("fl28t05","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("GRETEK")
+  Global("fl28t06","GLOBAL",14)
+THEN RESPONSE #100
+  GiveItemCreate("ring08_","GRETEK",0,0,0)
+  SetGlobal("fl28t06","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("GRETEK")
+  Global("fl28t07","GLOBAL",14)
+THEN RESPONSE #100
+  GiveItemCreate("brac10","GRETEK",0,0,0)
+  SetGlobal("fl28t07","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("GRETEK")
+  Global("fl28t08","GLOBAL",14)
+THEN RESPONSE #100
+  GiveItemCreate("sw1h06","GRETEK",0,0,0)
+  SetGlobal("fl28t08","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("GRETEK")
+  Global("fl28t09","GLOBAL",14)
+THEN RESPONSE #100
+  GiveItemCreate("wand04","GRETEK",13,0,0)
+  SetGlobal("fl28t09","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("GRETEK")
+  Global("fl28t10","GLOBAL",14)
+THEN RESPONSE #100
+  GiveItemCreate("wand10","GRETEK",8,0,0)
+  SetGlobal("fl28t10","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("GRETEK")
+  Global("fl28t11","GLOBAL",14)
+THEN RESPONSE #100
+  GiveItemCreate("wand10","GRETEK",20,0,0)
+  SetGlobal("fl28t11","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("GRETEK")
+  Global("fl28t12","GLOBAL",14)
+THEN RESPONSE #100
+  GiveItemCreate("xbow06","GRETEK",0,0,0)
+  SetGlobal("fl28t12","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("GRETEK")
+  Global("fl28t13","GLOBAL",14)
+THEN RESPONSE #100
+  GiveItemCreate("ring07","GRETEK",0,0,0)
+  SetGlobal("fl28t13","GLOBAL",-1)
+  DestroySelf()
+END

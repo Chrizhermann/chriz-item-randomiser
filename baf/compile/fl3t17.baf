@@ -1,0 +1,171 @@
+
+IF
+  Exists("sevpat04")
+  Global("fl3t01","GLOBAL",17)
+THEN RESPONSE #100
+  GiveItemCreate("belt06","sevpat04",1,0,0)
+  SetGlobal("fl3t01","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("sevpat01")
+  Global("fl3t02","GLOBAL",17)
+THEN RESPONSE #100
+  GiveItemCreate("ring31","sevpat01",0,0,0)
+  SetGlobal("fl3t02","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("sevpat04")
+  Global("fl3t03","GLOBAL",17)
+THEN RESPONSE #100
+  GiveItemCreate("helm20","sevpat04",0,0,0)
+  SetGlobal("fl3t03","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("sevpat02")
+  Global("fl3t04","GLOBAL",17)
+THEN RESPONSE #100
+  GiveItemCreate("clck03","sevpat02",0,0,0)
+  SetGlobal("fl3t04","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("sevpat04")
+  Global("fl3t05","GLOBAL",17)
+THEN RESPONSE #100
+  GiveItemCreate("slng05","sevpat04",0,0,0)
+  SetGlobal("fl3t05","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("sevpat04")
+  Global("fl3t07","GLOBAL",17)
+THEN RESPONSE #100
+  GiveItemCreate("clck15","sevpat04",0,0,0)
+  SetGlobal("fl3t07","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("sevpat05")
+  Global("fl3t08","GLOBAL",17)
+THEN RESPONSE #100
+  GiveItemCreate("clck16","sevpat05",0,0,0)
+  SetGlobal("fl3t08","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("sevpat02")
+  Global("fl3t09","GLOBAL",17)
+THEN RESPONSE #100
+  GiveItemCreate("clck17","sevpat02",0,0,0)
+  SetGlobal("fl3t09","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("sevpat02")
+  Global("fl3t10","GLOBAL",17)
+THEN RESPONSE #100
+  GiveItemCreate("halb09a","sevpat02",0,0,0)
+  SetGlobal("fl3t10","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("sevpat05")
+  Global("fl3t11","GLOBAL",17)
+THEN RESPONSE #100
+  GiveItemCreate("blun24","sevpat05",0,0,0)
+  SetGlobal("fl3t11","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("sevpat02")
+  Global("fl3t12","GLOBAL",17)
+THEN RESPONSE #100
+  GiveItemCreate("brac11","sevpat02",0,0,0)
+  SetGlobal("fl3t12","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("sevpat02")
+  Global("fl3t13","GLOBAL",17)
+THEN RESPONSE #100
+  GiveItemCreate("leat13","sevpat02",0,0,0)
+  SetGlobal("fl3t13","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("sevpat01")
+  Global("fl3t14","GLOBAL",17)
+THEN RESPONSE #100
+  GiveItemCreate("misc3m","sevpat01",3,0,0)
+  SetGlobal("fl3t14","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("sevpat04")
+  Global("fl3t15","GLOBAL",17)
+THEN RESPONSE #100
+  GiveItemCreate("misc3o","sevpat04",3,0,0)
+  SetGlobal("fl3t15","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("sevpat05")
+  Global("fl3t16","GLOBAL",17)
+THEN RESPONSE #100
+  GiveItemCreate("hamm03","sevpat05",0,0,0)
+  SetGlobal("fl3t16","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("sevpat01")
+  Global("fl3t17","GLOBAL",17)
+THEN RESPONSE #100
+  GiveItemCreate("clck24","sevpat01",0,0,0)
+  SetGlobal("fl3t17","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("sevpat01")
+  Global("fl3t18","GLOBAL",17)
+THEN RESPONSE #100
+  GiveItemCreate("chan09","sevpat01",0,0,0)
+  SetGlobal("fl3t18","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("sevpat02")
+  Global("fl3t19","GLOBAL",17)
+THEN RESPONSE #100
+  GiveItemCreate("halb08","sevpat02",0,0,0)
+  SetGlobal("fl3t19","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("sevpat04")
+  Global("fl3t20","GLOBAL",17)
+THEN RESPONSE #100
+  GiveItemCreate("sper07","sevpat04",0,0,0)
+  SetGlobal("fl3t20","GLOBAL",-1)
+  DestroySelf()
+END

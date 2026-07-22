@@ -1,0 +1,63 @@
+
+IF
+  Exists("tolger2")
+  Global("fls8t01","GLOBAL",7)
+THEN RESPONSE #100
+  GiveItemCreate("scrl9h","tolger2",1,0,0)
+  SetGlobal("fls8t01","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("tolger2")
+  Global("fls8t02","GLOBAL",7)
+THEN RESPONSE #100
+  GiveItemCreate("scrl9g","tolger2",1,1,0)
+  SetGlobal("fls8t02","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("tolger2")
+  Global("fls8t03","GLOBAL",7)
+THEN RESPONSE #100
+  GiveItemCreate("scrl9g","tolger2",1,1,0)
+  SetGlobal("fls8t03","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("tolger2")
+  Global("fls8t04","GLOBAL",7)
+THEN RESPONSE #100
+  GiveItemCreate("scrl9f","tolger2",1,1,0)
+  SetGlobal("fls8t04","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("tolger2")
+  Global("fls8t05","GLOBAL",7)
+THEN RESPONSE #100
+  GiveItemCreate("scrl9d","tolger2",1,1,0)
+  SetGlobal("fls8t05","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("tolger2")
+  Global("fls8t06","GLOBAL",7)
+THEN RESPONSE #100
+  GiveItemCreate("scrl8z","tolger2",1,0,0)
+  SetGlobal("fls8t06","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("tolger2")
+  Global("fls8t07","GLOBAL",7)
+THEN RESPONSE #100
+  GiveItemCreate("scrl9a","tolger2",1,1,0)
+  SetGlobal("fls8t07","GLOBAL",-1)
+  DestroySelf()
+END

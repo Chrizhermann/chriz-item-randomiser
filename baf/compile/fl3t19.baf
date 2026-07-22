@@ -1,0 +1,171 @@
+
+IF
+  Exists("hlmafer")
+  Global("fl3t01","GLOBAL",19)
+THEN RESPONSE #100
+  GiveItemCreate("belt06","hlmafer",1,0,0)
+  SetGlobal("fl3t01","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("hlketta")
+  Global("fl3t02","GLOBAL",19)
+THEN RESPONSE #100
+  GiveItemCreate("ring31","hlketta",0,0,0)
+  SetGlobal("fl3t02","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("hlmafer")
+  Global("fl3t03","GLOBAL",19)
+THEN RESPONSE #100
+  GiveItemCreate("helm20","hlmafer",0,0,0)
+  SetGlobal("fl3t03","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("hlmafer")
+  Global("fl3t04","GLOBAL",19)
+THEN RESPONSE #100
+  GiveItemCreate("clck03","hlmafer",0,0,0)
+  SetGlobal("fl3t04","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("hlmafer")
+  Global("fl3t05","GLOBAL",19)
+THEN RESPONSE #100
+  GiveItemCreate("slng05","hlmafer",0,0,0)
+  SetGlobal("fl3t05","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("hlsion")
+  Global("fl3t07","GLOBAL",19)
+THEN RESPONSE #100
+  GiveItemCreate("clck15","hlsion",0,0,0)
+  SetGlobal("fl3t07","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("hlketta")
+  Global("fl3t08","GLOBAL",19)
+THEN RESPONSE #100
+  GiveItemCreate("clck16","hlketta",0,0,0)
+  SetGlobal("fl3t08","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("hlsion")
+  Global("fl3t09","GLOBAL",19)
+THEN RESPONSE #100
+  GiveItemCreate("clck17","hlsion",0,0,0)
+  SetGlobal("fl3t09","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("hlolaf")
+  Global("fl3t10","GLOBAL",19)
+THEN RESPONSE #100
+  GiveItemCreate("halb09a","hlolaf",0,0,0)
+  SetGlobal("fl3t10","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("hlsion")
+  Global("fl3t11","GLOBAL",19)
+THEN RESPONSE #100
+  GiveItemCreate("blun24","hlsion",0,0,0)
+  SetGlobal("fl3t11","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("hlsion")
+  Global("fl3t12","GLOBAL",19)
+THEN RESPONSE #100
+  GiveItemCreate("brac11","hlsion",0,0,0)
+  SetGlobal("fl3t12","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("hlstal")
+  Global("fl3t13","GLOBAL",19)
+THEN RESPONSE #100
+  GiveItemCreate("leat13","hlstal",0,0,0)
+  SetGlobal("fl3t13","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("hlolaf")
+  Global("fl3t14","GLOBAL",19)
+THEN RESPONSE #100
+  GiveItemCreate("misc3m","hlolaf",3,0,0)
+  SetGlobal("fl3t14","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("hlketta")
+  Global("fl3t15","GLOBAL",19)
+THEN RESPONSE #100
+  GiveItemCreate("misc3o","hlketta",3,0,0)
+  SetGlobal("fl3t15","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("hlstal")
+  Global("fl3t16","GLOBAL",19)
+THEN RESPONSE #100
+  GiveItemCreate("hamm03","hlstal",0,0,0)
+  SetGlobal("fl3t16","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("hlsion")
+  Global("fl3t17","GLOBAL",19)
+THEN RESPONSE #100
+  GiveItemCreate("clck24","hlsion",0,0,0)
+  SetGlobal("fl3t17","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("hlstal")
+  Global("fl3t18","GLOBAL",19)
+THEN RESPONSE #100
+  GiveItemCreate("chan09","hlstal",0,0,0)
+  SetGlobal("fl3t18","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("hlmafer")
+  Global("fl3t19","GLOBAL",19)
+THEN RESPONSE #100
+  GiveItemCreate("halb08","hlmafer",0,0,0)
+  SetGlobal("fl3t19","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("hlmafer")
+  Global("fl3t20","GLOBAL",19)
+THEN RESPONSE #100
+  GiveItemCreate("sper07","hlmafer",0,0,0)
+  SetGlobal("fl3t20","GLOBAL",-1)
+  DestroySelf()
+END

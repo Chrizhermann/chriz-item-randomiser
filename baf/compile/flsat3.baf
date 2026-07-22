@@ -1,0 +1,162 @@
+
+IF
+  Exists("DENAK")
+  Global("flsat01","GLOBAL",3)
+THEN RESPONSE #100
+  GiveItemCreate("scrl66","DENAK",1,0,0)
+  SetGlobal("flsat01","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("DENAK")
+  Global("flsat02","GLOBAL",3)
+THEN RESPONSE #100
+  GiveItemCreate("scrl66","DENAK",1,0,0)
+  SetGlobal("flsat02","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("DIANA")
+  Global("flsat03","GLOBAL",3)
+THEN RESPONSE #100
+  GiveItemCreate("scrl66","DIANA",1,0,0)
+  SetGlobal("flsat03","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("DENAK")
+  Global("flsat04","GLOBAL",3)
+THEN RESPONSE #100
+  GiveItemCreate("scrl66","DENAK",1,0,0)
+  SetGlobal("flsat04","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("BRENDAN")
+  Global("flsat05","GLOBAL",3)
+THEN RESPONSE #100
+  GiveItemCreate("scrl67","BRENDAN",1,0,0)
+  SetGlobal("flsat05","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("DENAK")
+  Global("flsat06","GLOBAL",3)
+THEN RESPONSE #100
+  GiveItemCreate("scrl67","DENAK",1,0,0)
+  SetGlobal("flsat06","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("DIANA")
+  Global("flsat07","GLOBAL",3)
+THEN RESPONSE #100
+  GiveItemCreate("scrl67","DIANA",1,0,0)
+  SetGlobal("flsat07","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("DIANA")
+  Global("flsat08","GLOBAL",3)
+THEN RESPONSE #100
+  GiveItemCreate("scrl67","DIANA",1,0,0)
+  SetGlobal("flsat08","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("DENAK")
+  Global("flsat09","GLOBAL",3)
+THEN RESPONSE #100
+  GiveItemCreate("scrl67","DENAK",1,0,0)
+  SetGlobal("flsat09","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("DIANA")
+  Global("flsat10","GLOBAL",3)
+THEN RESPONSE #100
+  GiveItemCreate("scrl68","DIANA",1,0,0)
+  SetGlobal("flsat10","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("DENAK")
+  Global("flsat11","GLOBAL",3)
+THEN RESPONSE #100
+  GiveItemCreate("scrl68","DENAK",1,0,0)
+  SetGlobal("flsat11","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("BRENDAN")
+  Global("flsat12","GLOBAL",3)
+THEN RESPONSE #100
+  GiveItemCreate("scrl68","BRENDAN",1,0,0)
+  SetGlobal("flsat12","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("DENAK")
+  Global("flsat13","GLOBAL",3)
+THEN RESPONSE #100
+  GiveItemCreate("scrl71","DENAK",1,0,0)
+  SetGlobal("flsat13","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("DENAK")
+  Global("flsat14","GLOBAL",3)
+THEN RESPONSE #100
+  GiveItemCreate("scrl71","DENAK",1,0,0)
+  SetGlobal("flsat14","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("DIANA")
+  Global("flsat15","GLOBAL",3)
+THEN RESPONSE #100
+  GiveItemCreate("scrl81","DIANA",1,0,0)
+  SetGlobal("flsat15","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("DENAK")
+  Global("flsat16","GLOBAL",3)
+THEN RESPONSE #100
+  GiveItemCreate("scrl81","DENAK",1,0,0)
+  SetGlobal("flsat16","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("DIANA")
+  Global("flsat18","GLOBAL",3)
+THEN RESPONSE #100
+  GiveItemCreate("scrl83","DIANA",1,0,0)
+  SetGlobal("flsat18","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("BRENDAN")
+  Global("flsat19","GLOBAL",3)
+THEN RESPONSE #100
+  GiveItemCreate("scrl83","BRENDAN",1,0,0)
+  SetGlobal("flsat19","GLOBAL",-1)
+  DestroySelf()
+END

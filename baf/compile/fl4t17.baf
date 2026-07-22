@@ -1,0 +1,171 @@
+
+IF
+  Exists("dempri")
+  Global("fl4t01","GLOBAL",17)
+THEN RESPONSE #100
+  GiveItemCreate("amul25","dempri",0,0,0)
+  SetGlobal("fl4t01","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("dempri")
+  Global("fl4t02","GLOBAL",17)
+THEN RESPONSE #100
+  GiveItemCreate("sw1h33","dempri",0,1,0)
+  SetGlobal("fl4t02","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("dempri")
+  Global("fl4t03","GLOBAL",17)
+THEN RESPONSE #100
+  GiveItemCreate("staf16","dempri",0,30,30)
+  SetGlobal("fl4t03","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("demfig01")
+  Global("fl4t04","GLOBAL",17)
+THEN RESPONSE #100
+  GiveItemCreate("staf17","demfig01",1,20,20)
+  SetGlobal("fl4t04","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("demfig01")
+  Global("fl4t05","GLOBAL",17)
+THEN RESPONSE #100
+  GiveItemCreate("brac06","demfig01",0,0,0)
+  SetGlobal("fl4t05","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("dempri")
+  Global("fl4t06","GLOBAL",17)
+THEN RESPONSE #100
+  GiveItemCreate("brac15","dempri",0,0,0)
+  SetGlobal("fl4t06","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("demfig01")
+  Global("fl4t07","GLOBAL",17)
+THEN RESPONSE #100
+  GiveItemCreate("halb04","demfig01",0,0,0)
+  SetGlobal("fl4t07","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("demfig02")
+  Global("fl4t08","GLOBAL",17)
+THEN RESPONSE #100
+  GiveItemCreate("sw1h35","demfig02",0,0,0)
+  SetGlobal("fl4t08","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("demfig02")
+  Global("fl4t09","GLOBAL",17)
+THEN RESPONSE #100
+  GiveItemCreate("sw1h54a","demfig02",0,0,0)
+  SetGlobal("fl4t09","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("demfig02")
+  Global("fl4t10","GLOBAL",17)
+THEN RESPONSE #100
+  GiveItemCreate("bow19a","demfig02",0,0,0)
+  SetGlobal("fl4t10","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("dempri")
+  Global("fl4t12","GLOBAL",17)
+THEN RESPONSE #100
+  GiveItemCreate("dagg13","dempri",0,0,0)
+  SetGlobal("fl4t12","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("demmag")
+  Global("fl4t13","GLOBAL",17)
+THEN RESPONSE #100
+  GiveItemCreate("brac08","demmag",0,0,0)
+  SetGlobal("fl4t13","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("demmag")
+  Global("fl4t14","GLOBAL",17)
+THEN RESPONSE #100
+  GiveItemCreate("shld22","demmag",0,0,0)
+  SetGlobal("fl4t14","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("demmag")
+  Global("fl4t15","GLOBAL",17)
+THEN RESPONSE #100
+  GiveItemCreate("bow09","demmag",0,0,0)
+  SetGlobal("fl4t15","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("demfig01")
+  Global("fl4t16","GLOBAL",17)
+THEN RESPONSE #100
+  GiveItemCreate("boot04","demfig01",0,0,0)
+  SetGlobal("fl4t16","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("demfig02")
+  Global("fl4t17","GLOBAL",17)
+THEN RESPONSE #100
+  GiveItemCreate("sw1h52","demfig02",0,0,0)
+  SetGlobal("fl4t17","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("dempri")
+  Global("fl4t18","GLOBAL",17)
+THEN RESPONSE #100
+  GiveItemCreate("blun22","dempri",0,0,0)
+  SetGlobal("fl4t18","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("demmag")
+  Global("fl4t19","GLOBAL",17)
+THEN RESPONSE #100
+  GiveItemCreate("sw1h36","demmag",0,3,0)
+  SetGlobal("fl4t19","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("dempri")
+  Global("fl4t20","GLOBAL",17)
+THEN RESPONSE #100
+  GiveItemCreate("misc3a","dempri",1,0,0)
+  SetGlobal("fl4t20","GLOBAL",-1)
+  DestroySelf()
+END

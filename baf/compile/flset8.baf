@@ -1,0 +1,135 @@
+
+IF
+  Exists("ALAI")
+  Global("flset01","GLOBAL",8)
+THEN RESPONSE #100
+  GiveItemCreate("scrl2d","ALAI",1,1,0)
+  SetGlobal("flset01","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("ALAI")
+  Global("flset02","GLOBAL",8)
+THEN RESPONSE #100
+  GiveItemCreate("scrl2f","ALAI",1,1,0)
+  SetGlobal("flset02","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("NAAMAN")
+  Global("flset03","GLOBAL",8)
+THEN RESPONSE #100
+  GiveItemCreate("scrl2h","NAAMAN",1,1,0)
+  SetGlobal("flset03","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("NAAMAN")
+  Global("flset04","GLOBAL",8)
+THEN RESPONSE #100
+  GiveItemCreate("scrl2e","NAAMAN",1,0,0)
+  SetGlobal("flset04","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("NAAMAN")
+  Global("flset05","GLOBAL",8)
+THEN RESPONSE #100
+  GiveItemCreate("scrl2e","NAAMAN",1,0,0)
+  SetGlobal("flset05","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("ALAI")
+  Global("flset06","GLOBAL",8)
+THEN RESPONSE #100
+  GiveItemCreate("scrl2e","ALAI",1,0,0)
+  SetGlobal("flset06","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("ALAI")
+  Global("flset07","GLOBAL",8)
+THEN RESPONSE #100
+  GiveItemCreate("scrl2g","ALAI",1,0,0)
+  SetGlobal("flset07","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("NAAMAN")
+  Global("flset08","GLOBAL",8)
+THEN RESPONSE #100
+  GiveItemCreate("scrl5n","NAAMAN",1,0,0)
+  SetGlobal("flset08","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("NAAMAN")
+  Global("flset09","GLOBAL",8)
+THEN RESPONSE #100
+  GiveItemCreate("scrl5n","NAAMAN",1,0,0)
+  SetGlobal("flset09","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("NAAMAN")
+  Global("flset10","GLOBAL",8)
+THEN RESPONSE #100
+  GiveItemCreate("scrl5o","NAAMAN",1,0,0)
+  SetGlobal("flset10","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("NAAMAN")
+  Global("flset11","GLOBAL",8)
+THEN RESPONSE #100
+  GiveItemCreate("scrl5o","NAAMAN",1,0,0)
+  SetGlobal("flset11","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("NAAMAN")
+  Global("flset12","GLOBAL",8)
+THEN RESPONSE #100
+  GiveItemCreate("scrl5p","NAAMAN",1,0,0)
+  SetGlobal("flset12","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("ALAI")
+  Global("flset13","GLOBAL",8)
+THEN RESPONSE #100
+  GiveItemCreate("scrl5p","ALAI",1,0,0)
+  SetGlobal("flset13","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("ALAI")
+  Global("flset14","GLOBAL",8)
+THEN RESPONSE #100
+  GiveItemCreate("scrl5p","ALAI",1,0,0)
+  SetGlobal("flset14","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("ALAI")
+  Global("flset15","GLOBAL",8)
+THEN RESPONSE #100
+  GiveItemCreate("scrl5q","ALAI",1,0,0)
+  SetGlobal("flset15","GLOBAL",-1)
+  DestroySelf()
+END

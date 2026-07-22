@@ -1,0 +1,144 @@
+
+IF
+  Exists("KYSUS")
+  Global("fl25t01","GLOBAL",19)
+THEN RESPONSE #100
+  GiveItemCreate("amul15","KYSUS",10,0,0)
+  SetGlobal("fl25t01","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("REZDAN")
+  Global("fl25t02","GLOBAL",19)
+THEN RESPONSE #100
+  GiveItemCreate("ax1h02","REZDAN",0,0,0)
+  SetGlobal("fl25t02","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("GENTHORE")
+  Global("fl25t03","GLOBAL",19)
+THEN RESPONSE #100
+  GiveItemCreate("blun03","GENTHORE",0,0,0)
+  SetGlobal("fl25t03","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("KYSUS")
+  Global("fl25t04","GLOBAL",19)
+THEN RESPONSE #100
+  GiveItemCreate("blun05","KYSUS",0,0,0)
+  SetGlobal("fl25t04","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("REZDAN")
+  Global("fl25t05","GLOBAL",19)
+THEN RESPONSE #100
+  GiveItemCreate("bow02","REZDAN",0,0,0)
+  SetGlobal("fl25t05","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("DRASUS")
+  Global("fl25t07","GLOBAL",19)
+THEN RESPONSE #100
+  GiveItemCreate("hamm02","DRASUS",0,0,0)
+  SetGlobal("fl25t07","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("REZDAN")
+  Global("fl25t08","GLOBAL",19)
+THEN RESPONSE #100
+  GiveItemCreate("misc42","REZDAN",0,0,0)
+  SetGlobal("fl25t08","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("DRASUS")
+  Global("fl25t09","GLOBAL",19)
+THEN RESPONSE #100
+  GiveItemCreate("sper03","DRASUS",0,0,0)
+  SetGlobal("fl25t09","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("DRASUS")
+  Global("fl25t10","GLOBAL",19)
+THEN RESPONSE #100
+  GiveItemCreate("xbow03","DRASUS",0,0,0)
+  SetGlobal("fl25t10","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("DRASUS")
+  Global("fl25t13","GLOBAL",19)
+THEN RESPONSE #100
+  GiveItemCreate("sw1h02","DRASUS",0,0,0)
+  SetGlobal("fl25t13","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("KYSUS")
+  Global("fl25t14","GLOBAL",19)
+THEN RESPONSE #100
+  GiveItemCreate("sw1h05","KYSUS",0,0,0)
+  SetGlobal("fl25t14","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("DRASUS")
+  Global("fl25t15","GLOBAL",19)
+THEN RESPONSE #100
+  GiveItemCreate("sw1h08","DRASUS",0,0,0)
+  SetGlobal("fl25t15","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("KYSUS")
+  Global("fl25t16","GLOBAL",19)
+THEN RESPONSE #100
+  GiveItemCreate("wand07","KYSUS",6,0,0)
+  SetGlobal("fl25t16","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("GENTHORE")
+  Global("fl25t17","GLOBAL",19)
+THEN RESPONSE #100
+  GiveItemCreate("sw1h02","GENTHORE",0,0,0)
+  SetGlobal("fl25t17","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("DRASUS")
+  Global("fl25t18","GLOBAL",19)
+THEN RESPONSE #100
+  GiveItemCreate("hamm02","DRASUS",0,0,0)
+  SetGlobal("fl25t18","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("GENTHORE")
+  Global("fl25t19","GLOBAL",19)
+THEN RESPONSE #100
+  GiveItemCreate("staf02","GENTHORE",0,0,0)
+  SetGlobal("fl25t19","GLOBAL",-1)
+  DestroySelf()
+END

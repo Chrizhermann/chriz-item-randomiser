@@ -1,0 +1,189 @@
+
+IF
+  Exists("NATASHA")
+  Global("flsct01","GLOBAL",4)
+THEN RESPONSE #100
+  GiveItemCreate("scrl1e","NATASHA",1,0,0)
+  SetGlobal("flsct01","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("NATASHA")
+  Global("flsct02","GLOBAL",4)
+THEN RESPONSE #100
+  GiveItemCreate("scrl1e","NATASHA",1,0,0)
+  SetGlobal("flsct02","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("NATASHA")
+  Global("flsct03","GLOBAL",4)
+THEN RESPONSE #100
+  GiveItemCreate("scrl1f","NATASHA",1,0,0)
+  SetGlobal("flsct03","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("NATASHA")
+  Global("flsct04","GLOBAL",4)
+THEN RESPONSE #100
+  GiveItemCreate("scrl1f","NATASHA",1,0,0)
+  SetGlobal("flsct04","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("NATASHA")
+  Global("flsct05","GLOBAL",4)
+THEN RESPONSE #100
+  GiveItemCreate("scrl1g","NATASHA",1,0,0)
+  SetGlobal("flsct05","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("NATASHA")
+  Global("flsct06","GLOBAL",4)
+THEN RESPONSE #100
+  GiveItemCreate("scrl1g","NATASHA",1,0,0)
+  SetGlobal("flsct06","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("NATASHA")
+  Global("flsct07","GLOBAL",4)
+THEN RESPONSE #100
+  GiveItemCreate("scrl1h","NATASHA",1,0,0)
+  SetGlobal("flsct07","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("NATASHA")
+  Global("flsct08","GLOBAL",4)
+THEN RESPONSE #100
+  GiveItemCreate("scrl1i","NATASHA",1,0,0)
+  SetGlobal("flsct08","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("NATASHA")
+  Global("flsct09","GLOBAL",4)
+THEN RESPONSE #100
+  GiveItemCreate("scrl1k","NATASHA",1,0,0)
+  SetGlobal("flsct09","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("NATASHA")
+  Global("flsct10","GLOBAL",4)
+THEN RESPONSE #100
+  GiveItemCreate("scrl1k","NATASHA",1,0,0)
+  SetGlobal("flsct10","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("NATASHA")
+  Global("flsct11","GLOBAL",4)
+THEN RESPONSE #100
+  GiveItemCreate("scrl1k","NATASHA",1,0,0)
+  SetGlobal("flsct11","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("NATASHA")
+  Global("flsct12","GLOBAL",4)
+THEN RESPONSE #100
+  GiveItemCreate("scrl1l","NATASHA",1,0,0)
+  SetGlobal("flsct12","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("NATASHA")
+  Global("flsct13","GLOBAL",4)
+THEN RESPONSE #100
+  GiveItemCreate("scrl1m","NATASHA",1,0,0)
+  SetGlobal("flsct13","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("NATASHA")
+  Global("flsct14","GLOBAL",4)
+THEN RESPONSE #100
+  GiveItemCreate("scrl1n","NATASHA",1,0,0)
+  SetGlobal("flsct14","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("NATASHA")
+  Global("flsct15","GLOBAL",4)
+THEN RESPONSE #100
+  GiveItemCreate("scrl1n","NATASHA",1,0,0)
+  SetGlobal("flsct15","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("NATASHA")
+  Global("flsct16","GLOBAL",4)
+THEN RESPONSE #100
+  GiveItemCreate("scrl1n","NATASHA",1,0,0)
+  SetGlobal("flsct16","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("NATASHA")
+  Global("flsct17","GLOBAL",4)
+THEN RESPONSE #100
+  GiveItemCreate("scrl1o","NATASHA",1,0,0)
+  SetGlobal("flsct17","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("NATASHA")
+  Global("flsct18","GLOBAL",4)
+THEN RESPONSE #100
+  GiveItemCreate("scrl1s","NATASHA",1,0,0)
+  SetGlobal("flsct18","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("NATASHA")
+  Global("flsct19","GLOBAL",4)
+THEN RESPONSE #100
+  GiveItemCreate("scrl1s","NATASHA",1,0,0)
+  SetGlobal("flsct19","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("NATASHA")
+  Global("flsct20","GLOBAL",4)
+THEN RESPONSE #100
+  GiveItemCreate("scrl1t","NATASHA",1,0,0)
+  SetGlobal("flsct20","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("NATASHA")
+  Global("flsct21","GLOBAL",4)
+THEN RESPONSE #100
+  GiveItemCreate("scrl1t","NATASHA",1,0,0)
+  SetGlobal("flsct21","GLOBAL",-1)
+  DestroySelf()
+END

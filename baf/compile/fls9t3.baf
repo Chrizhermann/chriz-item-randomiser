@@ -1,0 +1,54 @@
+
+IF
+  Exists("drawer1")
+  Global("fls9t01","GLOBAL",3)
+THEN RESPONSE #100
+  ActionOverride("drawer1",CreateItem("scrl9t",1,1,0))
+  SetGlobal("fls9t01","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("drawer1")
+  Global("fls9t02","GLOBAL",3)
+THEN RESPONSE #100
+  ActionOverride("drawer1",CreateItem("scrl9s",1,1,0))
+  SetGlobal("fls9t02","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("drawer1")
+  Global("fls9t03","GLOBAL",3)
+THEN RESPONSE #100
+  ActionOverride("drawer1",CreateItem("scrl9r",1,1,0))
+  SetGlobal("fls9t03","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("drawer1")
+  Global("fls9t04","GLOBAL",3)
+THEN RESPONSE #100
+  ActionOverride("drawer1",CreateItem("scrl9r",1,1,0))
+  SetGlobal("fls9t04","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("drawer1")
+  Global("fls9t05","GLOBAL",3)
+THEN RESPONSE #100
+  ActionOverride("drawer1",CreateItem("scrl9p",1,1,0))
+  SetGlobal("fls9t05","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("drawer1")
+  Global("fls9t06","GLOBAL",3)
+THEN RESPONSE #100
+  ActionOverride("drawer1",CreateItem("scrl9n",1,1,0))
+  SetGlobal("fls9t06","GLOBAL",-1)
+  DestroySelf()
+END

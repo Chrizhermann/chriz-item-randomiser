@@ -1,0 +1,162 @@
+
+IF
+  Exists("GorWom01")
+  Global("fl10t01","GLOBAL",2)
+THEN RESPONSE #100
+  GiveItemCreate("ax1h16","GorWom01",0,0,0)
+  SetGlobal("fl10t01","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("GorWom01")
+  Global("fl10t02","GLOBAL",2)
+THEN RESPONSE #100
+  GiveItemCreate("blun26","GorWom01",0,0,0)
+  SetGlobal("fl10t02","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("GorWom06")
+  Global("fl10t03","GLOBAL",2)
+THEN RESPONSE #100
+  GiveItemCreate("sw1h67","GorWom06",0,0,0)
+  SetGlobal("fl10t03","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("GorWom01")
+  Global("fl10t04","GLOBAL",2)
+THEN RESPONSE #100
+  GiveItemCreate("brac21","GorWom01",0,0,0)
+  SetGlobal("fl10t04","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("GorWom06")
+  Global("fl10t05","GLOBAL",2)
+THEN RESPONSE #100
+  GiveItemCreate("dagg21","GorWom06",0,0,0)
+  SetGlobal("fl10t05","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("GorWom06")
+  Global("fl10t06","GLOBAL",2)
+THEN RESPONSE #100
+  GiveItemCreate("halb10","GorWom06",0,2,0)
+  SetGlobal("fl10t06","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("GorWom01")
+  Global("fl10t07","GLOBAL",2)
+THEN RESPONSE #100
+  GiveItemCreate("helm27","GorWom01",0,0,0)
+  SetGlobal("fl10t07","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("GorWom03")
+  Global("fl10t08","GLOBAL",2)
+THEN RESPONSE #100
+  GiveItemCreate("sw1h60","GorWom03",0,1,0)
+  SetGlobal("fl10t08","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("GorWom01")
+  Global("fl10t09","GLOBAL",2)
+THEN RESPONSE #100
+  GiveItemCreate("plat21","GorWom01",0,0,0)
+  SetGlobal("fl10t09","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("GorWom03")
+  Global("fl10t10","GLOBAL",2)
+THEN RESPONSE #100
+  GiveItemCreate("ax1h14","GorWom03",0,0,0)
+  SetGlobal("fl10t10","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("GorWom01")
+  Global("fl10t11","GLOBAL",2)
+THEN RESPONSE #100
+  GiveItemCreate("sw1h62","GorWom01",0,0,0)
+  SetGlobal("fl10t11","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("GorWom06")
+  Global("fl10t12","GLOBAL",2)
+THEN RESPONSE #100
+  GiveItemCreate("sper11","GorWom06",0,0,0)
+  SetGlobal("fl10t12","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("GorWom03")
+  Global("fl10t13","GLOBAL",2)
+THEN RESPONSE #100
+  GiveItemCreate("staf21","GorWom03",0,0,0)
+  SetGlobal("fl10t13","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("GorWom04")
+  Global("fl10t14","GLOBAL",2)
+THEN RESPONSE #100
+  GiveItemCreate("sw1h58","GorWom04",0,0,0)
+  SetGlobal("fl10t14","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("GorWom01")
+  Global("fl10t15","GLOBAL",2)
+THEN RESPONSE #100
+  GiveItemCreate("sw1h66","GorWom01",0,0,0)
+  SetGlobal("fl10t15","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("GorWom03")
+  Global("fl10t16","GLOBAL",2)
+THEN RESPONSE #100
+  GiveItemCreate("sw1h70","GorWom03",0,1,0)
+  SetGlobal("fl10t16","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("gorwom02")
+  Global("fl10t17","GLOBAL",2)
+THEN RESPONSE #100
+  GiveItemCreate("sw2h21","gorwom02",0,0,0)
+  SetGlobal("fl10t17","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("GorWom03")
+  Global("fl10t18","GLOBAL",2)
+THEN RESPONSE #100
+  GiveItemCreate("xbow15","GorWom03",0,0,0)
+  SetGlobal("fl10t18","GLOBAL",-1)
+  DestroySelf()
+END

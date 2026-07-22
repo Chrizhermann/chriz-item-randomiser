@@ -1,0 +1,81 @@
+
+IF
+  Exists("DENAK")
+  Global("fl24t01","GLOBAL",13)
+THEN RESPONSE #100
+  GiveItemCreate("brac01","DENAK",1,0,0)
+  SetGlobal("fl24t01","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("DENAK")
+  Global("fl24t02","GLOBAL",13)
+THEN RESPONSE #100
+  GiveItemCreate("brac01","DENAK",0,0,0)
+  SetGlobal("fl24t02","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("DENAK")
+  Global("fl24t03","GLOBAL",13)
+THEN RESPONSE #100
+  GiveItemCreate("bow06","DENAK",0,0,0)
+  SetGlobal("fl24t03","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("DENAK")
+  Global("fl24t04","GLOBAL",13)
+THEN RESPONSE #100
+  GiveItemCreate("chan02","DENAK",0,0,0)
+  SetGlobal("fl24t04","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("DENAK")
+  Global("fl24t05","GLOBAL",13)
+THEN RESPONSE #100
+  GiveItemCreate("chan02","DENAK",0,0,0)
+  SetGlobal("fl24t05","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("DENAK")
+  Global("fl24t06","GLOBAL",13)
+THEN RESPONSE #100
+  GiveItemCreate("chan02","DENAK",0,0,0)
+  SetGlobal("fl24t06","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("DENAK")
+  Global("fl24t07","GLOBAL",13)
+THEN RESPONSE #100
+  GiveItemCreate("leat02","DENAK",0,0,0)
+  SetGlobal("fl24t07","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("DENAK")
+  Global("fl24t08","GLOBAL",13)
+THEN RESPONSE #100
+  GiveItemCreate("leat06","DENAK",0,0,0)
+  SetGlobal("fl24t08","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("DENAK")
+  Global("fl24t09","GLOBAL",13)
+THEN RESPONSE #100
+  GiveItemCreate("ring20","DENAK",19,0,0)
+  SetGlobal("fl24t09","GLOBAL",-1)
+  DestroySelf()
+END

@@ -1,0 +1,162 @@
+
+IF
+  Exists("container1")
+  Global("flsat01","GLOBAL",16)
+THEN RESPONSE #100
+  ActionOverride("container1",CreateItem("scrl66",1,0,0))
+  SetGlobal("flsat01","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("container1")
+  Global("flsat02","GLOBAL",16)
+THEN RESPONSE #100
+  ActionOverride("container1",CreateItem("scrl66",1,0,0))
+  SetGlobal("flsat02","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("container1")
+  Global("flsat03","GLOBAL",16)
+THEN RESPONSE #100
+  ActionOverride("container1",CreateItem("scrl66",1,0,0))
+  SetGlobal("flsat03","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("container1")
+  Global("flsat04","GLOBAL",16)
+THEN RESPONSE #100
+  ActionOverride("container1",CreateItem("scrl66",1,0,0))
+  SetGlobal("flsat04","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("container1")
+  Global("flsat05","GLOBAL",16)
+THEN RESPONSE #100
+  ActionOverride("container1",CreateItem("scrl67",1,0,0))
+  SetGlobal("flsat05","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("container1")
+  Global("flsat06","GLOBAL",16)
+THEN RESPONSE #100
+  ActionOverride("container1",CreateItem("scrl67",1,0,0))
+  SetGlobal("flsat06","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("container1")
+  Global("flsat07","GLOBAL",16)
+THEN RESPONSE #100
+  ActionOverride("container1",CreateItem("scrl67",1,0,0))
+  SetGlobal("flsat07","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("container1")
+  Global("flsat08","GLOBAL",16)
+THEN RESPONSE #100
+  ActionOverride("container1",CreateItem("scrl67",1,0,0))
+  SetGlobal("flsat08","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("container1")
+  Global("flsat09","GLOBAL",16)
+THEN RESPONSE #100
+  ActionOverride("container1",CreateItem("scrl67",1,0,0))
+  SetGlobal("flsat09","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("container1")
+  Global("flsat10","GLOBAL",16)
+THEN RESPONSE #100
+  ActionOverride("container1",CreateItem("scrl68",1,0,0))
+  SetGlobal("flsat10","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("container1")
+  Global("flsat11","GLOBAL",16)
+THEN RESPONSE #100
+  ActionOverride("container1",CreateItem("scrl68",1,0,0))
+  SetGlobal("flsat11","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("container1")
+  Global("flsat12","GLOBAL",16)
+THEN RESPONSE #100
+  ActionOverride("container1",CreateItem("scrl68",1,0,0))
+  SetGlobal("flsat12","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("container1")
+  Global("flsat13","GLOBAL",16)
+THEN RESPONSE #100
+  ActionOverride("container1",CreateItem("scrl71",1,0,0))
+  SetGlobal("flsat13","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("container1")
+  Global("flsat14","GLOBAL",16)
+THEN RESPONSE #100
+  ActionOverride("container1",CreateItem("scrl71",1,0,0))
+  SetGlobal("flsat14","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("container1")
+  Global("flsat15","GLOBAL",16)
+THEN RESPONSE #100
+  ActionOverride("container1",CreateItem("scrl81",1,0,0))
+  SetGlobal("flsat15","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("container1")
+  Global("flsat16","GLOBAL",16)
+THEN RESPONSE #100
+  ActionOverride("container1",CreateItem("scrl81",1,0,0))
+  SetGlobal("flsat16","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("container1")
+  Global("flsat18","GLOBAL",16)
+THEN RESPONSE #100
+  ActionOverride("container1",CreateItem("scrl83",1,0,0))
+  SetGlobal("flsat18","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("container1")
+  Global("flsat19","GLOBAL",16)
+THEN RESPONSE #100
+  ActionOverride("container1",CreateItem("scrl83",1,0,0))
+  SetGlobal("flsat19","GLOBAL",-1)
+  DestroySelf()
+END

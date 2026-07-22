@@ -1,0 +1,183 @@
+Item     Replacement Source       Tier Token Ident Chance Comment
+
+leat03   leat04      maneir.cre   24   w01   v1    100
+
+blun07   blun06      drakar.cre   25   w01   v2    100
+slng02   blank       taerum.sto   25   w02   x     100
+staf02   blank       taerum.sto   25   w03   x     100
+
+chan05   blank       ar0161.are   26   w01   v3    100
+chan05   blank       ar0608.are   26   w02   x     100
+clck01   blank       ar0813.are   26   w03   v4    100
+helm03   helm08      jardak.cre   26   w04   v5    100
+plat02   plat01      gentho.cre   26   w05   v6    100
+chan03   plat01      molkar.cre   26   w06   v7    100
+
+sw1h03   blank       aldeth.dlg   27   w01   v8    100
+bow07    bow03       hakt.cre     27   w02   v9    100
+hamm03   hamm01      bassil.cre   27   w03   va    100
+boot04   blank       nimbul.cre   27   w04   vb    100
+shld07   blank       varci.dlg    27   w05   vc    100
+ax1h03   ax1h02      gretek.cre   27   w06   ve    100
+book03   blank       ar3601.are   27   w07   vf    100
+
+helm04   blank       droth.cre    28   w01   vd    100
+
+chan07   blank       baresh2.cre  31   w01   b3e   100
+
+v10
+
+scrl66   blank       andris.cre   sa   w01   vs3   100    Grease
+scrl66   blank       ar2611.are   sa   w02   vs2   100    Grease
+scrl66   blank       highhedg.sto sa   w03   x     100    Grease x2
+scrl66   blank       sto0703.sto  sa   w04   x     100    Grease x2
+scrl67   blank       ar2629.are   sa   w05   vs4   100    Armor
+scrl67   blank       brenda.cre   sa   w06   vs5   100    Armor
+scrl67   blank       diana.cre    sa   w07   vs6   100    Armor
+scrl67   blank       highhedg.sto sa   w08   x     100    Armor x2
+scrl67   blank       lasala.cre   sa   w09   vs7   100    Armor
+scrl67   blank       sto0703.sto  sa   w10   x     100    Armor x2
+scrl68   blank       ar0700.are   sa   w11   x     100    Burning Hands
+scrl68   blank       ar1201.are   sa   w12   vs8   100    Burning Hands
+scrl68   blank       brenda.cre   sa   w13   x     100    Burning Hands
+scrl68   blank       diana.cre    sa   w14   x     100    Burning Hands
+scrl68   blank       highhedg.sto sa   w15   x     100    Burning Hands x2
+scrl68   blank       lasala.cre   sa   w16   x     100    Burning Hands
+scrl68   blank       sto0703.sto  sa   w17   x     100    Burning Hands x2
+scrl71   blank       ar0138.are   sa   w18   vs9   100    Blindness
+scrl71   blank       diana.cre    sa   w19   x     100    Blindness
+scrl71   blank       highhedg.sto sa   w20   x     100    Blindness x2
+scrl71   blank       sto0703.sto  sa   w21   x     100    Blindness x2
+scrl71   blank       venkt.cre    sa   w22   vsa   100    Blindness
+scrl81   blank       ar0135.are   sa   w23   vsb   100    Sleep
+scrl81   blank       sto0703.sto  sa   w24   x     100    Sleep x2
+scrl83   blank       ar2609.are   sa   w25   vsc   100    Chromatic Orb
+scrl83   blank       ar2613.are   sa   w26   vsd   100    Chromatic Orb
+scrl83   blank       highhedg.sto sa   w27   x     100    Chromatic Orb x2
+scrl83   blank       prat.cre     sa   w28   vse   100    Chromatic Orb
+scrl81   blank       halaca.cre   sa   w29   bsa   100    Sleep
+scrl83   blank       sto0703.sto  sa   w30   x     100    Chromatic Orb x2
+
+scrl1b   blank       ar2613.are   sb   w01   vsf   100    Agannazar's Scorcher
+scrl1b   blank       sto0703.sto  sb   w02   x     100    Agannazar's Scorcher x2
+scrl1b   blank       gazib.cre    sb   w03   x     100    Agannazar's Scorcher
+scrl1c   blank       lendar.cre   sb   w04   vs10  100    Ghoul Touch
+scrl1c   blank       sakul.cre    sb   w05   vs11  100    Ghoul Touch
+scrl1c   blank       sto0703.sto  sb   w06   x     100    Ghoul Touch x2
+scrl3g   blank       ar2608.are   sb   w07   vs12  100    Vocalize
+scrl85   blank       ar0135.are   sb   w08   vs13  100    Blur
+scrl85   blank       ar0138.are   sb   w09   vs14  100    Blur
+scrl85   blank       sto0703.sto  sb   w10   x     100    Blur x2
+scrl87   blank       highhedg.sto sb   w11   x     100    Detect Invisibility x3
+scrl87   blank       sto0703.sto  sb   w12   x     100    Detect Invisibility x2
+scrl89   blank       ar0157.are   sb   w13   x     100    Horror
+scrl89   blank       highhedg.sto sb   w14   x     100    Horror x3
+scrl89   blank       sto0703.sto  sb   w15   x     100    Horror x2
+scrl90   blank       ar0138.are   sb   w16   vs15  100    Invisibility
+scrl90   blank       ar0717.are   sb   w17   x     100    Invisibility
+scrl90   blank       highhedg.sto sb   w18   x     100    Invisibility x3
+scrl90   blank       sto0703.sto  sb   w19   x     100    Invisibility x2
+scrl91   blank       ar2608.are   sb   w20   vs16  100    Knock
+scrl91   blank       sto0703.sto  sb   w21   x     100    Knock x2
+scrl93   blank       ar2609.are   sb   w22   vs17  100    Luck
+scrl93   blank       highhedg.sto sb   w23   x     100    Luck x3
+scrl93   blank       prat.cre     sb   w24   vs18  100    Luck
+scrl93   blank       sto0703.sto  sb   w25   x     100    Luck x2
+scrl93   blank       william.cre  sb   w26   vs19  100    Luck
+scrl94   blank       highhedg.sto sb   w27   x     100    Resist Fear x3
+scrl94   blank       prat.cre     sb   w28   vs1a  100    Resist Fear
+scrl94   blank       sto0703.sto  sb   w29   x     100    Resist Fear x2
+scrl95   blank       ar0135.are   sb   w30   vs1b  100    Melf's Acid Arrow
+scrl95   blank       sto0703.sto  sb   w31   x     100    Melf's Acid Arrow x2
+scrl96   blank       ar0138.are   sb   w32   vs1c  100    Mirror Image
+scrl96   blank       ar2609.are   sb   w33   vs1d  100    Mirror Image
+scrl96   blank       highhedg.sto sb   w34   x     100    Mirror Image x3
+scrl96   blank       prat.cre     sb   w35   vs1e  100    Mirror Image
+scrl96   blank       sto0703.sto  sb   w36   x     100    Mirror Image x2
+scrl97   blank       ar0614.are   sb   w37   vs1f  100    Stinking Cloud
+scrl97   blank       ar1901.are   sb   w38   vs20  100    Stinking Cloud
+scrl97   blank       sto0703.sto  sb   w39   x     100    Stinking Cloud x3
+scrl98   blank       highhedg.sto sb   w40   x     100    Strength x3
+scrl98   blank       sakul.cre    sb   w41   vs21  100    Strength
+scrl98   blank       sto0703.sto  sb   w42   x     100    Strength x2
+scrl99   blank       ar0144.are   sb   w43   vs22  100    Web
+scrl99   blank       ar1907.are   sb   w44   vs23  100    Web
+scrl99   blank       ar2608.are   sb   w45   vs24  100    Web
+scrl99   blank       ar2611.are   sb   w46   vs25  100    Web
+scrl99   blank       borda.cre    sb   w47   x     100    Web
+scrl99   blank       drelik.cre   sb   w48   vs26  100    Web
+scrl99   blank       dushai.cre   sb   w49   x     100    Web
+scrl99   blank       sto0703.sto  sb   w50   x     100    Web x2
+
+scrl1d   blank       ar0143.are   sc   w01   vs3b  100    Clairvoyance
+scrl1d   blank       krysti.cre   sc   w02   vs27  100    Clairvoyance
+scrl1d   blank       sto0703.sto  sc   w03   x     100    Clairvoyance
+scrl1d   blank       vayya.cre    sc   w04   vs28  100    Clairvoyance
+scrl1e   blank       ar2619.are   sc   w05   vs3c  100    Dispel Magic
+scrl1e   blank       naaman.cre   sc   w06   vs29  100    Dispel Magic
+scrl1e   blank       sto0703.sto  sc   w07   x     100    Dispel Magic x2
+scrl1e   blank       vayya.cre    sc   w08   vs2a  100    Dispel Magic
+scrl1f   blank       ar0614.are   sc   w09   vs3d  100    Flame Arrow
+scrl1f   blank       highhedg.sto sc   w10   x     100    Flame Arrow x3
+scrl1f   blank       sto0703.sto  sc   w11   x     100    Flame Arrow x2
+scrl1g   blank       ar0135.are   sc   w12   vs3e  100    Fireball
+scrl1g   blank       ar2613.are   sc   w13   vs3f  100    Fireball
+scrl1g   blank       garan.cre    sc   w14   x     100    Fireball
+scrl1g   blank       lendar.cre   sc   w15   vs2b  100    Fireball
+scrl1g   blank       naaman.cre   sc   w16   vs2c  100    Fireball
+scrl1g   blank       queen.cre    sc   w17   vs2d  100    Fireball
+scrl1g   blank       sto0703.sto  sc   w18   x     100    Fireball x2
+scrl1g   blank       sunin.cre    sc   w19   vs2e  100    Fireball
+scrl1h   blank       ar0512.are   sc   w20   vs40  100    Haste
+scrl1h   blank       sakul.cre    sc   w21   vs2f  100    Haste
+scrl1h   blank       sto0703.sto  sc   w22   x     100    Haste x2
+scrl1i   blank       ar0614.are   sc   w23   x     100    Hold Person
+scrl1i   blank       ar0615.are   sc   w24   vs41  100    Hold Person
+scrl1i   blank       hareis.cre   sc   w25   vs30  100    Hold Person
+scrl1i   blank       highhedg.sto sc   w26   x     100    Hold Person x3
+scrl1i   blank       sto0703.sto  sc   w27   x     100    Hold Person x2
+scrl1k   blank       lendar.cre   sc   w28   vs31  100    Lightning Bolt
+scrl1k   blank       sto0703.sto  sc   w29   x     100    Lightning Bolt x2
+scrl1l   blank       sto0703.sto  sc   w30   x     100    Monster Summoning I x2
+scrl1m   blank       krysti.cre   sc   w31   vs32  100    Non-Detection
+scrl1m   blank       nortua.cre   sc   w32   x     100    Non-Detection
+scrl1m   blank       sto0703.sto  sc   w33   x     100    Non-Detection x2
+scrl1n   blank       garan.cre    sc   w34   x     100    Protection From Normal Missiles
+scrl1n   blank       krysti.cre   sc   w35   vs33  100    Protection From Normal Missiles
+scrl1n   blank       sto0703.sto  sc   w36   x     100    Protection From Normal Missiles x2
+scrl1o   blank       ar0110.are   sc   w37   x     100    Slow
+scrl1o   blank       natash.cre   sc   w38   vs34  100    Slow
+scrl1o   blank       sakul.cre    sc   w39   vs35  100    Slow
+scrl1o   blank       sto0703.sto  sc   w40   x     100    Slow x2
+scrl1p   blank       highhedg.sto sc   w41   x     100    Skull Trap x3
+scrl1p   blank       krysti.cre   sc   w42   x     100    Skull Trap
+scrl1p   blank       sto0703.sto  sc   w43   x     100    Skull Trap x3
+scrl1q   blank       degrod.cre   sc   w44   vs36  100    Vampiric Touch
+scrl1q   blank       highhedg.sto sc   w45   x     100    Vampiric Touch x3
+scrl1q   blank       krysti.cre   sc   w46   vs43  100    Vampiric Touch
+scrl1q   blank       marcel.cre   sc   w47   vs37  100    Vampiric Touch
+scrl1q   blank       nemphr.dlg   sc   w48   vs1   100    Vampiric Touch nemphr.cre
+scrl1q   blank       queen.cre    sc   w49   vs38  100    Vampiric Touch
+scrl1q   blank       sto0703.sto  sc   w50   x     100    Vampiric Touch x2
+scrl1q   blank       sunin.cre    sc   w51   vs39  100    Vampiric Touch
+scrl1s   blank       sakul.cre    sc   w52   vs42  100    Dire Charm
+scrl1s   blank       sto0703.sto  sc   w53   x     100    Dire Charm x2
+scrl1t   blank       sakul.cre    sc   w54   x     100    Ghost Armor
+scrl1t   blank       sto0703.sto  sc   w55   x     100    Ghost Armor x2
+scrl1t   blank       wiven.cre    sc   w56   vs3a  100    Ghost Armor
+
+scrl1u   blank       sto0703.sto  sd   w01   x     100    Confusion x2
+scrl1v   blank       sto0703.sto  sd   w02   x     100    Dimension Door x2
+scrl1y   blank       ulgoth.sto   sd   w03   x     100    Improved Invisibility
+scrl1z   blank       sto0703.sto  sd   w04   x     100    Minor Globe of Invulnerability x2
+scrl2a   blank       sto0703.sto  sd   w05   x     100    Monster Summoning II x2
+scrl5g   blank       sto0703.sto  sd   w06   x     100    Remove Curse
+scrl5g   blank       ulgoth.sto   sd   w07   x     100    Remove Curse
+scrl5h   blank       ulgoth.sto   sd   w08   x     100    Emotion
+scrl5i   blank       sto0703.sto  sd   w09   x     100    Greater Malison
+scrl5i   blank       ulgoth.sto   sd   w10   x     100    Greater Malison
+scrl5j   blank       sto0703.sto  sd   w11   x     100    Otiluke's Resilient Sphere
+scrl5k   blank       sto0703.sto  sd   w12   x     100    Spirit Armor
+scrl5m   blank       ar0512.are   sd   w13   vs44  100    Polymorph Self
+
+vs45

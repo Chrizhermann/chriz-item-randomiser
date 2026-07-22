@@ -1,0 +1,135 @@
+
+IF
+  Exists("DEGROD")
+  Global("flset01","GLOBAL",13)
+THEN RESPONSE #100
+  GiveItemCreate("scrl2d","DEGROD",1,1,0)
+  SetGlobal("flset01","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("DEGROD")
+  Global("flset02","GLOBAL",13)
+THEN RESPONSE #100
+  GiveItemCreate("scrl2f","DEGROD",1,1,0)
+  SetGlobal("flset02","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("DEGROD")
+  Global("flset03","GLOBAL",13)
+THEN RESPONSE #100
+  GiveItemCreate("scrl2h","DEGROD",1,1,0)
+  SetGlobal("flset03","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("DEGROD")
+  Global("flset04","GLOBAL",13)
+THEN RESPONSE #100
+  GiveItemCreate("scrl2e","DEGROD",1,0,0)
+  SetGlobal("flset04","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("DEGROD")
+  Global("flset05","GLOBAL",13)
+THEN RESPONSE #100
+  GiveItemCreate("scrl2e","DEGROD",1,0,0)
+  SetGlobal("flset05","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("DEGROD")
+  Global("flset06","GLOBAL",13)
+THEN RESPONSE #100
+  GiveItemCreate("scrl2e","DEGROD",1,0,0)
+  SetGlobal("flset06","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("DEGROD")
+  Global("flset07","GLOBAL",13)
+THEN RESPONSE #100
+  GiveItemCreate("scrl2g","DEGROD",1,0,0)
+  SetGlobal("flset07","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("DEGROD")
+  Global("flset08","GLOBAL",13)
+THEN RESPONSE #100
+  GiveItemCreate("scrl5n","DEGROD",1,0,0)
+  SetGlobal("flset08","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("DEGROD")
+  Global("flset09","GLOBAL",13)
+THEN RESPONSE #100
+  GiveItemCreate("scrl5n","DEGROD",1,0,0)
+  SetGlobal("flset09","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("DEGROD")
+  Global("flset10","GLOBAL",13)
+THEN RESPONSE #100
+  GiveItemCreate("scrl5o","DEGROD",1,0,0)
+  SetGlobal("flset10","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("DEGROD")
+  Global("flset11","GLOBAL",13)
+THEN RESPONSE #100
+  GiveItemCreate("scrl5o","DEGROD",1,0,0)
+  SetGlobal("flset11","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("DEGROD")
+  Global("flset12","GLOBAL",13)
+THEN RESPONSE #100
+  GiveItemCreate("scrl5p","DEGROD",1,0,0)
+  SetGlobal("flset12","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("DEGROD")
+  Global("flset13","GLOBAL",13)
+THEN RESPONSE #100
+  GiveItemCreate("scrl5p","DEGROD",1,0,0)
+  SetGlobal("flset13","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("DEGROD")
+  Global("flset14","GLOBAL",13)
+THEN RESPONSE #100
+  GiveItemCreate("scrl5p","DEGROD",1,0,0)
+  SetGlobal("flset14","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("DEGROD")
+  Global("flset15","GLOBAL",13)
+THEN RESPONSE #100
+  GiveItemCreate("scrl5q","DEGROD",1,0,0)
+  SetGlobal("flset15","GLOBAL",-1)
+  DestroySelf()
+END

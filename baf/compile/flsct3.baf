@@ -1,0 +1,189 @@
+
+IF
+  Exists("HAREIS")
+  Global("flsct01","GLOBAL",3)
+THEN RESPONSE #100
+  GiveItemCreate("scrl1e","HAREIS",1,0,0)
+  SetGlobal("flsct01","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("HAREIS")
+  Global("flsct02","GLOBAL",3)
+THEN RESPONSE #100
+  GiveItemCreate("scrl1e","HAREIS",1,0,0)
+  SetGlobal("flsct02","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("HAREIS")
+  Global("flsct03","GLOBAL",3)
+THEN RESPONSE #100
+  GiveItemCreate("scrl1f","HAREIS",1,0,0)
+  SetGlobal("flsct03","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("HAREIS")
+  Global("flsct04","GLOBAL",3)
+THEN RESPONSE #100
+  GiveItemCreate("scrl1f","HAREIS",1,0,0)
+  SetGlobal("flsct04","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("HAREIS")
+  Global("flsct05","GLOBAL",3)
+THEN RESPONSE #100
+  GiveItemCreate("scrl1g","HAREIS",1,0,0)
+  SetGlobal("flsct05","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("HAREIS")
+  Global("flsct06","GLOBAL",3)
+THEN RESPONSE #100
+  GiveItemCreate("scrl1g","HAREIS",1,0,0)
+  SetGlobal("flsct06","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("HAREIS")
+  Global("flsct07","GLOBAL",3)
+THEN RESPONSE #100
+  GiveItemCreate("scrl1h","HAREIS",1,0,0)
+  SetGlobal("flsct07","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("HAREIS")
+  Global("flsct08","GLOBAL",3)
+THEN RESPONSE #100
+  GiveItemCreate("scrl1i","HAREIS",1,0,0)
+  SetGlobal("flsct08","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("HAREIS")
+  Global("flsct09","GLOBAL",3)
+THEN RESPONSE #100
+  GiveItemCreate("scrl1k","HAREIS",1,0,0)
+  SetGlobal("flsct09","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("HAREIS")
+  Global("flsct10","GLOBAL",3)
+THEN RESPONSE #100
+  GiveItemCreate("scrl1k","HAREIS",1,0,0)
+  SetGlobal("flsct10","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("HAREIS")
+  Global("flsct11","GLOBAL",3)
+THEN RESPONSE #100
+  GiveItemCreate("scrl1k","HAREIS",1,0,0)
+  SetGlobal("flsct11","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("HAREIS")
+  Global("flsct12","GLOBAL",3)
+THEN RESPONSE #100
+  GiveItemCreate("scrl1l","HAREIS",1,0,0)
+  SetGlobal("flsct12","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("HAREIS")
+  Global("flsct13","GLOBAL",3)
+THEN RESPONSE #100
+  GiveItemCreate("scrl1m","HAREIS",1,0,0)
+  SetGlobal("flsct13","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("HAREIS")
+  Global("flsct14","GLOBAL",3)
+THEN RESPONSE #100
+  GiveItemCreate("scrl1n","HAREIS",1,0,0)
+  SetGlobal("flsct14","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("HAREIS")
+  Global("flsct15","GLOBAL",3)
+THEN RESPONSE #100
+  GiveItemCreate("scrl1n","HAREIS",1,0,0)
+  SetGlobal("flsct15","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("HAREIS")
+  Global("flsct16","GLOBAL",3)
+THEN RESPONSE #100
+  GiveItemCreate("scrl1n","HAREIS",1,0,0)
+  SetGlobal("flsct16","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("HAREIS")
+  Global("flsct17","GLOBAL",3)
+THEN RESPONSE #100
+  GiveItemCreate("scrl1o","HAREIS",1,0,0)
+  SetGlobal("flsct17","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("HAREIS")
+  Global("flsct18","GLOBAL",3)
+THEN RESPONSE #100
+  GiveItemCreate("scrl1s","HAREIS",1,0,0)
+  SetGlobal("flsct18","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("HAREIS")
+  Global("flsct19","GLOBAL",3)
+THEN RESPONSE #100
+  GiveItemCreate("scrl1s","HAREIS",1,0,0)
+  SetGlobal("flsct19","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("HAREIS")
+  Global("flsct20","GLOBAL",3)
+THEN RESPONSE #100
+  GiveItemCreate("scrl1t","HAREIS",1,0,0)
+  SetGlobal("flsct20","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("HAREIS")
+  Global("flsct21","GLOBAL",3)
+THEN RESPONSE #100
+  GiveItemCreate("scrl1t","HAREIS",1,0,0)
+  SetGlobal("flsct21","GLOBAL",-1)
+  DestroySelf()
+END

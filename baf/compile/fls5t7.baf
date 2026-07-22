@@ -1,0 +1,207 @@
+
+IF
+  Exists("chest1")
+  Global("fls5t01","GLOBAL",7)
+THEN RESPONSE #100
+  ActionOverride("chest1",CreateItem("scrl7d",1,1,0))
+  SetGlobal("fls5t01","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("chest1")
+  Global("fls5t02","GLOBAL",7)
+THEN RESPONSE #100
+  ActionOverride("chest1",CreateItem("scrl7d",1,0,0))
+  SetGlobal("fls5t02","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("chest1")
+  Global("fls5t03","GLOBAL",7)
+THEN RESPONSE #100
+  ActionOverride("chest1",CreateItem("scrl6z",1,0,0))
+  SetGlobal("fls5t03","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("chest1")
+  Global("fls5t04","GLOBAL",7)
+THEN RESPONSE #100
+  ActionOverride("chest1",CreateItem("scrl6z",1,1,0))
+  SetGlobal("fls5t04","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("chest1")
+  Global("fls5t05","GLOBAL",7)
+THEN RESPONSE #100
+  ActionOverride("chest1",CreateItem("scrl6y",1,0,0))
+  SetGlobal("fls5t05","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("chest1")
+  Global("fls5t06","GLOBAL",7)
+THEN RESPONSE #100
+  ActionOverride("chest1",CreateItem("scrl2e",1,0,0))
+  SetGlobal("fls5t06","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("chest1")
+  Global("fls5t07","GLOBAL",7)
+THEN RESPONSE #100
+  ActionOverride("chest1",CreateItem("scrl2f",1,0,0))
+  SetGlobal("fls5t07","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("chest1")
+  Global("fls5t08","GLOBAL",7)
+THEN RESPONSE #100
+  ActionOverride("chest1",CreateItem("scrl2f",1,0,0))
+  SetGlobal("fls5t08","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("chest1")
+  Global("fls5t09","GLOBAL",7)
+THEN RESPONSE #100
+  ActionOverride("chest1",CreateItem("scrl5o",1,0,0))
+  SetGlobal("fls5t09","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("chest1")
+  Global("fls5t10","GLOBAL",7)
+THEN RESPONSE #100
+  ActionOverride("chest1",CreateItem("scrl5n",1,0,0))
+  SetGlobal("fls5t10","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("chest1")
+  Global("fls5t11","GLOBAL",7)
+THEN RESPONSE #100
+  ActionOverride("chest1",CreateItem("scrl2d",1,0,0))
+  SetGlobal("fls5t11","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("chest1")
+  Global("fls5t12","GLOBAL",7)
+THEN RESPONSE #100
+  ActionOverride("chest1",CreateItem("scrl6u",1,1,0))
+  SetGlobal("fls5t12","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("chest1")
+  Global("fls5t13","GLOBAL",7)
+THEN RESPONSE #100
+  ActionOverride("chest1",CreateItem("scrl6u",1,1,0))
+  SetGlobal("fls5t13","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("chest1")
+  Global("fls5t14","GLOBAL",7)
+THEN RESPONSE #100
+  ActionOverride("chest1",CreateItem("scrl6u",1,0,0))
+  SetGlobal("fls5t14","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("chest1")
+  Global("fls5t15","GLOBAL",7)
+THEN RESPONSE #100
+  ActionOverride("chest1",CreateItem("scrl6u",1,0,0))
+  SetGlobal("fls5t15","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("chest1")
+  Global("fls5t16","GLOBAL",7)
+THEN RESPONSE #100
+  ActionOverride("chest1",CreateItem("scrl6u",1,1,0))
+  SetGlobal("fls5t16","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("chest1")
+  Global("fls5t17","GLOBAL",7)
+THEN RESPONSE #100
+  ActionOverride("chest1",CreateItem("scrl6v",1,0,0))
+  SetGlobal("fls5t17","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("chest1")
+  Global("fls5t18","GLOBAL",7)
+THEN RESPONSE #100
+  ActionOverride("chest1",CreateItem("scrl6s",1,0,0))
+  SetGlobal("fls5t18","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("chest1")
+  Global("fls5t19","GLOBAL",7)
+THEN RESPONSE #100
+  ActionOverride("chest1",CreateItem("scrl6q",1,0,0))
+  SetGlobal("fls5t19","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("chest1")
+  Global("fls5t20","GLOBAL",7)
+THEN RESPONSE #100
+  ActionOverride("chest1",CreateItem("scrl5p",1,0,0))
+  SetGlobal("fls5t20","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("chest1")
+  Global("fls5t21","GLOBAL",7)
+THEN RESPONSE #100
+  ActionOverride("chest1",CreateItem("scrlal",1,1,0))
+  SetGlobal("fls5t21","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("chest1")
+  Global("fls5t22","GLOBAL",7)
+THEN RESPONSE #100
+  ActionOverride("chest1",CreateItem("scrlal",1,1,0))
+  SetGlobal("fls5t22","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("chest1")
+  Global("fls5tx0","GLOBAL",7)
+THEN RESPONSE #100
+  ActionOverride("chest1",CreateItem("scrlal",0,0,0))
+  SetGlobal("fls5tx0","GLOBAL",-1)
+  DestroySelf()
+END

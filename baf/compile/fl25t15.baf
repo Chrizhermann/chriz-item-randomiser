@@ -1,0 +1,144 @@
+
+IF
+  Exists("ALAI")
+  Global("fl25t01","GLOBAL",15)
+THEN RESPONSE #100
+  GiveItemCreate("amul15","ALAI",10,0,0)
+  SetGlobal("fl25t01","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("AASIM")
+  Global("fl25t02","GLOBAL",15)
+THEN RESPONSE #100
+  GiveItemCreate("ax1h02","AASIM",0,0,0)
+  SetGlobal("fl25t02","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("DIYAB")
+  Global("fl25t03","GLOBAL",15)
+THEN RESPONSE #100
+  GiveItemCreate("blun03","DIYAB",0,0,0)
+  SetGlobal("fl25t03","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("NAAMAN")
+  Global("fl25t04","GLOBAL",15)
+THEN RESPONSE #100
+  GiveItemCreate("blun05","NAAMAN",0,0,0)
+  SetGlobal("fl25t04","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("AASIM")
+  Global("fl25t05","GLOBAL",15)
+THEN RESPONSE #100
+  GiveItemCreate("bow02","AASIM",0,0,0)
+  SetGlobal("fl25t05","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("DIYAB")
+  Global("fl25t07","GLOBAL",15)
+THEN RESPONSE #100
+  GiveItemCreate("hamm02","DIYAB",0,0,0)
+  SetGlobal("fl25t07","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("ALAI")
+  Global("fl25t08","GLOBAL",15)
+THEN RESPONSE #100
+  GiveItemCreate("misc42","ALAI",0,0,0)
+  SetGlobal("fl25t08","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("AASIM")
+  Global("fl25t09","GLOBAL",15)
+THEN RESPONSE #100
+  GiveItemCreate("sper03","AASIM",0,0,0)
+  SetGlobal("fl25t09","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("GARDUSH")
+  Global("fl25t10","GLOBAL",15)
+THEN RESPONSE #100
+  GiveItemCreate("xbow03","GARDUSH",0,0,0)
+  SetGlobal("fl25t10","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("ALAI")
+  Global("fl25t13","GLOBAL",15)
+THEN RESPONSE #100
+  GiveItemCreate("sw1h02","ALAI",0,0,0)
+  SetGlobal("fl25t13","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("ZHALIMAR")
+  Global("fl25t14","GLOBAL",15)
+THEN RESPONSE #100
+  GiveItemCreate("sw1h05","ZHALIMAR",0,0,0)
+  SetGlobal("fl25t14","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("AASIM")
+  Global("fl25t15","GLOBAL",15)
+THEN RESPONSE #100
+  GiveItemCreate("sw1h08","AASIM",0,0,0)
+  SetGlobal("fl25t15","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("ALAI")
+  Global("fl25t16","GLOBAL",15)
+THEN RESPONSE #100
+  GiveItemCreate("wand07","ALAI",6,0,0)
+  SetGlobal("fl25t16","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("ALAI")
+  Global("fl25t17","GLOBAL",15)
+THEN RESPONSE #100
+  GiveItemCreate("sw1h02","ALAI",0,0,0)
+  SetGlobal("fl25t17","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("ZHALIMAR")
+  Global("fl25t18","GLOBAL",15)
+THEN RESPONSE #100
+  GiveItemCreate("hamm02","ZHALIMAR",0,0,0)
+  SetGlobal("fl25t18","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("ALAI")
+  Global("fl25t19","GLOBAL",15)
+THEN RESPONSE #100
+  GiveItemCreate("staf02","ALAI",0,0,0)
+  SetGlobal("fl25t19","GLOBAL",-1)
+  DestroySelf()
+END

@@ -1,0 +1,162 @@
+
+IF
+  Exists("container5")
+  Global("fl10t01","GLOBAL",13)
+THEN RESPONSE #100
+  ActionOverride("container5",CreateItem("ax1h16",0,0,0))
+  SetGlobal("fl10t01","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("container5")
+  Global("fl10t02","GLOBAL",13)
+THEN RESPONSE #100
+  ActionOverride("container5",CreateItem("blun26",0,0,0))
+  SetGlobal("fl10t02","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("container5")
+  Global("fl10t03","GLOBAL",13)
+THEN RESPONSE #100
+  ActionOverride("container5",CreateItem("sw1h67",0,0,0))
+  SetGlobal("fl10t03","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("container5")
+  Global("fl10t04","GLOBAL",13)
+THEN RESPONSE #100
+  ActionOverride("container5",CreateItem("brac21",0,0,0))
+  SetGlobal("fl10t04","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("container5")
+  Global("fl10t05","GLOBAL",13)
+THEN RESPONSE #100
+  ActionOverride("container5",CreateItem("dagg21",0,0,0))
+  SetGlobal("fl10t05","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("container5")
+  Global("fl10t06","GLOBAL",13)
+THEN RESPONSE #100
+  ActionOverride("container5",CreateItem("halb10",0,2,0))
+  SetGlobal("fl10t06","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("container5")
+  Global("fl10t07","GLOBAL",13)
+THEN RESPONSE #100
+  ActionOverride("container5",CreateItem("helm27",0,0,0))
+  SetGlobal("fl10t07","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("container5")
+  Global("fl10t08","GLOBAL",13)
+THEN RESPONSE #100
+  ActionOverride("container5",CreateItem("sw1h60",0,1,0))
+  SetGlobal("fl10t08","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("container5")
+  Global("fl10t09","GLOBAL",13)
+THEN RESPONSE #100
+  ActionOverride("container5",CreateItem("plat21",0,0,0))
+  SetGlobal("fl10t09","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("container5")
+  Global("fl10t10","GLOBAL",13)
+THEN RESPONSE #100
+  ActionOverride("container5",CreateItem("ax1h14",0,0,0))
+  SetGlobal("fl10t10","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("container5")
+  Global("fl10t11","GLOBAL",13)
+THEN RESPONSE #100
+  ActionOverride("container5",CreateItem("sw1h62",0,0,0))
+  SetGlobal("fl10t11","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("container5")
+  Global("fl10t12","GLOBAL",13)
+THEN RESPONSE #100
+  ActionOverride("container5",CreateItem("sper11",0,0,0))
+  SetGlobal("fl10t12","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("container5")
+  Global("fl10t13","GLOBAL",13)
+THEN RESPONSE #100
+  ActionOverride("container5",CreateItem("staf21",0,0,0))
+  SetGlobal("fl10t13","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("container5")
+  Global("fl10t14","GLOBAL",13)
+THEN RESPONSE #100
+  ActionOverride("container5",CreateItem("sw1h58",0,0,0))
+  SetGlobal("fl10t14","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("container5")
+  Global("fl10t15","GLOBAL",13)
+THEN RESPONSE #100
+  ActionOverride("container5",CreateItem("sw1h66",0,0,0))
+  SetGlobal("fl10t15","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("container5")
+  Global("fl10t16","GLOBAL",13)
+THEN RESPONSE #100
+  ActionOverride("container5",CreateItem("sw1h70",0,1,0))
+  SetGlobal("fl10t16","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("container5")
+  Global("fl10t17","GLOBAL",13)
+THEN RESPONSE #100
+  ActionOverride("container5",CreateItem("sw2h21",0,0,0))
+  SetGlobal("fl10t17","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("container5")
+  Global("fl10t18","GLOBAL",13)
+THEN RESPONSE #100
+  ActionOverride("container5",CreateItem("xbow15",0,0,0))
+  SetGlobal("fl10t18","GLOBAL",-1)
+  DestroySelf()
+END

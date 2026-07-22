@@ -1,0 +1,108 @@
+
+IF
+  Exists("bed")
+  Global("fl13t01","GLOBAL",1)
+THEN RESPONSE #100
+  ActionOverride("bed",CreateItem("scrlb4",1,0,0))
+  SetGlobal("fl13t01","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("bed")
+  Global("fl13t02","GLOBAL",1)
+THEN RESPONSE #100
+  ActionOverride("bed",CreateItem("slng08",0,1,0))
+  SetGlobal("fl13t02","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("bed")
+  Global("fl13t03","GLOBAL",1)
+THEN RESPONSE #100
+  ActionOverride("bed",CreateItem("helm34",0,0,0))
+  SetGlobal("fl13t03","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("bed")
+  Global("fl13t04","GLOBAL",1)
+THEN RESPONSE #100
+  ActionOverride("bed",CreateItem("helm26",0,0,0))
+  SetGlobal("fl13t04","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("bed")
+  Global("fl13t05","GLOBAL",1)
+THEN RESPONSE #100
+  ActionOverride("bed",CreateItem("ring02",0,0,0))
+  SetGlobal("fl13t05","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("bed")
+  Global("fl13t06","GLOBAL",1)
+THEN RESPONSE #100
+  ActionOverride("bed",CreateItem("dagg23",0,0,0))
+  SetGlobal("fl13t06","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("bed")
+  Global("fl13t07","GLOBAL",1)
+THEN RESPONSE #100
+  ActionOverride("bed",CreateItem("dart08",0,0,0))
+  SetGlobal("fl13t07","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("bed")
+  Global("fl13t08","GLOBAL",1)
+THEN RESPONSE #100
+  ActionOverride("bed",CreateItem("staf23",0,0,0))
+  SetGlobal("fl13t08","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("bed")
+  Global("fl13t09","GLOBAL",1)
+THEN RESPONSE #100
+  ActionOverride("bed",CreateItem("boot12",2,0,0))
+  SetGlobal("fl13t09","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("bed")
+  Global("fl13t10","GLOBAL",1)
+THEN RESPONSE #100
+  ActionOverride("bed",CreateItem("wand18",5,5,0))
+  SetGlobal("fl13t10","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("bed")
+  Global("fl13t11","GLOBAL",1)
+THEN RESPONSE #100
+  ActionOverride("bed",CreateItem("wand18",5,5,0))
+  SetGlobal("fl13t11","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("bed")
+  Global("fl13t12","GLOBAL",1)
+THEN RESPONSE #100
+  ActionOverride("bed",CreateItem("helm31",0,0,0))
+  SetGlobal("fl13t12","GLOBAL",-1)
+  DestroySelf()
+END

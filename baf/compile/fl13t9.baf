@@ -1,0 +1,108 @@
+
+IF
+  Exists("gorsta11")
+  Global("fl13t01","GLOBAL",9)
+THEN RESPONSE #100
+  GiveItemCreate("scrlb4","gorsta11",1,0,0)
+  SetGlobal("fl13t01","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("gorsta11")
+  Global("fl13t02","GLOBAL",9)
+THEN RESPONSE #100
+  GiveItemCreate("slng08","gorsta11",0,1,0)
+  SetGlobal("fl13t02","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("gorsta05")
+  Global("fl13t03","GLOBAL",9)
+THEN RESPONSE #100
+  GiveItemCreate("helm34","gorsta05",0,0,0)
+  SetGlobal("fl13t03","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("gorsta11")
+  Global("fl13t04","GLOBAL",9)
+THEN RESPONSE #100
+  GiveItemCreate("helm26","gorsta11",0,0,0)
+  SetGlobal("fl13t04","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("gorsta11")
+  Global("fl13t05","GLOBAL",9)
+THEN RESPONSE #100
+  GiveItemCreate("ring02","gorsta11",0,0,0)
+  SetGlobal("fl13t05","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("gorsta07")
+  Global("fl13t06","GLOBAL",9)
+THEN RESPONSE #100
+  GiveItemCreate("dagg23","gorsta07",0,0,0)
+  SetGlobal("fl13t06","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("gorsta05")
+  Global("fl13t07","GLOBAL",9)
+THEN RESPONSE #100
+  GiveItemCreate("dart08","gorsta05",0,0,0)
+  SetGlobal("fl13t07","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("gorsta09")
+  Global("fl13t08","GLOBAL",9)
+THEN RESPONSE #100
+  GiveItemCreate("staf23","gorsta09",0,0,0)
+  SetGlobal("fl13t08","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("gorsta03")
+  Global("fl13t09","GLOBAL",9)
+THEN RESPONSE #100
+  GiveItemCreate("boot12","gorsta03",2,0,0)
+  SetGlobal("fl13t09","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("gorsta11")
+  Global("fl13t10","GLOBAL",9)
+THEN RESPONSE #100
+  GiveItemCreate("wand18","gorsta11",5,5,0)
+  SetGlobal("fl13t10","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("gorsta11")
+  Global("fl13t11","GLOBAL",9)
+THEN RESPONSE #100
+  GiveItemCreate("wand18","gorsta11",5,5,0)
+  SetGlobal("fl13t11","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("gorsta07")
+  Global("fl13t12","GLOBAL",9)
+THEN RESPONSE #100
+  GiveItemCreate("helm31","gorsta07",0,0,0)
+  SetGlobal("fl13t12","GLOBAL",-1)
+  DestroySelf()
+END

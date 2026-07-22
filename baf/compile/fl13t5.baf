@@ -1,0 +1,108 @@
+
+IF
+  Exists("picture1")
+  Global("fl13t01","GLOBAL",5)
+THEN RESPONSE #100
+  ActionOverride("picture1",CreateItem("scrlb4",1,0,0))
+  SetGlobal("fl13t01","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("picture1")
+  Global("fl13t02","GLOBAL",5)
+THEN RESPONSE #100
+  ActionOverride("picture1",CreateItem("slng08",0,1,0))
+  SetGlobal("fl13t02","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("picture1")
+  Global("fl13t03","GLOBAL",5)
+THEN RESPONSE #100
+  ActionOverride("picture1",CreateItem("helm34",0,0,0))
+  SetGlobal("fl13t03","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("picture1")
+  Global("fl13t04","GLOBAL",5)
+THEN RESPONSE #100
+  ActionOverride("picture1",CreateItem("helm26",0,0,0))
+  SetGlobal("fl13t04","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("picture1")
+  Global("fl13t05","GLOBAL",5)
+THEN RESPONSE #100
+  ActionOverride("picture1",CreateItem("ring02",0,0,0))
+  SetGlobal("fl13t05","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("picture1")
+  Global("fl13t06","GLOBAL",5)
+THEN RESPONSE #100
+  ActionOverride("picture1",CreateItem("dagg23",0,0,0))
+  SetGlobal("fl13t06","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("picture1")
+  Global("fl13t07","GLOBAL",5)
+THEN RESPONSE #100
+  ActionOverride("picture1",CreateItem("dart08",0,0,0))
+  SetGlobal("fl13t07","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("picture1")
+  Global("fl13t08","GLOBAL",5)
+THEN RESPONSE #100
+  ActionOverride("picture1",CreateItem("staf23",0,0,0))
+  SetGlobal("fl13t08","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("picture1")
+  Global("fl13t09","GLOBAL",5)
+THEN RESPONSE #100
+  ActionOverride("picture1",CreateItem("boot12",2,0,0))
+  SetGlobal("fl13t09","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("picture1")
+  Global("fl13t10","GLOBAL",5)
+THEN RESPONSE #100
+  ActionOverride("picture1",CreateItem("wand18",5,5,0))
+  SetGlobal("fl13t10","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("picture1")
+  Global("fl13t11","GLOBAL",5)
+THEN RESPONSE #100
+  ActionOverride("picture1",CreateItem("wand18",5,5,0))
+  SetGlobal("fl13t11","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("picture1")
+  Global("fl13t12","GLOBAL",5)
+THEN RESPONSE #100
+  ActionOverride("picture1",CreateItem("helm31",0,0,0))
+  SetGlobal("fl13t12","GLOBAL",-1)
+  DestroySelf()
+END

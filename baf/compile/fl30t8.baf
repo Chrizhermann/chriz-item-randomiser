@@ -1,0 +1,81 @@
+
+IF
+  Exists("Andris")
+  Global("fl30t01","GLOBAL",8)
+THEN RESPONSE #100
+  GiveItemCreate("amul17","Andris",10,0,0)
+  SetGlobal("fl30t01","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Andris")
+  Global("fl30t02","GLOBAL",8)
+THEN RESPONSE #100
+  GiveItemCreate("blun11","Andris",0,0,0)
+  SetGlobal("fl30t02","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Andris")
+  Global("fl30t03","GLOBAL",8)
+THEN RESPONSE #100
+  GiveItemCreate("ring05","Andris",7,0,0)
+  SetGlobal("fl30t03","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Andris")
+  Global("fl30t05","GLOBAL",8)
+THEN RESPONSE #100
+  GiveItemCreate("leat09","Andris",0,0,0)
+  SetGlobal("fl30t05","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Andris")
+  Global("fl30t07","GLOBAL",8)
+THEN RESPONSE #100
+  GiveItemCreate("staf06","Andris",0,0,0)
+  SetGlobal("fl30t07","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Andris")
+  Global("fl30t08","GLOBAL",8)
+THEN RESPONSE #100
+  GiveItemCreate("sw1h23","Andris",0,0,0)
+  SetGlobal("fl30t08","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Andris")
+  Global("fl30t09","GLOBAL",8)
+THEN RESPONSE #100
+  GiveItemCreate("wand10","Andris",5,0,0)
+  SetGlobal("fl30t09","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Andris")
+  Global("fl30t10","GLOBAL",8)
+THEN RESPONSE #100
+  GiveItemCreate("wand10","Andris",6,0,0)
+  SetGlobal("fl30t10","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Andris")
+  Global("fl30t11","GLOBAL",8)
+THEN RESPONSE #100
+  GiveItemCreate("staf07","Andris",0,0,0)
+  SetGlobal("fl30t11","GLOBAL",-1)
+  DestroySelf()
+END

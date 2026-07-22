@@ -1,0 +1,162 @@
+
+IF
+  Exists("MUTAMIN")
+  Global("flsat01","GLOBAL",20)
+THEN RESPONSE #100
+  GiveItemCreate("scrl66","MUTAMIN",1,0,0)
+  SetGlobal("flsat01","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("MUTAMIN")
+  Global("flsat02","GLOBAL",20)
+THEN RESPONSE #100
+  GiveItemCreate("scrl66","MUTAMIN",1,0,0)
+  SetGlobal("flsat02","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("MUTAMIN")
+  Global("flsat03","GLOBAL",20)
+THEN RESPONSE #100
+  GiveItemCreate("scrl66","MUTAMIN",1,0,0)
+  SetGlobal("flsat03","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("MUTAMIN")
+  Global("flsat04","GLOBAL",20)
+THEN RESPONSE #100
+  GiveItemCreate("scrl66","MUTAMIN",1,0,0)
+  SetGlobal("flsat04","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("MUTAMIN")
+  Global("flsat05","GLOBAL",20)
+THEN RESPONSE #100
+  GiveItemCreate("scrl67","MUTAMIN",1,0,0)
+  SetGlobal("flsat05","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("MUTAMIN")
+  Global("flsat06","GLOBAL",20)
+THEN RESPONSE #100
+  GiveItemCreate("scrl67","MUTAMIN",1,0,0)
+  SetGlobal("flsat06","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("MUTAMIN")
+  Global("flsat07","GLOBAL",20)
+THEN RESPONSE #100
+  GiveItemCreate("scrl67","MUTAMIN",1,0,0)
+  SetGlobal("flsat07","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("MUTAMIN")
+  Global("flsat08","GLOBAL",20)
+THEN RESPONSE #100
+  GiveItemCreate("scrl67","MUTAMIN",1,0,0)
+  SetGlobal("flsat08","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("MUTAMIN")
+  Global("flsat09","GLOBAL",20)
+THEN RESPONSE #100
+  GiveItemCreate("scrl67","MUTAMIN",1,0,0)
+  SetGlobal("flsat09","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("MUTAMIN")
+  Global("flsat10","GLOBAL",20)
+THEN RESPONSE #100
+  GiveItemCreate("scrl68","MUTAMIN",1,0,0)
+  SetGlobal("flsat10","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("MUTAMIN")
+  Global("flsat11","GLOBAL",20)
+THEN RESPONSE #100
+  GiveItemCreate("scrl68","MUTAMIN",1,0,0)
+  SetGlobal("flsat11","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("MUTAMIN")
+  Global("flsat12","GLOBAL",20)
+THEN RESPONSE #100
+  GiveItemCreate("scrl68","MUTAMIN",1,0,0)
+  SetGlobal("flsat12","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("MUTAMIN")
+  Global("flsat13","GLOBAL",20)
+THEN RESPONSE #100
+  GiveItemCreate("scrl71","MUTAMIN",1,0,0)
+  SetGlobal("flsat13","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("MUTAMIN")
+  Global("flsat14","GLOBAL",20)
+THEN RESPONSE #100
+  GiveItemCreate("scrl71","MUTAMIN",1,0,0)
+  SetGlobal("flsat14","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("MUTAMIN")
+  Global("flsat15","GLOBAL",20)
+THEN RESPONSE #100
+  GiveItemCreate("scrl81","MUTAMIN",1,0,0)
+  SetGlobal("flsat15","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("MUTAMIN")
+  Global("flsat16","GLOBAL",20)
+THEN RESPONSE #100
+  GiveItemCreate("scrl81","MUTAMIN",1,0,0)
+  SetGlobal("flsat16","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("MUTAMIN")
+  Global("flsat18","GLOBAL",20)
+THEN RESPONSE #100
+  GiveItemCreate("scrl83","MUTAMIN",1,0,0)
+  SetGlobal("flsat18","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("MUTAMIN")
+  Global("flsat19","GLOBAL",20)
+THEN RESPONSE #100
+  GiveItemCreate("scrl83","MUTAMIN",1,0,0)
+  SetGlobal("flsat19","GLOBAL",-1)
+  DestroySelf()
+END

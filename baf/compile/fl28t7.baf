@@ -1,0 +1,117 @@
+
+IF
+  Exists("HASEO")
+  Global("fl28t01","GLOBAL",7)
+THEN RESPONSE #100
+  GiveItemCreate("book04","HASEO",1,0,0)
+  SetGlobal("fl28t01","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("SHALDRISSA")
+  Global("fl28t02","GLOBAL",7)
+THEN RESPONSE #100
+  GiveItemCreate("clck02","SHALDRISSA",0,0,0)
+  SetGlobal("fl28t02","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("RAHVIN")
+  Global("fl28t03","GLOBAL",7)
+THEN RESPONSE #100
+  GiveItemCreate("leat08","RAHVIN",0,0,0)
+  SetGlobal("fl28t03","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("WUDEI")
+  Global("fl28t04","GLOBAL",7)
+THEN RESPONSE #100
+  GiveItemCreate("helm06","WUDEI",0,0,0)
+  SetGlobal("fl28t04","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("RAHVIN")
+  Global("fl28t05","GLOBAL",7)
+THEN RESPONSE #100
+  GiveItemCreate("misc75","RAHVIN",0,0,0)
+  SetGlobal("fl28t05","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("SHALDRISSA")
+  Global("fl28t06","GLOBAL",7)
+THEN RESPONSE #100
+  GiveItemCreate("ring08_","SHALDRISSA",0,0,0)
+  SetGlobal("fl28t06","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("CARSTON")
+  Global("fl28t07","GLOBAL",7)
+THEN RESPONSE #100
+  GiveItemCreate("brac10","CARSTON",0,0,0)
+  SetGlobal("fl28t07","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("WUDEI")
+  Global("fl28t08","GLOBAL",7)
+THEN RESPONSE #100
+  GiveItemCreate("sw1h06","WUDEI",0,0,0)
+  SetGlobal("fl28t08","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("SHALDRISSA")
+  Global("fl28t09","GLOBAL",7)
+THEN RESPONSE #100
+  GiveItemCreate("wand04","SHALDRISSA",13,0,0)
+  SetGlobal("fl28t09","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("SHALDRISSA")
+  Global("fl28t10","GLOBAL",7)
+THEN RESPONSE #100
+  GiveItemCreate("wand10","SHALDRISSA",8,0,0)
+  SetGlobal("fl28t10","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("SHALDRISSA")
+  Global("fl28t11","GLOBAL",7)
+THEN RESPONSE #100
+  GiveItemCreate("wand10","SHALDRISSA",20,0,0)
+  SetGlobal("fl28t11","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("CARSTON")
+  Global("fl28t12","GLOBAL",7)
+THEN RESPONSE #100
+  GiveItemCreate("xbow06","CARSTON",0,0,0)
+  SetGlobal("fl28t12","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("CARSTON")
+  Global("fl28t13","GLOBAL",7)
+THEN RESPONSE #100
+  GiveItemCreate("ring07","CARSTON",0,0,0)
+  SetGlobal("fl28t13","GLOBAL",-1)
+  DestroySelf()
+END

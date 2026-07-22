@@ -1,0 +1,144 @@
+
+IF
+  Exists("Jalantha")
+  Global("fl25t01","GLOBAL",14)
+THEN RESPONSE #100
+  GiveItemCreate("amul15","Jalantha",10,0,0)
+  SetGlobal("fl25t01","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Jalantha")
+  Global("fl25t02","GLOBAL",14)
+THEN RESPONSE #100
+  GiveItemCreate("ax1h02","Jalantha",0,0,0)
+  SetGlobal("fl25t02","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Jalantha")
+  Global("fl25t03","GLOBAL",14)
+THEN RESPONSE #100
+  GiveItemCreate("blun03","Jalantha",0,0,0)
+  SetGlobal("fl25t03","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Jalantha")
+  Global("fl25t04","GLOBAL",14)
+THEN RESPONSE #100
+  GiveItemCreate("blun05","Jalantha",0,0,0)
+  SetGlobal("fl25t04","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Jalantha")
+  Global("fl25t05","GLOBAL",14)
+THEN RESPONSE #100
+  GiveItemCreate("bow02","Jalantha",0,0,0)
+  SetGlobal("fl25t05","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Jalantha")
+  Global("fl25t07","GLOBAL",14)
+THEN RESPONSE #100
+  GiveItemCreate("hamm02","Jalantha",0,0,0)
+  SetGlobal("fl25t07","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Jalantha")
+  Global("fl25t08","GLOBAL",14)
+THEN RESPONSE #100
+  GiveItemCreate("misc42","Jalantha",0,0,0)
+  SetGlobal("fl25t08","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Jalantha")
+  Global("fl25t09","GLOBAL",14)
+THEN RESPONSE #100
+  GiveItemCreate("sper03","Jalantha",0,0,0)
+  SetGlobal("fl25t09","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Jalantha")
+  Global("fl25t10","GLOBAL",14)
+THEN RESPONSE #100
+  GiveItemCreate("xbow03","Jalantha",0,0,0)
+  SetGlobal("fl25t10","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Jalantha")
+  Global("fl25t13","GLOBAL",14)
+THEN RESPONSE #100
+  GiveItemCreate("sw1h02","Jalantha",0,0,0)
+  SetGlobal("fl25t13","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Jalantha")
+  Global("fl25t14","GLOBAL",14)
+THEN RESPONSE #100
+  GiveItemCreate("sw1h05","Jalantha",0,0,0)
+  SetGlobal("fl25t14","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Jalantha")
+  Global("fl25t15","GLOBAL",14)
+THEN RESPONSE #100
+  GiveItemCreate("sw1h08","Jalantha",0,0,0)
+  SetGlobal("fl25t15","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Jalantha")
+  Global("fl25t16","GLOBAL",14)
+THEN RESPONSE #100
+  GiveItemCreate("wand07","Jalantha",6,0,0)
+  SetGlobal("fl25t16","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Jalantha")
+  Global("fl25t17","GLOBAL",14)
+THEN RESPONSE #100
+  GiveItemCreate("sw1h02","Jalantha",0,0,0)
+  SetGlobal("fl25t17","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Jalantha")
+  Global("fl25t18","GLOBAL",14)
+THEN RESPONSE #100
+  GiveItemCreate("hamm02","Jalantha",0,0,0)
+  SetGlobal("fl25t18","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Jalantha")
+  Global("fl25t19","GLOBAL",14)
+THEN RESPONSE #100
+  GiveItemCreate("staf02","Jalantha",0,0,0)
+  SetGlobal("fl25t19","GLOBAL",-1)
+  DestroySelf()
+END

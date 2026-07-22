@@ -1,0 +1,207 @@
+
+IF
+  Exists("pirsea03")
+  Global("fls5t01","GLOBAL",22)
+THEN RESPONSE #100
+  GiveItemCreate("scrl7d","pirsea03",1,1,0)
+  SetGlobal("fls5t01","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("pirsea03")
+  Global("fls5t02","GLOBAL",22)
+THEN RESPONSE #100
+  GiveItemCreate("scrl7d","pirsea03",1,0,0)
+  SetGlobal("fls5t02","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("pirsea03")
+  Global("fls5t03","GLOBAL",22)
+THEN RESPONSE #100
+  GiveItemCreate("scrl6z","pirsea03",1,0,0)
+  SetGlobal("fls5t03","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("pirsea03")
+  Global("fls5t04","GLOBAL",22)
+THEN RESPONSE #100
+  GiveItemCreate("scrl6z","pirsea03",1,1,0)
+  SetGlobal("fls5t04","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("pirsea03")
+  Global("fls5t05","GLOBAL",22)
+THEN RESPONSE #100
+  GiveItemCreate("scrl6y","pirsea03",1,0,0)
+  SetGlobal("fls5t05","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("pirsea03")
+  Global("fls5t06","GLOBAL",22)
+THEN RESPONSE #100
+  GiveItemCreate("scrl2e","pirsea03",1,0,0)
+  SetGlobal("fls5t06","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("pirsea03")
+  Global("fls5t07","GLOBAL",22)
+THEN RESPONSE #100
+  GiveItemCreate("scrl2f","pirsea03",1,0,0)
+  SetGlobal("fls5t07","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("pirsea03")
+  Global("fls5t08","GLOBAL",22)
+THEN RESPONSE #100
+  GiveItemCreate("scrl2f","pirsea03",1,0,0)
+  SetGlobal("fls5t08","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("pirsea03")
+  Global("fls5t09","GLOBAL",22)
+THEN RESPONSE #100
+  GiveItemCreate("scrl5o","pirsea03",1,0,0)
+  SetGlobal("fls5t09","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("pirsea03")
+  Global("fls5t10","GLOBAL",22)
+THEN RESPONSE #100
+  GiveItemCreate("scrl5n","pirsea03",1,0,0)
+  SetGlobal("fls5t10","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("pirsea03")
+  Global("fls5t11","GLOBAL",22)
+THEN RESPONSE #100
+  GiveItemCreate("scrl2d","pirsea03",1,0,0)
+  SetGlobal("fls5t11","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("pirsea03")
+  Global("fls5t12","GLOBAL",22)
+THEN RESPONSE #100
+  GiveItemCreate("scrl6u","pirsea03",1,1,0)
+  SetGlobal("fls5t12","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("pirsea03")
+  Global("fls5t13","GLOBAL",22)
+THEN RESPONSE #100
+  GiveItemCreate("scrl6u","pirsea03",1,1,0)
+  SetGlobal("fls5t13","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("pirsea03")
+  Global("fls5t14","GLOBAL",22)
+THEN RESPONSE #100
+  GiveItemCreate("scrl6u","pirsea03",1,0,0)
+  SetGlobal("fls5t14","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("pirsea03")
+  Global("fls5t15","GLOBAL",22)
+THEN RESPONSE #100
+  GiveItemCreate("scrl6u","pirsea03",1,0,0)
+  SetGlobal("fls5t15","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("pirsea03")
+  Global("fls5t16","GLOBAL",22)
+THEN RESPONSE #100
+  GiveItemCreate("scrl6u","pirsea03",1,1,0)
+  SetGlobal("fls5t16","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("pirsea03")
+  Global("fls5t17","GLOBAL",22)
+THEN RESPONSE #100
+  GiveItemCreate("scrl6v","pirsea03",1,0,0)
+  SetGlobal("fls5t17","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("pirsea03")
+  Global("fls5t18","GLOBAL",22)
+THEN RESPONSE #100
+  GiveItemCreate("scrl6s","pirsea03",1,0,0)
+  SetGlobal("fls5t18","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("pirsea03")
+  Global("fls5t19","GLOBAL",22)
+THEN RESPONSE #100
+  GiveItemCreate("scrl6q","pirsea03",1,0,0)
+  SetGlobal("fls5t19","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("pirsea03")
+  Global("fls5t20","GLOBAL",22)
+THEN RESPONSE #100
+  GiveItemCreate("scrl5p","pirsea03",1,0,0)
+  SetGlobal("fls5t20","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("pirsea03")
+  Global("fls5t21","GLOBAL",22)
+THEN RESPONSE #100
+  GiveItemCreate("scrlal","pirsea03",1,1,0)
+  SetGlobal("fls5t21","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("pirsea03")
+  Global("fls5t22","GLOBAL",22)
+THEN RESPONSE #100
+  GiveItemCreate("scrlal","pirsea03",1,1,0)
+  SetGlobal("fls5t22","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("pirsea03")
+  Global("fls5tx0","GLOBAL",22)
+THEN RESPONSE #100
+  GiveItemCreate("scrlal","pirsea03",0,0,0)
+  SetGlobal("fls5tx0","GLOBAL",-1)
+  DestroySelf()
+END

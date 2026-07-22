@@ -1,0 +1,171 @@
+
+IF
+  Exists("krystin")
+  Global("fl27t01","GLOBAL",17)
+THEN RESPONSE #100
+  GiveItemCreate("amul01","krystin",10,0,0)
+  SetGlobal("fl27t01","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("krystin")
+  Global("fl27t02","GLOBAL",17)
+THEN RESPONSE #100
+  GiveItemCreate("book05","krystin",1,0,0)
+  SetGlobal("fl27t02","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("krystin")
+  Global("fl27t03","GLOBAL",17)
+THEN RESPONSE #100
+  GiveItemCreate("book06","krystin",1,0,0)
+  SetGlobal("fl27t03","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Slythe")
+  Global("fl27t04","GLOBAL",17)
+THEN RESPONSE #100
+  GiveItemCreate("book08","Slythe",1,0,0)
+  SetGlobal("fl27t04","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Slythe")
+  Global("fl27t05","GLOBAL",17)
+THEN RESPONSE #100
+  GiveItemCreate("clck15","Slythe",0,0,0)
+  SetGlobal("fl27t05","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Slythe")
+  Global("fl27t06","GLOBAL",17)
+THEN RESPONSE #100
+  GiveItemCreate("clck16","Slythe",0,0,0)
+  SetGlobal("fl27t06","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("krystin")
+  Global("fl27t07","GLOBAL",17)
+THEN RESPONSE #100
+  GiveItemCreate("clck17","krystin",0,0,0)
+  SetGlobal("fl27t07","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Slythe")
+  Global("fl27t09","GLOBAL",17)
+THEN RESPONSE #100
+  GiveItemCreate("ring02","Slythe",0,0,0)
+  SetGlobal("fl27t09","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Slythe")
+  Global("fl27t10","GLOBAL",17)
+THEN RESPONSE #100
+  GiveItemCreate("sw1h09","Slythe",0,0,0)
+  SetGlobal("fl27t10","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("krystin")
+  Global("fl27t11","GLOBAL",17)
+THEN RESPONSE #100
+  GiveItemCreate("wand06","krystin",12,0,0)
+  SetGlobal("fl27t11","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("krystin")
+  Global("fl27t12","GLOBAL",17)
+THEN RESPONSE #100
+  GiveItemCreate("wand06","krystin",10,0,0)
+  SetGlobal("fl27t12","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Slythe")
+  Global("fl27t13","GLOBAL",17)
+THEN RESPONSE #100
+  GiveItemCreate("wand11","Slythe",20,0,0)
+  SetGlobal("fl27t13","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("krystin")
+  Global("fl27t14","GLOBAL",17)
+THEN RESPONSE #100
+  GiveItemCreate("plat05","krystin",0,0,0)
+  SetGlobal("fl27t14","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("krystin")
+  Global("fl27t15","GLOBAL",17)
+THEN RESPONSE #100
+  GiveItemCreate("brac06","krystin",0,0,0)
+  SetGlobal("fl27t15","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("krystin")
+  Global("fl27t16","GLOBAL",17)
+THEN RESPONSE #100
+  GiveItemCreate("amul16","krystin",0,0,0)
+  SetGlobal("fl27t16","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("krystin")
+  Global("fl27t17","GLOBAL",17)
+THEN RESPONSE #100
+  GiveItemCreate("ring22","krystin",20,0,0)
+  SetGlobal("fl27t17","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Slythe")
+  Global("fl27t18","GLOBAL",17)
+THEN RESPONSE #100
+  GiveItemCreate("dagg04","Slythe",0,0,0)
+  SetGlobal("fl27t18","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Slythe")
+  Global("fl27t19","GLOBAL",17)
+THEN RESPONSE #100
+  GiveItemCreate("plat04","Slythe",0,0,0)
+  SetGlobal("fl27t19","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("krystin")
+  Global("fl27t20","GLOBAL",17)
+THEN RESPONSE #100
+  GiveItemCreate("ring02","krystin",0,0,0)
+  SetGlobal("fl27t20","GLOBAL",-1)
+  DestroySelf()
+END

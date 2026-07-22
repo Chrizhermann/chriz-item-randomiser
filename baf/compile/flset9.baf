@@ -1,0 +1,135 @@
+
+IF
+  Exists("Cythan")
+  Global("flset01","GLOBAL",9)
+THEN RESPONSE #100
+  GiveItemCreate("scrl2d","Cythan",1,1,0)
+  SetGlobal("flset01","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Cythan")
+  Global("flset02","GLOBAL",9)
+THEN RESPONSE #100
+  GiveItemCreate("scrl2f","Cythan",1,1,0)
+  SetGlobal("flset02","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Cythan")
+  Global("flset03","GLOBAL",9)
+THEN RESPONSE #100
+  GiveItemCreate("scrl2h","Cythan",1,1,0)
+  SetGlobal("flset03","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Cythan")
+  Global("flset04","GLOBAL",9)
+THEN RESPONSE #100
+  GiveItemCreate("scrl2e","Cythan",1,0,0)
+  SetGlobal("flset04","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Cythan")
+  Global("flset05","GLOBAL",9)
+THEN RESPONSE #100
+  GiveItemCreate("scrl2e","Cythan",1,0,0)
+  SetGlobal("flset05","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Cythan")
+  Global("flset06","GLOBAL",9)
+THEN RESPONSE #100
+  GiveItemCreate("scrl2e","Cythan",1,0,0)
+  SetGlobal("flset06","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Cythan")
+  Global("flset07","GLOBAL",9)
+THEN RESPONSE #100
+  GiveItemCreate("scrl2g","Cythan",1,0,0)
+  SetGlobal("flset07","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Cythan")
+  Global("flset08","GLOBAL",9)
+THEN RESPONSE #100
+  GiveItemCreate("scrl5n","Cythan",1,0,0)
+  SetGlobal("flset08","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Cythan")
+  Global("flset09","GLOBAL",9)
+THEN RESPONSE #100
+  GiveItemCreate("scrl5n","Cythan",1,0,0)
+  SetGlobal("flset09","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Cythan")
+  Global("flset10","GLOBAL",9)
+THEN RESPONSE #100
+  GiveItemCreate("scrl5o","Cythan",1,0,0)
+  SetGlobal("flset10","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Cythan")
+  Global("flset11","GLOBAL",9)
+THEN RESPONSE #100
+  GiveItemCreate("scrl5o","Cythan",1,0,0)
+  SetGlobal("flset11","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Cythan")
+  Global("flset12","GLOBAL",9)
+THEN RESPONSE #100
+  GiveItemCreate("scrl5p","Cythan",1,0,0)
+  SetGlobal("flset12","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Cythan")
+  Global("flset13","GLOBAL",9)
+THEN RESPONSE #100
+  GiveItemCreate("scrl5p","Cythan",1,0,0)
+  SetGlobal("flset13","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Cythan")
+  Global("flset14","GLOBAL",9)
+THEN RESPONSE #100
+  GiveItemCreate("scrl5p","Cythan",1,0,0)
+  SetGlobal("flset14","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("Cythan")
+  Global("flset15","GLOBAL",9)
+THEN RESPONSE #100
+  GiveItemCreate("scrl5q","Cythan",1,0,0)
+  SetGlobal("flset15","GLOBAL",-1)
+  DestroySelf()
+END

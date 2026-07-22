@@ -1,0 +1,117 @@
+
+IF
+  Exists("NAAMAN")
+  Global("fl28t01","GLOBAL",10)
+THEN RESPONSE #100
+  GiveItemCreate("book04","NAAMAN",1,0,0)
+  SetGlobal("fl28t01","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("ZHALIMAR")
+  Global("fl28t02","GLOBAL",10)
+THEN RESPONSE #100
+  GiveItemCreate("clck02","ZHALIMAR",0,0,0)
+  SetGlobal("fl28t02","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("DIYAB")
+  Global("fl28t03","GLOBAL",10)
+THEN RESPONSE #100
+  GiveItemCreate("leat08","DIYAB",0,0,0)
+  SetGlobal("fl28t03","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("DIYAB")
+  Global("fl28t04","GLOBAL",10)
+THEN RESPONSE #100
+  GiveItemCreate("helm06","DIYAB",0,0,0)
+  SetGlobal("fl28t04","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("ALAI")
+  Global("fl28t05","GLOBAL",10)
+THEN RESPONSE #100
+  GiveItemCreate("misc75","ALAI",0,0,0)
+  SetGlobal("fl28t05","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("NAAMAN")
+  Global("fl28t06","GLOBAL",10)
+THEN RESPONSE #100
+  GiveItemCreate("ring08_","NAAMAN",0,0,0)
+  SetGlobal("fl28t06","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("NAAMAN")
+  Global("fl28t07","GLOBAL",10)
+THEN RESPONSE #100
+  GiveItemCreate("brac10","NAAMAN",0,0,0)
+  SetGlobal("fl28t07","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("DIYAB")
+  Global("fl28t08","GLOBAL",10)
+THEN RESPONSE #100
+  GiveItemCreate("sw1h06","DIYAB",0,0,0)
+  SetGlobal("fl28t08","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("ALAI")
+  Global("fl28t09","GLOBAL",10)
+THEN RESPONSE #100
+  GiveItemCreate("wand04","ALAI",13,0,0)
+  SetGlobal("fl28t09","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("NAAMAN")
+  Global("fl28t10","GLOBAL",10)
+THEN RESPONSE #100
+  GiveItemCreate("wand10","NAAMAN",8,0,0)
+  SetGlobal("fl28t10","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("ALAI")
+  Global("fl28t11","GLOBAL",10)
+THEN RESPONSE #100
+  GiveItemCreate("wand10","ALAI",20,0,0)
+  SetGlobal("fl28t11","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("ALAI")
+  Global("fl28t12","GLOBAL",10)
+THEN RESPONSE #100
+  GiveItemCreate("xbow06","ALAI",0,0,0)
+  SetGlobal("fl28t12","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("DIYAB")
+  Global("fl28t13","GLOBAL",10)
+THEN RESPONSE #100
+  GiveItemCreate("ring07","DIYAB",0,0,0)
+  SetGlobal("fl28t13","GLOBAL",-1)
+  DestroySelf()
+END

@@ -1,0 +1,54 @@
+
+IF
+  Exists("hllayen")
+  Global("fls9t01","GLOBAL",6)
+THEN RESPONSE #100
+  GiveItemCreate("scrl9t","hllayen",1,1,0)
+  SetGlobal("fls9t01","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("hlshang")
+  Global("fls9t02","GLOBAL",6)
+THEN RESPONSE #100
+  GiveItemCreate("scrl9s","hlshang",1,1,0)
+  SetGlobal("fls9t02","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("hllayen")
+  Global("fls9t03","GLOBAL",6)
+THEN RESPONSE #100
+  GiveItemCreate("scrl9r","hllayen",1,1,0)
+  SetGlobal("fls9t03","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("hlshang")
+  Global("fls9t04","GLOBAL",6)
+THEN RESPONSE #100
+  GiveItemCreate("scrl9r","hlshang",1,1,0)
+  SetGlobal("fls9t04","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("hlshang")
+  Global("fls9t05","GLOBAL",6)
+THEN RESPONSE #100
+  GiveItemCreate("scrl9p","hlshang",1,1,0)
+  SetGlobal("fls9t05","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("hllayen")
+  Global("fls9t06","GLOBAL",6)
+THEN RESPONSE #100
+  GiveItemCreate("scrl9n","hllayen",1,1,0)
+  SetGlobal("fls9t06","GLOBAL",-1)
+  DestroySelf()
+END

@@ -1,0 +1,153 @@
+
+IF
+  Exists("SHALDRISSA")
+  Global("flsdt01","GLOBAL",18)
+THEN RESPONSE #100
+  GiveItemCreate("scrl1u","SHALDRISSA",1,0,0)
+  SetGlobal("flsdt01","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("SHALDRISSA")
+  Global("flsdt02","GLOBAL",18)
+THEN RESPONSE #100
+  GiveItemCreate("scrl1u","SHALDRISSA",1,0,0)
+  SetGlobal("flsdt02","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("SHALDRISSA")
+  Global("flsdt03","GLOBAL",18)
+THEN RESPONSE #100
+  GiveItemCreate("scrl1u","SHALDRISSA",1,0,0)
+  SetGlobal("flsdt03","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("SHALDRISSA")
+  Global("flsdt07","GLOBAL",18)
+THEN RESPONSE #100
+  GiveItemCreate("scrl5l","SHALDRISSA",1,1,0)
+  SetGlobal("flsdt07","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("SHALDRISSA")
+  Global("flsdt08","GLOBAL",18)
+THEN RESPONSE #100
+  GiveItemCreate("scrl1z","SHALDRISSA",1,0,0)
+  SetGlobal("flsdt08","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("SHALDRISSA")
+  Global("flsdt09","GLOBAL",18)
+THEN RESPONSE #100
+  GiveItemCreate("scrl1z","SHALDRISSA",1,0,0)
+  SetGlobal("flsdt09","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("SHALDRISSA")
+  Global("flsdt10","GLOBAL",18)
+THEN RESPONSE #100
+  GiveItemCreate("scrl2a","SHALDRISSA",1,0,0)
+  SetGlobal("flsdt10","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("SHALDRISSA")
+  Global("flsdt11","GLOBAL",18)
+THEN RESPONSE #100
+  GiveItemCreate("scrl2a","SHALDRISSA",1,0,0)
+  SetGlobal("flsdt11","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("SHALDRISSA")
+  Global("flsdt12","GLOBAL",18)
+THEN RESPONSE #100
+  GiveItemCreate("scrl2a","SHALDRISSA",1,0,0)
+  SetGlobal("flsdt12","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("SHALDRISSA")
+  Global("flsdt13","GLOBAL",18)
+THEN RESPONSE #100
+  GiveItemCreate("scrl5g","SHALDRISSA",1,0,0)
+  SetGlobal("flsdt13","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("SHALDRISSA")
+  Global("flsdt14","GLOBAL",18)
+THEN RESPONSE #100
+  GiveItemCreate("scrl5g","SHALDRISSA",1,0,0)
+  SetGlobal("flsdt14","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("SHALDRISSA")
+  Global("flsdt15","GLOBAL",18)
+THEN RESPONSE #100
+  GiveItemCreate("scrl5h","SHALDRISSA",1,0,0)
+  SetGlobal("flsdt15","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("SHALDRISSA")
+  Global("flsdt16","GLOBAL",18)
+THEN RESPONSE #100
+  GiveItemCreate("scrl5h","SHALDRISSA",1,0,0)
+  SetGlobal("flsdt16","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("SHALDRISSA")
+  Global("flsdt17","GLOBAL",18)
+THEN RESPONSE #100
+  GiveItemCreate("scrl5i","SHALDRISSA",1,0,0)
+  SetGlobal("flsdt17","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("SHALDRISSA")
+  Global("flsdt18","GLOBAL",18)
+THEN RESPONSE #100
+  GiveItemCreate("scrl5j","SHALDRISSA",1,0,0)
+  SetGlobal("flsdt18","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("SHALDRISSA")
+  Global("flsdt19","GLOBAL",18)
+THEN RESPONSE #100
+  GiveItemCreate("scrl5k","SHALDRISSA",1,0,0)
+  SetGlobal("flsdt19","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("SHALDRISSA")
+  Global("flsdt20","GLOBAL",18)
+THEN RESPONSE #100
+  GiveItemCreate("scrl5m","SHALDRISSA",1,0,0)
+  SetGlobal("flsdt20","GLOBAL",-1)
+  DestroySelf()
+END

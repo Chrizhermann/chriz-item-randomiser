@@ -1,0 +1,180 @@
+
+IF
+  Exists("ZAL")
+  Global("fl26t01","GLOBAL",20)
+THEN RESPONSE #100
+  GiveItemCreate("amul14","ZAL",0,0,0)
+  SetGlobal("fl26t01","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("ZAL")
+  Global("fl26t02","GLOBAL",20)
+THEN RESPONSE #100
+  GiveItemCreate("book07","ZAL",1,0,0)
+  SetGlobal("fl26t02","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("ZAL")
+  Global("fl26t03","GLOBAL",20)
+THEN RESPONSE #100
+  GiveItemCreate("brac07","ZAL",0,0,0)
+  SetGlobal("fl26t03","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("ZAL")
+  Global("fl26t04","GLOBAL",20)
+THEN RESPONSE #100
+  GiveItemCreate("brac08","ZAL",0,0,0)
+  SetGlobal("fl26t04","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("ZAL")
+  Global("fl26t05","GLOBAL",20)
+THEN RESPONSE #100
+  GiveItemCreate("misc41","ZAL",0,0,0)
+  SetGlobal("fl26t05","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("ZAL")
+  Global("fl26t06","GLOBAL",20)
+THEN RESPONSE #100
+  GiveItemCreate("ring04","ZAL",0,0,0)
+  SetGlobal("fl26t06","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("ZAL")
+  Global("fl26t07","GLOBAL",20)
+THEN RESPONSE #100
+  GiveItemCreate("leat07","ZAL",0,0,0)
+  SetGlobal("fl26t07","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("ZAL")
+  Global("fl26t08","GLOBAL",20)
+THEN RESPONSE #100
+  GiveItemCreate("scrl09","ZAL",1,0,0)
+  SetGlobal("fl26t08","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("ZAL")
+  Global("fl26t09","GLOBAL",20)
+THEN RESPONSE #100
+  GiveItemCreate("clck01","ZAL",0,0,0)
+  SetGlobal("fl26t09","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("ZAL")
+  Global("fl26t10","GLOBAL",20)
+THEN RESPONSE #100
+  GiveItemCreate("wand05","ZAL",8,8,0)
+  SetGlobal("fl26t10","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("ZAL")
+  Global("fl26t11","GLOBAL",20)
+THEN RESPONSE #100
+  GiveItemCreate("wand05","ZAL",12,12,0)
+  SetGlobal("fl26t11","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("ZAL")
+  Global("fl26t12","GLOBAL",20)
+THEN RESPONSE #100
+  GiveItemCreate("wand05","ZAL",16,16,0)
+  SetGlobal("fl26t12","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("ZAL")
+  Global("fl26t13","GLOBAL",20)
+THEN RESPONSE #100
+  GiveItemCreate("ring06","ZAL",0,0,0)
+  SetGlobal("fl26t13","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("ZAL")
+  Global("fl26t14","GLOBAL",20)
+THEN RESPONSE #100
+  GiveItemCreate("belt04","ZAL",0,0,0)
+  SetGlobal("fl26t14","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("ZAL")
+  Global("fl26t15","GLOBAL",20)
+THEN RESPONSE #100
+  GiveItemCreate("belt02","ZAL",0,0,0)
+  SetGlobal("fl26t15","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("ZAL")
+  Global("fl26t16","GLOBAL",20)
+THEN RESPONSE #100
+  GiveItemCreate("boot01","ZAL",0,0,0)
+  SetGlobal("fl26t16","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("ZAL")
+  Global("fl26t17","GLOBAL",20)
+THEN RESPONSE #100
+  GiveItemCreate("belt03","ZAL",0,0,0)
+  SetGlobal("fl26t17","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("ZAL")
+  Global("fl26t18","GLOBAL",20)
+THEN RESPONSE #100
+  GiveItemCreate("boot05","ZAL",0,0,0)
+  SetGlobal("fl26t18","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("ZAL")
+  Global("fl26t19","GLOBAL",20)
+THEN RESPONSE #100
+  GiveItemCreate("brac03","ZAL",0,0,0)
+  SetGlobal("fl26t19","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("ZAL")
+  Global("fl26t20","GLOBAL",20)
+THEN RESPONSE #100
+  GiveItemCreate("brac04","ZAL",0,0,0)
+  SetGlobal("fl26t20","GLOBAL",-1)
+  DestroySelf()
+END

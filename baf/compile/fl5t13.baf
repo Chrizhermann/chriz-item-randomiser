@@ -1,0 +1,126 @@
+
+IF
+  Exists("obshal06")
+  Global("fl5t01","GLOBAL",13)
+THEN RESPONSE #100
+  GiveItemCreate("ring27","obshal06",1,1,1)
+  SetGlobal("fl5t01","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("obshal03")
+  Global("fl5t02","GLOBAL",13)
+THEN RESPONSE #100
+  GiveItemCreate("blun12","obshal03",0,0,0)
+  SetGlobal("fl5t02","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("obshal05")
+  Global("fl5t03","GLOBAL",13)
+THEN RESPONSE #100
+  GiveItemCreate("bow13","obshal05",0,0,0)
+  SetGlobal("fl5t03","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("obshal06")
+  Global("fl5t04","GLOBAL",13)
+THEN RESPONSE #100
+  GiveItemCreate("xbow06","obshal06",0,0,0)
+  SetGlobal("fl5t04","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("obshal03")
+  Global("fl5t05","GLOBAL",13)
+THEN RESPONSE #100
+  GiveItemCreate("belt10","obshal03",0,0,0)
+  SetGlobal("fl5t05","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("obshal02")
+  Global("fl5t07","GLOBAL",13)
+THEN RESPONSE #100
+  GiveItemCreate("bow10","obshal02",0,1,0)
+  SetGlobal("fl5t07","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("obshal06")
+  Global("fl5t08","GLOBAL",13)
+THEN RESPONSE #100
+  GiveItemCreate("helm07","obshal06",0,0,0)
+  SetGlobal("fl5t08","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("obshal01")
+  Global("fl5t09","GLOBAL",13)
+THEN RESPONSE #100
+  GiveItemCreate("belt07","obshal01",0,0,0)
+  SetGlobal("fl5t09","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("pries18a")
+  Global("fl5t10","GLOBAL",13)
+THEN RESPONSE #100
+  GiveItemCreate("clck02","pries18a",0,0,0)
+  SetGlobal("fl5t10","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("obshal03")
+  Global("fl5t11","GLOBAL",13)
+THEN RESPONSE #100
+  GiveItemCreate("leat20","obshal03",1,0,0)
+  SetGlobal("fl5t11","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("obshal06")
+  Global("fl5t12","GLOBAL",13)
+THEN RESPONSE #100
+  GiveItemCreate("ring23","obshal06",0,0,0)
+  SetGlobal("fl5t12","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("obshal06")
+  Global("fl5t13","GLOBAL",13)
+THEN RESPONSE #100
+  GiveItemCreate("bow15","obshal06",0,0,0)
+  SetGlobal("fl5t13","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("obshal01")
+  Global("fl5t14","GLOBAL",13)
+THEN RESPONSE #100
+  GiveItemCreate("hamm07","obshal01",0,0,0)
+  SetGlobal("fl5t14","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("obshal05")
+  Global("fl5t16","GLOBAL",13)
+THEN RESPONSE #100
+  GiveItemCreate("slng06","obshal05",0,1,0)
+  SetGlobal("fl5t16","GLOBAL",-1)
+  DestroySelf()
+END

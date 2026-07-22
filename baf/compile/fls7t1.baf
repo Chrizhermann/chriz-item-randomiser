@@ -1,0 +1,108 @@
+
+IF
+  Exists("shelf1")
+  Global("fls7t01","GLOBAL",1)
+THEN RESPONSE #100
+  ActionOverride("shelf1",CreateItem("scrl8q",1,0,0))
+  SetGlobal("fls7t01","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("shelf1")
+  Global("fls7t02","GLOBAL",1)
+THEN RESPONSE #100
+  ActionOverride("shelf1",CreateItem("scrl8p",1,0,0))
+  SetGlobal("fls7t02","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("shelf1")
+  Global("fls7t03","GLOBAL",1)
+THEN RESPONSE #100
+  ActionOverride("shelf1",CreateItem("scrl8o",1,1,0))
+  SetGlobal("fls7t03","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("shelf1")
+  Global("fls7t04","GLOBAL",1)
+THEN RESPONSE #100
+  ActionOverride("shelf1",CreateItem("scrl8o",1,0,0))
+  SetGlobal("fls7t04","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("shelf1")
+  Global("fls7t05","GLOBAL",1)
+THEN RESPONSE #100
+  ActionOverride("shelf1",CreateItem("scrl8n",1,0,0))
+  SetGlobal("fls7t05","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("shelf1")
+  Global("fls7t06","GLOBAL",1)
+THEN RESPONSE #100
+  ActionOverride("shelf1",CreateItem("scrl8i",1,1,0))
+  SetGlobal("fls7t06","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("shelf1")
+  Global("fls7t07","GLOBAL",1)
+THEN RESPONSE #100
+  ActionOverride("shelf1",CreateItem("scrl8h",1,1,0))
+  SetGlobal("fls7t07","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("shelf1")
+  Global("fls7t08","GLOBAL",1)
+THEN RESPONSE #100
+  ActionOverride("shelf1",CreateItem("scrl8g",1,1,0))
+  SetGlobal("fls7t08","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("shelf1")
+  Global("fls7t09","GLOBAL",1)
+THEN RESPONSE #100
+  ActionOverride("shelf1",CreateItem("scrl8f",1,0,0))
+  SetGlobal("fls7t09","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("shelf1")
+  Global("fls7t10","GLOBAL",1)
+THEN RESPONSE #100
+  ActionOverride("shelf1",CreateItem("scrl8e",1,1,0))
+  SetGlobal("fls7t10","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("shelf1")
+  Global("fls7t11","GLOBAL",1)
+THEN RESPONSE #100
+  ActionOverride("shelf1",CreateItem("scrl8h",1,1,0))
+  SetGlobal("fls7t11","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("shelf1")
+  Global("fls7t12","GLOBAL",1)
+THEN RESPONSE #100
+  ActionOverride("shelf1",CreateItem("scrl8o",1,1,0))
+  SetGlobal("fls7t12","GLOBAL",-1)
+  DestroySelf()
+END

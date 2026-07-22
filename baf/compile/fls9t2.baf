@@ -1,0 +1,54 @@
+
+IF
+  Exists("ar18Mage")
+  Global("fls9t01","GLOBAL",2)
+THEN RESPONSE #100
+  GiveItemCreate("scrl9t","ar18Mage",1,1,0)
+  SetGlobal("fls9t01","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("ar18Mage")
+  Global("fls9t02","GLOBAL",2)
+THEN RESPONSE #100
+  GiveItemCreate("scrl9s","ar18Mage",1,1,0)
+  SetGlobal("fls9t02","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("ar18Mage")
+  Global("fls9t03","GLOBAL",2)
+THEN RESPONSE #100
+  GiveItemCreate("scrl9r","ar18Mage",1,1,0)
+  SetGlobal("fls9t03","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("ar18Mage")
+  Global("fls9t04","GLOBAL",2)
+THEN RESPONSE #100
+  GiveItemCreate("scrl9r","ar18Mage",1,1,0)
+  SetGlobal("fls9t04","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("ar18Mage")
+  Global("fls9t05","GLOBAL",2)
+THEN RESPONSE #100
+  GiveItemCreate("scrl9p","ar18Mage",1,1,0)
+  SetGlobal("fls9t05","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("ar18Mage")
+  Global("fls9t06","GLOBAL",2)
+THEN RESPONSE #100
+  GiveItemCreate("scrl9n","ar18Mage",1,1,0)
+  SetGlobal("fls9t06","GLOBAL",-1)
+  DestroySelf()
+END

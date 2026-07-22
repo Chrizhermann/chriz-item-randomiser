@@ -1,0 +1,37 @@
+IF
+  Global("flSqueaked","GLOBAL",0)
+  Global("flToBC","LOCALS",0)
+THEN
+  RESPONSE #100
+    SetGlobal("flToBC","LOCALS",1)
+    CreateCreatureImpassable("fltier10",[-1.-1],0)
+    CreateCreatureImpassable("fltier10",[-1.-1],0)
+    CreateCreatureImpassable("fltier10",[-1.-1],0)
+    CreateCreatureImpassable("fltier11",[-1.-1],0)
+    CreateCreatureImpassable("fltier11",[-1.-1],0)
+    CreateCreatureImpassable("fltier12",[-1.-1],0)
+    CreateCreatureImpassable("fltier12",[-1.-1],0)
+    CreateCreatureImpassable("fltier12",[-1.-1],0)
+    CreateCreatureImpassable("fltier13",[-1.-1],0)
+    CreateCreatureImpassable("fltier13",[-1.-1],0)
+END
+
+IF
+  Global("fl10tDone","GLOBAL",1)
+  Global("fl11tDone","GLOBAL",1)
+  Global("fl12tDone","GLOBAL",1)
+  Global("fl13tDone","GLOBAL",1)
+  Global("flSqueaked","GLOBAL",0)
+THEN
+  RESPONSE #100
+    SetGlobal("flSqueaked","GLOBAL",1)
+    DisplayString(Myself,~Squeak!~)
+    DestroySelf()
+END
+
+IF
+  Global("flSqueaked","GLOBAL",1)
+THEN
+  RESPONSE #100
+    DestroySelf()
+END

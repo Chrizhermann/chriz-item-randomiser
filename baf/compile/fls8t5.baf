@@ -1,0 +1,63 @@
+
+IF
+  Exists("gpmage1")
+  Global("fls8t01","GLOBAL",5)
+THEN RESPONSE #100
+  GiveItemCreate("scrl9h","gpmage1",1,0,0)
+  SetGlobal("fls8t01","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("gpmage1")
+  Global("fls8t02","GLOBAL",5)
+THEN RESPONSE #100
+  GiveItemCreate("scrl9g","gpmage1",1,1,0)
+  SetGlobal("fls8t02","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("gpmage1")
+  Global("fls8t03","GLOBAL",5)
+THEN RESPONSE #100
+  GiveItemCreate("scrl9g","gpmage1",1,1,0)
+  SetGlobal("fls8t03","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("gpmage1")
+  Global("fls8t04","GLOBAL",5)
+THEN RESPONSE #100
+  GiveItemCreate("scrl9f","gpmage1",1,1,0)
+  SetGlobal("fls8t04","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("gpmage1")
+  Global("fls8t05","GLOBAL",5)
+THEN RESPONSE #100
+  GiveItemCreate("scrl9d","gpmage1",1,1,0)
+  SetGlobal("fls8t05","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("gpmage1")
+  Global("fls8t06","GLOBAL",5)
+THEN RESPONSE #100
+  GiveItemCreate("scrl8z","gpmage1",1,0,0)
+  SetGlobal("fls8t06","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("gpmage1")
+  Global("fls8t07","GLOBAL",5)
+THEN RESPONSE #100
+  GiveItemCreate("scrl9a","gpmage1",1,1,0)
+  SetGlobal("fls8t07","GLOBAL",-1)
+  DestroySelf()
+END

@@ -1,0 +1,1196 @@
+
+DEFINE_ACTION_MACRO stuff_cre BEGIN
+  COPY_EXISTING "%cre%.cre" override
+    READ_LONG 0x2b8 stuff_itm_slt
+    READ_LONG 0x2bc stuff_itm_off
+    READ_LONG 0x2c0 stuff_num_itm
+    INSERT_BYTES stuff_itm_off + 0x14*stuff_num_itm 0x14
+    WRITE_ASCIIE stuff_itm_off + 0x14*stuff_num_itm "%itm_to_stuff%"
+    SPRINT $removed_item_array("%removed_tier%" "%removed_token%" "%removed_ident%") ""
+    SPRINT $plugintierandtokenandgetitem("%removed_tier%" "%removed_token%") "%itm_to_del%"
+    WRITE_LONG 0x2c0 stuff_num_itm + 1
+    stuff_itm_slt += 0x14
+    WRITE_LONG 0x2b8 stuff_itm_slt
+    FOR (stuff=0;stuff<37;stuff+=1) BEGIN
+      READ_SSHORT stuff_itm_slt + 0x2*stuff stuff_slt_ref
+      PATCH_IF stuff_slt_ref = "-1" BEGIN
+        WRITE_SHORT stuff_itm_slt + 0x2*stuff stuff_num_itm
+        stuff = 37
+      END
+    END
+END
+
+DEFINE_PATCH_MACRO del_sto_itm_stuff BEGIN //Requires %itm_to_del%, %cre% and %itm_to_stuff%, the latter two are for the stuff_cre macro
+  READ_LONG 0x34 dsis_sal_off ELSE 0
+  READ_LONG 0x38 dsis_num_itm ELSE 0
+  dsis_adjust = 0
+  FOR (dsis1=0;dsis1<dsis_num_itm;dsis1+=1) BEGIN
+    READ_ASCII dsis_sal_off + 0x1c*dsis1 dsis_item ELSE blank
+    READ_LONG  dsis_sal_off + 0x1c*dsis1 + 0x14 dsis_num
+    PATCH_IF "%dsis_item%" STRING_EQUAL_CASE "%itm_to_del%" BEGIN
+      SET rca_offset = (dsis_sal_off + 0x1c*dsis1)
+      LAUNCH_PATCH_MACRO read_charge_array
+      DELETE_BYTES dsis_sal_off + 0x1c*dsis1 0x1c
+      dsis_num_itm -= 1
+      dsis1 -= 1
+      WRITE_LONG 0x38 dsis_num_itm
+      dsis_adjust -= 0x1c
+      PATCH_IF weidu_action = 0 BEGIN
+        INNER_ACTION BEGIN
+          LAUNCH_ACTION_MACRO stuff_cre
+        END
+      END ELSE BEGIN
+        SPRINT $removed_item_array("%removed_tier%" "%removed_token%" "%removed_ident%") ""
+        SPRINT $plugintierandtokenandgetitem("%removed_tier%" "%removed_token%") "%itm_to_del%"
+      END
+      PATCH_IF dsis_num > 1 BEGIN
+        FOR (dsis2=dsis_num;dsis2>1;--dsis2) BEGIN
+          PATCH_IF weidu_action = 0 BEGIN
+            FOR (dsis3=0;dsis3<100;++dsis3) BEGIN
+              PATCH_IF !VARIABLE_IS_SET $extra_tokens("%removed_tier%" "x%dsis3%") BEGIN
+                SPRINT $extra_tokens("%removed_tier%" "x%dsis3%") "%removed_token%"
+                SPRINT itm_to_stuff "fl%removed_tier%tx%dsis3%"
+                SPRINT removed_token "x%dsis3%"
+                INNER_ACTION BEGIN
+                  LAUNCH_ACTION_MACRO stuff_cre
+                END
+                dsis3 = 100
+              END
+            END
+          END ELSE BEGIN
+            FOR (dsis3=0;dsis3<0xffff;++dsis3) BEGIN
+              PATCH_IF !VARIABLE_IS_SET $extra_tokens("%removed_tier%" "x%dsis3%") BEGIN
+                SPRINT $extra_tokens("%removed_tier%" "x%dsis3%") "%removed_token%"
+                SPRINT $removed_item_array("%removed_tier%" "x%dsis3%" x) ""
+                SPRINT $plugintierandtokenandgetitem("%removed_tier%" "x%dsis3%") "%itm_to_del%"
+                dsis3 = 0xffff
+              END
+            END
+          END
+        END
+      END
+    END
+    /*
+    PATCH_IF "%dsis_item%" STRING_EQUAL_CASE "%itm_to_del%" BEGIN
+      SET rca_offset = (dsis_sal_off + 0x1c*dsis1)
+      LAUNCH_PATCH_MACRO read_charge_array
+      DELETE_BYTES dsis_sal_off + 0x1c*dsis1 0x1c
+      dsis_num_itm -= 1
+      dsis1 -= 1
+      WRITE_LONG 0x38 dsis_num_itm
+      dsis_adjust -= 0x1c
+      PATCH_IF weidu_action = 0 BEGIN
+        INNER_ACTION BEGIN
+          LAUNCH_ACTION_MACRO stuff_cre
+        END
+      END ELSE BEGIN
+        SPRINT $removed_item_array("%removed_tier%" "%removed_token%" "%removed_ident%") ""
+      END
+    END */
+  END
+  SET $dsis_offset(0) = 0x2c
+  SET $dsis_offset(1) = 0x4c
+  SET $dsis_offset(2) = 0x70
+  FOR(dsis1=0;dsis1<3;dsis1+=1) BEGIN
+    dsis_address = $dsis_offset("%dsis1%")
+    READ_LONG dsis_address dsis_offset ELSE 0
+    PATCH_IF dsis_offset > dsis_sal_off BEGIN
+      dsis_offset += dsis_adjust
+      WRITE_LONG dsis_address dsis_offset
+    END
+  END
+END
+
+DEFINE_PATCH_MACRO del_are_itm_stuff BEGIN
+  dais_deleted = 0
+
+  READ_LONG  0x70 dais_con_off
+  READ_SHORT 0x74 dais_num_con
+  READ_SHORT 0x76 dais_num_itm
+  READ_LONG  0x78 dais_itm_off
+  dais_delta = 0
+  FOR (dais1=0;dais1<dais_num_con;dais1+=1) BEGIN
+    READ_LONG  dais_con_off + 0xc0*dais1 + 0x40 dais_itm_idx
+    dais_itm_idx += dais_delta
+    WRITE_LONG dais_con_off + 0xc0*dais1 + 0x40 dais_itm_idx
+    READ_LONG  dais_con_off + 0xc0*dais1 + 0x44 dais_num_l_itm
+    FOR (dais2=0;dais2<dais_num_l_itm;dais2+=1) BEGIN
+      READ_ASCII dais_itm_off + 0x14*(dais_itm_idx + dais2) dais_item ELSE blank
+      PATCH_IF "%dais_item%" STRING_EQUAL_CASE "%itm_to_del%" AND dais_deleted = 0 BEGIN
+        category = 0
+        PATCH_IF FILE_EXISTS_IN_GAME "%itm_to_del%.itm" BEGIN
+          INNER_ACTION BEGIN
+            COPY_EXISTING "%itm_to_del%.itm" override
+              READ_SHORT 0x1c category ELSE 0
+              //READ_SHORT 0x38 dais_maxinstack ELSE 1
+            BUT_ONLY
+          END
+        END
+        SET rca_offset = (dais_itm_off + 0x14*(dais_itm_idx + dais2))
+        LAUNCH_PATCH_MACRO read_charge_array
+        DELETE_BYTES dais_itm_off + 0x14*(dais_itm_idx + dais2) 0x14
+        dais_delta -= 1
+        dais_num_l_itm -= 1
+        dais2 -= 1
+        dais_deleted = 1
+        PATCH_IF weidu_action = 0 BEGIN
+          INNER_ACTION BEGIN
+            LAUNCH_ACTION_MACRO stuff_cre
+          END
+        END ELSE BEGIN
+          SPRINT $removed_item_array("%removed_tier%" "%removed_token%" "%removed_ident%") ""
+          SPRINT $plugintierandtokenandgetitem("%removed_tier%" "%removed_token%") "%itm_to_del%"
+        END
+        PATCH_IF (category = 9 OR category = 11) AND charge1 > 1 BEGIN
+          FOR (dais2=charge1;dais2>1;--dais2) BEGIN
+            PATCH_IF !weidu_action BEGIN
+              FOR (dais3=0;dais3<100;++dais3) BEGIN
+                PATCH_IF !VARIABLE_IS_SET $extra_tokens("%removed_tier%" "y%dais3%") BEGIN
+                  SPRINT $extra_tokens("%removed_tier%" "y%dais3%") "%removed_token%"
+                  SPRINT itm_to_stuff "fl%removed_tier%ty%dais3%"
+                  SPRINT removed_token "y%dais3%"
+                  INNER_ACTION BEGIN
+                    LAM stuff_cre
+                  END
+                  dais3 = 100
+                END
+              END
+            END ELSE BEGIN
+              FOR (dais3=0;dais3<0xffff;++dais3) BEGIN
+                PATCH_IF !VARIABLE_IS_SET $extra_tokens("%removed_tier%" "y%dais3%") BEGIN
+                  SPRINT $extra_tokens("%removed_tier%" "y%dais3%") "%removed_token%"
+                  SPRINT $removed_item_array("%removed_tier%" "y%dais3%" x) ""
+                  SPRINT $plugintierandtokenandgetitem("%removed_tier%" "y%dais3%") "%itm_to_del%"
+                  dais3 = 0xffff
+                END
+              END
+            END
+          END
+        END
+      END
+    END
+    WRITE_LONG dais_con_off + 0xc0*dais1 + 0x44 dais_num_l_itm
+  END
+  dais_num_itm += dais_delta
+  WRITE_SHORT 0x76 dais_num_itm
+  dais_adjust = dais_delta*0x14
+  SET $dais_offset(0)  = 0x54
+  SET $dais_offset(1)  = 0x5c
+  SET $dais_offset(2)  = 0x60
+  SET $dais_offset(3)  = 0x68
+  SET $dais_offset(4)  = 0x70
+  SET $dais_offset(5)  = 0x7c
+  SET $dais_offset(6)  = 0x84
+  SET $dais_offset(7)  = 0x88
+  SET $dais_offset(8)  = 0xa0
+  SET $dais_offset(9)  = 0xa8
+  SET $dais_offset(10) = 0xb0
+  SET $dais_offset(11) = 0xb8
+  SET $dais_offset(12) = 0xbc
+  SET $dais_offset(13) = 0xc0
+  SET $dais_offset(14) = 0xc4
+  FOR (dais1=0;dais1<15;dais1+=1) BEGIN
+    SET dais_address = $dais_offset("%dais1%")
+    READ_LONG dais_address dais_offset
+    PATCH_IF dais_offset > dais_itm_off BEGIN
+      dais_offset += dais_adjust
+      WRITE_LONG dais_address dais_offset
+    END
+  END
+END
+
+DEFINE_PATCH_MACRO del_are_itm BEGIN //Requires itm_to_del
+  READ_LONG  0x70 dai_con_off
+  READ_SHORT 0x74 dai_num_con
+  READ_SHORT 0x76 dai_num_itm
+  READ_LONG  0x78 dai_itm_off
+  dai_delta = 0
+  FOR (dai1=0;dai1<dai_num_con;dai1+=1) BEGIN
+    READ_LONG  dai_con_off + 0xc0*dai1 + 0x40 dai_itm_idx
+    dai_itm_idx += dai_delta
+    WRITE_LONG dai_con_off + 0xc0*dai1 + 0x40 dai_itm_idx
+    READ_LONG  dai_con_off + 0xc0*dai1 + 0x44 dai_num_l_itm
+    FOR (dai2=0;dai2<dai_num_l_itm;dai2+=1) BEGIN
+      READ_ASCII dai_itm_off + 0x14*(dai_itm_idx + dai2) dai_item ELSE blank
+      PATCH_IF "%dai_item%" STRING_EQUAL_CASE "%itm_to_del%" BEGIN
+        DELETE_BYTES dai_itm_off + 0x14*(dai_itm_idx + dai2) 0x14
+        dai_delta -= 1
+        dai_num_l_itm -= 1
+        dai2 -= 1
+      END
+    END
+    WRITE_LONG dai_con_off + 0xc0*dai1 + 0x44 dai_num_l_itm
+  END
+  dai_num_itm += dai_delta
+  WRITE_SHORT 0x76 dai_num_itm
+  dai_adjust = dai_delta*0x14
+  SET $dai_offset(0)  = 0x54
+  SET $dai_offset(1)  = 0x5c
+  SET $dai_offset(2)  = 0x60
+  SET $dai_offset(3)  = 0x68
+  SET $dai_offset(4)  = 0x70
+  SET $dai_offset(5)  = 0x7c
+  SET $dai_offset(6)  = 0x84
+  SET $dai_offset(7)  = 0x88
+  SET $dai_offset(8)  = 0xa0
+  SET $dai_offset(9)  = 0xa8
+  SET $dai_offset(10) = 0xb0
+  SET $dai_offset(11) = 0xb8
+  SET $dai_offset(12) = 0xbc
+  SET $dai_offset(13) = 0xc0
+  SET $dai_offset(14) = 0xc4
+  FOR (dai1=0;dai1<15;dai1+=1) BEGIN
+    SET dai_address = $dai_offset("%dai1%")
+    READ_LONG dai_address dai_offset
+    PATCH_IF dai_offset > dai_itm_off BEGIN
+      dai_offset += dai_adjust
+      WRITE_LONG dai_address dai_offset
+    END
+  END
+END
+
+DEFINE_PATCH_MACRO del_cre_itm_stuff BEGIN //Requires %itm_to_del%, %replace_itm%, %cre% and %itm_to_stuff%, the latter two are for the stuff_cre macro. Takes regexps
+  SPRINT Source_Cre "%SOURCE_RES%"
+  TO_LOWER Source_Cre
+  READ_LONG 0x2b8 dcis_itm_slt ELSE 0
+  READ_LONG 0x2bc dcis_itm_off ELSE 0
+  READ_LONG 0x2c0 dcis_num_itm ELSE 0
+  dcis_adjust = 0
+  FOR (dcis1=0;dcis1<dcis_num_itm;dcis1+=1) BEGIN
+    READ_ASCII dcis_itm_off + 0x14*dcis1 dcis_item ELSE blank
+    PATCH_IF "%dcis_item%" STRING_MATCHES_REGEXP "%itm_to_del%" = 0 BEGIN
+      category = 0
+      PATCH_IF FILE_EXISTS_IN_GAME "%itm_to_del%.itm" BEGIN
+        INNER_ACTION BEGIN
+          COPY_EXISTING "%itm_to_del%.itm" override
+            READ_SHORT 0x1c category ELSE 0
+            //READ_SHORT 0x38 dcis_maxinstack ELSE 1
+          BUT_ONLY
+        END
+      END
+      SET rca_offset = (dcis_itm_off + 0x14*dcis1)
+      LAUNCH_PATCH_MACRO read_charge_array
+      PATCH_IF "%replace_itm%" STRING_COMPARE_CASE "blank" BEGIN                                                  //If it is not blank
+        WRITE_ASCIIE dcis_itm_off + 0x14*dcis1 "%replace_itm%" #8
+        SET $replace_array("%Source_Cre%") = 1
+        SET $EVAL "%Source_Cre%_replace"("%replace_itm%") = 1
+      END ELSE BEGIN
+        DELETE_BYTES dcis_itm_off + 0x14*dcis1 0x14
+        dcis_num_itm -= 1
+        WRITE_LONG 0x2c0 dcis_num_itm
+        dcis_adjust -= 0x14
+        dcis_itm_slt = dcis_itm_slt > dcis_itm_off ? dcis_itm_slt - 0x14 : dcis_itm_slt
+        FOR (dcis2=0;dcis2<37;dcis2+=1) BEGIN
+          READ_SSHORT dcis_itm_slt + 0x2*dcis2 dcis_slt_ref ELSE "-1"
+          PATCH_IF dcis_slt_ref = dcis1 BEGIN
+            WRITE_SHORT dcis_itm_slt + 0x2*dcis2 "-1"
+          END
+          PATCH_IF dcis_slt_ref > dcis1 BEGIN
+            WRITE_SHORT dcis_itm_slt + 0x2*dcis2 dcis_slt_ref - 1
+          END
+        END
+        dcis1 -= 1
+      END
+      PATCH_IF weidu_action = 0 BEGIN
+        INNER_ACTION BEGIN
+          LAUNCH_ACTION_MACRO stuff_cre
+        END
+      END ELSE BEGIN
+        SPRINT $removed_item_array("%removed_tier%" "%removed_token%" "%removed_ident%") ""
+        SPRINT $plugintierandtokenandgetitem("%removed_tier%" "%removed_token%") "%itm_to_del%"
+      END
+      PATCH_IF (category = 9 OR category = 11) AND charge1 > 1 BEGIN
+        FOR (dcis2=charge1;dcis2>1;--dcis2) BEGIN
+          PATCH_IF !weidu_action BEGIN
+            FOR (dcis3=0;dcis3<100;++dcis3) BEGIN
+              PATCH_IF !VARIABLE_IS_SET $extra_tokens("%removed_tier%" "y%dcis3%") BEGIN
+                SPRINT $extra_tokens("%removed_tier%" "y%dcis3%") "%removed_token%"
+                SPRINT itm_to_stuff "fl%removed_tier%ty%dcis3%"
+                SPRINT removed_token "y%dcis3%"
+                INNER_ACTION BEGIN
+                  LAM stuff_cre
+                END
+                dcis3 = 100
+              END
+            END
+          END ELSE BEGIN
+            FOR (dcis3=0;dcis3<0xffff;++dcis3) BEGIN
+              PATCH_IF !VARIABLE_IS_SET $extra_tokens("%removed_tier%" "y%dcis3%") BEGIN
+                SPRINT $extra_tokens("%removed_tier%" "y%dcis3%") "%removed_token%"
+                SPRINT $removed_item_array("%removed_tier%" "y%dcis3%" x) ""
+                SPRINT $plugintierandtokenandgetitem("%removed_tier%" "y%dcis3%") "%itm_to_del%"
+                dcis3 = 0xffff
+              END
+            END
+          END
+        END
+      END
+    END
+  END
+  PATCH_FOR_EACH dcis_off IN 0x2a0 0x2a8 0x2b0 0x2b8 0x2c4 BEGIN
+    READ_LONG dcis_off dcis_value ELSE 0
+    PATCH_IF dcis_value > dcis_itm_off BEGIN
+      WRITE_LONG dcis_off dcis_value + dcis_adjust
+    END
+  END
+END
+
+DEFINE_PATCH_MACRO del_cre_itm BEGIN //Requires %itm_to_del%, %replace_itm%. Takes regexps
+  SPRINT Source_Cre "%SOURCE_RES%"
+  TO_LOWER Source_Cre
+  READ_LONG 0x2b8 dci_itm_slt ELSE 0
+  READ_LONG 0x2bc dci_itm_off ELSE 0
+  READ_LONG 0x2c0 dci_num_itm ELSE 0
+  dci_adjust = 0
+  FOR (dci1=0;dci1<dci_num_itm;dci1+=1) BEGIN
+    READ_ASCII dci_itm_off + 0x14*dci1 dci_item ELSE blank
+    PATCH_IF "%dci_item%" STRING_MATCHES_REGEXP "%itm_to_del%" = 0 BEGIN
+      PATCH_IF "%replace_itm%" STRING_COMPARE_CASE "blank" BEGIN                                                  //If it is not blank
+        WRITE_ASCIIE dci_itm_off + 0x14*dci1 "%replace_itm%" #8
+        SET $replace_array("%Source_Cre%") = 1
+        SET $EVAL "%Source_Cre%_replace"("%replace_itm%") = 1
+      END ELSE BEGIN
+        DELETE_BYTES dci_itm_off + 0x14*dci1 0x14
+        dci_num_itm -= 1
+        WRITE_LONG 0x2c0 dci_num_itm
+        dci_adjust -= 0x14
+        dci_itm_slt = dci_itm_slt > dci_itm_off ? dci_itm_slt - 0x14 : dci_itm_slt
+        FOR (dci2=0;dci2<37;dci2+=1) BEGIN
+          READ_SSHORT dci_itm_slt + 0x2*dci2 dci_slt_ref ELSE "-1"
+          PATCH_IF dci_slt_ref = dci1 BEGIN
+            WRITE_SHORT dci_itm_slt + 0x2*dci2 "-1"
+          END
+          PATCH_IF dci_slt_ref > dci1 BEGIN
+            WRITE_SHORT dci_itm_slt + 0x2*dci2 dci_slt_ref - 1
+          END
+        END
+        dci1 -= 1
+      END
+    END
+  END
+  PATCH_FOR_EACH dci_off IN 0x2a0 0x2a8 0x2b0 0x2b8 0x2c4 BEGIN
+    READ_LONG dci_off dci_value ELSE 0
+    PATCH_IF dci_value > dci_itm_off BEGIN
+      WRITE_LONG dci_off dci_value + dci_adjust
+    END
+  END
+END
+
+DEFINE_PATCH_MACRO read_charge_array BEGIN
+  READ_SHORT rca_offset + 0xa charge1 ELSE 0
+  READ_SHORT rca_offset + 0xc charge2 ELSE 0
+  READ_SHORT rca_offset + 0xe charge3 ELSE 0
+  PATCH_IF VARIABLE_IS_SET category AND IS_AN_INT category AND (category = 9 OR category = 11) BEGIN
+    SPRINT $charge_array("%removed_token%" "%removed_tier%" 1 "%charge2%" "%charge3%") ""
+  END ELSE BEGIN
+    SPRINT $charge_array("%removed_token%" "%removed_tier%" "%charge1%" "%charge2%" "%charge3%") ""
+  END
+END
+
+DEFINE_PATCH_MACRO read_charge_array_on_itm BEGIN
+  charge1 = 0
+  charge2 = 0
+  charge3 = 0
+  counter = 0
+  PATCH_IF SOURCE_SIZE > 0x71 BEGIN
+    FOR(i=0;i<SHORT_AT 0x68;i+=1) BEGIN
+      READ_BYTE LONG_AT 0x64 + 0x38*i ab_type ELSE 999
+      PATCH_IF counter <= 3 BEGIN
+        counter += 1
+        READ_SHORT LONG_AT 0x64 + 0x38*i + 0x22 "charge%counter%" ELSE 0
+      END
+    END
+  END
+  SPRINT $charge_array("%removed_token%" "%removed_tier%" "%charge1%" "%charge2%" "%charge3%") ""
+END
+
+DEFINE_PATCH_FUNCTION insert_area_item
+  INT_VAR
+    charge1 = 1
+    charge2 = 0
+    charge3 = 0
+    flags = 0
+  STR_VAR
+    item = ""
+    container = ""
+BEGIN
+  GET_OFFSET_ARRAY array ARE_V10_CONTAINERS
+  PHP_EACH array AS idx => off BEGIN
+    READ_ASCII off name (32) NULL
+    INNER_PATCH_SAVE name "%name%" BEGIN
+      REPLACE_TEXTUALLY " " ""
+    END
+    PATCH_IF "%name%" STRING_EQUAL_CASE "%container%" BEGIN
+      LPF fj_are_structure
+        INT_VAR
+          fj_con_itm_idx = idx
+          fj_charge0 = charge1
+          fj_charge1 = charge2
+          fj_charge2 = charge3
+          fj_flags = flags
+        STR_VAR
+          fj_structure_type = itm
+          fj_name = EVAL "%item%"
+      END
+    END
+  END
+END
+
+DEFINE_PATCH_MACRO create_item_array#read_row BEGIN
+  READ_2DA_ENTRY_FORMER cia_file i 0 item
+  READ_2DA_ENTRY_FORMER cia_file i 1 replacement
+  READ_2DA_ENTRY_FORMER cia_file i 2 source
+  READ_2DA_ENTRY_FORMER cia_file i 3 tier
+  READ_2DA_ENTRY_FORMER cia_file i 4 token
+  READ_2DA_ENTRY_FORMER cia_file i 5 ident
+  READ_2DA_ENTRY_FORMER cia_file i 6 chance
+  TO_LOWER item
+  TO_LOWER replacement
+  TO_LOWER source
+  TO_LOWER tier
+  TO_LOWER token
+  TO_LOWER ident
+END
+
+DEFINE_ACTION_MACRO create_item_array#mark_cursed_item BEGIN
+  ACTION_IF VARIABLE_IS_SET $cursed_item_list("%item%") BEGIN
+    OUTER_SET $cursed_items("%tier%" "%token%") = 1
+  END
+END
+
+DEFINE_PATCH_MACRO create_item_array#convert_resrefs BEGIN
+  /* Only convert on Trilogy games if explicitly told to (do not
+   * convert BGII resources).
+   * Non-Trilogy games can be passed through unconditionally.
+   */
+  PATCH_IF (BGT AND BGT_Convert) OR NOT BGT BEGIN
+    LPF fl#bg1pal
+      STR_VAR
+        resource = EVAL "%item%"
+        type = itm
+      RET
+        item = resource
+    END
+    /* Don't attempt to convert empty entries */
+    PATCH_IF "%replacement%" STR_CMP "blank" BEGIN
+      LPF fl#bg1pal
+        STR_VAR
+          resource = EVAL "%replacement%"
+          type = itm
+        RET
+          replacement = resource
+      END
+    END
+    /* Don't attempt to convert empty or special entries */
+    PATCH_IF "%source%" STR_CMP "blank" AND
+             ("%source%" STRING_MATCHES_REGEXP ".+\.fl$")
+    BEGIN
+      LPF fl#bg1pal STR_VAR file = EVAL "%source%" RET source = file END
+    END
+  END
+END
+
+DEFINE_PATCH_FUNCTION create_item_array#stage1#filter
+  INT_VAR
+    global_chance = 0
+    chance = 100
+  STR_VAR
+    item = ""
+    source = ""
+    tier = ""
+    ident = ""
+  RET
+    skip
+BEGIN
+  skip = 0
+
+  /* Filter out option-dependent tiers that are not installed */
+  PATCH_IF !skip AND
+           ("%tier%" STRING_MATCHES_REGEXP "s.*" = 0 AND
+            !VARIABLE_IS_SET $RandOptions(flrc530)) OR
+           ("%tier%" STRING_EQUAL_CASE "ka" AND
+            !VARIABLE_IS_SET $RandOptions(flrc520)) OR
+           ("%tier%" STRING_EQUAL_CASE "fa" AND
+            !VARIABLE_IS_SET $RandOptions(flrc540))
+  BEGIN skip = 1 END
+
+  /* Filter out invalid items
+   * Items that do not exist
+   * Items whose source does not exist
+   *   unless the source is "blank" or an .fl source
+   */
+  PATCH_IF !skip AND
+           (!FILE_EXISTS_IN_GAME "%item%.itm" OR
+           ("%source%" STR_CMP "blank" AND
+           "%source%" STRING_MATCHES_REGEXP ".+\.fl$" AND
+           !FILE_EXISTS_IN_GAME "%source%"))
+  BEGIN skip = 1 END
+
+  /* For BCS|DLG sources, filter out items that do not exist in the source */
+  PATCH_IF !skip AND
+           "%source%" STRING_MATCHES_REGEXP ".+\.\(bcs\|dlg\)$" = 0 AND
+           FILE_EXISTS_IN_GAME "%source%" AND
+           NOT FILE_CONTAINS_EVALUATED ("%source%" "%item%")
+  BEGIN skip = 1 END
+
+  /* Global chance of skipping item, but only for items with a source
+   * global_chance is an exclusion percentage; 0 is never exclude
+   */
+  PATCH_IF !skip AND global_chance > 0 AND
+           "%source%" STR_CMP "blank" AND
+           (RANDOM(1 100) <= global_chance)
+  BEGIN skip = 1 END
+
+  /* Item chance
+   * chance is an inclusion percentage; 100 is always include
+   */
+  PATCH_IF !skip AND chance < 100 AND
+           RANDOM(1 100) > chance
+  BEGIN skip = 1 END
+
+  /* Skip Manual of CON on BG1, because of technical reasons
+   */
+  PATCH_IF ENGINE_IS ~bg1 totsc~ AND "%ident%" STRING_EQUAL_CASE "vf" BEGIN
+    skip = 1
+  END
+END
+
+DEFINE_ACTION_MACRO create_item_array#side_effects#totsc_tome BEGIN
+  LOCAL_SET r = 0
+  ACTION_IF VARIABLE_IS_SET $RandOptions(flrc500) AND weidu_action = 1 BEGIN
+    ACTION_DEFINE_ARRAY create_item_array#side_effects#totsc_tome#books BEGIN
+                        book03
+                        book04
+                        book05
+                        book06
+                        book07
+                        book08
+    END
+    OUTER_SET r = RANDOM (0 5)
+    OUTER_SPRINT item $create_item_array#side_effects#totsc_tome#books("%r%")
+    LAF fl#bg1pal STR_VAR file = EVAL "%item%.itm" RET item = resource END
+    OUTER_SPRINT replacement_b2c "%item%"
+  END
+END
+
+DEFINE_ACTION_MACRO create_item_array#side_effects#helm_balduran BEGIN
+  OUTER_SET remove_helm07 = 1
+END
+
+DEFINE_ACTION_MACRO create_item_array#rebalance BEGIN
+  ACTION_IF VARIABLE_IS_SET $rebalance_tier("%item%") BEGIN
+    OUTER_SPRINT tier $rebalance_tier("%item%")
+    OUTER_SPRINT token $rebalance_token("%item%")
+  END
+END
+
+/*
+ * Create a preliminary array from only the item lists themselves and the
+ * global environment.
+ */
+DEFINE_PATCH_MACRO create_item_array#stage1 BEGIN
+  LOCAL_SPRINT item ""
+  LOCAL_SPRINT replacement ""
+  LOCAL_SPRINT source ""
+  LOCAL_SPRINT tier ""
+  LOCAL_SPRINT token ""
+  LOCAL_SPRINT ident ""
+  LOCAL_SET chance = 0
+
+  LOCAL_SET i = 0
+  LOCAL_SET skip = 0
+  LOCAL_SPRINT macro ""
+
+  READ_2DA_ENTRIES_NOW cia_file 7
+  FOR (i = 1; i < cia_file; ++i) BEGIN
+    LPM create_item_array#read_row
+    LPM create_item_array#convert_resrefs
+    LPF create_item_array#stage1#filter
+      INT_VAR
+        global_chance = RandomNotRandom
+        chance
+      STR_VAR
+        item source tier ident
+      RET
+        skip
+    END
+    PATCH_IF skip BEGIN
+      PATCH_IF "%ident%" STRING_COMPARE_CASE "x" BEGIN
+        SPRINT $ident_filter("%ident%") ""
+      END
+    END ELSE BEGIN
+      PATCH_IF "%ident%" STRING_COMPARE_CASE "x" BEGIN
+        SPRINT $identitem("%ident%") "%item%"
+      END
+      SPRINT $item_array#stage1("%item%" "%replacement%" "%source%" "%tier%" "%token%" "%ident%") ""
+      SPRINT $EVAL "%tier_hook%"("%tier%") ""
+    END
+  END
+END
+
+DEFINE_ACTION_FUNCTION create_item_array#finalise#filter
+  STR_VAR
+    ident = ""
+  RET
+    skip
+BEGIN
+  OUTER_SET skip = 0
+
+  /* Idents which have been filtered out earlier in the
+   * installation process
+   */
+  ACTION_IF VARIABLE_IS_SET $ident_filter("%ident%") BEGIN
+    OUTER_SET skip = 1
+  END
+END
+
+/*
+ * Create the final item array by processing a preliminary array
+ * and retaining those items which made the final cut, based on all
+ * other lists and circumstances.
+ * Also pick out the cursed items and perform any rebalancing and special
+ * side-effects associated with the item.
+ */
+DEFINE_ACTION_MACRO create_item_array#finalise BEGIN
+  LOCAL_SPRINT create_item_array#finalise#array "item_array#stage1"
+
+  LOCAL_SPRINT item ""
+  LOCAL_SPRINT replacement ""
+  LOCAL_SPRINT source ""
+  LOCAL_SPRINT tier ""
+  LOCAL_SPRINT token ""
+  LOCAL_SPRINT ident ""
+  LOCAL_SET skip = 0
+  LOCAL_SPRINT entry ""
+  LOCAL_SPRINT macro ""
+
+  ACTION_DEFINE_ASSOCIATIVE_ARRAY create_item_array#side_effects BEGIN
+    b2c => create_item_array#side_effects#totsc_tome
+    i3d => create_item_array#side_effects#helm_balduran
+  END
+
+  ACTION_PHP_EACH "%create_item_array#finalise#array%" AS entry => _ BEGIN
+    OUTER_SPRINT item "%entry_0%"
+    OUTER_SPRINT replacement "%entry_1%"
+    OUTER_SPRINT source "%entry_2%"
+    OUTER_SPRINT tier "%entry_3%"
+    OUTER_SPRINT token "%entry_4%"
+    OUTER_SPRINT ident "%entry_5%"
+
+    LAF create_item_array#finalise#filter
+      STR_VAR
+        ident
+      RET
+        skip
+    END
+    ACTION_IF !skip BEGIN
+      LAM create_item_array#mark_cursed_item
+      ACTION_IF VARIABLE_IS_SET $create_item_array#side_effects("%ident%") BEGIN
+        OUTER_SPRINT macro $create_item_array#side_effects("%ident%")
+        LAM "%macro%"
+      END
+      LAM create_item_array#rebalance
+      OUTER_SPRINT $item_array("%item%" "%replacement%" "%source%" "%tier%" "%token%" "%ident%") ""
+    END
+  END
+END
+
+DEFINE_PATCH_MACRO create_loc_array#read_row BEGIN
+  READ_2DA_ENTRY_FORMER cla_file i 0 location
+  READ_2DA_ENTRY_FORMER cla_file i 1 tier
+  READ_2DA_ENTRY_FORMER cla_file i 2 target
+  READ_2DA_ENTRY_FORMER cla_file i 3 area
+  READ_2DA_ENTRY_FORMER cla_file i 4 ident
+  READ_2DA_ENTRY_FORMER cla_file i 5 chance
+  TO_LOWER location
+  TO_LOWER tier
+  TO_LOWER target
+  TO_LOWER area
+  TO_LOWER ident
+END
+
+DEFINE_PATCH_MACRO create_loc_array#convert_resrefs BEGIN
+  /* Only convert on Trilogy games if explicitly told to (do not
+   * convert BGII resources).
+   * Non-Trilogy games can be passed through unconditionally.
+   */
+  PATCH_IF (BGT AND BGT_Convert) OR NOT BGT BEGIN
+    /* Only convert targets with a file extension (not area containers)
+     *   except .fl and .flg targets
+     */
+    PATCH_IF "%target%" STRING_MATCHES_REGEXP ".+\.[a-z]+$" = 0 AND
+             "%target%" STRING_MATCHES_REGEXP ".+\.flg?$"
+    BEGIN
+      LPF fl#bg1pal STR_VAR file = EVAL "%target%" RET target = file END
+    END
+    LPF fl#bg1pal STR_VAR resource = EVAL "%area%" type = ARE RET area = resource END
+  END
+END
+
+DEFINE_PATCH_FUNCTION create_loc_array#filter
+  INT_VAR
+    chance = 100
+  STR_VAR
+    location = ""
+    tier = ""
+    target = ""
+    area = ""
+    ident = ""
+  RET
+    skip
+BEGIN
+  skip = 0
+
+  /* Filter out option-dependent tiers that are not installed */
+  PATCH_IF !skip AND
+           ("%tier%" STRING_MATCHES_REGEXP "s.*" = 0 AND
+            !VARIABLE_IS_SET $RandOptions(flrc530)) OR
+           ("%tier%" STRING_EQUAL_CASE "fa" AND
+            !VARIABLE_IS_SET $RandOptions(flrc540)) OR
+           ("%tier%" STRING_EQUAL_CASE "ka" AND
+            !VARIABLE_IS_SET $RandOptions(flrc520))
+  BEGIN skip = 1 END
+
+  /* Filter out invalid locations
+   * Areas which do not exist
+   *   unless the area is blank
+   * Targets which do not exist
+   *   unless it's an area container
+   *   or an .fl or .flg target
+   */
+  PATCH_IF !skip AND
+           ((!"%area%" STRING_EQUAL_CASE "blank" AND
+             !FILE_EXISTS_IN_GAME "%area%.are") OR
+           ("%target%" STRING_MATCHES_REGEXP ".+\.[a-z]+$" = 0 AND
+            !"%target%" STRING_MATCHES_REGEXP ".+\.flg?$" = 0 AND
+            !FILE_EXISTS_IN_GAME "%target%"))
+  BEGIN skip = 1 END
+
+  /* Chance of skipping location
+   * chance is an inclusion percentage; 100 is always include
+   */
+  PATCH_IF !skip AND chance < 100 AND
+           RANDOM(1 100) > chance
+  BEGIN skip = 1 END
+END
+
+/*
+ * Create a preliminary array from only the location lists themselves and
+ * the global environment.
+ */
+DEFINE_PATCH_MACRO create_loc_array#stage1 BEGIN
+  LOCAL_SPRINT location ""
+  LOCAL_SPRINT tier ""
+  LOCAL_SPRINT target ""
+  LOCAL_SPRINT area ""
+  LOCAL_SPRINT ident ""
+  LOCAL_SET chance = 0
+
+  LOCAL_SET i = 0
+  LOCAL_SET skip = 0
+
+  READ_2DA_ENTRIES_NOW cla_file 6
+  FOR (i = 1; i < cla_file; ++i)  BEGIN
+    LPM create_loc_array#read_row
+    LPM create_loc_array#convert_resrefs
+    LPF create_loc_array#filter
+      INT_VAR
+        chance
+      STR_VAR
+        location tier target area ident
+      RET
+        skip
+    END
+    PATCH_IF skip BEGIN
+      PATCH_IF "%ident%" STRING_COMPARE_CASE "x" BEGIN
+        SPRINT $ident_filter("%ident%") ""
+      END
+    END ELSE BEGIN
+      SPRINT $location_array#stage1("%location%" "%tier%" "%target%" "%area%" "%ident%") ""
+      SPRINT $EVAL "%tier_hook%"("%tier%") ""
+    END
+  END
+END
+
+DEFINE_ACTION_FUNCTION create_loc_array#finalise#filter
+  STR_VAR
+    ident = ""
+  RET
+    skip
+BEGIN
+  OUTER_SET skip = 0
+
+  /* Idents which have been filtered out earlier in the
+   * installation process
+   */
+  ACTION_IF VARIABLE_IS_SET $ident_filter("%ident%") BEGIN
+    OUTER_SET skip = 1
+  END
+END
+
+/*
+ * Create the final location array by processing a preliminary array
+ * and retaining those locations which made the final cut, based on all
+ * other lists and circumstances.
+ * Also create the tier array, from those tiers which are retained.
+ */
+DEFINE_ACTION_MACRO create_loc_array#finalise BEGIN
+  LOCAL_SPRINT create_loc_array#finalise#array "location_array#stage1"
+
+  LOCAL_SPRINT location ""
+  LOCAL_SPRINT tier ""
+  LOCAL_SPRINT target ""
+  LOCAL_SPRINT area ""
+  LOCAL_SPRINT ident ""
+  LOCAL_SET skip = 0
+  LOCAL_SPRINT entry ""
+
+  ACTION_PHP_EACH "%create_loc_array#finalise#array%" AS entry => _ BEGIN
+    OUTER_SPRINT location "%entry_0%"
+    OUTER_SPRINT tier "%entry_1%"
+    OUTER_SPRINT target "%entry_2%"
+    OUTER_SPRINT area "%entry_3%"
+    OUTER_SPRINT ident "%entry_4%"
+
+    LAF create_loc_array#finalise#filter
+      STR_VAR
+        ident
+      RET
+        skip
+    END
+    ACTION_IF !skip BEGIN
+      OUTER_SPRINT $location_array("%location%" "%tier%" "%target%" "%area%" "%ident%") ""
+      OUTER_SPRINT $tier_array("%tier%") ""
+    END
+  END
+END
+
+DEFINE_PATCH_MACRO create_group_array BEGIN
+  COUNT_2DA_ROWS 2 num_row
+    FOR(i=1;i<num_row;i+=1) BEGIN
+      READ_2DA_ENTRY i 0 2 group
+      READ_2DA_ENTRY i 1 2 cre
+      TO_LOWER group
+      TO_LOWER cre
+      PATCH_IF (BGT AND BGT_Convert) OR NOT BGT BEGIN
+        LPF fl#bg1pal STR_VAR resource = EVAL "%cre%" type = CRE RET cre = resource END
+      END
+      PATCH_IF FILE_EXISTS_IN_GAME "%cre%.cre" BEGIN
+        SPRINT $special_array("%i%" "%group%") "%cre%"
+      END
+    END
+END
+
+DEFINE_PATCH_MACRO create_duplicate_array BEGIN
+  COUNT_2DA_ROWS 4 num_row
+  FOR (i=1;i<num_row;i+=1) BEGIN
+    READ_2DA_ENTRY i 0 4 item
+    READ_2DA_ENTRY i 1 4 source
+    READ_2DA_ENTRY i 2 4 replace
+    READ_2DA_ENTRY i 3 4 ident
+    TO_LOWER item
+    TO_LOWER source
+    TO_LOWER replace
+    TO_LOWER ident
+    PATCH_IF !VARIABLE_IS_SET $ident_filter("%ident%") BEGIN
+      PATCH_IF (BGT AND BGT_Convert) OR NOT BGT BEGIN
+        LPF fl#bg1pal STR_VAR resource = EVAL "%item%" type = ITM RET item = resource END
+        LPF fl#bg1pal STR_VAR file = EVAL "%source%" RET source = file END
+        PATCH_IF "%replace%" STR_CMP "blank" BEGIN // Don't attempt to convert empty entries
+          LPF fl#bg1pal STR_VAR resource = "%replace%" type = ITM RET replace = resource END
+        END
+      END
+      PATCH_IF FILE_EXISTS_IN_GAME "%item%.itm" AND FILE_EXISTS_IN_GAME "%source%" BEGIN
+        SPRINT $duplicate_item_array("%item%" "%source%" "%replace%" "%ident%") ""
+      END
+    END
+  END
+END
+
+DEFINE_PATCH_FUNCTION find_base_ac RET ac BEGIN
+  ac = 10
+  READ_LONG  0x6a eff_off ELSE 0x72
+  READ_SHORT 0x70 num_eff ELSE 0
+  FOR (i=0;i<num_eff;i+=1) BEGIN
+    READ_SHORT eff_off + 0x30*i       eff_type ELSE 999
+    READ_LONG  eff_off + 0x30*i + 0x8 param2   ELSE 999
+    PATCH_IF eff_type = 0 AND param2= 16 BEGIN
+      READ_SLONG eff_off + 0x30*i + 0x4 ac
+    END
+  END
+END
+
+DEFINE_ACTION_FUNCTION process_script_for_m1 INT_VAR Get_Tra = 0 BEGIN
+  OUTER_SET add = 0
+  ACTION_PHP_EACH bcs_source_array AS entry => blank BEGIN
+    ACTION_IF "%entry_0%" STRING_EQUAL_CASE "%target_bcs%" BEGIN
+      OUTER_SET add = 1
+    END
+  END
+  ACTION_IF add = 1 BEGIN
+    OUTER_SPRINT script_string ""
+    OUTER_SET Charge1 = 0
+    OUTER_SET Charge2 = 0
+    OUTER_SET Charge3 = 0
+    ACTION_PHP_EACH removed_item_array AS ria_entry => int BEGIN
+      ACTION_IF "%ria_entry_0%" STRING_EQUAL_CASE "%Tier%" BEGIN
+        ACTION_IF VARIABLE_IS_SET $extra_tokens("%ria_entry_0%" "%ria_entry_1%") BEGIN
+          OUTER_SPRINT compare_token $extra_tokens("%ria_entry_0%" "%ria_entry_1%")
+        END ELSE BEGIN
+          OUTER_SPRINT compare_token "%ria_entry_1%"
+        END
+        ACTION_PHP_EACH item_array AS ia_entry => blank BEGIN
+          ACTION_IF "%ria_entry_0%" STRING_EQUAL_CASE "%ia_entry_3%" BEGIN
+            ACTION_IF "%ria_entry_0%" STRING_EQUAL_CASE "%ia_entry_3%" AND "%compare_token%" STRING_EQUAL_CASE "%ia_entry_4%" BEGIN
+              OUTER_SPRINT Item        "%ia_entry_0%"
+              ACTION_PHP_EACH charge_array AS ca_entry => blank BEGIN
+                ACTION_IF "%ca_entry_0%" STRING_EQUAL_CASE "%compare_token%" AND "%ca_entry_1%" STRING_EQUAL_CASE "%Tier%" BEGIN
+                  OUTER_SET Charge1 = ca_entry_2
+                  OUTER_SET Charge2 = ca_entry_3
+                  OUTER_SET Charge3 = ca_entry_4
+                END
+              END
+            END
+          END
+        END
+        ACTION_IF Get_Tra = 1 BEGIN
+          OUTER_SET TRA = 999
+          ACTION_PHP_EACH "%tra_array%" AS tra_item => ref BEGIN
+            ACTION_IF "%tra_item%" STRING_EQUAL_CASE "%Item%" BEGIN
+              OUTER_SET TRA = ref
+            END
+          END
+        END
+        OUTER_SPRINT Variable "fl%Tier%t%ria_entry_1%"
+        OUTER_PATCH_SAVE script_string "%script_string%" BEGIN
+          APPEND_FILE_EVALUATE "randomiser/baf/%baf%.baf"
+        END
+      END
+    END
+    COPY - "...blank" "...randomiser/fl-inlined/script_replace.baf"
+      INSERT_BYTES 0 STRING_LENGTH "%script_string%"
+      WRITE_ASCIIE 0 "%script_string%"
+    COPY_EXISTING "%target_bcs%" override
+      DECOMPILE_BCS_TO_BAF
+        REPLACE_TEXTUALLY CASE_INSENSITIVE EVALUATE_REGEXP "^[ %TAB%]+%replace_trigger%" "False()"
+      COMPILE_BAF_TO_BCS
+    BUT_ONLY
+    EXTEND_BOTTOM "%target_bcs%" "...randomiser/fl-inlined/script_replace.baf"
+  END
+END
+
+DEFINE_PATCH_FUNCTION insert_actor
+  STR_VAR
+    actor = ""
+    name = EVAL "%actor%"
+    loc_x = 1
+    loc_y = 1
+BEGIN
+  LPF fj_are_structure
+    INT_VAR
+      fj_loc_x = loc_x
+      fj_loc_y = loc_y
+      fj_dest_x = fj_loc_x
+      fj_dest_y = fj_loc_y
+    STR_VAR
+      fj_structure_type = actor
+      fj_cre_resref = EVAL "%actor%"
+      fj_name = EVAL "%name%"
+  END
+END
+
+<<<<<<<< .../randomiser/fl-inlined/sprint_at_var1.tpa
+OUTER_SPRINT %sprint_var% @%ref%
+>>>>>>>>
+
+DEFINE_ACTION_MACRO sprint_at_var BEGIN
+  COPY - ".../randomiser/fl-inlined/sprint_at_var1.tpa" ".../randomiser/fl-inlined/sprint_at_var2.tpa"
+    EVALUATE_BUFFER
+  ACTION_REINCLUDE ".../randomiser/fl-inlined/sprint_at_var2.tpa"
+END
+
+//Apparently ADD_STORE_ITEM can do #(charge) or somesuch, so look into retiring this
+DEFINE_PATCH_FUNCTION add_store_item INT_VAR f_Flags1 = 1 f_Number = 1 BEGIN //can do variable charges, needs %store_item%, %Charge[1-3]%
+  PATCH_IF SOURCE_SIZE > 0x9b BEGIN
+    READ_LONG 0x34 itm_off
+    READ_LONG 0x38 num_itm
+    added = 0
+    FOR (i=0;i<num_itm;++i) BEGIN
+      READ_ASCII itm_off + 0x1c*i item
+      READ_SHORT itm_off + 0x1c*i + 0xa c1
+      READ_SHORT itm_off + 0x1c*i + 0xc c2
+      READ_SHORT itm_off + 0x1c*i + 0xe c3
+      PATCH_IF "%store_item%" STRING_EQUAL_CASE "%item%" AND c1 = Charge1 AND c2 = Charge2 AND c3 = Charge3 BEGIN
+        WRITE_LONG itm_off + 0x1c*i + 0x14 THIS + 1
+        i = num_itm
+        added = 1
+      END
+    END
+    PATCH_IF added = 0 BEGIN
+      INSERT_BYTES itm_off + 0x1c*num_itm 0x1c
+      WRITE_ASCIIE itm_off + 0x1c*num_itm "%store_item%" #8
+      WRITE_SHORT  itm_off + 0x1c*num_itm + 0xa Charge1
+      WRITE_SHORT  itm_off + 0x1c*num_itm + 0xc Charge2
+      WRITE_SHORT  itm_off + 0x1c*num_itm + 0xe Charge3
+      WRITE_BYTE   itm_off + 0x1c*num_itm + 0x10 f_Flags1
+      WRITE_LONG   itm_off + 0x1c*num_itm + 0x14 f_Number
+      WRITE_LONG 0x38 num_itm + 1
+      PATCH_FOR_EACH off IN 0x2c 0x4c 0x70 BEGIN
+        READ_LONG off off_value
+        PATCH_IF (off_value > itm_off) OR (off_value = itm_off AND num_itm = 0) BEGIN
+          WRITE_LONG off off_value + 0x1c
+        END
+      END
+    END
+  END
+END
+
+/*
+ * Unequips all droppable items from slot lower to slot upper from the
+ * creature, provided there is inventory space for it.
+ *
+ * force -> undroppable items are unequipped and the item is
+ *          deleted if there is not enough space
+ */
+DEFINE_PATCH_FUNCTION unequip_items
+  INT_VAR
+    lower = 0
+    upper = 18
+    force = 0
+BEGIN
+  PATCH_IF SOURCE_SIZE > 0x2d3 BEGIN
+    READ_LONG 0x2b8 itm_slt
+    READ_LONG 0x2bc itm_off
+    READ_LONG 0x2c0 num_itm
+    FOR (i = lower; i < upper; ++i) BEGIN
+      READ_SSHORT itm_slt + 0x2 * i ref ELSE "-1"
+      PATCH_IF ref >= 0 BEGIN
+        READ_ASCII itm_off + 0x14 * ref item ELSE blank
+        READ_BYTE  itm_off + 0x14 * ref + 0x10 flags1 ELSE BIT3
+        PATCH_IF (flags1 BAND BIT3) = 0 OR force BEGIN // If not undroppable or force
+          flags2 = BIT2
+          PATCH_IF FILE_EXISTS_IN_GAME "%item%.itm" AND NOT force BEGIN
+            INNER_ACTION BEGIN
+              COPY_EXISTING "%item%.itm" override
+                READ_BYTE 0x18 flags2 ELSE BIT2
+              BUT_ONLY
+            END
+          END
+          PATCH_IF (flags2 BAND BIT2) = BIT2 OR force BEGIN // If droppable or force
+            removed = 0
+            FOR (j = 21; j < 37; ++j) BEGIN // Try to move the item into the inventory
+              READ_SSHORT itm_slt + 0x2 * j inv ELSE 0
+              PATCH_IF inv < 0 BEGIN
+                removed = 1
+                WRITE_SHORT itm_slt + 0x2 * j ref
+                WRITE_SHORT itm_slt + 0x2 * i "-1"
+                WRITE_BYTE  itm_off + 0x14 * ref + 0x10 (flags2 BAND BIT2) = BIT2 ? (THIS BAND BNOT BIT1) : THIS // Remove unstealable if droppable
+                j = 37
+              END
+            END
+            PATCH_IF removed = 0 AND force BEGIN // Else delete it, if force
+              REMOVE_CRE_ITEM "%item%"
+            END
+          END
+        END
+      END
+    END
+  END
+END
+
+//Selecct a group cre. For Mode 1. Requires f_Group, F_Item, $special_array and uses the read_itm_unusabilities and define_cre_unusabilities macros
+DEFINE_ACTION_FUNCTION select_group_cre RET f_Selected BEGIN
+  OUTER_SET NumCre = 0
+  ACTION_PHP_EACH special_array AS entry => cre BEGIN
+    ACTION_IF "%entry_1%" STRING_EQUAL_CASE "%f_Group%" AND FILE_EXISTS_IN_GAME "%cre%.cre" BEGIN
+      OUTER_SET ++NumCre
+      OUTER_SPRINT $special_cre_array("%NumCre%") "%cre%"
+    END
+  END
+  ACTION_IF FILE_EXISTS_IN_GAME "%f_Item%.itm" BEGIN
+    COPY_EXISTING "%f_Item%.itm" override
+      PATCH_IF SOURCE_SIZE > 0x71 BEGIN
+        LPM read_itm_unusabilities
+      END
+    BUT_ONLY
+    OUTER_SET NumUsable = 0
+    ACTION_PHP_EACH special_cre_array AS int => cre BEGIN
+      COPY_EXISTING "%cre%.cre" override
+        LPM define_cre_unusabilities
+      BUT_ONLY
+      ACTION_IF (riu_itm_unuse1 BAND dcu_cre_unuse1) = 0 AND (riu_itm_unuse2 BAND dcu_cre_unuse2) = 0 AND (riu_itm_unuse3 BAND dcu_cre_unuse3) = 0 AND (riu_itm_unuse4 BAND dcu_cre_unuse4) = 0 AND (riu_itm_kit_unuse1 BAND dcu_cre_kit_unuse1) = 0 AND (riu_itm_kit_unuse2 BAND dcu_cre_kit_unuse2) = 0 AND (riu_itm_kit_unuse3 BAND dcu_cre_kit_unuse3) = 0 AND (riu_itm_kit_unuse4 BAND dcu_cre_kit_unuse4) = 0 BEGIN
+        OUTER_SET ++NumUsable
+        OUTER_SPRINT $special_usable("%NumUsable%") "%cre%"
+      END
+    END
+    OUTER_SET r_f = NumUsable > 0 ? RANDOM(1 NumUsable) : RANDOM(1 NumCre)
+    ACTION_IF NumUsable > 0 BEGIN
+      OUTER_SPRINT f_Selected $special_usable("%r_f%")
+    END ELSE BEGIN
+      OUTER_SPRINT f_Selected $special_cre_array("%r_f%")
+    END
+  END
+END
+
+DEFINE_PATCH_FUNCTION minimum_proficiency
+  INT_VAR
+    value = 1
+    proficiency = 0
+BEGIN
+  PATCH_IF value >= 0 AND proficiency >= 0 BEGIN
+    coveredp = 0
+    GET_OFFSET_ARRAY effect_array 0x2c4 4 0x2c8 4 0 0 0x108
+    PHP_EACH effect_array AS i => off BEGIN
+      READ_LONG off + 0x08 opcode
+      READ_LONG off + 0x14 stars
+      READ_LONG off + 0x18 prof
+      PATCH_IF opcode = 233 AND prof = proficiency AND stars >= value BEGIN
+        coveredp = 1
+      END
+    END
+    PATCH_IF !coveredp BEGIN
+      SET_BG2_PROFICIENCY proficiency value
+    END
+  END ELSE BEGIN
+    PATCH_WARN "WARNING: minimum_proficiency received illegal arguments: value = %value%, proficiency = %proficiency%"
+  END
+END
+
+//DEFINE_PATCH_FUNCTION add_trap_script BEGIN //needs f_ConName, f_ScriptName
+//  READ_LONG  0x70 con_off
+//  READ_SHORT 0x74 num_con
+//  FOR (i=0;i<num_con;++i) BEGIN
+//    READ_ASCII con_off + 0xc0*i name ELSE blank (32) NULL
+//    INNER_PATCH_SAVE name "%name%" BEGIN
+//      REPLACE_TEXTUALLY " " ""
+//    END
+//    PATCH_IF "%name%" STRING_EQUAL_CASE "%f_ConName%" BEGIN
+//      READ_ASCII con_off + 0xc0*i + 0x48 Script ELSE blank
+//      PATCH_IF FILE_EXISTS_IN_GAME "%Script%.bcs" BEGIN
+//        INNER_ACTION BEGIN
+//          //EXTEND_TOP "%Script%.bcs" "randomiser/baf/%f_ScriptName%.baf" EVAL
+//        END
+//      END ELSE BEGIN
+//        WRITE_ASCIIE con_off + 0xc0*i + 0x48 "%f_ScriptName%" #8
+//        INNER_ACTION BEGIN
+//          COMPILE "randomiser/baf/%f_ScriptName%.baf" EVAL
+//        END
+//      END
+//    END
+//  END
+//END
+
+DEFINE_PATCH_FUNCTION change_store_stock
+  INT_VAR
+    stock = 1
+  STR_VAR
+    item = ""
+BEGIN
+  READ_LONG 0x34 io
+  FOR (i = 0; i < LONG_AT 0x38; ++i) BEGIN
+    READ_ASCII io + 0x1c * i store_item ELSE fl#blank
+    PATCH_IF "%store_item%" STRING_MATCHES_REGEXP "%item%" = 0 BEGIN
+      WRITE_LONG io + 0x1c * i + 0x14 stock
+    END
+  END
+END

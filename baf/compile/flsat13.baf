@@ -1,0 +1,162 @@
+
+IF
+  Exists("HAREIS")
+  Global("flsat01","GLOBAL",13)
+THEN RESPONSE #100
+  GiveItemCreate("scrl66","HAREIS",1,0,0)
+  SetGlobal("flsat01","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("HAREIS")
+  Global("flsat02","GLOBAL",13)
+THEN RESPONSE #100
+  GiveItemCreate("scrl66","HAREIS",1,0,0)
+  SetGlobal("flsat02","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("HAREIS")
+  Global("flsat03","GLOBAL",13)
+THEN RESPONSE #100
+  GiveItemCreate("scrl66","HAREIS",1,0,0)
+  SetGlobal("flsat03","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("HAREIS")
+  Global("flsat04","GLOBAL",13)
+THEN RESPONSE #100
+  GiveItemCreate("scrl66","HAREIS",1,0,0)
+  SetGlobal("flsat04","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("HAREIS")
+  Global("flsat05","GLOBAL",13)
+THEN RESPONSE #100
+  GiveItemCreate("scrl67","HAREIS",1,0,0)
+  SetGlobal("flsat05","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("HAREIS")
+  Global("flsat06","GLOBAL",13)
+THEN RESPONSE #100
+  GiveItemCreate("scrl67","HAREIS",1,0,0)
+  SetGlobal("flsat06","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("HAREIS")
+  Global("flsat07","GLOBAL",13)
+THEN RESPONSE #100
+  GiveItemCreate("scrl67","HAREIS",1,0,0)
+  SetGlobal("flsat07","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("HAREIS")
+  Global("flsat08","GLOBAL",13)
+THEN RESPONSE #100
+  GiveItemCreate("scrl67","HAREIS",1,0,0)
+  SetGlobal("flsat08","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("HAREIS")
+  Global("flsat09","GLOBAL",13)
+THEN RESPONSE #100
+  GiveItemCreate("scrl67","HAREIS",1,0,0)
+  SetGlobal("flsat09","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("HAREIS")
+  Global("flsat10","GLOBAL",13)
+THEN RESPONSE #100
+  GiveItemCreate("scrl68","HAREIS",1,0,0)
+  SetGlobal("flsat10","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("HAREIS")
+  Global("flsat11","GLOBAL",13)
+THEN RESPONSE #100
+  GiveItemCreate("scrl68","HAREIS",1,0,0)
+  SetGlobal("flsat11","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("HAREIS")
+  Global("flsat12","GLOBAL",13)
+THEN RESPONSE #100
+  GiveItemCreate("scrl68","HAREIS",1,0,0)
+  SetGlobal("flsat12","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("HAREIS")
+  Global("flsat13","GLOBAL",13)
+THEN RESPONSE #100
+  GiveItemCreate("scrl71","HAREIS",1,0,0)
+  SetGlobal("flsat13","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("HAREIS")
+  Global("flsat14","GLOBAL",13)
+THEN RESPONSE #100
+  GiveItemCreate("scrl71","HAREIS",1,0,0)
+  SetGlobal("flsat14","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("HAREIS")
+  Global("flsat15","GLOBAL",13)
+THEN RESPONSE #100
+  GiveItemCreate("scrl81","HAREIS",1,0,0)
+  SetGlobal("flsat15","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("HAREIS")
+  Global("flsat16","GLOBAL",13)
+THEN RESPONSE #100
+  GiveItemCreate("scrl81","HAREIS",1,0,0)
+  SetGlobal("flsat16","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("HAREIS")
+  Global("flsat18","GLOBAL",13)
+THEN RESPONSE #100
+  GiveItemCreate("scrl83","HAREIS",1,0,0)
+  SetGlobal("flsat18","GLOBAL",-1)
+  DestroySelf()
+END
+
+IF
+  Exists("HAREIS")
+  Global("flsat19","GLOBAL",13)
+THEN RESPONSE #100
+  GiveItemCreate("scrl83","HAREIS",1,0,0)
+  SetGlobal("flsat19","GLOBAL",-1)
+  DestroySelf()
+END
