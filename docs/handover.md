@@ -27,10 +27,31 @@ below is verified against the live install/saves unless marked *hypothesis*.
 
 ### 1.1 Status
 
-Script is **written, syntax-checked, NOT executed**:
-`research/2026-08-live-audit/handover_v4.lua`. It must run with the game loaded on
-**yaga dead**, party on the world screen (not in a dialog or cutscene). Afterwards the
-owner must save.
+**COMPLETED AND PERSISTED 2026-08-26.**
+`research/2026-08-live-audit/handover_v4.lua` was executed exactly once with the game
+loaded from **`000000476-yaga dead`** in `AR5203`. The remote result was
+`{ok=true,n=12,area="AR5203"}`; a fresh live read showed all seven repair guards at `-1`,
+the five delivered-sanity tokens still at `-1`, and the three Vongoethe watchpoint tokens
+still at `12`, `10`, and `6`.
+
+A distinct in-game save was then written to **`000000040-Interval-Save`**; the source slot
+remains preserved. Read-only save forensics proved execution and persistence:
+
+- current ARE item-table count increased **265 → 277**;
+- each of the 12 exact target resrefs increased **0 → 1**;
+- the 12 records are referenced by six new type-4 ground-pile containers (two items per
+  party-member tile), proving they are lootable area drops rather than corpse inventory;
+- saved charges match the effective ITMs (`halb10=0,2,0`, `wa2helm=1,0,0`, all others
+  `0,0,0`);
+- the seven repair guards persisted at `-1`, while all sanity/watchpoint tokens remained
+  unchanged;
+- new `BALDUR.gam` SHA-256:
+  `E34FBF355413F0DC9F60F2CE7CEA408DD6A7D667BCC8E5615E065DFBE0E36093`.
+
+**Do not execute the full v4 script again on this playthrough.** The drops are already
+materialized and saved. If a later check finds a genuinely missing drop, inspect the saved
+ARE first and use a separately guarded *drops-only* recovery; never reset or replay the
+token mutation.
 
 ### 1.2 The list (12) and why each is a bug loss
 
@@ -77,9 +98,11 @@ dropped only their +1 two-handed swords.
    round-robin across the party so the drops spread over several tiles.
 6. Returns JSON `{ok, n, placed[], after{}, area}`, or `{aborted=...}` naming the mismatch.
 
-### 1.4 How to run it
+### 1.4 Execution record (historical — do not rerun)
 
 Client repo: `C:\src\private\eeex-remote-console` (README has the full protocol).
+
+This is the exact command that was used successfully, retained only for provenance:
 
 ```powershell
 & "C:\src\private\eeex-remote-console\tools\eeex-remote.ps1" `
@@ -93,8 +116,9 @@ Use proven-safe EEex primitives only: `EEex_GameState_GetGlobalInt` / `SetGlobal
 API expects a `CAIObjectType*` — that caused two hard crashes in July. A client timeout
 means the game crashed; check before retrying.
 
-After success: owner saves, then re-read the 7 guard tokens (all -1) and confirm the 12
-items are on the ground or in inventory.
+The post-save check is stronger than the original planned visual-only check: the distinct
+save contains all 12 exact item records and correct charges. The owner can now pick up the
+drops and continue from `000000040-Interval-Save`.
 
 ### 1.5 Evidence files (`research/2026-08-live-audit/`)
 
@@ -109,6 +133,19 @@ items are on the ground or in inventory.
   55 re-seeded) that introduced defect classes 3 and 5 below.
 
 ## 2. Task B — fix the randomiser (this fork)
+
+### 2.0 Repository status
+
+The working repository already exists locally at
+`C:\src\private\bgee-itemrandomiser-fix`. Its history contains the unmodified import
+(`0da5eff`), the EET/BGT `flSqueaked` fix (`b600e94`), and this audit/handover
+(`a25c11e`, plus any later handover-status commit).
+
+It is **not yet a GitHub fork/repository**: no git remote is configured, and no matching
+repo currently exists under the owner's personal GitHub account. Do not re-import the
+source or start another local repo. The next repository step is simply to create the
+personal remote/fork, add it as a remote, and push this existing history when the owner
+authorizes that external action.
 
 ### 2.1 How the mod delivers (verified from source and saves)
 
@@ -211,6 +248,8 @@ Key inference rule: **a dead creature's record lists only the items that did NOT
 
 ## 4. Open items
 
-- Execute Task A (§1.4) on yaga dead; owner saves afterwards.
+- Pick up the 12 already-saved drops in `AR5203` and continue from
+  `000000040-Interval-Save`; preserve `000000476-yaga dead` as the pre-repair source.
 - Vongoethe watchpoint (§1.3) once that quest is resolved.
-- Fork: install-test @b600e94, then build §2.3. Upstream PR for class 1 still pending.
+- Create the personal GitHub remote/fork when authorized, push this existing local history,
+  install-test @b600e94, then build §2.3. Upstream PR for class 1 is still pending.
