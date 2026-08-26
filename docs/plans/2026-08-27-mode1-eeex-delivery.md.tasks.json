@@ -1,0 +1,89 @@
+{
+  "planPath": "docs/plans/2026-08-27-mode1-eeex-delivery.md",
+  "tasks": [
+    {
+      "id": 0,
+      "subject": "Task 1: Reproduce and fix campaign-local SSL completion",
+      "status": "pending"
+    },
+    {
+      "id": 1,
+      "subject": "Task 2: Establish the hermetic unit runner and Mode boundary guard",
+      "status": "pending",
+      "blockedBy": [0]
+    },
+    {
+      "id": 2,
+      "subject": "Task 3: Add the normalized public catalog and conflict semantics",
+      "status": "pending",
+      "blockedBy": [1]
+    },
+    {
+      "id": 3,
+      "subject": "Task 4: Move extension source overrides before filtering and split removal plan/apply",
+      "status": "pending",
+      "blockedBy": [2]
+    },
+    {
+      "id": 4,
+      "subject": "Task 5: Add persistent compact registries and legacy migration snapshots",
+      "status": "pending",
+      "blockedBy": [3]
+    },
+    {
+      "id": 5,
+      "subject": "Task 6: Model endpoints, capacity, stable slots, and authored fallbacks",
+      "status": "pending",
+      "blockedBy": [4]
+    },
+    {
+      "id": 6,
+      "subject": "Task 7: Generate a deterministic, spoiler-safe Lua manifest",
+      "status": "pending",
+      "blockedBy": [5]
+    },
+    {
+      "id": 7,
+      "subject": "Task 8: Add the exact Mode 1 backend seam and retain special BCS transforms",
+      "status": "pending",
+      "blockedBy": [6]
+    },
+    {
+      "id": 8,
+      "subject": "Task 9: Build the pure Lua delivery transaction state machine",
+      "status": "pending",
+      "blockedBy": [7]
+    },
+    {
+      "id": 9,
+      "subject": "Task 10: Add the EEex v0.11 bootstrap, render poll, and isolated API probes",
+      "status": "pending",
+      "blockedBy": [8]
+    },
+    {
+      "id": 10,
+      "subject": "Task 11: Add hermetic install, reinstall, uninstall, and Mode 2 matrices",
+      "status": "pending",
+      "blockedBy": [9]
+    },
+    {
+      "id": 11,
+      "subject": "Task 12: Reinstall and runtime-verify in the disposable EET",
+      "status": "pending",
+      "blockedBy": [10]
+    },
+    {
+      "id": 12,
+      "subject": "Task 13: Document extensions, migration, and spoiler-safe operations",
+      "status": "pending",
+      "blockedBy": [11]
+    },
+    {
+      "id": 13,
+      "subject": "Task 14: Final verification and independent review",
+      "status": "pending",
+      "blockedBy": [12]
+    }
+  ],
+  "lastUpdated": "2026-08-27T06:24:53.9414639+09:00"
+}
