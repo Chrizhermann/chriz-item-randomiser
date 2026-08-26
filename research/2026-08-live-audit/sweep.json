@@ -1,0 +1,9177 @@
+[
+ {
+  "tag": "BG2",
+  "item": "amul16",
+  "glob": "FL1T01",
+  "tier": 1,
+  "token": 1,
+  "src": "ar0602.are",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "GAM"
+  ],
+  "obtain": [
+   "GAM"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "boot02",
+  "glob": "FL1T02",
+  "tier": 1,
+  "token": 2,
+  "src": "ar0303.are",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "bdwaizah.sto",
+   "cdbag04.sto"
+  ],
+  "obtain": [
+   "bdwaizah.sto",
+   "cdbag04.sto"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "belt09",
+  "glob": "FL1T03",
+  "tier": 1,
+  "token": 3,
+  "src": "gaal01.cre",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "GAM"
+  ],
+  "obtain": [
+   "GAM"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "misc3h",
+  "glob": "FL1T04",
+  "tier": 1,
+  "token": 4,
+  "src": "ar1202.are",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "GAM"
+  ],
+  "obtain": [
+   "GAM"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "ring26",
+  "glob": "FL1T05",
+  "tier": 1,
+  "token": 5,
+  "src": "ar0329.are",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [],
+  "obtain": []
+ },
+ {
+  "tag": "BG2",
+  "item": "misc3l",
+  "glob": "FL1T06",
+  "tier": 1,
+  "token": 6,
+  "src": "ar1515.are",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "GAM"
+  ],
+  "obtain": [
+   "GAM"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "blun23",
+  "glob": "FL1T07",
+  "tier": 1,
+  "token": 7,
+  "src": "troalt.bcs",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "GAM"
+  ],
+  "obtain": [
+   "GAM"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "brac09",
+  "glob": "FL1T08",
+  "tier": 1,
+  "token": 8,
+  "src": "pthral05.cre",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "GAM",
+   "ar0602.are",
+   "bdkazzre.sto",
+   "bdsorcsc.sto",
+   "ohnimim.sto",
+   "ribald3.sto"
+  ],
+  "obtain": [
+   "GAM",
+   "bdkazzre.sto",
+   "bdsorcsc.sto",
+   "ohnimim.sto",
+   "ribald3.sto"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "rods05",
+  "glob": "FL1T09",
+  "tier": 1,
+  "token": 9,
+  "src": "grvlch01.cre",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "cdbag04.sto"
+  ],
+  "obtain": [
+   "cdbag04.sto"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "misc3i",
+  "glob": "FL1T10",
+  "tier": 1,
+  "token": 10,
+  "src": "ar0528.are",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "GAM"
+  ],
+  "obtain": [
+   "GAM"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "ring35",
+  "glob": "FL1T11",
+  "tier": 1,
+  "token": 11,
+  "src": "arnwar07.cre",
+  "val": null,
+  "mode": "NOVAR",
+  "hits": [
+   "GAM"
+  ],
+  "obtain": [
+   "GAM"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "scrl16",
+  "glob": "FL1T12",
+  "tier": 1,
+  "token": 12,
+  "src": "blank",
+  "val": null,
+  "mode": "NOVAR",
+  "hits": [
+   "ar1516.are",
+   "bd0122.are",
+   "oh6500.are"
+  ],
+  "obtain": []
+ },
+ {
+  "tag": "BG2",
+  "item": "xbow03",
+  "glob": "FL1T13",
+  "tier": 1,
+  "token": 13,
+  "src": "bhcapt01.cre",
+  "val": null,
+  "mode": "NOVAR",
+  "hits": [
+   "c!bag04.sto",
+   "cdbag04.sto"
+  ],
+  "obtain": [
+   "c!bag04.sto",
+   "cdbag04.sto"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "leat06",
+  "glob": "FL1T14",
+  "tier": 1,
+  "token": 14,
+  "src": "blank",
+  "val": null,
+  "mode": "NOVAR",
+  "hits": [
+   "GAM",
+   "ribald.sto"
+  ],
+  "obtain": [
+   "GAM",
+   "ribald.sto"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "ring36",
+  "glob": "FL1T15",
+  "tier": 1,
+  "token": 15,
+  "src": "ar0413.are",
+  "val": null,
+  "mode": "NOVAR",
+  "hits": [
+   "GAM",
+   "bd7100.are",
+   "bdwaizah.sto"
+  ],
+  "obtain": [
+   "GAM",
+   "bdwaizah.sto"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "staf10",
+  "glob": "FL1T16",
+  "tier": 1,
+  "token": 16,
+  "src": "ar0811.are",
+  "val": null,
+  "mode": "NOVAR",
+  "hits": [
+   "cdbag04.sto"
+  ],
+  "obtain": [
+   "cdbag04.sto"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "misc3p",
+  "glob": "FL1T17",
+  "tier": 1,
+  "token": 17,
+  "src": "arled.sto",
+  "val": null,
+  "mode": "NOVAR",
+  "hits": [
+   "GAM"
+  ],
+  "obtain": [
+   "GAM"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "sper03",
+  "glob": "FL1T18",
+  "tier": 1,
+  "token": 18,
+  "src": "udtrap03.cre",
+  "val": null,
+  "mode": "NOVAR",
+  "hits": [
+   "cdbag04.sto",
+   "taerum.sto"
+  ],
+  "obtain": [
+   "cdbag04.sto",
+   "taerum.sto"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "ring30",
+  "glob": "FL1T19",
+  "tier": 1,
+  "token": 19,
+  "src": "kalah2.cre",
+  "val": null,
+  "mode": "NOVAR",
+  "hits": [
+   "cdbag04.sto"
+  ],
+  "obtain": [
+   "cdbag04.sto"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "boot01",
+  "glob": "FL1T20",
+  "tier": 1,
+  "token": 20,
+  "src": "pbhunt05.cre",
+  "val": null,
+  "mode": "NOVAR",
+  "hits": [
+   "GAM",
+   "ar0306.are",
+   "ar0602.are",
+   "ar4000.are"
+  ],
+  "obtain": [
+   "GAM",
+   "ar4000.are"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "brac04",
+  "glob": "FL1T21",
+  "tier": 1,
+  "token": 21,
+  "src": "ar1904.are",
+  "val": null,
+  "mode": "NOVAR",
+  "hits": [
+   "GAM",
+   "ar0602.are",
+   "ar5003.are",
+   "bd7100.are",
+   "c!bag04.sto",
+   "cdbag04.sto"
+  ],
+  "obtain": [
+   "GAM",
+   "ar5003.are",
+   "c!bag04.sto",
+   "cdbag04.sto"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "brac17",
+  "glob": "FL1T22",
+  "tier": 1,
+  "token": 22,
+  "src": "ar0406.are",
+  "val": null,
+  "mode": "NOVAR",
+  "hits": [
+   "oh6450.are",
+   "cdbag04.sto"
+  ],
+  "obtain": [
+   "cdbag04.sto"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "helm18",
+  "glob": "FL1T23",
+  "tier": 1,
+  "token": 23,
+  "src": "ar1401.are",
+  "val": null,
+  "mode": "NOVAR",
+  "hits": [
+   "cdbag04.sto"
+  ],
+  "obtain": [
+   "cdbag04.sto"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "shld07",
+  "glob": "FL2T01",
+  "tier": 2,
+  "token": 1,
+  "src": "ar0412.are",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "GAM",
+   "cdbag04.sto"
+  ],
+  "obtain": [
+   "GAM",
+   "cdbag04.sto"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "sw2h03",
+  "glob": "FL2T02",
+  "tier": 2,
+  "token": 2,
+  "src": "sevpat04.cre",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "GAM",
+   "c!bag04.sto",
+   "sartem01.sto",
+   "sto0703.sto"
+  ],
+  "obtain": [
+   "GAM",
+   "c!bag04.sto",
+   "sartem01.sto",
+   "sto0703.sto"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "ring28",
+  "glob": "FL2T03",
+  "tier": 2,
+  "token": 3,
+  "src": "ribald.sto",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "GAM"
+  ],
+  "obtain": [
+   "GAM"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "ring29",
+  "glob": "FL2T04",
+  "tier": 2,
+  "token": 4,
+  "src": "ar1302.are",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "GAM"
+  ],
+  "obtain": [
+   "GAM"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "leat08",
+  "glob": "FL2T05",
+  "tier": 2,
+  "token": 5,
+  "src": "maevar.cre",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "ar0305.are",
+   "ar0306.are",
+   "ar0602.are",
+   "ar5003.are",
+   "bd0063.are",
+   "bd4100.are",
+   "bd6100.are",
+   "bdonoro.sto",
+   "ribald3.sto",
+   "shop07.sto"
+  ],
+  "obtain": [
+   "ar5003.are",
+   "bdonoro.sto",
+   "ribald3.sto",
+   "shop07.sto"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "dagg17",
+  "glob": "FL2T06",
+  "tier": 2,
+  "token": 6,
+  "src": "obshal03.cre",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "cdbag04.sto"
+  ],
+  "obtain": [
+   "cdbag04.sto"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "brac07",
+  "glob": "FL2T07",
+  "tier": 2,
+  "token": 7,
+  "src": "ar0206.are",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "GAM"
+  ],
+  "obtain": [
+   "GAM"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "amul22",
+  "glob": "FL2T08",
+  "tier": 2,
+  "token": 8,
+  "src": "trrak01.cre",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "cdbag04.sto"
+  ],
+  "obtain": [
+   "cdbag04.sto"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "chan17",
+  "glob": "FL2T09",
+  "tier": 2,
+  "token": 9,
+  "src": "ar0803.are",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "ribald3.sto"
+  ],
+  "obtain": [
+   "ribald3.sto"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "clck06",
+  "glob": "FL2T10",
+  "tier": 2,
+  "token": 10,
+  "src": "sevpat02.cre",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "ar0602.are",
+   "bd0120.are",
+   "bg2200.are",
+   "oh6450.are",
+   "c!bag04.sto",
+   "ribald3.sto"
+  ],
+  "obtain": [
+   "c!bag04.sto",
+   "ribald3.sto"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "leat16",
+  "glob": "FL2T11",
+  "tier": 2,
+  "token": 11,
+  "src": "ar1301.are",
+  "val": null,
+  "mode": "NOVAR",
+  "hits": [
+   "ribald.sto"
+  ],
+  "obtain": [
+   "ribald.sto"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "leat18",
+  "glob": "FL2T12",
+  "tier": 2,
+  "token": 12,
+  "src": "ar2207.are",
+  "val": null,
+  "mode": "NOVAR",
+  "hits": [
+   "cdbag04.sto"
+  ],
+  "obtain": [
+   "cdbag04.sto"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "blun19",
+  "glob": "FL2T13",
+  "tier": 2,
+  "token": 13,
+  "src": "bernard2.sto",
+  "val": null,
+  "mode": "NOVAR",
+  "hits": [
+   "bernard2.sto",
+   "cdbag04.sto"
+  ],
+  "obtain": [
+   "bernard2.sto",
+   "cdbag04.sto"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "sw2h12",
+  "glob": "FL2T14",
+  "tier": 2,
+  "token": 14,
+  "src": "ppmind01.cre",
+  "val": null,
+  "mode": "NOVAR",
+  "hits": [
+   "cdbag04.sto"
+  ],
+  "obtain": [
+   "cdbag04.sto"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "leat17",
+  "glob": "FL2T15",
+  "tier": 2,
+  "token": 15,
+  "src": "ribald.sto",
+  "val": null,
+  "mode": "NOVAR",
+  "hits": [
+   "cdbag04.sto"
+  ],
+  "obtain": [
+   "cdbag04.sto"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "helm06",
+  "glob": "FL2T16",
+  "tier": 2,
+  "token": 16,
+  "src": "ar0308.are",
+  "val": null,
+  "mode": "NOVAR",
+  "hits": [
+   "GAM",
+   "bg1200.are",
+   "bdkazzre.sto",
+   "c!bag04.sto",
+   "cdbag04.sto",
+   "ohnhuegr.sto"
+  ],
+  "obtain": [
+   "GAM",
+   "bdkazzre.sto",
+   "c!bag04.sto",
+   "cdbag04.sto",
+   "ohnhuegr.sto"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "wand12",
+  "glob": "FL2T17",
+  "tier": 2,
+  "token": 17,
+  "src": "ar0711.are",
+  "val": null,
+  "mode": "NOVAR",
+  "hits": [
+   "cdbag04.sto",
+   "ohnimim.sto"
+  ],
+  "obtain": [
+   "cdbag04.sto",
+   "ohnimim.sto"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "sw1h54c",
+  "glob": "FL2T18",
+  "tier": 2,
+  "token": 18,
+  "src": "ar0602.are",
+  "val": null,
+  "mode": "NOVAR",
+  "hits": [],
+  "obtain": []
+ },
+ {
+  "tag": "BG2",
+  "item": "clck27",
+  "glob": "FL2T19",
+  "tier": 2,
+  "token": 19,
+  "src": "sewrak01.cre",
+  "val": null,
+  "mode": "NOVAR",
+  "hits": [
+   "GAM"
+  ],
+  "obtain": [
+   "GAM"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "belt06",
+  "glob": "FL3T01",
+  "tier": 3,
+  "token": 1,
+  "src": "ribald.sto",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "GAM"
+  ],
+  "obtain": [
+   "GAM"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "ring31",
+  "glob": "FL3T02",
+  "tier": 3,
+  "token": 2,
+  "src": "ribald.cre",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "GAM",
+   "ar0602.are",
+   "cdbag04.sto"
+  ],
+  "obtain": [
+   "GAM",
+   "cdbag04.sto"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "helm20",
+  "glob": "FL3T03",
+  "tier": 3,
+  "token": 3,
+  "src": "ar0804.are",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "oh6450.are",
+   "ribald3.sto"
+  ],
+  "obtain": [
+   "ribald3.sto"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "clck03",
+  "glob": "FL3T04",
+  "tier": 3,
+  "token": 4,
+  "src": "trmer02.sto",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "GAM",
+   "bd1100.are"
+  ],
+  "obtain": [
+   "GAM"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "slng05",
+  "glob": "FL3T05",
+  "tier": 3,
+  "token": 5,
+  "src": "ar1401.are",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "ribald3.sto"
+  ],
+  "obtain": [
+   "ribald3.sto"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "sw1h40",
+  "glob": "FL3T06",
+  "tier": 3,
+  "token": 6,
+  "src": "bernard2.sto",
+  "val": null,
+  "mode": "NOVAR",
+  "hits": [
+   "bernard2.sto",
+   "cdbag04.sto"
+  ],
+  "obtain": [
+   "bernard2.sto",
+   "cdbag04.sto"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "clck15",
+  "glob": "FL3T07",
+  "tier": 3,
+  "token": 7,
+  "src": "trmer04.sto",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "ar0516.are",
+   "ar5000.are",
+   "25spell.sto",
+   "cdbag04.sto",
+   "taerum.sto"
+  ],
+  "obtain": [
+   "ar5000.are",
+   "25spell.sto",
+   "cdbag04.sto",
+   "taerum.sto"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "clck16",
+  "glob": "FL3T08",
+  "tier": 3,
+  "token": 8,
+  "src": "blank",
+  "val": null,
+  "mode": "NOVAR",
+  "hits": [
+   "ar1503.are",
+   "ar1506.are",
+   "ar1507.are",
+   "ar3005.are",
+   "ar3020.are",
+   "ar4000.are",
+   "ar5002.are",
+   "bd4000.are",
+   "bg3900.are",
+   "25spell.sto",
+   "cdbag04.sto",
+   "ribald3.sto"
+  ],
+  "obtain": [
+   "ar3005.are",
+   "ar3020.are",
+   "ar4000.are",
+   "ar5002.are",
+   "25spell.sto",
+   "cdbag04.sto",
+   "ribald3.sto"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "clck17",
+  "glob": "FL3T09",
+  "tier": 3,
+  "token": 9,
+  "src": "uddrow23.sto",
+  "val": null,
+  "mode": "NOVAR",
+  "hits": [
+   "GAM",
+   "ar0705.are",
+   "oh6460.are",
+   "oh6500.are",
+   "25spell.sto",
+   "bdsorcsc.sto",
+   "c!bag04.sto",
+   "cdbag04.sto",
+   "ribald.sto"
+  ],
+  "obtain": [
+   "GAM",
+   "25spell.sto",
+   "bdsorcsc.sto",
+   "c!bag04.sto",
+   "cdbag04.sto",
+   "ribald.sto"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "halb09a",
+  "glob": "FL3T10",
+  "tier": 3,
+  "token": 10,
+  "src": "pwarden.cre",
+  "val": null,
+  "mode": "NOVAR",
+  "hits": [],
+  "obtain": []
+ },
+ {
+  "tag": "BG2",
+  "item": "blun24",
+  "glob": "FL3T11",
+  "tier": 3,
+  "token": 11,
+  "src": "cedruid2.cre",
+  "val": null,
+  "mode": "NOVAR",
+  "hits": [
+   "cdbag04.sto"
+  ],
+  "obtain": [
+   "cdbag04.sto"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "brac11",
+  "glob": "FL3T12",
+  "tier": 3,
+  "token": 12,
+  "src": "ar2200.are",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "c!bag04.sto",
+   "cdbag04.sto"
+  ],
+  "obtain": [
+   "c!bag04.sto",
+   "cdbag04.sto"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "leat13",
+  "glob": "FL3T13",
+  "tier": 3,
+  "token": 13,
+  "src": "theshal.cre",
+  "val": null,
+  "mode": "NOVAR",
+  "hits": [
+   "cdbag04.sto"
+  ],
+  "obtain": [
+   "cdbag04.sto"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "misc3m",
+  "glob": "FL3T14",
+  "tier": 3,
+  "token": 14,
+  "src": "ar0705.are",
+  "val": null,
+  "mode": "NOVAR",
+  "hits": [
+   "cdbag04.sto"
+  ],
+  "obtain": [
+   "cdbag04.sto"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "misc3o",
+  "glob": "FL3T15",
+  "tier": 3,
+  "token": 15,
+  "src": "ar2400.are",
+  "val": null,
+  "mode": "NOVAR",
+  "hits": [
+   "cdbag04.sto"
+  ],
+  "obtain": [
+   "cdbag04.sto"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "hamm03",
+  "glob": "FL3T16",
+  "tier": 3,
+  "token": 16,
+  "src": "ar0204.are",
+  "val": null,
+  "mode": "NOVAR",
+  "hits": [
+   "bd1100.are",
+   "c!bag04.sto",
+   "cdbag04.sto",
+   "k#import.sto"
+  ],
+  "obtain": [
+   "c!bag04.sto",
+   "cdbag04.sto",
+   "k#import.sto"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "clck24",
+  "glob": "FL3T17",
+  "tier": 3,
+  "token": 17,
+  "src": "ar1511.are",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "GAM",
+   "ar4500.are"
+  ],
+  "obtain": [
+   "GAM",
+   "ar4500.are"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "chan09",
+  "glob": "FL3T18",
+  "tier": 3,
+  "token": 18,
+  "src": "rngsha02.cre",
+  "val": null,
+  "mode": "NOVAR",
+  "hits": [
+   "cdbag04.sto"
+  ],
+  "obtain": [
+   "cdbag04.sto"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "halb08",
+  "glob": "FL3T19",
+  "tier": 3,
+  "token": 19,
+  "src": "rngsha02.cre",
+  "val": null,
+  "mode": "NOVAR",
+  "hits": [
+   "cdbag04.sto"
+  ],
+  "obtain": [
+   "cdbag04.sto"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "sper07",
+  "glob": "FL3T20",
+  "tier": 3,
+  "token": 20,
+  "src": "ar1904.are",
+  "val": null,
+  "mode": "NOVAR",
+  "hits": [
+   "ribald.sto"
+  ],
+  "obtain": [
+   "ribald.sto"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "amul25",
+  "glob": "FL4T01",
+  "tier": 4,
+  "token": 1,
+  "src": "udelder.cre",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "GAM",
+   "ar0602.are"
+  ],
+  "obtain": [
+   "GAM"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "sw1h33",
+  "glob": "FL4T02",
+  "tier": 4,
+  "token": 2,
+  "src": "trmer02.sto",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "cdbag04.sto"
+  ],
+  "obtain": [
+   "cdbag04.sto"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "staf16",
+  "glob": "FL4T03",
+  "tier": 4,
+  "token": 3,
+  "src": "uddrow23.sto",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [],
+  "obtain": []
+ },
+ {
+  "tag": "BG2",
+  "item": "staf17",
+  "glob": "FL4T04",
+  "tier": 4,
+  "token": 4,
+  "src": "ar0412.are",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "cdbag04.sto"
+  ],
+  "obtain": [
+   "cdbag04.sto"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "brac06",
+  "glob": "FL4T05",
+  "tier": 4,
+  "token": 5,
+  "src": "obshal01.cre",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "GAM"
+  ],
+  "obtain": [
+   "GAM"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "brac15",
+  "glob": "FL4T06",
+  "tier": 4,
+  "token": 6,
+  "src": "ribald.sto",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "bdkazzre.sto",
+   "ribald3.sto"
+  ],
+  "obtain": [
+   "bdkazzre.sto",
+   "ribald3.sto"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "halb04",
+  "glob": "FL4T07",
+  "tier": 4,
+  "token": 7,
+  "src": "ar0205.are",
+  "val": 18,
+  "mode": "PENDING",
+  "block": [
+   [
+    "fl4t18.bcs",
+    "halb04",
+    "sahramb3"
+   ]
+  ],
+  "slotcre": "fl4t18",
+  "slotstatus": "ar2300:visited:ALIVE",
+  "anyblocks": [
+   [
+    "fl4t1.bcs",
+    1
+   ],
+   [
+    "fl4t10.bcs",
+    10
+   ],
+   [
+    "fl4t11.bcs",
+    11
+   ],
+   [
+    "fl4t12.bcs",
+    12
+   ],
+   [
+    "fl4t13.bcs",
+    13
+   ],
+   [
+    "fl4t14.bcs",
+    14
+   ],
+   [
+    "fl4t15.bcs",
+    15
+   ],
+   [
+    "fl4t16.bcs",
+    16
+   ],
+   [
+    "fl4t17.bcs",
+    17
+   ],
+   [
+    "fl4t18.bcs",
+    18
+   ],
+   [
+    "fl4t19.bcs",
+    19
+   ],
+   [
+    "fl4t2.bcs",
+    2
+   ],
+   [
+    "fl4t20.bcs",
+    20
+   ],
+   [
+    "fl4t3.bcs",
+    3
+   ],
+   [
+    "fl4t4.bcs",
+    4
+   ],
+   [
+    "fl4t5.bcs",
+    5
+   ],
+   [
+    "fl4t6.bcs",
+    6
+   ],
+   [
+    "fl4t7.bcs",
+    7
+   ],
+   [
+    "fl4t8.bcs",
+    8
+   ],
+   [
+    "fl4t9.bcs",
+    9
+   ]
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "sw1h35",
+  "glob": "FL4T08",
+  "tier": 4,
+  "token": 8,
+  "src": "pwarden.cre",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "cdbag04.sto"
+  ],
+  "obtain": [
+   "cdbag04.sto"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "sw1h54a",
+  "glob": "FL4T09",
+  "tier": 4,
+  "token": 9,
+  "src": "ar2400.are",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [],
+  "obtain": []
+ },
+ {
+  "tag": "BG2",
+  "item": "bow19a",
+  "glob": "FL4T10",
+  "tier": 4,
+  "token": 10,
+  "src": "ar0503.are",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [],
+  "obtain": []
+ },
+ {
+  "tag": "BG2",
+  "item": "slng07",
+  "glob": "FL4T11",
+  "tier": 4,
+  "token": 11,
+  "src": "bernard2.sto",
+  "val": null,
+  "mode": "NOVAR",
+  "hits": [
+   "GAM",
+   "cdbag04.sto"
+  ],
+  "obtain": [
+   "GAM",
+   "cdbag04.sto"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "dagg13",
+  "glob": "FL4T12",
+  "tier": 4,
+  "token": 12,
+  "src": "pbhunt05.cre",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "ohnsdwm.sto"
+  ],
+  "obtain": [
+   "ohnsdwm.sto"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "brac08",
+  "glob": "FL4T13",
+  "tier": 4,
+  "token": 13,
+  "src": "blank",
+  "val": null,
+  "mode": "NOVAR",
+  "hits": [
+   "ribald.sto",
+   "taerum.sto"
+  ],
+  "obtain": [
+   "ribald.sto",
+   "taerum.sto"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "shld22",
+  "glob": "FL4T14",
+  "tier": 4,
+  "token": 14,
+  "src": "uddrow23.sto",
+  "val": null,
+  "mode": "NOVAR",
+  "hits": [
+   "GAM"
+  ],
+  "obtain": [
+   "GAM"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "bow09",
+  "glob": "FL4T15",
+  "tier": 4,
+  "token": 15,
+  "src": "obshal02.cre",
+  "val": null,
+  "mode": "NOVAR",
+  "hits": [
+   "GAM",
+   "ar0307.are",
+   "ar0311.are",
+   "ar5003.are",
+   "bdwaizah.sto",
+   "bshop01.sto",
+   "cdbag04.sto",
+   "jayes.sto",
+   "ohnsdwm.sto",
+   "ribald3.sto",
+   "sarbar01.sto"
+  ],
+  "obtain": [
+   "GAM",
+   "ar5003.are",
+   "bdwaizah.sto",
+   "bshop01.sto",
+   "cdbag04.sto",
+   "jayes.sto",
+   "ohnsdwm.sto",
+   "ribald3.sto",
+   "sarbar01.sto"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "boot04",
+  "glob": "FL4T16",
+  "tier": 4,
+  "token": 16,
+  "src": "reti.cre",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "GAM",
+   "oh6450.are",
+   "cdbag04.sto",
+   "ribald3.sto"
+  ],
+  "obtain": [
+   "GAM",
+   "cdbag04.sto",
+   "ribald3.sto"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "sw1h52",
+  "glob": "FL4T17",
+  "tier": 4,
+  "token": 17,
+  "src": "ar2209.are",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "bd5100.are",
+   "ohnsdwm.sto"
+  ],
+  "obtain": [
+   "ohnsdwm.sto"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "blun22",
+  "glob": "FL4T18",
+  "tier": 4,
+  "token": 18,
+  "src": "trmer02.sto",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "cdbag04.sto"
+  ],
+  "obtain": [
+   "cdbag04.sto"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "sw1h36",
+  "glob": "FL4T19",
+  "tier": 4,
+  "token": 19,
+  "src": "bhcrypt.cre",
+  "val": null,
+  "mode": "NOVAR",
+  "hits": [
+   "cdbag04.sto"
+  ],
+  "obtain": [
+   "cdbag04.sto"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "misc3a",
+  "glob": "FL4T20",
+  "tier": 4,
+  "token": 20,
+  "src": "ppcowled.cre",
+  "val": null,
+  "mode": "NOVAR",
+  "hits": [
+   "cdbag04.sto"
+  ],
+  "obtain": [
+   "cdbag04.sto"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "ring27",
+  "glob": "FL5T01",
+  "tier": 5,
+  "token": 1,
+  "src": "uddwarf.cre",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "GAM"
+  ],
+  "obtain": [
+   "GAM"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "blun12",
+  "glob": "FL5T02",
+  "tier": 5,
+  "token": 2,
+  "src": "blpool.bcs",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [],
+  "obtain": []
+ },
+ {
+  "tag": "BG2",
+  "item": "bow13",
+  "glob": "FL5T03",
+  "tier": 5,
+  "token": 3,
+  "src": "ar2602.are",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "cdbag04.sto"
+  ],
+  "obtain": [
+   "cdbag04.sto"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "xbow06",
+  "glob": "FL5T04",
+  "tier": 5,
+  "token": 4,
+  "src": "bernard2.sto",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "ar2300.are",
+   "ar2400.are",
+   "c!bag04.sto",
+   "cdbag04.sto"
+  ],
+  "obtain": [
+   "c!bag04.sto",
+   "cdbag04.sto"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "belt10",
+  "glob": "FL5T05",
+  "tier": 5,
+  "token": 5,
+  "src": "trmer02.sto",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "GAM"
+  ],
+  "obtain": [
+   "GAM"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "ring08",
+  "glob": "FL5T06",
+  "tier": 5,
+  "token": 6,
+  "src": "jaga3.cre",
+  "val": null,
+  "mode": "NOVAR",
+  "hits": [
+   "GAM",
+   "ar0702.are",
+   "c!bag04.sto"
+  ],
+  "obtain": [
+   "GAM",
+   "c!bag04.sto"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "bow10",
+  "glob": "FL5T07",
+  "tier": 5,
+  "token": 7,
+  "src": "ar1202.are",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "cdbag04.sto",
+   "ribald.sto"
+  ],
+  "obtain": [
+   "cdbag04.sto",
+   "ribald.sto"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "helm07",
+  "glob": "FL5T08",
+  "tier": 5,
+  "token": 8,
+  "src": "blank",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "k#import.sto"
+  ],
+  "obtain": [
+   "k#import.sto"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "belt07",
+  "glob": "FL5T09",
+  "tier": 5,
+  "token": 9,
+  "src": "suadsaan.cre",
+  "val": null,
+  "mode": "NOVAR",
+  "hits": [
+   "GAM",
+   "oh6450.are"
+  ],
+  "obtain": [
+   "GAM"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "clck02",
+  "glob": "FL5T10",
+  "tier": 5,
+  "token": 10,
+  "src": "ar2300.are",
+  "val": null,
+  "mode": "NOVAR",
+  "hits": [
+   "GAM",
+   "oh6450.are",
+   "oh6460.are",
+   "oh6500.are",
+   "c!bag04.sto"
+  ],
+  "obtain": [
+   "GAM",
+   "c!bag04.sto"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "leat20",
+  "glob": "FL5T11",
+  "tier": 5,
+  "token": 11,
+  "src": "ribald.sto",
+  "val": null,
+  "mode": "NOVAR",
+  "hits": [
+   "cdbag04.sto"
+  ],
+  "obtain": [
+   "cdbag04.sto"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "ring23",
+  "glob": "FL5T12",
+  "tier": 5,
+  "token": 12,
+  "src": "ar2100.are",
+  "val": null,
+  "mode": "NOVAR",
+  "hits": [
+   "bg3100.are",
+   "ribald.sto",
+   "sto0703.sto"
+  ],
+  "obtain": [
+   "ribald.sto",
+   "sto0703.sto"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "bow15",
+  "glob": "FL5T13",
+  "tier": 5,
+  "token": 13,
+  "src": "trmer02.sto",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "GAM",
+   "cdbag04.sto"
+  ],
+  "obtain": [
+   "GAM",
+   "cdbag04.sto"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "hamm07",
+  "glob": "FL5T14",
+  "tier": 5,
+  "token": 14,
+  "src": "ar0711.are",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [],
+  "obtain": []
+ },
+ {
+  "tag": "BG2",
+  "item": "ax1h12",
+  "glob": "FL5T15",
+  "tier": 5,
+  "token": 15,
+  "src": "bernard2.sto",
+  "val": null,
+  "mode": "NOVAR",
+  "hits": [
+   "bernard2.sto",
+   "cdbag04.sto"
+  ],
+  "obtain": [
+   "bernard2.sto",
+   "cdbag04.sto"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "slng06",
+  "glob": "FL5T16",
+  "tier": 5,
+  "token": 16,
+  "src": "ar2101.are",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "ar2300.are"
+  ],
+  "obtain": []
+ },
+ {
+  "tag": "BG2",
+  "item": "sw1h25",
+  "glob": "FL6T01",
+  "tier": 6,
+  "token": 1,
+  "src": "pthral05.cre",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "GAM",
+   "c!bag04.sto"
+  ],
+  "obtain": [
+   "GAM",
+   "c!bag04.sto"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "sw1h30",
+  "glob": "FL6T02",
+  "tier": 6,
+  "token": 2,
+  "src": "ar1905.are",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "ar2201.are"
+  ],
+  "obtain": []
+ },
+ {
+  "tag": "BG2",
+  "item": "sw1h31",
+  "glob": "FL6T03",
+  "tier": 6,
+  "token": 3,
+  "src": "ar0082.are",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "cdbag04.sto"
+  ],
+  "obtain": [
+   "cdbag04.sto"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "ring09",
+  "glob": "FL6T04",
+  "tier": 6,
+  "token": 4,
+  "src": "ppbook.bcs",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "GAM",
+   "ar0602.are"
+  ],
+  "obtain": [
+   "GAM"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "bow14",
+  "glob": "FL6T05",
+  "tier": 6,
+  "token": 5,
+  "src": "beast.cre",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "cdbag04.sto",
+   "ribald.sto"
+  ],
+  "obtain": [
+   "cdbag04.sto",
+   "ribald.sto"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "brac16",
+  "glob": "FL6T06",
+  "tier": 6,
+  "token": 6,
+  "src": "udprince.cre",
+  "val": 1,
+  "mode": "PENDING",
+  "block": [],
+  "slotcre": "fl6t1",
+  "slotstatus": "NO-PLACEMENT-FOUND",
+  "anyblocks": [
+   [
+    "fl6t10.bcs",
+    10
+   ],
+   [
+    "fl6t11.bcs",
+    11
+   ],
+   [
+    "fl6t12.bcs",
+    12
+   ],
+   [
+    "fl6t13.bcs",
+    13
+   ],
+   [
+    "fl6t14.bcs",
+    14
+   ],
+   [
+    "fl6t15.bcs",
+    15
+   ],
+   [
+    "fl6t16.bcs",
+    16
+   ],
+   [
+    "fl6t17.bcs",
+    17
+   ],
+   [
+    "fl6t18.bcs",
+    18
+   ],
+   [
+    "fl6t19.bcs",
+    19
+   ],
+   [
+    "fl6t2.bcs",
+    2
+   ],
+   [
+    "fl6t20.bcs",
+    20
+   ],
+   [
+    "fl6t21.bcs",
+    21
+   ],
+   [
+    "fl6t22.bcs",
+    22
+   ],
+   [
+    "fl6t3.bcs",
+    3
+   ],
+   [
+    "fl6t4.bcs",
+    4
+   ],
+   [
+    "fl6t5.bcs",
+    5
+   ],
+   [
+    "fl6t6.bcs",
+    6
+   ],
+   [
+    "fl6t7.bcs",
+    7
+   ],
+   [
+    "fl6t8.bcs",
+    8
+   ],
+   [
+    "fl6t9.bcs",
+    9
+   ]
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "rods03",
+  "glob": "FL6T07",
+  "tier": 6,
+  "token": 7,
+  "src": "ribald.sto",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "GAM",
+   "oh6460.are"
+  ],
+  "obtain": [
+   "GAM"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "scrl07",
+  "glob": "FL6T08",
+  "tier": 6,
+  "token": 8,
+  "src": "ribald.sto",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "bd5100.are",
+   "bg4500.are",
+   "bg5500.are",
+   "25spell.sto",
+   "bag03_.sto",
+   "highhedg.sto",
+   "sto0703.sto"
+  ],
+  "obtain": [
+   "25spell.sto",
+   "bag03_.sto",
+   "highhedg.sto",
+   "sto0703.sto"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "sw2h09",
+  "glob": "FL6T09",
+  "tier": 6,
+  "token": 9,
+  "src": "ribald3.sto",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "ribald3.sto"
+  ],
+  "obtain": [
+   "ribald3.sto"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "wasling",
+  "glob": "FL6T10",
+  "tier": 6,
+  "token": 10,
+  "src": "wmart1.sto",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "GAM"
+  ],
+  "obtain": [
+   "GAM"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "ax1h10",
+  "glob": "FL6T11",
+  "tier": 6,
+  "token": 11,
+  "src": "bernard2.sto",
+  "val": 4,
+  "mode": "PENDING",
+  "block": [],
+  "slotcre": "fl6t4",
+  "slotstatus": "ar2402:visited:GONE",
+  "anyblocks": []
+ },
+ {
+  "tag": "BG2",
+  "item": "shld24",
+  "glob": "FL6T12",
+  "tier": 6,
+  "token": 12,
+  "src": "ribald.sto",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "GAM"
+  ],
+  "obtain": [
+   "GAM"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "scrlag",
+  "glob": "FL6T13",
+  "tier": 6,
+  "token": 13,
+  "src": "shadra01.cre",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [],
+  "obtain": []
+ },
+ {
+  "tag": "BG2",
+  "item": "sw1h54b",
+  "glob": "FL6T14",
+  "tier": 6,
+  "token": 14,
+  "src": "udelder.cre",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [],
+  "obtain": []
+ },
+ {
+  "tag": "BG2",
+  "item": "sper10",
+  "glob": "FL6T15",
+  "tier": 6,
+  "token": 15,
+  "src": "uddrow23.sto",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "ribald3.sto"
+  ],
+  "obtain": [
+   "ribald3.sto"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "dagg12",
+  "glob": "FL6T16",
+  "tier": 6,
+  "token": 16,
+  "src": "uddrow23.sto",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "GAM"
+  ],
+  "obtain": [
+   "GAM"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "helm16",
+  "glob": "FL6T17",
+  "tier": 6,
+  "token": 17,
+  "src": "ribald3.sto",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "GAM",
+   "c!bag04.sto",
+   "cdbag04.sto"
+  ],
+  "obtain": [
+   "GAM",
+   "c!bag04.sto",
+   "cdbag04.sto"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "dagg14",
+  "glob": "FL6T18",
+  "tier": 6,
+  "token": 18,
+  "src": "daqilue.cre",
+  "val": null,
+  "mode": "NOVAR",
+  "hits": [
+   "GAM"
+  ],
+  "obtain": [
+   "GAM"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "helm04",
+  "glob": "FL6T19",
+  "tier": 6,
+  "token": 19,
+  "src": "ar0412.are",
+  "val": null,
+  "mode": "NOVAR",
+  "hits": [
+   "GAM",
+   "cdbag04.sto",
+   "ohnhuegr.sto"
+  ],
+  "obtain": [
+   "GAM",
+   "cdbag04.sto",
+   "ohnhuegr.sto"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "sw1h28",
+  "glob": "FL6T20",
+  "tier": 6,
+  "token": 20,
+  "src": "ar0809.are",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "sarbar01.sto"
+  ],
+  "obtain": [
+   "sarbar01.sto"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "plat17",
+  "glob": "FL6T21",
+  "tier": 6,
+  "token": 21,
+  "src": "ribald3.sto",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "cdbag04.sto"
+  ],
+  "obtain": [
+   "cdbag04.sto"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "ring04",
+  "glob": "FL6T22",
+  "tier": 6,
+  "token": 22,
+  "src": "ar2210.are",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "bdnazram.sto",
+   "cdbag04.sto",
+   "sto0703.sto"
+  ],
+  "obtain": [
+   "bdnazram.sto",
+   "cdbag04.sto",
+   "sto0703.sto"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "brac10",
+  "glob": "FL7T01",
+  "tier": 7,
+  "token": 1,
+  "src": "ar0808.are",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "GAM",
+   "ar0602.are"
+  ],
+  "obtain": [
+   "GAM"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "clck26",
+  "glob": "FL7T02",
+  "tier": 7,
+  "token": 2,
+  "src": "sahramb3.cre",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "GAM",
+   "ar1607.are",
+   "oh6500.are"
+  ],
+  "obtain": [
+   "GAM"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "wa2helm",
+  "glob": "FL7T03",
+  "tier": 7,
+  "token": 3,
+  "src": "wmart2.sto",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [],
+  "obtain": []
+ },
+ {
+  "tag": "BG2",
+  "item": "wa2robe",
+  "glob": "FL7T04",
+  "tier": 7,
+  "token": 4,
+  "src": "wmart2.sto",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "GAM"
+  ],
+  "obtain": [
+   "GAM"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "wa2shiel",
+  "glob": "FL7T05",
+  "tier": 7,
+  "token": 5,
+  "src": "wmart2.sto",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "cdbag04.sto"
+  ],
+  "obtain": [
+   "cdbag04.sto"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "waflail",
+  "glob": "FL7T06",
+  "tier": 7,
+  "token": 6,
+  "src": "wmart1.sto",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "GAM"
+  ],
+  "obtain": [
+   "GAM"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "chan16",
+  "glob": "FL7T07",
+  "tier": 7,
+  "token": 7,
+  "src": "dragblac.cre",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [],
+  "obtain": []
+ },
+ {
+  "tag": "BG2",
+  "item": "staf11",
+  "glob": "FL7T08",
+  "tier": 7,
+  "token": 8,
+  "src": "hllayen.cre",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "GAM"
+  ],
+  "obtain": [
+   "GAM"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "belt08",
+  "glob": "FL7T09",
+  "tier": 7,
+  "token": 9,
+  "src": "uddeath2.cre",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [],
+  "obtain": []
+ },
+ {
+  "tag": "BG2",
+  "item": "plat16",
+  "glob": "FL7T10",
+  "tier": 7,
+  "token": 10,
+  "src": "uddeath2.cre",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "cdbag04.sto"
+  ],
+  "obtain": [
+   "cdbag04.sto"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "sw2h08",
+  "glob": "FL7T11",
+  "tier": 7,
+  "token": 11,
+  "src": "uddeath2.cre",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "cdbag04.sto"
+  ],
+  "obtain": [
+   "cdbag04.sto"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "halb05",
+  "glob": "FL7T12",
+  "tier": 7,
+  "token": 12,
+  "src": "gpfight1.cre",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [],
+  "obtain": []
+ },
+ {
+  "tag": "BG2",
+  "item": "sw1h51",
+  "glob": "FL7T13",
+  "tier": 7,
+  "token": 13,
+  "src": "hlkoshi.cre",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "GAM",
+   "ohnsdwm.sto"
+  ],
+  "obtain": [
+   "GAM",
+   "ohnsdwm.sto"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "ax1h16",
+  "glob": "FL10T01",
+  "tier": 10,
+  "token": 1,
+  "src": "amsmug02.sto",
+  "val": 1,
+  "mode": "PENDING",
+  "block": [
+   [
+    "fl10t1.bcs",
+    "ax1h16",
+    "gorgua01"
+   ]
+  ],
+  "slotcre": "fl10t1",
+  "slotstatus": "ar3019:visited:ALIVE",
+  "anyblocks": [
+   [
+    "fl10t1.bcs",
+    1
+   ],
+   [
+    "fl10t10.bcs",
+    10
+   ],
+   [
+    "fl10t11.bcs",
+    11
+   ],
+   [
+    "fl10t12.bcs",
+    12
+   ],
+   [
+    "fl10t13.bcs",
+    13
+   ],
+   [
+    "fl10t14.bcs",
+    14
+   ],
+   [
+    "fl10t15.bcs",
+    15
+   ],
+   [
+    "fl10t16.bcs",
+    16
+   ],
+   [
+    "fl10t17.bcs",
+    17
+   ],
+   [
+    "fl10t18.bcs",
+    18
+   ],
+   [
+    "fl10t2.bcs",
+    2
+   ],
+   [
+    "fl10t3.bcs",
+    3
+   ],
+   [
+    "fl10t4.bcs",
+    4
+   ],
+   [
+    "fl10t5.bcs",
+    5
+   ],
+   [
+    "fl10t6.bcs",
+    6
+   ],
+   [
+    "fl10t7.bcs",
+    7
+   ],
+   [
+    "fl10t8.bcs",
+    8
+   ],
+   [
+    "fl10t9.bcs",
+    9
+   ]
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "blun26",
+  "glob": "FL10T02",
+  "tier": 10,
+  "token": 2,
+  "src": "gorgua01.cre",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "cdbag04.sto"
+  ],
+  "obtain": [
+   "cdbag04.sto"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "sw1h67",
+  "glob": "FL10T03",
+  "tier": 10,
+  "token": 3,
+  "src": "gorsta07.cre",
+  "val": 9,
+  "mode": "PENDING",
+  "block": [
+   [
+    "fl10t9.bcs",
+    "sw1h67",
+    "Bazdra03"
+   ]
+  ],
+  "slotcre": "fl10t9",
+  "slotstatus": "ar6004:unvisited:ToB-reachable",
+  "anyblocks": [
+   [
+    "fl10t1.bcs",
+    1
+   ],
+   [
+    "fl10t10.bcs",
+    10
+   ],
+   [
+    "fl10t11.bcs",
+    11
+   ],
+   [
+    "fl10t12.bcs",
+    12
+   ],
+   [
+    "fl10t13.bcs",
+    13
+   ],
+   [
+    "fl10t14.bcs",
+    14
+   ],
+   [
+    "fl10t15.bcs",
+    15
+   ],
+   [
+    "fl10t16.bcs",
+    16
+   ],
+   [
+    "fl10t17.bcs",
+    17
+   ],
+   [
+    "fl10t18.bcs",
+    18
+   ],
+   [
+    "fl10t2.bcs",
+    2
+   ],
+   [
+    "fl10t3.bcs",
+    3
+   ],
+   [
+    "fl10t4.bcs",
+    4
+   ],
+   [
+    "fl10t5.bcs",
+    5
+   ],
+   [
+    "fl10t6.bcs",
+    6
+   ],
+   [
+    "fl10t7.bcs",
+    7
+   ],
+   [
+    "fl10t8.bcs",
+    8
+   ],
+   [
+    "fl10t9.bcs",
+    9
+   ]
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "brac21",
+  "glob": "FL10T04",
+  "tier": 10,
+  "token": 4,
+  "src": "gorwom03.cre",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "GAM"
+  ],
+  "obtain": [
+   "GAM"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "dagg21",
+  "glob": "FL10T05",
+  "tier": 10,
+  "token": 5,
+  "src": "demilich.cre",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "cdbag04.sto"
+  ],
+  "obtain": [
+   "cdbag04.sto"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "halb10",
+  "glob": "FL10T06",
+  "tier": 10,
+  "token": 6,
+  "src": "elemimix.cre",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [],
+  "obtain": []
+ },
+ {
+  "tag": "BG2",
+  "item": "helm27",
+  "glob": "FL10T07",
+  "tier": 10,
+  "token": 7,
+  "src": "ar5006.are",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "cdbag04.sto"
+  ],
+  "obtain": [
+   "cdbag04.sto"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "sw1h60",
+  "glob": "FL10T08",
+  "tier": 10,
+  "token": 8,
+  "src": "gorgit.cre",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "cdbag04.sto"
+  ],
+  "obtain": [
+   "cdbag04.sto"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "plat21",
+  "glob": "FL10T09",
+  "tier": 10,
+  "token": 9,
+  "src": "amsmug02.sto",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "GAM"
+  ],
+  "obtain": [
+   "GAM"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "ax1h14",
+  "glob": "FL10T10",
+  "tier": 10,
+  "token": 10,
+  "src": "rock.cre",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "cdbag04.sto"
+  ],
+  "obtain": [
+   "cdbag04.sto"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "sw1h62",
+  "glob": "FL10T11",
+  "tier": 10,
+  "token": 11,
+  "src": "gorsta01.cre",
+  "val": 8,
+  "mode": "PENDING",
+  "block": [
+   [
+    "fl10t8.bcs",
+    "sw1h62",
+    "Abazigal"
+   ]
+  ],
+  "slotcre": "fl10t8",
+  "slotstatus": "ar6005:unvisited:ToB-reachable",
+  "anyblocks": [
+   [
+    "fl10t1.bcs",
+    1
+   ],
+   [
+    "fl10t10.bcs",
+    10
+   ],
+   [
+    "fl10t11.bcs",
+    11
+   ],
+   [
+    "fl10t12.bcs",
+    12
+   ],
+   [
+    "fl10t13.bcs",
+    13
+   ],
+   [
+    "fl10t14.bcs",
+    14
+   ],
+   [
+    "fl10t15.bcs",
+    15
+   ],
+   [
+    "fl10t16.bcs",
+    16
+   ],
+   [
+    "fl10t17.bcs",
+    17
+   ],
+   [
+    "fl10t18.bcs",
+    18
+   ],
+   [
+    "fl10t2.bcs",
+    2
+   ],
+   [
+    "fl10t3.bcs",
+    3
+   ],
+   [
+    "fl10t4.bcs",
+    4
+   ],
+   [
+    "fl10t5.bcs",
+    5
+   ],
+   [
+    "fl10t6.bcs",
+    6
+   ],
+   [
+    "fl10t7.bcs",
+    7
+   ],
+   [
+    "fl10t8.bcs",
+    8
+   ],
+   [
+    "fl10t9.bcs",
+    9
+   ]
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "sper11",
+  "glob": "FL10T12",
+  "tier": 10,
+  "token": 12,
+  "src": "ar3025.are",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "cdbag04.sto"
+  ],
+  "obtain": [
+   "cdbag04.sto"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "staf21",
+  "glob": "FL10T13",
+  "tier": 10,
+  "token": 13,
+  "src": "gorsal.cre",
+  "val": 12,
+  "mode": "PENDING",
+  "block": [
+   [
+    "fl10t12.bcs",
+    "staf21",
+    "amlich01"
+   ]
+  ],
+  "slotcre": "fl10t12",
+  "slotstatus": "ar5509:unvisited:ToB-reachable",
+  "anyblocks": [
+   [
+    "fl10t1.bcs",
+    1
+   ],
+   [
+    "fl10t10.bcs",
+    10
+   ],
+   [
+    "fl10t11.bcs",
+    11
+   ],
+   [
+    "fl10t12.bcs",
+    12
+   ],
+   [
+    "fl10t13.bcs",
+    13
+   ],
+   [
+    "fl10t14.bcs",
+    14
+   ],
+   [
+    "fl10t15.bcs",
+    15
+   ],
+   [
+    "fl10t16.bcs",
+    16
+   ],
+   [
+    "fl10t17.bcs",
+    17
+   ],
+   [
+    "fl10t18.bcs",
+    18
+   ],
+   [
+    "fl10t2.bcs",
+    2
+   ],
+   [
+    "fl10t3.bcs",
+    3
+   ],
+   [
+    "fl10t4.bcs",
+    4
+   ],
+   [
+    "fl10t5.bcs",
+    5
+   ],
+   [
+    "fl10t6.bcs",
+    6
+   ],
+   [
+    "fl10t7.bcs",
+    7
+   ],
+   [
+    "fl10t8.bcs",
+    8
+   ],
+   [
+    "fl10t9.bcs",
+    9
+   ]
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "sw1h58",
+  "glob": "FL10T14",
+  "tier": 10,
+  "token": 14,
+  "src": "garlena.sto",
+  "val": 11,
+  "mode": "PENDING",
+  "block": [
+   [
+    "fl10t11.bcs",
+    "sw1h58",
+    "senlich"
+   ]
+  ],
+  "slotcre": "fl10t11",
+  "slotstatus": "ar6110:unvisited:ToB-reachable",
+  "anyblocks": [
+   [
+    "fl10t1.bcs",
+    1
+   ],
+   [
+    "fl10t10.bcs",
+    10
+   ],
+   [
+    "fl10t11.bcs",
+    11
+   ],
+   [
+    "fl10t12.bcs",
+    12
+   ],
+   [
+    "fl10t13.bcs",
+    13
+   ],
+   [
+    "fl10t14.bcs",
+    14
+   ],
+   [
+    "fl10t15.bcs",
+    15
+   ],
+   [
+    "fl10t16.bcs",
+    16
+   ],
+   [
+    "fl10t17.bcs",
+    17
+   ],
+   [
+    "fl10t18.bcs",
+    18
+   ],
+   [
+    "fl10t2.bcs",
+    2
+   ],
+   [
+    "fl10t3.bcs",
+    3
+   ],
+   [
+    "fl10t4.bcs",
+    4
+   ],
+   [
+    "fl10t5.bcs",
+    5
+   ],
+   [
+    "fl10t6.bcs",
+    6
+   ],
+   [
+    "fl10t7.bcs",
+    7
+   ],
+   [
+    "fl10t8.bcs",
+    8
+   ],
+   [
+    "fl10t9.bcs",
+    9
+   ]
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "sw1h66",
+  "glob": "FL10T15",
+  "tier": 10,
+  "token": 15,
+  "src": "sarbar01.sto",
+  "val": 18,
+  "mode": "PENDING",
+  "block": [
+   [
+    "fl10t18.bcs",
+    "sw1h66",
+    "GorChr"
+   ]
+  ],
+  "slotcre": "fl10t18",
+  "slotstatus": "ar3016:visited:GONE",
+  "anyblocks": [
+   [
+    "fl10t1.bcs",
+    1
+   ],
+   [
+    "fl10t10.bcs",
+    10
+   ],
+   [
+    "fl10t11.bcs",
+    11
+   ],
+   [
+    "fl10t12.bcs",
+    12
+   ],
+   [
+    "fl10t13.bcs",
+    13
+   ],
+   [
+    "fl10t14.bcs",
+    14
+   ],
+   [
+    "fl10t15.bcs",
+    15
+   ],
+   [
+    "fl10t16.bcs",
+    16
+   ],
+   [
+    "fl10t17.bcs",
+    17
+   ],
+   [
+    "fl10t18.bcs",
+    18
+   ],
+   [
+    "fl10t2.bcs",
+    2
+   ],
+   [
+    "fl10t3.bcs",
+    3
+   ],
+   [
+    "fl10t4.bcs",
+    4
+   ],
+   [
+    "fl10t5.bcs",
+    5
+   ],
+   [
+    "fl10t6.bcs",
+    6
+   ],
+   [
+    "fl10t7.bcs",
+    7
+   ],
+   [
+    "fl10t8.bcs",
+    8
+   ],
+   [
+    "fl10t9.bcs",
+    9
+   ]
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "sw1h70",
+  "glob": "FL10T16",
+  "tier": 10,
+  "token": 16,
+  "src": "fsdragon.cre",
+  "val": 10,
+  "mode": "PENDING",
+  "block": [
+   [
+    "fl10t10.bcs",
+    "sw1h70",
+    "amlich01"
+   ]
+  ],
+  "slotcre": "fl10t10",
+  "slotstatus": "ar5509:unvisited:ToB-reachable",
+  "anyblocks": [
+   [
+    "fl10t1.bcs",
+    1
+   ],
+   [
+    "fl10t10.bcs",
+    10
+   ],
+   [
+    "fl10t11.bcs",
+    11
+   ],
+   [
+    "fl10t12.bcs",
+    12
+   ],
+   [
+    "fl10t13.bcs",
+    13
+   ],
+   [
+    "fl10t14.bcs",
+    14
+   ],
+   [
+    "fl10t15.bcs",
+    15
+   ],
+   [
+    "fl10t16.bcs",
+    16
+   ],
+   [
+    "fl10t17.bcs",
+    17
+   ],
+   [
+    "fl10t18.bcs",
+    18
+   ],
+   [
+    "fl10t2.bcs",
+    2
+   ],
+   [
+    "fl10t3.bcs",
+    3
+   ],
+   [
+    "fl10t4.bcs",
+    4
+   ],
+   [
+    "fl10t5.bcs",
+    5
+   ],
+   [
+    "fl10t6.bcs",
+    6
+   ],
+   [
+    "fl10t7.bcs",
+    7
+   ],
+   [
+    "fl10t8.bcs",
+    8
+   ],
+   [
+    "fl10t9.bcs",
+    9
+   ]
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "sw2h21",
+  "glob": "FL10T17",
+  "tier": 10,
+  "token": 17,
+  "src": "ar5201.are",
+  "val": 20,
+  "mode": "PENDING",
+  "block": [],
+  "slotcre": "fl10t20",
+  "slotstatus": "NO-PLACEMENT-FOUND",
+  "anyblocks": [
+   [
+    "fl10t1.bcs",
+    1
+   ],
+   [
+    "fl10t10.bcs",
+    10
+   ],
+   [
+    "fl10t11.bcs",
+    11
+   ],
+   [
+    "fl10t12.bcs",
+    12
+   ],
+   [
+    "fl10t13.bcs",
+    13
+   ],
+   [
+    "fl10t14.bcs",
+    14
+   ],
+   [
+    "fl10t15.bcs",
+    15
+   ],
+   [
+    "fl10t16.bcs",
+    16
+   ],
+   [
+    "fl10t17.bcs",
+    17
+   ],
+   [
+    "fl10t18.bcs",
+    18
+   ],
+   [
+    "fl10t2.bcs",
+    2
+   ],
+   [
+    "fl10t3.bcs",
+    3
+   ],
+   [
+    "fl10t4.bcs",
+    4
+   ],
+   [
+    "fl10t5.bcs",
+    5
+   ],
+   [
+    "fl10t6.bcs",
+    6
+   ],
+   [
+    "fl10t7.bcs",
+    7
+   ],
+   [
+    "fl10t8.bcs",
+    8
+   ],
+   [
+    "fl10t9.bcs",
+    9
+   ]
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "xbow15",
+  "glob": "FL10T18",
+  "tier": 10,
+  "token": 18,
+  "src": "garlena.sto",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [],
+  "obtain": []
+ },
+ {
+  "tag": "BG2",
+  "item": "blun30a",
+  "glob": "FL11T01",
+  "tier": 11,
+  "token": 1,
+  "src": "ar3016.are",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "cdbag04.sto"
+  ],
+  "obtain": [
+   "cdbag04.sto"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "blun30b",
+  "glob": "FL11T02",
+  "tier": 11,
+  "token": 2,
+  "src": "dragblue.cre",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [],
+  "obtain": []
+ },
+ {
+  "tag": "BG2",
+  "item": "brac22",
+  "glob": "FL11T03",
+  "tier": 11,
+  "token": 3,
+  "src": "ar3001.are",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "cdbag04.sto"
+  ],
+  "obtain": [
+   "cdbag04.sto"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "figure01",
+  "glob": "FL11T04",
+  "tier": 11,
+  "token": 4,
+  "src": "sarkis01.cre",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "cdbag04.sto"
+  ],
+  "obtain": [
+   "cdbag04.sto"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "quiver01",
+  "glob": "FL11T05",
+  "tier": 11,
+  "token": 5,
+  "src": "ar3001.are",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "bd4000.are",
+   "cdbag04.sto"
+  ],
+  "obtain": [
+   "cdbag04.sto"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "quiver02",
+  "glob": "FL11T06",
+  "tier": 11,
+  "token": 6,
+  "src": "ar3001.are",
+  "val": 10,
+  "mode": "PENDING",
+  "block": [
+   [
+    "fl11t10.bcs",
+    "quiver02",
+    "AMARCH01"
+   ]
+  ],
+  "slotcre": "fl11t10",
+  "slotstatus": "ar5500:unvisited:ToB-reachable",
+  "anyblocks": [
+   [
+    "fl11t1.bcs",
+    1
+   ],
+   [
+    "fl11t10.bcs",
+    10
+   ],
+   [
+    "fl11t11.bcs",
+    11
+   ],
+   [
+    "fl11t12.bcs",
+    12
+   ],
+   [
+    "fl11t13.bcs",
+    13
+   ],
+   [
+    "fl11t14.bcs",
+    14
+   ],
+   [
+    "fl11t15.bcs",
+    15
+   ],
+   [
+    "fl11t16.bcs",
+    16
+   ],
+   [
+    "fl11t17.bcs",
+    17
+   ],
+   [
+    "fl11t18.bcs",
+    18
+   ],
+   [
+    "fl11t19.bcs",
+    19
+   ],
+   [
+    "fl11t2.bcs",
+    2
+   ],
+   [
+    "fl11t20.bcs",
+    20
+   ],
+   [
+    "fl11t3.bcs",
+    3
+   ],
+   [
+    "fl11t4.bcs",
+    4
+   ],
+   [
+    "fl11t5.bcs",
+    5
+   ],
+   [
+    "fl11t6.bcs",
+    6
+   ],
+   [
+    "fl11t7.bcs",
+    7
+   ],
+   [
+    "fl11t8.bcs",
+    8
+   ],
+   [
+    "fl11t9.bcs",
+    9
+   ]
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "quiver05",
+  "glob": "FL11T07",
+  "tier": 11,
+  "token": 7,
+  "src": "ar5204.are",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "cdbag04.sto"
+  ],
+  "obtain": [
+   "cdbag04.sto"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "ring42",
+  "glob": "FL11T08",
+  "tier": 11,
+  "token": 8,
+  "src": "bazdra03.cre",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "GAM"
+  ],
+  "obtain": [
+   "GAM"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "ring46",
+  "glob": "FL11T09",
+  "tier": 11,
+  "token": 9,
+  "src": "amlich01.cre",
+  "val": 13,
+  "mode": "PENDING",
+  "block": [
+   [
+    "fl11t13.bcs",
+    "ring46",
+    "senill01"
+   ]
+  ],
+  "slotcre": "fl11t13",
+  "slotstatus": "ar6107:unvisited:ToB-reachable",
+  "anyblocks": [
+   [
+    "fl11t1.bcs",
+    1
+   ],
+   [
+    "fl11t10.bcs",
+    10
+   ],
+   [
+    "fl11t11.bcs",
+    11
+   ],
+   [
+    "fl11t12.bcs",
+    12
+   ],
+   [
+    "fl11t13.bcs",
+    13
+   ],
+   [
+    "fl11t14.bcs",
+    14
+   ],
+   [
+    "fl11t15.bcs",
+    15
+   ],
+   [
+    "fl11t16.bcs",
+    16
+   ],
+   [
+    "fl11t17.bcs",
+    17
+   ],
+   [
+    "fl11t18.bcs",
+    18
+   ],
+   [
+    "fl11t19.bcs",
+    19
+   ],
+   [
+    "fl11t2.bcs",
+    2
+   ],
+   [
+    "fl11t20.bcs",
+    20
+   ],
+   [
+    "fl11t3.bcs",
+    3
+   ],
+   [
+    "fl11t4.bcs",
+    4
+   ],
+   [
+    "fl11t5.bcs",
+    5
+   ],
+   [
+    "fl11t6.bcs",
+    6
+   ],
+   [
+    "fl11t7.bcs",
+    7
+   ],
+   [
+    "fl11t8.bcs",
+    8
+   ],
+   [
+    "fl11t9.bcs",
+    9
+   ]
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "rods06",
+  "glob": "FL11T10",
+  "tier": 11,
+  "token": 10,
+  "src": "amsmug02.sto",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "cdbag04.sto"
+  ],
+  "obtain": [
+   "cdbag04.sto"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "tome01",
+  "glob": "FL11T11",
+  "tier": 11,
+  "token": 11,
+  "src": "ar3001.are",
+  "val": null,
+  "mode": "NOVAR",
+  "hits": [],
+  "obtain": []
+ },
+ {
+  "tag": "BG2",
+  "item": "wand18",
+  "glob": "FL11T12",
+  "tier": 11,
+  "token": 12,
+  "src": "ar3014.are",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "GAM",
+   "oh6460.are",
+   "oh6500.are",
+   "cdbag04.sto"
+  ],
+  "obtain": [
+   "GAM",
+   "cdbag04.sto"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "wand18",
+  "glob": "FL11T13",
+  "tier": 11,
+  "token": 13,
+  "src": "ar3022.are",
+  "val": null,
+  "mode": "NOVAR",
+  "hits": [
+   "GAM",
+   "oh6460.are",
+   "oh6500.are",
+   "cdbag04.sto"
+  ],
+  "obtain": [
+   "GAM",
+   "cdbag04.sto"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "wand19",
+  "glob": "FL11T14",
+  "tier": 11,
+  "token": 14,
+  "src": "ar3016.are",
+  "val": null,
+  "mode": "NOVAR",
+  "hits": [
+   "cdbag04.sto",
+   "ribald.sto"
+  ],
+  "obtain": [
+   "cdbag04.sto",
+   "ribald.sto"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "wand19",
+  "glob": "FL11T15",
+  "tier": 11,
+  "token": 15,
+  "src": "ar3021.are",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "cdbag04.sto",
+   "ribald.sto"
+  ],
+  "obtain": [
+   "cdbag04.sto",
+   "ribald.sto"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "helm23",
+  "glob": "FL11T16",
+  "tier": 11,
+  "token": 16,
+  "src": "25spell.sto",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "cdbag04.sto"
+  ],
+  "obtain": [
+   "cdbag04.sto"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "amul28",
+  "glob": "FL11T17",
+  "tier": 11,
+  "token": 17,
+  "src": "elemimix.cre",
+  "val": 7,
+  "mode": "PENDING",
+  "block": [
+   [
+    "fl11t7.bcs",
+    "amul28",
+    "container1"
+   ]
+  ],
+  "slotcre": "fl11t7",
+  "slotstatus": "ar6111:unvisited:ToB-reachable",
+  "anyblocks": [
+   [
+    "fl11t1.bcs",
+    1
+   ],
+   [
+    "fl11t10.bcs",
+    10
+   ],
+   [
+    "fl11t11.bcs",
+    11
+   ],
+   [
+    "fl11t12.bcs",
+    12
+   ],
+   [
+    "fl11t13.bcs",
+    13
+   ],
+   [
+    "fl11t14.bcs",
+    14
+   ],
+   [
+    "fl11t15.bcs",
+    15
+   ],
+   [
+    "fl11t16.bcs",
+    16
+   ],
+   [
+    "fl11t17.bcs",
+    17
+   ],
+   [
+    "fl11t18.bcs",
+    18
+   ],
+   [
+    "fl11t19.bcs",
+    19
+   ],
+   [
+    "fl11t2.bcs",
+    2
+   ],
+   [
+    "fl11t20.bcs",
+    20
+   ],
+   [
+    "fl11t3.bcs",
+    3
+   ],
+   [
+    "fl11t4.bcs",
+    4
+   ],
+   [
+    "fl11t5.bcs",
+    5
+   ],
+   [
+    "fl11t6.bcs",
+    6
+   ],
+   [
+    "fl11t7.bcs",
+    7
+   ],
+   [
+    "fl11t8.bcs",
+    8
+   ],
+   [
+    "fl11t9.bcs",
+    9
+   ]
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "brac24",
+  "glob": "FL11T18",
+  "tier": 11,
+  "token": 18,
+  "src": "ar3011.are",
+  "val": 15,
+  "mode": "PENDING",
+  "block": [
+   [
+    "fl11t15.bcs",
+    "brac24",
+    "amtgen01"
+   ]
+  ],
+  "slotcre": "fl11t15",
+  "slotstatus": "ar6300:unvisited:ToB-reachable",
+  "anyblocks": [
+   [
+    "fl11t1.bcs",
+    1
+   ],
+   [
+    "fl11t10.bcs",
+    10
+   ],
+   [
+    "fl11t11.bcs",
+    11
+   ],
+   [
+    "fl11t12.bcs",
+    12
+   ],
+   [
+    "fl11t13.bcs",
+    13
+   ],
+   [
+    "fl11t14.bcs",
+    14
+   ],
+   [
+    "fl11t15.bcs",
+    15
+   ],
+   [
+    "fl11t16.bcs",
+    16
+   ],
+   [
+    "fl11t17.bcs",
+    17
+   ],
+   [
+    "fl11t18.bcs",
+    18
+   ],
+   [
+    "fl11t19.bcs",
+    19
+   ],
+   [
+    "fl11t2.bcs",
+    2
+   ],
+   [
+    "fl11t20.bcs",
+    20
+   ],
+   [
+    "fl11t3.bcs",
+    3
+   ],
+   [
+    "fl11t4.bcs",
+    4
+   ],
+   [
+    "fl11t5.bcs",
+    5
+   ],
+   [
+    "fl11t6.bcs",
+    6
+   ],
+   [
+    "fl11t7.bcs",
+    7
+   ],
+   [
+    "fl11t8.bcs",
+    8
+   ],
+   [
+    "fl11t9.bcs",
+    9
+   ]
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "helm24",
+  "glob": "FL11T19",
+  "tier": 11,
+  "token": 19,
+  "src": "hgkar01.sto",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "cdbag04.sto"
+  ],
+  "obtain": [
+   "cdbag04.sto"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "helm25",
+  "glob": "FL11T20",
+  "tier": 11,
+  "token": 20,
+  "src": "ambar01.sto",
+  "val": 14,
+  "mode": "PENDING",
+  "block": [
+   [
+    "fl11t14.bcs",
+    "helm25",
+    "sengua03"
+   ]
+  ],
+  "slotcre": "fl11t14",
+  "slotstatus": "ar6106:unvisited:ToB-reachable",
+  "anyblocks": [
+   [
+    "fl11t1.bcs",
+    1
+   ],
+   [
+    "fl11t10.bcs",
+    10
+   ],
+   [
+    "fl11t11.bcs",
+    11
+   ],
+   [
+    "fl11t12.bcs",
+    12
+   ],
+   [
+    "fl11t13.bcs",
+    13
+   ],
+   [
+    "fl11t14.bcs",
+    14
+   ],
+   [
+    "fl11t15.bcs",
+    15
+   ],
+   [
+    "fl11t16.bcs",
+    16
+   ],
+   [
+    "fl11t17.bcs",
+    17
+   ],
+   [
+    "fl11t18.bcs",
+    18
+   ],
+   [
+    "fl11t19.bcs",
+    19
+   ],
+   [
+    "fl11t2.bcs",
+    2
+   ],
+   [
+    "fl11t20.bcs",
+    20
+   ],
+   [
+    "fl11t3.bcs",
+    3
+   ],
+   [
+    "fl11t4.bcs",
+    4
+   ],
+   [
+    "fl11t5.bcs",
+    5
+   ],
+   [
+    "fl11t6.bcs",
+    6
+   ],
+   [
+    "fl11t7.bcs",
+    7
+   ],
+   [
+    "fl11t8.bcs",
+    8
+   ],
+   [
+    "fl11t9.bcs",
+    9
+   ]
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "compon01",
+  "glob": "FL12T01",
+  "tier": 12,
+  "token": 1,
+  "src": "ar6107.are",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "cdbag04.sto"
+  ],
+  "obtain": [
+   "cdbag04.sto"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "compon02",
+  "glob": "FL12T02",
+  "tier": 12,
+  "token": 2,
+  "src": "senlich.cre",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [],
+  "obtain": []
+ },
+ {
+  "tag": "BG2",
+  "item": "compon03",
+  "glob": "FL12T03",
+  "tier": 12,
+  "token": 3,
+  "src": "ar5007.are",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "cdbag04.sto"
+  ],
+  "obtain": [
+   "cdbag04.sto"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "compon04",
+  "glob": "FL12T04",
+  "tier": 12,
+  "token": 4,
+  "src": "hgber01.cre",
+  "val": 19,
+  "mode": "PENDING",
+  "block": [
+   [
+    "fl12t19.bcs",
+    "compon04",
+    "Abazigal"
+   ]
+  ],
+  "slotcre": "fl12t19",
+  "slotstatus": "ar6005:unvisited:ToB-reachable",
+  "anyblocks": [
+   [
+    "fl12t1.bcs",
+    1
+   ],
+   [
+    "fl12t10.bcs",
+    10
+   ],
+   [
+    "fl12t11.bcs",
+    11
+   ],
+   [
+    "fl12t12.bcs",
+    12
+   ],
+   [
+    "fl12t13.bcs",
+    13
+   ],
+   [
+    "fl12t14.bcs",
+    14
+   ],
+   [
+    "fl12t15.bcs",
+    15
+   ],
+   [
+    "fl12t16.bcs",
+    16
+   ],
+   [
+    "fl12t17.bcs",
+    17
+   ],
+   [
+    "fl12t18.bcs",
+    18
+   ],
+   [
+    "fl12t19.bcs",
+    19
+   ],
+   [
+    "fl12t2.bcs",
+    2
+   ],
+   [
+    "fl12t20.bcs",
+    20
+   ],
+   [
+    "fl12t3.bcs",
+    3
+   ],
+   [
+    "fl12t4.bcs",
+    4
+   ],
+   [
+    "fl12t5.bcs",
+    5
+   ],
+   [
+    "fl12t6.bcs",
+    6
+   ],
+   [
+    "fl12t7.bcs",
+    7
+   ],
+   [
+    "fl12t8.bcs",
+    8
+   ],
+   [
+    "fl12t9.bcs",
+    9
+   ]
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "compon05",
+  "glob": "FL12T05",
+  "tier": 12,
+  "token": 5,
+  "src": "gromnir.cre",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "ar3022.are"
+  ],
+  "obtain": [
+   "ar3022.are"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "compon06",
+  "glob": "FL12T06",
+  "tier": 12,
+  "token": 6,
+  "src": "ar6110.are",
+  "val": 18,
+  "mode": "PENDING",
+  "block": [
+   [
+    "fl12t18.bcs",
+    "compon06",
+    "Abazigal"
+   ]
+  ],
+  "slotcre": "fl12t18",
+  "slotstatus": "ar6005:unvisited:ToB-reachable",
+  "anyblocks": [
+   [
+    "fl12t1.bcs",
+    1
+   ],
+   [
+    "fl12t10.bcs",
+    10
+   ],
+   [
+    "fl12t11.bcs",
+    11
+   ],
+   [
+    "fl12t12.bcs",
+    12
+   ],
+   [
+    "fl12t13.bcs",
+    13
+   ],
+   [
+    "fl12t14.bcs",
+    14
+   ],
+   [
+    "fl12t15.bcs",
+    15
+   ],
+   [
+    "fl12t16.bcs",
+    16
+   ],
+   [
+    "fl12t17.bcs",
+    17
+   ],
+   [
+    "fl12t18.bcs",
+    18
+   ],
+   [
+    "fl12t19.bcs",
+    19
+   ],
+   [
+    "fl12t2.bcs",
+    2
+   ],
+   [
+    "fl12t20.bcs",
+    20
+   ],
+   [
+    "fl12t3.bcs",
+    3
+   ],
+   [
+    "fl12t4.bcs",
+    4
+   ],
+   [
+    "fl12t5.bcs",
+    5
+   ],
+   [
+    "fl12t6.bcs",
+    6
+   ],
+   [
+    "fl12t7.bcs",
+    7
+   ],
+   [
+    "fl12t8.bcs",
+    8
+   ],
+   [
+    "fl12t9.bcs",
+    9
+   ]
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "compon07",
+  "glob": "FL12T07",
+  "tier": 12,
+  "token": 7,
+  "src": "bazmonk.cre",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "cdbag04.sto"
+  ],
+  "obtain": [
+   "cdbag04.sto"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "compon08",
+  "glob": "FL12T08",
+  "tier": 12,
+  "token": 8,
+  "src": "ar5014.are",
+  "val": 3,
+  "mode": "PENDING",
+  "block": [
+   [
+    "fl12t3.bcs",
+    "compon08",
+    "senill01"
+   ]
+  ],
+  "slotcre": "fl12t3",
+  "slotstatus": "ar6107:unvisited:ToB-reachable",
+  "anyblocks": [
+   [
+    "fl12t1.bcs",
+    1
+   ],
+   [
+    "fl12t10.bcs",
+    10
+   ],
+   [
+    "fl12t11.bcs",
+    11
+   ],
+   [
+    "fl12t12.bcs",
+    12
+   ],
+   [
+    "fl12t13.bcs",
+    13
+   ],
+   [
+    "fl12t14.bcs",
+    14
+   ],
+   [
+    "fl12t15.bcs",
+    15
+   ],
+   [
+    "fl12t16.bcs",
+    16
+   ],
+   [
+    "fl12t17.bcs",
+    17
+   ],
+   [
+    "fl12t18.bcs",
+    18
+   ],
+   [
+    "fl12t19.bcs",
+    19
+   ],
+   [
+    "fl12t2.bcs",
+    2
+   ],
+   [
+    "fl12t20.bcs",
+    20
+   ],
+   [
+    "fl12t3.bcs",
+    3
+   ],
+   [
+    "fl12t4.bcs",
+    4
+   ],
+   [
+    "fl12t5.bcs",
+    5
+   ],
+   [
+    "fl12t6.bcs",
+    6
+   ],
+   [
+    "fl12t7.bcs",
+    7
+   ],
+   [
+    "fl12t8.bcs",
+    8
+   ],
+   [
+    "fl12t9.bcs",
+    9
+   ]
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "compon09",
+  "glob": "FL12T09",
+  "tier": 12,
+  "token": 9,
+  "src": "ar6111.are",
+  "val": 4,
+  "mode": "PENDING",
+  "block": [
+   [
+    "fl12t4.bcs",
+    "compon09",
+    "senlich"
+   ]
+  ],
+  "slotcre": "fl12t4",
+  "slotstatus": "ar6110:unvisited:ToB-reachable",
+  "anyblocks": [
+   [
+    "fl12t1.bcs",
+    1
+   ],
+   [
+    "fl12t10.bcs",
+    10
+   ],
+   [
+    "fl12t11.bcs",
+    11
+   ],
+   [
+    "fl12t12.bcs",
+    12
+   ],
+   [
+    "fl12t13.bcs",
+    13
+   ],
+   [
+    "fl12t14.bcs",
+    14
+   ],
+   [
+    "fl12t15.bcs",
+    15
+   ],
+   [
+    "fl12t16.bcs",
+    16
+   ],
+   [
+    "fl12t17.bcs",
+    17
+   ],
+   [
+    "fl12t18.bcs",
+    18
+   ],
+   [
+    "fl12t19.bcs",
+    19
+   ],
+   [
+    "fl12t2.bcs",
+    2
+   ],
+   [
+    "fl12t20.bcs",
+    20
+   ],
+   [
+    "fl12t3.bcs",
+    3
+   ],
+   [
+    "fl12t4.bcs",
+    4
+   ],
+   [
+    "fl12t5.bcs",
+    5
+   ],
+   [
+    "fl12t6.bcs",
+    6
+   ],
+   [
+    "fl12t7.bcs",
+    7
+   ],
+   [
+    "fl12t8.bcs",
+    8
+   ],
+   [
+    "fl12t9.bcs",
+    9
+   ]
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "compon10",
+  "glob": "FL12T10",
+  "tier": 12,
+  "token": 10,
+  "src": "sengua03.cre",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [],
+  "obtain": []
+ },
+ {
+  "tag": "BG2",
+  "item": "compon11",
+  "glob": "FL12T11",
+  "tier": 12,
+  "token": 11,
+  "src": "ar3022.are",
+  "val": 9,
+  "mode": "PENDING",
+  "block": [
+   [
+    "fl12t9.bcs",
+    "compon11",
+    "Bazmonk"
+   ]
+  ],
+  "slotcre": "fl12t9",
+  "slotstatus": "ar6002:unvisited:ToB-reachable",
+  "anyblocks": [
+   [
+    "fl12t1.bcs",
+    1
+   ],
+   [
+    "fl12t10.bcs",
+    10
+   ],
+   [
+    "fl12t11.bcs",
+    11
+   ],
+   [
+    "fl12t12.bcs",
+    12
+   ],
+   [
+    "fl12t13.bcs",
+    13
+   ],
+   [
+    "fl12t14.bcs",
+    14
+   ],
+   [
+    "fl12t15.bcs",
+    15
+   ],
+   [
+    "fl12t16.bcs",
+    16
+   ],
+   [
+    "fl12t17.bcs",
+    17
+   ],
+   [
+    "fl12t18.bcs",
+    18
+   ],
+   [
+    "fl12t19.bcs",
+    19
+   ],
+   [
+    "fl12t2.bcs",
+    2
+   ],
+   [
+    "fl12t20.bcs",
+    20
+   ],
+   [
+    "fl12t3.bcs",
+    3
+   ],
+   [
+    "fl12t4.bcs",
+    4
+   ],
+   [
+    "fl12t5.bcs",
+    5
+   ],
+   [
+    "fl12t6.bcs",
+    6
+   ],
+   [
+    "fl12t7.bcs",
+    7
+   ],
+   [
+    "fl12t8.bcs",
+    8
+   ],
+   [
+    "fl12t9.bcs",
+    9
+   ]
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "compon12",
+  "glob": "FL12T12",
+  "tier": 12,
+  "token": 12,
+  "src": "gorgoli.cre",
+  "val": 16,
+  "mode": "PENDING",
+  "block": [
+   [
+    "fl12t16.bcs",
+    "compon12",
+    "table2"
+   ]
+  ],
+  "slotcre": "fl12t16",
+  "slotstatus": "ar6003:unvisited:ToB-reachable",
+  "anyblocks": [
+   [
+    "fl12t1.bcs",
+    1
+   ],
+   [
+    "fl12t10.bcs",
+    10
+   ],
+   [
+    "fl12t11.bcs",
+    11
+   ],
+   [
+    "fl12t12.bcs",
+    12
+   ],
+   [
+    "fl12t13.bcs",
+    13
+   ],
+   [
+    "fl12t14.bcs",
+    14
+   ],
+   [
+    "fl12t15.bcs",
+    15
+   ],
+   [
+    "fl12t16.bcs",
+    16
+   ],
+   [
+    "fl12t17.bcs",
+    17
+   ],
+   [
+    "fl12t18.bcs",
+    18
+   ],
+   [
+    "fl12t19.bcs",
+    19
+   ],
+   [
+    "fl12t2.bcs",
+    2
+   ],
+   [
+    "fl12t20.bcs",
+    20
+   ],
+   [
+    "fl12t3.bcs",
+    3
+   ],
+   [
+    "fl12t4.bcs",
+    4
+   ],
+   [
+    "fl12t5.bcs",
+    5
+   ],
+   [
+    "fl12t6.bcs",
+    6
+   ],
+   [
+    "fl12t7.bcs",
+    7
+   ],
+   [
+    "fl12t8.bcs",
+    8
+   ],
+   [
+    "fl12t9.bcs",
+    9
+   ]
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "compon13",
+  "glob": "FL12T13",
+  "tier": 12,
+  "token": 13,
+  "src": "ar3016.are",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "cdbag04.sto"
+  ],
+  "obtain": [
+   "cdbag04.sto"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "compon14",
+  "glob": "FL12T14",
+  "tier": 12,
+  "token": 14,
+  "src": "ar5202.are",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "cdbag04.sto"
+  ],
+  "obtain": [
+   "cdbag04.sto"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "compon15",
+  "glob": "FL12T15",
+  "tier": 12,
+  "token": 15,
+  "src": "senlich.cre",
+  "val": 6,
+  "mode": "PENDING",
+  "block": [
+   [
+    "fl12t6.bcs",
+    "compon15",
+    "amlich01"
+   ]
+  ],
+  "slotcre": "fl12t6",
+  "slotstatus": "ar5509:unvisited:ToB-reachable",
+  "anyblocks": [
+   [
+    "fl12t1.bcs",
+    1
+   ],
+   [
+    "fl12t10.bcs",
+    10
+   ],
+   [
+    "fl12t11.bcs",
+    11
+   ],
+   [
+    "fl12t12.bcs",
+    12
+   ],
+   [
+    "fl12t13.bcs",
+    13
+   ],
+   [
+    "fl12t14.bcs",
+    14
+   ],
+   [
+    "fl12t15.bcs",
+    15
+   ],
+   [
+    "fl12t16.bcs",
+    16
+   ],
+   [
+    "fl12t17.bcs",
+    17
+   ],
+   [
+    "fl12t18.bcs",
+    18
+   ],
+   [
+    "fl12t19.bcs",
+    19
+   ],
+   [
+    "fl12t2.bcs",
+    2
+   ],
+   [
+    "fl12t20.bcs",
+    20
+   ],
+   [
+    "fl12t3.bcs",
+    3
+   ],
+   [
+    "fl12t4.bcs",
+    4
+   ],
+   [
+    "fl12t5.bcs",
+    5
+   ],
+   [
+    "fl12t6.bcs",
+    6
+   ],
+   [
+    "fl12t7.bcs",
+    7
+   ],
+   [
+    "fl12t8.bcs",
+    8
+   ],
+   [
+    "fl12t9.bcs",
+    9
+   ]
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "compon17",
+  "glob": "FL12T16",
+  "tier": 12,
+  "token": 16,
+  "src": "gorchr.cre",
+  "val": 8,
+  "mode": "PENDING",
+  "block": [
+   [
+    "fl12t8.bcs",
+    "compon17",
+    "senlich"
+   ]
+  ],
+  "slotcre": "fl12t8",
+  "slotstatus": "ar6110:unvisited:ToB-reachable",
+  "anyblocks": [
+   [
+    "fl12t1.bcs",
+    1
+   ],
+   [
+    "fl12t10.bcs",
+    10
+   ],
+   [
+    "fl12t11.bcs",
+    11
+   ],
+   [
+    "fl12t12.bcs",
+    12
+   ],
+   [
+    "fl12t13.bcs",
+    13
+   ],
+   [
+    "fl12t14.bcs",
+    14
+   ],
+   [
+    "fl12t15.bcs",
+    15
+   ],
+   [
+    "fl12t16.bcs",
+    16
+   ],
+   [
+    "fl12t17.bcs",
+    17
+   ],
+   [
+    "fl12t18.bcs",
+    18
+   ],
+   [
+    "fl12t19.bcs",
+    19
+   ],
+   [
+    "fl12t2.bcs",
+    2
+   ],
+   [
+    "fl12t20.bcs",
+    20
+   ],
+   [
+    "fl12t3.bcs",
+    3
+   ],
+   [
+    "fl12t4.bcs",
+    4
+   ],
+   [
+    "fl12t5.bcs",
+    5
+   ],
+   [
+    "fl12t6.bcs",
+    6
+   ],
+   [
+    "fl12t7.bcs",
+    7
+   ],
+   [
+    "fl12t8.bcs",
+    8
+   ],
+   [
+    "fl12t9.bcs",
+    9
+   ]
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "compon18",
+  "glob": "FL12T17",
+  "tier": 12,
+  "token": 17,
+  "src": "ar3014.are",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [],
+  "obtain": []
+ },
+ {
+  "tag": "BG2",
+  "item": "tome02a",
+  "glob": "FL12T18",
+  "tier": 12,
+  "token": 18,
+  "src": "ar3017.are",
+  "val": null,
+  "mode": "NOVAR",
+  "hits": [],
+  "obtain": []
+ },
+ {
+  "tag": "BG2",
+  "item": "tome03a",
+  "glob": "FL12T19",
+  "tier": 12,
+  "token": 19,
+  "src": "ar5204.are",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "cdbag04.sto"
+  ],
+  "obtain": [
+   "cdbag04.sto"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "tome04a",
+  "glob": "FL12T20",
+  "tier": 12,
+  "token": 20,
+  "src": "ar6003.are",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "bag03b.sto"
+  ],
+  "obtain": [
+   "bag03b.sto"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "scrlb4",
+  "glob": "FL13T01",
+  "tier": 13,
+  "token": 1,
+  "src": "25spell.sto",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "bag03b.sto"
+  ],
+  "obtain": [
+   "bag03b.sto"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "slng08",
+  "glob": "FL13T02",
+  "tier": 13,
+  "token": 2,
+  "src": "gorlic01.cre",
+  "val": 6,
+  "mode": "PENDING",
+  "block": [
+   [
+    "fl13t6.bcs",
+    "slng08",
+    "Sengua01"
+   ]
+  ],
+  "slotcre": "fl13t6",
+  "slotstatus": "ar6100:unvisited:ToB-reachable",
+  "anyblocks": [
+   [
+    "fl13t1.bcs",
+    1
+   ],
+   [
+    "fl13t10.bcs",
+    10
+   ],
+   [
+    "fl13t11.bcs",
+    11
+   ],
+   [
+    "fl13t12.bcs",
+    12
+   ],
+   [
+    "fl13t2.bcs",
+    2
+   ],
+   [
+    "fl13t3.bcs",
+    3
+   ],
+   [
+    "fl13t4.bcs",
+    4
+   ],
+   [
+    "fl13t5.bcs",
+    5
+   ],
+   [
+    "fl13t6.bcs",
+    6
+   ],
+   [
+    "fl13t7.bcs",
+    7
+   ],
+   [
+    "fl13t8.bcs",
+    8
+   ],
+   [
+    "fl13t9.bcs",
+    9
+   ]
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "helm34",
+  "glob": "FL13T03",
+  "tier": 13,
+  "token": 3,
+  "src": "sendai.cre",
+  "val": 11,
+  "mode": "PENDING",
+  "block": [
+   [
+    "fl13t11.bcs",
+    "helm34",
+    "table1"
+   ]
+  ],
+  "slotcre": "fl13t11",
+  "slotstatus": "ar6003:unvisited:ToB-reachable",
+  "anyblocks": [
+   [
+    "fl13t1.bcs",
+    1
+   ],
+   [
+    "fl13t10.bcs",
+    10
+   ],
+   [
+    "fl13t11.bcs",
+    11
+   ],
+   [
+    "fl13t12.bcs",
+    12
+   ],
+   [
+    "fl13t2.bcs",
+    2
+   ],
+   [
+    "fl13t3.bcs",
+    3
+   ],
+   [
+    "fl13t4.bcs",
+    4
+   ],
+   [
+    "fl13t5.bcs",
+    5
+   ],
+   [
+    "fl13t6.bcs",
+    6
+   ],
+   [
+    "fl13t7.bcs",
+    7
+   ],
+   [
+    "fl13t8.bcs",
+    8
+   ],
+   [
+    "fl13t9.bcs",
+    9
+   ]
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "helm26",
+  "glob": "FL13T04",
+  "tier": 13,
+  "token": 4,
+  "src": "gromnir.cre",
+  "val": 3,
+  "mode": "PENDING",
+  "block": [
+   [
+    "fl13t3.bcs",
+    "helm26",
+    "bazeye01"
+   ]
+  ],
+  "slotcre": "fl13t3",
+  "slotstatus": "ar6003:unvisited:ToB-reachable",
+  "anyblocks": [
+   [
+    "fl13t1.bcs",
+    1
+   ],
+   [
+    "fl13t10.bcs",
+    10
+   ],
+   [
+    "fl13t11.bcs",
+    11
+   ],
+   [
+    "fl13t12.bcs",
+    12
+   ],
+   [
+    "fl13t2.bcs",
+    2
+   ],
+   [
+    "fl13t3.bcs",
+    3
+   ],
+   [
+    "fl13t4.bcs",
+    4
+   ],
+   [
+    "fl13t5.bcs",
+    5
+   ],
+   [
+    "fl13t6.bcs",
+    6
+   ],
+   [
+    "fl13t7.bcs",
+    7
+   ],
+   [
+    "fl13t8.bcs",
+    8
+   ],
+   [
+    "fl13t9.bcs",
+    9
+   ]
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "ring02",
+  "glob": "FL13T05",
+  "tier": 13,
+  "token": 5,
+  "src": "25spell.sto",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "GAM",
+   "ar0602.are"
+  ],
+  "obtain": [
+   "GAM"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "dagg23",
+  "glob": "FL13T06",
+  "tier": 13,
+  "token": 6,
+  "src": "gorchr.cre",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [],
+  "obtain": []
+ },
+ {
+  "tag": "BG2",
+  "item": "dart08",
+  "glob": "FL13T07",
+  "tier": 13,
+  "token": 7,
+  "src": "ar3001.are",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "cdbag04.sto"
+  ],
+  "obtain": [
+   "cdbag04.sto"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "staf23",
+  "glob": "FL13T08",
+  "tier": 13,
+  "token": 8,
+  "src": "gorlic01.cre",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "cdbag04.sto"
+  ],
+  "obtain": [
+   "cdbag04.sto"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "boot12",
+  "glob": "FL13T09",
+  "tier": 13,
+  "token": 9,
+  "src": "amsmug02.sto",
+  "val": null,
+  "mode": "NOVAR",
+  "hits": [
+   "GAM",
+   "bdkazzre.sto"
+  ],
+  "obtain": [
+   "GAM",
+   "bdkazzre.sto"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "wand18",
+  "glob": "FL13T10",
+  "tier": 13,
+  "token": 10,
+  "src": "ar3016.are",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "GAM",
+   "oh6460.are",
+   "oh6500.are",
+   "cdbag04.sto"
+  ],
+  "obtain": [
+   "GAM",
+   "cdbag04.sto"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "wand18",
+  "glob": "FL13T11",
+  "tier": 13,
+  "token": 11,
+  "src": "ar3017.are",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "GAM",
+   "oh6460.are",
+   "oh6500.are",
+   "cdbag04.sto"
+  ],
+  "obtain": [
+   "GAM",
+   "cdbag04.sto"
+  ]
+ },
+ {
+  "tag": "BG2",
+  "item": "helm31",
+  "glob": "FL13T12",
+  "tier": 13,
+  "token": 12,
+  "src": "gorfirg.cre",
+  "val": null,
+  "mode": "NOVAR",
+  "hits": [
+   "cdbag04.sto"
+  ],
+  "obtain": [
+   "cdbag04.sto"
+  ]
+ },
+ {
+  "tag": "BG1",
+  "item": "brac01",
+  "glob": "FL24T01",
+  "tier": 24,
+  "token": 1,
+  "src": "inn3351.sto",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "ar1304.are",
+   "bd0118.are",
+   "bd2000.are",
+   "bd4000.are",
+   "bd5300.are",
+   "bdnazram.sto",
+   "c!bag04.sto",
+   "ohnimim.sto",
+   "shop07.sto",
+   "sto0703.sto",
+   "taerum.sto"
+  ],
+  "obtain": [
+   "bdnazram.sto",
+   "c!bag04.sto",
+   "ohnimim.sto",
+   "shop07.sto",
+   "sto0703.sto",
+   "taerum.sto"
+  ]
+ },
+ {
+  "tag": "BG1",
+  "item": "brac01",
+  "glob": "FL24T02",
+  "tier": 24,
+  "token": 2,
+  "src": "ar4701.are",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "ar1304.are",
+   "bd0118.are",
+   "bd2000.are",
+   "bd4000.are",
+   "bd5300.are",
+   "bdnazram.sto",
+   "c!bag04.sto",
+   "ohnimim.sto",
+   "shop07.sto",
+   "sto0703.sto",
+   "taerum.sto"
+  ],
+  "obtain": [
+   "bdnazram.sto",
+   "c!bag04.sto",
+   "ohnimim.sto",
+   "shop07.sto",
+   "sto0703.sto",
+   "taerum.sto"
+  ]
+ },
+ {
+  "tag": "BG1",
+  "item": "bow06",
+  "glob": "FL24T03",
+  "tier": 24,
+  "token": 3,
+  "src": "taerum.sto",
+  "val": 6,
+  "mode": "PENDING",
+  "block": [
+   [
+    "fl24t6.bcs",
+    "bow06",
+    "container13"
+   ]
+  ],
+  "slotcre": "fl24t6",
+  "slotstatus": "bg3321:unvisited:UNREACHABLE-era",
+  "anyblocks": [
+   [
+    "fl24t1.bcs",
+    1
+   ],
+   [
+    "fl24t10.bcs",
+    10
+   ],
+   [
+    "fl24t11.bcs",
+    11
+   ],
+   [
+    "fl24t12.bcs",
+    12
+   ],
+   [
+    "fl24t13.bcs",
+    13
+   ],
+   [
+    "fl24t2.bcs",
+    2
+   ],
+   [
+    "fl24t3.bcs",
+    3
+   ],
+   [
+    "fl24t4.bcs",
+    4
+   ],
+   [
+    "fl24t5.bcs",
+    5
+   ],
+   [
+    "fl24t6.bcs",
+    6
+   ],
+   [
+    "fl24t7.bcs",
+    7
+   ],
+   [
+    "fl24t8.bcs",
+    8
+   ],
+   [
+    "fl24t9.bcs",
+    9
+   ]
+  ]
+ },
+ {
+  "tag": "BG1",
+  "item": "chan02",
+  "glob": "FL24T04",
+  "tier": 24,
+  "token": 4,
+  "src": "ar5001.are",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "ar0312.are",
+   "ar0509.are",
+   "ar2100.are",
+   "ar2200.are",
+   "ar2201.are",
+   "ar2206.are",
+   "ar2401.are",
+   "ar5016.are",
+   "bd0071.are",
+   "bd0100.are",
+   "bd0102.are",
+   "bd2000.are",
+   "bd3000.are",
+   "bd5300.are",
+   "bd7100.are",
+   "bg0108.are",
+   "bg1200.are",
+   "arled.sto",
+   "bdjegg01.sto",
+   "bdsorcsc.sto",
+   "bmthief.sto",
+   "cdaemerc.sto",
+   "ohnhuegr.sto",
+   "ppstor01.sto",
+   "sarbar01.sto",
+   "taerum.sto",
+   "trgeni01.sto",
+   "trmer04.sto",
+   "trthf02.sto",
+   "udduer02.sto",
+   "udsvir05.sto"
+  ],
+  "obtain": [
+   "ar5016.are",
+   "arled.sto",
+   "bdjegg01.sto",
+   "bdsorcsc.sto",
+   "bmthief.sto",
+   "cdaemerc.sto",
+   "ohnhuegr.sto",
+   "ppstor01.sto",
+   "sarbar01.sto",
+   "taerum.sto",
+   "trgeni01.sto",
+   "trmer04.sto",
+   "trthf02.sto",
+   "udduer02.sto",
+   "udsvir05.sto"
+  ]
+ },
+ {
+  "tag": "BG1",
+  "item": "chan02",
+  "glob": "FL24T05",
+  "tier": 24,
+  "token": 5,
+  "src": "ar1401.are",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "ar0312.are",
+   "ar0509.are",
+   "ar2100.are",
+   "ar2200.are",
+   "ar2201.are",
+   "ar2206.are",
+   "ar2401.are",
+   "ar5016.are",
+   "bd0071.are",
+   "bd0100.are",
+   "bd0102.are",
+   "bd2000.are",
+   "bd3000.are",
+   "bd5300.are",
+   "bd7100.are",
+   "bg0108.are",
+   "bg1200.are",
+   "arled.sto",
+   "bdjegg01.sto",
+   "bdsorcsc.sto",
+   "bmthief.sto",
+   "cdaemerc.sto",
+   "ohnhuegr.sto",
+   "ppstor01.sto",
+   "sarbar01.sto",
+   "taerum.sto",
+   "trgeni01.sto",
+   "trmer04.sto",
+   "trthf02.sto",
+   "udduer02.sto",
+   "udsvir05.sto"
+  ],
+  "obtain": [
+   "ar5016.are",
+   "arled.sto",
+   "bdjegg01.sto",
+   "bdsorcsc.sto",
+   "bmthief.sto",
+   "cdaemerc.sto",
+   "ohnhuegr.sto",
+   "ppstor01.sto",
+   "sarbar01.sto",
+   "taerum.sto",
+   "trgeni01.sto",
+   "trmer04.sto",
+   "trthf02.sto",
+   "udduer02.sto",
+   "udsvir05.sto"
+  ]
+ },
+ {
+  "tag": "BG1",
+  "item": "chan02",
+  "glob": "FL24T06",
+  "tier": 24,
+  "token": 6,
+  "src": "inn3351.sto",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "ar0312.are",
+   "ar0509.are",
+   "ar2100.are",
+   "ar2200.are",
+   "ar2201.are",
+   "ar2206.are",
+   "ar2401.are",
+   "ar5016.are",
+   "bd0071.are",
+   "bd0100.are",
+   "bd0102.are",
+   "bd2000.are",
+   "bd3000.are",
+   "bd5300.are",
+   "bd7100.are",
+   "bg0108.are",
+   "bg1200.are",
+   "arled.sto",
+   "bdjegg01.sto",
+   "bdsorcsc.sto",
+   "bmthief.sto",
+   "cdaemerc.sto",
+   "ohnhuegr.sto",
+   "ppstor01.sto",
+   "sarbar01.sto",
+   "taerum.sto",
+   "trgeni01.sto",
+   "trmer04.sto",
+   "trthf02.sto",
+   "udduer02.sto",
+   "udsvir05.sto"
+  ],
+  "obtain": [
+   "ar5016.are",
+   "arled.sto",
+   "bdjegg01.sto",
+   "bdsorcsc.sto",
+   "bmthief.sto",
+   "cdaemerc.sto",
+   "ohnhuegr.sto",
+   "ppstor01.sto",
+   "sarbar01.sto",
+   "taerum.sto",
+   "trgeni01.sto",
+   "trmer04.sto",
+   "trthf02.sto",
+   "udduer02.sto",
+   "udsvir05.sto"
+  ]
+ },
+ {
+  "tag": "BG1",
+  "item": "leat02",
+  "glob": "FL24T07",
+  "tier": 24,
+  "token": 7,
+  "src": "taerum.sto",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "ar0300.are",
+   "ar1100.are",
+   "ar5000.are",
+   "bd0071.are",
+   "bd0109.are",
+   "bd0110.are",
+   "bd3000.are",
+   "bg0504.are",
+   "bg1000.are",
+   "bg5500.are",
+   "bdwaizah.sto",
+   "bmthief.sto",
+   "bshop01.sto",
+   "c!bag04.sto",
+   "cdaemerc.sto",
+   "cdbag04.sto",
+   "ffbart.sto",
+   "ohnhuegr.sto",
+   "ppstor01.sto",
+   "ribald.sto",
+   "sarbar01.sto",
+   "sto0703.sto",
+   "stoblack.sto",
+   "thumb.sto",
+   "trmer04.sto",
+   "trthf02.sto",
+   "udduer02.sto",
+   "udsvir05.sto"
+  ],
+  "obtain": [
+   "ar5000.are",
+   "bdwaizah.sto",
+   "bmthief.sto",
+   "bshop01.sto",
+   "c!bag04.sto",
+   "cdaemerc.sto",
+   "cdbag04.sto",
+   "ffbart.sto",
+   "ohnhuegr.sto",
+   "ppstor01.sto",
+   "ribald.sto",
+   "sarbar01.sto",
+   "sto0703.sto",
+   "stoblack.sto",
+   "thumb.sto",
+   "trmer04.sto",
+   "trthf02.sto",
+   "udduer02.sto",
+   "udsvir05.sto"
+  ]
+ },
+ {
+  "tag": "BG1",
+  "item": "leat06",
+  "glob": "FL24T08",
+  "tier": 24,
+  "token": 8,
+  "src": "blank",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "GAM",
+   "ribald.sto"
+  ],
+  "obtain": [
+   "GAM",
+   "ribald.sto"
+  ]
+ },
+ {
+  "tag": "BG1",
+  "item": "ring20",
+  "glob": "FL24T09",
+  "tier": 24,
+  "token": 9,
+  "src": "denak.cre",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "ar0602.are",
+   "ar5003.are",
+   "bg1901.are",
+   "cdbag04.sto"
+  ],
+  "obtain": [
+   "ar5003.are",
+   "cdbag04.sto"
+  ]
+ },
+ {
+  "tag": "BG1",
+  "item": "shld02",
+  "glob": "FL24T10",
+  "tier": 24,
+  "token": 10,
+  "src": "taerum.sto",
+  "val": null,
+  "mode": "NOVAR",
+  "hits": [
+   "bg2643.are",
+   "bernard2.sto",
+   "cdaemerc.sto",
+   "crobar01.sto",
+   "ffbart.sto",
+   "ohnhuegr.sto",
+   "ppinn01.sto",
+   "ppstor01.sto",
+   "ribald.sto",
+   "sarbar01.sto",
+   "shop02.sto",
+   "shop07.sto",
+   "thumb.sto",
+   "trmer04.sto",
+   "trthf02.sto",
+   "uddrow22.sto",
+   "udduer02.sto",
+   "udsvir04.sto",
+   "udsvir05.sto",
+   "uhmer03.sto"
+  ],
+  "obtain": [
+   "bernard2.sto",
+   "cdaemerc.sto",
+   "crobar01.sto",
+   "ffbart.sto",
+   "ohnhuegr.sto",
+   "ppinn01.sto",
+   "ppstor01.sto",
+   "ribald.sto",
+   "sarbar01.sto",
+   "shop02.sto",
+   "shop07.sto",
+   "thumb.sto",
+   "trmer04.sto",
+   "trthf02.sto",
+   "uddrow22.sto",
+   "udduer02.sto",
+   "udsvir04.sto",
+   "udsvir05.sto",
+   "uhmer03.sto"
+  ]
+ },
+ {
+  "tag": "BG1",
+  "item": "shld04",
+  "glob": "FL24T11",
+  "tier": 24,
+  "token": 11,
+  "src": "inn3351.sto",
+  "val": null,
+  "mode": "NOVAR",
+  "hits": [
+   "ar0602.are",
+   "bd7100.are",
+   "arled.sto",
+   "c!bag04.sto",
+   "cdaemerc.sto",
+   "ffbart.sto",
+   "jayes.sto",
+   "ohnhuegr.sto",
+   "ppstor01.sto",
+   "ribald.sto",
+   "sarbar01.sto",
+   "shop02.sto",
+   "shop07.sto",
+   "thumb.sto",
+   "trgeni01.sto",
+   "trthf02.sto",
+   "udduer02.sto",
+   "udsvir05.sto"
+  ],
+  "obtain": [
+   "arled.sto",
+   "c!bag04.sto",
+   "cdaemerc.sto",
+   "ffbart.sto",
+   "jayes.sto",
+   "ohnhuegr.sto",
+   "ppstor01.sto",
+   "ribald.sto",
+   "sarbar01.sto",
+   "shop02.sto",
+   "shop07.sto",
+   "thumb.sto",
+   "trgeni01.sto",
+   "trthf02.sto",
+   "udduer02.sto",
+   "udsvir05.sto"
+  ]
+ },
+ {
+  "tag": "BG1",
+  "item": "shld04",
+  "glob": "FL24T12",
+  "tier": 24,
+  "token": 12,
+  "src": "taerum.sto",
+  "val": null,
+  "mode": "NOVAR",
+  "hits": [
+   "ar0602.are",
+   "bd7100.are",
+   "arled.sto",
+   "c!bag04.sto",
+   "cdaemerc.sto",
+   "ffbart.sto",
+   "jayes.sto",
+   "ohnhuegr.sto",
+   "ppstor01.sto",
+   "ribald.sto",
+   "sarbar01.sto",
+   "shop02.sto",
+   "shop07.sto",
+   "thumb.sto",
+   "trgeni01.sto",
+   "trthf02.sto",
+   "udduer02.sto",
+   "udsvir05.sto"
+  ],
+  "obtain": [
+   "arled.sto",
+   "c!bag04.sto",
+   "cdaemerc.sto",
+   "ffbart.sto",
+   "jayes.sto",
+   "ohnhuegr.sto",
+   "ppstor01.sto",
+   "ribald.sto",
+   "sarbar01.sto",
+   "shop02.sto",
+   "shop07.sto",
+   "thumb.sto",
+   "trgeni01.sto",
+   "trthf02.sto",
+   "udduer02.sto",
+   "udsvir05.sto"
+  ]
+ },
+ {
+  "tag": "BG1",
+  "item": "amul15",
+  "glob": "FL25T01",
+  "tier": 25,
+  "token": 1,
+  "src": "sto4906.sto",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "GAM",
+   "c!bag04.sto",
+   "cdbag04.sto"
+  ],
+  "obtain": [
+   "GAM",
+   "c!bag04.sto",
+   "cdbag04.sto"
+  ]
+ },
+ {
+  "tag": "BG1",
+  "item": "ax1h02",
+  "glob": "FL25T02",
+  "tier": 25,
+  "token": 2,
+  "src": "inn3351.sto",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "GAM",
+   "bd0063.are",
+   "bd0071.are",
+   "bd0101.are",
+   "bd4000.are",
+   "bd4300.are",
+   "bd5300.are",
+   "arled.sto",
+   "bdbelega.sto",
+   "bdjegg01.sto",
+   "bernard2.sto",
+   "c!bag04.sto",
+   "cdaemerc.sto",
+   "jayes.sto",
+   "ohnsdwm.sto",
+   "ppstor01.sto",
+   "ribald.sto",
+   "sarbar01.sto",
+   "sto0703.sto",
+   "trgeni01.sto",
+   "trmer04.sto",
+   "trthf02.sto",
+   "udduer02.sto",
+   "udsvir05.sto"
+  ],
+  "obtain": [
+   "GAM",
+   "arled.sto",
+   "bdbelega.sto",
+   "bdjegg01.sto",
+   "bernard2.sto",
+   "c!bag04.sto",
+   "cdaemerc.sto",
+   "jayes.sto",
+   "ohnsdwm.sto",
+   "ppstor01.sto",
+   "ribald.sto",
+   "sarbar01.sto",
+   "sto0703.sto",
+   "trgeni01.sto",
+   "trmer04.sto",
+   "trthf02.sto",
+   "udduer02.sto",
+   "udsvir05.sto"
+  ]
+ },
+ {
+  "tag": "BG1",
+  "item": "blun03",
+  "glob": "FL25T03",
+  "tier": 25,
+  "token": 3,
+  "src": "ar4701.are",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "ar0307.are",
+   "ar2008.are",
+   "ar4000.are",
+   "bd2000.are",
+   "bd4000.are",
+   "bd5000.are",
+   "bg1400.are",
+   "bg3900.are",
+   "arled.sto",
+   "bdbelega.sto",
+   "bdjegg01.sto",
+   "c!bag04.sto",
+   "cdaemerc.sto",
+   "ohnsdwm.sto",
+   "ppstor01.sto",
+   "ribald.sto",
+   "sarbar01.sto",
+   "taerum.sto",
+   "trgeni01.sto",
+   "trmer04.sto",
+   "trthf02.sto",
+   "udduer02.sto",
+   "udsvir05.sto"
+  ],
+  "obtain": [
+   "ar4000.are",
+   "arled.sto",
+   "bdbelega.sto",
+   "bdjegg01.sto",
+   "c!bag04.sto",
+   "cdaemerc.sto",
+   "ohnsdwm.sto",
+   "ppstor01.sto",
+   "ribald.sto",
+   "sarbar01.sto",
+   "taerum.sto",
+   "trgeni01.sto",
+   "trmer04.sto",
+   "trthf02.sto",
+   "udduer02.sto",
+   "udsvir05.sto"
+  ]
+ },
+ {
+  "tag": "BG1",
+  "item": "blun05",
+  "glob": "FL25T04",
+  "tier": 25,
+  "token": 4,
+  "src": "taerum.sto",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "ar0900.are",
+   "ar0904.are",
+   "bd0101.are",
+   "bd1100.are",
+   "bd4300.are",
+   "bd5100.are",
+   "bd7100.are",
+   "bg0132.are",
+   "bg4802.are",
+   "oh6460.are",
+   "arled.sto",
+   "bdbelega.sto",
+   "bdjegg01.sto",
+   "bdsorcsc.sto",
+   "bernard2.sto",
+   "cdaemerc.sto",
+   "jayes.sto",
+   "ohnsdwm.sto",
+   "ppstor01.sto",
+   "ribald.sto",
+   "sarbar01.sto",
+   "sto0703.sto",
+   "trgeni01.sto",
+   "trmer04.sto",
+   "trthf02.sto",
+   "udduer02.sto",
+   "udsvir05.sto"
+  ],
+  "obtain": [
+   "arled.sto",
+   "bdbelega.sto",
+   "bdjegg01.sto",
+   "bdsorcsc.sto",
+   "bernard2.sto",
+   "cdaemerc.sto",
+   "jayes.sto",
+   "ohnsdwm.sto",
+   "ppstor01.sto",
+   "ribald.sto",
+   "sarbar01.sto",
+   "sto0703.sto",
+   "trgeni01.sto",
+   "trmer04.sto",
+   "trthf02.sto",
+   "udduer02.sto",
+   "udsvir05.sto"
+  ]
+ },
+ {
+  "tag": "BG1",
+  "item": "bow02",
+  "glob": "FL25T05",
+  "tier": 25,
+  "token": 5,
+  "src": "inn3351.sto",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "ar0602.are",
+   "ar5000.are",
+   "bd4000.are",
+   "bd5000.are",
+   "arled.sto",
+   "bdbelega.sto",
+   "bdwaizah.sto",
+   "bernard2.sto",
+   "bmthief.sto",
+   "bshop01.sto",
+   "c!bag04.sto",
+   "cdaemerc.sto",
+   "dmark.sto",
+   "dshop01.sto",
+   "ffbart.sto",
+   "friend.sto",
+   "gorch.sto",
+   "inn2616.sto",
+   "inn3304.sto",
+   "jayes.sto",
+   "ohnsdwm.sto",
+   "ppstor01.sto",
+   "ribald.sto",
+   "sarbar01.sto",
+   "shop01.sto",
+   "shop05.sto",
+   "shop06.sto",
+   "shop07.sto",
+   "slshop02.sto",
+   "sto0703.sto",
+   "stoblack.sto",
+   "taerum.sto",
+   "thumb.sto",
+   "trgeni01.sto",
+   "trmer04.sto",
+   "trthf02.sto",
+   "udduer02.sto",
+   "udsvir05.sto",
+   "uhmer01.sto",
+   "ulgoth.sto"
+  ],
+  "obtain": [
+   "ar5000.are",
+   "arled.sto",
+   "bdbelega.sto",
+   "bdwaizah.sto",
+   "bernard2.sto",
+   "bmthief.sto",
+   "bshop01.sto",
+   "c!bag04.sto",
+   "cdaemerc.sto",
+   "dmark.sto",
+   "dshop01.sto",
+   "ffbart.sto",
+   "friend.sto",
+   "gorch.sto",
+   "inn2616.sto",
+   "inn3304.sto",
+   "jayes.sto",
+   "ohnsdwm.sto",
+   "ppstor01.sto",
+   "ribald.sto",
+   "sarbar01.sto",
+   "shop01.sto",
+   "shop05.sto",
+   "shop06.sto",
+   "shop07.sto",
+   "slshop02.sto",
+   "sto0703.sto",
+   "stoblack.sto",
+   "taerum.sto",
+   "thumb.sto",
+   "trgeni01.sto",
+   "trmer04.sto",
+   "trthf02.sto",
+   "udduer02.sto",
+   "udsvir05.sto",
+   "uhmer01.sto",
+   "ulgoth.sto"
+  ]
+ },
+ {
+  "tag": "BG1",
+  "item": "halb02",
+  "glob": "FL25T06",
+  "tier": 25,
+  "token": 6,
+  "src": "ar5202.are",
+  "val": null,
+  "mode": "NOVAR",
+  "hits": [
+   "GAM",
+   "ar1608.are",
+   "bd0071.are",
+   "bd3000.are",
+   "bd4000.are",
+   "bd4300.are",
+   "bd7300.are",
+   "arled.sto",
+   "bdbelega.sto",
+   "bdjegg01.sto",
+   "bmthief.sto",
+   "c!bag04.sto",
+   "cdaemerc.sto",
+   "ohnsdwm.sto",
+   "ppstor01.sto",
+   "sarbar01.sto",
+   "sto0703.sto",
+   "taerum.sto",
+   "trgeni01.sto",
+   "trthf02.sto",
+   "udduer02.sto",
+   "udsvir05.sto"
+  ],
+  "obtain": [
+   "GAM",
+   "arled.sto",
+   "bdbelega.sto",
+   "bdjegg01.sto",
+   "bmthief.sto",
+   "c!bag04.sto",
+   "cdaemerc.sto",
+   "ohnsdwm.sto",
+   "ppstor01.sto",
+   "sarbar01.sto",
+   "sto0703.sto",
+   "taerum.sto",
+   "trgeni01.sto",
+   "trthf02.sto",
+   "udduer02.sto",
+   "udsvir05.sto"
+  ]
+ },
+ {
+  "tag": "BG1",
+  "item": "hamm02",
+  "glob": "FL25T07",
+  "tier": 25,
+  "token": 7,
+  "src": "ar1001.are",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "GAM",
+   "ar2100.are",
+   "bd0120.are",
+   "bd1100.are",
+   "bd3000.are",
+   "bd7100.are",
+   "bdbelega.sto",
+   "bdjegg01.sto",
+   "bdsorcsc.sto",
+   "c!bag04.sto",
+   "ffbart.sto",
+   "ohnsdwm.sto",
+   "ribald.sto",
+   "sarbar01.sto",
+   "shop03.sto",
+   "sto0703.sto",
+   "taerum.sto",
+   "temhelm.sto",
+   "thumb.sto",
+   "trthf02.sto"
+  ],
+  "obtain": [
+   "GAM",
+   "bdbelega.sto",
+   "bdjegg01.sto",
+   "bdsorcsc.sto",
+   "c!bag04.sto",
+   "ffbart.sto",
+   "ohnsdwm.sto",
+   "ribald.sto",
+   "sarbar01.sto",
+   "shop03.sto",
+   "sto0703.sto",
+   "taerum.sto",
+   "temhelm.sto",
+   "thumb.sto",
+   "trthf02.sto"
+  ]
+ },
+ {
+  "tag": "BG1",
+  "item": "misc42",
+  "glob": "FL25T08",
+  "tier": 25,
+  "token": 8,
+  "src": "ar2700.are",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "ar0306.are",
+   "ar1401.are",
+   "ar2200.are",
+   "ar5203.are",
+   "bd0116.are",
+   "bg0102.are",
+   "bg0128.are",
+   "oh6000.are",
+   "bag02d.sto",
+   "bdnazram.sto",
+   "bernard2.sto",
+   "ribald3.sto",
+   "sarbar01.sto",
+   "sto0703.sto"
+  ],
+  "obtain": [
+   "ar5203.are",
+   "bag02d.sto",
+   "bdnazram.sto",
+   "bernard2.sto",
+   "ribald3.sto",
+   "sarbar01.sto",
+   "sto0703.sto"
+  ]
+ },
+ {
+  "tag": "BG1",
+  "item": "sper03",
+  "glob": "FL25T09",
+  "tier": 25,
+  "token": 9,
+  "src": "blank",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "cdbag04.sto",
+   "taerum.sto"
+  ],
+  "obtain": [
+   "cdbag04.sto",
+   "taerum.sto"
+  ]
+ },
+ {
+  "tag": "BG1",
+  "item": "xbow03",
+  "glob": "FL25T10",
+  "tier": 25,
+  "token": 10,
+  "src": "dabron.cre",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "c!bag04.sto",
+   "cdbag04.sto"
+  ],
+  "obtain": [
+   "c!bag04.sto",
+   "cdbag04.sto"
+  ]
+ },
+ {
+  "tag": "BG1",
+  "item": "shld06",
+  "glob": "FL25T11",
+  "tier": 25,
+  "token": 11,
+  "src": "sto4803.sto",
+  "val": null,
+  "mode": "NOVAR",
+  "hits": [
+   "ar2008.are",
+   "ar4000.are",
+   "ar5203.are",
+   "oh6500.are",
+   "bdjegg01.sto",
+   "bmthief.sto",
+   "cdaemerc.sto",
+   "cdbag04.sto",
+   "ffbart.sto",
+   "ohnhuegr.sto",
+   "ppstor01.sto",
+   "ribald.sto",
+   "sarbar01.sto",
+   "shop02.sto",
+   "thumb.sto",
+   "trmer04.sto",
+   "trthf02.sto",
+   "udduer02.sto",
+   "udsvir05.sto"
+  ],
+  "obtain": [
+   "ar4000.are",
+   "ar5203.are",
+   "bdjegg01.sto",
+   "bmthief.sto",
+   "cdaemerc.sto",
+   "cdbag04.sto",
+   "ffbart.sto",
+   "ohnhuegr.sto",
+   "ppstor01.sto",
+   "ribald.sto",
+   "sarbar01.sto",
+   "shop02.sto",
+   "thumb.sto",
+   "trmer04.sto",
+   "trthf02.sto",
+   "udduer02.sto",
+   "udsvir05.sto"
+  ]
+ },
+ {
+  "tag": "BG1",
+  "item": "shld06",
+  "glob": "FL25T12",
+  "tier": 25,
+  "token": 12,
+  "src": "friend.sto",
+  "val": null,
+  "mode": "NOVAR",
+  "hits": [
+   "ar2008.are",
+   "ar4000.are",
+   "ar5203.are",
+   "oh6500.are",
+   "bdjegg01.sto",
+   "bmthief.sto",
+   "cdaemerc.sto",
+   "cdbag04.sto",
+   "ffbart.sto",
+   "ohnhuegr.sto",
+   "ppstor01.sto",
+   "ribald.sto",
+   "sarbar01.sto",
+   "shop02.sto",
+   "thumb.sto",
+   "trmer04.sto",
+   "trthf02.sto",
+   "udduer02.sto",
+   "udsvir05.sto"
+  ],
+  "obtain": [
+   "ar4000.are",
+   "ar5203.are",
+   "bdjegg01.sto",
+   "bmthief.sto",
+   "cdaemerc.sto",
+   "cdbag04.sto",
+   "ffbart.sto",
+   "ohnhuegr.sto",
+   "ppstor01.sto",
+   "ribald.sto",
+   "sarbar01.sto",
+   "shop02.sto",
+   "thumb.sto",
+   "trmer04.sto",
+   "trthf02.sto",
+   "udduer02.sto",
+   "udsvir05.sto"
+  ]
+ },
+ {
+  "tag": "BG1",
+  "item": "sw1h02",
+  "glob": "FL25T13",
+  "tier": 25,
+  "token": 13,
+  "src": "inn3351.sto",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "ar2100.are",
+   "ar2200.are",
+   "ar2201.are",
+   "ar2208.are",
+   "ar2209.are",
+   "ar2401.are",
+   "ar2402.are",
+   "bd0100.are",
+   "bd0101.are",
+   "bd0102.are",
+   "bd0109.are",
+   "bd0110.are",
+   "bd0112.are",
+   "bd0120.are",
+   "bd4100.are",
+   "bd4300.are",
+   "bd5000.are",
+   "bd5200.are",
+   "bg0108.are",
+   "bg4500.are",
+   "bdbelega.sto",
+   "cdaemerc.sto",
+   "cdbag04.sto",
+   "ffbart.sto",
+   "ohnsdwm.sto",
+   "ppstor01.sto",
+   "ribald.sto",
+   "sarbar01.sto",
+   "shop07.sto",
+   "sto0703.sto",
+   "taerum.sto",
+   "thumb.sto",
+   "trmer04.sto",
+   "trthf02.sto",
+   "udduer02.sto",
+   "udsvir05.sto"
+  ],
+  "obtain": [
+   "bdbelega.sto",
+   "cdaemerc.sto",
+   "cdbag04.sto",
+   "ffbart.sto",
+   "ohnsdwm.sto",
+   "ppstor01.sto",
+   "ribald.sto",
+   "sarbar01.sto",
+   "shop07.sto",
+   "sto0703.sto",
+   "taerum.sto",
+   "thumb.sto",
+   "trmer04.sto",
+   "trthf02.sto",
+   "udduer02.sto",
+   "udsvir05.sto"
+  ]
+ },
+ {
+  "tag": "BG1",
+  "item": "sw1h05",
+  "glob": "FL25T14",
+  "tier": 25,
+  "token": 14,
+  "src": "taerum.sto",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "ar0516.are",
+   "ar4000.are",
+   "ar5000.are",
+   "ar5016.are",
+   "bd0071.are",
+   "bd0101.are",
+   "bd2000.are",
+   "bd3000.are",
+   "bd4000.are",
+   "bd4100.are",
+   "bd5200.are",
+   "bg0102.are",
+   "bg0106.are",
+   "bg0134.are",
+   "bg0514.are",
+   "bg0900.are",
+   "bdbelega.sto",
+   "bernard2.sto",
+   "bmthief.sto",
+   "c!bag04.sto",
+   "cdaemerc.sto",
+   "cdbag04.sto",
+   "crobar01.sto",
+   "ffbart.sto",
+   "ohnsdwm.sto",
+   "ppinn01.sto",
+   "ppstor01.sto",
+   "ribald.sto",
+   "sarbar01.sto",
+   "sto0703.sto",
+   "taerum.sto",
+   "thumb.sto",
+   "trmer04.sto",
+   "trthf02.sto",
+   "uddrow22.sto",
+   "udduer02.sto",
+   "udsvir04.sto",
+   "udsvir05.sto",
+   "uhmer01.sto"
+  ],
+  "obtain": [
+   "ar4000.are",
+   "ar5000.are",
+   "ar5016.are",
+   "bdbelega.sto",
+   "bernard2.sto",
+   "bmthief.sto",
+   "c!bag04.sto",
+   "cdaemerc.sto",
+   "cdbag04.sto",
+   "crobar01.sto",
+   "ffbart.sto",
+   "ohnsdwm.sto",
+   "ppinn01.sto",
+   "ppstor01.sto",
+   "ribald.sto",
+   "sarbar01.sto",
+   "sto0703.sto",
+   "taerum.sto",
+   "thumb.sto",
+   "trmer04.sto",
+   "trthf02.sto",
+   "uddrow22.sto",
+   "udduer02.sto",
+   "udsvir04.sto",
+   "udsvir05.sto",
+   "uhmer01.sto"
+  ]
+ },
+ {
+  "tag": "BG1",
+  "item": "sw1h08",
+  "glob": "FL25T15",
+  "tier": 25,
+  "token": 15,
+  "src": "taerum.sto",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "ar1300.are",
+   "ar1513.are",
+   "bd0116.are",
+   "bd1000.are",
+   "bd2000.are",
+   "bd5100.are",
+   "bd6100.are",
+   "bd7100.are",
+   "bg0504.are",
+   "bg1000.are",
+   "oh6000.are",
+   "arled.sto",
+   "bdbelega.sto",
+   "bdnazram.sto",
+   "bdwaizah.sto",
+   "bernard2.sto",
+   "bmthief.sto",
+   "c!bag04.sto",
+   "cdaemerc.sto",
+   "cdbag04.sto",
+   "crobar01.sto",
+   "ffbart.sto",
+   "ohnsdwm.sto",
+   "ppinn01.sto",
+   "ppstor01.sto",
+   "ribald.sto",
+   "ribald3.sto",
+   "sarbar01.sto",
+   "sto0703.sto",
+   "taerum.sto",
+   "thumb.sto",
+   "trgeni01.sto",
+   "trmer04.sto",
+   "trthf02.sto",
+   "uddrow22.sto",
+   "udduer02.sto",
+   "udsvir04.sto",
+   "udsvir05.sto",
+   "uhmer01.sto"
+  ],
+  "obtain": [
+   "arled.sto",
+   "bdbelega.sto",
+   "bdnazram.sto",
+   "bdwaizah.sto",
+   "bernard2.sto",
+   "bmthief.sto",
+   "c!bag04.sto",
+   "cdaemerc.sto",
+   "cdbag04.sto",
+   "crobar01.sto",
+   "ffbart.sto",
+   "ohnsdwm.sto",
+   "ppinn01.sto",
+   "ppstor01.sto",
+   "ribald.sto",
+   "ribald3.sto",
+   "sarbar01.sto",
+   "sto0703.sto",
+   "taerum.sto",
+   "thumb.sto",
+   "trgeni01.sto",
+   "trmer04.sto",
+   "trthf02.sto",
+   "uddrow22.sto",
+   "udduer02.sto",
+   "udsvir04.sto",
+   "udsvir05.sto",
+   "uhmer01.sto"
+  ]
+ },
+ {
+  "tag": "BG1",
+  "item": "wand07",
+  "glob": "FL25T16",
+  "tier": 25,
+  "token": 16,
+  "src": "ar3321.are",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "GAM",
+   "ar1304.are",
+   "25spell.sto",
+   "bdbeleg3.sto",
+   "bdnazram.sto",
+   "bdsorcsc.sto",
+   "bernard2.sto",
+   "c!bag04.sto",
+   "cdbag04.sto",
+   "ohnimim.sto",
+   "ohnwanme.sto",
+   "ribald.sto",
+   "ribald3.sto",
+   "shop07.sto",
+   "sto0703.sto"
+  ],
+  "obtain": [
+   "GAM",
+   "25spell.sto",
+   "bdbeleg3.sto",
+   "bdnazram.sto",
+   "bdsorcsc.sto",
+   "bernard2.sto",
+   "c!bag04.sto",
+   "cdbag04.sto",
+   "ohnimim.sto",
+   "ohnwanme.sto",
+   "ribald.sto",
+   "ribald3.sto",
+   "shop07.sto",
+   "sto0703.sto"
+  ]
+ },
+ {
+  "tag": "BG1",
+  "item": "sw1h02",
+  "glob": "FL25T17",
+  "tier": 25,
+  "token": 17,
+  "src": "ar3301.are",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "ar2100.are",
+   "ar2200.are",
+   "ar2201.are",
+   "ar2208.are",
+   "ar2209.are",
+   "ar2401.are",
+   "ar2402.are",
+   "bd0100.are",
+   "bd0101.are",
+   "bd0102.are",
+   "bd0109.are",
+   "bd0110.are",
+   "bd0112.are",
+   "bd0120.are",
+   "bd4100.are",
+   "bd4300.are",
+   "bd5000.are",
+   "bd5200.are",
+   "bg0108.are",
+   "bg4500.are",
+   "bdbelega.sto",
+   "cdaemerc.sto",
+   "cdbag04.sto",
+   "ffbart.sto",
+   "ohnsdwm.sto",
+   "ppstor01.sto",
+   "ribald.sto",
+   "sarbar01.sto",
+   "shop07.sto",
+   "sto0703.sto",
+   "taerum.sto",
+   "thumb.sto",
+   "trmer04.sto",
+   "trthf02.sto",
+   "udduer02.sto",
+   "udsvir05.sto"
+  ],
+  "obtain": [
+   "bdbelega.sto",
+   "cdaemerc.sto",
+   "cdbag04.sto",
+   "ffbart.sto",
+   "ohnsdwm.sto",
+   "ppstor01.sto",
+   "ribald.sto",
+   "sarbar01.sto",
+   "shop07.sto",
+   "sto0703.sto",
+   "taerum.sto",
+   "thumb.sto",
+   "trmer04.sto",
+   "trthf02.sto",
+   "udduer02.sto",
+   "udsvir05.sto"
+  ]
+ },
+ {
+  "tag": "BG1",
+  "item": "hamm02",
+  "glob": "FL25T18",
+  "tier": 25,
+  "token": 18,
+  "src": "raiken.cre",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "GAM",
+   "ar2100.are",
+   "bd0120.are",
+   "bd1100.are",
+   "bd3000.are",
+   "bd7100.are",
+   "bdbelega.sto",
+   "bdjegg01.sto",
+   "bdsorcsc.sto",
+   "c!bag04.sto",
+   "ffbart.sto",
+   "ohnsdwm.sto",
+   "ribald.sto",
+   "sarbar01.sto",
+   "shop03.sto",
+   "sto0703.sto",
+   "taerum.sto",
+   "temhelm.sto",
+   "thumb.sto",
+   "trthf02.sto"
+  ],
+  "obtain": [
+   "GAM",
+   "bdbelega.sto",
+   "bdjegg01.sto",
+   "bdsorcsc.sto",
+   "c!bag04.sto",
+   "ffbart.sto",
+   "ohnsdwm.sto",
+   "ribald.sto",
+   "sarbar01.sto",
+   "shop03.sto",
+   "sto0703.sto",
+   "taerum.sto",
+   "temhelm.sto",
+   "thumb.sto",
+   "trthf02.sto"
+  ]
+ },
+ {
+  "tag": "BG1",
+  "item": "staf02",
+  "glob": "FL25T19",
+  "tier": 25,
+  "token": 19,
+  "src": "silke.cre",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "GAM",
+   "ar1503.are",
+   "ar1506.are",
+   "ar1507.are",
+   "ar2208.are",
+   "ar4000.are",
+   "ar5203.are",
+   "bd0071.are",
+   "bd0101.are",
+   "bd4300.are",
+   "bd5300.are",
+   "oh6500.are",
+   "arled.sto",
+   "bdbelega.sto",
+   "bmthief.sto",
+   "c!bag04.sto",
+   "cdbag04.sto",
+   "ffbart.sto",
+   "ohngduke.sto",
+   "ohnsdwm.sto",
+   "ribald.sto",
+   "sarbar01.sto",
+   "shop03.sto",
+   "shop07.sto",
+   "taerum.sto",
+   "thumb.sto",
+   "trgeni01.sto"
+  ],
+  "obtain": [
+   "GAM",
+   "ar4000.are",
+   "ar5203.are",
+   "arled.sto",
+   "bdbelega.sto",
+   "bmthief.sto",
+   "c!bag04.sto",
+   "cdbag04.sto",
+   "ffbart.sto",
+   "ohngduke.sto",
+   "ohnsdwm.sto",
+   "ribald.sto",
+   "sarbar01.sto",
+   "shop03.sto",
+   "shop07.sto",
+   "taerum.sto",
+   "thumb.sto",
+   "trgeni01.sto"
+  ]
+ },
+ {
+  "tag": "BG1",
+  "item": "amul14",
+  "glob": "FL26T01",
+  "tier": 26,
+  "token": 1,
+  "src": "sto4906.sto",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "arled.sto",
+   "c!bag04.sto",
+   "cdbag04.sto",
+   "inn3351.sto",
+   "ohnimim.sto",
+   "ribald.sto",
+   "ribald3.sto",
+   "trgeni01.sto"
+  ],
+  "obtain": [
+   "arled.sto",
+   "c!bag04.sto",
+   "cdbag04.sto",
+   "inn3351.sto",
+   "ohnimim.sto",
+   "ribald.sto",
+   "ribald3.sto",
+   "trgeni01.sto"
+  ]
+ },
+ {
+  "tag": "BG1",
+  "item": "book07",
+  "glob": "FL26T02",
+  "tier": 26,
+  "token": 2,
+  "src": "ar5102.are",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [],
+  "obtain": []
+ },
+ {
+  "tag": "BG1",
+  "item": "brac07",
+  "glob": "FL26T03",
+  "tier": 26,
+  "token": 3,
+  "src": "hairto.cre",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "GAM"
+  ],
+  "obtain": [
+   "GAM"
+  ]
+ },
+ {
+  "tag": "BG1",
+  "item": "brac08",
+  "glob": "FL26T04",
+  "tier": 26,
+  "token": 4,
+  "src": "bassil.cre",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "ribald.sto",
+   "taerum.sto"
+  ],
+  "obtain": [
+   "ribald.sto",
+   "taerum.sto"
+  ]
+ },
+ {
+  "tag": "BG1",
+  "item": "misc41",
+  "glob": "FL26T05",
+  "tier": 26,
+  "token": 5,
+  "src": "ar5500.are",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "GAM",
+   "ar1200.are",
+   "bd4000.are",
+   "bd6000.are",
+   "bg0130.are",
+   "bg2617.are",
+   "bag02d.sto",
+   "bdnazram.sto",
+   "garlena.sto",
+   "ribald3.sto",
+   "sarbar01.sto",
+   "sto0703.sto",
+   "udduer01.sto"
+  ],
+  "obtain": [
+   "GAM",
+   "bag02d.sto",
+   "bdnazram.sto",
+   "garlena.sto",
+   "ribald3.sto",
+   "sarbar01.sto",
+   "sto0703.sto",
+   "udduer01.sto"
+  ]
+ },
+ {
+  "tag": "BG1",
+  "item": "ring04",
+  "glob": "FL26T06",
+  "tier": 26,
+  "token": 6,
+  "src": "niemai.cre",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "bdnazram.sto",
+   "cdbag04.sto",
+   "sto0703.sto"
+  ],
+  "obtain": [
+   "bdnazram.sto",
+   "cdbag04.sto",
+   "sto0703.sto"
+  ]
+ },
+ {
+  "tag": "BG1",
+  "item": "leat07",
+  "glob": "FL26T07",
+  "tier": 26,
+  "token": 7,
+  "src": "sendai.cre",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "ar4000.are",
+   "ar5203.are",
+   "bdsorcsc.sto",
+   "bdwaizah.sto",
+   "ohnhuegr.sto",
+   "ribald.sto",
+   "sarbar01.sto",
+   "slshop02.sto"
+  ],
+  "obtain": [
+   "ar4000.are",
+   "ar5203.are",
+   "bdsorcsc.sto",
+   "bdwaizah.sto",
+   "ohnhuegr.sto",
+   "ribald.sto",
+   "sarbar01.sto",
+   "slshop02.sto"
+  ]
+ },
+ {
+  "tag": "BG1",
+  "item": "scrl09",
+  "glob": "FL26T08",
+  "tier": 26,
+  "token": 8,
+  "src": "ar1803.are",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "ar0700.are",
+   "bg5200.are",
+   "bag03_.sto",
+   "shop08.sto"
+  ],
+  "obtain": [
+   "bag03_.sto",
+   "shop08.sto"
+  ]
+ },
+ {
+  "tag": "BG1",
+  "item": "clck01",
+  "glob": "FL26T09",
+  "tier": 26,
+  "token": 9,
+  "src": "ar0401.are",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "ar0306.are",
+   "ar0311.are",
+   "ar0602.are",
+   "bd0071.are",
+   "bd4000.are",
+   "bg0108.are",
+   "25spell.sto",
+   "bdkazzre.sto",
+   "bdnazram.sto",
+   "bdwaizah.sto",
+   "bmthief.sto",
+   "c!bag04.sto",
+   "cdbag04.sto",
+   "ohnimim.sto",
+   "ribald3.sto",
+   "shop07.sto",
+   "stoblack.sto"
+  ],
+  "obtain": [
+   "25spell.sto",
+   "bdkazzre.sto",
+   "bdnazram.sto",
+   "bdwaizah.sto",
+   "bmthief.sto",
+   "c!bag04.sto",
+   "cdbag04.sto",
+   "ohnimim.sto",
+   "ribald3.sto",
+   "shop07.sto",
+   "stoblack.sto"
+  ]
+ },
+ {
+  "tag": "BG1",
+  "item": "wand05",
+  "glob": "FL26T10",
+  "tier": 26,
+  "token": 10,
+  "src": "ar3901.are",
+  "val": 7,
+  "mode": "PENDING",
+  "block": [
+   [
+    "fl26t7.bcs",
+    "wand05",
+    "Resar"
+   ]
+  ],
+  "slotcre": "fl26t7",
+  "slotstatus": "bg0153:visited:ALIVE",
+  "anyblocks": [
+   [
+    "fl26t1.bcs",
+    1
+   ],
+   [
+    "fl26t10.bcs",
+    10
+   ],
+   [
+    "fl26t11.bcs",
+    11
+   ],
+   [
+    "fl26t12.bcs",
+    12
+   ],
+   [
+    "fl26t13.bcs",
+    13
+   ],
+   [
+    "fl26t14.bcs",
+    14
+   ],
+   [
+    "fl26t15.bcs",
+    15
+   ],
+   [
+    "fl26t16.bcs",
+    16
+   ],
+   [
+    "fl26t17.bcs",
+    17
+   ],
+   [
+    "fl26t18.bcs",
+    18
+   ],
+   [
+    "fl26t19.bcs",
+    19
+   ],
+   [
+    "fl26t2.bcs",
+    2
+   ],
+   [
+    "fl26t20.bcs",
+    20
+   ],
+   [
+    "fl26t21.bcs",
+    21
+   ],
+   [
+    "fl26t22.bcs",
+    22
+   ],
+   [
+    "fl26t3.bcs",
+    3
+   ],
+   [
+    "fl26t4.bcs",
+    4
+   ],
+   [
+    "fl26t5.bcs",
+    5
+   ],
+   [
+    "fl26t6.bcs",
+    6
+   ],
+   [
+    "fl26t7.bcs",
+    7
+   ],
+   [
+    "fl26t8.bcs",
+    8
+   ],
+   [
+    "fl26t9.bcs",
+    9
+   ]
+  ]
+ },
+ {
+  "tag": "BG1",
+  "item": "wand05",
+  "glob": "FL26T11",
+  "tier": 26,
+  "token": 11,
+  "src": "ar1401.are",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "GAM",
+   "ar5203.are",
+   "bd4000.are",
+   "bd5300.are",
+   "25spell.sto",
+   "bdbeleg3.sto",
+   "bdnazram.sto",
+   "bdsorcsc.sto",
+   "bernard2.sto",
+   "bshop01.sto",
+   "c!bag04.sto",
+   "cdbag04.sto",
+   "highhedg.sto",
+   "ohnimim.sto",
+   "sto0703.sto"
+  ],
+  "obtain": [
+   "GAM",
+   "ar5203.are",
+   "25spell.sto",
+   "bdbeleg3.sto",
+   "bdnazram.sto",
+   "bdsorcsc.sto",
+   "bernard2.sto",
+   "bshop01.sto",
+   "c!bag04.sto",
+   "cdbag04.sto",
+   "highhedg.sto",
+   "ohnimim.sto",
+   "sto0703.sto"
+  ]
+ },
+ {
+  "tag": "BG1",
+  "item": "wand05",
+  "glob": "FL26T12",
+  "tier": 26,
+  "token": 12,
+  "src": "ar2615.are",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "GAM",
+   "ar5203.are",
+   "bd4000.are",
+   "bd5300.are",
+   "25spell.sto",
+   "bdbeleg3.sto",
+   "bdnazram.sto",
+   "bdsorcsc.sto",
+   "bernard2.sto",
+   "bshop01.sto",
+   "c!bag04.sto",
+   "cdbag04.sto",
+   "highhedg.sto",
+   "ohnimim.sto",
+   "sto0703.sto"
+  ],
+  "obtain": [
+   "GAM",
+   "ar5203.are",
+   "25spell.sto",
+   "bdbeleg3.sto",
+   "bdnazram.sto",
+   "bdsorcsc.sto",
+   "bernard2.sto",
+   "bshop01.sto",
+   "c!bag04.sto",
+   "cdbag04.sto",
+   "highhedg.sto",
+   "ohnimim.sto",
+   "sto0703.sto"
+  ]
+ },
+ {
+  "tag": "BG1",
+  "item": "ring06",
+  "glob": "FL26T13",
+  "tier": 26,
+  "token": 13,
+  "src": "ar2800.are",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "GAM",
+   "ar4000.are",
+   "bd0112.are",
+   "bd1000.are",
+   "bd2000.are",
+   "bd3000.are",
+   "bd4000.are",
+   "bd4100.are",
+   "bd4300.are",
+   "bd7100.are",
+   "oh6500.are",
+   "bdkazzre.sto",
+   "bdsorcsc.sto",
+   "bdwaizah.sto",
+   "c!bag04.sto",
+   "cdbag04.sto",
+   "gorch.sto",
+   "ohnimim.sto",
+   "ribald.sto"
+  ],
+  "obtain": [
+   "GAM",
+   "ar4000.are",
+   "bdkazzre.sto",
+   "bdsorcsc.sto",
+   "bdwaizah.sto",
+   "c!bag04.sto",
+   "cdbag04.sto",
+   "gorch.sto",
+   "ohnimim.sto",
+   "ribald.sto"
+  ]
+ },
+ {
+  "tag": "BG1",
+  "item": "belt04",
+  "glob": "FL26T14",
+  "tier": 26,
+  "token": 14,
+  "src": "unshey.fl",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "GAM",
+   "bd3000.are",
+   "bd7100.are",
+   "cdbag04.sto",
+   "ohnimim.sto",
+   "ribald3.sto"
+  ],
+  "obtain": [
+   "GAM",
+   "cdbag04.sto",
+   "ohnimim.sto",
+   "ribald3.sto"
+  ]
+ },
+ {
+  "tag": "BG1",
+  "item": "belt02",
+  "glob": "FL26T15",
+  "tier": 26,
+  "token": 15,
+  "src": "kirian.cre",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "ar0602.are",
+   "k#import.sto",
+   "ohnimim.sto",
+   "sarbar01.sto",
+   "uddrow24.sto"
+  ],
+  "obtain": [
+   "k#import.sto",
+   "ohnimim.sto",
+   "sarbar01.sto",
+   "uddrow24.sto"
+  ]
+ },
+ {
+  "tag": "BG1",
+  "item": "boot01",
+  "glob": "FL26T16",
+  "tier": 26,
+  "token": 16,
+  "src": "drasus.cre",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "GAM",
+   "ar0306.are",
+   "ar0602.are",
+   "ar4000.are"
+  ],
+  "obtain": [
+   "GAM",
+   "ar4000.are"
+  ]
+ },
+ {
+  "tag": "BG1",
+  "item": "belt03",
+  "glob": "FL26T17",
+  "tier": 26,
+  "token": 17,
+  "src": "krumm.cre",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "GAM",
+   "cdbag04.sto",
+   "ohnimim.sto",
+   "ppumb01.sto",
+   "ribald3.sto"
+  ],
+  "obtain": [
+   "GAM",
+   "cdbag04.sto",
+   "ohnimim.sto",
+   "ppumb01.sto",
+   "ribald3.sto"
+  ]
+ },
+ {
+  "tag": "BG1",
+  "item": "boot05",
+  "glob": "FL26T18",
+  "tier": 26,
+  "token": 18,
+  "src": "mulahe.cre",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "GAM",
+   "ar0602.are"
+  ],
+  "obtain": [
+   "GAM"
+  ]
+ },
+ {
+  "tag": "BG1",
+  "item": "brac03",
+  "glob": "FL26T19",
+  "tier": 26,
+  "token": 19,
+  "src": "davaeo.cre",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "ar0411.are",
+   "bmthief.sto",
+   "c!bag04.sto",
+   "cdbag04.sto",
+   "gorch.sto",
+   "ohnimim.sto"
+  ],
+  "obtain": [
+   "bmthief.sto",
+   "c!bag04.sto",
+   "cdbag04.sto",
+   "gorch.sto",
+   "ohnimim.sto"
+  ]
+ },
+ {
+  "tag": "BG1",
+  "item": "brac04",
+  "glob": "FL26T20",
+  "tier": 26,
+  "token": 20,
+  "src": "zal.cre",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "GAM",
+   "ar0602.are",
+   "ar5003.are",
+   "bd7100.are",
+   "c!bag04.sto",
+   "cdbag04.sto"
+  ],
+  "obtain": [
+   "GAM",
+   "ar5003.are",
+   "c!bag04.sto",
+   "cdbag04.sto"
+  ]
+ },
+ {
+  "tag": "BG1",
+  "item": "amul01",
+  "glob": "FL27T01",
+  "tier": 27,
+  "token": 1,
+  "src": "sto4906.sto",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "ar0602.are",
+   "bg0514.are",
+   "ribald.sto"
+  ],
+  "obtain": [
+   "ribald.sto"
+  ]
+ },
+ {
+  "tag": "BG1",
+  "item": "book05",
+  "glob": "FL27T02",
+  "tier": 27,
+  "token": 2,
+  "src": "ar0153.are",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [],
+  "obtain": []
+ },
+ {
+  "tag": "BG1",
+  "item": "book06",
+  "glob": "FL27T03",
+  "tier": 27,
+  "token": 3,
+  "src": "ar0138.are",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [],
+  "obtain": []
+ },
+ {
+  "tag": "BG1",
+  "item": "book08",
+  "glob": "FL27T04",
+  "tier": 27,
+  "token": 4,
+  "src": "ar2615.are",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [],
+  "obtain": []
+ },
+ {
+  "tag": "BG1",
+  "item": "clck15",
+  "glob": "FL27T05",
+  "tier": 27,
+  "token": 5,
+  "src": "highhedg.sto",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "ar0516.are",
+   "ar5000.are",
+   "25spell.sto",
+   "cdbag04.sto",
+   "taerum.sto"
+  ],
+  "obtain": [
+   "ar5000.are",
+   "25spell.sto",
+   "cdbag04.sto",
+   "taerum.sto"
+  ]
+ },
+ {
+  "tag": "BG1",
+  "item": "clck16",
+  "glob": "FL27T06",
+  "tier": 27,
+  "token": 6,
+  "src": "highhedg.sto",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "ar1503.are",
+   "ar1506.are",
+   "ar1507.are",
+   "ar3005.are",
+   "ar3020.are",
+   "ar4000.are",
+   "ar5002.are",
+   "bd4000.are",
+   "bg3900.are",
+   "25spell.sto",
+   "cdbag04.sto",
+   "ribald3.sto"
+  ],
+  "obtain": [
+   "ar3005.are",
+   "ar3020.are",
+   "ar4000.are",
+   "ar5002.are",
+   "25spell.sto",
+   "cdbag04.sto",
+   "ribald3.sto"
+  ]
+ },
+ {
+  "tag": "BG1",
+  "item": "clck17",
+  "glob": "FL27T07",
+  "tier": 27,
+  "token": 7,
+  "src": "davaeo.cre",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "GAM",
+   "ar0705.are",
+   "oh6460.are",
+   "oh6500.are",
+   "25spell.sto",
+   "bdsorcsc.sto",
+   "c!bag04.sto",
+   "cdbag04.sto",
+   "ribald.sto"
+  ],
+  "obtain": [
+   "GAM",
+   "25spell.sto",
+   "bdsorcsc.sto",
+   "c!bag04.sto",
+   "cdbag04.sto",
+   "ribald.sto"
+  ]
+ },
+ {
+  "tag": "BG1",
+  "item": "plat06",
+  "glob": "FL27T08",
+  "tier": 27,
+  "token": 8,
+  "src": "ar4800.are",
+  "val": null,
+  "mode": "NOVAR",
+  "hits": [
+   "sarbar01.sto"
+  ],
+  "obtain": [
+   "sarbar01.sto"
+  ]
+ },
+ {
+  "tag": "BG1",
+  "item": "ring02",
+  "glob": "FL27T09",
+  "tier": 27,
+  "token": 9,
+  "src": "ar5500.are",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "GAM",
+   "ar0602.are"
+  ],
+  "obtain": [
+   "GAM"
+  ]
+ },
+ {
+  "tag": "BG1",
+  "item": "sw1h09",
+  "glob": "FL27T10",
+  "tier": 27,
+  "token": 10,
+  "src": "zargal.cre",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "GAM",
+   "ar1600.are",
+   "ar5203.are",
+   "bd2000.are",
+   "oh6450.are",
+   "bdsorcsc.sto",
+   "cdbag04.sto",
+   "ohnsdwm.sto",
+   "ribald.sto",
+   "ribald3.sto",
+   "sartem01.sto"
+  ],
+  "obtain": [
+   "GAM",
+   "ar5203.are",
+   "bdsorcsc.sto",
+   "cdbag04.sto",
+   "ohnsdwm.sto",
+   "ribald.sto",
+   "ribald3.sto",
+   "sartem01.sto"
+  ]
+ },
+ {
+  "tag": "BG1",
+  "item": "wand06",
+  "glob": "FL27T11",
+  "tier": 27,
+  "token": 11,
+  "src": "ar2101.are",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "ar0603.are",
+   "ar1905.are",
+   "bd0071.are",
+   "bd3000.are",
+   "bd4000.are",
+   "bd5300.are",
+   "arled.sto",
+   "bdbeleg3.sto",
+   "bdnazram.sto",
+   "bdsorcsc.sto",
+   "bmthief.sto",
+   "c!bag04.sto",
+   "cdbag04.sto",
+   "highhedg.sto",
+   "ohnimim.sto",
+   "ohnwanme.sto",
+   "ribald.sto",
+   "ribald3.sto",
+   "sto0703.sto",
+   "trgeni01.sto",
+   "trrak01.sto"
+  ],
+  "obtain": [
+   "arled.sto",
+   "bdbeleg3.sto",
+   "bdnazram.sto",
+   "bdsorcsc.sto",
+   "bmthief.sto",
+   "c!bag04.sto",
+   "cdbag04.sto",
+   "highhedg.sto",
+   "ohnimim.sto",
+   "ohnwanme.sto",
+   "ribald.sto",
+   "ribald3.sto",
+   "sto0703.sto",
+   "trgeni01.sto",
+   "trrak01.sto"
+  ]
+ },
+ {
+  "tag": "BG1",
+  "item": "wand06",
+  "glob": "FL27T12",
+  "tier": 27,
+  "token": 12,
+  "src": "ar5400.are",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "ar0603.are",
+   "ar1905.are",
+   "bd0071.are",
+   "bd3000.are",
+   "bd4000.are",
+   "bd5300.are",
+   "arled.sto",
+   "bdbeleg3.sto",
+   "bdnazram.sto",
+   "bdsorcsc.sto",
+   "bmthief.sto",
+   "c!bag04.sto",
+   "cdbag04.sto",
+   "highhedg.sto",
+   "ohnimim.sto",
+   "ohnwanme.sto",
+   "ribald.sto",
+   "ribald3.sto",
+   "sto0703.sto",
+   "trgeni01.sto",
+   "trrak01.sto"
+  ],
+  "obtain": [
+   "arled.sto",
+   "bdbeleg3.sto",
+   "bdnazram.sto",
+   "bdsorcsc.sto",
+   "bmthief.sto",
+   "c!bag04.sto",
+   "cdbag04.sto",
+   "highhedg.sto",
+   "ohnimim.sto",
+   "ohnwanme.sto",
+   "ribald.sto",
+   "ribald3.sto",
+   "sto0703.sto",
+   "trgeni01.sto",
+   "trrak01.sto"
+  ]
+ },
+ {
+  "tag": "BG1",
+  "item": "wand11",
+  "glob": "FL27T13",
+  "tier": 27,
+  "token": 13,
+  "src": "sto0703.sto",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "ar0904.are",
+   "bd0120.are",
+   "bd1100.are",
+   "bd2000.are",
+   "bd3000.are",
+   "bd4000.are",
+   "bd7100.are",
+   "25spell.sto",
+   "bdbeleg3.sto",
+   "bdnazram.sto",
+   "bdsorcsc.sto",
+   "c!bag04.sto",
+   "cdbag04.sto",
+   "ppumb01.sto",
+   "shop07.sto"
+  ],
+  "obtain": [
+   "25spell.sto",
+   "bdbeleg3.sto",
+   "bdnazram.sto",
+   "bdsorcsc.sto",
+   "c!bag04.sto",
+   "cdbag04.sto",
+   "ppumb01.sto",
+   "shop07.sto"
+  ]
+ },
+ {
+  "tag": "BG1",
+  "item": "plat05",
+  "glob": "FL27T14",
+  "tier": 27,
+  "token": 14,
+  "src": "tamoko.cre",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "ar0602.are"
+  ],
+  "obtain": []
+ },
+ {
+  "tag": "BG1",
+  "item": "brac06",
+  "glob": "FL27T15",
+  "tier": 27,
+  "token": 15,
+  "src": "desret.cre",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "GAM"
+  ],
+  "obtain": [
+   "GAM"
+  ]
+ },
+ {
+  "tag": "BG1",
+  "item": "amul16",
+  "glob": "FL27T16",
+  "tier": 27,
+  "token": 16,
+  "src": "ramazi.cre",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "GAM"
+  ],
+  "obtain": [
+   "GAM"
+  ]
+ },
+ {
+  "tag": "BG1",
+  "item": "ring22",
+  "glob": "FL27T17",
+  "tier": 27,
+  "token": 17,
+  "src": "mulahe.cre",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "GAM"
+  ],
+  "obtain": [
+   "GAM"
+  ]
+ },
+ {
+  "tag": "BG1",
+  "item": "dagg04",
+  "glob": "FL27T18",
+  "tier": 27,
+  "token": 18,
+  "src": "krysti.cre",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "ar0307.are",
+   "bd5110.are",
+   "bdbelega.sto",
+   "bdwaizah.sto",
+   "c!bag04.sto",
+   "k#import.sto",
+   "ohngduke.sto"
+  ],
+  "obtain": [
+   "bdbelega.sto",
+   "bdwaizah.sto",
+   "c!bag04.sto",
+   "k#import.sto",
+   "ohngduke.sto"
+  ]
+ },
+ {
+  "tag": "BG1",
+  "item": "plat04",
+  "glob": "FL27T19",
+  "tier": 27,
+  "token": 19,
+  "src": "taerum.sto",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "GAM",
+   "ar0602.are",
+   "ar0712.are",
+   "ar0900.are",
+   "ar0903.are",
+   "ar0904.are",
+   "ar1002.are",
+   "ar2007.are",
+   "ar4000.are",
+   "ar5200.are",
+   "bd0112.are",
+   "bd0116.are",
+   "bd1000.are",
+   "bd2000.are",
+   "bd4000.are",
+   "bd4100.are",
+   "bd4300.are",
+   "bg0102.are",
+   "oh6500.are",
+   "bdjegg01.sto",
+   "bdsorcsc.sto",
+   "bmthief.sto",
+   "cdbag04.sto",
+   "dmark.sto",
+   "ohnhuegr.sto",
+   "ribald.sto",
+   "sarbar01.sto",
+   "shop02.sto",
+   "slshop02.sto",
+   "temhelm.sto",
+   "trthf02.sto"
+  ],
+  "obtain": [
+   "GAM",
+   "ar4000.are",
+   "ar5200.are",
+   "bdjegg01.sto",
+   "bdsorcsc.sto",
+   "bmthief.sto",
+   "cdbag04.sto",
+   "dmark.sto",
+   "ohnhuegr.sto",
+   "ribald.sto",
+   "sarbar01.sto",
+   "shop02.sto",
+   "slshop02.sto",
+   "temhelm.sto",
+   "trthf02.sto"
+  ]
+ },
+ {
+  "tag": "BG1",
+  "item": "ring02",
+  "glob": "FL27T20",
+  "tier": 27,
+  "token": 20,
+  "src": "ar2615.are",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "GAM",
+   "ar0602.are"
+  ],
+  "obtain": [
+   "GAM"
+  ]
+ },
+ {
+  "tag": "BG1",
+  "item": "book04",
+  "glob": "FL28T01",
+  "tier": 28,
+  "token": 1,
+  "src": "ar2615.are",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "bd4300.are"
+  ],
+  "obtain": []
+ },
+ {
+  "tag": "BG1",
+  "item": "clck02",
+  "glob": "FL28T02",
+  "tier": 28,
+  "token": 2,
+  "src": "ar2615.are",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "GAM",
+   "oh6450.are",
+   "oh6460.are",
+   "oh6500.are",
+   "c!bag04.sto"
+  ],
+  "obtain": [
+   "GAM",
+   "c!bag04.sto"
+  ]
+ },
+ {
+  "tag": "BG1",
+  "item": "leat08",
+  "glob": "FL28T03",
+  "tier": 28,
+  "token": 3,
+  "src": "taerum.sto",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "ar0305.are",
+   "ar0306.are",
+   "ar0602.are",
+   "ar5003.are",
+   "bd0063.are",
+   "bd4100.are",
+   "bd6100.are",
+   "bdonoro.sto",
+   "ribald3.sto",
+   "shop07.sto"
+  ],
+  "obtain": [
+   "ar5003.are",
+   "bdonoro.sto",
+   "ribald3.sto",
+   "shop07.sto"
+  ]
+ },
+ {
+  "tag": "BG1",
+  "item": "helm06",
+  "glob": "FL28T04",
+  "tier": 28,
+  "token": 4,
+  "src": "blank",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "GAM",
+   "bg1200.are",
+   "bdkazzre.sto",
+   "c!bag04.sto",
+   "cdbag04.sto",
+   "ohnhuegr.sto"
+  ],
+  "obtain": [
+   "GAM",
+   "bdkazzre.sto",
+   "c!bag04.sto",
+   "cdbag04.sto",
+   "ohnhuegr.sto"
+  ]
+ },
+ {
+  "tag": "BG1",
+  "item": "misc75",
+  "glob": "FL28T05",
+  "tier": 28,
+  "token": 5,
+  "src": "taerum.sto",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "c!bag04.sto",
+   "ohngduke.sto",
+   "rr#marin.sto"
+  ],
+  "obtain": [
+   "c!bag04.sto",
+   "ohngduke.sto",
+   "rr#marin.sto"
+  ]
+ },
+ {
+  "tag": "BG1",
+  "item": "ring08",
+  "glob": "FL28T06",
+  "tier": 28,
+  "token": 6,
+  "src": "ar2300.are",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "GAM",
+   "ar0702.are",
+   "c!bag04.sto"
+  ],
+  "obtain": [
+   "GAM",
+   "c!bag04.sto"
+  ]
+ },
+ {
+  "tag": "BG1",
+  "item": "brac10",
+  "glob": "FL28T07",
+  "tier": 28,
+  "token": 7,
+  "src": "meilum.cre",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "GAM",
+   "ar0602.are"
+  ],
+  "obtain": [
+   "GAM"
+  ]
+ },
+ {
+  "tag": "BG1",
+  "item": "sw1h06",
+  "glob": "FL28T08",
+  "tier": 28,
+  "token": 8,
+  "src": "greywo.cre",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "ar0702.are",
+   "c!bag04.sto",
+   "k#import.sto"
+  ],
+  "obtain": [
+   "c!bag04.sto",
+   "k#import.sto"
+  ]
+ },
+ {
+  "tag": "BG1",
+  "item": "wand04",
+  "glob": "FL28T09",
+  "tier": 28,
+  "token": 9,
+  "src": "ar3601.are",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "ar5203.are",
+   "bd0101.are",
+   "bd1000.are",
+   "bd3000.are",
+   "bd4000.are",
+   "bd4300.are",
+   "bd5300.are",
+   "bd7100.are",
+   "bd7300.are",
+   "25spell.sto",
+   "bdnazram.sto",
+   "c!bag04.sto",
+   "highhedg.sto",
+   "ohnimim.sto",
+   "ohnwanme.sto",
+   "sto0703.sto"
+  ],
+  "obtain": [
+   "ar5203.are",
+   "25spell.sto",
+   "bdnazram.sto",
+   "c!bag04.sto",
+   "highhedg.sto",
+   "ohnimim.sto",
+   "ohnwanme.sto",
+   "sto0703.sto"
+  ]
+ },
+ {
+  "tag": "BG1",
+  "item": "wand10",
+  "glob": "FL28T10",
+  "tier": 28,
+  "token": 10,
+  "src": "ar5001.are",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "ar0902.are",
+   "bd0120.are",
+   "25spell.sto",
+   "bdbeleg3.sto",
+   "bdnazram.sto",
+   "bdsorcsc.sto",
+   "bernard2.sto",
+   "c!bag04.sto",
+   "cdbag04.sto",
+   "ohnimim.sto"
+  ],
+  "obtain": [
+   "25spell.sto",
+   "bdbeleg3.sto",
+   "bdnazram.sto",
+   "bdsorcsc.sto",
+   "bernard2.sto",
+   "c!bag04.sto",
+   "cdbag04.sto",
+   "ohnimim.sto"
+  ]
+ },
+ {
+  "tag": "BG1",
+  "item": "wand10",
+  "glob": "FL28T11",
+  "tier": 28,
+  "token": 11,
+  "src": "sto0703.sto",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "ar0902.are",
+   "bd0120.are",
+   "25spell.sto",
+   "bdbeleg3.sto",
+   "bdnazram.sto",
+   "bdsorcsc.sto",
+   "bernard2.sto",
+   "c!bag04.sto",
+   "cdbag04.sto",
+   "ohnimim.sto"
+  ],
+  "obtain": [
+   "25spell.sto",
+   "bdbeleg3.sto",
+   "bdnazram.sto",
+   "bdsorcsc.sto",
+   "bernard2.sto",
+   "c!bag04.sto",
+   "cdbag04.sto",
+   "ohnimim.sto"
+  ]
+ },
+ {
+  "tag": "BG1",
+  "item": "xbow06",
+  "glob": "FL28T12",
+  "tier": 28,
+  "token": 12,
+  "src": "taerum.sto",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "ar2300.are",
+   "ar2400.are",
+   "c!bag04.sto",
+   "cdbag04.sto"
+  ],
+  "obtain": [
+   "c!bag04.sto",
+   "cdbag04.sto"
+  ]
+ },
+ {
+  "tag": "BG1",
+  "item": "ring07",
+  "glob": "FL28T13",
+  "tier": 28,
+  "token": 13,
+  "src": "ramazi.cre",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "GAM",
+   "ar4000.are",
+   "ar5002.are",
+   "bd4100.are",
+   "bd4300.are"
+  ],
+  "obtain": [
+   "GAM",
+   "ar4000.are",
+   "ar5002.are"
+  ]
+ },
+ {
+  "tag": "BG1",
+  "item": "book08",
+  "glob": "FL29T01",
+  "tier": 29,
+  "token": 1,
+  "src": "ar0504.are",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [],
+  "obtain": []
+ },
+ {
+  "tag": "BG1",
+  "item": "brac11",
+  "glob": "FL29T02",
+  "tier": 29,
+  "token": 2,
+  "src": "ar1502.are",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "c!bag04.sto",
+   "cdbag04.sto"
+  ],
+  "obtain": [
+   "c!bag04.sto",
+   "cdbag04.sto"
+  ]
+ },
+ {
+  "tag": "BG1",
+  "item": "shld06",
+  "glob": "FL29T03",
+  "tier": 29,
+  "token": 3,
+  "src": "ulgoth.sto",
+  "val": null,
+  "mode": "NOVAR",
+  "hits": [
+   "ar2008.are",
+   "ar4000.are",
+   "ar5203.are",
+   "oh6500.are",
+   "bdjegg01.sto",
+   "bmthief.sto",
+   "cdaemerc.sto",
+   "cdbag04.sto",
+   "ffbart.sto",
+   "ohnhuegr.sto",
+   "ppstor01.sto",
+   "ribald.sto",
+   "sarbar01.sto",
+   "shop02.sto",
+   "thumb.sto",
+   "trmer04.sto",
+   "trthf02.sto",
+   "udduer02.sto",
+   "udsvir05.sto"
+  ],
+  "obtain": [
+   "ar4000.are",
+   "ar5203.are",
+   "bdjegg01.sto",
+   "bmthief.sto",
+   "cdaemerc.sto",
+   "cdbag04.sto",
+   "ffbart.sto",
+   "ohnhuegr.sto",
+   "ppstor01.sto",
+   "ribald.sto",
+   "sarbar01.sto",
+   "shop02.sto",
+   "thumb.sto",
+   "trmer04.sto",
+   "trthf02.sto",
+   "udduer02.sto",
+   "udsvir05.sto"
+  ]
+ },
+ {
+  "tag": "BG1",
+  "item": "wand05",
+  "glob": "FL29T04",
+  "tier": 29,
+  "token": 4,
+  "src": "erdane.sto",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "GAM",
+   "ar5203.are",
+   "bd4000.are",
+   "bd5300.are",
+   "25spell.sto",
+   "bdbeleg3.sto",
+   "bdnazram.sto",
+   "bdsorcsc.sto",
+   "bernard2.sto",
+   "bshop01.sto",
+   "c!bag04.sto",
+   "cdbag04.sto",
+   "highhedg.sto",
+   "ohnimim.sto",
+   "sto0703.sto"
+  ],
+  "obtain": [
+   "GAM",
+   "ar5203.are",
+   "25spell.sto",
+   "bdbeleg3.sto",
+   "bdnazram.sto",
+   "bdsorcsc.sto",
+   "bernard2.sto",
+   "bshop01.sto",
+   "c!bag04.sto",
+   "cdbag04.sto",
+   "highhedg.sto",
+   "ohnimim.sto",
+   "sto0703.sto"
+  ]
+ },
+ {
+  "tag": "BG1",
+  "item": "wand06",
+  "glob": "FL29T05",
+  "tier": 29,
+  "token": 5,
+  "src": "ar1501.are",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "ar0603.are",
+   "ar1905.are",
+   "bd0071.are",
+   "bd3000.are",
+   "bd4000.are",
+   "bd5300.are",
+   "arled.sto",
+   "bdbeleg3.sto",
+   "bdnazram.sto",
+   "bdsorcsc.sto",
+   "bmthief.sto",
+   "c!bag04.sto",
+   "cdbag04.sto",
+   "highhedg.sto",
+   "ohnimim.sto",
+   "ohnwanme.sto",
+   "ribald.sto",
+   "ribald3.sto",
+   "sto0703.sto",
+   "trgeni01.sto",
+   "trrak01.sto"
+  ],
+  "obtain": [
+   "arled.sto",
+   "bdbeleg3.sto",
+   "bdnazram.sto",
+   "bdsorcsc.sto",
+   "bmthief.sto",
+   "c!bag04.sto",
+   "cdbag04.sto",
+   "highhedg.sto",
+   "ohnimim.sto",
+   "ohnwanme.sto",
+   "ribald.sto",
+   "ribald3.sto",
+   "sto0703.sto",
+   "trgeni01.sto",
+   "trrak01.sto"
+  ]
+ },
+ {
+  "tag": "BG1",
+  "item": "wand06",
+  "glob": "FL29T06",
+  "tier": 29,
+  "token": 6,
+  "src": "ulgoth.sto",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "ar0603.are",
+   "ar1905.are",
+   "bd0071.are",
+   "bd3000.are",
+   "bd4000.are",
+   "bd5300.are",
+   "arled.sto",
+   "bdbeleg3.sto",
+   "bdnazram.sto",
+   "bdsorcsc.sto",
+   "bmthief.sto",
+   "c!bag04.sto",
+   "cdbag04.sto",
+   "highhedg.sto",
+   "ohnimim.sto",
+   "ohnwanme.sto",
+   "ribald.sto",
+   "ribald3.sto",
+   "sto0703.sto",
+   "trgeni01.sto",
+   "trrak01.sto"
+  ],
+  "obtain": [
+   "arled.sto",
+   "bdbeleg3.sto",
+   "bdnazram.sto",
+   "bdsorcsc.sto",
+   "bmthief.sto",
+   "c!bag04.sto",
+   "cdbag04.sto",
+   "highhedg.sto",
+   "ohnimim.sto",
+   "ohnwanme.sto",
+   "ribald.sto",
+   "ribald3.sto",
+   "sto0703.sto",
+   "trgeni01.sto",
+   "trrak01.sto"
+  ]
+ },
+ {
+  "tag": "BG1",
+  "item": "wand07",
+  "glob": "FL29T07",
+  "tier": 29,
+  "token": 7,
+  "src": "ar1502.are",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "GAM",
+   "ar1304.are",
+   "25spell.sto",
+   "bdbeleg3.sto",
+   "bdnazram.sto",
+   "bdsorcsc.sto",
+   "bernard2.sto",
+   "c!bag04.sto",
+   "cdbag04.sto",
+   "ohnimim.sto",
+   "ohnwanme.sto",
+   "ribald.sto",
+   "ribald3.sto",
+   "shop07.sto",
+   "sto0703.sto"
+  ],
+  "obtain": [
+   "GAM",
+   "25spell.sto",
+   "bdbeleg3.sto",
+   "bdnazram.sto",
+   "bdsorcsc.sto",
+   "bernard2.sto",
+   "c!bag04.sto",
+   "cdbag04.sto",
+   "ohnimim.sto",
+   "ohnwanme.sto",
+   "ribald.sto",
+   "ribald3.sto",
+   "shop07.sto",
+   "sto0703.sto"
+  ]
+ },
+ {
+  "tag": "BG1",
+  "item": "wand07",
+  "glob": "FL29T08",
+  "tier": 29,
+  "token": 8,
+  "src": "ar0514.are",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "GAM",
+   "ar1304.are",
+   "25spell.sto",
+   "bdbeleg3.sto",
+   "bdnazram.sto",
+   "bdsorcsc.sto",
+   "bernard2.sto",
+   "c!bag04.sto",
+   "cdbag04.sto",
+   "ohnimim.sto",
+   "ohnwanme.sto",
+   "ribald.sto",
+   "ribald3.sto",
+   "shop07.sto",
+   "sto0703.sto"
+  ],
+  "obtain": [
+   "GAM",
+   "25spell.sto",
+   "bdbeleg3.sto",
+   "bdnazram.sto",
+   "bdsorcsc.sto",
+   "bernard2.sto",
+   "c!bag04.sto",
+   "cdbag04.sto",
+   "ohnimim.sto",
+   "ohnwanme.sto",
+   "ribald.sto",
+   "ribald3.sto",
+   "shop07.sto",
+   "sto0703.sto"
+  ]
+ },
+ {
+  "tag": "BG1",
+  "item": "wand07",
+  "glob": "FL29T09",
+  "tier": 29,
+  "token": 9,
+  "src": "ar0504.are",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "GAM",
+   "ar1304.are",
+   "25spell.sto",
+   "bdbeleg3.sto",
+   "bdnazram.sto",
+   "bdsorcsc.sto",
+   "bernard2.sto",
+   "c!bag04.sto",
+   "cdbag04.sto",
+   "ohnimim.sto",
+   "ohnwanme.sto",
+   "ribald.sto",
+   "ribald3.sto",
+   "shop07.sto",
+   "sto0703.sto"
+  ],
+  "obtain": [
+   "GAM",
+   "25spell.sto",
+   "bdbeleg3.sto",
+   "bdnazram.sto",
+   "bdsorcsc.sto",
+   "bernard2.sto",
+   "c!bag04.sto",
+   "cdbag04.sto",
+   "ohnimim.sto",
+   "ohnwanme.sto",
+   "ribald.sto",
+   "ribald3.sto",
+   "shop07.sto",
+   "sto0703.sto"
+  ]
+ },
+ {
+  "tag": "BG1",
+  "item": "wand11",
+  "glob": "FL29T10",
+  "tier": 29,
+  "token": 10,
+  "src": "ulgoth.sto",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "ar0904.are",
+   "bd0120.are",
+   "bd1100.are",
+   "bd2000.are",
+   "bd3000.are",
+   "bd4000.are",
+   "bd7100.are",
+   "25spell.sto",
+   "bdbeleg3.sto",
+   "bdnazram.sto",
+   "bdsorcsc.sto",
+   "c!bag04.sto",
+   "cdbag04.sto",
+   "ppumb01.sto",
+   "shop07.sto"
+  ],
+  "obtain": [
+   "25spell.sto",
+   "bdbeleg3.sto",
+   "bdnazram.sto",
+   "bdsorcsc.sto",
+   "c!bag04.sto",
+   "cdbag04.sto",
+   "ppumb01.sto",
+   "shop07.sto"
+  ]
+ },
+ {
+  "tag": "BG1",
+  "item": "ax1h07",
+  "glob": "FL29T11",
+  "tier": 29,
+  "token": 11,
+  "src": "ar0513.are",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "c!bag04.sto",
+   "cdbag04.sto",
+   "k#import.sto"
+  ],
+  "obtain": [
+   "c!bag04.sto",
+   "cdbag04.sto",
+   "k#import.sto"
+  ]
+ },
+ {
+  "tag": "BG1",
+  "item": "amul17",
+  "glob": "FL30T01",
+  "tier": 30,
+  "token": 1,
+  "src": "ulgoth.sto",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "GAM",
+   "ar0602.are",
+   "c!bag04.sto"
+  ],
+  "obtain": [
+   "GAM",
+   "c!bag04.sto"
+  ]
+ },
+ {
+  "tag": "BG1",
+  "item": "blun11",
+  "glob": "FL30T02",
+  "tier": 30,
+  "token": 2,
+  "src": "ar0514.are",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "GAM",
+   "c!bag04.sto",
+   "k#import.sto"
+  ],
+  "obtain": [
+   "GAM",
+   "c!bag04.sto",
+   "k#import.sto"
+  ]
+ },
+ {
+  "tag": "BG1",
+  "item": "ring05",
+  "glob": "FL30T03",
+  "tier": 30,
+  "token": 3,
+  "src": "ulgoth.sto",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "GAM",
+   "ar0503.are",
+   "bg0108.are",
+   "bg0511.are",
+   "cdbag04.sto",
+   "ohnimim.sto"
+  ],
+  "obtain": [
+   "GAM",
+   "cdbag04.sto",
+   "ohnimim.sto"
+  ]
+ },
+ {
+  "tag": "BG1",
+  "item": "shld19",
+  "glob": "FL30T04",
+  "tier": 30,
+  "token": 4,
+  "src": "ar0514.are",
+  "val": null,
+  "mode": "NOVAR",
+  "hits": [
+   "cdbag04.sto"
+  ],
+  "obtain": [
+   "cdbag04.sto"
+  ]
+ },
+ {
+  "tag": "BG1",
+  "item": "leat09",
+  "glob": "FL30T05",
+  "tier": 30,
+  "token": 5,
+  "src": "ar0514.are",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "c!bag04.sto",
+   "ribald.sto"
+  ],
+  "obtain": [
+   "c!bag04.sto",
+   "ribald.sto"
+  ]
+ },
+ {
+  "tag": "BG1",
+  "item": "slng03",
+  "glob": "FL30T06",
+  "tier": 30,
+  "token": 6,
+  "src": "ar0514.are",
+  "val": null,
+  "mode": "NOVAR",
+  "hits": [],
+  "obtain": []
+ },
+ {
+  "tag": "BG1",
+  "item": "staf06",
+  "glob": "FL30T07",
+  "tier": 30,
+  "token": 7,
+  "src": "ar1505.are",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "bd5300.are",
+   "c!bag04.sto",
+   "k#import.sto",
+   "ppumb01.sto",
+   "ribald.sto"
+  ],
+  "obtain": [
+   "c!bag04.sto",
+   "k#import.sto",
+   "ppumb01.sto",
+   "ribald.sto"
+  ]
+ },
+ {
+  "tag": "BG1",
+  "item": "sw1h23",
+  "glob": "FL30T08",
+  "tier": 30,
+  "token": 8,
+  "src": "ar0500.are",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "oh6450.are",
+   "bdnazram.sto",
+   "bdwaizah.sto",
+   "bmthief.sto",
+   "sto0703.sto"
+  ],
+  "obtain": [
+   "bdnazram.sto",
+   "bdwaizah.sto",
+   "bmthief.sto",
+   "sto0703.sto"
+  ]
+ },
+ {
+  "tag": "BG1",
+  "item": "wand10",
+  "glob": "FL30T09",
+  "tier": 30,
+  "token": 9,
+  "src": "ar0511.are",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "ar0902.are",
+   "bd0120.are",
+   "25spell.sto",
+   "bdbeleg3.sto",
+   "bdnazram.sto",
+   "bdsorcsc.sto",
+   "bernard2.sto",
+   "c!bag04.sto",
+   "cdbag04.sto",
+   "ohnimim.sto"
+  ],
+  "obtain": [
+   "25spell.sto",
+   "bdbeleg3.sto",
+   "bdnazram.sto",
+   "bdsorcsc.sto",
+   "bernard2.sto",
+   "c!bag04.sto",
+   "cdbag04.sto",
+   "ohnimim.sto"
+  ]
+ },
+ {
+  "tag": "BG1",
+  "item": "wand10",
+  "glob": "FL30T10",
+  "tier": 30,
+  "token": 10,
+  "src": "ar0514.are",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "ar0902.are",
+   "bd0120.are",
+   "25spell.sto",
+   "bdbeleg3.sto",
+   "bdnazram.sto",
+   "bdsorcsc.sto",
+   "bernard2.sto",
+   "c!bag04.sto",
+   "cdbag04.sto",
+   "ohnimim.sto"
+  ],
+  "obtain": [
+   "25spell.sto",
+   "bdbeleg3.sto",
+   "bdnazram.sto",
+   "bdsorcsc.sto",
+   "bernard2.sto",
+   "c!bag04.sto",
+   "cdbag04.sto",
+   "ohnimim.sto"
+  ]
+ },
+ {
+  "tag": "BG1",
+  "item": "staf07",
+  "glob": "FL30T11",
+  "tier": 30,
+  "token": 11,
+  "src": "kirinh.cre",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "ar5203.are",
+   "bd0071.are",
+   "bd4000.are",
+   "bmthief.sto",
+   "bshop01.sto",
+   "c!bag04.sto",
+   "k#import.sto",
+   "ohnsdwm.sto",
+   "taerum.sto"
+  ],
+  "obtain": [
+   "ar5203.are",
+   "bmthief.sto",
+   "bshop01.sto",
+   "c!bag04.sto",
+   "k#import.sto",
+   "ohnsdwm.sto",
+   "taerum.sto"
+  ]
+ },
+ {
+  "tag": "BG1",
+  "item": "clck03",
+  "glob": "FL31T01",
+  "tier": 31,
+  "token": 1,
+  "src": "ulgoth.sto",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "GAM",
+   "bd1100.are"
+  ],
+  "obtain": [
+   "GAM"
+  ]
+ },
+ {
+  "tag": "BG1",
+  "item": "plat08",
+  "glob": "FL31T02",
+  "tier": 31,
+  "token": 2,
+  "src": "ar0511.are",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "GAM"
+  ],
+  "obtain": [
+   "GAM"
+  ]
+ },
+ {
+  "tag": "BG1",
+  "item": "sw1h24",
+  "glob": "FL31T03",
+  "tier": 31,
+  "token": 3,
+  "src": "ar0514.are",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "bdwaizah.sto",
+   "bernard2.sto",
+   "c!bag04.sto",
+   "k#import.sto"
+  ],
+  "obtain": [
+   "bdwaizah.sto",
+   "bernard2.sto",
+   "c!bag04.sto",
+   "k#import.sto"
+  ]
+ },
+ {
+  "tag": "BG1",
+  "item": "sw2h07",
+  "glob": "FL31T04",
+  "tier": 31,
+  "token": 4,
+  "src": "king.cre",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "ar0809.are"
+  ],
+  "obtain": []
+ },
+ {
+  "tag": "BG1",
+  "item": "staf05",
+  "glob": "FL31T05",
+  "tier": 31,
+  "token": 5,
+  "src": "ar0514.are",
+  "val": -1,
+  "mode": "DELIVERED",
+  "hits": [
+   "c!bag04.sto",
+   "ohngduke.sto",
+   "temlath.sto"
+  ],
+  "obtain": [
+   "c!bag04.sto",
+   "ohngduke.sto",
+   "temlath.sto"
+  ]
+ },
+ {
+  "tag": "BG1",
+  "item": "staf08",
+  "glob": "FL31T06",
+  "tier": 31,
+  "token": 6,
+  "src": "ulgoth.sto",
+  "val": null,
+  "mode": "NOVAR",
+  "hits": [
+   "jayes.sto",
+   "ribald3.sto"
+  ],
+  "obtain": [
+   "jayes.sto",
+   "ribald3.sto"
+  ]
+ }
+]
