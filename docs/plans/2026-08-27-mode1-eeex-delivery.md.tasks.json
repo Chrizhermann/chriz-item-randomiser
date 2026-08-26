@@ -4,12 +4,12 @@
     {
       "id": 0,
       "subject": "Task 1: Reproduce and fix campaign-local SSL completion",
-      "status": "in_progress"
+      "status": "completed"
     },
     {
       "id": 1,
       "subject": "Task 2: Establish the hermetic unit runner and Mode boundary guard",
-      "status": "pending",
+      "status": "in_progress",
       "blockedBy": [0]
     },
     {
@@ -85,5 +85,5 @@
       "blockedBy": [12]
     }
   ],
-  "lastUpdated": "2026-08-27T06:27:52.8949741+09:00"
+  "lastUpdated": "2026-08-27T07:31:18.6021062+09:00"
 }
