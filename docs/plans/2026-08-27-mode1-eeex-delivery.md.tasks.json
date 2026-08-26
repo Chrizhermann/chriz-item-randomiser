@@ -4,7 +4,7 @@
     {
       "id": 0,
       "subject": "Task 1: Reproduce and fix campaign-local SSL completion",
-      "status": "pending"
+      "status": "in_progress"
     },
     {
       "id": 1,
@@ -85,5 +85,5 @@
       "blockedBy": [12]
     }
   ],
-  "lastUpdated": "2026-08-27T06:24:53.9414639+09:00"
+  "lastUpdated": "2026-08-27T06:27:52.8949741+09:00"
 }
