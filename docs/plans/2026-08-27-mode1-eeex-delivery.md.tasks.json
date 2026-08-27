@@ -21,13 +21,13 @@
     {
       "id": 3,
       "subject": "Task 4: Move extension source overrides before filtering and split removal plan/apply",
-      "status": "in_progress",
+      "status": "completed",
       "blockedBy": [2]
     },
     {
       "id": 4,
       "subject": "Task 5: Add persistent compact registries and legacy migration snapshots",
-      "status": "pending",
+      "status": "in_progress",
       "blockedBy": [3]
     },
     {
@@ -85,5 +85,5 @@
       "blockedBy": [12]
     }
   ],
-  "lastUpdated": "2026-08-27T19:31:42.3120088+09:00"
+  "lastUpdated": "2026-08-28T05:32:30.2415993+09:00"
 }
