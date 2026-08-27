@@ -1,0 +1,1020 @@
+// Normalized, provider-extensible catalog for Mode 1 delivery.
+//
+// Public stable IDs are provider-qualified as "provider:local-id". The public
+// API below accepts provider and local ID separately; callers never name
+// the internal parallel arrays. Limits are intentionally conservative and are
+// exposed for extension validators and serialized diagnostics.
+
+OUTER_SET flir_catalog_provider_max = 16
+OUTER_SET flir_catalog_local_id_max = 40
+OUTER_SET flir_catalog_qualified_id_max = 48
+OUTER_SPRINT flir_catalog_arg_unset ~__FLIR_CATALOG_ARG_UNSET__~
+
+// Append a length-prefixed field. A value containing '#', ':', '|', or '%'
+// remains unambiguous because the byte length, rather than a delimiter search,
+// frames it. The macro contains no interpolation of catalog data: WeiDU's
+// by-name STR_VAR form crosses the nested function boundary byte-exactly.
+DEFINE_ACTION_FUNCTION flir_catalog_append_canonical_impl
+  STR_VAR
+    flir_catalog_canonical = ~~
+    flir_catalog_append_value = ~~
+  RET
+    flir_catalog_canonical
+BEGIN
+  OUTER_SET flir_catalog_segment_length = STRING_LENGTH ~%flir_catalog_append_value%~
+  OUTER_TEXT_SPRINT flir_catalog_canonical ~%flir_catalog_canonical%%flir_catalog_segment_length%#%flir_catalog_append_value%~
+END
+
+DEFINE_ACTION_MACRO flir_catalog_append_canonical BEGIN
+  LAF flir_catalog_append_canonical_impl
+    STR_VAR flir_catalog_canonical flir_catalog_append_value
+    RET flir_catalog_canonical
+  END
+END
+
+DEFINE_ACTION_FUNCTION flir_catalog_fail
+  STR_VAR
+    code = ~~
+    kind = ~~
+    provider = ~~
+    id = ~~
+BEGIN
+  // Never print row fields here: provider plus opaque row ID is enough to
+  // diagnose an extension conflict without joining item and location content.
+  FAIL ~FLIR_CATALOG_ERR %code% kind=%kind% provider=%provider% id=%id%~
+END
+
+DEFINE_ACTION_FUNCTION flir_catalog_validate_reference
+  STR_VAR
+    value = ~~
+    kind = ~~
+    provider = ~~
+    id = ~~
+BEGIN
+  OUTER_SET flir_catalog_reference_length = STRING_LENGTH ~%value%~
+  OUTER_SET flir_catalog_reference_separator = INDEX (~:~ ~%value%~)
+  OUTER_SPRINT flir_catalog_reference_lower ~%value%~
+  ACTION_TO_LOWER flir_catalog_reference_lower
+  ACTION_IF flir_catalog_reference_length > flir_catalog_qualified_id_max
+    OR flir_catalog_reference_separator < 1
+    OR flir_catalog_reference_separator > flir_catalog_provider_max
+    OR (flir_catalog_reference_length - flir_catalog_reference_separator - 1) > flir_catalog_local_id_max
+    OR NOT (~%value%~ STRING_EQUAL ~%flir_catalog_reference_lower%~)
+    OR (~%value%~ STRING_MATCHES_REGEXP ~^[a-z0-9][a-z0-9._-]*:[a-z0-9][a-z0-9._-]*$~) != 0 BEGIN
+    LAF flir_catalog_fail
+      STR_VAR code = ~INVALID_REFERENCE~ kind = EVAL ~%kind%~ provider = EVAL ~%provider%~ id = EVAL ~%id%~
+    END
+  END
+END
+
+// Fingerprint schemas, in canonical field order:
+// item: tier,resref,variant_policy,source_set_id,enabled
+// unit: item_id,tier,compact_token,occurrence,charge1,charge2,charge3,enabled
+// source: item_id,source_kind,resource,object_or_slot,expected_quantity,
+//         multiplicity_policy,charge_policy,priority,enabled
+// slot: tier,slot_value,endpoint_id,weight,progression_band,enabled
+// endpoint: area,target_kind,target_identity,x,y,capacity,static_policy,
+//           fallback_chain,enabled
+// group: group_id,endpoint_id,weight,priority,enabled
+// override: item_id,location_id,endpoint_id,enabled
+DEFINE_ACTION_FUNCTION flir_catalog_compute_fingerprint
+  INT_VAR
+    occurrence = 2147483647
+    charge1 = 2147483647
+    charge2 = 2147483647
+    charge3 = 2147483647
+    expected_quantity = 2147483647
+    priority = 2147483647
+    slot_value = 2147483647
+    weight = 2147483647
+    x = 2147483647
+    y = 2147483647
+    capacity = 2147483647
+    enabled = 2147483647
+  STR_VAR
+    kind = ~~
+    qualified = ~~
+    tier = ~~
+    resref = ~~
+    variant_policy = ~~
+    source_set_id = ~~
+    item_id = ~~
+    compact_token = ~~
+    source_kind = ~~
+    resource = ~~
+    object_or_slot = ~~
+    multiplicity_policy = ~~
+    charge_policy = ~~
+    endpoint_id = ~~
+    progression_band = ~~
+    area = ~~
+    target_kind = ~~
+    target_identity = ~~
+    static_policy = ~~
+    fallback_chain = ~~
+    group_id = ~~
+    location_id = ~~
+  RET
+    fingerprint
+BEGIN
+  OUTER_TEXT_SPRINT flir_catalog_canonical ~~
+  OUTER_TEXT_SPRINT flir_catalog_append_value ~%kind%~
+  LAM flir_catalog_append_canonical
+  OUTER_TEXT_SPRINT flir_catalog_append_value ~%qualified%~
+  LAM flir_catalog_append_canonical
+
+  ACTION_MATCH ~%kind%~ WITH
+    item BEGIN
+      OUTER_TEXT_SPRINT flir_catalog_append_value ~%tier%~
+      LAM flir_catalog_append_canonical
+      OUTER_TEXT_SPRINT flir_catalog_append_value ~%resref%~
+      LAM flir_catalog_append_canonical
+      OUTER_TEXT_SPRINT flir_catalog_append_value ~%variant_policy%~
+      LAM flir_catalog_append_canonical
+      OUTER_TEXT_SPRINT flir_catalog_append_value ~%source_set_id%~
+      LAM flir_catalog_append_canonical
+      OUTER_TEXT_SPRINT flir_catalog_append_value ~%enabled%~
+      LAM flir_catalog_append_canonical
+    END
+    unit BEGIN
+      OUTER_TEXT_SPRINT flir_catalog_append_value ~%item_id%~
+      LAM flir_catalog_append_canonical
+      OUTER_TEXT_SPRINT flir_catalog_append_value ~%tier%~
+      LAM flir_catalog_append_canonical
+      OUTER_TEXT_SPRINT flir_catalog_append_value ~%compact_token%~
+      LAM flir_catalog_append_canonical
+      OUTER_TEXT_SPRINT flir_catalog_append_value ~%occurrence%~
+      LAM flir_catalog_append_canonical
+      OUTER_TEXT_SPRINT flir_catalog_append_value ~%charge1%~
+      LAM flir_catalog_append_canonical
+      OUTER_TEXT_SPRINT flir_catalog_append_value ~%charge2%~
+      LAM flir_catalog_append_canonical
+      OUTER_TEXT_SPRINT flir_catalog_append_value ~%charge3%~
+      LAM flir_catalog_append_canonical
+      OUTER_TEXT_SPRINT flir_catalog_append_value ~%enabled%~
+      LAM flir_catalog_append_canonical
+    END
+    source BEGIN
+      OUTER_TEXT_SPRINT flir_catalog_append_value ~%item_id%~
+      LAM flir_catalog_append_canonical
+      OUTER_TEXT_SPRINT flir_catalog_append_value ~%source_kind%~
+      LAM flir_catalog_append_canonical
+      OUTER_TEXT_SPRINT flir_catalog_append_value ~%resource%~
+      LAM flir_catalog_append_canonical
+      OUTER_TEXT_SPRINT flir_catalog_append_value ~%object_or_slot%~
+      LAM flir_catalog_append_canonical
+      OUTER_TEXT_SPRINT flir_catalog_append_value ~%expected_quantity%~
+      LAM flir_catalog_append_canonical
+      OUTER_TEXT_SPRINT flir_catalog_append_value ~%multiplicity_policy%~
+      LAM flir_catalog_append_canonical
+      OUTER_TEXT_SPRINT flir_catalog_append_value ~%charge_policy%~
+      LAM flir_catalog_append_canonical
+      OUTER_TEXT_SPRINT flir_catalog_append_value ~%priority%~
+      LAM flir_catalog_append_canonical
+      OUTER_TEXT_SPRINT flir_catalog_append_value ~%enabled%~
+      LAM flir_catalog_append_canonical
+    END
+    slot BEGIN
+      OUTER_TEXT_SPRINT flir_catalog_append_value ~%tier%~
+      LAM flir_catalog_append_canonical
+      OUTER_TEXT_SPRINT flir_catalog_append_value ~%slot_value%~
+      LAM flir_catalog_append_canonical
+      OUTER_TEXT_SPRINT flir_catalog_append_value ~%endpoint_id%~
+      LAM flir_catalog_append_canonical
+      OUTER_TEXT_SPRINT flir_catalog_append_value ~%weight%~
+      LAM flir_catalog_append_canonical
+      OUTER_TEXT_SPRINT flir_catalog_append_value ~%progression_band%~
+      LAM flir_catalog_append_canonical
+      OUTER_TEXT_SPRINT flir_catalog_append_value ~%enabled%~
+      LAM flir_catalog_append_canonical
+    END
+    endpoint BEGIN
+      OUTER_TEXT_SPRINT flir_catalog_append_value ~%area%~
+      LAM flir_catalog_append_canonical
+      OUTER_TEXT_SPRINT flir_catalog_append_value ~%target_kind%~
+      LAM flir_catalog_append_canonical
+      OUTER_TEXT_SPRINT flir_catalog_append_value ~%target_identity%~
+      LAM flir_catalog_append_canonical
+      OUTER_TEXT_SPRINT flir_catalog_append_value ~%x%~
+      LAM flir_catalog_append_canonical
+      OUTER_TEXT_SPRINT flir_catalog_append_value ~%y%~
+      LAM flir_catalog_append_canonical
+      OUTER_TEXT_SPRINT flir_catalog_append_value ~%capacity%~
+      LAM flir_catalog_append_canonical
+      OUTER_TEXT_SPRINT flir_catalog_append_value ~%static_policy%~
+      LAM flir_catalog_append_canonical
+      OUTER_TEXT_SPRINT flir_catalog_append_value ~%fallback_chain%~
+      LAM flir_catalog_append_canonical
+      OUTER_TEXT_SPRINT flir_catalog_append_value ~%enabled%~
+      LAM flir_catalog_append_canonical
+    END
+    group BEGIN
+      OUTER_TEXT_SPRINT flir_catalog_append_value ~%group_id%~
+      LAM flir_catalog_append_canonical
+      OUTER_TEXT_SPRINT flir_catalog_append_value ~%endpoint_id%~
+      LAM flir_catalog_append_canonical
+      OUTER_TEXT_SPRINT flir_catalog_append_value ~%weight%~
+      LAM flir_catalog_append_canonical
+      OUTER_TEXT_SPRINT flir_catalog_append_value ~%priority%~
+      LAM flir_catalog_append_canonical
+      OUTER_TEXT_SPRINT flir_catalog_append_value ~%enabled%~
+      LAM flir_catalog_append_canonical
+    END
+    override BEGIN
+      OUTER_TEXT_SPRINT flir_catalog_append_value ~%item_id%~
+      LAM flir_catalog_append_canonical
+      OUTER_TEXT_SPRINT flir_catalog_append_value ~%location_id%~
+      LAM flir_catalog_append_canonical
+      OUTER_TEXT_SPRINT flir_catalog_append_value ~%endpoint_id%~
+      LAM flir_catalog_append_canonical
+      OUTER_TEXT_SPRINT flir_catalog_append_value ~%enabled%~
+      LAM flir_catalog_append_canonical
+    END
+    DEFAULT
+      LAF flir_catalog_fail STR_VAR code = ~UNSUPPORTED_KIND~ kind = EVAL ~%kind%~ provider = ~~ id = EVAL ~%qualified%~ END
+  END
+
+  // FNV-1a is evaluated entirely with WeiDU Int32 operations. Reserve zero
+  // and INT_MAX for function defaults by mapping the result to 1..2147483646.
+  OUTER_SET flir_catalog_hash = 0x811c9dc5
+  OUTER_INNER_PATCH ~%flir_catalog_canonical%~ BEGIN
+    FOR (flir_catalog_hash_i = 0; flir_catalog_hash_i < BUFFER_LENGTH; ++flir_catalog_hash_i) BEGIN
+      SET flir_catalog_hash = (flir_catalog_hash BXOR BYTE_AT flir_catalog_hash_i) * 16777619
+    END
+  END
+  OUTER_SET fingerprint = ((flir_catalog_hash BAND 2147483647) MODULO 2147483646) + 1
+END
+
+DEFINE_ACTION_FUNCTION flir_catalog_compute_stored_fingerprint
+  STR_VAR
+    kind = ~~
+    qualified = ~~
+  RET
+    fingerprint
+BEGIN
+  ACTION_MATCH ~%kind%~ WITH
+    item BEGIN
+      LAF flir_catalog_compute_fingerprint
+        INT_VAR enabled = $flir_catalog_enabled("%kind%" "%qualified%")
+        STR_VAR kind = EVAL ~%kind%~ qualified = EVAL ~%qualified%~ tier = $flir_catalog_tier("%kind%" "%qualified%") resref = $flir_catalog_resref("%kind%" "%qualified%") variant_policy = $flir_catalog_variant_policy("%kind%" "%qualified%") source_set_id = $flir_catalog_source_set_id("%kind%" "%qualified%")
+        RET fingerprint
+      END
+    END
+    unit BEGIN
+      LAF flir_catalog_compute_fingerprint
+        INT_VAR occurrence = $flir_catalog_occurrence("%kind%" "%qualified%") charge1 = $flir_catalog_charge1("%kind%" "%qualified%") charge2 = $flir_catalog_charge2("%kind%" "%qualified%") charge3 = $flir_catalog_charge3("%kind%" "%qualified%") enabled = $flir_catalog_enabled("%kind%" "%qualified%")
+        STR_VAR kind = EVAL ~%kind%~ qualified = EVAL ~%qualified%~ item_id = $flir_catalog_item_id("%kind%" "%qualified%") tier = $flir_catalog_tier("%kind%" "%qualified%") compact_token = $flir_catalog_compact_token("%kind%" "%qualified%")
+        RET fingerprint
+      END
+    END
+    source BEGIN
+      LAF flir_catalog_compute_fingerprint
+        INT_VAR expected_quantity = $flir_catalog_expected_quantity("%kind%" "%qualified%") priority = $flir_catalog_priority("%kind%" "%qualified%") enabled = $flir_catalog_enabled("%kind%" "%qualified%")
+        STR_VAR kind = EVAL ~%kind%~ qualified = EVAL ~%qualified%~ item_id = $flir_catalog_item_id("%kind%" "%qualified%") source_kind = $flir_catalog_source_kind("%kind%" "%qualified%") resource = $flir_catalog_resource("%kind%" "%qualified%") object_or_slot = $flir_catalog_object_or_slot("%kind%" "%qualified%") multiplicity_policy = $flir_catalog_multiplicity_policy("%kind%" "%qualified%") charge_policy = $flir_catalog_charge_policy("%kind%" "%qualified%")
+        RET fingerprint
+      END
+    END
+    slot BEGIN
+      LAF flir_catalog_compute_fingerprint
+        INT_VAR slot_value = $flir_catalog_slot_value("%kind%" "%qualified%") weight = $flir_catalog_weight("%kind%" "%qualified%") enabled = $flir_catalog_enabled("%kind%" "%qualified%")
+        STR_VAR kind = EVAL ~%kind%~ qualified = EVAL ~%qualified%~ tier = $flir_catalog_tier("%kind%" "%qualified%") endpoint_id = $flir_catalog_endpoint_id("%kind%" "%qualified%") progression_band = $flir_catalog_progression_band("%kind%" "%qualified%")
+        RET fingerprint
+      END
+    END
+    endpoint BEGIN
+      LAF flir_catalog_compute_fingerprint
+        INT_VAR x = $flir_catalog_x("%kind%" "%qualified%") y = $flir_catalog_y("%kind%" "%qualified%") capacity = $flir_catalog_capacity("%kind%" "%qualified%") enabled = $flir_catalog_enabled("%kind%" "%qualified%")
+        STR_VAR kind = EVAL ~%kind%~ qualified = EVAL ~%qualified%~ area = $flir_catalog_area("%kind%" "%qualified%") target_kind = $flir_catalog_target_kind("%kind%" "%qualified%") target_identity = $flir_catalog_target_identity("%kind%" "%qualified%") static_policy = $flir_catalog_static_policy("%kind%" "%qualified%") fallback_chain = $flir_catalog_fallback_chain("%kind%" "%qualified%")
+        RET fingerprint
+      END
+    END
+    group BEGIN
+      LAF flir_catalog_compute_fingerprint
+        INT_VAR weight = $flir_catalog_weight("%kind%" "%qualified%") priority = $flir_catalog_priority("%kind%" "%qualified%") enabled = $flir_catalog_enabled("%kind%" "%qualified%")
+        STR_VAR kind = EVAL ~%kind%~ qualified = EVAL ~%qualified%~ group_id = $flir_catalog_group_id("%kind%" "%qualified%") endpoint_id = $flir_catalog_endpoint_id("%kind%" "%qualified%")
+        RET fingerprint
+      END
+    END
+    override BEGIN
+      LAF flir_catalog_compute_fingerprint
+        INT_VAR enabled = $flir_catalog_enabled("%kind%" "%qualified%")
+        STR_VAR kind = EVAL ~%kind%~ qualified = EVAL ~%qualified%~ item_id = $flir_catalog_item_id("%kind%" "%qualified%") location_id = $flir_catalog_location_id("%kind%" "%qualified%") endpoint_id = $flir_catalog_endpoint_id("%kind%" "%qualified%")
+        RET fingerprint
+      END
+    END
+    DEFAULT
+      LAF flir_catalog_fail STR_VAR code = ~UNSUPPORTED_KIND~ kind = EVAL ~%kind%~ provider = ~~ id = EVAL ~%qualified%~ END
+  END
+END
+
+DEFINE_ACTION_FUNCTION flir_catalog_apply
+  INT_VAR
+    use_public_args = 0
+    expected_fingerprint = 0
+    occurrence = 2147483647
+    charge1 = 2147483647
+    charge2 = 2147483647
+    charge3 = 2147483647
+    expected_quantity = 2147483647
+    priority = 2147483647
+    slot_value = 2147483647
+    weight = 2147483647
+    x = 2147483647
+    y = 2147483647
+    capacity = 2147483647
+    enabled = 2147483647
+  STR_VAR
+    kind = ~~
+    operation = ~~
+    actor_provider = ~~
+    provider = ~~
+    id = ~~
+    tier = ~~
+    resref = ~~
+    variant_policy = ~~
+    source_set_id = ~~
+    item_id = ~~
+    compact_token = ~~
+    source_kind = ~~
+    resource = ~~
+    object_or_slot = ~~
+    multiplicity_policy = ~~
+    charge_policy = ~~
+    endpoint_id = ~~
+    progression_band = ~~
+    area = ~~
+    target_kind = ~~
+    target_identity = ~~
+    static_policy = ~~
+    fallback_chain = ~~
+    group_id = ~~
+    location_id = ~~
+  RET
+    fingerprint
+  RET_ARRAY
+    flir_catalog_present
+    flir_catalog_owner
+    flir_catalog_provider
+    flir_catalog_id
+    flir_catalog_enabled
+    flir_catalog_row_fingerprint
+    flir_catalog_tier
+    flir_catalog_resref
+    flir_catalog_variant_policy
+    flir_catalog_source_set_id
+    flir_catalog_item_id
+    flir_catalog_compact_token
+    flir_catalog_occurrence
+    flir_catalog_charge1
+    flir_catalog_charge2
+    flir_catalog_charge3
+    flir_catalog_source_kind
+    flir_catalog_resource
+    flir_catalog_object_or_slot
+    flir_catalog_expected_quantity
+    flir_catalog_multiplicity_policy
+    flir_catalog_charge_policy
+    flir_catalog_priority
+    flir_catalog_slot_value
+    flir_catalog_endpoint_id
+    flir_catalog_weight
+    flir_catalog_progression_band
+    flir_catalog_area
+    flir_catalog_target_kind
+    flir_catalog_target_identity
+    flir_catalog_x
+    flir_catalog_y
+    flir_catalog_capacity
+    flir_catalog_static_policy
+    flir_catalog_fallback_chain
+    flir_catalog_group_id
+    flir_catalog_location_id
+    flir_catalog_index
+    flir_catalog_index_kind
+    flir_catalog_index_qualified
+BEGIN
+  // Public row macros must not forward caller strings through EVALUATE_BUFFER,
+  // which recursively evaluates percent-delimited data. Instead, they set this
+  // flag and the function copies each prefixed global with TEXT_SPRINT.
+  ACTION_IF use_public_args = 1 BEGIN
+    OUTER_TEXT_SPRINT kind ~%flir_catalog_arg_kind%~
+    OUTER_TEXT_SPRINT operation ~%flir_catalog_arg_operation%~
+    OUTER_TEXT_SPRINT actor_provider ~%flir_catalog_arg_actor_provider%~
+    OUTER_TEXT_SPRINT provider ~%flir_catalog_arg_provider%~
+    OUTER_TEXT_SPRINT id ~%flir_catalog_arg_id%~
+    OUTER_TEXT_SPRINT tier ~%flir_catalog_arg_tier%~
+    OUTER_TEXT_SPRINT resref ~%flir_catalog_arg_resref%~
+    OUTER_TEXT_SPRINT variant_policy ~%flir_catalog_arg_variant_policy%~
+    OUTER_TEXT_SPRINT source_set_id ~%flir_catalog_arg_source_set_id%~
+    OUTER_TEXT_SPRINT item_id ~%flir_catalog_arg_item_id%~
+    OUTER_TEXT_SPRINT compact_token ~%flir_catalog_arg_compact_token%~
+    OUTER_TEXT_SPRINT source_kind ~%flir_catalog_arg_source_kind%~
+    OUTER_TEXT_SPRINT resource ~%flir_catalog_arg_resource%~
+    OUTER_TEXT_SPRINT object_or_slot ~%flir_catalog_arg_object_or_slot%~
+    OUTER_TEXT_SPRINT multiplicity_policy ~%flir_catalog_arg_multiplicity_policy%~
+    OUTER_TEXT_SPRINT charge_policy ~%flir_catalog_arg_charge_policy%~
+    OUTER_TEXT_SPRINT endpoint_id ~%flir_catalog_arg_endpoint_id%~
+    OUTER_TEXT_SPRINT progression_band ~%flir_catalog_arg_progression_band%~
+    OUTER_TEXT_SPRINT area ~%flir_catalog_arg_area%~
+    OUTER_TEXT_SPRINT target_kind ~%flir_catalog_arg_target_kind%~
+    OUTER_TEXT_SPRINT target_identity ~%flir_catalog_arg_target_identity%~
+    OUTER_TEXT_SPRINT static_policy ~%flir_catalog_arg_static_policy%~
+    OUTER_TEXT_SPRINT fallback_chain ~%flir_catalog_arg_fallback_chain%~
+    OUTER_TEXT_SPRINT group_id ~%flir_catalog_arg_group_id%~
+    OUTER_TEXT_SPRINT location_id ~%flir_catalog_arg_location_id%~
+  END
+  OUTER_SET flir_catalog_provider_length = STRING_LENGTH ~%provider%~
+  OUTER_SET flir_catalog_local_id_length = STRING_LENGTH ~%id%~
+  OUTER_SPRINT flir_catalog_provider_lower ~%provider%~
+  OUTER_SPRINT flir_catalog_local_id_lower ~%id%~
+  ACTION_TO_LOWER flir_catalog_provider_lower
+  ACTION_TO_LOWER flir_catalog_local_id_lower
+  OUTER_TEXT_SPRINT flir_catalog_qualified ~%provider%:%id%~
+  OUTER_SET flir_catalog_qualified_length = STRING_LENGTH ~%flir_catalog_qualified%~
+  ACTION_IF flir_catalog_provider_length > flir_catalog_provider_max
+    OR flir_catalog_local_id_length > flir_catalog_local_id_max
+    OR flir_catalog_qualified_length > flir_catalog_qualified_id_max BEGIN
+    LAF flir_catalog_fail STR_VAR code = ~ID_LENGTH~ kind = EVAL ~%kind%~ provider = EVAL ~%provider%~ id = EVAL ~%id%~ END
+  END
+  ACTION_IF NOT (~%provider%~ STRING_EQUAL ~%flir_catalog_provider_lower%~)
+    OR NOT (~%id%~ STRING_EQUAL ~%flir_catalog_local_id_lower%~)
+    OR (~%provider%~ STRING_MATCHES_REGEXP ~^[a-z0-9][a-z0-9._-]*$~) != 0
+    OR (~%id%~ STRING_MATCHES_REGEXP ~^[a-z0-9][a-z0-9._-]*$~) != 0 BEGIN
+    LAF flir_catalog_fail STR_VAR code = ~INVALID_ID~ kind = EVAL ~%kind%~ provider = EVAL ~%provider%~ id = EVAL ~%id%~ END
+  END
+
+  ACTION_IF NOT (~%kind%~ STRING_EQUAL ~item~)
+    AND NOT (~%kind%~ STRING_EQUAL ~unit~)
+    AND NOT (~%kind%~ STRING_EQUAL ~source~)
+    AND NOT (~%kind%~ STRING_EQUAL ~slot~)
+    AND NOT (~%kind%~ STRING_EQUAL ~endpoint~)
+    AND NOT (~%kind%~ STRING_EQUAL ~group~)
+    AND NOT (~%kind%~ STRING_EQUAL ~override~) BEGIN
+    LAF flir_catalog_fail STR_VAR code = ~UNSUPPORTED_KIND~ kind = EVAL ~%kind%~ provider = EVAL ~%provider%~ id = EVAL ~%id%~ END
+  END
+  ACTION_IF NOT (~%operation%~ STRING_EQUAL ~ADD~)
+    AND NOT (~%operation%~ STRING_EQUAL ~REPLACE~)
+    AND NOT (~%operation%~ STRING_EQUAL ~DISABLE~) BEGIN
+    LAF flir_catalog_fail STR_VAR code = ~UNSUPPORTED_OPERATION~ kind = EVAL ~%kind%~ provider = EVAL ~%provider%~ id = EVAL ~%id%~ END
+  END
+
+  // The actor is distinct from the provider embedded in the target key.
+  // Diagnostics deliberately identify only that opaque target key.
+  OUTER_SET flir_catalog_actor_provider_length = STRING_LENGTH ~%actor_provider%~
+  OUTER_SPRINT flir_catalog_actor_provider_lower ~%actor_provider%~
+  ACTION_TO_LOWER flir_catalog_actor_provider_lower
+  ACTION_IF flir_catalog_actor_provider_length > flir_catalog_provider_max
+    OR ~%actor_provider%~ STRING_EQUAL_CASE ~~
+    OR ~%actor_provider%~ STRING_EQUAL_CASE ~%flir_catalog_arg_unset%~
+    OR NOT (~%actor_provider%~ STRING_EQUAL ~%flir_catalog_actor_provider_lower%~)
+    OR (~%actor_provider%~ STRING_MATCHES_REGEXP ~^[a-z0-9][a-z0-9._-]*$~) != 0 BEGIN
+    LAF flir_catalog_fail STR_VAR code = ~INVALID_ACTOR~ kind = EVAL ~%kind%~ provider = EVAL ~%provider%~ id = EVAL ~%id%~ END
+  END
+
+  ACTION_IF ~%operation%~ STRING_EQUAL_CASE ~ADD~
+    AND NOT (~%actor_provider%~ STRING_EQUAL_CASE ~%provider%~) BEGIN
+    LAF flir_catalog_fail STR_VAR code = ~OWNER_CONFLICT~ kind = EVAL ~%kind%~ provider = EVAL ~%provider%~ id = EVAL ~%id%~ END
+  END
+
+  OUTER_SET flir_catalog_exists = 0
+  ACTION_IF VARIABLE_IS_SET $flir_catalog_present("%kind%" "%flir_catalog_qualified%") BEGIN
+    OUTER_SET flir_catalog_exists = $flir_catalog_present("%kind%" "%flir_catalog_qualified%")
+  END
+  ACTION_IF flir_catalog_exists = 1 BEGIN
+    ACTION_IF NOT (~%provider%~ STRING_EQUAL_CASE $flir_catalog_owner("%kind%" "%flir_catalog_qualified%")) BEGIN
+      LAF flir_catalog_fail STR_VAR code = ~OWNER_CONFLICT~ kind = EVAL ~%kind%~ provider = EVAL ~%provider%~ id = EVAL ~%id%~ END
+    END
+  END
+
+  ACTION_IF ~%operation%~ STRING_EQUAL_CASE ~ADD~ BEGIN
+    ACTION_IF flir_catalog_exists = 1 BEGIN
+      LAF flir_catalog_fail STR_VAR code = ~DUPLICATE~ kind = EVAL ~%kind%~ provider = EVAL ~%provider%~ id = EVAL ~%id%~ END
+    END
+  END ELSE BEGIN
+    ACTION_IF flir_catalog_exists != 1 BEGIN
+      LAF flir_catalog_fail STR_VAR code = ~NOT_FOUND~ kind = EVAL ~%kind%~ provider = EVAL ~%provider%~ id = EVAL ~%id%~ END
+    END
+    ACTION_IF expected_fingerprint < 1
+      OR expected_fingerprint != $flir_catalog_row_fingerprint("%kind%" "%flir_catalog_qualified%") BEGIN
+      LAF flir_catalog_fail STR_VAR code = ~FINGERPRINT_MISMATCH~ kind = EVAL ~%kind%~ provider = EVAL ~%provider%~ id = EVAL ~%id%~ END
+    END
+    ACTION_IF ~%operation%~ STRING_EQUAL_CASE ~REPLACE~
+      AND $flir_catalog_enabled("%kind%" "%flir_catalog_qualified%") = 0 BEGIN
+      LAF flir_catalog_fail STR_VAR code = ~TOMBSTONE_IMMUTABLE~ kind = EVAL ~%kind%~ provider = EVAL ~%provider%~ id = EVAL ~%id%~ END
+    END
+  END
+
+  ACTION_IF ~%operation%~ STRING_EQUAL_CASE ~DISABLE~ BEGIN
+    OUTER_SET $flir_catalog_enabled("%kind%" "%flir_catalog_qualified%") = 0
+    LAF flir_catalog_compute_stored_fingerprint
+      STR_VAR kind = EVAL ~%kind%~ qualified = EVAL ~%flir_catalog_qualified%~
+      RET fingerprint
+    END
+    OUTER_SET $flir_catalog_row_fingerprint("%kind%" "%flir_catalog_qualified%") = fingerprint
+  END ELSE BEGIN
+    // Validate every field of the complete ADD/REPLACE row before writing any
+    // catalog state.
+    ACTION_MATCH ~%kind%~ WITH
+      item BEGIN
+        ACTION_IF ~%tier%~ STRING_EQUAL_CASE ~~ OR ~%tier%~ STRING_EQUAL_CASE ~%flir_catalog_arg_unset%~ OR ~%resref%~ STRING_EQUAL_CASE ~~ OR ~%resref%~ STRING_EQUAL_CASE ~%flir_catalog_arg_unset%~ OR ~%variant_policy%~ STRING_EQUAL_CASE ~~ OR ~%variant_policy%~ STRING_EQUAL_CASE ~%flir_catalog_arg_unset%~ OR ~%source_set_id%~ STRING_EQUAL_CASE ~~ OR ~%source_set_id%~ STRING_EQUAL_CASE ~%flir_catalog_arg_unset%~ BEGIN
+          LAF flir_catalog_fail STR_VAR code = ~INCOMPLETE_ROW~ kind = EVAL ~%kind%~ provider = EVAL ~%provider%~ id = EVAL ~%id%~ END
+        END
+        ACTION_IF enabled != 0 AND enabled != 1 BEGIN
+          LAF flir_catalog_fail STR_VAR code = ~INVALID_NUMERIC~ kind = EVAL ~%kind%~ provider = EVAL ~%provider%~ id = EVAL ~%id%~ END
+        END
+        LAF flir_catalog_validate_reference STR_VAR value = EVAL ~%source_set_id%~ kind = EVAL ~%kind%~ provider = EVAL ~%provider%~ id = EVAL ~%id%~ END
+      END
+      unit BEGIN
+        ACTION_IF ~%item_id%~ STRING_EQUAL_CASE ~~ OR ~%item_id%~ STRING_EQUAL_CASE ~%flir_catalog_arg_unset%~ OR ~%tier%~ STRING_EQUAL_CASE ~~ OR ~%tier%~ STRING_EQUAL_CASE ~%flir_catalog_arg_unset%~ OR ~%compact_token%~ STRING_EQUAL_CASE ~~ OR ~%compact_token%~ STRING_EQUAL_CASE ~%flir_catalog_arg_unset%~ BEGIN
+          LAF flir_catalog_fail STR_VAR code = ~INCOMPLETE_ROW~ kind = EVAL ~%kind%~ provider = EVAL ~%provider%~ id = EVAL ~%id%~ END
+        END
+        ACTION_IF occurrence < 1 OR occurrence = 2147483647 OR charge1 < 0 OR charge1 = 2147483647 OR charge2 < 0 OR charge2 = 2147483647 OR charge3 < 0 OR charge3 = 2147483647 OR (enabled != 0 AND enabled != 1) BEGIN
+          LAF flir_catalog_fail STR_VAR code = ~INVALID_NUMERIC~ kind = EVAL ~%kind%~ provider = EVAL ~%provider%~ id = EVAL ~%id%~ END
+        END
+        LAF flir_catalog_validate_reference STR_VAR value = EVAL ~%item_id%~ kind = EVAL ~%kind%~ provider = EVAL ~%provider%~ id = EVAL ~%id%~ END
+      END
+      source BEGIN
+        ACTION_IF ~%item_id%~ STRING_EQUAL_CASE ~~ OR ~%item_id%~ STRING_EQUAL_CASE ~%flir_catalog_arg_unset%~ OR ~%source_kind%~ STRING_EQUAL_CASE ~~ OR ~%source_kind%~ STRING_EQUAL_CASE ~%flir_catalog_arg_unset%~ OR ~%resource%~ STRING_EQUAL_CASE ~~ OR ~%resource%~ STRING_EQUAL_CASE ~%flir_catalog_arg_unset%~ OR ~%object_or_slot%~ STRING_EQUAL_CASE ~~ OR ~%object_or_slot%~ STRING_EQUAL_CASE ~%flir_catalog_arg_unset%~ OR ~%multiplicity_policy%~ STRING_EQUAL_CASE ~~ OR ~%multiplicity_policy%~ STRING_EQUAL_CASE ~%flir_catalog_arg_unset%~ OR ~%charge_policy%~ STRING_EQUAL_CASE ~~ OR ~%charge_policy%~ STRING_EQUAL_CASE ~%flir_catalog_arg_unset%~ BEGIN
+          LAF flir_catalog_fail STR_VAR code = ~INCOMPLETE_ROW~ kind = EVAL ~%kind%~ provider = EVAL ~%provider%~ id = EVAL ~%id%~ END
+        END
+        ACTION_IF expected_quantity < 1 OR expected_quantity = 2147483647 OR priority < 0 OR priority = 2147483647 OR (enabled != 0 AND enabled != 1) BEGIN
+          LAF flir_catalog_fail STR_VAR code = ~INVALID_NUMERIC~ kind = EVAL ~%kind%~ provider = EVAL ~%provider%~ id = EVAL ~%id%~ END
+        END
+        LAF flir_catalog_validate_reference STR_VAR value = EVAL ~%item_id%~ kind = EVAL ~%kind%~ provider = EVAL ~%provider%~ id = EVAL ~%id%~ END
+      END
+      slot BEGIN
+        ACTION_IF ~%tier%~ STRING_EQUAL_CASE ~~ OR ~%tier%~ STRING_EQUAL_CASE ~%flir_catalog_arg_unset%~ OR ~%endpoint_id%~ STRING_EQUAL_CASE ~~ OR ~%endpoint_id%~ STRING_EQUAL_CASE ~%flir_catalog_arg_unset%~ OR ~%progression_band%~ STRING_EQUAL_CASE ~~ OR ~%progression_band%~ STRING_EQUAL_CASE ~%flir_catalog_arg_unset%~ BEGIN
+          LAF flir_catalog_fail STR_VAR code = ~INCOMPLETE_ROW~ kind = EVAL ~%kind%~ provider = EVAL ~%provider%~ id = EVAL ~%id%~ END
+        END
+        ACTION_IF slot_value < 1 OR slot_value = 2147483647 OR weight < 1 OR weight = 2147483647 OR (enabled != 0 AND enabled != 1) BEGIN
+          LAF flir_catalog_fail STR_VAR code = ~INVALID_NUMERIC~ kind = EVAL ~%kind%~ provider = EVAL ~%provider%~ id = EVAL ~%id%~ END
+        END
+        LAF flir_catalog_validate_reference STR_VAR value = EVAL ~%endpoint_id%~ kind = EVAL ~%kind%~ provider = EVAL ~%provider%~ id = EVAL ~%id%~ END
+      END
+      endpoint BEGIN
+        ACTION_IF ~%area%~ STRING_EQUAL_CASE ~~ OR ~%area%~ STRING_EQUAL_CASE ~%flir_catalog_arg_unset%~ OR ~%target_kind%~ STRING_EQUAL_CASE ~~ OR ~%target_kind%~ STRING_EQUAL_CASE ~%flir_catalog_arg_unset%~ OR ~%target_identity%~ STRING_EQUAL_CASE ~~ OR ~%target_identity%~ STRING_EQUAL_CASE ~%flir_catalog_arg_unset%~ OR ~%static_policy%~ STRING_EQUAL_CASE ~~ OR ~%static_policy%~ STRING_EQUAL_CASE ~%flir_catalog_arg_unset%~ OR ~%fallback_chain%~ STRING_EQUAL_CASE ~~ OR ~%fallback_chain%~ STRING_EQUAL_CASE ~%flir_catalog_arg_unset%~ BEGIN
+          LAF flir_catalog_fail STR_VAR code = ~INCOMPLETE_ROW~ kind = EVAL ~%kind%~ provider = EVAL ~%provider%~ id = EVAL ~%id%~ END
+        END
+        ACTION_IF x < 0 OR x = 2147483647 OR y < 0 OR y = 2147483647 OR capacity < 1 OR capacity = 2147483647 OR (enabled != 0 AND enabled != 1) BEGIN
+          LAF flir_catalog_fail STR_VAR code = ~INVALID_NUMERIC~ kind = EVAL ~%kind%~ provider = EVAL ~%provider%~ id = EVAL ~%id%~ END
+        END
+      END
+      group BEGIN
+        ACTION_IF ~%group_id%~ STRING_EQUAL_CASE ~~ OR ~%group_id%~ STRING_EQUAL_CASE ~%flir_catalog_arg_unset%~ OR ~%endpoint_id%~ STRING_EQUAL_CASE ~~ OR ~%endpoint_id%~ STRING_EQUAL_CASE ~%flir_catalog_arg_unset%~ BEGIN
+          LAF flir_catalog_fail STR_VAR code = ~INCOMPLETE_ROW~ kind = EVAL ~%kind%~ provider = EVAL ~%provider%~ id = EVAL ~%id%~ END
+        END
+        ACTION_IF weight < 1 OR weight = 2147483647 OR priority < 0 OR priority = 2147483647 OR (enabled != 0 AND enabled != 1) BEGIN
+          LAF flir_catalog_fail STR_VAR code = ~INVALID_NUMERIC~ kind = EVAL ~%kind%~ provider = EVAL ~%provider%~ id = EVAL ~%id%~ END
+        END
+        LAF flir_catalog_validate_reference STR_VAR value = EVAL ~%group_id%~ kind = EVAL ~%kind%~ provider = EVAL ~%provider%~ id = EVAL ~%id%~ END
+        LAF flir_catalog_validate_reference STR_VAR value = EVAL ~%endpoint_id%~ kind = EVAL ~%kind%~ provider = EVAL ~%provider%~ id = EVAL ~%id%~ END
+      END
+      override BEGIN
+        ACTION_IF ~%item_id%~ STRING_EQUAL_CASE ~~ OR ~%item_id%~ STRING_EQUAL_CASE ~%flir_catalog_arg_unset%~ OR ~%location_id%~ STRING_EQUAL_CASE ~~ OR ~%location_id%~ STRING_EQUAL_CASE ~%flir_catalog_arg_unset%~ OR ~%endpoint_id%~ STRING_EQUAL_CASE ~~ OR ~%endpoint_id%~ STRING_EQUAL_CASE ~%flir_catalog_arg_unset%~ BEGIN
+          LAF flir_catalog_fail STR_VAR code = ~INCOMPLETE_ROW~ kind = EVAL ~%kind%~ provider = EVAL ~%provider%~ id = EVAL ~%id%~ END
+        END
+        ACTION_IF enabled != 0 AND enabled != 1 BEGIN
+          LAF flir_catalog_fail STR_VAR code = ~INVALID_NUMERIC~ kind = EVAL ~%kind%~ provider = EVAL ~%provider%~ id = EVAL ~%id%~ END
+        END
+        LAF flir_catalog_validate_reference STR_VAR value = EVAL ~%item_id%~ kind = EVAL ~%kind%~ provider = EVAL ~%provider%~ id = EVAL ~%id%~ END
+        LAF flir_catalog_validate_reference STR_VAR value = EVAL ~%location_id%~ kind = EVAL ~%kind%~ provider = EVAL ~%provider%~ id = EVAL ~%id%~ END
+        LAF flir_catalog_validate_reference STR_VAR value = EVAL ~%endpoint_id%~ kind = EVAL ~%kind%~ provider = EVAL ~%provider%~ id = EVAL ~%id%~ END
+      END
+      DEFAULT
+        LAF flir_catalog_fail STR_VAR code = ~UNSUPPORTED_KIND~ kind = EVAL ~%kind%~ provider = EVAL ~%provider%~ id = EVAL ~%id%~ END
+    END
+
+    // By-name arguments preserve exact bytes across LAF, including percent
+    // pairs that would be recursively expanded by EVALUATE_BUFFER.
+    OUTER_SPRINT qualified ~%flir_catalog_qualified%~
+    LAF flir_catalog_compute_fingerprint
+      INT_VAR occurrence = occurrence charge1 = charge1 charge2 = charge2 charge3 = charge3 expected_quantity = expected_quantity priority = priority slot_value = slot_value weight = weight x = x y = y capacity = capacity enabled = enabled
+      STR_VAR kind qualified tier resref variant_policy source_set_id item_id compact_token source_kind resource object_or_slot multiplicity_policy charge_policy endpoint_id progression_band area target_kind target_identity static_policy fallback_chain group_id location_id
+      RET fingerprint
+    END
+
+    OUTER_SET $flir_catalog_present("%kind%" "%flir_catalog_qualified%") = 1
+    OUTER_TEXT_SPRINT $flir_catalog_owner("%kind%" "%flir_catalog_qualified%") ~%provider%~
+    OUTER_TEXT_SPRINT $flir_catalog_provider("%kind%" "%flir_catalog_qualified%") ~%provider%~
+    OUTER_TEXT_SPRINT $flir_catalog_id("%kind%" "%flir_catalog_qualified%") ~%id%~
+    OUTER_SET $flir_catalog_enabled("%kind%" "%flir_catalog_qualified%") = enabled
+    OUTER_SET $flir_catalog_row_fingerprint("%kind%" "%flir_catalog_qualified%") = fingerprint
+
+    ACTION_MATCH ~%kind%~ WITH
+      item BEGIN
+        OUTER_TEXT_SPRINT $flir_catalog_tier("%kind%" "%flir_catalog_qualified%") ~%tier%~
+        OUTER_TEXT_SPRINT $flir_catalog_resref("%kind%" "%flir_catalog_qualified%") ~%resref%~
+        OUTER_TEXT_SPRINT $flir_catalog_variant_policy("%kind%" "%flir_catalog_qualified%") ~%variant_policy%~
+        OUTER_TEXT_SPRINT $flir_catalog_source_set_id("%kind%" "%flir_catalog_qualified%") ~%source_set_id%~
+      END
+      unit BEGIN
+        OUTER_TEXT_SPRINT $flir_catalog_item_id("%kind%" "%flir_catalog_qualified%") ~%item_id%~
+        OUTER_TEXT_SPRINT $flir_catalog_tier("%kind%" "%flir_catalog_qualified%") ~%tier%~
+        OUTER_TEXT_SPRINT $flir_catalog_compact_token("%kind%" "%flir_catalog_qualified%") ~%compact_token%~
+        OUTER_SET $flir_catalog_occurrence("%kind%" "%flir_catalog_qualified%") = occurrence
+        OUTER_SET $flir_catalog_charge1("%kind%" "%flir_catalog_qualified%") = charge1
+        OUTER_SET $flir_catalog_charge2("%kind%" "%flir_catalog_qualified%") = charge2
+        OUTER_SET $flir_catalog_charge3("%kind%" "%flir_catalog_qualified%") = charge3
+      END
+      source BEGIN
+        OUTER_TEXT_SPRINT $flir_catalog_item_id("%kind%" "%flir_catalog_qualified%") ~%item_id%~
+        OUTER_TEXT_SPRINT $flir_catalog_source_kind("%kind%" "%flir_catalog_qualified%") ~%source_kind%~
+        OUTER_TEXT_SPRINT $flir_catalog_resource("%kind%" "%flir_catalog_qualified%") ~%resource%~
+        OUTER_TEXT_SPRINT $flir_catalog_object_or_slot("%kind%" "%flir_catalog_qualified%") ~%object_or_slot%~
+        OUTER_SET $flir_catalog_expected_quantity("%kind%" "%flir_catalog_qualified%") = expected_quantity
+        OUTER_TEXT_SPRINT $flir_catalog_multiplicity_policy("%kind%" "%flir_catalog_qualified%") ~%multiplicity_policy%~
+        OUTER_TEXT_SPRINT $flir_catalog_charge_policy("%kind%" "%flir_catalog_qualified%") ~%charge_policy%~
+        OUTER_SET $flir_catalog_priority("%kind%" "%flir_catalog_qualified%") = priority
+      END
+      slot BEGIN
+        OUTER_TEXT_SPRINT $flir_catalog_tier("%kind%" "%flir_catalog_qualified%") ~%tier%~
+        OUTER_SET $flir_catalog_slot_value("%kind%" "%flir_catalog_qualified%") = slot_value
+        OUTER_TEXT_SPRINT $flir_catalog_endpoint_id("%kind%" "%flir_catalog_qualified%") ~%endpoint_id%~
+        OUTER_SET $flir_catalog_weight("%kind%" "%flir_catalog_qualified%") = weight
+        OUTER_TEXT_SPRINT $flir_catalog_progression_band("%kind%" "%flir_catalog_qualified%") ~%progression_band%~
+      END
+      endpoint BEGIN
+        OUTER_TEXT_SPRINT $flir_catalog_area("%kind%" "%flir_catalog_qualified%") ~%area%~
+        OUTER_TEXT_SPRINT $flir_catalog_target_kind("%kind%" "%flir_catalog_qualified%") ~%target_kind%~
+        OUTER_TEXT_SPRINT $flir_catalog_target_identity("%kind%" "%flir_catalog_qualified%") ~%target_identity%~
+        OUTER_SET $flir_catalog_x("%kind%" "%flir_catalog_qualified%") = x
+        OUTER_SET $flir_catalog_y("%kind%" "%flir_catalog_qualified%") = y
+        OUTER_SET $flir_catalog_capacity("%kind%" "%flir_catalog_qualified%") = capacity
+        OUTER_TEXT_SPRINT $flir_catalog_static_policy("%kind%" "%flir_catalog_qualified%") ~%static_policy%~
+        OUTER_TEXT_SPRINT $flir_catalog_fallback_chain("%kind%" "%flir_catalog_qualified%") ~%fallback_chain%~
+      END
+      group BEGIN
+        OUTER_TEXT_SPRINT $flir_catalog_group_id("%kind%" "%flir_catalog_qualified%") ~%group_id%~
+        OUTER_TEXT_SPRINT $flir_catalog_endpoint_id("%kind%" "%flir_catalog_qualified%") ~%endpoint_id%~
+        OUTER_SET $flir_catalog_weight("%kind%" "%flir_catalog_qualified%") = weight
+        OUTER_SET $flir_catalog_priority("%kind%" "%flir_catalog_qualified%") = priority
+      END
+      override BEGIN
+        OUTER_TEXT_SPRINT $flir_catalog_item_id("%kind%" "%flir_catalog_qualified%") ~%item_id%~
+        OUTER_TEXT_SPRINT $flir_catalog_location_id("%kind%" "%flir_catalog_qualified%") ~%location_id%~
+        OUTER_TEXT_SPRINT $flir_catalog_endpoint_id("%kind%" "%flir_catalog_qualified%") ~%endpoint_id%~
+      END
+      DEFAULT
+        LAF flir_catalog_fail STR_VAR code = ~UNSUPPORTED_KIND~ kind = EVAL ~%kind%~ provider = EVAL ~%provider%~ id = EVAL ~%id%~ END
+    END
+
+    OUTER_TEXT_SPRINT flir_catalog_sort_key ~%kind%|%flir_catalog_qualified%~
+    OUTER_SET $flir_catalog_index("%flir_catalog_sort_key%") = 1
+    OUTER_TEXT_SPRINT $flir_catalog_index_kind("%flir_catalog_sort_key%") ~%kind%~
+    OUTER_TEXT_SPRINT $flir_catalog_index_qualified("%flir_catalog_sort_key%") ~%flir_catalog_qualified%~
+  END
+END
+
+DEFINE_ACTION_FUNCTION flir_catalog_canonical_rows
+  RET
+    rows
+BEGIN
+  OUTER_TEXT_SPRINT rows ~~
+  ACTION_SORT_ARRAY_INDICES flir_catalog_index LEXICOGRAPHICALLY
+  ACTION_PHP_EACH flir_catalog_index AS flir_catalog_sort_key => flir_catalog_sort_present BEGIN
+    ACTION_IF flir_catalog_sort_present = 1 BEGIN
+      OUTER_SPRINT flir_catalog_emit_kind $flir_catalog_index_kind("%flir_catalog_sort_key%")
+      OUTER_SPRINT flir_catalog_emit_qualified $flir_catalog_index_qualified("%flir_catalog_sort_key%")
+      OUTER_SPRINT flir_catalog_emit_provider $flir_catalog_provider("%flir_catalog_emit_kind%" "%flir_catalog_emit_qualified%")
+      OUTER_SPRINT flir_catalog_emit_id $flir_catalog_id("%flir_catalog_emit_kind%" "%flir_catalog_emit_qualified%")
+      OUTER_SET flir_catalog_emit_enabled = $flir_catalog_enabled("%flir_catalog_emit_kind%" "%flir_catalog_emit_qualified%")
+      OUTER_SET flir_catalog_emit_fingerprint = $flir_catalog_row_fingerprint("%flir_catalog_emit_kind%" "%flir_catalog_emit_qualified%")
+      OUTER_TEXT_SPRINT rows ~%rows%%flir_catalog_emit_kind% %flir_catalog_emit_provider% %flir_catalog_emit_id% %flir_catalog_emit_enabled% %flir_catalog_emit_fingerprint%%WNL%~
+    END
+  END
+END
+
+// WeiDU localizes arrays written inside action functions. The public wrappers
+// are therefore macros: they keep catalog state in component scope while this
+// private macro threads every internal parallel array through the typed generic
+// function. Extension authors set only flir_catalog_arg_* values and never
+// construct or RET_ARRAY an internal array name.
+DEFINE_ACTION_MACRO flir_catalog_thread_apply BEGIN
+  LAF flir_catalog_apply
+    INT_VAR
+      use_public_args = 1
+      expected_fingerprint = flir_catalog_arg_expected_fingerprint
+      occurrence = flir_catalog_arg_occurrence
+      charge1 = flir_catalog_arg_charge1
+      charge2 = flir_catalog_arg_charge2
+      charge3 = flir_catalog_arg_charge3
+      expected_quantity = flir_catalog_arg_expected_quantity
+      priority = flir_catalog_arg_priority
+      slot_value = flir_catalog_arg_slot_value
+      weight = flir_catalog_arg_weight
+      x = flir_catalog_arg_x
+      y = flir_catalog_arg_y
+      capacity = flir_catalog_arg_capacity
+      enabled = flir_catalog_arg_enabled
+    RET
+      flir_catalog_result_fingerprint = fingerprint
+    RET_ARRAY
+      flir_catalog_present = flir_catalog_present
+      flir_catalog_owner = flir_catalog_owner
+      flir_catalog_provider = flir_catalog_provider
+      flir_catalog_id = flir_catalog_id
+      flir_catalog_enabled = flir_catalog_enabled
+      flir_catalog_row_fingerprint = flir_catalog_row_fingerprint
+      flir_catalog_tier = flir_catalog_tier
+      flir_catalog_resref = flir_catalog_resref
+      flir_catalog_variant_policy = flir_catalog_variant_policy
+      flir_catalog_source_set_id = flir_catalog_source_set_id
+      flir_catalog_item_id = flir_catalog_item_id
+      flir_catalog_compact_token = flir_catalog_compact_token
+      flir_catalog_occurrence = flir_catalog_occurrence
+      flir_catalog_charge1 = flir_catalog_charge1
+      flir_catalog_charge2 = flir_catalog_charge2
+      flir_catalog_charge3 = flir_catalog_charge3
+      flir_catalog_source_kind = flir_catalog_source_kind
+      flir_catalog_resource = flir_catalog_resource
+      flir_catalog_object_or_slot = flir_catalog_object_or_slot
+      flir_catalog_expected_quantity = flir_catalog_expected_quantity
+      flir_catalog_multiplicity_policy = flir_catalog_multiplicity_policy
+      flir_catalog_charge_policy = flir_catalog_charge_policy
+      flir_catalog_priority = flir_catalog_priority
+      flir_catalog_slot_value = flir_catalog_slot_value
+      flir_catalog_endpoint_id = flir_catalog_endpoint_id
+      flir_catalog_weight = flir_catalog_weight
+      flir_catalog_progression_band = flir_catalog_progression_band
+      flir_catalog_area = flir_catalog_area
+      flir_catalog_target_kind = flir_catalog_target_kind
+      flir_catalog_target_identity = flir_catalog_target_identity
+      flir_catalog_x = flir_catalog_x
+      flir_catalog_y = flir_catalog_y
+      flir_catalog_capacity = flir_catalog_capacity
+      flir_catalog_static_policy = flir_catalog_static_policy
+      flir_catalog_fallback_chain = flir_catalog_fallback_chain
+      flir_catalog_group_id = flir_catalog_group_id
+      flir_catalog_location_id = flir_catalog_location_id
+      flir_catalog_index = flir_catalog_index
+      flir_catalog_index_kind = flir_catalog_index_kind
+      flir_catalog_index_qualified = flir_catalog_index_qualified
+  END
+END
+
+DEFINE_ACTION_MACRO flir_catalog_reset_public_args BEGIN
+  OUTER_SPRINT flir_catalog_arg_kind ~%flir_catalog_arg_unset%~
+  OUTER_SPRINT flir_catalog_arg_operation ~%flir_catalog_arg_unset%~
+  OUTER_SPRINT flir_catalog_arg_actor_provider ~%flir_catalog_arg_unset%~
+  OUTER_SPRINT flir_catalog_arg_provider ~%flir_catalog_arg_unset%~
+  OUTER_SPRINT flir_catalog_arg_id ~%flir_catalog_arg_unset%~
+  OUTER_SPRINT flir_catalog_arg_tier ~%flir_catalog_arg_unset%~
+  OUTER_SPRINT flir_catalog_arg_resref ~%flir_catalog_arg_unset%~
+  OUTER_SPRINT flir_catalog_arg_variant_policy ~%flir_catalog_arg_unset%~
+  OUTER_SPRINT flir_catalog_arg_source_set_id ~%flir_catalog_arg_unset%~
+  OUTER_SPRINT flir_catalog_arg_item_id ~%flir_catalog_arg_unset%~
+  OUTER_SPRINT flir_catalog_arg_compact_token ~%flir_catalog_arg_unset%~
+  OUTER_SPRINT flir_catalog_arg_source_kind ~%flir_catalog_arg_unset%~
+  OUTER_SPRINT flir_catalog_arg_resource ~%flir_catalog_arg_unset%~
+  OUTER_SPRINT flir_catalog_arg_object_or_slot ~%flir_catalog_arg_unset%~
+  OUTER_SPRINT flir_catalog_arg_multiplicity_policy ~%flir_catalog_arg_unset%~
+  OUTER_SPRINT flir_catalog_arg_charge_policy ~%flir_catalog_arg_unset%~
+  OUTER_SPRINT flir_catalog_arg_endpoint_id ~%flir_catalog_arg_unset%~
+  OUTER_SPRINT flir_catalog_arg_progression_band ~%flir_catalog_arg_unset%~
+  OUTER_SPRINT flir_catalog_arg_area ~%flir_catalog_arg_unset%~
+  OUTER_SPRINT flir_catalog_arg_target_kind ~%flir_catalog_arg_unset%~
+  OUTER_SPRINT flir_catalog_arg_target_identity ~%flir_catalog_arg_unset%~
+  OUTER_SPRINT flir_catalog_arg_static_policy ~%flir_catalog_arg_unset%~
+  OUTER_SPRINT flir_catalog_arg_fallback_chain ~%flir_catalog_arg_unset%~
+  OUTER_SPRINT flir_catalog_arg_group_id ~%flir_catalog_arg_unset%~
+  OUTER_SPRINT flir_catalog_arg_location_id ~%flir_catalog_arg_unset%~
+  OUTER_SET flir_catalog_arg_expected_fingerprint = 0
+  OUTER_SET flir_catalog_arg_occurrence = 2147483647
+  OUTER_SET flir_catalog_arg_charge1 = 2147483647
+  OUTER_SET flir_catalog_arg_charge2 = 2147483647
+  OUTER_SET flir_catalog_arg_charge3 = 2147483647
+  OUTER_SET flir_catalog_arg_expected_quantity = 2147483647
+  OUTER_SET flir_catalog_arg_priority = 2147483647
+  OUTER_SET flir_catalog_arg_slot_value = 2147483647
+  OUTER_SET flir_catalog_arg_weight = 2147483647
+  OUTER_SET flir_catalog_arg_x = 2147483647
+  OUTER_SET flir_catalog_arg_y = 2147483647
+  OUTER_SET flir_catalog_arg_capacity = 2147483647
+  OUTER_SET flir_catalog_arg_enabled = 2147483647
+END
+
+// Thin row-kind wrappers. Required fields stay in flir_catalog_arg_*; every
+// irrelevant field is canonicalized before the generic call. A successful
+// call resets all public args, preventing omitted fields from inheriting a
+// previous row's values.
+DEFINE_ACTION_MACRO flir_catalog_item BEGIN
+  OUTER_SPRINT flir_catalog_arg_kind ~item~
+  OUTER_SPRINT flir_catalog_arg_item_id ~~
+  OUTER_SPRINT flir_catalog_arg_compact_token ~~
+  OUTER_SPRINT flir_catalog_arg_source_kind ~~
+  OUTER_SPRINT flir_catalog_arg_resource ~~
+  OUTER_SPRINT flir_catalog_arg_object_or_slot ~~
+  OUTER_SPRINT flir_catalog_arg_multiplicity_policy ~~
+  OUTER_SPRINT flir_catalog_arg_charge_policy ~~
+  OUTER_SPRINT flir_catalog_arg_endpoint_id ~~
+  OUTER_SPRINT flir_catalog_arg_progression_band ~~
+  OUTER_SPRINT flir_catalog_arg_area ~~
+  OUTER_SPRINT flir_catalog_arg_target_kind ~~
+  OUTER_SPRINT flir_catalog_arg_target_identity ~~
+  OUTER_SPRINT flir_catalog_arg_static_policy ~~
+  OUTER_SPRINT flir_catalog_arg_fallback_chain ~~
+  OUTER_SPRINT flir_catalog_arg_group_id ~~
+  OUTER_SPRINT flir_catalog_arg_location_id ~~
+  OUTER_SET flir_catalog_arg_occurrence = 2147483647
+  OUTER_SET flir_catalog_arg_charge1 = 2147483647
+  OUTER_SET flir_catalog_arg_charge2 = 2147483647
+  OUTER_SET flir_catalog_arg_charge3 = 2147483647
+  OUTER_SET flir_catalog_arg_expected_quantity = 2147483647
+  OUTER_SET flir_catalog_arg_priority = 2147483647
+  OUTER_SET flir_catalog_arg_slot_value = 2147483647
+  OUTER_SET flir_catalog_arg_weight = 2147483647
+  OUTER_SET flir_catalog_arg_x = 2147483647
+  OUTER_SET flir_catalog_arg_y = 2147483647
+  OUTER_SET flir_catalog_arg_capacity = 2147483647
+  LAM flir_catalog_thread_apply
+  LAM flir_catalog_reset_public_args
+END
+
+DEFINE_ACTION_MACRO flir_catalog_unit BEGIN
+  OUTER_SPRINT flir_catalog_arg_kind ~unit~
+  OUTER_SPRINT flir_catalog_arg_resref ~~
+  OUTER_SPRINT flir_catalog_arg_variant_policy ~~
+  OUTER_SPRINT flir_catalog_arg_source_set_id ~~
+  OUTER_SPRINT flir_catalog_arg_source_kind ~~
+  OUTER_SPRINT flir_catalog_arg_resource ~~
+  OUTER_SPRINT flir_catalog_arg_object_or_slot ~~
+  OUTER_SPRINT flir_catalog_arg_multiplicity_policy ~~
+  OUTER_SPRINT flir_catalog_arg_charge_policy ~~
+  OUTER_SPRINT flir_catalog_arg_endpoint_id ~~
+  OUTER_SPRINT flir_catalog_arg_progression_band ~~
+  OUTER_SPRINT flir_catalog_arg_area ~~
+  OUTER_SPRINT flir_catalog_arg_target_kind ~~
+  OUTER_SPRINT flir_catalog_arg_target_identity ~~
+  OUTER_SPRINT flir_catalog_arg_static_policy ~~
+  OUTER_SPRINT flir_catalog_arg_fallback_chain ~~
+  OUTER_SPRINT flir_catalog_arg_group_id ~~
+  OUTER_SPRINT flir_catalog_arg_location_id ~~
+  OUTER_SET flir_catalog_arg_expected_quantity = 2147483647
+  OUTER_SET flir_catalog_arg_priority = 2147483647
+  OUTER_SET flir_catalog_arg_slot_value = 2147483647
+  OUTER_SET flir_catalog_arg_weight = 2147483647
+  OUTER_SET flir_catalog_arg_x = 2147483647
+  OUTER_SET flir_catalog_arg_y = 2147483647
+  OUTER_SET flir_catalog_arg_capacity = 2147483647
+  LAM flir_catalog_thread_apply
+  LAM flir_catalog_reset_public_args
+END
+
+DEFINE_ACTION_MACRO flir_catalog_source BEGIN
+  OUTER_SPRINT flir_catalog_arg_kind ~source~
+  OUTER_SPRINT flir_catalog_arg_tier ~~
+  OUTER_SPRINT flir_catalog_arg_resref ~~
+  OUTER_SPRINT flir_catalog_arg_variant_policy ~~
+  OUTER_SPRINT flir_catalog_arg_source_set_id ~~
+  OUTER_SPRINT flir_catalog_arg_compact_token ~~
+  OUTER_SPRINT flir_catalog_arg_endpoint_id ~~
+  OUTER_SPRINT flir_catalog_arg_progression_band ~~
+  OUTER_SPRINT flir_catalog_arg_area ~~
+  OUTER_SPRINT flir_catalog_arg_target_kind ~~
+  OUTER_SPRINT flir_catalog_arg_target_identity ~~
+  OUTER_SPRINT flir_catalog_arg_static_policy ~~
+  OUTER_SPRINT flir_catalog_arg_fallback_chain ~~
+  OUTER_SPRINT flir_catalog_arg_group_id ~~
+  OUTER_SPRINT flir_catalog_arg_location_id ~~
+  OUTER_SET flir_catalog_arg_occurrence = 2147483647
+  OUTER_SET flir_catalog_arg_charge1 = 2147483647
+  OUTER_SET flir_catalog_arg_charge2 = 2147483647
+  OUTER_SET flir_catalog_arg_charge3 = 2147483647
+  OUTER_SET flir_catalog_arg_slot_value = 2147483647
+  OUTER_SET flir_catalog_arg_weight = 2147483647
+  OUTER_SET flir_catalog_arg_x = 2147483647
+  OUTER_SET flir_catalog_arg_y = 2147483647
+  OUTER_SET flir_catalog_arg_capacity = 2147483647
+  LAM flir_catalog_thread_apply
+  LAM flir_catalog_reset_public_args
+END
+
+DEFINE_ACTION_MACRO flir_catalog_slot BEGIN
+  OUTER_SPRINT flir_catalog_arg_kind ~slot~
+  OUTER_SPRINT flir_catalog_arg_resref ~~
+  OUTER_SPRINT flir_catalog_arg_variant_policy ~~
+  OUTER_SPRINT flir_catalog_arg_source_set_id ~~
+  OUTER_SPRINT flir_catalog_arg_item_id ~~
+  OUTER_SPRINT flir_catalog_arg_compact_token ~~
+  OUTER_SPRINT flir_catalog_arg_source_kind ~~
+  OUTER_SPRINT flir_catalog_arg_resource ~~
+  OUTER_SPRINT flir_catalog_arg_object_or_slot ~~
+  OUTER_SPRINT flir_catalog_arg_multiplicity_policy ~~
+  OUTER_SPRINT flir_catalog_arg_charge_policy ~~
+  OUTER_SPRINT flir_catalog_arg_area ~~
+  OUTER_SPRINT flir_catalog_arg_target_kind ~~
+  OUTER_SPRINT flir_catalog_arg_target_identity ~~
+  OUTER_SPRINT flir_catalog_arg_static_policy ~~
+  OUTER_SPRINT flir_catalog_arg_fallback_chain ~~
+  OUTER_SPRINT flir_catalog_arg_group_id ~~
+  OUTER_SPRINT flir_catalog_arg_location_id ~~
+  OUTER_SET flir_catalog_arg_occurrence = 2147483647
+  OUTER_SET flir_catalog_arg_charge1 = 2147483647
+  OUTER_SET flir_catalog_arg_charge2 = 2147483647
+  OUTER_SET flir_catalog_arg_charge3 = 2147483647
+  OUTER_SET flir_catalog_arg_expected_quantity = 2147483647
+  OUTER_SET flir_catalog_arg_priority = 2147483647
+  OUTER_SET flir_catalog_arg_x = 2147483647
+  OUTER_SET flir_catalog_arg_y = 2147483647
+  OUTER_SET flir_catalog_arg_capacity = 2147483647
+  LAM flir_catalog_thread_apply
+  LAM flir_catalog_reset_public_args
+END
+
+DEFINE_ACTION_MACRO flir_catalog_endpoint BEGIN
+  OUTER_SPRINT flir_catalog_arg_kind ~endpoint~
+  OUTER_SPRINT flir_catalog_arg_tier ~~
+  OUTER_SPRINT flir_catalog_arg_resref ~~
+  OUTER_SPRINT flir_catalog_arg_variant_policy ~~
+  OUTER_SPRINT flir_catalog_arg_source_set_id ~~
+  OUTER_SPRINT flir_catalog_arg_item_id ~~
+  OUTER_SPRINT flir_catalog_arg_compact_token ~~
+  OUTER_SPRINT flir_catalog_arg_source_kind ~~
+  OUTER_SPRINT flir_catalog_arg_resource ~~
+  OUTER_SPRINT flir_catalog_arg_object_or_slot ~~
+  OUTER_SPRINT flir_catalog_arg_multiplicity_policy ~~
+  OUTER_SPRINT flir_catalog_arg_charge_policy ~~
+  OUTER_SPRINT flir_catalog_arg_endpoint_id ~~
+  OUTER_SPRINT flir_catalog_arg_progression_band ~~
+  OUTER_SPRINT flir_catalog_arg_group_id ~~
+  OUTER_SPRINT flir_catalog_arg_location_id ~~
+  OUTER_SET flir_catalog_arg_occurrence = 2147483647
+  OUTER_SET flir_catalog_arg_charge1 = 2147483647
+  OUTER_SET flir_catalog_arg_charge2 = 2147483647
+  OUTER_SET flir_catalog_arg_charge3 = 2147483647
+  OUTER_SET flir_catalog_arg_expected_quantity = 2147483647
+  OUTER_SET flir_catalog_arg_priority = 2147483647
+  OUTER_SET flir_catalog_arg_slot_value = 2147483647
+  OUTER_SET flir_catalog_arg_weight = 2147483647
+  LAM flir_catalog_thread_apply
+  LAM flir_catalog_reset_public_args
+END
+
+DEFINE_ACTION_MACRO flir_catalog_group_membership BEGIN
+  OUTER_SPRINT flir_catalog_arg_kind ~group~
+  OUTER_SPRINT flir_catalog_arg_tier ~~
+  OUTER_SPRINT flir_catalog_arg_resref ~~
+  OUTER_SPRINT flir_catalog_arg_variant_policy ~~
+  OUTER_SPRINT flir_catalog_arg_source_set_id ~~
+  OUTER_SPRINT flir_catalog_arg_item_id ~~
+  OUTER_SPRINT flir_catalog_arg_compact_token ~~
+  OUTER_SPRINT flir_catalog_arg_source_kind ~~
+  OUTER_SPRINT flir_catalog_arg_resource ~~
+  OUTER_SPRINT flir_catalog_arg_object_or_slot ~~
+  OUTER_SPRINT flir_catalog_arg_multiplicity_policy ~~
+  OUTER_SPRINT flir_catalog_arg_charge_policy ~~
+  OUTER_SPRINT flir_catalog_arg_progression_band ~~
+  OUTER_SPRINT flir_catalog_arg_area ~~
+  OUTER_SPRINT flir_catalog_arg_target_kind ~~
+  OUTER_SPRINT flir_catalog_arg_target_identity ~~
+  OUTER_SPRINT flir_catalog_arg_static_policy ~~
+  OUTER_SPRINT flir_catalog_arg_fallback_chain ~~
+  OUTER_SPRINT flir_catalog_arg_location_id ~~
+  OUTER_SET flir_catalog_arg_occurrence = 2147483647
+  OUTER_SET flir_catalog_arg_charge1 = 2147483647
+  OUTER_SET flir_catalog_arg_charge2 = 2147483647
+  OUTER_SET flir_catalog_arg_charge3 = 2147483647
+  OUTER_SET flir_catalog_arg_expected_quantity = 2147483647
+  OUTER_SET flir_catalog_arg_slot_value = 2147483647
+  OUTER_SET flir_catalog_arg_x = 2147483647
+  OUTER_SET flir_catalog_arg_y = 2147483647
+  OUTER_SET flir_catalog_arg_capacity = 2147483647
+  LAM flir_catalog_thread_apply
+  LAM flir_catalog_reset_public_args
+END
+
+DEFINE_ACTION_MACRO flir_catalog_sparse_override BEGIN
+  OUTER_SPRINT flir_catalog_arg_kind ~override~
+  OUTER_SPRINT flir_catalog_arg_tier ~~
+  OUTER_SPRINT flir_catalog_arg_resref ~~
+  OUTER_SPRINT flir_catalog_arg_variant_policy ~~
+  OUTER_SPRINT flir_catalog_arg_source_set_id ~~
+  OUTER_SPRINT flir_catalog_arg_compact_token ~~
+  OUTER_SPRINT flir_catalog_arg_source_kind ~~
+  OUTER_SPRINT flir_catalog_arg_resource ~~
+  OUTER_SPRINT flir_catalog_arg_object_or_slot ~~
+  OUTER_SPRINT flir_catalog_arg_multiplicity_policy ~~
+  OUTER_SPRINT flir_catalog_arg_charge_policy ~~
+  OUTER_SPRINT flir_catalog_arg_progression_band ~~
+  OUTER_SPRINT flir_catalog_arg_area ~~
+  OUTER_SPRINT flir_catalog_arg_target_kind ~~
+  OUTER_SPRINT flir_catalog_arg_target_identity ~~
+  OUTER_SPRINT flir_catalog_arg_static_policy ~~
+  OUTER_SPRINT flir_catalog_arg_fallback_chain ~~
+  OUTER_SPRINT flir_catalog_arg_group_id ~~
+  OUTER_SET flir_catalog_arg_occurrence = 2147483647
+  OUTER_SET flir_catalog_arg_charge1 = 2147483647
+  OUTER_SET flir_catalog_arg_charge2 = 2147483647
+  OUTER_SET flir_catalog_arg_charge3 = 2147483647
+  OUTER_SET flir_catalog_arg_expected_quantity = 2147483647
+  OUTER_SET flir_catalog_arg_priority = 2147483647
+  OUTER_SET flir_catalog_arg_slot_value = 2147483647
+  OUTER_SET flir_catalog_arg_weight = 2147483647
+  OUTER_SET flir_catalog_arg_x = 2147483647
+  OUTER_SET flir_catalog_arg_y = 2147483647
+  OUTER_SET flir_catalog_arg_capacity = 2147483647
+  LAM flir_catalog_thread_apply
+  LAM flir_catalog_reset_public_args
+END
+
+LAM flir_catalog_reset_public_args

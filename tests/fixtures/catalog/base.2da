@@ -1,0 +1,8 @@
+Kind      Provider Id
+source    core     source-z
+item      core     item-z
+endpoint  core     endpoint-z
+unit      core     unit-z
+override  core     override-z
+group     core     member-z
+slot      core     slot-z

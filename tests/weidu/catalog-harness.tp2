@@ -1,0 +1,768 @@
+// Hermetic --nogame catalog harness. Every identifier and resource is synthetic.
+// argv[0] = production catalog.tpa
+// argv[1] = first fixture
+// argv[2] = second fixture
+// argv[3] = output report (positive cases only)
+
+BACKUP ~backup~
+AUTHOR ~BG2 Item Randomiser test harness~
+
+ALWAYS
+  INCLUDE ~%argv[0]%~
+
+// WeiDU localizes arrays written by action functions. Production therefore
+// exposes row-kind action macros backed by flir_catalog_apply plus explicit
+// RET_ARRAY state threading. Declaration paths use only flir_catalog_arg_*;
+// white-box assertions below inspect storage solely to prove the contract.
+DEFINE_ACTION_MACRO flir_harness_add_synthetic_row BEGIN
+  OUTER_SPRINT flir_catalog_arg_operation ~ADD~
+  OUTER_SPRINT flir_catalog_arg_actor_provider ~%flir_harness_row_provider%~
+  OUTER_SPRINT flir_catalog_arg_provider ~%flir_harness_row_provider%~
+  OUTER_SPRINT flir_catalog_arg_id ~%flir_harness_row_id%~
+  OUTER_SET flir_catalog_arg_enabled = 1
+
+  ACTION_MATCH ~%flir_harness_row_kind%~ WITH
+    item BEGIN
+      OUTER_SPRINT flir_catalog_arg_tier ~tier-a~
+      OUTER_SPRINT flir_catalog_arg_resref ~itm-a001~
+      OUTER_SPRINT flir_catalog_arg_variant_policy ~policy|a:#~
+      OUTER_SPRINT flir_catalog_arg_source_set_id ~core:sourceset-z~
+      LAM flir_catalog_item
+    END
+    unit BEGIN
+      OUTER_SPRINT flir_catalog_arg_item_id ~core:item-z~
+      OUTER_SPRINT flir_catalog_arg_tier ~tier-a~
+      OUTER_SPRINT flir_catalog_arg_compact_token ~token-001~
+      OUTER_SET flir_catalog_arg_occurrence = 1
+      OUTER_SET flir_catalog_arg_charge1 = 3
+      OUTER_SET flir_catalog_arg_charge2 = 2
+      OUTER_SET flir_catalog_arg_charge3 = 1
+      LAM flir_catalog_unit
+    END
+    source BEGIN
+      OUTER_SPRINT flir_catalog_arg_item_id ~core:item-z~
+      OUTER_SPRINT flir_catalog_arg_source_kind ~synthetic~
+      OUTER_SPRINT flir_catalog_arg_resource ~src-a001~
+      OUTER_SPRINT flir_catalog_arg_object_or_slot ~slot-a~
+      OUTER_SPRINT flir_catalog_arg_multiplicity_policy ~exact~
+      OUTER_SPRINT flir_catalog_arg_charge_policy ~declared~
+      OUTER_SET flir_catalog_arg_expected_quantity = 1
+      OUTER_SET flir_catalog_arg_priority = 10
+      LAM flir_catalog_source
+    END
+    slot BEGIN
+      OUTER_SPRINT flir_catalog_arg_tier ~tier-a~
+      OUTER_SPRINT flir_catalog_arg_endpoint_id ~core:endpoint-z~
+      OUTER_SPRINT flir_catalog_arg_progression_band ~band-a~
+      OUTER_SET flir_catalog_arg_slot_value = 7
+      OUTER_SET flir_catalog_arg_weight = 100
+      LAM flir_catalog_slot
+    END
+    endpoint BEGIN
+      OUTER_SPRINT flir_catalog_arg_area ~area-a01~
+      OUTER_SPRINT flir_catalog_arg_target_kind ~ground~
+      OUTER_SPRINT flir_catalog_arg_target_identity ~point-a~
+      OUTER_SPRINT flir_catalog_arg_static_policy ~static~
+      OUTER_SPRINT flir_catalog_arg_fallback_chain ~chain|a:#~
+      OUTER_SET flir_catalog_arg_x = 111
+      OUTER_SET flir_catalog_arg_y = 222
+      OUTER_SET flir_catalog_arg_capacity = 2
+      LAM flir_catalog_endpoint
+    END
+    group BEGIN
+      OUTER_SPRINT flir_catalog_arg_group_id ~core:group-z~
+      OUTER_SPRINT flir_catalog_arg_endpoint_id ~core:endpoint-z~
+      OUTER_SET flir_catalog_arg_weight = 25
+      OUTER_SET flir_catalog_arg_priority = 4
+      LAM flir_catalog_group_membership
+    END
+    override BEGIN
+      OUTER_SPRINT flir_catalog_arg_item_id ~core:item-z~
+      OUTER_SPRINT flir_catalog_arg_location_id ~core:location-z~
+      OUTER_SPRINT flir_catalog_arg_endpoint_id ~core:endpoint-z~
+      LAM flir_catalog_sparse_override
+    END
+    DEFAULT
+      FAIL ~HARNESS_ERR unsupported synthetic row kind~
+  END
+END
+
+DEFINE_ACTION_MACRO flir_harness_write_single_line_report BEGIN
+  COPY ~%argv[1]%~ ~%flir_harness_output%~
+    DELETE_BYTES 0 BUFFER_LENGTH
+    INSERT_BYTES 0 (STRING_LENGTH ~%flir_harness_report%~)
+    WRITE_ASCIIE 0 ~%flir_harness_report%~ (STRING_LENGTH ~%flir_harness_report%~)
+END
+
+// Pass the scalar by name and copy with TEXT_SPRINT. That lets the assertion
+// inspect literal percent bytes without evaluating the ambient probe variable.
+DEFINE_ACTION_FUNCTION flir_harness_assert_percent_bytes
+  STR_VAR
+    flir_harness_percent_stored = ~~
+BEGIN
+  OUTER_TEXT_SPRINT flir_harness_percent_exact ~%flir_harness_percent_stored%~
+  OUTER_INNER_PATCH ~%flir_harness_percent_exact%~ BEGIN
+    PATCH_IF BUFFER_LENGTH != 32 BEGIN
+      PATCH_FAIL ~HARNESS_ERR percent-bearing field length changed~
+    END
+    PATCH_IF BYTE_AT 7 != 0x25 OR BYTE_AT 27 != 0x25 BEGIN
+      PATCH_FAIL ~HARNESS_ERR percent-bearing field bytes changed~
+    END
+  END
+END
+
+DEFINE_ACTION_MACRO flir_harness_load_fixture BEGIN
+  ACTION_CLEAR_ARRAY flir_harness_kind
+  ACTION_CLEAR_ARRAY flir_harness_provider
+  ACTION_CLEAR_ARRAY flir_harness_id
+
+  COPY - ~%flir_harness_fixture%~ ~.../flir-catalog/harness-fixture.2da~
+    COUNT_2DA_ROWS 3 flir_harness_rows
+    FOR (flir_harness_i = 1; flir_harness_i < flir_harness_rows; ++flir_harness_i) BEGIN
+      READ_2DA_ENTRY flir_harness_i 0 3 flir_harness_kind_value
+      READ_2DA_ENTRY flir_harness_i 1 3 flir_harness_provider_value
+      READ_2DA_ENTRY flir_harness_i 2 3 flir_harness_id_value
+      SPRINT $flir_harness_kind(~%flir_harness_i%~) ~%flir_harness_kind_value%~
+      SPRINT $flir_harness_provider(~%flir_harness_i%~) ~%flir_harness_provider_value%~
+      SPRINT $flir_harness_id(~%flir_harness_i%~) ~%flir_harness_id_value%~
+    END
+
+  ACTION_PHP_EACH flir_harness_kind AS flir_harness_row => flir_harness_kind_value BEGIN
+    OUTER_SPRINT flir_harness_row_kind ~%flir_harness_kind_value%~
+    OUTER_SPRINT flir_harness_row_provider $flir_harness_provider(~%flir_harness_row%~)
+    OUTER_SPRINT flir_harness_row_id $flir_harness_id(~%flir_harness_row%~)
+    LAM flir_harness_add_synthetic_row
+  END
+END
+
+DEFINE_ACTION_MACRO flir_harness_assert_schema_storage BEGIN
+  ACTION_IF NOT VARIABLE_IS_SET $flir_catalog_tier("item" "core:item-z") BEGIN FAIL ~HARNESS_ERR missing item tier~ END
+  ACTION_IF NOT VARIABLE_IS_SET $flir_catalog_resref("item" "core:item-z") BEGIN FAIL ~HARNESS_ERR missing item resref~ END
+  ACTION_IF NOT VARIABLE_IS_SET $flir_catalog_variant_policy("item" "core:item-z") BEGIN FAIL ~HARNESS_ERR missing item variant_policy~ END
+  ACTION_IF NOT VARIABLE_IS_SET $flir_catalog_source_set_id("item" "core:item-z") BEGIN FAIL ~HARNESS_ERR missing item source_set_id~ END
+  ACTION_IF NOT VARIABLE_IS_SET $flir_catalog_enabled("item" "core:item-z") BEGIN FAIL ~HARNESS_ERR missing item enabled~ END
+  ACTION_IF NOT VARIABLE_IS_SET $flir_catalog_item_id("unit" "core:unit-z")
+    OR NOT VARIABLE_IS_SET $flir_catalog_tier("unit" "core:unit-z")
+    OR NOT VARIABLE_IS_SET $flir_catalog_compact_token("unit" "core:unit-z")
+    OR NOT VARIABLE_IS_SET $flir_catalog_occurrence("unit" "core:unit-z")
+    OR NOT VARIABLE_IS_SET $flir_catalog_charge1("unit" "core:unit-z")
+    OR NOT VARIABLE_IS_SET $flir_catalog_charge2("unit" "core:unit-z")
+    OR NOT VARIABLE_IS_SET $flir_catalog_charge3("unit" "core:unit-z")
+    OR NOT VARIABLE_IS_SET $flir_catalog_enabled("unit" "core:unit-z") BEGIN
+    FAIL ~HARNESS_ERR incomplete unit storage~
+  END
+  ACTION_IF NOT VARIABLE_IS_SET $flir_catalog_item_id("source" "core:source-z")
+    OR NOT VARIABLE_IS_SET $flir_catalog_source_kind("source" "core:source-z")
+    OR NOT VARIABLE_IS_SET $flir_catalog_resource("source" "core:source-z")
+    OR NOT VARIABLE_IS_SET $flir_catalog_object_or_slot("source" "core:source-z")
+    OR NOT VARIABLE_IS_SET $flir_catalog_expected_quantity("source" "core:source-z")
+    OR NOT VARIABLE_IS_SET $flir_catalog_multiplicity_policy("source" "core:source-z")
+    OR NOT VARIABLE_IS_SET $flir_catalog_charge_policy("source" "core:source-z")
+    OR NOT VARIABLE_IS_SET $flir_catalog_priority("source" "core:source-z")
+    OR NOT VARIABLE_IS_SET $flir_catalog_enabled("source" "core:source-z") BEGIN
+    FAIL ~HARNESS_ERR incomplete source storage~
+  END
+  ACTION_IF NOT VARIABLE_IS_SET $flir_catalog_tier("slot" "core:slot-z")
+    OR NOT VARIABLE_IS_SET $flir_catalog_slot_value("slot" "core:slot-z")
+    OR NOT VARIABLE_IS_SET $flir_catalog_endpoint_id("slot" "core:slot-z")
+    OR NOT VARIABLE_IS_SET $flir_catalog_weight("slot" "core:slot-z")
+    OR NOT VARIABLE_IS_SET $flir_catalog_progression_band("slot" "core:slot-z")
+    OR NOT VARIABLE_IS_SET $flir_catalog_enabled("slot" "core:slot-z") BEGIN
+    FAIL ~HARNESS_ERR incomplete slot storage~
+  END
+  ACTION_IF NOT VARIABLE_IS_SET $flir_catalog_area("endpoint" "core:endpoint-z")
+    OR NOT VARIABLE_IS_SET $flir_catalog_target_kind("endpoint" "core:endpoint-z")
+    OR NOT VARIABLE_IS_SET $flir_catalog_target_identity("endpoint" "core:endpoint-z")
+    OR NOT VARIABLE_IS_SET $flir_catalog_x("endpoint" "core:endpoint-z")
+    OR NOT VARIABLE_IS_SET $flir_catalog_y("endpoint" "core:endpoint-z")
+    OR NOT VARIABLE_IS_SET $flir_catalog_capacity("endpoint" "core:endpoint-z")
+    OR NOT VARIABLE_IS_SET $flir_catalog_static_policy("endpoint" "core:endpoint-z")
+    OR NOT VARIABLE_IS_SET $flir_catalog_fallback_chain("endpoint" "core:endpoint-z")
+    OR NOT VARIABLE_IS_SET $flir_catalog_enabled("endpoint" "core:endpoint-z") BEGIN
+    FAIL ~HARNESS_ERR incomplete endpoint storage~
+  END
+  ACTION_IF NOT VARIABLE_IS_SET $flir_catalog_group_id("group" "core:member-z")
+    OR NOT VARIABLE_IS_SET $flir_catalog_endpoint_id("group" "core:member-z")
+    OR NOT VARIABLE_IS_SET $flir_catalog_weight("group" "core:member-z")
+    OR NOT VARIABLE_IS_SET $flir_catalog_priority("group" "core:member-z")
+    OR NOT VARIABLE_IS_SET $flir_catalog_enabled("group" "core:member-z") BEGIN
+    FAIL ~HARNESS_ERR incomplete group storage~
+  END
+  ACTION_IF NOT VARIABLE_IS_SET $flir_catalog_item_id("override" "core:override-z")
+    OR NOT VARIABLE_IS_SET $flir_catalog_location_id("override" "core:override-z")
+    OR NOT VARIABLE_IS_SET $flir_catalog_endpoint_id("override" "core:override-z")
+    OR NOT VARIABLE_IS_SET $flir_catalog_enabled("override" "core:override-z") BEGIN
+    FAIL ~HARNESS_ERR incomplete override storage~
+  END
+END
+
+DEFINE_ACTION_MACRO flir_harness_write_positive_report BEGIN
+  OUTER_SPRINT flir_harness_fixture ~%flir_harness_first_fixture%~
+  LAM flir_harness_load_fixture
+  OUTER_SPRINT flir_harness_fixture ~%flir_harness_second_fixture%~
+  LAM flir_harness_load_fixture
+
+  // Exercise the generic kind-dispatch path without exposing internal arrays.
+  OUTER_SPRINT flir_catalog_arg_kind ~item~
+  OUTER_SPRINT flir_catalog_arg_operation ~ADD~
+  OUTER_SPRINT flir_catalog_arg_actor_provider ~generic~
+  OUTER_SPRINT flir_catalog_arg_provider ~generic~
+  OUTER_SPRINT flir_catalog_arg_id ~item-g~
+  OUTER_SPRINT flir_catalog_arg_tier ~tier-a~
+  OUTER_SPRINT flir_catalog_arg_resref ~itm-g001~
+  OUTER_SPRINT flir_catalog_arg_variant_policy ~policy|a:#~
+  OUTER_SPRINT flir_catalog_arg_source_set_id ~generic:sourceset-g~
+  OUTER_SET flir_catalog_arg_enabled = 1
+  LAM flir_catalog_thread_apply
+  LAM flir_catalog_reset_public_args
+
+  LAM flir_harness_assert_schema_storage
+  LAF flir_catalog_canonical_rows RET flir_harness_before_rows = rows END
+
+  OUTER_SET flir_harness_item_before = $flir_catalog_row_fingerprint("item" "core:item-z")
+  OUTER_SPRINT flir_catalog_arg_operation ~REPLACE~
+  OUTER_SPRINT flir_catalog_arg_actor_provider ~core~
+  OUTER_SPRINT flir_catalog_arg_provider ~core~
+  OUTER_SPRINT flir_catalog_arg_id ~item-z~
+  OUTER_SPRINT flir_catalog_arg_tier ~tier-a~
+  OUTER_SPRINT flir_catalog_arg_resref ~itm-a001~
+  OUTER_SPRINT flir_catalog_arg_variant_policy ~policy|b:#~
+  OUTER_SPRINT flir_catalog_arg_source_set_id ~core:sourceset-z~
+  OUTER_SET flir_catalog_arg_expected_fingerprint = flir_harness_item_before
+  OUTER_SET flir_catalog_arg_enabled = 1
+  LAM flir_catalog_item
+
+  OUTER_SET flir_harness_source_before = $flir_catalog_row_fingerprint("source" "core:source-z")
+  OUTER_SPRINT flir_catalog_arg_operation ~DISABLE~
+  OUTER_SPRINT flir_catalog_arg_actor_provider ~core~
+  OUTER_SPRINT flir_catalog_arg_provider ~core~
+  OUTER_SPRINT flir_catalog_arg_id ~source-z~
+  OUTER_SET flir_catalog_arg_expected_fingerprint = flir_harness_source_before
+  LAM flir_catalog_source
+
+  LAF flir_catalog_canonical_rows RET flir_harness_after_rows = rows END
+  OUTER_TEXT_SPRINT flir_harness_report ~LIMITS %flir_catalog_provider_max% %flir_catalog_local_id_max% %flir_catalog_qualified_id_max%
+BEFORE
+%flir_harness_before_rows%AFTER
+%flir_harness_after_rows%~
+  COPY ~%flir_harness_first_fixture%~ ~%flir_harness_output%~
+    DELETE_BYTES 0 BUFFER_LENGTH
+    INSERT_BYTES 0 (STRING_LENGTH ~%flir_harness_report%~)
+    WRITE_ASCIIE 0 ~%flir_harness_report%~ (STRING_LENGTH ~%flir_harness_report%~)
+END
+
+END // ALWAYS
+
+BEGIN ~Catalog harness: positive declarations forward~ DESIGNATED 0
+OUTER_SPRINT flir_harness_first_fixture ~%argv[1]%~
+OUTER_SPRINT flir_harness_second_fixture ~%argv[2]%~
+OUTER_SPRINT flir_harness_output ~%argv[3]%~
+LAM flir_harness_write_positive_report
+
+BEGIN ~Catalog harness: positive declarations reverse~ DESIGNATED 1
+OUTER_SPRINT flir_harness_first_fixture ~%argv[2]%~
+OUTER_SPRINT flir_harness_second_fixture ~%argv[1]%~
+OUTER_SPRINT flir_harness_output ~%argv[3]%~
+LAM flir_harness_write_positive_report
+
+BEGIN ~Catalog harness: percent-bearing data stays byte exact~ DESIGNATED 2
+OUTER_INNER_PATCH_SAVE flir_catalog_arg_variant_policy ~literalflir_probe_variabletail~ BEGIN
+  INSERT_BYTES 26 1
+  WRITE_BYTE 26 0x25
+  INSERT_BYTES 7 1
+  WRITE_BYTE 7 0x25
+END
+OUTER_SET flir_harness_percent_input_length = STRING_LENGTH ~%flir_catalog_arg_variant_policy%~
+ACTION_IF flir_harness_percent_input_length != 32 BEGIN
+  FAIL ~HARNESS_ERR percent-bearing input fixture length changed~
+END
+OUTER_INNER_PATCH ~%flir_catalog_arg_variant_policy%~ BEGIN
+  PATCH_IF BYTE_AT 7 != 0x25 OR BYTE_AT 27 != 0x25 BEGIN
+    PATCH_FAIL ~HARNESS_ERR percent-bearing input fixture bytes changed~
+  END
+END
+OUTER_SPRINT flir_probe_variable ~expanded~
+OUTER_SPRINT flir_catalog_arg_operation ~ADD~
+OUTER_SPRINT flir_catalog_arg_actor_provider ~core~
+OUTER_SPRINT flir_catalog_arg_provider ~core~
+OUTER_SPRINT flir_catalog_arg_id ~percent-a~
+OUTER_SPRINT flir_catalog_arg_tier ~tier-p~
+OUTER_SPRINT flir_catalog_arg_resref ~itm-p001~
+OUTER_SPRINT flir_catalog_arg_source_set_id ~core:sourceset-z~
+OUTER_SET flir_catalog_arg_enabled = 1
+LAM flir_catalog_item
+OUTER_SET flir_harness_percent_rows = 0
+ACTION_PHP_EACH flir_catalog_variant_policy AS flir_harness_percent_key => flir_harness_percent_value BEGIN
+  OUTER_SET flir_harness_percent_rows += 1
+  OUTER_TEXT_SPRINT flir_harness_percent_stored ~%flir_harness_percent_value%~
+END
+ACTION_IF flir_harness_percent_rows != 1 BEGIN
+  FAIL ~HARNESS_ERR percent-bearing field storage count changed~
+END
+LAF flir_harness_assert_percent_bytes STR_VAR flir_harness_percent_stored END
+OUTER_SET flir_harness_percent_add_fingerprint = $flir_catalog_row_fingerprint("item" "core:percent-a")
+OUTER_SPRINT flir_catalog_arg_operation ~DISABLE~
+OUTER_SPRINT flir_catalog_arg_actor_provider ~core~
+OUTER_SPRINT flir_catalog_arg_provider ~core~
+OUTER_SPRINT flir_catalog_arg_id ~percent-a~
+OUTER_SET flir_catalog_arg_expected_fingerprint = flir_harness_percent_add_fingerprint
+LAM flir_catalog_item
+OUTER_SET flir_harness_percent_rows = 0
+ACTION_PHP_EACH flir_catalog_variant_policy AS flir_harness_percent_key => flir_harness_percent_value BEGIN
+  OUTER_SET flir_harness_percent_rows += 1
+  OUTER_TEXT_SPRINT flir_harness_percent_stored ~%flir_harness_percent_value%~
+END
+ACTION_IF flir_harness_percent_rows != 1 BEGIN
+  FAIL ~HARNESS_ERR percent-bearing tombstone storage count changed~
+END
+LAF flir_harness_assert_percent_bytes STR_VAR flir_harness_percent_stored END
+OUTER_SET flir_harness_percent_disable_fingerprint = $flir_catalog_row_fingerprint("item" "core:percent-a")
+OUTER_TEXT_SPRINT flir_harness_report ~PERCENT item core percent-a %flir_harness_percent_add_fingerprint% %flir_harness_percent_disable_fingerprint%%WNL%~
+OUTER_SPRINT flir_harness_output ~%argv[3]%~
+LAM flir_harness_write_single_line_report
+
+BEGIN ~Catalog harness: cross-provider source replacement succeeds~ DESIGNATED 3
+OUTER_SPRINT flir_harness_row_kind ~source~
+OUTER_SPRINT flir_harness_row_provider ~base~
+OUTER_SPRINT flir_harness_row_id ~cross-source~
+LAM flir_harness_add_synthetic_row
+OUTER_SET flir_harness_cross_fingerprint = $flir_catalog_row_fingerprint("source" "base:cross-source")
+OUTER_SPRINT flir_catalog_arg_operation ~REPLACE~
+OUTER_SPRINT flir_catalog_arg_actor_provider ~compat~
+OUTER_SPRINT flir_catalog_arg_provider ~base~
+OUTER_SPRINT flir_catalog_arg_id ~cross-source~
+OUTER_SPRINT flir_catalog_arg_item_id ~base:item-z~
+OUTER_SPRINT flir_catalog_arg_source_kind ~synthetic~
+OUTER_SPRINT flir_catalog_arg_resource ~src-b001~
+OUTER_SPRINT flir_catalog_arg_object_or_slot ~slot-b~
+OUTER_SPRINT flir_catalog_arg_multiplicity_policy ~exact~
+OUTER_SPRINT flir_catalog_arg_charge_policy ~declared~
+OUTER_SET flir_catalog_arg_expected_quantity = 1
+OUTER_SET flir_catalog_arg_priority = 11
+OUTER_SET flir_catalog_arg_enabled = 1
+OUTER_SET flir_catalog_arg_expected_fingerprint = flir_harness_cross_fingerprint
+LAM flir_catalog_source
+ACTION_IF NOT (~base~ STRING_EQUAL $flir_catalog_owner("source" "base:cross-source"))
+  OR NOT (~base~ STRING_EQUAL $flir_catalog_provider("source" "base:cross-source")) BEGIN
+  FAIL ~HARNESS_ERR cross-provider replacement changed target ownership~
+END
+OUTER_SET flir_harness_cross_fingerprint = $flir_catalog_row_fingerprint("source" "base:cross-source")
+OUTER_TEXT_SPRINT flir_harness_report ~CROSS source base cross-source %flir_harness_cross_fingerprint%%WNL%~
+OUTER_SPRINT flir_harness_output ~%argv[3]%~
+LAM flir_harness_write_single_line_report
+
+BEGIN ~Catalog harness: numeric-looking string fields stay byte exact~ DESIGNATED 4
+OUTER_SPRINT flir_catalog_arg_operation ~ADD~
+OUTER_SPRINT flir_catalog_arg_actor_provider ~core~
+OUTER_SPRINT flir_catalog_arg_provider ~core~
+OUTER_SPRINT flir_catalog_arg_id ~numeric-string-001~
+OUTER_SPRINT flir_catalog_arg_tier ~tier-a~
+OUTER_SPRINT flir_catalog_arg_resref ~itm-n001~
+OUTER_SPRINT flir_catalog_arg_variant_policy ~001~
+OUTER_SPRINT flir_catalog_arg_source_set_id ~core:sourceset-z~
+OUTER_SET flir_catalog_arg_enabled = 1
+LAM flir_catalog_item
+
+OUTER_SPRINT flir_catalog_arg_operation ~ADD~
+OUTER_SPRINT flir_catalog_arg_actor_provider ~core~
+OUTER_SPRINT flir_catalog_arg_provider ~core~
+OUTER_SPRINT flir_catalog_arg_id ~numeric-string-1~
+OUTER_SPRINT flir_catalog_arg_tier ~tier-a~
+OUTER_SPRINT flir_catalog_arg_resref ~itm-n001~
+OUTER_SPRINT flir_catalog_arg_variant_policy ~1~
+OUTER_SPRINT flir_catalog_arg_source_set_id ~core:sourceset-z~
+OUTER_SET flir_catalog_arg_enabled = 1
+LAM flir_catalog_item
+
+ACTION_IF NOT (~001~ STRING_EQUAL $flir_catalog_variant_policy("item" "core:numeric-string-001"))
+  OR NOT (~1~ STRING_EQUAL $flir_catalog_variant_policy("item" "core:numeric-string-1")) BEGIN
+  FAIL ~HARNESS_ERR numeric-looking string storage changed~
+END
+OUTER_SET flir_harness_numeric_fingerprint_001 = $flir_catalog_row_fingerprint("item" "core:numeric-string-001")
+OUTER_SET flir_harness_numeric_fingerprint_1 = $flir_catalog_row_fingerprint("item" "core:numeric-string-1")
+ACTION_IF flir_harness_numeric_fingerprint_001 = flir_harness_numeric_fingerprint_1 BEGIN
+  FAIL ~HARNESS_ERR numeric-looking string fingerprints collapsed~
+END
+OUTER_TEXT_SPRINT flir_harness_report ~NUMERIC_STRING item core numeric-string-001 001 %flir_harness_numeric_fingerprint_001% numeric-string-1 1 %flir_harness_numeric_fingerprint_1%%WNL%~
+OUTER_SPRINT flir_harness_output ~%argv[3]%~
+LAM flir_harness_write_single_line_report
+
+BEGIN ~Catalog harness: duplicate ADD fails~ DESIGNATED 10
+OUTER_SPRINT flir_harness_row_kind ~item~
+OUTER_SPRINT flir_harness_row_provider ~core~
+OUTER_SPRINT flir_harness_row_id ~dup-a~
+LAM flir_harness_add_synthetic_row
+LAM flir_harness_add_synthetic_row
+
+BEGIN ~Catalog harness: mismatched REPLACE fails~ DESIGNATED 11
+OUTER_SPRINT flir_harness_row_kind ~item~
+OUTER_SPRINT flir_harness_row_provider ~core~
+OUTER_SPRINT flir_harness_row_id ~replace-a~
+LAM flir_harness_add_synthetic_row
+OUTER_SET flir_harness_bad_fingerprint = $flir_catalog_row_fingerprint("item" "core:replace-a") + 1
+OUTER_SPRINT flir_catalog_arg_operation ~REPLACE~
+OUTER_SPRINT flir_catalog_arg_actor_provider ~core~
+OUTER_SPRINT flir_catalog_arg_provider ~core~
+OUTER_SPRINT flir_catalog_arg_id ~replace-a~
+OUTER_SPRINT flir_catalog_arg_tier ~tier-a~
+OUTER_SPRINT flir_catalog_arg_resref ~itm-b001~
+OUTER_SPRINT flir_catalog_arg_variant_policy ~policy-b~
+OUTER_SPRINT flir_catalog_arg_source_set_id ~core:sourceset-z~
+OUTER_SET flir_catalog_arg_expected_fingerprint = flir_harness_bad_fingerprint
+OUTER_SET flir_catalog_arg_enabled = 1
+LAM flir_catalog_item
+
+BEGIN ~Catalog harness: mismatched DISABLE fails~ DESIGNATED 12
+OUTER_SPRINT flir_harness_row_kind ~source~
+OUTER_SPRINT flir_harness_row_provider ~core~
+OUTER_SPRINT flir_harness_row_id ~disable-a~
+LAM flir_harness_add_synthetic_row
+OUTER_SET flir_harness_bad_fingerprint = $flir_catalog_row_fingerprint("source" "core:disable-a") + 1
+OUTER_SPRINT flir_catalog_arg_operation ~DISABLE~
+OUTER_SPRINT flir_catalog_arg_actor_provider ~core~
+OUTER_SPRINT flir_catalog_arg_provider ~core~
+OUTER_SPRINT flir_catalog_arg_id ~disable-a~
+OUTER_SET flir_catalog_arg_expected_fingerprint = flir_harness_bad_fingerprint
+LAM flir_catalog_source
+
+BEGIN ~Catalog harness: ADD actor must own target namespace~ DESIGNATED 13
+OUTER_SPRINT flir_catalog_arg_operation ~ADD~
+OUTER_SPRINT flir_catalog_arg_actor_provider ~compat~
+OUTER_SPRINT flir_catalog_arg_provider ~base~
+OUTER_SPRINT flir_catalog_arg_id ~owner-a~
+OUTER_SPRINT flir_catalog_arg_tier ~tier-a~
+OUTER_SPRINT flir_catalog_arg_resref ~itm-a001~
+OUTER_SPRINT flir_catalog_arg_variant_policy ~policy-a~
+OUTER_SPRINT flir_catalog_arg_source_set_id ~base:sourceset-z~
+OUTER_SET flir_catalog_arg_enabled = 1
+LAM flir_catalog_item
+
+BEGIN ~Catalog harness: uppercase provider fails~ DESIGNATED 14
+OUTER_SPRINT flir_harness_row_kind ~item~
+OUTER_SPRINT flir_harness_row_provider ~Core~
+OUTER_SPRINT flir_harness_row_id ~id-a~
+LAM flir_harness_add_synthetic_row
+
+BEGIN ~Catalog harness: empty local ID fails~ DESIGNATED 15
+OUTER_SPRINT flir_harness_row_kind ~item~
+OUTER_SPRINT flir_harness_row_provider ~core~
+OUTER_SPRINT flir_harness_row_id ~~
+LAM flir_harness_add_synthetic_row
+
+BEGIN ~Catalog harness: multiple separator local ID fails~ DESIGNATED 16
+OUTER_SPRINT flir_harness_row_kind ~item~
+OUTER_SPRINT flir_harness_row_provider ~core~
+OUTER_SPRINT flir_harness_row_id ~id:a:b~
+LAM flir_harness_add_synthetic_row
+
+BEGIN ~Catalog harness: uppercase local ID fails~ DESIGNATED 17
+OUTER_SPRINT flir_harness_row_kind ~item~
+OUTER_SPRINT flir_harness_row_provider ~core~
+OUTER_SPRINT flir_harness_row_id ~Id-a~
+LAM flir_harness_add_synthetic_row
+
+BEGIN ~Catalog harness: invalid local ID character fails~ DESIGNATED 18
+OUTER_SPRINT flir_harness_row_kind ~item~
+OUTER_SPRINT flir_harness_row_provider ~core~
+OUTER_SPRINT flir_harness_row_id ~id/a~
+LAM flir_harness_add_synthetic_row
+
+BEGIN ~Catalog harness: provider length fails~ DESIGNATED 19
+OUTER_SPRINT flir_harness_row_kind ~item~
+OUTER_SPRINT flir_harness_row_provider ~abcdefghijklmnopq~
+OUTER_SPRINT flir_harness_row_id ~id-a~
+LAM flir_harness_add_synthetic_row
+
+BEGIN ~Catalog harness: local ID length fails~ DESIGNATED 20
+OUTER_SPRINT flir_harness_row_kind ~item~
+OUTER_SPRINT flir_harness_row_provider ~core~
+OUTER_SPRINT flir_harness_row_id ~abcdefghijklmnopqrstuvwxyzabcdefghijklmno~
+LAM flir_harness_add_synthetic_row
+
+BEGIN ~Catalog harness: qualified ID length fails~ DESIGNATED 21
+OUTER_SPRINT flir_harness_row_kind ~item~
+OUTER_SPRINT flir_harness_row_provider ~abcdefghijklmnop~
+OUTER_SPRINT flir_harness_row_id ~abcdefghijklmnopqrstuvwxyzabcdef~
+LAM flir_harness_add_synthetic_row
+
+BEGIN ~Catalog harness: incomplete row fails~ DESIGNATED 22
+OUTER_SPRINT flir_catalog_arg_operation ~ADD~
+OUTER_SPRINT flir_catalog_arg_actor_provider ~core~
+OUTER_SPRINT flir_catalog_arg_provider ~core~
+OUTER_SPRINT flir_catalog_arg_id ~incomplete-a~
+OUTER_SPRINT flir_catalog_arg_tier ~tier-a~
+OUTER_SPRINT flir_catalog_arg_variant_policy ~policy-a~
+OUTER_SPRINT flir_catalog_arg_source_set_id ~core:sourceset-z~
+OUTER_SET flir_catalog_arg_enabled = 1
+LAM flir_catalog_item
+
+BEGIN ~Catalog harness: invalid numeric field fails~ DESIGNATED 23
+OUTER_SPRINT flir_catalog_arg_operation ~ADD~
+OUTER_SPRINT flir_catalog_arg_actor_provider ~core~
+OUTER_SPRINT flir_catalog_arg_provider ~core~
+OUTER_SPRINT flir_catalog_arg_id ~numeric-a~
+OUTER_SPRINT flir_catalog_arg_tier ~tier-a~
+OUTER_SPRINT flir_catalog_arg_endpoint_id ~core:endpoint-z~
+OUTER_SPRINT flir_catalog_arg_progression_band ~band-a~
+OUTER_SET flir_catalog_arg_slot_value = 0
+OUTER_SET flir_catalog_arg_weight = 100
+OUTER_SET flir_catalog_arg_enabled = 1
+LAM flir_catalog_slot
+
+BEGIN ~Catalog harness: unsupported kind fails~ DESIGNATED 24
+OUTER_SPRINT flir_catalog_arg_kind ~unknown~
+OUTER_SPRINT flir_catalog_arg_operation ~ADD~
+OUTER_SPRINT flir_catalog_arg_actor_provider ~core~
+OUTER_SPRINT flir_catalog_arg_provider ~core~
+OUTER_SPRINT flir_catalog_arg_id ~kind-a~
+OUTER_SET flir_catalog_arg_enabled = 1
+LAM flir_catalog_thread_apply
+
+BEGIN ~Catalog harness: unsupported operation fails~ DESIGNATED 25
+OUTER_SPRINT flir_catalog_arg_operation ~UPSERT~
+OUTER_SPRINT flir_catalog_arg_actor_provider ~core~
+OUTER_SPRINT flir_catalog_arg_provider ~core~
+OUTER_SPRINT flir_catalog_arg_id ~operation-a~
+OUTER_SPRINT flir_catalog_arg_tier ~tier-a~
+OUTER_SPRINT flir_catalog_arg_resref ~itm-a001~
+OUTER_SPRINT flir_catalog_arg_variant_policy ~policy-a~
+OUTER_SPRINT flir_catalog_arg_source_set_id ~core:sourceset-z~
+OUTER_SET flir_catalog_arg_enabled = 1
+LAM flir_catalog_item
+
+BEGIN ~Catalog harness: disabled tombstone cannot be reused~ DESIGNATED 26
+OUTER_SPRINT flir_harness_row_kind ~source~
+OUTER_SPRINT flir_harness_row_provider ~core~
+OUTER_SPRINT flir_harness_row_id ~tombstone-a~
+LAM flir_harness_add_synthetic_row
+OUTER_SET flir_harness_tombstone_fingerprint = $flir_catalog_row_fingerprint("source" "core:tombstone-a")
+OUTER_SPRINT flir_catalog_arg_operation ~DISABLE~
+OUTER_SPRINT flir_catalog_arg_actor_provider ~core~
+OUTER_SPRINT flir_catalog_arg_provider ~core~
+OUTER_SPRINT flir_catalog_arg_id ~tombstone-a~
+OUTER_SET flir_catalog_arg_expected_fingerprint = flir_harness_tombstone_fingerprint
+LAM flir_catalog_source
+LAM flir_harness_add_synthetic_row
+
+BEGIN ~Catalog harness: invalid referenced stable ID fails~ DESIGNATED 27
+OUTER_SPRINT flir_catalog_arg_operation ~ADD~
+OUTER_SPRINT flir_catalog_arg_actor_provider ~core~
+OUTER_SPRINT flir_catalog_arg_provider ~core~
+OUTER_SPRINT flir_catalog_arg_id ~reference-a~
+OUTER_SPRINT flir_catalog_arg_tier ~tier-a~
+OUTER_SPRINT flir_catalog_arg_resref ~itm-a001~
+OUTER_SPRINT flir_catalog_arg_variant_policy ~policy-a~
+OUTER_SPRINT flir_catalog_arg_source_set_id ~bad:reference:extra~
+OUTER_SET flir_catalog_arg_enabled = 1
+LAM flir_catalog_item
+
+BEGIN ~Catalog harness: omitted field cannot inherit stale value~ DESIGNATED 28
+OUTER_SPRINT flir_harness_row_kind ~item~
+OUTER_SPRINT flir_harness_row_provider ~core~
+OUTER_SPRINT flir_harness_row_id ~stale-first~
+LAM flir_harness_add_synthetic_row
+OUTER_SPRINT flir_catalog_arg_operation ~ADD~
+OUTER_SPRINT flir_catalog_arg_actor_provider ~core~
+OUTER_SPRINT flir_catalog_arg_provider ~core~
+OUTER_SPRINT flir_catalog_arg_id ~stale-second~
+OUTER_SPRINT flir_catalog_arg_tier ~tier-a~
+OUTER_SPRINT flir_catalog_arg_variant_policy ~policy-a~
+OUTER_SPRINT flir_catalog_arg_source_set_id ~core:sourceset-z~
+OUTER_SET flir_catalog_arg_enabled = 1
+LAM flir_catalog_item
+
+BEGIN ~Catalog harness: REPLACE requires an existing key~ DESIGNATED 29
+OUTER_SPRINT flir_catalog_arg_operation ~REPLACE~
+OUTER_SPRINT flir_catalog_arg_actor_provider ~core~
+OUTER_SPRINT flir_catalog_arg_provider ~core~
+OUTER_SPRINT flir_catalog_arg_id ~absent-a~
+OUTER_SPRINT flir_catalog_arg_tier ~tier-a~
+OUTER_SPRINT flir_catalog_arg_resref ~itm-a001~
+OUTER_SPRINT flir_catalog_arg_variant_policy ~policy-a~
+OUTER_SPRINT flir_catalog_arg_source_set_id ~core:sourceset-z~
+OUTER_SET flir_catalog_arg_expected_fingerprint = 1
+OUTER_SET flir_catalog_arg_enabled = 1
+LAM flir_catalog_item
+
+BEGIN ~Catalog harness: unit tombstone cannot be replaced~ DESIGNATED 30
+OUTER_SPRINT flir_harness_row_kind ~unit~
+OUTER_SPRINT flir_harness_row_provider ~core~
+OUTER_SPRINT flir_harness_row_id ~unit-tombstone~
+LAM flir_harness_add_synthetic_row
+OUTER_SET flir_harness_tombstone_fingerprint = $flir_catalog_row_fingerprint("unit" "core:unit-tombstone")
+OUTER_SPRINT flir_catalog_arg_operation ~DISABLE~
+OUTER_SPRINT flir_catalog_arg_actor_provider ~core~
+OUTER_SPRINT flir_catalog_arg_provider ~core~
+OUTER_SPRINT flir_catalog_arg_id ~unit-tombstone~
+OUTER_SET flir_catalog_arg_expected_fingerprint = flir_harness_tombstone_fingerprint
+LAM flir_catalog_unit
+ACTION_IF $flir_catalog_enabled("unit" "core:unit-tombstone") != 0
+  OR NOT (~token-001~ STRING_EQUAL $flir_catalog_compact_token("unit" "core:unit-tombstone"))
+  OR NOT (~core~ STRING_EQUAL $flir_catalog_owner("unit" "core:unit-tombstone"))
+  OR NOT (~core~ STRING_EQUAL $flir_catalog_provider("unit" "core:unit-tombstone"))
+  OR NOT (~unit-tombstone~ STRING_EQUAL $flir_catalog_id("unit" "core:unit-tombstone")) BEGIN
+  FAIL ~HARNESS_ERR unit DISABLE changed stored identity or fields~
+END
+OUTER_SET flir_harness_tombstone_fingerprint = $flir_catalog_row_fingerprint("unit" "core:unit-tombstone")
+OUTER_SPRINT flir_catalog_arg_operation ~REPLACE~
+OUTER_SPRINT flir_catalog_arg_actor_provider ~compat~
+OUTER_SPRINT flir_catalog_arg_provider ~core~
+OUTER_SPRINT flir_catalog_arg_id ~unit-tombstone~
+OUTER_SPRINT flir_catalog_arg_item_id ~core:item-z~
+OUTER_SPRINT flir_catalog_arg_tier ~tier-a~
+OUTER_SPRINT flir_catalog_arg_compact_token ~token-999~
+OUTER_SET flir_catalog_arg_occurrence = 1
+OUTER_SET flir_catalog_arg_charge1 = 3
+OUTER_SET flir_catalog_arg_charge2 = 2
+OUTER_SET flir_catalog_arg_charge3 = 1
+OUTER_SET flir_catalog_arg_enabled = 1
+OUTER_SET flir_catalog_arg_expected_fingerprint = flir_harness_tombstone_fingerprint
+LAM flir_catalog_unit
+
+BEGIN ~Catalog harness: slot tombstone cannot be replaced~ DESIGNATED 31
+OUTER_SPRINT flir_harness_row_kind ~slot~
+OUTER_SPRINT flir_harness_row_provider ~core~
+OUTER_SPRINT flir_harness_row_id ~slot-tombstone~
+LAM flir_harness_add_synthetic_row
+OUTER_SET flir_harness_tombstone_fingerprint = $flir_catalog_row_fingerprint("slot" "core:slot-tombstone")
+OUTER_SPRINT flir_catalog_arg_operation ~DISABLE~
+OUTER_SPRINT flir_catalog_arg_actor_provider ~core~
+OUTER_SPRINT flir_catalog_arg_provider ~core~
+OUTER_SPRINT flir_catalog_arg_id ~slot-tombstone~
+OUTER_SET flir_catalog_arg_expected_fingerprint = flir_harness_tombstone_fingerprint
+LAM flir_catalog_slot
+ACTION_IF $flir_catalog_enabled("slot" "core:slot-tombstone") != 0
+  OR $flir_catalog_slot_value("slot" "core:slot-tombstone") != 7
+  OR NOT (~core~ STRING_EQUAL $flir_catalog_owner("slot" "core:slot-tombstone"))
+  OR NOT (~core~ STRING_EQUAL $flir_catalog_provider("slot" "core:slot-tombstone"))
+  OR NOT (~slot-tombstone~ STRING_EQUAL $flir_catalog_id("slot" "core:slot-tombstone")) BEGIN
+  FAIL ~HARNESS_ERR slot DISABLE changed stored identity or fields~
+END
+OUTER_SET flir_harness_tombstone_fingerprint = $flir_catalog_row_fingerprint("slot" "core:slot-tombstone")
+OUTER_SPRINT flir_catalog_arg_operation ~REPLACE~
+OUTER_SPRINT flir_catalog_arg_actor_provider ~compat~
+OUTER_SPRINT flir_catalog_arg_provider ~core~
+OUTER_SPRINT flir_catalog_arg_id ~slot-tombstone~
+OUTER_SPRINT flir_catalog_arg_tier ~tier-a~
+OUTER_SPRINT flir_catalog_arg_endpoint_id ~core:endpoint-z~
+OUTER_SPRINT flir_catalog_arg_progression_band ~band-a~
+OUTER_SET flir_catalog_arg_slot_value = 8
+OUTER_SET flir_catalog_arg_weight = 100
+OUTER_SET flir_catalog_arg_enabled = 1
+OUTER_SET flir_catalog_arg_expected_fingerprint = flir_harness_tombstone_fingerprint
+LAM flir_catalog_slot
+
+BEGIN ~Catalog harness: cross-provider replacement remains fingerprint gated~ DESIGNATED 32
+OUTER_SPRINT flir_harness_row_kind ~source~
+OUTER_SPRINT flir_harness_row_provider ~base~
+OUTER_SPRINT flir_harness_row_id ~cross-mismatch~
+LAM flir_harness_add_synthetic_row
+OUTER_SET flir_harness_bad_fingerprint = $flir_catalog_row_fingerprint("source" "base:cross-mismatch") + 1
+OUTER_SPRINT flir_catalog_arg_operation ~REPLACE~
+OUTER_SPRINT flir_catalog_arg_actor_provider ~compat~
+OUTER_SPRINT flir_catalog_arg_provider ~base~
+OUTER_SPRINT flir_catalog_arg_id ~cross-mismatch~
+OUTER_SPRINT flir_catalog_arg_item_id ~base:item-z~
+OUTER_SPRINT flir_catalog_arg_source_kind ~synthetic~
+OUTER_SPRINT flir_catalog_arg_resource ~src-b001~
+OUTER_SPRINT flir_catalog_arg_object_or_slot ~slot-b~
+OUTER_SPRINT flir_catalog_arg_multiplicity_policy ~exact~
+OUTER_SPRINT flir_catalog_arg_charge_policy ~declared~
+OUTER_SET flir_catalog_arg_expected_quantity = 1
+OUTER_SET flir_catalog_arg_priority = 11
+OUTER_SET flir_catalog_arg_enabled = 1
+OUTER_SET flir_catalog_arg_expected_fingerprint = flir_harness_bad_fingerprint
+LAM flir_catalog_source
+
+BEGIN ~Catalog harness: omitted actor cannot inherit stale value~ DESIGNATED 33
+OUTER_SPRINT flir_harness_row_kind ~item~
+OUTER_SPRINT flir_harness_row_provider ~core~
+OUTER_SPRINT flir_harness_row_id ~actor-first~
+LAM flir_harness_add_synthetic_row
+OUTER_SPRINT flir_catalog_arg_operation ~ADD~
+OUTER_SPRINT flir_catalog_arg_provider ~core~
+OUTER_SPRINT flir_catalog_arg_id ~actor-second~
+OUTER_SPRINT flir_catalog_arg_tier ~tier-a~
+OUTER_SPRINT flir_catalog_arg_resref ~itm-a001~
+OUTER_SPRINT flir_catalog_arg_variant_policy ~policy-a~
+OUTER_SPRINT flir_catalog_arg_source_set_id ~core:sourceset-z~
+OUTER_SET flir_catalog_arg_enabled = 1
+LAM flir_catalog_item
+
+BEGIN ~Catalog harness: actor grammar validates literal percent bytes~ DESIGNATED 34
+OUTER_INNER_PATCH_SAVE flir_catalog_arg_actor_provider ~p~ BEGIN
+  INSERT_BYTES 1 1
+  WRITE_BYTE 1 0x25
+  INSERT_BYTES 0 1
+  WRITE_BYTE 0 0x25
+END
+OUTER_SPRINT p ~core~
+OUTER_SPRINT flir_catalog_arg_operation ~ADD~
+OUTER_SPRINT flir_catalog_arg_provider ~core~
+OUTER_SPRINT flir_catalog_arg_id ~actor-percent~
+OUTER_SPRINT flir_catalog_arg_tier ~tier-a~
+OUTER_SPRINT flir_catalog_arg_resref ~itm-a001~
+OUTER_SPRINT flir_catalog_arg_variant_policy ~policy-a~
+OUTER_SPRINT flir_catalog_arg_source_set_id ~core:sourceset-z~
+OUTER_SET flir_catalog_arg_enabled = 1
+LAM flir_catalog_item
+
+BEGIN ~Catalog harness: reference grammar validates literal percent bytes~ DESIGNATED 35
+OUTER_INNER_PATCH_SAVE flir_catalog_arg_source_set_id ~p~ BEGIN
+  INSERT_BYTES 1 1
+  WRITE_BYTE 1 0x25
+  INSERT_BYTES 0 1
+  WRITE_BYTE 0 0x25
+END
+OUTER_SPRINT p ~core:sourceset-z~
+OUTER_SPRINT flir_catalog_arg_operation ~ADD~
+OUTER_SPRINT flir_catalog_arg_actor_provider ~core~
+OUTER_SPRINT flir_catalog_arg_provider ~core~
+OUTER_SPRINT flir_catalog_arg_id ~reference-percent~
+OUTER_SPRINT flir_catalog_arg_tier ~tier-a~
+OUTER_SPRINT flir_catalog_arg_resref ~itm-a001~
+OUTER_SPRINT flir_catalog_arg_variant_policy ~policy-a~
+OUTER_SET flir_catalog_arg_enabled = 1
+LAM flir_catalog_item
+
+BEGIN ~Catalog harness: unsupported kind with over-limit provider validates ID first~ DESIGNATED 36
+OUTER_SPRINT flir_catalog_arg_kind ~unknown~
+OUTER_SPRINT flir_catalog_arg_operation ~ADD~
+OUTER_SPRINT flir_catalog_arg_actor_provider ~abcdefghijklmnopq~
+OUTER_SPRINT flir_catalog_arg_provider ~abcdefghijklmnopq~
+OUTER_SPRINT flir_catalog_arg_id ~kind-overlimit~
+OUTER_SET flir_catalog_arg_enabled = 1
+LAM flir_catalog_thread_apply
+
+BEGIN ~Catalog harness: unsupported kind with invalid local ID validates ID first~ DESIGNATED 37
+OUTER_SPRINT flir_catalog_arg_kind ~unknown~
+OUTER_SPRINT flir_catalog_arg_operation ~ADD~
+OUTER_SPRINT flir_catalog_arg_actor_provider ~core~
+OUTER_SPRINT flir_catalog_arg_provider ~core~
+OUTER_SPRINT flir_catalog_arg_id ~Kind/Invalid~
+OUTER_SET flir_catalog_arg_enabled = 1
+LAM flir_catalog_thread_apply
+
+BEGIN ~Catalog harness: unsupported operation with over-limit local ID validates ID first~ DESIGNATED 38
+OUTER_SPRINT flir_catalog_arg_operation ~UPSERT~
+OUTER_SPRINT flir_catalog_arg_actor_provider ~core~
+OUTER_SPRINT flir_catalog_arg_provider ~core~
+OUTER_SPRINT flir_catalog_arg_id ~abcdefghijklmnopqrstuvwxyzabcdefghijklmno~
+OUTER_SPRINT flir_catalog_arg_tier ~tier-a~
+OUTER_SPRINT flir_catalog_arg_resref ~itm-a001~
+OUTER_SPRINT flir_catalog_arg_variant_policy ~policy-a~
+OUTER_SPRINT flir_catalog_arg_source_set_id ~core:sourceset-z~
+OUTER_SET flir_catalog_arg_enabled = 1
+LAM flir_catalog_item
+
+BEGIN ~Catalog harness: unsupported operation with invalid provider validates ID first~ DESIGNATED 39
+OUTER_SPRINT flir_catalog_arg_operation ~UPSERT~
+OUTER_SPRINT flir_catalog_arg_actor_provider ~Core~
+OUTER_SPRINT flir_catalog_arg_provider ~Core~
+OUTER_SPRINT flir_catalog_arg_id ~operation-invalid~
+OUTER_SPRINT flir_catalog_arg_tier ~tier-a~
+OUTER_SPRINT flir_catalog_arg_resref ~itm-a001~
+OUTER_SPRINT flir_catalog_arg_variant_policy ~policy-a~
+OUTER_SPRINT flir_catalog_arg_source_set_id ~core:sourceset-z~
+OUTER_SET flir_catalog_arg_enabled = 1
+LAM flir_catalog_item
