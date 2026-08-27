@@ -12,33 +12,39 @@ ACTION_IF !weidu_action BEGIN
   END
 END
 
-//Reuse existing, suitable locations if we have fewer locations than items. If there are no suitable locations, excess items are lost
-ACTION_PHP_EACH tier_array AS Tier => blank BEGIN
-  OUTER_SET counteri = 0
-  ACTION_PHP_EACH removed_item_array AS entry => blank BEGIN
-    ACTION_IF "%entry_0%" STRING_EQUAL_CASE "%Tier%" BEGIN
-      OUTER_SET counteri += 1
-    END
-  END
-  OUTER_SET counterl = 0
-  OUTER_SET loc_num = 0
-  ACTION_PHP_EACH location_array AS entry => blank BEGIN
-    ACTION_IF "%entry_1%" STRING_EQUAL_CASE "%Tier%" BEGIN
-      OUTER_SET counterl += 1
-      ACTION_IF "%entry_2%" STRING_MATCHES_REGEXP ".*\.\(cre\|flg\|sto\)$" = 0 OR "%entry_2%" STRING_CONTAINS_REGEXP "\." BEGIN //if it's .cre, .flg, .sto or does not contain . (area)
-        OUTER_SET loc_num += 1
-        OUTER_SPRINT $ftarget("%loc_num%") "%entry_2%"
-        OUTER_SPRINT $farea("%loc_num%")  "%entry_3%"
+// Reuse existing, suitable locations if we have fewer locations than items.
+// Mode 1 uses the shared migration-aware allocator; Mode 2 retains the exact
+// legacy implementation because it has no persistent registry.
+ACTION_IF weidu_action = 0 AND VARIABLE_IS_SET flir_registry_available BEGIN
+  LAM flir_registry_add_current_overflow_locations
+END ELSE BEGIN
+  ACTION_PHP_EACH tier_array AS Tier => blank BEGIN
+    OUTER_SET counteri = 0
+    ACTION_PHP_EACH removed_item_array AS entry => blank BEGIN
+      ACTION_IF "%entry_0%" STRING_EQUAL_CASE "%Tier%" BEGIN
+        OUTER_SET counteri += 1
       END
     END
-  END
-  ACTION_IF counteri > counterl AND loc_num > 0 BEGIN
-    OUTER_FOR (d1=0;d1<counteri - counterl;d1+=1) BEGIN
-      OUTER_SET r = RANDOM(1 loc_num)
-      OUTER_SET floc = r + 100 + d1
-      OUTER_SPRINT ftarget $ftarget("%r%")
-      OUTER_SPRINT farea $farea("%r%")
-      OUTER_SPRINT $location_array("%floc%" "%Tier%" "%ftarget%" "%farea%") "%r%"
+    OUTER_SET counterl = 0
+    OUTER_SET loc_num = 0
+    ACTION_PHP_EACH location_array AS entry => blank BEGIN
+      ACTION_IF "%entry_1%" STRING_EQUAL_CASE "%Tier%" BEGIN
+        OUTER_SET counterl += 1
+        ACTION_IF "%entry_2%" STRING_MATCHES_REGEXP ".*\.\(cre\|flg\|sto\)$" = 0 OR "%entry_2%" STRING_CONTAINS_REGEXP "\." BEGIN //if it's .cre, .flg, .sto or does not contain . (area)
+          OUTER_SET loc_num += 1
+          OUTER_SPRINT $ftarget("%loc_num%") "%entry_2%"
+          OUTER_SPRINT $farea("%loc_num%")  "%entry_3%"
+        END
+      END
+    END
+    ACTION_IF counteri > counterl AND loc_num > 0 BEGIN
+      OUTER_FOR (d1=0;d1<counteri - counterl;d1+=1) BEGIN
+        OUTER_SET r = RANDOM(1 loc_num)
+        OUTER_SET floc = r + 100 + d1
+        OUTER_SPRINT ftarget $ftarget("%r%")
+        OUTER_SPRINT farea $farea("%r%")
+        OUTER_SPRINT $location_array("%floc%" "%Tier%" "%ftarget%" "%farea%") "%r%"
+      END
     END
   END
 END

@@ -63,6 +63,13 @@ DEFINE_ACTION_MACRO flir_removal_harness_reset_source_decls BEGIN
   ACTION_CLEAR_ARRAY flir_source_decl_declared_charge2
   ACTION_CLEAR_ARRAY flir_source_decl_declared_charge3
   ACTION_CLEAR_ARRAY flir_source_decl_expected_quantity
+  ACTION_CLEAR_ARRAY flir_source_decl_tier_hook
+  ACTION_CLEAR_ARRAY flir_source_decl_birth_campaign
+  ACTION_CLEAR_ARRAY flir_source_decl_birth_tier
+  ACTION_CLEAR_ARRAY flir_source_decl_birth_stable
+  ACTION_CLEAR_ARRAY flir_source_decl_birth_fingerprint
+  ACTION_CLEAR_ARRAY flir_source_birth_hash_canonical
+  ACTION_CLEAR_ARRAY flir_source_birth_occurrence
   ACTION_CLEAR_ARRAY item_array#stage1
   ACTION_CLEAR_ARRAY tier_array
   ACTION_CLEAR_ARRAY ident_filter

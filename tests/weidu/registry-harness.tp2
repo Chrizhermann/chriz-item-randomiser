@@ -1,0 +1,2216 @@
+// Hermetic synthetic-game registry harness. Every ID and resource is synthetic.
+// argv[0] = production registry.tpa
+// argv[1] = output report path
+// argv[2] = production removal_plan.tpa
+// argv[3] = production lib.tpa (shared source-filter implementation)
+// argv[4] = production catalog.tpa
+
+BACKUP ~backup~
+AUTHOR ~BG2 Item Randomiser registry test harness~
+
+ALWAYS
+  INCLUDE ~%argv[3]%~
+  INCLUDE ~%argv[4]%~
+  INCLUDE ~%argv[0]%~
+  INCLUDE ~%argv[2]%~
+END
+
+DEFINE_ACTION_MACRO flir_registry_harness_reset BEGIN
+  OUTER_SET weidu_action = 0
+  OUTER_SET RandomNotRandom = 0
+  OUTER_SPRINT flir_registry_backend ~legacy-bcs-v1~
+  OUTER_SPRINT h_origin ~fresh-postextension-v1~
+  OUTER_SPRINT h_campaign ~bg2~
+  LAM flir_registry_reset
+END
+
+DEFINE_ACTION_MACRO flir_registry_harness_ensure_legacy_state BEGIN
+  ACTION_IF NOT FILE_EXISTS_IN_GAME "fl#randomseed.2da"
+        AND NOT FILE_EXISTS "override/fl#randomseed.2da" BEGIN
+    COPY + "...blank" "override/fl#randomseed.2da"
+      INSERT_BYTES 0 6
+      WRITE_LONG 0 1
+      WRITE_BYTE 4 0
+      WRITE_BYTE 5 0
+    BUT_ONLY
+  END
+  ACTION_IF NOT FILE_EXISTS_IN_GAME "fl#removeditems.2da"
+        AND NOT FILE_EXISTS "override/fl#removeditems.2da" BEGIN
+    OUTER_TEXT_SPRINT h_legacy_removed_fixture ~Tier Token Ident%WNL%~
+    COPY + "...blank" "override/fl#removeditems.2da"
+      INSERT_BYTES 0 STRING_LENGTH ~%h_legacy_removed_fixture%~
+      WRITE_ASCIIE 0 ~%h_legacy_removed_fixture%~ (STRING_LENGTH ~%h_legacy_removed_fixture%~)
+    BUT_ONLY
+  END
+  ACTION_IF NOT FILE_EXISTS_IN_GAME "fl#randoptions.2da"
+        AND NOT FILE_EXISTS "override/fl#randoptions.2da" BEGIN
+    OUTER_TEXT_SPRINT h_legacy_options_fixture ~Option%WNL%weidu_action%WNL%~
+    COPY + "...blank" "override/fl#randoptions.2da"
+      INSERT_BYTES 0 STRING_LENGTH ~%h_legacy_options_fixture%~
+      WRITE_ASCIIE 0 ~%h_legacy_options_fixture%~ (STRING_LENGTH ~%h_legacy_options_fixture%~)
+    BUT_ONLY
+  END
+END
+
+DEFINE_ACTION_MACRO flir_registry_harness_write_report BEGIN
+  LAF flir_registry_canonical_rows RET flir_registry_report_rows = rows END
+  OUTER_TEXT_SPRINT flir_registry_report ~schema=%flir_registry_schema% backend=%flir_registry_backend% catalog=%flir_registry_catalog_fingerprint%%WNL%%flir_registry_report_rows%~
+  COPY + "...blank" "%argv[1]%"
+    INSERT_BYTES 0 STRING_LENGTH ~%flir_registry_report%~
+    WRITE_ASCIIE 0 ~%flir_registry_report%~ (STRING_LENGTH ~%flir_registry_report%~)
+  BUT_ONLY
+END
+
+DEFINE_ACTION_MACRO flir_registry_harness_write_extra_plan BEGIN
+  OUTER_SPRINT h_plan_stable $flir_registry_planned_extra_stable("1" "%h_plan_prefix%" "1")
+  OUTER_SPRINT h_plan_compact $flir_registry_planned_extra_compact("1" "%h_plan_prefix%" "1")
+  OUTER_TEXT_SPRINT h_plan_report ~PLAN 1 %h_plan_prefix% 1 %h_plan_stable% %h_plan_compact%%WNL%~
+  COPY + "...blank" "%argv[1]%"
+    INSERT_BYTES 0 STRING_LENGTH ~%h_plan_report%~
+    WRITE_ASCIIE 0 ~%h_plan_report%~ (STRING_LENGTH ~%h_plan_report%~)
+  BUT_ONLY
+END
+
+DEFINE_ACTION_MACRO flir_registry_harness_add_unit BEGIN
+  OUTER_SPRINT $flir_registry_catalog_unit("%h_campaign%" "%h_tier%" "%h_id%") ~1~
+END
+
+DEFINE_ACTION_MACRO flir_registry_harness_add_slot BEGIN
+  OUTER_SPRINT $flir_registry_catalog_slot("%h_campaign%" "%h_tier%" "%h_id%") ~1~
+END
+
+DEFINE_ACTION_MACRO flir_registry_harness_seed_legacy_locations BEGIN
+  ACTION_CLEAR_ARRAY bg1_tiers
+  ACTION_CLEAR_ARRAY bg2_tiers
+  OUTER_SPRINT $bg2_tiers("1") ~~
+  ACTION_CLEAR_ARRAY location_array
+  OUTER_SPRINT $location_array("raw999" "1" "target-a.cre" "area-a" "a") ~~
+  OUTER_SPRINT $location_array("raw005" "1" "target-b.cre" "area-b" "b") ~~
+  LAM flir_registry_snapshot_legacy_slots
+END
+
+DEFINE_ACTION_MACRO flir_registry_harness_seed_production_arrays BEGIN
+  ACTION_CLEAR_ARRAY removed_item_array
+  ACTION_CLEAR_ARRAY extra_tokens
+  ACTION_CLEAR_ARRAY location_array
+  ACTION_CLEAR_ARRAY bg1_tiers
+  ACTION_CLEAR_ARRAY bg2_tiers
+  OUTER_SPRINT $bg2_tiers("1") ~~
+  OUTER_SPRINT $bg1_tiers("24") ~~
+  OUTER_SPRINT $removed_item_array("1" "1" "alpha") ~~
+  OUTER_SPRINT $removed_item_array("1" "x0" "x") ~~
+  OUTER_SPRINT $removed_item_array("1" "y0" "x") ~~
+  OUTER_SPRINT $extra_tokens("1" "x0") "1"
+  OUTER_SPRINT $extra_tokens("1" "y0") "1"
+  OUTER_SPRINT $location_array("raw100" "1" "target-a.cre" "area-a" "same") ~~
+  OUTER_SPRINT $location_array("raw200" "1" "target-b.cre" "area-b" "same") ~~
+  OUTER_SPRINT $location_array("raw300" "1" "target-c.cre" "area-c" "fixes") "1"
+  OUTER_SPRINT $location_array("raw400" "24" "target-d.cre" "area-d" "bg1row") ~~
+END
+
+DEFINE_ACTION_MACRO flir_registry_harness_reset_sources BEGIN
+  OUTER_SET flir_source_decl_count = 0
+  OUTER_SET flir_source_legacy_snapshot_initialized = 0
+  OUTER_SET flir_source_legacy_cursor = 0
+  ACTION_CLEAR_ARRAY flir_source_decl_order
+  ACTION_CLEAR_ARRAY flir_source_decl_exists
+  ACTION_CLEAR_ARRAY flir_source_decl_enabled
+  ACTION_CLEAR_ARRAY flir_source_decl_item
+  ACTION_CLEAR_ARRAY flir_source_decl_replacement
+  ACTION_CLEAR_ARRAY flir_source_decl_source
+  ACTION_CLEAR_ARRAY flir_source_decl_tier
+  ACTION_CLEAR_ARRAY flir_source_decl_token
+  ACTION_CLEAR_ARRAY flir_source_decl_ident
+  ACTION_CLEAR_ARRAY flir_source_decl_chance
+  ACTION_CLEAR_ARRAY flir_source_decl_source_kind
+  ACTION_CLEAR_ARRAY flir_source_decl_object_or_slot
+  ACTION_CLEAR_ARRAY flir_source_decl_virtual_policy
+  ACTION_CLEAR_ARRAY flir_source_decl_declared_charge1
+  ACTION_CLEAR_ARRAY flir_source_decl_declared_charge2
+  ACTION_CLEAR_ARRAY flir_source_decl_declared_charge3
+  ACTION_CLEAR_ARRAY flir_source_decl_expected_quantity
+  ACTION_CLEAR_ARRAY flir_source_decl_campaign
+  ACTION_CLEAR_ARRAY flir_source_decl_tier_hook
+  ACTION_CLEAR_ARRAY flir_source_decl_birth_campaign
+  ACTION_CLEAR_ARRAY flir_source_decl_birth_tier
+  ACTION_CLEAR_ARRAY flir_source_decl_birth_stable
+  ACTION_CLEAR_ARRAY flir_source_decl_birth_fingerprint
+  ACTION_CLEAR_ARRAY flir_source_birth_hash_canonical
+  ACTION_CLEAR_ARRAY flir_source_birth_occurrence
+  ACTION_CLEAR_ARRAY flir_source_direct_occurrence
+  ACTION_CLEAR_ARRAY flir_source_legacy_filter_signature
+  ACTION_CLEAR_ARRAY flir_source_legacy_filter_skip
+  ACTION_CLEAR_ARRAY flir_source_legacy_stage1
+  ACTION_CLEAR_ARRAY flir_source_legacy_item_array
+  ACTION_CLEAR_ARRAY flir_source_legacy_row_key
+  ACTION_CLEAR_ARRAY flir_source_current_row_key
+  ACTION_CLEAR_ARRAY flir_registry_legacy_ident_filter
+  ACTION_CLEAR_ARRAY ident_filter
+  ACTION_CLEAR_ARRAY identitem
+  ACTION_CLEAR_ARRAY rebalance_tier
+  ACTION_CLEAR_ARRAY rebalance_token
+  ACTION_CLEAR_ARRAY item_array#stage1
+  ACTION_CLEAR_ARRAY item_array
+END
+
+DEFINE_ACTION_MACRO flir_registry_harness_add_named_source BEGIN
+  OUTER_SET flir_source_decl_count += 1
+  OUTER_SPRINT flir_source_key ~ident:%h_source_ident%~
+  OUTER_SPRINT $flir_source_decl_order("%flir_source_decl_count%") ~%flir_source_key%~
+  OUTER_SPRINT $flir_source_decl_exists("%flir_source_key%") ~1~
+  OUTER_SET $flir_source_decl_enabled("%flir_source_key%") = 1
+  OUTER_SPRINT $flir_source_decl_item("%flir_source_key%") ~%h_source_item%~
+  OUTER_SPRINT $flir_source_decl_replacement("%flir_source_key%") ~blank~
+  OUTER_SPRINT $flir_source_decl_source("%flir_source_key%") ~%h_source_resource%~
+  OUTER_SPRINT $flir_source_decl_tier("%flir_source_key%") ~%h_source_tier%~
+  OUTER_SPRINT $flir_source_decl_token("%flir_source_key%") ~%h_source_token%~
+  OUTER_SPRINT $flir_source_decl_ident("%flir_source_key%") ~%h_source_ident%~
+  OUTER_SET $flir_source_decl_chance("%flir_source_key%") = h_source_chance
+  OUTER_SPRINT $flir_source_decl_source_kind("%flir_source_key%") ~%h_source_kind%~
+  OUTER_SPRINT $flir_source_decl_object_or_slot("%flir_source_key%") ~*~
+  OUTER_SPRINT $flir_source_decl_virtual_policy("%flir_source_key%") ~%h_source_virtual_policy%~
+  OUTER_SET $flir_source_decl_declared_charge1("%flir_source_key%") = 0
+  OUTER_SET $flir_source_decl_declared_charge2("%flir_source_key%") = 0
+  OUTER_SET $flir_source_decl_declared_charge3("%flir_source_key%") = 0
+  OUTER_SET $flir_source_decl_expected_quantity("%flir_source_key%") = 1
+  ACTION_IF VARIABLE_IS_SET h_source_campaign BEGIN
+    OUTER_SPRINT $flir_source_decl_campaign("%flir_source_key%") ~%h_source_campaign%~
+    ACTION_IF "%h_source_campaign%" STRING_EQUAL_CASE ~bg1~ BEGIN
+      OUTER_SPRINT $flir_source_decl_tier_hook("%flir_source_key%") ~bg1_tiers~
+    END ELSE ACTION_IF "%h_source_campaign%" STRING_EQUAL_CASE ~bg2~ BEGIN
+      OUTER_SPRINT $flir_source_decl_tier_hook("%flir_source_key%") ~bg2_tiers~
+    END
+  END
+END
+
+DEFINE_ACTION_MACRO flir_registry_harness_run_order_probe BEGIN
+  OUTER_TEXT_SPRINT h_order_report ~STATE %flir_registry_loaded_existing% %flir_registry_old_unmarked_migration%%WNL%~
+  OUTER_FOR (h_order_seed = 1; h_order_seed <= 64; ++h_order_seed) BEGIN
+    LAM flir_registry_harness_reset_sources
+    ACTION_CLEAR_ARRAY bg1_tiers
+    ACTION_CLEAR_ARRAY bg2_tiers
+    ACTION_CLEAR_ARRAY location_array#stage1
+    ACTION_CLEAR_ARRAY location_array
+    ACTION_CLEAR_ARRAY tier_array
+    OUTER_SPRINT $bg2_tiers("1") ~~
+    OUTER_SET flir_source_allow_override_availability = 1
+    OUTER_SPRINT h_source_campaign ~bg2~
+    OUTER_SPRINT h_source_item ~rng00001~
+    OUTER_SPRINT h_source_resource ~blank~
+    OUTER_SPRINT h_source_tier ~1~
+    OUTER_SPRINT h_source_token ~1~
+    OUTER_SPRINT h_source_ident ~order_item~
+    OUTER_SET h_source_chance = 50
+    OUTER_SPRINT h_source_kind ~virtual~
+    OUTER_SPRINT h_source_virtual_policy ~explicit~
+    LAM flir_registry_harness_add_named_source
+
+    RANDOM_SEED "%h_order_seed%"
+    LAM flir_source_filter_stage1_legacy_ident_filter
+    OUTER_PATCH "" BEGIN
+      LPF create_loc_array#filter
+        INT_VAR chance = 50
+        STR_VAR location = ~order_loc~ tier = ~1~ target = ~container~ area = ~blank~ ident = ~order_location~
+        RET h_order_location_skip = skip
+      END
+    END
+    LAM flir_source_finalize_legacy_snapshot
+    LAM flir_source_adopt_direct_virtual_rows
+    ACTION_IF "%Preserve%" STRING_EQUAL_CASE "y" BEGIN
+      LAM flir_removal_plan_load_preserve
+    END
+    LAM flir_registry_capture_old_unmarked_legacy_slots
+    LAM flir_source_apply_extension_hook
+    LAM flir_source_filter_stage1
+    OUTER_SET h_order_item_skip = 0
+    ACTION_IF VARIABLE_IS_SET $ident_filter("order_item") BEGIN
+      OUTER_SET h_order_item_skip = 1
+    END
+    OUTER_SET h_order_next = RANDOM(1 100)
+    OUTER_TEXT_SPRINT h_order_report ~%h_order_report%ORDER %h_order_seed% %h_order_item_skip% %h_order_location_skip% %h_order_next%%WNL%~
+  END
+END
+
+DEFINE_ACTION_MACRO flir_registry_harness_run_origin_probe BEGIN
+  OUTER_TEXT_SPRINT h_origin_report ~STATE %flir_registry_loaded_existing% %flir_registry_old_unmarked_migration% %flir_registry_origin%%WNL%~
+  OUTER_FOR (h_origin_seed = 1; h_origin_seed <= 64; ++h_origin_seed) BEGIN
+    LAM flir_registry_harness_reset_sources
+    ACTION_CLEAR_ARRAY bg1_tiers
+    ACTION_CLEAR_ARRAY bg2_tiers
+    ACTION_CLEAR_ARRAY location_array#stage1
+    ACTION_CLEAR_ARRAY location_array
+    ACTION_CLEAR_ARRAY tier_array
+    ACTION_CLEAR_ARRAY removed_item_array
+    ACTION_CLEAR_ARRAY flir_removal_history_array
+    OUTER_SPRINT $bg2_tiers("1") ~~
+    OUTER_SPRINT $location_array#stage1("010" "1" "target-a.cre" "area-a" "base_a") ~~
+    OUTER_SPRINT $location_array#stage1("020" "1" "target-b.cre" "area-b" "base_b") ~~
+    ACTION_IF "%Preserve%" STRING_EQUAL_CASE "y" BEGIN
+      LAM flir_removal_plan_load_preserve
+    END ELSE BEGIN
+      OUTER_SPRINT $removed_item_array("1" "1" "alpha") ~~
+      OUTER_SPRINT $removed_item_array("1" "2" "beta") ~~
+      OUTER_SPRINT $removed_item_array("1" "3" "gamma") ~~
+    END
+
+    RANDOM_SEED "%h_origin_seed%"
+    LAM flir_registry_capture_old_unmarked_legacy_slots
+
+    OUTER_SET flir_source_allow_override_availability = 1
+    OUTER_SPRINT h_source_campaign ~bg2~
+    OUTER_SPRINT h_source_item ~rng00002~
+    OUTER_SPRINT h_source_resource ~blank~
+    OUTER_SPRINT h_source_tier ~1~
+    OUTER_SPRINT h_source_token ~4~
+    OUTER_SPRINT h_source_ident ~origin_ext~
+    OUTER_SET h_source_chance = 50
+    OUTER_SPRINT h_source_kind ~virtual~
+    OUTER_SPRINT h_source_virtual_policy ~explicit~
+    LAM flir_registry_harness_add_named_source
+    LAM flir_source_filter_stage1
+    LAM create_loc_array#finalise
+    LAM flir_registry_add_current_overflow_locations
+
+    OUTER_SET h_origin_extension_skip = 0
+    ACTION_IF VARIABLE_IS_SET $ident_filter("origin_ext") BEGIN
+      OUTER_SET h_origin_extension_skip = 1
+    END
+    OUTER_SPRINT h_origin_overflow_raw ~missing~
+    OUTER_SPRINT h_origin_overflow_target ~missing~
+    OUTER_SPRINT h_origin_overflow_area ~missing~
+    ACTION_PHP_EACH location_array AS h_origin_location => blank BEGIN
+      ACTION_IF "%h_origin_location_4%" STRING_EQUAL_CASE "" BEGIN
+        OUTER_SPRINT h_origin_overflow_raw ~%h_origin_location_0%~
+        OUTER_SPRINT h_origin_overflow_target ~%h_origin_location_2%~
+        OUTER_SPRINT h_origin_overflow_area ~%h_origin_location_3%~
+      END
+    END
+    OUTER_SET h_origin_next = RANDOM(1 100)
+    OUTER_TEXT_SPRINT h_origin_report ~%h_origin_report%ORIGIN_ORDER %h_origin_seed% %h_origin_extension_skip% %h_origin_overflow_raw% %h_origin_overflow_target% %h_origin_overflow_area% %h_origin_next%%WNL%~
+  END
+END
+
+DEFINE_ACTION_MACRO flir_registry_harness_choose_mixed_seed BEGIN
+  OUTER_SET h_mixed_seed = 0
+  OUTER_FOR (h_mixed_candidate = 1; h_mixed_candidate <= 64; ++h_mixed_candidate) BEGIN
+    RANDOM_SEED "%h_mixed_candidate%"
+    OUTER_SET h_mixed_expected_a = RANDOM(1 2)
+    OUTER_SET h_mixed_expected_extension = RANDOM(1 100)
+    OUTER_SET h_mixed_expected_b = RANDOM(1 2)
+    RANDOM_SEED "%h_mixed_candidate%"
+    OUTER_SET h_mixed_fresh_extension = RANDOM(1 100)
+    OUTER_SET h_mixed_fresh_a = RANDOM(1 2)
+    OUTER_SET h_mixed_fresh_b = RANDOM(1 2)
+    RANDOM_SEED "%h_mixed_candidate%"
+    OUTER_SET h_mixed_wrong_a = RANDOM(1 2)
+    OUTER_SET h_mixed_wrong_b = RANDOM(1 2)
+    OUTER_SET h_mixed_wrong_extension = RANDOM(1 100)
+    OUTER_SET h_mixed_legacy_discriminates = 0
+    OUTER_SET h_mixed_fresh_discriminates = 0
+    ACTION_IF (h_mixed_expected_extension > 50 AND h_mixed_wrong_extension <= 50)
+          OR (h_mixed_expected_extension <= 50 AND h_mixed_wrong_extension > 50)
+          OR h_mixed_expected_b != h_mixed_wrong_b BEGIN
+      OUTER_SET h_mixed_legacy_discriminates = 1
+    END
+    ACTION_IF (h_mixed_fresh_extension > 50 AND h_mixed_wrong_extension <= 50)
+          OR (h_mixed_fresh_extension <= 50 AND h_mixed_wrong_extension > 50)
+          OR h_mixed_fresh_a != h_mixed_wrong_a
+          OR h_mixed_fresh_b != h_mixed_wrong_b BEGIN
+      OUTER_SET h_mixed_fresh_discriminates = 1
+    END
+    ACTION_IF h_mixed_seed = 0
+          AND h_mixed_legacy_discriminates = 1
+          AND h_mixed_fresh_discriminates = 1 BEGIN
+      OUTER_SET h_mixed_seed = h_mixed_candidate
+    END
+  END
+  ACTION_IF h_mixed_seed = 0 BEGIN
+    FAIL ~FLIR_REGISTRY_TEST NO_DISCRIMINATING_MIXED_SEED~
+  END
+END
+
+DEFINE_ACTION_MACRO flir_registry_harness_run_mixed_probe BEGIN
+  LAM flir_registry_harness_choose_mixed_seed
+  LAM flir_registry_harness_reset_sources
+  ACTION_CLEAR_ARRAY bg1_tiers
+  ACTION_CLEAR_ARRAY bg2_tiers
+  ACTION_CLEAR_ARRAY location_array#stage1
+  ACTION_CLEAR_ARRAY location_array
+  ACTION_CLEAR_ARRAY tier_array
+  ACTION_CLEAR_ARRAY removed_item_array
+  ACTION_CLEAR_ARRAY flir_removal_history_array
+  OUTER_SPRINT $bg2_tiers("1") ~~
+  OUTER_SPRINT $location_array#stage1("010" "1" "target-a.cre" "area-a" "base_a") ~~
+  OUTER_SPRINT $location_array#stage1("020" "1" "target-b.cre" "area-b" "base_b") ~~
+  ACTION_IF "%Preserve%" STRING_EQUAL_CASE "y" BEGIN
+    LAM flir_removal_plan_load_preserve
+  END ELSE BEGIN
+    OUTER_SPRINT $removed_item_array("1" "1" "alpha") ~~
+    OUTER_SPRINT $removed_item_array("1" "2" "beta") ~~
+    OUTER_SPRINT $removed_item_array("1" "3" "gamma") ~~
+    OUTER_SPRINT $removed_item_array("1" "4" "delta") ~~
+  END
+
+  RANDOM_SEED "%h_mixed_seed%"
+  LAM flir_registry_capture_old_unmarked_legacy_slots
+
+  OUTER_SET flir_source_allow_override_availability = 1
+  OUTER_SPRINT h_source_campaign ~bg2~
+  OUTER_SPRINT h_source_item ~rng00002~
+  OUTER_SPRINT h_source_resource ~blank~
+  OUTER_SPRINT h_source_tier ~1~
+  OUTER_SPRINT h_source_token ~4~
+  OUTER_SPRINT h_source_ident ~mixed_ext~
+  OUTER_SET h_source_chance = 50
+  OUTER_SPRINT h_source_kind ~virtual~
+  OUTER_SPRINT h_source_virtual_policy ~explicit~
+  LAM flir_registry_harness_add_named_source
+  LAM flir_source_filter_stage1
+  LAM create_loc_array#finalise
+  ACTION_IF !VARIABLE_IS_SET $removed_item_array("1" "4" "delta") BEGIN
+    OUTER_SPRINT $removed_item_array("1" "4" "delta") ~~
+  END
+  LAM flir_registry_add_current_overflow_locations
+
+  OUTER_SET h_mixed_extension_skip = 0
+  ACTION_IF VARIABLE_IS_SET $ident_filter("mixed_ext") BEGIN
+    OUTER_SET h_mixed_extension_skip = 1
+  END
+  OUTER_TEXT_SPRINT h_mixed_overflow_rows ~~
+  ACTION_SORT_ARRAY_INDICES location_array LEXICOGRAPHICALLY
+  ACTION_PHP_EACH location_array AS h_mixed_location => blank BEGIN
+    ACTION_IF "%h_mixed_location_4%" STRING_EQUAL_CASE "" BEGIN
+      OUTER_TEXT_SPRINT h_mixed_overflow_rows ~%h_mixed_overflow_rows%MIXED_OVERFLOW %h_mixed_location_0% %h_mixed_location_2% %h_mixed_location_3%%WNL%~
+    END
+  END
+  OUTER_SET h_mixed_next = RANDOM(1 100)
+  LAM flir_registry_capture_final_slots
+  LAM flir_registry_reconcile
+  LAF flir_registry_canonical_rows RET h_mixed_registry_rows = rows END
+  OUTER_TEXT_SPRINT h_mixed_report ~MIXED_STATE %flir_registry_loaded_existing% %flir_registry_old_unmarked_migration% %flir_registry_origin%%WNL%MIXED_SEED %h_mixed_seed%%WNL%MIXED_EXTENSION %h_mixed_extension_skip%%WNL%%h_mixed_overflow_rows%MIXED_NEXT %h_mixed_next%%WNL%%h_mixed_registry_rows%~
+END
+
+DEFINE_ACTION_MACRO flir_registry_harness_write_migration_report BEGIN
+  LAF flir_registry_canonical_rows RET flir_registry_report_rows = rows END
+  OUTER_TEXT_SPRINT flir_registry_current_rows ~~
+  ACTION_SORT_ARRAY_INDICES removed_item_array LEXICOGRAPHICALLY
+  ACTION_PHP_EACH removed_item_array AS flir_registry_current_removed => blank BEGIN
+    OUTER_TEXT_SPRINT flir_registry_current_rows ~%flir_registry_current_rows%CURRENT %flir_registry_current_removed_0% %flir_registry_current_removed_1% %flir_registry_current_removed_2%%WNL%~
+  END
+  OUTER_TEXT_SPRINT flir_registry_report ~%flir_registry_report_rows%%flir_registry_current_rows%~
+  COPY + "...blank" "%argv[1]%"
+    INSERT_BYTES 0 STRING_LENGTH ~%flir_registry_report%~
+    WRITE_ASCIIE 0 ~%flir_registry_report%~ (STRING_LENGTH ~%flir_registry_report%~)
+  BUT_ONLY
+END
+
+DEFINE_ACTION_MACRO flir_registry_harness_write_raw_fixture BEGIN
+  OUTER_TEXT_SPRINT flir_registry_fixture_base ~2DA V1.0%WNL%0%WNL%CAMPAIGN TIER KIND STABLE_ID COMPACT ENABLED%WNL%@meta @schema schema %h_schema% 1 1%WNL%@meta @backend backend %h_backend% 1 1%WNL%@meta @origin origin %h_origin% 1 1%WNL%@meta @catalog catalog %h_catalog% 1 1%WNL%%h_rows%~
+  LAF flir_registry_hash_text STR_VAR text = EVAL ~%flir_registry_fixture_base%~ RET flir_registry_fixture_fingerprint = hash END
+  OUTER_TEXT_SPRINT flir_registry_fixture_state ~2DA V1.0%WNL%0%WNL%CAMPAIGN TIER KIND STABLE_ID COMPACT ENABLED%WNL%@meta @schema schema %h_schema% 1 1%WNL%@meta @backend backend %h_backend% 1 1%WNL%@meta @origin origin %h_origin% 1 1%WNL%@meta @catalog catalog %h_catalog% 1 1%WNL%@meta @fingerprint fingerprint %flir_registry_fixture_fingerprint% 1 1%WNL%%h_rows%~
+  COPY + "...blank" "override/fl#irreg.2da"
+    INSERT_BYTES 0 STRING_LENGTH ~%flir_registry_fixture_state%~
+    WRITE_ASCIIE 0 ~%flir_registry_fixture_state%~ (STRING_LENGTH ~%flir_registry_fixture_state%~)
+  BUT_ONLY
+END
+
+DEFINE_ACTION_MACRO flir_registry_harness_write_tampered_fixture BEGIN
+  OUTER_TEXT_SPRINT flir_registry_fixture_base ~2DA V1.0%WNL%0%WNL%CAMPAIGN TIER KIND STABLE_ID COMPACT ENABLED%WNL%@meta @schema schema %h_schema% 1 1%WNL%@meta @backend backend %h_backend% 1 1%WNL%@meta @origin origin %h_origin% 1 1%WNL%@meta @catalog catalog %h_catalog% 1 1%WNL%%h_fingerprint_rows%~
+  LAF flir_registry_hash_text STR_VAR text = EVAL ~%flir_registry_fixture_base%~ RET flir_registry_fixture_fingerprint = hash END
+  OUTER_TEXT_SPRINT flir_registry_fixture_state ~2DA V1.0%WNL%0%WNL%%h_header%%WNL%@meta @schema %h_schema_kind% %h_schema% %h_schema_compact% %h_schema_enabled%%WNL%@meta @backend %h_backend_kind% %h_backend% %h_backend_compact% %h_backend_enabled%%WNL%@meta @origin origin %h_origin% 1 1%WNL%@meta @catalog %h_catalog_kind% %h_catalog% %h_catalog_compact% %h_catalog_enabled%%WNL%@meta @fingerprint %h_fingerprint_kind% %flir_registry_fixture_fingerprint% %h_fingerprint_compact% %h_fingerprint_enabled%%WNL%%h_rows%~
+  COPY + "...blank" "override/fl#irreg.2da"
+    INSERT_BYTES 0 STRING_LENGTH ~%flir_registry_fixture_state%~
+    WRITE_ASCIIE 0 ~%flir_registry_fixture_state%~ (STRING_LENGTH ~%flir_registry_fixture_state%~)
+  BUT_ONLY
+END
+
+DEFINE_ACTION_MACRO flir_registry_harness_default_tamper_fields BEGIN
+  OUTER_SPRINT h_schema ~flir-registry-v1~
+  OUTER_SPRINT h_backend ~legacy-bcs-v1~
+  OUTER_SET h_catalog = 11111
+  OUTER_SPRINT h_header ~CAMPAIGN TIER KIND STABLE_ID COMPACT ENABLED~
+  OUTER_SPRINT h_schema_kind ~schema~
+  OUTER_SPRINT h_schema_compact ~1~
+  OUTER_SET h_schema_enabled = 1
+  OUTER_SPRINT h_backend_kind ~backend~
+  OUTER_SPRINT h_backend_compact ~1~
+  OUTER_SET h_backend_enabled = 1
+  OUTER_SPRINT h_catalog_kind ~catalog~
+  OUTER_SPRINT h_catalog_compact ~1~
+  OUTER_SET h_catalog_enabled = 1
+  OUTER_SPRINT h_fingerprint_kind ~fingerprint~
+  OUTER_SPRINT h_fingerprint_compact ~1~
+  OUTER_SET h_fingerprint_enabled = 1
+  OUTER_TEXT_SPRINT h_rows ~~
+  OUTER_TEXT_SPRINT h_fingerprint_rows ~~
+END
+
+BEGIN ~fresh registry publish~ DESIGNATED 0
+  LAM flir_registry_harness_reset
+  OUTER_SPRINT h_tier ~1~
+  OUTER_SPRINT h_id ~core:unit-a~
+  LAM flir_registry_harness_add_unit
+  OUTER_SPRINT h_id ~core:unit-b~
+  LAM flir_registry_harness_add_unit
+  OUTER_SPRINT h_id ~core:unit-extra-x0~
+  LAM flir_registry_harness_add_unit
+  OUTER_SPRINT h_id ~core:unit-extra-y0~
+  LAM flir_registry_harness_add_unit
+  OUTER_SPRINT h_id ~core:slot-a~
+  LAM flir_registry_harness_add_slot
+  OUTER_SPRINT h_id ~core:slot-b~
+  LAM flir_registry_harness_add_slot
+  LAM flir_registry_bootstrap
+  LAM flir_registry_write_state
+  LAM flir_registry_harness_write_report
+
+BEGIN ~monotonic after tombstone~ DESIGNATED 1
+  LAM flir_registry_harness_reset
+  OUTER_SPRINT h_tier ~1~
+  OUTER_SPRINT h_id ~core:new-unit~
+  LAM flir_registry_harness_add_unit
+  OUTER_SPRINT h_id ~core:new-slot~
+  LAM flir_registry_harness_add_slot
+  LAM flir_registry_bootstrap
+  LAM flir_registry_write_state
+  LAM flir_registry_harness_write_report
+
+BEGIN ~legacy slot snapshot~ DESIGNATED 2
+  LAM flir_registry_harness_reset
+  LAM flir_registry_harness_seed_legacy_locations
+  OUTER_SPRINT h_tier ~1~
+  OUTER_SPRINT h_id ~core:slot-c~
+  LAM flir_registry_harness_add_slot
+  LAM flir_registry_bootstrap
+  LAM flir_registry_write_state
+  LAM flir_registry_harness_write_report
+
+BEGIN ~schema rejection~ DESIGNATED 3
+  LAM flir_registry_harness_reset
+  LAM flir_registry_bootstrap
+
+BEGIN ~backend rejection~ DESIGNATED 4
+  LAM flir_registry_harness_reset
+  OUTER_SPRINT flir_registry_backend ~legacy-bcs-v1~
+  LAM flir_registry_bootstrap
+
+BEGIN ~fingerprint rejection~ DESIGNATED 5
+  LAM flir_registry_harness_reset
+  OUTER_SET flir_registry_catalog_fingerprint = 654321
+  LAM flir_registry_bootstrap
+
+BEGIN ~compact collision rejection~ DESIGNATED 6
+  LAM flir_registry_harness_reset
+  LAM flir_registry_bootstrap
+
+BEGIN ~tombstone reuse rejection~ DESIGNATED 7
+  LAM flir_registry_harness_reset
+  LAM flir_registry_bootstrap
+
+BEGIN ~legacy ordinal drift rejection~ DESIGNATED 8
+  LAM flir_registry_harness_reset
+  LAM flir_registry_harness_seed_legacy_locations
+  LAM flir_registry_bootstrap
+
+BEGIN ~mode two boundary~ DESIGNATED 20
+  LAM flir_registry_harness_reset
+  OUTER_SET weidu_action = 1
+  OUTER_SPRINT h_tier ~1~
+  OUTER_SPRINT h_id ~core:unit-a~
+  LAM flir_registry_harness_add_unit
+  LAM flir_registry_bootstrap
+  ACTION_IF FILE_EXISTS ~override/fl#irreg.2da~ BEGIN
+    FAIL ~FLIR_REGISTRY_ERR MODE2_PUBLISHED kind=boundary id=fl#irreg.2da~
+  END
+  LAM flir_registry_harness_write_report
+
+BEGIN ~production macro order contract~ DESIGNATED 30
+  LAM flir_registry_harness_reset
+  LAM flir_registry_preload_state
+  LAM flir_registry_harness_seed_production_arrays
+  LAM flir_registry_register_applied_units
+  LAM flir_registry_capture_final_slots
+  LAM flir_registry_reconcile
+  LAM flir_registry_write_state
+  LAM flir_registry_harness_write_report
+
+BEGIN ~seed monotonic fixture~ DESIGNATED 40
+  LAM flir_registry_harness_reset
+  OUTER_SPRINT h_schema ~flir-registry-v1~
+  OUTER_SPRINT h_backend ~legacy-bcs-v1~
+  OUTER_SET h_catalog = 11111
+  OUTER_TEXT_SPRINT h_rows ~bg2 1 slot core:old-slot 9 0%WNL%bg2 1 unit core:old-unit 7 0%WNL%~
+  LAM flir_registry_harness_write_raw_fixture
+
+BEGIN ~seed schema fixture~ DESIGNATED 41
+  LAM flir_registry_harness_reset
+  OUTER_SPRINT h_schema ~future-schema~
+  OUTER_SPRINT h_backend ~legacy-bcs-v1~
+  OUTER_SET h_catalog = 11111
+  OUTER_TEXT_SPRINT h_rows ~~
+  LAM flir_registry_harness_write_raw_fixture
+
+BEGIN ~seed backend fixture~ DESIGNATED 42
+  LAM flir_registry_harness_reset
+  OUTER_SPRINT h_schema ~flir-registry-v1~
+  OUTER_SPRINT h_backend ~eeex-manifest-v1~
+  OUTER_SET h_catalog = 11111
+  OUTER_TEXT_SPRINT h_rows ~~
+  LAM flir_registry_harness_write_raw_fixture
+
+BEGIN ~seed compact collision fixture~ DESIGNATED 43
+  LAM flir_registry_harness_reset
+  OUTER_SPRINT h_schema ~flir-registry-v1~
+  OUTER_SPRINT h_backend ~legacy-bcs-v1~
+  OUTER_SET h_catalog = 11111
+  OUTER_TEXT_SPRINT h_rows ~bg2 1 unit core:one 4 1%WNL%bg2 1 unit core:two 4 1%WNL%~
+  LAM flir_registry_harness_write_raw_fixture
+
+BEGIN ~seed tombstone reuse fixture~ DESIGNATED 44
+  LAM flir_registry_harness_reset
+  OUTER_SPRINT h_schema ~flir-registry-v1~
+  OUTER_SPRINT h_backend ~legacy-bcs-v1~
+  OUTER_SET h_catalog = 11111
+  OUTER_TEXT_SPRINT h_rows ~bg2 1 unit core:old 5 0%WNL%bg2 1 unit core:new 5 1%WNL%~
+  LAM flir_registry_harness_write_raw_fixture
+
+BEGIN ~seed legacy drift fixture~ DESIGNATED 45
+  LAM flir_registry_harness_reset
+  OUTER_SPRINT h_schema ~flir-registry-v1~
+  OUTER_SPRINT h_backend ~legacy-bcs-v1~
+  OUTER_SET h_catalog = 11111
+  OUTER_TEXT_SPRINT h_rows ~bg2 1 slot legacy:slot-bg2-1-raw999-a-1 2 1%WNL%~
+  LAM flir_registry_harness_write_raw_fixture
+
+BEGIN ~copy plus fresh probe~ DESIGNATED 50
+  COPY + "...blank" "override/fl#probe.2da"
+    INSERT_BYTES 0 4
+    WRITE_ASCIIE 0 ~base~ #4
+  BUT_ONLY
+
+BEGIN ~copy existing plus probe~ DESIGNATED 51
+  COPY_EXISTING + "fl#probe.2da" override
+  BUT_ONLY
+
+BEGIN ~ordinary copy fresh probe~ DESIGNATED 52
+  COPY "...blank" "override/fl#ordinary.2da"
+    INSERT_BYTES 0 4
+    WRITE_ASCIIE 0 ~base~ #4
+  BUT_ONLY
+
+BEGIN ~ordinary copy existing probe~ DESIGNATED 53
+  COPY_EXISTING "fl#ordinary.2da" override
+    DELETE_BYTES 0 BUFFER_LENGTH
+    INSERT_BYTES 0 9
+    WRITE_ASCIIE 0 ~installed~ #9
+  BUT_ONLY
+
+BEGIN ~migration filtered preextension contract~ DESIGNATED 60
+  LAM flir_registry_harness_reset
+  OUTER_SET flir_source_allow_override_availability = 1
+  OUTER_SPRINT Preserve ~y~
+  LAM flir_registry_harness_ensure_legacy_state
+  LAM flir_registry_preload_state
+  ACTION_CLEAR_ARRAY bg1_tiers
+  ACTION_CLEAR_ARRAY bg2_tiers
+  ACTION_CLEAR_ARRAY ident_filter
+  ACTION_CLEAR_ARRAY location_array#stage1
+  ACTION_CLEAR_ARRAY location_array
+  ACTION_CLEAR_ARRAY flir_source_decl_order
+  ACTION_CLEAR_ARRAY flir_source_decl_enabled
+  ACTION_CLEAR_ARRAY flir_source_decl_item
+  ACTION_CLEAR_ARRAY flir_source_decl_replacement
+  ACTION_CLEAR_ARRAY flir_source_decl_source
+  ACTION_CLEAR_ARRAY flir_source_decl_tier
+  ACTION_CLEAR_ARRAY flir_source_decl_token
+  ACTION_CLEAR_ARRAY flir_source_decl_ident
+  ACTION_CLEAR_ARRAY flir_source_decl_chance
+  OUTER_SPRINT $bg2_tiers("1") ~~
+  OUTER_SET flir_source_decl_count = 2
+  OUTER_SPRINT $flir_source_decl_order("1") ~keep~
+  OUTER_SPRINT $flir_source_decl_enabled("keep") ~1~
+  OUTER_SPRINT $flir_source_decl_item("keep") ~synt0001~
+  OUTER_SPRINT $flir_source_decl_replacement("keep") ~none~
+  OUTER_SPRINT $flir_source_decl_source("keep") ~blank~
+  OUTER_SPRINT $flir_source_decl_tier("keep") ~1~
+  OUTER_SPRINT $flir_source_decl_token("keep") ~1~
+  OUTER_SPRINT $flir_source_decl_ident("keep") ~keepdyn~
+  OUTER_SET $flir_source_decl_chance("keep") = 100
+  OUTER_SPRINT $flir_source_decl_order("2") ~skip~
+  OUTER_SET $flir_source_decl_enabled("skip") = 0
+  OUTER_SPRINT $flir_source_decl_item("skip") ~synt0002~
+  OUTER_SPRINT $flir_source_decl_replacement("skip") ~none~
+  OUTER_SPRINT $flir_source_decl_source("skip") ~blank~
+  OUTER_SPRINT $flir_source_decl_tier("skip") ~1~
+  OUTER_SPRINT $flir_source_decl_token("skip") ~2~
+  OUTER_SPRINT $flir_source_decl_ident("skip") ~skipdyn~
+  OUTER_SET $flir_source_decl_chance("skip") = 100
+  OUTER_SPRINT $location_array#stage1("raw100" "1" "target-a.cre" "area-a" "keepdyn") ~~
+  OUTER_SPRINT $location_array#stage1("raw200" "1" "target-b.cre" "area-b" "skipdyn") ~~
+  LAM flir_source_filter_stage1_legacy_ident_filter
+  LAM flir_registry_capture_old_unmarked_legacy_slots
+  OUTER_SPRINT $location_array("raw050" "1" "target-ext.cre" "area-ext" "extdyn") ~~
+  OUTER_SPRINT $location_array("raw100" "1" "target-a.cre" "area-a" "keepdyn") ~~
+  LAM flir_registry_capture_final_slots
+  LAM flir_registry_reconcile
+  LAM flir_registry_write_state
+  LAM flir_registry_harness_write_report
+
+BEGIN ~seed existing slot fixture~ DESIGNATED 61
+  LAM flir_registry_harness_reset
+  OUTER_SPRINT h_schema ~flir-registry-v1~
+  OUTER_SPRINT h_backend ~legacy-bcs-v1~
+  OUTER_SET h_catalog = 11111
+  OUTER_TEXT_SPRINT h_rows ~bg2 1 slot legacy:slot-bg2-1-raw050-old-1 1 1%WNL%bg2 1 slot legacy:slot-bg2-1-raw100-a-1 2 1%WNL%bg2 1 slot legacy:slot-bg2-1-raw200-b-1 3 1%WNL%~
+  LAM flir_registry_harness_write_raw_fixture
+
+BEGIN ~insert before existing slots~ DESIGNATED 62
+  LAM flir_registry_harness_reset
+  LAM flir_registry_preload_state
+  ACTION_CLEAR_ARRAY bg1_tiers
+  ACTION_CLEAR_ARRAY bg2_tiers
+  ACTION_CLEAR_ARRAY location_array
+  OUTER_SPRINT $bg2_tiers("1") ~~
+  OUTER_SPRINT $location_array("raw025" "1" "target-new.cre" "area-new" "new") ~~
+  OUTER_SPRINT $location_array("raw100" "1" "target-a.cre" "area-a" "a") ~~
+  OUTER_SPRINT $location_array("raw200" "1" "target-b.cre" "area-b" "b") ~~
+  LAM flir_registry_capture_final_slots
+  LAM flir_registry_reconcile
+  LAM flir_registry_write_state
+  LAM flir_registry_harness_write_report
+
+BEGIN ~remove before existing slots~ DESIGNATED 63
+  LAM flir_registry_harness_reset
+  LAM flir_registry_preload_state
+  ACTION_CLEAR_ARRAY bg1_tiers
+  ACTION_CLEAR_ARRAY bg2_tiers
+  ACTION_CLEAR_ARRAY location_array
+  OUTER_SPRINT $bg2_tiers("1") ~~
+  OUTER_SPRINT $location_array("raw100" "1" "target-a.cre" "area-a" "a") ~~
+  OUTER_SPRINT $location_array("raw200" "1" "target-b.cre" "area-b" "b") ~~
+  LAM flir_registry_capture_final_slots
+  LAM flir_registry_reconcile
+  LAM flir_registry_write_state
+  LAM flir_registry_harness_write_report
+
+BEGIN ~old migration snapshot survives final capture~ DESIGNATED 64
+  LAM flir_registry_harness_reset
+  OUTER_SPRINT Preserve ~y~
+  LAM flir_registry_harness_ensure_legacy_state
+  LAM flir_registry_preload_state
+  ACTION_CLEAR_ARRAY bg1_tiers
+  ACTION_CLEAR_ARRAY bg2_tiers
+  ACTION_CLEAR_ARRAY ident_filter
+  ACTION_CLEAR_ARRAY location_array#stage1
+  ACTION_CLEAR_ARRAY location_array
+  OUTER_SPRINT $bg2_tiers("1") ~~
+  OUTER_SPRINT $location_array#stage1("raw999" "1" "target-old-a.cre" "area-old-a" "old_a") ~~
+  OUTER_SPRINT $location_array#stage1("raw005" "1" "target-old-b.cre" "area-old-b" "old_b") ~~
+  LAM flir_registry_capture_old_unmarked_legacy_slots
+  OUTER_SPRINT $location_array("raw001" "1" "target-new.cre" "area-new" "new") ~~
+  OUTER_SPRINT $location_array("raw999" "1" "target-old-a.cre" "area-old-a" "old_a") ~~
+  OUTER_SPRINT $location_array("raw005" "1" "target-old-b.cre" "area-old-b" "old_b") ~~
+  LAM flir_registry_capture_final_slots
+  LAM flir_registry_reconcile
+  LAM flir_registry_write_state
+  LAM flir_registry_harness_write_report
+
+BEGIN ~old migration removed slot becomes tombstone~ DESIGNATED 65
+  LAM flir_registry_harness_reset
+  OUTER_SPRINT Preserve ~y~
+  LAM flir_registry_harness_ensure_legacy_state
+  LAM flir_registry_preload_state
+  ACTION_CLEAR_ARRAY bg1_tiers
+  ACTION_CLEAR_ARRAY bg2_tiers
+  ACTION_CLEAR_ARRAY ident_filter
+  ACTION_CLEAR_ARRAY location_array#stage1
+  ACTION_CLEAR_ARRAY location_array
+  OUTER_SPRINT $bg2_tiers("1") ~~
+  OUTER_SPRINT $location_array#stage1("raw100" "1" "target-keep.cre" "area-keep" "keep") ~~
+  OUTER_SPRINT $location_array#stage1("raw200" "1" "target-removed.cre" "area-removed" "removed") ~~
+  LAM flir_registry_capture_old_unmarked_legacy_slots
+  OUTER_SPRINT $location_array("raw050" "1" "target-added.cre" "area-added" "added") ~~
+  OUTER_SPRINT $location_array("raw100" "1" "target-keep.cre" "area-keep" "keep") ~~
+  LAM flir_registry_capture_final_slots
+  LAM flir_registry_reconcile
+  LAM flir_registry_write_state
+  LAM flir_registry_harness_write_report
+
+BEGIN ~old migration reuses chance filter decision~ DESIGNATED 66
+  LAM flir_registry_harness_reset
+  OUTER_SPRINT Preserve ~y~
+  LAM flir_registry_harness_ensure_legacy_state
+  LAM flir_registry_preload_state
+  ACTION_CLEAR_ARRAY bg1_tiers
+  ACTION_CLEAR_ARRAY bg2_tiers
+  OUTER_SPRINT $bg2_tiers("1") ~~
+  OUTER_SET flir_source_allow_override_availability = 1
+  OUTER_SET flir_source_decl_count = 1
+  OUTER_SPRINT $flir_source_decl_order("1") ~chance~
+  OUTER_SET $flir_source_decl_enabled("chance") = 1
+  OUTER_SPRINT $flir_source_decl_item("chance") ~synt0001~
+  OUTER_SPRINT $flir_source_decl_replacement("chance") ~none~
+  OUTER_SPRINT $flir_source_decl_source("chance") ~blank~
+  OUTER_SPRINT $flir_source_decl_tier("chance") ~1~
+  OUTER_SPRINT $flir_source_decl_token("chance") ~1~
+  OUTER_SPRINT $flir_source_decl_ident("chance") ~chanceident~
+  OUTER_SET $flir_source_decl_chance("chance") = 50
+  OUTER_FOR (h_seed = 1; h_seed <= 32; ++h_seed) BEGIN
+    ACTION_CLEAR_ARRAY ident_filter
+    ACTION_CLEAR_ARRAY item_array#stage1
+    LAM flir_source_legacy_snapshot_reset
+    RANDOM_SEED "%h_seed%"
+    LAM flir_source_filter_stage1_legacy_ident_filter
+    OUTER_SET h_legacy_skip = 0
+    ACTION_IF VARIABLE_IS_SET $flir_registry_legacy_ident_filter("chanceident") BEGIN
+      OUTER_SET h_legacy_skip = 1
+    END
+    LAM flir_source_filter_stage1
+    OUTER_SET h_final_skip = 0
+    ACTION_IF VARIABLE_IS_SET $ident_filter("chanceident") BEGIN
+      OUTER_SET h_final_skip = 1
+    END
+    ACTION_IF h_legacy_skip != h_final_skip BEGIN
+      LAF flir_registry_fail STR_VAR code = ~FILTER_REROLL~ kind = ~unit~ id = ~chanceident~ END
+    END
+  END
+
+BEGIN ~seed bad header fixture~ DESIGNATED 70
+  LAM flir_registry_harness_reset
+  LAM flir_registry_harness_default_tamper_fields
+  OUTER_SPRINT h_header ~CAMPAIGN TIER KIND STABLE_ID VALUE ENABLED~
+  LAM flir_registry_harness_write_tampered_fixture
+
+BEGIN ~seed bad schema meta kind fixture~ DESIGNATED 71
+  LAM flir_registry_harness_reset
+  LAM flir_registry_harness_default_tamper_fields
+  OUTER_SPRINT h_schema_kind ~bogus~
+  LAM flir_registry_harness_write_tampered_fixture
+
+BEGIN ~seed bad backend meta compact fixture~ DESIGNATED 72
+  LAM flir_registry_harness_reset
+  LAM flir_registry_harness_default_tamper_fields
+  OUTER_SPRINT h_backend_compact ~9~
+  LAM flir_registry_harness_write_tampered_fixture
+
+BEGIN ~seed bad catalog meta enabled fixture~ DESIGNATED 73
+  LAM flir_registry_harness_reset
+  LAM flir_registry_harness_default_tamper_fields
+  OUTER_SET h_catalog_enabled = 0
+  LAM flir_registry_harness_write_tampered_fixture
+
+BEGIN ~seed bad stable id separator fixture~ DESIGNATED 74
+  LAM flir_registry_harness_reset
+  LAM flir_registry_harness_default_tamper_fields
+  OUTER_TEXT_SPRINT h_rows ~bg2 1 unit core:bad:extra 1 1%WNL%~
+  OUTER_TEXT_SPRINT h_fingerprint_rows ~bg2 1 unit core:bad:extra 1 1%WNL%~
+  LAM flir_registry_harness_write_tampered_fixture
+
+BEGIN ~seed exact duplicate identity fixture~ DESIGNATED 75
+  LAM flir_registry_harness_reset
+  LAM flir_registry_harness_default_tamper_fields
+  OUTER_TEXT_SPRINT h_rows ~bg2 1 unit core:duplicate 1 1%WNL%bg2 1 unit core:duplicate 1 1%WNL%~
+  OUTER_TEXT_SPRINT h_fingerprint_rows ~bg2 1 unit core:duplicate 1 1%WNL%~
+  LAM flir_registry_harness_write_tampered_fixture
+
+BEGIN ~seed unknown origin with matching fingerprint fixture~ DESIGNATED 76
+  LAM flir_registry_harness_reset
+  LAM flir_registry_harness_default_tamper_fields
+  OUTER_SPRINT h_origin ~future-origin-v9~
+  LAM flir_registry_harness_write_tampered_fixture
+
+BEGIN ~seed zero catalog hash fixture~ DESIGNATED 77
+  LAM flir_registry_harness_reset
+  LAM flir_registry_harness_default_tamper_fields
+  OUTER_SPRINT h_catalog ~0~
+  LAM flir_registry_harness_write_tampered_fixture
+
+BEGIN ~seed zero file fingerprint fixture~ DESIGNATED 78
+  LAM flir_registry_harness_reset
+  OUTER_TEXT_SPRINT flir_registry_fixture_state ~2DA V1.0%WNL%0%WNL%CAMPAIGN TIER KIND STABLE_ID COMPACT ENABLED%WNL%@meta @schema schema flir-registry-v1 1 1%WNL%@meta @backend backend legacy-bcs-v1 1 1%WNL%@meta @origin origin fresh-postextension-v1 1 1%WNL%@meta @catalog catalog 11111 1 1%WNL%@meta @fingerprint fingerprint 0 1 1%WNL%~
+  COPY + "...blank" "override/fl#irreg.2da"
+    INSERT_BYTES 0 STRING_LENGTH ~%flir_registry_fixture_state%~
+    WRITE_ASCIIE 0 ~%flir_registry_fixture_state%~ (STRING_LENGTH ~%flir_registry_fixture_state%~)
+  BUT_ONLY
+
+BEGIN ~seed oversized catalog hash fixture~ DESIGNATED 79
+  LAM flir_registry_harness_reset
+  LAM flir_registry_harness_default_tamper_fields
+  OUTER_SPRINT h_catalog ~9999999999~
+  LAM flir_registry_harness_write_tampered_fixture
+
+BEGIN ~planned base compact collision before mutation~ DESIGNATED 80
+  LAM flir_registry_harness_reset
+  OUTER_SPRINT h_schema ~flir-registry-v1~
+  OUTER_SPRINT h_backend ~legacy-bcs-v1~
+  OUTER_SET h_catalog = 11111
+  OUTER_TEXT_SPRINT h_rows ~bg2 1 unit legacy:unit-bg2-1-1-other 1 1%WNL%~
+  LAM flir_registry_harness_write_raw_fixture
+  LAM flir_registry_harness_reset
+  ACTION_CLEAR_ARRAY bg1_tiers
+  ACTION_CLEAR_ARRAY bg2_tiers
+  OUTER_SPRINT $bg2_tiers("1") ~~
+  LAM flir_registry_preload_state
+  OUTER_SET flir_removal_plan_count = 1
+  OUTER_SET $flir_removal_plan_emit_count("1") = 1
+  OUTER_SPRINT $flir_removal_plan_tier("1") ~1~
+  OUTER_SPRINT $flir_removal_plan_token("1") ~1~
+  OUTER_SPRINT $flir_removal_plan_ident("1") ~alpha~
+  LAM flir_registry_validate_planned_units
+  COPY + "...blank" "override/fl#mutated.mrk"
+    INSERT_BYTES 0 7
+    WRITE_ASCIIE 0 ~mutated~ #7
+  BUT_ONLY
+
+BEGIN ~planned extra tombstone collision before mutation~ DESIGNATED 81
+  LAM flir_registry_harness_reset
+  OUTER_SPRINT h_schema ~flir-registry-v1~
+  OUTER_SPRINT h_backend ~legacy-bcs-v1~
+  OUTER_SET h_catalog = 11111
+  OUTER_TEXT_SPRINT h_rows ~bg2 1 unit legacy:unit-bg2-1-1-alpha-extra-x1 x0 0%WNL%~
+  LAM flir_registry_harness_write_raw_fixture
+  LAM flir_registry_harness_reset
+  ACTION_CLEAR_ARRAY bg1_tiers
+  ACTION_CLEAR_ARRAY bg2_tiers
+  OUTER_SPRINT $bg2_tiers("1") ~~
+  LAM flir_registry_preload_state
+  OUTER_SET flir_removal_plan_count = 1
+  OUTER_SET $flir_removal_plan_emit_count("1") = 1
+  OUTER_SPRINT $flir_removal_plan_kind("1") ~store~
+  OUTER_SET $flir_removal_plan_quantity("1") = 2
+  OUTER_SPRINT $flir_removal_plan_tier("1") ~1~
+  OUTER_SPRINT $flir_removal_plan_token("1") ~1~
+  OUTER_SPRINT $flir_removal_plan_ident("1") ~alpha~
+  LAM flir_registry_validate_planned_units
+  COPY + "...blank" "override/fl#mutated.mrk"
+    INSERT_BYTES 0 7
+    WRITE_ASCIIE 0 ~mutated~ #7
+  BUT_ONLY
+
+BEGIN ~planned charge extra allocates after occupied compact~ DESIGNATED 82
+  LAM flir_registry_harness_reset
+  OUTER_SPRINT h_schema ~flir-registry-v1~
+  OUTER_SPRINT h_backend ~legacy-bcs-v1~
+  OUTER_SET h_catalog = 11111
+  OUTER_TEXT_SPRINT h_rows ~bg2 1 unit legacy:unit-bg2-1-unrelated y0 1%WNL%~
+  LAM flir_registry_harness_write_raw_fixture
+  LAM flir_registry_harness_reset
+  ACTION_CLEAR_ARRAY bg1_tiers
+  ACTION_CLEAR_ARRAY bg2_tiers
+  OUTER_SPRINT $bg2_tiers("1") ~~
+  LAM flir_registry_preload_state
+  OUTER_SET flir_removal_plan_count = 1
+  OUTER_SET $flir_removal_plan_emit_count("1") = 2
+  OUTER_SPRINT $flir_removal_plan_kind("1") ~cre_inventory~
+  OUTER_SET $flir_removal_plan_quantity("1") = 1
+  OUTER_SET $flir_removal_plan_category("1") = 9
+  OUTER_SET $flir_removal_plan_charge1("1") = 2
+  OUTER_SPRINT $flir_removal_plan_tier("1") ~1~
+  OUTER_SPRINT $flir_removal_plan_token("1") ~1~
+  OUTER_SPRINT $flir_removal_plan_ident("1") ~alpha~
+  LAM flir_registry_validate_planned_units
+  OUTER_SPRINT h_plan_prefix ~y~
+  LAM flir_registry_harness_write_extra_plan
+
+BEGIN ~old migration reuses historical extra compact~ DESIGNATED 83
+  LAM flir_registry_harness_reset
+  OUTER_SPRINT Preserve ~y~
+  LAM flir_registry_harness_ensure_legacy_state
+  LAM flir_registry_preload_state
+  ACTION_CLEAR_ARRAY bg1_tiers
+  ACTION_CLEAR_ARRAY bg2_tiers
+  ACTION_CLEAR_ARRAY removed_item_array
+  OUTER_SPRINT $bg2_tiers("1") ~~
+  OUTER_SPRINT $removed_item_array("1" "1" "alpha") ~~
+  OUTER_SPRINT $removed_item_array("1" "x0" "x") ~~
+  OUTER_SET flir_removal_plan_count = 1
+  OUTER_SET $flir_removal_plan_emit_count("1") = 2
+  OUTER_SPRINT $flir_removal_plan_kind("1") ~store~
+  OUTER_SET $flir_removal_plan_quantity("1") = 2
+  OUTER_SPRINT $flir_removal_plan_tier("1") ~1~
+  OUTER_SPRINT $flir_removal_plan_token("1") ~1~
+  OUTER_SPRINT $flir_removal_plan_ident("1") ~alpha~
+  LAM flir_registry_capture_old_unmarked_legacy_units
+  LAM flir_registry_validate_planned_units
+  OUTER_SPRINT h_plan_prefix ~x~
+  LAM flir_registry_harness_write_extra_plan
+
+BEGIN ~existing logical extra reuses persisted compact~ DESIGNATED 84
+  LAM flir_registry_harness_reset
+  OUTER_SPRINT h_schema ~flir-registry-v1~
+  OUTER_SPRINT h_backend ~legacy-bcs-v1~
+  OUTER_SET h_catalog = 11111
+  OUTER_TEXT_SPRINT h_rows ~bg2 1 unit legacy:unit-bg2-1-1-alpha-extra-x1 x0 1%WNL%~
+  LAM flir_registry_harness_write_raw_fixture
+  LAM flir_registry_harness_reset
+  ACTION_CLEAR_ARRAY bg1_tiers
+  ACTION_CLEAR_ARRAY bg2_tiers
+  OUTER_SPRINT $bg2_tiers("1") ~~
+  LAM flir_registry_preload_state
+  OUTER_SET flir_removal_plan_count = 1
+  OUTER_SET $flir_removal_plan_emit_count("1") = 2
+  OUTER_SPRINT $flir_removal_plan_kind("1") ~store~
+  OUTER_SET $flir_removal_plan_quantity("1") = 2
+  OUTER_SPRINT $flir_removal_plan_tier("1") ~1~
+  OUTER_SPRINT $flir_removal_plan_token("1") ~1~
+  OUTER_SPRINT $flir_removal_plan_ident("1") ~alpha~
+  LAM flir_registry_validate_planned_units
+  OUTER_SPRINT h_plan_prefix ~x~
+  LAM flir_registry_harness_write_extra_plan
+
+BEGIN ~old migration rejects orphaned historical extra~ DESIGNATED 85
+  LAM flir_registry_harness_reset
+  OUTER_SPRINT Preserve ~y~
+  LAM flir_registry_harness_ensure_legacy_state
+  LAM flir_registry_preload_state
+  ACTION_CLEAR_ARRAY bg1_tiers
+  ACTION_CLEAR_ARRAY bg2_tiers
+  ACTION_CLEAR_ARRAY removed_item_array
+  OUTER_SPRINT $bg2_tiers("1") ~~
+  OUTER_SPRINT $removed_item_array("1" "x0" "x") ~~
+  OUTER_SET flir_removal_plan_count = 0
+  LAM flir_registry_capture_old_unmarked_legacy_units
+  COPY + "...blank" "override/fl#mutated.mrk"
+    INSERT_BYTES 0 7
+    WRITE_ASCIIE 0 ~mutated~ #7
+  BUT_ONLY
+
+BEGIN ~planned extra compact is consumed during emission~ DESIGNATED 86
+  LAM flir_registry_harness_reset
+  OUTER_SPRINT h_schema ~flir-registry-v1~
+  OUTER_SPRINT h_backend ~legacy-bcs-v1~
+  OUTER_SET h_catalog = 11111
+  OUTER_TEXT_SPRINT h_rows ~bg2 1 unit legacy:unit-bg2-1-unrelated x0 1%WNL%~
+  LAM flir_registry_harness_write_raw_fixture
+  LAM flir_registry_harness_reset
+  ACTION_CLEAR_ARRAY bg1_tiers
+  ACTION_CLEAR_ARRAY bg2_tiers
+  ACTION_CLEAR_ARRAY removed_item_array
+  ACTION_CLEAR_ARRAY extra_tokens
+  OUTER_SPRINT $bg2_tiers("1") ~~
+  LAM flir_registry_preload_state
+
+  COPY + "...blank" "override/fltier1.cre"
+    INSERT_BYTES 0 1024
+    WRITE_LONG 0x2b8 0x320
+    WRITE_LONG 0x2bc 0x300
+    WRITE_LONG 0x2c0 0
+    FOR (h_slot = 0; h_slot < 37; ++h_slot) BEGIN
+      WRITE_SHORT (0x320 + 2 * h_slot) 0xffff
+    END
+  BUT_ONLY
+
+  OUTER_SET flir_removal_plan_count = 1
+  OUTER_SET flir_removal_plan_applied_count = 0
+  OUTER_SET $flir_removal_plan_emit_count("1") = 2
+  OUTER_SPRINT $flir_removal_plan_kind("1") ~store~
+  OUTER_SET $flir_removal_plan_quantity("1") = 2
+  OUTER_SPRINT $flir_removal_plan_tier("1") ~1~
+  OUTER_SPRINT $flir_removal_plan_token("1") ~1~
+  OUTER_SPRINT $flir_removal_plan_ident("1") ~alpha~
+  OUTER_SPRINT $flir_removal_plan_item("1") ~synt0001~
+  OUTER_SPRINT $flir_removal_plan_source("1") ~shop0001.sto~
+  OUTER_SET $flir_removal_plan_category("1") = 0
+  OUTER_SET $flir_removal_plan_charge1("1") = 0
+  OUTER_SET $flir_removal_plan_charge2("1") = 0
+  OUTER_SET $flir_removal_plan_charge3("1") = 0
+  LAM flir_registry_validate_planned_units
+  OUTER_SPRINT flir_emit_plan_id ~1~
+  LAM flir_removal_emit_plan
+  LAM flir_registry_register_applied_units
+  LAM flir_registry_reconcile
+  LAM flir_registry_write_state
+  LAM flir_registry_harness_write_report
+
+BEGIN ~catalog fingerprint includes normalized row fields a~ DESIGNATED 87
+  LAM flir_registry_harness_reset
+  OUTER_SPRINT flir_catalog_arg_operation ~ADD~
+  OUTER_SPRINT flir_catalog_arg_actor_provider ~core~
+  OUTER_SPRINT flir_catalog_arg_provider ~core~
+  OUTER_SPRINT flir_catalog_arg_id ~fingerprint-item~
+  OUTER_SPRINT flir_catalog_arg_tier ~1~
+  OUTER_SPRINT flir_catalog_arg_resref ~synt0001~
+  OUTER_SPRINT flir_catalog_arg_variant_policy ~exact~
+  OUTER_SPRINT flir_catalog_arg_source_set_id ~core:fingerprint-sources~
+  OUTER_SET flir_catalog_arg_enabled = 1
+  LAM flir_catalog_item
+  OUTER_SPRINT h_tier ~1~
+  OUTER_SPRINT h_id ~core:unit-a~
+  LAM flir_registry_harness_add_unit
+  LAM flir_registry_bootstrap
+  LAM flir_registry_write_state
+  LAM flir_registry_harness_write_report
+
+BEGIN ~catalog fingerprint includes normalized row fields b~ DESIGNATED 88
+  LAM flir_registry_harness_reset
+  OUTER_SPRINT flir_catalog_arg_operation ~ADD~
+  OUTER_SPRINT flir_catalog_arg_actor_provider ~core~
+  OUTER_SPRINT flir_catalog_arg_provider ~core~
+  OUTER_SPRINT flir_catalog_arg_id ~fingerprint-item~
+  OUTER_SPRINT flir_catalog_arg_tier ~1~
+  OUTER_SPRINT flir_catalog_arg_resref ~synt0002~
+  OUTER_SPRINT flir_catalog_arg_variant_policy ~exact~
+  OUTER_SPRINT flir_catalog_arg_source_set_id ~core:fingerprint-sources~
+  OUTER_SET flir_catalog_arg_enabled = 1
+  LAM flir_catalog_item
+  OUTER_SPRINT h_tier ~1~
+  OUTER_SPRINT h_id ~core:unit-a~
+  LAM flir_registry_harness_add_unit
+  LAM flir_registry_bootstrap
+  LAM flir_registry_write_state
+  LAM flir_registry_harness_write_report
+
+BEGIN ~old migration preserves extra parent ownership~ DESIGNATED 89
+  LAM flir_registry_harness_reset
+  OUTER_SPRINT Preserve ~y~
+  LAM flir_registry_harness_ensure_legacy_state
+  LAM flir_registry_preload_state
+  ACTION_CLEAR_ARRAY bg1_tiers
+  ACTION_CLEAR_ARRAY bg2_tiers
+  ACTION_CLEAR_ARRAY removed_item_array
+  OUTER_SPRINT $bg2_tiers("1") ~~
+  OUTER_SPRINT $removed_item_array("1" "1" "alpha") ~~
+  OUTER_SPRINT $removed_item_array("1" "2" "beta") ~~
+  OUTER_SPRINT $removed_item_array("1" "x0" "x") ~~
+
+  LAM flir_removal_plan_reset
+  OUTER_SET flir_removal_plan_count = 2
+  OUTER_SET $flir_removal_plan_emit_count("1") = 2
+  OUTER_SPRINT $flir_removal_plan_kind("1") ~store~
+  OUTER_SET $flir_removal_plan_quantity("1") = 2
+  OUTER_SPRINT $flir_removal_plan_tier("1") ~1~
+  OUTER_SPRINT $flir_removal_plan_token("1") ~1~
+  OUTER_SPRINT $flir_removal_plan_ident("1") ~alpha~
+  OUTER_SET $flir_removal_plan_category("1") = 0
+  OUTER_SET $flir_removal_plan_charge1("1") = 0
+  OUTER_SET $flir_removal_plan_emit_count("2") = 1
+  OUTER_SPRINT $flir_removal_plan_kind("2") ~virtual~
+  OUTER_SET $flir_removal_plan_quantity("2") = 1
+  OUTER_SPRINT $flir_removal_plan_tier("2") ~1~
+  OUTER_SPRINT $flir_removal_plan_token("2") ~2~
+  OUTER_SPRINT $flir_removal_plan_ident("2") ~beta~
+  OUTER_SET $flir_removal_plan_category("2") = 0
+  OUTER_SET $flir_removal_plan_charge1("2") = 0
+  LAM flir_registry_capture_old_unmarked_legacy_units
+
+  LAM flir_removal_plan_reset
+  OUTER_SET flir_removal_plan_count = 2
+  OUTER_SET $flir_removal_plan_emit_count("1") = 2
+  OUTER_SPRINT $flir_removal_plan_kind("1") ~store~
+  OUTER_SET $flir_removal_plan_quantity("1") = 2
+  OUTER_SPRINT $flir_removal_plan_tier("1") ~1~
+  OUTER_SPRINT $flir_removal_plan_token("1") ~2~
+  OUTER_SPRINT $flir_removal_plan_ident("1") ~beta~
+  OUTER_SET $flir_removal_plan_category("1") = 0
+  OUTER_SET $flir_removal_plan_charge1("1") = 0
+  OUTER_SET $flir_removal_plan_emit_count("2") = 1
+  OUTER_SPRINT $flir_removal_plan_kind("2") ~virtual~
+  OUTER_SET $flir_removal_plan_quantity("2") = 1
+  OUTER_SPRINT $flir_removal_plan_tier("2") ~1~
+  OUTER_SPRINT $flir_removal_plan_token("2") ~1~
+  OUTER_SPRINT $flir_removal_plan_ident("2") ~alpha~
+  OUTER_SET $flir_removal_plan_category("2") = 0
+  OUTER_SET $flir_removal_plan_charge1("2") = 0
+  LAM flir_registry_validate_planned_units
+  OUTER_SPRINT h_plan_prefix ~x~
+  LAM flir_registry_harness_write_extra_plan
+
+BEGIN ~automatic old migration preserves ownership and tombstones history~ DESIGNATED 90
+  LAM flir_registry_harness_reset
+  OUTER_SPRINT Preserve ~y~
+  LAM flir_registry_harness_ensure_legacy_state
+  LAM flir_registry_preload_state
+  LAM flir_registry_harness_reset_sources
+  ACTION_CLEAR_ARRAY bg1_tiers
+  ACTION_CLEAR_ARRAY bg2_tiers
+  ACTION_CLEAR_ARRAY removed_item_array
+  ACTION_CLEAR_ARRAY extra_tokens
+  OUTER_SPRINT $bg2_tiers("1") ~~
+  OUTER_SET flir_source_allow_override_availability = 1
+
+  OUTER_SPRINT h_source_item ~synt0001~
+  OUTER_SPRINT h_source_resource ~shop0001.sto~
+  OUTER_SPRINT h_source_tier ~1~
+  OUTER_SPRINT h_source_token ~1~
+  OUTER_SPRINT h_source_ident ~alpha~
+  OUTER_SET h_source_chance = 100
+  OUTER_SPRINT h_source_kind ~store~
+  OUTER_SPRINT h_source_virtual_policy ~~
+  LAM flir_registry_harness_add_named_source
+  OUTER_SPRINT h_source_item ~synt0002~
+  OUTER_SPRINT h_source_token ~2~
+  OUTER_SPRINT h_source_ident ~beta~
+  LAM flir_registry_harness_add_named_source
+  OUTER_SPRINT h_source_item ~synt0003~
+  OUTER_SPRINT h_source_resource ~blank~
+  OUTER_SPRINT h_source_token ~3~
+  OUTER_SPRINT h_source_ident ~gamma~
+  OUTER_SPRINT h_source_kind ~virtual~
+  OUTER_SPRINT h_source_virtual_policy ~legacy_blank~
+  LAM flir_registry_harness_add_named_source
+  OUTER_SPRINT h_source_item ~synt0004~
+  OUTER_SPRINT h_source_token ~4~
+  OUTER_SPRINT h_source_ident ~delta~
+  LAM flir_registry_harness_add_named_source
+
+  LAM flir_source_filter_stage1_legacy_ident_filter
+  LAM flir_source_finalize_legacy_snapshot
+
+  OUTER_SPRINT $flir_source_decl_item("ident:alpha") ~synt0002~
+  OUTER_SPRINT $flir_source_decl_item("ident:beta") ~synt0001~
+  OUTER_SPRINT $flir_source_decl_item("ident:gamma") ~synt0004~
+  OUTER_SPRINT $flir_source_decl_item("ident:delta") ~synt0003~
+  LAM flir_source_filter_stage1
+  LAM create_item_array#finalise
+
+  LAM flir_removal_plan_build
+  LAM flir_removal_plan_apply
+  LAM flir_registry_register_applied_units
+  LAM flir_registry_reconcile
+  LAM flir_registry_write_state
+  LAM flir_registry_harness_write_migration_report
+
+BEGIN ~automatic old migration tombstones a removed base unit~ DESIGNATED 91
+  LAM flir_registry_harness_reset
+  OUTER_SPRINT Preserve ~y~
+  LAM flir_registry_harness_ensure_legacy_state
+  LAM flir_registry_preload_state
+  LAM flir_registry_harness_reset_sources
+  ACTION_CLEAR_ARRAY bg1_tiers
+  ACTION_CLEAR_ARRAY bg2_tiers
+  ACTION_CLEAR_ARRAY removed_item_array
+  ACTION_CLEAR_ARRAY extra_tokens
+  OUTER_SPRINT $bg2_tiers("1") ~~
+  OUTER_SET flir_source_allow_override_availability = 1
+
+  OUTER_SPRINT h_source_item ~synt0002~
+  OUTER_SPRINT h_source_resource ~shop0001.sto~
+  OUTER_SPRINT h_source_tier ~1~
+  OUTER_SPRINT h_source_token ~1~
+  OUTER_SPRINT h_source_ident ~alpha~
+  OUTER_SET h_source_chance = 100
+  OUTER_SPRINT h_source_kind ~store~
+  OUTER_SPRINT h_source_virtual_policy ~~
+  LAM flir_registry_harness_add_named_source
+
+  LAM flir_source_filter_stage1_legacy_ident_filter
+  LAM flir_source_finalize_legacy_snapshot
+  OUTER_SET $flir_source_decl_enabled("ident:alpha") = 0
+  LAM flir_source_filter_stage1
+  LAM create_item_array#finalise
+
+  LAM flir_removal_plan_build
+  LAM flir_removal_plan_apply
+  LAM flir_registry_register_applied_units
+  LAM flir_registry_reconcile
+  LAM flir_registry_write_state
+  LAM flir_registry_harness_write_migration_report
+
+BEGIN ~anonymous virtual source retains declaration metadata~ DESIGNATED 92
+  LAM flir_registry_harness_reset
+  OUTER_SPRINT Preserve ~n~
+  LAM flir_registry_preload_state
+  LAM flir_registry_harness_reset_sources
+  ACTION_CLEAR_ARRAY bg1_tiers
+  ACTION_CLEAR_ARRAY bg2_tiers
+  ACTION_CLEAR_ARRAY removed_item_array
+  OUTER_SPRINT $bg2_tiers("1") ~~
+  OUTER_SET flir_source_allow_override_availability = 1
+  OUTER_SET flir_source_decl_count = 1
+  OUTER_SPRINT flir_source_key ~anon:1:av0:anon0001:0~
+  OUTER_SPRINT $flir_source_decl_order("1") ~%flir_source_key%~
+  OUTER_SPRINT $flir_source_decl_exists("%flir_source_key%") ~1~
+  OUTER_SET $flir_source_decl_enabled("%flir_source_key%") = 1
+  OUTER_SPRINT $flir_source_decl_item("%flir_source_key%") ~anon0001~
+  OUTER_SPRINT $flir_source_decl_replacement("%flir_source_key%") ~blank~
+  OUTER_SPRINT $flir_source_decl_source("%flir_source_key%") ~blank~
+  OUTER_SPRINT $flir_source_decl_tier("%flir_source_key%") ~1~
+  OUTER_SPRINT $flir_source_decl_token("%flir_source_key%") ~av0~
+  OUTER_SPRINT $flir_source_decl_ident("%flir_source_key%") ~x~
+  OUTER_SET $flir_source_decl_chance("%flir_source_key%") = 100
+  OUTER_SPRINT $flir_source_decl_source_kind("%flir_source_key%") ~virtual~
+  OUTER_SPRINT $flir_source_decl_object_or_slot("%flir_source_key%") ~legacy_blank~
+  OUTER_SPRINT $flir_source_decl_virtual_policy("%flir_source_key%") ~legacy_blank~
+  OUTER_SET $flir_source_decl_expected_quantity("%flir_source_key%") = 1
+  OUTER_SET flir_source_decl_count = 2
+  OUTER_SPRINT flir_source_key ~anon:1:rawav:anon0002:1~
+  OUTER_SPRINT $flir_source_decl_order("2") ~%flir_source_key%~
+  OUTER_SPRINT $flir_source_decl_exists("%flir_source_key%") ~1~
+  OUTER_SET $flir_source_decl_enabled("%flir_source_key%") = 1
+  OUTER_SPRINT $flir_source_decl_item("%flir_source_key%") ~anon0002~
+  OUTER_SPRINT $flir_source_decl_replacement("%flir_source_key%") ~blank~
+  OUTER_SPRINT $flir_source_decl_source("%flir_source_key%") ~shop0001.sto~
+  OUTER_SPRINT $flir_source_decl_tier("%flir_source_key%") ~1~
+  OUTER_SPRINT $flir_source_decl_token("%flir_source_key%") ~rawav~
+  OUTER_SPRINT $flir_source_decl_ident("%flir_source_key%") ~x~
+  OUTER_SET $flir_source_decl_chance("%flir_source_key%") = 100
+  OUTER_SPRINT $flir_source_decl_source_kind("%flir_source_key%") ~virtual~
+  OUTER_SPRINT $flir_source_decl_object_or_slot("%flir_source_key%") ~explicit~
+  OUTER_SPRINT $flir_source_decl_virtual_policy("%flir_source_key%") ~explicit~
+  OUTER_SET $flir_source_decl_expected_quantity("%flir_source_key%") = 1
+  OUTER_SPRINT $rebalance_tier("anon0002") ~1~
+  OUTER_SPRINT $rebalance_token("anon0002") ~av1~
+  LAM flir_source_filter_stage1
+  LAM create_item_array#finalise
+  LAM flir_removal_plan_build
+  OUTER_TEXT_SPRINT h_plan_report ~PLAN_COUNT %flir_removal_plan_count%%WNL%~
+  OUTER_FOR (h_plan_i = 1; h_plan_i <= flir_removal_plan_count; ++h_plan_i) BEGIN
+    OUTER_SPRINT h_plan_kind $flir_removal_plan_kind("%h_plan_i%")
+    OUTER_SPRINT h_plan_source $flir_removal_plan_source("%h_plan_i%")
+    OUTER_SPRINT h_plan_token $flir_removal_plan_token("%h_plan_i%")
+    OUTER_SPRINT h_plan_ident $flir_removal_plan_ident("%h_plan_i%")
+    OUTER_SPRINT h_plan_policy $flir_removal_plan_container("%h_plan_i%")
+    OUTER_TEXT_SPRINT h_plan_report ~%h_plan_report%PLANMETA %h_plan_token% %h_plan_ident% %h_plan_kind% %h_plan_source% %h_plan_policy%%WNL%~
+  END
+  COPY + "...blank" "%argv[1]%"
+    INSERT_BYTES 0 STRING_LENGTH ~%h_plan_report%~
+    WRITE_ASCIIE 0 ~%h_plan_report%~ (STRING_LENGTH ~%h_plan_report%~)
+  BUT_ONLY
+
+BEGIN ~legacy cursor preserves historical item location RNG order~ DESIGNATED 93
+  LAM flir_registry_harness_reset
+  OUTER_SET flir_registry_old_unmarked_migration = 1
+  OUTER_SET flir_source_allow_override_availability = 1
+  ACTION_CLEAR_ARRAY bg1_tiers
+  ACTION_CLEAR_ARRAY bg2_tiers
+  OUTER_SPRINT $bg2_tiers("1") ~~
+  OUTER_FOR (h_seed = 1; h_seed <= 64; ++h_seed) BEGIN
+    RANDOM_SEED "%h_seed%"
+    OUTER_PATCH "" BEGIN
+      LPF create_item_array#stage1#filter
+        INT_VAR global_chance = 0 chance = 50 allow_override_availability = 1
+        STR_VAR item = ~rng00001~ source = ~blank~ tier = ~1~ ident = ~blocked~
+        RET h_hist_item1 = skip
+      END
+      LPF create_loc_array#filter
+        INT_VAR chance = 50
+        STR_VAR location = ~l1~ tier = ~1~ target = ~container~ area = ~blank~ ident = ~blocked~
+        RET h_hist_loc1 = skip
+      END
+      LPF create_item_array#stage1#filter
+        INT_VAR global_chance = 0 chance = 50 allow_override_availability = 1
+        STR_VAR item = ~rng00002~ source = ~blank~ tier = ~1~ ident = ~second~
+        RET h_hist_item2 = skip
+      END
+      LPF create_loc_array#filter
+        INT_VAR chance = 50
+        STR_VAR location = ~l2~ tier = ~1~ target = ~container~ area = ~blank~ ident = ~second~
+        RET h_hist_loc2 = skip
+      END
+    END
+    OUTER_SET h_hist_next = RANDOM(1 100)
+
+    RANDOM_SEED "%h_seed%"
+    LAM flir_registry_harness_reset_sources
+    OUTER_SPRINT $ident_filter("blocked") ~~
+    OUTER_SPRINT h_source_item ~rng00001~
+    OUTER_SPRINT h_source_resource ~blank~
+    OUTER_SPRINT h_source_tier ~1~
+    OUTER_SPRINT h_source_token ~r1~
+    OUTER_SPRINT h_source_ident ~blocked~
+    OUTER_SET h_source_chance = 50
+    OUTER_SPRINT h_source_kind ~virtual~
+    OUTER_SPRINT h_source_virtual_policy ~legacy_blank~
+    LAM flir_registry_harness_add_named_source
+    LAM flir_source_filter_stage1_legacy_ident_filter
+    OUTER_PATCH "" BEGIN
+      LPF create_loc_array#filter
+        INT_VAR chance = 50
+        STR_VAR location = ~l1~ tier = ~1~ target = ~container~ area = ~blank~ ident = ~blocked~
+        RET h_prod_loc1 = skip
+      END
+    END
+    OUTER_SPRINT h_source_item ~rng00002~
+    OUTER_SPRINT h_source_token ~r2~
+    OUTER_SPRINT h_source_ident ~second~
+    LAM flir_registry_harness_add_named_source
+    LAM flir_source_filter_stage1_legacy_ident_filter
+    OUTER_PATCH "" BEGIN
+      LPF create_loc_array#filter
+        INT_VAR chance = 50
+        STR_VAR location = ~l2~ tier = ~1~ target = ~container~ area = ~blank~ ident = ~second~
+        RET h_prod_loc2 = skip
+      END
+    END
+    LAM flir_source_filter_stage1
+    OUTER_SET h_prod_item1 = $flir_source_legacy_filter_skip("ident:blocked")
+    OUTER_SET h_prod_item2 = $flir_source_legacy_filter_skip("ident:second")
+    OUTER_SET h_prod_next = RANDOM(1 100)
+    ACTION_IF h_hist_item1 != h_prod_item1
+          OR h_hist_loc1 != h_prod_loc1
+          OR h_hist_item2 != h_prod_item2
+          OR h_hist_loc2 != h_prod_loc2
+          OR h_hist_next != h_prod_next BEGIN
+      LAF flir_registry_fail STR_VAR code = ~LEGACY_RNG_DRIFT~ kind = ~filter~ id = EVAL ~%h_seed%~ END
+    END
+  END
+  OUTER_TEXT_SPRINT h_rng_report ~RNG_ORDER_OK 64%WNL%~
+  COPY + "...blank" "%argv[1]%"
+    INSERT_BYTES 0 STRING_LENGTH ~%h_rng_report%~
+    WRITE_ASCIIE 0 ~%h_rng_report%~ (STRING_LENGTH ~%h_rng_report%~)
+  BUT_ONLY
+
+BEGIN ~final source filtering preserves campaign-local tier ownership~ DESIGNATED 94
+  LAM flir_registry_harness_reset
+  OUTER_SPRINT Preserve ~n~
+  LAM flir_registry_preload_state
+  LAM flir_registry_harness_reset_sources
+  ACTION_CLEAR_ARRAY bg1_tiers
+  ACTION_CLEAR_ARRAY bg2_tiers
+  // Production location staging has already established the campaign tiers.
+  OUTER_SPRINT $bg2_tiers("1") ~~
+  OUTER_SPRINT $bg1_tiers("24") ~~
+  OUTER_SET flir_source_allow_override_availability = 1
+
+  OUTER_SPRINT h_source_campaign ~bg2~
+  OUTER_SPRINT h_source_item ~synt0001~
+  OUTER_SPRINT h_source_resource ~shop0001.sto~
+  OUTER_SPRINT h_source_tier ~1~
+  OUTER_SPRINT h_source_token ~1~
+  OUTER_SPRINT h_source_ident ~alpha~
+  OUTER_SET h_source_chance = 100
+  OUTER_SPRINT h_source_kind ~store~
+  OUTER_SPRINT h_source_virtual_policy ~~
+  LAM flir_registry_harness_add_named_source
+
+  OUTER_SPRINT h_source_campaign ~bg1~
+  OUTER_SPRINT h_source_item ~synt0002~
+  OUTER_SPRINT h_source_tier ~24~
+  OUTER_SPRINT h_source_token ~1~
+  OUTER_SPRINT h_source_ident ~beta~
+  LAM flir_registry_harness_add_named_source
+
+  OUTER_TEXT_SPRINT h_campaign_extension ~2DA V1.0%WNL%0%WNL%OP ITEM REPLACEMENT SOURCE TIER TOKEN IDENT CHANCE SOURCE_KIND OBJECT_OR_SLOT VIRTUAL_POLICY CHARGE1 CHARGE2 CHARGE3 EXPECTED_QUANTITY%WNL%ADD anon0001 blank blank 1 ax x 100 virtual legacy_blank legacy_blank 0 0 0 1%WNL%REPLACE synt0002 blank shop0001.sto 24 1 beta 100 store * none 0 0 0 1%WNL%~
+  COPY + "...blank" "override/fl#campaign-ext.2da"
+    INSERT_BYTES 0 STRING_LENGTH ~%h_campaign_extension%~
+    WRITE_ASCIIE 0 ~%h_campaign_extension%~ (STRING_LENGTH ~%h_campaign_extension%~)
+  BUT_ONLY
+  OUTER_SPRINT flir_source_extension_fixture ~override/fl#campaign-ext.2da~
+  LAM flir_source_apply_extension_hook
+
+  // Match the real EET tail: BG1 was staged last before one all-catalog pass.
+  OUTER_SPRINT tier_hook ~bg1_tiers~
+  LAM flir_source_filter_stage1
+
+  OUTER_SET h_bg2_tier_1 = 0
+  OUTER_SET h_bg2_tier_24 = 0
+  OUTER_SET h_bg1_tier_1 = 0
+  OUTER_SET h_bg1_tier_24 = 0
+  ACTION_IF VARIABLE_IS_SET $bg2_tiers("1") BEGIN OUTER_SET h_bg2_tier_1 = 1 END
+  ACTION_IF VARIABLE_IS_SET $bg2_tiers("24") BEGIN OUTER_SET h_bg2_tier_24 = 1 END
+  ACTION_IF VARIABLE_IS_SET $bg1_tiers("1") BEGIN OUTER_SET h_bg1_tier_1 = 1 END
+  ACTION_IF VARIABLE_IS_SET $bg1_tiers("24") BEGIN OUTER_SET h_bg1_tier_24 = 1 END
+  OUTER_SPRINT flir_registry_tier_for_campaign ~1~
+  LAM flir_registry_campaign_for_tier
+  OUTER_SPRINT h_tier_1_campaign ~%flir_registry_detected_campaign%~
+  OUTER_SPRINT flir_registry_tier_for_campaign ~24~
+  LAM flir_registry_campaign_for_tier
+  OUTER_SPRINT h_tier_24_campaign ~%flir_registry_detected_campaign%~
+  OUTER_SPRINT h_alpha_hook ~missing~
+  OUTER_SPRINT h_beta_hook ~missing~
+  OUTER_SPRINT h_anon_hook ~missing~
+  ACTION_IF VARIABLE_IS_SET $flir_source_decl_tier_hook("ident:alpha") BEGIN
+    OUTER_SPRINT h_alpha_hook $flir_source_decl_tier_hook("ident:alpha")
+  END
+  ACTION_IF VARIABLE_IS_SET $flir_source_decl_tier_hook("ident:beta") BEGIN
+    OUTER_SPRINT h_beta_hook $flir_source_decl_tier_hook("ident:beta")
+  END
+  ACTION_IF VARIABLE_IS_SET $flir_source_decl_tier_hook("anon:1:ax:anon0001:2") BEGIN
+    OUTER_SPRINT h_anon_hook $flir_source_decl_tier_hook("anon:1:ax:anon0001:2")
+  END
+  OUTER_TEXT_SPRINT h_campaign_report ~ROUTE bg2 1 %h_bg2_tier_1%%WNL%ROUTE bg2 24 %h_bg2_tier_24%%WNL%ROUTE bg1 1 %h_bg1_tier_1%%WNL%ROUTE bg1 24 %h_bg1_tier_24%%WNL%CAMPAIGN 1 %h_tier_1_campaign%%WNL%CAMPAIGN 24 %h_tier_24_campaign%%WNL%DECL ident:alpha %h_alpha_hook%%WNL%DECL ident:beta %h_beta_hook%%WNL%DECL anon:1:ax:anon0001:2 %h_anon_hook%%WNL%~
+  COPY + "...blank" "%argv[1]%"
+    INSERT_BYTES 0 STRING_LENGTH ~%h_campaign_report%~
+    WRITE_ASCIIE 0 ~%h_campaign_report%~ (STRING_LENGTH ~%h_campaign_report%~)
+  BUT_ONLY
+
+BEGIN ~extension replace cannot cross campaign tier ownership~ DESIGNATED 95
+  LAM flir_registry_harness_reset
+  OUTER_SPRINT Preserve ~n~
+  LAM flir_registry_preload_state
+  LAM flir_registry_harness_reset_sources
+  ACTION_CLEAR_ARRAY bg1_tiers
+  ACTION_CLEAR_ARRAY bg2_tiers
+  OUTER_SPRINT $bg2_tiers("1") ~~
+  OUTER_SPRINT $bg1_tiers("24") ~~
+
+  OUTER_SPRINT h_source_campaign ~bg2~
+  OUTER_SPRINT h_source_item ~synt0001~
+  OUTER_SPRINT h_source_resource ~shop0001.sto~
+  OUTER_SPRINT h_source_tier ~1~
+  OUTER_SPRINT h_source_token ~1~
+  OUTER_SPRINT h_source_ident ~alpha~
+  OUTER_SET h_source_chance = 100
+  OUTER_SPRINT h_source_kind ~store~
+  OUTER_SPRINT h_source_virtual_policy ~~
+  LAM flir_registry_harness_add_named_source
+
+  OUTER_TEXT_SPRINT h_cross_campaign_extension ~2DA V1.0%WNL%0%WNL%OP ITEM REPLACEMENT SOURCE TIER TOKEN IDENT CHANCE SOURCE_KIND OBJECT_OR_SLOT VIRTUAL_POLICY CHARGE1 CHARGE2 CHARGE3 EXPECTED_QUANTITY%WNL%REPLACE synt0001 blank shop0001.sto 24 1 alpha 100 store * none 0 0 0 1%WNL%~
+  COPY + "...blank" "override/fl#cross-campaign-ext.2da"
+    INSERT_BYTES 0 STRING_LENGTH ~%h_cross_campaign_extension%~
+    WRITE_ASCIIE 0 ~%h_cross_campaign_extension%~ (STRING_LENGTH ~%h_cross_campaign_extension%~)
+  BUT_ONLY
+  OUTER_SPRINT flir_source_extension_fixture ~override/fl#cross-campaign-ext.2da~
+  LAM flir_source_apply_extension_hook
+
+BEGIN ~preserve without complete legacy state is not old-unmarked migration~ DESIGNATED 96
+  LAM flir_registry_harness_reset
+  OUTER_SPRINT Preserve ~y~
+  LAM flir_registry_preload_state
+  OUTER_TEXT_SPRINT h_old_unmarked_report ~OLD_UNMARKED %flir_registry_old_unmarked_migration%%WNL%~
+  COPY + "...blank" "%argv[1]%"
+    INSERT_BYTES 0 STRING_LENGTH ~%h_old_unmarked_report%~
+    WRITE_ASCIIE 0 ~%h_old_unmarked_report%~ (STRING_LENGTH ~%h_old_unmarked_report%~)
+  BUT_ONLY
+
+BEGIN ~campaign lookup rejects a tier owned by no campaign~ DESIGNATED 97
+  LAM flir_registry_harness_reset
+  ACTION_CLEAR_ARRAY bg1_tiers
+  ACTION_CLEAR_ARRAY bg2_tiers
+  OUTER_SPRINT flir_registry_tier_for_campaign ~1~
+  LAM flir_registry_campaign_for_tier
+
+BEGIN ~campaign lookup rejects a tier owned by both campaigns~ DESIGNATED 98
+  LAM flir_registry_harness_reset
+  ACTION_CLEAR_ARRAY bg1_tiers
+  ACTION_CLEAR_ARRAY bg2_tiers
+  OUTER_SPRINT $bg1_tiers("1") ~~
+  OUTER_SPRINT $bg2_tiers("1") ~~
+  OUTER_SPRINT flir_registry_tier_for_campaign ~1~
+  LAM flir_registry_campaign_for_tier
+
+BEGIN ~preserve plan loading rejects missing removal history~ DESIGNATED 99
+  LAM flir_registry_harness_reset
+  OUTER_SPRINT Preserve ~y~
+  LAM flir_removal_plan_load_preserve
+
+BEGIN ~preserve migration includes newly enabled current units~ DESIGNATED 100
+  LAM flir_registry_harness_reset
+  OUTER_SPRINT Preserve ~y~
+  LAM flir_registry_preload_state
+  LAM flir_registry_harness_reset_sources
+  ACTION_CLEAR_ARRAY bg1_tiers
+  ACTION_CLEAR_ARRAY bg2_tiers
+  ACTION_CLEAR_ARRAY removed_item_array
+  ACTION_CLEAR_ARRAY extra_tokens
+  OUTER_SPRINT $bg2_tiers("1") ~~
+  OUTER_SET flir_source_allow_override_availability = 1
+
+  OUTER_SPRINT h_source_campaign ~bg2~
+  OUTER_SPRINT h_source_item ~synt0002~
+  OUTER_SPRINT h_source_resource ~shop0001.sto~
+  OUTER_SPRINT h_source_tier ~1~
+  OUTER_SPRINT h_source_token ~1~
+  OUTER_SPRINT h_source_ident ~alpha~
+  OUTER_SET h_source_chance = 100
+  OUTER_SPRINT h_source_kind ~store~
+  OUTER_SPRINT h_source_virtual_policy ~~
+  LAM flir_registry_harness_add_named_source
+  LAM flir_source_filter_stage1_legacy_ident_filter
+  LAM flir_source_finalize_legacy_snapshot
+
+  OUTER_SPRINT h_source_item ~synt0001~
+  OUTER_SPRINT h_source_token ~2~
+  OUTER_SPRINT h_source_ident ~beta~
+  LAM flir_registry_harness_add_named_source
+  LAM flir_source_filter_stage1
+  LAM create_item_array#finalise
+
+  LAM flir_removal_plan_build
+  LAM flir_removal_plan_apply
+  LAM flir_registry_register_applied_units
+  LAM flir_registry_reconcile
+  LAF flir_registry_canonical_rows RET h_registry_rows = rows END
+  OUTER_TEXT_SPRINT h_current_rows ~~
+  ACTION_SORT_ARRAY_INDICES removed_item_array LEXICOGRAPHICALLY
+  ACTION_PHP_EACH removed_item_array AS h_current => blank BEGIN
+    OUTER_TEXT_SPRINT h_current_rows ~%h_current_rows%CURRENT %h_current_0% %h_current_1% %h_current_2%%WNL%~
+  END
+  OUTER_SET h_store_sale_count = 0 - 1
+  COPY_EXISTING "shop0001.sto" "flir-removal-read/shop0001-after.sto"
+    READ_LONG 0x38 h_store_sale_count ELSE 0
+  BUT_ONLY
+  OUTER_TEXT_SPRINT h_preserve_new_report ~%h_registry_rows%%h_current_rows%STORE_SALE_COUNT %h_store_sale_count%%WNL%~
+  COPY + "...blank" "%argv[1]%"
+    INSERT_BYTES 0 STRING_LENGTH ~%h_preserve_new_report%~
+    WRITE_ASCIIE 0 ~%h_preserve_new_report%~ (STRING_LENGTH ~%h_preserve_new_report%~)
+  BUT_ONLY
+
+BEGIN ~duplicate anonymous unit token is rejected~ DESIGNATED 101
+  LAM flir_registry_harness_reset
+  OUTER_SPRINT Preserve ~n~
+  LAM flir_registry_preload_state
+  LAM flir_registry_harness_reset_sources
+  ACTION_CLEAR_ARRAY bg1_tiers
+  ACTION_CLEAR_ARRAY bg2_tiers
+  OUTER_SPRINT $bg2_tiers("1") ~~
+  OUTER_SET flir_source_allow_override_availability = 1
+
+  OUTER_SET flir_source_decl_count = 1
+  OUTER_SPRINT flir_source_key ~anon:1:dup:anon0001:0~
+  OUTER_SPRINT $flir_source_decl_order("1") ~%flir_source_key%~
+  OUTER_SPRINT $flir_source_decl_exists("%flir_source_key%") ~1~
+  OUTER_SET $flir_source_decl_enabled("%flir_source_key%") = 1
+  OUTER_SPRINT $flir_source_decl_item("%flir_source_key%") ~anon0001~
+  OUTER_SPRINT $flir_source_decl_replacement("%flir_source_key%") ~blank~
+  OUTER_SPRINT $flir_source_decl_source("%flir_source_key%") ~blank~
+  OUTER_SPRINT $flir_source_decl_tier("%flir_source_key%") ~1~
+  OUTER_SPRINT $flir_source_decl_token("%flir_source_key%") ~dup~
+  OUTER_SPRINT $flir_source_decl_ident("%flir_source_key%") ~x~
+  OUTER_SET $flir_source_decl_chance("%flir_source_key%") = 100
+  OUTER_SPRINT $flir_source_decl_source_kind("%flir_source_key%") ~virtual~
+  OUTER_SPRINT $flir_source_decl_object_or_slot("%flir_source_key%") ~explicit~
+  OUTER_SPRINT $flir_source_decl_virtual_policy("%flir_source_key%") ~explicit~
+  OUTER_SET $flir_source_decl_expected_quantity("%flir_source_key%") = 1
+  OUTER_SPRINT $flir_source_decl_tier_hook("%flir_source_key%") ~bg2_tiers~
+
+  OUTER_SET flir_source_decl_count = 2
+  OUTER_SPRINT flir_source_key ~anon:1:dup:anon0002:1~
+  OUTER_SPRINT $flir_source_decl_order("2") ~%flir_source_key%~
+  OUTER_SPRINT $flir_source_decl_exists("%flir_source_key%") ~1~
+  OUTER_SET $flir_source_decl_enabled("%flir_source_key%") = 1
+  OUTER_SPRINT $flir_source_decl_item("%flir_source_key%") ~anon0002~
+  OUTER_SPRINT $flir_source_decl_replacement("%flir_source_key%") ~blank~
+  OUTER_SPRINT $flir_source_decl_source("%flir_source_key%") ~blank~
+  OUTER_SPRINT $flir_source_decl_tier("%flir_source_key%") ~1~
+  OUTER_SPRINT $flir_source_decl_token("%flir_source_key%") ~dup~
+  OUTER_SPRINT $flir_source_decl_ident("%flir_source_key%") ~x~
+  OUTER_SET $flir_source_decl_chance("%flir_source_key%") = 100
+  OUTER_SPRINT $flir_source_decl_source_kind("%flir_source_key%") ~virtual~
+  OUTER_SPRINT $flir_source_decl_object_or_slot("%flir_source_key%") ~explicit~
+  OUTER_SPRINT $flir_source_decl_virtual_policy("%flir_source_key%") ~explicit~
+  OUTER_SET $flir_source_decl_expected_quantity("%flir_source_key%") = 1
+  OUTER_SPRINT $flir_source_decl_tier_hook("%flir_source_key%") ~bg2_tiers~
+  LAM flir_source_filter_stage1
+  LAM create_item_array#finalise
+  LAM flir_removal_plan_build
+
+BEGIN ~declared virtual quantity and charges reach the plan~ DESIGNATED 102
+  LAM flir_registry_harness_reset
+  OUTER_SPRINT Preserve ~n~
+  LAM flir_registry_preload_state
+  LAM flir_registry_harness_reset_sources
+  ACTION_CLEAR_ARRAY bg1_tiers
+  ACTION_CLEAR_ARRAY bg2_tiers
+  OUTER_SPRINT $bg2_tiers("1") ~~
+  OUTER_SET flir_source_allow_override_availability = 1
+
+  OUTER_SET flir_source_decl_count = 1
+  OUTER_SPRINT flir_source_key ~anon:1:q0:anon0001:0~
+  OUTER_SPRINT $flir_source_decl_order("1") ~%flir_source_key%~
+  OUTER_SPRINT $flir_source_decl_exists("%flir_source_key%") ~1~
+  OUTER_SET $flir_source_decl_enabled("%flir_source_key%") = 1
+  OUTER_SPRINT $flir_source_decl_item("%flir_source_key%") ~anon0001~
+  OUTER_SPRINT $flir_source_decl_replacement("%flir_source_key%") ~blank~
+  OUTER_SPRINT $flir_source_decl_source("%flir_source_key%") ~blank~
+  OUTER_SPRINT $flir_source_decl_tier("%flir_source_key%") ~1~
+  OUTER_SPRINT $flir_source_decl_token("%flir_source_key%") ~q0~
+  OUTER_SPRINT $flir_source_decl_ident("%flir_source_key%") ~x~
+  OUTER_SET $flir_source_decl_chance("%flir_source_key%") = 100
+  OUTER_SPRINT $flir_source_decl_source_kind("%flir_source_key%") ~virtual~
+  OUTER_SPRINT $flir_source_decl_object_or_slot("%flir_source_key%") ~explicit~
+  OUTER_SPRINT $flir_source_decl_virtual_policy("%flir_source_key%") ~explicit~
+  OUTER_SET $flir_source_decl_declared_charge1("%flir_source_key%") = 5
+  OUTER_SET $flir_source_decl_declared_charge2("%flir_source_key%") = 6
+  OUTER_SET $flir_source_decl_declared_charge3("%flir_source_key%") = 7
+  OUTER_SET $flir_source_decl_expected_quantity("%flir_source_key%") = 2
+  OUTER_SPRINT $flir_source_decl_tier_hook("%flir_source_key%") ~bg2_tiers~
+
+  OUTER_SET flir_source_decl_count = 2
+  OUTER_SPRINT flir_source_key ~anon:1:c0:synt0003:1~
+  OUTER_SPRINT $flir_source_decl_order("2") ~%flir_source_key%~
+  OUTER_SPRINT $flir_source_decl_exists("%flir_source_key%") ~1~
+  OUTER_SET $flir_source_decl_enabled("%flir_source_key%") = 1
+  OUTER_SPRINT $flir_source_decl_item("%flir_source_key%") ~synt0003~
+  OUTER_SPRINT $flir_source_decl_replacement("%flir_source_key%") ~blank~
+  OUTER_SPRINT $flir_source_decl_source("%flir_source_key%") ~blank~
+  OUTER_SPRINT $flir_source_decl_tier("%flir_source_key%") ~1~
+  OUTER_SPRINT $flir_source_decl_token("%flir_source_key%") ~c0~
+  OUTER_SPRINT $flir_source_decl_ident("%flir_source_key%") ~x~
+  OUTER_SET $flir_source_decl_chance("%flir_source_key%") = 100
+  OUTER_SPRINT $flir_source_decl_source_kind("%flir_source_key%") ~virtual~
+  OUTER_SPRINT $flir_source_decl_object_or_slot("%flir_source_key%") ~explicit~
+  OUTER_SPRINT $flir_source_decl_virtual_policy("%flir_source_key%") ~explicit~
+  OUTER_SET $flir_source_decl_declared_charge1("%flir_source_key%") = 7
+  OUTER_SET $flir_source_decl_declared_charge2("%flir_source_key%") = 8
+  OUTER_SET $flir_source_decl_declared_charge3("%flir_source_key%") = 9
+  OUTER_SET $flir_source_decl_expected_quantity("%flir_source_key%") = 1
+  OUTER_SPRINT $flir_source_decl_tier_hook("%flir_source_key%") ~bg2_tiers~
+  LAM flir_source_filter_stage1
+  LAM create_item_array#finalise
+  LAM flir_removal_plan_build
+  OUTER_TEXT_SPRINT h_virtual_report ~~
+  OUTER_FOR (h_virtual_i = 1; h_virtual_i <= flir_removal_plan_count; ++h_virtual_i) BEGIN
+    OUTER_SPRINT h_virtual_token $flir_removal_plan_token("%h_virtual_i%")
+    OUTER_SET h_virtual_quantity = $flir_removal_plan_quantity("%h_virtual_i%")
+    OUTER_SET h_virtual_charge1 = $flir_removal_plan_charge1("%h_virtual_i%")
+    OUTER_SET h_virtual_charge2 = $flir_removal_plan_charge2("%h_virtual_i%")
+    OUTER_SET h_virtual_charge3 = $flir_removal_plan_charge3("%h_virtual_i%")
+    OUTER_SET h_virtual_emit = $flir_removal_plan_emit_count("%h_virtual_i%")
+    OUTER_TEXT_SPRINT h_virtual_report ~%h_virtual_report%VIRTUAL %h_virtual_token% %h_virtual_quantity% %h_virtual_charge1% %h_virtual_charge2% %h_virtual_charge3% %h_virtual_emit%%WNL%~
+  END
+  LAM flir_removal_plan_apply
+  LAM flir_registry_register_applied_units
+  LAM flir_registry_reconcile
+  ACTION_SORT_ARRAY_INDICES removed_item_array LEXICOGRAPHICALLY
+  ACTION_PHP_EACH removed_item_array AS h_virtual_current => blank BEGIN
+    OUTER_TEXT_SPRINT h_virtual_report ~%h_virtual_report%CURRENT %h_virtual_current_0% %h_virtual_current_1% %h_virtual_current_2%%WNL%~
+  END
+  COPY + "...blank" "%argv[1]%"
+    INSERT_BYTES 0 STRING_LENGTH ~%h_virtual_report%~
+    WRITE_ASCIIE 0 ~%h_virtual_report%~ (STRING_LENGTH ~%h_virtual_report%~)
+  BUT_ONLY
+
+BEGIN ~named stable identity rejects compact drift~ DESIGNATED 103
+  LAM flir_registry_harness_reset
+  OUTER_SPRINT h_schema ~flir-registry-v1~
+  OUTER_SPRINT h_backend ~legacy-bcs-v1~
+  OUTER_SET h_catalog = 11111
+  OUTER_TEXT_SPRINT h_rows ~bg2 1 unit legacy:unit-bg2-1-ident-alpha 1 1%WNL%~
+  LAM flir_registry_harness_write_raw_fixture
+  LAM flir_registry_harness_reset
+  ACTION_CLEAR_ARRAY bg1_tiers
+  ACTION_CLEAR_ARRAY bg2_tiers
+  OUTER_SPRINT $bg2_tiers("1") ~~
+  LAM flir_registry_preload_state
+  OUTER_SET flir_removal_plan_count = 1
+  OUTER_SET $flir_removal_plan_emit_count("1") = 1
+  OUTER_SPRINT $flir_removal_plan_tier("1") ~1~
+  OUTER_SPRINT $flir_removal_plan_token("1") ~2~
+  OUTER_SPRINT $flir_removal_plan_ident("1") ~alpha~
+  OUTER_SPRINT $flir_removal_plan_stable("1") ~legacy:unit-bg2-1-ident-alpha~
+  LAM flir_registry_validate_planned_units
+
+BEGIN ~source declarations carry birth stable identities~ DESIGNATED 104
+  LAM flir_registry_harness_reset
+  OUTER_SPRINT Preserve ~n~
+  LAM flir_registry_preload_state
+  LAM flir_registry_harness_reset_sources
+  ACTION_CLEAR_ARRAY bg1_tiers
+  ACTION_CLEAR_ARRAY bg2_tiers
+  OUTER_SPRINT $bg2_tiers("1") ~~
+  OUTER_SET flir_source_allow_override_availability = 1
+
+  OUTER_SPRINT h_source_campaign ~bg2~
+  OUTER_SPRINT h_source_item ~synt0001~
+  OUTER_SPRINT h_source_resource ~blank~
+  OUTER_SPRINT h_source_tier ~1~
+  OUTER_SPRINT h_source_token ~7~
+  OUTER_SPRINT h_source_ident ~alpha~
+  OUTER_SET h_source_chance = 100
+  OUTER_SPRINT h_source_kind ~virtual~
+  OUTER_SPRINT h_source_virtual_policy ~explicit~
+  LAM flir_registry_harness_add_named_source
+  LAM flir_source_filter_stage1
+  LAM create_item_array#finalise
+  LAM flir_removal_plan_build
+  OUTER_SPRINT h_birth_stable ~missing~
+  ACTION_IF VARIABLE_IS_SET $flir_removal_plan_stable("1") BEGIN
+    OUTER_SPRINT h_birth_stable $flir_removal_plan_stable("1")
+  END
+  OUTER_TEXT_SPRINT h_birth_report ~STABLE %h_birth_stable%%WNL%~
+  COPY + "...blank" "%argv[1]%"
+    INSERT_BYTES 0 STRING_LENGTH ~%h_birth_report%~
+    WRITE_ASCIIE 0 ~%h_birth_report%~ (STRING_LENGTH ~%h_birth_report%~)
+  BUT_ONLY
+
+BEGIN ~anonymous birth identity excludes compact token~ DESIGNATED 105
+  LAM flir_registry_harness_reset
+  OUTER_SPRINT Preserve ~n~
+  LAM flir_registry_preload_state
+  LAM flir_registry_harness_reset_sources
+  ACTION_CLEAR_ARRAY bg1_tiers
+  ACTION_CLEAR_ARRAY bg2_tiers
+  OUTER_SPRINT $bg2_tiers("1") ~~
+  OUTER_SET flir_source_allow_override_availability = 1
+  OUTER_SPRINT tier_hook ~bg2_tiers~
+
+  OUTER_PATCH "" BEGIN
+    SPRINT item ~anon0001~
+    SPRINT replacement ~blank~
+    SPRINT source ~blank~
+    SPRINT tier ~1~
+    SPRINT token ~a0~
+    SPRINT ident ~x~
+    SET chance = 100
+    SPRINT source_kind ~virtual~
+    SPRINT object_or_slot ~explicit~
+    SPRINT virtual_policy ~explicit~
+    SET declared_charge1 = 0
+    SET declared_charge2 = 0
+    SET declared_charge3 = 0
+    SET expected_quantity = 1
+    SPRINT flir_source_decl_update_mode ~add~
+    SPRINT flir_source_decl_enabled_value ~1~
+    LPM flir_source_decl_store_current
+  END
+  OUTER_PATCH "" BEGIN
+    SPRINT item ~anon0001~
+    SPRINT replacement ~blank~
+    SPRINT source ~blank~
+    SPRINT tier ~1~
+    SPRINT token ~a1~
+    SPRINT ident ~x~
+    SET chance = 100
+    SPRINT source_kind ~virtual~
+    SPRINT object_or_slot ~explicit~
+    SPRINT virtual_policy ~explicit~
+    SET declared_charge1 = 0
+    SET declared_charge2 = 0
+    SET declared_charge3 = 0
+    SET expected_quantity = 1
+    SPRINT flir_source_decl_update_mode ~add~
+    SPRINT flir_source_decl_enabled_value ~1~
+    LPM flir_source_decl_store_current
+  END
+  OUTER_PATCH "" BEGIN
+    SPRINT item ~anon0002~
+    SPRINT replacement ~blank~
+    SPRINT source ~blank~
+    SPRINT tier ~1~
+    SPRINT token ~a2~
+    SPRINT ident ~x~
+    SET chance = 100
+    SPRINT source_kind ~virtual~
+    SPRINT object_or_slot ~explicit~
+    SPRINT virtual_policy ~explicit~
+    SET declared_charge1 = 0
+    SET declared_charge2 = 0
+    SET declared_charge3 = 0
+    SET expected_quantity = 1
+    SPRINT flir_source_decl_update_mode ~add~
+    SPRINT flir_source_decl_enabled_value ~1~
+    LPM flir_source_decl_store_current
+  END
+  LAM flir_source_filter_stage1
+  LAM create_item_array#finalise
+  LAM flir_removal_plan_build
+  OUTER_TEXT_SPRINT h_anon_birth_report ~~
+  OUTER_FOR (h_anon_i = 1; h_anon_i <= flir_removal_plan_count; ++h_anon_i) BEGIN
+    OUTER_SPRINT h_anon_stable ~missing~
+    ACTION_IF VARIABLE_IS_SET $flir_removal_plan_stable("%h_anon_i%") BEGIN
+      OUTER_SPRINT h_anon_stable $flir_removal_plan_stable("%h_anon_i%")
+    END
+    OUTER_TEXT_SPRINT h_anon_birth_report ~%h_anon_birth_report%ANON %h_anon_i% %h_anon_stable%%WNL%~
+  END
+  COPY + "...blank" "%argv[1]%"
+    INSERT_BYTES 0 STRING_LENGTH ~%h_anon_birth_report%~
+    WRITE_ASCIIE 0 ~%h_anon_birth_report%~ (STRING_LENGTH ~%h_anon_birth_report%~)
+  BUT_ONLY
+
+BEGIN ~direct virtual row participates in old migration~ DESIGNATED 106
+  LAM flir_registry_harness_reset
+  OUTER_SPRINT Preserve ~y~
+  LAM flir_registry_preload_state
+  LAM flir_registry_harness_reset_sources
+  ACTION_CLEAR_ARRAY bg1_tiers
+  ACTION_CLEAR_ARRAY bg2_tiers
+  ACTION_CLEAR_ARRAY removed_item_array
+  OUTER_SPRINT $bg2_tiers("1") ~~
+  OUTER_SPRINT $item_array("synt0001" "blank" "blank" "1" "sp0" "x") ~~
+  LAM flir_source_finalize_legacy_snapshot
+  LAM flir_source_adopt_direct_virtual_rows
+  LAM create_item_array#finalise
+  LAM flir_removal_plan_build
+  OUTER_SET h_direct_plan_count = flir_removal_plan_count
+  OUTER_SPRINT h_direct_kind $flir_removal_plan_kind("1")
+  OUTER_SPRINT h_direct_source $flir_removal_plan_source("1")
+  OUTER_SPRINT h_direct_policy $flir_removal_plan_container("1")
+  LAM flir_removal_plan_apply
+  LAM flir_registry_register_applied_units
+  LAM flir_registry_reconcile
+  LAF flir_registry_canonical_rows RET h_direct_rows = rows END
+  OUTER_TEXT_SPRINT h_direct_current ~~
+  ACTION_SORT_ARRAY_INDICES removed_item_array LEXICOGRAPHICALLY
+  ACTION_PHP_EACH removed_item_array AS h_direct_removed => blank BEGIN
+    OUTER_TEXT_SPRINT h_direct_current ~%h_direct_current%CURRENT %h_direct_removed_0% %h_direct_removed_1% %h_direct_removed_2%%WNL%~
+  END
+  OUTER_TEXT_SPRINT h_direct_report ~PLAN_COUNT %h_direct_plan_count%%WNL%PLANMETA sp0 x %h_direct_kind% %h_direct_source% %h_direct_policy%%WNL%%h_direct_rows%%h_direct_current%~
+  COPY + "...blank" "%argv[1]%"
+    INSERT_BYTES 0 STRING_LENGTH ~%h_direct_report%~
+    WRITE_ASCIIE 0 ~%h_direct_report%~ (STRING_LENGTH ~%h_direct_report%~)
+  BUT_ONLY
+
+BEGIN ~absent historical base becomes a disabled tombstone~ DESIGNATED 107
+  LAM flir_registry_harness_reset
+  OUTER_SPRINT Preserve ~y~
+  LAM flir_registry_preload_state
+  LAM flir_registry_harness_reset_sources
+  ACTION_CLEAR_ARRAY bg1_tiers
+  ACTION_CLEAR_ARRAY bg2_tiers
+  ACTION_CLEAR_ARRAY removed_item_array
+  OUTER_SPRINT $bg2_tiers("1") ~~
+  LAM flir_source_finalize_legacy_snapshot
+  LAM flir_source_adopt_direct_virtual_rows
+  LAM create_item_array#finalise
+  LAM flir_removal_plan_build
+  LAM flir_removal_plan_apply
+  LAM flir_registry_register_applied_units
+  LAM flir_registry_reconcile
+  LAM flir_registry_harness_write_migration_report
+
+BEGIN ~orphaned historical y extra remains fatal~ DESIGNATED 108
+  LAM flir_registry_harness_reset
+  OUTER_SPRINT Preserve ~y~
+  LAM flir_registry_preload_state
+  LAM flir_registry_harness_reset_sources
+  ACTION_CLEAR_ARRAY bg1_tiers
+  ACTION_CLEAR_ARRAY bg2_tiers
+  ACTION_CLEAR_ARRAY removed_item_array
+  OUTER_SPRINT $bg2_tiers("1") ~~
+  LAM flir_source_finalize_legacy_snapshot
+  LAM flir_source_adopt_direct_virtual_rows
+  LAM create_item_array#finalise
+  LAM flir_removal_plan_build
+
+BEGIN ~old migration reconstructs fixes overflow before extensions~ DESIGNATED 109
+  LAM flir_registry_harness_reset
+  OUTER_SPRINT Preserve ~y~
+  LAM flir_registry_preload_state
+  LAM flir_registry_harness_reset_sources
+  ACTION_CLEAR_ARRAY bg1_tiers
+  ACTION_CLEAR_ARRAY bg2_tiers
+  ACTION_CLEAR_ARRAY ident_filter
+  ACTION_CLEAR_ARRAY location_array#stage1
+  ACTION_CLEAR_ARRAY location_array
+  ACTION_CLEAR_ARRAY tier_array
+  OUTER_SPRINT $bg2_tiers("1") ~~
+  LAM flir_removal_plan_load_preserve
+
+  // These are the two exact eligible rows the historical fixes loop saw.
+  OUTER_SPRINT $location_array#stage1("010" "1" "target-a.cre" "area-a" "base_a") ~~
+  OUTER_SPRINT $location_array#stage1("020" "1" "target-b.cre" "area-b" "base_b") ~~
+
+  // Three historical units required one random overflow row. Compute the
+  // expected old draw independently, then reset to the migration seed.
+  RANDOM_SEED "1701"
+  OUTER_SET h_overflow_expected_pick = RANDOM(1 2)
+  OUTER_SET h_overflow_expected_next = RANDOM(1 100)
+  OUTER_SET h_overflow_expected_raw = 100 + h_overflow_expected_pick
+  OUTER_SPRINT h_overflow_expected_stable ~legacy:slot-bg2-1-%h_overflow_expected_raw%--1~
+  OUTER_SPRINT h_overflow_expected_target ~target-a.cre~
+  OUTER_SPRINT h_overflow_expected_area ~area-a~
+  ACTION_IF h_overflow_expected_pick = 2 BEGIN
+    OUTER_SPRINT h_overflow_expected_target ~target-b.cre~
+    OUTER_SPRINT h_overflow_expected_area ~area-b~
+  END
+  RANDOM_SEED "1701"
+
+  LAM flir_registry_capture_old_unmarked_legacy_slots
+  OUTER_SET h_overflow_endpoint_matches = 0
+  OUTER_SET h_overflow_endpoint_wrong = 0
+  ACTION_PHP_EACH location_array#stage1 AS h_overflow_replayed => blank BEGIN
+    ACTION_IF "%h_overflow_replayed_0%" STRING_EQUAL_CASE "%h_overflow_expected_raw%"
+          AND "%h_overflow_replayed_1%" STRING_EQUAL_CASE "1" BEGIN
+      ACTION_IF "%h_overflow_replayed_2%" STRING_EQUAL_CASE "%h_overflow_expected_target%"
+            AND "%h_overflow_replayed_3%" STRING_EQUAL_CASE "%h_overflow_expected_area%"
+            AND "%h_overflow_replayed_4%" STRING_EQUAL_CASE "" BEGIN
+        OUTER_SET h_overflow_endpoint_matches += 1
+      END ELSE BEGIN
+        OUTER_SET h_overflow_endpoint_wrong += 1
+      END
+    END
+  END
+  LAM create_loc_array#finalise
+
+  // A current extension supplies enough authored capacity that the unmodified
+  // fixes loop would add no overflow row and would silently take compact 3.
+  OUTER_SPRINT $location_array("001" "1" "target-ext.cre" "area-ext" "ext") ~~
+  LAM flir_registry_add_current_overflow_locations
+  LAM flir_registry_capture_final_slots
+  LAM flir_registry_reconcile
+  LAM flir_registry_write_state
+  OUTER_SET h_overflow_actual_next = RANDOM(1 100)
+  LAF flir_registry_canonical_rows RET h_overflow_rows = rows END
+  OUTER_TEXT_SPRINT h_overflow_report ~STATE %flir_registry_loaded_existing% %flir_registry_old_unmarked_migration% %flir_registry_origin%%WNL%EXPECTED_OVERFLOW %h_overflow_expected_stable% 3%WNL%ENDPOINT %h_overflow_expected_target% %h_overflow_expected_area% %h_overflow_endpoint_matches% %h_overflow_endpoint_wrong%%WNL%RNG_NEXT %h_overflow_expected_next% %h_overflow_actual_next%%WNL%%h_overflow_rows%~
+  COPY + "...blank" "%argv[1]%"
+    INSERT_BYTES 0 STRING_LENGTH ~%h_overflow_report%~
+    WRITE_ASCIIE 0 ~%h_overflow_report%~ (STRING_LENGTH ~%h_overflow_report%~)
+  BUT_ONLY
+
+BEGIN ~old migration rejects named raw compact drift~ DESIGNATED 110
+  LAM flir_registry_harness_reset
+  OUTER_SPRINT Preserve ~y~
+  LAM flir_registry_preload_state
+  LAM flir_registry_harness_reset_sources
+  ACTION_CLEAR_ARRAY bg1_tiers
+  ACTION_CLEAR_ARRAY bg2_tiers
+  ACTION_CLEAR_ARRAY removed_item_array
+  OUTER_SPRINT $bg2_tiers("1") ~~
+  OUTER_SET flir_source_allow_override_availability = 1
+
+  // This models the built-in authored row changing before the migration seam,
+  // not a post-snapshot extension replacement.
+  OUTER_SPRINT h_source_campaign ~bg2~
+  OUTER_SPRINT h_source_item ~synt0001~
+  OUTER_SPRINT h_source_resource ~blank~
+  OUTER_SPRINT h_source_tier ~1~
+  OUTER_SPRINT h_source_token ~2~
+  OUTER_SPRINT h_source_ident ~alpha~
+  OUTER_SET h_source_chance = 100
+  OUTER_SPRINT h_source_kind ~virtual~
+  OUTER_SPRINT h_source_virtual_policy ~explicit~
+  LAM flir_registry_harness_add_named_source
+  LAM flir_source_filter_stage1_legacy_ident_filter
+  LAM flir_source_finalize_legacy_snapshot
+  LAM flir_source_filter_stage1
+  LAM create_item_array#finalise
+  LAM flir_removal_plan_build
+  COPY + "...blank" "override/fl#mutated.mrk"
+    INSERT_BYTES 0 7
+    WRITE_ASCIIE 0 ~mutated~ #7
+  BUT_ONLY
+
+BEGIN ~deferred persistent state survives a later rollback~ DESIGNATED 111
+  LAM flir_registry_harness_reset
+  OUTER_SET flir_mode1_defer_state_publication = 1
+  OUTER_SPRINT Preserve ~n~
+  ACTION_CLEAR_ARRAY removed_item_array
+  OUTER_SPRINT $removed_item_array("1" "9" "changed") ~~
+  LAM flir_removal_plan_write_state
+
+  OUTER_SPRINT h_campaign ~bg2~
+  OUTER_SPRINT h_tier ~1~
+  OUTER_SPRINT h_id ~core:changed~
+  LAM flir_registry_harness_add_unit
+  LAM flir_registry_reconcile
+  LAM flir_registry_write_state
+
+  COPY ~...blank~ ~override/fl#rollback-control.mrk~
+    INSERT_BYTES 0 7
+    WRITE_ASCIIE 0 ~changed~ #7
+  BUT_ONLY
+  FAIL ~FLIR_STATE_TEST INTENTIONAL_AFTER_PREPARE~
+
+BEGIN ~new overflow demand continues after historical rows~ DESIGNATED 112
+  LAM flir_registry_harness_reset
+  OUTER_SPRINT Preserve ~y~
+  LAM flir_registry_preload_state
+  LAM flir_registry_harness_reset_sources
+  ACTION_CLEAR_ARRAY bg1_tiers
+  ACTION_CLEAR_ARRAY bg2_tiers
+  ACTION_CLEAR_ARRAY ident_filter
+  ACTION_CLEAR_ARRAY location_array#stage1
+  ACTION_CLEAR_ARRAY location_array
+  ACTION_CLEAR_ARRAY tier_array
+  OUTER_SPRINT $bg2_tiers("1") ~~
+  LAM flir_removal_plan_load_preserve
+  OUTER_SPRINT $location_array#stage1("010" "1" "target-a.cre" "area-a" "base_a") ~~
+  OUTER_SPRINT $location_array#stage1("020" "1" "target-b.cre" "area-b" "base_b") ~~
+
+  RANDOM_SEED "2917"
+  OUTER_SET h_continue_historical_pick = RANDOM(1 2)
+  OUTER_SET h_continue_new_pick = RANDOM(1 2)
+  OUTER_SET h_continue_expected_next = RANDOM(1 100)
+  OUTER_SET h_continue_historical_raw = 100 + h_continue_historical_pick
+  OUTER_SET h_continue_new_raw = 101 + h_continue_new_pick
+  OUTER_SPRINT h_continue_historical_stable ~legacy:slot-bg2-1-%h_continue_historical_raw%--1~
+  OUTER_SPRINT h_continue_new_stable ~legacy:slot-bg2-1-%h_continue_new_raw%--1~
+  RANDOM_SEED "2917"
+
+  LAM flir_registry_capture_old_unmarked_legacy_slots
+  LAM create_loc_array#finalise
+  OUTER_SPRINT $removed_item_array("1" "4" "delta") ~~
+  LAM flir_registry_add_current_overflow_locations
+  LAM flir_registry_capture_final_slots
+  LAM flir_registry_reconcile
+  OUTER_SET h_continue_actual_next = RANDOM(1 100)
+  LAF flir_registry_canonical_rows RET h_continue_rows = rows END
+  OUTER_TEXT_SPRINT h_continue_report ~EXPECTED_HISTORICAL %h_continue_historical_stable% 3%WNL%EXPECTED_NEW %h_continue_new_stable% 4%WNL%RNG_NEXT %h_continue_expected_next% %h_continue_actual_next%%WNL%%h_continue_rows%~
+  COPY + "...blank" "%argv[1]%"
+    INSERT_BYTES 0 STRING_LENGTH ~%h_continue_report%~
+    WRITE_ASCIIE 0 ~%h_continue_report%~ (STRING_LENGTH ~%h_continue_report%~)
+  BUT_ONLY
+
+BEGIN ~registered preserve reinstall reconstructs historical overflow~ DESIGNATED 113
+  LAM flir_registry_harness_reset
+  OUTER_SPRINT Preserve ~y~
+  LAM flir_registry_preload_state
+  LAM flir_registry_harness_reset_sources
+  ACTION_CLEAR_ARRAY bg1_tiers
+  ACTION_CLEAR_ARRAY bg2_tiers
+  ACTION_CLEAR_ARRAY ident_filter
+  ACTION_CLEAR_ARRAY location_array#stage1
+  ACTION_CLEAR_ARRAY location_array
+  ACTION_CLEAR_ARRAY tier_array
+  OUTER_SPRINT $bg2_tiers("1") ~~
+  OUTER_SPRINT $location_array#stage1("010" "1" "target-a.cre" "area-a" "base_a") ~~
+  OUTER_SPRINT $location_array#stage1("020" "1" "target-b.cre" "area-b" "base_b") ~~
+
+  RANDOM_SEED "1701"
+  OUTER_SET h_reinstall_expected_pick = RANDOM(1 2)
+  OUTER_SET h_reinstall_expected_next = RANDOM(1 100)
+  OUTER_SET h_reinstall_expected_raw = 100 + h_reinstall_expected_pick
+  OUTER_SPRINT h_reinstall_expected_stable ~legacy:slot-bg2-1-%h_reinstall_expected_raw%--1~
+  OUTER_SPRINT h_reinstall_expected_target ~target-a.cre~
+  OUTER_SPRINT h_reinstall_expected_area ~area-a~
+  ACTION_IF h_reinstall_expected_pick = 2 BEGIN
+    OUTER_SPRINT h_reinstall_expected_target ~target-b.cre~
+    OUTER_SPRINT h_reinstall_expected_area ~area-b~
+  END
+  RANDOM_SEED "1701"
+
+  LAM flir_source_finalize_legacy_snapshot
+  LAM flir_removal_plan_load_preserve
+  LAM flir_registry_capture_old_unmarked_legacy_slots
+  OUTER_SET h_reinstall_endpoint_matches = 0
+  ACTION_PHP_EACH location_array#stage1 AS h_reinstall_replayed => blank BEGIN
+    ACTION_IF "%h_reinstall_replayed_0%" STRING_EQUAL_CASE "%h_reinstall_expected_raw%"
+          AND "%h_reinstall_replayed_1%" STRING_EQUAL_CASE "1"
+          AND "%h_reinstall_replayed_2%" STRING_EQUAL_CASE "%h_reinstall_expected_target%"
+          AND "%h_reinstall_replayed_3%" STRING_EQUAL_CASE "%h_reinstall_expected_area%"
+          AND "%h_reinstall_replayed_4%" STRING_EQUAL_CASE "" BEGIN
+      OUTER_SET h_reinstall_endpoint_matches += 1
+    END
+  END
+  LAM create_loc_array#finalise
+  OUTER_SPRINT $location_array("001" "1" "target-ext.cre" "area-ext" "ext") ~~
+  LAM flir_registry_add_current_overflow_locations
+  LAM flir_registry_capture_final_slots
+  LAM flir_registry_reconcile
+  OUTER_SET h_reinstall_actual_next = RANDOM(1 100)
+  LAF flir_registry_canonical_rows RET h_reinstall_rows = rows END
+  OUTER_TEXT_SPRINT h_reinstall_report ~STATE %flir_registry_loaded_existing% %flir_registry_old_unmarked_migration% %flir_registry_origin%%WNL%EXPECTED_OVERFLOW %h_reinstall_expected_stable% 3%WNL%ENDPOINT %h_reinstall_endpoint_matches%%WNL%RNG_NEXT %h_reinstall_expected_next% %h_reinstall_actual_next%%WNL%%h_reinstall_rows%~
+  COPY + "...blank" "%argv[1]%"
+    INSERT_BYTES 0 STRING_LENGTH ~%h_reinstall_report%~
+    WRITE_ASCIIE 0 ~%h_reinstall_report%~ (STRING_LENGTH ~%h_reinstall_report%~)
+  BUT_ONLY
+
+BEGIN ~fresh Mode 1 base RNG order probe~ DESIGNATED 114
+  LAM flir_registry_harness_reset
+  OUTER_SPRINT Preserve ~n~
+  LAM flir_registry_preload_state
+  LAM flir_registry_harness_run_order_probe
+  LAM flir_registry_harness_ensure_legacy_state
+  OUTER_SPRINT h_campaign ~bg2~
+  OUTER_SPRINT h_tier ~1~
+  OUTER_SPRINT h_id ~probe:order~
+  LAM flir_registry_harness_add_unit
+  OUTER_SPRINT $flir_registry_catalog_unit_compact("bg2" "1" "probe:order") ~1~
+  LAM flir_registry_reconcile
+  LAM flir_registry_write_state
+  COPY + "...blank" "%argv[1]%"
+    INSERT_BYTES 0 STRING_LENGTH ~%h_order_report%~
+    WRITE_ASCIIE 0 ~%h_order_report%~ (STRING_LENGTH ~%h_order_report%~)
+  BUT_ONLY
+
+BEGIN ~registered Mode 1 base RNG order probe~ DESIGNATED 115
+  LAM flir_registry_harness_reset
+  OUTER_SPRINT Preserve ~y~
+  LAM flir_registry_preload_state
+  LAM flir_registry_harness_run_order_probe
+  COPY + "...blank" "%argv[1]%"
+    INSERT_BYTES 0 STRING_LENGTH ~%h_order_report%~
+    WRITE_ASCIIE 0 ~%h_order_report%~ (STRING_LENGTH ~%h_order_report%~)
+  BUT_ONLY
+
+BEGIN ~fresh registry origin keeps extension overflow RNG seam~ DESIGNATED 116
+  LAM flir_registry_harness_reset
+  OUTER_SPRINT Preserve ~n~
+  LAM flir_registry_preload_state
+  LAM flir_registry_harness_run_origin_probe
+  LAM flir_registry_capture_final_slots
+  LAM flir_registry_reconcile
+  LAF flir_registry_canonical_rows RET h_origin_registry_rows = rows END
+  OUTER_TEXT_SPRINT h_origin_report ~%h_origin_report%%h_origin_registry_rows%~
+  LAM flir_registry_write_state
+  COPY + "...blank" "%argv[1]%"
+    INSERT_BYTES 0 STRING_LENGTH ~%h_origin_report%~
+    WRITE_ASCIIE 0 ~%h_origin_report%~ (STRING_LENGTH ~%h_origin_report%~)
+  BUT_ONLY
+
+BEGIN ~registered fresh origin replays extension overflow RNG seam~ DESIGNATED 117
+  LAM flir_registry_harness_reset
+  OUTER_SPRINT Preserve ~y~
+  LAM flir_registry_preload_state
+  LAM flir_registry_harness_run_origin_probe
+  LAM flir_registry_capture_final_slots
+  LAM flir_registry_reconcile
+  LAF flir_registry_canonical_rows RET h_origin_registry_rows = rows END
+  OUTER_TEXT_SPRINT h_origin_report ~%h_origin_report%%h_origin_registry_rows%~
+  COPY + "...blank" "%argv[1]%"
+    INSERT_BYTES 0 STRING_LENGTH ~%h_origin_report%~
+    WRITE_ASCIIE 0 ~%h_origin_report%~ (STRING_LENGTH ~%h_origin_report%~)
+  BUT_ONLY
+
+BEGIN ~old migration retains mixed pre-extension overflow ordering~ DESIGNATED 118
+  LAM flir_registry_harness_reset
+  OUTER_SPRINT Preserve ~y~
+  LAM flir_registry_preload_state
+  LAM flir_registry_harness_run_mixed_probe
+  LAM flir_removal_plan_write_state
+  LAM flir_registry_write_state
+  COPY + "...blank" "%argv[1]%"
+    INSERT_BYTES 0 STRING_LENGTH ~%h_mixed_report%~
+    WRITE_ASCIIE 0 ~%h_mixed_report%~ (STRING_LENGTH ~%h_mixed_report%~)
+  BUT_ONLY
+
+BEGIN ~registered migration retains mixed pre-extension overflow ordering~ DESIGNATED 119
+  LAM flir_registry_harness_reset
+  OUTER_SPRINT Preserve ~y~
+  LAM flir_registry_preload_state
+  LAM flir_registry_harness_run_mixed_probe
+  COPY + "...blank" "%argv[1]%"
+    INSERT_BYTES 0 STRING_LENGTH ~%h_mixed_report%~
+    WRITE_ASCIIE 0 ~%h_mixed_report%~ (STRING_LENGTH ~%h_mixed_report%~)
+  BUT_ONLY
+
+BEGIN ~no-preserve run rebases a legacy registry to fresh origin~ DESIGNATED 120
+  LAM flir_registry_harness_reset
+  OUTER_SPRINT Preserve ~n~
+  LAM flir_registry_preload_state
+  LAM flir_registry_harness_run_mixed_probe
+  LAM flir_removal_plan_write_state
+  LAM flir_registry_write_state
+  COPY + "...blank" "%argv[1]%"
+    INSERT_BYTES 0 STRING_LENGTH ~%h_mixed_report%~
+    WRITE_ASCIIE 0 ~%h_mixed_report%~ (STRING_LENGTH ~%h_mixed_report%~)
+  BUT_ONLY
+
+BEGIN ~preserve after rebase follows fresh overflow ordering~ DESIGNATED 121
+  LAM flir_registry_harness_reset
+  OUTER_SPRINT Preserve ~y~
+  LAM flir_registry_preload_state
+  LAM flir_registry_harness_run_mixed_probe
+  COPY + "...blank" "%argv[1]%"
+    INSERT_BYTES 0 STRING_LENGTH ~%h_mixed_report%~
+    WRITE_ASCIIE 0 ~%h_mixed_report%~ (STRING_LENGTH ~%h_mixed_report%~)
+  BUT_ONLY
+
+BEGIN ~authored identity sharing replay tuple remains overflow eligible~ DESIGNATED 122
+  LAM flir_registry_harness_reset
+  ACTION_CLEAR_ARRAY h_replay_tiers
+  ACTION_CLEAR_ARRAY h_replay_units
+  ACTION_CLEAR_ARRAY h_replay_locations
+  OUTER_SPRINT $h_replay_tiers("1") ~~
+  OUTER_SPRINT $h_replay_units("1" "1" "alpha") ~~
+  OUTER_SPRINT $h_replay_units("1" "2" "beta") ~~
+  OUTER_SPRINT $h_replay_units("1" "3" "gamma") ~~
+  OUTER_SPRINT $h_replay_locations("150" "1" "same.cre" "same-area" "") ~~
+  OUTER_SPRINT $h_replay_locations("150" "1" "same.cre" "same-area" "authored") ~~
+  OUTER_SPRINT $flir_registry_legacy_overflow_location("150" "1" "same.cre" "same-area") ~~
+
+  OUTER_SPRINT flir_registry_overflow_tier_array ~h_replay_tiers~
+  OUTER_SPRINT flir_registry_overflow_unit_array ~h_replay_units~
+  OUTER_SPRINT flir_registry_overflow_location_array ~h_replay_locations~
+  OUTER_SET flir_registry_overflow_capture_cache = 0
+  OUTER_SET flir_registry_overflow_continue_cache = 1
+  OUTER_SET flir_registry_overflow_normalize_identity = 1
+  RANDOM_SEED "122"
+  LAM flir_registry_allocate_overflow_locations
+
+  OUTER_SET h_replay_generated = 0
+  ACTION_PHP_EACH h_replay_locations AS h_replay_location => blank BEGIN
+    ACTION_IF "%h_replay_location_0%" STRING_EQUAL_CASE "101"
+          AND "%h_replay_location_1%" STRING_EQUAL_CASE "1"
+          AND "%h_replay_location_2%" STRING_EQUAL_CASE "same.cre"
+          AND "%h_replay_location_3%" STRING_EQUAL_CASE "same-area"
+          AND "%h_replay_location_4%" STRING_EQUAL_CASE "" BEGIN
+      OUTER_SET h_replay_generated += 1
+    END
+  END
+  OUTER_TEXT_SPRINT h_replay_report ~ELIGIBLE %flir_registry_overflow_eligible_count%%WNL%GENERATED %h_replay_generated%%WNL%~
+  COPY + "...blank" "%argv[1]%"
+    INSERT_BYTES 0 STRING_LENGTH ~%h_replay_report%~
+    WRITE_ASCIIE 0 ~%h_replay_report%~ (STRING_LENGTH ~%h_replay_report%~)
+  BUT_ONLY

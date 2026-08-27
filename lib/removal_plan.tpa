@@ -9,6 +9,121 @@ OUTER_SET flir_source_decl_count = 0
 OUTER_SET flir_removal_plan_count = 0
 OUTER_SET flir_removal_plan_disabled_count = 0
 OUTER_SET flir_removal_plan_applied_count = 0
+OUTER_SET flir_source_legacy_snapshot_initialized = 0
+OUTER_SET flir_source_legacy_cursor = 0
+OUTER_SET flir_removal_building_legacy_snapshot = 0
+OUTER_SET flir_source_extension_active = 0
+OUTER_SET flir_removal_state_ready = 0
+ACTION_IF !VARIABLE_IS_SET flir_registry_old_unmarked_migration BEGIN
+  OUTER_SET flir_registry_old_unmarked_migration = 0
+END
+
+DEFINE_ACTION_MACRO flir_source_prepare_birth_identities BEGIN
+  ACTION_IF VARIABLE_IS_SET flir_registry_available
+        AND flir_registry_available = 1 BEGIN
+    OUTER_FOR (flir_source_birth_i = 1; flir_source_birth_i <= flir_source_decl_count; ++flir_source_birth_i) BEGIN
+      ACTION_IF VARIABLE_IS_SET $flir_source_decl_order("%flir_source_birth_i%") BEGIN
+        OUTER_SPRINT flir_source_birth_key $flir_source_decl_order("%flir_source_birth_i%")
+        OUTER_SPRINT flir_source_birth_tier $flir_source_decl_tier("%flir_source_birth_key%")
+        OUTER_SPRINT flir_source_birth_ident $flir_source_decl_ident("%flir_source_birth_key%")
+        OUTER_SPRINT flir_source_birth_hook ~~
+        ACTION_IF VARIABLE_IS_SET $flir_source_decl_tier_hook("%flir_source_birth_key%") BEGIN
+          OUTER_SPRINT flir_source_birth_hook $flir_source_decl_tier_hook("%flir_source_birth_key%")
+        END
+        OUTER_SPRINT flir_source_birth_campaign ~~
+        ACTION_IF "%flir_source_birth_hook%" STRING_EQUAL_CASE "bg1_tiers" BEGIN
+          OUTER_SPRINT flir_source_birth_campaign ~bg1~
+        END ELSE ACTION_IF "%flir_source_birth_hook%" STRING_EQUAL_CASE "bg2_tiers" BEGIN
+          OUTER_SPRINT flir_source_birth_campaign ~bg2~
+        END ELSE ACTION_IF VARIABLE_IS_SET $flir_source_decl_campaign("%flir_source_birth_key%") BEGIN
+          OUTER_SPRINT flir_source_birth_campaign $flir_source_decl_campaign("%flir_source_birth_key%")
+        END
+        ACTION_IF "%flir_source_birth_campaign%" STRING_EQUAL_CASE "" BEGIN
+          OUTER_SET flir_source_birth_bg1_tier = 0
+          OUTER_SET flir_source_birth_bg2_tier = 0
+          ACTION_IF VARIABLE_IS_SET $bg1_tiers("%flir_source_birth_tier%") BEGIN
+            OUTER_SET flir_source_birth_bg1_tier = 1
+          END
+          ACTION_IF VARIABLE_IS_SET $bg2_tiers("%flir_source_birth_tier%") BEGIN
+            OUTER_SET flir_source_birth_bg2_tier = 1
+          END
+          ACTION_IF flir_source_birth_bg1_tier = 1 AND flir_source_birth_bg2_tier = 0 BEGIN
+            OUTER_SPRINT flir_source_birth_campaign ~bg1~
+          END ELSE ACTION_IF flir_source_birth_bg2_tier = 1 AND flir_source_birth_bg1_tier = 0 BEGIN
+            OUTER_SPRINT flir_source_birth_campaign ~bg2~
+          END
+        END
+        ACTION_IF "%flir_source_birth_campaign%" STRING_EQUAL_CASE "" BEGIN
+          LAF flir_removal_fail STR_VAR code = ~SOURCE_CAMPAIGN_MISSING~ tier = EVAL ~%flir_source_birth_tier%~ token = $flir_source_decl_token("%flir_source_birth_key%") ident = EVAL ~%flir_source_birth_ident%~ END
+        END
+
+        ACTION_IF VARIABLE_IS_SET $flir_source_decl_birth_stable("%flir_source_birth_key%") BEGIN
+          OUTER_SPRINT flir_source_existing_birth_campaign $flir_source_decl_birth_campaign("%flir_source_birth_key%")
+          OUTER_SPRINT flir_source_existing_birth_tier $flir_source_decl_birth_tier("%flir_source_birth_key%")
+          ACTION_IF NOT ("%flir_source_birth_campaign%" STRING_EQUAL_CASE "%flir_source_existing_birth_campaign%")
+                OR NOT ("%flir_source_birth_tier%" STRING_EQUAL_CASE "%flir_source_existing_birth_tier%") BEGIN
+            LAF flir_removal_fail STR_VAR code = ~SOURCE_BIRTH_SCOPE_DRIFT~ tier = EVAL ~%flir_source_birth_tier%~ token = $flir_source_decl_token("%flir_source_birth_key%") ident = EVAL ~%flir_source_birth_ident%~ END
+          END
+        END ELSE BEGIN
+          OUTER_SPRINT flir_source_birth_stable ~~
+          ACTION_IF "%flir_source_birth_ident%" STRING_COMPARE_CASE "x" BEGIN
+            OUTER_SPRINT flir_source_birth_stable ~legacy:unit-%flir_source_birth_campaign%-%flir_source_birth_tier%-ident-%flir_source_birth_ident%~
+          END ELSE BEGIN
+            OUTER_TEXT_SPRINT flir_catalog_canonical ~~
+            OUTER_TEXT_SPRINT flir_catalog_append_value ~anon-birth-v1~
+            LAM flir_catalog_append_canonical
+            OUTER_TEXT_SPRINT flir_catalog_append_value ~%flir_source_birth_campaign%~
+            LAM flir_catalog_append_canonical
+            OUTER_TEXT_SPRINT flir_catalog_append_value ~%flir_source_birth_tier%~
+            LAM flir_catalog_append_canonical
+            OUTER_TEXT_SPRINT flir_catalog_append_value $flir_source_decl_item("%flir_source_birth_key%")
+            LAM flir_catalog_append_canonical
+            OUTER_TEXT_SPRINT flir_catalog_append_value $flir_source_decl_replacement("%flir_source_birth_key%")
+            LAM flir_catalog_append_canonical
+            OUTER_TEXT_SPRINT flir_catalog_append_value $flir_source_decl_source("%flir_source_birth_key%")
+            LAM flir_catalog_append_canonical
+            OUTER_TEXT_SPRINT flir_catalog_append_value $flir_source_decl_chance("%flir_source_birth_key%")
+            LAM flir_catalog_append_canonical
+            OUTER_TEXT_SPRINT flir_catalog_append_value $flir_source_decl_source_kind("%flir_source_birth_key%")
+            LAM flir_catalog_append_canonical
+            OUTER_TEXT_SPRINT flir_catalog_append_value $flir_source_decl_object_or_slot("%flir_source_birth_key%")
+            LAM flir_catalog_append_canonical
+            OUTER_TEXT_SPRINT flir_catalog_append_value $flir_source_decl_virtual_policy("%flir_source_birth_key%")
+            LAM flir_catalog_append_canonical
+            OUTER_TEXT_SPRINT flir_catalog_append_value $flir_source_decl_declared_charge1("%flir_source_birth_key%")
+            LAM flir_catalog_append_canonical
+            OUTER_TEXT_SPRINT flir_catalog_append_value $flir_source_decl_declared_charge2("%flir_source_birth_key%")
+            LAM flir_catalog_append_canonical
+            OUTER_TEXT_SPRINT flir_catalog_append_value $flir_source_decl_declared_charge3("%flir_source_birth_key%")
+            LAM flir_catalog_append_canonical
+            OUTER_TEXT_SPRINT flir_catalog_append_value $flir_source_decl_expected_quantity("%flir_source_birth_key%")
+            LAM flir_catalog_append_canonical
+            LAF flir_registry_hash_text STR_VAR text = EVAL ~%flir_catalog_canonical%~ RET flir_source_birth_fingerprint = hash END
+            ACTION_IF VARIABLE_IS_SET $flir_source_birth_hash_canonical("%flir_source_birth_campaign%" "%flir_source_birth_tier%" "%flir_source_birth_fingerprint%") BEGIN
+              OUTER_TEXT_SPRINT flir_source_birth_existing_canonical $flir_source_birth_hash_canonical("%flir_source_birth_campaign%" "%flir_source_birth_tier%" "%flir_source_birth_fingerprint%")
+              ACTION_IF NOT ("%flir_source_birth_existing_canonical%" STRING_EQUAL "%flir_catalog_canonical%") BEGIN
+                LAF flir_removal_fail STR_VAR code = ~SOURCE_ID_HASH_COLLISION~ tier = EVAL ~%flir_source_birth_tier%~ token = $flir_source_decl_token("%flir_source_birth_key%") ident = ~x~ END
+              END
+            END ELSE BEGIN
+              OUTER_TEXT_SPRINT $flir_source_birth_hash_canonical("%flir_source_birth_campaign%" "%flir_source_birth_tier%" "%flir_source_birth_fingerprint%") ~%flir_catalog_canonical%~
+            END
+            ACTION_IF VARIABLE_IS_SET $flir_source_birth_occurrence("%flir_source_birth_campaign%" "%flir_source_birth_tier%" "%flir_source_birth_fingerprint%") BEGIN
+              OUTER_SET $flir_source_birth_occurrence("%flir_source_birth_campaign%" "%flir_source_birth_tier%" "%flir_source_birth_fingerprint%") += 1
+            END ELSE BEGIN
+              OUTER_SET $flir_source_birth_occurrence("%flir_source_birth_campaign%" "%flir_source_birth_tier%" "%flir_source_birth_fingerprint%") = 1
+            END
+            OUTER_SET flir_source_birth_occurrence_value = $flir_source_birth_occurrence("%flir_source_birth_campaign%" "%flir_source_birth_tier%" "%flir_source_birth_fingerprint%")
+            OUTER_SPRINT flir_source_birth_stable ~legacy:unit-%flir_source_birth_campaign%-%flir_source_birth_tier%-anon-%flir_source_birth_fingerprint%-%flir_source_birth_occurrence_value%~
+            OUTER_SPRINT $flir_source_decl_birth_fingerprint("%flir_source_birth_key%") ~%flir_source_birth_fingerprint%~
+          END
+          OUTER_SPRINT $flir_source_decl_birth_campaign("%flir_source_birth_key%") ~%flir_source_birth_campaign%~
+          OUTER_SPRINT $flir_source_decl_birth_tier("%flir_source_birth_key%") ~%flir_source_birth_tier%~
+          OUTER_SPRINT $flir_source_decl_birth_stable("%flir_source_birth_key%") ~%flir_source_birth_stable%~
+        END
+      END
+    END
+  END
+END
 
 DEFINE_ACTION_FUNCTION flir_removal_fail
   STR_VAR
@@ -152,6 +267,55 @@ DEFINE_PATCH_MACRO flir_source_decl_store_current BEGIN
     SPRINT $flir_source_decl_order("%flir_source_decl_count%") "%flir_source_decl_key%"
   END
 
+  // Raw rows retain the campaign-local tier array that was active while their
+  // source list was staged. Extension replacements keep that ownership; a new
+  // row must name a tier already owned by exactly one campaign until the public
+  // catalog grows an explicit campaign field.
+  SPRINT flir_source_decl_row_tier_hook "%tier_hook%"
+  PATCH_IF "%flir_source_decl_update_mode%" STRING_EQUAL_CASE "replace"
+        AND VARIABLE_IS_SET $flir_source_decl_tier_hook("%flir_source_decl_key%") BEGIN
+    SPRINT flir_source_decl_row_tier_hook $flir_source_decl_tier_hook("%flir_source_decl_key%")
+  END ELSE PATCH_IF flir_source_extension_active = 1 BEGIN
+    SET flir_source_decl_bg1_tier = 0
+    SET flir_source_decl_bg2_tier = 0
+    PATCH_IF VARIABLE_IS_SET $bg1_tiers("%tier%") BEGIN
+      SET flir_source_decl_bg1_tier = 1
+    END
+    PATCH_IF VARIABLE_IS_SET $bg2_tiers("%tier%") BEGIN
+      SET flir_source_decl_bg2_tier = 1
+    END
+    PATCH_IF flir_source_decl_bg1_tier + flir_source_decl_bg2_tier != 1 BEGIN
+      PATCH_FAIL ~FLIR_REMOVAL_ERR HOOK_CAMPAIGN_TIER tier=%tier% token=%token% ident=%ident%~
+    END ELSE PATCH_IF flir_source_decl_bg1_tier = 1 BEGIN
+      SPRINT flir_source_decl_row_tier_hook "bg1_tiers"
+    END ELSE BEGIN
+      SPRINT flir_source_decl_row_tier_hook "bg2_tiers"
+    END
+  END
+  PATCH_IF flir_source_extension_active = 1
+        AND "%flir_source_decl_update_mode%" STRING_EQUAL_CASE "replace" BEGIN
+    SET flir_source_decl_bg1_tier = 0
+    SET flir_source_decl_bg2_tier = 0
+    PATCH_IF VARIABLE_IS_SET $bg1_tiers("%tier%") BEGIN
+      SET flir_source_decl_bg1_tier = 1
+    END
+    PATCH_IF VARIABLE_IS_SET $bg2_tiers("%tier%") BEGIN
+      SET flir_source_decl_bg2_tier = 1
+    END
+    PATCH_IF "%flir_source_decl_row_tier_hook%" STRING_EQUAL_CASE "bg1_tiers" BEGIN
+      PATCH_IF flir_source_decl_bg1_tier != 1 OR flir_source_decl_bg2_tier != 0 BEGIN
+        PATCH_FAIL ~FLIR_REMOVAL_ERR HOOK_CAMPAIGN_TIER tier=%tier% token=%token% ident=%ident%~
+      END
+    END ELSE PATCH_IF "%flir_source_decl_row_tier_hook%" STRING_EQUAL_CASE "bg2_tiers" BEGIN
+      PATCH_IF flir_source_decl_bg2_tier != 1 OR flir_source_decl_bg1_tier != 0 BEGIN
+        PATCH_FAIL ~FLIR_REMOVAL_ERR HOOK_CAMPAIGN_TIER tier=%tier% token=%token% ident=%ident%~
+      END
+    END
+  END
+  PATCH_IF "%flir_source_decl_row_tier_hook%" STRING_EQUAL_CASE "" BEGIN
+    PATCH_FAIL ~FLIR_REMOVAL_ERR SOURCE_CAMPAIGN_MISSING tier=%tier% token=%token% ident=%ident%~
+  END
+
   SPRINT $flir_source_decl_exists("%flir_source_decl_key%") "1"
   SPRINT $flir_source_decl_enabled("%flir_source_decl_key%") "%flir_source_decl_enabled_value%"
   SPRINT $flir_source_decl_item("%flir_source_decl_key%") "%item%"
@@ -168,6 +332,7 @@ DEFINE_PATCH_MACRO flir_source_decl_store_current BEGIN
   SPRINT $flir_source_decl_declared_charge2("%flir_source_decl_key%") "%declared_charge2%"
   SPRINT $flir_source_decl_declared_charge3("%flir_source_decl_key%") "%declared_charge3%"
   SPRINT $flir_source_decl_expected_quantity("%flir_source_decl_key%") "%expected_quantity%"
+  SPRINT $flir_source_decl_tier_hook("%flir_source_decl_key%") "%flir_source_decl_row_tier_hook%"
 END
 
 DEFINE_PATCH_MACRO flir_source_stage1_raw BEGIN
@@ -208,6 +373,7 @@ END
 DEFINE_ACTION_MACRO flir_source_apply_extension_hook BEGIN
   ACTION_IF VARIABLE_IS_SET flir_source_extension_fixture
         AND FILE_EXISTS "%flir_source_extension_fixture%" BEGIN
+    OUTER_SET flir_source_extension_active = 1
     COPY - "%flir_source_extension_fixture%" "flir-removal-read/source-extension.2da"
       READ_2DA_ENTRIES_NOW flir_source_extension_rows 15
       FOR (i = 1; i < flir_source_extension_rows; ++i) BEGIN
@@ -251,10 +417,34 @@ DEFINE_ACTION_MACRO flir_source_apply_extension_hook BEGIN
           PATCH_FAIL ~FLIR_REMOVAL_ERR HOOK_OPERATION tier=%tier% token=%token% ident=%ident%~
         END
       END
+    OUTER_SET flir_source_extension_active = 0
   END
 END
 
+DEFINE_ACTION_MACRO flir_source_build_filter_signature BEGIN
+  OUTER_SPRINT flir_source_filter_signature ~%flir_source_enabled%|%item%|%source%|%tier%|%ident%|%chance%|%flir_filter_allow_override_availability%|%RandomNotRandom%~
+END
+
+DEFINE_ACTION_MACRO flir_source_legacy_snapshot_reset BEGIN
+  OUTER_SET flir_source_legacy_snapshot_initialized = 0
+  OUTER_SET flir_source_legacy_cursor = 0
+  ACTION_CLEAR_ARRAY flir_registry_legacy_ident_filter
+  ACTION_CLEAR_ARRAY flir_source_legacy_filter_signature
+  ACTION_CLEAR_ARRAY flir_source_legacy_filter_skip
+  ACTION_CLEAR_ARRAY flir_source_legacy_stage1
+  ACTION_CLEAR_ARRAY flir_source_legacy_item_array
+  ACTION_CLEAR_ARRAY flir_source_legacy_row_key
+  ACTION_CLEAR_ARRAY flir_source_legacy_decl_source_kind
+  ACTION_CLEAR_ARRAY flir_source_legacy_decl_object_or_slot
+  ACTION_CLEAR_ARRAY flir_source_legacy_decl_virtual_policy
+  ACTION_CLEAR_ARRAY flir_source_legacy_decl_declared_charge1
+  ACTION_CLEAR_ARRAY flir_source_legacy_decl_declared_charge2
+  ACTION_CLEAR_ARRAY flir_source_legacy_decl_declared_charge3
+  ACTION_CLEAR_ARRAY flir_source_legacy_decl_expected_quantity
+END
+
 DEFINE_ACTION_MACRO flir_source_filter_stage1 BEGIN
+  LAM flir_source_prepare_birth_identities
   OUTER_FOR (flir_source_i = 1; flir_source_i <= flir_source_decl_count; ++flir_source_i) BEGIN
     ACTION_IF VARIABLE_IS_SET $flir_source_decl_order("%flir_source_i%") BEGIN
       OUTER_SPRINT flir_source_key $flir_source_decl_order("%flir_source_i%")
@@ -266,27 +456,42 @@ DEFINE_ACTION_MACRO flir_source_filter_stage1 BEGIN
       OUTER_SPRINT ident $flir_source_decl_ident("%flir_source_key%")
       OUTER_SET chance = $flir_source_decl_chance("%flir_source_key%")
       OUTER_SET flir_source_enabled = $flir_source_decl_enabled("%flir_source_key%")
+      OUTER_SPRINT flir_source_row_tier_hook ~%tier_hook%~
+      ACTION_IF VARIABLE_IS_SET $flir_source_decl_tier_hook("%flir_source_key%") BEGIN
+        OUTER_SPRINT flir_source_row_tier_hook $flir_source_decl_tier_hook("%flir_source_key%")
+      END
+      OUTER_SET flir_filter_allow_override_availability = 0
+      ACTION_IF VARIABLE_IS_SET flir_source_allow_override_availability BEGIN
+        OUTER_SET flir_filter_allow_override_availability = flir_source_allow_override_availability
+      END
+      LAM flir_source_build_filter_signature
 
       ACTION_IF flir_source_enabled = 0 BEGIN
         ACTION_IF "%ident%" STRING_COMPARE_CASE "x" BEGIN
           OUTER_SPRINT $ident_filter("%ident%") ""
         END
       END ELSE BEGIN
-        OUTER_SET flir_filter_allow_override_availability = 0
-        ACTION_IF VARIABLE_IS_SET flir_source_allow_override_availability BEGIN
-          OUTER_SET flir_filter_allow_override_availability = flir_source_allow_override_availability
+        OUTER_SET flir_source_use_cached_filter = 0
+        ACTION_IF VARIABLE_IS_SET $flir_source_legacy_filter_signature("%flir_source_key%") BEGIN
+          OUTER_SPRINT flir_source_cached_signature $flir_source_legacy_filter_signature("%flir_source_key%")
+          ACTION_IF "%flir_source_cached_signature%" STRING_EQUAL "%flir_source_filter_signature%" BEGIN
+            OUTER_SET flir_source_use_cached_filter = 1
+            OUTER_SET skip = $flir_source_legacy_filter_skip("%flir_source_key%")
+          END
         END
-        OUTER_PATCH "" BEGIN
-          LPF create_item_array#stage1#filter
-            INT_VAR
-              global_chance = RandomNotRandom
-              chance
-              allow_override_availability = flir_filter_allow_override_availability
-            STR_VAR
-              item source tier ident
-            RET
-              skip
-              skip_reason
+        ACTION_IF flir_source_use_cached_filter = 0 BEGIN
+          OUTER_PATCH "" BEGIN
+            LPF create_item_array#stage1#filter
+              INT_VAR
+                global_chance = RandomNotRandom
+                chance
+                allow_override_availability = flir_filter_allow_override_availability
+              STR_VAR
+                item source tier ident
+              RET
+                skip
+                skip_reason
+            END
           END
         END
         ACTION_IF skip BEGIN
@@ -298,7 +503,225 @@ DEFINE_ACTION_MACRO flir_source_filter_stage1 BEGIN
             OUTER_SPRINT $identitem("%ident%") "%item%"
           END
           OUTER_SPRINT $item_array#stage1("%item%" "%replacement%" "%source%" "%tier%" "%token%" "%ident%") ""
-          OUTER_SPRINT $EVAL "%tier_hook%"("%tier%") ""
+          OUTER_SPRINT flir_source_unbalanced_tier ~%tier%~
+          OUTER_SPRINT flir_source_unbalanced_token ~%token%~
+          LAM create_item_array#rebalance
+          ACTION_IF VARIABLE_IS_SET $flir_source_current_row_key("%item%" "%replacement%" "%source%" "%tier%" "%token%" "%ident%") BEGIN
+            OUTER_SPRINT flir_source_existing_row_key $flir_source_current_row_key("%item%" "%replacement%" "%source%" "%tier%" "%token%" "%ident%")
+            ACTION_IF NOT ("%flir_source_existing_row_key%" STRING_EQUAL "%flir_source_key%") BEGIN
+              LAF flir_removal_fail STR_VAR code = ~ROW_IDENTITY_COLLISION~ tier = EVAL ~%tier%~ token = EVAL ~%token%~ ident = EVAL ~%ident%~ END
+            END
+          END ELSE BEGIN
+            OUTER_SPRINT $flir_source_current_row_key("%item%" "%replacement%" "%source%" "%tier%" "%token%" "%ident%") ~%flir_source_key%~
+          END
+          OUTER_SPRINT tier ~%flir_source_unbalanced_tier%~
+          OUTER_SPRINT token ~%flir_source_unbalanced_token%~
+          OUTER_SPRINT $EVAL "%flir_source_row_tier_hook%"("%tier%") ""
+        END
+      END
+    END
+  END
+END
+
+// Every Mode 1 origin consumes base-item filter RNG at the historical
+// per-campaign seam, before that campaign's location rows. Cache those neutral
+// decisions for the current tail; only preserve installs build migration-only
+// snapshots. Keep both paths out of shared ident_filter until the tail so
+// extensions can still replace or re-enable rows.
+DEFINE_ACTION_MACRO flir_source_filter_stage1_legacy_ident_filter BEGIN
+  LAM flir_source_prepare_birth_identities
+  ACTION_IF flir_source_legacy_snapshot_initialized = 0 BEGIN
+    LAM flir_source_legacy_snapshot_reset
+    OUTER_SET flir_source_legacy_snapshot_initialized = 1
+    ACTION_IF "%Preserve%" STRING_EQUAL_CASE "y" BEGIN
+      ACTION_PHP_EACH ident_filter AS flir_source_legacy_ident => blank BEGIN
+        OUTER_SPRINT $flir_registry_legacy_ident_filter("%flir_source_legacy_ident%") ~~
+      END
+    END
+  END
+  OUTER_FOR (flir_source_i = flir_source_legacy_cursor + 1; flir_source_i <= flir_source_decl_count; ++flir_source_i) BEGIN
+    ACTION_IF VARIABLE_IS_SET $flir_source_decl_order("%flir_source_i%") BEGIN
+        OUTER_SPRINT flir_source_key $flir_source_decl_order("%flir_source_i%")
+        OUTER_SPRINT item $flir_source_decl_item("%flir_source_key%")
+        OUTER_SPRINT replacement $flir_source_decl_replacement("%flir_source_key%")
+        OUTER_SPRINT source $flir_source_decl_source("%flir_source_key%")
+        OUTER_SPRINT tier $flir_source_decl_tier("%flir_source_key%")
+        OUTER_SPRINT token $flir_source_decl_token("%flir_source_key%")
+        OUTER_SPRINT ident $flir_source_decl_ident("%flir_source_key%")
+        OUTER_SET chance = $flir_source_decl_chance("%flir_source_key%")
+        OUTER_SET flir_source_enabled = $flir_source_decl_enabled("%flir_source_key%")
+        OUTER_SPRINT flir_source_row_tier_hook ~%tier_hook%~
+        ACTION_IF VARIABLE_IS_SET $flir_source_decl_tier_hook("%flir_source_key%") BEGIN
+          OUTER_SPRINT flir_source_row_tier_hook $flir_source_decl_tier_hook("%flir_source_key%")
+        END
+        OUTER_SET flir_filter_allow_override_availability = 0
+        ACTION_IF VARIABLE_IS_SET flir_source_allow_override_availability BEGIN
+          OUTER_SET flir_filter_allow_override_availability = flir_source_allow_override_availability
+        END
+        LAM flir_source_build_filter_signature
+        OUTER_SET skip = 0
+
+        ACTION_IF flir_source_enabled = 0 BEGIN
+          OUTER_SET skip = 1
+        END ELSE BEGIN
+          OUTER_PATCH "" BEGIN
+            LPF create_item_array#stage1#filter
+              INT_VAR
+                global_chance = RandomNotRandom
+                chance
+                allow_override_availability = flir_filter_allow_override_availability
+              STR_VAR
+                item source tier ident
+              RET
+                skip
+                skip_reason
+            END
+          END
+        END
+        OUTER_SPRINT $flir_source_legacy_filter_signature("%flir_source_key%") ~%flir_source_filter_signature%~
+        OUTER_SPRINT $flir_source_legacy_filter_skip("%flir_source_key%") ~%skip%~
+        ACTION_IF "%Preserve%" STRING_EQUAL_CASE "y" BEGIN
+          ACTION_IF skip AND "%ident%" STRING_COMPARE_CASE "x" BEGIN
+            OUTER_SPRINT $flir_registry_legacy_ident_filter("%ident%") ~~
+          END ELSE ACTION_IF skip = 0 BEGIN
+            OUTER_SPRINT $flir_source_legacy_stage1("%item%" "%replacement%" "%source%" "%tier%" "%token%" "%ident%") ~%flir_source_key%~
+            OUTER_SPRINT $EVAL "%flir_source_row_tier_hook%"("%tier%") ""
+            OUTER_SPRINT $flir_source_legacy_decl_source_kind("%flir_source_key%") ~auto~
+            OUTER_SPRINT $flir_source_legacy_decl_object_or_slot("%flir_source_key%") ~*~
+            OUTER_SPRINT $flir_source_legacy_decl_virtual_policy("%flir_source_key%") ~~
+            OUTER_SET $flir_source_legacy_decl_declared_charge1("%flir_source_key%") = 0
+            OUTER_SET $flir_source_legacy_decl_declared_charge2("%flir_source_key%") = 0
+            OUTER_SET $flir_source_legacy_decl_declared_charge3("%flir_source_key%") = 0
+            OUTER_SET $flir_source_legacy_decl_expected_quantity("%flir_source_key%") = 1
+            ACTION_IF VARIABLE_IS_SET $flir_source_decl_source_kind("%flir_source_key%") BEGIN
+              OUTER_SPRINT $flir_source_legacy_decl_source_kind("%flir_source_key%") $flir_source_decl_source_kind("%flir_source_key%")
+            END
+            ACTION_IF VARIABLE_IS_SET $flir_source_decl_object_or_slot("%flir_source_key%") BEGIN
+              OUTER_SPRINT $flir_source_legacy_decl_object_or_slot("%flir_source_key%") $flir_source_decl_object_or_slot("%flir_source_key%")
+            END
+            ACTION_IF VARIABLE_IS_SET $flir_source_decl_virtual_policy("%flir_source_key%") BEGIN
+              OUTER_SPRINT $flir_source_legacy_decl_virtual_policy("%flir_source_key%") $flir_source_decl_virtual_policy("%flir_source_key%")
+            END
+            ACTION_IF VARIABLE_IS_SET $flir_source_decl_declared_charge1("%flir_source_key%") BEGIN
+              OUTER_SET $flir_source_legacy_decl_declared_charge1("%flir_source_key%") = $flir_source_decl_declared_charge1("%flir_source_key%")
+            END
+            ACTION_IF VARIABLE_IS_SET $flir_source_decl_declared_charge2("%flir_source_key%") BEGIN
+              OUTER_SET $flir_source_legacy_decl_declared_charge2("%flir_source_key%") = $flir_source_decl_declared_charge2("%flir_source_key%")
+            END
+            ACTION_IF VARIABLE_IS_SET $flir_source_decl_declared_charge3("%flir_source_key%") BEGIN
+              OUTER_SET $flir_source_legacy_decl_declared_charge3("%flir_source_key%") = $flir_source_decl_declared_charge3("%flir_source_key%")
+            END
+            ACTION_IF VARIABLE_IS_SET $flir_source_decl_expected_quantity("%flir_source_key%") BEGIN
+              OUTER_SET $flir_source_legacy_decl_expected_quantity("%flir_source_key%") = $flir_source_decl_expected_quantity("%flir_source_key%")
+            END
+          END
+        END
+      END
+    END
+  OUTER_SET flir_source_legacy_cursor = flir_source_decl_count
+END
+
+DEFINE_ACTION_MACRO flir_source_finalize_legacy_snapshot BEGIN
+  ACTION_IF "%Preserve%" STRING_EQUAL_CASE "y" BEGIN
+    ACTION_PHP_EACH ident_filter AS flir_source_legacy_ident => blank BEGIN
+      OUTER_SPRINT $flir_registry_legacy_ident_filter("%flir_source_legacy_ident%") ~~
+    END
+    ACTION_CLEAR_ARRAY flir_source_legacy_item_array
+    ACTION_CLEAR_ARRAY flir_source_legacy_row_key
+    ACTION_PHP_EACH flir_source_legacy_stage1 AS flir_source_legacy_entry => flir_source_key BEGIN
+      OUTER_SPRINT item ~%flir_source_legacy_entry_0%~
+      OUTER_SPRINT replacement ~%flir_source_legacy_entry_1%~
+      OUTER_SPRINT source ~%flir_source_legacy_entry_2%~
+      OUTER_SPRINT tier ~%flir_source_legacy_entry_3%~
+      OUTER_SPRINT token ~%flir_source_legacy_entry_4%~
+      OUTER_SPRINT ident ~%flir_source_legacy_entry_5%~
+      ACTION_IF !VARIABLE_IS_SET $flir_registry_legacy_ident_filter("%ident%") BEGIN
+        LAM create_item_array#rebalance
+        ACTION_IF VARIABLE_IS_SET $flir_source_legacy_row_key("%item%" "%replacement%" "%source%" "%tier%" "%token%" "%ident%") BEGIN
+          OUTER_SPRINT flir_source_existing_row_key $flir_source_legacy_row_key("%item%" "%replacement%" "%source%" "%tier%" "%token%" "%ident%")
+          ACTION_IF NOT ("%flir_source_existing_row_key%" STRING_EQUAL "%flir_source_key%") BEGIN
+            LAF flir_removal_fail STR_VAR code = ~LEGACY_ROW_IDENTITY_COLLISION~ tier = EVAL ~%tier%~ token = EVAL ~%token%~ ident = EVAL ~%ident%~ END
+          END
+        END ELSE BEGIN
+          OUTER_SPRINT $flir_source_legacy_row_key("%item%" "%replacement%" "%source%" "%tier%" "%token%" "%ident%") ~%flir_source_key%~
+          OUTER_SPRINT $flir_source_legacy_item_array("%item%" "%replacement%" "%source%" "%tier%" "%token%" "%ident%") ~~
+        END
+      END
+    END
+  END
+END
+
+// Some historical integrations add virtual rows directly to item_array after
+// authored source staging. Adopt those rows at the exact pre-extension seam:
+// they consumed no source-filter RNG, but still need stable identity and
+// explicit virtual metadata in both the legacy and current plan views.
+DEFINE_ACTION_MACRO flir_source_adopt_direct_virtual_rows BEGIN
+  ACTION_IF weidu_action = 0 BEGIN
+    ACTION_PHP_EACH item_array AS flir_source_direct => blank BEGIN
+      OUTER_SPRINT flir_source_direct_item ~%flir_source_direct_0%~
+      OUTER_SPRINT flir_source_direct_replacement ~%flir_source_direct_1%~
+      OUTER_SPRINT flir_source_direct_source ~%flir_source_direct_2%~
+      OUTER_SPRINT flir_source_direct_tier ~%flir_source_direct_3%~
+      OUTER_SPRINT flir_source_direct_token ~%flir_source_direct_4%~
+      OUTER_SPRINT flir_source_direct_ident ~%flir_source_direct_5%~
+      ACTION_IF "%flir_source_direct_source%" STRING_EQUAL_CASE "blank" BEGIN
+        ACTION_IF "%flir_source_direct_ident%" STRING_EQUAL_CASE "x"
+              AND "%flir_source_direct_token%" STRING_MATCHES_REGEXP "^[xy][0-9]+$" = 0 BEGIN
+          LAF flir_removal_fail STR_VAR code = ~DIRECT_EXTRA_NAMESPACE~ tier = EVAL ~%flir_source_direct_tier%~ token = EVAL ~%flir_source_direct_token%~ ident = EVAL ~%flir_source_direct_ident%~ END
+        END
+        OUTER_SET flir_source_direct_bg1 = 0
+        OUTER_SET flir_source_direct_bg2 = 0
+        ACTION_IF VARIABLE_IS_SET $bg1_tiers("%flir_source_direct_tier%") BEGIN
+          OUTER_SET flir_source_direct_bg1 = 1
+        END
+        ACTION_IF VARIABLE_IS_SET $bg2_tiers("%flir_source_direct_tier%") BEGIN
+          OUTER_SET flir_source_direct_bg2 = 1
+        END
+        ACTION_IF flir_source_direct_bg1 + flir_source_direct_bg2 != 1 BEGIN
+          LAF flir_removal_fail STR_VAR code = ~SOURCE_CAMPAIGN_MISSING~ tier = EVAL ~%flir_source_direct_tier%~ token = EVAL ~%flir_source_direct_token%~ ident = EVAL ~%flir_source_direct_ident%~ END
+        END ELSE ACTION_IF flir_source_direct_bg1 = 1 BEGIN
+          OUTER_SPRINT flir_source_direct_campaign ~bg1~
+        END ELSE BEGIN
+          OUTER_SPRINT flir_source_direct_campaign ~bg2~
+        END
+        ACTION_IF VARIABLE_IS_SET $flir_source_direct_occurrence("%flir_source_direct_campaign%" "%flir_source_direct_tier%" "%flir_source_direct_item%") BEGIN
+          OUTER_SET $flir_source_direct_occurrence("%flir_source_direct_campaign%" "%flir_source_direct_tier%" "%flir_source_direct_item%") += 1
+        END ELSE BEGIN
+          OUTER_SET $flir_source_direct_occurrence("%flir_source_direct_campaign%" "%flir_source_direct_tier%" "%flir_source_direct_item%") = 1
+        END
+        OUTER_SET flir_source_direct_occurrence_value = $flir_source_direct_occurrence("%flir_source_direct_campaign%" "%flir_source_direct_tier%" "%flir_source_direct_item%")
+        OUTER_SPRINT flir_source_direct_key ~direct:%flir_source_direct_campaign%:%flir_source_direct_tier%:%flir_source_direct_item%:%flir_source_direct_occurrence_value%~
+        OUTER_SPRINT flir_source_direct_stable ~legacy:unit-%flir_source_direct_campaign%-%flir_source_direct_tier%-direct-%flir_source_direct_item%-%flir_source_direct_occurrence_value%~
+
+        ACTION_IF VARIABLE_IS_SET $flir_source_current_row_key("%flir_source_direct_item%" "%flir_source_direct_replacement%" "%flir_source_direct_source%" "%flir_source_direct_tier%" "%flir_source_direct_token%" "%flir_source_direct_ident%") BEGIN
+          OUTER_SPRINT flir_source_direct_existing $flir_source_current_row_key("%flir_source_direct_item%" "%flir_source_direct_replacement%" "%flir_source_direct_source%" "%flir_source_direct_tier%" "%flir_source_direct_token%" "%flir_source_direct_ident%")
+          ACTION_IF NOT ("%flir_source_direct_existing%" STRING_EQUAL "%flir_source_direct_key%") BEGIN
+            LAF flir_removal_fail STR_VAR code = ~ROW_IDENTITY_COLLISION~ tier = EVAL ~%flir_source_direct_tier%~ token = EVAL ~%flir_source_direct_token%~ ident = EVAL ~%flir_source_direct_ident%~ END
+          END
+        END ELSE BEGIN
+          OUTER_SPRINT $flir_source_current_row_key("%flir_source_direct_item%" "%flir_source_direct_replacement%" "%flir_source_direct_source%" "%flir_source_direct_tier%" "%flir_source_direct_token%" "%flir_source_direct_ident%") ~%flir_source_direct_key%~
+        END
+        OUTER_SPRINT $flir_source_decl_source_kind("%flir_source_direct_key%") ~virtual~
+        OUTER_SPRINT $flir_source_decl_object_or_slot("%flir_source_direct_key%") ~legacy_blank~
+        OUTER_SPRINT $flir_source_decl_virtual_policy("%flir_source_direct_key%") ~legacy_blank~
+        OUTER_SET $flir_source_decl_declared_charge1("%flir_source_direct_key%") = 0
+        OUTER_SET $flir_source_decl_declared_charge2("%flir_source_direct_key%") = 0
+        OUTER_SET $flir_source_decl_declared_charge3("%flir_source_direct_key%") = 0
+        OUTER_SET $flir_source_decl_expected_quantity("%flir_source_direct_key%") = 1
+        OUTER_SPRINT $flir_source_decl_birth_campaign("%flir_source_direct_key%") ~%flir_source_direct_campaign%~
+        OUTER_SPRINT $flir_source_decl_birth_tier("%flir_source_direct_key%") ~%flir_source_direct_tier%~
+        OUTER_SPRINT $flir_source_decl_birth_stable("%flir_source_direct_key%") ~%flir_source_direct_stable%~
+
+        ACTION_IF flir_registry_old_unmarked_migration = 1 BEGIN
+          OUTER_SPRINT $flir_source_legacy_item_array("%flir_source_direct_item%" "%flir_source_direct_replacement%" "%flir_source_direct_source%" "%flir_source_direct_tier%" "%flir_source_direct_token%" "%flir_source_direct_ident%") ~~
+          OUTER_SPRINT $flir_source_legacy_row_key("%flir_source_direct_item%" "%flir_source_direct_replacement%" "%flir_source_direct_source%" "%flir_source_direct_tier%" "%flir_source_direct_token%" "%flir_source_direct_ident%") ~%flir_source_direct_key%~
+          OUTER_SPRINT $flir_source_legacy_decl_source_kind("%flir_source_direct_key%") ~virtual~
+          OUTER_SPRINT $flir_source_legacy_decl_object_or_slot("%flir_source_direct_key%") ~legacy_blank~
+          OUTER_SPRINT $flir_source_legacy_decl_virtual_policy("%flir_source_direct_key%") ~legacy_blank~
+          OUTER_SET $flir_source_legacy_decl_declared_charge1("%flir_source_direct_key%") = 0
+          OUTER_SET $flir_source_legacy_decl_declared_charge2("%flir_source_direct_key%") = 0
+          OUTER_SET $flir_source_legacy_decl_declared_charge3("%flir_source_direct_key%") = 0
+          OUTER_SET $flir_source_legacy_decl_expected_quantity("%flir_source_direct_key%") = 1
         END
       END
     END
@@ -317,6 +740,7 @@ DEFINE_ACTION_MACRO flir_removal_plan_reset BEGIN
   ACTION_CLEAR_ARRAY flir_removal_plan_tier
   ACTION_CLEAR_ARRAY flir_removal_plan_token
   ACTION_CLEAR_ARRAY flir_removal_plan_ident
+  ACTION_CLEAR_ARRAY flir_removal_plan_stable
   ACTION_CLEAR_ARRAY flir_removal_plan_record_index
   ACTION_CLEAR_ARRAY flir_removal_plan_record_offset
   ACTION_CLEAR_ARRAY flir_removal_plan_record_size
@@ -344,6 +768,13 @@ DEFINE_ACTION_MACRO flir_removal_plan_reset BEGIN
 END
 
 DEFINE_ACTION_MACRO flir_removal_plan_load_preserve BEGIN
+  ACTION_CLEAR_ARRAY removed_item_array
+  ACTION_CLEAR_ARRAY flir_removal_history_array
+  ACTION_IF "%Preserve%" STRING_EQUAL_CASE y
+        AND NOT FILE_EXISTS_IN_GAME "fl#removeditems.2da"
+        AND NOT FILE_EXISTS "override/fl#removeditems.2da" BEGIN
+    LAF flir_removal_fail STR_VAR code = ~PRESERVE_STATE_MISSING~ END
+  END
   ACTION_IF "%Preserve%" STRING_EQUAL_CASE y
         AND (FILE_EXISTS_IN_GAME "fl#removeditems.2da"
           OR FILE_EXISTS "override/fl#removeditems.2da") BEGIN
@@ -357,6 +788,7 @@ DEFINE_ACTION_MACRO flir_removal_plan_load_preserve BEGIN
         TO_LOWER Token
         TO_LOWER Ident
         SPRINT $removed_item_array("%Tier%" "%Token%" "%Ident%") ""
+        SPRINT $flir_removal_history_array("%Tier%" "%Token%" "%Ident%") ""
       END
     BUT_ONLY
   END
@@ -416,6 +848,7 @@ DEFINE_PATCH_MACRO flir_removal_plan_add_current BEGIN
   SPRINT $flir_removal_plan_tier("%flir_plan_id%") "%removed_tier%"
   SPRINT $flir_removal_plan_token("%flir_plan_id%") "%removed_token%"
   SPRINT $flir_removal_plan_ident("%flir_plan_id%") "%removed_ident%"
+  SPRINT $flir_removal_plan_stable("%flir_plan_id%") "%flir_plan_stable%"
   SPRINT $flir_removal_plan_record_index("%flir_plan_id%") "%flir_record_index%"
   SPRINT $flir_removal_plan_record_offset("%flir_plan_id%") "%flir_record_offset%"
   SPRINT $flir_removal_plan_record_size("%flir_plan_id%") "%flir_record_size%"
@@ -602,6 +1035,7 @@ DEFINE_ACTION_MACRO flir_removal_plan_add_virtual_current BEGIN
   OUTER_SPRINT $flir_removal_plan_tier("%flir_plan_id%") "%removed_tier%"
   OUTER_SPRINT $flir_removal_plan_token("%flir_plan_id%") "%removed_token%"
   OUTER_SPRINT $flir_removal_plan_ident("%flir_plan_id%") "%removed_ident%"
+  OUTER_SPRINT $flir_removal_plan_stable("%flir_plan_id%") "%flir_plan_stable%"
   OUTER_SPRINT $flir_removal_plan_record_index("%flir_plan_id%") "-1"
   OUTER_SPRINT $flir_removal_plan_record_offset("%flir_plan_id%") "0"
   OUTER_SPRINT $flir_removal_plan_record_size("%flir_plan_id%") "0"
@@ -610,15 +1044,20 @@ DEFINE_ACTION_MACRO flir_removal_plan_add_virtual_current BEGIN
   OUTER_SPRINT $flir_removal_plan_whole_hash("%flir_plan_id%") "%flir_virtual_whole_hash%"
   OUTER_SPRINT $flir_removal_plan_container("%flir_plan_id%") "%flir_virtual_policy%"
   OUTER_SPRINT $flir_removal_plan_slot("%flir_plan_id%") "%flir_virtual_policy%"
-  OUTER_SPRINT $flir_removal_plan_quantity("%flir_plan_id%") "1"
+  OUTER_SPRINT $flir_removal_plan_quantity("%flir_plan_id%") "%flir_virtual_quantity%"
   OUTER_SPRINT $flir_removal_plan_flags("%flir_plan_id%") "0"
-  OUTER_SPRINT $flir_removal_plan_charge1("%flir_plan_id%") "%flir_item_default_charge1%"
-  OUTER_SPRINT $flir_removal_plan_charge2("%flir_plan_id%") "%flir_item_default_charge2%"
-  OUTER_SPRINT $flir_removal_plan_charge3("%flir_plan_id%") "%flir_item_default_charge3%"
+  OUTER_SPRINT $flir_removal_plan_charge1("%flir_plan_id%") "%flir_virtual_charge1%"
+  OUTER_SPRINT $flir_removal_plan_charge2("%flir_plan_id%") "%flir_virtual_charge2%"
+  OUTER_SPRINT $flir_removal_plan_charge3("%flir_plan_id%") "%flir_virtual_charge3%"
   OUTER_SPRINT $flir_removal_plan_category("%flir_plan_id%") "%flir_item_category_value%"
   OUTER_SPRINT $flir_removal_plan_adapter("%flir_plan_id%") "%flir_plan_adapter%"
   OUTER_SPRINT $flir_removal_plan_emit("%flir_plan_id%") "1"
-  OUTER_SPRINT $flir_removal_plan_emit_count("%flir_plan_id%") "1"
+  OUTER_SET flir_virtual_emit_count = flir_virtual_quantity
+  ACTION_IF (flir_item_category_value = 9 OR flir_item_category_value = 11)
+        AND flir_virtual_charge1 > flir_virtual_emit_count BEGIN
+    OUTER_SET flir_virtual_emit_count = flir_virtual_charge1
+  END
+  OUTER_SPRINT $flir_removal_plan_emit_count("%flir_plan_id%") "%flir_virtual_emit_count%"
 END
 
 DEFINE_ACTION_MACRO flir_removal_legacy_adapter_pre_unshey BEGIN
@@ -746,8 +1185,9 @@ END
 
 DEFINE_ACTION_MACRO flir_removal_plan_build_item BEGIN
   OUTER_SET flir_preserve_allowed = 1
-  ACTION_IF "%Preserve%" STRING_EQUAL_CASE y
-        AND !VARIABLE_IS_SET $removed_item_array("%removed_tier%" "%removed_token%" "%removed_ident%") BEGIN
+  ACTION_IF flir_removal_building_legacy_snapshot = 1
+        AND "%Preserve%" STRING_EQUAL_CASE y
+        AND !VARIABLE_IS_SET $flir_removal_history_array("%removed_tier%" "%removed_token%" "%removed_ident%") BEGIN
     OUTER_SET flir_preserve_allowed = 0
   END
 
@@ -761,6 +1201,7 @@ DEFINE_ACTION_MACRO flir_removal_plan_build_item BEGIN
       OUTER_SET flir_item_default_charge1 = $flir_removal_item_charge1("%itm_to_del%")
       OUTER_SET flir_item_default_charge2 = $flir_removal_item_charge2("%itm_to_del%")
       OUTER_SET flir_item_default_charge3 = $flir_removal_item_charge3("%itm_to_del%")
+      OUTER_SPRINT flir_plan_stable ~~
 
       ACTION_PHP_EACH duplicate_item_array AS dia_entry => blank BEGIN
         ACTION_IF "%dia_entry_3%" STRING_EQUAL_CASE "%removed_ident%" BEGIN
@@ -778,18 +1219,72 @@ DEFINE_ACTION_MACRO flir_removal_plan_build_item BEGIN
       END
 
       OUTER_SPRINT flir_source_key "ident:%removed_ident%"
+      ACTION_IF flir_removal_building_legacy_snapshot = 1
+            AND VARIABLE_IS_SET $flir_source_legacy_row_key("%itm_to_del%" "%replacement_itm%" "%sourcefile%" "%removed_tier%" "%removed_token%" "%removed_ident%") BEGIN
+        OUTER_SPRINT flir_source_key $flir_source_legacy_row_key("%itm_to_del%" "%replacement_itm%" "%sourcefile%" "%removed_tier%" "%removed_token%" "%removed_ident%")
+      END ELSE ACTION_IF flir_removal_building_legacy_snapshot = 0
+            AND VARIABLE_IS_SET $flir_source_current_row_key("%itm_to_del%" "%replacement_itm%" "%sourcefile%" "%removed_tier%" "%removed_token%" "%removed_ident%") BEGIN
+        OUTER_SPRINT flir_source_key $flir_source_current_row_key("%itm_to_del%" "%replacement_itm%" "%sourcefile%" "%removed_tier%" "%removed_token%" "%removed_ident%")
+      END
+      ACTION_IF VARIABLE_IS_SET $flir_source_decl_birth_stable("%flir_source_key%") BEGIN
+        OUTER_SPRINT flir_plan_stable $flir_source_decl_birth_stable("%flir_source_key%")
+      END
       OUTER_SPRINT flir_source_kind "auto"
       OUTER_SPRINT flir_object_or_slot "*"
       OUTER_SPRINT flir_virtual_policy ""
       OUTER_SPRINT flir_plan_adapter ""
-      ACTION_IF VARIABLE_IS_SET $flir_source_decl_source_kind("%flir_source_key%") BEGIN
-        OUTER_SPRINT flir_source_kind $flir_source_decl_source_kind("%flir_source_key%")
-      END
-      ACTION_IF VARIABLE_IS_SET $flir_source_decl_object_or_slot("%flir_source_key%") BEGIN
-        OUTER_SPRINT flir_object_or_slot $flir_source_decl_object_or_slot("%flir_source_key%")
-      END
-      ACTION_IF VARIABLE_IS_SET $flir_source_decl_virtual_policy("%flir_source_key%") BEGIN
-        OUTER_SPRINT flir_virtual_policy $flir_source_decl_virtual_policy("%flir_source_key%")
+      OUTER_SET flir_virtual_quantity = 1
+      OUTER_SET flir_virtual_charge1 = flir_item_default_charge1
+      OUTER_SET flir_virtual_charge2 = flir_item_default_charge2
+      OUTER_SET flir_virtual_charge3 = flir_item_default_charge3
+      ACTION_IF flir_removal_building_legacy_snapshot = 1 BEGIN
+        ACTION_IF VARIABLE_IS_SET $flir_source_legacy_decl_source_kind("%flir_source_key%") BEGIN
+          OUTER_SPRINT flir_source_kind $flir_source_legacy_decl_source_kind("%flir_source_key%")
+        END
+        ACTION_IF VARIABLE_IS_SET $flir_source_legacy_decl_object_or_slot("%flir_source_key%") BEGIN
+          OUTER_SPRINT flir_object_or_slot $flir_source_legacy_decl_object_or_slot("%flir_source_key%")
+        END
+        ACTION_IF VARIABLE_IS_SET $flir_source_legacy_decl_virtual_policy("%flir_source_key%") BEGIN
+          OUTER_SPRINT flir_virtual_policy $flir_source_legacy_decl_virtual_policy("%flir_source_key%")
+        END
+        ACTION_IF "%flir_virtual_policy%" STRING_EQUAL_CASE "explicit" BEGIN
+          ACTION_IF VARIABLE_IS_SET $flir_source_legacy_decl_expected_quantity("%flir_source_key%") BEGIN
+            OUTER_SET flir_virtual_quantity = $flir_source_legacy_decl_expected_quantity("%flir_source_key%")
+          END
+          ACTION_IF VARIABLE_IS_SET $flir_source_legacy_decl_declared_charge1("%flir_source_key%") BEGIN
+            OUTER_SET flir_virtual_charge1 = $flir_source_legacy_decl_declared_charge1("%flir_source_key%")
+          END
+          ACTION_IF VARIABLE_IS_SET $flir_source_legacy_decl_declared_charge2("%flir_source_key%") BEGIN
+            OUTER_SET flir_virtual_charge2 = $flir_source_legacy_decl_declared_charge2("%flir_source_key%")
+          END
+          ACTION_IF VARIABLE_IS_SET $flir_source_legacy_decl_declared_charge3("%flir_source_key%") BEGIN
+            OUTER_SET flir_virtual_charge3 = $flir_source_legacy_decl_declared_charge3("%flir_source_key%")
+          END
+        END
+      END ELSE BEGIN
+        ACTION_IF VARIABLE_IS_SET $flir_source_decl_source_kind("%flir_source_key%") BEGIN
+          OUTER_SPRINT flir_source_kind $flir_source_decl_source_kind("%flir_source_key%")
+        END
+        ACTION_IF VARIABLE_IS_SET $flir_source_decl_object_or_slot("%flir_source_key%") BEGIN
+          OUTER_SPRINT flir_object_or_slot $flir_source_decl_object_or_slot("%flir_source_key%")
+        END
+        ACTION_IF VARIABLE_IS_SET $flir_source_decl_virtual_policy("%flir_source_key%") BEGIN
+          OUTER_SPRINT flir_virtual_policy $flir_source_decl_virtual_policy("%flir_source_key%")
+        END
+        ACTION_IF "%flir_virtual_policy%" STRING_EQUAL_CASE "explicit" BEGIN
+          ACTION_IF VARIABLE_IS_SET $flir_source_decl_expected_quantity("%flir_source_key%") BEGIN
+            OUTER_SET flir_virtual_quantity = $flir_source_decl_expected_quantity("%flir_source_key%")
+          END
+          ACTION_IF VARIABLE_IS_SET $flir_source_decl_declared_charge1("%flir_source_key%") BEGIN
+            OUTER_SET flir_virtual_charge1 = $flir_source_decl_declared_charge1("%flir_source_key%")
+          END
+          ACTION_IF VARIABLE_IS_SET $flir_source_decl_declared_charge2("%flir_source_key%") BEGIN
+            OUTER_SET flir_virtual_charge2 = $flir_source_decl_declared_charge2("%flir_source_key%")
+          END
+          ACTION_IF VARIABLE_IS_SET $flir_source_decl_declared_charge3("%flir_source_key%") BEGIN
+            OUTER_SET flir_virtual_charge3 = $flir_source_decl_declared_charge3("%flir_source_key%")
+          END
+        END
       END
       ACTION_IF "%flir_source_kind%" STRING_EQUAL_CASE "auto" BEGIN
         ACTION_IF "%sourcefile%" STRING_EQUAL_CASE "blank" BEGIN
@@ -814,6 +1309,12 @@ DEFINE_ACTION_MACRO flir_removal_plan_build_item BEGIN
         ACTION_IF NOT ("%flir_virtual_policy%" STRING_EQUAL_CASE "explicit")
               AND NOT ("%flir_virtual_policy%" STRING_EQUAL_CASE "legacy_blank") BEGIN
           LAF flir_removal_fail STR_VAR code = ~VIRTUAL_SOURCE_POLICY~ tier = EVAL ~%removed_tier%~ token = EVAL ~%removed_token%~ ident = EVAL ~%removed_ident%~ END
+        END
+        ACTION_IF flir_virtual_quantity < 1
+              OR flir_virtual_charge1 < 0
+              OR flir_virtual_charge2 < 0
+              OR flir_virtual_charge3 < 0 BEGIN
+          LAF flir_removal_fail STR_VAR code = ~VIRTUAL_SOURCE_METADATA~ tier = EVAL ~%removed_tier%~ token = EVAL ~%removed_token%~ ident = EVAL ~%removed_ident%~ END
         END
         OUTER_SET flir_virtual_whole_size = 0
         OUTER_SET flir_virtual_whole_hash = 0
@@ -894,12 +1395,14 @@ DEFINE_ACTION_MACRO flir_removal_validate_future_hooks BEGIN
   ACTION_IF VARIABLE_IS_SET flir_removal_force_validator_failure BEGIN
     LAF flir_removal_fail STR_VAR code = ~VALIDATOR_HOOK~ tier = ~~ token = ~~ ident = ~~ END
   END
+  ACTION_IF VARIABLE_IS_SET flir_registry_available BEGIN
+    LAM flir_registry_validate_planned_units
+  END
 END
 
-DEFINE_ACTION_MACRO flir_removal_plan_build BEGIN
+DEFINE_ACTION_MACRO flir_removal_plan_build_selected_array BEGIN
   LAM flir_removal_plan_reset
-  LAM flir_removal_plan_load_preserve
-  ACTION_PHP_EACH item_array AS entry => int BEGIN
+  ACTION_PHP_EACH "%flir_removal_plan_build_array%" AS entry => int BEGIN
     OUTER_SPRINT itm_to_del     "%entry_0%"
     OUTER_SPRINT replacement_itm "%entry_1%"
     OUTER_SPRINT sourcefile     "%entry_2%"
@@ -908,8 +1411,26 @@ DEFINE_ACTION_MACRO flir_removal_plan_build BEGIN
     OUTER_SPRINT removed_ident  "%entry_5%"
     LAM flir_removal_plan_build_item
   END
+END
+
+DEFINE_ACTION_MACRO flir_removal_plan_build BEGIN
+  LAM flir_removal_plan_load_preserve
+  ACTION_IF flir_registry_old_unmarked_migration = 1 BEGIN
+    OUTER_SET flir_removal_building_legacy_snapshot = 1
+    OUTER_SPRINT flir_removal_plan_build_array ~flir_source_legacy_item_array~
+    LAM flir_removal_plan_build_selected_array
+    LAM flir_registry_capture_old_unmarked_legacy_units
+  END
+
+  OUTER_SET flir_removal_building_legacy_snapshot = 0
+  OUTER_SPRINT flir_removal_plan_build_array ~item_array~
+  LAM flir_removal_plan_build_selected_array
   LAM flir_removal_validate_future_hooks
   LAM flir_removal_validate_token_capacity
+  // From this point onward removed_item_array means this install's successfully
+  // applied removals. Preserve history remains available only in the dedicated
+  // history array and is never registered as current catalog content.
+  ACTION_CLEAR_ARRAY removed_item_array
 END
 
 DEFINE_ACTION_MACRO flir_removal_validate_token_capacity BEGIN
@@ -963,25 +1484,38 @@ END
 DEFINE_ACTION_MACRO flir_removal_emit_extra_token BEGIN
   OUTER_SPRINT flir_extra_saved_token "%removed_token%"
   OUTER_SPRINT flir_extra_saved_ident "%removed_ident%"
+  OUTER_SPRINT flir_extra_stable ~~
   ACTION_IF VARIABLE_IS_SET flir_extra_base_token BEGIN
     OUTER_SPRINT flir_extra_base "%flir_extra_base_token%"
   END ELSE BEGIN
     OUTER_SPRINT flir_extra_base "%removed_token%"
   END
-  OUTER_SET flir_extra_slot = 0
   OUTER_SET flir_extra_found = 0
-  OUTER_WHILE flir_extra_found = 0 AND flir_extra_slot < 100 BEGIN
-    OUTER_SPRINT flir_extra_token "%flir_extra_prefix%%flir_extra_slot%"
-    ACTION_IF !VARIABLE_IS_SET $extra_tokens("%removed_tier%" "%flir_extra_token%") BEGIN
-      OUTER_SET flir_extra_found = 1
-    END ELSE BEGIN
-      OUTER_SET flir_extra_slot += 1
+  ACTION_IF VARIABLE_IS_SET $flir_registry_planned_extra_compact("%flir_emit_plan_id%" "%flir_extra_prefix%" "%flir_extra_i%") BEGIN
+    OUTER_SPRINT flir_extra_token $flir_registry_planned_extra_compact("%flir_emit_plan_id%" "%flir_extra_prefix%" "%flir_extra_i%")
+    ACTION_IF VARIABLE_IS_SET $extra_tokens("%removed_tier%" "%flir_extra_token%") BEGIN
+      LAF flir_registry_fail STR_VAR code = ~COMPACT_COLLISION~ kind = ~unit~ id = EVAL ~%flir_extra_token%~ END
+    END
+    OUTER_SET flir_extra_found = 1
+    OUTER_SPRINT flir_extra_stable $flir_registry_planned_extra_stable("%flir_emit_plan_id%" "%flir_extra_prefix%" "%flir_extra_i%")
+  END ELSE BEGIN
+    OUTER_SET flir_extra_slot = 0
+    OUTER_WHILE flir_extra_found = 0 AND flir_extra_slot < 100 BEGIN
+      OUTER_SPRINT flir_extra_token "%flir_extra_prefix%%flir_extra_slot%"
+      ACTION_IF !VARIABLE_IS_SET $extra_tokens("%removed_tier%" "%flir_extra_token%") BEGIN
+        OUTER_SET flir_extra_found = 1
+      END ELSE BEGIN
+        OUTER_SET flir_extra_slot += 1
+      END
     END
   END
   ACTION_IF flir_extra_found = 0 BEGIN
     LAF flir_removal_fail STR_VAR code = ~EXTRA_TOKEN_EXHAUSTED~ tier = EVAL ~%removed_tier%~ token = EVAL ~%removed_token%~ ident = EVAL ~%removed_ident%~ END
   END
   OUTER_SPRINT $extra_tokens("%removed_tier%" "%flir_extra_token%") "%flir_extra_base%"
+  ACTION_IF "%flir_extra_stable%" STRING_COMPARE_CASE "" BEGIN
+    OUTER_SPRINT $flir_registry_applied_extra_stable("%removed_tier%" "%flir_extra_token%") ~%flir_extra_stable%~
+  END
   OUTER_SPRINT removed_token "%flir_extra_token%"
   OUTER_SPRINT removed_ident "x"
   OUTER_SPRINT itm_to_stuff "fl%removed_tier%t%flir_extra_token%"
@@ -1026,6 +1560,10 @@ DEFINE_ACTION_MACRO flir_removal_emit_plan BEGIN
   OUTER_SPRINT itm_to_del $flir_removal_plan_item("%flir_emit_plan_id%")
   OUTER_SPRINT sourcefile $flir_removal_plan_source("%flir_emit_plan_id%")
   OUTER_SPRINT flir_emit_kind $flir_removal_plan_kind("%flir_emit_plan_id%")
+  OUTER_SPRINT flir_emit_stable ~~
+  ACTION_IF VARIABLE_IS_SET $flir_removal_plan_stable("%flir_emit_plan_id%") BEGIN
+    OUTER_SPRINT flir_emit_stable $flir_removal_plan_stable("%flir_emit_plan_id%")
+  END
   OUTER_SPRINT cre "fltier%removed_tier%"
   OUTER_SPRINT itm_to_stuff "fl%removed_tier%t%removed_token%"
   OUTER_SET flir_emit_category = $flir_removal_plan_category("%flir_emit_plan_id%")
@@ -1038,6 +1576,9 @@ DEFINE_ACTION_MACRO flir_removal_emit_plan BEGIN
     OUTER_SET flir_emit_base_charge1 = flir_emit_charge1
   END
   LAM flir_removal_stuff_cre
+  ACTION_IF "%flir_emit_stable%" STRING_COMPARE_CASE "" BEGIN
+    OUTER_SPRINT $flir_registry_applied_unit_stable("%removed_tier%" "%removed_token%" "%removed_ident%") ~%flir_emit_stable%~
+  END
   OUTER_SPRINT $charge_array("%removed_token%" "%removed_tier%" "%flir_emit_base_charge1%" "%flir_emit_charge2%" "%flir_emit_charge3%") ""
   OUTER_SET flir_removal_plan_applied_count += 1
 
@@ -1046,8 +1587,11 @@ DEFINE_ACTION_MACRO flir_removal_emit_plan BEGIN
   END
 
   OUTER_SET flir_emit_quantity = $flir_removal_plan_quantity("%flir_emit_plan_id%")
-  ACTION_IF "%flir_emit_kind%" STRING_EQUAL_CASE "store"
-        AND flir_emit_quantity > 1 BEGIN
+  ACTION_IF ("%flir_emit_kind%" STRING_EQUAL_CASE "store"
+          OR "%flir_emit_kind%" STRING_EQUAL_CASE "virtual")
+        AND flir_emit_quantity > 1
+        AND ((flir_emit_category != 9 AND flir_emit_category != 11)
+          OR flir_emit_quantity >= flir_emit_charge1) BEGIN
     OUTER_SPRINT flir_extra_prefix "x"
     OUTER_SPRINT flir_extra_base_token "%removed_token%"
     OUTER_FOR (flir_extra_i = 1; flir_extra_i < flir_emit_quantity; ++flir_extra_i) BEGIN
@@ -1057,7 +1601,9 @@ DEFINE_ACTION_MACRO flir_removal_emit_plan BEGIN
 
   ACTION_IF (flir_emit_category = 9 OR flir_emit_category = 11)
         AND flir_emit_charge1 > 1
-        AND NOT ("%flir_emit_kind%" STRING_EQUAL_CASE "store") BEGIN
+        AND NOT ("%flir_emit_kind%" STRING_EQUAL_CASE "store")
+        AND (NOT ("%flir_emit_kind%" STRING_EQUAL_CASE "virtual")
+          OR flir_emit_charge1 > flir_emit_quantity) BEGIN
     OUTER_SPRINT flir_extra_prefix "y"
     OUTER_SPRINT flir_extra_base_token "%removed_token%"
     OUTER_FOR (flir_extra_i = 1; flir_extra_i < flir_emit_charge1; ++flir_extra_i) BEGIN
@@ -1292,5 +1838,31 @@ DEFINE_ACTION_MACRO flir_removal_plan_apply BEGIN
       END
     END
     LAM flir_removal_run_legacy_adapter_post_hooks
+    LAM flir_removal_plan_write_state
+  END
+END
+
+DEFINE_ACTION_MACRO flir_removal_plan_publish_state BEGIN
+  ACTION_IF flir_removal_state_ready != 1 BEGIN
+    FAIL ~FLIR_REMOVAL_ERR STATE_NOT_READY tier= token= ident=~
+  END
+  COPY + "...blank" "override/fl#removeditems.2da"
+    INSERT_BYTES 0 STRING_LENGTH ~%flir_removed_state%~
+    WRITE_ASCIIE 0 ~%flir_removed_state%~ (STRING_LENGTH ~%flir_removed_state%~)
+  BUT_ONLY
+END
+
+DEFINE_ACTION_MACRO flir_removal_plan_write_state BEGIN
+  ACTION_IF weidu_action = 0 AND "%Preserve%" STRING_EQUAL_CASE "n" BEGIN
+    OUTER_TEXT_SPRINT flir_removed_state ~Tier Token Ident%WNL%~
+    ACTION_SORT_ARRAY_INDICES removed_item_array LEXICOGRAPHICALLY
+    ACTION_PHP_EACH removed_item_array AS flir_removed_state_entry => blank BEGIN
+      OUTER_TEXT_SPRINT flir_removed_state ~%flir_removed_state%%flir_removed_state_entry_0% %flir_removed_state_entry_1% %flir_removed_state_entry_2%%WNL%~
+    END
+    OUTER_SET flir_removal_state_ready = 1
+    ACTION_IF !VARIABLE_IS_SET flir_mode1_defer_state_publication
+          OR flir_mode1_defer_state_publication = 0 BEGIN
+      LAM flir_removal_plan_publish_state
+    END
   END
 END

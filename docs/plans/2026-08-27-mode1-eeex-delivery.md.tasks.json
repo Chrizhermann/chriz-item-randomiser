@@ -27,7 +27,7 @@
     {
       "id": 4,
       "subject": "Task 5: Add persistent compact registries and legacy migration snapshots",
-      "status": "in_progress",
+      "status": "completed",
       "blockedBy": [3]
     },
     {
@@ -85,5 +85,5 @@
       "blockedBy": [12]
     }
   ],
-  "lastUpdated": "2026-08-28T05:32:30.2415993+09:00"
+  "lastUpdated": "2026-08-30T08:08:23.6649484+09:00"
 }

@@ -129,6 +129,7 @@ BEGIN @101100 SUBCOMPONENT @101000 DESIGNATED 1100                              
 
   OUTER_SET lost = 0
   OUTER_SET weidu_action = 0
+  OUTER_SET flir_mode1_defer_state_publication = 1
 
   INCLUDE "randomiser/lib/random_seed.tpa"                                                                             //Asks the user if saved game compatibility should be preserved, provided the mod's been installed before
 
@@ -152,9 +153,16 @@ BEGIN @101100 SUBCOMPONENT @101000 DESIGNATED 1100                              
 
   INCLUDE "randomiser/lib/fixes.tpa"                                                                                   //Makes some minor adjustsments
 
+  LAM flir_registry_register_applied_units
+  LAM flir_registry_capture_final_slots
+  LAM flir_registry_reconcile
+  LAM flir_registry_write_state
+
   INCLUDE "randomiser/lib/delivery.tpa"                                                                                //Creates the scripts that places the randomised items at their new location. See locationlist.2da
 
   INCLUDE "randomiser/lib/ssl.tpa"                                                                                     //Calls SSL to create the randomisation scripts
+
+  LAM flir_mode1_publish_state
 
 
 BEGIN @101200 SUBCOMPONENT @101000 DESIGNATED 1200                                                                     //Randomise items: Some items are lost
@@ -165,6 +173,7 @@ BEGIN @101200 SUBCOMPONENT @101000 DESIGNATED 1200                              
 
   OUTER_SET lost = 1
   OUTER_SET weidu_action = 0
+  OUTER_SET flir_mode1_defer_state_publication = 1
 
   INCLUDE "randomiser/lib/random_seed.tpa"
 
@@ -188,9 +197,16 @@ BEGIN @101200 SUBCOMPONENT @101000 DESIGNATED 1200                              
 
   INCLUDE "randomiser/lib/fixes.tpa"
 
+  LAM flir_registry_register_applied_units
+  LAM flir_registry_capture_final_slots
+  LAM flir_registry_reconcile
+  LAM flir_registry_write_state
+
   INCLUDE "randomiser/lib/delivery.tpa"
 
   INCLUDE "randomiser/lib/ssl.tpa"
+
+  LAM flir_mode1_publish_state
 
 
 BEGIN @101300 SUBCOMPONENT @101000 DESIGNATED 1300                                                                     //WeiDU randomisation: no items are lost

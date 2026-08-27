@@ -1,0 +1,108 @@
+// Hermetic non-interactive random-seed state-selection harness.
+// argv[0] = production random_seed.tpa
+// argv[1] = output report path
+// argv[2] = production removal_plan.tpa
+// argv[3] = production catalog.tpa
+
+BACKUP ~backup~
+AUTHOR ~BG2 Item Randomiser random-seed test harness~
+
+BEGIN ~non-interactive state selection~ DESIGNATED 0
+  OUTER_SET weidu_action = 0
+  OUTER_SET lost = 0
+  OUTER_SET INTERACTIVE = 0
+  INCLUDE ~%argv[0]%~
+  OUTER_SET h_seed_present = 0
+  OUTER_SET h_options_present = 0
+  OUTER_SET h_removed_present = 0
+  ACTION_IF FILE_EXISTS_IN_GAME ~fl#randomseed.2da~
+        OR FILE_EXISTS ~override/fl#randomseed.2da~ BEGIN
+    OUTER_SET h_seed_present = 1
+  END
+  ACTION_IF FILE_EXISTS_IN_GAME ~fl#randoptions.2da~
+        OR FILE_EXISTS ~override/fl#randoptions.2da~ BEGIN
+    OUTER_SET h_options_present = 1
+  END
+  ACTION_IF FILE_EXISTS_IN_GAME ~fl#removeditems.2da~
+        OR FILE_EXISTS ~override/fl#removeditems.2da~ BEGIN
+    OUTER_SET h_removed_present = 1
+  END
+  OUTER_TEXT_SPRINT h_random_seed_report ~PRESERVE %Preserve%%WNL%SEED %h_seed_present%%WNL%OPTIONS %h_options_present%%WNL%REMOVED %h_removed_present%%WNL%~
+  COPY + ~...blank~ ~%argv[1]%~
+    INSERT_BYTES 0 STRING_LENGTH ~%h_random_seed_report%~
+    WRITE_ASCIIE 0 ~%h_random_seed_report%~ (STRING_LENGTH ~%h_random_seed_report%~)
+  BUT_ONLY
+
+BEGIN ~deferred fresh state rolls back before final publication~ DESIGNATED 1
+  OUTER_SET weidu_action = 0
+  OUTER_SET lost = 0
+  OUTER_SET INTERACTIVE = 0
+  OUTER_SET flir_mode1_defer_state_publication = 1
+  INCLUDE ~%argv[0]%~
+  OUTER_SPRINT $RandOptions("ModCompatYes") ~~
+  FAIL ~FLIR_RANDOM_SEED_ERR INTENTIONAL_AFTER_PREPARE~
+
+BEGIN ~deferred publication includes late in-memory options~ DESIGNATED 2
+  OUTER_SET weidu_action = 0
+  OUTER_SET lost = 0
+  OUTER_SET INTERACTIVE = 0
+  OUTER_SET flir_mode1_defer_state_publication = 1
+  INCLUDE ~%argv[0]%~
+  OUTER_SET h_seed_prepublished = 0
+  OUTER_SET h_options_prepublished = 0
+  ACTION_IF FILE_EXISTS_IN_GAME ~fl#randomseed.2da~
+        OR FILE_EXISTS ~override/fl#randomseed.2da~ BEGIN
+    OUTER_SET h_seed_prepublished = 1
+  END
+  ACTION_IF FILE_EXISTS_IN_GAME ~fl#randoptions.2da~
+        OR FILE_EXISTS ~override/fl#randoptions.2da~ BEGIN
+    OUTER_SET h_options_prepublished = 1
+  END
+  OUTER_SPRINT $RandOptions("ModCompatYes") ~~
+  LAM flir_random_seed_publish_state
+  OUTER_TEXT_SPRINT h_random_seed_report ~PREPUBLISHED %h_seed_prepublished% %h_options_prepublished%%WNL%~
+  COPY + ~...blank~ ~%argv[1]%~
+    INSERT_BYTES 0 STRING_LENGTH ~%h_random_seed_report%~
+    WRITE_ASCIIE 0 ~%h_random_seed_report%~ (STRING_LENGTH ~%h_random_seed_report%~)
+  BUT_ONLY
+
+BEGIN ~Mode 2 republishes late in-memory options immediately~ DESIGNATED 3
+  OUTER_SET weidu_action = 1
+  OUTER_SET lost = 0
+  OUTER_SET INTERACTIVE = 0
+  OUTER_SET flir_mode1_defer_state_publication = 0
+  INCLUDE ~%argv[0]%~
+  OUTER_SPRINT $RandOptions("ModCompatYes") ~~
+  LAM flir_random_seed_publish_state
+  OUTER_TEXT_SPRINT h_random_seed_report ~PUBLISHED mode2%WNL%~
+  COPY + ~...blank~ ~%argv[1]%~
+    INSERT_BYTES 0 STRING_LENGTH ~%h_random_seed_report%~
+    WRITE_ASCIIE 0 ~%h_random_seed_report%~ (STRING_LENGTH ~%h_random_seed_report%~)
+  BUT_ONLY
+
+BEGIN ~unified Mode 1 final state publication succeeds~ DESIGNATED 4
+  OUTER_SET weidu_action = 0
+  OUTER_SET lost = 0
+  OUTER_SET INTERACTIVE = 0
+  OUTER_SET flir_mode1_defer_state_publication = 1
+  INCLUDE ~%argv[0]%~
+  INCLUDE ~%argv[2]%~
+  INCLUDE ~%argv[3]%~
+  OUTER_SET h_prepublished_count = 0
+  ACTION_FOR_EACH h_state_name IN fl#randomseed.2da fl#randoptions.2da fl#removeditems.2da fl#irreg.2da BEGIN
+    ACTION_IF FILE_EXISTS_IN_GAME "%h_state_name%"
+          OR FILE_EXISTS "override/%h_state_name%" BEGIN
+      OUTER_SET h_prepublished_count += 1
+    END
+  END
+  ACTION_CLEAR_ARRAY removed_item_array
+  OUTER_SPRINT $removed_item_array("1" "1" "alpha") ~~
+  LAM flir_removal_plan_write_state
+  LAM flir_registry_reconcile
+  LAM flir_registry_write_state
+  LAM flir_mode1_publish_state
+  OUTER_TEXT_SPRINT h_random_seed_report ~PREPUBLISHED_COUNT %h_prepublished_count%%WNL%~
+  COPY + ~...blank~ ~%argv[1]%~
+    INSERT_BYTES 0 STRING_LENGTH ~%h_random_seed_report%~
+    WRITE_ASCIIE 0 ~%h_random_seed_report%~ (STRING_LENGTH ~%h_random_seed_report%~)
+  BUT_ONLY

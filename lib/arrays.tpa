@@ -33,10 +33,12 @@ ACTION_IF prompt = 1 AND "%Preserve%" STRING_EQUAL_CASE n BEGIN
     ACTION_PHP_EACH mod_compat_array AS ident => blank BEGIN
       OUTER_SPRINT $ident_filter("%ident%") ""
     END
-    COPY_EXISTING + "fl#randoptions.2da" override
-      COUNT_2DA_ROWS 1 rc
-      INSERT_2DA_ROW rc 1 ModCompatYes
-      SET $RandOptions(ModCompatYes) = 1
+    OUTER_SPRINT $RandOptions(ModCompatYes) ~~
+    ACTION_IF weidu_action = 1 BEGIN
+      // Mode 2 has no deferred final commit seam, so persist its late answer
+      // immediately through the same authoritative options builder.
+      LAM flir_random_seed_publish_state
+    END
   END
 END
 
@@ -122,6 +124,7 @@ ACTION_IF BG1 = 0 OR BGT = 1 BEGIN
     COPY - "randomiser/lists/items/base/bg2.2da"
            ".../randomiser/fl-inlined/lists/items/base/bg2.2da"
       LAUNCH_PATCH_MACRO flir_source_stage1_raw
+    LAM flir_source_filter_stage1_legacy_ident_filter
   END ELSE BEGIN
     COPY - "randomiser/lists/items/base/bg2.2da"
            ".../randomiser/fl-inlined/lists/items/base/bg2.2da"
@@ -284,6 +287,7 @@ ACTION_IF BG1 = 1 BEGIN
     COPY - "randomiser/lists/items/base/bg1.2da"
            ".../randomiser/fl-inlined/lists/items/base/bg1.2da"
       LAUNCH_PATCH_MACRO flir_source_stage1_raw
+    LAM flir_source_filter_stage1_legacy_ident_filter
   END ELSE BEGIN
     COPY - "randomiser/lists/items/base/bg1.2da"
            ".../randomiser/fl-inlined/lists/items/base/bg1.2da"
@@ -358,6 +362,12 @@ ACTION_IF FILE_EXISTS_IN_GAME lclist_scrolls.2da AND weidu_action AND VARIABLE_I
 END
 
 ACTION_IF weidu_action = 0 BEGIN
+  LAM flir_source_finalize_legacy_snapshot
+  LAM flir_source_adopt_direct_virtual_rows
+  ACTION_IF "%Preserve%" STRING_EQUAL_CASE "y" BEGIN
+    LAM flir_removal_plan_load_preserve
+  END
+  LAM flir_registry_capture_old_unmarked_legacy_slots
   LAM flir_source_apply_extension_hook
   LAM flir_source_filter_stage1
 END

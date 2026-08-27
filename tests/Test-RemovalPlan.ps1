@@ -255,6 +255,7 @@ function Copy-FixtureCase {
     param([psobject] $Case, [string] $RunDirectory)
     $override = Join-Path $RunDirectory 'override'
     $null = New-Item -ItemType Directory -Path $override -Force
+    [System.IO.File]::WriteAllBytes((Join-Path $RunDirectory '...blank'), @())
     foreach ($item in @($Case.items)) {
         New-ItmFixture -Path (Join-Path $override ($item.resref + '.itm')) -Item $item
     }
@@ -472,6 +473,10 @@ try {
     }
     if (([System.IO.File]::ReadAllBytes((Join-Path $positiveA.RunDirectory 'override\shopok.sto')) -join ',') -match '115,116,111,105,116,109') {
         throw 'STO source still contains the removed synthetic item.'
+    }
+    $removedStatePath = Join-Path $positiveA.RunDirectory 'override\fl#removeditems.2da'
+    if (-not (Test-Path -LiteralPath $removedStatePath -PathType Leaf)) {
+        throw 'Mode 1 did not publish fl#removeditems.2da after applying a fresh removal plan.'
     }
 
     $sourceReplace = Invoke-RemovalHarness -Component 3 -Name 'source-replace' -Case $fixtures.sourceReplace
