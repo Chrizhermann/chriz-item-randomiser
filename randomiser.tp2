@@ -134,7 +134,15 @@ BEGIN @101100 SUBCOMPONENT @101000 DESIGNATED 1100                              
 
   INCLUDE "randomiser/lib/missing_items.tpa"                                                                           //Adds certain items if they are missing
 
+  INCLUDE "randomiser/lib/catalog.tpa"                                                                                 //Defines the internal normalized catalog seam
+
+  INCLUDE "randomiser/lib/removal_plan.tpa"                                                                            //Defines Mode 1 read-only source planning and hook seams
+
+  OUTER_SPRINT flir_removal_token_template ~randomiser/copy/flrandom.cre~
+
   INCLUDE "randomiser/lib/arrays.tpa"                                                                                  //Creates arrays from the mod's 2da files
+
+  LAM flir_removal_plan_build                                                                                          //Builds and validates the source-removal plan before resources are mutated
 
   INCLUDE "randomiser/lib/copy.tpa"                                                                                    //Copies creatures, marker file
 
@@ -162,7 +170,15 @@ BEGIN @101200 SUBCOMPONENT @101000 DESIGNATED 1200                              
 
   INCLUDE "randomiser/lib/missing_items.tpa"
 
+  INCLUDE "randomiser/lib/catalog.tpa"
+
+  INCLUDE "randomiser/lib/removal_plan.tpa"
+
+  OUTER_SPRINT flir_removal_token_template ~randomiser/copy/flrandom.cre~
+
   INCLUDE "randomiser/lib/arrays.tpa"
+
+  LAM flir_removal_plan_build
 
   INCLUDE "randomiser/lib/copy.tpa"
 

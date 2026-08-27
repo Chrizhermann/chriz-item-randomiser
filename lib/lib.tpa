@@ -494,6 +494,7 @@ DEFINE_PATCH_FUNCTION create_item_array#stage1#filter
   INT_VAR
     global_chance = 0
     chance = 100
+    allow_override_availability = 0
   STR_VAR
     item = ""
     source = ""
@@ -501,8 +502,10 @@ DEFINE_PATCH_FUNCTION create_item_array#stage1#filter
     ident = ""
   RET
     skip
+    skip_reason
 BEGIN
   skip = 0
+  SPRINT skip_reason ""
 
   /* Filter out option-dependent tiers that are not installed */
   PATCH_IF !skip AND
@@ -512,26 +515,61 @@ BEGIN
             !VARIABLE_IS_SET $RandOptions(flrc520)) OR
            ("%tier%" STRING_EQUAL_CASE "fa" AND
             !VARIABLE_IS_SET $RandOptions(flrc540))
-  BEGIN skip = 1 END
+  BEGIN
+    skip = 1
+    SPRINT skip_reason "option_gating"
+  END
 
   /* Filter out invalid items
    * Items that do not exist
    * Items whose source does not exist
    *   unless the source is "blank" or an .fl source
    */
-  PATCH_IF !skip AND
-           (!FILE_EXISTS_IN_GAME "%item%.itm" OR
-           ("%source%" STR_CMP "blank" AND
-           "%source%" STRING_MATCHES_REGEXP ".+\.fl$" AND
-           !FILE_EXISTS_IN_GAME "%source%"))
-  BEGIN skip = 1 END
+  PATCH_IF !skip BEGIN
+    flir_filter_item_available = 0
+    PATCH_IF FILE_EXISTS_IN_GAME "%item%.itm" BEGIN
+      flir_filter_item_available = 1
+    END ELSE PATCH_IF allow_override_availability = 1
+                  AND FILE_EXISTS "override/%item%.itm" BEGIN
+      flir_filter_item_available = 1
+    END
+
+    flir_filter_source_available = 1
+    PATCH_IF "%source%" STR_CMP "blank" AND
+             "%source%" STRING_MATCHES_REGEXP ".+\.fl$" BEGIN
+      flir_filter_source_available = 0
+      PATCH_IF FILE_EXISTS_IN_GAME "%source%" BEGIN
+        flir_filter_source_available = 1
+      END ELSE PATCH_IF allow_override_availability = 1
+                    AND FILE_EXISTS "override/%source%" BEGIN
+        flir_filter_source_available = 1
+      END
+    END
+
+    PATCH_IF !flir_filter_item_available OR !flir_filter_source_available BEGIN
+      skip = 1
+      SPRINT skip_reason "resource_availability"
+    END
+  END
 
   /* For BCS|DLG sources, filter out items that do not exist in the source */
   PATCH_IF !skip AND
-           "%source%" STRING_MATCHES_REGEXP ".+\.\(bcs\|dlg\)$" = 0 AND
-           FILE_EXISTS_IN_GAME "%source%" AND
-           NOT FILE_CONTAINS_EVALUATED ("%source%" "%item%")
-  BEGIN skip = 1 END
+           "%source%" STRING_MATCHES_REGEXP ".+\.\(bcs\|dlg\)$" = 0 BEGIN
+    flir_filter_source_content_exists = 0
+    SPRINT flir_filter_source_content_path "%source%"
+    PATCH_IF FILE_EXISTS_IN_GAME "%source%" BEGIN
+      flir_filter_source_content_exists = 1
+    END ELSE PATCH_IF allow_override_availability = 1
+                  AND FILE_EXISTS "override/%source%" BEGIN
+      flir_filter_source_content_exists = 1
+      SPRINT flir_filter_source_content_path "override/%source%"
+    END
+    PATCH_IF flir_filter_source_content_exists AND
+             NOT FILE_CONTAINS_EVALUATED ("%flir_filter_source_content_path%" "%item%") BEGIN
+      skip = 1
+      SPRINT skip_reason "source_content"
+    END
+  END
 
   /* Global chance of skipping item, but only for items with a source
    * global_chance is an exclusion percentage; 0 is never exclude
@@ -539,19 +577,26 @@ BEGIN
   PATCH_IF !skip AND global_chance > 0 AND
            "%source%" STR_CMP "blank" AND
            (RANDOM(1 100) <= global_chance)
-  BEGIN skip = 1 END
+  BEGIN
+    skip = 1
+    SPRINT skip_reason "global_chance"
+  END
 
   /* Item chance
    * chance is an inclusion percentage; 100 is always include
    */
   PATCH_IF !skip AND chance < 100 AND
            RANDOM(1 100) > chance
-  BEGIN skip = 1 END
+  BEGIN
+    skip = 1
+    SPRINT skip_reason "row_chance"
+  END
 
   /* Skip Manual of CON on BG1, because of technical reasons
    */
   PATCH_IF ENGINE_IS ~bg1 totsc~ AND "%ident%" STRING_EQUAL_CASE "vf" BEGIN
     skip = 1
+    SPRINT skip_reason "engine_manual"
   END
 END
 

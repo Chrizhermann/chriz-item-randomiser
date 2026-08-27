@@ -1,4 +1,5 @@
 
+ACTION_IF weidu_action = 1 BEGIN
 ACTION_IF "%Preserve%" STRING_EQUAL_CASE y BEGIN
   COPY_EXISTING "fl#removeditems.2da" override
     READ_2DA_ENTRIES_NOW r2en_removeditems 3
@@ -138,4 +139,7 @@ ACTION_IF "%Preserve%" STRING_EQUAL_CASE n BEGIN
   COPY + "...blank" "override/fl#removeditems.2da"
     INSERT_BYTES 0 STRING_LENGTH "%string%"
     WRITE_ASCIIE 0 "%string%" (STRING_LENGTH "%string%")
+END
+END ELSE BEGIN
+  LAM flir_removal_plan_apply
 END

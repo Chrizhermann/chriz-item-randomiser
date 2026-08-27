@@ -1,0 +1,351 @@
+// Hermetic --nogame removal-plan harness.
+// argv[0] = production lib.tpa
+// argv[1] = production catalog.tpa
+// argv[2] = production removal_plan.tpa
+// argv[3] = output report
+// argv[4] = source extension 2DA
+// argv[5] = raw item-list 2DA
+// argv[6] = production fl#bg1pal.tpa
+// argv[7] = global semantic-filter raw item-list 2DA
+// argv[8] = row semantic-filter raw item-list 2DA
+// argv[9] = script source-content raw item-list 2DA
+
+BACKUP ~backup~
+AUTHOR ~BG2 Item Randomiser removal-plan test harness~
+
+ALWAYS
+  INCLUDE ~%argv[0]%~
+  INCLUDE ~%argv[6]%~
+  INCLUDE ~%argv[1]%~
+  INCLUDE ~%argv[2]%~
+
+DEFINE_ACTION_MACRO flir_removal_harness_reset BEGIN
+  OUTER_SET BG1 = 0
+  OUTER_SET BGT = 0
+  OUTER_SET Tutu = 0
+  OUTER_SET RandomNotRandom = 0
+  OUTER_SPRINT Preserve ~n~
+  OUTER_SET weidu_action = 0
+  OUTER_SET lost = 0
+  OUTER_SET flir_source_allow_override_availability = 0
+  OUTER_SPRINT tier_hook ~tier_array~
+  ACTION_CLEAR_ARRAY item_array
+  ACTION_CLEAR_ARRAY item_array#stage1
+  ACTION_CLEAR_ARRAY location_array
+  ACTION_CLEAR_ARRAY tier_array
+  ACTION_CLEAR_ARRAY removed_item_array
+  ACTION_CLEAR_ARRAY charge_array
+  ACTION_CLEAR_ARRAY extra_tokens
+  ACTION_CLEAR_ARRAY bcs_source_array
+  ACTION_CLEAR_ARRAY plugintierandtokenandgetitem
+  ACTION_CLEAR_ARRAY duplicate_item_array
+  ACTION_CLEAR_ARRAY ident_filter
+  ACTION_CLEAR_ARRAY identitem
+  LAM flir_removal_harness_reset_source_decls
+END
+
+DEFINE_ACTION_MACRO flir_removal_harness_reset_source_decls BEGIN
+  OUTER_SET flir_source_decl_count = 0
+  ACTION_CLEAR_ARRAY flir_source_decl_order
+  ACTION_CLEAR_ARRAY flir_source_decl_exists
+  ACTION_CLEAR_ARRAY flir_source_decl_enabled
+  ACTION_CLEAR_ARRAY flir_source_decl_item
+  ACTION_CLEAR_ARRAY flir_source_decl_replacement
+  ACTION_CLEAR_ARRAY flir_source_decl_source
+  ACTION_CLEAR_ARRAY flir_source_decl_tier
+  ACTION_CLEAR_ARRAY flir_source_decl_token
+  ACTION_CLEAR_ARRAY flir_source_decl_ident
+  ACTION_CLEAR_ARRAY flir_source_decl_chance
+  ACTION_CLEAR_ARRAY flir_source_decl_source_kind
+  ACTION_CLEAR_ARRAY flir_source_decl_object_or_slot
+  ACTION_CLEAR_ARRAY flir_source_decl_virtual_policy
+  ACTION_CLEAR_ARRAY flir_source_decl_declared_charge1
+  ACTION_CLEAR_ARRAY flir_source_decl_declared_charge2
+  ACTION_CLEAR_ARRAY flir_source_decl_declared_charge3
+  ACTION_CLEAR_ARRAY flir_source_decl_expected_quantity
+  ACTION_CLEAR_ARRAY item_array#stage1
+  ACTION_CLEAR_ARRAY tier_array
+  ACTION_CLEAR_ARRAY ident_filter
+  ACTION_CLEAR_ARRAY identitem
+END
+
+DEFINE_ACTION_MACRO flir_removal_harness_add_item BEGIN
+  OUTER_SPRINT $item_array("%h_item%" "%h_replacement%" "%h_source%" "%h_tier%" "%h_token%" "%h_ident%") ~~
+END
+
+DEFINE_ACTION_MACRO flir_removal_harness_write_report BEGIN
+  OUTER_TEXT_SPRINT flir_report ~PLAN applied=%flir_removal_plan_applied_count% disabled=%flir_removal_plan_disabled_count%%WNL%~
+  ACTION_PHP_EACH removed_item_array AS entry => blank BEGIN
+    OUTER_TEXT_SPRINT flir_report ~%flir_report%REMOVED %entry_0% %entry_1% %entry_2%%WNL%~
+  END
+  ACTION_PHP_EACH charge_array AS entry => blank BEGIN
+    OUTER_TEXT_SPRINT flir_report ~%flir_report%CHARGE %entry_0% %entry_1% %entry_2% %entry_3% %entry_4%%WNL%~
+  END
+  ACTION_PHP_EACH extra_tokens AS entry => base BEGIN
+    OUTER_TEXT_SPRINT flir_report ~%flir_report%EXTRA %entry_0% %entry_1% %base%%WNL%~
+  END
+  ACTION_PHP_EACH bcs_source_array AS entry => blank BEGIN
+    OUTER_TEXT_SPRINT flir_report ~%flir_report%BCS %entry_0%%WNL%~
+  END
+  ACTION_PHP_EACH plugintierandtokenandgetitem AS entry => item BEGIN
+    OUTER_TEXT_SPRINT flir_report ~%flir_report%PLUGIN %entry_0% %entry_1% %item%%WNL%~
+  END
+  COPY ~%argv[5]%~ ~%argv[3]%~
+    DELETE_BYTES 0 BUFFER_LENGTH
+    INSERT_BYTES 0 (STRING_LENGTH ~%flir_report%~)
+    WRITE_ASCIIE 0 ~%flir_report%~ (STRING_LENGTH ~%flir_report%~)
+END
+
+END
+
+BEGIN ~Removal harness: positive plan and apply~ DESIGNATED 0
+LAM flir_removal_harness_reset
+OUTER_SPRINT h_tier ~1~
+
+OUTER_SPRINT h_item ~creitm~
+OUTER_SPRINT h_replacement ~blank~
+OUTER_SPRINT h_source ~creok.cre~
+OUTER_SPRINT h_token ~1~
+OUTER_SPRINT h_ident ~cre-exact~
+LAM flir_removal_harness_add_item
+
+OUTER_SPRINT h_item ~areone~
+OUTER_SPRINT h_replacement ~blank~
+OUTER_SPRINT h_source ~areaok.are~
+OUTER_SPRINT h_token ~2~
+OUTER_SPRINT h_ident ~are-one~
+LAM flir_removal_harness_add_item
+
+OUTER_SPRINT h_item ~aretwo~
+OUTER_SPRINT h_replacement ~blank~
+OUTER_SPRINT h_source ~areaok.are~
+OUTER_SPRINT h_token ~3~
+OUTER_SPRINT h_ident ~are-two~
+LAM flir_removal_harness_add_item
+
+OUTER_SPRINT h_item ~stoitm~
+OUTER_SPRINT h_replacement ~blank~
+OUTER_SPRINT h_source ~shopok.sto~
+OUTER_SPRINT h_token ~4~
+OUTER_SPRINT h_ident ~store-stock~
+LAM flir_removal_harness_add_item
+
+OUTER_SPRINT h_item ~stkitm~
+OUTER_SPRINT h_replacement ~blank~
+OUTER_SPRINT h_source ~areaok.are~
+OUTER_SPRINT h_token ~5~
+OUTER_SPRINT h_ident ~stack-item~
+LAM flir_removal_harness_add_item
+
+OUTER_SPRINT h_item ~bcsitm~
+OUTER_SPRINT h_replacement ~blank~
+OUTER_SPRINT h_source ~script.bcs~
+OUTER_SPRINT h_token ~6~
+OUTER_SPRINT h_ident ~bcs-source~
+LAM flir_removal_harness_add_item
+
+OUTER_SPRINT h_item ~virtok~
+OUTER_SPRINT h_replacement ~blank~
+OUTER_SPRINT h_source ~blank~
+OUTER_SPRINT h_token ~7~
+OUTER_SPRINT h_ident ~virt-explicit~
+OUTER_SPRINT $flir_source_decl_virtual_policy(~ident:virt-explicit~) ~explicit~
+OUTER_SPRINT $flir_source_decl_source_kind(~ident:virt-explicit~) ~virtual~
+LAM flir_removal_harness_add_item
+
+OUTER_SPRINT h_item ~absitm~
+OUTER_SPRINT h_replacement ~blank~
+OUTER_SPRINT h_source ~creok.cre~
+OUTER_SPRINT h_token ~8~
+OUTER_SPRINT h_ident ~missing-itm~
+LAM flir_removal_harness_add_item
+
+OUTER_SPRINT h_item ~creitm~
+OUTER_SPRINT h_replacement ~blank~
+OUTER_SPRINT h_source ~missing.cre~
+OUTER_SPRINT h_token ~9~
+OUTER_SPRINT h_ident ~missing-source~
+LAM flir_removal_harness_add_item
+
+OUTER_SPRINT h_item ~zeromt~
+OUTER_SPRINT h_replacement ~blank~
+OUTER_SPRINT h_source ~creok.cre~
+OUTER_SPRINT h_token ~10~
+OUTER_SPRINT h_ident ~zero-match~
+LAM flir_removal_harness_add_item
+
+LAM flir_removal_plan_build
+LAM flir_removal_plan_apply
+LAM flir_removal_harness_write_report
+
+BEGIN ~Removal harness: ambiguous exact source fails before apply~ DESIGNATED 1
+LAM flir_removal_harness_reset
+OUTER_SPRINT h_item ~ambitm~
+OUTER_SPRINT h_replacement ~blank~
+OUTER_SPRINT h_source ~ambig.cre~
+OUTER_SPRINT h_tier ~1~
+OUTER_SPRINT h_token ~1~
+OUTER_SPRINT h_ident ~ambiguous~
+LAM flir_removal_harness_add_item
+LAM flir_removal_plan_build
+LAM flir_removal_plan_apply
+LAM flir_removal_harness_write_report
+
+BEGIN ~Removal harness: source drift aborts apply~ DESIGNATED 2
+LAM flir_removal_harness_reset
+OUTER_SPRINT h_item ~drfitm~
+OUTER_SPRINT h_replacement ~blank~
+OUTER_SPRINT h_source ~drift.cre~
+OUTER_SPRINT h_tier ~1~
+OUTER_SPRINT h_token ~1~
+OUTER_SPRINT h_ident ~drift~
+LAM flir_removal_harness_add_item
+LAM flir_removal_plan_build
+COPY ~override/drift.cre~ ~override~
+  WRITE_BYTE 0x08 (THIS BXOR 1)
+BUT_ONLY
+LAM flir_removal_plan_apply
+LAM flir_removal_harness_write_report
+
+BEGIN ~Removal harness: raw source replacement precedes filter~ DESIGNATED 3
+LAM flir_removal_harness_reset
+OUTER_SET flir_source_allow_override_availability = 1
+OUTER_SPRINT flir_source_extension_fixture ~%argv[4]%~
+COPY ~%argv[5]%~ ~flir-removal/raw-items.2da~
+  LAUNCH_PATCH_MACRO flir_source_stage1_raw
+LAM flir_source_apply_extension_hook
+LAM flir_source_filter_stage1
+OUTER_SET flir_report_count = 0
+OUTER_TEXT_SPRINT flir_report ~~
+ACTION_PHP_EACH item_array#stage1 AS entry => blank BEGIN
+  OUTER_SET flir_report_count += 1
+  OUTER_TEXT_SPRINT flir_report ~%flir_report%SOURCE %entry_0% %entry_2% %entry_3% %entry_4% %entry_5%%WNL%~
+END
+OUTER_TEXT_SPRINT flir_report ~COUNT %flir_report_count%%WNL%%flir_report%~
+COPY ~%argv[5]%~ ~%argv[3]%~
+  DELETE_BYTES 0 BUFFER_LENGTH
+  INSERT_BYTES 0 (STRING_LENGTH ~%flir_report%~)
+  WRITE_ASCIIE 0 ~%flir_report%~ (STRING_LENGTH ~%flir_report%~)
+
+BEGIN ~Removal harness: override script sources still require content match~ DESIGNATED 10
+LAM flir_removal_harness_reset
+OUTER_SET flir_source_allow_override_availability = 1
+COPY ~%argv[9]%~ ~flir-removal/source-content.2da~
+  LAUNCH_PATCH_MACRO flir_source_stage1_raw
+LAM flir_source_filter_stage1
+OUTER_SET flir_content_count = 0
+OUTER_TEXT_SPRINT flir_content_report ~~
+ACTION_PHP_EACH item_array#stage1 AS entry => blank BEGIN
+  OUTER_SET flir_content_count += 1
+  OUTER_TEXT_SPRINT flir_content_report ~%flir_content_report%CONTENT_SOURCE %entry_0% %entry_2% %entry_3% %entry_4% %entry_5%%WNL%~
+END
+OUTER_TEXT_SPRINT flir_report ~CONTENT_COUNT %flir_content_count%%WNL%%flir_content_report%~
+COPY ~%argv[5]%~ ~%argv[3]%~
+  DELETE_BYTES 0 BUFFER_LENGTH
+  INSERT_BYTES 0 (STRING_LENGTH ~%flir_report%~)
+  WRITE_ASCIIE 0 ~%flir_report%~ (STRING_LENGTH ~%flir_report%~)
+
+BEGIN ~Removal harness: accidental blank virtual source fails~ DESIGNATED 4
+LAM flir_removal_harness_reset
+OUTER_SPRINT h_item ~blanki~
+OUTER_SPRINT h_replacement ~blank~
+OUTER_SPRINT h_source ~blank~
+OUTER_SPRINT h_tier ~1~
+OUTER_SPRINT h_token ~1~
+OUTER_SPRINT h_ident ~blank-accidental~
+LAM flir_removal_harness_add_item
+LAM flir_removal_plan_build
+LAM flir_removal_plan_apply
+LAM flir_removal_harness_write_report
+
+BEGIN ~Removal harness: token capacity preflight fails before apply~ DESIGNATED 5
+LAM flir_removal_harness_reset
+OUTER_SPRINT h_item ~capitm~
+OUTER_SPRINT h_replacement ~blank~
+OUTER_SPRINT h_source ~cap.cre~
+OUTER_SPRINT h_tier ~1~
+OUTER_SPRINT h_token ~1~
+OUTER_SPRINT h_ident ~capacity~
+LAM flir_removal_harness_add_item
+LAM flir_removal_plan_build
+PRINT ~MUTATION_MARKER_REACHED~
+LAM flir_removal_plan_apply
+LAM flir_removal_harness_write_report
+
+BEGIN ~Removal harness: BG1 legacy adapter plans a real CRE removal~ DESIGNATED 6
+LAM flir_removal_harness_reset
+OUTER_SET BG1 = 1
+OUTER_SET flir_removal_skip_legacy_adapter_post = 1
+OUTER_SPRINT h_item ~legitm~
+OUTER_SPRINT h_replacement ~blank~
+OUTER_SPRINT h_source ~unshey.fl~
+OUTER_SPRINT h_tier ~1~
+OUTER_SPRINT h_token ~11~
+OUTER_SPRINT h_ident ~legacy-adapter~
+LAM flir_removal_harness_add_item
+LAM flir_removal_plan_build
+LAM flir_removal_plan_apply
+LAM flir_removal_harness_write_report
+
+BEGIN ~Removal harness: script source drift aborts before token emission~ DESIGNATED 7
+LAM flir_removal_harness_reset
+OUTER_SPRINT h_item ~sdrift~
+OUTER_SPRINT h_replacement ~blank~
+OUTER_SPRINT h_source ~sdrift.bcs~
+OUTER_SPRINT h_tier ~1~
+OUTER_SPRINT h_token ~12~
+OUTER_SPRINT h_ident ~script-drift~
+LAM flir_removal_harness_add_item
+LAM flir_removal_plan_build
+COPY ~override/sdrift.bcs~ ~override~
+  INSERT_BYTES 0 1
+  WRITE_ASCIIE 0 ~x~ #1
+BUT_ONLY
+LAM flir_removal_plan_apply
+LAM flir_removal_harness_write_report
+
+BEGIN ~Removal harness: unknown legacy adapter fails closed~ DESIGNATED 8
+LAM flir_removal_harness_reset
+OUTER_SET BG1 = 1
+OUTER_SPRINT h_item ~unkleg~
+OUTER_SPRINT h_replacement ~blank~
+OUTER_SPRINT h_source ~unknown.fl~
+OUTER_SPRINT h_tier ~1~
+OUTER_SPRINT h_token ~13~
+OUTER_SPRINT h_ident ~unknown-legacy~
+LAM flir_removal_harness_add_item
+LAM flir_removal_plan_build
+LAM flir_removal_plan_apply
+LAM flir_removal_harness_write_report
+
+BEGIN ~Removal harness: semantic source filters beat fixture availability~ DESIGNATED 9
+LAM flir_removal_harness_reset
+OUTER_SET flir_source_allow_override_availability = 1
+OUTER_SET RandomNotRandom = 100
+COPY ~%argv[7]%~ ~flir-removal/semantic-global.2da~
+  LAUNCH_PATCH_MACRO flir_source_stage1_raw
+LAM flir_source_filter_stage1
+OUTER_SET flir_global_count = 0
+OUTER_TEXT_SPRINT flir_global_report ~~
+ACTION_PHP_EACH item_array#stage1 AS entry => blank BEGIN
+  OUTER_SET flir_global_count += 1
+  OUTER_TEXT_SPRINT flir_global_report ~%flir_global_report%GLOBAL_SOURCE %entry_0% %entry_2% %entry_3% %entry_4% %entry_5%%WNL%~
+END
+
+LAM flir_removal_harness_reset_source_decls
+OUTER_SET flir_source_allow_override_availability = 1
+OUTER_SET RandomNotRandom = 0
+COPY ~%argv[8]%~ ~flir-removal/semantic-rows.2da~
+  LAUNCH_PATCH_MACRO flir_source_stage1_raw
+LAM flir_source_filter_stage1
+OUTER_SET flir_semantic_count = 0
+OUTER_TEXT_SPRINT flir_semantic_report ~~
+ACTION_PHP_EACH item_array#stage1 AS entry => blank BEGIN
+  OUTER_SET flir_semantic_count += 1
+  OUTER_TEXT_SPRINT flir_semantic_report ~%flir_semantic_report%SEMANTIC_SOURCE %entry_0% %entry_2% %entry_3% %entry_4% %entry_5%%WNL%~
+END
+OUTER_TEXT_SPRINT flir_report ~GLOBAL_COUNT %flir_global_count%%WNL%%flir_global_report%SEMANTIC_COUNT %flir_semantic_count%%WNL%%flir_semantic_report%~
+COPY ~%argv[5]%~ ~%argv[3]%~
+  DELETE_BYTES 0 BUFFER_LENGTH
+  INSERT_BYTES 0 (STRING_LENGTH ~%flir_report%~)
+  WRITE_ASCIIE 0 ~%flir_report%~ (STRING_LENGTH ~%flir_report%~)

@@ -1,0 +1,159 @@
+{
+  "positive": {
+    "items": [
+      { "resref": "creitm", "category": 1, "charges": [5, 6, 7] },
+      { "resref": "areone", "category": 1, "charges": [0, 0, 0] },
+      { "resref": "aretwo", "category": 1, "charges": [0, 0, 0] },
+      { "resref": "stoitm", "category": 1, "charges": [1, 0, 0] },
+      { "resref": "stkitm", "category": 9, "charges": [3, 0, 0] },
+      { "resref": "bcsitm", "category": 1, "charges": [2, 0, 0] },
+      { "resref": "virtok", "category": 1, "charges": [4, 0, 0] },
+      { "resref": "zeromt", "category": 1, "charges": [0, 0, 0] }
+    ],
+    "creatures": {
+      "creok.cre": [
+        { "resref": "creitm", "slot": 21, "charges": [5, 6, 7], "flags": 1 }
+      ],
+      "fltier1.cre": []
+    },
+    "areas": {
+      "areaok.are": [
+        {
+          "name": "Container One",
+          "items": [
+            { "resref": "areone", "charges": [1, 2, 3], "flags": 1 }
+          ]
+        },
+        {
+          "name": "Container Two",
+          "items": [
+            { "resref": "aretwo", "charges": [4, 5, 6], "flags": 1 },
+            { "resref": "stkitm", "charges": [3, 0, 0], "flags": 1 }
+          ]
+        }
+      ]
+    },
+    "stores": {
+      "shopok.sto": [
+        { "resref": "stoitm", "charges": [1, 0, 0], "flags": 1, "stock": 3, "infinite": 0 }
+      ]
+    },
+    "scripts": {
+      "script.bcs": "IF\\n  True()\\nTHEN RESPONSE #100\\n  // bcsitm\\nEND\\n"
+    }
+  },
+  "ambiguous": {
+    "items": [
+      { "resref": "ambitm", "category": 1, "charges": [0, 0, 0] }
+    ],
+    "creatures": {
+      "ambig.cre": [
+        { "resref": "ambitm", "slot": 21, "charges": [1, 0, 0], "flags": 1 },
+        { "resref": "ambitm", "slot": 22, "charges": [1, 0, 0], "flags": 1 }
+      ],
+      "fltier1.cre": []
+    }
+  },
+  "drift": {
+    "items": [
+      { "resref": "drfitm", "category": 1, "charges": [0, 0, 0] }
+    ],
+    "creatures": {
+      "drift.cre": [
+        { "resref": "drfitm", "slot": 21, "charges": [1, 0, 0], "flags": 1 }
+      ],
+      "fltier1.cre": []
+    }
+  },
+  "capacity": {
+    "items": [
+      { "resref": "capitm", "category": 1, "charges": [0, 0, 0] }
+    ],
+    "creatures": {
+      "cap.cre": [
+        { "resref": "capitm", "slot": 21, "charges": [1, 0, 0], "flags": 1 }
+      ]
+    },
+    "fullTokenTiers": [1]
+  },
+  "sourceReplace": {
+    "items": [
+      { "resref": "movitm", "category": 1, "charges": [0, 0, 0] }
+    ],
+    "creatures": {
+      "present.cre": [
+        { "resref": "movitm", "slot": 21, "charges": [1, 0, 0], "flags": 1 }
+      ],
+      "fltier1.cre": []
+    }
+  },
+  "semanticFilter": {
+    "items": [
+      { "resref": "optskip", "category": 1, "charges": [0, 0, 0] },
+      { "resref": "globskp", "category": 1, "charges": [0, 0, 0] },
+      { "resref": "rowskip", "category": 1, "charges": [0, 0, 0] },
+      { "resref": "keepok", "category": 1, "charges": [0, 0, 0] }
+    ],
+    "creatures": {
+      "filter.cre": [
+        { "resref": "optskip", "slot": 21, "charges": [1, 0, 0], "flags": 1 },
+        { "resref": "globskp", "slot": 22, "charges": [1, 0, 0], "flags": 1 },
+        { "resref": "rowskip", "slot": 23, "charges": [1, 0, 0], "flags": 1 },
+        { "resref": "keepok", "slot": 24, "charges": [1, 0, 0], "flags": 1 }
+      ]
+    }
+  },
+  "sourceContent": {
+    "items": [
+      { "resref": "missbcs", "category": 1, "charges": [0, 0, 0] },
+      { "resref": "missdlg", "category": 1, "charges": [0, 0, 0] },
+      { "resref": "hitbcs", "category": 1, "charges": [0, 0, 0] }
+    ],
+    "creatures": {
+      "fltier1.cre": []
+    },
+    "scripts": {
+      "missing.bcs": "IF\\n  True()\\nTHEN RESPONSE #100\\n  // unrelated\\nEND\\n",
+      "missing.dlg": "BEGIN ~missing~\\nIF ~~ THEN BEGIN 0 SAY ~unrelated~ END\\n",
+      "hit.bcs": "IF\\n  True()\\nTHEN RESPONSE #100\\n  // hitbcs\\nEND\\n"
+    }
+  },
+  "legacyAdapter": {
+    "items": [
+      { "resref": "legitm", "category": 1, "charges": [0, 0, 0] }
+    ],
+    "creatures": {
+      "ogreunsh.cre": [
+        { "resref": "legitm", "slot": 21, "charges": [1, 0, 0], "flags": 1 }
+      ],
+      "fltier1.cre": []
+    }
+  },
+  "scriptDrift": {
+    "items": [
+      { "resref": "sdrift", "category": 1, "charges": [0, 0, 0] }
+    ],
+    "creatures": {
+      "fltier1.cre": []
+    },
+    "scripts": {
+      "sdrift.bcs": "IF\\n  True()\\nTHEN RESPONSE #100\\n  // sdrift\\nEND\\n"
+    }
+  },
+  "unknownLegacyAdapter": {
+    "items": [
+      { "resref": "unkleg", "category": 1, "charges": [0, 0, 0] }
+    ],
+    "creatures": {
+      "fltier1.cre": []
+    }
+  },
+  "blankPolicy": {
+    "items": [
+      { "resref": "blanki", "category": 1, "charges": [0, 0, 0] }
+    ],
+    "creatures": {
+      "fltier1.cre": []
+    }
+  }
+}
