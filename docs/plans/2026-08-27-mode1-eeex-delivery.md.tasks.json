@@ -39,13 +39,13 @@
     {
       "id": 6,
       "subject": "Task 7: Generate a deterministic, spoiler-safe Lua manifest",
-      "status": "in_progress",
+      "status": "completed",
       "blockedBy": [5]
     },
     {
       "id": 7,
       "subject": "Task 8: Add the exact Mode 1 backend seam and retain special BCS transforms",
-      "status": "pending",
+      "status": "in_progress",
       "blockedBy": [6]
     },
     {
@@ -85,5 +85,5 @@
       "blockedBy": [12]
     }
   ],
-  "lastUpdated": "2026-08-30T11:12:35.9941525+09:00"
+  "lastUpdated": "2026-08-30T12:12:00.1784376+09:00"
 }

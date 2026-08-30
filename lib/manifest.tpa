@@ -1,0 +1,642 @@
+// Deterministic, data-only runtime manifest for the Mode 1 EEex backend.
+//
+// The manifest deliberately keeps randomizable units, delivery slots, and
+// endpoints as separate relations.  It never serializes an item/location
+// assignment: that choice remains an in-game operation.
+
+OUTER_SPRINT flir_manifest_schema ~flir-delivery-manifest-v1~
+OUTER_SPRINT flir_manifest_backend ~eeex-manifest-v1~
+OUTER_SPRINT flir_manifest_resource ~FLDLVMan~
+OUTER_SET flir_manifest_prepared = 0
+
+DEFINE_ACTION_FUNCTION flir_manifest_fail
+  STR_VAR
+    code = ~~
+    id = ~~
+BEGIN
+  FAIL ~FLIR_MANIFEST_ERR %code% id=%id%~
+END
+
+// Quote every input byte as a fixed-width Lua decimal escape.  The resulting
+// source is ASCII-only and round-trips quotes, backslashes, controls, percent
+// pairs, long-bracket terminators, and non-ASCII bytes on Lua 5.1 / 5.3.
+DEFINE_PATCH_FUNCTION flir_manifest_quote_buffer
+  RET
+    quoted
+BEGIN
+  SPRINT quoted ~"~
+  FOR (flir_manifest_quote_i = 0; flir_manifest_quote_i < BUFFER_LENGTH; ++flir_manifest_quote_i) BEGIN
+    SET flir_manifest_quote_byte = BYTE_AT flir_manifest_quote_i
+    PATCH_IF flir_manifest_quote_byte < 10 BEGIN
+      SPRINT quoted ~%quoted%\00%flir_manifest_quote_byte%~
+    END ELSE PATCH_IF flir_manifest_quote_byte < 100 BEGIN
+      SPRINT quoted ~%quoted%\0%flir_manifest_quote_byte%~
+    END ELSE BEGIN
+      SPRINT quoted ~%quoted%\%flir_manifest_quote_byte%~
+    END
+  END
+  SPRINT quoted ~%quoted%"~
+END
+
+// Caller sets flir_manifest_quote_input; result is flir_manifest_quote_output.
+// TEXT_SPRINT plus ordinary one-pass patch interpolation preserves literal
+// percent-delimited data.  EVAL / EVALUATE_BUFFER are intentionally absent.
+DEFINE_ACTION_MACRO flir_manifest_quote BEGIN
+  OUTER_TEXT_SPRINT flir_manifest_quote_exact ~%flir_manifest_quote_input%~
+  OUTER_INNER_PATCH_SAVE flir_manifest_quote_output ~%flir_manifest_quote_exact%~ BEGIN
+    LPF flir_manifest_quote_buffer RET flir_manifest_quote_rendered = quoted END
+    DELETE_BYTES 0 BUFFER_LENGTH
+    INSERT_BYTES 0 STRING_LENGTH ~%flir_manifest_quote_rendered%~
+    WRITE_ASCIIE 0 ~%flir_manifest_quote_rendered%~ (STRING_LENGTH ~%flir_manifest_quote_rendered%~)
+  END
+END
+
+// By-name wrapper for opaque values stored in parallel arrays. Keeping the
+// formal parameter name identical to the STR_VAR binding prevents a literal
+// percent pair from being expanded before it reaches the byte encoder.
+DEFINE_ACTION_FUNCTION flir_manifest_quote_value
+  STR_VAR
+    raw = ~~
+  RET
+    encoded
+BEGIN
+  OUTER_TEXT_SPRINT flir_manifest_quote_exact ~%raw%~
+  OUTER_INNER_PATCH_SAVE encoded ~%flir_manifest_quote_exact%~ BEGIN
+    LPF flir_manifest_quote_buffer RET flir_manifest_quote_rendered = quoted END
+    DELETE_BYTES 0 BUFFER_LENGTH
+    INSERT_BYTES 0 STRING_LENGTH ~%flir_manifest_quote_rendered%~
+    WRITE_ASCIIE 0 ~%flir_manifest_quote_rendered%~ (STRING_LENGTH ~%flir_manifest_quote_rendered%~)
+  END
+END
+
+DEFINE_PATCH_FUNCTION flir_manifest_hash_buffer
+  RET
+    hash
+BEGIN
+  hash = 0x811c9dc5
+  FOR (flir_manifest_hash_i = 0; flir_manifest_hash_i < BUFFER_LENGTH; ++flir_manifest_hash_i) BEGIN
+    hash = (hash BXOR BYTE_AT flir_manifest_hash_i) * 16777619
+  END
+  hash = ((hash BAND 2147483647) MODULO 2147483646) + 1
+END
+
+// Caller sets flir_manifest_hash_input; result is flir_manifest_hash_output.
+DEFINE_ACTION_MACRO flir_manifest_hash BEGIN
+  OUTER_INNER_PATCH_SAVE flir_manifest_hash_copy ~%flir_manifest_hash_input%~ BEGIN
+    LPF flir_manifest_hash_buffer RET flir_manifest_hash_value = hash END
+  END
+  OUTER_SET flir_manifest_hash_output = flir_manifest_hash_value
+END
+
+// Length-prefix one semantic fingerprint field. Caller sets
+// flir_manifest_canonical_append; flir_manifest_canonical is extended.
+DEFINE_ACTION_MACRO flir_manifest_append_canonical BEGIN
+  OUTER_SET flir_manifest_canonical_length = STRING_LENGTH ~%flir_manifest_canonical_append%~
+  OUTER_TEXT_SPRINT flir_manifest_canonical ~%flir_manifest_canonical%%flir_manifest_canonical_length%#%flir_manifest_canonical_append%~
+END
+
+// Split a validated provider-qualified reference without evaluating its data.
+// Caller sets flir_manifest_reference; provider/local results are global.
+DEFINE_ACTION_MACRO flir_manifest_split_reference BEGIN
+  OUTER_SET flir_manifest_reference_separator = INDEX (~:~ ~%flir_manifest_reference%~)
+  ACTION_IF flir_manifest_reference_separator < 1 BEGIN
+    LAF flir_manifest_fail STR_VAR code = ~BAD_REFERENCE~ id = ~split~ END
+  END
+  OUTER_INNER_PATCH_SAVE flir_manifest_reference_provider ~%flir_manifest_reference%~ BEGIN
+    DELETE_BYTES flir_manifest_reference_separator BUFFER_LENGTH - flir_manifest_reference_separator
+  END
+  OUTER_INNER_PATCH_SAVE flir_manifest_reference_local ~%flir_manifest_reference%~ BEGIN
+    DELETE_BYTES 0 flir_manifest_reference_separator + 1
+  END
+END
+
+DEFINE_ACTION_MACRO flir_manifest_reset BEGIN
+  ACTION_CLEAR_ARRAY flir_manifest_token_present
+  ACTION_CLEAR_ARRAY flir_manifest_token_unit
+  ACTION_CLEAR_ARRAY flir_manifest_token_item
+  ACTION_CLEAR_ARRAY flir_manifest_token_tier
+  ACTION_CLEAR_ARRAY flir_manifest_token_compact
+  ACTION_CLEAR_ARRAY flir_manifest_token_resref
+  ACTION_CLEAR_ARRAY flir_manifest_token_charge1
+  ACTION_CLEAR_ARRAY flir_manifest_token_charge2
+  ACTION_CLEAR_ARRAY flir_manifest_token_charge3
+  ACTION_CLEAR_ARRAY flir_manifest_token_variant
+  ACTION_CLEAR_ARRAY flir_manifest_token_enabled
+  OUTER_SET flir_manifest_prepared = 0
+END
+
+// Resolve a logical item row already supplied by a provider.  If no provider
+// declared one, synthesize a short stable logical ID from exact applied data.
+// Caller sets campaign/tier/resref/variant; result is flir_manifest_item_id.
+DEFINE_ACTION_MACRO flir_manifest_resolve_item BEGIN
+  OUTER_SET flir_manifest_item_matches = 0
+  OUTER_SET flir_manifest_item_disabled_matches = 0
+  OUTER_SPRINT flir_manifest_item_id ~~
+  ACTION_SORT_ARRAY_INDICES flir_catalog_index LEXICOGRAPHICALLY
+  ACTION_PHP_EACH flir_catalog_index AS flir_manifest_catalog_key => flir_manifest_catalog_present BEGIN
+    ACTION_IF flir_manifest_catalog_present = 1
+          AND $flir_catalog_index_kind("%flir_manifest_catalog_key%") STRING_EQUAL_CASE ~item~ BEGIN
+      OUTER_SPRINT flir_manifest_catalog_item $flir_catalog_index_qualified("%flir_manifest_catalog_key%")
+      ACTION_IF $flir_catalog_tier("item" "%flir_manifest_catalog_item%") STRING_EQUAL_CASE ~%flir_manifest_item_tier%~
+            AND $flir_catalog_resref("item" "%flir_manifest_catalog_item%") STRING_EQUAL_CASE ~%flir_manifest_item_resref%~ BEGIN
+        ACTION_IF $flir_catalog_enabled("item" "%flir_manifest_catalog_item%") = 1 BEGIN
+          OUTER_SET flir_manifest_item_matches += 1
+          OUTER_SPRINT flir_manifest_item_id ~%flir_manifest_catalog_item%~
+          OUTER_TEXT_SPRINT flir_manifest_item_variant $flir_catalog_variant_policy("item" "%flir_manifest_catalog_item%")
+        END ELSE BEGIN
+          OUTER_SET flir_manifest_item_disabled_matches += 1
+        END
+      END
+    END
+  END
+  ACTION_IF flir_manifest_item_matches > 1
+        OR (flir_manifest_item_matches = 1 AND flir_manifest_item_disabled_matches > 0) BEGIN
+    LAF flir_manifest_fail STR_VAR code = ~AMBIGUOUS_ITEM~ id = ~logical-item~ END
+  END
+  ACTION_IF flir_manifest_item_matches = 0
+        AND flir_manifest_item_disabled_matches > 0 BEGIN
+    LAF flir_manifest_fail STR_VAR code = ~ITEM_CATALOG_DRIFT~ id = ~logical-item~ END
+  END
+
+  ACTION_IF flir_manifest_item_matches = 0 BEGIN
+    OUTER_TEXT_SPRINT flir_manifest_canonical ~~
+    OUTER_TEXT_SPRINT flir_manifest_canonical_append ~item~
+    LAM flir_manifest_append_canonical
+    OUTER_TEXT_SPRINT flir_manifest_canonical_append ~%flir_manifest_item_campaign%~
+    LAM flir_manifest_append_canonical
+    OUTER_TEXT_SPRINT flir_manifest_canonical_append ~%flir_manifest_item_tier%~
+    LAM flir_manifest_append_canonical
+    OUTER_TEXT_SPRINT flir_manifest_canonical_append ~%flir_manifest_item_resref%~
+    LAM flir_manifest_append_canonical
+    OUTER_TEXT_SPRINT flir_manifest_canonical_append ~%flir_manifest_item_variant%~
+    LAM flir_manifest_append_canonical
+    OUTER_TEXT_SPRINT flir_manifest_hash_input ~%flir_manifest_canonical%~
+    LAM flir_manifest_hash
+    OUTER_SPRINT flir_manifest_item_local ~item-%flir_manifest_hash_output%~
+    OUTER_SPRINT flir_manifest_item_id ~flir:%flir_manifest_item_local%~
+
+    ACTION_IF VARIABLE_IS_SET $flir_catalog_present("item" "%flir_manifest_item_id%") BEGIN
+      ACTION_IF $flir_catalog_enabled("item" "%flir_manifest_item_id%") != 1
+            OR NOT ($flir_catalog_tier("item" "%flir_manifest_item_id%") STRING_EQUAL_CASE ~%flir_manifest_item_tier%~)
+            OR NOT ($flir_catalog_resref("item" "%flir_manifest_item_id%") STRING_EQUAL_CASE ~%flir_manifest_item_resref%~)
+            OR NOT ($flir_catalog_variant_policy("item" "%flir_manifest_item_id%") STRING_EQUAL_CASE ~%flir_manifest_item_variant%~) BEGIN
+        LAF flir_manifest_fail STR_VAR code = ~ITEM_HASH_COLLISION~ id = ~logical-item~ END
+      END
+    END ELSE BEGIN
+      OUTER_SPRINT flir_catalog_arg_operation ~ADD~
+      OUTER_SPRINT flir_catalog_arg_actor_provider ~flir~
+      OUTER_SPRINT flir_catalog_arg_provider ~flir~
+      OUTER_SPRINT flir_catalog_arg_id ~%flir_manifest_item_local%~
+      OUTER_SPRINT flir_catalog_arg_tier ~%flir_manifest_item_tier%~
+      OUTER_TEXT_SPRINT flir_catalog_arg_resref ~%flir_manifest_item_resref%~
+      OUTER_SPRINT flir_catalog_arg_variant_policy ~%flir_manifest_item_variant%~
+      OUTER_SPRINT flir_catalog_arg_source_set_id ~%flir_manifest_item_id%~
+      OUTER_SET flir_catalog_arg_enabled = 1
+      LAM flir_catalog_item
+    END
+  END
+END
+
+// Materialize actual applied units into the normalized catalog before its
+// fingerprint is finalized. This consumes only post-removal arrays and the
+// reconciled registry; planned and preserve-history rows are excluded.
+DEFINE_ACTION_MACRO flir_manifest_prepare_catalog BEGIN
+  ACTION_IF weidu_action != 0 BEGIN
+    LAF flir_manifest_fail STR_VAR code = ~WRONG_MODE~ id = ~prepare~ END
+  END
+  ACTION_IF NOT ("%flir_registry_backend%" STRING_EQUAL_CASE ~%flir_manifest_backend%~) BEGIN
+    LAF flir_manifest_fail STR_VAR code = ~WRONG_BACKEND~ id = ~prepare~ END
+  END
+  ACTION_IF flir_registry_compacts_ready != 1 BEGIN
+    LAF flir_manifest_fail STR_VAR code = ~MAPPINGS_NOT_READY~ id = ~prepare~ END
+  END
+  LAM flir_manifest_reset
+
+  ACTION_PHP_EACH removed_item_array AS flir_manifest_removed => blank BEGIN
+    OUTER_SPRINT flir_manifest_tier ~%flir_manifest_removed_0%~
+    OUTER_SPRINT flir_manifest_token ~%flir_manifest_removed_1%~
+    OUTER_SPRINT flir_manifest_ident ~%flir_manifest_removed_2%~
+    OUTER_SPRINT flir_manifest_global ~fl%flir_manifest_tier%t%flir_manifest_token%~
+    OUTER_SET flir_manifest_global_length = STRING_LENGTH ~%flir_manifest_global%~
+    ACTION_IF flir_manifest_global_length > 32
+          OR ~%flir_manifest_global%~ STRING_MATCHES_REGEXP ~^[a-zA-Z0-9_]+$~ != 0 BEGIN
+      LAF flir_manifest_fail STR_VAR code = ~BAD_GLOBAL~ id = ~applied-unit~ END
+    END
+    ACTION_IF VARIABLE_IS_SET $flir_manifest_token_present("%flir_manifest_global%") BEGIN
+      LAF flir_manifest_fail STR_VAR code = ~DUPLICATE_GLOBAL~ id = ~applied-unit~ END
+    END
+    ACTION_IF NOT VARIABLE_IS_SET $plugintierandtokenandgetitem("%flir_manifest_tier%" "%flir_manifest_token%") BEGIN
+      LAF flir_manifest_fail STR_VAR code = ~ITEM_MISSING~ id = ~applied-unit~ END
+    END
+    OUTER_TEXT_SPRINT flir_manifest_resref $plugintierandtokenandgetitem("%flir_manifest_tier%" "%flir_manifest_token%")
+
+    OUTER_SPRINT flir_manifest_charge_token ~%flir_manifest_token%~
+    ACTION_IF VARIABLE_IS_SET $extra_tokens("%flir_manifest_tier%" "%flir_manifest_token%") BEGIN
+      OUTER_SPRINT flir_manifest_charge_token $extra_tokens("%flir_manifest_tier%" "%flir_manifest_token%")
+    END
+    OUTER_SET flir_manifest_charge_matches = 0
+    OUTER_SET flir_manifest_charge1 = 0
+    OUTER_SET flir_manifest_charge2 = 0
+    OUTER_SET flir_manifest_charge3 = 0
+    ACTION_PHP_EACH charge_array AS flir_manifest_charge => blank BEGIN
+      ACTION_IF "%flir_manifest_charge_0%" STRING_EQUAL_CASE "%flir_manifest_charge_token%"
+            AND "%flir_manifest_charge_1%" STRING_EQUAL_CASE "%flir_manifest_tier%" BEGIN
+        OUTER_SET flir_manifest_charge_matches += 1
+        OUTER_SET flir_manifest_charge1 = flir_manifest_charge_2
+        OUTER_SET flir_manifest_charge2 = flir_manifest_charge_3
+        OUTER_SET flir_manifest_charge3 = flir_manifest_charge_4
+      END
+    END
+    ACTION_IF flir_manifest_charge_matches != 1 BEGIN
+      LAF flir_manifest_fail STR_VAR code = ~CHARGE_MISMATCH~ id = ~applied-unit~ END
+    END
+
+    OUTER_SPRINT flir_registry_tier_for_campaign ~%flir_manifest_tier%~
+    LAM flir_registry_campaign_for_tier
+    OUTER_SPRINT flir_manifest_campaign ~%flir_registry_detected_campaign%~
+    OUTER_SPRINT flir_manifest_compact_key ~%flir_manifest_campaign%|%flir_manifest_tier%|unit|%flir_manifest_token%~
+    ACTION_IF NOT VARIABLE_IS_SET $flir_registry_compact_owner("%flir_manifest_compact_key%") BEGIN
+      LAF flir_manifest_fail STR_VAR code = ~UNIT_MAPPING_MISSING~ id = ~applied-unit~ END
+    END
+    OUTER_SPRINT flir_manifest_unit_id $flir_registry_compact_owner("%flir_manifest_compact_key%")
+    ACTION_IF NOT VARIABLE_IS_SET $flir_registry_current("%flir_manifest_campaign%" "%flir_manifest_tier%" "unit" "%flir_manifest_unit_id%")
+          OR NOT VARIABLE_IS_SET $flir_registry_present("%flir_manifest_campaign%" "%flir_manifest_tier%" "unit" "%flir_manifest_unit_id%")
+          OR $flir_registry_enabled("%flir_manifest_campaign%" "%flir_manifest_tier%" "unit" "%flir_manifest_unit_id%") != 1
+          OR NOT ($flir_registry_compact("%flir_manifest_campaign%" "%flir_manifest_tier%" "unit" "%flir_manifest_unit_id%") STRING_EQUAL_CASE ~%flir_manifest_token%~) BEGIN
+      LAF flir_manifest_fail STR_VAR code = ~UNIT_MAPPING_DRIFT~ id = ~applied-unit~ END
+    END
+
+    OUTER_TEXT_SPRINT flir_manifest_reference ~%flir_manifest_unit_id%~
+    LAM flir_manifest_split_reference
+    ACTION_IF VARIABLE_IS_SET $flir_catalog_present("unit" "%flir_manifest_unit_id%") BEGIN
+      OUTER_TEXT_SPRINT flir_manifest_item_id $flir_catalog_item_id("unit" "%flir_manifest_unit_id%")
+      ACTION_IF $flir_catalog_enabled("unit" "%flir_manifest_unit_id%") != 1
+            OR $flir_catalog_occurrence("unit" "%flir_manifest_unit_id%") != 1
+            OR NOT ($flir_catalog_tier("unit" "%flir_manifest_unit_id%") STRING_EQUAL_CASE ~%flir_manifest_tier%~)
+            OR NOT ($flir_catalog_compact_token("unit" "%flir_manifest_unit_id%") STRING_EQUAL_CASE ~%flir_manifest_token%~)
+            OR $flir_catalog_charge1("unit" "%flir_manifest_unit_id%") != flir_manifest_charge1
+            OR $flir_catalog_charge2("unit" "%flir_manifest_unit_id%") != flir_manifest_charge2
+            OR $flir_catalog_charge3("unit" "%flir_manifest_unit_id%") != flir_manifest_charge3 BEGIN
+        LAF flir_manifest_fail STR_VAR code = ~UNIT_CATALOG_DRIFT~ id = ~applied-unit~ END
+      END
+      ACTION_IF NOT VARIABLE_IS_SET $flir_catalog_present("item" "%flir_manifest_item_id%")
+            OR $flir_catalog_enabled("item" "%flir_manifest_item_id%") != 1
+            OR NOT ($flir_catalog_tier("item" "%flir_manifest_item_id%") STRING_EQUAL_CASE ~%flir_manifest_tier%~)
+            OR NOT ($flir_catalog_resref("item" "%flir_manifest_item_id%") STRING_EQUAL_CASE ~%flir_manifest_resref%~) BEGIN
+        LAF flir_manifest_fail STR_VAR code = ~ITEM_CATALOG_DRIFT~ id = ~applied-unit~ END
+      END
+      OUTER_TEXT_SPRINT flir_manifest_item_variant $flir_catalog_variant_policy("item" "%flir_manifest_item_id%")
+    END ELSE BEGIN
+      OUTER_SPRINT flir_manifest_item_campaign ~%flir_manifest_campaign%~
+      OUTER_SPRINT flir_manifest_item_tier ~%flir_manifest_tier%~
+      OUTER_TEXT_SPRINT flir_manifest_item_resref ~%flir_manifest_resref%~
+      OUTER_SPRINT flir_manifest_item_variant ~exact~
+      ACTION_IF VARIABLE_IS_SET $RandOptions(flrc500)
+            AND "%flir_manifest_ident%" STRING_EQUAL_CASE ~b2c~ BEGIN
+        OUTER_SPRINT flir_manifest_item_variant ~legacy-random-book~
+      END
+      LAM flir_manifest_resolve_item
+
+      OUTER_SPRINT flir_catalog_arg_operation ~ADD~
+      OUTER_SPRINT flir_catalog_arg_actor_provider ~%flir_manifest_reference_provider%~
+      OUTER_SPRINT flir_catalog_arg_provider ~%flir_manifest_reference_provider%~
+      OUTER_SPRINT flir_catalog_arg_id ~%flir_manifest_reference_local%~
+      OUTER_SPRINT flir_catalog_arg_item_id ~%flir_manifest_item_id%~
+      OUTER_SPRINT flir_catalog_arg_tier ~%flir_manifest_tier%~
+      OUTER_SPRINT flir_catalog_arg_compact_token ~%flir_manifest_token%~
+      OUTER_SET flir_catalog_arg_occurrence = 1
+      OUTER_SET flir_catalog_arg_charge1 = flir_manifest_charge1
+      OUTER_SET flir_catalog_arg_charge2 = flir_manifest_charge2
+      OUTER_SET flir_catalog_arg_charge3 = flir_manifest_charge3
+      OUTER_SET flir_catalog_arg_enabled = 1
+      LAM flir_catalog_unit
+    END
+
+    OUTER_SET $flir_manifest_token_present("%flir_manifest_global%") = 1
+    OUTER_TEXT_SPRINT $flir_manifest_token_unit("%flir_manifest_global%") ~%flir_manifest_unit_id%~
+    OUTER_TEXT_SPRINT $flir_manifest_token_item("%flir_manifest_global%") ~%flir_manifest_item_id%~
+    OUTER_TEXT_SPRINT $flir_manifest_token_tier("%flir_manifest_global%") ~%flir_manifest_tier%~
+    OUTER_TEXT_SPRINT $flir_manifest_token_compact("%flir_manifest_global%") ~%flir_manifest_token%~
+    OUTER_TEXT_SPRINT $flir_manifest_token_resref("%flir_manifest_global%") ~%flir_manifest_resref%~
+    OUTER_SET $flir_manifest_token_charge1("%flir_manifest_global%") = flir_manifest_charge1
+    OUTER_SET $flir_manifest_token_charge2("%flir_manifest_global%") = flir_manifest_charge2
+    OUTER_SET $flir_manifest_token_charge3("%flir_manifest_global%") = flir_manifest_charge3
+    OUTER_TEXT_SPRINT $flir_manifest_token_variant("%flir_manifest_global%") ~%flir_manifest_item_variant%~
+    OUTER_SET $flir_manifest_token_enabled("%flir_manifest_global%") = 1
+  END
+  OUTER_SET flir_manifest_prepared = 1
+END
+
+// Endpoint adapters are runtime semantics but intentionally live outside the
+// normalized catalog schema. Canonicalize them separately so an adapter-only
+// change cannot retain a stale manifest fingerprint. Values are byte-encoded
+// first, keeping literal percent pairs and control bytes out of interpolation.
+DEFINE_ACTION_MACRO flir_manifest_build_endpoint_semantics BEGIN
+  ACTION_CLEAR_ARRAY flir_manifest_endpoint_semantic_present
+  OUTER_FOR (flir_manifest_endpoint_semantic_i = 1; flir_manifest_endpoint_semantic_i <= flir_endpoint_count; ++flir_manifest_endpoint_semantic_i) BEGIN
+    OUTER_SPRINT flir_manifest_endpoint_semantic_id $flir_endpoint_order("%flir_manifest_endpoint_semantic_i%")
+    OUTER_SET $flir_manifest_endpoint_semantic_present("%flir_manifest_endpoint_semantic_id%") = 1
+  END
+  ACTION_SORT_ARRAY_INDICES flir_manifest_endpoint_semantic_present LEXICOGRAPHICALLY
+  OUTER_TEXT_SPRINT flir_manifest_endpoint_semantic_rows ~~
+  ACTION_PHP_EACH flir_manifest_endpoint_semantic_present AS flir_manifest_endpoint_semantic_id => flir_manifest_endpoint_semantic_enabled BEGIN
+    ACTION_IF flir_manifest_endpoint_semantic_enabled = 1 BEGIN
+      LAF flir_manifest_quote_value
+        STR_VAR raw = $flir_endpoint_adapter("%flir_manifest_endpoint_semantic_id%")
+        RET flir_manifest_endpoint_semantic_adapter = encoded
+      END
+      OUTER_SET flir_manifest_endpoint_semantic_external = 0
+      ACTION_IF $flir_endpoint_target_kind("%flir_manifest_endpoint_semantic_id%") STRING_EQUAL_CASE ~legacy_adapter~ BEGIN
+        OUTER_SET flir_manifest_endpoint_semantic_external = 1
+      END
+      OUTER_TEXT_SPRINT flir_manifest_endpoint_semantic_rows ~%flir_manifest_endpoint_semantic_rows%ENDPOINT %flir_manifest_endpoint_semantic_id% %flir_manifest_endpoint_semantic_adapter% %flir_manifest_endpoint_semantic_external%%WNL%~
+    END
+  END
+END
+
+DEFINE_ACTION_MACRO flir_manifest_build_fingerprint BEGIN
+  LAF flir_registry_canonical_rows RET flir_manifest_registry_rows = rows END
+  LAF flir_catalog_canonical_rows RET flir_manifest_catalog_rows = rows END
+  LAM flir_manifest_build_endpoint_semantics
+  OUTER_TEXT_SPRINT flir_manifest_canonical ~~
+  OUTER_TEXT_SPRINT flir_manifest_canonical_append ~%flir_manifest_schema%~
+  LAM flir_manifest_append_canonical
+  OUTER_TEXT_SPRINT flir_manifest_canonical_append ~%flir_manifest_backend%~
+  LAM flir_manifest_append_canonical
+  OUTER_TEXT_SPRINT flir_manifest_canonical_append ~%flir_manifest_registry_rows%~
+  LAM flir_manifest_append_canonical
+  OUTER_TEXT_SPRINT flir_manifest_canonical_append ~%flir_manifest_catalog_rows%~
+  LAM flir_manifest_append_canonical
+  OUTER_TEXT_SPRINT flir_manifest_canonical_append ~%flir_manifest_endpoint_semantic_rows%~
+  LAM flir_manifest_append_canonical
+  ACTION_CLEAR_ARRAY flir_manifest_fingerprint
+  OUTER_FOR (flir_manifest_word = 1; flir_manifest_word <= 4; ++flir_manifest_word) BEGIN
+    OUTER_TEXT_SPRINT flir_manifest_hash_input ~flir-manifest-fingerprint-v1:%flir_manifest_word%|%flir_manifest_canonical%~
+    LAM flir_manifest_hash
+    OUTER_SET $flir_manifest_fingerprint("%flir_manifest_word%") = flir_manifest_hash_output
+  END
+END
+
+DEFINE_ACTION_MACRO flir_manifest_build_lua BEGIN
+  ACTION_IF flir_manifest_prepared != 1 BEGIN
+    LAF flir_manifest_fail STR_VAR code = ~NOT_PREPARED~ id = ~write~ END
+  END
+  ACTION_IF flir_registry_catalog_finalized != 1 BEGIN
+    LAF flir_manifest_fail STR_VAR code = ~CATALOG_NOT_FINAL~ id = ~write~ END
+  END
+  LAM flir_manifest_build_fingerprint
+
+  OUTER_SPRINT flir_manifest_quote_input ~%flir_manifest_schema%~
+  LAM flir_manifest_quote
+  OUTER_SPRINT flir_manifest_schema_lua ~%flir_manifest_quote_output%~
+  OUTER_SPRINT flir_manifest_quote_input ~%flir_manifest_backend%~
+  LAM flir_manifest_quote
+  OUTER_SPRINT flir_manifest_backend_lua ~%flir_manifest_quote_output%~
+  OUTER_SET flir_manifest_fingerprint1 = $flir_manifest_fingerprint("1")
+  OUTER_SET flir_manifest_fingerprint2 = $flir_manifest_fingerprint("2")
+  OUTER_SET flir_manifest_fingerprint3 = $flir_manifest_fingerprint("3")
+  OUTER_SET flir_manifest_fingerprint4 = $flir_manifest_fingerprint("4")
+  OUTER_TEXT_SPRINT flir_manifest_lua ~FLDLV = FLDLV or {}%WNL%FLDLV.Manifest = {%WNL%  schema = %flir_manifest_schema_lua%,%WNL%  backend = %flir_manifest_backend_lua%,%WNL%  fingerprint = {%flir_manifest_fingerprint1%, %flir_manifest_fingerprint2%, %flir_manifest_fingerprint3%, %flir_manifest_fingerprint4%},%WNL%  tokens_by_global = {%WNL%~
+
+  ACTION_SORT_ARRAY_INDICES flir_manifest_token_present LEXICOGRAPHICALLY
+  ACTION_PHP_EACH flir_manifest_token_present AS flir_manifest_global => flir_manifest_token_is_present BEGIN
+    ACTION_IF flir_manifest_token_is_present = 1 BEGIN
+      OUTER_TEXT_SPRINT flir_manifest_quote_input ~%flir_manifest_global%~
+      LAM flir_manifest_quote
+      OUTER_SPRINT flir_manifest_key_lua ~%flir_manifest_quote_output%~
+      OUTER_TEXT_SPRINT flir_manifest_quote_input $flir_manifest_token_unit("%flir_manifest_global%")
+      LAM flir_manifest_quote
+      OUTER_SPRINT flir_manifest_unit_lua ~%flir_manifest_quote_output%~
+      OUTER_TEXT_SPRINT flir_manifest_quote_input $flir_manifest_token_item("%flir_manifest_global%")
+      LAM flir_manifest_quote
+      OUTER_SPRINT flir_manifest_item_lua ~%flir_manifest_quote_output%~
+      OUTER_TEXT_SPRINT flir_manifest_quote_input $flir_manifest_token_tier("%flir_manifest_global%")
+      LAM flir_manifest_quote
+      OUTER_SPRINT flir_manifest_tier_lua ~%flir_manifest_quote_output%~
+      OUTER_TEXT_SPRINT flir_manifest_quote_input $flir_manifest_token_compact("%flir_manifest_global%")
+      LAM flir_manifest_quote
+      OUTER_SPRINT flir_manifest_compact_lua ~%flir_manifest_quote_output%~
+      OUTER_TEXT_SPRINT flir_manifest_quote_input $flir_manifest_token_resref("%flir_manifest_global%")
+      LAM flir_manifest_quote
+      OUTER_SPRINT flir_manifest_resref_lua ~%flir_manifest_quote_output%~
+      LAF flir_manifest_quote_value
+        STR_VAR raw = $flir_manifest_token_variant("%flir_manifest_global%")
+        RET flir_manifest_variant_lua = encoded
+      END
+      OUTER_SET flir_manifest_emit_charge1 = $flir_manifest_token_charge1("%flir_manifest_global%")
+      OUTER_SET flir_manifest_emit_charge2 = $flir_manifest_token_charge2("%flir_manifest_global%")
+      OUTER_SET flir_manifest_emit_charge3 = $flir_manifest_token_charge3("%flir_manifest_global%")
+      OUTER_SET flir_manifest_emit_enabled = $flir_manifest_token_enabled("%flir_manifest_global%")
+      OUTER_TEXT_SPRINT flir_manifest_lua ~%flir_manifest_lua%    [%flir_manifest_key_lua%] = { global = %flir_manifest_key_lua%, unit_id = %flir_manifest_unit_lua%, item_id = %flir_manifest_item_lua%, tier = %flir_manifest_tier_lua%, compact_token = %flir_manifest_compact_lua%, item_resref = %flir_manifest_resref_lua%, charges = {%flir_manifest_emit_charge1%, %flir_manifest_emit_charge2%, %flir_manifest_emit_charge3%}, variant_policy = %flir_manifest_variant_lua%, enabled = %flir_manifest_emit_enabled% },%WNL%~
+    END
+  END
+  OUTER_TEXT_SPRINT flir_manifest_lua ~%flir_manifest_lua%  },%WNL%  slots_by_tier_value = {%WNL%~
+
+  ACTION_CLEAR_ARRAY flir_manifest_slot_tier_present
+  ACTION_CLEAR_ARRAY flir_manifest_slot_tier_max
+  ACTION_CLEAR_ARRAY flir_manifest_slot_by_value
+  OUTER_FOR (flir_manifest_slot_i = 1; flir_manifest_slot_i <= flir_endpoint_slot_count; ++flir_manifest_slot_i) BEGIN
+    OUTER_SPRINT flir_manifest_slot_id $flir_endpoint_slot_order("%flir_manifest_slot_i%")
+    OUTER_SPRINT flir_manifest_slot_tier $flir_endpoint_slot_tier("%flir_manifest_slot_id%")
+    OUTER_SET flir_manifest_slot_value = $flir_endpoint_slot_value("%flir_manifest_slot_id%")
+    ACTION_IF flir_manifest_slot_value < 1 BEGIN
+      LAF flir_manifest_fail STR_VAR code = ~BAD_SLOT_VALUE~ id = ~slot~ END
+    END
+    ACTION_IF VARIABLE_IS_SET $flir_manifest_slot_by_value("%flir_manifest_slot_tier%" "%flir_manifest_slot_value%") BEGIN
+      LAF flir_manifest_fail STR_VAR code = ~DUPLICATE_SLOT_VALUE~ id = ~slot~ END
+    END
+    OUTER_SET $flir_manifest_slot_tier_present("%flir_manifest_slot_tier%") = 1
+    OUTER_SPRINT $flir_manifest_slot_by_value("%flir_manifest_slot_tier%" "%flir_manifest_slot_value%") ~%flir_manifest_slot_id%~
+    ACTION_IF NOT VARIABLE_IS_SET $flir_manifest_slot_tier_max("%flir_manifest_slot_tier%")
+          OR $flir_manifest_slot_tier_max("%flir_manifest_slot_tier%") < flir_manifest_slot_value BEGIN
+      OUTER_SET $flir_manifest_slot_tier_max("%flir_manifest_slot_tier%") = flir_manifest_slot_value
+    END
+  END
+  ACTION_SORT_ARRAY_INDICES flir_manifest_slot_tier_present LEXICOGRAPHICALLY
+  ACTION_PHP_EACH flir_manifest_slot_tier_present AS flir_manifest_slot_tier => flir_manifest_slot_tier_enabled BEGIN
+    ACTION_IF flir_manifest_slot_tier_enabled = 1 BEGIN
+      OUTER_TEXT_SPRINT flir_manifest_quote_input ~%flir_manifest_slot_tier%~
+      LAM flir_manifest_quote
+      OUTER_SPRINT flir_manifest_tier_key_lua ~%flir_manifest_quote_output%~
+      OUTER_TEXT_SPRINT flir_manifest_lua ~%flir_manifest_lua%    [%flir_manifest_tier_key_lua%] = {%WNL%~
+      OUTER_SET flir_manifest_slot_max = $flir_manifest_slot_tier_max("%flir_manifest_slot_tier%")
+      OUTER_FOR (flir_manifest_slot_value = 1; flir_manifest_slot_value <= flir_manifest_slot_max; ++flir_manifest_slot_value) BEGIN
+        ACTION_IF VARIABLE_IS_SET $flir_manifest_slot_by_value("%flir_manifest_slot_tier%" "%flir_manifest_slot_value%") BEGIN
+          OUTER_SPRINT flir_manifest_slot_id $flir_manifest_slot_by_value("%flir_manifest_slot_tier%" "%flir_manifest_slot_value%")
+          OUTER_TEXT_SPRINT flir_manifest_quote_input ~%flir_manifest_slot_id%~
+          LAM flir_manifest_quote
+          OUTER_SPRINT flir_manifest_slot_lua ~%flir_manifest_quote_output%~
+          OUTER_TEXT_SPRINT flir_manifest_quote_input $flir_endpoint_slot_endpoint("%flir_manifest_slot_id%")
+          LAM flir_manifest_quote
+          OUTER_SPRINT flir_manifest_endpoint_lua ~%flir_manifest_quote_output%~
+          OUTER_TEXT_SPRINT flir_manifest_quote_input $flir_endpoint_slot_band("%flir_manifest_slot_id%")
+          LAM flir_manifest_quote
+          OUTER_SPRINT flir_manifest_band_lua ~%flir_manifest_quote_output%~
+          OUTER_SET flir_manifest_emit_weight = $flir_endpoint_slot_weight("%flir_manifest_slot_id%")
+          OUTER_SET flir_manifest_emit_enabled = $flir_endpoint_slot_enabled("%flir_manifest_slot_id%")
+          OUTER_TEXT_SPRINT flir_manifest_lua ~%flir_manifest_lua%      [%flir_manifest_slot_value%] = { slot_id = %flir_manifest_slot_lua%, tier = %flir_manifest_tier_key_lua%, slot_value = %flir_manifest_slot_value%, endpoint_id = %flir_manifest_endpoint_lua%, weight = %flir_manifest_emit_weight%, progression_band = %flir_manifest_band_lua%, enabled = %flir_manifest_emit_enabled% },%WNL%~
+        END
+      END
+      OUTER_TEXT_SPRINT flir_manifest_lua ~%flir_manifest_lua%    },%WNL%~
+    END
+  END
+  OUTER_TEXT_SPRINT flir_manifest_lua ~%flir_manifest_lua%  },%WNL%  endpoints_by_id = {%WNL%~
+
+  ACTION_CLEAR_ARRAY flir_manifest_endpoint_present
+  OUTER_FOR (flir_manifest_endpoint_i = 1; flir_manifest_endpoint_i <= flir_endpoint_count; ++flir_manifest_endpoint_i) BEGIN
+    OUTER_SPRINT flir_manifest_endpoint_id $flir_endpoint_order("%flir_manifest_endpoint_i%")
+    OUTER_SET $flir_manifest_endpoint_present("%flir_manifest_endpoint_id%") = 1
+  END
+  ACTION_SORT_ARRAY_INDICES flir_manifest_endpoint_present LEXICOGRAPHICALLY
+  ACTION_PHP_EACH flir_manifest_endpoint_present AS flir_manifest_endpoint_id => flir_manifest_endpoint_is_present BEGIN
+    ACTION_IF flir_manifest_endpoint_is_present = 1 BEGIN
+      OUTER_TEXT_SPRINT flir_manifest_quote_input ~%flir_manifest_endpoint_id%~
+      LAM flir_manifest_quote
+      OUTER_SPRINT flir_manifest_endpoint_key_lua ~%flir_manifest_quote_output%~
+      OUTER_TEXT_SPRINT flir_manifest_quote_input $flir_endpoint_area("%flir_manifest_endpoint_id%")
+      LAM flir_manifest_quote
+      OUTER_SPRINT flir_manifest_area_lua ~%flir_manifest_quote_output%~
+      OUTER_TEXT_SPRINT flir_manifest_quote_input $flir_endpoint_target_kind("%flir_manifest_endpoint_id%")
+      LAM flir_manifest_quote
+      OUTER_SPRINT flir_manifest_kind_lua ~%flir_manifest_quote_output%~
+      LAF flir_manifest_quote_value
+        STR_VAR raw = $flir_endpoint_target_identity("%flir_manifest_endpoint_id%")
+        RET flir_manifest_identity_lua = encoded
+      END
+      OUTER_TEXT_SPRINT flir_manifest_quote_input $flir_endpoint_static_policy("%flir_manifest_endpoint_id%")
+      LAM flir_manifest_quote
+      OUTER_SPRINT flir_manifest_policy_lua ~%flir_manifest_quote_output%~
+      OUTER_TEXT_SPRINT flir_manifest_quote_input $flir_endpoint_fallback("%flir_manifest_endpoint_id%")
+      LAM flir_manifest_quote
+      OUTER_SPRINT flir_manifest_fallback_lua ~%flir_manifest_quote_output%~
+      LAF flir_manifest_quote_value
+        STR_VAR raw = $flir_endpoint_adapter("%flir_manifest_endpoint_id%")
+        RET flir_manifest_adapter_lua = encoded
+      END
+      OUTER_SET flir_manifest_external_delivery = 0
+      ACTION_IF $flir_endpoint_target_kind("%flir_manifest_endpoint_id%") STRING_EQUAL_CASE ~legacy_adapter~ BEGIN
+        OUTER_SET flir_manifest_external_delivery = 1
+      END
+      OUTER_SET flir_manifest_emit_x = $flir_endpoint_x("%flir_manifest_endpoint_id%")
+      OUTER_SET flir_manifest_emit_y = $flir_endpoint_y("%flir_manifest_endpoint_id%")
+      OUTER_SET flir_manifest_emit_capacity = $flir_endpoint_capacity("%flir_manifest_endpoint_id%")
+      OUTER_SET flir_manifest_emit_enabled = $flir_endpoint_enabled("%flir_manifest_endpoint_id%")
+      OUTER_TEXT_SPRINT flir_manifest_lua ~%flir_manifest_lua%    [%flir_manifest_endpoint_key_lua%] = { area = %flir_manifest_area_lua%, target_kind = %flir_manifest_kind_lua%, target_identity = %flir_manifest_identity_lua%, x = %flir_manifest_emit_x%, y = %flir_manifest_emit_y%, capacity = %flir_manifest_emit_capacity%, static_policy = %flir_manifest_policy_lua%, fallback_id = %flir_manifest_fallback_lua%, adapter = %flir_manifest_adapter_lua%, external_delivery = %flir_manifest_external_delivery%, enabled = %flir_manifest_emit_enabled% },%WNL%~
+    END
+  END
+  OUTER_TEXT_SPRINT flir_manifest_lua ~%flir_manifest_lua%  },%WNL%  sparse_overrides = {%WNL%~
+
+  ACTION_CLEAR_ARRAY flir_manifest_override_present
+  ACTION_CLEAR_ARRAY flir_manifest_override_item_present
+  ACTION_CLEAR_ARRAY flir_manifest_override_endpoint
+  ACTION_CLEAR_ARRAY flir_manifest_endpoint_location_present
+  ACTION_CLEAR_ARRAY flir_manifest_endpoint_location_count
+  // Capacity is a promise per physical endpoint. A source slot can contribute
+  // at most one delivery, even when several item-specific overrides name it,
+  // so count the union of enabled base and override source-slot identities.
+  OUTER_FOR (flir_manifest_capacity_slot_i = 1; flir_manifest_capacity_slot_i <= flir_endpoint_slot_count; ++flir_manifest_capacity_slot_i) BEGIN
+    OUTER_SPRINT flir_manifest_capacity_location $flir_endpoint_slot_order("%flir_manifest_capacity_slot_i%")
+    ACTION_IF $flir_endpoint_slot_enabled("%flir_manifest_capacity_location%") = 1 BEGIN
+      OUTER_SPRINT flir_manifest_capacity_endpoint $flir_endpoint_slot_endpoint("%flir_manifest_capacity_location%")
+      OUTER_SET $flir_manifest_endpoint_location_present("%flir_manifest_capacity_endpoint%" "%flir_manifest_capacity_location%") = 1
+      ACTION_IF VARIABLE_IS_SET $flir_manifest_endpoint_location_count("%flir_manifest_capacity_endpoint%") BEGIN
+        OUTER_SET $flir_manifest_endpoint_location_count("%flir_manifest_capacity_endpoint%") += 1
+      END ELSE BEGIN
+        OUTER_SET $flir_manifest_endpoint_location_count("%flir_manifest_capacity_endpoint%") = 1
+      END
+    END
+  END
+  ACTION_SORT_ARRAY_INDICES flir_catalog_index LEXICOGRAPHICALLY
+  ACTION_PHP_EACH flir_catalog_index AS flir_manifest_catalog_key => flir_manifest_catalog_present BEGIN
+    ACTION_IF flir_manifest_catalog_present = 1
+          AND $flir_catalog_index_kind("%flir_manifest_catalog_key%") STRING_EQUAL_CASE ~override~ BEGIN
+      OUTER_SPRINT flir_manifest_override_id $flir_catalog_index_qualified("%flir_manifest_catalog_key%")
+      ACTION_IF $flir_catalog_enabled("override" "%flir_manifest_override_id%") = 1 BEGIN
+        OUTER_SPRINT flir_manifest_override_item $flir_catalog_item_id("override" "%flir_manifest_override_id%")
+        OUTER_SPRINT flir_manifest_override_location $flir_catalog_location_id("override" "%flir_manifest_override_id%")
+        OUTER_SPRINT flir_manifest_override_target $flir_catalog_endpoint_id("override" "%flir_manifest_override_id%")
+        ACTION_IF NOT VARIABLE_IS_SET $flir_catalog_present("item" "%flir_manifest_override_item%")
+              OR $flir_catalog_enabled("item" "%flir_manifest_override_item%") != 1
+              OR NOT VARIABLE_IS_SET $flir_catalog_present("slot" "%flir_manifest_override_location%")
+              OR $flir_catalog_enabled("slot" "%flir_manifest_override_location%") != 1
+              OR NOT VARIABLE_IS_SET $flir_endpoint_slot_present("%flir_manifest_override_location%")
+              OR $flir_endpoint_slot_enabled("%flir_manifest_override_location%") != 1
+              OR NOT VARIABLE_IS_SET $flir_catalog_present("endpoint" "%flir_manifest_override_target%")
+              OR $flir_catalog_enabled("endpoint" "%flir_manifest_override_target%") != 1
+              OR NOT VARIABLE_IS_SET $flir_endpoint_present("%flir_manifest_override_target%")
+              OR $flir_endpoint_enabled("%flir_manifest_override_target%") != 1 BEGIN
+          LAF flir_manifest_fail STR_VAR code = ~OVERRIDE_REFERENCE~ id = ~override~ END
+        END
+        OUTER_SPRINT flir_manifest_override_tier $flir_catalog_tier("slot" "%flir_manifest_override_location%")
+        OUTER_SPRINT flir_manifest_override_campaign $flir_endpoint_slot_campaign("%flir_manifest_override_location%")
+        OUTER_SPRINT flir_manifest_override_band $flir_catalog_progression_band("slot" "%flir_manifest_override_location%")
+        ACTION_IF NOT ($flir_catalog_tier("item" "%flir_manifest_override_item%") STRING_EQUAL_CASE ~%flir_manifest_override_tier%~)
+              OR NOT ($flir_endpoint_slot_tier("%flir_manifest_override_location%") STRING_EQUAL_CASE ~%flir_manifest_override_tier%~)
+              OR $flir_endpoint_target_kind("%flir_manifest_override_target%") STRING_EQUAL_CASE ~legacy_adapter~
+              OR NOT VARIABLE_IS_SET $flir_endpoint_candidate("%flir_manifest_override_campaign%" "%flir_manifest_override_tier%" "%flir_manifest_override_band%" "%flir_manifest_override_target%") BEGIN
+          LAF flir_manifest_fail STR_VAR code = ~OVERRIDE_SCOPE~ id = ~override~ END
+        END
+        ACTION_IF VARIABLE_IS_SET $flir_manifest_override_present("%flir_manifest_override_item%" "%flir_manifest_override_location%") BEGIN
+          LAF flir_manifest_fail STR_VAR code = ~DUPLICATE_OVERRIDE~ id = ~override~ END
+        END
+        ACTION_IF NOT VARIABLE_IS_SET $flir_manifest_endpoint_location_present("%flir_manifest_override_target%" "%flir_manifest_override_location%") BEGIN
+          OUTER_SET $flir_manifest_endpoint_location_present("%flir_manifest_override_target%" "%flir_manifest_override_location%") = 1
+          ACTION_IF VARIABLE_IS_SET $flir_manifest_endpoint_location_count("%flir_manifest_override_target%") BEGIN
+            OUTER_SET $flir_manifest_endpoint_location_count("%flir_manifest_override_target%") += 1
+          END ELSE BEGIN
+            OUTER_SET $flir_manifest_endpoint_location_count("%flir_manifest_override_target%") = 1
+          END
+          OUTER_SET flir_manifest_override_capacity_used = $flir_manifest_endpoint_location_count("%flir_manifest_override_target%")
+          ACTION_IF $flir_endpoint_target_kind("%flir_manifest_override_target%") STRING_EQUAL_CASE ~ground~
+                AND VARIABLE_IS_SET $flir_endpoint_fallback_required("%flir_manifest_override_target%") BEGIN
+            OUTER_SET flir_manifest_override_capacity_used += $flir_endpoint_fallback_required("%flir_manifest_override_target%")
+          END
+          ACTION_IF flir_manifest_override_capacity_used > $flir_endpoint_capacity("%flir_manifest_override_target%") BEGIN
+            LAF flir_manifest_fail STR_VAR code = ~OVERRIDE_CAPACITY~ id = ~override~ END
+          END
+        END
+        OUTER_SET $flir_manifest_override_item_present("%flir_manifest_override_item%") = 1
+        OUTER_SET $flir_manifest_override_present("%flir_manifest_override_item%" "%flir_manifest_override_location%") = 1
+        OUTER_TEXT_SPRINT $flir_manifest_override_endpoint("%flir_manifest_override_item%" "%flir_manifest_override_location%") ~%flir_manifest_override_target%~
+      END
+    END
+  END
+  ACTION_SORT_ARRAY_INDICES flir_manifest_override_item_present LEXICOGRAPHICALLY
+  ACTION_SORT_ARRAY_INDICES flir_manifest_override_present LEXICOGRAPHICALLY
+  ACTION_PHP_EACH flir_manifest_override_item_present AS flir_manifest_override_item => flir_manifest_override_item_enabled BEGIN
+    ACTION_IF flir_manifest_override_item_enabled = 1 BEGIN
+      OUTER_TEXT_SPRINT flir_manifest_quote_input ~%flir_manifest_override_item%~
+      LAM flir_manifest_quote
+      OUTER_SPRINT flir_manifest_override_item_lua ~%flir_manifest_quote_output%~
+      OUTER_TEXT_SPRINT flir_manifest_lua ~%flir_manifest_lua%    [%flir_manifest_override_item_lua%] = {%WNL%~
+      ACTION_PHP_EACH flir_manifest_override_present AS flir_manifest_override_key => flir_manifest_override_enabled BEGIN
+        ACTION_IF flir_manifest_override_enabled = 1
+              AND "%flir_manifest_override_key_0%" STRING_EQUAL_CASE "%flir_manifest_override_item%" BEGIN
+          OUTER_TEXT_SPRINT flir_manifest_quote_input ~%flir_manifest_override_key_1%~
+          LAM flir_manifest_quote
+          OUTER_SPRINT flir_manifest_override_location_lua ~%flir_manifest_quote_output%~
+          OUTER_TEXT_SPRINT flir_manifest_quote_input $flir_manifest_override_endpoint("%flir_manifest_override_key_0%" "%flir_manifest_override_key_1%")
+          LAM flir_manifest_quote
+          OUTER_SPRINT flir_manifest_override_endpoint_lua ~%flir_manifest_quote_output%~
+          OUTER_TEXT_SPRINT flir_manifest_lua ~%flir_manifest_lua%      [%flir_manifest_override_location_lua%] = %flir_manifest_override_endpoint_lua%,%WNL%~
+        END
+      END
+      OUTER_TEXT_SPRINT flir_manifest_lua ~%flir_manifest_lua%    },%WNL%~
+    END
+  END
+  OUTER_TEXT_SPRINT flir_manifest_lua ~%flir_manifest_lua%  },%WNL%}%WNL%~
+END
+
+DEFINE_ACTION_MACRO flir_manifest_write BEGIN
+  LAM flir_manifest_build_lua
+  ACTION_IF NOT VARIABLE_IS_SET flir_manifest_output_path
+        OR "%flir_manifest_output_path%" STRING_EQUAL_CASE "" BEGIN
+    OUTER_SPRINT flir_manifest_output_path ~override/%flir_manifest_resource%.lua~
+  END
+  COPY ~...blank~ ~%flir_manifest_output_path%~
+    INSERT_BYTES 0 STRING_LENGTH ~%flir_manifest_lua%~
+    WRITE_ASCIIE 0 ~%flir_manifest_lua%~ (STRING_LENGTH ~%flir_manifest_lua%~)
+  BUT_ONLY
+END
+
+LAM flir_manifest_reset
