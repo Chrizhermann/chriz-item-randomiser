@@ -1355,6 +1355,7 @@ DEFINE_PATCH_MACRO flir_endpoints_read_declaration_rows BEGIN
     SPRINT $flir_endpoint_declaration_band("%flir_endpoint_row_key%") ~%flir_endpoint_row_band%~
     SET $flir_endpoint_declaration_weight("%flir_endpoint_row_key%") = flir_endpoint_row_weight
     SPRINT $flir_endpoint_declaration_kind("%flir_endpoint_row_key%") ~%flir_endpoint_row_kind%~
+    SPRINT $flir_endpoint_declaration_raw_area("%flir_endpoint_row_key%") ~%flir_endpoint_row_area%~
     SPRINT $flir_endpoint_declaration_area("%flir_endpoint_row_key%") ~%flir_endpoint_row_area%~
     SPRINT $flir_endpoint_declaration_identity("%flir_endpoint_row_key%") ~%flir_endpoint_row_identity%~
     SET $flir_endpoint_declaration_capacity("%flir_endpoint_row_key%") = flir_endpoint_row_capacity
@@ -1537,6 +1538,7 @@ DEFINE_ACTION_MACRO flir_endpoints_load_declarations BEGIN
   ACTION_CLEAR_ARRAY flir_endpoint_active_binding_id
   ACTION_CLEAR_ARRAY flir_endpoint_active_binding_area
   ACTION_CLEAR_ARRAY flir_endpoint_declaration_order
+  ACTION_CLEAR_ARRAY flir_endpoint_declaration_raw_area
   ACTION_CLEAR_ARRAY flir_endpoint_fallback_provider
   ACTION_CLEAR_ARRAY flir_endpoint_legacy_physical_endpoint
   ACTION_CLEAR_ARRAY flir_endpoint_legacy_physical_band
@@ -1590,7 +1592,35 @@ DEFINE_ACTION_MACRO flir_endpoints_load_declarations BEGIN
       OUTER_SPRINT flir_endpoint_decl_fallback_local $flir_endpoint_declaration_fallback("%flir_endpoint_decl_key%")
       OUTER_SPRINT flir_endpoint_decl_fallback ~%flir_endpoint_decl_provider%:%flir_endpoint_decl_fallback_local%~
       OUTER_SPRINT flir_endpoint_decl_kind $flir_endpoint_declaration_kind("%flir_endpoint_decl_key%")
+      OUTER_SPRINT flir_endpoint_decl_raw_area $flir_endpoint_declaration_raw_area("%flir_endpoint_decl_key%")
       OUTER_SPRINT flir_endpoint_decl_area $flir_endpoint_declaration_area("%flir_endpoint_decl_key%")
+      OUTER_SPRINT flir_endpoint_decl_fallback_area ~-~
+      ACTION_IF NOT ("%flir_endpoint_decl_kind%" STRING_EQUAL_CASE ~legacy_adapter~) BEGIN
+        ACTION_IF NOT VARIABLE_IS_SET $flir_endpoint_fallback_provider("%flir_endpoint_decl_fallback%") BEGIN
+          LAF flir_endpoints_fail STR_VAR code = ~MISSING_FALLBACK~ provider = EVAL ~%flir_endpoint_decl_provider%~ id = EVAL ~%flir_endpoint_decl_endpoint_local%~ END
+        END
+        OUTER_SPRINT flir_endpoint_decl_fallback_primary $flir_endpoint_fallback_primary("%flir_endpoint_decl_fallback%")
+        OUTER_SPRINT flir_endpoint_decl_fallback_raw_area $flir_endpoint_fallback_area("%flir_endpoint_decl_fallback%")
+        ACTION_IF NOT ("%flir_endpoint_decl_fallback_primary%" STRING_EQUAL_CASE ~%flir_endpoint_decl_endpoint_local%~)
+              OR NOT ("%flir_endpoint_decl_fallback_raw_area%" STRING_EQUAL_CASE ~%flir_endpoint_decl_raw_area%~) BEGIN
+          LAF flir_endpoints_fail STR_VAR code = ~FALLBACK_AREA_DRIFT~ provider = EVAL ~%flir_endpoint_decl_provider%~ id = EVAL ~%flir_endpoint_decl_endpoint_local%~ END
+        END
+        OUTER_SPRINT flir_endpoint_decl_fallback_area ~%flir_endpoint_decl_fallback_raw_area%~
+      END
+      // Base BG1 tables are authored in the canonical BG1 namespace.  Active
+      // legacy rows have already passed through fl#bg1pal, so translate both
+      // sides of the authenticated primary/fallback pair through the same
+      // platform seam only after their canonical raw areas agree.
+      ACTION_IF "%flir_endpoint_decl_campaign%" STRING_EQUAL_CASE ~bg1~ BEGIN
+        LAF fl#bg1pal STR_VAR resource = EVAL ~%flir_endpoint_decl_area%~ type = ARE RET flir_endpoint_decl_area = resource END
+        ACTION_IF NOT ("%flir_endpoint_decl_kind%" STRING_EQUAL_CASE ~legacy_adapter~) BEGIN
+          LAF fl#bg1pal STR_VAR resource = EVAL ~%flir_endpoint_decl_fallback_area%~ type = ARE RET flir_endpoint_decl_fallback_area = resource END
+        END
+      END
+      ACTION_IF NOT ("%flir_endpoint_decl_kind%" STRING_EQUAL_CASE ~legacy_adapter~)
+            AND NOT ("%flir_endpoint_decl_fallback_area%" STRING_EQUAL_CASE ~%flir_endpoint_decl_area%~) BEGIN
+        LAF flir_endpoints_fail STR_VAR code = ~FALLBACK_AREA_DRIFT~ provider = EVAL ~%flir_endpoint_decl_provider%~ id = EVAL ~%flir_endpoint_decl_endpoint_local%~ END
+      END
       ACTION_IF NOT VARIABLE_IS_SET $flir_endpoint_present("%flir_endpoint_decl_endpoint%") BEGIN
         OUTER_SPRINT flir_endpoint_arg_provider ~%flir_endpoint_decl_provider%~
         OUTER_SPRINT flir_endpoint_arg_id ~%flir_endpoint_decl_endpoint_local%~
@@ -1606,9 +1636,6 @@ DEFINE_ACTION_MACRO flir_endpoints_load_declarations BEGIN
           OUTER_SET flir_endpoint_arg_y = 0
           OUTER_SPRINT flir_endpoint_arg_fallback ~-~
         END ELSE BEGIN
-          ACTION_IF NOT VARIABLE_IS_SET $flir_endpoint_fallback_provider("%flir_endpoint_decl_fallback%") BEGIN
-            LAF flir_endpoints_fail STR_VAR code = ~MISSING_FALLBACK~ provider = EVAL ~%flir_endpoint_decl_provider%~ id = EVAL ~%flir_endpoint_decl_endpoint_local%~ END
-          END
           OUTER_SET flir_endpoint_arg_x = $flir_endpoint_fallback_x("%flir_endpoint_decl_fallback%")
           OUTER_SET flir_endpoint_arg_y = $flir_endpoint_fallback_y("%flir_endpoint_decl_fallback%")
           OUTER_SPRINT flir_endpoint_arg_fallback ~%flir_endpoint_decl_fallback%~
@@ -1619,7 +1646,7 @@ DEFINE_ACTION_MACRO flir_endpoints_load_declarations BEGIN
             AND NOT VARIABLE_IS_SET $flir_endpoint_present("%flir_endpoint_decl_fallback%") BEGIN
         OUTER_SPRINT flir_endpoint_arg_provider ~%flir_endpoint_decl_provider%~
         OUTER_SPRINT flir_endpoint_arg_id ~%flir_endpoint_decl_fallback_local%~
-        OUTER_SPRINT flir_endpoint_arg_area ~%flir_endpoint_decl_area%~
+        OUTER_SPRINT flir_endpoint_arg_area ~%flir_endpoint_decl_fallback_area%~
         OUTER_SPRINT flir_endpoint_arg_target_kind ~ground~
         OUTER_SPRINT flir_endpoint_arg_target_identity ~-~
         OUTER_SET flir_endpoint_arg_x = $flir_endpoint_fallback_x("%flir_endpoint_decl_fallback%")

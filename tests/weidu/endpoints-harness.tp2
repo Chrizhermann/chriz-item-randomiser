@@ -3,11 +3,14 @@
 // argv[1] = production catalog.tpa
 // argv[2] = report path
 // argv[3] = endpoint extension fixture
-// argv[4] = optional real SSL BAF
+// argv[4] = hermetic fl#bg1pal stub
+// argv[5] = optional real SSL BAF
 BACKUP ~backup~
 AUTHOR ~BG2 Item Randomiser endpoint test harness~
 
 ALWAYS
+  OUTER_SET h_bg1pal_area_mapping = 0
+  INCLUDE ~%argv[4]%~
   INCLUDE ~%argv[1]%~
   INCLUDE ~%argv[0]%~
 END
@@ -366,7 +369,7 @@ BEGIN ~real SSL sparse roll rewrite~ DESIGNATED 6
   OUTER_SPRINT flir_endpoint_ssl_campaign ~bg2~
   OUTER_SPRINT flir_endpoint_ssl_tier ~1~
   LAM flir_endpoints_build_ssl_scope
-  COPY + ~%argv[4]%~ ~%argv[2]%~
+  COPY + ~%argv[5]%~ ~%argv[2]%~
     LAUNCH_PATCH_MACRO flir_endpoints_rewrite_sparse_rolls
   BUT_ONLY
 
@@ -1115,6 +1118,60 @@ BEGIN ~authenticated endpoint and fallback replacement accepts area move~ DESIGN
   OUTER_SPRINT h_relocated_fallback $flir_endpoint_fallback("%h_relocated_endpoint%")
   OUTER_SPRINT h_relocated_fallback_area $flir_endpoint_area("%h_relocated_fallback%")
   OUTER_TEXT_SPRINT h_report ~AREA_REPLACED primary=%h_relocated_area% fallback=%h_relocated_fallback_area%%WNL%~
+  COPY + ~%argv[0]%~ ~%argv[2]%~
+    DELETE_BYTES 0 BUFFER_LENGTH
+    INSERT_BYTES 0 STRING_LENGTH ~%h_report%~
+    WRITE_ASCIIE 0 ~%h_report%~ (STRING_LENGTH ~%h_report%~)
+  BUT_ONLY
+
+BEGIN ~BG1 platform mapping normalizes base endpoint and fallback areas~ DESIGNATED 37
+  OUTER_SET h_bg1pal_area_mapping = 1
+  ACTION_CLEAR_ARRAY location_array
+  ACTION_CLEAR_ARRAY removed_item_array
+  COPY - ~randomiser/lists/locations/base/bg2.2da~
+         ~.../randomiser/fl-inlined/lists/locations/base/bg2.2da~
+    LAUNCH_PATCH_MACRO h_read_legacy_locations
+  COPY - ~randomiser/lists/locations/base/bg1.2da~
+         ~.../randomiser/fl-inlined/lists/locations/base/bg1.2da~
+    LAUNCH_PATCH_MACRO h_read_legacy_locations
+  LAM flir_endpoints_load_declarations
+  LAM flir_endpoints_validate
+  OUTER_SPRINT h_mapped_slot ~legacy:loc-reloc~
+  OUTER_SPRINT h_mapped_endpoint $flir_endpoint_slot_endpoint("%h_mapped_slot%")
+  OUTER_SPRINT h_mapped_area $flir_endpoint_area("%h_mapped_endpoint%")
+  OUTER_SPRINT h_mapped_fallback $flir_endpoint_fallback("%h_mapped_endpoint%")
+  OUTER_SPRINT h_mapped_fallback_area $flir_endpoint_area("%h_mapped_fallback%")
+  OUTER_SPRINT h_bg2_slot ~legacy:loc-bg2~
+  OUTER_SPRINT h_bg2_endpoint $flir_endpoint_slot_endpoint("%h_bg2_slot%")
+  OUTER_SPRINT h_bg2_area $flir_endpoint_area("%h_bg2_endpoint%")
+  OUTER_SPRINT h_bg2_fallback $flir_endpoint_fallback("%h_bg2_endpoint%")
+  OUTER_SPRINT h_bg2_fallback_area $flir_endpoint_area("%h_bg2_fallback%")
+  OUTER_TEXT_SPRINT h_report ~AREA_PLATFORM primary=%h_mapped_area% fallback=%h_mapped_fallback_area% bg2_primary=%h_bg2_area% bg2_fallback=%h_bg2_fallback_area%%WNL%~
+  COPY + ~%argv[0]%~ ~%argv[2]%~
+    DELETE_BYTES 0 BUFFER_LENGTH
+    INSERT_BYTES 0 STRING_LENGTH ~%h_report%~
+    WRITE_ASCIIE 0 ~%h_report%~ (STRING_LENGTH ~%h_report%~)
+  BUT_ONLY
+
+BEGIN ~authenticated BG1 replacement follows platform mapping~ DESIGNATED 38
+  OUTER_SET h_bg1pal_area_mapping = 1
+  ACTION_CLEAR_ARRAY location_array
+  ACTION_CLEAR_ARRAY removed_item_array
+  COPY - ~randomiser/lists/locations/base/bg2.2da~
+         ~.../randomiser/fl-inlined/lists/locations/base/bg2.2da~
+    LAUNCH_PATCH_MACRO h_read_legacy_locations
+  COPY - ~randomiser/lists/locations/base/bg1.2da~
+         ~.../randomiser/fl-inlined/lists/locations/base/bg1.2da~
+    LAUNCH_PATCH_MACRO h_read_legacy_locations
+  OUTER_SPRINT flir_endpoint_extension_fixture ~%argv[3]%~
+  LAM flir_endpoints_load_declarations
+  LAM flir_endpoints_validate
+  OUTER_SPRINT h_mapped_slot ~legacy:loc-reloc~
+  OUTER_SPRINT h_mapped_endpoint $flir_endpoint_slot_endpoint("%h_mapped_slot%")
+  OUTER_SPRINT h_mapped_area $flir_endpoint_area("%h_mapped_endpoint%")
+  OUTER_SPRINT h_mapped_fallback $flir_endpoint_fallback("%h_mapped_endpoint%")
+  OUTER_SPRINT h_mapped_fallback_area $flir_endpoint_area("%h_mapped_fallback%")
+  OUTER_TEXT_SPRINT h_report ~AREA_PLATFORM_REPLACED primary=%h_mapped_area% fallback=%h_mapped_fallback_area%%WNL%~
   COPY + ~%argv[0]%~ ~%argv[2]%~
     DELETE_BYTES 0 BUFFER_LENGTH
     INSERT_BYTES 0 STRING_LENGTH ~%h_report%~

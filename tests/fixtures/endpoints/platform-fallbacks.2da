@@ -1,0 +1,5 @@
+2DA V1.0
+0
+PROVIDER FALLBACK_ID PRIMARY_ENDPOINT_ID AREA X Y CAPACITY PROGRESSION_BAND STATIC_POLICY ENABLED
+legacy fb-reloc ep-reloc area-old 100 200 1 * authored-static 1
+legacy fb-bg2 ep-bg2 area-bg2 300 400 1 * authored-static 1

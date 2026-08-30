@@ -10,6 +10,7 @@ Set-StrictMode -Version 2.0
 $repositoryRoot = Split-Path -Parent $PSScriptRoot
 $endpointsPath = Join-Path $repositoryRoot 'lib\endpoints.tpa'
 $harnessPath = Join-Path $PSScriptRoot 'weidu\endpoints-harness.tp2'
+$paletteStubPath = Join-Path $PSScriptRoot 'weidu\bg1pal-stub.tpa'
 $bg1Path = Join-Path $repositoryRoot 'lists\endpoints\base\bg1.2da'
 $bg2Path = Join-Path $repositoryRoot 'lists\endpoints\base\bg2.2da'
 $fallbackPath = Join-Path $repositoryRoot 'lists\endpoints\fallbacks.2da'
@@ -21,6 +22,13 @@ $relocationBg2LocationPath = Join-Path $PSScriptRoot 'fixtures\endpoints\relocat
 $relocationBg1EndpointPath = Join-Path $PSScriptRoot 'fixtures\endpoints\relocation-endpoint-bg1.2da'
 $relocationBg2EndpointPath = Join-Path $PSScriptRoot 'fixtures\endpoints\relocation-endpoint-bg2.2da'
 $relocationFallbackPath = Join-Path $PSScriptRoot 'fixtures\endpoints\relocation-fallbacks.2da'
+$platformBg1LocationPath = Join-Path $PSScriptRoot 'fixtures\endpoints\platform-location-bg1.2da'
+$platformRelocatedBg1LocationPath = Join-Path $PSScriptRoot 'fixtures\endpoints\platform-location-bg1-relocated.2da'
+$platformBg2LocationPath = Join-Path $PSScriptRoot 'fixtures\endpoints\platform-location-bg2.2da'
+$platformBg1EndpointPath = Join-Path $PSScriptRoot 'fixtures\endpoints\platform-endpoint-bg1.2da'
+$platformBg2EndpointPath = Join-Path $PSScriptRoot 'fixtures\endpoints\platform-endpoint-bg2.2da'
+$platformFallbackPath = Join-Path $PSScriptRoot 'fixtures\endpoints\platform-fallbacks.2da'
+$platformMismatchFallbackPath = Join-Path $PSScriptRoot 'fixtures\endpoints\platform-fallbacks-area-mismatch.2da'
 $normalizedBg2LocationPath = Join-Path $PSScriptRoot 'fixtures\endpoints\normalized-location-bg2.2da'
 $normalizedBg2EndpointPath = Join-Path $PSScriptRoot 'fixtures\endpoints\normalized-endpoint-bg2.2da'
 $normalizedFallbackPath = Join-Path $PSScriptRoot 'fixtures\endpoints\normalized-fallbacks.2da'
@@ -37,7 +45,7 @@ if (-not (Test-Path -LiteralPath $endpointsPath -PathType Leaf)) {
     exit 1
 }
 
-foreach ($requiredPath in @($harnessPath, $bg1Path, $bg2Path, $fallbackPath, $defaultExtensionPath, $extensionFixturePath, $invalidHeaderFixturePath, $mutationFixturePath, $relocationBg1LocationPath, $relocationBg2LocationPath, $relocationBg1EndpointPath, $relocationBg2EndpointPath, $relocationFallbackPath, $normalizedBg2LocationPath, $normalizedBg2EndpointPath, $normalizedFallbackPath, $bg1LocationPath, $bg2LocationPath, $sslCompilerPath, $sslTemplatePath, $sslLibraryPath)) {
+foreach ($requiredPath in @($harnessPath, $paletteStubPath, $bg1Path, $bg2Path, $fallbackPath, $defaultExtensionPath, $extensionFixturePath, $invalidHeaderFixturePath, $mutationFixturePath, $relocationBg1LocationPath, $relocationBg2LocationPath, $relocationBg1EndpointPath, $relocationBg2EndpointPath, $relocationFallbackPath, $platformBg1LocationPath, $platformRelocatedBg1LocationPath, $platformBg2LocationPath, $platformBg1EndpointPath, $platformBg2EndpointPath, $platformFallbackPath, $platformMismatchFallbackPath, $normalizedBg2LocationPath, $normalizedBg2EndpointPath, $normalizedFallbackPath, $bg1LocationPath, $bg2LocationPath, $sslCompilerPath, $sslTemplatePath, $sslLibraryPath)) {
     if (-not (Test-Path -LiteralPath $requiredPath -PathType Leaf)) {
         throw "Required endpoint test input is missing: $requiredPath"
     }
@@ -305,9 +313,13 @@ function Invoke-EndpointHarness {
         [Parameter(Mandatory = $true)][string] $Name,
         [bool] $ExpectSuccess = $true,
         [string] $ExpectedCode = '',
+        [int] $ExpectedPaletteCalls = -1,
         [string] $InputBaf = '',
         [string] $ExtensionFixture = $script:extensionFixturePath,
+        [string] $FallbackFixture = '',
         [switch] $UseRelocationFixture,
+        [switch] $UseBg1PlatformFixture,
+        [switch] $UseBg1PlatformRelocationFixture,
         [switch] $UseNormalizedTargetFixture
     )
     $run = Join-Path $script:scratchRoot ('case-' + $Component + '-' + $Name)
@@ -323,6 +335,14 @@ function Invoke-EndpointHarness {
         Copy-Item -LiteralPath $script:relocationBg2EndpointPath -Destination (Join-Path $endpointData 'bg2.2da')
         Copy-Item -LiteralPath $script:relocationFallbackPath -Destination (Join-Path (Split-Path -Parent $endpointData) 'fallbacks.2da')
     }
+    elseif ($UseBg1PlatformFixture -or $UseBg1PlatformRelocationFixture) {
+        $selectedBg1Location = if ($UseBg1PlatformRelocationFixture) { $script:platformRelocatedBg1LocationPath } else { $script:platformBg1LocationPath }
+        Copy-Item -LiteralPath $selectedBg1Location -Destination (Join-Path $locationData 'bg1.2da')
+        Copy-Item -LiteralPath $script:platformBg2LocationPath -Destination (Join-Path $locationData 'bg2.2da')
+        Copy-Item -LiteralPath $script:platformBg1EndpointPath -Destination (Join-Path $endpointData 'bg1.2da')
+        Copy-Item -LiteralPath $script:platformBg2EndpointPath -Destination (Join-Path $endpointData 'bg2.2da')
+        Copy-Item -LiteralPath $script:platformFallbackPath -Destination (Join-Path (Split-Path -Parent $endpointData) 'fallbacks.2da')
+    }
     elseif ($UseNormalizedTargetFixture) {
         Copy-Item -LiteralPath $script:relocationBg1LocationPath -Destination (Join-Path $locationData 'bg1.2da')
         Copy-Item -LiteralPath $script:normalizedBg2LocationPath -Destination (Join-Path $locationData 'bg2.2da')
@@ -337,11 +357,15 @@ function Invoke-EndpointHarness {
         Copy-Item -LiteralPath $script:bg2Path -Destination (Join-Path $endpointData 'bg2.2da')
         Copy-Item -LiteralPath $script:fallbackPath -Destination (Join-Path (Split-Path -Parent $endpointData) 'fallbacks.2da')
     }
+    if (-not [string]::IsNullOrWhiteSpace($FallbackFixture)) {
+        Copy-Item -LiteralPath $FallbackFixture -Destination (Join-Path (Split-Path -Parent $endpointData) 'fallbacks.2da') -Force
+    }
     $report = Join-Path $run 'endpoint-report.txt'
     $arguments = @(
         $script:harnessPath, '--nogame', '--force-install-list', [string]$Component,
         '--args', $script:endpointsPath, '--args', (Join-Path $script:repositoryRoot 'lib\catalog.tpa'),
-        '--args', $report, '--args', $ExtensionFixture, '--no-exit-pause', '--quick-log'
+        '--args', $report, '--args', $ExtensionFixture, '--args', $script:paletteStubPath,
+        '--no-exit-pause', '--quick-log'
     )
     if (-not [string]::IsNullOrWhiteSpace($InputBaf)) {
         $arguments += @('--args', $InputBaf)
@@ -353,6 +377,12 @@ function Invoke-EndpointHarness {
     }
     finally { Pop-Location }
     $joined = $output -join "`n"
+    if ($ExpectedPaletteCalls -ge 0) {
+        $paletteCalls = [regex]::Matches($joined, 'FLIR_TEST_BG1PAL_AREA_CALL').Count
+        if ($paletteCalls -ne $ExpectedPaletteCalls) {
+            throw "Endpoint harness '$Name' made $paletteCalls BG1 area translations; expected $ExpectedPaletteCalls.`n$joined"
+        }
+    }
     if ($ExpectSuccess) {
         if ($exitCode -ne 0 -or $joined -match 'NOT INSTALLED DUE TO ERRORS' -or -not (Test-Path -LiteralPath $report)) {
             throw "Endpoint harness '$Name' failed unexpectedly.`n$joined"
@@ -456,6 +486,26 @@ try {
     $relocationReport = Invoke-EndpointHarness -Component 35 -Name 'active-area-replaced' -ExtensionFixture $relocationExtensionPath -UseRelocationFixture
     if ($relocationReport -notmatch [regex]::Escape('AREA_REPLACED primary=area-new fallback=area-new')) {
         throw "Authenticated endpoint replacements did not authorize the active area move.`n$relocationReport"
+    }
+    $null = Invoke-EndpointHarness -Component 37 -Name 'bg1-platform-raw-mismatch' -ExpectSuccess $false -ExpectedCode 'FALLBACK_AREA_DRIFT' -ExpectedPaletteCalls 0 -UseBg1PlatformFixture -FallbackFixture $platformMismatchFallbackPath
+    $platformAreaReport = Invoke-EndpointHarness -Component 37 -Name 'bg1-platform-area' -ExpectedPaletteCalls 2 -UseBg1PlatformFixture
+    if ($platformAreaReport -notmatch [regex]::Escape('AREA_PLATFORM primary=area-new fallback=area-new bg2_primary=area-bg2 bg2_fallback=area-bg2')) {
+        throw "BG1 platform normalization did not align the base endpoint and fallback areas.`n$platformAreaReport"
+    }
+    $mappedPrimaryFingerprint = Get-EndpointRowFingerprint -QualifiedId 'legacy:ep-reloc' -Area 'area-new' -TargetKind 'container' -TargetIdentity 'target-old' -X 100 -Y 200 -Capacity 1 -StaticPolicy 'runtime-resolve' -Fallback 'legacy:fb-reloc' -Adapter '-' -Enabled 1
+    $mappedFallbackFingerprint = Get-EndpointRowFingerprint -QualifiedId 'legacy:fb-reloc' -Area 'area-new' -TargetKind 'ground' -TargetIdentity '-' -X 100 -Y 200 -Capacity 1 -StaticPolicy 'authored-static' -Fallback '-' -Adapter '' -Enabled 1
+    $mappedRelocationExtensionPath = Join-Path $scratchRoot 'mapped-relocation-extension.2da'
+    $mappedRelocationExtension = @(
+        '2DA V1.0',
+        '0',
+        'KIND OPERATION ACTOR_PROVIDER PROVIDER ID EXPECTED_FINGERPRINT CAMPAIGN TIER AREA TARGET_KIND TARGET_IDENTITY X Y CAPACITY STATIC_POLICY FALLBACK ADAPTER ENDPOINT_ID PROGRESSION_BAND WEIGHT ENABLED',
+        "endpoint REPLACE compat legacy ep-reloc $mappedPrimaryFingerprint - - area-relocated container target-old 0 0 1 runtime-resolve legacy:fb-reloc - - - 0 1",
+        "endpoint REPLACE compat legacy fb-reloc $mappedFallbackFingerprint - - area-relocated ground - 300 400 1 authored-static - - - - 0 1"
+    ) -join "`r`n"
+    [System.IO.File]::WriteAllText($mappedRelocationExtensionPath, $mappedRelocationExtension + "`r`n", [System.Text.Encoding]::ASCII)
+    $mappedRelocationReport = Invoke-EndpointHarness -Component 38 -Name 'bg1-platform-authenticated-relocation' -ExpectedPaletteCalls 2 -ExtensionFixture $mappedRelocationExtensionPath -UseBg1PlatformRelocationFixture
+    if ($mappedRelocationReport -notmatch [regex]::Escape('AREA_PLATFORM_REPLACED primary=area-relocated fallback=area-relocated')) {
+        throw "Authenticated BG1 relocation did not follow platform normalization.`n$mappedRelocationReport"
     }
     $realSslReport = Invoke-EndpointHarness -Component 6 -Name 'real-ssl-sparse' -InputBaf $realSslBaf
     $denseRolls = @([regex]::Matches($realSslReport, 'RandomNum\(([0-9]+),([0-9]+)\)') | ForEach-Object { $_.Groups[1].Value + ',' + $_.Groups[2].Value })

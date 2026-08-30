@@ -1,0 +1,27 @@
+// The production installer supplies the real BG1 platform abstraction before
+// endpoints.tpa. Hermetic tests use this gated stub to prove that checked-in
+// BG1 endpoint/fallback areas are normalized through the same seam as active
+// legacy location rows, while unrelated drift remains fatal.
+DEFINE_ACTION_FUNCTION fl#bg1pal
+  STR_VAR file = "" resource = "" type = ""
+  RET file resource type
+BEGIN
+  ACTION_IF "%file%" STR_CMP "" BEGIN
+    OUTER_SPRINT resource ~%file%~
+    OUTER_INNER_PATCH_SAVE resource ~%resource%~ BEGIN
+      REPLACE_TEXTUALLY CASE_INSENSITIVE ~\.are$~ ~~
+    END
+    OUTER_SPRINT type ~are~
+  END
+  ACTION_TO_LOWER resource
+  ACTION_TO_LOWER type
+  ACTION_IF "%type%" STRING_EQUAL_CASE ~are~ BEGIN
+    PRINT ~FLIR_TEST_BG1PAL_AREA_CALL~
+    ACTION_IF h_bg1pal_area_mapping = 1
+          AND ("%resource%" STRING_EQUAL_CASE ~area-old~
+               OR "%resource%" STRING_EQUAL_CASE ~other-old~) BEGIN
+      OUTER_SPRINT resource ~area-new~
+    END
+  END
+  OUTER_SPRINT file ~%resource%.%type%~
+END
