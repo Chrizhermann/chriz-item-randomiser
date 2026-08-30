@@ -138,6 +138,7 @@ local TOP_LEVEL_KEYS = {
     tokens_by_global = true,
     slots_by_tier_value = true,
     endpoints_by_id = true,
+    unit_overrides = true,
     sparse_overrides = true,
 }
 
@@ -175,11 +176,14 @@ local function validate_manifest(manifest)
     if type(manifest.tokens_by_global) ~= "table" or
         type(manifest.slots_by_tier_value) ~= "table" or
         type(manifest.endpoints_by_id) ~= "table" or
+        type(manifest.unit_overrides) ~= "table" or
         type(manifest.sparse_overrides) ~= "table" then
         return nil, "MANIFEST_SHAPE"
     end
 
     local unit_ids = {}
+    local item_tiers = {}
+    local active_units = {}
     local quarantine_names = {}
     for global_name, token in pairs(manifest.tokens_by_global) do
         if type(global_name) ~= "string" or #global_name < 1 or #global_name > 32 or
@@ -206,6 +210,13 @@ local function validate_manifest(manifest)
         end
         quarantine_names[quarantine_name] = global_name
         unit_ids[token.unit_id] = true
+        if token.enabled == 1 then
+            active_units[token.unit_id] = token.tier
+        end
+        if item_tiers[token.item_id] and item_tiers[token.item_id] ~= token.tier then
+            return nil, "MANIFEST_TOKENS"
+        end
+        item_tiers[token.item_id] = token.tier
         if not has_exact_array_keys(token.charges, 3) then
             return nil, "MANIFEST_TOKENS"
         end
@@ -296,16 +307,62 @@ local function validate_manifest(manifest)
         end
     end
 
+    local override_targets = {}
     for item_id, by_slot in pairs(manifest.sparse_overrides) do
-        if not is_nonempty_string(item_id) or type(by_slot) ~= "table" then
+        if not is_nonempty_string(item_id) or type(by_slot) ~= "table" or
+            not item_tiers[item_id] then
             return nil, "MANIFEST_OVERRIDES"
         end
+        override_targets[item_id] = {}
         for slot_id, endpoint_id in pairs(by_slot) do
             local slot = slot_ids[slot_id]
             local endpoint = manifest.endpoints_by_id[endpoint_id]
             if not slot or slot.enabled ~= 1 or not endpoint or endpoint.enabled ~= 1 or
-                endpoint.target_kind == "legacy_adapter" or endpoint.external_delivery ~= 0 then
+                item_tiers[item_id] ~= slot.tier or endpoint.target_kind == "group" or
+                endpoint.target_kind == "legacy_adapter" or endpoint.external_delivery ~= 0 or
+                not same_text(endpoint.area,
+                    manifest.endpoints_by_id[slot.endpoint_id].area) then
                 return nil, "MANIFEST_OVERRIDES"
+            end
+            override_targets[item_id][slot_id] = endpoint_id
+        end
+    end
+
+    local unit_override_targets = {}
+    for unit_id, by_slot in pairs(manifest.unit_overrides) do
+        if not is_nonempty_string(unit_id) or type(by_slot) ~= "table" or
+            not active_units[unit_id] then
+            return nil, "MANIFEST_UNIT_OVERRIDES"
+        end
+        unit_override_targets[unit_id] = {}
+        local unit_tier = active_units[unit_id]
+        for slot_id, endpoint_id in pairs(by_slot) do
+            local slot = slot_ids[slot_id]
+            local endpoint = manifest.endpoints_by_id[endpoint_id]
+            if not slot or slot.enabled ~= 1 or not endpoint or endpoint.enabled ~= 1 or
+                unit_tier ~= slot.tier or endpoint.target_kind == "group" or
+                endpoint.target_kind == "legacy_adapter" or endpoint.external_delivery ~= 0 or
+                not same_text(endpoint.area,
+                    manifest.endpoints_by_id[slot.endpoint_id].area) then
+                return nil, "MANIFEST_UNIT_OVERRIDES"
+            end
+            unit_override_targets[unit_id][slot_id] = endpoint_id
+        end
+    end
+
+    -- Group files are installer metadata, not a runtime target identity.  The
+    -- generated manifest must lower every active unit/group-slot pairing to a
+    -- concrete endpoint through unit_overrides.  This also prevents runtime
+    -- recovery from selecting a different group member after a save/load.
+    for _, slot in pairs(slot_ids) do
+        local base_endpoint = manifest.endpoints_by_id[slot.endpoint_id]
+        if slot.enabled == 1 and base_endpoint.target_kind == "group" then
+            for unit_id, tier in pairs(active_units) do
+                if tier == slot.tier and
+                    (not unit_override_targets[unit_id] or
+                        not unit_override_targets[unit_id][slot.slot_id]) then
+                    return nil, "MANIFEST_GROUPS"
+                end
             end
         end
     end
@@ -465,9 +522,14 @@ function Controller:_slot_and_base_endpoint(token, slot_value)
         return nil, nil
     end
     local endpoint_id = slot.endpoint_id
-    local item_overrides = self.manifest.sparse_overrides[token.item_id]
-    if item_overrides and item_overrides[slot.slot_id] then
-        endpoint_id = item_overrides[slot.slot_id]
+    local unit_overrides = self.manifest.unit_overrides[token.unit_id]
+    if unit_overrides and unit_overrides[slot.slot_id] then
+        endpoint_id = unit_overrides[slot.slot_id]
+    else
+        local item_overrides = self.manifest.sparse_overrides[token.item_id]
+        if item_overrides and item_overrides[slot.slot_id] then
+            endpoint_id = item_overrides[slot.slot_id]
+        end
     end
     return slot, endpoint_id
 end

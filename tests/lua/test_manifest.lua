@@ -41,6 +41,112 @@ return function(context)
         truthy(controller, code)
     end)
 
+    test("ManifestRequiresEveryGroupSlotToBeLoweredPerUnit", function()
+        local manifest = FakeEngine.manifest()
+        manifest.endpoints_by_id.group = {
+            area = "artest",
+            target_kind = "group",
+            target_identity = "test.flg",
+            x = 10,
+            y = 20,
+            capacity = 1,
+            static_policy = "runtime-resolve",
+            fallback_id = "fallback",
+            adapter = "",
+            external_delivery = 0,
+            enabled = 1,
+        }
+        manifest.slots_by_tier_value["1"][4] = {
+            slot_id = "test:slot-group",
+            tier = "1",
+            slot_value = 4,
+            endpoint_id = "group",
+            weight = 1,
+            progression_band = "test",
+            enabled = 1,
+        }
+
+        local controller, code = Core.new(FakeEngine.new(), manifest)
+        equal(controller, nil, "unlowered group endpoint was accepted")
+        equal(code, "MANIFEST_GROUPS")
+
+        manifest.unit_overrides["test:unit-a"] = {
+            ["test:slot-group"] = "primary",
+        }
+        manifest.unit_overrides["test:unit-b"] = {
+            ["test:slot-group"] = "override",
+        }
+        controller, code = Core.new(FakeEngine.new(), manifest)
+        truthy(controller, code)
+    end)
+
+    test("UnitOverridePreservesDuplicateLogicalItemChoicesAndWinsFirst", function()
+        local manifest = FakeEngine.manifest()
+        manifest.tokens_by_global.fl1t2.item_id = "test:item-a"
+        manifest.tokens_by_global.fl1t2.item_resref = "tstitema"
+        manifest.unit_overrides["test:unit-a"] = {
+            ["test:slot-a"] = "primary",
+        }
+        manifest.unit_overrides["test:unit-b"] = {
+            ["test:slot-a"] = "container",
+        }
+        manifest.sparse_overrides["test:item-a"] = {
+            ["test:slot-a"] = "override",
+        }
+
+        local first_engine = FakeEngine.new({ globals = { fl1t1 = 1 } })
+        local first = assert(Core.new(first_engine, manifest))
+        first:poll()
+        equal(first_engine.queues[1].endpoint_id, "primary")
+
+        local second_engine = FakeEngine.new({ globals = { fl1t2 = 1 } })
+        local second = assert(Core.new(second_engine, manifest))
+        second:poll()
+        equal(second_engine.queues[1].endpoint_id, "container")
+    end)
+
+    test("ManifestRejectsInvalidUnitOverrides", function()
+        local cases = {
+            function(manifest)
+                manifest.unit_overrides["test:unit-missing"] = {
+                    ["test:slot-a"] = "primary",
+                }
+            end,
+            function(manifest)
+                manifest.unit_overrides["test:unit-a"] = {
+                    ["test:slot-a"] = "missing",
+                }
+            end,
+            function(manifest)
+                manifest.endpoints_by_id.other = {
+                    area = "other-area", target_kind = "ground", target_identity = "-",
+                    x = 1, y = 2, capacity = 1, static_policy = "same-area",
+                    fallback_id = "-", adapter = "-", external_delivery = 0, enabled = 1,
+                }
+                manifest.unit_overrides["test:unit-a"] = {
+                    ["test:slot-a"] = "other",
+                }
+            end,
+        }
+        for _, mutate in ipairs(cases) do
+            local manifest = FakeEngine.manifest()
+            mutate(manifest)
+            local controller, code = Core.new(FakeEngine.new(), manifest)
+            equal(controller, nil)
+            equal(code, "MANIFEST_UNIT_OVERRIDES")
+        end
+    end)
+
+    test("ManifestRejectsUnknownOverrideItems", function()
+        local manifest = FakeEngine.manifest()
+        manifest.sparse_overrides["test:item-missing"] = {
+            ["test:slot-a"] = "override",
+        }
+        local controller, code = Core.new(FakeEngine.new(), manifest)
+        equal(controller, nil)
+        equal(code, "MANIFEST_OVERRIDES")
+    end)
+
     test("TokenSelectionLeavesZeroAndDeliveredGlobalsUntouched", function()
         local engine = FakeEngine.new({ globals = { fl1t1 = 0, fl1t2 = -1 } })
         local controller = assert(Core.new(engine, FakeEngine.manifest()))

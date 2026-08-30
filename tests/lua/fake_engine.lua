@@ -296,6 +296,7 @@ function FakeEngine.manifest()
                 enabled = 1,
             },
         },
+        unit_overrides = {},
         sparse_overrides = {},
     }
 end

@@ -13,6 +13,7 @@ $manifestPath = Join-Path $repositoryRoot 'lib\manifest.tpa'
 $catalogPath = Join-Path $repositoryRoot 'lib\catalog.tpa'
 $registryPath = Join-Path $repositoryRoot 'lib\registry.tpa'
 $endpointsPath = Join-Path $repositoryRoot 'lib\endpoints.tpa'
+$corePath = Join-Path $repositoryRoot 'copy\FLDLVCor.lua'
 $harnessPath = Join-Path $PSScriptRoot 'weidu\manifest-harness.tp2'
 $validatorPath = Join-Path $PSScriptRoot 'fixtures\manifest\validate-manifest.lua'
 $forbiddenLiveRoot = [System.IO.Path]::GetFullPath("C:\Games\Baldur's Gate II Enhanced Edition modded")
@@ -94,7 +95,7 @@ function Invoke-ManifestHarness {
         [Parameter(Mandatory = $true)]
         [string] $Name,
 
-        [ValidateSet('default', 'changed', 'synthesized', 'variant', 'adapter', 'book')]
+        [ValidateSet('default', 'changed', 'synthesized', 'variant', 'adapter', 'book', 'group')]
         [string] $ValidatorMode = 'default'
     )
 
@@ -148,7 +149,7 @@ function Invoke-ManifestHarness {
         throw "Manifest harness case '$Name' did not encode literal percent-bearing data safely."
     }
 
-    $validatorArguments = @($script:validatorPath, $outputPath, $ValidatorMode)
+    $validatorArguments = @($script:validatorPath, $outputPath, $ValidatorMode, $script:corePath)
     $luaOutput = @(& $script:resolvedLua @validatorArguments 2>&1 | ForEach-Object { [string] $_ })
     $luaExitCode = $LASTEXITCODE
     if ($luaExitCode -ne 0) {
@@ -174,6 +175,8 @@ function Invoke-ManifestHarnessFailure {
 
         [Parameter(Mandatory = $true)]
         [string] $ExpectedCode,
+
+        [string] $ErrorPrefix = 'FLIR_MANIFEST_ERR',
 
         [switch] $Preseed
     )
@@ -211,7 +214,7 @@ function Invoke-ManifestHarnessFailure {
     if ($weiduExitCode -eq 0 -and $joinedWeiduOutput -notmatch 'NOT INSTALLED DUE TO ERRORS') {
         throw "Manifest harness case '$Name' succeeded but should have failed with $ExpectedCode."
     }
-    if ($joinedWeiduOutput -notmatch ('FLIR_MANIFEST_ERR\s+' + [regex]::Escape($ExpectedCode) + '\b')) {
+    if ($joinedWeiduOutput -notmatch ([regex]::Escape($ErrorPrefix) + '\s+' + [regex]::Escape($ExpectedCode) + '\b')) {
         throw "Manifest harness case '$Name' did not report $ExpectedCode.`n$joinedWeiduOutput"
     }
     if ($Preseed) {
@@ -243,6 +246,8 @@ try {
     $bookTwo = Invoke-ManifestHarness -Component 13 -Name 'legacy-book-two' -ValidatorMode book
     $predeclaredUnit = Invoke-ManifestHarness -Component 15 -Name 'predeclared-unit'
     $bookReverse = Invoke-ManifestHarness -Component 16 -Name 'legacy-book-reverse' -ValidatorMode book
+    $groupLowered = Invoke-ManifestHarness -Component 18 -Name 'group-lowered' -ValidatorMode group
+    $groupReverse = Invoke-ManifestHarness -Component 22 -Name 'group-reverse' -ValidatorMode group
 
     Invoke-ManifestHarnessFailure -Component 6 -Name 'duplicate-global' -ExpectedCode 'DUPLICATE_GLOBAL'
     Invoke-ManifestHarnessFailure -Component 6 -Name 'duplicate-global-preserve' -ExpectedCode 'DUPLICATE_GLOBAL' -Preseed
@@ -255,9 +260,16 @@ try {
     Invoke-ManifestHarnessFailure -Component 12 -Name 'override-capacity' -ExpectedCode 'OVERRIDE_CAPACITY'
     Invoke-ManifestHarnessFailure -Component 14 -Name 'legacy-adapter-override' -ExpectedCode 'OVERRIDE_SCOPE'
     Invoke-ManifestHarnessFailure -Component 17 -Name 'ground-override-capacity' -ExpectedCode 'OVERRIDE_CAPACITY'
+    Invoke-ManifestHarnessFailure -Component 19 -Name 'group-target-override' -ExpectedCode 'OVERRIDE_SCOPE'
+    Invoke-ManifestHarnessFailure -Component 20 -Name 'group-cross-area-override' -ExpectedCode 'OVERRIDE_SCOPE'
+    Invoke-ManifestHarnessFailure -Component 21 -Name 'group-missing-pair' -ExpectedCode 'GROUP_OVERRIDE_MISSING'
+    Invoke-ManifestHarnessFailure -Component 23 -Name 'group-alias-mismatch' -ExpectedCode 'GROUP_PHYSICAL_ALIAS' -ErrorPrefix 'FLIR_ENDPOINT_ERR'
 
     if (-not (Test-ByteArrayEqual -Left $forwardOne.Bytes -Right $forwardTwo.Bytes)) {
         throw 'Two identical manifest runs were not byte-identical.'
+    }
+    if (-not (Test-ByteArrayEqual -Left $groupLowered.Bytes -Right $groupReverse.Bytes)) {
+        throw 'Group lowering changed with extension membership declaration order.'
     }
     if (-not (Test-ByteArrayEqual -Left $forwardOne.Bytes -Right $reverse.Bytes)) {
         throw 'Manifest bytes changed with declaration order.'
@@ -305,8 +317,11 @@ try {
     Write-Output 'PASS Manifest_LastKnownGoodSurvivesValidationFailure'
     Write-Output 'PASS Manifest_OverrideReferencesAndCompatibilityValidated'
     Write-Output 'PASS Manifest_OverrideCapacityAndLegacyAdaptersValidated'
+    Write-Output 'PASS Manifest_GroupsLoweredToConcreteUnitSlotOverrides'
+    Write-Output 'PASS Manifest_GroupOverridesConcreteSameAreaAndComplete'
+    Write-Output 'PASS Manifest_GroupLoweringStableUnitsPriorityFallbackAndAliases'
     Write-Output 'PASS Manifest_EightCharacterEngineBasenameAndNumericFlags'
-    Write-Output 'SUMMARY passed=16 failed=0'
+    Write-Output 'SUMMARY passed=19 failed=0'
 }
 finally {
     if (Test-Path -LiteralPath $scratchRoot) {

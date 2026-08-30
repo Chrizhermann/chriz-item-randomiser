@@ -103,6 +103,7 @@ DEFINE_ACTION_MACRO flir_endpoints_reset BEGIN
   OUTER_SET flir_endpoints_plan_ready = 0
   OUTER_SET flir_endpoints_extensions_dirty = 0
   OUTER_SET flir_endpoint_extension_rows_loaded = 0
+  OUTER_SET flir_endpoint_validation_generation = 0
   OUTER_SPRINT flir_endpoint_extension_phase ~ALL~
   OUTER_SET flir_endpoint_count = 0
   OUTER_SET flir_endpoint_slot_count = 0
@@ -138,6 +139,11 @@ DEFINE_ACTION_MACRO flir_endpoints_reset BEGIN
   ACTION_CLEAR_ARRAY flir_endpoint_slot_enabled
   ACTION_CLEAR_ARRAY flir_endpoint_slot_row_fingerprint
   ACTION_CLEAR_ARRAY flir_endpoint_candidate
+  ACTION_CLEAR_ARRAY flir_endpoint_group_processed_slot
+  ACTION_CLEAR_ARRAY flir_endpoint_group_unit_override
+  ACTION_CLEAR_ARRAY flir_endpoint_group_shadow_base
+  ACTION_CLEAR_ARRAY flir_endpoint_physical_canonical
+  ACTION_CLEAR_ARRAY flir_endpoint_physical_owner
   ACTION_CLEAR_ARRAY flir_endpoint_reserved_value
   ACTION_CLEAR_ARRAY flir_endpoint_value_owner
   ACTION_CLEAR_ARRAY flir_endpoint_scope_reserved_max
@@ -145,6 +151,406 @@ DEFINE_ACTION_MACRO flir_endpoints_reset BEGIN
   ACTION_CLEAR_ARRAY flir_endpoint_scope_max
   ACTION_CLEAR_ARRAY flir_endpoint_scope_list
   ACTION_CLEAR_ARRAY flir_endpoint_extension_row_order
+END
+
+// Build a canonical physical identity for enabled creature endpoints. The
+// engine resolves script names case-insensitively, so same-area/same-script
+// aliases share one capacity budget. Exact semantic aliases reuse the
+// lexicographically first stable endpoint; conflicting aliases fail opaquely.
+DEFINE_ACTION_MACRO flir_endpoints_build_physical_aliases BEGIN
+  ACTION_CLEAR_ARRAY flir_endpoint_physical_canonical
+  ACTION_CLEAR_ARRAY flir_endpoint_physical_owner
+  ACTION_SORT_ARRAY_INDICES flir_endpoint_present LEXICOGRAPHICALLY
+  ACTION_PHP_EACH flir_endpoint_present AS flir_endpoint_physical_id => flir_endpoint_physical_present BEGIN
+    ACTION_IF flir_endpoint_physical_present = 1
+          AND $flir_endpoint_enabled("%flir_endpoint_physical_id%") = 1
+          AND $flir_endpoint_target_kind("%flir_endpoint_physical_id%") STRING_EQUAL_CASE ~creature~ BEGIN
+      OUTER_TEXT_SPRINT flir_endpoint_physical_area $flir_endpoint_area("%flir_endpoint_physical_id%")
+      OUTER_TEXT_SPRINT flir_endpoint_physical_script $flir_endpoint_target_identity("%flir_endpoint_physical_id%")
+      ACTION_TO_LOWER flir_endpoint_physical_area
+      ACTION_TO_LOWER flir_endpoint_physical_script
+      OUTER_SET flir_endpoint_physical_area_length = STRING_LENGTH ~%flir_endpoint_physical_area%~
+      OUTER_SET flir_endpoint_physical_script_length = STRING_LENGTH ~%flir_endpoint_physical_script%~
+      OUTER_TEXT_SPRINT flir_endpoint_physical_key ~%flir_endpoint_physical_area_length%#%flir_endpoint_physical_area%%flir_endpoint_physical_script_length%#%flir_endpoint_physical_script%~
+      ACTION_IF VARIABLE_IS_SET $flir_endpoint_physical_owner("%flir_endpoint_physical_key%") BEGIN
+        OUTER_SPRINT flir_endpoint_physical_first $flir_endpoint_physical_owner("%flir_endpoint_physical_key%")
+        ACTION_IF $flir_endpoint_x("%flir_endpoint_physical_id%") != $flir_endpoint_x("%flir_endpoint_physical_first%")
+              OR $flir_endpoint_y("%flir_endpoint_physical_id%") != $flir_endpoint_y("%flir_endpoint_physical_first%")
+              OR $flir_endpoint_capacity("%flir_endpoint_physical_id%") != $flir_endpoint_capacity("%flir_endpoint_physical_first%")
+              OR NOT ($flir_endpoint_static_policy("%flir_endpoint_physical_id%") STRING_EQUAL_CASE $flir_endpoint_static_policy("%flir_endpoint_physical_first%"))
+              OR NOT ($flir_endpoint_fallback("%flir_endpoint_physical_id%") STRING_EQUAL_CASE $flir_endpoint_fallback("%flir_endpoint_physical_first%"))
+              OR NOT ($flir_endpoint_adapter("%flir_endpoint_physical_id%") STRING_EQUAL_CASE $flir_endpoint_adapter("%flir_endpoint_physical_first%")) BEGIN
+          LAF flir_endpoints_fail STR_VAR code = ~GROUP_PHYSICAL_ALIAS~ provider = ~flir~ id = ~group~ END
+        END
+        OUTER_SPRINT $flir_endpoint_physical_canonical("%flir_endpoint_physical_id%") ~%flir_endpoint_physical_first%~
+      END ELSE BEGIN
+        OUTER_SPRINT $flir_endpoint_physical_owner("%flir_endpoint_physical_key%") ~%flir_endpoint_physical_id%~
+        OUTER_SPRINT $flir_endpoint_physical_canonical("%flir_endpoint_physical_id%") ~%flir_endpoint_physical_id%~
+      END
+    END
+  END
+  ACTION_SORT_ARRAY_INDICES flir_endpoint_candidate LEXICOGRAPHICALLY
+  ACTION_PHP_EACH flir_endpoint_candidate AS flir_endpoint_physical_candidate_key => flir_endpoint_physical_candidate_enabled BEGIN
+    ACTION_IF flir_endpoint_physical_candidate_enabled = 1
+          AND VARIABLE_IS_SET $flir_endpoint_physical_canonical("%flir_endpoint_physical_candidate_key_3%") BEGIN
+      OUTER_SPRINT flir_endpoint_physical_candidate_canonical $flir_endpoint_physical_canonical("%flir_endpoint_physical_candidate_key_3%")
+      OUTER_SET $flir_endpoint_candidate(
+        "%flir_endpoint_physical_candidate_key_0%"
+        "%flir_endpoint_physical_candidate_key_1%"
+        "%flir_endpoint_physical_candidate_key_2%"
+        "%flir_endpoint_physical_candidate_canonical%"
+      ) = 1
+    END
+  END
+END
+
+// Resolve the terminal authored ground fallback for a validated endpoint.
+DEFINE_ACTION_MACRO flir_endpoints_resolve_group_ground BEGIN
+  OUTER_SPRINT flir_endpoint_group_fallback_cursor ~%flir_endpoint_group_fallback_start%~
+  OUTER_SPRINT flir_endpoint_group_fallback_ground ~~
+  OUTER_SET flir_endpoint_group_fallback_steps = 0
+  OUTER_WHILE "%flir_endpoint_group_fallback_ground%" STRING_EQUAL_CASE ~~ BEGIN
+    OUTER_SET flir_endpoint_group_fallback_steps += 1
+    ACTION_IF flir_endpoint_group_fallback_steps > flir_endpoint_count
+          OR NOT VARIABLE_IS_SET $flir_endpoint_present("%flir_endpoint_group_fallback_cursor%")
+          OR $flir_endpoint_enabled("%flir_endpoint_group_fallback_cursor%") != 1 BEGIN
+      LAF flir_endpoints_fail STR_VAR code = ~GROUP_FALLBACK~ provider = ~flir~ id = ~group~ END
+    END
+    ACTION_IF $flir_endpoint_target_kind("%flir_endpoint_group_fallback_cursor%") STRING_EQUAL_CASE ~ground~ BEGIN
+      OUTER_SPRINT flir_endpoint_group_fallback_ground ~%flir_endpoint_group_fallback_cursor%~
+    END ELSE BEGIN
+      OUTER_SPRINT flir_endpoint_group_fallback_cursor $flir_endpoint_fallback("%flir_endpoint_group_fallback_cursor%")
+    END
+  END
+END
+
+// Record one stable-unit/group-slot relation to a concrete same-area endpoint.
+// Caller sets flir_endpoint_group_arg_unit, _item, _slot, and _target.
+DEFINE_ACTION_MACRO flir_endpoints_record_group_target BEGIN
+  OUTER_SPRINT flir_endpoint_group_unit ~%flir_endpoint_group_arg_unit%~
+  OUTER_SPRINT flir_endpoint_group_item ~%flir_endpoint_group_arg_item%~
+  OUTER_SPRINT flir_endpoint_group_slot ~%flir_endpoint_group_arg_slot%~
+  OUTER_SPRINT flir_endpoint_group_target ~%flir_endpoint_group_arg_target%~
+  OUTER_SET flir_endpoint_group_unit_matches = 0
+  ACTION_PHP_EACH flir_manifest_token_present AS flir_endpoint_group_global => flir_endpoint_group_token_present BEGIN
+    ACTION_IF flir_endpoint_group_token_present = 1
+          AND $flir_manifest_token_enabled("%flir_endpoint_group_global%") = 1
+          AND $flir_manifest_token_unit("%flir_endpoint_group_global%") STRING_EQUAL_CASE ~%flir_endpoint_group_unit%~
+          AND $flir_manifest_token_item("%flir_endpoint_group_global%") STRING_EQUAL_CASE ~%flir_endpoint_group_item%~
+          AND $flir_manifest_token_tier("%flir_endpoint_group_global%") STRING_EQUAL_CASE $flir_endpoint_slot_tier("%flir_endpoint_group_slot%") BEGIN
+      OUTER_SET flir_endpoint_group_unit_matches += 1
+    END
+  END
+  OUTER_SPRINT flir_endpoint_group_base $flir_endpoint_slot_endpoint("%flir_endpoint_group_slot%")
+  ACTION_IF flir_manifest_prepared != 1
+        OR flir_endpoint_group_unit_matches != 1
+        OR NOT VARIABLE_IS_SET $flir_endpoint_slot_present("%flir_endpoint_group_slot%")
+        OR $flir_endpoint_slot_enabled("%flir_endpoint_group_slot%") != 1
+        OR NOT VARIABLE_IS_SET $flir_endpoint_present("%flir_endpoint_group_base%")
+        OR $flir_endpoint_enabled("%flir_endpoint_group_base%") != 1
+        OR NOT ($flir_endpoint_target_kind("%flir_endpoint_group_base%") STRING_EQUAL_CASE ~group~)
+        OR NOT VARIABLE_IS_SET $flir_endpoint_present("%flir_endpoint_group_target%")
+        OR $flir_endpoint_enabled("%flir_endpoint_group_target%") != 1
+        OR $flir_endpoint_target_kind("%flir_endpoint_group_target%") STRING_EQUAL_CASE ~group~
+        OR $flir_endpoint_target_kind("%flir_endpoint_group_target%") STRING_EQUAL_CASE ~legacy_adapter~
+        OR NOT ($flir_endpoint_area("%flir_endpoint_group_target%") STRING_EQUAL_CASE $flir_endpoint_area("%flir_endpoint_group_base%")) BEGIN
+    LAF flir_endpoints_fail STR_VAR code = ~GROUP_RESOLUTION~ provider = ~flir~ id = ~group~ END
+  END
+  ACTION_IF VARIABLE_IS_SET $flir_endpoint_physical_canonical("%flir_endpoint_group_target%") BEGIN
+    OUTER_SPRINT flir_endpoint_group_target $flir_endpoint_physical_canonical("%flir_endpoint_group_target%")
+  END
+  ACTION_IF VARIABLE_IS_SET $flir_endpoint_group_unit_override("%flir_endpoint_group_unit%" "%flir_endpoint_group_slot%") BEGIN
+    LAF flir_endpoints_fail STR_VAR code = ~GROUP_DUPLICATE~ provider = ~flir~ id = ~group~ END
+  END
+  OUTER_SET $flir_endpoint_candidate(
+    $flir_endpoint_slot_campaign("%flir_endpoint_group_slot%")
+    $flir_endpoint_slot_tier("%flir_endpoint_group_slot%")
+    $flir_endpoint_slot_band("%flir_endpoint_group_slot%")
+    "%flir_endpoint_group_target%"
+  ) = 1
+  OUTER_SPRINT $flir_endpoint_group_unit_override("%flir_endpoint_group_unit%" "%flir_endpoint_group_slot%") ~%flir_endpoint_group_target%~
+END
+
+// Preserve one legacy selector result. Every legacy unit invokes
+// select_group_cre before this macro, even when two units share an item ID.
+// Caller additionally sets _cre, _script, and _use_fallback.
+DEFINE_ACTION_MACRO flir_endpoints_record_group_resolution BEGIN
+  OUTER_SPRINT flir_endpoint_group_slot ~%flir_endpoint_group_arg_slot%~
+  OUTER_SPRINT flir_endpoint_group_base $flir_endpoint_slot_endpoint("%flir_endpoint_group_slot%")
+  ACTION_IF flir_endpoint_group_arg_use_fallback = 1 BEGIN
+    OUTER_SPRINT flir_endpoint_group_fallback_start ~%flir_endpoint_group_base%~
+    LAM flir_endpoints_resolve_group_ground
+    OUTER_SPRINT flir_endpoint_group_arg_target ~%flir_endpoint_group_fallback_ground%~
+  END ELSE BEGIN
+    ACTION_IF "%flir_endpoint_group_arg_cre%" STRING_EQUAL_CASE ~~
+          OR "%flir_endpoint_group_arg_script%" STRING_EQUAL_CASE ~~
+          OR "%flir_endpoint_group_arg_script%" STRING_EQUAL_CASE ~invalid~ BEGIN
+      LAF flir_endpoints_fail STR_VAR code = ~GROUP_RESOLUTION~ provider = ~flir~ id = ~group~ END
+    END
+    OUTER_TEXT_SPRINT flir_endpoint_physical_area $flir_endpoint_area("%flir_endpoint_group_base%")
+    OUTER_TEXT_SPRINT flir_endpoint_physical_script ~%flir_endpoint_group_arg_script%~
+    ACTION_TO_LOWER flir_endpoint_physical_area
+    ACTION_TO_LOWER flir_endpoint_physical_script
+    OUTER_SET flir_endpoint_physical_area_length = STRING_LENGTH ~%flir_endpoint_physical_area%~
+    OUTER_SET flir_endpoint_physical_script_length = STRING_LENGTH ~%flir_endpoint_physical_script%~
+    OUTER_TEXT_SPRINT flir_endpoint_physical_key ~%flir_endpoint_physical_area_length%#%flir_endpoint_physical_area%%flir_endpoint_physical_script_length%#%flir_endpoint_physical_script%~
+    ACTION_IF VARIABLE_IS_SET $flir_endpoint_physical_owner("%flir_endpoint_physical_key%") BEGIN
+      OUTER_SPRINT flir_endpoint_group_arg_target $flir_endpoint_physical_owner("%flir_endpoint_physical_key%")
+      ACTION_IF $flir_endpoint_capacity("%flir_endpoint_group_arg_target%") != $flir_endpoint_capacity("%flir_endpoint_group_base%")
+            OR $flir_endpoint_x("%flir_endpoint_group_arg_target%") != 0
+            OR $flir_endpoint_y("%flir_endpoint_group_arg_target%") != 0
+            OR NOT ($flir_endpoint_static_policy("%flir_endpoint_group_arg_target%") STRING_EQUAL_CASE ~runtime-resolve~)
+            OR NOT ($flir_endpoint_fallback("%flir_endpoint_group_arg_target%") STRING_EQUAL_CASE $flir_endpoint_fallback("%flir_endpoint_group_base%"))
+            OR NOT ($flir_endpoint_adapter("%flir_endpoint_group_arg_target%") STRING_EQUAL_CASE ~-~) BEGIN
+        LAF flir_endpoints_fail STR_VAR code = ~GROUP_PHYSICAL_ALIAS~ provider = ~flir~ id = ~group~ END
+      END
+    END ELSE BEGIN
+      OUTER_TEXT_SPRINT flir_endpoint_group_hash_text ~group|%flir_endpoint_group_base%|%flir_endpoint_group_arg_cre%~
+      LAF flir_endpoints_hash_text STR_VAR text = EVAL ~%flir_endpoint_group_hash_text%~ RET flir_endpoint_group_hash = hash END
+      OUTER_SPRINT flir_endpoint_group_local ~group-%flir_endpoint_group_hash%~
+      OUTER_SPRINT flir_endpoint_group_arg_target ~flir:%flir_endpoint_group_local%~
+      ACTION_IF VARIABLE_IS_SET $flir_endpoint_present("%flir_endpoint_group_arg_target%") BEGIN
+        LAF flir_endpoints_fail STR_VAR code = ~GROUP_ID_COLLISION~ provider = ~flir~ id = ~group~ END
+      END
+      OUTER_SPRINT flir_endpoint_arg_provider ~flir~
+      OUTER_SPRINT flir_endpoint_arg_id ~%flir_endpoint_group_local%~
+      OUTER_SPRINT flir_endpoint_arg_area $flir_endpoint_area("%flir_endpoint_group_base%")
+      OUTER_SPRINT flir_endpoint_arg_target_kind ~creature~
+      OUTER_TEXT_SPRINT flir_endpoint_arg_target_identity ~%flir_endpoint_group_arg_script%~
+      OUTER_SET flir_endpoint_arg_x = 0
+      OUTER_SET flir_endpoint_arg_y = 0
+      OUTER_SET flir_endpoint_arg_capacity = $flir_endpoint_capacity("%flir_endpoint_group_base%")
+      OUTER_SPRINT flir_endpoint_arg_static_policy ~runtime-resolve~
+      OUTER_SPRINT flir_endpoint_arg_fallback $flir_endpoint_fallback("%flir_endpoint_group_base%")
+      OUTER_SPRINT flir_endpoint_arg_adapter ~-~
+      OUTER_SET flir_endpoint_arg_enabled = 1
+      LAM flir_endpoints_add_endpoint
+      OUTER_SPRINT $flir_endpoint_physical_owner("%flir_endpoint_physical_key%") ~%flir_endpoint_group_arg_target%~
+      OUTER_SPRINT $flir_endpoint_physical_canonical("%flir_endpoint_group_arg_target%") ~%flir_endpoint_group_arg_target%~
+      OUTER_SPRINT $flir_endpoint_group_shadow_base("%flir_endpoint_group_arg_target%") ~%flir_endpoint_group_base%~
+    END
+  END
+  LAM flir_endpoints_record_group_target
+END
+
+// Lower legacy groups first, preserving every legacy selector call and result
+// per stable unit. Extension-only groups then consume normalized membership
+// rows in lexicographic slot/unit/member order. Lowest priority wins; weights
+// apply within that priority. A memberless group uses its authored ground tail.
+DEFINE_ACTION_MACRO flir_endpoints_lower_groups BEGIN
+  ACTION_IF flir_manifest_prepared != 1 BEGIN
+    LAF flir_endpoints_fail STR_VAR code = ~GROUP_NOT_PREPARED~ provider = ~flir~ id = ~group~ END
+  END
+  ACTION_CLEAR_ARRAY flir_endpoint_group_unit_override
+  ACTION_CLEAR_ARRAY flir_endpoint_group_legacy_occurrence
+  ACTION_CLEAR_ARRAY flir_endpoint_group_processed_slot
+  LAM flir_endpoints_build_physical_aliases
+
+  ACTION_PHP_EACH tier_array AS flir_endpoint_group_tier => blank BEGIN
+    ACTION_PHP_EACH location_array AS flir_endpoint_group_location => int BEGIN
+      ACTION_IF "%flir_endpoint_group_tier%" STRING_EQUAL_CASE "%flir_endpoint_group_location_1%" BEGIN
+        OUTER_SPRINT flir_registry_tier_for_campaign ~%flir_endpoint_group_tier%~
+        LAM flir_registry_campaign_for_tier
+        OUTER_SPRINT flir_endpoint_group_campaign ~%flir_registry_detected_campaign%~
+        OUTER_SPRINT flir_endpoint_group_occurrence_key ~%flir_endpoint_group_campaign%|%flir_endpoint_group_tier%|%flir_endpoint_group_location_0%|%flir_endpoint_group_location_4%~
+        ACTION_IF VARIABLE_IS_SET $flir_endpoint_group_legacy_occurrence("%flir_endpoint_group_occurrence_key%") BEGIN
+          OUTER_SET $flir_endpoint_group_legacy_occurrence("%flir_endpoint_group_occurrence_key%") += 1
+        END ELSE BEGIN
+          OUTER_SET $flir_endpoint_group_legacy_occurrence("%flir_endpoint_group_occurrence_key%") = 1
+        END
+        OUTER_SET flir_endpoint_group_occurrence = $flir_endpoint_group_legacy_occurrence("%flir_endpoint_group_occurrence_key%")
+        ACTION_IF "%flir_endpoint_group_location_2%" STRING_MATCHES_REGEXP ~.*\.flg$~ = 0
+              AND FILE_EXISTS_IN_GAME "%flir_endpoint_group_location_3%.are" BEGIN
+          OUTER_SET flir_endpoint_group_slot_matches = 0
+          OUTER_SPRINT flir_endpoint_group_slot ~~
+          OUTER_FOR (flir_endpoint_group_slot_i = 1; flir_endpoint_group_slot_i <= flir_endpoint_slot_count; ++flir_endpoint_group_slot_i) BEGIN
+            OUTER_SPRINT flir_endpoint_group_candidate_slot $flir_endpoint_slot_order("%flir_endpoint_group_slot_i%")
+            ACTION_IF $flir_endpoint_slot_campaign("%flir_endpoint_group_candidate_slot%") STRING_EQUAL_CASE ~%flir_endpoint_group_campaign%~
+                  AND $flir_endpoint_slot_tier("%flir_endpoint_group_candidate_slot%") STRING_EQUAL_CASE ~%flir_endpoint_group_tier%~
+                  AND $flir_endpoint_slot_legacy_raw("%flir_endpoint_group_candidate_slot%") STRING_EQUAL_CASE ~%flir_endpoint_group_location_0%~
+                  AND $flir_endpoint_slot_legacy_ident("%flir_endpoint_group_candidate_slot%") STRING_EQUAL_CASE ~%flir_endpoint_group_location_4%~
+                  AND $flir_endpoint_slot_legacy_occurrence("%flir_endpoint_group_candidate_slot%") = flir_endpoint_group_occurrence BEGIN
+              OUTER_SET flir_endpoint_group_slot_matches += 1
+              OUTER_SPRINT flir_endpoint_group_slot ~%flir_endpoint_group_candidate_slot%~
+            END
+          END
+          ACTION_IF flir_endpoint_group_slot_matches != 1 BEGIN
+            LAF flir_endpoints_fail STR_VAR code = ~GROUP_SLOT~ provider = ~flir~ id = ~group~ END
+          END
+          OUTER_SPRINT flir_endpoint_group_base $flir_endpoint_slot_endpoint("%flir_endpoint_group_slot%")
+          ACTION_IF $flir_endpoint_slot_enabled("%flir_endpoint_group_slot%") = 1
+                AND $flir_endpoint_target_kind("%flir_endpoint_group_base%") STRING_EQUAL_CASE ~group~ BEGIN
+            OUTER_SET $flir_endpoint_group_processed_slot("%flir_endpoint_group_slot%") = 1
+            ACTION_PHP_EACH removed_item_array AS flir_endpoint_group_removed => blank BEGIN
+              ACTION_IF "%flir_endpoint_group_removed_0%" STRING_EQUAL_CASE "%flir_endpoint_group_tier%" BEGIN
+                OUTER_SPRINT flir_endpoint_group_global ~fl%flir_endpoint_group_removed_0%t%flir_endpoint_group_removed_1%~
+                ACTION_IF NOT VARIABLE_IS_SET $flir_manifest_token_present("%flir_endpoint_group_global%") BEGIN
+                  LAF flir_endpoints_fail STR_VAR code = ~GROUP_TOKEN~ provider = ~flir~ id = ~group~ END
+                END
+                OUTER_SPRINT flir_endpoint_group_arg_unit $flir_manifest_token_unit("%flir_endpoint_group_global%")
+                OUTER_SPRINT flir_endpoint_group_arg_item $flir_manifest_token_item("%flir_endpoint_group_global%")
+                OUTER_SPRINT flir_endpoint_group_item_resref $flir_manifest_token_resref("%flir_endpoint_group_global%")
+                OUTER_SPRINT flir_endpoint_group_legacy_item ~~
+                OUTER_SPRINT flir_endpoint_group_extra ~~
+                ACTION_IF VARIABLE_IS_SET $extra_tokens("%flir_endpoint_group_removed_0%" "%flir_endpoint_group_removed_1%") BEGIN
+                  OUTER_SPRINT flir_endpoint_group_extra $extra_tokens("%flir_endpoint_group_removed_0%" "%flir_endpoint_group_removed_1%")
+                END
+                ACTION_PHP_EACH item_array AS flir_endpoint_group_item_row => blank BEGIN
+                  ACTION_IF "%flir_endpoint_group_removed_0%" STRING_EQUAL_CASE "%flir_endpoint_group_item_row_3%"
+                        AND ("%flir_endpoint_group_removed_1%" STRING_EQUAL_CASE "%flir_endpoint_group_item_row_4%"
+                          OR "%flir_endpoint_group_extra%" STRING_EQUAL_CASE "%flir_endpoint_group_item_row_4%") BEGIN
+                    OUTER_SPRINT flir_endpoint_group_legacy_item ~%flir_endpoint_group_item_row_0%~
+                  END
+                END
+                ACTION_IF "%flir_endpoint_group_legacy_item%" STRING_EQUAL_CASE ~~
+                      OR NOT ("%flir_endpoint_group_legacy_item%" STRING_EQUAL_CASE "%flir_endpoint_group_item_resref%") BEGIN
+                  LAF flir_endpoints_fail STR_VAR code = ~GROUP_ITEM_DRIFT~ provider = ~flir~ id = ~group~ END
+                END
+                OUTER_SET flir_endpoint_group_member_count = 0
+                OUTER_SPRINT flir_endpoint_group_identity $flir_endpoint_target_identity("%flir_endpoint_group_base%")
+                ACTION_PHP_EACH special_array AS flir_endpoint_group_member_key => flir_endpoint_group_member_cre BEGIN
+                  ACTION_IF "%flir_endpoint_group_member_key_1%" STRING_EQUAL_CASE "%flir_endpoint_group_identity%"
+                        AND FILE_EXISTS_IN_GAME "%flir_endpoint_group_member_cre%.cre" BEGIN
+                    OUTER_SET flir_endpoint_group_member_count += 1
+                  END
+                END
+                OUTER_SPRINT flir_endpoint_group_arg_cre ~~
+                OUTER_SPRINT flir_endpoint_group_arg_script ~~
+                ACTION_IF flir_endpoint_group_member_count > 0
+                      AND FILE_EXISTS_IN_GAME "%flir_endpoint_group_legacy_item%.itm" BEGIN
+                  LAF select_group_cre
+                    STR_VAR f_Group = EVAL ~%flir_endpoint_group_identity%~ f_Item = EVAL ~%flir_endpoint_group_legacy_item%~
+                    RET flir_endpoint_group_arg_cre = f_Selected
+                  END
+                  ACTION_IF NOT ("%flir_endpoint_group_arg_cre%" STRING_EQUAL_CASE ~~)
+                        AND FILE_EXISTS_IN_GAME "%flir_endpoint_group_arg_cre%.cre" BEGIN
+                    COPY_EXISTING "%flir_endpoint_group_arg_cre%.cre" override
+                      READ_ASCII 0x280 flir_endpoint_group_arg_script ELSE invalid (32) NULL
+                    BUT_ONLY
+                  END
+                END
+                OUTER_SPRINT flir_endpoint_group_arg_slot ~%flir_endpoint_group_slot%~
+                OUTER_SET flir_endpoint_group_arg_use_fallback = 0
+                ACTION_IF "%flir_endpoint_group_arg_script%" STRING_EQUAL_CASE ~~ OR "%flir_endpoint_group_arg_script%" STRING_EQUAL_CASE ~invalid~ BEGIN
+                  OUTER_SET flir_endpoint_group_arg_use_fallback = 1
+                END
+                LAM flir_endpoints_record_group_resolution
+              END
+            END
+          END
+        END
+      END
+    END
+  END
+
+  ACTION_CLEAR_ARRAY flir_endpoint_group_unit_present
+  ACTION_CLEAR_ARRAY flir_endpoint_group_unit_global
+  ACTION_PHP_EACH flir_manifest_token_present AS flir_endpoint_group_global => flir_endpoint_group_token_present BEGIN
+    ACTION_IF flir_endpoint_group_token_present = 1
+          AND $flir_manifest_token_enabled("%flir_endpoint_group_global%") = 1 BEGIN
+      OUTER_SPRINT flir_endpoint_group_unit $flir_manifest_token_unit("%flir_endpoint_group_global%")
+      OUTER_SET $flir_endpoint_group_unit_present("%flir_endpoint_group_unit%") = 1
+      OUTER_SPRINT $flir_endpoint_group_unit_global("%flir_endpoint_group_unit%") ~%flir_endpoint_group_global%~
+    END
+  END
+  ACTION_SORT_ARRAY_INDICES flir_endpoint_group_unit_present LEXICOGRAPHICALLY
+  ACTION_CLEAR_ARRAY flir_endpoint_group_slot_present
+  OUTER_FOR (flir_endpoint_group_slot_i = 1; flir_endpoint_group_slot_i <= flir_endpoint_slot_count; ++flir_endpoint_group_slot_i) BEGIN
+    OUTER_SPRINT flir_endpoint_group_slot $flir_endpoint_slot_order("%flir_endpoint_group_slot_i%")
+    OUTER_SPRINT flir_endpoint_group_base $flir_endpoint_slot_endpoint("%flir_endpoint_group_slot%")
+    ACTION_IF $flir_endpoint_slot_enabled("%flir_endpoint_group_slot%") = 1
+          AND $flir_endpoint_enabled("%flir_endpoint_group_base%") = 1
+          AND $flir_endpoint_target_kind("%flir_endpoint_group_base%") STRING_EQUAL_CASE ~group~
+          AND NOT VARIABLE_IS_SET $flir_endpoint_group_processed_slot("%flir_endpoint_group_slot%") BEGIN
+      OUTER_SET $flir_endpoint_group_slot_present("%flir_endpoint_group_slot%") = 1
+    END
+  END
+  ACTION_SORT_ARRAY_INDICES flir_endpoint_group_slot_present LEXICOGRAPHICALLY
+  ACTION_SORT_ARRAY_INDICES flir_catalog_index LEXICOGRAPHICALLY
+  ACTION_PHP_EACH flir_endpoint_group_slot_present AS flir_endpoint_group_slot => flir_endpoint_group_slot_is_present BEGIN
+    ACTION_IF flir_endpoint_group_slot_is_present = 1 BEGIN
+      OUTER_SPRINT flir_endpoint_group_base $flir_endpoint_slot_endpoint("%flir_endpoint_group_slot%")
+      ACTION_CLEAR_ARRAY flir_endpoint_group_member_present
+      ACTION_CLEAR_ARRAY flir_endpoint_group_member_target
+      ACTION_CLEAR_ARRAY flir_endpoint_group_member_weight
+      ACTION_CLEAR_ARRAY flir_endpoint_group_member_priority
+      OUTER_SET flir_endpoint_group_best_priority = 2147483647
+      ACTION_PHP_EACH flir_catalog_index AS flir_endpoint_group_catalog_key => flir_endpoint_group_catalog_present BEGIN
+        ACTION_IF flir_endpoint_group_catalog_present = 1
+              AND $flir_catalog_index_kind("%flir_endpoint_group_catalog_key%") STRING_EQUAL_CASE ~group~ BEGIN
+          OUTER_SPRINT flir_endpoint_group_member_id $flir_catalog_index_qualified("%flir_endpoint_group_catalog_key%")
+          ACTION_IF $flir_catalog_enabled("group" "%flir_endpoint_group_member_id%") = 1
+                AND $flir_catalog_group_id("group" "%flir_endpoint_group_member_id%") STRING_EQUAL_CASE ~%flir_endpoint_group_base%~ BEGIN
+            OUTER_SPRINT flir_endpoint_group_member_endpoint $flir_catalog_endpoint_id("group" "%flir_endpoint_group_member_id%")
+            ACTION_IF NOT VARIABLE_IS_SET $flir_endpoint_present("%flir_endpoint_group_member_endpoint%")
+                  OR $flir_endpoint_enabled("%flir_endpoint_group_member_endpoint%") != 1
+                  OR NOT ($flir_endpoint_target_kind("%flir_endpoint_group_member_endpoint%") STRING_EQUAL_CASE ~creature~)
+                  OR NOT ($flir_endpoint_area("%flir_endpoint_group_member_endpoint%") STRING_EQUAL_CASE $flir_endpoint_area("%flir_endpoint_group_base%")) BEGIN
+              LAF flir_endpoints_fail STR_VAR code = ~GROUP_MEMBER_SCOPE~ provider = ~flir~ id = ~group~ END
+            END
+            OUTER_SPRINT flir_endpoint_group_member_target_value $flir_endpoint_physical_canonical("%flir_endpoint_group_member_endpoint%")
+            OUTER_SET flir_endpoint_group_member_priority_value = $flir_catalog_priority("group" "%flir_endpoint_group_member_id%")
+            OUTER_SET $flir_endpoint_group_member_present("%flir_endpoint_group_member_id%") = 1
+            OUTER_SPRINT $flir_endpoint_group_member_target("%flir_endpoint_group_member_id%") ~%flir_endpoint_group_member_target_value%~
+            OUTER_SET $flir_endpoint_group_member_weight("%flir_endpoint_group_member_id%") = $flir_catalog_weight("group" "%flir_endpoint_group_member_id%")
+            OUTER_SET $flir_endpoint_group_member_priority("%flir_endpoint_group_member_id%") = flir_endpoint_group_member_priority_value
+            ACTION_IF flir_endpoint_group_member_priority_value < flir_endpoint_group_best_priority BEGIN
+              OUTER_SET flir_endpoint_group_best_priority = flir_endpoint_group_member_priority_value
+            END
+          END
+        END
+      END
+      ACTION_SORT_ARRAY_INDICES flir_endpoint_group_member_present LEXICOGRAPHICALLY
+      OUTER_SET flir_endpoint_group_total_weight = 0
+      ACTION_PHP_EACH flir_endpoint_group_member_present AS flir_endpoint_group_member_id => flir_endpoint_group_member_is_present BEGIN
+        ACTION_IF flir_endpoint_group_member_is_present = 1
+              AND $flir_endpoint_group_member_priority("%flir_endpoint_group_member_id%") = flir_endpoint_group_best_priority BEGIN
+          OUTER_SET flir_endpoint_group_member_weight_value = $flir_endpoint_group_member_weight("%flir_endpoint_group_member_id%")
+          ACTION_IF flir_endpoint_group_total_weight > 2147483646 - flir_endpoint_group_member_weight_value BEGIN
+            LAF flir_endpoints_fail STR_VAR code = ~GROUP_WEIGHT~ provider = ~flir~ id = ~group~ END
+          END
+          OUTER_SET flir_endpoint_group_total_weight += flir_endpoint_group_member_weight_value
+        END
+      END
+      ACTION_PHP_EACH flir_endpoint_group_unit_present AS flir_endpoint_group_unit => flir_endpoint_group_unit_is_present BEGIN
+        ACTION_IF flir_endpoint_group_unit_is_present = 1 BEGIN
+          OUTER_SPRINT flir_endpoint_group_global $flir_endpoint_group_unit_global("%flir_endpoint_group_unit%")
+          ACTION_IF $flir_manifest_token_tier("%flir_endpoint_group_global%") STRING_EQUAL_CASE $flir_endpoint_slot_tier("%flir_endpoint_group_slot%") BEGIN
+            OUTER_SPRINT flir_endpoint_group_arg_unit ~%flir_endpoint_group_unit%~
+            OUTER_SPRINT flir_endpoint_group_arg_item $flir_manifest_token_item("%flir_endpoint_group_global%")
+            OUTER_SPRINT flir_endpoint_group_arg_slot ~%flir_endpoint_group_slot%~
+            ACTION_IF flir_endpoint_group_total_weight = 0 BEGIN
+              OUTER_SPRINT flir_endpoint_group_fallback_start ~%flir_endpoint_group_base%~
+              LAM flir_endpoints_resolve_group_ground
+              OUTER_SPRINT flir_endpoint_group_arg_target ~%flir_endpoint_group_fallback_ground%~
+            END ELSE BEGIN
+              OUTER_SET flir_endpoint_group_roll = RANDOM(1 flir_endpoint_group_total_weight)
+              OUTER_SET flir_endpoint_group_cumulative = 0
+              OUTER_SPRINT flir_endpoint_group_arg_target ~~
+              ACTION_PHP_EACH flir_endpoint_group_member_present AS flir_endpoint_group_member_id => flir_endpoint_group_member_is_present BEGIN
+                ACTION_IF flir_endpoint_group_member_is_present = 1
+                      AND $flir_endpoint_group_member_priority("%flir_endpoint_group_member_id%") = flir_endpoint_group_best_priority
+                      AND "%flir_endpoint_group_arg_target%" STRING_EQUAL_CASE ~~ BEGIN
+                  OUTER_SET flir_endpoint_group_cumulative += $flir_endpoint_group_member_weight("%flir_endpoint_group_member_id%")
+                  ACTION_IF flir_endpoint_group_roll <= flir_endpoint_group_cumulative BEGIN
+                    OUTER_SPRINT flir_endpoint_group_arg_target $flir_endpoint_group_member_target("%flir_endpoint_group_member_id%")
+                  END
+                END
+              END
+            END
+            LAM flir_endpoints_record_group_target
+          END
+        END
+      END
+    END
+  END
+  LAM flir_endpoints_validate
+END
+
+// Stable-unit group relations are a separate manifest relation, not catalog
+// sparse overrides. Keep this public integration seam for installer ordering.
+DEFINE_ACTION_MACRO flir_endpoints_register_group_overrides BEGIN
+  ACTION_SORT_ARRAY_INDICES flir_endpoint_group_unit_override LEXICOGRAPHICALLY
 END
 
 // Caller arguments:
@@ -433,8 +839,10 @@ END
 
 DEFINE_ACTION_MACRO flir_endpoints_validate BEGIN
   ACTION_CLEAR_ARRAY flir_endpoint_validation_seen
+  OUTER_SET flir_endpoint_validation_generation += 1
   ACTION_CLEAR_ARRAY flir_endpoint_capacity_used
   ACTION_CLEAR_ARRAY flir_endpoint_fallback_required
+  LAM flir_endpoints_build_physical_aliases
 
   OUTER_FOR (flir_endpoint_i = 1; flir_endpoint_i <= flir_endpoint_count; ++flir_endpoint_i) BEGIN
     OUTER_SPRINT flir_endpoint_id $flir_endpoint_order("%flir_endpoint_i%")
@@ -448,6 +856,16 @@ DEFINE_ACTION_MACRO flir_endpoints_validate BEGIN
     OUTER_SPRINT flir_endpoint_adapter_value $flir_endpoint_adapter("%flir_endpoint_id%")
     OUTER_SET flir_endpoint_cap = $flir_endpoint_capacity("%flir_endpoint_id%")
     OUTER_SET flir_endpoint_enabled_value = $flir_endpoint_enabled("%flir_endpoint_id%")
+    ACTION_IF VARIABLE_IS_SET $flir_endpoint_group_shadow_base("%flir_endpoint_id%") BEGIN
+      OUTER_SPRINT flir_endpoint_group_shadow $flir_endpoint_group_shadow_base("%flir_endpoint_id%")
+      ACTION_IF NOT VARIABLE_IS_SET $flir_endpoint_present("%flir_endpoint_group_shadow%")
+            OR NOT ($flir_endpoint_target_kind("%flir_endpoint_group_shadow%") STRING_EQUAL_CASE ~group~)
+            OR NOT ("%flir_endpoint_area_value%" STRING_EQUAL_CASE $flir_endpoint_area("%flir_endpoint_group_shadow%"))
+            OR flir_endpoint_cap != $flir_endpoint_capacity("%flir_endpoint_group_shadow%")
+            OR NOT ("%flir_endpoint_fallback_value%" STRING_EQUAL_CASE $flir_endpoint_fallback("%flir_endpoint_group_shadow%")) BEGIN
+        LAF flir_endpoints_fail STR_VAR code = ~GROUP_SHADOW~ provider = EVAL ~%flir_endpoint_provider_value%~ id = EVAL ~%flir_endpoint_local_value%~ END
+      END
+    END
     ACTION_IF (flir_endpoint_enabled_value != 0 AND flir_endpoint_enabled_value != 1)
           OR "%flir_endpoint_area_value%" STRING_EQUAL_CASE ~~ BEGIN
       LAF flir_endpoints_fail STR_VAR code = ~INVALID_ENDPOINT~ provider = EVAL ~%flir_endpoint_provider_value%~ id = EVAL ~%flir_endpoint_local_value%~ END
@@ -507,15 +925,14 @@ DEFINE_ACTION_MACRO flir_endpoints_validate BEGIN
 
     ACTION_IF NOT ("%flir_endpoint_kind%" STRING_EQUAL_CASE ~ground~)
           AND NOT ("%flir_endpoint_kind%" STRING_EQUAL_CASE ~legacy_adapter~) BEGIN
-      ACTION_CLEAR_ARRAY flir_endpoint_validation_seen
       OUTER_SPRINT flir_endpoint_cursor ~%flir_endpoint_id%~
       OUTER_SET flir_endpoint_steps = 0
       OUTER_SET flir_endpoint_reached_ground = 0
       OUTER_WHILE flir_endpoint_reached_ground = 0 BEGIN
-        ACTION_IF VARIABLE_IS_SET $flir_endpoint_validation_seen("%flir_endpoint_cursor%") BEGIN
+        ACTION_IF VARIABLE_IS_SET $flir_endpoint_validation_seen("%flir_endpoint_validation_generation%" "%flir_endpoint_id%" "%flir_endpoint_cursor%") BEGIN
           LAF flir_endpoints_fail STR_VAR code = ~FALLBACK_CYCLE~ provider = EVAL ~%flir_endpoint_provider_value%~ id = EVAL ~%flir_endpoint_local_value%~ END
         END
-        OUTER_SET $flir_endpoint_validation_seen("%flir_endpoint_cursor%") = 1
+        OUTER_SET $flir_endpoint_validation_seen("%flir_endpoint_validation_generation%" "%flir_endpoint_id%" "%flir_endpoint_cursor%") = 1
         OUTER_SET flir_endpoint_steps += 1
         ACTION_IF flir_endpoint_steps > flir_endpoint_count BEGIN
           LAF flir_endpoints_fail STR_VAR code = ~FALLBACK_CYCLE~ provider = EVAL ~%flir_endpoint_provider_value%~ id = EVAL ~%flir_endpoint_local_value%~ END
@@ -534,11 +951,22 @@ DEFINE_ACTION_MACRO flir_endpoints_validate BEGIN
         OUTER_SPRINT flir_endpoint_next_kind $flir_endpoint_target_kind("%flir_endpoint_next%")
         ACTION_IF "%flir_endpoint_next_kind%" STRING_EQUAL_CASE ~ground~ BEGIN
           OUTER_SET flir_endpoint_reached_ground = 1
-          ACTION_IF flir_endpoint_enabled_value = 1 BEGIN
-            ACTION_IF VARIABLE_IS_SET $flir_endpoint_fallback_required("%flir_endpoint_next%") BEGIN
-              OUTER_SET $flir_endpoint_fallback_required("%flir_endpoint_next%") += flir_endpoint_cap
+          ACTION_IF flir_endpoint_enabled_value = 1
+                BEGIN
+            OUTER_SET flir_endpoint_reserve_fallback = 1
+            ACTION_IF VARIABLE_IS_SET $flir_endpoint_group_shadow_base("%flir_endpoint_id%") BEGIN
+              OUTER_SET flir_endpoint_reserve_fallback = 0
+            END
+            ACTION_IF VARIABLE_IS_SET $flir_endpoint_physical_canonical("%flir_endpoint_id%")
+                  AND NOT ("%flir_endpoint_id%" STRING_EQUAL_CASE $flir_endpoint_physical_canonical("%flir_endpoint_id%")) BEGIN
+              OUTER_SET flir_endpoint_reserve_fallback = 0
+            END
+            ACTION_IF flir_endpoint_reserve_fallback = 1 BEGIN
+            ACTION_IF VARIABLE_IS_SET $flir_endpoint_fallback_required("%flir_endpoint_validation_generation%" "%flir_endpoint_next%") BEGIN
+              OUTER_SET $flir_endpoint_fallback_required("%flir_endpoint_validation_generation%" "%flir_endpoint_next%") += flir_endpoint_cap
             END ELSE BEGIN
-              OUTER_SET $flir_endpoint_fallback_required("%flir_endpoint_next%") = flir_endpoint_cap
+              OUTER_SET $flir_endpoint_fallback_required("%flir_endpoint_validation_generation%" "%flir_endpoint_next%") = flir_endpoint_cap
+            END
             END
           END
         END ELSE BEGIN
@@ -548,9 +976,12 @@ DEFINE_ACTION_MACRO flir_endpoints_validate BEGIN
     END
   END
 
-  ACTION_PHP_EACH flir_endpoint_fallback_required AS flir_endpoint_ground_id => flir_endpoint_required BEGIN
-    ACTION_IF flir_endpoint_required > $flir_endpoint_capacity("%flir_endpoint_ground_id%") BEGIN
-      LAF flir_endpoints_fail STR_VAR code = ~FALLBACK_CAPACITY~ provider = EVAL $flir_endpoint_provider("%flir_endpoint_ground_id%") id = EVAL $flir_endpoint_local_id("%flir_endpoint_ground_id%") END
+  ACTION_PHP_EACH flir_endpoint_fallback_required AS flir_endpoint_ground_key => flir_endpoint_required BEGIN
+    ACTION_IF "%flir_endpoint_ground_key_0%" STRING_EQUAL_CASE "%flir_endpoint_validation_generation%" BEGIN
+      OUTER_SPRINT flir_endpoint_ground_id ~%flir_endpoint_ground_key_1%~
+      ACTION_IF flir_endpoint_required > $flir_endpoint_capacity("%flir_endpoint_ground_id%") BEGIN
+        LAF flir_endpoints_fail STR_VAR code = ~FALLBACK_CAPACITY~ provider = EVAL $flir_endpoint_provider("%flir_endpoint_ground_id%") id = EVAL $flir_endpoint_local_id("%flir_endpoint_ground_id%") END
+      END
     END
   END
 
@@ -610,25 +1041,32 @@ DEFINE_ACTION_MACRO flir_endpoints_validate BEGIN
             AND NOT VARIABLE_IS_SET $flir_endpoint_candidate("%flir_endpoint_slot_campaign_value%" "%flir_endpoint_slot_tier_value%" "%flir_endpoint_slot_band_value%" "%flir_endpoint_slot_endpoint_value%") BEGIN
         LAF flir_endpoints_fail STR_VAR code = ~INVALID_SLOT~ provider = EVAL ~%flir_endpoint_slot_provider_value%~ id = EVAL ~%flir_endpoint_slot_local_value%~ END
       END
-      ACTION_IF VARIABLE_IS_SET $flir_endpoint_capacity_used("%flir_endpoint_slot_endpoint_value%") BEGIN
-        OUTER_SET $flir_endpoint_capacity_used("%flir_endpoint_slot_endpoint_value%") += 1
-      END ELSE BEGIN
-        OUTER_SET $flir_endpoint_capacity_used("%flir_endpoint_slot_endpoint_value%") = 1
+      OUTER_SPRINT flir_endpoint_slot_capacity_endpoint ~%flir_endpoint_slot_endpoint_value%~
+      ACTION_IF VARIABLE_IS_SET $flir_endpoint_physical_canonical("%flir_endpoint_slot_endpoint_value%") BEGIN
+        OUTER_SPRINT flir_endpoint_slot_capacity_endpoint $flir_endpoint_physical_canonical("%flir_endpoint_slot_endpoint_value%")
       END
-      ACTION_IF $flir_endpoint_capacity_used("%flir_endpoint_slot_endpoint_value%") > $flir_endpoint_capacity("%flir_endpoint_slot_endpoint_value%") BEGIN
+      ACTION_IF VARIABLE_IS_SET $flir_endpoint_capacity_used("%flir_endpoint_validation_generation%" "%flir_endpoint_slot_capacity_endpoint%") BEGIN
+        OUTER_SET $flir_endpoint_capacity_used("%flir_endpoint_validation_generation%" "%flir_endpoint_slot_capacity_endpoint%") += 1
+      END ELSE BEGIN
+        OUTER_SET $flir_endpoint_capacity_used("%flir_endpoint_validation_generation%" "%flir_endpoint_slot_capacity_endpoint%") = 1
+      END
+      ACTION_IF $flir_endpoint_capacity_used("%flir_endpoint_validation_generation%" "%flir_endpoint_slot_capacity_endpoint%") > $flir_endpoint_capacity("%flir_endpoint_slot_capacity_endpoint%") BEGIN
         LAF flir_endpoints_fail STR_VAR code = ~CAPACITY_EXCEEDED~ provider = EVAL ~%flir_endpoint_slot_provider_value%~ id = EVAL ~%flir_endpoint_slot_local_value%~ END
       END
     END
   END
   // A ground endpoint's capacity covers both direct slots and the worst-case
   // fallback reservation promised to every primary that names it.
-  ACTION_PHP_EACH flir_endpoint_fallback_required AS flir_endpoint_ground_id => flir_endpoint_required BEGIN
-    OUTER_SET flir_endpoint_direct_used = 0
-    ACTION_IF VARIABLE_IS_SET $flir_endpoint_capacity_used("%flir_endpoint_ground_id%") BEGIN
-      OUTER_SET flir_endpoint_direct_used = $flir_endpoint_capacity_used("%flir_endpoint_ground_id%")
-    END
-    ACTION_IF flir_endpoint_required + flir_endpoint_direct_used > $flir_endpoint_capacity("%flir_endpoint_ground_id%") BEGIN
-      LAF flir_endpoints_fail STR_VAR code = ~FALLBACK_CAPACITY~ provider = EVAL $flir_endpoint_provider("%flir_endpoint_ground_id%") id = EVAL $flir_endpoint_local_id("%flir_endpoint_ground_id%") END
+  ACTION_PHP_EACH flir_endpoint_fallback_required AS flir_endpoint_ground_key => flir_endpoint_required BEGIN
+    ACTION_IF "%flir_endpoint_ground_key_0%" STRING_EQUAL_CASE "%flir_endpoint_validation_generation%" BEGIN
+      OUTER_SPRINT flir_endpoint_ground_id ~%flir_endpoint_ground_key_1%~
+      OUTER_SET flir_endpoint_direct_used = 0
+      ACTION_IF VARIABLE_IS_SET $flir_endpoint_capacity_used("%flir_endpoint_validation_generation%" "%flir_endpoint_ground_id%") BEGIN
+        OUTER_SET flir_endpoint_direct_used = $flir_endpoint_capacity_used("%flir_endpoint_validation_generation%" "%flir_endpoint_ground_id%")
+      END
+      ACTION_IF flir_endpoint_required + flir_endpoint_direct_used > $flir_endpoint_capacity("%flir_endpoint_ground_id%") BEGIN
+        LAF flir_endpoints_fail STR_VAR code = ~FALLBACK_CAPACITY~ provider = EVAL $flir_endpoint_provider("%flir_endpoint_ground_id%") id = EVAL $flir_endpoint_local_id("%flir_endpoint_ground_id%") END
+      END
     END
   END
 END
@@ -645,6 +1083,9 @@ DEFINE_ACTION_MACRO flir_endpoints_allocate_rounds BEGIN
     OUTER_SPRINT flir_endpoint_slot_id $flir_endpoint_slot_order("%flir_endpoint_i%")
     ACTION_IF $flir_endpoint_slot_enabled("%flir_endpoint_slot_id%") = 1 BEGIN
       OUTER_SPRINT flir_endpoint_slot_endpoint_value $flir_endpoint_slot_endpoint("%flir_endpoint_slot_id%")
+      ACTION_IF VARIABLE_IS_SET $flir_endpoint_physical_canonical("%flir_endpoint_slot_endpoint_value%") BEGIN
+        OUTER_SPRINT flir_endpoint_slot_endpoint_value $flir_endpoint_physical_canonical("%flir_endpoint_slot_endpoint_value%")
+      END
       ACTION_IF VARIABLE_IS_SET $flir_endpoint_allocate_used("%flir_endpoint_slot_endpoint_value%") BEGIN
         OUTER_SET $flir_endpoint_allocate_used("%flir_endpoint_slot_endpoint_value%") += 1
       END ELSE BEGIN
@@ -663,8 +1104,14 @@ DEFINE_ACTION_MACRO flir_endpoints_allocate_rounds BEGIN
           AND "%flir_endpoint_candidate_key_0%" STRING_EQUAL_CASE ~%flir_endpoint_allocate_campaign%~
           AND "%flir_endpoint_candidate_key_1%" STRING_EQUAL_CASE ~%flir_endpoint_allocate_tier%~
           AND "%flir_endpoint_candidate_key_2%" STRING_EQUAL_CASE ~%flir_endpoint_allocate_band%~ BEGIN
-      OUTER_SET flir_endpoint_candidate_cap = $flir_endpoint_capacity("%flir_endpoint_candidate_key_3%")
-      OUTER_SET flir_endpoint_allocate_max_capacity = flir_endpoint_allocate_max_capacity < flir_endpoint_candidate_cap ? flir_endpoint_candidate_cap : flir_endpoint_allocate_max_capacity
+      OUTER_SPRINT flir_endpoint_allocate_candidate_endpoint ~%flir_endpoint_candidate_key_3%~
+      ACTION_IF VARIABLE_IS_SET $flir_endpoint_physical_canonical("%flir_endpoint_allocate_candidate_endpoint%") BEGIN
+        OUTER_SPRINT flir_endpoint_allocate_candidate_endpoint $flir_endpoint_physical_canonical("%flir_endpoint_allocate_candidate_endpoint%")
+      END
+      ACTION_IF "%flir_endpoint_allocate_candidate_endpoint%" STRING_EQUAL_CASE "%flir_endpoint_candidate_key_3%" BEGIN
+        OUTER_SET flir_endpoint_candidate_cap = $flir_endpoint_capacity("%flir_endpoint_allocate_candidate_endpoint%")
+        OUTER_SET flir_endpoint_allocate_max_capacity = flir_endpoint_allocate_max_capacity < flir_endpoint_candidate_cap ? flir_endpoint_candidate_cap : flir_endpoint_allocate_max_capacity
+      END
     END
   END
   OUTER_FOR (flir_endpoint_round = 1; flir_endpoint_round <= flir_endpoint_allocate_max_capacity AND flir_endpoint_allocate_count < flir_endpoint_allocate_demand; ++flir_endpoint_round) BEGIN
@@ -675,11 +1122,15 @@ DEFINE_ACTION_MACRO flir_endpoints_allocate_rounds BEGIN
             AND "%flir_endpoint_candidate_key_1%" STRING_EQUAL_CASE ~%flir_endpoint_allocate_tier%~
             AND "%flir_endpoint_candidate_key_2%" STRING_EQUAL_CASE ~%flir_endpoint_allocate_band%~ BEGIN
         OUTER_SPRINT flir_endpoint_allocate_endpoint ~%flir_endpoint_candidate_key_3%~
+        ACTION_IF VARIABLE_IS_SET $flir_endpoint_physical_canonical("%flir_endpoint_allocate_endpoint%") BEGIN
+          OUTER_SPRINT flir_endpoint_allocate_endpoint $flir_endpoint_physical_canonical("%flir_endpoint_allocate_endpoint%")
+        END
         OUTER_SET flir_endpoint_allocate_endpoint_used = 0
         ACTION_IF VARIABLE_IS_SET $flir_endpoint_allocate_used("%flir_endpoint_allocate_endpoint%") BEGIN
           OUTER_SET flir_endpoint_allocate_endpoint_used = $flir_endpoint_allocate_used("%flir_endpoint_allocate_endpoint%")
         END
-        ACTION_IF flir_endpoint_allocate_endpoint_used < flir_endpoint_round
+        ACTION_IF "%flir_endpoint_allocate_endpoint%" STRING_EQUAL_CASE "%flir_endpoint_candidate_key_3%"
+              AND flir_endpoint_allocate_endpoint_used < flir_endpoint_round
               AND flir_endpoint_allocate_endpoint_used < $flir_endpoint_capacity("%flir_endpoint_allocate_endpoint%") BEGIN
           OUTER_SPRINT flir_endpoint_generated_campaign ~%flir_endpoint_allocate_campaign%~
           OUTER_SPRINT flir_endpoint_generated_tier ~%flir_endpoint_allocate_tier%~

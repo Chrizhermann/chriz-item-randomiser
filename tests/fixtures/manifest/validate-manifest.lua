@@ -1,10 +1,12 @@
 local manifest_path = assert(arg[1], "manifest path missing")
 local mode = arg[2] or "default"
+local core_path = assert(arg[3], "core path missing")
 local changed = mode == "changed"
 local book = mode == "book"
 local synthesized = mode == "synthesized" or book
 local variant = mode == "variant"
 local adapter_changed = mode == "adapter"
+local group = mode == "group"
 local percent_policy = "policy%flir_manifest_probe%tail"
 
 local environment = {}
@@ -17,6 +19,12 @@ assert(type(environment.FLDLV) == "table", "FLDLV namespace missing")
 local manifest = environment.FLDLV.Manifest
 assert(type(manifest) == "table", "FLDLV.Manifest missing")
 
+local core_chunk, core_load_error = loadfile(core_path, "t", environment)
+assert(core_chunk, core_load_error)
+local core = core_chunk()
+local core_valid, core_error = core.validate_manifest(manifest)
+assert(core_valid, "transaction core rejected manifest: " .. tostring(core_error))
+
 local expected_top_level = {
     schema = true,
     backend = true,
@@ -24,6 +32,7 @@ local expected_top_level = {
     tokens_by_global = true,
     slots_by_tier_value = true,
     endpoints_by_id = true,
+    unit_overrides = true,
     sparse_overrides = true,
 }
 for key in pairs(manifest) do
@@ -110,7 +119,40 @@ if synthesized then
 else
     assert(token_a.item_id == "core:item-a", "token A item ID mismatch")
     assert(token_b.item_id == "core:item-b", "token B item ID mismatch")
-    assert(tokens.fl1tx0 == nil and tokens.fl1ty0 == nil, "unexpected extra token emitted")
+    if group then
+        local token_x = assert(tokens.fl1tx0, "duplicate logical item token missing")
+        assert(token_x.unit_id == "core:unit-x" and token_x.item_id == "core:item-a" and
+            token_x.item_resref == "synt0001", "duplicate logical item token identity drifted")
+    else
+        assert(tokens.fl1tx0 == nil and tokens.fl1ty0 == nil, "unexpected extra token emitted")
+    end
+end
+if group then
+    local group_slot = assert(manifest.slots_by_tier_value["1"][11], "group slot missing")
+    assert(group_slot.slot_id == "core:slot-group" and group_slot.endpoint_id == "core:group-a",
+        "group slot identity changed during lowering")
+    local first_target = assert(manifest.unit_overrides["core:unit-a"]["core:slot-group"],
+        "first unit group override missing")
+    local duplicate_target = assert(manifest.unit_overrides["core:unit-x"]["core:slot-group"],
+        "duplicate logical item unit override missing")
+    local second_target = assert(manifest.unit_overrides["core:unit-b"]["core:slot-group"],
+        "second unit group override missing")
+    assert(first_target == "core:member-a" and duplicate_target == "core:member-a" and
+        second_target == "core:member-a", "priority or physical-alias canonicalization drifted")
+    local concrete = assert(manifest.endpoints_by_id[first_target], "lowered endpoint missing")
+    assert(concrete.target_kind == "creature" and concrete.area == "area-g" and
+        concrete.fallback_id == "core:ground-g" and concrete.enabled == 1 and
+        concrete.target_identity == percent_policy,
+        "lowered endpoint semantics mismatch")
+    for _, unit_id in ipairs({ "core:unit-a", "core:unit-x", "core:unit-b" }) do
+        local by_slot = assert(manifest.unit_overrides[unit_id], "unit override map missing")
+        assert(by_slot["core:slot-group-zero"] == "core:ground-g",
+            "memberless group did not use its authored fallback")
+        assert(by_slot["core:slot-group-disabled"] == nil,
+            "disabled group slot was lowered")
+        assert(by_slot["core:slot-group-replaced"] == nil,
+            "slot replaced by a concrete endpoint was lowered as a group")
+    end
 end
 assert(tokens.fl1t10 == nil, "unexpected token/global join emitted")
 for _, token in pairs(tokens) do

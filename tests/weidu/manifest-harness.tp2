@@ -204,6 +204,220 @@ DEFINE_ACTION_MACRO flir_manifest_harness_add_container_b BEGIN
   OUTER_SET $flir_endpoint_candidate("bg2" "1" "bg2:1" "core:container-b") = 1
 END
 
+DEFINE_ACTION_MACRO flir_manifest_harness_add_capacity_fixture BEGIN
+  OUTER_SPRINT flir_endpoint_arg_provider ~core~
+  OUTER_SPRINT flir_endpoint_arg_id ~ground-cap~
+  OUTER_SPRINT flir_endpoint_arg_area ~area-b~
+  OUTER_SPRINT flir_endpoint_arg_target_kind ~ground~
+  OUTER_SPRINT flir_endpoint_arg_target_identity ~-~
+  OUTER_SET flir_endpoint_arg_x = 900
+  OUTER_SET flir_endpoint_arg_y = 1000
+  OUTER_SET flir_endpoint_arg_capacity = 1
+  OUTER_SPRINT flir_endpoint_arg_static_policy ~authored-static~
+  OUTER_SPRINT flir_endpoint_arg_fallback ~-~
+  OUTER_SPRINT flir_endpoint_arg_adapter ~-~
+  OUTER_SET flir_endpoint_arg_enabled = 1
+  LAM flir_endpoints_add_endpoint
+  OUTER_SET $flir_endpoint_candidate("bg2" "1" "bg2:1" "core:ground-cap") = 1
+
+  OUTER_SPRINT flir_endpoint_arg_provider ~core~
+  OUTER_SPRINT flir_endpoint_arg_id ~container-cap~
+  OUTER_SPRINT flir_endpoint_arg_area ~area-b~
+  OUTER_SPRINT flir_endpoint_arg_target_kind ~container~
+  OUTER_SPRINT flir_endpoint_arg_target_identity ~Capacity Container~
+  OUTER_SET flir_endpoint_arg_x = 0
+  OUTER_SET flir_endpoint_arg_y = 0
+  OUTER_SET flir_endpoint_arg_capacity = 1
+  OUTER_SPRINT flir_endpoint_arg_static_policy ~runtime-resolve~
+  OUTER_SPRINT flir_endpoint_arg_fallback ~core:ground-cap~
+  OUTER_SPRINT flir_endpoint_arg_adapter ~-~
+  OUTER_SET flir_endpoint_arg_enabled = 1
+  LAM flir_endpoints_add_endpoint
+END
+
+DEFINE_ACTION_MACRO flir_manifest_harness_add_group_fixture BEGIN
+  OUTER_SPRINT flir_endpoint_arg_provider ~core~
+  OUTER_SPRINT flir_endpoint_arg_id ~ground-g~
+  OUTER_SPRINT flir_endpoint_arg_area ~area-g~
+  OUTER_SPRINT flir_endpoint_arg_target_kind ~ground~
+  OUTER_SPRINT flir_endpoint_arg_target_identity ~-~
+  OUTER_SET flir_endpoint_arg_x = 700
+  OUTER_SET flir_endpoint_arg_y = 800
+  OUTER_SET flir_endpoint_arg_capacity = 4
+  OUTER_SPRINT flir_endpoint_arg_static_policy ~authored-static~
+  OUTER_SPRINT flir_endpoint_arg_fallback ~-~
+  OUTER_SPRINT flir_endpoint_arg_adapter ~-~
+  OUTER_SET flir_endpoint_arg_enabled = 1
+  LAM flir_endpoints_add_endpoint
+
+  OUTER_SPRINT flir_endpoint_arg_provider ~core~
+  OUTER_SPRINT flir_endpoint_arg_id ~group-a~
+  OUTER_SPRINT flir_endpoint_arg_area ~area-g~
+  OUTER_SPRINT flir_endpoint_arg_target_kind ~group~
+  OUTER_SPRINT flir_endpoint_arg_target_identity ~synthetic.flg~
+  OUTER_SET flir_endpoint_arg_x = 0
+  OUTER_SET flir_endpoint_arg_y = 0
+  OUTER_SET flir_endpoint_arg_capacity = 1
+  OUTER_SPRINT flir_endpoint_arg_static_policy ~runtime-resolve~
+  OUTER_SPRINT flir_endpoint_arg_fallback ~core:ground-g~
+  OUTER_SPRINT flir_endpoint_arg_adapter ~-~
+  OUTER_SET flir_endpoint_arg_enabled = 1
+  LAM flir_endpoints_add_endpoint
+  OUTER_SET $flir_endpoint_candidate("bg2" "1" "bg2:1" "core:group-a") = 1
+
+  OUTER_SPRINT flir_endpoint_slot_arg_provider ~core~
+  OUTER_SPRINT flir_endpoint_slot_arg_id ~slot-group~
+  OUTER_SPRINT flir_endpoint_slot_arg_campaign ~bg2~
+  OUTER_SPRINT flir_endpoint_slot_arg_tier ~1~
+  OUTER_SPRINT flir_endpoint_slot_arg_legacy_raw ~slot-group~
+  OUTER_SPRINT flir_endpoint_slot_arg_legacy_ident ~generated~
+  OUTER_SET flir_endpoint_slot_arg_legacy_occurrence = 1
+  OUTER_SPRINT flir_endpoint_slot_arg_endpoint ~core:group-a~
+  OUTER_SPRINT flir_endpoint_slot_arg_band ~bg2:1~
+  OUTER_SET flir_endpoint_slot_arg_weight = 1
+  OUTER_SET flir_endpoint_slot_arg_value = 11
+  OUTER_SET flir_endpoint_slot_arg_enabled = 1
+  LAM flir_endpoints_add_slot
+
+  OUTER_SPRINT flir_endpoint_arg_provider ~core~
+  OUTER_SPRINT flir_endpoint_arg_id ~member-a~
+  OUTER_SPRINT flir_endpoint_arg_area ~area-g~
+  OUTER_SPRINT flir_endpoint_arg_target_kind ~creature~
+  OUTER_TEXT_SPRINT flir_endpoint_arg_target_identity ~%flir_manifest_harness_percent_policy%~
+  OUTER_SET flir_endpoint_arg_x = 0
+  OUTER_SET flir_endpoint_arg_y = 0
+  OUTER_SET flir_endpoint_arg_capacity = 2
+  OUTER_SPRINT flir_endpoint_arg_static_policy ~runtime-resolve~
+  OUTER_SPRINT flir_endpoint_arg_fallback ~core:ground-g~
+  OUTER_SPRINT flir_endpoint_arg_adapter ~-~
+  OUTER_SET flir_endpoint_arg_enabled = 1
+  LAM flir_endpoints_add_endpoint
+  OUTER_SET $flir_endpoint_candidate("bg2" "1" "bg2:1" "core:member-a") = 1
+
+  OUTER_SPRINT flir_endpoint_arg_provider ~core~
+  OUTER_SPRINT flir_endpoint_arg_id ~member-z-alias~
+  OUTER_SPRINT flir_endpoint_arg_area ~area-g~
+  OUTER_SPRINT flir_endpoint_arg_target_kind ~creature~
+  OUTER_TEXT_SPRINT flir_endpoint_arg_target_identity ~%flir_manifest_harness_percent_policy%~
+  OUTER_SET flir_endpoint_arg_x = 0
+  OUTER_SET flir_endpoint_arg_y = 0
+  ACTION_IF flir_manifest_harness_group_alias_mismatch = 1 BEGIN
+    OUTER_SET flir_endpoint_arg_capacity = 3
+  END ELSE BEGIN
+    OUTER_SET flir_endpoint_arg_capacity = 2
+  END
+  OUTER_SPRINT flir_endpoint_arg_static_policy ~runtime-resolve~
+  OUTER_SPRINT flir_endpoint_arg_fallback ~core:ground-g~
+  OUTER_SPRINT flir_endpoint_arg_adapter ~-~
+  OUTER_SET flir_endpoint_arg_enabled = 1
+  LAM flir_endpoints_add_endpoint
+
+  OUTER_SPRINT flir_endpoint_arg_provider ~core~
+  OUTER_SPRINT flir_endpoint_arg_id ~group-zero~
+  OUTER_SPRINT flir_endpoint_arg_area ~area-g~
+  OUTER_SPRINT flir_endpoint_arg_target_kind ~group~
+  OUTER_SPRINT flir_endpoint_arg_target_identity ~empty.flg~
+  OUTER_SET flir_endpoint_arg_x = 0
+  OUTER_SET flir_endpoint_arg_y = 0
+  OUTER_SET flir_endpoint_arg_capacity = 1
+  OUTER_SPRINT flir_endpoint_arg_static_policy ~runtime-resolve~
+  OUTER_SPRINT flir_endpoint_arg_fallback ~core:ground-g~
+  OUTER_SPRINT flir_endpoint_arg_adapter ~-~
+  OUTER_SET flir_endpoint_arg_enabled = 1
+  LAM flir_endpoints_add_endpoint
+  OUTER_SET $flir_endpoint_candidate("bg2" "1" "bg2:1" "core:group-zero") = 1
+
+  OUTER_SPRINT flir_endpoint_slot_arg_provider ~core~
+  OUTER_SPRINT flir_endpoint_slot_arg_id ~slot-group-zero~
+  OUTER_SPRINT flir_endpoint_slot_arg_campaign ~bg2~
+  OUTER_SPRINT flir_endpoint_slot_arg_tier ~1~
+  OUTER_SPRINT flir_endpoint_slot_arg_legacy_raw ~slot-group-zero~
+  OUTER_SPRINT flir_endpoint_slot_arg_legacy_ident ~generated~
+  OUTER_SET flir_endpoint_slot_arg_legacy_occurrence = 1
+  OUTER_SPRINT flir_endpoint_slot_arg_endpoint ~core:group-zero~
+  OUTER_SPRINT flir_endpoint_slot_arg_band ~bg2:1~
+  OUTER_SET flir_endpoint_slot_arg_weight = 1
+  OUTER_SET flir_endpoint_slot_arg_value = 12
+  OUTER_SET flir_endpoint_slot_arg_enabled = 1
+  LAM flir_endpoints_add_slot
+
+  OUTER_SPRINT flir_endpoint_slot_arg_provider ~core~
+  OUTER_SPRINT flir_endpoint_slot_arg_id ~slot-group-disabled~
+  OUTER_SPRINT flir_endpoint_slot_arg_campaign ~bg2~
+  OUTER_SPRINT flir_endpoint_slot_arg_tier ~1~
+  OUTER_SPRINT flir_endpoint_slot_arg_legacy_raw ~slot-group-disabled~
+  OUTER_SPRINT flir_endpoint_slot_arg_legacy_ident ~generated~
+  OUTER_SET flir_endpoint_slot_arg_legacy_occurrence = 1
+  OUTER_SPRINT flir_endpoint_slot_arg_endpoint ~core:group-a~
+  OUTER_SPRINT flir_endpoint_slot_arg_band ~bg2:1~
+  OUTER_SET flir_endpoint_slot_arg_weight = 1
+  OUTER_SET flir_endpoint_slot_arg_value = 13
+  OUTER_SET flir_endpoint_slot_arg_enabled = 0
+  LAM flir_endpoints_add_slot
+
+  OUTER_SPRINT flir_endpoint_slot_arg_provider ~core~
+  OUTER_SPRINT flir_endpoint_slot_arg_id ~slot-group-replaced~
+  OUTER_SPRINT flir_endpoint_slot_arg_campaign ~bg2~
+  OUTER_SPRINT flir_endpoint_slot_arg_tier ~1~
+  OUTER_SPRINT flir_endpoint_slot_arg_legacy_raw ~slot-group-replaced~
+  OUTER_SPRINT flir_endpoint_slot_arg_legacy_ident ~generated~
+  OUTER_SET flir_endpoint_slot_arg_legacy_occurrence = 1
+  OUTER_SPRINT flir_endpoint_slot_arg_endpoint ~core:member-a~
+  OUTER_SPRINT flir_endpoint_slot_arg_band ~bg2:1~
+  OUTER_SET flir_endpoint_slot_arg_weight = 1
+  OUTER_SET flir_endpoint_slot_arg_value = 14
+  OUTER_SET flir_endpoint_slot_arg_enabled = 1
+  LAM flir_endpoints_add_slot
+
+  ACTION_IF flir_manifest_harness_group_reverse = 1 BEGIN
+    LAM flir_manifest_harness_add_group_member_low
+    LAM flir_manifest_harness_add_group_member_high
+  END ELSE BEGIN
+    LAM flir_manifest_harness_add_group_member_high
+    LAM flir_manifest_harness_add_group_member_low
+  END
+  LAM flir_manifest_harness_add_group_member_disabled
+END
+
+DEFINE_ACTION_MACRO flir_manifest_harness_add_group_member_high BEGIN
+  OUTER_SPRINT flir_catalog_arg_operation ~ADD~
+  OUTER_SPRINT flir_catalog_arg_actor_provider ~core~
+  OUTER_SPRINT flir_catalog_arg_provider ~core~
+  OUTER_SPRINT flir_catalog_arg_id ~group-member-z~
+  OUTER_SPRINT flir_catalog_arg_group_id ~core:group-a~
+  OUTER_SPRINT flir_catalog_arg_endpoint_id ~core:member-z-alias~
+  OUTER_SET flir_catalog_arg_weight = 1
+  OUTER_SET flir_catalog_arg_priority = 0
+  OUTER_SET flir_catalog_arg_enabled = 1
+  LAM flir_catalog_group_membership
+END
+
+DEFINE_ACTION_MACRO flir_manifest_harness_add_group_member_low BEGIN
+  OUTER_SPRINT flir_catalog_arg_operation ~ADD~
+  OUTER_SPRINT flir_catalog_arg_actor_provider ~core~
+  OUTER_SPRINT flir_catalog_arg_provider ~core~
+  OUTER_SPRINT flir_catalog_arg_id ~group-member-a~
+  OUTER_SPRINT flir_catalog_arg_group_id ~core:group-a~
+  OUTER_SPRINT flir_catalog_arg_endpoint_id ~core:member-a~
+  OUTER_SET flir_catalog_arg_weight = 7
+  OUTER_SET flir_catalog_arg_priority = 10
+  OUTER_SET flir_catalog_arg_enabled = 1
+  LAM flir_catalog_group_membership
+END
+
+DEFINE_ACTION_MACRO flir_manifest_harness_add_group_member_disabled BEGIN
+  OUTER_SPRINT flir_catalog_arg_operation ~ADD~
+  OUTER_SPRINT flir_catalog_arg_actor_provider ~core~
+  OUTER_SPRINT flir_catalog_arg_provider ~core~
+  OUTER_SPRINT flir_catalog_arg_id ~group-member-disabled~
+  OUTER_SPRINT flir_catalog_arg_group_id ~core:group-a~
+  OUTER_SPRINT flir_catalog_arg_endpoint_id ~core:container-o~
+  OUTER_SET flir_catalog_arg_weight = 100
+  OUTER_SET flir_catalog_arg_priority = 0
+  OUTER_SET flir_catalog_arg_enabled = 0
+  LAM flir_catalog_group_membership
+END
+
 DEFINE_ACTION_MACRO flir_manifest_harness_add_disabled_ground BEGIN
   OUTER_SPRINT flir_endpoint_arg_provider ~core~
   OUTER_SPRINT flir_endpoint_arg_id ~ground-disabled~
@@ -367,7 +581,7 @@ DEFINE_ACTION_MACRO flir_manifest_harness_add_capacity_override BEGIN
   OUTER_SPRINT flir_catalog_arg_id ~override-capacity~
   OUTER_SPRINT flir_catalog_arg_item_id ~core:item-b~
   OUTER_SPRINT flir_catalog_arg_location_id ~core:slot-b~
-  OUTER_SPRINT flir_catalog_arg_endpoint_id ~core:container-o~
+  OUTER_SPRINT flir_catalog_arg_endpoint_id ~core:ground-cap~
   OUTER_SET flir_catalog_arg_enabled = 1
   LAM flir_catalog_sparse_override
 END
@@ -391,7 +605,31 @@ DEFINE_ACTION_MACRO flir_manifest_harness_add_ground_override BEGIN
   OUTER_SPRINT flir_catalog_arg_id ~override-ground~
   OUTER_SPRINT flir_catalog_arg_item_id ~core:item-b~
   OUTER_SPRINT flir_catalog_arg_location_id ~core:slot-b~
-  OUTER_SPRINT flir_catalog_arg_endpoint_id ~core:ground-a~
+  OUTER_SPRINT flir_catalog_arg_endpoint_id ~core:ground-cap~
+  OUTER_SET flir_catalog_arg_enabled = 1
+  LAM flir_catalog_sparse_override
+END
+
+DEFINE_ACTION_MACRO flir_manifest_harness_add_group_target_override BEGIN
+  OUTER_SPRINT flir_catalog_arg_operation ~ADD~
+  OUTER_SPRINT flir_catalog_arg_actor_provider ~core~
+  OUTER_SPRINT flir_catalog_arg_provider ~core~
+  OUTER_SPRINT flir_catalog_arg_id ~override-group-target~
+  OUTER_SPRINT flir_catalog_arg_item_id ~core:item-a~
+  OUTER_SPRINT flir_catalog_arg_location_id ~core:slot-group~
+  OUTER_SPRINT flir_catalog_arg_endpoint_id ~core:group-a~
+  OUTER_SET flir_catalog_arg_enabled = 1
+  LAM flir_catalog_sparse_override
+END
+
+DEFINE_ACTION_MACRO flir_manifest_harness_add_cross_area_group_override BEGIN
+  OUTER_SPRINT flir_catalog_arg_operation ~ADD~
+  OUTER_SPRINT flir_catalog_arg_actor_provider ~core~
+  OUTER_SPRINT flir_catalog_arg_provider ~core~
+  OUTER_SPRINT flir_catalog_arg_id ~override-group-cross-area~
+  OUTER_SPRINT flir_catalog_arg_item_id ~core:item-a~
+  OUTER_SPRINT flir_catalog_arg_location_id ~core:slot-group~
+  OUTER_SPRINT flir_catalog_arg_endpoint_id ~core:container-o~
   OUTER_SET flir_catalog_arg_enabled = 1
   LAM flir_catalog_sparse_override
 END
@@ -413,6 +651,13 @@ DEFINE_ACTION_MACRO flir_manifest_harness_defaults BEGIN
   OUTER_SET flir_manifest_harness_adapter_override = 0
   OUTER_SET flir_manifest_harness_legacy_book = 0
   OUTER_SET flir_manifest_harness_ground_override = 0
+  OUTER_SET flir_manifest_harness_group_lowering = 0
+  OUTER_SET flir_manifest_harness_group_reverse = 0
+  OUTER_SET flir_manifest_harness_group_alias_mismatch = 0
+  OUTER_SET flir_manifest_harness_group_target_override = 0
+  OUTER_SET flir_manifest_harness_group_cross_area_override = 0
+  OUTER_SET flir_manifest_harness_group_missing_pair = 0
+  OUTER_SET flir_manifest_harness_skip_default_override = 0
 END
 
 DEFINE_ACTION_MACRO flir_manifest_harness_seed BEGIN
@@ -424,6 +669,10 @@ DEFINE_ACTION_MACRO flir_manifest_harness_seed BEGIN
   ACTION_CLEAR_ARRAY bg1_tiers
   ACTION_CLEAR_ARRAY bg2_tiers
   ACTION_CLEAR_ARRAY removed_item_array
+  ACTION_CLEAR_ARRAY tier_array
+  ACTION_CLEAR_ARRAY location_array
+  ACTION_CLEAR_ARRAY item_array
+  ACTION_CLEAR_ARRAY special_array
   ACTION_CLEAR_ARRAY plugintierandtokenandgetitem
   ACTION_CLEAR_ARRAY charge_array
   ACTION_CLEAR_ARRAY extra_tokens
@@ -486,6 +735,18 @@ DEFINE_ACTION_MACRO flir_manifest_harness_seed BEGIN
     LAM flir_manifest_harness_add_disabled_slot
   END
 
+  ACTION_IF flir_manifest_harness_group_lowering = 1 BEGIN
+    LAM flir_manifest_harness_add_group_fixture
+    OUTER_SPRINT $removed_item_array("1" "x0" "x") ~~
+    OUTER_SPRINT $plugintierandtokenandgetitem("1" "x0") ~synt0001~
+    OUTER_SPRINT $extra_tokens("1" "x0") ~1~
+    OUTER_SPRINT $flir_registry_applied_extra_stable("1" "x0") ~core:unit-x~
+  END
+  ACTION_IF flir_manifest_harness_capacity_override = 1
+        OR flir_manifest_harness_ground_override = 1 BEGIN
+    LAM flir_manifest_harness_add_capacity_fixture
+  END
+
   ACTION_IF flir_manifest_harness_synthesized = 1 BEGIN
     OUTER_SPRINT $removed_item_array("1" "x0" "x") ~~
     OUTER_SPRINT $removed_item_array("1" "y0" "x") ~~
@@ -510,10 +771,6 @@ DEFINE_ACTION_MACRO flir_manifest_harness_seed BEGIN
     LAM flir_manifest_harness_add_unit_a
   END
 
-  ACTION_IF flir_manifest_harness_ground_override = 1 BEGIN
-    OUTER_SET $flir_endpoint_candidate("bg2" "1" "bg2:1" "core:ground-a") = 1
-  END
-
   ACTION_IF flir_manifest_harness_legacy_book = 1 BEGIN
     OUTER_SPRINT $flir_registry_applied_unit_stable("1" "1" "b2c") ~core:unit-a~
   END ELSE BEGIN
@@ -532,9 +789,26 @@ DEFINE_ACTION_MACRO flir_manifest_harness_seed BEGIN
   LAM flir_endpoints_register_registry_slots
   LAM flir_registry_reconcile_mappings
   LAM flir_endpoints_claim_slots
+  ACTION_IF flir_manifest_harness_duplicate_global = 1 BEGIN
+    // Inject after registry reconciliation so manifest validation, not registry
+    // setup, owns the duplicate GLOBAL diagnostic.
+    OUTER_SPRINT $removed_item_array("1" "1" "duplicate") ~~
+  END
+  LAM flir_manifest_prepare_catalog
+  ACTION_IF flir_manifest_harness_group_lowering = 1 BEGIN
+    LAM flir_endpoints_lower_groups
+    ACTION_IF flir_manifest_harness_group_missing_pair = 1 BEGIN
+      // Deliberately retain only one stable-unit relation so publication owns
+      // the opaque completeness failure.
+      OUTER_SPRINT flir_manifest_harness_missing_target $flir_endpoint_group_unit_override("core:unit-a" "core:slot-group")
+      ACTION_CLEAR_ARRAY flir_endpoint_group_unit_override
+      OUTER_SPRINT $flir_endpoint_group_unit_override("core:unit-a" "core:slot-group") ~%flir_manifest_harness_missing_target%~
+    END
+  END
   LAM flir_endpoints_register_catalog_rows
   ACTION_IF flir_manifest_harness_synthesized != 1
-        AND flir_manifest_harness_disable_item != 1 BEGIN
+        AND flir_manifest_harness_disable_item != 1
+        AND flir_manifest_harness_skip_default_override != 1 BEGIN
     ACTION_IF flir_manifest_harness_reverse = 1 BEGIN
       LAM flir_manifest_harness_add_disabled_override
       LAM flir_manifest_harness_add_sparse_override
@@ -561,15 +835,13 @@ DEFINE_ACTION_MACRO flir_manifest_harness_seed BEGIN
   ACTION_IF flir_manifest_harness_ground_override = 1 BEGIN
     LAM flir_manifest_harness_add_ground_override
   END
-  ACTION_IF flir_manifest_harness_duplicate_global = 1 BEGIN
-    // Inject after registry reconciliation so manifest validation, not registry
-    // setup, owns the duplicate GLOBAL diagnostic.
-    OUTER_SPRINT $removed_item_array("1" "1" "duplicate") ~~
+  ACTION_IF flir_manifest_harness_group_target_override = 1 BEGIN
+    LAM flir_manifest_harness_add_group_target_override
   END
-
-  // This is the production seam under test: actual applied arrays and their
-  // registry identities are normalized before the final catalog fingerprint.
-  LAM flir_manifest_prepare_catalog
+  ACTION_IF flir_manifest_harness_group_cross_area_override = 1 BEGIN
+    LAM flir_manifest_harness_add_cross_area_group_override
+  END
+  LAM flir_endpoints_register_group_overrides
   LAM flir_registry_finalize_catalog
   OUTER_SPRINT flir_manifest_probe ~THIS_MUST_NOT_REPLACE_LITERAL_DATA~
   OUTER_SPRINT flir_manifest_output_path ~%argv[4]%~
@@ -683,5 +955,48 @@ BEGIN ~Manifest harness: reversed synthesized legacy book policy~ DESIGNATED 16
 BEGIN ~Manifest harness: ground override shares fallback capacity~ DESIGNATED 17
   LAM flir_manifest_harness_defaults
   OUTER_SET flir_manifest_harness_ground_override = 1
+  LAM flir_manifest_harness_make_escaped_identity
+  LAM flir_manifest_harness_seed
+
+BEGIN ~Manifest harness: group choices are lowered per stable unit~ DESIGNATED 18
+  LAM flir_manifest_harness_defaults
+  OUTER_SET flir_manifest_harness_group_lowering = 1
+  LAM flir_manifest_harness_make_escaped_identity
+  LAM flir_manifest_harness_seed
+
+BEGIN ~Manifest harness: group override cannot target group metadata~ DESIGNATED 19
+  LAM flir_manifest_harness_defaults
+  OUTER_SET flir_manifest_harness_group_lowering = 1
+  OUTER_SET flir_manifest_harness_group_target_override = 1
+  OUTER_SET flir_manifest_harness_skip_default_override = 1
+  LAM flir_manifest_harness_make_escaped_identity
+  LAM flir_manifest_harness_seed
+
+BEGIN ~Manifest harness: group override cannot cross area~ DESIGNATED 20
+  LAM flir_manifest_harness_defaults
+  OUTER_SET flir_manifest_harness_group_lowering = 1
+  OUTER_SET flir_manifest_harness_group_cross_area_override = 1
+  OUTER_SET flir_manifest_harness_skip_default_override = 1
+  LAM flir_manifest_harness_make_escaped_identity
+  LAM flir_manifest_harness_seed
+
+BEGIN ~Manifest harness: every active group unit pair is required~ DESIGNATED 21
+  LAM flir_manifest_harness_defaults
+  OUTER_SET flir_manifest_harness_group_lowering = 1
+  OUTER_SET flir_manifest_harness_group_missing_pair = 1
+  LAM flir_manifest_harness_make_escaped_identity
+  LAM flir_manifest_harness_seed
+
+BEGIN ~Manifest harness: reversed group membership declarations~ DESIGNATED 22
+  LAM flir_manifest_harness_defaults
+  OUTER_SET flir_manifest_harness_group_lowering = 1
+  OUTER_SET flir_manifest_harness_group_reverse = 1
+  LAM flir_manifest_harness_make_escaped_identity
+  LAM flir_manifest_harness_seed
+
+BEGIN ~Manifest harness: conflicting physical alias fails~ DESIGNATED 23
+  LAM flir_manifest_harness_defaults
+  OUTER_SET flir_manifest_harness_group_lowering = 1
+  OUTER_SET flir_manifest_harness_group_alias_mismatch = 1
   LAM flir_manifest_harness_make_escaped_identity
   LAM flir_manifest_harness_seed

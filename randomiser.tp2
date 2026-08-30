@@ -165,8 +165,10 @@ BEGIN @101100 SUBCOMPONENT @101000 DESIGNATED 1100                              
     LAM flir_endpoints_register_registry_slots
     LAM flir_registry_reconcile_mappings
     LAM flir_endpoints_claim_slots
-    LAM flir_endpoints_register_catalog_rows
     LAM flir_manifest_prepare_catalog
+    LAM flir_endpoints_lower_groups
+    LAM flir_endpoints_register_catalog_rows
+    LAM flir_endpoints_register_group_overrides
     LAM flir_registry_finalize_catalog
     LAM flir_registry_write_state
     LAM flir_delivery_publish_manifest
@@ -235,8 +237,10 @@ BEGIN @101200 SUBCOMPONENT @101000 DESIGNATED 1200                              
     LAM flir_endpoints_register_registry_slots
     LAM flir_registry_reconcile_mappings
     LAM flir_endpoints_claim_slots
-    LAM flir_endpoints_register_catalog_rows
     LAM flir_manifest_prepare_catalog
+    LAM flir_endpoints_lower_groups
+    LAM flir_endpoints_register_catalog_rows
+    LAM flir_endpoints_register_group_overrides
     LAM flir_registry_finalize_catalog
     LAM flir_registry_write_state
     LAM flir_delivery_publish_manifest

@@ -354,10 +354,25 @@ DEFINE_ACTION_MACRO flir_manifest_build_endpoint_semantics BEGIN
   END
 END
 
+// Unit-specific group choices are installer results rather than catalog rows.
+// Canonicalize them explicitly so a changed seeded choice changes the manifest
+// fingerprint even when the normalized catalog is otherwise identical.
+DEFINE_ACTION_MACRO flir_manifest_build_unit_override_semantics BEGIN
+  ACTION_SORT_ARRAY_INDICES flir_endpoint_group_unit_override LEXICOGRAPHICALLY
+  OUTER_TEXT_SPRINT flir_manifest_unit_override_semantic_rows ~~
+  ACTION_PHP_EACH flir_endpoint_group_unit_override AS flir_manifest_unit_override_key => flir_manifest_unit_override_target BEGIN
+    LAF flir_manifest_quote_value STR_VAR raw = ~%flir_manifest_unit_override_key_0%~ RET flir_manifest_unit_semantic_unit = encoded END
+    LAF flir_manifest_quote_value STR_VAR raw = ~%flir_manifest_unit_override_key_1%~ RET flir_manifest_unit_semantic_slot = encoded END
+    LAF flir_manifest_quote_value STR_VAR raw = ~%flir_manifest_unit_override_target%~ RET flir_manifest_unit_semantic_target = encoded END
+    OUTER_TEXT_SPRINT flir_manifest_unit_override_semantic_rows ~%flir_manifest_unit_override_semantic_rows%UNIT_OVERRIDE %flir_manifest_unit_semantic_unit% %flir_manifest_unit_semantic_slot% %flir_manifest_unit_semantic_target%%WNL%~
+  END
+END
+
 DEFINE_ACTION_MACRO flir_manifest_build_fingerprint BEGIN
   LAF flir_registry_canonical_rows RET flir_manifest_registry_rows = rows END
   LAF flir_catalog_canonical_rows RET flir_manifest_catalog_rows = rows END
   LAM flir_manifest_build_endpoint_semantics
+  LAM flir_manifest_build_unit_override_semantics
   OUTER_TEXT_SPRINT flir_manifest_canonical ~~
   OUTER_TEXT_SPRINT flir_manifest_canonical_append ~%flir_manifest_schema%~
   LAM flir_manifest_append_canonical
@@ -368,6 +383,8 @@ DEFINE_ACTION_MACRO flir_manifest_build_fingerprint BEGIN
   OUTER_TEXT_SPRINT flir_manifest_canonical_append ~%flir_manifest_catalog_rows%~
   LAM flir_manifest_append_canonical
   OUTER_TEXT_SPRINT flir_manifest_canonical_append ~%flir_manifest_endpoint_semantic_rows%~
+  LAM flir_manifest_append_canonical
+  OUTER_TEXT_SPRINT flir_manifest_canonical_append ~%flir_manifest_unit_override_semantic_rows%~
   LAM flir_manifest_append_canonical
   ACTION_CLEAR_ARRAY flir_manifest_fingerprint
   OUTER_FOR (flir_manifest_word = 1; flir_manifest_word <= 4; ++flir_manifest_word) BEGIN
@@ -524,20 +541,20 @@ DEFINE_ACTION_MACRO flir_manifest_build_lua BEGIN
       OUTER_TEXT_SPRINT flir_manifest_lua ~%flir_manifest_lua%    [%flir_manifest_endpoint_key_lua%] = { area = %flir_manifest_area_lua%, target_kind = %flir_manifest_kind_lua%, target_identity = %flir_manifest_identity_lua%, x = %flir_manifest_emit_x%, y = %flir_manifest_emit_y%, capacity = %flir_manifest_emit_capacity%, static_policy = %flir_manifest_policy_lua%, fallback_id = %flir_manifest_fallback_lua%, adapter = %flir_manifest_adapter_lua%, external_delivery = %flir_manifest_external_delivery%, enabled = %flir_manifest_emit_enabled% },%WNL%~
     END
   END
-  OUTER_TEXT_SPRINT flir_manifest_lua ~%flir_manifest_lua%  },%WNL%  sparse_overrides = {%WNL%~
+  OUTER_TEXT_SPRINT flir_manifest_lua ~%flir_manifest_lua%  },%WNL%  unit_overrides = {%WNL%~
 
-  ACTION_CLEAR_ARRAY flir_manifest_override_present
-  ACTION_CLEAR_ARRAY flir_manifest_override_item_present
-  ACTION_CLEAR_ARRAY flir_manifest_override_endpoint
   ACTION_CLEAR_ARRAY flir_manifest_endpoint_location_present
   ACTION_CLEAR_ARRAY flir_manifest_endpoint_location_count
-  // Capacity is a promise per physical endpoint. A source slot can contribute
-  // at most one delivery, even when several item-specific overrides name it,
-  // so count the union of enabled base and override source-slot identities.
+  // Capacity is reserved per physical endpoint and stable source-slot. Exact
+  // creature aliases use their canonical endpoint, so aliases cannot mint a
+  // second capacity budget.
   OUTER_FOR (flir_manifest_capacity_slot_i = 1; flir_manifest_capacity_slot_i <= flir_endpoint_slot_count; ++flir_manifest_capacity_slot_i) BEGIN
     OUTER_SPRINT flir_manifest_capacity_location $flir_endpoint_slot_order("%flir_manifest_capacity_slot_i%")
     ACTION_IF $flir_endpoint_slot_enabled("%flir_manifest_capacity_location%") = 1 BEGIN
       OUTER_SPRINT flir_manifest_capacity_endpoint $flir_endpoint_slot_endpoint("%flir_manifest_capacity_location%")
+      ACTION_IF VARIABLE_IS_SET $flir_endpoint_physical_canonical("%flir_manifest_capacity_endpoint%") BEGIN
+        OUTER_SPRINT flir_manifest_capacity_endpoint $flir_endpoint_physical_canonical("%flir_manifest_capacity_endpoint%")
+      END
       OUTER_SET $flir_manifest_endpoint_location_present("%flir_manifest_capacity_endpoint%" "%flir_manifest_capacity_location%") = 1
       ACTION_IF VARIABLE_IS_SET $flir_manifest_endpoint_location_count("%flir_manifest_capacity_endpoint%") BEGIN
         OUTER_SET $flir_manifest_endpoint_location_count("%flir_manifest_capacity_endpoint%") += 1
@@ -546,6 +563,116 @@ DEFINE_ACTION_MACRO flir_manifest_build_lua BEGIN
       END
     END
   END
+
+  ACTION_CLEAR_ARRAY flir_manifest_active_unit_tier
+  ACTION_SORT_ARRAY_INDICES flir_manifest_token_present LEXICOGRAPHICALLY
+  ACTION_PHP_EACH flir_manifest_token_present AS flir_manifest_unit_global => flir_manifest_unit_token_present BEGIN
+    ACTION_IF flir_manifest_unit_token_present = 1
+          AND $flir_manifest_token_enabled("%flir_manifest_unit_global%") = 1 BEGIN
+      OUTER_SPRINT flir_manifest_unit_id $flir_manifest_token_unit("%flir_manifest_unit_global%")
+      ACTION_IF VARIABLE_IS_SET $flir_manifest_active_unit_tier("%flir_manifest_unit_id%") BEGIN
+        LAF flir_manifest_fail STR_VAR code = ~DUPLICATE_UNIT~ id = ~unit-override~ END
+      END
+      OUTER_SPRINT $flir_manifest_active_unit_tier("%flir_manifest_unit_id%") $flir_manifest_token_tier("%flir_manifest_unit_global%")
+    END
+  END
+  ACTION_CLEAR_ARRAY flir_manifest_unit_override_present
+  ACTION_CLEAR_ARRAY flir_manifest_unit_override_unit_present
+  ACTION_CLEAR_ARRAY flir_manifest_unit_override_endpoint
+  ACTION_SORT_ARRAY_INDICES flir_endpoint_group_unit_override LEXICOGRAPHICALLY
+  ACTION_PHP_EACH flir_endpoint_group_unit_override AS flir_manifest_unit_override_key => flir_manifest_unit_override_target BEGIN
+    OUTER_SPRINT flir_manifest_unit_override_unit ~%flir_manifest_unit_override_key_0%~
+    OUTER_SPRINT flir_manifest_unit_override_location ~%flir_manifest_unit_override_key_1%~
+    OUTER_SPRINT flir_manifest_unit_override_base $flir_endpoint_slot_endpoint("%flir_manifest_unit_override_location%")
+    ACTION_IF VARIABLE_IS_SET $flir_endpoint_physical_canonical("%flir_manifest_unit_override_target%") BEGIN
+      OUTER_SPRINT flir_manifest_unit_override_target $flir_endpoint_physical_canonical("%flir_manifest_unit_override_target%")
+    END
+    ACTION_IF NOT VARIABLE_IS_SET $flir_manifest_active_unit_tier("%flir_manifest_unit_override_unit%")
+          OR NOT VARIABLE_IS_SET $flir_catalog_present("unit" "%flir_manifest_unit_override_unit%")
+          OR $flir_catalog_enabled("unit" "%flir_manifest_unit_override_unit%") != 1
+          OR NOT VARIABLE_IS_SET $flir_catalog_present("slot" "%flir_manifest_unit_override_location%")
+          OR $flir_catalog_enabled("slot" "%flir_manifest_unit_override_location%") != 1
+          OR NOT VARIABLE_IS_SET $flir_endpoint_slot_present("%flir_manifest_unit_override_location%")
+          OR $flir_endpoint_slot_enabled("%flir_manifest_unit_override_location%") != 1
+          OR NOT ($flir_manifest_active_unit_tier("%flir_manifest_unit_override_unit%") STRING_EQUAL_CASE $flir_endpoint_slot_tier("%flir_manifest_unit_override_location%"))
+          OR NOT VARIABLE_IS_SET $flir_endpoint_present("%flir_manifest_unit_override_target%")
+          OR $flir_endpoint_enabled("%flir_manifest_unit_override_target%") != 1
+          OR NOT VARIABLE_IS_SET $flir_catalog_present("endpoint" "%flir_manifest_unit_override_target%")
+          OR $flir_catalog_enabled("endpoint" "%flir_manifest_unit_override_target%") != 1
+          OR $flir_endpoint_target_kind("%flir_manifest_unit_override_target%") STRING_EQUAL_CASE ~group~
+          OR $flir_endpoint_target_kind("%flir_manifest_unit_override_target%") STRING_EQUAL_CASE ~legacy_adapter~
+          OR NOT ($flir_endpoint_area("%flir_manifest_unit_override_target%") STRING_EQUAL_CASE $flir_endpoint_area("%flir_manifest_unit_override_base%"))
+          OR NOT VARIABLE_IS_SET $flir_endpoint_candidate(
+            $flir_endpoint_slot_campaign("%flir_manifest_unit_override_location%")
+            $flir_endpoint_slot_tier("%flir_manifest_unit_override_location%")
+            $flir_endpoint_slot_band("%flir_manifest_unit_override_location%")
+            "%flir_manifest_unit_override_target%"
+          ) BEGIN
+      LAF flir_manifest_fail STR_VAR code = ~UNIT_OVERRIDE_SCOPE~ id = ~group~ END
+    END
+    OUTER_SET flir_manifest_unit_override_already_reserved = 0
+    OUTER_SPRINT flir_manifest_unit_override_cursor ~%flir_manifest_unit_override_base%~
+    OUTER_SET flir_manifest_unit_override_steps = 0
+    OUTER_WHILE flir_manifest_unit_override_already_reserved = 0
+          AND NOT ("%flir_manifest_unit_override_cursor%" STRING_EQUAL_CASE ~-~) BEGIN
+      OUTER_SET flir_manifest_unit_override_steps += 1
+      ACTION_IF flir_manifest_unit_override_steps > flir_endpoint_count
+            OR NOT VARIABLE_IS_SET $flir_endpoint_present("%flir_manifest_unit_override_cursor%") BEGIN
+        LAF flir_manifest_fail STR_VAR code = ~UNIT_OVERRIDE_SCOPE~ id = ~group~ END
+      END
+      ACTION_IF "%flir_manifest_unit_override_cursor%" STRING_EQUAL_CASE "%flir_manifest_unit_override_target%" BEGIN
+        OUTER_SET flir_manifest_unit_override_already_reserved = 1
+      END ELSE ACTION_IF $flir_endpoint_target_kind("%flir_manifest_unit_override_cursor%") STRING_EQUAL_CASE ~ground~ BEGIN
+        OUTER_SPRINT flir_manifest_unit_override_cursor ~-~
+      END ELSE BEGIN
+        OUTER_SPRINT flir_manifest_unit_override_cursor $flir_endpoint_fallback("%flir_manifest_unit_override_cursor%")
+      END
+    END
+    ACTION_IF NOT VARIABLE_IS_SET $flir_manifest_endpoint_location_present("%flir_manifest_unit_override_target%" "%flir_manifest_unit_override_location%") BEGIN
+      OUTER_SET $flir_manifest_endpoint_location_present("%flir_manifest_unit_override_target%" "%flir_manifest_unit_override_location%") = 1
+      ACTION_IF flir_manifest_unit_override_already_reserved = 0 BEGIN
+        ACTION_IF VARIABLE_IS_SET $flir_manifest_endpoint_location_count("%flir_manifest_unit_override_target%") BEGIN
+          OUTER_SET $flir_manifest_endpoint_location_count("%flir_manifest_unit_override_target%") += 1
+        END ELSE BEGIN
+          OUTER_SET $flir_manifest_endpoint_location_count("%flir_manifest_unit_override_target%") = 1
+        END
+        ACTION_IF $flir_manifest_endpoint_location_count("%flir_manifest_unit_override_target%") > $flir_endpoint_capacity("%flir_manifest_unit_override_target%") BEGIN
+          LAF flir_manifest_fail STR_VAR code = ~UNIT_OVERRIDE_CAPACITY~ id = ~group~ END
+        END
+      END
+    END
+    OUTER_SET $flir_manifest_unit_override_unit_present("%flir_manifest_unit_override_unit%") = 1
+    OUTER_SET $flir_manifest_unit_override_present("%flir_manifest_unit_override_unit%" "%flir_manifest_unit_override_location%") = 1
+    OUTER_SPRINT $flir_manifest_unit_override_endpoint("%flir_manifest_unit_override_unit%" "%flir_manifest_unit_override_location%") ~%flir_manifest_unit_override_target%~
+  END
+  ACTION_SORT_ARRAY_INDICES flir_manifest_unit_override_unit_present LEXICOGRAPHICALLY
+  ACTION_SORT_ARRAY_INDICES flir_manifest_unit_override_present LEXICOGRAPHICALLY
+  ACTION_PHP_EACH flir_manifest_unit_override_unit_present AS flir_manifest_unit_override_unit => flir_manifest_unit_override_unit_enabled BEGIN
+    ACTION_IF flir_manifest_unit_override_unit_enabled = 1 BEGIN
+      OUTER_TEXT_SPRINT flir_manifest_quote_input ~%flir_manifest_unit_override_unit%~
+      LAM flir_manifest_quote
+      OUTER_SPRINT flir_manifest_unit_override_unit_lua ~%flir_manifest_quote_output%~
+      OUTER_TEXT_SPRINT flir_manifest_lua ~%flir_manifest_lua%    [%flir_manifest_unit_override_unit_lua%] = {%WNL%~
+      ACTION_PHP_EACH flir_manifest_unit_override_present AS flir_manifest_unit_override_emit_key => flir_manifest_unit_override_emit_enabled BEGIN
+        ACTION_IF flir_manifest_unit_override_emit_enabled = 1
+              AND "%flir_manifest_unit_override_emit_key_0%" STRING_EQUAL_CASE "%flir_manifest_unit_override_unit%" BEGIN
+          OUTER_TEXT_SPRINT flir_manifest_quote_input ~%flir_manifest_unit_override_emit_key_1%~
+          LAM flir_manifest_quote
+          OUTER_SPRINT flir_manifest_unit_override_location_lua ~%flir_manifest_quote_output%~
+          OUTER_TEXT_SPRINT flir_manifest_quote_input $flir_manifest_unit_override_endpoint("%flir_manifest_unit_override_emit_key_0%" "%flir_manifest_unit_override_emit_key_1%")
+          LAM flir_manifest_quote
+          OUTER_SPRINT flir_manifest_unit_override_endpoint_lua ~%flir_manifest_quote_output%~
+          OUTER_TEXT_SPRINT flir_manifest_lua ~%flir_manifest_lua%      [%flir_manifest_unit_override_location_lua%] = %flir_manifest_unit_override_endpoint_lua%,%WNL%~
+        END
+      END
+      OUTER_TEXT_SPRINT flir_manifest_lua ~%flir_manifest_lua%    },%WNL%~
+    END
+  END
+  OUTER_TEXT_SPRINT flir_manifest_lua ~%flir_manifest_lua%  },%WNL%  sparse_overrides = {%WNL%~
+
+  ACTION_CLEAR_ARRAY flir_manifest_override_present
+  ACTION_CLEAR_ARRAY flir_manifest_override_item_present
+  ACTION_CLEAR_ARRAY flir_manifest_override_endpoint
   ACTION_SORT_ARRAY_INDICES flir_catalog_index LEXICOGRAPHICALLY
   ACTION_PHP_EACH flir_catalog_index AS flir_manifest_catalog_key => flir_manifest_catalog_present BEGIN
     ACTION_IF flir_manifest_catalog_present = 1
@@ -567,37 +694,81 @@ DEFINE_ACTION_MACRO flir_manifest_build_lua BEGIN
               OR $flir_endpoint_enabled("%flir_manifest_override_target%") != 1 BEGIN
           LAF flir_manifest_fail STR_VAR code = ~OVERRIDE_REFERENCE~ id = ~override~ END
         END
-        OUTER_SPRINT flir_manifest_override_tier $flir_catalog_tier("slot" "%flir_manifest_override_location%")
-        OUTER_SPRINT flir_manifest_override_campaign $flir_endpoint_slot_campaign("%flir_manifest_override_location%")
-        OUTER_SPRINT flir_manifest_override_band $flir_catalog_progression_band("slot" "%flir_manifest_override_location%")
-        ACTION_IF NOT ($flir_catalog_tier("item" "%flir_manifest_override_item%") STRING_EQUAL_CASE ~%flir_manifest_override_tier%~)
-              OR NOT ($flir_endpoint_slot_tier("%flir_manifest_override_location%") STRING_EQUAL_CASE ~%flir_manifest_override_tier%~)
-              OR $flir_endpoint_target_kind("%flir_manifest_override_target%") STRING_EQUAL_CASE ~legacy_adapter~
-              OR NOT VARIABLE_IS_SET $flir_endpoint_candidate("%flir_manifest_override_campaign%" "%flir_manifest_override_tier%" "%flir_manifest_override_band%" "%flir_manifest_override_target%") BEGIN
-          LAF flir_manifest_fail STR_VAR code = ~OVERRIDE_SCOPE~ id = ~override~ END
-        END
         ACTION_IF VARIABLE_IS_SET $flir_manifest_override_present("%flir_manifest_override_item%" "%flir_manifest_override_location%") BEGIN
           LAF flir_manifest_fail STR_VAR code = ~DUPLICATE_OVERRIDE~ id = ~override~ END
         END
+        OUTER_SPRINT flir_manifest_override_tier $flir_catalog_tier("slot" "%flir_manifest_override_location%")
+        OUTER_SPRINT flir_manifest_override_campaign $flir_endpoint_slot_campaign("%flir_manifest_override_location%")
+        OUTER_SPRINT flir_manifest_override_band $flir_catalog_progression_band("slot" "%flir_manifest_override_location%")
+        OUTER_SPRINT flir_manifest_override_base $flir_endpoint_slot_endpoint("%flir_manifest_override_location%")
+        ACTION_IF NOT ($flir_catalog_tier("item" "%flir_manifest_override_item%") STRING_EQUAL_CASE ~%flir_manifest_override_tier%~)
+              OR NOT ($flir_endpoint_slot_tier("%flir_manifest_override_location%") STRING_EQUAL_CASE ~%flir_manifest_override_tier%~)
+              OR $flir_endpoint_target_kind("%flir_manifest_override_target%") STRING_EQUAL_CASE ~group~
+              OR $flir_endpoint_target_kind("%flir_manifest_override_target%") STRING_EQUAL_CASE ~legacy_adapter~
+              OR NOT ($flir_endpoint_area("%flir_manifest_override_target%") STRING_EQUAL_CASE $flir_endpoint_area("%flir_manifest_override_base%"))
+              OR NOT VARIABLE_IS_SET $flir_endpoint_candidate("%flir_manifest_override_campaign%" "%flir_manifest_override_tier%" "%flir_manifest_override_band%" "%flir_manifest_override_target%") BEGIN
+          LAF flir_manifest_fail STR_VAR code = ~OVERRIDE_SCOPE~ id = ~override~ END
+        END
+        ACTION_IF VARIABLE_IS_SET $flir_endpoint_physical_canonical("%flir_manifest_override_target%") BEGIN
+          OUTER_SPRINT flir_manifest_override_target $flir_endpoint_physical_canonical("%flir_manifest_override_target%")
+        END
+        OUTER_SET flir_manifest_override_already_reserved = 0
+        OUTER_SPRINT flir_manifest_override_cursor $flir_endpoint_slot_endpoint("%flir_manifest_override_location%")
+        OUTER_SET flir_manifest_override_steps = 0
+        OUTER_WHILE flir_manifest_override_already_reserved = 0
+              AND NOT ("%flir_manifest_override_cursor%" STRING_EQUAL_CASE ~-~) BEGIN
+          OUTER_SET flir_manifest_override_steps += 1
+          ACTION_IF flir_manifest_override_steps > flir_endpoint_count
+                OR NOT VARIABLE_IS_SET $flir_endpoint_present("%flir_manifest_override_cursor%") BEGIN
+            LAF flir_manifest_fail STR_VAR code = ~OVERRIDE_SCOPE~ id = ~override~ END
+          END
+          ACTION_IF "%flir_manifest_override_cursor%" STRING_EQUAL_CASE "%flir_manifest_override_target%" BEGIN
+            OUTER_SET flir_manifest_override_already_reserved = 1
+          END ELSE ACTION_IF $flir_endpoint_target_kind("%flir_manifest_override_cursor%") STRING_EQUAL_CASE ~ground~ BEGIN
+            OUTER_SPRINT flir_manifest_override_cursor ~-~
+          END ELSE BEGIN
+            OUTER_SPRINT flir_manifest_override_cursor $flir_endpoint_fallback("%flir_manifest_override_cursor%")
+          END
+        END
         ACTION_IF NOT VARIABLE_IS_SET $flir_manifest_endpoint_location_present("%flir_manifest_override_target%" "%flir_manifest_override_location%") BEGIN
           OUTER_SET $flir_manifest_endpoint_location_present("%flir_manifest_override_target%" "%flir_manifest_override_location%") = 1
-          ACTION_IF VARIABLE_IS_SET $flir_manifest_endpoint_location_count("%flir_manifest_override_target%") BEGIN
-            OUTER_SET $flir_manifest_endpoint_location_count("%flir_manifest_override_target%") += 1
-          END ELSE BEGIN
-            OUTER_SET $flir_manifest_endpoint_location_count("%flir_manifest_override_target%") = 1
-          END
-          OUTER_SET flir_manifest_override_capacity_used = $flir_manifest_endpoint_location_count("%flir_manifest_override_target%")
-          ACTION_IF $flir_endpoint_target_kind("%flir_manifest_override_target%") STRING_EQUAL_CASE ~ground~
-                AND VARIABLE_IS_SET $flir_endpoint_fallback_required("%flir_manifest_override_target%") BEGIN
-            OUTER_SET flir_manifest_override_capacity_used += $flir_endpoint_fallback_required("%flir_manifest_override_target%")
-          END
-          ACTION_IF flir_manifest_override_capacity_used > $flir_endpoint_capacity("%flir_manifest_override_target%") BEGIN
-            LAF flir_manifest_fail STR_VAR code = ~OVERRIDE_CAPACITY~ id = ~override~ END
+          ACTION_IF flir_manifest_override_already_reserved = 0 BEGIN
+            ACTION_IF VARIABLE_IS_SET $flir_manifest_endpoint_location_count("%flir_manifest_override_target%") BEGIN
+              OUTER_SET $flir_manifest_endpoint_location_count("%flir_manifest_override_target%") += 1
+            END ELSE BEGIN
+              OUTER_SET $flir_manifest_endpoint_location_count("%flir_manifest_override_target%") = 1
+            END
+            OUTER_SET flir_manifest_override_capacity_used = $flir_manifest_endpoint_location_count("%flir_manifest_override_target%")
+            ACTION_IF $flir_endpoint_target_kind("%flir_manifest_override_target%") STRING_EQUAL_CASE ~ground~
+                  AND VARIABLE_IS_SET $flir_endpoint_fallback_required("%flir_endpoint_validation_generation%" "%flir_manifest_override_target%") BEGIN
+              OUTER_SET flir_manifest_override_capacity_used += $flir_endpoint_fallback_required("%flir_endpoint_validation_generation%" "%flir_manifest_override_target%")
+            END
+            ACTION_IF flir_manifest_override_capacity_used > $flir_endpoint_capacity("%flir_manifest_override_target%") BEGIN
+              LAF flir_manifest_fail STR_VAR code = ~OVERRIDE_CAPACITY~ id = ~override~ END
+            END
           END
         END
         OUTER_SET $flir_manifest_override_item_present("%flir_manifest_override_item%") = 1
         OUTER_SET $flir_manifest_override_present("%flir_manifest_override_item%" "%flir_manifest_override_location%") = 1
         OUTER_TEXT_SPRINT $flir_manifest_override_endpoint("%flir_manifest_override_item%" "%flir_manifest_override_location%") ~%flir_manifest_override_target%~
+      END
+    END
+  END
+
+  // A group is installer metadata, never a runtime target. Require one
+  // concrete relation for every enabled stable unit that can draw an enabled
+  // same-tier group slot. Diagnostics deliberately omit both identities.
+  OUTER_FOR (flir_manifest_group_slot_i = 1; flir_manifest_group_slot_i <= flir_endpoint_slot_count; ++flir_manifest_group_slot_i) BEGIN
+    OUTER_SPRINT flir_manifest_group_slot $flir_endpoint_slot_order("%flir_manifest_group_slot_i%")
+    OUTER_SPRINT flir_manifest_group_base $flir_endpoint_slot_endpoint("%flir_manifest_group_slot%")
+    ACTION_IF $flir_endpoint_slot_enabled("%flir_manifest_group_slot%") = 1
+          AND $flir_endpoint_target_kind("%flir_manifest_group_base%") STRING_EQUAL_CASE ~group~ BEGIN
+      OUTER_SPRINT flir_manifest_group_slot_tier $flir_endpoint_slot_tier("%flir_manifest_group_slot%")
+      ACTION_PHP_EACH flir_manifest_active_unit_tier AS flir_manifest_group_unit => flir_manifest_group_unit_tier BEGIN
+        ACTION_IF "%flir_manifest_group_unit_tier%" STRING_EQUAL_CASE "%flir_manifest_group_slot_tier%"
+              AND NOT VARIABLE_IS_SET $flir_manifest_unit_override_present("%flir_manifest_group_unit%" "%flir_manifest_group_slot%") BEGIN
+          LAF flir_manifest_fail STR_VAR code = ~GROUP_OVERRIDE_MISSING~ id = ~group~ END
+        END
       END
     END
   END

@@ -73,7 +73,12 @@ foreach ($symbol in @(
     'flir_endpoints_claim_slots',
     'flir_endpoints_register_registry_slots',
     'flir_endpoints_finalize_values',
+    'flir_endpoints_build_physical_aliases',
+    'flir_endpoints_record_group_target',
+    'flir_endpoints_record_group_resolution',
+    'flir_endpoints_lower_groups',
     'flir_endpoints_register_catalog_rows',
+    'flir_endpoints_register_group_overrides',
     'flir_endpoints_build_ssl_scope'
 )) {
     if ($source -notmatch ('DEFINE_ACTION_MACRO\s+' + [regex]::Escape($symbol))) {
@@ -94,6 +99,20 @@ if ($source -notmatch 'DEFINE_PATCH_MACRO\s+flir_endpoints_rewrite_sparse_rolls'
 }
 if ($source -match '(?i)item[_-]?location|location[_-]?item|joined_assignment|assignment_map') {
     throw 'Endpoint source contains a joined assignment/reporting smell.'
+}
+if ($source -notmatch '(?s)DEFINE_ACTION_MACRO\s+flir_endpoints_lower_groups.*?ACTION_PHP_EACH\s+tier_array.*?ACTION_PHP_EACH\s+location_array.*?ACTION_PHP_EACH\s+removed_item_array.*?select_group_cre') {
+    throw 'Legacy group lowering does not preserve the seeded tier/location/item selection order.'
+}
+if ($source -notmatch '(?s)flir_endpoint_group_processed_slot.*?ACTION_SORT_ARRAY_INDICES\s+flir_endpoint_group_slot_present\s+LEXICOGRAPHICALLY.*?flir_catalog_group_id.*?flir_catalog_priority.*?flir_catalog_weight') {
+    throw 'Group lowering does not append a deterministic pass for non-legacy effective group slots.'
+}
+if ($source -notmatch '(?s)flir_manifest_token_unit.*?select_group_cre.*?flir_endpoints_record_group_resolution' -or
+    $source -notmatch 'flir_endpoint_group_unit_override') {
+    throw 'Legacy group choices are not preserved per stable unit after every selector call.'
+}
+if ($source -notmatch '(?s)flir_endpoint_group_shadow_base.*?GROUP_SHADOW.*?flir_endpoint_reserve_fallback' -or
+    $source -notmatch '(?s)GROUP_PHYSICAL_ALIAS.*?flir_endpoint_physical_canonical') {
+    throw 'Concrete group shadows are not constrained to their validated capacity envelope.'
 }
 if ($source -notmatch 'randomiser/lists/endpoints/extensions\.2da') {
     throw 'Endpoint extensions have no production-reachable default fragment path.'
@@ -117,7 +136,7 @@ foreach ($component in @(1100, 1200)) {
     if ($installerSource -notmatch $componentPattern) {
         throw "Mode 1 component $component does not load endpoint validation before removal planning and deletion."
     }
-    $integrationPattern = '(?s)DESIGNATED\s+' + $component + '\b.*?flir_registry_register_applied_units.*?eeex-manifest-v1.*?flir_endpoints_register_registry_slots.*?flir_registry_reconcile_mappings.*?flir_endpoints_claim_slots.*?flir_endpoints_register_catalog_rows.*?flir_manifest_prepare_catalog.*?flir_registry_finalize_catalog.*?flir_registry_write_state.*?flir_delivery_publish_manifest.*?END\s+ELSE\s+ACTION_IF.*?legacy-bcs-v1.*?BEGIN.*?flir_registry_capture_final_slots.*?flir_registry_reconcile.*?flir_registry_write_state'
+    $integrationPattern = '(?s)DESIGNATED\s+' + $component + '\b.*?flir_registry_register_applied_units.*?eeex-manifest-v1.*?flir_endpoints_register_registry_slots.*?flir_registry_reconcile_mappings.*?flir_endpoints_claim_slots.*?flir_manifest_prepare_catalog.*?flir_endpoints_lower_groups.*?flir_endpoints_register_catalog_rows.*?flir_endpoints_register_group_overrides.*?flir_registry_finalize_catalog.*?flir_registry_write_state.*?flir_delivery_publish_manifest.*?END\s+ELSE\s+ACTION_IF.*?legacy-bcs-v1.*?BEGIN.*?flir_registry_capture_final_slots.*?flir_registry_reconcile.*?flir_registry_write_state'
     if ($installerSource -notmatch $integrationPattern) {
         throw "Mode 1 component $component does not reconcile endpoints, registry compacts, catalog rows, and fingerprints in order."
     }
