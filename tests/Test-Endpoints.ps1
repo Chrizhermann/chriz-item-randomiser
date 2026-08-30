@@ -117,7 +117,7 @@ foreach ($component in @(1100, 1200)) {
     if ($installerSource -notmatch $componentPattern) {
         throw "Mode 1 component $component does not load endpoint validation before removal planning and deletion."
     }
-    $integrationPattern = '(?s)DESIGNATED\s+' + $component + '\b.*?flir_registry_register_applied_units.*?eeex-manifest-v1.*?flir_endpoints_register_registry_slots.*?flir_registry_reconcile_mappings.*?flir_endpoints_claim_slots.*?flir_endpoints_register_catalog_rows.*?flir_registry_finalize_catalog.*?ELSE\s+BEGIN.*?flir_registry_capture_final_slots.*?flir_registry_reconcile.*?flir_registry_write_state'
+    $integrationPattern = '(?s)DESIGNATED\s+' + $component + '\b.*?flir_registry_register_applied_units.*?eeex-manifest-v1.*?flir_endpoints_register_registry_slots.*?flir_registry_reconcile_mappings.*?flir_endpoints_claim_slots.*?flir_endpoints_register_catalog_rows.*?flir_manifest_prepare_catalog.*?flir_registry_finalize_catalog.*?flir_registry_write_state.*?flir_delivery_publish_manifest.*?END\s+ELSE\s+ACTION_IF.*?legacy-bcs-v1.*?BEGIN.*?flir_registry_capture_final_slots.*?flir_registry_reconcile.*?flir_registry_write_state'
     if ($installerSource -notmatch $integrationPattern) {
         throw "Mode 1 component $component does not reconcile endpoints, registry compacts, catalog rows, and fingerprints in order."
     }

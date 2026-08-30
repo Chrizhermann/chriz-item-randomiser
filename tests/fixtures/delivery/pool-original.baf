@@ -1,0 +1,6 @@
+IF
+  Global("Pool","AR0801",1)
+THEN
+  RESPONSE #100
+    SetGlobal("FixturePool","GLOBAL",1)
+END

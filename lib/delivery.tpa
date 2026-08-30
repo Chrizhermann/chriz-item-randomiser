@@ -180,29 +180,6 @@ ACTION_PHP_EACH tier_array AS ta_tier => blank BEGIN
         BUT_ONLY
       END
 
-      ACTION_IF "%res%" STRING_EQUAL_CASE blpool.bcs AND FILE_EXISTS_IN_GAME blpool.bcs AND (BG1 = 0 OR BGT = 1) BEGIN
-        OUTER_SPRINT target_bcs "%res%"
-        OUTER_SPRINT baf flpool
-        OUTER_SPRINT replace_trigger ~Global(\"Pool\",\"AR0801\",1)~
-        LAUNCH_ACTION_FUNCTION process_script_for_m1 INT_VAR Get_Tra = 1 STR_VAR tra_array = blpool_item_tra END
-        EXTEND_BOTTOM "%res%" "randomiser/baf/pool_out_of_items.baf"
-      END
-
-      ACTION_IF "%res%" STRING_EQUAL_CASE ppbook.bcs AND FILE_EXISTS_IN_GAME ppbook.bcs AND (BG1 = 0 OR BGT = 1) BEGIN
-        OUTER_SPRINT target_bcs "%res%"
-        OUTER_SPRINT baf flbook
-        OUTER_SPRINT replace_trigger ~Global(\"page\",\"AR1513\",5)~
-        LAUNCH_ACTION_FUNCTION process_script_for_m1 END
-        EXTEND_BOTTOM "%res%" "randomiser/baf/book_out_of_items.baf"
-      END
-
-      ACTION_IF "%res%" STRING_EQUAL_CASE troalt.bcs AND FILE_EXISTS_IN_GAME troalt.bcs AND (BG1 = 0 OR BGT = 1) BEGIN
-        OUTER_SPRINT target_bcs "%res%"
-        OUTER_SPRINT baf fltroalt
-        OUTER_SPRINT replace_trigger ~Contains(\"MISC9D\",Myself)~
-        LAUNCH_ACTION_FUNCTION process_script_for_m1 END
-        EXTEND_BOTTOM "%res%" "randomiser/baf/altar_out_of_items.baf"
-      END
     END
   END
 END

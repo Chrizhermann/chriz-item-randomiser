@@ -1,0 +1,30 @@
+// Hermetic --nogame harness for Mode 1 delivery-backend selection.
+// argv[0] = production delivery_manifest.tpa
+// argv[1] = configurable synthetic EEex probe root
+// argv[2] = exact report output path
+// argv[3] = synthetic GAME_IS EE predicate (0 or 1)
+
+BACKUP ~backup~
+AUTHOR ~BG2 Item Randomiser delivery-backend test harness~
+
+ALWAYS
+  INCLUDE ~%argv[0]%~
+END
+
+BEGIN ~select delivery backend~ DESIGNATED 0
+  OUTER_SET weidu_action = 0
+  OUTER_SPRINT flir_delivery_probe_root ~%argv[1]%~
+  OUTER_SET flir_delivery_probe_game_is_ee = %argv[3]%
+
+  LAM flir_delivery_select_backend
+
+  ACTION_IF NOT (~%flir_delivery_backend%~ STRING_EQUAL_CASE ~eeex-manifest-v1~
+              OR ~%flir_delivery_backend%~ STRING_EQUAL_CASE ~legacy-bcs-v1~) BEGIN
+    FAIL ~FLIR_DELIVERY_TEST_ERR UNKNOWN_RESULT backend=%flir_delivery_backend%~
+  END
+
+  OUTER_TEXT_SPRINT flir_delivery_backend_report ~BACKEND %flir_delivery_backend%%WNL%~
+  COPY + ~...blank~ ~%argv[2]%~
+    INSERT_BYTES 0 STRING_LENGTH ~%flir_delivery_backend_report%~
+    WRITE_ASCIIE 0 ~%flir_delivery_backend_report%~ (STRING_LENGTH ~%flir_delivery_backend_report%~)
+  BUT_ONLY

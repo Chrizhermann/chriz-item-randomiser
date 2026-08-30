@@ -45,13 +45,13 @@
     {
       "id": 7,
       "subject": "Task 8: Add the exact Mode 1 backend seam and retain special BCS transforms",
-      "status": "in_progress",
+      "status": "completed",
       "blockedBy": [6]
     },
     {
       "id": 8,
       "subject": "Task 9: Build the pure Lua delivery transaction state machine",
-      "status": "pending",
+      "status": "in_progress",
       "blockedBy": [7]
     },
     {
@@ -85,5 +85,5 @@
       "blockedBy": [12]
     }
   ],
-  "lastUpdated": "2026-08-30T12:12:00.1784376+09:00"
+  "lastUpdated": "2026-08-30T12:43:04.4872917+09:00"
 }

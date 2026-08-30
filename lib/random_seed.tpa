@@ -37,8 +37,17 @@ DEFINE_ACTION_MACRO flir_random_seed_publish_state BEGIN
 END
 
 ACTION_IF weidu_action = 0 BEGIN
+  // Standalone compatibility harnesses and third-party includes historically
+  // entered here without a selector.  Preserve that API as explicitly legacy;
+  // production components 1100/1200 always select before this include.
+  ACTION_IF NOT VARIABLE_IS_SET flir_delivery_backend BEGIN
+    OUTER_SPRINT flir_delivery_backend ~legacy-bcs-v1~
+  END ELSE ACTION_IF NOT ("%flir_delivery_backend%" STRING_EQUAL_CASE ~eeex-manifest-v1~
+                       OR "%flir_delivery_backend%" STRING_EQUAL_CASE ~legacy-bcs-v1~) BEGIN
+    FAIL ~FLIR_DELIVERY_ERR UNKNOWN_BACKEND~
+  END
   INCLUDE "randomiser/lib/registry.tpa"
-  OUTER_SPRINT flir_registry_backend ~legacy-bcs-v1~
+  OUTER_SPRINT flir_registry_backend ~%flir_delivery_backend%~
 END
 
 OUTER_SET flir_seed_state_seed_present = 0

@@ -1,0 +1,93 @@
+// Neutralize ordinary one-shot delivery actors that may already be embedded in
+// existing saves when a preserved installation uses the EEex manifest backend.
+// Registry rows are the authenticated history: include enabled rows and
+// tombstones, but never generated assignment actors or retained adapters.
+
+<<<<<<<< ...randomiser/fl-inlined/delivery-neutralizer.baf
+IF
+  True()
+THEN
+  RESPONSE #100
+    DestroySelf()
+END
+>>>>>>>>
+
+DEFINE_ACTION_FUNCTION flir_delivery_neutralize_fail
+  STR_VAR
+    code = ~~
+BEGIN
+  FAIL ~FLIR_DELIVERY_ERR %code%~
+END
+
+DEFINE_ACTION_MACRO flir_delivery_neutralize_historical_actors BEGIN
+  ACTION_IF NOT VARIABLE_IS_SET flir_registry_available
+        OR NOT VARIABLE_IS_SET flir_registry_compacts_ready
+        OR flir_registry_compacts_ready != 1 BEGIN
+    LAF flir_delivery_neutralize_fail STR_VAR code = ~REGISTRY_NOT_READY~ END
+  END
+
+  ACTION_CLEAR_ARRAY flir_delivery_neutralize_adapter_stable
+  ACTION_CLEAR_ARRAY flir_delivery_neutralize_resref
+
+  // Build the exclusion set from immutable base-declaration birth semantics,
+  // not today's mutable slot -> endpoint mapping.  A compatibility REPLACE may
+  // redirect an ordinary slot, but an actor already embedded in an old save
+  // still belongs to its original ordinary family and must remain neutralized.
+  ACTION_SORT_ARRAY_INDICES flir_endpoint_declaration_order LEXICOGRAPHICALLY
+  ACTION_PHP_EACH flir_endpoint_declaration_order AS flir_delivery_neutralize_decl => flir_delivery_neutralize_decl_present BEGIN
+    ACTION_IF $flir_endpoint_declaration_kind("%flir_delivery_neutralize_decl%") STRING_EQUAL_CASE ~legacy_adapter~ BEGIN
+      OUTER_SPRINT flir_delivery_neutralize_decl_campaign $flir_endpoint_declaration_campaign("%flir_delivery_neutralize_decl%")
+      OUTER_SPRINT flir_delivery_neutralize_decl_tier $flir_endpoint_declaration_tier("%flir_delivery_neutralize_decl%")
+      OUTER_SPRINT flir_delivery_neutralize_decl_raw $flir_endpoint_declaration_raw("%flir_delivery_neutralize_decl%")
+      OUTER_SPRINT flir_delivery_neutralize_decl_ident $flir_endpoint_declaration_ident("%flir_delivery_neutralize_decl%")
+      OUTER_SET flir_delivery_neutralize_decl_occurrence = $flir_endpoint_declaration_occurrence("%flir_delivery_neutralize_decl%")
+      OUTER_SPRINT flir_delivery_neutralize_stable ~legacy:slot-%flir_delivery_neutralize_decl_campaign%-%flir_delivery_neutralize_decl_tier%-%flir_delivery_neutralize_decl_raw%-%flir_delivery_neutralize_decl_ident%-%flir_delivery_neutralize_decl_occurrence%~
+      OUTER_SET $flir_delivery_neutralize_adapter_stable("%flir_delivery_neutralize_stable%") = 1
+    END
+  END
+
+  ACTION_SORT_ARRAY_INDICES flir_registry_index LEXICOGRAPHICALLY
+  ACTION_PHP_EACH flir_registry_index AS flir_delivery_neutralize_key => flir_delivery_neutralize_present BEGIN
+    ACTION_IF flir_delivery_neutralize_present = 1
+          AND $flir_registry_index_kind("%flir_delivery_neutralize_key%") STRING_EQUAL_CASE ~slot~ BEGIN
+      OUTER_SPRINT flir_delivery_neutralize_stable $flir_registry_index_stable("%flir_delivery_neutralize_key%")
+      OUTER_SPRINT flir_delivery_neutralize_campaign $flir_registry_index_campaign("%flir_delivery_neutralize_key%")
+      OUTER_SPRINT flir_delivery_neutralize_tier $flir_registry_index_tier("%flir_delivery_neutralize_key%")
+
+      ACTION_IF "%flir_delivery_neutralize_stable%" STRING_MATCHES_REGEXP ~^legacy:slot-~ = 0
+            AND NOT VARIABLE_IS_SET $flir_delivery_neutralize_adapter_stable("%flir_delivery_neutralize_stable%") BEGIN
+        OUTER_SET flir_delivery_neutralize_compact = $flir_registry_compact(
+          "%flir_delivery_neutralize_campaign%"
+          "%flir_delivery_neutralize_tier%"
+          "slot"
+          "%flir_delivery_neutralize_stable%"
+        )
+        ACTION_IF flir_delivery_neutralize_compact < 1 BEGIN
+          LAF flir_delivery_neutralize_fail STR_VAR code = ~INVALID_HISTORICAL_SLOT~ END
+        END
+
+        OUTER_SPRINT flir_delivery_neutralize_script ~fl%flir_delivery_neutralize_tier%t%flir_delivery_neutralize_compact%~
+        OUTER_SET flir_delivery_neutralize_length = STRING_LENGTH ~%flir_delivery_neutralize_script%~
+        ACTION_IF flir_delivery_neutralize_length > 8
+              OR "%flir_delivery_neutralize_script%" STRING_MATCHES_REGEXP ~^[a-zA-Z0-9]+$~ != 0 BEGIN
+          LAF flir_delivery_neutralize_fail STR_VAR code = ~INVALID_ACTOR_SCRIPT~ END
+        END
+        ACTION_IF "%flir_delivery_neutralize_script%" STRING_MATCHES_REGEXP ~^fltier~ = 0 BEGIN
+          LAF flir_delivery_neutralize_fail STR_VAR code = ~ASSIGNMENT_NAMESPACE~ END
+        END
+        OUTER_SET $flir_delivery_neutralize_resref("%flir_delivery_neutralize_script%") = 1
+      END
+    END
+  END
+
+  // Campaign registries may authenticate the same physical BCS basename.
+  // Deduplicate before publication so install order cannot decide its bytes.
+  ACTION_SORT_ARRAY_INDICES flir_delivery_neutralize_resref LEXICOGRAPHICALLY
+  ACTION_PHP_EACH flir_delivery_neutralize_resref AS flir_delivery_neutralize_script => flir_delivery_neutralize_emit BEGIN
+    ACTION_IF flir_delivery_neutralize_emit = 1 BEGIN
+      COPY ~...randomiser/fl-inlined/delivery-neutralizer.baf~
+           ~...randomiser/fl-inlined/%flir_delivery_neutralize_script%.baf~
+      COMPILE ~...randomiser/fl-inlined/%flir_delivery_neutralize_script%.baf~
+    END
+  END
+END

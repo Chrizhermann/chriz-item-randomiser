@@ -526,11 +526,11 @@ try {
 
     $modeBoundary = @(& powershell.exe -NoProfile -File $modeBoundaryPath 2>&1 | ForEach-Object { [string] $_ })
     $modeJoined = $modeBoundary -join "`n"
-    if ($LASTEXITCODE -ne 1 -or
+    if ($LASTEXITCODE -ne 0 -or
         $modeJoined -notmatch 'PASS Mode2_ComponentsExcludeManifestRuntimeAssets' -or
-        $modeJoined -notmatch 'FAIL FUTURE_Mode1_ExplicitManifestVersusLegacyDeliveryBranch' -or
-        $modeJoined -match 'FAIL Mode2_') {
-        throw "Mode 2 boundary guard did not retain only the known future RED.`n$modeJoined"
+        $modeJoined -notmatch 'PASS FUTURE_Mode1_ExplicitManifestVersusLegacyDeliveryBranch' -or
+        $modeJoined -match 'FAIL (?:Mode1_|Mode2_|FUTURE_)') {
+        throw "Mode boundary guard did not accept the completed Task 8 seam.`n$modeJoined"
     }
 
     Write-Output 'PASS RemovalPlan_SourceReplaceBeforeFilter'

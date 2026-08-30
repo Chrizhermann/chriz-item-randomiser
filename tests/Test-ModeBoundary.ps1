@@ -156,19 +156,73 @@ function Test-ExplicitMode1DeliveryBackendBranch {
     )
 
     foreach ($body in $Bodies) {
-        $hasBackendSelector = $body -match '(?im)^[ \t]*ACTION_IF[^\r\n]*(?:eeex-manifest-v1|legacy-bcs-v1)[^\r\n]*BEGIN[ \t]*(?://[^\r\n]*)?\r?$'
-        $hasExplicitElse = $body -match '(?im)^[ \t]*END[ \t]+ELSE[ \t]+BEGIN[ \t]*(?://[^\r\n]*)?\r?$'
-        $hasLegacyRoute = $body -match '(?im)^[ \t]*INCLUDE[ \t]+["~]randomiser/lib/delivery\.tpa["~]'
-        $hasManifestRoute = $body -match '(?im)^[ \t]*INCLUDE[ \t]+["~]randomiser/lib/delivery_manifest\.tpa["~]'
-        $hasNeutralizationRoute = $body -match '(?im)^[ \t]*INCLUDE[ \t]+["~]randomiser/lib/delivery_neutralize\.tpa["~]'
+        $indexManifestInclude = $body.IndexOf(
+            'INCLUDE "randomiser/lib/delivery_manifest.tpa"',
+            [System.StringComparison]::OrdinalIgnoreCase
+        )
+        $indexSelector = $body.IndexOf('LAM flir_delivery_select_backend', [System.StringComparison]::OrdinalIgnoreCase)
+        $indexRandomSeed = $body.IndexOf(
+            'INCLUDE "randomiser/lib/random_seed.tpa"',
+            [System.StringComparison]::OrdinalIgnoreCase
+        )
+        $indexRemovalPlan = $body.IndexOf('LAM flir_removal_plan_build', [System.StringComparison]::OrdinalIgnoreCase)
+        $indexFixes = $body.IndexOf(
+            'INCLUDE "randomiser/lib/fixes.tpa"',
+            [System.StringComparison]::OrdinalIgnoreCase
+        )
+        $indexAppliedUnits = $body.IndexOf('LAM flir_registry_register_applied_units', [System.StringComparison]::OrdinalIgnoreCase)
+        $indexLegacyDelivery = $body.IndexOf(
+            'INCLUDE "randomiser/lib/delivery.tpa"',
+            [System.StringComparison]::OrdinalIgnoreCase
+        )
+        $indexManifestPrepare = $body.IndexOf('LAM flir_manifest_prepare_catalog', [System.StringComparison]::OrdinalIgnoreCase)
+        $indexManifestPublish = $body.IndexOf('LAM flir_delivery_publish_manifest', [System.StringComparison]::OrdinalIgnoreCase)
+        $indexNeutralizerInclude = $body.IndexOf(
+            'INCLUDE "randomiser/lib/delivery_neutralize.tpa"',
+            [System.StringComparison]::OrdinalIgnoreCase
+        )
+        $indexNeutralize = $body.IndexOf('LAM flir_delivery_neutralize_historical_actors', [System.StringComparison]::OrdinalIgnoreCase)
+        $indexSpecial = $body.IndexOf(
+            'INCLUDE "randomiser/lib/delivery_special.tpa"',
+            [System.StringComparison]::OrdinalIgnoreCase
+        )
+        $indexSsl = $body.IndexOf(
+            'INCLUDE "randomiser/lib/ssl.tpa"',
+            [System.StringComparison]::OrdinalIgnoreCase
+        )
 
-        if (-not (
-            $hasBackendSelector -and
-            $hasExplicitElse -and
-            $hasLegacyRoute -and
-            $hasManifestRoute -and
-            $hasNeutralizationRoute
-        )) {
+        $selectionIsEarly = (
+            $indexManifestInclude -ge 0 -and
+            $indexSelector -gt $indexManifestInclude -and
+            $indexRandomSeed -gt $indexSelector -and
+            $indexRemovalPlan -gt $indexRandomSeed -and
+            $indexFixes -gt $indexRemovalPlan
+        )
+        $postFixesLifecycle = (
+            $indexAppliedUnits -gt $indexFixes -and
+            $indexManifestPrepare -gt $indexAppliedUnits -and
+            $indexManifestPublish -gt $indexManifestPrepare -and
+            $indexNeutralizerInclude -gt $indexAppliedUnits -and
+            $indexNeutralize -gt $indexNeutralizerInclude -and
+            $indexLegacyDelivery -gt $indexAppliedUnits -and
+            $indexSpecial -gt $indexLegacyDelivery -and
+            $indexSpecial -gt $indexManifestPublish -and
+            $indexSpecial -gt $indexNeutralize -and
+            $indexSsl -gt $indexSpecial
+        )
+        $hasExactBackends = (
+            $body -match '(?im)^[ \t]*ACTION_IF[^\r\n]*eeex-manifest-v1[^\r\n]*BEGIN[ \t]*(?://[^\r\n]*)?\r?$' -and
+            $body -match '(?im)^[ \t]*END[ \t]+ELSE[ \t]+ACTION_IF[^\r\n]*legacy-bcs-v1[^\r\n]*BEGIN[ \t]*(?://[^\r\n]*)?\r?$' -and
+            $body -match 'FLIR_DELIVERY_ERR\s+UNKNOWN_BACKEND'
+        )
+        $commonSpecialIsSingle = (
+            [regex]::Matches(
+                $body,
+                '(?im)^[ \t]*INCLUDE[ \t]+["~]randomiser/lib/delivery_special\.tpa["~]'
+            ).Count -eq 1
+        )
+
+        if (-not ($selectionIsEarly -and $postFixesLifecycle -and $hasExactBackends -and $commonSpecialIsSingle)) {
             return $false
         }
     }

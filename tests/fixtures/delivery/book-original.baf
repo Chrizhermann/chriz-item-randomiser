@@ -1,0 +1,6 @@
+IF
+  Global("page","AR1513",5)
+THEN
+  RESPONSE #100
+    SetGlobal("FixtureBook","GLOBAL",1)
+END

@@ -1,0 +1,288 @@
+BACKUP ~backup~
+AUTHOR ~Item Randomiser tests~
+
+// argv[0] = lib/lib.tpa
+// argv[1] = lib/delivery_special.tpa
+// argv[2] = lib/delivery_neutralize.tpa
+// argv[3] = fixture directory
+// argv[4] = decompile/report output directory
+
+DEFINE_ACTION_MACRO flir_delivery_harness_reset BEGIN
+  ACTION_CLEAR_ARRAY tier_array
+  ACTION_CLEAR_ARRAY location_array
+  ACTION_CLEAR_ARRAY item_array
+  ACTION_CLEAR_ARRAY removed_item_array
+  ACTION_CLEAR_ARRAY charge_array
+  ACTION_CLEAR_ARRAY extra_tokens
+  ACTION_CLEAR_ARRAY bcs_source_array
+  ACTION_CLEAR_ARRAY blpool_item_tra
+END
+
+DEFINE_ACTION_MACRO flir_delivery_harness_registry_row BEGIN
+  OUTER_SPRINT flir_delivery_harness_key ~%h_campaign%|%h_tier%|%h_kind%|%h_stable%~
+  OUTER_SET $flir_registry_index(~%flir_delivery_harness_key%~) = 1
+  OUTER_SPRINT $flir_registry_index_campaign(~%flir_delivery_harness_key%~) ~%h_campaign%~
+  OUTER_SPRINT $flir_registry_index_tier(~%flir_delivery_harness_key%~) ~%h_tier%~
+  OUTER_SPRINT $flir_registry_index_kind(~%flir_delivery_harness_key%~) ~%h_kind%~
+  OUTER_SPRINT $flir_registry_index_stable(~%flir_delivery_harness_key%~) ~%h_stable%~
+  OUTER_SET $flir_registry_present(~%h_campaign%~ ~%h_tier%~ ~%h_kind%~ ~%h_stable%~) = 1
+  OUTER_SPRINT $flir_registry_compact(~%h_campaign%~ ~%h_tier%~ ~%h_kind%~ ~%h_stable%~) ~%h_compact%~
+  OUTER_SET $flir_registry_enabled(~%h_campaign%~ ~%h_tier%~ ~%h_kind%~ ~%h_stable%~) = h_enabled
+END
+
+DEFINE_ACTION_MACRO flir_delivery_harness_compile_named BEGIN
+  COPY ~%h_source_baf%~ ~%argv[4]%/compile/%h_target%.baf~
+  COMPILE ~%argv[4]%/compile/%h_target%.baf~
+END
+
+BEGIN ~retained special transformations~ DESIGNATED 0
+  INCLUDE ~%argv[0]%~
+  LAM flir_delivery_harness_reset
+  OUTER_SET BG1 = 0
+  OUTER_SET BGT = 0
+  OUTER_SPRINT TUTU_VAR ~~
+  LOAD_TRA ~%argv[3]%/delivery-test.tra~
+
+  OUTER_SPRINT h_source_baf ~%argv[3]%/pool-original.baf~
+  OUTER_SPRINT h_target ~blpool~
+  LAM flir_delivery_harness_compile_named
+  OUTER_SPRINT h_source_baf ~%argv[3]%/book-original.baf~
+  OUTER_SPRINT h_target ~ppbook~
+  LAM flir_delivery_harness_compile_named
+  OUTER_SPRINT h_source_baf ~%argv[3]%/altar-original.baf~
+  OUTER_SPRINT h_target ~troalt~
+  LAM flir_delivery_harness_compile_named
+
+  // A nonexistent row before each adapter is intentional: legacy Value is the
+  // ordinal in the complete filtered tier, not the ordinal among valid files.
+  OUTER_SPRINT $tier_array(~a1~) ~~
+  OUTER_SPRINT $tier_array(~a2~) ~~
+  OUTER_SPRINT $tier_array(~a3~) ~~
+  OUTER_SPRINT $location_array(~0~ ~a1~ ~missing.cre~ ~missing~ ~decoy~ ~100~) ~~
+  OUTER_SPRINT $location_array(~1~ ~a1~ ~blpool.bcs~ ~testa1~ ~special~ ~100~) ~~
+  OUTER_SPRINT $location_array(~0~ ~a2~ ~missing.cre~ ~missing~ ~decoy~ ~100~) ~~
+  OUTER_SPRINT $location_array(~1~ ~a2~ ~ppbook.bcs~ ~testa2~ ~special~ ~100~) ~~
+  OUTER_SPRINT $location_array(~0~ ~a3~ ~missing.cre~ ~missing~ ~decoy~ ~100~) ~~
+  OUTER_SPRINT $location_array(~1~ ~a3~ ~troalt.bcs~ ~testa3~ ~special~ ~100~) ~~
+
+  OUTER_SPRINT $item_array(~tstp0001~ ~blank~ ~blpool.bcs~ ~a1~ ~9~ ~pool~ ~100~) ~~
+  OUTER_SPRINT $item_array(~tstb0001~ ~blank~ ~ppbook.bcs~ ~a2~ ~2~ ~book~ ~100~) ~~
+  OUTER_SPRINT $item_array(~tsta0001~ ~blank~ ~troalt.bcs~ ~a3~ ~3~ ~altar~ ~100~) ~~
+  OUTER_SPRINT $removed_item_array(~a1~ ~x0~ ~x~) ~~
+  OUTER_SPRINT $removed_item_array(~a2~ ~2~ ~book~) ~~
+  OUTER_SPRINT $removed_item_array(~a3~ ~3~ ~altar~) ~~
+  OUTER_SPRINT $extra_tokens(~a1~ ~x0~) ~9~
+  OUTER_SPRINT $charge_array(~9~ ~a1~ ~3~ ~2~ ~1~) ~~
+  OUTER_SPRINT $charge_array(~2~ ~a2~ ~4~ ~5~ ~6~) ~~
+  OUTER_SPRINT $charge_array(~3~ ~a3~ ~7~ ~8~ ~9~) ~~
+  OUTER_SPRINT $bcs_source_array(~blpool.bcs~) ~~
+  OUTER_SPRINT $bcs_source_array(~ppbook.bcs~) ~~
+  OUTER_SPRINT $bcs_source_array(~troalt.bcs~) ~~
+  OUTER_SET $blpool_item_tra(~tstp0001~) = 700
+
+  INCLUDE ~%argv[1]%~
+  LAM flir_delivery_special_apply
+
+  COPY_EXISTING ~blpool.bcs~ ~%argv[4]%/pool-result.baf~
+    DECOMPILE_BCS_TO_BAF
+  COPY_EXISTING ~ppbook.bcs~ ~%argv[4]%/book-result.baf~
+    DECOMPILE_BCS_TO_BAF
+  COPY_EXISTING ~troalt.bcs~ ~%argv[4]%/altar-result.baf~
+    DECOMPILE_BCS_TO_BAF
+
+BEGIN ~historical ordinary actor neutralizer~ DESIGNATED 1
+  INCLUDE ~%argv[2]%~
+  OUTER_SPRINT flir_delivery_backend ~eeex-manifest-v1~
+  ACTION_CLEAR_ARRAY flir_registry_index
+  ACTION_CLEAR_ARRAY flir_registry_index_campaign
+  ACTION_CLEAR_ARRAY flir_registry_index_tier
+  ACTION_CLEAR_ARRAY flir_registry_index_kind
+  ACTION_CLEAR_ARRAY flir_registry_index_stable
+  ACTION_CLEAR_ARRAY flir_registry_present
+  ACTION_CLEAR_ARRAY flir_registry_compact
+  ACTION_CLEAR_ARRAY flir_registry_enabled
+  ACTION_CLEAR_ARRAY flir_endpoint_declaration_order
+  ACTION_CLEAR_ARRAY flir_endpoint_declaration_campaign
+  ACTION_CLEAR_ARRAY flir_endpoint_declaration_tier
+  ACTION_CLEAR_ARRAY flir_endpoint_declaration_raw
+  ACTION_CLEAR_ARRAY flir_endpoint_declaration_ident
+  ACTION_CLEAR_ARRAY flir_endpoint_declaration_occurrence
+  ACTION_CLEAR_ARRAY flir_endpoint_declaration_kind
+  ACTION_CLEAR_ARRAY flir_endpoint_slot_order
+  ACTION_CLEAR_ARRAY flir_endpoint_slot_registry_stable
+  ACTION_CLEAR_ARRAY flir_endpoint_slot_endpoint
+  ACTION_CLEAR_ARRAY flir_endpoint_target_kind
+
+  // Birth classifications for the retained adapters. The q1 adapter shares a
+  // derived resref with an ordinary row in the other campaign; excluding by
+  // resref instead of by stable identity would therefore be wrong.
+  OUTER_SPRINT $flir_endpoint_declaration_order(~special-q1~) ~special-q1~
+  OUTER_SPRINT $flir_endpoint_declaration_campaign(~special-q1~) ~bg2~
+  OUTER_SPRINT $flir_endpoint_declaration_tier(~special-q1~) ~q1~
+  OUTER_SPRINT $flir_endpoint_declaration_raw(~special-q1~) ~1~
+  OUTER_SPRINT $flir_endpoint_declaration_ident(~special-q1~) ~sp~
+  OUTER_SET $flir_endpoint_declaration_occurrence(~special-q1~) = 1
+  OUTER_SPRINT $flir_endpoint_declaration_kind(~special-q1~) ~legacy_adapter~
+  OUTER_SPRINT $flir_endpoint_declaration_order(~special-q2~) ~special-q2~
+  OUTER_SPRINT $flir_endpoint_declaration_campaign(~special-q2~) ~bg2~
+  OUTER_SPRINT $flir_endpoint_declaration_tier(~special-q2~) ~q2~
+  OUTER_SPRINT $flir_endpoint_declaration_raw(~special-q2~) ~1~
+  OUTER_SPRINT $flir_endpoint_declaration_ident(~special-q2~) ~sp~
+  OUTER_SET $flir_endpoint_declaration_occurrence(~special-q2~) = 1
+  OUTER_SPRINT $flir_endpoint_declaration_kind(~special-q2~) ~legacy_adapter~
+
+  // Birth-ordinary, current-adapter is an adversarial compatibility REPLACE.
+  // A historical actor can already exist in a save, so current classification
+  // must not suppress its neutralizer.
+  OUTER_SPRINT $flir_endpoint_declaration_order(~ordinary-q3~) ~ordinary-q3~
+  OUTER_SPRINT $flir_endpoint_declaration_campaign(~ordinary-q3~) ~bg2~
+  OUTER_SPRINT $flir_endpoint_declaration_tier(~ordinary-q3~) ~q3~
+  OUTER_SPRINT $flir_endpoint_declaration_raw(~ordinary-q3~) ~1~
+  OUTER_SPRINT $flir_endpoint_declaration_ident(~ordinary-q3~) ~ord~
+  OUTER_SET $flir_endpoint_declaration_occurrence(~ordinary-q3~) = 1
+  OUTER_SPRINT $flir_endpoint_declaration_kind(~ordinary-q3~) ~creature~
+
+  // The current normalized view deliberately replaces birth classifications
+  // in both directions. Neither replacement may rewrite historical meaning.
+  OUTER_SET flir_endpoint_slot_count = 3
+  OUTER_SPRINT $flir_endpoint_slot_order(~1~) ~legacy:special-q1~
+  OUTER_SPRINT $flir_endpoint_slot_registry_stable(~legacy:special-q1~) ~legacy:slot-bg2-q1-1-sp-1~
+  OUTER_SPRINT $flir_endpoint_slot_endpoint(~legacy:special-q1~) ~legacy:adapter-q1~
+  OUTER_SET $flir_endpoint_present(~legacy:adapter-q1~) = 1
+  OUTER_SPRINT $flir_endpoint_target_kind(~legacy:adapter-q1~) ~legacy_adapter~
+  OUTER_SPRINT $flir_endpoint_slot_order(~2~) ~legacy:special-q2~
+  OUTER_SPRINT $flir_endpoint_slot_registry_stable(~legacy:special-q2~) ~legacy:slot-bg2-q2-1-sp-1~
+  OUTER_SPRINT $flir_endpoint_slot_endpoint(~legacy:special-q2~) ~legacy:replacement-ordinary-q2~
+  OUTER_SET $flir_endpoint_present(~legacy:replacement-ordinary-q2~) = 1
+  OUTER_SPRINT $flir_endpoint_target_kind(~legacy:replacement-ordinary-q2~) ~creature~
+  OUTER_SPRINT $flir_endpoint_slot_order(~3~) ~legacy:replaced-q3~
+  OUTER_SPRINT $flir_endpoint_slot_registry_stable(~legacy:replaced-q3~) ~legacy:slot-bg2-q3-1-ord-1~
+  OUTER_SPRINT $flir_endpoint_slot_endpoint(~legacy:replaced-q3~) ~legacy:adapter-q3~
+  OUTER_SET $flir_endpoint_present(~legacy:adapter-q3~) = 1
+  OUTER_SPRINT $flir_endpoint_target_kind(~legacy:adapter-q3~) ~legacy_adapter~
+
+  // Special adapter at q1/2: excluded, but an ordinary bg1 row still owns the
+  // same engine resref and must cause exactly one stub to be published.
+  OUTER_SPRINT h_campaign ~bg2~
+  OUTER_SPRINT h_tier ~q1~
+  OUTER_SPRINT h_kind ~slot~
+  OUTER_SPRINT h_stable ~legacy:slot-bg2-q1-1-sp-1~
+  OUTER_SPRINT h_compact ~2~
+  OUTER_SET h_enabled = 1
+  LAM flir_delivery_harness_registry_row
+  OUTER_SPRINT h_campaign ~bg1~
+  OUTER_SPRINT h_stable ~legacy:slot-bg1-q1-4-ord-1~
+  LAM flir_delivery_harness_registry_row
+
+  // Two historical rows collapse to one q1/5 script.
+  OUTER_SPRINT h_campaign ~bg1~
+  OUTER_SPRINT h_stable ~legacy:slot-bg1-q1-5-ord-1~
+  OUTER_SPRINT h_compact ~5~
+  LAM flir_delivery_harness_registry_row
+  OUTER_SPRINT h_campaign ~bg2~
+  OUTER_SPRINT h_stable ~legacy:slot-bg2-q1-5-ord-1~
+  LAM flir_delivery_harness_registry_row
+
+  // Disabled history is still dangerous in an existing save and must be
+  // neutralized. A generated provider slot and a unit row must not be.
+  OUTER_SPRINT h_campaign ~bg2~
+  OUTER_SPRINT h_stable ~legacy:slot-bg2-q1-7-old-1~
+  OUTER_SPRINT h_compact ~7~
+  OUTER_SET h_enabled = 0
+  LAM flir_delivery_harness_registry_row
+  OUTER_SPRINT h_stable ~extension:slot-new~
+  OUTER_SPRINT h_compact ~8~
+  OUTER_SET h_enabled = 1
+  LAM flir_delivery_harness_registry_row
+  OUTER_SPRINT h_kind ~unit~
+  OUTER_SPRINT h_stable ~legacy:unit-bg2-q1-u1-source~
+  OUTER_SPRINT h_compact ~u1~
+  LAM flir_delivery_harness_registry_row
+
+  // A special-only compact must not produce a historical ordinary script.
+  OUTER_SPRINT h_kind ~slot~
+  OUTER_SPRINT h_tier ~q2~
+  OUTER_SPRINT h_stable ~legacy:slot-bg2-q2-1-sp-1~
+  OUTER_SPRINT h_compact ~1~
+  LAM flir_delivery_harness_registry_row
+
+  // Current mapping says adapter, immutable declaration says ordinary: this
+  // compact remains in the historical ordinary union.
+  OUTER_SPRINT h_tier ~q3~
+  OUTER_SPRINT h_stable ~legacy:slot-bg2-q3-1-ord-1~
+  OUTER_SPRINT h_compact ~3~
+  LAM flir_delivery_harness_registry_row
+
+  // Preexisting special targets and assignment actors are byte sentinels.
+  OUTER_SPRINT h_source_baf ~%argv[3]%/pool-original.baf~
+  OUTER_SPRINT h_target ~blpool~
+  LAM flir_delivery_harness_compile_named
+  OUTER_SPRINT h_source_baf ~%argv[3]%/book-original.baf~
+  OUTER_SPRINT h_target ~ppbook~
+  LAM flir_delivery_harness_compile_named
+  OUTER_SPRINT h_source_baf ~%argv[3]%/altar-original.baf~
+  OUTER_SPRINT h_target ~troalt~
+  LAM flir_delivery_harness_compile_named
+  OUTER_SPRINT h_source_baf ~%argv[3]%/assignment-original.baf~
+  OUTER_SPRINT h_target ~fltier1~
+  LAM flir_delivery_harness_compile_named
+  COPY_EXISTING ~blpool.bcs~ ~%argv[4]%/blpool-before.bcs~
+  COPY_EXISTING ~ppbook.bcs~ ~%argv[4]%/ppbook-before.bcs~
+  COPY_EXISTING ~troalt.bcs~ ~%argv[4]%/troalt-before.bcs~
+  COPY_EXISTING ~fltier1.bcs~ ~%argv[4]%/fltier1-before.bcs~
+
+  OUTER_SET flir_registry_available = 1
+  OUTER_SET flir_registry_compacts_ready = 1
+  LAM flir_delivery_neutralize_historical_actors
+
+  COPY_EXISTING ~flq1t2.bcs~ ~%argv[4]%/flq1t2-result.baf~
+    DECOMPILE_BCS_TO_BAF
+  COPY_EXISTING ~flq1t5.bcs~ ~%argv[4]%/flq1t5-result.baf~
+    DECOMPILE_BCS_TO_BAF
+  COPY_EXISTING ~flq1t7.bcs~ ~%argv[4]%/flq1t7-result.baf~
+    DECOMPILE_BCS_TO_BAF
+  COPY_EXISTING ~flq3t3.bcs~ ~%argv[4]%/flq3t3-result.baf~
+    DECOMPILE_BCS_TO_BAF
+  COPY_EXISTING ~blpool.bcs~ ~%argv[4]%/blpool-after.bcs~
+  COPY_EXISTING ~ppbook.bcs~ ~%argv[4]%/ppbook-after.bcs~
+  COPY_EXISTING ~troalt.bcs~ ~%argv[4]%/troalt-after.bcs~
+  COPY_EXISTING ~fltier1.bcs~ ~%argv[4]%/fltier1-after.bcs~
+  OUTER_SET flir_delivery_harness_count = 0
+  ACTION_PHP_EACH flir_delivery_neutralize_resref AS flir_delivery_harness_resref => flir_delivery_harness_present BEGIN
+    ACTION_IF flir_delivery_harness_present = 1 BEGIN
+      OUTER_SET flir_delivery_harness_count += 1
+    END
+  END
+  OUTER_TEXT_SPRINT flir_delivery_harness_report ~COUNT %flir_delivery_harness_count%%WNL%~
+  COPY ~%argv[3]%/delivery-test.tra~ ~%argv[4]%/neutralize-report.txt~
+    DELETE_BYTES 0 BUFFER_LENGTH
+    INSERT_BYTES 0 STRING_LENGTH ~%flir_delivery_harness_report%~
+    WRITE_ASCIIE 0 ~%flir_delivery_harness_report%~ (STRING_LENGTH ~%flir_delivery_harness_report%~)
+
+BEGIN ~assignment-family collision fails closed~ DESIGNATED 2
+  INCLUDE ~%argv[2]%~
+  OUTER_SPRINT flir_delivery_backend ~eeex-manifest-v1~
+  ACTION_CLEAR_ARRAY flir_registry_index
+  ACTION_CLEAR_ARRAY flir_registry_index_campaign
+  ACTION_CLEAR_ARRAY flir_registry_index_tier
+  ACTION_CLEAR_ARRAY flir_registry_index_kind
+  ACTION_CLEAR_ARRAY flir_registry_index_stable
+  ACTION_CLEAR_ARRAY flir_registry_present
+  ACTION_CLEAR_ARRAY flir_registry_compact
+  ACTION_CLEAR_ARRAY flir_registry_enabled
+  OUTER_SET flir_endpoint_slot_count = 0
+  ACTION_CLEAR_ARRAY flir_endpoint_slot_order
+  ACTION_CLEAR_ARRAY flir_endpoint_slot_endpoint
+  ACTION_CLEAR_ARRAY flir_endpoint_slot_registry_stable
+  ACTION_CLEAR_ARRAY flir_endpoint_present
+  ACTION_CLEAR_ARRAY flir_endpoint_target_kind
+  OUTER_SPRINT h_campaign ~bg2~
+  OUTER_SPRINT h_tier ~tier~
+  OUTER_SPRINT h_kind ~slot~
+  OUTER_SPRINT h_stable ~legacy:slot-bg2-tier-1-ordinary-1~
+  OUTER_SPRINT h_compact ~1~
+  OUTER_SET h_enabled = 1
+  LAM flir_delivery_harness_registry_row
+  OUTER_SET flir_registry_available = 1
+  OUTER_SET flir_registry_compacts_ready = 1
+  LAM flir_delivery_neutralize_historical_actors

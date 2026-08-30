@@ -135,18 +135,28 @@ foreach ($componentId in 1100, 1200) {
     $body = $match.Groups['body'].Value
     $fixesIndex = $body.IndexOf('INCLUDE "randomiser/lib/fixes.tpa"', [System.StringComparison]::Ordinal)
     $registerIndex = $body.IndexOf('LAM flir_registry_register_applied_units', [System.StringComparison]::Ordinal)
+    $manifestPrepareIndex = $body.IndexOf('LAM flir_manifest_prepare_catalog', [System.StringComparison]::Ordinal)
+    $manifestPublishIndex = $body.IndexOf('LAM flir_delivery_publish_manifest', [System.StringComparison]::Ordinal)
+    $neutralizeIndex = $body.IndexOf('LAM flir_delivery_neutralize_historical_actors', [System.StringComparison]::Ordinal)
     $captureIndex = $body.IndexOf('LAM flir_registry_capture_final_slots', [System.StringComparison]::Ordinal)
-    $writeIndex = $body.IndexOf('LAM flir_registry_write_state', [System.StringComparison]::Ordinal)
+    $firstWriteIndex = $body.IndexOf('LAM flir_registry_write_state', [System.StringComparison]::Ordinal)
+    $lastWriteIndex = $body.LastIndexOf('LAM flir_registry_write_state', [System.StringComparison]::Ordinal)
     $deliveryIndex = $body.IndexOf('INCLUDE "randomiser/lib/delivery.tpa"', [System.StringComparison]::Ordinal)
+    $specialIndex = $body.IndexOf('INCLUDE "randomiser/lib/delivery_special.tpa"', [System.StringComparison]::Ordinal)
     $sslIndex = $body.IndexOf('INCLUDE "randomiser/lib/ssl.tpa"', [System.StringComparison]::Ordinal)
     $publishIndex = $body.IndexOf('LAM flir_mode1_publish_state', [System.StringComparison]::Ordinal)
     $deferIndex = $body.IndexOf('OUTER_SET flir_mode1_defer_state_publication = 1', [System.StringComparison]::Ordinal)
     $seedIndex = $body.IndexOf('INCLUDE "randomiser/lib/random_seed.tpa"', [System.StringComparison]::Ordinal)
-    if ($fixesIndex -lt 0 -or $registerIndex -lt 0 -or $captureIndex -lt 0 -or $writeIndex -lt 0 -or
-        $deliveryIndex -lt 0 -or $sslIndex -lt 0 -or $publishIndex -lt 0 -or $deferIndex -lt 0 -or $seedIndex -lt 0 -or
-        -not ($deferIndex -lt $seedIndex -and $fixesIndex -lt $registerIndex -and $registerIndex -lt $captureIndex -and
-              $captureIndex -lt $writeIndex -and $writeIndex -lt $deliveryIndex -and $deliveryIndex -lt $sslIndex -and
-              $sslIndex -lt $publishIndex)) {
+    if ($fixesIndex -lt 0 -or $registerIndex -lt 0 -or $manifestPrepareIndex -lt 0 -or
+        $manifestPublishIndex -lt 0 -or $neutralizeIndex -lt 0 -or $captureIndex -lt 0 -or
+        $firstWriteIndex -lt 0 -or $lastWriteIndex -le $firstWriteIndex -or $deliveryIndex -lt 0 -or
+        $specialIndex -lt 0 -or $sslIndex -lt 0 -or $publishIndex -lt 0 -or $deferIndex -lt 0 -or $seedIndex -lt 0 -or
+        -not ($deferIndex -lt $seedIndex -and $fixesIndex -lt $registerIndex -and
+              $registerIndex -lt $manifestPrepareIndex -and $manifestPrepareIndex -lt $firstWriteIndex -and
+              $firstWriteIndex -lt $manifestPublishIndex -and $manifestPublishIndex -lt $neutralizeIndex -and
+              $neutralizeIndex -lt $captureIndex -and $captureIndex -lt $lastWriteIndex -and
+              $lastWriteIndex -lt $deliveryIndex -and $deliveryIndex -lt $specialIndex -and
+              $specialIndex -lt $sslIndex -and $sslIndex -lt $publishIndex)) {
         $staticFailures.Add("Mode 1 component $componentId does not prepare state in memory and publish it only after delivery/SSL.")
     }
 }

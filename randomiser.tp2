@@ -131,6 +131,11 @@ BEGIN @101100 SUBCOMPONENT @101000 DESIGNATED 1100                              
   OUTER_SET weidu_action = 0
   OUTER_SET flir_mode1_defer_state_publication = 1
 
+  INCLUDE "randomiser/lib/delivery_manifest.tpa"                                                                    //Selects the capability-backed Mode 1 delivery backend
+  LAM flir_delivery_select_backend
+
+  INCLUDE "randomiser/lib/manifest.tpa"                                                                             //Defines deterministic manifest generation for the EEex branch
+
   INCLUDE "randomiser/lib/random_seed.tpa"                                                                             //Asks the user if saved game compatibility should be preserved, provided the mod's been installed before
 
   INCLUDE "randomiser/lib/missing_items.tpa"                                                                           //Adds certain items if they are missing
@@ -156,20 +161,30 @@ BEGIN @101100 SUBCOMPONENT @101000 DESIGNATED 1100                              
   INCLUDE "randomiser/lib/fixes.tpa"                                                                                   //Makes some minor adjustsments
 
   LAM flir_registry_register_applied_units
-  ACTION_IF VARIABLE_IS_SET flir_delivery_backend
-        AND "%flir_delivery_backend%" STRING_EQUAL_CASE ~eeex-manifest-v1~ BEGIN
+  ACTION_IF "%flir_delivery_backend%" STRING_EQUAL_CASE ~eeex-manifest-v1~ BEGIN
     LAM flir_endpoints_register_registry_slots
     LAM flir_registry_reconcile_mappings
     LAM flir_endpoints_claim_slots
     LAM flir_endpoints_register_catalog_rows
+    LAM flir_manifest_prepare_catalog
     LAM flir_registry_finalize_catalog
-  END ELSE BEGIN
+    LAM flir_registry_write_state
+    LAM flir_delivery_publish_manifest
+
+    INCLUDE "randomiser/lib/delivery_neutralize.tpa"
+    LAM flir_delivery_neutralize_historical_actors
+  END ELSE ACTION_IF "%flir_delivery_backend%" STRING_EQUAL_CASE ~legacy-bcs-v1~ BEGIN
     LAM flir_registry_capture_final_slots
     LAM flir_registry_reconcile
-  END
-  LAM flir_registry_write_state
+    LAM flir_registry_write_state
 
-  INCLUDE "randomiser/lib/delivery.tpa"                                                                                //Creates the scripts that places the randomised items at their new location. See locationlist.2da
+    INCLUDE "randomiser/lib/delivery.tpa"                                                                              //Creates the legacy scripts that place randomised items
+  END ELSE BEGIN
+    FAIL ~FLIR_DELIVERY_ERR UNKNOWN_BACKEND~
+  END
+
+  INCLUDE "randomiser/lib/delivery_special.tpa"                                                                        //Retains the three authored special script transformations for both backends
+  LAM flir_delivery_special_apply
 
   INCLUDE "randomiser/lib/ssl.tpa"                                                                                     //Calls SSL to create the randomisation scripts
 
@@ -185,6 +200,11 @@ BEGIN @101200 SUBCOMPONENT @101000 DESIGNATED 1200                              
   OUTER_SET lost = 1
   OUTER_SET weidu_action = 0
   OUTER_SET flir_mode1_defer_state_publication = 1
+
+  INCLUDE "randomiser/lib/delivery_manifest.tpa"
+  LAM flir_delivery_select_backend
+
+  INCLUDE "randomiser/lib/manifest.tpa"
 
   INCLUDE "randomiser/lib/random_seed.tpa"
 
@@ -211,20 +231,30 @@ BEGIN @101200 SUBCOMPONENT @101000 DESIGNATED 1200                              
   INCLUDE "randomiser/lib/fixes.tpa"
 
   LAM flir_registry_register_applied_units
-  ACTION_IF VARIABLE_IS_SET flir_delivery_backend
-        AND "%flir_delivery_backend%" STRING_EQUAL_CASE ~eeex-manifest-v1~ BEGIN
+  ACTION_IF "%flir_delivery_backend%" STRING_EQUAL_CASE ~eeex-manifest-v1~ BEGIN
     LAM flir_endpoints_register_registry_slots
     LAM flir_registry_reconcile_mappings
     LAM flir_endpoints_claim_slots
     LAM flir_endpoints_register_catalog_rows
+    LAM flir_manifest_prepare_catalog
     LAM flir_registry_finalize_catalog
-  END ELSE BEGIN
+    LAM flir_registry_write_state
+    LAM flir_delivery_publish_manifest
+
+    INCLUDE "randomiser/lib/delivery_neutralize.tpa"
+    LAM flir_delivery_neutralize_historical_actors
+  END ELSE ACTION_IF "%flir_delivery_backend%" STRING_EQUAL_CASE ~legacy-bcs-v1~ BEGIN
     LAM flir_registry_capture_final_slots
     LAM flir_registry_reconcile
-  END
-  LAM flir_registry_write_state
+    LAM flir_registry_write_state
 
-  INCLUDE "randomiser/lib/delivery.tpa"
+    INCLUDE "randomiser/lib/delivery.tpa"
+  END ELSE BEGIN
+    FAIL ~FLIR_DELIVERY_ERR UNKNOWN_BACKEND~
+  END
+
+  INCLUDE "randomiser/lib/delivery_special.tpa"
+  LAM flir_delivery_special_apply
 
   INCLUDE "randomiser/lib/ssl.tpa"
 

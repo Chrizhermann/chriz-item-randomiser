@@ -10,7 +10,6 @@ Set-StrictMode -Version 2.0
 
 $repositoryRoot = Split-Path -Parent $PSScriptRoot
 $liveGameRoot = 'C:\Games\Baldur''s Gate II Enhanced Edition modded'
-$knownFutureAssertion = 'FUTURE_Mode1_ExplicitManifestVersusLegacyDeliveryBranch'
 $modeBoundaryAssertionNames = @(
     'Mode1_1100_SetsWeiduAction0',
     'Mode1_1200_SetsWeiduAction0',
@@ -644,24 +643,7 @@ function Get-ValidatedModeBoundaryProtocol {
             throw 'invalid'
         }
 
-        $state = $null
-        if ($passedCount -eq 10 -and $failedCount -eq 0 -and $Result.ExitCode -eq 0) {
-            $state = 'Pass'
-        }
-        elseif (
-            $passedCount -eq 9 -and
-            $failedCount -eq 1 -and
-            $records[$script:knownFutureAssertion] -eq 'FAIL' -and
-            $Result.ExitCode -eq 1
-        ) {
-            foreach ($name in $script:modeBoundaryAssertionNames) {
-                if ($name -ne $script:knownFutureAssertion -and $records[$name] -ne 'PASS') {
-                    throw 'invalid'
-                }
-            }
-            $state = 'IntentionalRed'
-        }
-        else {
+        if ($passedCount -ne 10 -or $failedCount -ne 0 -or $Result.ExitCode -ne 0) {
             throw 'invalid'
         }
 
@@ -673,7 +655,6 @@ function Get-ValidatedModeBoundaryProtocol {
         )
 
         [pscustomobject]@{
-            State = $state
             Lines = $validatedLines
         }
     }
@@ -863,7 +844,7 @@ try {
         Write-Output 'SKIP Lua53_tests/lua/run.lua_NotPresent'
     }
 
-    # Keep the known future assertion last. It is a real RED until Task 8 adds the seam.
+    # Keep the cross-mode boundary check last so it verifies the final source tree.
     $modeBoundaryPath = Join-Path $PSScriptRoot 'Test-ModeBoundary.ps1'
     $modeBoundaryResult = Invoke-ChildPowerShell -ScriptPath $modeBoundaryPath
     $validatedModeBoundary = Get-ValidatedModeBoundaryProtocol -Result $modeBoundaryResult
@@ -871,13 +852,7 @@ try {
         Write-Output $line
     }
 
-    if ($validatedModeBoundary.State -eq 'Pass') {
-        Write-Output 'PASS PowerShell_Test-ModeBoundary'
-    }
-    else {
-        Write-Output "INTENTIONAL_RED $knownFutureAssertion"
-        $runnerExitCode = 1
-    }
+    Write-Output 'PASS PowerShell_Test-ModeBoundary'
 }
 catch {
     $runnerExitCode = 1

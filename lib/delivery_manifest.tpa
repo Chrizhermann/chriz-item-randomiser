@@ -1,0 +1,211 @@
+// Mode 1 delivery-backend selection and manifest publication seam.
+//
+// Selection is capability-based and is deliberately performed before the
+// registry is loaded.  A recorded backend is authoritative: compatible
+// reinstalls never switch silently, and a recorded EEex backend fails closed
+// if its required runtime surface disappears.
+
+DEFINE_ACTION_FUNCTION flir_delivery_fail
+  STR_VAR
+    code = ~~
+BEGIN
+  FAIL ~FLIR_DELIVERY_ERR %code%~
+END
+
+// Caller sets flir_delivery_count_path and flir_delivery_count_pattern.
+// The same-file COPY is observation-only: COUNT_REGEXP_INSTANCES does not
+// alter the buffer and BUT_ONLY therefore publishes no bytes.
+DEFINE_ACTION_MACRO flir_delivery_count_exact BEGIN
+  OUTER_SET flir_delivery_count = 0
+  ACTION_IF FILE_EXISTS ~%flir_delivery_count_path%~ BEGIN
+    COPY - ~%flir_delivery_count_path%~ ~%flir_delivery_count_path%~
+      COUNT_REGEXP_INSTANCES CASE_SENSITIVE
+        ~%flir_delivery_count_pattern%~
+        flir_delivery_count
+    BUT_ONLY
+  END
+END
+
+// Count against the effective game resource without materializing a biffed
+// registry into override.  The inlined destination and BUT_ONLY keep this
+// probe observation-only.
+DEFINE_ACTION_MACRO flir_delivery_count_game_registry BEGIN
+  OUTER_SET flir_delivery_count = 0
+  COPY_EXISTING - ~fl#irreg.2da~ ~...randomiser/fl-inlined/fl#irreg.2da~
+    COUNT_REGEXP_INSTANCES CASE_SENSITIVE
+      ~%flir_delivery_count_pattern%~
+      flir_delivery_count
+  BUT_ONLY
+END
+
+// Caller sets flir_delivery_symbol_file and flir_delivery_symbol_name.
+DEFINE_ACTION_MACRO flir_delivery_require_symbol BEGIN
+  ACTION_IF flir_delivery_capable = 1 BEGIN
+    OUTER_SPRINT flir_delivery_count_path ~%flir_delivery_probe_root%/override/%flir_delivery_symbol_file%~
+    OUTER_SPRINT flir_delivery_count_pattern ~^[ %TAB%]*function[ %TAB%]+%flir_delivery_symbol_name%[ %TAB%]*(~
+    OUTER_SET flir_delivery_symbol_offset = 0 - 1
+    OUTER_SET flir_delivery_long_comment_offset = 0 - 1
+    ACTION_IF FILE_EXISTS ~%flir_delivery_count_path%~ BEGIN
+      COPY - ~%flir_delivery_count_path%~ ~%flir_delivery_count_path%~
+        SET flir_delivery_symbol_offset = INDEX_BUFFER (CASE_SENSITIVE ~^[ %TAB%]*function[ %TAB%]+%flir_delivery_symbol_name%[ %TAB%]*(~)
+        SET flir_delivery_long_comment_offset = INDEX_BUFFER (CASE_SENSITIVE ~^[ %TAB%]*--\[=*\[~)
+      BUT_ONLY
+    END
+    LAM flir_delivery_count_exact
+    // Conservatively reject a source whose first Lua long-comment opener is
+    // before the required declaration.  This prevents a declaration-looking
+    // line inside --[[...]] / --[=[...]=] from satisfying the gate.  The
+    // verified v0.11 files declare every required API before any such block.
+    ACTION_IF flir_delivery_count != 1
+          OR (flir_delivery_long_comment_offset >= 0
+              AND flir_delivery_long_comment_offset < flir_delivery_symbol_offset) BEGIN
+      OUTER_SET flir_delivery_capable = 0
+    END
+  END
+END
+
+DEFINE_ACTION_MACRO flir_delivery_probe_capabilities BEGIN
+  ACTION_IF NOT VARIABLE_IS_SET flir_delivery_probe_game_is_ee BEGIN
+    OUTER_SET flir_delivery_probe_game_is_ee = 0
+    ACTION_IF GAME_IS ~bgee bg2ee eet iwdee pstee~ BEGIN
+      OUTER_SET flir_delivery_probe_game_is_ee = 1
+    END
+  END
+  ACTION_IF flir_delivery_probe_game_is_ee != 0
+        AND flir_delivery_probe_game_is_ee != 1 BEGIN
+    LAF flir_delivery_fail STR_VAR code = ~INVALID_ENGINE_PROBE~ END
+  END
+
+  OUTER_SET flir_delivery_capable = flir_delivery_probe_game_is_ee
+  ACTION_IF NOT FILE_EXISTS ~%flir_delivery_probe_root%/override/M___EEex.lua~ BEGIN
+    OUTER_SET flir_delivery_capable = 0
+  END
+
+  // A root-level EEex_scripts tree is the incompatible v1 layout.  Reject
+  // mixed/stale layouts rather than guessing which bootstrap will win.
+  ACTION_IF DIRECTORY_EXISTS ~%flir_delivery_probe_root%/EEex_scripts~ BEGIN
+    OUTER_SET flir_delivery_capable = 0
+  END
+
+  OUTER_SPRINT flir_delivery_symbol_file ~EEex_Action.lua~
+  OUTER_SPRINT flir_delivery_symbol_name ~EEex_Action_QueueResponseStringOnAIBase~
+  LAM flir_delivery_require_symbol
+
+  OUTER_SPRINT flir_delivery_symbol_file ~EEex_GameObject.lua~
+  OUTER_SPRINT flir_delivery_symbol_name ~EEex_GameObject_Get~
+  LAM flir_delivery_require_symbol
+
+  OUTER_SPRINT flir_delivery_symbol_file ~EEex_GameState.lua~
+  OUTER_SPRINT flir_delivery_symbol_name ~EEex_GameState_GetGlobalInt~
+  LAM flir_delivery_require_symbol
+  OUTER_SPRINT flir_delivery_symbol_name ~EEex_GameState_SetGlobalInt~
+  LAM flir_delivery_require_symbol
+  OUTER_SPRINT flir_delivery_symbol_name ~EEex_GameState_AddDestroyedListener~
+  LAM flir_delivery_require_symbol
+
+  OUTER_SPRINT flir_delivery_symbol_file ~EEex_Menu.lua~
+  OUTER_SPRINT flir_delivery_symbol_name ~EEex_Menu_Find~
+  LAM flir_delivery_require_symbol
+  OUTER_SPRINT flir_delivery_symbol_name ~EEex_Menu_GetItemFunction~
+  LAM flir_delivery_require_symbol
+  OUTER_SPRINT flir_delivery_symbol_name ~EEex_Menu_SetItemFunction~
+  LAM flir_delivery_require_symbol
+  OUTER_SPRINT flir_delivery_symbol_name ~EEex_Menu_LoadFile~
+  LAM flir_delivery_require_symbol
+  OUTER_SPRINT flir_delivery_symbol_name ~EEex_Menu_AddAfterMainFileLoadedListener~
+  LAM flir_delivery_require_symbol
+
+  OUTER_SPRINT flir_delivery_symbol_file ~EEex_Resource.lua~
+  OUTER_SPRINT flir_delivery_symbol_name ~EEex_Resource_Fetch~
+  LAM flir_delivery_require_symbol
+
+  OUTER_SPRINT flir_delivery_symbol_file ~EEex_Sprite.lua~
+  OUTER_SPRINT flir_delivery_symbol_name ~EEex_Sprite_AddLoadedListener~
+  LAM flir_delivery_require_symbol
+  OUTER_SPRINT flir_delivery_symbol_name ~EEex_Sprite_GetInPortrait~
+  LAM flir_delivery_require_symbol
+
+  // %MNL%? matches the optional CR before LF, so the exact active line is
+  // accepted under both LF and CRLF.  Comments, whitespace variants, suffixes,
+  // case variants, and duplicate active settings do not pass count == 1.
+  ACTION_IF flir_delivery_capable = 1 BEGIN
+    OUTER_SPRINT flir_delivery_count_path ~%flir_delivery_probe_root%/InfinityLoader.ini~
+    OUTER_SPRINT flir_delivery_count_pattern ~^LuaPatchMode=REPLACE_INTERNAL_WITH_EXTERNAL%MNL%?$~
+    LAM flir_delivery_count_exact
+    ACTION_IF flir_delivery_count != 1 BEGIN
+      OUTER_SET flir_delivery_capable = 0
+    END
+  END
+END
+
+DEFINE_ACTION_MACRO flir_delivery_select_backend BEGIN
+  ACTION_IF weidu_action != 0 BEGIN
+    LAF flir_delivery_fail STR_VAR code = ~WRONG_MODE~ END
+  END
+  OUTER_SET flir_delivery_custom_probe_root = 1
+  ACTION_IF NOT VARIABLE_IS_SET flir_delivery_probe_root
+        OR "%flir_delivery_probe_root%" STRING_EQUAL_CASE ~~ BEGIN
+    OUTER_SET flir_delivery_custom_probe_root = 0
+    OUTER_SPRINT flir_delivery_probe_root ~.~
+  END
+
+  LAM flir_delivery_probe_capabilities
+
+  OUTER_SET flir_delivery_registry_present = 0
+  OUTER_SET flir_delivery_recorded_legacy = 0
+  OUTER_SET flir_delivery_recorded_eeex = 0
+  OUTER_SPRINT flir_delivery_registry_path ~%flir_delivery_probe_root%/override/fl#irreg.2da~
+  ACTION_IF FILE_EXISTS ~%flir_delivery_registry_path%~ BEGIN
+    OUTER_SET flir_delivery_registry_present = 1
+
+    OUTER_SPRINT flir_delivery_count_path ~%flir_delivery_registry_path%~
+    OUTER_SPRINT flir_delivery_count_pattern ~^@meta[ %TAB%]+@backend[ %TAB%]+backend[ %TAB%]+legacy-bcs-v1[ %TAB%]+1[ %TAB%]+1%MNL%?$~
+    LAM flir_delivery_count_exact
+    OUTER_SET flir_delivery_recorded_legacy = flir_delivery_count
+
+    OUTER_SPRINT flir_delivery_count_pattern ~^@meta[ %TAB%]+@backend[ %TAB%]+backend[ %TAB%]+eeex-manifest-v1[ %TAB%]+1[ %TAB%]+1%MNL%?$~
+    LAM flir_delivery_count_exact
+    OUTER_SET flir_delivery_recorded_eeex = flir_delivery_count
+  END ELSE ACTION_IF flir_delivery_custom_probe_root = 0
+        AND FILE_EXISTS_IN_GAME ~fl#irreg.2da~ BEGIN
+    // Generalized Biffing and similar tools may move the preserved registry
+    // out of override.  Observe the effective resource using the same lookup
+    // domain as registry preload so backend preservation cannot disagree.
+    OUTER_SET flir_delivery_registry_present = 1
+
+    OUTER_SPRINT flir_delivery_count_pattern ~^@meta[ %TAB%]+@backend[ %TAB%]+backend[ %TAB%]+legacy-bcs-v1[ %TAB%]+1[ %TAB%]+1%MNL%?$~
+    LAM flir_delivery_count_game_registry
+    OUTER_SET flir_delivery_recorded_legacy = flir_delivery_count
+
+    OUTER_SPRINT flir_delivery_count_pattern ~^@meta[ %TAB%]+@backend[ %TAB%]+backend[ %TAB%]+eeex-manifest-v1[ %TAB%]+1[ %TAB%]+1%MNL%?$~
+    LAM flir_delivery_count_game_registry
+    OUTER_SET flir_delivery_recorded_eeex = flir_delivery_count
+  END
+
+  ACTION_IF flir_delivery_registry_present = 1 BEGIN
+    ACTION_IF flir_delivery_recorded_legacy = 1
+          AND flir_delivery_recorded_eeex = 0 BEGIN
+      OUTER_SPRINT flir_delivery_backend ~legacy-bcs-v1~
+    END ELSE ACTION_IF flir_delivery_recorded_legacy = 0
+          AND flir_delivery_recorded_eeex = 1 BEGIN
+      ACTION_IF flir_delivery_capable != 1 BEGIN
+        LAF flir_delivery_fail STR_VAR code = ~CAPABILITY_LOSS~ END
+      END
+      OUTER_SPRINT flir_delivery_backend ~eeex-manifest-v1~
+    END ELSE BEGIN
+      LAF flir_delivery_fail STR_VAR code = ~UNKNOWN_RECORDED_BACKEND~ END
+    END
+  END ELSE ACTION_IF flir_delivery_capable = 1 BEGIN
+    OUTER_SPRINT flir_delivery_backend ~eeex-manifest-v1~
+  END ELSE BEGIN
+    OUTER_SPRINT flir_delivery_backend ~legacy-bcs-v1~
+  END
+END
+
+DEFINE_ACTION_MACRO flir_delivery_publish_manifest BEGIN
+  ACTION_IF NOT VARIABLE_IS_SET flir_delivery_backend
+        OR NOT ("%flir_delivery_backend%" STRING_EQUAL_CASE ~eeex-manifest-v1~) BEGIN
+    LAF flir_delivery_fail STR_VAR code = ~WRONG_BACKEND~ END
+  END
+  LAM flir_manifest_write
+END
