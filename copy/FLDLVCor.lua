@@ -436,7 +436,7 @@ local function build_indices(manifest)
     }
 end
 
-function Core.new(engine, manifest)
+function Core.new(engine, manifest, retry_blocked)
     local valid, code = validate_manifest(manifest)
     if not valid then
         return nil, code
@@ -449,13 +449,16 @@ function Core.new(engine, manifest)
             return nil, "ENGINE_SHAPE"
         end
     end
+    if retry_blocked ~= nil and type(retry_blocked) ~= "table" then
+        return nil, "ENGINE_SHAPE"
+    end
 
     local self = setmetatable({}, Controller)
     self.engine = engine
     self.manifest = manifest
     self.indices = build_indices(manifest)
     self.reported_errors = {}
-    self.retry_blocked = {}
+    self.retry_blocked = retry_blocked or {}
     return self
 end
 
@@ -988,9 +991,15 @@ function Controller:_continue_transaction(transaction, execution_failure)
         self:_report_once("COUNT_FAILURE", count_error)
         return
     end
-    if count >= transaction.baseline + transaction.quantity then
+    local expected_count = transaction.baseline + transaction.quantity
+    if count == expected_count then
         self:_set_phase(Core.PHASE.VERIFIED, Core.REASON.NONE)
         self:_commit(global_name)
+        return
+    end
+    if count > expected_count then
+        self:_set_phase(Core.PHASE.QUARANTINED, Core.REASON.LOCKED_UNSAFE)
+        self:_report_once("DELTA_OVERSHOOT", "locked endpoint")
         return
     end
 
@@ -1034,7 +1043,9 @@ function Controller:poll()
 end
 
 function Controller:on_game_state_destroyed()
-    self.retry_blocked = {}
+    for global_name in pairs(self.retry_blocked) do
+        self.retry_blocked[global_name] = nil
+    end
 end
 
 FLDLV.Core = Core

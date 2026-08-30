@@ -116,6 +116,21 @@ return function(context)
         equal(dirty_calls, 3, "listener trampoline retained stale handler")
     end)
 
+    test("AdapterPreservesRetryFuseAcrossHotReload", function()
+        local fake, root = new_loaded()
+        root.Controller.retry_blocked.fl1t1 = true
+        local shared_retry_blocked = root.Controller.retry_blocked
+
+        fake:load_bootstrap()
+        equal(root.Controller.retry_blocked, shared_retry_blocked,
+            "hot reload replaced the same-GameState retry fuse")
+        equal(root.Controller.retry_blocked.fl1t1, true)
+
+        fake:trigger_destroyed()
+        equal(next(shared_retry_blocked), nil,
+            "GameState destruction did not clear the shared retry fuse")
+    end)
+
     test("AdapterFailedReloadCannotRetainPriorController", function()
         local fake, root = new_loaded()
         truthy(root.Controller)

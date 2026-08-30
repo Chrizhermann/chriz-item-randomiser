@@ -199,6 +199,26 @@ return function(context)
         equal(#engine.executions, 1, "delivery executed twice across visibility boundary")
     end)
 
+    test("ExactDeltaOvershootStaysLockedWithoutCommit", function()
+        local controller, engine = new_pending("fl1t1", 1, function(fake)
+            fake.execute_hook = function(current, endpoint_id, _, item)
+                current:add_item(endpoint_id, item.resref, item.charges)
+            end
+        end)
+
+        controller:poll()
+        controller:poll()
+        equal(engine:get_global("fl1t1"), 1)
+        equal(engine:get_global(Core.GLOBALS.phase), Core.PHASE.QUARANTINED)
+        equal(engine:get_global(Core.GLOBALS.reason), Core.REASON.LOCKED_UNSAFE)
+        equal(engine:count_exact("primary", "tstitema", { 3, 2, 1 }), 2)
+        equal(#engine.executions, 1)
+
+        controller:poll()
+        equal(engine:get_global("fl1t1"), 1)
+        equal(#engine.executions, 1, "overshoot caused another execution")
+    end)
+
     test("ExecutionErrorAfterCreationCommitsByExactObservation", function()
         local controller, engine = new_pending("fl1t1", 1, function(fake)
             fake.execute_error = "synthetic instant executor error"

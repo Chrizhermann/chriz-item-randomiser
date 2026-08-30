@@ -2,9 +2,9 @@
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers-extended-cc:executing-plans to implement this plan task-by-task.
 
-**Goal:** Replace recipient-owned queued delivery actions with synchronous, immediately verified EEex item insertion while deferring unspawned targets.
+**Goal:** Replace recipient-owned queued delivery actions with queue-free EEex item insertion verified after the next engine boundary while deferring unspawned targets.
 
-**Architecture:** Keep the generated manifest, stable endpoint resolver, exact item signatures, and durable GLOBAL journal. Execute one `CreateItem` or `GiveItemCreate` action through EEex's INSTANT.IDS executor, re-resolve the locked endpoint immediately, and commit only after an exact count increase. Missing primaries defer; dead/full primaries may use their authorized ground fallback.
+**Architecture:** Keep the generated manifest, stable endpoint resolver, exact item signatures, and durable GLOBAL journal. Execute one `CreateItem` or `GiveItemCreate` action through EEex's INSTANT.IDS executor, return to the engine with `EXECUTING` durable, then re-resolve the locked endpoint on a later poll and commit only after an exact one-item count increase. Missing primaries defer; dead/full primaries may use their authorized ground fallback.
 
 **Tech Stack:** Lua 5.1/5.3, EEex v0.11 action and object APIs, WeiDU 249, PowerShell test harnesses, disposable EET 2.6.6 installation.
 
@@ -23,8 +23,10 @@
 Replace queue/ACK-specific assertions with tests for:
 
 ```lua
-test("LivingPrimaryExecutesAndCommitsSynchronously", function()
+test("LivingPrimaryExecutesThenCommitsAtNextBoundary", function()
     local manifest, engine, controller = setup({ fl1t1 = 1 })
+    controller:poll()
+    engine:publish_pending_items()
     controller:poll()
     equal(engine:get_global("fl1t1"), -1)
     equal(engine:get_global(Core.GLOBALS.phase), Core.PHASE.NONE)
@@ -78,8 +80,8 @@ function FakeEngine:execute_delivery(endpoint_id, _, item)
 end
 ```
 
-Track `executions` and an ephemeral `retry_blocked` behavior rather than fake
-engine queues.
+Track `executions`, next-boundary item publication, and a `retry_blocked` table
+that survives Lua hot reload within one GameState rather than fake engine queues.
 
 **Step 4: Implement the synchronous core**
 
@@ -87,12 +89,14 @@ engine queues.
   preserving values 2 and 3.
 - Rename reason `QUEUE_FAILURE -> EXECUTION_FAILURE` while preserving value 7.
 - Replace the required engine method with `execute_delivery`.
-- Persist `PREPARED`, set `EXECUTING`, call the engine once, then immediately
-  re-observe the locked endpoint and exact signature.
-- On an exact `baseline + quantity` result, set `VERIFIED`, write token `-1`,
-  and clear the journal.
-- On stable unchanged state, keep the token positive, record the per-token
-  reason, clear the journal, and block only that token until GameState teardown.
+- Persist `PREPARED`, set `EXECUTING`, call the engine once, and return with the
+  journal intact so the engine can publish the item-list mutation.
+- On a later poll, re-resolve the locked endpoint. Only an exact
+  `baseline + quantity` result may set `VERIFIED`, write token `-1`, and clear
+  the journal; an overshoot remains locked and quarantined.
+- On a stable unchanged result after that boundary, keep the token positive,
+  record the per-token reason, clear the journal, and block only that token
+  until GameState teardown. Preserve this fuse across Lua hot reloads.
 - On an unobservable `EXECUTING` endpoint, retain the locked journal and set
   `QUARANTINED`; never switch fallback.
 - Clear ephemeral retry blocks at GameState teardown.
@@ -117,6 +121,8 @@ git commit -m "refactor: make delivery transactions synchronous"
 - Modify: `tests/lua/fake_eeex.lua`
 - Modify: `tests/lua/test_adapter.lua`
 - Modify: `copy/M_FLDLV.lua`
+- Modify: `lib/delivery_manifest.tpa`
+- Modify: `tests/Test-DeliveryBackend.ps1`
 
 **Step 1: Write the failing adapter tests**
 
@@ -167,6 +173,11 @@ end
 Remove `_DeliveryAck`, `_ackCallbacks`, generation handling, the queued
 two-action payload, and the queue capability requirement. Preserve opaque
 diagnostics and all existing object-identity checks.
+
+Update the installer capability probe to require
+`EEex_Action_ExecuteScriptFileResponseAsAIBaseInstantly`, not the removed queue
+API. Cover instant-without-queue as capable and queue-without-instant as
+incapable.
 
 **Step 5: Run the Lua suite and verify GREEN**
 

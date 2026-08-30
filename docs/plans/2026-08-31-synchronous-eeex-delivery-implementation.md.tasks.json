@@ -21,15 +21,15 @@
     {
       "id": 3,
       "subject": "Task 4: Run the complete local verification matrix",
-      "status": "in_progress",
+      "status": "completed",
       "blockedBy": [2]
     },
     {
       "id": 4,
       "subject": "Task 5: Reinstall and runtime-test only the disposable EET copy",
-      "status": "pending",
+      "status": "completed",
       "blockedBy": [3]
     }
   ],
-  "lastUpdated": "2026-08-31T05:32:00+09:00"
+  "lastUpdated": "2026-08-31T06:46:16+09:00"
 }

@@ -12,6 +12,9 @@ local unpack_values = unpack or table.unpack
 
 root.Diagnostics = root.Diagnostics or { counts = {} }
 root.Diagnostics.counts = root.Diagnostics.counts or {}
+if type(root._retryBlocked) ~= "table" then
+    root._retryBlocked = {}
+end
 
 -- Publish a disabled surface before probing or loading anything.  If a hot
 -- reload fails partway through, append-only listener trampolines must not keep
@@ -471,7 +474,8 @@ root._currentArea = nil
 root._settlingSweeps = 0
 root._menuPushed = root._menuPushed == true
 
-local controller, controller_error = root.Core.new(root.Engine, root.Manifest)
+local controller, controller_error = root.Core.new(
+    root.Engine, root.Manifest, root._retryBlocked)
 if not controller then
     root.Disabled = opaque_code(controller_error)
     return

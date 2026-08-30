@@ -184,6 +184,31 @@ return function(context)
         equal(engine:get_global("fl1t1"), -1)
     end)
 
+    test("FailedExecutionFuseSurvivesControllerRecreation", function()
+        local manifest = FakeEngine.manifest()
+        local engine = FakeEngine.new({ globals = { fl1t1 = 1 } })
+        local shared_retry_blocked = {}
+        engine.execute_create = false
+        local controller = assert(Core.new(engine, manifest, shared_retry_blocked))
+        controller:poll()
+        controller:poll()
+        equal(#engine.executions, 1)
+        equal(shared_retry_blocked.fl1t1, true)
+
+        engine.execute_create = true
+        local recreated = assert(Core.new(engine, manifest, shared_retry_blocked))
+        recreated:poll()
+        equal(#engine.executions, 1,
+            "hot reload discarded the same-GameState retry fuse")
+
+        recreated:on_game_state_destroyed()
+        equal(next(shared_retry_blocked), nil)
+        recreated:poll()
+        equal(#engine.executions, 2)
+        recreated:poll()
+        equal(engine:get_global("fl1t1"), -1)
+    end)
+
     test("UnobservableExecutingLockCanLaterVerifyWithoutDuplicate", function()
         local manifest = FakeEngine.manifest()
         local engine = FakeEngine.new({ globals = { fl1t1 = 1 } })

@@ -34,7 +34,10 @@ if ($deliveryManifestSource -notmatch 'FILE_EXISTS_IN_GAME\s+["~]fl#irreg\.2da["
     $deliveryManifestSource -notmatch 'COPY_EXISTING\s+-\s+["~]fl#irreg\.2da["~]') {
     throw 'The production selector cannot preserve a registry stored in the effective game resource set.'
 }
-if ($deliveryManifestSource -match 'EEex_Action_QueueResponseStringOnAIBase|EEex_Sprite_GetInPortrait') {
+if ($deliveryManifestSource -notmatch 'EEex_Action_ExecuteScriptFileResponseAsAIBaseInstantly') {
+    throw 'The production capability gate does not require the instant delivery executor.'
+}
+if ($deliveryManifestSource -match 'EEex_Action_(?:QueueResponseStringOnAIBase|QueueScriptFileResponseOnAIBase)|EEex_Sprite_GetInPortrait') {
     throw 'The production capability gate still requires an obsolete queue API or an unused portrait helper.'
 }
 
@@ -87,7 +90,7 @@ $utf8NoBom = [System.Text.UTF8Encoding]::new($false)
 $requiredApiSources = [ordered]@{
     'EEex_Action.lua' = @(
         'function EEex_Action_ParseResponseString(responseString) end',
-        'function EEex_Action_QueueScriptFileResponseOnAIBase(response, actor) end'
+        'function EEex_Action_ExecuteScriptFileResponseAsAIBaseInstantly(response, actor) end'
     )
     'EEex_Area.lua' = @(
         'function EEex_Area_GetVisible() end'
@@ -135,7 +138,7 @@ function Write-Utf8NoBom {
 function New-DeliveryBackendFixture {
     param(
         [Parameter(Mandatory = $true)][string] $ProbeRoot,
-        [ValidateSet('Complete', 'CompleteCRLF', 'MissingBootstrap', 'MissingApiFile', 'MissingSymbol', 'MissingSecondarySymbol', 'CommentedSymbol', 'BlockCommentedSymbol', 'CommentedIni', 'InactiveIni', 'DuplicateActiveIni', 'NearMissIni')]
+        [ValidateSet('Complete', 'CompleteCRLF', 'MissingBootstrap', 'MissingApiFile', 'MissingSymbol', 'MissingSecondarySymbol', 'QueueInsteadOfInstant', 'CommentedSymbol', 'BlockCommentedSymbol', 'CommentedIni', 'InactiveIni', 'DuplicateActiveIni', 'NearMissIni')]
         [string] $CapabilityMode,
         [string[]] $BackendRows = @()
     )
@@ -158,13 +161,19 @@ function New-DeliveryBackendFixture {
             if ($CapabilityMode -eq 'MissingSymbol') {
                 $sourceLines = @('function EEex_Action_UnrelatedSyntheticApi() end')
             }
+            elseif ($CapabilityMode -eq 'QueueInsteadOfInstant') {
+                $sourceLines = @(
+                    'function EEex_Action_ParseResponseString(responseString) end',
+                    'function EEex_Action_QueueScriptFileResponseOnAIBase(response, actor) end'
+                )
+            }
             elseif ($CapabilityMode -eq 'CommentedSymbol') {
-                $sourceLines = @('-- function EEex_Action_QueueScriptFileResponseOnAIBase(response, actor) end')
+                $sourceLines = @('-- function EEex_Action_ExecuteScriptFileResponseAsAIBaseInstantly(response, actor) end')
             }
             elseif ($CapabilityMode -eq 'BlockCommentedSymbol') {
                 $sourceLines = @(
                     '--[[',
-                    'function EEex_Action_QueueScriptFileResponseOnAIBase(response, actor) end',
+                    'function EEex_Action_ExecuteScriptFileResponseAsAIBaseInstantly(response, actor) end',
                     ']]'
                 )
             }
@@ -270,8 +279,9 @@ function Invoke-DeliveryBackendCase {
 try {
     $null = New-Item -ItemType Directory -Path $scratchRoot
 
-    Invoke-DeliveryBackendCase -Name 'fresh-complete' -CapabilityMode Complete -ExpectedBackend 'eeex-manifest-v1'
+    Invoke-DeliveryBackendCase -Name 'fresh-instant-without-queue' -CapabilityMode Complete -ExpectedBackend 'eeex-manifest-v1'
     Invoke-DeliveryBackendCase -Name 'fresh-complete-crlf' -CapabilityMode CompleteCRLF -ExpectedBackend 'eeex-manifest-v1'
+    Invoke-DeliveryBackendCase -Name 'fresh-queue-without-instant' -CapabilityMode QueueInsteadOfInstant -ExpectedBackend 'legacy-bcs-v1'
     Invoke-DeliveryBackendCase -Name 'fresh-classic-with-stale-eeex-layout' -CapabilityMode Complete -IsEeGame $false -ExpectedBackend 'legacy-bcs-v1'
     Invoke-DeliveryBackendCase -Name 'fresh-missing-bootstrap' -CapabilityMode MissingBootstrap -ExpectedBackend 'legacy-bcs-v1'
     Invoke-DeliveryBackendCase -Name 'fresh-missing-api-file' -CapabilityMode MissingApiFile -ExpectedBackend 'legacy-bcs-v1'
@@ -290,7 +300,7 @@ try {
     Invoke-DeliveryBackendCase -Name 'preserved-unknown-backend' -CapabilityMode Complete -BackendRows @('future-backend-v9')
     Invoke-DeliveryBackendCase -Name 'preserved-both-backends' -CapabilityMode Complete -BackendRows @('legacy-bcs-v1', 'eeex-manifest-v1')
 
-    Write-Output 'Delivery backend tests passed (18 cases).'
+    Write-Output 'Delivery backend tests passed (19 cases).'
 }
 finally {
     if (Test-Path -LiteralPath $scratchRoot -PathType Container) {

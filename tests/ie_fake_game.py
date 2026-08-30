@@ -344,9 +344,8 @@ def seed_common_override(
 
 CAPABILITY_SOURCES: Mapping[str, Sequence[str]] = {
     "EEex_Action.lua": (
-        "function EEex_Action_QueueResponseStringOnAIBase(response, actor) end",
         "function EEex_Action_ParseResponseString(response) end",
-        "function EEex_Action_QueueScriptFileResponseOnAIBase(response, actor) end",
+        "function EEex_Action_ExecuteScriptFileResponseAsAIBaseInstantly(response, actor) end",
     ),
     "EEex_Area.lua": (
         "function EEex_Area_GetVisible() end",

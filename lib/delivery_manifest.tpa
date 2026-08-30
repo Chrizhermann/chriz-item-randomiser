@@ -90,7 +90,7 @@ DEFINE_ACTION_MACRO flir_delivery_probe_capabilities BEGIN
   OUTER_SPRINT flir_delivery_symbol_file ~EEex_Action.lua~
   OUTER_SPRINT flir_delivery_symbol_name ~EEex_Action_ParseResponseString~
   LAM flir_delivery_require_symbol
-  OUTER_SPRINT flir_delivery_symbol_name ~EEex_Action_QueueScriptFileResponseOnAIBase~
+  OUTER_SPRINT flir_delivery_symbol_name ~EEex_Action_ExecuteScriptFileResponseAsAIBaseInstantly~
   LAM flir_delivery_require_symbol
 
   OUTER_SPRINT flir_delivery_symbol_file ~EEex_Area.lua~
