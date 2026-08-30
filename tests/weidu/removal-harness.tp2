@@ -9,6 +9,9 @@
 // argv[7] = global semantic-filter raw item-list 2DA
 // argv[8] = row semantic-filter raw item-list 2DA
 // argv[9] = script source-content raw item-list 2DA
+// argv[10] = internal source-selector 2DA
+// argv[11] = internal-selector raw item-list 2DA
+// argv[12] = selector replacement extension 2DA
 
 BACKUP ~backup~
 AUTHOR ~BG2 Item Randomiser removal-plan test harness~
@@ -211,6 +214,49 @@ LAM flir_removal_plan_build
 COPY ~override/drift.cre~ ~override~
   WRITE_BYTE 0x08 (THIS BXOR 1)
 BUT_ONLY
+LAM flir_removal_plan_apply
+LAM flir_removal_harness_write_report
+
+BEGIN ~Removal harness: internal selector disambiguates an authored source~ DESIGNATED 11
+LAM flir_removal_harness_reset
+OUTER_SET flir_source_allow_override_availability = 1
+COPY ~%argv[11]%~ ~flir-removal/selector-items.2da~
+  LAUNCH_PATCH_MACRO flir_source_stage1_raw
+OUTER_SPRINT flir_source_internal_selector_table ~%argv[10]%~
+LAM flir_source_apply_internal_selector_table
+OUTER_SPRINT flir_test_selector_key ~ident:selector-stable~
+OUTER_SPRINT flir_test_selector $flir_source_decl_object_or_slot("%flir_test_selector_key%")
+ACTION_IF !VARIABLE_IS_SET $flir_source_decl_object_or_slot("%flir_test_selector_key%")
+      OR NOT ("%flir_test_selector%" STRING_EQUAL_CASE "target-two") BEGIN
+  FAIL ~TEST_INTERNAL_SELECTOR_DECLARATION_MISSING~
+END
+LAM flir_source_filter_stage1
+OUTER_SPRINT flir_test_row_item ~selitm~
+OUTER_SPRINT flir_test_row_replacement ~blank~
+OUTER_SPRINT flir_test_row_source ~select.are~
+OUTER_SPRINT flir_test_row_tier ~1~
+OUTER_SPRINT flir_test_row_token ~14~
+OUTER_SPRINT flir_test_row_ident ~selector-stable~
+ACTION_IF !VARIABLE_IS_SET $flir_source_current_row_key("%flir_test_row_item%" "%flir_test_row_replacement%" "%flir_test_row_source%" "%flir_test_row_tier%" "%flir_test_row_token%" "%flir_test_row_ident%") BEGIN
+  FAIL ~TEST_INTERNAL_SELECTOR_ROW_KEY_MISSING~
+END
+LAM create_item_array#finalise
+LAM flir_removal_plan_build
+LAM flir_removal_plan_apply
+LAM flir_removal_harness_write_report
+
+BEGIN ~Removal harness: extension replacement overrides internal selector~ DESIGNATED 12
+LAM flir_removal_harness_reset
+OUTER_SET flir_source_allow_override_availability = 1
+COPY ~%argv[11]%~ ~flir-removal/selector-items.2da~
+  LAUNCH_PATCH_MACRO flir_source_stage1_raw
+OUTER_SPRINT flir_source_internal_selector_table ~%argv[10]%~
+LAM flir_source_apply_internal_selector_table
+OUTER_SPRINT flir_source_extension_fixture ~%argv[12]%~
+LAM flir_source_apply_extension_hook
+LAM flir_source_filter_stage1
+LAM create_item_array#finalise
+LAM flir_removal_plan_build
 LAM flir_removal_plan_apply
 LAM flir_removal_harness_write_report
 

@@ -15,6 +15,8 @@ $palettePath = Join-Path $repositoryRoot 'lib\fl#bg1pal.tpa'
 $catalogPath = Join-Path $repositoryRoot 'lib\catalog.tpa'
 $removalPlanPath = Join-Path $repositoryRoot 'lib\removal_plan.tpa'
 $arraysPath = Join-Path $repositoryRoot 'lib\arrays.tpa'
+$selectorTablePath = Join-Path $repositoryRoot 'lists\sources\base\bg2.2da'
+$bg2ItemsPath = Join-Path $repositoryRoot 'lists\items\base\bg2.2da'
 $deletePath = Join-Path $repositoryRoot 'lib\delete.tpa'
 $tp2Path = Join-Path $repositoryRoot 'randomiser.tp2'
 $modeBoundaryPath = Join-Path $PSScriptRoot 'Test-ModeBoundary.ps1'
@@ -25,7 +27,7 @@ if (-not (Test-Path -LiteralPath $removalPlanPath -PathType Leaf)) {
     exit 1
 }
 
-foreach ($requiredPath in @($fixturePath, $harnessPath, $libPath, $palettePath, $catalogPath, $arraysPath, $deletePath, $tp2Path)) {
+foreach ($requiredPath in @($fixturePath, $harnessPath, $libPath, $palettePath, $catalogPath, $arraysPath, $selectorTablePath, $bg2ItemsPath, $deletePath, $tp2Path)) {
     if (-not (Test-Path -LiteralPath $requiredPath -PathType Leaf)) {
         throw "Required removal-plan test input is missing: $requiredPath"
     }
@@ -35,6 +37,7 @@ $removalPlanSource = [System.IO.File]::ReadAllText($removalPlanPath)
 $staticFailures = [System.Collections.Generic.List[string]]::new()
 foreach ($requiredSymbol in @(
     'flir_source_stage1_raw',
+    'flir_source_apply_internal_selector_table',
     'flir_source_apply_extension_hook',
     'flir_source_filter_stage1',
     'flir_removal_plan_build',
@@ -80,6 +83,44 @@ if ($arraysSource -notmatch 'flir_source_stage1_raw' -or
     $arraysSource -notmatch 'flir_source_apply_extension_hook' -or
     $arraysSource -notmatch 'flir_source_filter_stage1') {
     throw 'arrays.tpa does not route Mode 1 item declarations through the pre-filter source hook.'
+}
+$selectorOrder = [regex]::Match(
+    $arraysSource,
+    '(?s)lists/items/base/bg2\.2da.*?flir_source_stage1_raw.*?flir_source_internal_selector_table.*?flir_source_apply_internal_selector_table.*?flir_source_filter_stage1_legacy_ident_filter'
+)
+if (-not $selectorOrder.Success) {
+    throw 'The internal BG2 selector table is not applied between raw staging and the legacy filter.'
+}
+
+$bg2StableIdents = @{}
+foreach ($line in Get-Content -LiteralPath $bg2ItemsPath | Select-Object -Skip 1) {
+    $parts = @($line.Trim() -split '\s+' | Where-Object { $_ -ne '' })
+    if ($parts.Count -ge 7 -and $parts[5] -cne 'x') {
+        $bg2StableIdents[$parts[5].ToLowerInvariant()] = $true
+    }
+}
+$selectorIdents = @{}
+$selectorRows = @(Get-Content -LiteralPath $selectorTablePath | Select-Object -Skip 1 | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+if ($selectorRows.Count -ne 4) {
+    throw 'The internal BG2 selector table does not contain the four audited authored exceptions.'
+}
+foreach ($line in $selectorRows) {
+    $parts = @($line.Trim() -split '\s+' | Where-Object { $_ -ne '' })
+    if ($parts.Count -ne 2 -or [string]::IsNullOrWhiteSpace($parts[0]) -or [string]::IsNullOrWhiteSpace($parts[1])) {
+        throw 'An internal BG2 selector row is malformed or empty.'
+    }
+    $ident = $parts[0].ToLowerInvariant()
+    $selectorValue = $parts[1].ToLowerInvariant()
+    if ($ident -ceq 'x' -or $selectorValue -cin @('*', 'any', 'none')) {
+        throw 'An internal BG2 selector row is not a stable, explicit selector.'
+    }
+    if ($selectorIdents.ContainsKey($ident)) {
+        throw 'The internal BG2 selector table contains a duplicate stable identity.'
+    }
+    if (-not $bg2StableIdents.ContainsKey($ident)) {
+        throw 'The internal BG2 selector table targets no authored stable identity.'
+    }
+    $selectorIdents[$ident] = $true
 }
 
 $deleteSource = [System.IO.File]::ReadAllText($deletePath)
@@ -300,6 +341,9 @@ function Copy-FixtureCase {
 function Write-HookFixtures {
     param([string] $RunDirectory)
     $extensionPath = Join-Path $RunDirectory 'source-extension.2da'
+    $internalSelectorPath = Join-Path $RunDirectory 'internal-source-selectors.2da'
+    $selectorRawPath = Join-Path $RunDirectory 'selector-items.2da'
+    $selectorExtensionPath = Join-Path $RunDirectory 'selector-extension.2da'
     $rawPath = Join-Path $RunDirectory 'raw-items.2da'
     $semanticGlobalPath = Join-Path $RunDirectory 'semantic-global.2da'
     $semanticRowsPath = Join-Path $RunDirectory 'semantic-rows.2da'
@@ -307,6 +351,21 @@ function Write-HookFixtures {
     [System.IO.File]::WriteAllText(
         $extensionPath,
         "2DA V1.0`n0`nOP ITEM REPLACEMENT SOURCE TIER TOKEN IDENT CHANCE SOURCE_KIND OBJECT_OR_SLOT VIRTUAL_POLICY CHARGE1 CHARGE2 CHARGE3 EXPECTED_QUANTITY`nREPLACE movitm blank present.cre 1 8 moved-ident 100 cre_inventory * none 0 0 0 1`n",
+        [System.Text.Encoding]::ASCII
+    )
+    [System.IO.File]::WriteAllText(
+        $internalSelectorPath,
+        "IDENT OBJECT_OR_SLOT`nselector-stable target-two`n",
+        [System.Text.Encoding]::ASCII
+    )
+    [System.IO.File]::WriteAllText(
+        $selectorRawPath,
+        "2DA V1.0`n0`nITEM REPLACEMENT SOURCE TIER TOKEN IDENT CHANCE`nselitm blank select.are 1 14 selector-stable 100`n",
+        [System.Text.Encoding]::ASCII
+    )
+    [System.IO.File]::WriteAllText(
+        $selectorExtensionPath,
+        "2DA V1.0`n0`nOP ITEM REPLACEMENT SOURCE TIER TOKEN IDENT CHANCE SOURCE_KIND OBJECT_OR_SLOT VIRTUAL_POLICY CHARGE1 CHARGE2 CHARGE3 EXPECTED_QUANTITY`nREPLACE selitm blank select.are 1 14 selector-stable 100 area_container target-one none 0 0 0 1`n",
         [System.Text.Encoding]::ASCII
     )
     [System.IO.File]::WriteAllText(
@@ -331,6 +390,9 @@ function Write-HookFixtures {
     )
     [pscustomobject]@{
         Extension = $extensionPath
+        InternalSelector = $internalSelectorPath
+        SelectorRaw = $selectorRawPath
+        SelectorExtension = $selectorExtensionPath
         Raw = $rawPath
         SemanticGlobal = $semanticGlobalPath
         SemanticRows = $semanticRowsPath
@@ -366,6 +428,9 @@ function Invoke-RemovalHarness {
         '--args', $hookFiles.SemanticGlobal,
         '--args', $hookFiles.SemanticRows,
         '--args', $hookFiles.SourceContent,
+        '--args', $hookFiles.InternalSelector,
+        '--args', $hookFiles.SelectorRaw,
+        '--args', $hookFiles.SelectorExtension,
         '--no-exit-pause',
         '--quick-log'
     )
@@ -483,6 +548,25 @@ try {
     Assert-ReportContainsExactlyOnce -Report $sourceReplace.Report -Line 'COUNT 1'
     Assert-ReportContainsExactlyOnce -Report $sourceReplace.Report -Line 'SOURCE movitm present.cre 1 8 moved-ident'
 
+    $selector = Invoke-RemovalHarness -Component 11 -Name 'internal-selector' -Case $fixtures.selector
+    Assert-ReportContainsExactlyOnce -Report $selector.Report -Line 'PLAN applied=1 disabled=0'
+    Assert-ReportContainsExactlyOnce -Report $selector.Report -Line 'REMOVED 1 14 selector-stable'
+    $selectorArea = [System.IO.File]::ReadAllBytes((Join-Path $selector.RunDirectory 'override\select.are'))
+    $selectorContainerOffset = [BitConverter]::ToUInt32($selectorArea, 0x70)
+    if ([BitConverter]::ToUInt32($selectorArea, $selectorContainerOffset + 0x44) -ne 1 -or
+        [BitConverter]::ToUInt32($selectorArea, $selectorContainerOffset + 0xc0 + 0x44) -ne 0) {
+        throw 'The internal selector did not remove only the selected duplicate source instance.'
+    }
+
+    $selectorOverride = Invoke-RemovalHarness -Component 12 -Name 'selector-extension-override' -Case $fixtures.selector
+    Assert-ReportContainsExactlyOnce -Report $selectorOverride.Report -Line 'PLAN applied=1 disabled=0'
+    $selectorOverrideArea = [System.IO.File]::ReadAllBytes((Join-Path $selectorOverride.RunDirectory 'override\select.are'))
+    $selectorOverrideContainerOffset = [BitConverter]::ToUInt32($selectorOverrideArea, 0x70)
+    if ([BitConverter]::ToUInt32($selectorOverrideArea, $selectorOverrideContainerOffset + 0x44) -ne 0 -or
+        [BitConverter]::ToUInt32($selectorOverrideArea, $selectorOverrideContainerOffset + 0xc0 + 0x44) -ne 1) {
+        throw 'The external source replacement did not override the internal selector default.'
+    }
+
     $semanticFilter = Invoke-RemovalHarness -Component 9 -Name 'semantic-filter' -Case $fixtures.semanticFilter
     Assert-ReportContainsExactlyOnce -Report $semanticFilter.Report -Line 'GLOBAL_COUNT 0'
     Assert-ReportContainsExactlyOnce -Report $semanticFilter.Report -Line 'SEMANTIC_COUNT 1'
@@ -534,6 +618,8 @@ try {
     }
 
     Write-Output 'PASS RemovalPlan_SourceReplaceBeforeFilter'
+    Write-Output 'PASS RemovalPlan_InternalSelectorDisambiguatesAuthoredSource'
+    Write-Output 'PASS RemovalPlan_ExternalSelectorReplacementOverridesInternalDefault'
     Write-Output 'PASS RemovalPlan_SemanticFiltersNotFixtureAvailability'
     Write-Output 'PASS RemovalPlan_OverrideScriptSourceContentChecked'
     Write-Output 'PASS RemovalPlan_ValidationBeforeMutation'

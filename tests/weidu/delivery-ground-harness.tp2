@@ -145,3 +145,47 @@ BEGIN ~roll back an earlier area when a later area is occupied~ DESIGNATED 6
   OUTER_SET flir_ground_harness_y = 2200
   LAM flir_ground_harness_add
   LAM flir_delivery_materialize_ground_endpoints
+
+BEGIN ~preserve mixed ARE section pointers and embedded creatures~ DESIGNATED 7
+  LAM flir_ground_harness_reset
+  OUTER_SPRINT flir_ground_harness_id ~test:mixed-relocation~
+  OUTER_SPRINT flir_ground_harness_area ~FLGRD09~
+  OUTER_SPRINT flir_ground_harness_kind ~ground~
+  OUTER_SET flir_ground_harness_x = 2300
+  OUTER_SET flir_ground_harness_y = 2400
+  OUTER_SET flir_ground_harness_enabled = 1
+  LAM flir_ground_harness_add
+  LAM flir_delivery_materialize_ground_endpoints
+
+BEGIN ~reject a tiled-object flags offset that would overflow its word~ DESIGNATED 8
+  LAM flir_ground_harness_reset
+  OUTER_SPRINT flir_ground_harness_id ~test:word-offset-overflow~
+  OUTER_SPRINT flir_ground_harness_area ~FLGRD10~
+  OUTER_SPRINT flir_ground_harness_kind ~ground~
+  OUTER_SET flir_ground_harness_x = 2500
+  OUTER_SET flir_ground_harness_y = 2600
+  OUTER_SET flir_ground_harness_enabled = 1
+  LAM flir_ground_harness_add
+  LAM flir_delivery_materialize_ground_endpoints
+
+BEGIN ~repeat mixed ARE materialization byte-identically~ DESIGNATED 9
+  LAM flir_ground_harness_reset
+  OUTER_SPRINT flir_ground_harness_id ~test:mixed-relocation-repeat~
+  OUTER_SPRINT flir_ground_harness_area ~FLGRD09~
+  OUTER_SPRINT flir_ground_harness_kind ~ground~
+  OUTER_SET flir_ground_harness_x = 2300
+  OUTER_SET flir_ground_harness_y = 2400
+  OUTER_SET flir_ground_harness_enabled = 1
+  LAM flir_ground_harness_add
+  LAM flir_delivery_materialize_ground_endpoints
+
+BEGIN ~reject an embedded creature payload split by insertion~ DESIGNATED 10
+  LAM flir_ground_harness_reset
+  OUTER_SPRINT flir_ground_harness_id ~test:embedded-cre-straddle~
+  OUTER_SPRINT flir_ground_harness_area ~FLGRD11~
+  OUTER_SPRINT flir_ground_harness_kind ~ground~
+  OUTER_SET flir_ground_harness_x = 2700
+  OUTER_SET flir_ground_harness_y = 2800
+  OUTER_SET flir_ground_harness_enabled = 1
+  LAM flir_ground_harness_add
+  LAM flir_delivery_materialize_ground_endpoints

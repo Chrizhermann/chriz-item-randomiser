@@ -124,6 +124,8 @@ ACTION_IF BG1 = 0 OR BGT = 1 BEGIN
     COPY - "randomiser/lists/items/base/bg2.2da"
            ".../randomiser/fl-inlined/lists/items/base/bg2.2da"
       LAUNCH_PATCH_MACRO flir_source_stage1_raw
+    OUTER_SPRINT flir_source_internal_selector_table ~randomiser/lists/sources/base/bg2.2da~
+    LAM flir_source_apply_internal_selector_table
     LAM flir_source_filter_stage1_legacy_ident_filter
   END ELSE BEGIN
     COPY - "randomiser/lists/items/base/bg2.2da"

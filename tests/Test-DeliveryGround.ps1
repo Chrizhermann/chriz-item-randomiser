@@ -254,6 +254,100 @@ function New-AreFixture {
     [System.IO.File]::WriteAllBytes($Path, $bytes)
 }
 
+function New-MixedRelocationAreFixture {
+    param([Parameter(Mandatory = $true)][string] $Path)
+
+    # This layout intentionally does not follow header-field order. The
+    # container table ends before an actor table, while one embedded CRE is
+    # before the insertion and another is after it. That makes the fixture an
+    # independent relocation oracle instead of a mirror of the patcher's list.
+    $earlyCreOffset = 0x120
+    $containerOffset = 0x160
+    $actorOffset = 0x230
+    $itemOffset = 0x570
+    $vertexOffset = 0x590
+    $lateCreOffset = 0x5a0
+    $tiledFlagsOffset = 0x5d0
+    $projectileOffset = 0x5e0
+    $bytes = [byte[]]::new(0x680)
+
+    Set-Ascii $bytes 0 8 'AREAV1.0'
+    Set-U32 $bytes 0x54 $actorOffset
+    Set-U16 $bytes 0x58 3
+    Set-U32 $bytes 0x70 $containerOffset
+    Set-U16 $bytes 0x74 1
+    Set-U16 $bytes 0x76 1
+    Set-U32 $bytes 0x78 $itemOffset
+    Set-U32 $bytes 0x7c $vertexOffset
+    Set-U16 $bytes 0x80 1
+    Set-U16 $bytes 0x90 $tiledFlagsOffset
+    Set-U16 $bytes 0x92 1
+    Set-U32 $bytes 0xcc $projectileOffset
+    Set-U32 $bytes 0xd0 1
+
+    Set-Ascii $bytes $earlyCreOffset 0x20 'EARLY-CRE-BEFORE-INSERT'
+    Set-Ascii $bytes $containerOffset 32 'mixed-unrelated'
+    Set-U16 $bytes ($containerOffset + 0x20) 77
+    Set-U16 $bytes ($containerOffset + 0x22) 88
+    Set-U16 $bytes ($containerOffset + 0x24) 8
+    Set-U32 $bytes ($containerOffset + 0x40) 0
+    Set-U32 $bytes ($containerOffset + 0x44) 1
+
+    for ($index = 0; $index -lt 3; ++$index) {
+        $record = $actorOffset + $index * 0x110
+        Set-Ascii $bytes $record 32 ("mixed-actor-$index")
+        Set-Ascii $bytes ($record + 0x80) 8 ("MXACTR$index")
+    }
+    # External actor: no embedded payload.
+    Set-U32 $bytes ($actorOffset + 0x88) 0
+    Set-U32 $bytes ($actorOffset + 0x8c) 0
+    # Embedded payload before insertion: the pointer must remain unchanged.
+    Set-U32 $bytes ($actorOffset + 0x110 + 0x88) $earlyCreOffset
+    Set-U32 $bytes ($actorOffset + 0x110 + 0x8c) 0x20
+    # Embedded payload after insertion: the pointer must move with the bytes.
+    Set-U32 $bytes ($actorOffset + 0x220 + 0x88) $lateCreOffset
+    Set-U32 $bytes ($actorOffset + 0x220 + 0x8c) 0x20
+
+    Set-Ascii $bytes $itemOffset 8 'MIXITEM1'
+    Set-U32 $bytes ($itemOffset + 0x10) 1
+    Set-Ascii $bytes $vertexOffset 0x10 'MIXED-VERTEX'
+    Set-Ascii $bytes $lateCreOffset 0x20 'LATE-CRE-AFTER-INSERT'
+    Set-U16 $bytes $tiledFlagsOffset 0x5a5a
+    Set-Ascii $bytes $projectileOffset 0x90 'PROJECTILE-TRAP-SENTINEL'
+    [System.IO.File]::WriteAllBytes($Path, $bytes)
+}
+
+function New-TiledFlagsOverflowAreFixture {
+    param([Parameter(Mandatory = $true)][string] $Path)
+
+    $containerOffset = 0x120
+    $tiledFlagsOffset = 0xff80
+    $bytes = [byte[]]::new(0xff90)
+    Set-Ascii $bytes 0 8 'AREAV1.0'
+    Set-U32 $bytes 0x70 $containerOffset
+    Set-U16 $bytes 0x74 1
+    Set-U16 $bytes 0x90 $tiledFlagsOffset
+    Set-U16 $bytes 0x92 1
+    Set-Ascii $bytes $containerOffset 32 'overflow-unrelated'
+    Set-U16 $bytes ($containerOffset + 0x20) 99
+    Set-U16 $bytes ($containerOffset + 0x22) 111
+    Set-U16 $bytes ($containerOffset + 0x24) 8
+    Set-U16 $bytes $tiledFlagsOffset 0x6b6b
+    [System.IO.File]::WriteAllBytes($Path, $bytes)
+}
+
+function New-StraddlingEmbeddedCreAreFixture {
+    param([Parameter(Mandatory = $true)][string] $Path)
+
+    New-MixedRelocationAreFixture -Path $Path
+    $bytes = [System.IO.File]::ReadAllBytes($Path)
+    $actorOffset = Get-U32 $bytes 0x54
+    $insertionOffset = (Get-U32 $bytes 0x70) + (Get-U16 $bytes 0x74) * 0xc0
+    Set-U32 $bytes ($actorOffset + 0x110 + 0x88) ($insertionOffset - 0x10)
+    Set-U32 $bytes ($actorOffset + 0x110 + 0x8c) 0x20
+    [System.IO.File]::WriteAllBytes($Path, $bytes)
+}
+
 function New-FakeGame {
     param([Parameter(Mandatory = $true)][string] $Name)
 
@@ -512,7 +606,70 @@ try {
         throw 'A later occupied area was not rolled back transactionally with the earlier patched area.'
     }
 
-    Write-Output 'Delivery ground materializer tests passed (installer seam, append, reuse, alias, disabled, idempotent, failures, missing-area preflight, component rollback).'
+    $overflowGame = New-FakeGame -Name 'word-offset-overflow'
+    $overflowAreaPath = Join-Path $overflowGame 'override\FLGRD10.ARE'
+    New-TiledFlagsOverflowAreFixture -Path $overflowAreaPath
+    $overflowBefore = [System.IO.File]::ReadAllBytes($overflowAreaPath)
+    Assert-WeiDUFailure -Result (Invoke-WeiDUComponent -GameRoot $overflowGame -Component 8) -Code 'GROUND_OFFSET_OVERFLOW' -Case 'tiled-flags-word-offset-overflow'
+    $overflowAfter = [System.IO.File]::ReadAllBytes($overflowAreaPath)
+    Assert-ByteSequenceEqual -Actual $overflowAfter -Expected $overflowBefore -Message 'A tiled-object flags word-offset overflow changed its area fixture.'
+
+    $straddleGame = New-FakeGame -Name 'embedded-cre-straddle'
+    $straddleAreaPath = Join-Path $straddleGame 'override\FLGRD11.ARE'
+    New-StraddlingEmbeddedCreAreFixture -Path $straddleAreaPath
+    $straddleBefore = [System.IO.File]::ReadAllBytes($straddleAreaPath)
+    Assert-WeiDUFailure -Result (Invoke-WeiDUComponent -GameRoot $straddleGame -Component 10) -Code 'GROUND_INVALID_ARE' -Case 'embedded-cre-straddles-insertion'
+    $straddleAfter = [System.IO.File]::ReadAllBytes($straddleAreaPath)
+    Assert-ByteSequenceEqual -Actual $straddleAfter -Expected $straddleBefore -Message 'A split embedded-CRE failure changed its area fixture.'
+
+    $mixedGame = New-FakeGame -Name 'mixed-relocation'
+    $mixedAreaPath = Join-Path $mixedGame 'override\FLGRD09.ARE'
+    New-MixedRelocationAreFixture -Path $mixedAreaPath
+    $mixedBefore = [System.IO.File]::ReadAllBytes($mixedAreaPath)
+    $mixedActorBefore = Get-U32 $mixedBefore 0x54
+    $mixedInsertOffset = (Get-U32 $mixedBefore 0x70) + (Get-U16 $mixedBefore 0x74) * 0xc0
+    $mixedEarlyCreBefore = Get-U32 $mixedBefore ($mixedActorBefore + 0x110 + 0x88)
+    $mixedLateCreBefore = Get-U32 $mixedBefore ($mixedActorBefore + 0x220 + 0x88)
+    $mixedTiledFlagsBefore = Get-U16 $mixedBefore 0x90
+    $mixedProjectileBefore = Get-U32 $mixedBefore 0xcc
+    $mixedItemBefore = Get-U32 $mixedBefore 0x78
+    $mixedVertexBefore = Get-U32 $mixedBefore 0x7c
+
+    Assert-WeiDUSuccess -Result (Invoke-WeiDUComponent -GameRoot $mixedGame -Component 7) -Case 'mixed-section-relocation'
+    $mixedAfter = [System.IO.File]::ReadAllBytes($mixedAreaPath)
+    $relocationDelta = 0xc0
+    $mixedActorAfter = Get-U32 $mixedAfter 0x54
+    if ($mixedActorAfter -ne $mixedActorBefore + $relocationDelta -or
+        (Get-U32 $mixedAfter 0xcc) -ne $mixedProjectileBefore + $relocationDelta -or
+        (Get-U16 $mixedAfter 0x90) -ne $mixedTiledFlagsBefore + $relocationDelta -or
+        (Get-U32 $mixedAfter 0x78) -ne $mixedItemBefore + $relocationDelta -or
+        (Get-U32 $mixedAfter 0x7c) -ne $mixedVertexBefore + $relocationDelta) {
+        throw 'Mixed ARE header pointers were not relocated using their declared field widths.'
+    }
+    if ((Get-U32 $mixedAfter ($mixedActorAfter + 0x88)) -ne 0 -or
+        (Get-U32 $mixedAfter ($mixedActorAfter + 0x110 + 0x88)) -ne $mixedEarlyCreBefore -or
+        (Get-U32 $mixedAfter ($mixedActorAfter + 0x220 + 0x88)) -ne $mixedLateCreBefore + $relocationDelta) {
+        throw 'Embedded actor CRE pointers did not preserve zero/before-insertion values and relocate the later payload.'
+    }
+    if ((Get-Ascii $mixedAfter $mixedEarlyCreBefore 0x20) -cne 'EARLY-CRE-BEFORE-INSERT' -or
+        (Get-Ascii $mixedAfter ($mixedLateCreBefore + $relocationDelta) 0x20) -cne 'LATE-CRE-AFTER-INSERT' -or
+        (Get-Ascii $mixedAfter ($mixedItemBefore + $relocationDelta) 8) -cne 'MIXITEM1' -or
+        (Get-Ascii $mixedAfter ($mixedVertexBefore + $relocationDelta) 0x10) -cne 'MIXED-VERTEX' -or
+        (Get-U16 $mixedAfter ($mixedTiledFlagsBefore + $relocationDelta)) -ne 0x5a5a -or
+        (Get-Ascii $mixedAfter ($mixedProjectileBefore + $relocationDelta) 0x90) -cne 'PROJECTILE-TRAP-SENTINEL') {
+        throw 'Mixed ARE section payload bytes did not follow their relocated pointers.'
+    }
+    $mixedPiles = @(Get-MatchingPiles -Bytes $mixedAfter -X 2300 -Y 2400)
+    if ($mixedPiles.Count -ne 1 -or $mixedPiles[0].Offset -ne $mixedInsertOffset -or $mixedPiles[0].ItemCount -ne 0) {
+        throw 'Mixed ARE materialization did not place exactly one empty pile at the insertion boundary.'
+    }
+    $mixedHashAfterFirst = (Get-FileHash -LiteralPath $mixedAreaPath -Algorithm SHA256).Hash
+    Assert-WeiDUSuccess -Result (Invoke-WeiDUComponent -GameRoot $mixedGame -Component 9) -Case 'mixed-section-idempotent-repeat'
+    if ((Get-FileHash -LiteralPath $mixedAreaPath -Algorithm SHA256).Hash -cne $mixedHashAfterFirst) {
+        throw 'Mixed ARE materialization was not byte-identical on repeat.'
+    }
+
+    Write-Output 'Delivery ground materializer tests passed (installer seam, append, mixed-section relocation, embedded CREs, width overflow, reuse, alias, disabled, idempotent, failures, missing-area preflight, component rollback).'
 }
 finally {
     if (Test-Path -LiteralPath $scratchRoot -PathType Container) {

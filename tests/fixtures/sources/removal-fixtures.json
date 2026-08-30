@@ -54,6 +54,30 @@
       "fltier1.cre": []
     }
   },
+  "selector": {
+    "items": [
+      { "resref": "selitm", "category": 1, "charges": [0, 0, 0] }
+    ],
+    "creatures": {
+      "fltier1.cre": []
+    },
+    "areas": {
+      "select.are": [
+        {
+          "name": "target-one",
+          "items": [
+            { "resref": "selitm", "charges": [1, 0, 0], "flags": 1 }
+          ]
+        },
+        {
+          "name": "target-two",
+          "items": [
+            { "resref": "selitm", "charges": [2, 0, 0], "flags": 1 }
+          ]
+        }
+      ]
+    }
+  },
   "drift": {
     "items": [
       { "resref": "drfitm", "category": 1, "charges": [0, 0, 0] }

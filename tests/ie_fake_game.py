@@ -570,12 +570,19 @@ def expected_single_ground_materialization(source: bytes, x: int, y: int) -> byt
         0xBC,
         0xC0,
         0xC4,
+        0xCC,
     ):
         original_offset = struct.unpack_from("<I", source, header_offset)[0]
         if original_offset >= container_offset and original_offset != 0:
             struct.pack_into(
                 "<I", expected, header_offset, original_offset + record_size
             )
+    tiled_flags_offset = struct.unpack_from("<H", source, 0x90)[0]
+    if tiled_flags_offset >= container_offset and tiled_flags_offset != 0:
+        relocated_tiled_flags = tiled_flags_offset + record_size
+        if relocated_tiled_flags > 0xFFFF:
+            raise MatrixFailure("synthetic tiled-object flags offset overflows its word")
+        struct.pack_into("<H", expected, 0x90, relocated_tiled_flags)
 
     struct.pack_into("<H", expected, 0x74, 1)
     struct.pack_into("<I", expected, 0x70, container_offset)

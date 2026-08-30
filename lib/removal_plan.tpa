@@ -370,6 +370,53 @@ DEFINE_PATCH_MACRO flir_source_stage1_raw BEGIN
   END
 END
 
+// Checked-in selector tables disambiguate authored legacy rows whose source
+// resource legitimately contains more than one matching item instance. Apply
+// these defaults before filtering; the later extension hook may still replace
+// the complete declaration.
+DEFINE_ACTION_MACRO flir_source_apply_internal_selector_table BEGIN
+  ACTION_IF !VARIABLE_IS_SET flir_source_internal_selector_table
+        OR "%flir_source_internal_selector_table%" STRING_EQUAL_CASE ""
+        OR NOT FILE_EXISTS "%flir_source_internal_selector_table%" BEGIN
+    LAF flir_removal_fail STR_VAR code = ~INTERNAL_SELECTOR_TABLE_MISSING~ END
+  END
+
+  ACTION_CLEAR_ARRAY flir_source_internal_selector_seen
+  COPY - "%flir_source_internal_selector_table%" "flir-removal-read/internal-source-selectors.2da"
+    READ_2DA_ENTRIES_NOW flir_source_internal_selector_rows 2
+    FOR (i = 1; i < flir_source_internal_selector_rows; ++i) BEGIN
+      READ_2DA_ENTRY_FORMER flir_source_internal_selector_rows i 0 flir_source_internal_selector_ident
+      READ_2DA_ENTRY_FORMER flir_source_internal_selector_rows i 1 flir_source_internal_selector_value
+      TO_LOWER flir_source_internal_selector_ident
+      TO_LOWER flir_source_internal_selector_value
+      INNER_PATCH_SAVE flir_source_internal_selector_value "%flir_source_internal_selector_value%" BEGIN
+        REPLACE_TEXTUALLY " " ""
+      END
+
+      PATCH_IF "%flir_source_internal_selector_ident%" STRING_EQUAL_CASE ""
+            OR "%flir_source_internal_selector_ident%" STRING_EQUAL_CASE "x" BEGIN
+        PATCH_FAIL ~FLIR_REMOVAL_ERR INTERNAL_SELECTOR_TARGET tier= token= ident=%flir_source_internal_selector_ident%~
+      END
+      PATCH_IF VARIABLE_IS_SET $flir_source_internal_selector_seen("%flir_source_internal_selector_ident%") BEGIN
+        PATCH_FAIL ~FLIR_REMOVAL_ERR INTERNAL_SELECTOR_DUPLICATE tier= token= ident=%flir_source_internal_selector_ident%~
+      END
+      SPRINT $flir_source_internal_selector_seen("%flir_source_internal_selector_ident%") "1"
+
+      PATCH_IF "%flir_source_internal_selector_value%" STRING_EQUAL_CASE ""
+            OR "%flir_source_internal_selector_value%" STRING_EQUAL_CASE "*"
+            OR "%flir_source_internal_selector_value%" STRING_EQUAL_CASE "any"
+            OR "%flir_source_internal_selector_value%" STRING_EQUAL_CASE "none" BEGIN
+        PATCH_FAIL ~FLIR_REMOVAL_ERR INTERNAL_SELECTOR_EMPTY tier= token= ident=%flir_source_internal_selector_ident%~
+      END
+
+      SPRINT flir_source_internal_selector_key "ident:%flir_source_internal_selector_ident%"
+      PATCH_IF !VARIABLE_IS_SET $flir_source_decl_exists("%flir_source_internal_selector_key%") BEGIN
+        PATCH_FAIL ~FLIR_REMOVAL_ERR INTERNAL_SELECTOR_TARGET tier= token= ident=%flir_source_internal_selector_ident%~
+      END
+      SPRINT $flir_source_decl_object_or_slot("%flir_source_internal_selector_key%") "%flir_source_internal_selector_value%"
+    END
+END
+
 DEFINE_ACTION_MACRO flir_source_apply_extension_hook BEGIN
   ACTION_IF VARIABLE_IS_SET flir_source_extension_fixture
         AND FILE_EXISTS "%flir_source_extension_fixture%" BEGIN

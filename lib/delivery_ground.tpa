@@ -24,13 +24,43 @@ DEFINE_PATCH_MACRO flir_delivery_materialize_ground_area BEGIN
   READ_LONG 0x70 flir_delivery_ground_container_offset
   READ_SHORT 0x74 flir_delivery_ground_container_count
   READ_SHORT 0x76 flir_delivery_ground_item_count
+  READ_LONG 0x54 flir_delivery_ground_actor_offset
+  READ_SHORT 0x58 flir_delivery_ground_actor_count
   SET flir_delivery_ground_original_length = BUFFER_LENGTH
 
   PATCH_IF flir_delivery_ground_container_count > 0
         AND (flir_delivery_ground_container_offset < 0x11c
-             OR flir_delivery_ground_container_offset
-                  + flir_delivery_ground_container_count * 0xc0 > BUFFER_LENGTH) BEGIN
+             OR flir_delivery_ground_container_offset > BUFFER_LENGTH
+             OR flir_delivery_ground_container_count * 0xc0
+                  > BUFFER_LENGTH - flir_delivery_ground_container_offset) BEGIN
     PATCH_FAIL ~FLIR_DELIVERY_ERR GROUND_INVALID_ARE~
+  END
+  PATCH_IF flir_delivery_ground_actor_count > 0
+        AND (flir_delivery_ground_actor_offset < 0x11c
+             OR flir_delivery_ground_actor_offset > BUFFER_LENGTH
+             OR flir_delivery_ground_actor_count * 0x110
+                  > BUFFER_LENGTH - flir_delivery_ground_actor_offset) BEGIN
+    PATCH_FAIL ~FLIR_DELIVERY_ERR GROUND_INVALID_ARE~
+  END
+
+  // Actor records carry their own absolute pointer to an embedded CRE. Check
+  // every pointed-to payload while all offsets still refer to the source
+  // buffer; zero is the external-CRE sentinel and is deliberately ignored.
+  FOR (flir_delivery_ground_actor_i = 0;
+       flir_delivery_ground_actor_i < flir_delivery_ground_actor_count;
+       ++flir_delivery_ground_actor_i) BEGIN
+    SET flir_delivery_ground_actor = flir_delivery_ground_actor_offset
+                                     + flir_delivery_ground_actor_i * 0x110
+    READ_LONG (flir_delivery_ground_actor + 0x88) flir_delivery_ground_embedded_cre_offset
+    READ_LONG (flir_delivery_ground_actor + 0x8c) flir_delivery_ground_embedded_cre_size
+    PATCH_IF flir_delivery_ground_embedded_cre_offset != 0
+          AND (flir_delivery_ground_embedded_cre_offset < 0
+               OR flir_delivery_ground_embedded_cre_size < 0
+               OR flir_delivery_ground_embedded_cre_offset > BUFFER_LENGTH
+               OR flir_delivery_ground_embedded_cre_size
+                    > BUFFER_LENGTH - flir_delivery_ground_embedded_cre_offset) BEGIN
+      PATCH_FAIL ~FLIR_DELIVERY_ERR GROUND_INVALID_ARE~
+    END
   END
 
   SET flir_delivery_ground_append_count = 0
@@ -89,22 +119,101 @@ DEFINE_PATCH_MACRO flir_delivery_materialize_ground_area BEGIN
                                                + flir_delivery_ground_container_count * 0xc0
     END
     SET flir_delivery_ground_insert_size = flir_delivery_ground_append_count * 0xc0
+
+    // Inserting into the middle of an actor record or an embedded CRE would
+    // split a fixed-size object even if both endpoints are individually in
+    // bounds. Reject those overlapping layouts instead of corrupting them.
+    PATCH_IF flir_delivery_ground_actor_count > 0
+          AND flir_delivery_ground_actor_offset < flir_delivery_ground_insert_offset
+          AND flir_delivery_ground_actor_count * 0x110
+               > flir_delivery_ground_insert_offset - flir_delivery_ground_actor_offset BEGIN
+      PATCH_FAIL ~FLIR_DELIVERY_ERR GROUND_INVALID_ARE~
+    END
+    FOR (flir_delivery_ground_actor_i = 0;
+         flir_delivery_ground_actor_i < flir_delivery_ground_actor_count;
+         ++flir_delivery_ground_actor_i) BEGIN
+      SET flir_delivery_ground_actor = flir_delivery_ground_actor_offset
+                                       + flir_delivery_ground_actor_i * 0x110
+      READ_LONG (flir_delivery_ground_actor + 0x88) flir_delivery_ground_embedded_cre_offset
+      READ_LONG (flir_delivery_ground_actor + 0x8c) flir_delivery_ground_embedded_cre_size
+      PATCH_IF flir_delivery_ground_embedded_cre_offset != 0
+            AND flir_delivery_ground_embedded_cre_offset < flir_delivery_ground_insert_offset
+            AND flir_delivery_ground_embedded_cre_size
+                 > flir_delivery_ground_insert_offset - flir_delivery_ground_embedded_cre_offset BEGIN
+        PATCH_FAIL ~FLIR_DELIVERY_ERR GROUND_INVALID_ARE~
+      END
+    END
+
+    PATCH_IF flir_delivery_ground_original_length
+             > 0x7fffffff - flir_delivery_ground_insert_size BEGIN
+      PATCH_FAIL ~FLIR_DELIVERY_ERR GROUND_OFFSET_OVERFLOW~
+    END
+
+    // Unlike every other ARE section pointer, the tiled-object flags offset
+    // is a 16-bit field. Preflight both its source bounds and its narrower
+    // destination width before inserting any bytes.
+    READ_SHORT 0x90 flir_delivery_ground_tiled_flags_offset
+    PATCH_IF flir_delivery_ground_tiled_flags_offset != 0
+          AND flir_delivery_ground_tiled_flags_offset > flir_delivery_ground_original_length BEGIN
+      PATCH_FAIL ~FLIR_DELIVERY_ERR GROUND_INVALID_ARE~
+    END
+    PATCH_IF flir_delivery_ground_tiled_flags_offset != 0
+          AND flir_delivery_ground_tiled_flags_offset >= flir_delivery_ground_insert_offset
+          AND flir_delivery_ground_tiled_flags_offset > 0xffff - flir_delivery_ground_insert_size BEGIN
+      PATCH_FAIL ~FLIR_DELIVERY_ERR GROUND_OFFSET_OVERFLOW~
+    END
     INSERT_BYTES flir_delivery_ground_insert_offset flir_delivery_ground_insert_size
+
+    PATCH_IF flir_delivery_ground_tiled_flags_offset != 0
+          AND flir_delivery_ground_tiled_flags_offset >= flir_delivery_ground_insert_offset BEGIN
+      WRITE_SHORT 0x90
+        (flir_delivery_ground_tiled_flags_offset + flir_delivery_ground_insert_size)
+    END
 
     // Every later table moves with the insertion. The container table itself
     // remains anchored at 0x70 and grows into the inserted records.
     PATCH_FOR_EACH flir_delivery_ground_header_offset IN
       0x54 0x5c 0x60 0x68 0x78 0x7c 0x84 0x88
-      0xa0 0xa8 0xb0 0xb8 0xbc 0xc0 0xc4 BEGIN
+      0xa0 0xa8 0xb0 0xb8 0xbc 0xc0 0xc4 0xcc BEGIN
       READ_LONG flir_delivery_ground_header_offset flir_delivery_ground_later_offset
       PATCH_IF flir_delivery_ground_later_offset != 0
-            AND flir_delivery_ground_later_offset > flir_delivery_ground_original_length BEGIN
+            AND (flir_delivery_ground_later_offset < 0
+                 OR flir_delivery_ground_later_offset > flir_delivery_ground_original_length) BEGIN
         PATCH_FAIL ~FLIR_DELIVERY_ERR GROUND_INVALID_ARE~
       END
       PATCH_IF flir_delivery_ground_later_offset != 0
             AND flir_delivery_ground_later_offset >= flir_delivery_ground_insert_offset BEGIN
+        PATCH_IF flir_delivery_ground_later_offset
+                 > 0x7fffffff - flir_delivery_ground_insert_size BEGIN
+          PATCH_FAIL ~FLIR_DELIVERY_ERR GROUND_OFFSET_OVERFLOW~
+        END
         WRITE_LONG flir_delivery_ground_header_offset
           (flir_delivery_ground_later_offset + flir_delivery_ground_insert_size)
+      END
+    END
+
+    // The actor table itself may be on either side of the insertion. Locate
+    // each moved record first, then relocate its embedded-CRE pointer only
+    // when that nonzero payload pointer is at or beyond the insertion.
+    SET flir_delivery_ground_actor_offset_after = flir_delivery_ground_actor_offset
+    PATCH_IF flir_delivery_ground_actor_count > 0
+          AND flir_delivery_ground_actor_offset >= flir_delivery_ground_insert_offset BEGIN
+      SET flir_delivery_ground_actor_offset_after += flir_delivery_ground_insert_size
+    END
+    FOR (flir_delivery_ground_actor_i = 0;
+         flir_delivery_ground_actor_i < flir_delivery_ground_actor_count;
+         ++flir_delivery_ground_actor_i) BEGIN
+      SET flir_delivery_ground_actor = flir_delivery_ground_actor_offset_after
+                                       + flir_delivery_ground_actor_i * 0x110
+      READ_LONG (flir_delivery_ground_actor + 0x88) flir_delivery_ground_embedded_cre_offset
+      PATCH_IF flir_delivery_ground_embedded_cre_offset != 0
+            AND flir_delivery_ground_embedded_cre_offset >= flir_delivery_ground_insert_offset BEGIN
+        PATCH_IF flir_delivery_ground_embedded_cre_offset
+                 > 0x7fffffff - flir_delivery_ground_insert_size BEGIN
+          PATCH_FAIL ~FLIR_DELIVERY_ERR GROUND_OFFSET_OVERFLOW~
+        END
+        WRITE_LONG (flir_delivery_ground_actor + 0x88)
+          (flir_delivery_ground_embedded_cre_offset + flir_delivery_ground_insert_size)
       END
     END
 
