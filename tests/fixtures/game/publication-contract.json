@@ -1,0 +1,23 @@
+{
+  "schema": "flir-fake-game-contract-v1",
+  "publication_assets": [
+    "M_FLDLV.lua",
+    "FLDLVCor.lua",
+    "FLDLV.menu",
+    "FLDLVMan.lua"
+  ],
+  "registry": "fl#irreg.2da",
+  "preserved_state": [
+    "fl#irreg.2da"
+  ],
+  "ordinary_actor_pattern": "^flm1t[0-9]+\\.cre$",
+  "ordinary_script_pattern": "^flm1t[0-9]+\\.bcs$",
+  "fixture_existing_override": {
+    "matrix.keep": "preexisting override bytes\n",
+    "itemexcl.2da": "2DA V1.0\n0\n"
+  },
+  "mode2_components": [
+    1300,
+    1400
+  ]
+}

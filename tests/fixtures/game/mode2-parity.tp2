@@ -1,0 +1,55 @@
+BACKUP ~mode2-parity-backup~
+AUTHOR ~BG2 Item Randomiser hermetic Mode 2 parity tests~
+
+ALWAYS
+  LOAD_TRA ~randomiser/tests/mode2-parity.tra~
+  INCLUDE ~randomiser/lib/fl#gear.tpa~
+  INCLUDE ~randomiser/lib/lib.tpa~
+END
+
+DEFINE_ACTION_MACRO flir_mode2_matrix_reset BEGIN
+  OUTER_SET weidu_action = 1
+  OUTER_SET remove_helm07 = 0
+  // Sentinel 2 exercises the shared Mode 2 randomisation path without
+  // claiming that this minimal fixture supplies either campaign's unrelated
+  // dialogue/script transformation resources.
+  OUTER_SET BG1 = 2
+  OUTER_SET BGT = 0
+  OUTER_SPRINT TUTU_VAR ~~
+  OUTER_SET RandomNotRandom = 0
+  ACTION_CLEAR_ARRAY tier_array
+  ACTION_CLEAR_ARRAY location_array
+  ACTION_CLEAR_ARRAY item_array
+  ACTION_CLEAR_ARRAY removed_item_array
+  ACTION_CLEAR_ARRAY charge_array
+  ACTION_CLEAR_ARRAY extra_tokens
+  ACTION_CLEAR_ARRAY RandOptions
+  ACTION_CLEAR_ARRAY cursed_items
+  ACTION_CLEAR_ARRAY fast_lane
+  ACTION_CLEAR_ARRAY identitem
+  ACTION_CLEAR_ARRAY plugintierandtokenandgetitem
+  OUTER_SPRINT $tier_array(~m2~) ~~
+  OUTER_SPRINT $location_array(~1~ ~m2~ ~mtrxcre.cre~ ~mtrxarea~ ~matrix~ ~100~) ~~
+  OUTER_SPRINT $item_array(~mtrxitem~ ~blank~ ~mtrxsrc.cre~ ~m2~ ~1~ ~matrix~ ~100~) ~~
+  OUTER_SPRINT $removed_item_array(~m2~ ~1~ ~matrix~) ~~
+  OUTER_SPRINT $plugintierandtokenandgetitem(~m2~ ~1~) ~mtrxitem~
+  OUTER_SPRINT $charge_array(~1~ ~m2~ ~3~ ~2~ ~1~) ~~
+  RANDOM_SEED 424242
+END
+
+DEFINE_ACTION_MACRO flir_mode2_matrix_run BEGIN
+  INCLUDE ~randomiser/lib/random_seed.tpa~
+  INCLUDE ~randomiser/lib/delete.tpa~
+  INCLUDE ~randomiser/lib/fixes.tpa~
+  INCLUDE ~randomiser/lib/weidu_action.tpa~
+END
+
+BEGIN ~Hermetic Mode 2 no-loss boundary~ DESIGNATED 1300
+  OUTER_SET lost = 0
+  LAM flir_mode2_matrix_reset
+  LAM flir_mode2_matrix_run
+
+BEGIN ~Hermetic Mode 2 lossy boundary~ DESIGNATED 1400
+  OUTER_SET lost = 1
+  LAM flir_mode2_matrix_reset
+  LAM flir_mode2_matrix_run

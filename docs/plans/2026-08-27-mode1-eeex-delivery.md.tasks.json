@@ -57,19 +57,19 @@
     {
       "id": 9,
       "subject": "Task 10: Add the EEex v0.11 bootstrap, render poll, and isolated API probes",
-      "status": "in_progress",
+      "status": "completed",
       "blockedBy": [8]
     },
     {
       "id": 10,
       "subject": "Task 11: Add hermetic install, reinstall, uninstall, and Mode 2 matrices",
-      "status": "pending",
+      "status": "completed",
       "blockedBy": [9]
     },
     {
       "id": 11,
       "subject": "Task 12: Reinstall and runtime-verify in the disposable EET",
-      "status": "pending",
+      "status": "in_progress",
       "blockedBy": [10]
     },
     {
@@ -85,5 +85,5 @@
       "blockedBy": [12]
     }
   ],
-  "lastUpdated": "2026-08-30T13:21:53.0913051+09:00"
+  "lastUpdated": "2026-08-30T16:52:00.1909839+09:00"
 }

@@ -1,0 +1,168 @@
+BACKUP ~matrix-backup~
+AUTHOR ~BG2 Item Randomiser hermetic publication tests~
+
+ALWAYS
+  INCLUDE ~randomiser/lib/lib.tpa~
+  INCLUDE ~randomiser/lib/delivery_manifest.tpa~
+  INCLUDE ~randomiser/lib/catalog.tpa~
+  INCLUDE ~randomiser/lib/registry.tpa~
+  INCLUDE ~randomiser/lib/endpoints.tpa~
+  INCLUDE ~randomiser/lib/delivery_ground.tpa~
+  INCLUDE ~randomiser/lib/manifest.tpa~
+END
+
+DEFINE_ACTION_MACRO flir_matrix_reset_common BEGIN
+  OUTER_SET weidu_action = 0
+  OUTER_SET lost = 0
+  OUTER_SET RandomNotRandom = 0
+  OUTER_SET flir_mode1_defer_state_publication = 1
+  OUTER_SPRINT Preserve ~y~
+  ACTION_CLEAR_ARRAY bg1_tiers
+  ACTION_CLEAR_ARRAY bg2_tiers
+  ACTION_CLEAR_ARRAY tier_array
+  ACTION_CLEAR_ARRAY location_array
+  ACTION_CLEAR_ARRAY item_array
+  ACTION_CLEAR_ARRAY removed_item_array
+  ACTION_CLEAR_ARRAY charge_array
+  ACTION_CLEAR_ARRAY extra_tokens
+  ACTION_CLEAR_ARRAY RandOptions
+  ACTION_CLEAR_ARRAY plugintierandtokenandgetitem
+  ACTION_CLEAR_ARRAY flir_registry_applied_unit_stable
+  ACTION_CLEAR_ARRAY flir_registry_applied_extra_stable
+  OUTER_SPRINT $bg2_tiers(~m1~) ~~
+  OUTER_SPRINT $tier_array(~m1~) ~~
+  OUTER_SPRINT $removed_item_array(~m1~ ~1~ ~matrix~) ~~
+  OUTER_SPRINT $item_array(~mtrxitem~ ~blank~ ~matrixbox~ ~m1~ ~1~ ~matrix~ ~100~) ~~
+  OUTER_SPRINT $plugintierandtokenandgetitem(~m1~ ~1~) ~mtrxitem~
+  OUTER_SPRINT $charge_array(~1~ ~m1~ ~3~ ~2~ ~1~) ~~
+  OUTER_SPRINT $location_array(~1~ ~m1~ ~matrixbox~ ~mtrxarea~ ~matrix~ ~100~) ~~
+  OUTER_SPRINT $flir_registry_applied_unit_stable(~m1~ ~1~ ~matrix~) ~matrix:unit-a~
+END
+
+DEFINE_ACTION_MACRO flir_matrix_add_item BEGIN
+  OUTER_SPRINT flir_catalog_arg_operation ~ADD~
+  OUTER_SPRINT flir_catalog_arg_actor_provider ~matrix~
+  OUTER_SPRINT flir_catalog_arg_provider ~matrix~
+  OUTER_SPRINT flir_catalog_arg_id ~item-a~
+  OUTER_SPRINT flir_catalog_arg_tier ~m1~
+  OUTER_SPRINT flir_catalog_arg_resref ~mtrxitem~
+  OUTER_SPRINT flir_catalog_arg_variant_policy ~exact~
+  OUTER_SPRINT flir_catalog_arg_source_set_id ~matrix:sources-a~
+  OUTER_SET flir_catalog_arg_enabled = 1
+  LAM flir_catalog_item
+END
+
+DEFINE_ACTION_MACRO flir_matrix_add_unit BEGIN
+  OUTER_SPRINT flir_catalog_arg_operation ~ADD~
+  OUTER_SPRINT flir_catalog_arg_actor_provider ~matrix~
+  OUTER_SPRINT flir_catalog_arg_provider ~matrix~
+  OUTER_SPRINT flir_catalog_arg_id ~unit-a~
+  OUTER_SPRINT flir_catalog_arg_item_id ~matrix:item-a~
+  OUTER_SPRINT flir_catalog_arg_tier ~m1~
+  OUTER_SPRINT flir_catalog_arg_compact_token ~1~
+  OUTER_SET flir_catalog_arg_occurrence = 1
+  OUTER_SET flir_catalog_arg_charge1 = 3
+  OUTER_SET flir_catalog_arg_charge2 = 2
+  OUTER_SET flir_catalog_arg_charge3 = 1
+  OUTER_SET flir_catalog_arg_enabled = 1
+  LAM flir_catalog_unit
+END
+
+DEFINE_ACTION_MACRO flir_matrix_add_endpoints BEGIN
+  OUTER_SPRINT flir_endpoint_arg_provider ~matrix~
+  OUTER_SPRINT flir_endpoint_arg_id ~ground-a~
+  OUTER_SPRINT flir_endpoint_arg_area ~mtrxarea~
+  OUTER_SPRINT flir_endpoint_arg_target_kind ~ground~
+  OUTER_SPRINT flir_endpoint_arg_target_identity ~-~
+  OUTER_SET flir_endpoint_arg_x = 100
+  OUTER_SET flir_endpoint_arg_y = 200
+  OUTER_SET flir_endpoint_arg_capacity = 1
+  OUTER_SPRINT flir_endpoint_arg_static_policy ~authored-static~
+  OUTER_SPRINT flir_endpoint_arg_fallback ~-~
+  OUTER_SPRINT flir_endpoint_arg_adapter ~-~
+  OUTER_SET flir_endpoint_arg_enabled = 1
+  LAM flir_endpoints_add_endpoint
+
+  OUTER_SPRINT flir_endpoint_arg_id ~container-a~
+  OUTER_SPRINT flir_endpoint_arg_target_kind ~container~
+  OUTER_SPRINT flir_endpoint_arg_target_identity ~Matrix Box~
+  OUTER_SET flir_endpoint_arg_x = 0
+  OUTER_SET flir_endpoint_arg_y = 0
+  OUTER_SET flir_endpoint_arg_capacity = 1
+  OUTER_SPRINT flir_endpoint_arg_static_policy ~runtime-resolve~
+  OUTER_SPRINT flir_endpoint_arg_fallback ~matrix:ground-a~
+  LAM flir_endpoints_add_endpoint
+  OUTER_SET $flir_endpoint_candidate(~bg2~ ~m1~ ~bg2:m1~ ~matrix:container-a~) = 1
+
+  OUTER_SPRINT flir_endpoint_slot_arg_provider ~matrix~
+  OUTER_SPRINT flir_endpoint_slot_arg_id ~slot-a~
+  OUTER_SPRINT flir_endpoint_slot_arg_campaign ~bg2~
+  OUTER_SPRINT flir_endpoint_slot_arg_tier ~m1~
+  OUTER_SPRINT flir_endpoint_slot_arg_legacy_raw ~1~
+  OUTER_SPRINT flir_endpoint_slot_arg_legacy_ident ~matrix~
+  OUTER_SET flir_endpoint_slot_arg_legacy_occurrence = 1
+  OUTER_SPRINT flir_endpoint_slot_arg_endpoint ~matrix:container-a~
+  OUTER_SPRINT flir_endpoint_slot_arg_band ~bg2:m1~
+  OUTER_SET flir_endpoint_slot_arg_weight = 1
+  OUTER_SET flir_endpoint_slot_arg_value = 1
+  OUTER_SET flir_endpoint_slot_arg_enabled = 1
+  LAM flir_endpoints_add_slot
+END
+
+DEFINE_ACTION_MACRO flir_matrix_prepare_registry BEGIN
+  OUTER_SPRINT flir_registry_backend ~%flir_delivery_backend%~
+  LAM flir_registry_reset
+  OUTER_SPRINT flir_registry_backend ~%flir_delivery_backend%~
+  LAM flir_registry_preload_state
+END
+
+DEFINE_ACTION_MACRO flir_matrix_publish_eeex BEGIN
+  LAM flir_endpoints_reset
+  LAM flir_matrix_add_item
+  LAM flir_matrix_add_unit
+  LAM flir_matrix_add_endpoints
+  LAM flir_endpoints_validate
+  LAM flir_registry_register_applied_units
+  LAM flir_endpoints_register_registry_slots
+  LAM flir_registry_reconcile_mappings
+  LAM flir_endpoints_claim_slots
+  LAM flir_delivery_materialize_ground_endpoints
+  LAM flir_manifest_prepare_catalog
+  LAM flir_endpoints_register_catalog_rows
+  LAM flir_endpoints_register_group_overrides
+  LAM flir_registry_finalize_catalog
+  LAM flir_registry_write_state
+  LAM flir_delivery_publish_manifest
+  LAM flir_mode1_publish_state
+END
+
+DEFINE_ACTION_MACRO flir_matrix_publish_legacy BEGIN
+  LAM flir_registry_register_applied_units
+  LAM flir_registry_capture_final_slots
+  LAM flir_registry_reconcile
+  LAM flir_registry_write_state
+  INCLUDE ~randomiser/lib/delivery.tpa~
+  LAM flir_mode1_publish_state
+END
+
+BEGIN ~Hermetic Mode 1 publication boundary~ DESIGNATED 1100
+  LAM flir_matrix_reset_common
+  LAM flir_delivery_select_backend
+  LAM flir_matrix_prepare_registry
+  ACTION_IF ~%flir_delivery_backend%~ STRING_EQUAL_CASE ~eeex-manifest-v1~ BEGIN
+    LAM flir_matrix_publish_eeex
+  END ELSE ACTION_IF ~%flir_delivery_backend%~ STRING_EQUAL_CASE ~legacy-bcs-v1~ BEGIN
+    LAM flir_matrix_publish_legacy
+  END ELSE BEGIN
+    FAIL ~FLIR_MATRIX_ERR UNKNOWN_BACKEND~
+  END
+
+BEGIN ~Hermetic failed publication boundary~ DESIGNATED 1199
+  LAM flir_matrix_reset_common
+  LAM flir_delivery_select_backend
+  ACTION_IF NOT ~%flir_delivery_backend%~ STRING_EQUAL_CASE ~eeex-manifest-v1~ BEGIN
+    FAIL ~FLIR_MATRIX_ERR EXPECTED_EEEX~
+  END
+  // No registry, endpoint, or manifest preparation is intentional. The
+  // production publication seam must fail transactionally without residue.
+  LAM flir_delivery_publish_manifest
