@@ -1,6 +1,7 @@
-// Install-time materialization of the empty type-4 containers used by
-// manifest ground endpoints. The public action macro consumes the finalized
-// flir_endpoint_* arrays produced by endpoints.tpa.
+// Install-time materialization of the type-4 containers used by manifest
+// ground endpoints. Missing piles are created empty; a unique existing pile
+// is reused byte-identically even when it already contains items. The public
+// action macro consumes the finalized flir_endpoint_* arrays from endpoints.tpa.
 
 DEFINE_ACTION_FUNCTION flir_delivery_ground_fail
   STR_VAR
@@ -11,7 +12,7 @@ END
 
 // Patch the current ARE for every unique coordinate collected under
 // flir_delivery_ground_patch_area. All candidate piles are validated before
-// bytes are inserted, so ambiguity and occupancy fail without a partial ARE.
+// bytes are inserted, so ambiguity fails without a partial ARE.
 DEFINE_PATCH_MACRO flir_delivery_materialize_ground_area BEGIN
   PATCH_IF BUFFER_LENGTH < 0x11c BEGIN
     PATCH_FAIL ~FLIR_DELIVERY_ERR GROUND_INVALID_ARE~
@@ -75,7 +76,6 @@ DEFINE_PATCH_MACRO flir_delivery_materialize_ground_area BEGIN
     END
 
     SET flir_delivery_ground_matches = 0
-    SET flir_delivery_ground_occupied = 0
     FOR (flir_delivery_ground_container_i = 0;
          flir_delivery_ground_container_i < flir_delivery_ground_container_count;
          ++flir_delivery_ground_container_i) BEGIN
@@ -88,19 +88,11 @@ DEFINE_PATCH_MACRO flir_delivery_materialize_ground_area BEGIN
             AND flir_delivery_ground_container_x = flir_delivery_ground_x
             AND flir_delivery_ground_container_y = flir_delivery_ground_y BEGIN
         SET flir_delivery_ground_matches += 1
-        READ_LONG (flir_delivery_ground_container + 0x44) flir_delivery_ground_container_items
-        PATCH_IF flir_delivery_ground_container_items != 0 BEGIN
-          SET flir_delivery_ground_occupied = 1
-        END
       END
     END
 
     PATCH_IF flir_delivery_ground_matches > 1 BEGIN
       PATCH_FAIL ~FLIR_DELIVERY_ERR GROUND_AMBIGUOUS~
-    END
-    PATCH_IF flir_delivery_ground_matches = 1
-          AND flir_delivery_ground_occupied = 1 BEGIN
-      PATCH_FAIL ~FLIR_DELIVERY_ERR GROUND_OCCUPIED~
     END
     PATCH_IF flir_delivery_ground_matches = 0 BEGIN
       SET flir_delivery_ground_append_count += 1

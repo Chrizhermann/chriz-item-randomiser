@@ -1216,3 +1216,180 @@ BEGIN ~historical overflow matches raw selector despite normalized identity~ DES
     INSERT_BYTES 0 STRING_LENGTH ~%h_report%~
     WRITE_ASCIIE 0 ~%h_report%~ (STRING_LENGTH ~%h_report%~)
   BUT_ONLY
+
+BEGIN ~global plan preserves shared capacity for constrained scopes~ DESIGNATED 39
+  LAM flir_endpoints_reset
+
+  OUTER_SPRINT flir_endpoint_arg_provider ~core~
+  OUTER_SPRINT flir_endpoint_arg_id ~ground-global~
+  OUTER_SPRINT flir_endpoint_arg_area ~area-global~
+  OUTER_SPRINT flir_endpoint_arg_target_kind ~ground~
+  OUTER_SPRINT flir_endpoint_arg_target_identity ~-~
+  OUTER_SET flir_endpoint_arg_x = 100
+  OUTER_SET flir_endpoint_arg_y = 200
+  OUTER_SET flir_endpoint_arg_capacity = 4
+  OUTER_SPRINT flir_endpoint_arg_static_policy ~authored~
+  OUTER_SPRINT flir_endpoint_arg_fallback ~-~
+  OUTER_SPRINT flir_endpoint_arg_adapter ~~
+  OUTER_SET flir_endpoint_arg_enabled = 1
+  LAM h_endpoint
+
+  OUTER_SPRINT flir_endpoint_arg_id ~shared-global~
+  OUTER_SPRINT flir_endpoint_arg_target_kind ~container~
+  OUTER_SPRINT flir_endpoint_arg_target_identity ~shared-target~
+  OUTER_SET flir_endpoint_arg_x = 0
+  OUTER_SET flir_endpoint_arg_y = 0
+  OUTER_SET flir_endpoint_arg_capacity = 2
+  OUTER_SPRINT flir_endpoint_arg_static_policy ~runtime-resolve~
+  OUTER_SPRINT flir_endpoint_arg_fallback ~core:ground-global~
+  LAM h_endpoint
+
+  OUTER_SPRINT flir_endpoint_arg_id ~exclusive-global~
+  OUTER_SPRINT flir_endpoint_arg_target_identity ~exclusive-target~
+  LAM h_endpoint
+
+  OUTER_SPRINT flir_endpoint_candidate_provider ~core~
+  OUTER_SPRINT flir_endpoint_candidate_id ~shared-global~
+  OUTER_SPRINT flir_endpoint_candidate_campaign ~bg2~
+  OUTER_SPRINT flir_endpoint_candidate_tier ~1~
+  OUTER_SPRINT flir_endpoint_candidate_band ~bg2:1~
+  OUTER_SPRINT flir_endpoint_candidate_endpoint ~core:shared-global~
+  LAM flir_endpoints_mark_candidate
+  OUTER_SPRINT flir_endpoint_candidate_id ~exclusive-global~
+  OUTER_SPRINT flir_endpoint_candidate_endpoint ~core:exclusive-global~
+  LAM flir_endpoints_mark_candidate
+  OUTER_SPRINT flir_endpoint_candidate_id ~shared-global~
+  OUTER_SPRINT flir_endpoint_candidate_tier ~2~
+  OUTER_SPRINT flir_endpoint_candidate_band ~bg2:2~
+  OUTER_SPRINT flir_endpoint_candidate_endpoint ~core:shared-global~
+  LAM flir_endpoints_mark_candidate
+
+  OUTER_SPRINT flir_endpoint_slot_arg_provider ~core~
+  OUTER_SPRINT flir_endpoint_slot_arg_id ~slot-b-authored~
+  OUTER_SPRINT flir_endpoint_slot_arg_campaign ~bg2~
+  OUTER_SPRINT flir_endpoint_slot_arg_tier ~2~
+  OUTER_SPRINT flir_endpoint_slot_arg_legacy_raw ~1~
+  OUTER_SPRINT flir_endpoint_slot_arg_legacy_ident ~x~
+  OUTER_SET flir_endpoint_slot_arg_legacy_occurrence = 1
+  OUTER_SPRINT flir_endpoint_slot_arg_endpoint ~core:shared-global~
+  OUTER_SPRINT flir_endpoint_slot_arg_band ~bg2:2~
+  OUTER_SET flir_endpoint_slot_arg_weight = 1
+  OUTER_SET flir_endpoint_slot_arg_value = 0
+  OUTER_SET flir_endpoint_slot_arg_enabled = 1
+  LAM h_slot
+
+  OUTER_SET flir_endpoints_loaded = 1
+  OUTER_SET flir_removal_plan_count = 2
+  OUTER_SET $flir_removal_plan_emit("1") = 1
+  OUTER_SET $flir_removal_plan_emit_count("1") = 2
+  OUTER_SPRINT $flir_removal_plan_tier("1") ~1~
+  OUTER_SET $flir_removal_plan_emit("2") = 1
+  OUTER_SET $flir_removal_plan_emit_count("2") = 2
+  OUTER_SPRINT $flir_removal_plan_tier("2") ~2~
+  LAM flir_endpoints_build_plan
+
+  OUTER_SET h_shared_count = 0
+  OUTER_SET h_exclusive_count = 0
+  OUTER_FOR (h_i = 1; h_i <= flir_endpoint_slot_count; ++h_i) BEGIN
+    OUTER_SPRINT h_slot_id $flir_endpoint_slot_order("%h_i%")
+    ACTION_IF $flir_endpoint_slot_endpoint("%h_slot_id%") STRING_EQUAL_CASE ~core:shared-global~ BEGIN
+      OUTER_SET h_shared_count += 1
+    END ELSE ACTION_IF $flir_endpoint_slot_endpoint("%h_slot_id%") STRING_EQUAL_CASE ~core:exclusive-global~ BEGIN
+      OUTER_SET h_exclusive_count += 1
+    END
+  END
+  OUTER_TEXT_SPRINT h_report ~GLOBAL_PLAN shared=%h_shared_count% exclusive=%h_exclusive_count% slots=%flir_endpoint_slot_count%%WNL%~
+  COPY + ~%argv[0]%~ ~%argv[2]%~
+    DELETE_BYTES 0 BUFFER_LENGTH
+    INSERT_BYTES 0 STRING_LENGTH ~%h_report%~
+    WRITE_ASCIIE 0 ~%h_report%~ (STRING_LENGTH ~%h_report%~)
+  BUT_ONLY
+
+BEGIN ~group and direct routes retain independent capacity~ DESIGNATED 40
+  LAM flir_endpoints_reset
+
+  OUTER_SPRINT flir_endpoint_arg_provider ~core~
+  OUTER_SPRINT flir_endpoint_arg_id ~ground-direct~
+  OUTER_SPRINT flir_endpoint_arg_area ~area-overlap~
+  OUTER_SPRINT flir_endpoint_arg_target_kind ~ground~
+  OUTER_SPRINT flir_endpoint_arg_target_identity ~-~
+  OUTER_SET flir_endpoint_arg_x = 100
+  OUTER_SET flir_endpoint_arg_y = 200
+  OUTER_SET flir_endpoint_arg_capacity = 2
+  OUTER_SPRINT flir_endpoint_arg_static_policy ~authored~
+  OUTER_SPRINT flir_endpoint_arg_fallback ~-~
+  OUTER_SPRINT flir_endpoint_arg_adapter ~-~
+  OUTER_SET flir_endpoint_arg_enabled = 1
+  LAM h_endpoint
+
+  OUTER_SPRINT flir_endpoint_arg_id ~ground-group~
+  OUTER_SET flir_endpoint_arg_x = 300
+  OUTER_SET flir_endpoint_arg_y = 400
+  OUTER_SET flir_endpoint_arg_capacity = 4
+  LAM h_endpoint
+
+  OUTER_SPRINT flir_endpoint_arg_id ~direct-overlap~
+  OUTER_SPRINT flir_endpoint_arg_target_kind ~creature~
+  OUTER_SPRINT flir_endpoint_arg_target_identity ~target-overlap~
+  OUTER_SET flir_endpoint_arg_x = 100
+  OUTER_SET flir_endpoint_arg_y = 200
+  OUTER_SET flir_endpoint_arg_capacity = 2
+  OUTER_SPRINT flir_endpoint_arg_static_policy ~runtime-resolve~
+  OUTER_SPRINT flir_endpoint_arg_fallback ~core:ground-direct~
+  LAM h_endpoint
+
+  OUTER_SPRINT flir_endpoint_arg_id ~group-overlap~
+  OUTER_SPRINT flir_endpoint_arg_target_kind ~group~
+  OUTER_SPRINT flir_endpoint_arg_target_identity ~synthetic.flg~
+  OUTER_SET flir_endpoint_arg_x = 300
+  OUTER_SET flir_endpoint_arg_y = 400
+  OUTER_SET flir_endpoint_arg_capacity = 4
+  OUTER_SPRINT flir_endpoint_arg_fallback ~core:ground-group~
+  LAM h_endpoint
+
+  OUTER_SPRINT flir_endpoint_slot_arg_provider ~core~
+  OUTER_SPRINT flir_endpoint_slot_arg_id ~slot-group-overlap~
+  OUTER_SPRINT flir_endpoint_slot_arg_campaign ~bg2~
+  OUTER_SPRINT flir_endpoint_slot_arg_tier ~1~
+  OUTER_SPRINT flir_endpoint_slot_arg_legacy_raw ~1~
+  OUTER_SPRINT flir_endpoint_slot_arg_legacy_ident ~x~
+  OUTER_SET flir_endpoint_slot_arg_legacy_occurrence = 1
+  OUTER_SPRINT flir_endpoint_slot_arg_endpoint ~core:group-overlap~
+  OUTER_SPRINT flir_endpoint_slot_arg_band ~bg2:1~
+  OUTER_SET flir_endpoint_slot_arg_weight = 1
+  OUTER_SET flir_endpoint_slot_arg_value = 1
+  OUTER_SET flir_endpoint_slot_arg_enabled = 1
+  LAM h_slot
+
+  OUTER_SET flir_manifest_prepared = 1
+  OUTER_SET $flir_manifest_token_present(~fl1t1~) = 1
+  OUTER_SET $flir_manifest_token_enabled(~fl1t1~) = 1
+  OUTER_SPRINT $flir_manifest_token_unit(~fl1t1~) ~core:unit-overlap~
+  OUTER_SPRINT $flir_manifest_token_item(~fl1t1~) ~core:item-overlap~
+  OUTER_SPRINT $flir_manifest_token_tier(~fl1t1~) ~1~
+  OUTER_SPRINT flir_endpoint_group_arg_unit ~core:unit-overlap~
+  OUTER_SPRINT flir_endpoint_group_arg_item ~core:item-overlap~
+  OUTER_SPRINT flir_endpoint_group_arg_slot ~core:slot-group-overlap~
+  OUTER_SPRINT flir_endpoint_group_arg_cre ~crea0001~
+  OUTER_SPRINT flir_endpoint_group_arg_script ~target-overlap~
+  OUTER_SET flir_endpoint_group_arg_use_fallback = 0
+  LAM flir_endpoints_record_group_resolution
+
+  OUTER_SPRINT h_group_target $flir_endpoint_group_unit_override(~core:unit-overlap~ ~core:slot-group-overlap~)
+  ACTION_IF "%h_group_target%" STRING_EQUAL_CASE ~core:direct-overlap~
+        OR NOT VARIABLE_IS_SET $flir_endpoint_present("%h_group_target%")
+        OR NOT VARIABLE_IS_SET $flir_endpoint_group_shadow_base("%h_group_target%")
+        OR NOT ($flir_endpoint_group_shadow_base("%h_group_target%") STRING_EQUAL_CASE ~core:group-overlap~)
+        OR $flir_endpoint_capacity("%h_group_target%") != 4
+        OR NOT ($flir_endpoint_fallback("%h_group_target%") STRING_EQUAL_CASE ~core:ground-group~)
+        OR $flir_endpoint_capacity(~core:direct-overlap~) != 2
+        OR NOT ($flir_endpoint_fallback(~core:direct-overlap~) STRING_EQUAL_CASE ~core:ground-direct~) BEGIN
+    FAIL ~GROUP_OVERLAP_ASSERT~
+  END
+  LAM flir_endpoints_build_physical_aliases
+  OUTER_TEXT_SPRINT h_report ~GROUP_OVERLAP direct=2 shadow=4 independent=1%WNL%~
+  COPY + ~%argv[0]%~ ~%argv[2]%~
+    DELETE_BYTES 0 BUFFER_LENGTH
+    INSERT_BYTES 0 STRING_LENGTH ~%h_report%~
+    WRITE_ASCIIE 0 ~%h_report%~ (STRING_LENGTH ~%h_report%~)
+  BUT_ONLY

@@ -15,6 +15,7 @@
 // argv[13] = internal all-one-unit policy 2DA
 // argv[14] = all-one-unit raw item-list 2DA
 // argv[15] = all-one-unit replacement extension 2DA
+// argv[16] = production token CRE template
 
 BACKUP ~backup~
 AUTHOR ~BG2 Item Randomiser removal-plan test harness~
@@ -364,6 +365,21 @@ LAM flir_removal_plan_build
 PRINT ~MUTATION_MARKER_REACHED~
 LAM flir_removal_plan_apply
 LAM flir_removal_harness_write_report
+
+BEGIN ~Removal harness: repeated capacity validation does not accumulate~ DESIGNATED 15
+LAM flir_removal_harness_reset
+OUTER_SPRINT $flir_removal_plan_emit("1") ~1~
+OUTER_SPRINT $flir_removal_plan_emit_count("1") ~19~
+OUTER_SPRINT $flir_removal_plan_tier("1") ~1~
+OUTER_SPRINT flir_removal_token_template ~%argv[16]%~
+LAM flir_removal_validate_token_capacity
+COPY ~%argv[16]%~ ~override/fltier1.cre~
+  WRITE_ASCIIE 0x248 ~fltier1~ #8
+LAM flir_removal_validate_token_capacity
+COPY ~%argv[5]%~ ~%argv[3]%~
+  DELETE_BYTES 0 BUFFER_LENGTH
+  INSERT_BYTES 0 19
+  WRITE_ASCIIE 0 ~CAPACITY_RECHECK_OK~ #19
 
 BEGIN ~Removal harness: BG1 legacy adapter plans a real CRE removal~ DESIGNATED 6
 LAM flir_removal_harness_reset

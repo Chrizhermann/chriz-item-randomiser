@@ -14,6 +14,7 @@ $libPath = Join-Path $repositoryRoot 'lib\lib.tpa'
 $palettePath = Join-Path $repositoryRoot 'lib\fl#bg1pal.tpa'
 $catalogPath = Join-Path $repositoryRoot 'lib\catalog.tpa'
 $removalPlanPath = Join-Path $repositoryRoot 'lib\removal_plan.tpa'
+$tokenTemplatePath = Join-Path $repositoryRoot 'copy\flrandom.cre'
 $arraysPath = Join-Path $repositoryRoot 'lib\arrays.tpa'
 $selectorTablePath = Join-Path $repositoryRoot 'lists\sources\base\bg2.2da'
 $bg1SelectorTablePath = Join-Path $repositoryRoot 'lists\sources\base\bg1.2da'
@@ -29,7 +30,7 @@ if (-not (Test-Path -LiteralPath $removalPlanPath -PathType Leaf)) {
     exit 1
 }
 
-foreach ($requiredPath in @($fixturePath, $harnessPath, $libPath, $palettePath, $catalogPath, $arraysPath, $selectorTablePath, $bg1SelectorTablePath, $bg2ItemsPath, $bg1ItemsPath, $deletePath, $tp2Path)) {
+foreach ($requiredPath in @($fixturePath, $harnessPath, $libPath, $palettePath, $catalogPath, $tokenTemplatePath, $arraysPath, $selectorTablePath, $bg1SelectorTablePath, $bg2ItemsPath, $bg1ItemsPath, $deletePath, $tp2Path)) {
     if (-not (Test-Path -LiteralPath $requiredPath -PathType Leaf)) {
         throw "Required removal-plan test input is missing: $requiredPath"
     }
@@ -115,14 +116,18 @@ function Test-InternalMatchPolicyTable {
         throw "The internal $Campaign match-policy table contains non-printable bytes."
     }
     $stableIdents = @{}
+    $stableDeclarationRows = @{}
     foreach ($line in Get-Content -LiteralPath $ItemsPath | Select-Object -Skip 1) {
         $parts = @($line.Trim() -split '\s+' | Where-Object { $_ -ne '' })
         if ($parts.Count -ge 7 -and $parts[5] -cne 'x') {
-            $stableIdents[$parts[5].ToLowerInvariant()] = $true
+            $ident = $parts[5].ToLowerInvariant()
+            $stableIdents[$ident] = $true
+            $stableDeclarationRows[$ident] = $parts
         }
     }
 
     $seen = @{}
+    $singleAssignments = @{}
     $singleRows = 0
     $groupedRows = 0
     $rows = @(Get-Content -LiteralPath $TablePath | Select-Object -Skip 1 | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
@@ -148,6 +153,12 @@ function Test-InternalMatchPolicyTable {
             if ($selectorValue -cin @('*', 'any', 'none') -or $expectedMatches -ne 1) {
                 throw "An internal $Campaign single-match row lacks one explicit selector."
             }
+            $declaration = @($stableDeclarationRows[$ident])
+            $assignmentKey = (@($declaration[0], $declaration[1], $declaration[2], $declaration[3], $declaration[6], $selectorValue) -join [char]31)
+            if ($singleAssignments.ContainsKey($assignmentKey)) {
+                throw "Two internal $Campaign single-match rows target the same authored source unit."
+            }
+            $singleAssignments[$assignmentKey] = $ident
             $singleRows++
         }
         elseif ($policy -ceq 'all_one_unit') {
@@ -310,6 +321,7 @@ function New-AreFixture {
     Write-U16 $buffer 0x74 $Containers.Count
     Write-U16 $buffer 0x76 $items.Count
     Write-U32 $buffer 0x78 $itemsOffset
+    Write-U32 $buffer 0xcc $buffer.Length
     $itemIndex = 0
     for ($containerIndex = 0; $containerIndex -lt $Containers.Count; $containerIndex++) {
         $containerOffsetCurrent = $containerOffset + 0xc0 * $containerIndex
@@ -504,6 +516,7 @@ function Invoke-RemovalHarness {
         '--args', $hookFiles.GroupedPolicy,
         '--args', $hookFiles.GroupedRaw,
         '--args', $hookFiles.GroupedReplacement,
+        '--args', $script:tokenTemplatePath,
         '--no-exit-pause',
         '--quick-log'
     )
@@ -612,6 +625,10 @@ try {
     if (([System.IO.File]::ReadAllBytes((Join-Path $positiveA.RunDirectory 'override\shopok.sto')) -join ',') -match '115,116,111,105,116,109') {
         throw 'STO source still contains the removed synthetic item.'
     }
+    $positiveArea = [System.IO.File]::ReadAllBytes((Join-Path $positiveA.RunDirectory 'override\areaok.are'))
+    if ([BitConverter]::ToUInt32($positiveArea, 0xcc) -ne $positiveArea.Length) {
+        throw 'ARE removal did not relocate the final section pointer after deleting item records.'
+    }
     $removedStatePath = Join-Path $positiveA.RunDirectory 'override\fl#removeditems.2da'
     if (-not (Test-Path -LiteralPath $removedStatePath -PathType Leaf)) {
         throw 'Mode 1 did not publish fl#removeditems.2da after applying a fresh removal plan.'
@@ -706,6 +723,8 @@ try {
     $null = Invoke-RemovalHarness -Component 2 -Name 'drift' -Case $fixtures.drift -ExpectSuccess $false -ExpectedErrorCode 'PRECONDITION_DRIFT'
     $null = Invoke-RemovalHarness -Component 4 -Name 'blank-policy' -Case $fixtures.blankPolicy -ExpectSuccess $false -ExpectedErrorCode 'VIRTUAL_SOURCE_POLICY'
     $null = Invoke-RemovalHarness -Component 5 -Name 'capacity' -Case $fixtures.capacity -ExpectSuccess $false -ExpectedErrorCode 'TOKEN_CAPACITY' -ForbiddenLogText 'MUTATION_MARKER_REACHED'
+    $capacityRecheck = Invoke-RemovalHarness -Component 15 -Name 'capacity-recheck' -Case $fixtures.semanticFilter
+    Assert-ReportContainsExactlyOnce -Report $capacityRecheck.Report -Line 'CAPACITY_RECHECK_OK'
     $null = Invoke-RemovalHarness -Component 7 -Name 'script-drift' -Case $fixtures.scriptDrift -ExpectSuccess $false -ExpectedErrorCode 'PRECONDITION_DRIFT'
     $null = Invoke-RemovalHarness -Component 8 -Name 'unknown-legacy-adapter' -Case $fixtures.unknownLegacyAdapter -ExpectSuccess $false -ExpectedErrorCode 'UNKNOWN_LEGACY_ADAPTER'
 
@@ -730,9 +749,11 @@ try {
     Write-Output 'PASS RemovalPlan_ValidationBeforeMutation'
     Write-Output 'PASS RemovalPlan_MissingAndZeroSourcesDisable'
     Write-Output 'PASS RemovalPlan_CreAreStoVirtualExactApply'
+    Write-Output 'PASS RemovalPlan_AreFinalSectionOffsetRelocated'
     Write-Output 'PASS RemovalPlan_ExtraTokensAndCharges'
     Write-Output 'PASS RemovalPlan_DriftAndDeterministicRuns'
     Write-Output 'PASS RemovalPlan_CapacityPreflight'
+    Write-Output 'PASS RemovalPlan_RepeatedCapacityValidationIdempotent'
     Write-Output 'PASS RemovalPlan_LegacyAdapterPrePost'
     Write-Output 'PASS RemovalPlan_ScriptPreconditionRecheck'
     Write-Output 'PASS RemovalPlan_Mode2BoundaryProtected'

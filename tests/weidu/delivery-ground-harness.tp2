@@ -84,7 +84,7 @@ BEGIN ~reject ambiguous matching piles~ DESIGNATED 2
   LAM flir_ground_harness_add
   LAM flir_delivery_materialize_ground_endpoints
 
-BEGIN ~reject an occupied matching pile~ DESIGNATED 3
+BEGIN ~reuse an occupied matching pile~ DESIGNATED 3
   LAM flir_ground_harness_reset
   OUTER_SPRINT flir_ground_harness_id ~test:occupied~
   OUTER_SPRINT flir_ground_harness_area ~FLGRD03~
@@ -129,7 +129,7 @@ BEGIN ~roll back an earlier area when a later area is ambiguous~ DESIGNATED 5
   LAM flir_ground_harness_add
   LAM flir_delivery_materialize_ground_endpoints
 
-BEGIN ~roll back an earlier area when a later area is occupied~ DESIGNATED 6
+BEGIN ~reuse a later occupied pile without changing its contents~ DESIGNATED 6
   LAM flir_ground_harness_reset
   OUTER_SPRINT flir_ground_harness_id ~test:rollback-valid-before-occupied~
   OUTER_SPRINT flir_ground_harness_area ~FLGRD07~

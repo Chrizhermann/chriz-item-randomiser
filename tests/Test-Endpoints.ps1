@@ -77,7 +77,9 @@ foreach ($symbol in @(
     'flir_endpoints_validate',
     'flir_endpoints_validate_planned_units',
     'flir_endpoints_assert_plan_ready',
+    'flir_endpoints_add_generated_slot',
     'flir_endpoints_allocate_rounds',
+    'flir_endpoints_allocate_plan',
     'flir_endpoints_claim_slots',
     'flir_endpoints_register_registry_slots',
     'flir_endpoints_finalize_values',
@@ -443,6 +445,14 @@ try {
     if ($plannedReport -notmatch [regex]::Escape('PLANNED_SLOTS 3')) {
         throw "Endpoint demand was not derived from the read-only removal plan.`n$plannedReport"
     }
+    $globalPlanReport = Invoke-EndpointHarness -Component 39 -Name 'global-shared-capacity'
+    if ($globalPlanReport -notmatch [regex]::Escape('GLOBAL_PLAN shared=2 exclusive=2 slots=4')) {
+        throw "Endpoint planning consumed capacity needed by a constrained scope despite a feasible global assignment.`n$globalPlanReport"
+    }
+    $groupOverlapReport = Invoke-EndpointHarness -Component 40 -Name 'group-direct-overlap'
+    if ($groupOverlapReport -notmatch [regex]::Escape('GROUP_OVERLAP direct=2 shadow=4 independent=1')) {
+        throw "A group route could not retain capacity and fallback independence from a direct route to the same creature.`n$groupOverlapReport"
+    }
     $historyReport = Invoke-EndpointHarness -Component 3 -Name 'generated-history'
     if ($historyReport -notmatch [regex]::Escape('HISTORY slots=1 value=7')) {
         throw "A compatible lower-demand reinstall did not retain its historical generated slot.`n$historyReport"
@@ -547,6 +557,8 @@ try {
     Write-Output 'PASS Endpoints_ExplicitKindsAndThreeAdapters'
     Write-Output 'PASS Endpoints_AllLegacyRowsNormalized'
     Write-Output 'PASS Endpoints_PlannedDemandValidatedBeforeMutation'
+    Write-Output 'PASS Endpoints_GlobalPlanPreservesConstrainedCapacity'
+    Write-Output 'PASS Endpoints_GroupRoutePreservesIndependentCapacity'
     Write-Output 'PASS Endpoints_GeneratedHistoryRetainedAndTombstonesNotReused'
     Write-Output 'PASS Endpoints_HistoricalOverflowRetainsPhysicalEndpoint'
     Write-Output 'PASS Endpoints_SameAreaAuthoredFallbacksAndNoOneOne'

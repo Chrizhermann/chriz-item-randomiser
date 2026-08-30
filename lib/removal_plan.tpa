@@ -1640,6 +1640,9 @@ DEFINE_ACTION_MACRO flir_removal_plan_build BEGIN
 END
 
 DEFINE_ACTION_MACRO flir_removal_validate_token_capacity BEGIN
+  ACTION_PHP_EACH flir_removal_capacity_required AS stale_tier => stale_required_count BEGIN
+    OUTER_SET $flir_removal_capacity_required("%stale_tier%") = 0
+  END
   ACTION_CLEAR_ARRAY flir_removal_capacity_required
   ACTION_PHP_EACH flir_removal_plan_emit_count AS plan_id => emit_count BEGIN
     ACTION_IF $flir_removal_plan_emit("%plan_id%") = 1 BEGIN
@@ -1950,7 +1953,7 @@ DEFINE_PATCH_MACRO flir_removal_apply_are_resource BEGIN
         END
       END
       SET flir_adjust = 0 - 0x14
-      PATCH_FOR_EACH flir_off IN 0x54 0x5c 0x60 0x68 0x70 0x7c 0x84 0x88 0xa0 0xa8 0xb0 0xb8 0xbc 0xc0 0xc4 BEGIN
+      PATCH_FOR_EACH flir_off IN 0x54 0x5c 0x60 0x68 0x70 0x7c 0x84 0x88 0xa0 0xa8 0xb0 0xb8 0xbc 0xc0 0xc4 0xcc BEGIN
         READ_LONG flir_off flir_value ELSE 0
         PATCH_IF flir_value > flir_are_items_off BEGIN
           WRITE_LONG flir_off flir_value + flir_adjust

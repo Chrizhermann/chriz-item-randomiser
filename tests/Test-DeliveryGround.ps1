@@ -555,9 +555,13 @@ try {
         [pscustomobject]@{ Name = 'occupied'; X = 900; Y = 1000; Type = 4; Items = @('TSTITM02') }
     )
     $occupiedBefore = (Get-FileHash -LiteralPath $occupiedAreaPath -Algorithm SHA256).Hash
-    Assert-WeiDUFailure -Result (Invoke-WeiDUComponent -GameRoot $occupiedGame -Component 3) -Code 'GROUND_OCCUPIED' -Case 'occupied'
+    Assert-WeiDUSuccess -Result (Invoke-WeiDUComponent -GameRoot $occupiedGame -Component 3) -Case 'occupied-reuse'
     if ((Get-FileHash -LiteralPath $occupiedAreaPath -Algorithm SHA256).Hash -cne $occupiedBefore) {
-        throw 'The occupied failure changed its area fixture.'
+        throw 'Reusing an occupied pile changed its area fixture.'
+    }
+    $occupiedPiles = Get-MatchingPiles -Bytes ([System.IO.File]::ReadAllBytes($occupiedAreaPath)) -X 900 -Y 1000
+    if ($occupiedPiles.Count -ne 1 -or $occupiedPiles[0].ItemCount -ne 1) {
+        throw 'The unique occupied pile or its existing item was not preserved.'
     }
 
     $missingGame = New-FakeGame -Name 'missing'
@@ -600,10 +604,22 @@ try {
     )
     $validBeforeOccupiedHash = (Get-FileHash -LiteralPath $validBeforeOccupiedPath -Algorithm SHA256).Hash
     $lateOccupiedHash = (Get-FileHash -LiteralPath $lateOccupiedPath -Algorithm SHA256).Hash
-    Assert-WeiDUFailure -Result (Invoke-WeiDUComponent -GameRoot $occupiedRollbackGame -Component 6) -Code 'GROUND_OCCUPIED' -Case 'occupied-component-rollback'
-    if ((Get-FileHash -LiteralPath $validBeforeOccupiedPath -Algorithm SHA256).Hash -cne $validBeforeOccupiedHash -or
-        (Get-FileHash -LiteralPath $lateOccupiedPath -Algorithm SHA256).Hash -cne $lateOccupiedHash) {
-        throw 'A later occupied area was not rolled back transactionally with the earlier patched area.'
+    Assert-WeiDUSuccess -Result (Invoke-WeiDUComponent -GameRoot $occupiedRollbackGame -Component 6) -Case 'later-occupied-reuse'
+    if ((Get-FileHash -LiteralPath $validBeforeOccupiedPath -Algorithm SHA256).Hash -ceq $validBeforeOccupiedHash) {
+        throw 'Reusing a later occupied pile did not materialize the earlier missing pile.'
+    }
+    $validBeforeOccupiedBytes = [System.IO.File]::ReadAllBytes($validBeforeOccupiedPath)
+    $earlyNewPiles = Get-MatchingPiles -Bytes $validBeforeOccupiedBytes -X 1900 -Y 2000
+    if ((Get-U16 $validBeforeOccupiedBytes 0x74) -ne 2 -or
+        $earlyNewPiles.Count -ne 1 -or $earlyNewPiles[0].ItemCount -ne 0) {
+        throw 'Reusing a later occupied pile did not append exactly one earlier empty pile.'
+    }
+    if ((Get-FileHash -LiteralPath $lateOccupiedPath -Algorithm SHA256).Hash -cne $lateOccupiedHash) {
+        throw 'Reusing a later occupied pile changed that area or its existing contents.'
+    }
+    $lateOccupiedPiles = Get-MatchingPiles -Bytes ([System.IO.File]::ReadAllBytes($lateOccupiedPath)) -X 2100 -Y 2200
+    if ($lateOccupiedPiles.Count -ne 1 -or $lateOccupiedPiles[0].ItemCount -ne 1) {
+        throw 'The later occupied pile or its existing item was not preserved.'
     }
 
     $overflowGame = New-FakeGame -Name 'word-offset-overflow'
@@ -669,7 +685,7 @@ try {
         throw 'Mixed ARE materialization was not byte-identical on repeat.'
     }
 
-    Write-Output 'Delivery ground materializer tests passed (installer seam, append, mixed-section relocation, embedded CREs, width overflow, reuse, alias, disabled, idempotent, failures, missing-area preflight, component rollback).'
+    Write-Output 'Delivery ground materializer tests passed (installer seam, append, mixed-section relocation, embedded CREs, width overflow, empty and occupied reuse, alias, disabled, idempotent, failures, missing-area preflight, component rollback).'
 }
 finally {
     if (Test-Path -LiteralPath $scratchRoot -PathType Container) {
