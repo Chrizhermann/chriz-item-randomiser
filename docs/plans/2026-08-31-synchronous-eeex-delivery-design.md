@@ -38,6 +38,13 @@ Use EEex's official instantaneous action executor. The installed EET
 action directly through `virtual_ExecuteAction()`, restores the recipient's
 current action, and never inserts into `m_queuedActions`.
 
+Disposable runtime testing established one important boundary: the executor
+returns before the new creature/container/ground item entry becomes visible to
+Lua.  The exact entry appears after the invoking chunk returns and the engine
+crosses its next boundary.  `EXECUTING` must therefore remain durable until a
+later controller poll; same-call inventory observation is not completion
+evidence.
+
 Each delivery contains exactly one parsed item action. There is no engine-queue
 submission, acknowledgement action, callback map, or generation guard.
 
@@ -74,8 +81,9 @@ but its phases become truthful synchronous states:
 - `QUARANTINED = 4`: the transaction cannot safely progress automatically.
 
 Normal flow is: observe baseline, persist `PREPARED`, set `EXECUTING`, execute
-one instant action, re-resolve the locked endpoint, observe the exact count,
-set `VERIFIED`, set the assignment to `-1`, then clear the journal.
+one instant action, return to the engine, then on a later poll re-resolve the
+locked endpoint and observe the exact count.  Only then set `VERIFIED`, set the
+assignment to `-1`, and clear the journal.
 
 Recovery rules:
 

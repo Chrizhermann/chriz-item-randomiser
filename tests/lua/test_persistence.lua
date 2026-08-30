@@ -44,6 +44,7 @@ return function(context)
         local engine = FakeEngine.new({ globals = { fl1t1 = 1 } })
         local controller = assert(Core.new(engine, FakeEngine.manifest()))
         controller:poll()
+        controller:poll()
 
         local none_index
         local scrub_index
@@ -157,6 +158,7 @@ return function(context)
         equal(#engine.executions, 0, "PREPARED recovery executed without replanning")
         equal(engine:get_global(Core.GLOBALS.phase), Core.PHASE.NONE)
         recreated:poll()
+        recreated:poll()
         equal(engine:get_global("fl1t1"), -1)
         equal(#engine.executions, 1)
         equal(engine.executions[1].endpoint_id, "fallback")
@@ -170,6 +172,7 @@ return function(context)
         controller:poll()
         equal(#engine.executions, 1)
 
+        controller:poll()
         engine.execute_create = true
         controller:poll()
         equal(#engine.executions, 1)
@@ -177,6 +180,7 @@ return function(context)
         controller:on_game_state_destroyed()
         controller:poll()
         equal(#engine.executions, 2)
+        controller:poll()
         equal(engine:get_global("fl1t1"), -1)
     end)
 

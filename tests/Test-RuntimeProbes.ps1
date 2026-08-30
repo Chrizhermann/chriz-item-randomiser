@@ -233,6 +233,7 @@ end
 local objects
 local instant_calls
 local mutate_action_state
+local pending_inserts
 local function add_action_state(object, current_id)
     object.m_curAction = { m_actionID = current_id }
     object.m_queuedActions = {
@@ -271,6 +272,7 @@ local function reset_transport_world(mutate)
     }
     instant_calls = 0
     mutate_action_state = mutate == true
+    pending_inserts = {}
     FLDLVProbe = {
         config = {
             area_resref = "FLRTPRA",
@@ -340,7 +342,19 @@ function EEex_Action_ExecuteScriptFileResponseAsAIBaseInstantly(parsed, target)
     local item = instance_item(resref, {
         tonumber(charge1), tonumber(charge2), tonumber(charge3),
     })
-    if target._sprite then
+    pending_inserts[#pending_inserts + 1] = { target = target, item = item }
+    if mutate_action_state then
+        target.m_curAction.m_actionID = target.m_curAction.m_actionID + 1
+        target.m_queuedActions[#target.m_queuedActions + 1] = { m_actionID = 99 }
+    end
+end
+local function publish_pending_inserts()
+    local pending = pending_inserts
+    pending_inserts = {}
+    for _, insert in ipairs(pending) do
+        local target = insert.target
+        local item = insert.item
+        if target._sprite then
         for slot = 0, 38 do
             if target.m_equipment.m_items.values[slot] == nil then
                 target.m_equipment.m_items.values[slot] = item
@@ -350,16 +364,14 @@ function EEex_Action_ExecuteScriptFileResponseAsAIBaseInstantly(parsed, target)
     else
         target.m_lstItems[#target.m_lstItems + 1] = item
     end
-    if mutate_action_state then
-        target.m_curAction.m_actionID = target.m_curAction.m_actionID + 1
-        target.m_queuedActions[#target.m_queuedActions + 1] = { m_actionID = 99 }
     end
 end
 
 reset_transport_world()
 local transport = assert(dofile(transport_path))
-assert(transport.phase == "settle" and transport.passed == 7
-    and transport.pending == 1 and instant_calls == 3)
+assert(transport.phase == "settle" and transport.passed == 4
+    and transport.pending == 4 and instant_calls == 3)
+publish_pending_inserts()
 transport = assert(dofile(transport_path))
 assert(transport.phase == "done" and transport.passed == 8
     and transport.failed == 0 and transport.pending == 0

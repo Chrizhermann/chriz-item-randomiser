@@ -48,6 +48,8 @@ function FakeEngine.new(options)
     self.missing_items = options.missing_items or {}
     self.execute_accept = options.execute_accept ~= false
     self.execute_create = options.execute_create ~= false
+    self.defer_visibility = options.defer_visibility == true
+    self.pending_items = {}
     self.execute_error = options.execute_error
     self.execute_error_after_create = options.execute_error_after_create == true
     self.execute_hook = options.execute_hook
@@ -136,7 +138,14 @@ function FakeEngine:execute_delivery(endpoint_id, endpoint, item)
         error(self.execute_error)
     end
     if self.execute_create then
-        self:add_item(endpoint_id, copied_item.resref, copied_item.charges)
+        if self.defer_visibility then
+            self.pending_items[#self.pending_items + 1] = {
+                endpoint_id = endpoint_id,
+                item = copied_item,
+            }
+        else
+            self:add_item(endpoint_id, copied_item.resref, copied_item.charges)
+        end
     end
     if self.execute_hook then
         self.execute_hook(self, endpoint_id, endpoint, copied_item)
@@ -145,6 +154,14 @@ function FakeEngine:execute_delivery(endpoint_id, endpoint, item)
         error(self.execute_error)
     end
     return self.execute_accept
+end
+
+function FakeEngine:publish_pending_items()
+    local pending = self.pending_items
+    self.pending_items = {}
+    for _, entry in ipairs(pending) do
+        self:add_item(entry.endpoint_id, entry.item.resref, entry.item.charges)
+    end
 end
 
 function FakeEngine:add_item(endpoint_id, resref, charges)

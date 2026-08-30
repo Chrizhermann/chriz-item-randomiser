@@ -13,9 +13,14 @@ return function(context)
         return controller, engine
     end
 
-    test("LivingPrimaryExecutesAndCommitsSynchronously", function()
-        local controller, engine = new_pending("fl1t1", 1)
+    local function execute_and_verify(controller)
         controller:poll()
+        controller:poll()
+    end
+
+    test("LivingPrimaryExecutesThenCommitsAtNextBoundary", function()
+        local controller, engine = new_pending("fl1t1", 1)
+        execute_and_verify(controller)
         equal(engine:get_global("fl1t1"), -1)
         equal(engine:get_global(Core.GLOBALS.phase), Core.PHASE.NONE)
         equal(engine:count_exact("primary", "tstitema", { 3, 2, 1 }), 1)
@@ -84,7 +89,7 @@ return function(context)
         }
         local engine = FakeEngine.new({ globals = { fl1t0 = 4, fl1t1 = 1 } })
         local controller = assert(Core.new(engine, manifest))
-        controller:poll()
+        execute_and_verify(controller)
         equal(#engine.executions, 1)
         equal(engine.executions[1].endpoint_id, "primary")
         equal(engine:get_global("fl1t0"), 4)
@@ -113,7 +118,7 @@ return function(context)
                     fake.endpoints.primary.full = true
                 end
             end)
-            controller:poll()
+            execute_and_verify(controller)
             equal(engine:get_global("fl1t1"), -1, state .. " primary did not commit")
             equal(#engine.executions, 1)
             equal(engine.executions[1].endpoint_id, "fallback",
@@ -125,11 +130,11 @@ return function(context)
         local engine = FakeEngine.new({ globals = { fl1t1 = 3, fl1t2 = 3 } })
         local controller = assert(Core.new(engine, FakeEngine.manifest()))
 
-        controller:poll()
+        execute_and_verify(controller)
         equal(engine:get_global("fl1t1"), -1)
         equal(engine:get_global("fl1t2"), 3)
 
-        controller:poll()
+        execute_and_verify(controller)
         equal(engine:get_global("fl1t2"), -1)
         equal(#engine.endpoints.primary.items, 2)
         equal(#engine.executions, 2)
@@ -140,7 +145,7 @@ return function(context)
             fake:add_item("primary", "tstitema", { 3, 2, 9 })
             fake:add_item("primary", "otheritm", { 3, 2, 1 })
         end)
-        controller:poll()
+        execute_and_verify(controller)
         equal(engine:get_global("fl1t1"), -1)
         equal(engine.executions[1].item.charges[1], 3)
         equal(engine.executions[1].item.charges[2], 2)
@@ -156,7 +161,7 @@ return function(context)
         local engine = FakeEngine.new({ globals = { fl1t1 = 1 }, variant_choice = 1 })
         engine:add_item("primary", "book03", { 0, 0, 0 })
         local controller = assert(Core.new(engine, manifest))
-        controller:poll()
+        execute_and_verify(controller)
         equal(engine:get_global("fl1t1"), -1)
         equal(engine.executions[1].item.resref, "book03")
         equal(engine:count_exact("primary", "book03", { 0, 0, 0 }), 2)
@@ -166,15 +171,32 @@ return function(context)
         local controller, engine = new_pending("fl1t1", 1, function(fake)
             fake.execute_create = false
         end)
-        controller:poll()
+        execute_and_verify(controller)
         equal(engine:get_global("fl1t1"), 1)
         equal(engine:get_global(Core.GLOBALS.phase), Core.PHASE.NONE)
         equal(engine:get_global(Core.quarantine_global("fl1t1")),
             Core.REASON.EXECUTION_FAILURE)
         equal(#engine.executions, 1)
 
-        controller:poll()
+        execute_and_verify(controller)
         equal(#engine.executions, 1, "failed delivery retried in the same GameState")
+    end)
+
+    test("NextBoundaryVisibilityCommitsWithoutReexecution", function()
+        local controller, engine = new_pending("fl1t1", 1, function(fake)
+            fake.defer_visibility = true
+        end)
+
+        controller:poll()
+        equal(engine:get_global("fl1t1"), 1)
+        equal(engine:get_global(Core.GLOBALS.phase), Core.PHASE.EXECUTING)
+        equal(#engine.executions, 1)
+
+        engine:publish_pending_items()
+        controller:poll()
+        equal(engine:get_global("fl1t1"), -1)
+        equal(engine:get_global(Core.GLOBALS.phase), Core.PHASE.NONE)
+        equal(#engine.executions, 1, "delivery executed twice across visibility boundary")
     end)
 
     test("ExecutionErrorAfterCreationCommitsByExactObservation", function()
@@ -182,7 +204,7 @@ return function(context)
             fake.execute_error = "synthetic instant executor error"
             fake.execute_error_after_create = true
         end)
-        controller:poll()
+        execute_and_verify(controller)
         equal(engine:get_global("fl1t1"), -1)
         equal(engine:count_exact("primary", "tstitema", { 3, 2, 1 }), 1)
         equal(#engine.executions, 1)
@@ -212,7 +234,7 @@ return function(context)
                 current.endpoints.primary.observable = false
             end
         end)
-        controller:poll()
+        execute_and_verify(controller)
         equal(engine:get_global("fl1t1"), 1)
         equal(engine:get_global(Core.GLOBALS.phase), Core.PHASE.QUARANTINED)
         equal(engine:get_global(Core.GLOBALS.reason), Core.REASON.LOCKED_UNOBSERVABLE)
@@ -226,14 +248,14 @@ return function(context)
                 current.endpoints.container.full = true
             end
         end)
-        controller:poll()
+        execute_and_verify(controller)
         equal(engine:get_global("fl1t1"), -1)
         equal(#engine.endpoints.container.items, 1)
     end)
 
     test("CommitWritesAssignmentBeforeClearingJournal", function()
         local controller, engine = new_pending("fl1t1", 1)
-        controller:poll()
+        execute_and_verify(controller)
 
         local assignment_index
         local first_clear_index

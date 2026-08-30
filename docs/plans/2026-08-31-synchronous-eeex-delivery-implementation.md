@@ -291,9 +291,13 @@ between repository source and staged files.
 From `C:\Users\chris\Games\EET-IR-Test-b600e94\bg2` run:
 
 ```powershell
-& .\Setup-Randomiser.exe --game . --use-lang en_US --language 0 `
+'y' | & .\Setup-Randomiser.exe --game . --use-lang en_US --language 0 `
   --force-uninstall-list 1100 --force-install-list 1100 --no-exit-pause
 ```
+
+The explicit `y` answers the mod-owned saved-game compatibility prompt when
+the preserved seed/options/removal files are present.  Omitting it makes the
+noninteractive reinstall stop at `ACTION_READLN` after uninstalling 1100.
 
 Expected: exit 0, component 1100 appears exactly once, generated manifest and
 Lua parse checks pass, installed `M_FLDLV.lua` matches staged source, and Remote
@@ -303,8 +307,9 @@ Console remains installed.
 
 Ask the owner to start only the disposable `InfinityLoader.exe`. Use the single
 Remote Console IPC channel to run ping, the watchdog smoke test, and the updated
-transport aggregate. Acceptance is synchronous exact insertion with unchanged
-current/queued actions, clean transaction globals, and no item-location output.
+transport aggregate. Acceptance is queue-free execution with unchanged
+current/queued actions, followed by exact insertion evidence on the next engine
+boundary, clean transaction globals, and no item-location output.
 
 **Step 5: Close the game and perform final review**
 

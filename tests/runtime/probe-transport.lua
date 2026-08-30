@@ -1,8 +1,9 @@
 -- Stateful instant-transport probe for the disposable synthetic fixture.
 --
 -- The first accepted call executes three synthetic INSTANT.IDS actions and
--- verifies their exact deltas without changing recipient action state.  The
--- second call proves that the result is stable and no transport is repeated.
+-- proves that recipient action state is unchanged.  The engine publishes the
+-- new item-list entries only after that Lua call returns, so the second call
+-- verifies all three exact deltas and proves that no transport was repeated.
 -- The ground target is resolved only by authenticated area/type/coordinates,
 -- never by script name.  Returned data contains check codes and counts only.
 
@@ -517,22 +518,14 @@ local function execute_transport(state, entry, target_kind, expected_identity,
 
     local after_target = refresh_target(target, target_kind, expected_identity,
         endpoint, area_identity)
-    local after_count = after_target and
-        matching_count(after_target, target_kind, item) or nil
     local after_actions = after_target and action_snapshot(after_target) or nil
-    local exact_delta = after_count == baseline + 1
     local stable_actions = actions_unchanged(before_actions, after_actions)
-    if exact_delta then
-        state.exact_deltas = (state.exact_deltas or 0) + 1
-    end
     if stable_actions then
         state.unchanged_actions = (state.unchanged_actions or 0) + 1
     end
-    if not executed or not freed or not exact_delta or not stable_actions then
+    if not executed or not freed or not stable_actions then
         return false, "execution"
     end
-    state.exact_transports = (state.exact_transports or 0) + 1
-    state.checks[code] = "P"
     return true, "executed"
 end
 
@@ -674,39 +667,16 @@ if state.phase == "start" then
     state.checks.T05 = state.full_rejection_observed
         and full_guard_ok(state, full_creature, last_slot, config,
             endpoint, area_identity) and "P" or "F"
-    state.checks.T06 = state.exact_transports == 3
-        and state.instant_attempts == 3 and state.parsed_actions == 3
+    state.checks.T06 = state.instant_attempts == 3
+        and state.parsed_actions == 3
         and "P" or "F"
-    state.checks.T07 = state.exact_deltas == 3
-        and state.unchanged_actions == 3
-        and "P" or "F"
+    state.checks.T07 = state.unchanged_actions == 3 and "P" or "F"
     if state.checks.T05 ~= "P" or state.checks.T06 ~= "P"
         or state.checks.T07 ~= "P" then
         state.phase = "failed"
         return sanitized_result(state)
     end
 
-    local creature_live = refresh_target(creature, "creature",
-        config.creature_script, endpoint, area_identity)
-    local container_live = refresh_target(container, "container",
-        config.container_script, endpoint, area_identity)
-    local pile_live = refresh_target(pile, "pile", nil,
-        endpoint, area_identity)
-    if not creature_live or not container_live or not pile_live then
-        return terminal_failure(state, "T08")
-    end
-    state.settle_counts = {
-        creature = matching_count(creature_live, "creature",
-            config.items.creature),
-        container = matching_count(container_live, "container",
-            config.items.container),
-        pile = matching_count(pile_live, "pile", config.items.pile),
-    }
-    if state.settle_counts.creature ~= state.initial_counts.creature + 1
-        or state.settle_counts.container ~= state.initial_counts.container + 1
-        or state.settle_counts.pile ~= state.initial_counts.pile + 1 then
-        return terminal_failure(state, "T08")
-    end
     state.phase = "settle"
     return sanitized_result(state)
 end
@@ -723,13 +693,23 @@ if state.phase == "settle" then
         config.container_script, endpoint, area_identity)
     local pile_live = refresh_target(pile, "pile", nil,
         endpoint, area_identity)
-    local stable = creature_live and container_live and pile_live
-        and matching_count(creature_live, "creature", config.items.creature)
-            == state.settle_counts.creature
-        and matching_count(container_live, "container", config.items.container)
-            == state.settle_counts.container
-        and matching_count(pile_live, "pile", config.items.pile)
-            == state.settle_counts.pile
+    local creature_count = creature_live and matching_count(creature_live,
+        "creature", config.items.creature) or nil
+    local container_count = container_live and matching_count(container_live,
+        "container", config.items.container) or nil
+    local pile_count = pile_live and matching_count(pile_live, "pile",
+        config.items.pile) or nil
+    state.checks.T02 = container_count == state.initial_counts.container + 1
+        and "P" or "F"
+    state.checks.T03 = creature_count == state.initial_counts.creature + 1
+        and "P" or "F"
+    state.checks.T04 = pile_count == state.initial_counts.pile + 1
+        and "P" or "F"
+    state.exact_deltas = (state.checks.T02 == "P" and 1 or 0)
+        + (state.checks.T03 == "P" and 1 or 0)
+        + (state.checks.T04 == "P" and 1 or 0)
+    state.exact_transports = state.exact_deltas
+    local stable = state.exact_deltas == 3
         and state.instant_attempts == 3
         and state.exact_transports == 3
         and state.unchanged_actions == 3

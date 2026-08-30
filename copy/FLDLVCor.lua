@@ -839,9 +839,14 @@ function Controller:_submit(transaction, global_name, token, endpoint_id, signat
         execution_failure = "instant executor rejected delivery"
     end
 
-    -- The executor may throw after the engine has already applied the action.
-    -- The only authoritative result is the locked endpoint's exact count.
-    self:_continue_transaction(self:_read_transaction(), execution_failure)
+    -- INSTANT.IDS execution does not use the recipient's action queue, but the
+    -- engine publishes the new inventory entry only after this Lua call
+    -- returns.  Keep EXECUTING durable and let the next poll observe the exact
+    -- locked-endpoint delta.  This also covers an executor that throws after
+    -- the engine has already accepted the action.
+    if execution_failure then
+        self:_report_once("EXECUTOR_FAILURE", execution_failure)
+    end
     return "executed"
 end
 
