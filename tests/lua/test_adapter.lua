@@ -57,6 +57,7 @@ return function(context)
         local required = {
             "Infinity_DoFile",
             "Infinity_GetClockTicks",
+            "Infinity_IsMenuOnStack",
             "Infinity_PushMenu",
             "EEex_Action_ParseResponseString",
             "EEex_Action_QueueScriptFileResponseOnAIBase",
@@ -235,6 +236,29 @@ return function(context)
         equal(#fake.menu_pops, 0,
             "F5-style menu rebuild explicitly popped the poll menu")
         equal(root.Disabled, nil)
+    end)
+
+    test("AdapterWorldOpenRepushesMissingPollMenuWithoutStacking", function()
+        local fake, root = new_loaded({
+            on_open = function() end,
+        })
+        fake:trigger_menu_loaded()
+        local open_wrapper = fake.menu.reference_onOpen.fn
+
+        open_wrapper()
+        equal(#fake.menu_pushes, 1)
+        open_wrapper()
+        equal(#fake.menu_pushes, 1,
+            "world reopen stacked an already-present poll menu")
+
+        fake:set_menu_on_stack("FLDLV_POLL", false)
+        equal(root._menuPushed, true,
+            "fixture did not reproduce the stale pushed flag")
+        open_wrapper()
+        equal(#fake.menu_pushes, 2,
+            "missing poll menu was not repushed after stack restoration")
+        truthy(fake.menu_stack.FLDLV_POLL,
+            "repushed poll menu was not present on the menu stack")
     end)
 
     test("AdapterPollGuardsVisibleAreaDebouncesAndSweepsFourLists", function()

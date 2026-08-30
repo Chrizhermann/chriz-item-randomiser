@@ -36,6 +36,7 @@ end
 local REQUIRED_CAPABILITIES = {
     "Infinity_DoFile",
     "Infinity_GetClockTicks",
+    "Infinity_IsMenuOnStack",
     "Infinity_PushMenu",
     "EEex_Action_ParseResponseString",
     "EEex_Action_QueueScriptFileResponseOnAIBase",
@@ -565,7 +566,7 @@ function root._OnWorldOpen(previous, ...)
     if previous then
         results = pack_values(previous(...))
     end
-    if not root._menuPushed then
+    if not Infinity_IsMenuOnStack("FLDLV_POLL") then
         Infinity_PushMenu("FLDLV_POLL")
         root._menuPushed = true
     end

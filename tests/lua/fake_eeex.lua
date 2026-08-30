@@ -73,6 +73,7 @@ function FakeEEex.new(repository_root, manifest, options)
     self.loaded_menus = {}
     self.menu_pushes = {}
     self.menu_pops = {}
+    self.menu_stack = {}
     self.menu = make_menu(options.on_open, options.on_close)
     self.list_visits = {}
     self.fetch_count = 0
@@ -125,10 +126,16 @@ function FakeEEex:_install_globals(missing_capability)
 
     env.Infinity_PushMenu = function(name)
         fake.menu_pushes[#fake.menu_pushes + 1] = name
+        fake.menu_stack[name] = true
     end
 
     env.Infinity_PopMenu = function(name)
         fake.menu_pops[#fake.menu_pops + 1] = name
+        fake.menu_stack[name] = nil
+    end
+
+    env.Infinity_IsMenuOnStack = function(name)
+        return fake.menu_stack[name] and 1 or nil
     end
 
     env.EEex_Action_ParseResponseString = function(source)
@@ -312,6 +319,10 @@ end
 
 function FakeEEex:set_clock(value)
     self.clock = value
+end
+
+function FakeEEex:set_menu_on_stack(name, present)
+    self.menu_stack[name] = present and true or nil
 end
 
 function FakeEEex:set_area(resref)
