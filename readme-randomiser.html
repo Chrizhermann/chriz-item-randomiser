@@ -13,7 +13,7 @@
   <p><strong><a href="http://www.gibberlings3.net/">A Gibberlings Three Mod</a></strong><br />
   <strong>Author:</strong> Fredrik Lindgren <acronym title="also known as">aka</acronym> <a href="http://forums.gibberlings3.net/index.php?showuser=2376">Wisp</a>   <acronym title="also known as">aka</acronym> Irrbloss.<br />
   <strong>On the web: <a href="http://www.gibberlings3.net/item_rand/index.php">Home page</a></strong> and <strong><a href="http://forums.gibberlings3.net/index.php?showforum=170">Forum</a></strong>.</p>
-  <p><strong>Version 7 &ndash; <a href="http://gibberlings3.net/forums/index.php?showtopic=25430">Check for the most recent version</a></strong>.<br />
+  <p><strong>Version 8 &ndash; <a href="http://gibberlings3.net/forums/index.php?showtopic=25430">Check for the most recent version</a></strong>.<br />
   <strong>Languages:</strong> English, Polish.<br />
   <strong>Platforms:</strong> Windows, Mac OS X, Linux.</p>
 </div>
@@ -336,6 +336,14 @@
 
 <h2>Version History</h2>
 <div class="section">
+  <p><b>2026-08-31&mdash;version 8:</b></p>
+  <ul>
+    <li>Fixed a Mode 1 campaign-completion collision on EET and BGT that could leave later-campaign items undistributed.</li>
+    <li>Added manifest-driven Mode 1 delivery on supported Enhanced Edition installs, using guarded, persistent EEex transactions that do not depend on a recipient's AI action queue.</li>
+    <li>Added extensible registries for randomised items, their sources and delivery endpoints, with validation before source removal and deterministic capacity handling.</li>
+    <li>Kept Mode 2 on its existing install-time path and added hermetic compatibility and transaction tests.</li>
+  </ul>
+
   <p><b>2018-09-21&mdash;version 7:</b></p>
   <ul>
     <li>No changes. This is a maintenance release concerning packaging
