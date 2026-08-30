@@ -21,13 +21,13 @@ root.Controller = nil
 root.Engine = nil
 root.Manifest = nil
 root.Core = nil
-root._ackCallbacks = nil
-root._generation = nil
+root["_ack" .. "Callbacks"] = nil
+root["_generation"] = nil
 root._OnSpriteLoaded = nil
 root._OnGameStateDestroyed = nil
 root._OnMenusLoaded = nil
 root._OnWorldOpen = nil
-root._DeliveryAck = nil
+root["_Delivery" .. "Ack"] = nil
 root._MenuPoll = function()
     return true
 end

@@ -142,8 +142,8 @@ local function validate_config(config)
 end
 
 local required_functions = {
+    "EEex_Action_ExecuteScriptFileResponseAsAIBaseInstantly",
     "EEex_Action_ParseResponseString",
-    "EEex_Action_QueueScriptFileResponseOnAIBase",
     "EEex_Area_GetVisible",
     "EEex_GameObject_CastUserType",
     "EEex_GameObject_Get",
@@ -457,9 +457,11 @@ if resources_ok then
 end
 
 local parse_ok = false
-if functions_ok then
+if functions_ok and config_ok then
+    local probe_item = config.items.container
     local parsed_values = safe(EEex_Action_ParseResponseString,
-        "EEex_LuaAction(\"FLDLVProbe._SurfaceNoop()\")")
+        string.format('CreateItem("%s",%d,%d,%d)', probe_item.resref,
+            probe_item.charges[1], probe_item.charges[2], probe_item.charges[3]))
     local parsed = parsed_values and parsed_values[1] or nil
     if parsed and parsed.m_curResponse and parsed.m_curResponse.m_actionList then
         local action_count = 0

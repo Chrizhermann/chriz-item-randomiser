@@ -39,6 +39,25 @@ $surface = [System.IO.File]::ReadAllText((Join-Path $runtimeRoot 'probe-eeex-sur
 $transport = [System.IO.File]::ReadAllText((Join-Path $runtimeRoot 'probe-transport.lua'))
 $lifecycle = [System.IO.File]::ReadAllText((Join-Path $runtimeRoot 'probe-lifecycle.lua'))
 $aggregate = [System.IO.File]::ReadAllText((Join-Path $runtimeRoot 'probe-aggregate.lua'))
+$adapter = [System.IO.File]::ReadAllText((Join-Path $repositoryRoot 'copy/M_FLDLV.lua'))
+
+if ($surface -notmatch 'EEex_Action_ExecuteScriptFileResponseAsAIBaseInstantly' -or
+    $transport -notmatch 'EEex_Action_ExecuteScriptFileResponseAsAIBaseInstantly' -or
+    $adapter -notmatch 'EEex_Action_ExecuteScriptFileResponseAsAIBaseInstantly') {
+    throw 'The delivery surface does not require and use the official instant executor.'
+}
+foreach ($forbidden in @('EEex_Action_Queue', 'EEex_LuaAction', '_DeliveryAck')) {
+    if ($transport -match [regex]::Escape($forbidden) -or
+        $adapter -match [regex]::Escape($forbidden)) {
+        throw "The delivery source still contains forbidden queued transport '$forbidden'."
+    }
+}
+if ($transport -notmatch 'm_curAction' -or
+    $transport -notmatch 'm_queuedActions' -or
+    $transport -notmatch 'action_snapshot' -or
+    $transport -notmatch 'actions_unchanged') {
+    throw 'The transport probe does not prove that instant delivery preserves action state.'
+}
 
 if ($surface -notmatch 'ability_maxima' -or
     $surface -notmatch 'cResRef' -or
@@ -64,8 +83,8 @@ if ($transport -notmatch 'm_containerType' -or
     $transport -notmatch 'full_script' -or
     $transport -notmatch 'InventoryFull\(Myself\)' -or
     $transport -notmatch 'settle' -or
-    $transport -notmatch 'ack_duplicates') {
-    throw 'The transport probe lacks coordinate/type ground resolution or observed capacity/ACK/stability checks.'
+    $transport -notmatch 'instant_attempts') {
+    throw 'The transport probe lacks coordinate/type ground resolution or observed capacity/action/stability checks.'
 }
 if ($lifecycle -notmatch 'EEex_GameState_GetGlobalInt' -or
     $lifecycle -notmatch 'EEex_GameState_SetGlobalInt' -or
@@ -212,27 +231,36 @@ local function item_slots(seed_count)
 end
 
 local objects
-local queue_calls
+local instant_calls
+local mutate_action_state
+local function add_action_state(object, current_id)
+    object.m_curAction = { m_actionID = current_id }
+    object.m_queuedActions = {
+        { m_actionID = current_id + 10 },
+        { m_actionID = current_id + 20 },
+    }
+    return object
+end
 local function creature(script, seed_count, full)
-    return {
+    return add_action_state({
         _sprite = true,
         _full = full,
         m_scriptName = identity(script),
         m_equipment = { m_items = item_slots(seed_count) },
-    }
+    }, 7)
 end
 
 local function container(script, container_type, x, y)
-    return {
+    return add_action_state({
         _sprite = false,
         m_scriptName = identity(script),
         m_containerType = container_type,
         m_pos = { x = x, y = y },
         m_lstItems = { instance_item("FLRTPFL", { 0, 0, 0 }) },
-    }
+    }, 11)
 end
 
-local function reset_transport_world()
+local function reset_transport_world(mutate)
     objects = {
         [1] = creature("FLRTPU", 1, false),
         [2] = creature("FLRTPL", 15, false),
@@ -241,7 +269,8 @@ local function reset_transport_world()
         -- Deliberately not config.pile_script: transport must use endpoint only.
         [5] = container("ACTPILE", 4, 164, 148),
     }
-    queue_calls = 0
+    instant_calls = 0
+    mutate_action_state = mutate == true
     FLDLVProbe = {
         config = {
             area_resref = "FLRTPRA",
@@ -295,12 +324,12 @@ end
 function EEex_Action_ParseResponseString(text)
     return {
         text = text,
-        m_curResponse = { m_actionList = { 1, 2 } },
+        m_curResponse = { m_actionList = { { m_actionID = 140 } } },
         free = function() end,
     }
 end
-function EEex_Action_QueueScriptFileResponseOnAIBase(parsed, target)
-    queue_calls = queue_calls + 1
+function EEex_Action_ExecuteScriptFileResponseAsAIBaseInstantly(parsed, target)
+    instant_calls = instant_calls + 1
     local resref, charge1, charge2, charge3 = string.match(parsed.text,
         'GiveItemCreate%("([^"]+)",Myself,(%d+),(%d+),(%d+)%)')
     if not resref then
@@ -321,28 +350,35 @@ function EEex_Action_QueueScriptFileResponseOnAIBase(parsed, target)
     else
         target.m_lstItems[#target.m_lstItems + 1] = item
     end
-    local nonce = assert(string.match(parsed.text, "%[%[(%d+)%]%]"))
-    assert(FLDLVProbe._AckFromAction(nonce))
+    if mutate_action_state then
+        target.m_curAction.m_actionID = target.m_curAction.m_actionID + 1
+        target.m_queuedActions[#target.m_queuedActions + 1] = { m_actionID = 99 }
+    end
 end
 
 reset_transport_world()
-local transport
-for _ = 1, 5 do
-    transport = assert(dofile(transport_path))
-end
+local transport = assert(dofile(transport_path))
+assert(transport.phase == "settle" and transport.passed == 7
+    and transport.pending == 1 and instant_calls == 3)
+transport = assert(dofile(transport_path))
 assert(transport.phase == "done" and transport.passed == 8
     and transport.failed == 0 and transport.pending == 0
-    and queue_calls == 3)
+    and instant_calls == 3)
 local stable = assert(dofile(transport_path))
-assert(stable.phase == "done" and queue_calls == 3)
+assert(stable.phase == "done" and instant_calls == 3)
 
 reset_transport_world()
 FLDLVProbe.config.creature_script = ""
 local rejected = assert(dofile(transport_path))
 assert(rejected.phase == "failed" and rejected.failed == 1
-    and queue_calls == 0)
+    and instant_calls == 0)
 
-print("PASS RuntimeProbeTransport_ObservedTransactionAndGuards")
+reset_transport_world(true)
+local action_mutation = assert(dofile(transport_path))
+assert(action_mutation.phase == "failed" and action_mutation.failed == 1
+    and instant_calls == 1)
+
+print("PASS RuntimeProbeTransport_InstantDeltaAndActionGuards")
 '@
 
 try {

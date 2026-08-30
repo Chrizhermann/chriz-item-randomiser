@@ -1,9 +1,10 @@
--- Stateful queued-transport probe for the disposable synthetic fixture.
+-- Stateful instant-transport probe for the disposable synthetic fixture.
 --
--- Invoke repeatedly through the serialized Remote Console while simulation is
--- unpaused.  Every accepted call queues at most one transport.  The ground
--- target is resolved only by its authenticated area/type/coordinates, never by
--- script name.  Returned data contains check codes and counts only.
+-- The first accepted call executes three synthetic INSTANT.IDS actions and
+-- verifies their exact deltas without changing recipient action state.  The
+-- second call proves that the result is stable and no transport is repeated.
+-- The ground target is resolved only by authenticated area/type/coordinates,
+-- never by script name.  Returned data contains check codes and counts only.
 
 FLDLVProbe = FLDLVProbe or {}
 FLDLVProbe.results = FLDLVProbe.results or {}
@@ -416,45 +417,43 @@ local function inventory_full(entry)
     return values[1]
 end
 
-local function target_for(objects, config, kind, endpoint, area_identity)
-    if kind == "creature" then
-        return resolve_unique(objects, config.creature_script),
-            config.creature_script
-    elseif kind == "container" then
-        return resolve_unique(objects, config.container_script),
-            config.container_script
-    elseif kind == "pile" then
-        return resolve_ground(objects, endpoint, area_identity), nil
-    end
-    return nil, nil
+local function action_snapshot(entry)
+    local snapshot
+    local inspected = safe(function()
+        local object = assert(entry and entry.object, "target object missing")
+        local current = assert(object.m_curAction, "current action missing")
+        local current_id = current.m_actionID
+        if type(current_id) ~= "number" or current_id ~= math.floor(current_id) then
+            error("current action id invalid")
+        end
+        local queued = assert(object.m_queuedActions, "queued actions missing")
+        local queued_ids = {}
+        EEex_Utility_IterateCPtrList(queued, function(action)
+            local action_id = action and action.m_actionID
+            if type(action_id) ~= "number" or action_id ~= math.floor(action_id) then
+                error("queued action id invalid")
+            end
+            queued_ids[#queued_ids + 1] = action_id
+        end)
+        snapshot = { current = current_id, queued = queued_ids }
+    end)
+    return inspected and snapshot or nil
 end
 
-local function next_nonce(state)
-    state.sequence = (state.sequence or 1000) + 1
-    if state.sequence > 2147483646 then
-        state.sequence = 1001
-    end
-    return state.sequence
-end
-
-function FLDLVProbe._AckFromAction(payload)
-    local state = FLDLVProbe.transport_state
-    local nonce = tonumber(payload)
-    if type(state) ~= "table" or type(nonce) ~= "number"
-        or nonce ~= math.floor(nonce) or nonce < 1
-        or nonce ~= state.expected_nonce then
+local function actions_unchanged(before, after)
+    if not before or not after or before.current ~= after.current
+        or #before.queued ~= #after.queued then
         return false
     end
-    if state.ack_nonce == nonce then
-        state.ack_duplicates = (state.ack_duplicates or 0) + 1
-        return false
+    for index, action_id in ipairs(before.queued) do
+        if after.queued[index] ~= action_id then
+            return false
+        end
     end
-    state.ack_nonce = nonce
-    state.acks_observed = (state.acks_observed or 0) + 1
     return true
 end
 
-local function queue_transport(state, entry, target_kind, expected_identity,
+local function execute_transport(state, entry, target_kind, expected_identity,
     endpoint, area_identity, item, code)
     if not valid_item(item) then
         return false, "item"
@@ -472,7 +471,8 @@ local function queue_transport(state, entry, target_kind, expected_identity,
     end
 
     local baseline = matching_count(target, target_kind, item)
-    if baseline == nil then
+    local before_actions = action_snapshot(target)
+    if baseline == nil or not before_actions then
         return false, "target"
     end
 
@@ -486,11 +486,8 @@ local function queue_transport(state, entry, target_kind, expected_identity,
             'CreateItem("%s",%d,%d,%d)', item.resref,
             item.charges[1], item.charges[2], item.charges[3])
     end
-    local nonce = next_nonce(state)
-    local acknowledge = string.format(
-        'EEex_LuaAction("FLDLVProbe._AckFromAction([[%d]])")', nonce)
     local parsed_values = safe(EEex_Action_ParseResponseString,
-        transport .. "\n" .. acknowledge)
+        transport)
     local parsed = parsed_values and parsed_values[1] or nil
     if not parsed or not parsed.m_curResponse
         or not parsed.m_curResponse.m_actionList then
@@ -503,36 +500,40 @@ local function queue_transport(state, entry, target_kind, expected_identity,
                 action_count = action_count + 1
             end)
     end)
-    if not counted or action_count ~= 2 then
+    if not counted or action_count ~= 1 then
         safe(function()
             parsed:free()
         end)
         return false, "parse"
     end
 
-    -- From this point, any queue exception is ambiguous.  State is committed
-    -- before the call and the phase is failed rather than retried by the caller.
-    state.expected_nonce = nonce
-    state.ack_nonce = 0
-    state.active_code = code
-    state.active_kind = target_kind
-    state.active_identity = expected_identity
-    state.active_item = {
-        resref = item.resref,
-        charges = { item.charges[1], item.charges[2], item.charges[3] },
-    }
-    state.active_baseline = baseline
-    state.queue_attempts = (state.queue_attempts or 0) + 1
+    state.instant_attempts = (state.instant_attempts or 0) + 1
     state.parsed_actions = (state.parsed_actions or 0) + action_count
-    local queued = safe(EEex_Action_QueueScriptFileResponseOnAIBase,
+    local executed = safe(EEex_Action_ExecuteScriptFileResponseAsAIBaseInstantly,
         parsed, target.object)
-    safe(function()
+    local freed = safe(function()
         parsed:free()
     end)
-    if not queued then
-        return false, "ambiguous"
+
+    local after_target = refresh_target(target, target_kind, expected_identity,
+        endpoint, area_identity)
+    local after_count = after_target and
+        matching_count(after_target, target_kind, item) or nil
+    local after_actions = after_target and action_snapshot(after_target) or nil
+    local exact_delta = after_count == baseline + 1
+    local stable_actions = actions_unchanged(before_actions, after_actions)
+    if exact_delta then
+        state.exact_deltas = (state.exact_deltas or 0) + 1
     end
-    return true, "queued"
+    if stable_actions then
+        state.unchanged_actions = (state.unchanged_actions or 0) + 1
+    end
+    if not executed or not freed or not exact_delta or not stable_actions then
+        return false, "execution"
+    end
+    state.exact_transports = (state.exact_transports or 0) + 1
+    state.checks[code] = "P"
+    return true, "executed"
 end
 
 local function full_guard_ok(state, full_entry, last_entry, config,
@@ -552,17 +553,16 @@ end
 
 local config = FLDLVProbe.config
 local state = FLDLVProbe.transport_state
-if type(state) ~= "table" then
+if type(state) ~= "table" or state.version ~= 2 then
     state = {
+        version = 2,
         phase = "start",
         checks = {},
-        sequence = 1000,
         exact_transports = 0,
         exact_deltas = 0,
-        queue_attempts = 0,
+        instant_attempts = 0,
         parsed_actions = 0,
-        acks_observed = 0,
-        ack_duplicates = 0,
+        unchanged_actions = 0,
     }
     FLDLVProbe.transport_state = state
 else
@@ -631,108 +631,54 @@ if state.phase == "start" then
     }
     state.full_guard_baseline = initial_full
 
-    local before_attempts = state.queue_attempts
-    local accepted, reason = queue_transport(state, full_live, "creature",
+    local full_before_actions = action_snapshot(full_live)
+    local before_attempts = state.instant_attempts
+    local before_parsed = state.parsed_actions
+    local accepted, reason = execute_transport(state, full_live, "creature",
         config.full_script, endpoint, area_identity,
         config.items.creature, "T05")
+    local full_after = refresh_target(full_live, "creature",
+        config.full_script, endpoint, area_identity)
     state.full_rejection_observed = accepted == false and reason == "capacity"
-        and state.queue_attempts == before_attempts
+        and state.instant_attempts == before_attempts
+        and state.parsed_actions == before_parsed
         and inventory_full(last_live) == false
         and inventory_full(full_live) == true
-        and matching_count(full_live, "creature", config.items.creature)
+        and full_after ~= nil
+        and actions_unchanged(full_before_actions, action_snapshot(full_after))
+        and matching_count(full_after, "creature", config.items.creature)
             == state.full_guard_baseline
     if not state.full_rejection_observed then
         return terminal_failure(state, "T05")
     end
 
     state.checks.T01 = "P"
-    local queued = queue_transport(state, container_live, "container",
+    local container_ok = execute_transport(state, container_live, "container",
         config.container_script, endpoint, area_identity,
         config.items.container, "T02")
-    if not queued then
+    if not container_ok then
         return terminal_failure(state, "T02")
     end
-    state.phase = "container_queued"
-    return sanitized_result(state)
-end
-
-if not full_guard_ok(state, full_creature, last_slot, config,
-    endpoint, area_identity) then
-    return terminal_failure(state, "T05")
-end
-
-if state.phase == "settle" then
-    local creature_live = refresh_target(creature, "creature",
-        config.creature_script, endpoint, area_identity)
-    local container_live = refresh_target(container, "container",
-        config.container_script, endpoint, area_identity)
-    local pile_live = refresh_target(pile, "pile", nil,
-        endpoint, area_identity)
-    local stable = creature_live and container_live and pile_live
-        and matching_count(creature_live, "creature", config.items.creature)
-            == state.settle_counts.creature
-        and matching_count(container_live, "container", config.items.container)
-            == state.settle_counts.container
-        and matching_count(pile_live, "pile", config.items.pile)
-            == state.settle_counts.pile
-        and state.queue_attempts == 3
-        and state.exact_transports == 3
-        and state.acks_observed == 3
-        and state.ack_duplicates == 0
-    state.checks.T08 = stable and "P" or "F"
-    state.phase = stable and "done" or "failed"
-    return sanitized_result(state)
-end
-
-local active_target, active_identity = target_for(objects, config,
-    state.active_kind, endpoint, area_identity)
-local active_live = refresh_target(active_target, state.active_kind,
-    active_identity, endpoint, area_identity)
-if not active_live then
-    return sanitized_result(state)
-end
-local post_count = matching_count(active_live, state.active_kind,
-    state.active_item)
-if post_count == nil or post_count > state.active_baseline + 1
-    or state.ack_duplicates > 0 then
-    return terminal_failure(state, state.active_code)
-end
-if state.ack_nonce ~= state.expected_nonce then
-    return sanitized_result(state)
-end
-if post_count ~= state.active_baseline + 1 then
-    -- ACK is the second action, so an acknowledged non-delta is terminal.
-    return terminal_failure(state, state.active_code)
-end
-
-state.checks[state.active_code] = "P"
-state.exact_transports = state.exact_transports + 1
-state.exact_deltas = state.exact_deltas + 1
-
-if state.phase == "container_queued" then
-    local queued = queue_transport(state, creature, "creature",
+    local creature_ok = execute_transport(state, creature_live, "creature",
         config.creature_script, endpoint, area_identity,
         config.items.creature, "T03")
-    if not queued then
+    if not creature_ok then
         return terminal_failure(state, "T03")
     end
-    state.phase = "creature_queued"
-elseif state.phase == "creature_queued" then
-    local queued = queue_transport(state, pile, "pile", nil,
+    local pile_ok = execute_transport(state, pile_live, "pile", nil,
         endpoint, area_identity, config.items.pile, "T04")
-    if not queued then
+    if not pile_ok then
         return terminal_failure(state, "T04")
     end
-    state.phase = "pile_queued"
-elseif state.phase == "pile_queued" then
+
     state.checks.T05 = state.full_rejection_observed
         and full_guard_ok(state, full_creature, last_slot, config,
             endpoint, area_identity) and "P" or "F"
     state.checks.T06 = state.exact_transports == 3
-        and state.queue_attempts == 3 and state.parsed_actions == 6
+        and state.instant_attempts == 3 and state.parsed_actions == 3
         and "P" or "F"
     state.checks.T07 = state.exact_deltas == 3
-        and state.acks_observed == 3 and state.ack_duplicates == 0
+        and state.unchanged_actions == 3
         and "P" or "F"
     if state.checks.T05 ~= "P" or state.checks.T06 ~= "P"
         or state.checks.T07 ~= "P" then
@@ -762,6 +708,34 @@ elseif state.phase == "pile_queued" then
         return terminal_failure(state, "T08")
     end
     state.phase = "settle"
+    return sanitized_result(state)
+end
+
+if not full_guard_ok(state, full_creature, last_slot, config,
+    endpoint, area_identity) then
+    return terminal_failure(state, "T05")
+end
+
+if state.phase == "settle" then
+    local creature_live = refresh_target(creature, "creature",
+        config.creature_script, endpoint, area_identity)
+    local container_live = refresh_target(container, "container",
+        config.container_script, endpoint, area_identity)
+    local pile_live = refresh_target(pile, "pile", nil,
+        endpoint, area_identity)
+    local stable = creature_live and container_live and pile_live
+        and matching_count(creature_live, "creature", config.items.creature)
+            == state.settle_counts.creature
+        and matching_count(container_live, "container", config.items.container)
+            == state.settle_counts.container
+        and matching_count(pile_live, "pile", config.items.pile)
+            == state.settle_counts.pile
+        and state.instant_attempts == 3
+        and state.exact_transports == 3
+        and state.unchanged_actions == 3
+    state.checks.T08 = stable and "P" or "F"
+    state.phase = stable and "done" or "failed"
+    return sanitized_result(state)
 end
 
 return sanitized_result(state)

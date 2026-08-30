@@ -15,13 +15,13 @@
     {
       "id": 2,
       "subject": "Task 3: Make the runtime probe enforce the no-queue contract",
-      "status": "in_progress",
+      "status": "completed",
       "blockedBy": [1]
     },
     {
       "id": 3,
       "subject": "Task 4: Run the complete local verification matrix",
-      "status": "pending",
+      "status": "in_progress",
       "blockedBy": [2]
     },
     {
