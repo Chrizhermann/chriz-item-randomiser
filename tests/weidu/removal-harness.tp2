@@ -12,6 +12,9 @@
 // argv[10] = internal source-selector 2DA
 // argv[11] = internal-selector raw item-list 2DA
 // argv[12] = selector replacement extension 2DA
+// argv[13] = internal all-one-unit policy 2DA
+// argv[14] = all-one-unit raw item-list 2DA
+// argv[15] = all-one-unit replacement extension 2DA
 
 BACKUP ~backup~
 AUTHOR ~BG2 Item Randomiser removal-plan test harness~
@@ -66,6 +69,8 @@ DEFINE_ACTION_MACRO flir_removal_harness_reset_source_decls BEGIN
   ACTION_CLEAR_ARRAY flir_source_decl_declared_charge2
   ACTION_CLEAR_ARRAY flir_source_decl_declared_charge3
   ACTION_CLEAR_ARRAY flir_source_decl_expected_quantity
+  ACTION_CLEAR_ARRAY flir_source_decl_match_policy
+  ACTION_CLEAR_ARRAY flir_source_decl_expected_matches
   ACTION_CLEAR_ARRAY flir_source_decl_tier_hook
   ACTION_CLEAR_ARRAY flir_source_decl_birth_campaign
   ACTION_CLEAR_ARRAY flir_source_decl_birth_tier
@@ -259,6 +264,41 @@ LAM create_item_array#finalise
 LAM flir_removal_plan_build
 LAM flir_removal_plan_apply
 LAM flir_removal_harness_write_report
+
+BEGIN ~Removal harness: explicit all-one-unit policy removes every physical match~ DESIGNATED 13
+LAM flir_removal_harness_reset
+OUTER_SET flir_source_allow_override_availability = 1
+COPY ~%argv[14]%~ ~flir-removal/grouped-items.2da~
+  LAUNCH_PATCH_MACRO flir_source_stage1_raw
+OUTER_SPRINT flir_source_internal_selector_table ~%argv[13]%~
+LAM flir_source_apply_internal_selector_table
+LAM flir_source_filter_stage1
+LAM create_item_array#finalise
+LAM flir_removal_plan_build
+LAM flir_removal_plan_apply
+LAM flir_removal_harness_write_report
+
+BEGIN ~Removal harness: grouped preserve snapshot survives strict extension replacement~ DESIGNATED 14
+LAM flir_removal_harness_reset
+OUTER_SPRINT Preserve ~y~
+OUTER_SET flir_source_allow_override_availability = 1
+COPY ~%argv[14]%~ ~flir-removal/grouped-preserve-items.2da~
+  LAUNCH_PATCH_MACRO flir_source_stage1_raw
+OUTER_SPRINT flir_source_internal_selector_table ~%argv[13]%~
+LAM flir_source_apply_internal_selector_table
+LAM flir_source_filter_stage1_legacy_ident_filter
+OUTER_SPRINT flir_source_extension_fixture ~%argv[15]%~
+LAM flir_source_apply_extension_hook
+OUTER_SPRINT flir_grouped_key ~ident:ambiguous~
+OUTER_SPRINT flir_grouped_legacy_policy $flir_source_legacy_decl_match_policy("%flir_grouped_key%")
+OUTER_SET flir_grouped_legacy_count = $flir_source_legacy_decl_expected_matches("%flir_grouped_key%")
+OUTER_SPRINT flir_grouped_current_policy $flir_source_decl_match_policy("%flir_grouped_key%")
+OUTER_SET flir_grouped_current_count = $flir_source_decl_expected_matches("%flir_grouped_key%")
+OUTER_TEXT_SPRINT flir_report ~POLICY legacy=%flir_grouped_legacy_policy%/%flir_grouped_legacy_count% current=%flir_grouped_current_policy%/%flir_grouped_current_count%%WNL%~
+COPY ~%argv[5]%~ ~%argv[3]%~
+  DELETE_BYTES 0 BUFFER_LENGTH
+  INSERT_BYTES 0 (STRING_LENGTH ~%flir_report%~)
+  WRITE_ASCIIE 0 ~%flir_report%~ (STRING_LENGTH ~%flir_report%~)
 
 BEGIN ~Removal harness: raw source replacement precedes filter~ DESIGNATED 3
 LAM flir_removal_harness_reset

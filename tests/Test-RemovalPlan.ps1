@@ -16,7 +16,9 @@ $catalogPath = Join-Path $repositoryRoot 'lib\catalog.tpa'
 $removalPlanPath = Join-Path $repositoryRoot 'lib\removal_plan.tpa'
 $arraysPath = Join-Path $repositoryRoot 'lib\arrays.tpa'
 $selectorTablePath = Join-Path $repositoryRoot 'lists\sources\base\bg2.2da'
+$bg1SelectorTablePath = Join-Path $repositoryRoot 'lists\sources\base\bg1.2da'
 $bg2ItemsPath = Join-Path $repositoryRoot 'lists\items\base\bg2.2da'
+$bg1ItemsPath = Join-Path $repositoryRoot 'lists\items\base\bg1.2da'
 $deletePath = Join-Path $repositoryRoot 'lib\delete.tpa'
 $tp2Path = Join-Path $repositoryRoot 'randomiser.tp2'
 $modeBoundaryPath = Join-Path $PSScriptRoot 'Test-ModeBoundary.ps1'
@@ -27,7 +29,7 @@ if (-not (Test-Path -LiteralPath $removalPlanPath -PathType Leaf)) {
     exit 1
 }
 
-foreach ($requiredPath in @($fixturePath, $harnessPath, $libPath, $palettePath, $catalogPath, $arraysPath, $selectorTablePath, $bg2ItemsPath, $deletePath, $tp2Path)) {
+foreach ($requiredPath in @($fixturePath, $harnessPath, $libPath, $palettePath, $catalogPath, $arraysPath, $selectorTablePath, $bg1SelectorTablePath, $bg2ItemsPath, $bg1ItemsPath, $deletePath, $tp2Path)) {
     if (-not (Test-Path -LiteralPath $requiredPath -PathType Leaf)) {
         throw "Required removal-plan test input is missing: $requiredPath"
     }
@@ -91,37 +93,81 @@ $selectorOrder = [regex]::Match(
 if (-not $selectorOrder.Success) {
     throw 'The internal BG2 selector table is not applied between raw staging and the legacy filter.'
 }
+$bg1SelectorOrder = [regex]::Match(
+    $arraysSource,
+    '(?s)lists/items/base/bg1\.2da.*?flir_source_stage1_raw.*?flir_source_internal_selector_table.*?flir_source_apply_internal_selector_table.*?flir_source_filter_stage1_legacy_ident_filter'
+)
+if (-not $bg1SelectorOrder.Success) {
+    throw 'The internal BG1 match-policy table is not applied between raw staging and the legacy filter.'
+}
 
-$bg2StableIdents = @{}
-foreach ($line in Get-Content -LiteralPath $bg2ItemsPath | Select-Object -Skip 1) {
-    $parts = @($line.Trim() -split '\s+' | Where-Object { $_ -ne '' })
-    if ($parts.Count -ge 7 -and $parts[5] -cne 'x') {
-        $bg2StableIdents[$parts[5].ToLowerInvariant()] = $true
+function Test-InternalMatchPolicyTable {
+    param(
+        [string] $TablePath,
+        [string] $ItemsPath,
+        [int] $ExpectedRows,
+        [int] $ExpectedSingleRows,
+        [int] $ExpectedGroupedRows,
+        [string] $Campaign
+    )
+    $tableBytes = [System.IO.File]::ReadAllBytes($TablePath)
+    if (@($tableBytes | Where-Object { $_ -lt 32 -and $_ -notin @(9, 10, 13) }).Count -ne 0) {
+        throw "The internal $Campaign match-policy table contains non-printable bytes."
+    }
+    $stableIdents = @{}
+    foreach ($line in Get-Content -LiteralPath $ItemsPath | Select-Object -Skip 1) {
+        $parts = @($line.Trim() -split '\s+' | Where-Object { $_ -ne '' })
+        if ($parts.Count -ge 7 -and $parts[5] -cne 'x') {
+            $stableIdents[$parts[5].ToLowerInvariant()] = $true
+        }
+    }
+
+    $seen = @{}
+    $singleRows = 0
+    $groupedRows = 0
+    $rows = @(Get-Content -LiteralPath $TablePath | Select-Object -Skip 1 | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+    if ($rows.Count -ne $ExpectedRows) {
+        throw "The internal $Campaign match-policy table has an unexpected audited-row count."
+    }
+    foreach ($line in $rows) {
+        $parts = @($line.Trim() -split '\s+' | Where-Object { $_ -ne '' })
+        if ($parts.Count -ne 4 -or @($parts | Where-Object { [string]::IsNullOrWhiteSpace($_) }).Count -ne 0) {
+            throw "An internal $Campaign match-policy row is malformed or empty."
+        }
+        $ident = $parts[0].ToLowerInvariant()
+        $selectorValue = $parts[1].ToLowerInvariant()
+        $policy = $parts[2].ToLowerInvariant()
+        $expectedMatches = 0
+        if (-not [int]::TryParse($parts[3], [ref] $expectedMatches)) {
+            throw "An internal $Campaign match-policy row has a non-numeric expected count."
+        }
+        if ($ident -ceq 'x' -or $seen.ContainsKey($ident) -or -not $stableIdents.ContainsKey($ident)) {
+            throw "An internal $Campaign match-policy row does not target one unique authored stable identity."
+        }
+        if ($policy -ceq 'single') {
+            if ($selectorValue -cin @('*', 'any', 'none') -or $expectedMatches -ne 1) {
+                throw "An internal $Campaign single-match row lacks one explicit selector."
+            }
+            $singleRows++
+        }
+        elseif ($policy -ceq 'all_one_unit') {
+            if ($selectorValue -cnotin @('*', 'any') -or $expectedMatches -ne 2) {
+                throw "An internal $Campaign grouped row lacks the audited wildcard/count contract."
+            }
+            $groupedRows++
+        }
+        else {
+            throw "An internal $Campaign match-policy row has an unknown policy."
+        }
+        $seen[$ident] = $true
+    }
+    if ($singleRows -ne $ExpectedSingleRows -or $groupedRows -ne $ExpectedGroupedRows) {
+        throw "The internal $Campaign match-policy distribution differs from the audited contract."
     }
 }
-$selectorIdents = @{}
-$selectorRows = @(Get-Content -LiteralPath $selectorTablePath | Select-Object -Skip 1 | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
-if ($selectorRows.Count -ne 4) {
-    throw 'The internal BG2 selector table does not contain the four audited authored exceptions.'
-}
-foreach ($line in $selectorRows) {
-    $parts = @($line.Trim() -split '\s+' | Where-Object { $_ -ne '' })
-    if ($parts.Count -ne 2 -or [string]::IsNullOrWhiteSpace($parts[0]) -or [string]::IsNullOrWhiteSpace($parts[1])) {
-        throw 'An internal BG2 selector row is malformed or empty.'
-    }
-    $ident = $parts[0].ToLowerInvariant()
-    $selectorValue = $parts[1].ToLowerInvariant()
-    if ($ident -ceq 'x' -or $selectorValue -cin @('*', 'any', 'none')) {
-        throw 'An internal BG2 selector row is not a stable, explicit selector.'
-    }
-    if ($selectorIdents.ContainsKey($ident)) {
-        throw 'The internal BG2 selector table contains a duplicate stable identity.'
-    }
-    if (-not $bg2StableIdents.ContainsKey($ident)) {
-        throw 'The internal BG2 selector table targets no authored stable identity.'
-    }
-    $selectorIdents[$ident] = $true
-}
+
+Test-InternalMatchPolicyTable -TablePath $selectorTablePath -ItemsPath $bg2ItemsPath -ExpectedRows 4 -ExpectedSingleRows 4 -ExpectedGroupedRows 0 -Campaign 'BG2'
+Test-InternalMatchPolicyTable -TablePath $bg1SelectorTablePath -ItemsPath $bg1ItemsPath -ExpectedRows 3 -ExpectedSingleRows 2 -ExpectedGroupedRows 1 -Campaign 'BG1'
 
 $deleteSource = [System.IO.File]::ReadAllText($deletePath)
 if ($deleteSource -notmatch 'weidu_action\s*=\s*1' -or $deleteSource -notmatch 'flir_removal_plan_apply') {
@@ -214,6 +260,9 @@ function New-ItmFixture {
 function Write-ItemRecord {
     param([byte[]] $Buffer, [int] $Offset, [psobject] $Item, [int] $RecordSize)
     Write-AsciiFixed $Buffer $Offset ([string] $Item.resref) 8
+    $expirationProperty = $Item.PSObject.Properties['expiration']
+    $expiration = if ($null -eq $expirationProperty) { 0 } else { [int] $expirationProperty.Value }
+    Write-U16 $Buffer ($Offset + 0x08) $expiration
     Write-U16 $Buffer ($Offset + 0x0a) ([int] $Item.charges[0])
     Write-U16 $Buffer ($Offset + 0x0c) ([int] $Item.charges[1])
     Write-U16 $Buffer ($Offset + 0x0e) ([int] $Item.charges[2])
@@ -344,6 +393,9 @@ function Write-HookFixtures {
     $internalSelectorPath = Join-Path $RunDirectory 'internal-source-selectors.2da'
     $selectorRawPath = Join-Path $RunDirectory 'selector-items.2da'
     $selectorExtensionPath = Join-Path $RunDirectory 'selector-extension.2da'
+    $groupedPolicyPath = Join-Path $RunDirectory 'grouped-policy.2da'
+    $groupedRawPath = Join-Path $RunDirectory 'grouped-items.2da'
+    $groupedReplacementPath = Join-Path $RunDirectory 'grouped-replacement.2da'
     $rawPath = Join-Path $RunDirectory 'raw-items.2da'
     $semanticGlobalPath = Join-Path $RunDirectory 'semantic-global.2da'
     $semanticRowsPath = Join-Path $RunDirectory 'semantic-rows.2da'
@@ -355,7 +407,7 @@ function Write-HookFixtures {
     )
     [System.IO.File]::WriteAllText(
         $internalSelectorPath,
-        "IDENT OBJECT_OR_SLOT`nselector-stable target-two`n",
+        "IDENT OBJECT_OR_SLOT MATCH_POLICY EXPECTED_MATCHES`nselector-stable target-two single 1`n",
         [System.Text.Encoding]::ASCII
     )
     [System.IO.File]::WriteAllText(
@@ -366,6 +418,21 @@ function Write-HookFixtures {
     [System.IO.File]::WriteAllText(
         $selectorExtensionPath,
         "2DA V1.0`n0`nOP ITEM REPLACEMENT SOURCE TIER TOKEN IDENT CHANCE SOURCE_KIND OBJECT_OR_SLOT VIRTUAL_POLICY CHARGE1 CHARGE2 CHARGE3 EXPECTED_QUANTITY`nREPLACE selitm blank select.are 1 14 selector-stable 100 area_container target-one none 0 0 0 1`n",
+        [System.Text.Encoding]::ASCII
+    )
+    [System.IO.File]::WriteAllText(
+        $groupedPolicyPath,
+        "IDENT OBJECT_OR_SLOT MATCH_POLICY EXPECTED_MATCHES`nambiguous * all_one_unit 2`n",
+        [System.Text.Encoding]::ASCII
+    )
+    [System.IO.File]::WriteAllText(
+        $groupedRawPath,
+        "2DA V1.0`n0`nITEM REPLACEMENT SOURCE TIER TOKEN IDENT CHANCE`nambitm blank ambig.cre 1 1 ambiguous 100`n",
+        [System.Text.Encoding]::ASCII
+    )
+    [System.IO.File]::WriteAllText(
+        $groupedReplacementPath,
+        "2DA V1.0`n0`nOP ITEM REPLACEMENT SOURCE TIER TOKEN IDENT CHANCE SOURCE_KIND OBJECT_OR_SLOT VIRTUAL_POLICY CHARGE1 CHARGE2 CHARGE3 EXPECTED_QUANTITY`nREPLACE ambitm blank ambig.cre 1 1 ambiguous 100 cre_inventory slot:21 none 0 0 0 1`n",
         [System.Text.Encoding]::ASCII
     )
     [System.IO.File]::WriteAllText(
@@ -393,6 +460,9 @@ function Write-HookFixtures {
         InternalSelector = $internalSelectorPath
         SelectorRaw = $selectorRawPath
         SelectorExtension = $selectorExtensionPath
+        GroupedPolicy = $groupedPolicyPath
+        GroupedRaw = $groupedRawPath
+        GroupedReplacement = $groupedReplacementPath
         Raw = $rawPath
         SemanticGlobal = $semanticGlobalPath
         SemanticRows = $semanticRowsPath
@@ -431,6 +501,9 @@ function Invoke-RemovalHarness {
         '--args', $hookFiles.InternalSelector,
         '--args', $hookFiles.SelectorRaw,
         '--args', $hookFiles.SelectorExtension,
+        '--args', $hookFiles.GroupedPolicy,
+        '--args', $hookFiles.GroupedRaw,
+        '--args', $hookFiles.GroupedReplacement,
         '--no-exit-pause',
         '--quick-log'
     )
@@ -567,6 +640,34 @@ try {
         throw 'The external source replacement did not override the internal selector default.'
     }
 
+    $grouped = Invoke-RemovalHarness -Component 13 -Name 'all-one-unit' -Case $fixtures.ambiguous
+    Assert-ReportContainsExactlyOnce -Report $grouped.Report -Line 'PLAN applied=1 disabled=0'
+    Assert-ReportContainsExactlyOnce -Report $grouped.Report -Line 'REMOVED 1 1 ambiguous'
+    $groupedRemoved = @($grouped.Report -split "`r?`n" | Where-Object { $_ -like 'REMOVED *' })
+    $groupedPlugins = @($grouped.Report -split "`r?`n" | Where-Object { $_ -like 'PLUGIN *' })
+    $groupedExtras = @($grouped.Report -split "`r?`n" | Where-Object { $_ -like 'EXTRA *' })
+    if ($groupedRemoved.Count -ne 1 -or $groupedPlugins.Count -ne 1 -or $groupedExtras.Count -ne 0) {
+        throw 'All-one-unit physical multiplicity did not collapse to exactly one logical unit.'
+    }
+    $groupedSource = [System.IO.File]::ReadAllBytes((Join-Path $grouped.RunDirectory 'override\ambig.cre'))
+    $groupedSourceItemOffset = [BitConverter]::ToUInt32($groupedSource, 0x2bc)
+    $groupedSourceItemCount = [BitConverter]::ToUInt32($groupedSource, 0x2c0)
+    $groupedSourceResref = [System.Text.Encoding]::ASCII.GetString($groupedSource, $groupedSourceItemOffset, 8).Trim([char]0)
+    if ($groupedSourceItemCount -ne 1 -or $groupedSourceResref -cne 'keepitm') {
+        throw 'All-one-unit did not remove both physical matches while preserving the unrelated CRE item.'
+    }
+    $groupedToken = [System.IO.File]::ReadAllBytes((Join-Path $grouped.RunDirectory 'override\fltier1.cre'))
+    if ([BitConverter]::ToUInt32($groupedToken, 0x2c0) -ne 1) {
+        throw 'All-one-unit emitted more than one base token item.'
+    }
+
+    $null = Invoke-RemovalHarness -Component 13 -Name 'all-one-unit-count-low' -Case $fixtures.ambiguousOne -ExpectSuccess $false -ExpectedErrorCode 'MATCH_COUNT_MISMATCH'
+    $null = Invoke-RemovalHarness -Component 13 -Name 'all-one-unit-count-high' -Case $fixtures.ambiguousThree -ExpectSuccess $false -ExpectedErrorCode 'MATCH_COUNT_MISMATCH'
+    $null = Invoke-RemovalHarness -Component 13 -Name 'all-one-unit-signature-drift' -Case $fixtures.ambiguousSignature -ExpectSuccess $false -ExpectedErrorCode 'MATCH_SIGNATURE_MISMATCH'
+    $null = Invoke-RemovalHarness -Component 13 -Name 'all-one-unit-expiration-drift' -Case $fixtures.ambiguousExpiration -ExpectSuccess $false -ExpectedErrorCode 'MATCH_SIGNATURE_MISMATCH'
+    $groupedPreserve = Invoke-RemovalHarness -Component 14 -Name 'all-one-unit-preserve-extension' -Case $fixtures.ambiguous
+    Assert-ReportContainsExactlyOnce -Report $groupedPreserve.Report -Line 'POLICY legacy=all_one_unit/2 current=single/1'
+
     $semanticFilter = Invoke-RemovalHarness -Component 9 -Name 'semantic-filter' -Case $fixtures.semanticFilter
     Assert-ReportContainsExactlyOnce -Report $semanticFilter.Report -Line 'GLOBAL_COUNT 0'
     Assert-ReportContainsExactlyOnce -Report $semanticFilter.Report -Line 'SEMANTIC_COUNT 1'
@@ -620,6 +721,10 @@ try {
     Write-Output 'PASS RemovalPlan_SourceReplaceBeforeFilter'
     Write-Output 'PASS RemovalPlan_InternalSelectorDisambiguatesAuthoredSource'
     Write-Output 'PASS RemovalPlan_ExternalSelectorReplacementOverridesInternalDefault'
+    Write-Output 'PASS RemovalPlan_ExplicitAllOneUnitMultiplicity'
+    Write-Output 'PASS RemovalPlan_AllOneUnitExpectedMatchCount'
+    Write-Output 'PASS RemovalPlan_AllOneUnitSignatureGuard'
+    Write-Output 'PASS RemovalPlan_AllOneUnitPreserveAndExtensionReset'
     Write-Output 'PASS RemovalPlan_SemanticFiltersNotFixtureAvailability'
     Write-Output 'PASS RemovalPlan_OverrideScriptSourceContentChecked'
     Write-Output 'PASS RemovalPlan_ValidationBeforeMutation'

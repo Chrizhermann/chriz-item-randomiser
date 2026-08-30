@@ -44,17 +44,75 @@
   },
   "ambiguous": {
     "items": [
-      { "resref": "ambitm", "category": 1, "charges": [0, 0, 0] }
+      { "resref": "ambitm", "category": 1, "charges": [0, 0, 0] },
+      { "resref": "keepitm", "category": 1, "charges": [0, 0, 0] }
     ],
     "creatures": {
       "ambig.cre": [
         { "resref": "ambitm", "slot": 21, "charges": [1, 0, 0], "flags": 1 },
-        { "resref": "ambitm", "slot": 22, "charges": [1, 0, 0], "flags": 1 }
+        { "resref": "ambitm", "slot": 22, "charges": [1, 0, 0], "flags": 1 },
+        { "resref": "keepitm", "slot": 23, "charges": [4, 5, 6], "flags": 1 }
       ],
       "fltier1.cre": []
     }
   },
-  "selector": {
+  "ambiguousOne": {
+    "items": [
+      { "resref": "ambitm", "category": 1, "charges": [0, 0, 0] },
+      { "resref": "keepitm", "category": 1, "charges": [0, 0, 0] }
+    ],
+    "creatures": {
+      "ambig.cre": [
+        { "resref": "ambitm", "slot": 21, "charges": [1, 0, 0], "flags": 1 },
+        { "resref": "keepitm", "slot": 23, "charges": [4, 5, 6], "flags": 1 }
+      ],
+      "fltier1.cre": []
+    }
+  },
+  "ambiguousThree": {
+    "items": [
+      { "resref": "ambitm", "category": 1, "charges": [0, 0, 0] },
+      { "resref": "keepitm", "category": 1, "charges": [0, 0, 0] }
+    ],
+    "creatures": {
+      "ambig.cre": [
+        { "resref": "ambitm", "slot": 21, "charges": [1, 0, 0], "flags": 1 },
+        { "resref": "ambitm", "slot": 22, "charges": [1, 0, 0], "flags": 1 },
+        { "resref": "ambitm", "slot": 23, "charges": [1, 0, 0], "flags": 1 },
+        { "resref": "keepitm", "slot": 24, "charges": [4, 5, 6], "flags": 1 }
+      ],
+      "fltier1.cre": []
+      }
+    },
+  "ambiguousSignature": {
+      "items": [
+        { "resref": "ambitm", "category": 1, "charges": [0, 0, 0] },
+        { "resref": "keepitm", "category": 1, "charges": [0, 0, 0] }
+      ],
+      "creatures": {
+        "ambig.cre": [
+          { "resref": "ambitm", "slot": 21, "charges": [1, 0, 0], "flags": 1 },
+          { "resref": "ambitm", "slot": 22, "charges": [2, 0, 0], "flags": 1 },
+          { "resref": "keepitm", "slot": 23, "charges": [4, 5, 6], "flags": 1 }
+        ],
+        "fltier1.cre": []
+      }
+    },
+  "ambiguousExpiration": {
+      "items": [
+        { "resref": "ambitm", "category": 1, "charges": [0, 0, 0] },
+        { "resref": "keepitm", "category": 1, "charges": [0, 0, 0] }
+      ],
+      "creatures": {
+        "ambig.cre": [
+          { "resref": "ambitm", "slot": 21, "expiration": 0, "charges": [1, 0, 0], "flags": 1 },
+          { "resref": "ambitm", "slot": 22, "expiration": 7, "charges": [1, 0, 0], "flags": 1 },
+          { "resref": "keepitm", "slot": 23, "charges": [4, 5, 6], "flags": 1 }
+        ],
+        "fltier1.cre": []
+      }
+    },
+    "selector": {
     "items": [
       { "resref": "selitm", "category": 1, "charges": [0, 0, 0] }
     ],

@@ -252,6 +252,13 @@ DEFINE_PATCH_MACRO flir_source_decl_derive_kind BEGIN
 END
 
 DEFINE_PATCH_MACRO flir_source_decl_store_current BEGIN
+  PATCH_IF !VARIABLE_IS_SET match_policy
+        OR "%match_policy%" STRING_EQUAL_CASE "" BEGIN
+    SPRINT match_policy "single"
+  END
+  PATCH_IF !VARIABLE_IS_SET expected_matches BEGIN
+    SET expected_matches = 1
+  END
   LPM flir_source_decl_make_key
   LPM flir_source_decl_derive_kind
 
@@ -332,6 +339,8 @@ DEFINE_PATCH_MACRO flir_source_decl_store_current BEGIN
   SPRINT $flir_source_decl_declared_charge2("%flir_source_decl_key%") "%declared_charge2%"
   SPRINT $flir_source_decl_declared_charge3("%flir_source_decl_key%") "%declared_charge3%"
   SPRINT $flir_source_decl_expected_quantity("%flir_source_decl_key%") "%expected_quantity%"
+  SPRINT $flir_source_decl_match_policy("%flir_source_decl_key%") "%match_policy%"
+  SPRINT $flir_source_decl_expected_matches("%flir_source_decl_key%") "%expected_matches%"
   SPRINT $flir_source_decl_tier_hook("%flir_source_decl_key%") "%flir_source_decl_row_tier_hook%"
 END
 
@@ -350,6 +359,8 @@ DEFINE_PATCH_MACRO flir_source_stage1_raw BEGIN
   LOCAL_SET declared_charge2 = 0
   LOCAL_SET declared_charge3 = 0
   LOCAL_SET expected_quantity = 1
+  LOCAL_SPRINT match_policy "single"
+  LOCAL_SET expected_matches = 1
   LOCAL_SPRINT flir_source_decl_update_mode "add"
   LOCAL_SPRINT flir_source_decl_enabled_value "1"
 
@@ -364,16 +375,19 @@ DEFINE_PATCH_MACRO flir_source_stage1_raw BEGIN
     SET declared_charge2 = 0
     SET declared_charge3 = 0
     SET expected_quantity = 1
+    SPRINT match_policy "single"
+    SET expected_matches = 1
     SPRINT flir_source_decl_update_mode "add"
     SPRINT flir_source_decl_enabled_value "1"
     LPM flir_source_decl_store_current
   END
 END
 
-// Checked-in selector tables disambiguate authored legacy rows whose source
-// resource legitimately contains more than one matching item instance. Apply
-// these defaults before filtering; the later extension hook may still replace
-// the complete declaration.
+// Checked-in match-policy tables describe the small audited set of authored
+// legacy rows whose source legitimately contains more than one matching item
+// instance. Apply these defaults before filtering; the later extension hook
+// may still replace the complete declaration with the strict single-match
+// default.
 DEFINE_ACTION_MACRO flir_source_apply_internal_selector_table BEGIN
   ACTION_IF !VARIABLE_IS_SET flir_source_internal_selector_table
         OR "%flir_source_internal_selector_table%" STRING_EQUAL_CASE ""
@@ -383,12 +397,15 @@ DEFINE_ACTION_MACRO flir_source_apply_internal_selector_table BEGIN
 
   ACTION_CLEAR_ARRAY flir_source_internal_selector_seen
   COPY - "%flir_source_internal_selector_table%" "flir-removal-read/internal-source-selectors.2da"
-    READ_2DA_ENTRIES_NOW flir_source_internal_selector_rows 2
+    READ_2DA_ENTRIES_NOW flir_source_internal_selector_rows 4
     FOR (i = 1; i < flir_source_internal_selector_rows; ++i) BEGIN
       READ_2DA_ENTRY_FORMER flir_source_internal_selector_rows i 0 flir_source_internal_selector_ident
       READ_2DA_ENTRY_FORMER flir_source_internal_selector_rows i 1 flir_source_internal_selector_value
+      READ_2DA_ENTRY_FORMER flir_source_internal_selector_rows i 2 flir_source_internal_match_policy
+      READ_2DA_ENTRY_FORMER flir_source_internal_selector_rows i 3 flir_source_internal_expected_matches
       TO_LOWER flir_source_internal_selector_ident
       TO_LOWER flir_source_internal_selector_value
+      TO_LOWER flir_source_internal_match_policy
       INNER_PATCH_SAVE flir_source_internal_selector_value "%flir_source_internal_selector_value%" BEGIN
         REPLACE_TEXTUALLY " " ""
       END
@@ -397,23 +414,53 @@ DEFINE_ACTION_MACRO flir_source_apply_internal_selector_table BEGIN
             OR "%flir_source_internal_selector_ident%" STRING_EQUAL_CASE "x" BEGIN
         PATCH_FAIL ~FLIR_REMOVAL_ERR INTERNAL_SELECTOR_TARGET tier= token= ident=%flir_source_internal_selector_ident%~
       END
+      PATCH_IF "%flir_source_internal_selector_ident%" STRING_MATCHES_REGEXP "^[a-z0-9_.:-]+$" != 0
+            OR "%flir_source_internal_selector_value%" STRING_MATCHES_REGEXP "^[a-z0-9_.:*-]+$" != 0 BEGIN
+        PATCH_FAIL ~FLIR_REMOVAL_ERR INTERNAL_SELECTOR_FORMAT tier= token= ident=%flir_source_internal_selector_ident%~
+      END
       PATCH_IF VARIABLE_IS_SET $flir_source_internal_selector_seen("%flir_source_internal_selector_ident%") BEGIN
         PATCH_FAIL ~FLIR_REMOVAL_ERR INTERNAL_SELECTOR_DUPLICATE tier= token= ident=%flir_source_internal_selector_ident%~
       END
       SPRINT $flir_source_internal_selector_seen("%flir_source_internal_selector_ident%") "1"
 
-      PATCH_IF "%flir_source_internal_selector_value%" STRING_EQUAL_CASE ""
-            OR "%flir_source_internal_selector_value%" STRING_EQUAL_CASE "*"
-            OR "%flir_source_internal_selector_value%" STRING_EQUAL_CASE "any"
-            OR "%flir_source_internal_selector_value%" STRING_EQUAL_CASE "none" BEGIN
-        PATCH_FAIL ~FLIR_REMOVAL_ERR INTERNAL_SELECTOR_EMPTY tier= token= ident=%flir_source_internal_selector_ident%~
+      PATCH_IF "%flir_source_internal_expected_matches%" STRING_MATCHES_REGEXP "^[0-9]+$" != 0 BEGIN
+        PATCH_FAIL ~FLIR_REMOVAL_ERR INTERNAL_MATCH_COUNT tier= token= ident=%flir_source_internal_selector_ident%~
       END
+      SET flir_source_internal_expected_matches_value = flir_source_internal_expected_matches
 
       SPRINT flir_source_internal_selector_key "ident:%flir_source_internal_selector_ident%"
       PATCH_IF !VARIABLE_IS_SET $flir_source_decl_exists("%flir_source_internal_selector_key%") BEGIN
         PATCH_FAIL ~FLIR_REMOVAL_ERR INTERNAL_SELECTOR_TARGET tier= token= ident=%flir_source_internal_selector_ident%~
       END
+      PATCH_IF "%flir_source_internal_match_policy%" STRING_EQUAL_CASE "single" BEGIN
+        PATCH_IF "%flir_source_internal_selector_value%" STRING_EQUAL_CASE ""
+              OR "%flir_source_internal_selector_value%" STRING_EQUAL_CASE "*"
+              OR "%flir_source_internal_selector_value%" STRING_EQUAL_CASE "any"
+              OR "%flir_source_internal_selector_value%" STRING_EQUAL_CASE "none" BEGIN
+          PATCH_FAIL ~FLIR_REMOVAL_ERR INTERNAL_SELECTOR_EMPTY tier= token= ident=%flir_source_internal_selector_ident%~
+        END
+        PATCH_IF flir_source_internal_expected_matches_value != 1 BEGIN
+          PATCH_FAIL ~FLIR_REMOVAL_ERR INTERNAL_MATCH_COUNT tier= token= ident=%flir_source_internal_selector_ident%~
+        END
+      END ELSE PATCH_IF "%flir_source_internal_match_policy%" STRING_EQUAL_CASE "all_one_unit" BEGIN
+        PATCH_IF flir_source_internal_expected_matches_value < 2 BEGIN
+          PATCH_FAIL ~FLIR_REMOVAL_ERR INTERNAL_MATCH_COUNT tier= token= ident=%flir_source_internal_selector_ident%~
+        END
+        PATCH_IF NOT ("%flir_source_internal_selector_value%" STRING_EQUAL_CASE "*")
+              AND NOT ("%flir_source_internal_selector_value%" STRING_EQUAL_CASE "any") BEGIN
+          PATCH_FAIL ~FLIR_REMOVAL_ERR INTERNAL_MATCH_SELECTOR tier= token= ident=%flir_source_internal_selector_ident%~
+        END
+        SPRINT flir_source_internal_kind $flir_source_decl_source_kind("%flir_source_internal_selector_key%")
+        PATCH_IF NOT ("%flir_source_internal_kind%" STRING_EQUAL_CASE "cre_inventory") BEGIN
+          PATCH_FAIL ~FLIR_REMOVAL_ERR MATCH_POLICY_KIND tier= token= ident=%flir_source_internal_selector_ident%~
+        END
+        SPRINT flir_source_internal_selector_value "*"
+      END ELSE BEGIN
+        PATCH_FAIL ~FLIR_REMOVAL_ERR INTERNAL_MATCH_POLICY tier= token= ident=%flir_source_internal_selector_ident%~
+      END
       SPRINT $flir_source_decl_object_or_slot("%flir_source_internal_selector_key%") "%flir_source_internal_selector_value%"
+      SPRINT $flir_source_decl_match_policy("%flir_source_internal_selector_key%") "%flir_source_internal_match_policy%"
+      SPRINT $flir_source_decl_expected_matches("%flir_source_internal_selector_key%") "%flir_source_internal_expected_matches_value%"
     END
 END
 
@@ -449,6 +496,8 @@ DEFINE_ACTION_MACRO flir_source_apply_extension_hook BEGIN
         TO_LOWER source_kind
         TO_LOWER object_or_slot
         TO_LOWER virtual_policy
+        SPRINT match_policy "single"
+        SET expected_matches = 1
         SPRINT flir_source_decl_enabled_value "1"
         PATCH_IF "%flir_source_extension_op%" STRING_EQUAL_CASE "replace" BEGIN
           SPRINT flir_source_decl_update_mode "replace"
@@ -488,6 +537,8 @@ DEFINE_ACTION_MACRO flir_source_legacy_snapshot_reset BEGIN
   ACTION_CLEAR_ARRAY flir_source_legacy_decl_declared_charge2
   ACTION_CLEAR_ARRAY flir_source_legacy_decl_declared_charge3
   ACTION_CLEAR_ARRAY flir_source_legacy_decl_expected_quantity
+  ACTION_CLEAR_ARRAY flir_source_legacy_decl_match_policy
+  ACTION_CLEAR_ARRAY flir_source_legacy_decl_expected_matches
 END
 
 DEFINE_ACTION_MACRO flir_source_filter_stage1 BEGIN
@@ -640,6 +691,8 @@ DEFINE_ACTION_MACRO flir_source_filter_stage1_legacy_ident_filter BEGIN
             OUTER_SET $flir_source_legacy_decl_declared_charge2("%flir_source_key%") = 0
             OUTER_SET $flir_source_legacy_decl_declared_charge3("%flir_source_key%") = 0
             OUTER_SET $flir_source_legacy_decl_expected_quantity("%flir_source_key%") = 1
+            OUTER_SPRINT $flir_source_legacy_decl_match_policy("%flir_source_key%") ~single~
+            OUTER_SET $flir_source_legacy_decl_expected_matches("%flir_source_key%") = 1
             ACTION_IF VARIABLE_IS_SET $flir_source_decl_source_kind("%flir_source_key%") BEGIN
               OUTER_SPRINT $flir_source_legacy_decl_source_kind("%flir_source_key%") $flir_source_decl_source_kind("%flir_source_key%")
             END
@@ -660,6 +713,12 @@ DEFINE_ACTION_MACRO flir_source_filter_stage1_legacy_ident_filter BEGIN
             END
             ACTION_IF VARIABLE_IS_SET $flir_source_decl_expected_quantity("%flir_source_key%") BEGIN
               OUTER_SET $flir_source_legacy_decl_expected_quantity("%flir_source_key%") = $flir_source_decl_expected_quantity("%flir_source_key%")
+            END
+            ACTION_IF VARIABLE_IS_SET $flir_source_decl_match_policy("%flir_source_key%") BEGIN
+              OUTER_SPRINT $flir_source_legacy_decl_match_policy("%flir_source_key%") $flir_source_decl_match_policy("%flir_source_key%")
+            END
+            ACTION_IF VARIABLE_IS_SET $flir_source_decl_expected_matches("%flir_source_key%") BEGIN
+              OUTER_SET $flir_source_legacy_decl_expected_matches("%flir_source_key%") = $flir_source_decl_expected_matches("%flir_source_key%")
             END
           END
         END
@@ -755,6 +814,8 @@ DEFINE_ACTION_MACRO flir_source_adopt_direct_virtual_rows BEGIN
         OUTER_SET $flir_source_decl_declared_charge2("%flir_source_direct_key%") = 0
         OUTER_SET $flir_source_decl_declared_charge3("%flir_source_direct_key%") = 0
         OUTER_SET $flir_source_decl_expected_quantity("%flir_source_direct_key%") = 1
+        OUTER_SPRINT $flir_source_decl_match_policy("%flir_source_direct_key%") ~single~
+        OUTER_SET $flir_source_decl_expected_matches("%flir_source_direct_key%") = 1
         OUTER_SPRINT $flir_source_decl_birth_campaign("%flir_source_direct_key%") ~%flir_source_direct_campaign%~
         OUTER_SPRINT $flir_source_decl_birth_tier("%flir_source_direct_key%") ~%flir_source_direct_tier%~
         OUTER_SPRINT $flir_source_decl_birth_stable("%flir_source_direct_key%") ~%flir_source_direct_stable%~
@@ -769,6 +830,8 @@ DEFINE_ACTION_MACRO flir_source_adopt_direct_virtual_rows BEGIN
           OUTER_SET $flir_source_legacy_decl_declared_charge2("%flir_source_direct_key%") = 0
           OUTER_SET $flir_source_legacy_decl_declared_charge3("%flir_source_direct_key%") = 0
           OUTER_SET $flir_source_legacy_decl_expected_quantity("%flir_source_direct_key%") = 1
+          OUTER_SPRINT $flir_source_legacy_decl_match_policy("%flir_source_direct_key%") ~single~
+          OUTER_SET $flir_source_legacy_decl_expected_matches("%flir_source_direct_key%") = 1
         END
       END
     END
@@ -936,6 +999,7 @@ DEFINE_PATCH_MACRO flir_removal_scan_cre BEGIN
   READ_LONG 0x2bc flir_cre_items_off ELSE 0
   READ_LONG 0x2c0 flir_cre_items_count ELSE 0
   SET flir_match_count = 0
+  SET flir_group_signature_set = 0
   FOR (flir_i = 0; flir_i < flir_cre_items_count; ++flir_i) BEGIN
     READ_ASCII (flir_cre_items_off + 0x14 * flir_i) flir_candidate ELSE blank
     PATCH_IF "%flir_candidate%" STRING_EQUAL_CASE "%itm_to_del%" BEGIN
@@ -966,21 +1030,78 @@ DEFINE_PATCH_MACRO flir_removal_scan_cre BEGIN
         SET flir_record_offset = flir_cre_items_off + 0x14 * flir_i
         SET flir_record_size = 0x14
         LPF flir_removal_hash_slice INT_VAR offset = flir_record_offset length = flir_record_size RET flir_record_hash = hash END
+        READ_SHORT flir_record_offset + 0x08 flir_expiration ELSE 0
         READ_SHORT flir_record_offset + 0x0a flir_charge1 ELSE 0
         READ_SHORT flir_record_offset + 0x0c flir_charge2 ELSE 0
         READ_SHORT flir_record_offset + 0x0e flir_charge3 ELSE 0
         READ_LONG flir_record_offset + 0x10 flir_flags ELSE 0
         SET flir_quantity = 1
         SPRINT flir_container_identity "*"
+        PATCH_IF "%flir_match_policy%" STRING_EQUAL_CASE "all_one_unit" BEGIN
+          PATCH_IF flir_group_signature_set = 0 BEGIN
+            SET flir_group_signature_expiration = flir_expiration
+            SET flir_group_signature_charge1 = flir_charge1
+            SET flir_group_signature_charge2 = flir_charge2
+            SET flir_group_signature_charge3 = flir_charge3
+            SET flir_group_signature_flags = flir_flags
+            SET flir_group_signature_set = 1
+          END ELSE PATCH_IF flir_expiration != flir_group_signature_expiration
+                OR flir_charge1 != flir_group_signature_charge1
+                OR flir_charge2 != flir_group_signature_charge2
+                OR flir_charge3 != flir_group_signature_charge3
+                OR flir_flags != flir_group_signature_flags BEGIN
+            PATCH_FAIL ~FLIR_REMOVAL_ERR MATCH_SIGNATURE_MISMATCH tier=%removed_tier% token=%removed_token% ident=%removed_ident%~
+          END
+        END
       END
     END
   END
-  PATCH_IF flir_match_count = 0 BEGIN
-    SET flir_removal_plan_disabled_count += 1
-  END ELSE PATCH_IF flir_match_count > 1 BEGIN
-    PATCH_FAIL ~FLIR_REMOVAL_ERR AMBIGUOUS_SOURCE tier=%removed_tier% token=%removed_token% ident=%removed_ident%~
+  PATCH_IF "%flir_match_policy%" STRING_EQUAL_CASE "all_one_unit" BEGIN
+    PATCH_IF flir_match_count != flir_expected_matches BEGIN
+      PATCH_FAIL ~FLIR_REMOVAL_ERR MATCH_COUNT_MISMATCH tier=%removed_tier% token=%removed_token% ident=%removed_ident%~
+    END
+
+    // Re-scan only after the exact-count and signature preconditions pass.
+    // Each physical record gets a plan, but only the first logical record is
+    // allowed to emit a registry unit/token. Apply removes records from the
+    // highest index downward, so every captured offset remains valid.
+    SET flir_group_emit_index = 0
+    FOR (flir_i = 0; flir_i < flir_cre_items_count; ++flir_i) BEGIN
+      READ_ASCII (flir_cre_items_off + 0x14 * flir_i) flir_candidate ELSE blank
+      PATCH_IF "%flir_candidate%" STRING_EQUAL_CASE "%itm_to_del%" BEGIN
+        SET flir_record_index = flir_i
+        SET flir_record_offset = flir_cre_items_off + 0x14 * flir_i
+        SET flir_record_size = 0x14
+        LPF flir_removal_hash_slice INT_VAR offset = flir_record_offset length = flir_record_size RET flir_record_hash = hash END
+        READ_SHORT flir_record_offset + 0x0a flir_charge1 ELSE 0
+        READ_SHORT flir_record_offset + 0x0c flir_charge2 ELSE 0
+        READ_SHORT flir_record_offset + 0x0e flir_charge3 ELSE 0
+        READ_LONG flir_record_offset + 0x10 flir_flags ELSE 0
+        SET flir_quantity = 1
+        SPRINT flir_container_identity "*"
+        SPRINT flir_slot_identity "*"
+        FOR (flir_slot = 0; flir_slot < 37; ++flir_slot) BEGIN
+          READ_SHORT (flir_cre_slots_off + 2 * flir_slot) flir_slot_ref ELSE 0xffff
+          PATCH_IF flir_slot_ref = flir_i BEGIN
+            SPRINT flir_slot_identity "slot:%flir_slot%"
+          END
+        END
+        SET flir_group_emit_index += 1
+        SET flir_emit_unit = 0
+        PATCH_IF flir_group_emit_index = 1 BEGIN
+          SET flir_emit_unit = 1
+        END
+        LPM flir_removal_plan_add_current
+      END
+    END
   END ELSE BEGIN
-    LPM flir_removal_plan_add_current
+    PATCH_IF flir_match_count = 0 BEGIN
+      SET flir_removal_plan_disabled_count += 1
+    END ELSE PATCH_IF flir_match_count > 1 BEGIN
+      PATCH_FAIL ~FLIR_REMOVAL_ERR AMBIGUOUS_SOURCE tier=%removed_tier% token=%removed_token% ident=%removed_ident%~
+    END ELSE BEGIN
+      LPM flir_removal_plan_add_current
+    END
   END
 END
 
@@ -1194,6 +1315,8 @@ DEFINE_ACTION_MACRO flir_removal_plan_build_duplicate_current BEGIN
             OR "%flir_plan_kind%" STRING_EQUAL_CASE "cre_inventory"
             OR "%flir_plan_kind%" STRING_EQUAL_CASE "store" BEGIN
         OUTER_SPRINT flir_object_or_slot "*"
+        OUTER_SPRINT flir_match_policy "single"
+        OUTER_SET flir_expected_matches = 1
         OUTER_SET flir_category = 0
         OUTER_SET flir_emit_unit = 0
         OUTER_SET flir_emit_count = 0
@@ -1279,6 +1402,8 @@ DEFINE_ACTION_MACRO flir_removal_plan_build_item BEGIN
       OUTER_SPRINT flir_source_kind "auto"
       OUTER_SPRINT flir_object_or_slot "*"
       OUTER_SPRINT flir_virtual_policy ""
+      OUTER_SPRINT flir_match_policy "single"
+      OUTER_SET flir_expected_matches = 1
       OUTER_SPRINT flir_plan_adapter ""
       OUTER_SET flir_virtual_quantity = 1
       OUTER_SET flir_virtual_charge1 = flir_item_default_charge1
@@ -1293,6 +1418,12 @@ DEFINE_ACTION_MACRO flir_removal_plan_build_item BEGIN
         END
         ACTION_IF VARIABLE_IS_SET $flir_source_legacy_decl_virtual_policy("%flir_source_key%") BEGIN
           OUTER_SPRINT flir_virtual_policy $flir_source_legacy_decl_virtual_policy("%flir_source_key%")
+        END
+        ACTION_IF VARIABLE_IS_SET $flir_source_legacy_decl_match_policy("%flir_source_key%") BEGIN
+          OUTER_SPRINT flir_match_policy $flir_source_legacy_decl_match_policy("%flir_source_key%")
+        END
+        ACTION_IF VARIABLE_IS_SET $flir_source_legacy_decl_expected_matches("%flir_source_key%") BEGIN
+          OUTER_SET flir_expected_matches = $flir_source_legacy_decl_expected_matches("%flir_source_key%")
         END
         ACTION_IF "%flir_virtual_policy%" STRING_EQUAL_CASE "explicit" BEGIN
           ACTION_IF VARIABLE_IS_SET $flir_source_legacy_decl_expected_quantity("%flir_source_key%") BEGIN
@@ -1317,6 +1448,12 @@ DEFINE_ACTION_MACRO flir_removal_plan_build_item BEGIN
         END
         ACTION_IF VARIABLE_IS_SET $flir_source_decl_virtual_policy("%flir_source_key%") BEGIN
           OUTER_SPRINT flir_virtual_policy $flir_source_decl_virtual_policy("%flir_source_key%")
+        END
+        ACTION_IF VARIABLE_IS_SET $flir_source_decl_match_policy("%flir_source_key%") BEGIN
+          OUTER_SPRINT flir_match_policy $flir_source_decl_match_policy("%flir_source_key%")
+        END
+        ACTION_IF VARIABLE_IS_SET $flir_source_decl_expected_matches("%flir_source_key%") BEGIN
+          OUTER_SET flir_expected_matches = $flir_source_decl_expected_matches("%flir_source_key%")
         END
         ACTION_IF "%flir_virtual_policy%" STRING_EQUAL_CASE "explicit" BEGIN
           ACTION_IF VARIABLE_IS_SET $flir_source_decl_expected_quantity("%flir_source_key%") BEGIN
@@ -1350,6 +1487,23 @@ DEFINE_ACTION_MACRO flir_removal_plan_build_item BEGIN
       END
       ACTION_IF "%flir_source_kind%" STRING_EQUAL_CASE "legacy_adapter" BEGIN
         LAM flir_removal_legacy_adapter_pre
+      END
+
+      ACTION_IF "%flir_match_policy%" STRING_EQUAL_CASE "single" BEGIN
+        ACTION_IF flir_expected_matches != 1 BEGIN
+          LAF flir_removal_fail STR_VAR code = ~MATCH_COUNT_POLICY~ tier = EVAL ~%removed_tier%~ token = EVAL ~%removed_token%~ ident = EVAL ~%removed_ident%~ END
+        END
+      END ELSE ACTION_IF "%flir_match_policy%" STRING_EQUAL_CASE "all_one_unit" BEGIN
+        ACTION_IF flir_expected_matches < 2
+              OR NOT ("%flir_source_kind%" STRING_EQUAL_CASE "cre_inventory") BEGIN
+          LAF flir_removal_fail STR_VAR code = ~MATCH_POLICY_KIND~ tier = EVAL ~%removed_tier%~ token = EVAL ~%removed_token%~ ident = EVAL ~%removed_ident%~ END
+        END
+        ACTION_IF NOT ("%flir_object_or_slot%" STRING_EQUAL_CASE "*")
+              AND NOT ("%flir_object_or_slot%" STRING_EQUAL_CASE "any") BEGIN
+          LAF flir_removal_fail STR_VAR code = ~MATCH_POLICY_SELECTOR~ tier = EVAL ~%removed_tier%~ token = EVAL ~%removed_token%~ ident = EVAL ~%removed_ident%~ END
+        END
+      END ELSE BEGIN
+        LAF flir_removal_fail STR_VAR code = ~MATCH_POLICY~ tier = EVAL ~%removed_tier%~ token = EVAL ~%removed_token%~ ident = EVAL ~%removed_ident%~ END
       END
 
       ACTION_IF "%flir_source_kind%" STRING_EQUAL_CASE "virtual" BEGIN

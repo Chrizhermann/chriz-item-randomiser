@@ -1,0 +1,4 @@
+IDENT  OBJECT_OR_SLOT  MATCH_POLICY  EXPECTED_MATCHES
+bsc    *               all_one_unit  2
+bs11   container4      single        1
+bs12   container4      single        1
