@@ -1,0 +1,35 @@
+{
+  "planPath": "docs/plans/2026-08-31-synchronous-eeex-delivery-implementation.md",
+  "tasks": [
+    {
+      "id": 0,
+      "subject": "Task 1: Convert the transaction core to synchronous execution",
+      "status": "pending"
+    },
+    {
+      "id": 1,
+      "subject": "Task 2: Replace the EEex queue adapter with instant execution",
+      "status": "pending",
+      "blockedBy": [0]
+    },
+    {
+      "id": 2,
+      "subject": "Task 3: Make the runtime probe enforce the no-queue contract",
+      "status": "pending",
+      "blockedBy": [1]
+    },
+    {
+      "id": 3,
+      "subject": "Task 4: Run the complete local verification matrix",
+      "status": "pending",
+      "blockedBy": [2]
+    },
+    {
+      "id": 4,
+      "subject": "Task 5: Reinstall and runtime-test only the disposable EET copy",
+      "status": "pending",
+      "blockedBy": [3]
+    }
+  ],
+  "lastUpdated": "2026-08-31T05:20:00+09:00"
+}
