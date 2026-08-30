@@ -4,12 +4,12 @@
     {
       "id": 0,
       "subject": "Task 1: Convert the transaction core to synchronous execution",
-      "status": "pending"
+      "status": "completed"
     },
     {
       "id": 1,
       "subject": "Task 2: Replace the EEex queue adapter with instant execution",
-      "status": "pending",
+      "status": "in_progress",
       "blockedBy": [0]
     },
     {
@@ -31,5 +31,5 @@
       "blockedBy": [3]
     }
   ],
-  "lastUpdated": "2026-08-31T05:20:00+09:00"
+  "lastUpdated": "2026-08-31T05:32:00+09:00"
 }

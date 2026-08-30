@@ -17,8 +17,8 @@ Core.MAX_GLOBAL = 2147483646
 Core.PHASE = {
     NONE = 0,
     PREPARED = 1,
-    QUEUED = 2,
-    ACKED = 3,
+    EXECUTING = 2,
+    VERIFIED = 3,
     QUARANTINED = 4,
 }
 
@@ -30,7 +30,7 @@ Core.REASON = {
     LOCKED_UNOBSERVABLE = 4,
     FINGERPRINT_MISMATCH = 5,
     TRANSACTION_INVALID = 6,
-    QUEUE_FAILURE = 7,
+    EXECUTION_FAILURE = 7,
     ASSIGNMENT_CHANGED = 8,
     ENGINE_FAILURE = 9,
     LOCKED_UNSAFE = 10,
@@ -399,7 +399,7 @@ local REQUIRED_ENGINE_METHODS = {
     "choose_variant",
     "observe_endpoint",
     "list_items",
-    "queue_delivery",
+    "execute_delivery",
     "report_error",
 }
 
@@ -454,9 +454,8 @@ function Core.new(engine, manifest)
     self.engine = engine
     self.manifest = manifest
     self.indices = build_indices(manifest)
-    self.after_teardown = false
     self.reported_errors = {}
-    self.ephemeral_ack = {}
+    self.retry_blocked = {}
     return self
 end
 
@@ -797,8 +796,18 @@ function Controller:_select_endpoint(base_endpoint_id, token)
         if observation.observable and observation.eligible then
             return endpoint_id, observation
         end
-        if not observation.observable and not observation.settled then
-            return nil, nil, "settling"
+        local reason = string.lower(tostring(observation.reason or ""))
+        if not observation.observable then
+            if reason == "missing" then
+                return nil, nil, "deferred"
+            end
+            if not observation.settled then
+                return nil, nil, "settling"
+            end
+            return nil, nil, "unobservable"
+        end
+        if reason ~= "dead" and reason ~= "full" then
+            return nil, nil, "unavailable"
         end
         endpoint_id = endpoint.fallback_id
     end
@@ -807,12 +816,7 @@ end
 
 function Controller:_submit(transaction, global_name, token, endpoint_id, signature)
     local endpoint = self.manifest.endpoints_by_id[endpoint_id]
-    self:_set_phase(Core.PHASE.QUEUED, Core.REASON.NONE)
-    local acknowledge = function(received_nonce)
-        self:guarded_callback("delivery_ack", function()
-            self:ack(received_nonce)
-        end)
-    end
+    self:_set_phase(Core.PHASE.EXECUTING, Core.REASON.NONE)
     local item = {
         resref = signature.resref,
         charges = {
@@ -826,23 +830,19 @@ function Controller:_submit(transaction, global_name, token, endpoint_id, signat
         global = global_name,
         unit_id = token.unit_id,
     }
-    local ok, accepted = pcall(self.engine.queue_delivery, self.engine,
-        endpoint_id, endpoint, item, transaction.nonce, acknowledge)
-    if ok and accepted == false then
-        -- A literal false is the adapter's definitive "nothing queued"
-        -- result.  It is safe to release the singleton journal and retain only
-        -- this token's retryable diagnostic.
-        self:_quarantine_new(token, Core.REASON.QUEUE_FAILURE,
-            "queue rejected before submission")
-        self:_clear_transaction()
-        return "rejected"
+    local ok, accepted = pcall(self.engine.execute_delivery, self.engine,
+        endpoint_id, endpoint, item)
+    local execution_failure
+    if not ok then
+        execution_failure = tostring(accepted)
+    elseif accepted ~= true then
+        execution_failure = "instant executor rejected delivery"
     end
-    if not ok or accepted ~= true then
-        self:_set_phase(Core.PHASE.QUARANTINED, Core.REASON.QUEUE_FAILURE)
-        self:_report_once("QUEUE_FAILURE", ok and "rejected" or tostring(accepted))
-        return "ambiguous"
-    end
-    return "accepted"
+
+    -- The executor may throw after the engine has already applied the action.
+    -- The only authoritative result is the locked endpoint's exact count.
+    self:_continue_transaction(self:_read_transaction(), execution_failure)
+    return "executed"
 end
 
 function Controller:_start_transaction(global_name, token, slot_value)
@@ -863,7 +863,8 @@ function Controller:_start_transaction(global_name, token, slot_value)
 
     local selected_id, observation, select_error = self:_select_endpoint(endpoint_id, token)
     if not selected_id then
-        if select_error == "wrong-area" or select_error == "settling" then
+        if select_error == "wrong-area" or select_error == "settling" or
+            select_error == "deferred" then
             return "deferred"
         end
         self:_quarantine_new(token, Core.REASON.ENDPOINT_UNAVAILABLE,
@@ -895,21 +896,16 @@ function Controller:_start_transaction(global_name, token, slot_value)
         signature.selector, nil)
     local transaction = self:_read_transaction()
     transaction.nonce = nonce
-    local submit_result = self:_submit(transaction, global_name, token,
-        selected_id, signature)
-    if submit_result == "rejected" then
-        return "quarantined"
-    end
+    self:_submit(transaction, global_name, token, selected_id, signature)
     return "started"
 end
 
 function Controller:_commit(global_name)
     self:_set_global(global_name, -1)
     self:_clear_transaction()
-    self.after_teardown = false
 end
 
-function Controller:_continue_transaction(transaction)
+function Controller:_continue_transaction(transaction, execution_failure)
     if not self:_fingerprint_matches_globals() then
         self:_set_phase(Core.PHASE.QUARANTINED, Core.REASON.FINGERPRINT_MISMATCH)
         self:_report_once("FINGERPRINT_MISMATCH", "persisted transaction")
@@ -924,29 +920,35 @@ function Controller:_continue_transaction(transaction)
         return
     end
 
-    -- PREPARED is written before QUEUED, and QUEUED is written before the
-    -- transport call.  A recovered PREPARED record therefore proves that no
-    -- delivery was submitted.  Once its persisted identity is known to be
-    -- valid, clear it before comparing the live assignment: another mod may
-    -- legitimately remove or reassign that token during the crash window.
-    -- The next poll will reselect the endpoint and take a fresh baseline.
+    -- PREPARED is durable before EXECUTING.  Recovering it proves that the
+    -- instant action was never invoked, so it can be cleared and replanned.
     if transaction.phase == Core.PHASE.PREPARED then
         self:_clear_transaction()
-        self.after_teardown = false
         return
     end
 
     local assignment = self:_get_global(global_name)
-    local assignment_already_delivered = assignment == -1
-    if not assignment_already_delivered and assignment ~= transaction.slot_value then
+    if assignment == -1 then
+        self:_clear_transaction()
+        return
+    end
+    if assignment ~= transaction.slot_value then
         self:_set_phase(Core.PHASE.QUARANTINED, Core.REASON.ASSIGNMENT_CHANGED)
         self:_report_once("ASSIGNMENT_CHANGED", global_name)
         return
     end
-    if assignment_already_delivered and
-        (transaction.phase == Core.PHASE.ACKED or self.after_teardown) then
-        self:_clear_transaction()
-        self.after_teardown = false
+
+    -- VERIFIED is written only after an exact baseline delta was observed.
+    -- If a save/load lands in this tiny window, the durable proof is enough to
+    -- finish the assignment commit without executing or inserting again.
+    if transaction.phase == Core.PHASE.VERIFIED then
+        self:_commit(global_name)
+        return
+    end
+
+    if transaction.phase == Core.PHASE.QUARANTINED and
+        transaction.reason ~= Core.REASON.LOCKED_UNOBSERVABLE and
+        transaction.reason ~= Core.REASON.LOCKED_UNSAFE then
         return
     end
 
@@ -970,13 +972,8 @@ function Controller:_continue_transaction(transaction)
     -- the loot pile.  Visibility and exact count are therefore insufficient
     -- unless the adapter also proves the locked endpoint remains lootable.
     if not observation.verifiable then
-        if self.after_teardown then
-            self:_clear_transaction()
-            self.after_teardown = false
-        else
-            self:_set_phase(Core.PHASE.QUARANTINED, Core.REASON.LOCKED_UNSAFE)
-            self:_report_once("LOCKED_UNSAFE", endpoint_id)
-        end
+        self:_set_phase(Core.PHASE.QUARANTINED, Core.REASON.LOCKED_UNSAFE)
+        self:_report_once("LOCKED_UNSAFE", endpoint_id)
         return
     end
 
@@ -987,33 +984,22 @@ function Controller:_continue_transaction(transaction)
         return
     end
     if count >= transaction.baseline + transaction.quantity then
-        if assignment_already_delivered and
-            transaction.phase ~= Core.PHASE.ACKED and not self.after_teardown then
-            return
-        end
-        if assignment_already_delivered then
-            self:_clear_transaction()
-            self.after_teardown = false
-        else
-            self:_commit(global_name)
-        end
+        self:_set_phase(Core.PHASE.VERIFIED, Core.REASON.NONE)
+        self:_commit(global_name)
         return
     end
 
-    if assignment_already_delivered then
-        if self.after_teardown then
-            self:_clear_transaction()
-            self.after_teardown = false
-        end
+    -- A locked ambiguous transaction is observation-only.  It may later prove
+    -- the exact delta, but it must never execute again or switch endpoints.
+    if transaction.phase == Core.PHASE.QUARANTINED then
         return
     end
 
-    if self.after_teardown then
-        self:_clear_transaction()
-        self.after_teardown = false
-        return
-    end
-
+    self.retry_blocked[global_name] = true
+    self:_quarantine_new(token, Core.REASON.EXECUTION_FAILURE,
+        execution_failure or ("no exact delivery delta at " .. endpoint_id))
+    self:_report_once("EXECUTION_FAILURE", execution_failure or endpoint_id)
+    self:_clear_transaction()
 end
 
 function Controller:poll()
@@ -1022,41 +1008,28 @@ function Controller:poll()
         self:_continue_transaction(transaction)
         return
     end
-    self.after_teardown = false
 
     for _, global_name in ipairs(self.indices.token_globals) do
         local token = self.manifest.tokens_by_global[global_name]
         if token.enabled == 1 then
             local slot_value = self:_get_global(global_name)
-            if slot_value > 0 then
+            if slot_value > 0 and not self.retry_blocked[global_name] then
                 local outcome = self:_start_transaction(global_name, token, slot_value)
                 if outcome == "started" then
                     return
                 end
             else
-                self:_clear_token_quarantine(token)
+                if slot_value <= 0 then
+                    self.retry_blocked[global_name] = nil
+                    self:_clear_token_quarantine(token)
+                end
             end
         end
     end
 end
 
-function Controller:ack(nonce)
-    if not is_integer(nonce) or nonce < 1 then
-        return false
-    end
-    local phase = self:_get_global(Core.GLOBALS.phase)
-    local expected_nonce = self:_get_global(Core.GLOBALS.nonce)
-    if phase ~= Core.PHASE.QUEUED or nonce ~= expected_nonce then
-        return false
-    end
-    self.ephemeral_ack[nonce] = true
-    self:_set_phase(Core.PHASE.ACKED, Core.REASON.NONE)
-    return true
-end
-
 function Controller:on_game_state_destroyed()
-    self.ephemeral_ack = {}
-    self.after_teardown = true
+    self.retry_blocked = {}
 end
 
 FLDLV.Core = Core

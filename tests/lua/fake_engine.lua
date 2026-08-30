@@ -41,12 +41,16 @@ function FakeEngine.new(options)
         container = endpoint_state(),
         override = endpoint_state(),
     }
-    self.queues = {}
+    self.executions = {}
     self.errors = {}
     self.events = {}
     self.current_area = options.current_area or "artest"
     self.missing_items = options.missing_items or {}
-    self.queue_accept = options.queue_accept ~= false
+    self.execute_accept = options.execute_accept ~= false
+    self.execute_create = options.execute_create ~= false
+    self.execute_error = options.execute_error
+    self.execute_error_after_create = options.execute_error_after_create == true
+    self.execute_hook = options.execute_hook
     self.variant_choice = options.variant_choice or 1
     return self
 end
@@ -90,7 +94,7 @@ function FakeEngine:observe_endpoint(endpoint_id, endpoint)
             eligible = false,
             settled = state == nil or state.settled ~= false,
             verifiable = false,
-            reason = state and "unobservable" or "missing",
+            reason = (state == nil or state.present == false) and "missing" or "unobservable",
         }
     end
 
@@ -117,45 +121,30 @@ function FakeEngine:list_items(observation)
     return observation.items
 end
 
-function FakeEngine:queue_delivery(endpoint_id, endpoint, item, nonce, acknowledge)
+function FakeEngine:execute_delivery(endpoint_id, endpoint, item)
+    local copied_item = copy_item(item)
     self.events[#self.events + 1] = {
-        kind = "queue_delivery",
+        kind = "execute_delivery",
         endpoint_id = endpoint_id,
-        nonce = nonce,
     }
-    if not self.queue_accept then
-        return false
-    end
-    self.queues[#self.queues + 1] = {
+    self.executions[#self.executions + 1] = {
         endpoint_id = endpoint_id,
         endpoint = endpoint,
-        item = copy_item(item),
-        nonce = nonce,
-        acknowledge = acknowledge,
-        processed = false,
+        item = copied_item,
     }
-    return true
-end
-
-function FakeEngine:process_queue(options)
-    options = options or {}
-    local create = options.create ~= false
-    local acknowledge = options.acknowledge ~= false
-    for _, queued in ipairs(self.queues) do
-        if not queued.processed then
-            queued.processed = true
-            if create then
-                self:add_item(queued.endpoint_id, queued.item.resref, queued.item.charges)
-            end
-            if acknowledge then
-                queued.acknowledge(queued.nonce)
-            end
-        end
+    if self.execute_error and not self.execute_error_after_create then
+        error(self.execute_error)
     end
-end
-
-function FakeEngine:discard_queues()
-    self.queues = {}
+    if self.execute_create then
+        self:add_item(endpoint_id, copied_item.resref, copied_item.charges)
+    end
+    if self.execute_hook then
+        self.execute_hook(self, endpoint_id, endpoint, copied_item)
+    end
+    if self.execute_error then
+        error(self.execute_error)
+    end
+    return self.execute_accept
 end
 
 function FakeEngine:add_item(endpoint_id, resref, charges)
@@ -164,6 +153,19 @@ function FakeEngine:add_item(endpoint_id, resref, charges)
         resref = resref,
         charges = copy_array(charges),
     }
+end
+
+function FakeEngine:count_exact(endpoint_id, resref, charges)
+    local state = assert(self.endpoints[endpoint_id], "unknown fake endpoint: " .. endpoint_id)
+    local count = 0
+    for _, item in ipairs(state.items) do
+        if string.lower(item.resref) == string.lower(resref) and
+            item.charges[1] == charges[1] and item.charges[2] == charges[2] and
+            item.charges[3] == charges[3] then
+            count = count + 1
+        end
+    end
+    return count
 end
 
 function FakeEngine:report_error(code, detail)
