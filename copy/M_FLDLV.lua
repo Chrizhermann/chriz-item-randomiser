@@ -15,20 +15,19 @@ root.Diagnostics.counts = root.Diagnostics.counts or {}
 
 -- Publish a disabled surface before probing or loading anything.  If a hot
 -- reload fails partway through, append-only listener trampolines must not keep
--- dispatching into the previous controller or accept its stale ACK callbacks.
+-- dispatching into the previous controller.
 root.Disabled = "INITIALIZING"
 root.Controller = nil
 root.Engine = nil
 root.Manifest = nil
 root.Core = nil
-root._ackCallbacks = {}
+root._ackCallbacks = nil
+root._generation = nil
 root._OnSpriteLoaded = nil
 root._OnGameStateDestroyed = nil
 root._OnMenusLoaded = nil
 root._OnWorldOpen = nil
-root._DeliveryAck = function()
-    return false
-end
+root._DeliveryAck = nil
 root._MenuPoll = function()
     return true
 end
@@ -38,8 +37,8 @@ local REQUIRED_CAPABILITIES = {
     "Infinity_GetClockTicks",
     "Infinity_IsMenuOnStack",
     "Infinity_PushMenu",
+    "EEex_Action_ExecuteScriptFileResponseAsAIBaseInstantly",
     "EEex_Action_ParseResponseString",
-    "EEex_Action_QueueScriptFileResponseOnAIBase",
     "EEex_Area_GetVisible",
     "EEex_GameObject_CastUserType",
     "EEex_GameObject_Get",
@@ -388,19 +387,10 @@ local function parsed_action_count(parsed)
     return count
 end
 
-local function next_generation()
-    local generation = root._generation or 0
-    if generation < 1 or generation >= 2147483646 then
-        return 1
-    end
-    return generation + 1
-end
-
-function Engine:queue_delivery(endpoint_id, _, item, nonce, acknowledge)
+function Engine:execute_delivery(endpoint_id, _, item)
     local endpoint = self.manifest.endpoints_by_id[endpoint_id]
     if not endpoint or endpoint.external_delivery ~= 0 or
-        not valid_delivery_item(item) or not is_integer(nonce) or nonce < 1 or
-        type(acknowledge) ~= "function" then
+        not valid_delivery_item(item) then
         return false
     end
 
@@ -429,11 +419,7 @@ function Engine:queue_delivery(endpoint_id, _, item, nonce, acknowledge)
         transport = string.format('CreateItem("%s",%d,%d,%d)',
             item.resref, charges[1], charges[2], charges[3])
     end
-    local generation = root._generation
-    local acknowledgement = string.format(
-        'EEex_LuaAction("FLDLV._DeliveryAck([[%d]],[[%d]])")',
-        generation, nonce)
-    local parsed = EEex_Action_ParseResponseString(transport .. "\n" .. acknowledgement)
+    local parsed = EEex_Action_ParseResponseString(transport)
     if not parsed then
         return false
     end
@@ -454,33 +440,29 @@ function Engine:queue_delivery(endpoint_id, _, item, nonce, acknowledge)
         end
         error(action_count, 0)
     end
-    if action_count ~= 2 then
+    if action_count ~= 1 then
         free_parsed()
         return false
     end
 
-    local ack_key = tostring(generation) .. ":" .. tostring(nonce)
-    root._ackCallbacks[ack_key] = acknowledge
-    local queue_ok, queue_error = pcall(
-        EEex_Action_QueueScriptFileResponseOnAIBase, parsed, object)
+    local execute_ok, execute_error = pcall(
+        EEex_Action_ExecuteScriptFileResponseAsAIBaseInstantly, parsed, object)
     local free_ok, free_error = pcall(free_parsed)
-    if not queue_ok then
-        error(queue_error, 0)
+    if not execute_ok then
+        error(execute_error, 0)
     end
     if not free_ok then
         error(free_error, 0)
     end
 
-    -- The v0.11 queue function returns nil.  Reaching this point without an
-    -- exception means submission was attempted; only later observation proves
-    -- delivery, but the adapter must report the submission as accepted.
+    -- The v0.11 instant executor returns nil.  Reaching this point without an
+    -- exception means the one INSTANT.IDS action finished synchronously; the
+    -- core still verifies the exact inventory delta before committing.
     return true
 end
 
 root.Engine = Engine.new(root.Manifest)
 root.Disabled = nil
-root._generation = next_generation()
-root._ackCallbacks = {}
 root._boundaryReported = root._boundaryReported or {}
 root._dirty = true
 root._dirtyTick = Infinity_GetClockTicks()
@@ -513,30 +495,6 @@ function root._Boundary(label, callback, ...)
     return unpack_values(results, 1, results.n)
 end
 
-function root._DeliveryAck(generation_value, nonce_value)
-    local generation = tonumber(generation_value)
-    local nonce = tonumber(nonce_value)
-    if not is_integer(generation) or not is_integer(nonce) or nonce < 1 or
-        generation ~= root._generation then
-        return false
-    end
-    local key = tostring(generation) .. ":" .. tostring(nonce)
-    local acknowledge = root._ackCallbacks[key]
-    if not acknowledge then
-        return false
-    end
-    root._ackCallbacks[key] = nil
-    local ok = pcall(acknowledge, nonce)
-    if not ok then
-        if not root._boundaryReported.delivery_ack then
-            root._boundaryReported.delivery_ack = true
-            root.Engine:report_error("CALLBACK_ERROR", "delivery_ack")
-        end
-        return false
-    end
-    return true
-end
-
 local function mark_dirty()
     root._dirty = true
     root._dirtyTick = Infinity_GetClockTicks()
@@ -550,8 +508,6 @@ function root._OnSpriteLoaded(_)
 end
 
 function root._OnGameStateDestroyed()
-    root._ackCallbacks = {}
-    root._generation = next_generation()
     root._currentArea = nil
     root._settlingSweeps = 0
     root._dirty = true

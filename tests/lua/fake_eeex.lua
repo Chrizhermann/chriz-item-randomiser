@@ -82,11 +82,10 @@ function FakeEEex.new(repository_root, manifest, options)
     self.parsed = {}
     self.parse_calls = 0
     self.free_count = 0
-    self.queue_attempts = 0
-    self.queued = {}
-    self.queue_return = options.queue_return
-    self.queue_error = options.queue_error
-    self.next_action_count = options.action_count or 2
+    self.instant_attempts = 0
+    self.executed = {}
+    self.instant_error = options.instant_error
+    self.next_action_count = options.action_count or 1
 
     local environment = {
         FLDLV = options.root_namespace or {},
@@ -163,17 +162,16 @@ function FakeEEex:_install_globals(missing_capability)
         return parsed
     end
 
-    env.EEex_Action_QueueScriptFileResponseOnAIBase = function(parsed, object)
-        fake.queue_attempts = fake.queue_attempts + 1
-        fake.queued[#fake.queued + 1] = {
+    env.EEex_Action_ExecuteScriptFileResponseAsAIBaseInstantly = function(parsed, object)
+        fake.instant_attempts = fake.instant_attempts + 1
+        fake.executed[#fake.executed + 1] = {
             parsed = parsed,
             object_id = object and object._source and object._source.id or nil,
             fetch_serial = object and object._fetch_serial or nil,
         }
-        if fake.queue_error then
-            error(fake.queue_error)
+        if fake.instant_error then
+            error(fake.instant_error)
         end
-        return fake.queue_return
     end
 
     env.EEex_Area_GetVisible = function()

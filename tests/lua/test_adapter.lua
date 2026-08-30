@@ -59,8 +59,8 @@ return function(context)
             "Infinity_GetClockTicks",
             "Infinity_IsMenuOnStack",
             "Infinity_PushMenu",
+            "EEex_Action_ExecuteScriptFileResponseAsAIBaseInstantly",
             "EEex_Action_ParseResponseString",
-            "EEex_Action_QueueScriptFileResponseOnAIBase",
             "EEex_Area_GetVisible",
             "EEex_GameObject_CastUserType",
             "EEex_GameObject_Get",
@@ -124,7 +124,7 @@ return function(context)
         equal(root.Disabled, "CAPABILITY")
         equal(root.Controller, nil, "failed reload retained the prior controller")
         equal(root.Engine, nil, "failed reload retained the prior engine adapter")
-        equal(root._DeliveryAck("1", "1"), false)
+        equal(root._DeliveryAck, nil)
         equal(root._MenuPoll(), true)
     end)
 
@@ -408,79 +408,73 @@ return function(context)
         root.Engine:list_items(observation)
         truthy(fake.fetch_count > after_observe,
             "item listing reused an observed object wrapper")
-        local before_queue = fake.fetch_count
-        local accepted = root.Engine:queue_delivery("container", endpoint,
-            valid_item("tstitema", { 3, 2, 1 }), 55, function() end)
+        local before_execution = fake.fetch_count
+        local accepted = root.Engine:execute_delivery("container", endpoint,
+            valid_item("tstitema", { 3, 2, 1 }))
         equal(accepted, true)
-        truthy(fake.fetch_count > before_queue,
-            "queue submission reused an earlier object wrapper")
-        truthy(fake.queued[1].fetch_serial > before_queue,
-            "queued target was not fetched during the submission sweep")
-        equal(fake.queued[1].object_id, 101)
+        truthy(fake.fetch_count > before_execution,
+            "instant execution reused an earlier object wrapper")
+        truthy(fake.executed[1].fetch_serial > before_execution,
+            "instant target was not fetched during the execution sweep")
+        equal(fake.executed[1].object_id, 101)
     end)
 
-    test("AdapterQueuesExactChargedTransportAndGenerationNonceAck", function()
+    test("AdapterExecutesExactChargedTransportInstantly", function()
         local fake, root = new_loaded()
         add_ready_endpoints(fake)
         root._settlingSweeps = 2
-        local acknowledged = {}
-        local accepted = root.Engine:queue_delivery("primary",
+        local accepted = root.Engine:execute_delivery("primary",
             root.Manifest.endpoints_by_id.primary,
-            valid_item("tstitema", { 3, 2, 1 }), 77,
-            function(nonce)
-                acknowledged[#acknowledged + 1] = nonce
-            end)
-        equal(accepted, true, "native nil queue return was not treated as success")
-        equal(fake.queue_attempts, 1)
+            valid_item("tstitema", { 3, 2, 1 }))
+        equal(accepted, true, "successful instant execution was rejected")
+        equal(fake.instant_attempts, 1)
+        equal(fake.queue_attempts, nil)
         equal(fake.free_count, 1)
         equal(fake.parsed[1].source,
-            'GiveItemCreate("tstitema",Myself,3,2,1)\n' ..
-            'EEex_LuaAction("FLDLV._DeliveryAck([[' .. tostring(root._generation) ..
-            ']],[[77]])")')
-        equal(root._DeliveryAck(tostring(root._generation), "77"), true)
-        equal(acknowledged[1], 77)
-        equal(root._DeliveryAck(tostring(root._generation), "77"), false,
-            "duplicate ACK was accepted")
+            'GiveItemCreate("tstitema",Myself,3,2,1)')
+        equal(root._DeliveryAck, nil)
+        equal(root._ackCallbacks, nil)
+        equal(root._generation, nil)
 
-        root.Engine:queue_delivery("container",
+        root.Engine:execute_delivery("container",
             root.Manifest.endpoints_by_id.container,
-            valid_item("tstitemb", { 0, 4, 0 }), 78, function() end)
-        equal(fake.parsed[2].source:match("^[^\n]+"),
+            valid_item("tstitemb", { 0, 4, 0 }))
+        equal(fake.parsed[2].source,
             'CreateItem("tstitemb",0,4,0)')
     end)
 
-    test("AdapterRejectsPreflightBeforeSubmissionAndFreesParseOnce", function()
+    test("AdapterRejectsPreflightBeforeExecutionAndFreesParseOnce", function()
         local fake, root = new_loaded()
         local creature = add_ready_endpoints(fake)
         root._settlingSweeps = 2
         creature.full = true
-        local accepted = root.Engine:queue_delivery("primary",
+        local accepted = root.Engine:execute_delivery("primary",
             root.Manifest.endpoints_by_id.primary,
-            valid_item("tstitema", { 3, 2, 1 }), 80, function() end)
+            valid_item("tstitema", { 3, 2, 1 }))
         equal(accepted, false)
         equal(fake.parse_calls, 0)
-        equal(fake.queue_attempts, 0)
+        equal(fake.instant_attempts, 0)
 
         creature.full = false
-        fake.next_action_count = 1
-        accepted = root.Engine:queue_delivery("primary",
+        fake.next_action_count = 2
+        accepted = root.Engine:execute_delivery("primary",
             root.Manifest.endpoints_by_id.primary,
-            valid_item("tstitema", { 3, 2, 1 }), 81, function() end)
+            valid_item("tstitema", { 3, 2, 1 }))
         equal(accepted, false)
         equal(fake.parse_calls, 1)
         equal(fake.free_count, 1)
-        equal(fake.queue_attempts, 0)
+        equal(fake.instant_attempts, 0)
     end)
 
-    test("AdapterQueueExceptionPropagatesAmbiguouslyAndFreesOnce", function()
-        local fake, root = new_loaded({ queue_error = "ambiguous queue" })
+    test("AdapterInstantExceptionPropagatesAndFreesOnce", function()
+        local fake, root = new_loaded({ instant_error = "synthetic instant failure" })
         add_ready_endpoints(fake)
         root._settlingSweeps = 2
-        local ok = pcall(root.Engine.queue_delivery, root.Engine, "container",
+        local ok = pcall(root.Engine.execute_delivery, root.Engine, "container",
             root.Manifest.endpoints_by_id.container,
-            valid_item("tstitema", { 3, 2, 1 }), 90, function() end)
-        equal(ok, false, "queue exception was converted to deterministic rejection")
-        equal(fake.queue_attempts, 1)
+            valid_item("tstitema", { 3, 2, 1 }))
+        equal(ok, false, "instant exception was converted to deterministic rejection")
+        equal(fake.instant_attempts, 1)
         equal(fake.free_count, 1)
     end)
 
@@ -495,17 +489,17 @@ return function(context)
             y = 20,
             items = {},
         }, "m_lVertSortFlight")
-        local accepted = root.Engine:queue_delivery("fallback",
+        local accepted = root.Engine:execute_delivery("fallback",
             root.Manifest.endpoints_by_id.fallback,
-            valid_item("tstitema", { 3, 2, 1 }), 91, function() end)
+            valid_item("tstitema", { 3, 2, 1 }))
         equal(accepted, false)
-        equal(fake.queue_attempts, 0)
+        equal(fake.instant_attempts, 0)
         fake:remove_id(duplicate.id)
-        accepted = root.Engine:queue_delivery("fallback",
+        accepted = root.Engine:execute_delivery("fallback",
             root.Manifest.endpoints_by_id.fallback,
-            valid_item("tstitema", { 3, 2, 1 }), 92, function() end)
+            valid_item("tstitema", { 3, 2, 1 }))
         equal(accepted, true)
-        equal(fake.parsed[1].source:match("^[^\n]+"),
+        equal(fake.parsed[1].source,
             'CreateItem("tstitema",3,2,1)')
         truthy(ground.id ~= duplicate.id)
     end)
@@ -533,23 +527,21 @@ return function(context)
             "callback diagnostic was not deduplicated by opaque boundary")
     end)
 
-    test("AdapterDestroyedBoundaryClearsEphemeralQueueState", function()
+    test("AdapterDestroyedBoundaryHasNoEphemeralTransportState", function()
         local fake, root = new_loaded()
         add_ready_endpoints(fake)
         root._settlingSweeps = 2
         root._currentArea = "artest"
-        local generation = root._generation
-        root.Engine:queue_delivery("container",
+        root.Controller.retry_blocked.fl1t1 = true
+        root.Engine:execute_delivery("container",
             root.Manifest.endpoints_by_id.container,
-            valid_item("tstitema", { 3, 2, 1 }), 101, function() end)
-        truthy(next(root._ackCallbacks) ~= nil)
+            valid_item("tstitema", { 3, 2, 1 }))
         fake:trigger_destroyed()
-        equal(next(root._ackCallbacks), nil)
-        equal(root._generation, generation + 1)
+        equal(root._ackCallbacks, nil)
+        equal(root._generation, nil)
+        equal(root._DeliveryAck, nil)
         equal(root._currentArea, nil)
-        equal(root.Controller.after_teardown, true)
-        equal(root._DeliveryAck(tostring(generation), "101"), false,
-            "pre-destroy ACK crossed the GameState boundary")
+        equal(next(root.Controller.retry_blocked), nil)
     end)
 
     test("AdapterMenuContainsOneInvisiblePollPredicate", function()

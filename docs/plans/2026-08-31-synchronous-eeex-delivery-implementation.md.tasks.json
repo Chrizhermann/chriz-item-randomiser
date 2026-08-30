@@ -9,13 +9,13 @@
     {
       "id": 1,
       "subject": "Task 2: Replace the EEex queue adapter with instant execution",
-      "status": "in_progress",
+      "status": "completed",
       "blockedBy": [0]
     },
     {
       "id": 2,
       "subject": "Task 3: Make the runtime probe enforce the no-queue contract",
-      "status": "pending",
+      "status": "in_progress",
       "blockedBy": [1]
     },
     {
