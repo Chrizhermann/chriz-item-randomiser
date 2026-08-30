@@ -143,6 +143,8 @@ BEGIN @101100 SUBCOMPONENT @101000 DESIGNATED 1100                              
 
   INCLUDE "randomiser/lib/arrays.tpa"                                                                                  //Creates arrays from the mod's 2da files
 
+  INCLUDE "randomiser/lib/endpoints.tpa"                                                                              //Defines explicit Mode 1 delivery endpoints before destructive validation
+
   LAM flir_removal_plan_build                                                                                          //Builds and validates the source-removal plan before resources are mutated
 
   INCLUDE "randomiser/lib/copy.tpa"                                                                                    //Copies creatures, marker file
@@ -154,8 +156,17 @@ BEGIN @101100 SUBCOMPONENT @101000 DESIGNATED 1100                              
   INCLUDE "randomiser/lib/fixes.tpa"                                                                                   //Makes some minor adjustsments
 
   LAM flir_registry_register_applied_units
-  LAM flir_registry_capture_final_slots
-  LAM flir_registry_reconcile
+  ACTION_IF VARIABLE_IS_SET flir_delivery_backend
+        AND "%flir_delivery_backend%" STRING_EQUAL_CASE ~eeex-manifest-v1~ BEGIN
+    LAM flir_endpoints_register_registry_slots
+    LAM flir_registry_reconcile_mappings
+    LAM flir_endpoints_claim_slots
+    LAM flir_endpoints_register_catalog_rows
+    LAM flir_registry_finalize_catalog
+  END ELSE BEGIN
+    LAM flir_registry_capture_final_slots
+    LAM flir_registry_reconcile
+  END
   LAM flir_registry_write_state
 
   INCLUDE "randomiser/lib/delivery.tpa"                                                                                //Creates the scripts that places the randomised items at their new location. See locationlist.2da
@@ -187,6 +198,8 @@ BEGIN @101200 SUBCOMPONENT @101000 DESIGNATED 1200                              
 
   INCLUDE "randomiser/lib/arrays.tpa"
 
+  INCLUDE "randomiser/lib/endpoints.tpa"
+
   LAM flir_removal_plan_build
 
   INCLUDE "randomiser/lib/copy.tpa"
@@ -198,8 +211,17 @@ BEGIN @101200 SUBCOMPONENT @101000 DESIGNATED 1200                              
   INCLUDE "randomiser/lib/fixes.tpa"
 
   LAM flir_registry_register_applied_units
-  LAM flir_registry_capture_final_slots
-  LAM flir_registry_reconcile
+  ACTION_IF VARIABLE_IS_SET flir_delivery_backend
+        AND "%flir_delivery_backend%" STRING_EQUAL_CASE ~eeex-manifest-v1~ BEGIN
+    LAM flir_endpoints_register_registry_slots
+    LAM flir_registry_reconcile_mappings
+    LAM flir_endpoints_claim_slots
+    LAM flir_endpoints_register_catalog_rows
+    LAM flir_registry_finalize_catalog
+  END ELSE BEGIN
+    LAM flir_registry_capture_final_slots
+    LAM flir_registry_reconcile
+  END
   LAM flir_registry_write_state
 
   INCLUDE "randomiser/lib/delivery.tpa"

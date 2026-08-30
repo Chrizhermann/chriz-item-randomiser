@@ -33,13 +33,13 @@
     {
       "id": 5,
       "subject": "Task 6: Model endpoints, capacity, stable slots, and authored fallbacks",
-      "status": "pending",
+      "status": "completed",
       "blockedBy": [4]
     },
     {
       "id": 6,
       "subject": "Task 7: Generate a deterministic, spoiler-safe Lua manifest",
-      "status": "pending",
+      "status": "in_progress",
       "blockedBy": [5]
     },
     {
@@ -85,5 +85,5 @@
       "blockedBy": [12]
     }
   ],
-  "lastUpdated": "2026-08-30T08:08:23.6649484+09:00"
+  "lastUpdated": "2026-08-30T11:12:35.9941525+09:00"
 }

@@ -13,9 +13,14 @@ ACTION_IF !weidu_action BEGIN
 END
 
 // Reuse existing, suitable locations if we have fewer locations than items.
-// Mode 1 uses the shared migration-aware allocator; Mode 2 retains the exact
-// legacy implementation because it has no persistent registry.
-ACTION_IF weidu_action = 0 AND VARIABLE_IS_SET flir_registry_available BEGIN
+// Explicit endpoint capacity replaces implicit duplication only for the EEex
+// manifest backend.  Classic Mode 1 retains the migration-aware historical
+// draw and Mode 2 retains its byte-for-byte legacy implementation.
+ACTION_IF weidu_action = 0
+      AND VARIABLE_IS_SET flir_delivery_backend
+      AND "%flir_delivery_backend%" STRING_EQUAL_CASE ~eeex-manifest-v1~ BEGIN
+  LAM flir_endpoints_assert_plan_ready
+END ELSE ACTION_IF weidu_action = 0 AND VARIABLE_IS_SET flir_registry_available BEGIN
   LAM flir_registry_add_current_overflow_locations
 END ELSE BEGIN
   ACTION_PHP_EACH tier_array AS Tier => blank BEGIN

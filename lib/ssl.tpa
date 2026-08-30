@@ -85,19 +85,29 @@ OUTER_FOR (sslpass=0;sslpass<pass;sslpass+=1) BEGIN
 
       OUTER_SPRINT LocationList ""
       OUTER_SET MaxRandom = 0
-      OUTER_SET counter = 0
-      ACTION_PHP_EACH location_array AS entry => int BEGIN
-        OUTER_SPRINT location    "%entry_0%"
-        //OUTER_SET    tiercheck =   entry_1
-        OUTER_SPRINT tiercheck   "%entry_1%"
-        ACTION_IF "%tiercheck%" STRING_EQUAL_CASE "%tier%" BEGIN
-          OUTER_SET counter += 1
-          OUTER_SPRINT LocationList "%LocationList%"^"%counter%;"
-          OUTER_SET MaxRandom = MaxRandom < counter ? counter : MaxRandom
+      ACTION_IF weidu_action = 0
+            AND VARIABLE_IS_SET flir_delivery_backend
+            AND "%flir_delivery_backend%" STRING_EQUAL_CASE ~eeex-manifest-v1~ BEGIN
+        OUTER_SPRINT flir_registry_tier_for_campaign ~%tier%~
+        LAM flir_registry_campaign_for_tier
+        OUTER_SPRINT flir_endpoint_ssl_campaign ~%flir_registry_detected_campaign%~
+        OUTER_SPRINT flir_endpoint_ssl_tier ~%tier%~
+        LAM flir_endpoints_build_ssl_scope
+      END ELSE BEGIN
+        OUTER_SET counter = 0
+        ACTION_PHP_EACH location_array AS entry => int BEGIN
+          OUTER_SPRINT location    "%entry_0%"
+          //OUTER_SET    tiercheck =   entry_1
+          OUTER_SPRINT tiercheck   "%entry_1%"
+          ACTION_IF "%tiercheck%" STRING_EQUAL_CASE "%tier%" BEGIN
+            OUTER_SET counter += 1
+            OUTER_SPRINT LocationList "%LocationList%"^"%counter%;"
+            OUTER_SET MaxRandom = MaxRandom < counter ? counter : MaxRandom
+          END
         END
-      END
-      OUTER_PATCH_SAVE LocationList "%LocationList%" BEGIN
-        REPLACE_TEXTUALLY CASE_INSENSITIVE EVALUATE_REGEXP ";$" ""
+        OUTER_PATCH_SAVE LocationList "%LocationList%" BEGIN
+          REPLACE_TEXTUALLY CASE_INSENSITIVE EVALUATE_REGEXP ";$" ""
+        END
       END
 
       OUTER_SPRINT sslvar "%sslvar%"^"&LocationList=%LocationList%&MaxRandom=%MaxRandom%&TierNumber=%tier%&TokenList=%TokenList%&AreaCode=%AreaCode%"
@@ -108,6 +118,11 @@ OUTER_FOR (sslpass=0;sslpass<pass;sslpass+=1) BEGIN
         AT_NOW ~/usr/bin/perl randomiser/ssl/ssl.pl "randomiser/ssl/%ssl_file%.ssl %sslvar% -l randomiser/ssl/library"~ EXACT
       END
       COPY "randomiser/ssl/ssl_out/%ssl_file%.baf" "randomiser/ssl/compile/%ssl_file%%tier%.baf"
+        PATCH_IF weidu_action = 0
+              AND VARIABLE_IS_SET flir_delivery_backend
+              AND "%flir_delivery_backend%" STRING_EQUAL_CASE ~eeex-manifest-v1~ BEGIN
+          LAUNCH_PATCH_MACRO flir_endpoints_rewrite_sparse_rolls
+        END
     //END
   END
 END

@@ -1398,6 +1398,11 @@ DEFINE_ACTION_MACRO flir_removal_validate_future_hooks BEGIN
   ACTION_IF VARIABLE_IS_SET flir_registry_available BEGIN
     LAM flir_registry_validate_planned_units
   END
+  ACTION_IF VARIABLE_IS_SET flir_endpoints_available
+        AND VARIABLE_IS_SET flir_delivery_backend
+        AND "%flir_delivery_backend%" STRING_EQUAL_CASE ~eeex-manifest-v1~ BEGIN
+    LAM flir_endpoints_validate_planned_units
+  END
 END
 
 DEFINE_ACTION_MACRO flir_removal_plan_build_selected_array BEGIN

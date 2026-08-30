@@ -4,6 +4,7 @@
 // argv[2] = production removal_plan.tpa
 // argv[3] = production lib.tpa (shared source-filter implementation)
 // argv[4] = production catalog.tpa
+// argv[5] = production endpoints.tpa
 
 BACKUP ~backup~
 AUTHOR ~BG2 Item Randomiser registry test harness~
@@ -12,6 +13,7 @@ ALWAYS
   INCLUDE ~%argv[3]%~
   INCLUDE ~%argv[4]%~
   INCLUDE ~%argv[0]%~
+  INCLUDE ~%argv[5]%~
   INCLUDE ~%argv[2]%~
 END
 
@@ -50,6 +52,37 @@ DEFINE_ACTION_MACRO flir_registry_harness_ensure_legacy_state BEGIN
       WRITE_ASCIIE 0 ~%h_legacy_options_fixture%~ (STRING_LENGTH ~%h_legacy_options_fixture%~)
     BUT_ONLY
   END
+END
+
+DEFINE_ACTION_MACRO flir_registry_harness_generated_endpoint BEGIN
+  OUTER_SET $bg2_tiers("1") = 1
+  OUTER_SPRINT flir_endpoint_arg_provider ~core~
+  OUTER_SPRINT flir_endpoint_arg_id ~ground-generated~
+  OUTER_SPRINT flir_endpoint_arg_area ~area-generated~
+  OUTER_SPRINT flir_endpoint_arg_target_kind ~ground~
+  OUTER_SPRINT flir_endpoint_arg_target_identity ~-~
+  OUTER_SET flir_endpoint_arg_x = 50
+  OUTER_SET flir_endpoint_arg_y = 60
+  OUTER_SET flir_endpoint_arg_capacity = 1
+  OUTER_SPRINT flir_endpoint_arg_static_policy ~authored-static~
+  OUTER_SPRINT flir_endpoint_arg_fallback ~-~
+  OUTER_SPRINT flir_endpoint_arg_adapter ~~
+  OUTER_SET flir_endpoint_arg_enabled = 1
+  LAM flir_endpoints_add_endpoint
+  OUTER_SPRINT flir_endpoint_arg_id ~endpoint-generated~
+  OUTER_SPRINT flir_endpoint_arg_target_kind ~container~
+  OUTER_SPRINT flir_endpoint_arg_target_identity ~target-generated~
+  OUTER_SET flir_endpoint_arg_x = 0
+  OUTER_SET flir_endpoint_arg_y = 0
+  OUTER_SET flir_endpoint_arg_capacity = 1
+  OUTER_SPRINT flir_endpoint_arg_static_policy ~runtime-resolve~
+  OUTER_SPRINT flir_endpoint_arg_fallback ~core:ground-generated~
+  LAM flir_endpoints_add_endpoint
+  OUTER_SET $flir_endpoint_candidate("bg2" "1" "bg2:1" "core:endpoint-generated") = 1
+END
+
+DEFINE_PATCH_MACRO flir_registry_harness_read_generated_fingerprint BEGIN
+  READ_LONG 0 h_generated_original_fingerprint
 END
 
 DEFINE_ACTION_MACRO flir_registry_harness_write_report BEGIN
@@ -1897,6 +1930,14 @@ BEGIN ~old migration reconstructs fixes overflow before extensions~ DESIGNATED 1
   RANDOM_SEED "1701"
 
   LAM flir_registry_capture_old_unmarked_legacy_slots
+  OUTER_SPRINT h_overflow_cached_stable ~missing~
+  OUTER_SET h_overflow_cached_occurrence = 0
+  ACTION_IF VARIABLE_IS_SET $flir_registry_legacy_overflow_stable("%h_overflow_expected_raw%" "1" "%h_overflow_expected_target%" "%h_overflow_expected_area%") BEGIN
+    OUTER_SPRINT h_overflow_cached_stable $flir_registry_legacy_overflow_stable("%h_overflow_expected_raw%" "1" "%h_overflow_expected_target%" "%h_overflow_expected_area%")
+  END
+  ACTION_IF VARIABLE_IS_SET $flir_registry_legacy_overflow_occurrence("%h_overflow_expected_raw%" "1" "%h_overflow_expected_target%" "%h_overflow_expected_area%") BEGIN
+    OUTER_SET h_overflow_cached_occurrence = $flir_registry_legacy_overflow_occurrence("%h_overflow_expected_raw%" "1" "%h_overflow_expected_target%" "%h_overflow_expected_area%")
+  END
   OUTER_SET h_overflow_endpoint_matches = 0
   OUTER_SET h_overflow_endpoint_wrong = 0
   ACTION_PHP_EACH location_array#stage1 AS h_overflow_replayed => blank BEGIN
@@ -1922,7 +1963,7 @@ BEGIN ~old migration reconstructs fixes overflow before extensions~ DESIGNATED 1
   LAM flir_registry_write_state
   OUTER_SET h_overflow_actual_next = RANDOM(1 100)
   LAF flir_registry_canonical_rows RET h_overflow_rows = rows END
-  OUTER_TEXT_SPRINT h_overflow_report ~STATE %flir_registry_loaded_existing% %flir_registry_old_unmarked_migration% %flir_registry_origin%%WNL%EXPECTED_OVERFLOW %h_overflow_expected_stable% 3%WNL%ENDPOINT %h_overflow_expected_target% %h_overflow_expected_area% %h_overflow_endpoint_matches% %h_overflow_endpoint_wrong%%WNL%RNG_NEXT %h_overflow_expected_next% %h_overflow_actual_next%%WNL%%h_overflow_rows%~
+  OUTER_TEXT_SPRINT h_overflow_report ~STATE %flir_registry_loaded_existing% %flir_registry_old_unmarked_migration% %flir_registry_origin%%WNL%EXPECTED_OVERFLOW %h_overflow_expected_stable% 3%WNL%CACHE %h_overflow_cached_stable% %h_overflow_cached_occurrence%%WNL%ENDPOINT %h_overflow_expected_target% %h_overflow_expected_area% %h_overflow_endpoint_matches% %h_overflow_endpoint_wrong%%WNL%RNG_NEXT %h_overflow_expected_next% %h_overflow_actual_next%%WNL%%h_overflow_rows%~
   COPY + "...blank" "%argv[1]%"
     INSERT_BYTES 0 STRING_LENGTH ~%h_overflow_report%~
     WRITE_ASCIIE 0 ~%h_overflow_report%~ (STRING_LENGTH ~%h_overflow_report%~)
@@ -2053,6 +2094,14 @@ BEGIN ~registered preserve reinstall reconstructs historical overflow~ DESIGNATE
   LAM flir_source_finalize_legacy_snapshot
   LAM flir_removal_plan_load_preserve
   LAM flir_registry_capture_old_unmarked_legacy_slots
+  OUTER_SPRINT h_reinstall_cached_stable ~missing~
+  OUTER_SET h_reinstall_cached_occurrence = 0
+  ACTION_IF VARIABLE_IS_SET $flir_registry_legacy_overflow_stable("%h_reinstall_expected_raw%" "1" "%h_reinstall_expected_target%" "%h_reinstall_expected_area%") BEGIN
+    OUTER_SPRINT h_reinstall_cached_stable $flir_registry_legacy_overflow_stable("%h_reinstall_expected_raw%" "1" "%h_reinstall_expected_target%" "%h_reinstall_expected_area%")
+  END
+  ACTION_IF VARIABLE_IS_SET $flir_registry_legacy_overflow_occurrence("%h_reinstall_expected_raw%" "1" "%h_reinstall_expected_target%" "%h_reinstall_expected_area%") BEGIN
+    OUTER_SET h_reinstall_cached_occurrence = $flir_registry_legacy_overflow_occurrence("%h_reinstall_expected_raw%" "1" "%h_reinstall_expected_target%" "%h_reinstall_expected_area%")
+  END
   OUTER_SET h_reinstall_endpoint_matches = 0
   ACTION_PHP_EACH location_array#stage1 AS h_reinstall_replayed => blank BEGIN
     ACTION_IF "%h_reinstall_replayed_0%" STRING_EQUAL_CASE "%h_reinstall_expected_raw%"
@@ -2070,7 +2119,7 @@ BEGIN ~registered preserve reinstall reconstructs historical overflow~ DESIGNATE
   LAM flir_registry_reconcile
   OUTER_SET h_reinstall_actual_next = RANDOM(1 100)
   LAF flir_registry_canonical_rows RET h_reinstall_rows = rows END
-  OUTER_TEXT_SPRINT h_reinstall_report ~STATE %flir_registry_loaded_existing% %flir_registry_old_unmarked_migration% %flir_registry_origin%%WNL%EXPECTED_OVERFLOW %h_reinstall_expected_stable% 3%WNL%ENDPOINT %h_reinstall_endpoint_matches%%WNL%RNG_NEXT %h_reinstall_expected_next% %h_reinstall_actual_next%%WNL%%h_reinstall_rows%~
+  OUTER_TEXT_SPRINT h_reinstall_report ~STATE %flir_registry_loaded_existing% %flir_registry_old_unmarked_migration% %flir_registry_origin%%WNL%EXPECTED_OVERFLOW %h_reinstall_expected_stable% 3%WNL%CACHE %h_reinstall_cached_stable% %h_reinstall_cached_occurrence%%WNL%ENDPOINT %h_reinstall_endpoint_matches%%WNL%RNG_NEXT %h_reinstall_expected_next% %h_reinstall_actual_next%%WNL%%h_reinstall_rows%~
   COPY + "...blank" "%argv[1]%"
     INSERT_BYTES 0 STRING_LENGTH ~%h_reinstall_report%~
     WRITE_ASCIIE 0 ~%h_reinstall_report%~ (STRING_LENGTH ~%h_reinstall_report%~)
@@ -2213,4 +2262,246 @@ BEGIN ~authored identity sharing replay tuple remains overflow eligible~ DESIGNA
   COPY + "...blank" "%argv[1]%"
     INSERT_BYTES 0 STRING_LENGTH ~%h_replay_report%~
     WRITE_ASCIIE 0 ~%h_replay_report%~ (STRING_LENGTH ~%h_replay_report%~)
+  BUT_ONLY
+
+BEGIN ~catalog finalization requires compact reconciliation~ DESIGNATED 123
+  LAM flir_registry_harness_reset
+  LAM flir_registry_finalize_catalog
+
+BEGIN ~state writing requires catalog finalization~ DESIGNATED 124
+  LAM flir_registry_harness_reset
+  OUTER_SPRINT h_tier ~1~
+  OUTER_SPRINT h_id ~core:slot-readiness~
+  LAM flir_registry_harness_add_slot
+  LAM flir_registry_reconcile_mappings
+  LAM flir_registry_write_state
+
+BEGIN ~slot registration API and split reconciliation~ DESIGNATED 125
+  LAM flir_registry_harness_reset
+  OUTER_SPRINT flir_registry_register_campaign ~bg2~
+  OUTER_SPRINT flir_registry_register_tier ~1~
+  OUTER_SPRINT flir_registry_register_stable ~core:slot-api~
+  OUTER_SPRINT flir_registry_register_compact ~~
+  LAM flir_registry_register_slot
+  LAM flir_registry_reconcile_mappings
+  LAM flir_registry_finalize_catalog
+  LAM flir_registry_write_state
+  LAF flir_registry_canonical_rows RET h_api_rows = rows END
+  OUTER_SPRINT h_api_compact $flir_registry_catalog_slot_compact("bg2" "1" "core:slot-api")
+  OUTER_TEXT_SPRINT h_api_report ~REGAPI compact=%h_api_compact% ready=%flir_registry_compacts_ready% finalized=%flir_registry_catalog_finalized%%WNL%%h_api_rows%~
+  COPY + ~...blank~ ~%argv[1]%~
+    INSERT_BYTES 0 STRING_LENGTH ~%h_api_report%~
+    WRITE_ASCIIE 0 ~%h_api_report%~ (STRING_LENGTH ~%h_api_report%~)
+  BUT_ONLY
+
+BEGIN ~disabled slots persist as monotonic tombstones~ DESIGNATED 126
+  LAM flir_registry_harness_reset
+  OUTER_SET flir_registry_store_enabled = 1
+  OUTER_SPRINT flir_registry_store_campaign ~bg2~
+  OUTER_SPRINT flir_registry_store_tier ~1~
+  OUTER_SPRINT flir_registry_store_kind ~slot~
+  OUTER_SPRINT flir_registry_store_stable ~ext:slot-old-active~
+  OUTER_SPRINT flir_registry_store_compact ~7~
+  LAM flir_registry_store_row
+  OUTER_SPRINT flir_registry_register_campaign ~bg2~
+  OUTER_SPRINT flir_registry_register_tier ~1~
+  OUTER_SPRINT flir_registry_register_stable ~ext:slot-old-active~
+  OUTER_SPRINT flir_registry_register_compact ~~
+  LAM flir_registry_register_slot_tombstone
+  OUTER_SPRINT flir_registry_register_stable ~ext:slot-fresh-disabled~
+  LAM flir_registry_register_slot_tombstone
+  LAM flir_registry_reconcile_mappings
+  LAM flir_registry_finalize_catalog
+  LAF flir_registry_canonical_rows RET h_tombstone_rows = rows END
+  OUTER_SPRINT h_tombstone_old_compact $flir_registry_compact("bg2" "1" "slot" "ext:slot-old-active")
+  OUTER_SET h_tombstone_old_enabled = $flir_registry_enabled("bg2" "1" "slot" "ext:slot-old-active")
+  OUTER_SPRINT h_tombstone_fresh_compact $flir_registry_compact("bg2" "1" "slot" "ext:slot-fresh-disabled")
+  OUTER_SET h_tombstone_fresh_enabled = $flir_registry_enabled("bg2" "1" "slot" "ext:slot-fresh-disabled")
+  OUTER_SET h_tombstone_max = $flir_registry_scope_max("bg2|1|slot")
+  OUTER_TEXT_SPRINT h_tombstone_report ~TOMBSTONES old=%h_tombstone_old_compact%/%h_tombstone_old_enabled% fresh=%h_tombstone_fresh_compact%/%h_tombstone_fresh_enabled% max=%h_tombstone_max%%WNL%%h_tombstone_rows%~
+  COPY + ~...blank~ ~%argv[1]%~
+    INSERT_BYTES 0 STRING_LENGTH ~%h_tombstone_report%~
+    WRITE_ASCIIE 0 ~%h_tombstone_report%~ (STRING_LENGTH ~%h_tombstone_report%~)
+  BUT_ONLY
+
+BEGIN ~disabled slot cannot be resurrected~ DESIGNATED 127
+  LAM flir_registry_harness_reset
+  OUTER_SET flir_registry_store_enabled = 0
+  OUTER_SPRINT flir_registry_store_campaign ~bg2~
+  OUTER_SPRINT flir_registry_store_tier ~1~
+  OUTER_SPRINT flir_registry_store_kind ~slot~
+  OUTER_SPRINT flir_registry_store_stable ~ext:slot-disabled~
+  OUTER_SPRINT flir_registry_store_compact ~4~
+  LAM flir_registry_store_row
+  OUTER_SPRINT flir_registry_register_campaign ~bg2~
+  OUTER_SPRINT flir_registry_register_tier ~1~
+  OUTER_SPRINT flir_registry_register_stable ~ext:slot-disabled~
+  OUTER_SPRINT flir_registry_register_compact ~~
+  LAM flir_registry_register_slot
+  LAM flir_registry_reconcile_mappings
+
+BEGIN ~disabled endpoint slot persists through registry and catalog~ DESIGNATED 128
+  LAM flir_registry_harness_reset
+  LAM flir_endpoints_reset
+  OUTER_SET $bg2_tiers("1") = 1
+  OUTER_SPRINT flir_endpoint_arg_provider ~ext~
+  OUTER_SPRINT flir_endpoint_arg_id ~ground-disabled~
+  OUTER_SPRINT flir_endpoint_arg_area ~area-a~
+  OUTER_SPRINT flir_endpoint_arg_target_kind ~ground~
+  OUTER_SPRINT flir_endpoint_arg_target_identity ~-~
+  OUTER_SET flir_endpoint_arg_x = 50
+  OUTER_SET flir_endpoint_arg_y = 60
+  OUTER_SET flir_endpoint_arg_capacity = 1
+  OUTER_SPRINT flir_endpoint_arg_static_policy ~authored-static~
+  OUTER_SPRINT flir_endpoint_arg_fallback ~-~
+  OUTER_SPRINT flir_endpoint_arg_adapter ~~
+  OUTER_SET flir_endpoint_arg_enabled = 1
+  LAM flir_endpoints_add_endpoint
+  OUTER_SPRINT flir_endpoint_slot_arg_provider ~ext~
+  OUTER_SPRINT flir_endpoint_slot_arg_id ~slot-disabled~
+  OUTER_SPRINT flir_endpoint_slot_arg_campaign ~bg2~
+  OUTER_SPRINT flir_endpoint_slot_arg_tier ~1~
+  OUTER_SPRINT flir_endpoint_slot_arg_legacy_raw ~slot-disabled~
+  OUTER_SPRINT flir_endpoint_slot_arg_legacy_ident ~generated~
+  OUTER_SET flir_endpoint_slot_arg_legacy_occurrence = 1
+  OUTER_SPRINT flir_endpoint_slot_arg_endpoint ~ext:ground-disabled~
+  OUTER_SPRINT flir_endpoint_slot_arg_band ~bg2:1~
+  OUTER_SET flir_endpoint_slot_arg_weight = 1
+  OUTER_SET flir_endpoint_slot_arg_value = 0
+  OUTER_SET flir_endpoint_slot_arg_enabled = 0
+  LAM flir_endpoints_add_slot
+  LAM flir_endpoints_validate
+  LAM flir_endpoints_register_registry_slots
+  LAM flir_registry_reconcile_mappings
+  LAM flir_endpoints_claim_slots
+  LAM flir_endpoints_register_catalog_rows
+  LAM flir_registry_finalize_catalog
+  LAM flir_registry_write_state
+  OUTER_SET h_endpoint_registry_compact = $flir_registry_compact("bg2" "1" "slot" "ext:slot-disabled")
+  OUTER_SET h_endpoint_registry_enabled = $flir_registry_enabled("bg2" "1" "slot" "ext:slot-disabled")
+  OUTER_SET h_endpoint_catalog_enabled = $flir_catalog_enabled("slot" "ext:slot-disabled")
+  OUTER_TEXT_SPRINT h_endpoint_registry_report ~ENDPOINT_REGISTRY compact=%h_endpoint_registry_compact% registry=%h_endpoint_registry_enabled% catalog=%h_endpoint_catalog_enabled%%WNL%~
+  COPY + ~...blank~ ~%argv[1]%~
+    INSERT_BYTES 0 STRING_LENGTH ~%h_endpoint_registry_report%~
+    WRITE_ASCIIE 0 ~%h_endpoint_registry_report%~ (STRING_LENGTH ~%h_endpoint_registry_report%~)
+  BUT_ONLY
+
+BEGIN ~persisted endpoint tombstone cannot resurrect next install~ DESIGNATED 129
+  LAM flir_registry_harness_reset
+  OUTER_SPRINT Preserve ~y~
+  LAM flir_registry_preload_state
+  LAM flir_endpoints_reset
+  OUTER_SET $bg2_tiers("1") = 1
+  OUTER_SPRINT flir_endpoint_arg_provider ~ext~
+  OUTER_SPRINT flir_endpoint_arg_id ~ground-disabled~
+  OUTER_SPRINT flir_endpoint_arg_area ~area-a~
+  OUTER_SPRINT flir_endpoint_arg_target_kind ~ground~
+  OUTER_SPRINT flir_endpoint_arg_target_identity ~-~
+  OUTER_SET flir_endpoint_arg_x = 50
+  OUTER_SET flir_endpoint_arg_y = 60
+  OUTER_SET flir_endpoint_arg_capacity = 1
+  OUTER_SPRINT flir_endpoint_arg_static_policy ~authored-static~
+  OUTER_SPRINT flir_endpoint_arg_fallback ~-~
+  OUTER_SPRINT flir_endpoint_arg_adapter ~~
+  OUTER_SET flir_endpoint_arg_enabled = 1
+  LAM flir_endpoints_add_endpoint
+  OUTER_SPRINT flir_endpoint_slot_arg_provider ~ext~
+  OUTER_SPRINT flir_endpoint_slot_arg_id ~slot-disabled~
+  OUTER_SPRINT flir_endpoint_slot_arg_campaign ~bg2~
+  OUTER_SPRINT flir_endpoint_slot_arg_tier ~1~
+  OUTER_SPRINT flir_endpoint_slot_arg_legacy_raw ~slot-disabled~
+  OUTER_SPRINT flir_endpoint_slot_arg_legacy_ident ~generated~
+  OUTER_SET flir_endpoint_slot_arg_legacy_occurrence = 1
+  OUTER_SPRINT flir_endpoint_slot_arg_endpoint ~ext:ground-disabled~
+  OUTER_SPRINT flir_endpoint_slot_arg_band ~bg2:1~
+  OUTER_SET flir_endpoint_slot_arg_weight = 1
+  OUTER_SET flir_endpoint_slot_arg_value = 0
+  OUTER_SET flir_endpoint_slot_arg_enabled = 1
+  LAM flir_endpoints_add_slot
+  OUTER_SET $flir_endpoint_candidate("bg2" "1" "bg2:1" "ext:ground-disabled") = 1
+  LAM flir_endpoints_validate
+
+BEGIN ~generated slot extension disable persists first install~ DESIGNATED 130
+  LAM flir_registry_harness_reset
+  LAM flir_endpoints_reset
+  LAM flir_registry_harness_generated_endpoint
+  OUTER_SPRINT flir_endpoint_allocate_campaign ~bg2~
+  OUTER_SPRINT flir_endpoint_allocate_tier ~1~
+  OUTER_SPRINT flir_endpoint_allocate_band ~bg2:1~
+  OUTER_SET flir_endpoint_allocate_demand = 1
+  OUTER_SPRINT flir_endpoint_allocate_provider ~core~
+  OUTER_SPRINT flir_endpoint_allocate_id ~generated-first~
+  LAM flir_endpoints_allocate_rounds
+  OUTER_SPRINT h_generated_slot $flir_endpoint_slot_order("1")
+  OUTER_SET flir_endpoint_extension_expected_fingerprint = $flir_endpoint_slot_row_fingerprint("%h_generated_slot%")
+  OUTER_SET h_generated_first_fingerprint = flir_endpoint_extension_expected_fingerprint
+  COPY + ~...blank~ ~override/h#gfpr.dat~
+    INSERT_BYTES 0 4
+    WRITE_LONG 0 h_generated_first_fingerprint
+  BUT_ONLY
+  OUTER_SPRINT flir_endpoint_extension_kind ~slot~
+  OUTER_SPRINT flir_endpoint_extension_operation ~DISABLE~
+  OUTER_SPRINT flir_endpoint_extension_actor_provider ~compat~
+  OUTER_SPRINT flir_endpoint_extension_provider ~flir~
+  OUTER_SPRINT flir_endpoint_extension_id $flir_endpoint_slot_local_id("%h_generated_slot%")
+  LAM flir_endpoints_apply
+  LAM flir_endpoints_validate
+  LAM flir_endpoints_register_registry_slots
+  LAM flir_registry_reconcile_mappings
+  LAM flir_endpoints_claim_slots
+  LAM flir_endpoints_register_catalog_rows
+  LAM flir_registry_finalize_catalog
+  LAM flir_registry_write_state
+  OUTER_SET h_generated_first_value = $flir_endpoint_slot_value("%h_generated_slot%")
+  OUTER_TEXT_SPRINT h_generated_first_report ~GENERATED_DISABLE_FIRST enabled=0 value=%h_generated_first_value%%WNL%~
+  COPY + ~...blank~ ~%argv[1]%~
+    INSERT_BYTES 0 STRING_LENGTH ~%h_generated_first_report%~
+    WRITE_ASCIIE 0 ~%h_generated_first_report%~ (STRING_LENGTH ~%h_generated_first_report%~)
+  BUT_ONLY
+
+BEGIN ~generated slot extension disable replays next install~ DESIGNATED 131
+  LAM flir_registry_harness_reset
+  OUTER_SPRINT Preserve ~y~
+  LAM flir_registry_preload_state
+  LAM flir_endpoints_reset
+  LAM flir_registry_harness_generated_endpoint
+  OUTER_SPRINT flir_endpoint_generated_campaign ~bg2~
+  OUTER_SPRINT flir_endpoint_generated_tier ~1~
+  OUTER_SPRINT flir_endpoint_generated_band ~bg2:1~
+  OUTER_SPRINT flir_endpoint_generated_endpoint ~core:endpoint-generated~
+  OUTER_SET flir_endpoint_generated_round = 1
+  OUTER_SET flir_endpoint_generated_generation = 0
+  LAM flir_endpoints_generated_slot_identity
+  LAM flir_endpoints_rehydrate_generated_slots
+  OUTER_SET h_generated_original_fingerprint = 0
+  COPY_EXISTING - ~h#gfpr.dat~ ~.../randomiser/fl-inlined/h#gfpr.dat~
+    LAUNCH_PATCH_MACRO flir_registry_harness_read_generated_fingerprint
+  OUTER_SET h_generated_rehydrated_fingerprint = 0
+  ACTION_IF VARIABLE_IS_SET $flir_endpoint_slot_present("%flir_endpoint_generated_qualified%") BEGIN
+    OUTER_SET h_generated_rehydrated_fingerprint = $flir_endpoint_slot_row_fingerprint("%flir_endpoint_generated_qualified%")
+  END
+  ACTION_IF h_generated_original_fingerprint < 1
+        OR h_generated_rehydrated_fingerprint != h_generated_original_fingerprint BEGIN
+    FAIL ~FLIR_ENDPOINT_ERR FIXTURE_FINGERPRINT provider=test id=generated-replay~
+  END
+  OUTER_SET flir_endpoint_extension_expected_fingerprint = h_generated_original_fingerprint
+  OUTER_SPRINT flir_endpoint_extension_kind ~slot~
+  OUTER_SPRINT flir_endpoint_extension_operation ~DISABLE~
+  OUTER_SPRINT flir_endpoint_extension_actor_provider ~compat~
+  OUTER_SPRINT flir_endpoint_extension_provider ~flir~
+  OUTER_SPRINT flir_endpoint_extension_id ~%flir_endpoint_generated_local%~
+  LAM flir_endpoints_apply
+  LAM flir_endpoints_validate
+  LAM flir_endpoints_register_registry_slots
+  LAM flir_registry_reconcile_mappings
+  LAM flir_endpoints_claim_slots
+  LAM flir_endpoints_register_catalog_rows
+  LAM flir_registry_finalize_catalog
+  LAM flir_registry_write_state
+  OUTER_SET h_generated_replay_value = $flir_endpoint_slot_value("%flir_endpoint_generated_qualified%")
+  OUTER_SET h_generated_replay_enabled = $flir_endpoint_slot_enabled("%flir_endpoint_generated_qualified%")
+  OUTER_TEXT_SPRINT h_generated_replay_report ~GENERATED_DISABLE_REPLAY enabled=%h_generated_replay_enabled% value=%h_generated_replay_value%%WNL%~
+  COPY + ~...blank~ ~%argv[1]%~
+    INSERT_BYTES 0 STRING_LENGTH ~%h_generated_replay_report%~
+    WRITE_ASCIIE 0 ~%h_generated_replay_report%~ (STRING_LENGTH ~%h_generated_replay_report%~)
   BUT_ONLY

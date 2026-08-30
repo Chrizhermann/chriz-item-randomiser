@@ -107,6 +107,8 @@ DEFINE_ACTION_MACRO flir_registry_reset BEGIN
   OUTER_SET flir_registry_existing_file_fingerprint = 0
   OUTER_SET flir_registry_catalog_fingerprint = 0
   OUTER_SET flir_registry_file_fingerprint = 0
+  OUTER_SET flir_registry_compacts_ready = 0
+  OUTER_SET flir_registry_catalog_finalized = 0
   OUTER_SET flir_registry_state_ready = 0
   ACTION_CLEAR_ARRAY flir_registry_present
   ACTION_CLEAR_ARRAY flir_registry_current
@@ -139,6 +141,8 @@ DEFINE_ACTION_MACRO flir_registry_reset BEGIN
   ACTION_CLEAR_ARRAY flir_registry_legacy_overflow_area
   ACTION_CLEAR_ARRAY flir_registry_legacy_overflow_pick
   ACTION_CLEAR_ARRAY flir_registry_legacy_overflow_location
+  ACTION_CLEAR_ARRAY flir_registry_legacy_overflow_stable
+  ACTION_CLEAR_ARRAY flir_registry_legacy_overflow_occurrence
 END
 
 DEFINE_ACTION_MACRO flir_registry_validate_values BEGIN
@@ -498,6 +502,72 @@ DEFINE_ACTION_MACRO flir_registry_note_current_slot BEGIN
   END
 END
 
+// Register a current slot identity without assigning a compact.  Endpoint
+// providers use this seam before reconciliation; an optional explicit compact
+// is accepted only for a migrated or otherwise frozen slot.
+DEFINE_ACTION_MACRO flir_registry_register_slot BEGIN
+  OUTER_SET flir_registry_store_enabled = 1
+  OUTER_SPRINT flir_registry_store_campaign ~%flir_registry_register_campaign%~
+  OUTER_SPRINT flir_registry_store_tier ~%flir_registry_register_tier%~
+  OUTER_SPRINT flir_registry_store_kind ~slot~
+  OUTER_SPRINT flir_registry_store_stable ~%flir_registry_register_stable%~
+  ACTION_IF "%flir_registry_register_compact%" STRING_EQUAL_CASE "" BEGIN
+    OUTER_SPRINT flir_registry_store_compact ~1~
+  END ELSE BEGIN
+    OUTER_SPRINT flir_registry_store_compact ~%flir_registry_register_compact%~
+  END
+  LAM flir_registry_validate_values
+
+  ACTION_IF VARIABLE_IS_SET $flir_registry_catalog_slot("%flir_registry_register_campaign%" "%flir_registry_register_tier%" "%flir_registry_register_stable%")
+        AND NOT ("%flir_registry_register_compact%" STRING_EQUAL_CASE "")
+        AND VARIABLE_IS_SET $flir_registry_catalog_slot_compact("%flir_registry_register_campaign%" "%flir_registry_register_tier%" "%flir_registry_register_stable%")
+        AND NOT ("%flir_registry_register_compact%" STRING_EQUAL $flir_registry_catalog_slot_compact("%flir_registry_register_campaign%" "%flir_registry_register_tier%" "%flir_registry_register_stable%")) BEGIN
+    LAF flir_registry_fail STR_VAR code = ~COMPACT_COLLISION~ kind = ~slot~ id = EVAL ~%flir_registry_register_stable%~ END
+  END
+  OUTER_SPRINT $flir_registry_catalog_slot("%flir_registry_register_campaign%" "%flir_registry_register_tier%" "%flir_registry_register_stable%") ~1~
+  ACTION_IF NOT ("%flir_registry_register_compact%" STRING_EQUAL_CASE "") BEGIN
+    OUTER_SPRINT $flir_registry_catalog_slot_compact("%flir_registry_register_campaign%" "%flir_registry_register_tier%" "%flir_registry_register_stable%") ~%flir_registry_register_compact%~
+  END
+  OUTER_SET flir_registry_compacts_ready = 0
+  OUTER_SET flir_registry_catalog_finalized = 0
+  OUTER_SET flir_registry_state_ready = 0
+END
+
+// Register an intentionally disabled slot as a permanent registry tombstone.
+// Existing compacts are retained; a first-install disable still receives the
+// next monotonic compact so removing the extension cannot resurrect or reuse
+// its identity later.
+DEFINE_ACTION_MACRO flir_registry_register_slot_tombstone BEGIN
+  OUTER_SET flir_registry_store_enabled = 0
+  OUTER_SPRINT flir_registry_store_campaign ~%flir_registry_register_campaign%~
+  OUTER_SPRINT flir_registry_store_tier ~%flir_registry_register_tier%~
+  OUTER_SPRINT flir_registry_store_kind ~slot~
+  OUTER_SPRINT flir_registry_store_stable ~%flir_registry_register_stable%~
+  ACTION_IF "%flir_registry_register_compact%" STRING_EQUAL_CASE "" BEGIN
+    OUTER_SPRINT flir_registry_store_compact ~1~
+  END ELSE BEGIN
+    OUTER_SPRINT flir_registry_store_compact ~%flir_registry_register_compact%~
+  END
+  LAM flir_registry_validate_values
+
+  OUTER_SPRINT flir_registry_tombstone_compact ~%flir_registry_register_compact%~
+  ACTION_IF "%flir_registry_tombstone_compact%" STRING_EQUAL_CASE ""
+        AND VARIABLE_IS_SET $flir_registry_present("%flir_registry_register_campaign%" "%flir_registry_register_tier%" "slot" "%flir_registry_register_stable%") BEGIN
+    OUTER_SPRINT flir_registry_tombstone_compact $flir_registry_compact("%flir_registry_register_campaign%" "%flir_registry_register_tier%" "slot" "%flir_registry_register_stable%")
+  END
+  ACTION_IF "%flir_registry_tombstone_compact%" STRING_EQUAL_CASE ""
+        AND VARIABLE_IS_SET $flir_registry_migration_slot_compact("%flir_registry_register_campaign%" "%flir_registry_register_tier%" "%flir_registry_register_stable%") BEGIN
+    OUTER_SPRINT flir_registry_tombstone_compact $flir_registry_migration_slot_compact("%flir_registry_register_campaign%" "%flir_registry_register_tier%" "%flir_registry_register_stable%")
+  END
+  OUTER_SET $flir_registry_catalog_slot("%flir_registry_register_campaign%" "%flir_registry_register_tier%" "%flir_registry_register_stable%") = 0
+  ACTION_IF NOT ("%flir_registry_tombstone_compact%" STRING_EQUAL_CASE "") BEGIN
+    OUTER_SPRINT $flir_registry_catalog_slot_compact("%flir_registry_register_campaign%" "%flir_registry_register_tier%" "%flir_registry_register_stable%") ~%flir_registry_tombstone_compact%~
+  END
+  OUTER_SET flir_registry_compacts_ready = 0
+  OUTER_SET flir_registry_catalog_finalized = 0
+  OUTER_SET flir_registry_state_ready = 0
+END
+
 DEFINE_ACTION_MACRO flir_registry_capture_final_slots BEGIN
   ACTION_IF weidu_action = 0 BEGIN
     ACTION_CLEAR_ARRAY flir_registry_slot_counter
@@ -629,6 +699,8 @@ DEFINE_ACTION_MACRO flir_registry_capture_old_unmarked_legacy_slots BEGIN
     ACTION_CLEAR_ARRAY flir_registry_legacy_overflow_area
     ACTION_CLEAR_ARRAY flir_registry_legacy_overflow_pick
     ACTION_CLEAR_ARRAY flir_registry_legacy_overflow_location
+    ACTION_CLEAR_ARRAY flir_registry_legacy_overflow_stable
+    ACTION_CLEAR_ARRAY flir_registry_legacy_overflow_occurrence
 
     ACTION_PHP_EACH location_array#stage1 AS flir_registry_loc => blank BEGIN
       OUTER_SPRINT flir_registry_slot_raw ~%flir_registry_loc_0%~
@@ -687,6 +759,11 @@ DEFINE_ACTION_MACRO flir_registry_capture_old_unmarked_legacy_slots BEGIN
         END
         OUTER_SET flir_registry_slot_occurrence_value = $flir_registry_migration_occurrence("%flir_registry_slot_campaign%" "%flir_registry_slot_tier%" "%flir_registry_slot_raw%" "%flir_registry_slot_ident%")
         OUTER_SPRINT flir_registry_slot_stable ~legacy:slot-%flir_registry_slot_campaign%-%flir_registry_slot_tier%-%flir_registry_slot_raw%-%flir_registry_slot_ident%-%flir_registry_slot_occurrence_value%~
+        ACTION_IF "%flir_registry_slot_ident%" STRING_EQUAL_CASE ""
+              AND VARIABLE_IS_SET $flir_registry_legacy_overflow_location("%flir_registry_loc_0%" "%flir_registry_loc_1%" "%flir_registry_loc_2%" "%flir_registry_loc_3%") BEGIN
+          OUTER_SPRINT $flir_registry_legacy_overflow_stable("%flir_registry_loc_0%" "%flir_registry_loc_1%" "%flir_registry_loc_2%" "%flir_registry_loc_3%") ~%flir_registry_slot_stable%~
+          OUTER_SET $flir_registry_legacy_overflow_occurrence("%flir_registry_loc_0%" "%flir_registry_loc_1%" "%flir_registry_loc_2%" "%flir_registry_loc_3%") = flir_registry_slot_occurrence_value
+        END
         ACTION_IF flir_registry_old_unmarked_migration = 1 BEGIN
           LAM flir_registry_note_current_slot
         END
@@ -710,31 +787,27 @@ DEFINE_ACTION_MACRO flir_registry_compute_catalog_fingerprint BEGIN
   OUTER_TEXT_SPRINT flir_registry_catalog_text ~%flir_registry_catalog_text%normalized-catalog%WNL%%flir_registry_normalized_catalog_rows%~
   ACTION_SORT_ARRAY_INDICES flir_registry_catalog_unit LEXICOGRAPHICALLY
   ACTION_PHP_EACH flir_registry_catalog_unit AS flir_registry_catalog_entry => flir_registry_catalog_enabled BEGIN
-    ACTION_IF flir_registry_catalog_enabled = 1 BEGIN
-      OUTER_SPRINT flir_registry_catalog_campaign ~%flir_registry_catalog_entry_0%~
-      OUTER_SPRINT flir_registry_catalog_tier ~%flir_registry_catalog_entry_1%~
-      OUTER_SPRINT flir_registry_catalog_stable ~%flir_registry_catalog_entry_2%~
-      ACTION_IF VARIABLE_IS_SET $flir_registry_catalog_unit_compact("%flir_registry_catalog_campaign%" "%flir_registry_catalog_tier%" "%flir_registry_catalog_stable%") BEGIN
-        OUTER_SPRINT flir_registry_catalog_compact $flir_registry_catalog_unit_compact("%flir_registry_catalog_campaign%" "%flir_registry_catalog_tier%" "%flir_registry_catalog_stable%")
-      END ELSE BEGIN
-        OUTER_SPRINT flir_registry_catalog_compact ~~
-      END
-      OUTER_TEXT_SPRINT flir_registry_catalog_text ~%flir_registry_catalog_text%unit %flir_registry_catalog_campaign% %flir_registry_catalog_tier% %flir_registry_catalog_stable% %flir_registry_catalog_compact%%WNL%~
+    OUTER_SPRINT flir_registry_catalog_campaign ~%flir_registry_catalog_entry_0%~
+    OUTER_SPRINT flir_registry_catalog_tier ~%flir_registry_catalog_entry_1%~
+    OUTER_SPRINT flir_registry_catalog_stable ~%flir_registry_catalog_entry_2%~
+    ACTION_IF VARIABLE_IS_SET $flir_registry_catalog_unit_compact("%flir_registry_catalog_campaign%" "%flir_registry_catalog_tier%" "%flir_registry_catalog_stable%") BEGIN
+      OUTER_SPRINT flir_registry_catalog_compact $flir_registry_catalog_unit_compact("%flir_registry_catalog_campaign%" "%flir_registry_catalog_tier%" "%flir_registry_catalog_stable%")
+    END ELSE BEGIN
+      OUTER_SPRINT flir_registry_catalog_compact ~~
     END
+    OUTER_TEXT_SPRINT flir_registry_catalog_text ~%flir_registry_catalog_text%unit %flir_registry_catalog_campaign% %flir_registry_catalog_tier% %flir_registry_catalog_stable% %flir_registry_catalog_compact% %flir_registry_catalog_enabled%%WNL%~
   END
   ACTION_SORT_ARRAY_INDICES flir_registry_catalog_slot LEXICOGRAPHICALLY
   ACTION_PHP_EACH flir_registry_catalog_slot AS flir_registry_catalog_entry => flir_registry_catalog_enabled BEGIN
-    ACTION_IF flir_registry_catalog_enabled = 1 BEGIN
-      OUTER_SPRINT flir_registry_catalog_campaign ~%flir_registry_catalog_entry_0%~
-      OUTER_SPRINT flir_registry_catalog_tier ~%flir_registry_catalog_entry_1%~
-      OUTER_SPRINT flir_registry_catalog_stable ~%flir_registry_catalog_entry_2%~
-      ACTION_IF VARIABLE_IS_SET $flir_registry_catalog_slot_compact("%flir_registry_catalog_campaign%" "%flir_registry_catalog_tier%" "%flir_registry_catalog_stable%") BEGIN
-        OUTER_SPRINT flir_registry_catalog_compact $flir_registry_catalog_slot_compact("%flir_registry_catalog_campaign%" "%flir_registry_catalog_tier%" "%flir_registry_catalog_stable%")
-      END ELSE BEGIN
-        OUTER_SPRINT flir_registry_catalog_compact ~~
-      END
-      OUTER_TEXT_SPRINT flir_registry_catalog_text ~%flir_registry_catalog_text%slot %flir_registry_catalog_campaign% %flir_registry_catalog_tier% %flir_registry_catalog_stable% %flir_registry_catalog_compact%%WNL%~
+    OUTER_SPRINT flir_registry_catalog_campaign ~%flir_registry_catalog_entry_0%~
+    OUTER_SPRINT flir_registry_catalog_tier ~%flir_registry_catalog_entry_1%~
+    OUTER_SPRINT flir_registry_catalog_stable ~%flir_registry_catalog_entry_2%~
+    ACTION_IF VARIABLE_IS_SET $flir_registry_catalog_slot_compact("%flir_registry_catalog_campaign%" "%flir_registry_catalog_tier%" "%flir_registry_catalog_stable%") BEGIN
+      OUTER_SPRINT flir_registry_catalog_compact $flir_registry_catalog_slot_compact("%flir_registry_catalog_campaign%" "%flir_registry_catalog_tier%" "%flir_registry_catalog_stable%")
+    END ELSE BEGIN
+      OUTER_SPRINT flir_registry_catalog_compact ~~
     END
+    OUTER_TEXT_SPRINT flir_registry_catalog_text ~%flir_registry_catalog_text%slot %flir_registry_catalog_campaign% %flir_registry_catalog_tier% %flir_registry_catalog_stable% %flir_registry_catalog_compact% %flir_registry_catalog_enabled%%WNL%~
   END
   LAF flir_registry_hash_text STR_VAR text = EVAL ~%flir_registry_catalog_text%~ RET flir_registry_catalog_fingerprint = hash END
 END
@@ -780,6 +853,29 @@ DEFINE_ACTION_MACRO flir_registry_insert_current BEGIN
     OUTER_SPRINT flir_registry_store_compact ~%flir_registry_catalog_compact%~
     LAM flir_registry_store_row
     OUTER_SPRINT $flir_registry_current("%flir_registry_catalog_campaign%" "%flir_registry_catalog_tier%" "%flir_registry_catalog_kind%" "%flir_registry_catalog_stable%") ~1~
+  END
+END
+
+DEFINE_ACTION_MACRO flir_registry_insert_tombstone BEGIN
+  ACTION_IF VARIABLE_IS_SET $flir_registry_present("%flir_registry_catalog_campaign%" "%flir_registry_catalog_tier%" "%flir_registry_catalog_kind%" "%flir_registry_catalog_stable%") BEGIN
+    OUTER_SPRINT flir_registry_existing_compact $flir_registry_compact("%flir_registry_catalog_campaign%" "%flir_registry_catalog_tier%" "%flir_registry_catalog_kind%" "%flir_registry_catalog_stable%")
+    ACTION_IF NOT ("%flir_registry_catalog_compact%" STRING_EQUAL_CASE "")
+          AND NOT ("%flir_registry_catalog_compact%" STRING_EQUAL "%flir_registry_existing_compact%") BEGIN
+      LAF flir_registry_fail STR_VAR code = ~LEGACY_ORDINAL_DRIFT~ kind = EVAL ~%flir_registry_catalog_kind%~ id = EVAL ~%flir_registry_catalog_stable%~ END
+    END
+    OUTER_SPRINT flir_registry_catalog_compact ~%flir_registry_existing_compact%~
+    OUTER_SET $flir_registry_enabled("%flir_registry_catalog_campaign%" "%flir_registry_catalog_tier%" "%flir_registry_catalog_kind%" "%flir_registry_catalog_stable%") = 0
+    OUTER_SPRINT flir_registry_compact_key ~%flir_registry_catalog_campaign%|%flir_registry_catalog_tier%|%flir_registry_catalog_kind%|%flir_registry_catalog_compact%~
+    OUTER_SET $flir_registry_compact_enabled("%flir_registry_compact_key%") = 0
+  END ELSE BEGIN
+    LAM flir_registry_assign_current_compact
+    OUTER_SET flir_registry_store_enabled = 0
+    OUTER_SPRINT flir_registry_store_campaign ~%flir_registry_catalog_campaign%~
+    OUTER_SPRINT flir_registry_store_tier ~%flir_registry_catalog_tier%~
+    OUTER_SPRINT flir_registry_store_kind ~%flir_registry_catalog_kind%~
+    OUTER_SPRINT flir_registry_store_stable ~%flir_registry_catalog_stable%~
+    OUTER_SPRINT flir_registry_store_compact ~%flir_registry_catalog_compact%~
+    LAM flir_registry_store_row
   END
 END
 
@@ -834,13 +930,27 @@ DEFINE_ACTION_MACRO flir_registry_reconcile_kind BEGIN
         LAM flir_registry_assign_current_compact
         OUTER_SPRINT $flir_registry_catalog_slot_compact("%flir_registry_catalog_campaign%" "%flir_registry_catalog_tier%" "%flir_registry_catalog_stable%") ~%flir_registry_catalog_compact%~
         LAM flir_registry_insert_current
+      END ELSE BEGIN
+        OUTER_SPRINT flir_registry_catalog_campaign ~%flir_registry_catalog_entry_0%~
+        OUTER_SPRINT flir_registry_catalog_tier ~%flir_registry_catalog_entry_1%~
+        OUTER_SPRINT flir_registry_catalog_stable ~%flir_registry_catalog_entry_2%~
+        ACTION_IF VARIABLE_IS_SET $flir_registry_catalog_slot_compact("%flir_registry_catalog_campaign%" "%flir_registry_catalog_tier%" "%flir_registry_catalog_stable%") BEGIN
+          OUTER_SPRINT flir_registry_catalog_compact $flir_registry_catalog_slot_compact("%flir_registry_catalog_campaign%" "%flir_registry_catalog_tier%" "%flir_registry_catalog_stable%")
+        END ELSE BEGIN
+          OUTER_SPRINT flir_registry_catalog_compact ~~
+        END
+        LAM flir_registry_insert_tombstone
+        OUTER_SPRINT $flir_registry_catalog_slot_compact("%flir_registry_catalog_campaign%" "%flir_registry_catalog_tier%" "%flir_registry_catalog_stable%") ~%flir_registry_catalog_compact%~
       END
     END
   END
 END
 
-DEFINE_ACTION_MACRO flir_registry_reconcile BEGIN
+DEFINE_ACTION_MACRO flir_registry_reconcile_mappings BEGIN
   ACTION_IF weidu_action = 0 BEGIN
+    OUTER_SET flir_registry_compacts_ready = 0
+    OUTER_SET flir_registry_catalog_finalized = 0
+    OUTER_SET flir_registry_state_ready = 0
     OUTER_SPRINT flir_registry_catalog_kind ~unit~
     LAM flir_registry_reconcile_kind
     OUTER_SPRINT flir_registry_catalog_kind ~slot~
@@ -862,8 +972,24 @@ DEFINE_ACTION_MACRO flir_registry_reconcile BEGIN
         END
       END
     END
-    LAM flir_registry_compute_catalog_fingerprint
+    OUTER_SET flir_registry_compacts_ready = 1
   END
+END
+
+DEFINE_ACTION_MACRO flir_registry_finalize_catalog BEGIN
+  ACTION_IF weidu_action = 0 BEGIN
+    ACTION_IF flir_registry_compacts_ready != 1 BEGIN
+      LAF flir_registry_fail STR_VAR code = ~MAPPINGS_NOT_READY~ kind = ~catalog~ id = ~fingerprint~ END
+    END
+    LAM flir_registry_compute_catalog_fingerprint
+    OUTER_SET flir_registry_catalog_finalized = 1
+    OUTER_SET flir_registry_state_ready = 0
+  END
+END
+
+DEFINE_ACTION_MACRO flir_registry_reconcile BEGIN
+  LAM flir_registry_reconcile_mappings
+  LAM flir_registry_finalize_catalog
 END
 
 DEFINE_ACTION_MACRO flir_registry_bootstrap BEGIN
@@ -934,6 +1060,9 @@ END
 
 DEFINE_ACTION_MACRO flir_registry_write_state BEGIN
   ACTION_IF weidu_action = 0 BEGIN
+    ACTION_IF flir_registry_catalog_finalized != 1 BEGIN
+      LAF flir_registry_fail STR_VAR code = ~CATALOG_NOT_FINALIZED~ kind = ~file~ id = ~fl#irreg.2da~ END
+    END
     LAM flir_registry_build_state_text
     OUTER_SET flir_registry_state_ready = 1
     ACTION_IF !VARIABLE_IS_SET flir_mode1_defer_state_publication

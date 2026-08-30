@@ -1,0 +1,1161 @@
+// Synthetic endpoint/capacity harness. All resources and IDs are fictional.
+// argv[0] = production endpoints.tpa
+// argv[1] = production catalog.tpa
+// argv[2] = report path
+// argv[3] = endpoint extension fixture
+// argv[4] = optional real SSL BAF
+BACKUP ~backup~
+AUTHOR ~BG2 Item Randomiser endpoint test harness~
+
+ALWAYS
+  INCLUDE ~%argv[1]%~
+  INCLUDE ~%argv[0]%~
+END
+
+DEFINE_ACTION_MACRO h_endpoint BEGIN
+  LAM flir_endpoints_add_endpoint
+END
+
+DEFINE_ACTION_MACRO h_slot BEGIN
+  LAM flir_endpoints_add_slot
+END
+
+DEFINE_ACTION_MACRO flir_registry_campaign_for_tier BEGIN
+  ACTION_IF "%flir_registry_tier_for_campaign%" STRING_MATCHES_REGEXP ~^\([1-9]\|1[0-3]\|fa\|ka\|s[4-9]\)$~ = 0 BEGIN
+    OUTER_SPRINT flir_registry_detected_campaign ~bg2~
+  END ELSE BEGIN
+    OUTER_SPRINT flir_registry_detected_campaign ~bg1~
+  END
+END
+
+DEFINE_PATCH_MACRO h_read_legacy_locations BEGIN
+  READ_2DA_ENTRIES_NOW h_location_rows 6
+  FOR (h_row = 1; h_row < h_location_rows; ++h_row) BEGIN
+    READ_2DA_ENTRY_FORMER h_location_rows h_row 0 h_raw
+    READ_2DA_ENTRY_FORMER h_location_rows h_row 1 h_tier
+    READ_2DA_ENTRY_FORMER h_location_rows h_row 2 h_target
+    READ_2DA_ENTRY_FORMER h_location_rows h_row 3 h_area
+    READ_2DA_ENTRY_FORMER h_location_rows h_row 4 h_ident
+    SPRINT $location_array("%h_raw%" "%h_tier%" "%h_target%" "%h_area%" "%h_ident%") ~~
+  END
+END
+
+BEGIN ~valid explicit endpoints, fair rounds, and sparse values~ DESIGNATED 0
+  LAM flir_endpoints_reset
+
+  OUTER_SPRINT flir_endpoint_arg_provider ~core~
+  OUTER_SPRINT flir_endpoint_arg_id ~ground-a~
+  OUTER_SPRINT flir_endpoint_arg_area ~area-a~
+  OUTER_SPRINT flir_endpoint_arg_target_kind ~ground~
+  OUTER_SPRINT flir_endpoint_arg_target_identity ~-~
+  OUTER_SET flir_endpoint_arg_x = 100
+  OUTER_SET flir_endpoint_arg_y = 200
+  OUTER_SET flir_endpoint_arg_capacity = 6
+  OUTER_SPRINT flir_endpoint_arg_static_policy ~authored~
+  OUTER_SPRINT flir_endpoint_arg_fallback ~-~
+  OUTER_SPRINT flir_endpoint_arg_adapter ~~
+  OUTER_SET flir_endpoint_arg_enabled = 1
+  LAM h_endpoint
+
+  ACTION_DEFINE_ASSOCIATIVE_ARRAY h_caps BEGIN
+    a => 2
+    b => 1
+    c => 3
+  END
+  ACTION_PHP_EACH h_caps AS h_name => h_cap BEGIN
+    OUTER_SPRINT flir_endpoint_arg_provider ~core~
+    OUTER_SPRINT flir_endpoint_arg_id ~endpoint-%h_name%~
+    OUTER_SPRINT flir_endpoint_arg_area ~area-a~
+    ACTION_IF "%h_name%" STRING_EQUAL_CASE ~a~ BEGIN
+      OUTER_SPRINT flir_endpoint_arg_target_kind ~creature~
+    END ELSE ACTION_IF "%h_name%" STRING_EQUAL_CASE ~b~ BEGIN
+      OUTER_SPRINT flir_endpoint_arg_target_kind ~container~
+    END ELSE BEGIN
+      OUTER_SPRINT flir_endpoint_arg_target_kind ~group~
+    END
+    OUTER_SPRINT flir_endpoint_arg_target_identity ~target-%h_name%~
+    OUTER_SET flir_endpoint_arg_x = 0
+    OUTER_SET flir_endpoint_arg_y = 0
+    OUTER_SET flir_endpoint_arg_capacity = h_cap
+    OUTER_SPRINT flir_endpoint_arg_static_policy ~runtime-resolve~
+    OUTER_SPRINT flir_endpoint_arg_fallback ~core:ground-a~
+    OUTER_SPRINT flir_endpoint_arg_adapter ~~
+    OUTER_SET flir_endpoint_arg_enabled = 1
+    LAM h_endpoint
+    OUTER_SET $flir_endpoint_candidate("bg2" "1" "early" "core:endpoint-%h_name%") = 1
+  END
+
+  OUTER_SPRINT flir_endpoint_allocate_campaign ~bg2~
+  OUTER_SPRINT flir_endpoint_allocate_tier ~1~
+  OUTER_SPRINT flir_endpoint_allocate_band ~early~
+  OUTER_SET flir_endpoint_allocate_demand = 6
+  OUTER_SPRINT flir_endpoint_allocate_provider ~core~
+  OUTER_SPRINT flir_endpoint_allocate_id ~scope-a~
+  LAM flir_endpoints_allocate_rounds
+
+  OUTER_SPRINT flir_endpoint_reserve_campaign ~bg2~
+  OUTER_SPRINT flir_endpoint_reserve_tier ~1~
+  OUTER_SPRINT flir_endpoint_reserve_provider ~core~
+  OUTER_SPRINT flir_endpoint_reserve_id ~tombstone~
+  OUTER_SET flir_endpoint_reserve_value = 1000
+  LAM flir_endpoints_reserve_value
+  // Freeze two migrated values and leave a long tombstone gap before appends.
+  OUTER_SPRINT h_first_slot $flir_endpoint_slot_order("1")
+  OUTER_SPRINT h_second_slot $flir_endpoint_slot_order("2")
+  OUTER_SET $flir_endpoint_slot_value("%h_first_slot%") = 2
+  OUTER_SET $flir_endpoint_slot_value("%h_second_slot%") = 7
+  LAM flir_endpoints_validate
+  LAM flir_endpoints_finalize_values
+
+  OUTER_SPRINT h_order ~~
+  OUTER_FOR (h_i = 1; h_i <= flir_endpoint_slot_count; ++h_i) BEGIN
+    OUTER_SPRINT h_slot_id $flir_endpoint_slot_order("%h_i%")
+    OUTER_SPRINT h_endpoint_id $flir_endpoint_slot_endpoint("%h_slot_id%")
+    OUTER_SPRINT h_value $flir_endpoint_slot_value("%h_slot_id%")
+    OUTER_SPRINT h_order ~%h_order%%h_endpoint_id%@%h_value%;~
+  END
+  OUTER_SPRINT h_scope ~bg2|1~
+  OUTER_SPRINT h_list $flir_endpoint_scope_list("%h_scope%")
+  OUTER_SPRINT h_max $flir_endpoint_scope_max("%h_scope%")
+  OUTER_SPRINT flir_endpoint_ssl_campaign ~bg2~
+  OUTER_SPRINT flir_endpoint_ssl_tier ~1~
+  LAM flir_endpoints_build_ssl_scope
+  OUTER_TEXT_SPRINT h_report ~ORDER %h_order%%WNL%SCOPE %h_list% MAX %h_max%%WNL%SPARSE%WNL%RandomNum(1004,2)%WNL%RandomNum(1004,7)%WNL%RandomNum(1004,1001)%WNL%RandomNum(1004,1002)%WNL%RandomNum(1004,1003)%WNL%RandomNum(1004,1004)%WNL%~
+  COPY + ~%argv[0]%~ ~%argv[2]%~
+    DELETE_BYTES 0 BUFFER_LENGTH
+    INSERT_BYTES 0 STRING_LENGTH ~%h_report%~
+    WRITE_ASCIIE 0 ~%h_report%~ (STRING_LENGTH ~%h_report%~)
+    LAUNCH_PATCH_MACRO flir_endpoints_rewrite_sparse_rolls
+  BUT_ONLY
+
+BEGIN ~all base declarations match the legacy active set~ DESIGNATED 1
+  ACTION_CLEAR_ARRAY location_array
+  ACTION_CLEAR_ARRAY removed_item_array
+  COPY - ~randomiser/lists/locations/base/bg2.2da~
+         ~.../randomiser/fl-inlined/lists/locations/base/bg2.2da~
+    LAUNCH_PATCH_MACRO h_read_legacy_locations
+  COPY - ~randomiser/lists/locations/base/bg1.2da~
+         ~.../randomiser/fl-inlined/lists/locations/base/bg1.2da~
+    LAUNCH_PATCH_MACRO h_read_legacy_locations
+  LAM flir_endpoints_load_declarations
+  LAM flir_endpoints_validate
+  OUTER_TEXT_SPRINT h_report ~DECLARATIONS %flir_endpoint_slot_count% ENDPOINTS %flir_endpoint_count%%WNL%~
+  COPY + ~%argv[0]%~ ~%argv[2]%~
+    DELETE_BYTES 0 BUFFER_LENGTH
+    INSERT_BYTES 0 STRING_LENGTH ~%h_report%~
+    WRITE_ASCIIE 0 ~%h_report%~ (STRING_LENGTH ~%h_report%~)
+  BUT_ONLY
+
+BEGIN ~planned units drive pre-mutation capacity~ DESIGNATED 2
+  LAM flir_endpoints_reset
+
+  OUTER_SPRINT flir_endpoint_arg_provider ~core~
+  OUTER_SPRINT flir_endpoint_arg_id ~ground-plan~
+  OUTER_SPRINT flir_endpoint_arg_area ~area-plan~
+  OUTER_SPRINT flir_endpoint_arg_target_kind ~ground~
+  OUTER_SPRINT flir_endpoint_arg_target_identity ~-~
+  OUTER_SET flir_endpoint_arg_x = 100
+  OUTER_SET flir_endpoint_arg_y = 200
+  OUTER_SET flir_endpoint_arg_capacity = 3
+  OUTER_SPRINT flir_endpoint_arg_static_policy ~authored~
+  OUTER_SPRINT flir_endpoint_arg_fallback ~-~
+  OUTER_SPRINT flir_endpoint_arg_adapter ~~
+  OUTER_SET flir_endpoint_arg_enabled = 1
+  LAM h_endpoint
+
+  OUTER_SPRINT flir_endpoint_arg_id ~endpoint-plan~
+  OUTER_SPRINT flir_endpoint_arg_target_kind ~container~
+  OUTER_SPRINT flir_endpoint_arg_target_identity ~target-plan~
+  OUTER_SET flir_endpoint_arg_x = 0
+  OUTER_SET flir_endpoint_arg_y = 0
+  OUTER_SPRINT flir_endpoint_arg_static_policy ~runtime-resolve~
+  OUTER_SPRINT flir_endpoint_arg_fallback ~core:ground-plan~
+  LAM h_endpoint
+  OUTER_SPRINT flir_endpoint_candidate_provider ~core~
+  OUTER_SPRINT flir_endpoint_candidate_id ~endpoint-plan~
+  OUTER_SPRINT flir_endpoint_candidate_campaign ~bg2~
+  OUTER_SPRINT flir_endpoint_candidate_tier ~1~
+  OUTER_SPRINT flir_endpoint_candidate_band ~bg2:1~
+  OUTER_SPRINT flir_endpoint_candidate_endpoint ~core:endpoint-plan~
+  LAM flir_endpoints_mark_candidate
+
+  OUTER_SET flir_endpoints_loaded = 1
+  OUTER_SET flir_removal_plan_count = 2
+  OUTER_SET $flir_removal_plan_emit("1") = 1
+  OUTER_SET $flir_removal_plan_emit_count("1") = 2
+  OUTER_SPRINT $flir_removal_plan_tier("1") ~1~
+  OUTER_SET $flir_removal_plan_emit("2") = 1
+  OUTER_SET $flir_removal_plan_emit_count("2") = 1
+  OUTER_SPRINT $flir_removal_plan_tier("2") ~1~
+  // Preserve history is deliberately unrelated and must never drive demand.
+  OUTER_SPRINT $removed_item_array("24" "99" "history") ~~
+  LAM flir_endpoints_build_plan
+
+  OUTER_TEXT_SPRINT h_report ~PLANNED_SLOTS %flir_endpoint_slot_count%%WNL%~
+  COPY + ~%argv[0]%~ ~%argv[2]%~
+    DELETE_BYTES 0 BUFFER_LENGTH
+    INSERT_BYTES 0 STRING_LENGTH ~%h_report%~
+    WRITE_ASCIIE 0 ~%h_report%~ (STRING_LENGTH ~%h_report%~)
+  BUT_ONLY
+
+BEGIN ~historical generated slots survive lower demand~ DESIGNATED 3
+  LAM flir_endpoints_reset
+  OUTER_SPRINT flir_endpoint_arg_provider ~core~
+  OUTER_SPRINT flir_endpoint_arg_id ~ground-history~
+  OUTER_SPRINT flir_endpoint_arg_area ~area-history~
+  OUTER_SPRINT flir_endpoint_arg_target_kind ~ground~
+  OUTER_SPRINT flir_endpoint_arg_target_identity ~-~
+  OUTER_SET flir_endpoint_arg_x = 100
+  OUTER_SET flir_endpoint_arg_y = 200
+  OUTER_SET flir_endpoint_arg_capacity = 2
+  OUTER_SPRINT flir_endpoint_arg_static_policy ~authored~
+  OUTER_SPRINT flir_endpoint_arg_fallback ~-~
+  OUTER_SPRINT flir_endpoint_arg_adapter ~~
+  OUTER_SET flir_endpoint_arg_enabled = 1
+  LAM h_endpoint
+  OUTER_SPRINT flir_endpoint_arg_id ~endpoint-history~
+  OUTER_SPRINT flir_endpoint_arg_target_kind ~container~
+  OUTER_SPRINT flir_endpoint_arg_target_identity ~target-history~
+  OUTER_SET flir_endpoint_arg_x = 0
+  OUTER_SET flir_endpoint_arg_y = 0
+  OUTER_SPRINT flir_endpoint_arg_static_policy ~runtime-resolve~
+  OUTER_SPRINT flir_endpoint_arg_fallback ~core:ground-history~
+  LAM h_endpoint
+  OUTER_SPRINT flir_endpoint_candidate_provider ~core~
+  OUTER_SPRINT flir_endpoint_candidate_id ~endpoint-history~
+  OUTER_SPRINT flir_endpoint_candidate_campaign ~bg2~
+  OUTER_SPRINT flir_endpoint_candidate_tier ~1~
+  OUTER_SPRINT flir_endpoint_candidate_band ~bg2:1~
+  OUTER_SPRINT flir_endpoint_candidate_endpoint ~core:endpoint-history~
+  LAM flir_endpoints_mark_candidate
+  OUTER_SPRINT flir_endpoint_generated_campaign ~bg2~
+  OUTER_SPRINT flir_endpoint_generated_tier ~1~
+  OUTER_SPRINT flir_endpoint_generated_band ~bg2:1~
+  OUTER_SPRINT flir_endpoint_generated_endpoint ~core:endpoint-history~
+  OUTER_SET flir_endpoint_generated_round = 1
+  OUTER_SET flir_endpoint_generated_generation = 0
+  LAM flir_endpoints_generated_slot_identity
+  OUTER_SET flir_registry_available = 1
+  OUTER_SET $flir_registry_index("history-row") = 1
+  OUTER_SPRINT $flir_registry_index_campaign("history-row") ~bg2~
+  OUTER_SPRINT $flir_registry_index_tier("history-row") ~1~
+  OUTER_SPRINT $flir_registry_index_kind("history-row") ~slot~
+  OUTER_SPRINT $flir_registry_index_stable("history-row") ~%flir_endpoint_generated_qualified%~
+  OUTER_SET $flir_registry_enabled("bg2" "1" "slot" "%flir_endpoint_generated_qualified%") = 1
+  OUTER_SET $flir_registry_compact("bg2" "1" "slot" "%flir_endpoint_generated_qualified%") = 7
+  LAM flir_endpoints_rehydrate_generated_slots
+  OUTER_SPRINT h_history_slot $flir_endpoint_slot_order("1")
+  OUTER_SET h_history_value = $flir_endpoint_slot_value("%h_history_slot%")
+  OUTER_TEXT_SPRINT h_report ~HISTORY slots=%flir_endpoint_slot_count% value=%h_history_value%%WNL%~
+  COPY + ~%argv[0]%~ ~%argv[2]%~
+    DELETE_BYTES 0 BUFFER_LENGTH
+    INSERT_BYTES 0 STRING_LENGTH ~%h_report%~
+    WRITE_ASCIIE 0 ~%h_report%~ (STRING_LENGTH ~%h_report%~)
+  BUT_ONLY
+
+BEGIN ~historical legacy overflow keeps its physical endpoint~ DESIGNATED 5
+  ACTION_CLEAR_ARRAY location_array
+  ACTION_CLEAR_ARRAY removed_item_array
+  COPY - ~randomiser/lists/locations/base/bg2.2da~
+         ~.../randomiser/fl-inlined/lists/locations/base/bg2.2da~
+    LAUNCH_PATCH_MACRO h_read_legacy_locations
+  COPY - ~randomiser/lists/locations/base/bg1.2da~
+         ~.../randomiser/fl-inlined/lists/locations/base/bg1.2da~
+    LAUNCH_PATCH_MACRO h_read_legacy_locations
+  OUTER_SPRINT h_overflow_target ~~
+  OUTER_SPRINT h_overflow_area ~~
+  ACTION_PHP_EACH location_array AS h_overflow_base => blank BEGIN
+    ACTION_IF "%h_overflow_base_0%" STRING_EQUAL_CASE ~1~
+          AND "%h_overflow_base_1%" STRING_EQUAL_CASE ~1~ BEGIN
+      OUTER_SPRINT h_overflow_target ~%h_overflow_base_2%~
+      OUTER_SPRINT h_overflow_area ~%h_overflow_base_3%~
+    END
+  END
+  ACTION_IF "%h_overflow_target%" STRING_EQUAL_CASE ~~ BEGIN
+    FAIL ~FLIR_ENDPOINT_ERR FIXTURE_MISSING provider=test id=overflow-base~
+  END
+  OUTER_SPRINT h_overflow_raw ~9001~
+  OUTER_SPRINT h_overflow_stable ~legacy:slot-bg2-1-9001--1~
+  OUTER_SPRINT $location_array("%h_overflow_raw%" "1" "%h_overflow_target%" "%h_overflow_area%" "") ~~
+  OUTER_SPRINT $flir_registry_legacy_overflow_location("%h_overflow_raw%" "1" "%h_overflow_target%" "%h_overflow_area%") ~1~
+  OUTER_SPRINT $flir_registry_legacy_overflow_stable("%h_overflow_raw%" "1" "%h_overflow_target%" "%h_overflow_area%") ~%h_overflow_stable%~
+  OUTER_SET $flir_registry_legacy_overflow_occurrence("%h_overflow_raw%" "1" "%h_overflow_target%" "%h_overflow_area%") = 1
+  OUTER_SET flir_registry_available = 1
+  OUTER_SPRINT $flir_registry_present("bg2" "1" "slot" "%h_overflow_stable%") ~1~
+  OUTER_SET $flir_registry_enabled("bg2" "1" "slot" "%h_overflow_stable%") = 1
+  OUTER_SET $flir_registry_compact("bg2" "1" "slot" "%h_overflow_stable%") = 300
+  LAM flir_endpoints_load_declarations
+  LAM flir_endpoints_validate
+  OUTER_SET h_overflow_value = 0
+  OUTER_FOR (h_overflow_i = 1; h_overflow_i <= flir_endpoint_slot_count; ++h_overflow_i) BEGIN
+    OUTER_SPRINT h_overflow_slot $flir_endpoint_slot_order("%h_overflow_i%")
+    ACTION_IF $flir_endpoint_slot_registry_stable("%h_overflow_slot%") STRING_EQUAL_CASE ~%h_overflow_stable%~ BEGIN
+      OUTER_SET h_overflow_value = $flir_endpoint_slot_value("%h_overflow_slot%")
+    END
+  END
+  OUTER_TEXT_SPRINT h_report ~OVERFLOW active=%flir_endpoint_active_count% matched=%flir_endpoint_matched_count% slots=%flir_endpoint_slot_count% value=%h_overflow_value%%WNL%~
+  COPY + ~%argv[0]%~ ~%argv[2]%~
+    DELETE_BYTES 0 BUFFER_LENGTH
+    INSERT_BYTES 0 STRING_LENGTH ~%h_report%~
+    WRITE_ASCIIE 0 ~%h_report%~ (STRING_LENGTH ~%h_report%~)
+  BUT_ONLY
+
+BEGIN ~tombstoned generated identities are never reused~ DESIGNATED 4
+  LAM flir_endpoints_reset
+  OUTER_SPRINT flir_endpoint_arg_provider ~core~
+  OUTER_SPRINT flir_endpoint_arg_id ~ground-tomb~
+  OUTER_SPRINT flir_endpoint_arg_area ~area-tomb~
+  OUTER_SPRINT flir_endpoint_arg_target_kind ~ground~
+  OUTER_SPRINT flir_endpoint_arg_target_identity ~-~
+  OUTER_SET flir_endpoint_arg_x = 100
+  OUTER_SET flir_endpoint_arg_y = 200
+  OUTER_SET flir_endpoint_arg_capacity = 1
+  OUTER_SPRINT flir_endpoint_arg_static_policy ~authored~
+  OUTER_SPRINT flir_endpoint_arg_fallback ~-~
+  OUTER_SPRINT flir_endpoint_arg_adapter ~~
+  OUTER_SET flir_endpoint_arg_enabled = 1
+  LAM h_endpoint
+  OUTER_SPRINT flir_endpoint_arg_id ~endpoint-tomb~
+  OUTER_SPRINT flir_endpoint_arg_target_kind ~container~
+  OUTER_SPRINT flir_endpoint_arg_target_identity ~target-tomb~
+  OUTER_SET flir_endpoint_arg_x = 0
+  OUTER_SET flir_endpoint_arg_y = 0
+  OUTER_SPRINT flir_endpoint_arg_static_policy ~runtime-resolve~
+  OUTER_SPRINT flir_endpoint_arg_fallback ~core:ground-tomb~
+  LAM h_endpoint
+  OUTER_SPRINT flir_endpoint_candidate_provider ~core~
+  OUTER_SPRINT flir_endpoint_candidate_id ~endpoint-tomb~
+  OUTER_SPRINT flir_endpoint_candidate_campaign ~bg2~
+  OUTER_SPRINT flir_endpoint_candidate_tier ~1~
+  OUTER_SPRINT flir_endpoint_candidate_band ~bg2:1~
+  OUTER_SPRINT flir_endpoint_candidate_endpoint ~core:endpoint-tomb~
+  LAM flir_endpoints_mark_candidate
+  OUTER_SPRINT flir_endpoint_generated_campaign ~bg2~
+  OUTER_SPRINT flir_endpoint_generated_tier ~1~
+  OUTER_SPRINT flir_endpoint_generated_band ~bg2:1~
+  OUTER_SPRINT flir_endpoint_generated_endpoint ~core:endpoint-tomb~
+  OUTER_SET flir_endpoint_generated_round = 1
+  OUTER_SET flir_endpoint_generated_generation = 0
+  LAM flir_endpoints_generated_slot_identity
+  OUTER_SET flir_registry_available = 1
+  OUTER_SPRINT $flir_registry_present("bg2" "1" "slot" "%flir_endpoint_generated_qualified%") ~1~
+  OUTER_SET $flir_registry_enabled("bg2" "1" "slot" "%flir_endpoint_generated_qualified%") = 0
+  OUTER_SET flir_endpoint_allocate_demand = 1
+  OUTER_SPRINT flir_endpoint_allocate_campaign ~bg2~
+  OUTER_SPRINT flir_endpoint_allocate_tier ~1~
+  OUTER_SPRINT flir_endpoint_allocate_band ~bg2:1~
+  OUTER_SPRINT flir_endpoint_allocate_provider ~core~
+  OUTER_SPRINT flir_endpoint_allocate_id ~tombstone~
+  LAM flir_endpoints_allocate_rounds
+  OUTER_TEXT_SPRINT h_report ~TOMBSTONE generation=%flir_endpoint_generated_generation% slots=%flir_endpoint_slot_count%%WNL%~
+  COPY + ~%argv[0]%~ ~%argv[2]%~
+    DELETE_BYTES 0 BUFFER_LENGTH
+    INSERT_BYTES 0 STRING_LENGTH ~%h_report%~
+    WRITE_ASCIIE 0 ~%h_report%~ (STRING_LENGTH ~%h_report%~)
+  BUT_ONLY
+
+BEGIN ~real SSL sparse roll rewrite~ DESIGNATED 6
+  ACTION_CLEAR_ARRAY flir_endpoint_scope_list
+  ACTION_CLEAR_ARRAY flir_endpoint_scope_max
+  ACTION_CLEAR_ARRAY flir_endpoint_scope_active
+  OUTER_SPRINT $flir_endpoint_scope_list("bg2|1") ~2;7;1001;1002;1003;1004~
+  OUTER_SET $flir_endpoint_scope_max("bg2|1") = 1004
+  ACTION_FOR_EACH h_value IN 2 7 1001 1002 1003 1004 BEGIN
+    OUTER_SET $flir_endpoint_scope_active("bg2|1" "%h_value%") = 1
+  END
+  OUTER_SPRINT flir_endpoint_ssl_campaign ~bg2~
+  OUTER_SPRINT flir_endpoint_ssl_tier ~1~
+  LAM flir_endpoints_build_ssl_scope
+  COPY + ~%argv[4]%~ ~%argv[2]%~
+    LAUNCH_PATCH_MACRO flir_endpoints_rewrite_sparse_rolls
+  BUT_ONLY
+
+BEGIN ~extension rows survive loading and preserve identity~ DESIGNATED 7
+  ACTION_CLEAR_ARRAY location_array
+  ACTION_CLEAR_ARRAY removed_item_array
+  COPY - ~randomiser/lists/locations/base/bg2.2da~
+         ~.../randomiser/fl-inlined/lists/locations/base/bg2.2da~
+    LAUNCH_PATCH_MACRO h_read_legacy_locations
+  COPY - ~randomiser/lists/locations/base/bg1.2da~
+         ~.../randomiser/fl-inlined/lists/locations/base/bg1.2da~
+    LAUNCH_PATCH_MACRO h_read_legacy_locations
+  OUTER_SPRINT flir_endpoint_extension_fixture ~%argv[3]%~
+  LAM flir_endpoints_load_declarations
+
+  OUTER_SET $flir_endpoint_slot_value("ext:slot-a") = 17
+  OUTER_SET flir_endpoint_extension_expected_fingerprint = $flir_endpoint_slot_row_fingerprint("ext:slot-a")
+  OUTER_SPRINT flir_endpoint_extension_kind ~slot~
+  OUTER_SPRINT flir_endpoint_extension_operation ~REPLACE~
+  OUTER_SPRINT flir_endpoint_extension_actor_provider ~compat~
+  OUTER_SPRINT flir_endpoint_extension_provider ~ext~
+  OUTER_SPRINT flir_endpoint_extension_id ~slot-a~
+  OUTER_SPRINT flir_endpoint_extension_campaign ~bg2~
+  OUTER_SPRINT flir_endpoint_extension_tier ~1~
+  OUTER_SPRINT flir_endpoint_extension_endpoint ~ext:endpoint-a~
+  OUTER_SPRINT flir_endpoint_extension_band ~bg2:1~
+  OUTER_SET flir_endpoint_extension_weight = 1
+  OUTER_SET flir_endpoint_extension_enabled = 1
+  LAM flir_endpoints_apply
+
+  OUTER_SET flir_endpoint_extension_expected_fingerprint = $flir_endpoint_slot_row_fingerprint("ext:slot-b")
+  OUTER_SPRINT flir_endpoint_extension_kind ~slot~
+  OUTER_SPRINT flir_endpoint_extension_operation ~DISABLE~
+  OUTER_SPRINT flir_endpoint_extension_actor_provider ~ext~
+  OUTER_SPRINT flir_endpoint_extension_provider ~ext~
+  OUTER_SPRINT flir_endpoint_extension_id ~slot-b~
+  LAM flir_endpoints_apply
+  LAM flir_endpoints_rebuild_candidates
+  LAM flir_endpoints_validate
+
+  OUTER_SET h_ext_active = $flir_endpoint_slot_enabled("ext:slot-a")
+  OUTER_SET h_ext_disabled = 1 - $flir_endpoint_slot_enabled("ext:slot-b")
+  OUTER_SET h_ext_compact = $flir_endpoint_slot_value("ext:slot-a")
+  OUTER_TEXT_SPRINT h_report ~EXTENSIONS endpoints=%flir_endpoint_count% slots=%flir_endpoint_slot_count% active_ext=%h_ext_active% disabled_ext=%h_ext_disabled% compact=%h_ext_compact%%WNL%~
+  COPY + ~%argv[0]%~ ~%argv[2]%~
+    DELETE_BYTES 0 BUFFER_LENGTH
+    INSERT_BYTES 0 STRING_LENGTH ~%h_report%~
+    WRITE_ASCIIE 0 ~%h_report%~ (STRING_LENGTH ~%h_report%~)
+  BUT_ONLY
+
+BEGIN ~cross-area fallback fails~ DESIGNATED 10
+  LAM flir_endpoints_reset
+  OUTER_SPRINT flir_endpoint_arg_provider ~core~
+  OUTER_SPRINT flir_endpoint_arg_id ~ground-b~
+  OUTER_SPRINT flir_endpoint_arg_area ~area-b~
+  OUTER_SPRINT flir_endpoint_arg_target_kind ~ground~
+  OUTER_SPRINT flir_endpoint_arg_target_identity ~-~
+  OUTER_SET flir_endpoint_arg_x = 50
+  OUTER_SET flir_endpoint_arg_y = 60
+  OUTER_SET flir_endpoint_arg_capacity = 1
+  OUTER_SPRINT flir_endpoint_arg_static_policy ~authored~
+  OUTER_SPRINT flir_endpoint_arg_fallback ~-~
+  OUTER_SPRINT flir_endpoint_arg_adapter ~~
+  OUTER_SET flir_endpoint_arg_enabled = 1
+  LAM h_endpoint
+  OUTER_SPRINT flir_endpoint_arg_id ~primary-a~
+  OUTER_SPRINT flir_endpoint_arg_area ~area-a~
+  OUTER_SPRINT flir_endpoint_arg_target_kind ~container~
+  OUTER_SPRINT flir_endpoint_arg_target_identity ~target-a~
+  OUTER_SET flir_endpoint_arg_x = 0
+  OUTER_SET flir_endpoint_arg_y = 0
+  OUTER_SPRINT flir_endpoint_arg_static_policy ~runtime-resolve~
+  OUTER_SPRINT flir_endpoint_arg_fallback ~core:ground-b~
+  LAM h_endpoint
+  LAM flir_endpoints_validate
+
+BEGIN ~fallback cycle fails~ DESIGNATED 11
+  LAM flir_endpoints_reset
+  ACTION_FOR_EACH h_name IN a b BEGIN
+    OUTER_SPRINT flir_endpoint_arg_provider ~core~
+    OUTER_SPRINT flir_endpoint_arg_id ~cycle-%h_name%~
+    OUTER_SPRINT flir_endpoint_arg_area ~area-a~
+    OUTER_SPRINT flir_endpoint_arg_target_kind ~container~
+    OUTER_SPRINT flir_endpoint_arg_target_identity ~target-%h_name%~
+    OUTER_SET flir_endpoint_arg_x = 0
+    OUTER_SET flir_endpoint_arg_y = 0
+    OUTER_SET flir_endpoint_arg_capacity = 1
+    OUTER_SPRINT flir_endpoint_arg_static_policy ~runtime-resolve~
+    ACTION_IF "%h_name%" STRING_EQUAL_CASE ~a~ BEGIN
+      OUTER_SPRINT flir_endpoint_arg_fallback ~core:cycle-b~
+    END ELSE BEGIN
+      OUTER_SPRINT flir_endpoint_arg_fallback ~core:cycle-a~
+    END
+    OUTER_SPRINT flir_endpoint_arg_adapter ~~
+    OUTER_SET flir_endpoint_arg_enabled = 1
+    LAM h_endpoint
+  END
+  LAM flir_endpoints_validate
+
+BEGIN ~invalid ground anchor fails~ DESIGNATED 12
+  LAM flir_endpoints_reset
+  OUTER_SPRINT flir_endpoint_arg_provider ~core~
+  OUTER_SPRINT flir_endpoint_arg_id ~ground-bad~
+  OUTER_SPRINT flir_endpoint_arg_area ~area-a~
+  OUTER_SPRINT flir_endpoint_arg_target_kind ~ground~
+  OUTER_SPRINT flir_endpoint_arg_target_identity ~-~
+  OUTER_SET flir_endpoint_arg_x = 1
+  OUTER_SET flir_endpoint_arg_y = 1
+  OUTER_SET flir_endpoint_arg_capacity = 1
+  OUTER_SPRINT flir_endpoint_arg_static_policy ~authored~
+  OUTER_SPRINT flir_endpoint_arg_fallback ~-~
+  OUTER_SPRINT flir_endpoint_arg_adapter ~~
+  OUTER_SET flir_endpoint_arg_enabled = 1
+  LAM h_endpoint
+  LAM flir_endpoints_validate
+
+BEGIN ~no-loss shortage fails~ DESIGNATED 13
+  LAM flir_endpoints_reset
+  OUTER_SET lost = 0
+  OUTER_SPRINT flir_endpoint_allocate_campaign ~bg2~
+  OUTER_SPRINT flir_endpoint_allocate_tier ~1~
+  OUTER_SPRINT flir_endpoint_allocate_band ~early~
+  OUTER_SET flir_endpoint_allocate_demand = 1
+  OUTER_SPRINT flir_endpoint_allocate_provider ~core~
+  OUTER_SPRINT flir_endpoint_allocate_id ~no-loss~
+  LAM flir_endpoints_allocate_rounds
+
+BEGIN ~some-loss shortage fails~ DESIGNATED 14
+  LAM flir_endpoints_reset
+  OUTER_SET lost = 1
+  OUTER_SPRINT flir_endpoint_allocate_campaign ~bg2~
+  OUTER_SPRINT flir_endpoint_allocate_tier ~1~
+  OUTER_SPRINT flir_endpoint_allocate_band ~early~
+  OUTER_SET flir_endpoint_allocate_demand = 1
+  OUTER_SPRINT flir_endpoint_allocate_provider ~core~
+  OUTER_SPRINT flir_endpoint_allocate_id ~some-loss~
+  LAM flir_endpoints_allocate_rounds
+
+BEGIN ~fallback capacity fails~ DESIGNATED 15
+  LAM flir_endpoints_reset
+  OUTER_SPRINT flir_endpoint_arg_provider ~core~
+  OUTER_SPRINT flir_endpoint_arg_id ~ground-small~
+  OUTER_SPRINT flir_endpoint_arg_area ~area-a~
+  OUTER_SPRINT flir_endpoint_arg_target_kind ~ground~
+  OUTER_SPRINT flir_endpoint_arg_target_identity ~-~
+  OUTER_SET flir_endpoint_arg_x = 50
+  OUTER_SET flir_endpoint_arg_y = 60
+  OUTER_SET flir_endpoint_arg_capacity = 1
+  OUTER_SPRINT flir_endpoint_arg_static_policy ~authored~
+  OUTER_SPRINT flir_endpoint_arg_fallback ~-~
+  OUTER_SPRINT flir_endpoint_arg_adapter ~~
+  OUTER_SET flir_endpoint_arg_enabled = 1
+  LAM h_endpoint
+  OUTER_SPRINT flir_endpoint_arg_id ~primary-large~
+  OUTER_SPRINT flir_endpoint_arg_target_kind ~container~
+  OUTER_SPRINT flir_endpoint_arg_target_identity ~target-a~
+  OUTER_SET flir_endpoint_arg_x = 0
+  OUTER_SET flir_endpoint_arg_y = 0
+  OUTER_SET flir_endpoint_arg_capacity = 2
+  OUTER_SPRINT flir_endpoint_arg_static_policy ~runtime-resolve~
+  OUTER_SPRINT flir_endpoint_arg_fallback ~core:ground-small~
+  LAM h_endpoint
+  LAM flir_endpoints_validate
+
+BEGIN ~invalid slot fields fail~ DESIGNATED 16
+  LAM flir_endpoints_reset
+  OUTER_SPRINT flir_endpoint_arg_provider ~core~
+  OUTER_SPRINT flir_endpoint_arg_id ~ground-slot~
+  OUTER_SPRINT flir_endpoint_arg_area ~area-a~
+  OUTER_SPRINT flir_endpoint_arg_target_kind ~ground~
+  OUTER_SPRINT flir_endpoint_arg_target_identity ~-~
+  OUTER_SET flir_endpoint_arg_x = 50
+  OUTER_SET flir_endpoint_arg_y = 60
+  OUTER_SET flir_endpoint_arg_capacity = 1
+  OUTER_SPRINT flir_endpoint_arg_static_policy ~authored~
+  OUTER_SPRINT flir_endpoint_arg_fallback ~-~
+  OUTER_SPRINT flir_endpoint_arg_adapter ~~
+  OUTER_SET flir_endpoint_arg_enabled = 1
+  LAM h_endpoint
+  OUTER_SPRINT flir_endpoint_slot_arg_provider ~core~
+  OUTER_SPRINT flir_endpoint_slot_arg_id ~slot-bad~
+  OUTER_SPRINT flir_endpoint_slot_arg_campaign ~bg2~
+  OUTER_SPRINT flir_endpoint_slot_arg_tier ~1~
+  OUTER_SPRINT flir_endpoint_slot_arg_legacy_raw ~1~
+  OUTER_SPRINT flir_endpoint_slot_arg_legacy_ident ~generated~
+  OUTER_SET flir_endpoint_slot_arg_legacy_occurrence = 1
+  OUTER_SPRINT flir_endpoint_slot_arg_endpoint ~core:ground-slot~
+  OUTER_SPRINT flir_endpoint_slot_arg_band ~bg2:1~
+  OUTER_SET flir_endpoint_slot_arg_weight = 2
+  OUTER_SET flir_endpoint_slot_arg_value = 40000
+  OUTER_SET flir_endpoint_slot_arg_enabled = 1
+  LAM h_slot
+  LAM flir_endpoints_validate
+
+BEGIN ~invalid adapter identity fails~ DESIGNATED 17
+  LAM flir_endpoints_reset
+  OUTER_SPRINT flir_endpoint_arg_provider ~core~
+  OUTER_SPRINT flir_endpoint_arg_id ~adapter-bad~
+  OUTER_SPRINT flir_endpoint_arg_area ~area-a~
+  OUTER_SPRINT flir_endpoint_arg_target_kind ~legacy_adapter~
+  OUTER_SPRINT flir_endpoint_arg_target_identity ~adapter-a~
+  OUTER_SET flir_endpoint_arg_x = 0
+  OUTER_SET flir_endpoint_arg_y = 0
+  OUTER_SET flir_endpoint_arg_capacity = 1
+  OUTER_SPRINT flir_endpoint_arg_static_policy ~legacy-external~
+  OUTER_SPRINT flir_endpoint_arg_fallback ~-~
+  OUTER_SPRINT flir_endpoint_arg_adapter ~adapter-b~
+  OUTER_SET flir_endpoint_arg_enabled = 1
+  LAM h_endpoint
+  LAM flir_endpoints_validate
+
+BEGIN ~invalid endpoint policy fails~ DESIGNATED 18
+  LAM flir_endpoints_reset
+  OUTER_SPRINT flir_endpoint_arg_provider ~core~
+  OUTER_SPRINT flir_endpoint_arg_id ~ground-policy~
+  OUTER_SPRINT flir_endpoint_arg_area ~area-a~
+  OUTER_SPRINT flir_endpoint_arg_target_kind ~ground~
+  OUTER_SPRINT flir_endpoint_arg_target_identity ~-~
+  OUTER_SET flir_endpoint_arg_x = 50
+  OUTER_SET flir_endpoint_arg_y = 60
+  OUTER_SET flir_endpoint_arg_capacity = 1
+  OUTER_SPRINT flir_endpoint_arg_static_policy ~runtime-resolve~
+  OUTER_SPRINT flir_endpoint_arg_fallback ~-~
+  OUTER_SPRINT flir_endpoint_arg_adapter ~~
+  OUTER_SET flir_endpoint_arg_enabled = 1
+  LAM h_endpoint
+  LAM flir_endpoints_validate
+
+BEGIN ~extension fingerprint mismatch fails~ DESIGNATED 19
+  LAM flir_endpoints_reset
+  OUTER_SPRINT flir_endpoint_arg_provider ~ext~
+  OUTER_SPRINT flir_endpoint_arg_id ~endpoint-a~
+  OUTER_SPRINT flir_endpoint_arg_area ~area-a~
+  OUTER_SPRINT flir_endpoint_arg_target_kind ~ground~
+  OUTER_SPRINT flir_endpoint_arg_target_identity ~-~
+  OUTER_SET flir_endpoint_arg_x = 50
+  OUTER_SET flir_endpoint_arg_y = 60
+  OUTER_SET flir_endpoint_arg_capacity = 1
+  OUTER_SPRINT flir_endpoint_arg_static_policy ~authored-static~
+  OUTER_SPRINT flir_endpoint_arg_fallback ~-~
+  OUTER_SPRINT flir_endpoint_arg_adapter ~~
+  OUTER_SET flir_endpoint_arg_enabled = 1
+  LAM h_endpoint
+  OUTER_SPRINT flir_endpoint_extension_kind ~endpoint~
+  OUTER_SPRINT flir_endpoint_extension_operation ~REPLACE~
+  OUTER_SPRINT flir_endpoint_extension_actor_provider ~ext~
+  OUTER_SPRINT flir_endpoint_extension_provider ~ext~
+  OUTER_SPRINT flir_endpoint_extension_id ~endpoint-a~
+  OUTER_SET flir_endpoint_extension_expected_fingerprint = $flir_endpoint_row_fingerprint("ext:endpoint-a") + 1
+  LAM flir_endpoints_apply
+
+BEGIN ~extension duplicate add fails~ DESIGNATED 20
+  LAM flir_endpoints_reset
+  OUTER_SPRINT flir_endpoint_arg_provider ~ext~
+  OUTER_SPRINT flir_endpoint_arg_id ~endpoint-a~
+  OUTER_SPRINT flir_endpoint_arg_area ~area-a~
+  OUTER_SPRINT flir_endpoint_arg_target_kind ~ground~
+  OUTER_SPRINT flir_endpoint_arg_target_identity ~-~
+  OUTER_SET flir_endpoint_arg_x = 50
+  OUTER_SET flir_endpoint_arg_y = 60
+  OUTER_SET flir_endpoint_arg_capacity = 1
+  OUTER_SPRINT flir_endpoint_arg_static_policy ~authored-static~
+  OUTER_SPRINT flir_endpoint_arg_fallback ~-~
+  OUTER_SPRINT flir_endpoint_arg_adapter ~~
+  OUTER_SET flir_endpoint_arg_enabled = 1
+  LAM h_endpoint
+  OUTER_SPRINT flir_endpoint_extension_kind ~endpoint~
+  OUTER_SPRINT flir_endpoint_extension_operation ~ADD~
+  OUTER_SPRINT flir_endpoint_extension_actor_provider ~ext~
+  OUTER_SPRINT flir_endpoint_extension_provider ~ext~
+  OUTER_SPRINT flir_endpoint_extension_id ~endpoint-a~
+  OUTER_SPRINT flir_endpoint_extension_area ~area-a~
+  OUTER_SPRINT flir_endpoint_extension_target_kind ~ground~
+  OUTER_SPRINT flir_endpoint_extension_target_identity ~-~
+  OUTER_SET flir_endpoint_extension_x = 50
+  OUTER_SET flir_endpoint_extension_y = 60
+  OUTER_SET flir_endpoint_extension_capacity = 1
+  OUTER_SPRINT flir_endpoint_extension_static_policy ~authored-static~
+  OUTER_SPRINT flir_endpoint_extension_fallback ~-~
+  OUTER_SPRINT flir_endpoint_extension_adapter ~~
+  OUTER_SET flir_endpoint_extension_enabled = 1
+  LAM flir_endpoints_apply
+
+BEGIN ~extension endpoint disable with live slot fails~ DESIGNATED 21
+  LAM flir_endpoints_reset
+  OUTER_SPRINT flir_endpoint_arg_provider ~ext~
+  OUTER_SPRINT flir_endpoint_arg_id ~ground-a~
+  OUTER_SPRINT flir_endpoint_arg_area ~area-a~
+  OUTER_SPRINT flir_endpoint_arg_target_kind ~ground~
+  OUTER_SPRINT flir_endpoint_arg_target_identity ~-~
+  OUTER_SET flir_endpoint_arg_x = 50
+  OUTER_SET flir_endpoint_arg_y = 60
+  OUTER_SET flir_endpoint_arg_capacity = 1
+  OUTER_SPRINT flir_endpoint_arg_static_policy ~authored-static~
+  OUTER_SPRINT flir_endpoint_arg_fallback ~-~
+  OUTER_SPRINT flir_endpoint_arg_adapter ~~
+  OUTER_SET flir_endpoint_arg_enabled = 1
+  LAM h_endpoint
+  OUTER_SPRINT flir_endpoint_arg_id ~endpoint-a~
+  OUTER_SPRINT flir_endpoint_arg_target_kind ~container~
+  OUTER_SPRINT flir_endpoint_arg_target_identity ~target-a~
+  OUTER_SET flir_endpoint_arg_x = 0
+  OUTER_SET flir_endpoint_arg_y = 0
+  OUTER_SPRINT flir_endpoint_arg_static_policy ~runtime-resolve~
+  OUTER_SPRINT flir_endpoint_arg_fallback ~ext:ground-a~
+  LAM h_endpoint
+  OUTER_SPRINT flir_endpoint_slot_arg_provider ~ext~
+  OUTER_SPRINT flir_endpoint_slot_arg_id ~slot-a~
+  OUTER_SPRINT flir_endpoint_slot_arg_campaign ~bg2~
+  OUTER_SPRINT flir_endpoint_slot_arg_tier ~1~
+  OUTER_SPRINT flir_endpoint_slot_arg_legacy_raw ~slot-a~
+  OUTER_SPRINT flir_endpoint_slot_arg_legacy_ident ~generated~
+  OUTER_SET flir_endpoint_slot_arg_legacy_occurrence = 1
+  OUTER_SPRINT flir_endpoint_slot_arg_endpoint ~ext:endpoint-a~
+  OUTER_SPRINT flir_endpoint_slot_arg_band ~bg2:1~
+  OUTER_SET flir_endpoint_slot_arg_weight = 1
+  OUTER_SET flir_endpoint_slot_arg_value = 0
+  OUTER_SET flir_endpoint_slot_arg_enabled = 1
+  LAM h_slot
+  OUTER_SET flir_endpoint_extension_expected_fingerprint = $flir_endpoint_row_fingerprint("ext:endpoint-a")
+  OUTER_SPRINT flir_endpoint_extension_kind ~endpoint~
+  OUTER_SPRINT flir_endpoint_extension_operation ~DISABLE~
+  OUTER_SPRINT flir_endpoint_extension_actor_provider ~ext~
+  OUTER_SPRINT flir_endpoint_extension_provider ~ext~
+  OUTER_SPRINT flir_endpoint_extension_id ~endpoint-a~
+  LAM flir_endpoints_apply
+  LAM flir_endpoints_rebuild_candidates
+
+BEGIN ~extension slot scope drift fails~ DESIGNATED 22
+  LAM flir_endpoints_reset
+  OUTER_SPRINT flir_endpoint_arg_provider ~ext~
+  OUTER_SPRINT flir_endpoint_arg_id ~ground-a~
+  OUTER_SPRINT flir_endpoint_arg_area ~area-a~
+  OUTER_SPRINT flir_endpoint_arg_target_kind ~ground~
+  OUTER_SPRINT flir_endpoint_arg_target_identity ~-~
+  OUTER_SET flir_endpoint_arg_x = 50
+  OUTER_SET flir_endpoint_arg_y = 60
+  OUTER_SET flir_endpoint_arg_capacity = 1
+  OUTER_SPRINT flir_endpoint_arg_static_policy ~authored-static~
+  OUTER_SPRINT flir_endpoint_arg_fallback ~-~
+  OUTER_SPRINT flir_endpoint_arg_adapter ~~
+  OUTER_SET flir_endpoint_arg_enabled = 1
+  LAM h_endpoint
+  OUTER_SPRINT flir_endpoint_slot_arg_provider ~ext~
+  OUTER_SPRINT flir_endpoint_slot_arg_id ~slot-a~
+  OUTER_SPRINT flir_endpoint_slot_arg_campaign ~bg2~
+  OUTER_SPRINT flir_endpoint_slot_arg_tier ~1~
+  OUTER_SPRINT flir_endpoint_slot_arg_legacy_raw ~slot-a~
+  OUTER_SPRINT flir_endpoint_slot_arg_legacy_ident ~generated~
+  OUTER_SET flir_endpoint_slot_arg_legacy_occurrence = 1
+  OUTER_SPRINT flir_endpoint_slot_arg_endpoint ~ext:ground-a~
+  OUTER_SPRINT flir_endpoint_slot_arg_band ~bg2:1~
+  OUTER_SET flir_endpoint_slot_arg_weight = 1
+  OUTER_SET flir_endpoint_slot_arg_value = 0
+  OUTER_SET flir_endpoint_slot_arg_enabled = 1
+  LAM h_slot
+  OUTER_SET flir_endpoint_extension_expected_fingerprint = $flir_endpoint_slot_row_fingerprint("ext:slot-a")
+  OUTER_SPRINT flir_endpoint_extension_kind ~slot~
+  OUTER_SPRINT flir_endpoint_extension_operation ~REPLACE~
+  OUTER_SPRINT flir_endpoint_extension_actor_provider ~ext~
+  OUTER_SPRINT flir_endpoint_extension_provider ~ext~
+  OUTER_SPRINT flir_endpoint_extension_id ~slot-a~
+  OUTER_SPRINT flir_endpoint_extension_campaign ~bg1~
+  OUTER_SPRINT flir_endpoint_extension_tier ~1~
+  OUTER_SPRINT flir_endpoint_extension_endpoint ~ext:ground-a~
+  OUTER_SPRINT flir_endpoint_extension_band ~bg1:1~
+  OUTER_SET flir_endpoint_extension_weight = 1
+  OUTER_SET flir_endpoint_extension_enabled = 1
+  LAM flir_endpoints_apply
+
+BEGIN ~extension cross-area replacement fails~ DESIGNATED 23
+  LAM flir_endpoints_reset
+  OUTER_SPRINT flir_endpoint_arg_provider ~ext~
+  OUTER_SPRINT flir_endpoint_arg_id ~ground-a~
+  OUTER_SPRINT flir_endpoint_arg_area ~area-a~
+  OUTER_SPRINT flir_endpoint_arg_target_kind ~ground~
+  OUTER_SPRINT flir_endpoint_arg_target_identity ~-~
+  OUTER_SET flir_endpoint_arg_x = 50
+  OUTER_SET flir_endpoint_arg_y = 60
+  OUTER_SET flir_endpoint_arg_capacity = 1
+  OUTER_SPRINT flir_endpoint_arg_static_policy ~authored-static~
+  OUTER_SPRINT flir_endpoint_arg_fallback ~-~
+  OUTER_SPRINT flir_endpoint_arg_adapter ~~
+  OUTER_SET flir_endpoint_arg_enabled = 1
+  LAM h_endpoint
+  OUTER_SPRINT flir_endpoint_arg_id ~endpoint-a~
+  OUTER_SPRINT flir_endpoint_arg_target_kind ~container~
+  OUTER_SPRINT flir_endpoint_arg_target_identity ~target-a~
+  OUTER_SET flir_endpoint_arg_x = 0
+  OUTER_SET flir_endpoint_arg_y = 0
+  OUTER_SPRINT flir_endpoint_arg_static_policy ~runtime-resolve~
+  OUTER_SPRINT flir_endpoint_arg_fallback ~ext:ground-a~
+  LAM h_endpoint
+  OUTER_SET flir_endpoint_extension_expected_fingerprint = $flir_endpoint_row_fingerprint("ext:endpoint-a")
+  OUTER_SPRINT flir_endpoint_extension_kind ~endpoint~
+  OUTER_SPRINT flir_endpoint_extension_operation ~REPLACE~
+  OUTER_SPRINT flir_endpoint_extension_actor_provider ~ext~
+  OUTER_SPRINT flir_endpoint_extension_provider ~ext~
+  OUTER_SPRINT flir_endpoint_extension_id ~endpoint-a~
+  OUTER_SPRINT flir_endpoint_extension_area ~area-b~
+  OUTER_SPRINT flir_endpoint_extension_target_kind ~container~
+  OUTER_SPRINT flir_endpoint_extension_target_identity ~target-a~
+  OUTER_SET flir_endpoint_extension_x = 0
+  OUTER_SET flir_endpoint_extension_y = 0
+  OUTER_SET flir_endpoint_extension_capacity = 1
+  OUTER_SPRINT flir_endpoint_extension_static_policy ~runtime-resolve~
+  OUTER_SPRINT flir_endpoint_extension_fallback ~ext:ground-a~
+  OUTER_SPRINT flir_endpoint_extension_adapter ~~
+  OUTER_SET flir_endpoint_extension_enabled = 1
+  LAM flir_endpoints_apply
+  LAM flir_endpoints_validate
+
+BEGIN ~extension mutation invalidates a prepared plan~ DESIGNATED 24
+  LAM flir_endpoints_reset
+  OUTER_SET flir_endpoints_loaded = 1
+  OUTER_SET flir_endpoints_plan_ready = 1
+  OUTER_SPRINT flir_endpoint_extension_kind ~endpoint~
+  OUTER_SPRINT flir_endpoint_extension_operation ~ADD~
+  OUTER_SPRINT flir_endpoint_extension_actor_provider ~ext~
+  OUTER_SPRINT flir_endpoint_extension_provider ~ext~
+  OUTER_SPRINT flir_endpoint_extension_id ~ground-late~
+  OUTER_SPRINT flir_endpoint_extension_area ~area-a~
+  OUTER_SPRINT flir_endpoint_extension_target_kind ~ground~
+  OUTER_SPRINT flir_endpoint_extension_target_identity ~-~
+  OUTER_SET flir_endpoint_extension_x = 50
+  OUTER_SET flir_endpoint_extension_y = 60
+  OUTER_SET flir_endpoint_extension_capacity = 1
+  OUTER_SPRINT flir_endpoint_extension_static_policy ~authored-static~
+  OUTER_SPRINT flir_endpoint_extension_fallback ~-~
+  OUTER_SPRINT flir_endpoint_extension_adapter ~~
+  OUTER_SET flir_endpoint_extension_enabled = 1
+  LAM flir_endpoints_apply
+  LAM flir_endpoints_assert_plan_ready
+
+BEGIN ~fallback reservation plus direct occupancy cannot exceed capacity~ DESIGNATED 25
+  LAM flir_endpoints_reset
+  OUTER_SPRINT flir_endpoint_arg_provider ~ext~
+  OUTER_SPRINT flir_endpoint_arg_id ~ground-shared~
+  OUTER_SPRINT flir_endpoint_arg_area ~area-a~
+  OUTER_SPRINT flir_endpoint_arg_target_kind ~ground~
+  OUTER_SPRINT flir_endpoint_arg_target_identity ~-~
+  OUTER_SET flir_endpoint_arg_x = 50
+  OUTER_SET flir_endpoint_arg_y = 60
+  OUTER_SET flir_endpoint_arg_capacity = 2
+  OUTER_SPRINT flir_endpoint_arg_static_policy ~authored-static~
+  OUTER_SPRINT flir_endpoint_arg_fallback ~-~
+  OUTER_SPRINT flir_endpoint_arg_adapter ~~
+  OUTER_SET flir_endpoint_arg_enabled = 1
+  LAM h_endpoint
+  OUTER_SPRINT flir_endpoint_arg_id ~endpoint-primary~
+  OUTER_SPRINT flir_endpoint_arg_target_kind ~container~
+  OUTER_SPRINT flir_endpoint_arg_target_identity ~target-a~
+  OUTER_SET flir_endpoint_arg_x = 0
+  OUTER_SET flir_endpoint_arg_y = 0
+  OUTER_SET flir_endpoint_arg_capacity = 2
+  OUTER_SPRINT flir_endpoint_arg_static_policy ~runtime-resolve~
+  OUTER_SPRINT flir_endpoint_arg_fallback ~ext:ground-shared~
+  LAM h_endpoint
+  OUTER_SET $flir_endpoint_candidate("bg2" "1" "bg2:1" "ext:ground-shared") = 1
+  OUTER_SET $flir_endpoint_candidate("bg2" "1" "bg2:1" "ext:endpoint-primary") = 1
+  OUTER_SPRINT flir_endpoint_slot_arg_provider ~ext~
+  OUTER_SPRINT flir_endpoint_slot_arg_id ~slot-ground~
+  OUTER_SPRINT flir_endpoint_slot_arg_campaign ~bg2~
+  OUTER_SPRINT flir_endpoint_slot_arg_tier ~1~
+  OUTER_SPRINT flir_endpoint_slot_arg_legacy_raw ~slot-ground~
+  OUTER_SPRINT flir_endpoint_slot_arg_legacy_ident ~generated~
+  OUTER_SET flir_endpoint_slot_arg_legacy_occurrence = 1
+  OUTER_SPRINT flir_endpoint_slot_arg_endpoint ~ext:ground-shared~
+  OUTER_SPRINT flir_endpoint_slot_arg_band ~bg2:1~
+  OUTER_SET flir_endpoint_slot_arg_weight = 1
+  OUTER_SET flir_endpoint_slot_arg_value = 0
+  OUTER_SET flir_endpoint_slot_arg_enabled = 1
+  LAM h_slot
+  LAM flir_endpoints_validate
+
+BEGIN ~extension actor must be a valid provider identity~ DESIGNATED 26
+  LAM flir_endpoints_reset
+  OUTER_SPRINT flir_endpoint_arg_provider ~ext~
+  OUTER_SPRINT flir_endpoint_arg_id ~ground-a~
+  OUTER_SPRINT flir_endpoint_arg_area ~area-a~
+  OUTER_SPRINT flir_endpoint_arg_target_kind ~ground~
+  OUTER_SPRINT flir_endpoint_arg_target_identity ~-~
+  OUTER_SET flir_endpoint_arg_x = 50
+  OUTER_SET flir_endpoint_arg_y = 60
+  OUTER_SET flir_endpoint_arg_capacity = 1
+  OUTER_SPRINT flir_endpoint_arg_static_policy ~authored-static~
+  OUTER_SPRINT flir_endpoint_arg_fallback ~-~
+  OUTER_SPRINT flir_endpoint_arg_adapter ~~
+  OUTER_SET flir_endpoint_arg_enabled = 1
+  LAM h_endpoint
+  OUTER_SET flir_endpoint_extension_expected_fingerprint = $flir_endpoint_row_fingerprint("ext:ground-a")
+  OUTER_SPRINT flir_endpoint_extension_kind ~endpoint~
+  OUTER_SPRINT flir_endpoint_extension_operation ~REPLACE~
+  OUTER_SPRINT flir_endpoint_extension_actor_provider ~~
+  OUTER_SPRINT flir_endpoint_extension_provider ~ext~
+  OUTER_SPRINT flir_endpoint_extension_id ~ground-a~
+  LAM flir_endpoints_apply
+
+BEGIN ~extension slot scope must match a known campaign tier~ DESIGNATED 27
+  LAM flir_endpoints_reset
+  OUTER_SPRINT flir_endpoint_arg_provider ~ext~
+  OUTER_SPRINT flir_endpoint_arg_id ~ground-a~
+  OUTER_SPRINT flir_endpoint_arg_area ~area-a~
+  OUTER_SPRINT flir_endpoint_arg_target_kind ~ground~
+  OUTER_SPRINT flir_endpoint_arg_target_identity ~-~
+  OUTER_SET flir_endpoint_arg_x = 50
+  OUTER_SET flir_endpoint_arg_y = 60
+  OUTER_SET flir_endpoint_arg_capacity = 1
+  OUTER_SPRINT flir_endpoint_arg_static_policy ~authored-static~
+  OUTER_SPRINT flir_endpoint_arg_fallback ~-~
+  OUTER_SPRINT flir_endpoint_arg_adapter ~~
+  OUTER_SET flir_endpoint_arg_enabled = 1
+  LAM h_endpoint
+  OUTER_SET $flir_endpoint_candidate("oops" "1" "oops:1" "ext:ground-a") = 1
+  OUTER_SPRINT flir_endpoint_slot_arg_provider ~ext~
+  OUTER_SPRINT flir_endpoint_slot_arg_id ~slot-a~
+  OUTER_SPRINT flir_endpoint_slot_arg_campaign ~oops~
+  OUTER_SPRINT flir_endpoint_slot_arg_tier ~1~
+  OUTER_SPRINT flir_endpoint_slot_arg_legacy_raw ~slot-a~
+  OUTER_SPRINT flir_endpoint_slot_arg_legacy_ident ~generated~
+  OUTER_SET flir_endpoint_slot_arg_legacy_occurrence = 1
+  OUTER_SPRINT flir_endpoint_slot_arg_endpoint ~ext:ground-a~
+  OUTER_SPRINT flir_endpoint_slot_arg_band ~oops:1~
+  OUTER_SET flir_endpoint_slot_arg_weight = 1
+  OUTER_SET flir_endpoint_slot_arg_value = 0
+  OUTER_SET flir_endpoint_slot_arg_enabled = 1
+  LAM h_slot
+  LAM flir_endpoints_validate
+
+BEGIN ~active endpoint slot cannot resurrect a registry tombstone~ DESIGNATED 28
+  LAM flir_endpoints_reset
+  OUTER_SPRINT flir_endpoint_arg_provider ~ext~
+  OUTER_SPRINT flir_endpoint_arg_id ~ground-a~
+  OUTER_SPRINT flir_endpoint_arg_area ~area-a~
+  OUTER_SPRINT flir_endpoint_arg_target_kind ~ground~
+  OUTER_SPRINT flir_endpoint_arg_target_identity ~-~
+  OUTER_SET flir_endpoint_arg_x = 50
+  OUTER_SET flir_endpoint_arg_y = 60
+  OUTER_SET flir_endpoint_arg_capacity = 1
+  OUTER_SPRINT flir_endpoint_arg_static_policy ~authored-static~
+  OUTER_SPRINT flir_endpoint_arg_fallback ~-~
+  OUTER_SPRINT flir_endpoint_arg_adapter ~~
+  OUTER_SET flir_endpoint_arg_enabled = 1
+  LAM h_endpoint
+  OUTER_SET $flir_endpoint_candidate("bg2" "1" "bg2:1" "ext:ground-a") = 1
+  OUTER_SPRINT flir_endpoint_slot_arg_provider ~ext~
+  OUTER_SPRINT flir_endpoint_slot_arg_id ~slot-a~
+  OUTER_SPRINT flir_endpoint_slot_arg_campaign ~bg2~
+  OUTER_SPRINT flir_endpoint_slot_arg_tier ~1~
+  OUTER_SPRINT flir_endpoint_slot_arg_legacy_raw ~slot-a~
+  OUTER_SPRINT flir_endpoint_slot_arg_legacy_ident ~generated~
+  OUTER_SET flir_endpoint_slot_arg_legacy_occurrence = 1
+  OUTER_SPRINT flir_endpoint_slot_arg_endpoint ~ext:ground-a~
+  OUTER_SPRINT flir_endpoint_slot_arg_band ~bg2:1~
+  OUTER_SET flir_endpoint_slot_arg_weight = 1
+  OUTER_SET flir_endpoint_slot_arg_value = 0
+  OUTER_SET flir_endpoint_slot_arg_enabled = 1
+  LAM h_slot
+  OUTER_SET flir_registry_available = 1
+  OUTER_SET $flir_registry_present("bg2" "1" "slot" "ext:slot-a") = 1
+  OUTER_SET $flir_registry_enabled("bg2" "1" "slot" "ext:slot-a") = 0
+  LAM flir_endpoints_validate
+
+BEGIN ~endpoint coordinates must fit the catalog numeric contract~ DESIGNATED 29
+  LAM flir_endpoints_reset
+  OUTER_SPRINT flir_endpoint_arg_provider ~ext~
+  OUTER_SPRINT flir_endpoint_arg_id ~ground-wide~
+  OUTER_SPRINT flir_endpoint_arg_area ~area-a~
+  OUTER_SPRINT flir_endpoint_arg_target_kind ~ground~
+  OUTER_SPRINT flir_endpoint_arg_target_identity ~-~
+  OUTER_SET flir_endpoint_arg_x = 40000
+  OUTER_SET flir_endpoint_arg_y = 60
+  OUTER_SET flir_endpoint_arg_capacity = 1
+  OUTER_SPRINT flir_endpoint_arg_static_policy ~authored-static~
+  OUTER_SPRINT flir_endpoint_arg_fallback ~-~
+  OUTER_SPRINT flir_endpoint_arg_adapter ~~
+  OUTER_SET flir_endpoint_arg_enabled = 1
+  LAM h_endpoint
+  LAM flir_endpoints_validate
+
+BEGIN ~extension mutation runs after generated-slot rehydration~ DESIGNATED 30
+  LAM flir_endpoints_reset
+  OUTER_SPRINT flir_endpoint_arg_provider ~core~
+  OUTER_SPRINT flir_endpoint_arg_id ~ground-history~
+  OUTER_SPRINT flir_endpoint_arg_area ~area-history~
+  OUTER_SPRINT flir_endpoint_arg_target_kind ~ground~
+  OUTER_SPRINT flir_endpoint_arg_target_identity ~-~
+  OUTER_SET flir_endpoint_arg_x = 100
+  OUTER_SET flir_endpoint_arg_y = 200
+  OUTER_SET flir_endpoint_arg_capacity = 1
+  OUTER_SPRINT flir_endpoint_arg_static_policy ~authored~
+  OUTER_SPRINT flir_endpoint_arg_fallback ~-~
+  OUTER_SPRINT flir_endpoint_arg_adapter ~~
+  OUTER_SET flir_endpoint_arg_enabled = 1
+  LAM h_endpoint
+  OUTER_SPRINT flir_endpoint_arg_id ~endpoint-history~
+  OUTER_SPRINT flir_endpoint_arg_target_kind ~container~
+  OUTER_SPRINT flir_endpoint_arg_target_identity ~target-history~
+  OUTER_SET flir_endpoint_arg_x = 0
+  OUTER_SET flir_endpoint_arg_y = 0
+  OUTER_SPRINT flir_endpoint_arg_static_policy ~runtime-resolve~
+  OUTER_SPRINT flir_endpoint_arg_fallback ~core:ground-history~
+  LAM h_endpoint
+  OUTER_SET $flir_endpoint_candidate("bg2" "1" "bg2:1" "core:endpoint-history") = 1
+
+  OUTER_SPRINT flir_endpoint_generated_campaign ~bg2~
+  OUTER_SPRINT flir_endpoint_generated_tier ~1~
+  OUTER_SPRINT flir_endpoint_generated_band ~bg2:1~
+  OUTER_SPRINT flir_endpoint_generated_endpoint ~core:endpoint-history~
+  OUTER_SET flir_endpoint_generated_round = 1
+  OUTER_SET flir_endpoint_generated_generation = 0
+  LAM flir_endpoints_generated_slot_identity
+  OUTER_SET flir_registry_available = 1
+  OUTER_SET $flir_registry_index("history-row") = 1
+  OUTER_SPRINT $flir_registry_index_campaign("history-row") ~bg2~
+  OUTER_SPRINT $flir_registry_index_tier("history-row") ~1~
+  OUTER_SPRINT $flir_registry_index_kind("history-row") ~slot~
+  OUTER_SPRINT $flir_registry_index_stable("history-row") ~%flir_endpoint_generated_qualified%~
+  OUTER_SET $flir_registry_present("bg2" "1" "slot" "%flir_endpoint_generated_qualified%") = 1
+  OUTER_SET $flir_registry_enabled("bg2" "1" "slot" "%flir_endpoint_generated_qualified%") = 1
+  OUTER_SET $flir_registry_compact("bg2" "1" "slot" "%flir_endpoint_generated_qualified%") = 7
+  LAM flir_endpoints_rehydrate_generated_slots
+
+  OUTER_SPRINT h_generated_slot $flir_endpoint_slot_order("1")
+  OUTER_SET $flir_endpoint_extension_row_order("1") = 1
+  OUTER_SPRINT $flir_endpoint_extension_row_kind("1") ~slot~
+  OUTER_SPRINT $flir_endpoint_extension_row_operation("1") ~DISABLE~
+  OUTER_SPRINT $flir_endpoint_extension_row_actor("1") ~compat~
+  OUTER_SPRINT $flir_endpoint_extension_row_provider("1") ~flir~
+  OUTER_SPRINT $flir_endpoint_extension_row_id("1") $flir_endpoint_slot_local_id("%h_generated_slot%")
+  OUTER_SET $flir_endpoint_extension_row_expected("1") = $flir_endpoint_slot_row_fingerprint("%h_generated_slot%")
+  OUTER_SPRINT $flir_endpoint_extension_row_campaign("1") ~~
+  OUTER_SPRINT $flir_endpoint_extension_row_tier("1") ~~
+  OUTER_SPRINT $flir_endpoint_extension_row_area("1") ~~
+  OUTER_SPRINT $flir_endpoint_extension_row_target_kind("1") ~~
+  OUTER_SPRINT $flir_endpoint_extension_row_target_identity("1") ~~
+  OUTER_SET $flir_endpoint_extension_row_x("1") = 0
+  OUTER_SET $flir_endpoint_extension_row_y("1") = 0
+  OUTER_SET $flir_endpoint_extension_row_capacity("1") = 0
+  OUTER_SPRINT $flir_endpoint_extension_row_policy("1") ~~
+  OUTER_SPRINT $flir_endpoint_extension_row_fallback("1") ~~
+  OUTER_SPRINT $flir_endpoint_extension_row_adapter("1") ~~
+  OUTER_SPRINT $flir_endpoint_extension_row_endpoint("1") ~~
+  OUTER_SPRINT $flir_endpoint_extension_row_band("1") ~~
+  OUTER_SET $flir_endpoint_extension_row_weight("1") = 0
+  OUTER_SET $flir_endpoint_extension_row_enabled("1") = 0
+  OUTER_SET flir_endpoint_extension_rows_loaded = 1
+  OUTER_SPRINT flir_endpoint_extension_phase ~MUTATE~
+  LAM flir_endpoints_apply_extension_hook
+  OUTER_SET h_generated_enabled = $flir_endpoint_slot_enabled("%h_generated_slot%")
+  OUTER_SET h_generated_value = $flir_endpoint_slot_value("%h_generated_slot%")
+  OUTER_TEXT_SPRINT h_report ~POST_REHYDRATE enabled=%h_generated_enabled% value=%h_generated_value%%WNL%~
+  COPY + ~%argv[0]%~ ~%argv[2]%~
+    DELETE_BYTES 0 BUFFER_LENGTH
+    INSERT_BYTES 0 STRING_LENGTH ~%h_report%~
+    WRITE_ASCIIE 0 ~%h_report%~ (STRING_LENGTH ~%h_report%~)
+  BUT_ONLY
+
+BEGIN ~extension fragment header must match the public schema~ DESIGNATED 32
+  LAM flir_endpoints_reset
+  OUTER_SPRINT flir_endpoint_extension_fixture ~%argv[3]%~
+  OUTER_SPRINT flir_endpoint_extension_phase ~ALL~
+  LAM flir_endpoints_apply_extension_hook
+
+BEGIN ~parsed extension replacement and disable rows~ DESIGNATED 33
+  LAM flir_endpoints_reset
+  OUTER_SPRINT flir_endpoint_arg_provider ~core~
+  OUTER_SPRINT flir_endpoint_arg_id ~ground-parsed~
+  OUTER_SPRINT flir_endpoint_arg_area ~area-parsed~
+  OUTER_SPRINT flir_endpoint_arg_target_kind ~ground~
+  OUTER_SPRINT flir_endpoint_arg_target_identity ~-~
+  OUTER_SET flir_endpoint_arg_x = 50
+  OUTER_SET flir_endpoint_arg_y = 60
+  OUTER_SET flir_endpoint_arg_capacity = 1
+  OUTER_SPRINT flir_endpoint_arg_static_policy ~authored-static~
+  OUTER_SPRINT flir_endpoint_arg_fallback ~-~
+  OUTER_SPRINT flir_endpoint_arg_adapter ~~
+  OUTER_SET flir_endpoint_arg_enabled = 1
+  LAM h_endpoint
+  OUTER_SET $flir_endpoint_candidate("bg2" "1" "bg2:1" "core:ground-parsed") = 1
+  OUTER_SPRINT flir_endpoint_slot_arg_provider ~core~
+  OUTER_SPRINT flir_endpoint_slot_arg_id ~slot-parsed~
+  OUTER_SPRINT flir_endpoint_slot_arg_campaign ~bg2~
+  OUTER_SPRINT flir_endpoint_slot_arg_tier ~1~
+  OUTER_SPRINT flir_endpoint_slot_arg_legacy_raw ~slot-parsed~
+  OUTER_SPRINT flir_endpoint_slot_arg_legacy_ident ~generated~
+  OUTER_SET flir_endpoint_slot_arg_legacy_occurrence = 1
+  OUTER_SPRINT flir_endpoint_slot_arg_endpoint ~core:ground-parsed~
+  OUTER_SPRINT flir_endpoint_slot_arg_band ~bg2:1~
+  OUTER_SET flir_endpoint_slot_arg_weight = 1
+  OUTER_SET flir_endpoint_slot_arg_value = 0
+  OUTER_SET flir_endpoint_slot_arg_enabled = 1
+  LAM h_slot
+  OUTER_SET h_parsed_endpoint_fingerprint = $flir_endpoint_row_fingerprint("core:ground-parsed")
+  OUTER_SET h_parsed_slot_fingerprint = $flir_endpoint_slot_row_fingerprint("core:slot-parsed")
+  COPY ~%argv[3]%~ ~%argv[2]%.mutations.2da~
+    REPLACE_TEXTUALLY EXACT_MATCH ~EP_FP~ ~%h_parsed_endpoint_fingerprint%~
+    REPLACE_TEXTUALLY EXACT_MATCH ~SLOT_FP~ ~%h_parsed_slot_fingerprint%~
+  OUTER_SPRINT flir_endpoint_extension_fixture ~%argv[2]%.mutations.2da~
+  OUTER_SPRINT flir_endpoint_extension_phase ~ALL~
+  LAM flir_endpoints_apply_extension_hook
+  LAM flir_endpoints_rebuild_candidates
+  LAM flir_endpoints_validate
+  OUTER_SET h_parsed_x = $flir_endpoint_x("core:ground-parsed")
+  OUTER_SET h_parsed_slot_disabled = 1 - $flir_endpoint_slot_enabled("core:slot-parsed")
+  OUTER_TEXT_SPRINT h_report ~PARSED_MUTATIONS x=%h_parsed_x% disabled=%h_parsed_slot_disabled%%WNL%~
+  COPY + ~%argv[0]%~ ~%argv[2]%~
+    DELETE_BYTES 0 BUFFER_LENGTH
+    INSERT_BYTES 0 STRING_LENGTH ~%h_report%~
+    WRITE_ASCIIE 0 ~%h_report%~ (STRING_LENGTH ~%h_report%~)
+  BUT_ONLY
+
+BEGIN ~active area drift fails without an authenticated endpoint update~ DESIGNATED 34
+  ACTION_CLEAR_ARRAY location_array
+  ACTION_CLEAR_ARRAY removed_item_array
+  COPY - ~randomiser/lists/locations/base/bg2.2da~
+         ~.../randomiser/fl-inlined/lists/locations/base/bg2.2da~
+    LAUNCH_PATCH_MACRO h_read_legacy_locations
+  COPY - ~randomiser/lists/locations/base/bg1.2da~
+         ~.../randomiser/fl-inlined/lists/locations/base/bg1.2da~
+    LAUNCH_PATCH_MACRO h_read_legacy_locations
+  LAM flir_endpoints_load_declarations
+  LAM flir_endpoints_validate
+  OUTER_TEXT_SPRINT h_report ~AREA_DRIFT_UNEXPECTED_SUCCESS%WNL%~
+  COPY + ~%argv[0]%~ ~%argv[2]%~
+    DELETE_BYTES 0 BUFFER_LENGTH
+    INSERT_BYTES 0 STRING_LENGTH ~%h_report%~
+    WRITE_ASCIIE 0 ~%h_report%~ (STRING_LENGTH ~%h_report%~)
+  BUT_ONLY
+
+BEGIN ~authenticated endpoint and fallback replacement accepts area move~ DESIGNATED 35
+  ACTION_CLEAR_ARRAY location_array
+  ACTION_CLEAR_ARRAY removed_item_array
+  COPY - ~randomiser/lists/locations/base/bg2.2da~
+         ~.../randomiser/fl-inlined/lists/locations/base/bg2.2da~
+    LAUNCH_PATCH_MACRO h_read_legacy_locations
+  COPY - ~randomiser/lists/locations/base/bg1.2da~
+         ~.../randomiser/fl-inlined/lists/locations/base/bg1.2da~
+    LAUNCH_PATCH_MACRO h_read_legacy_locations
+  OUTER_SPRINT flir_endpoint_extension_fixture ~%argv[3]%~
+  LAM flir_endpoints_load_declarations
+  LAM flir_endpoints_validate
+  OUTER_SPRINT h_relocated_slot ~legacy:loc-reloc~
+  OUTER_SPRINT h_relocated_endpoint $flir_endpoint_slot_endpoint("%h_relocated_slot%")
+  OUTER_SPRINT h_relocated_area $flir_endpoint_area("%h_relocated_endpoint%")
+  OUTER_SPRINT h_relocated_fallback $flir_endpoint_fallback("%h_relocated_endpoint%")
+  OUTER_SPRINT h_relocated_fallback_area $flir_endpoint_area("%h_relocated_fallback%")
+  OUTER_TEXT_SPRINT h_report ~AREA_REPLACED primary=%h_relocated_area% fallback=%h_relocated_fallback_area%%WNL%~
+  COPY + ~%argv[0]%~ ~%argv[2]%~
+    DELETE_BYTES 0 BUFFER_LENGTH
+    INSERT_BYTES 0 STRING_LENGTH ~%h_report%~
+    WRITE_ASCIIE 0 ~%h_report%~ (STRING_LENGTH ~%h_report%~)
+  BUT_ONLY
+
+BEGIN ~historical overflow matches raw selector despite normalized identity~ DESIGNATED 36
+  ACTION_CLEAR_ARRAY location_array
+  ACTION_CLEAR_ARRAY removed_item_array
+  COPY - ~randomiser/lists/locations/base/bg2.2da~
+         ~.../randomiser/fl-inlined/lists/locations/base/bg2.2da~
+    LAUNCH_PATCH_MACRO h_read_legacy_locations
+  COPY - ~randomiser/lists/locations/base/bg1.2da~
+         ~.../randomiser/fl-inlined/lists/locations/base/bg1.2da~
+    LAUNCH_PATCH_MACRO h_read_legacy_locations
+  OUTER_SPRINT h_overflow_raw ~9001~
+  OUTER_SPRINT h_overflow_target ~actor-source.cre~
+  OUTER_SPRINT h_overflow_area ~area-one~
+  OUTER_SPRINT h_overflow_stable ~legacy:slot-bg2-1-9001--1~
+  OUTER_SPRINT $location_array("%h_overflow_raw%" "1" "%h_overflow_target%" "%h_overflow_area%" "") ~~
+  OUTER_SPRINT $flir_registry_legacy_overflow_location("%h_overflow_raw%" "1" "%h_overflow_target%" "%h_overflow_area%") ~1~
+  OUTER_SPRINT $flir_registry_legacy_overflow_stable("%h_overflow_raw%" "1" "%h_overflow_target%" "%h_overflow_area%") ~%h_overflow_stable%~
+  OUTER_SET $flir_registry_legacy_overflow_occurrence("%h_overflow_raw%" "1" "%h_overflow_target%" "%h_overflow_area%") = 1
+  OUTER_SET flir_registry_available = 1
+  OUTER_SPRINT $flir_registry_present("bg2" "1" "slot" "%h_overflow_stable%") ~1~
+  OUTER_SET $flir_registry_enabled("bg2" "1" "slot" "%h_overflow_stable%") = 1
+  OUTER_SET $flir_registry_compact("bg2" "1" "slot" "%h_overflow_stable%") = 300
+  LAM flir_endpoints_load_declarations
+  LAM flir_endpoints_validate
+  OUTER_SET h_overflow_value = 0
+  OUTER_SPRINT h_overflow_endpoint ~~
+  OUTER_FOR (h_overflow_i = 1; h_overflow_i <= flir_endpoint_slot_count; ++h_overflow_i) BEGIN
+    OUTER_SPRINT h_overflow_slot $flir_endpoint_slot_order("%h_overflow_i%")
+    ACTION_IF $flir_endpoint_slot_registry_stable("%h_overflow_slot%") STRING_EQUAL_CASE ~%h_overflow_stable%~ BEGIN
+      OUTER_SET h_overflow_value = $flir_endpoint_slot_value("%h_overflow_slot%")
+      OUTER_SPRINT h_overflow_endpoint $flir_endpoint_slot_endpoint("%h_overflow_slot%")
+    END
+  END
+  OUTER_TEXT_SPRINT h_report ~RAW_OVERFLOW active=%flir_endpoint_active_count% matched=%flir_endpoint_matched_count% slots=%flir_endpoint_slot_count% value=%h_overflow_value% endpoint=%h_overflow_endpoint%%WNL%~
+  COPY + ~%argv[0]%~ ~%argv[2]%~
+    DELETE_BYTES 0 BUFFER_LENGTH
+    INSERT_BYTES 0 STRING_LENGTH ~%h_report%~
+    WRITE_ASCIIE 0 ~%h_report%~ (STRING_LENGTH ~%h_report%~)
+  BUT_ONLY

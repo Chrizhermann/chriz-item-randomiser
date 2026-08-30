@@ -1,0 +1,7 @@
+2DA V1.0
+0
+KIND OPERATION ACTOR_PROVIDER PROVIDER ID EXPECTED_FINGERPRINT CAMPAIGN TIER AREA TARGET_KIND TARGET_IDENTITY X Y CAPACITY STATIC_POLICY FALLBACK ADAPTER ENDPOINT_ID PROGRESSION_BAND WEIGHT ENABLED
+endpoint ADD ext ext ground-a 0 - - area-ext ground - 120 220 2 authored-static - - - - 0 1
+endpoint ADD ext ext endpoint-a 0 - - area-ext container target-a 0 0 2 runtime-resolve ext:ground-a - - - 0 1
+slot ADD ext ext slot-a 0 bg2 1 - - - 0 0 0 - - - ext:endpoint-a bg2:1 1 1
+slot ADD ext ext slot-b 0 bg2 1 - - - 0 0 0 - - - ext:endpoint-a bg2:1 1 1

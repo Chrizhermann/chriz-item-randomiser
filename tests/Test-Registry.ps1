@@ -16,6 +16,7 @@ $fixesPath = Join-Path $repositoryRoot 'lib\fixes.tpa'
 $removalPlanPath = Join-Path $repositoryRoot 'lib\removal_plan.tpa'
 $coreLibPath = Join-Path $repositoryRoot 'lib\lib.tpa'
 $catalogPath = Join-Path $repositoryRoot 'lib\catalog.tpa'
+$endpointsPath = Join-Path $repositoryRoot 'lib\endpoints.tpa'
 $harnessPath = Join-Path $PSScriptRoot 'weidu\registry-harness.tp2'
 $randomSeedHarnessPath = Join-Path $PSScriptRoot 'weidu\random-seed-harness.tp2'
 $forbiddenLiveRoot = [System.IO.Path]::GetFullPath("C:\Games\Baldur's Gate II Enhanced Edition modded").TrimEnd('\', '/')
@@ -25,7 +26,7 @@ if (-not (Test-Path -LiteralPath $registryPath -PathType Leaf)) {
     exit 1
 }
 
-foreach ($requiredPath in @($randomSeedPath, $harnessPath, $randomSeedHarnessPath, $removalPlanPath, $coreLibPath, $catalogPath)) {
+foreach ($requiredPath in @($randomSeedPath, $harnessPath, $randomSeedHarnessPath, $removalPlanPath, $coreLibPath, $catalogPath, $endpointsPath)) {
     if (-not (Test-Path -LiteralPath $requiredPath -PathType Leaf)) {
         throw "Required registry test input is missing: $requiredPath"
     }
@@ -86,6 +87,10 @@ foreach ($requiredSymbol in @(
     'flir_registry_allocate_overflow_locations',
     'flir_registry_add_current_overflow_locations',
     'flir_registry_capture_final_slots',
+    'flir_registry_register_slot',
+    'flir_registry_register_slot_tombstone',
+    'flir_registry_reconcile_mappings',
+    'flir_registry_finalize_catalog',
     'flir_registry_reconcile',
     'flir_registry_publish_state',
     'flir_mode1_publish_state',
@@ -391,6 +396,7 @@ function Invoke-RegistryHarness {
         '--args', $script:removalPlanPath,
         '--args', $script:coreLibPath,
         '--args', $script:catalogPath,
+        '--args', $script:endpointsPath,
         '--language', '0',
         '--use-lang', 'en_US',
         '--no-exit-pause',
@@ -438,6 +444,7 @@ function Invoke-RegistryReinstall {
         '--args', $script:removalPlanPath,
         '--args', $script:coreLibPath,
         '--args', $script:catalogPath,
+        '--args', $script:endpointsPath,
         '--language', '0',
         '--use-lang', 'en_US',
         '--no-exit-pause',
@@ -461,7 +468,7 @@ function Invoke-RegistryUninstallOnly {
     param([string] $GameRoot, [int] $Component = 0)
     Push-Location $GameRoot
     try {
-        $output = @(& $script:resolvedWeidu $script:harnessPath --game $GameRoot --force-uninstall-list $Component --args $script:registryPath --args (Join-Path $GameRoot 'registry-report-uninstall.txt') --args $script:removalPlanPath --args $script:coreLibPath --args $script:catalogPath --language 0 --use-lang en_US --no-exit-pause --quick-log 2>&1 | ForEach-Object { [string] $_ })
+        $output = @(& $script:resolvedWeidu $script:harnessPath --game $GameRoot --force-uninstall-list $Component --args $script:registryPath --args (Join-Path $GameRoot 'registry-report-uninstall.txt') --args $script:removalPlanPath --args $script:coreLibPath --args $script:catalogPath --args $script:endpointsPath --language 0 --use-lang en_US --no-exit-pause --quick-log 2>&1 | ForEach-Object { [string] $_ })
         $exitCode = $LASTEXITCODE
     }
     finally {
@@ -1293,6 +1300,9 @@ try {
             if (@($historicalOverflow.Report -split "`r?`n" | Where-Object { $_ -ceq $expectedOverflowRow }).Count -ne 1) {
                 Add-RegistryRedFailure -Code 'Registry_HistoricalOverflowCompactRepurposed' -Message "missing $expectedOverflowRow"
             }
+            if ($historicalOverflow.Report -notmatch ('(?m)^CACHE ' + [regex]::Escape($expectedOverflow.Groups[1].Value) + ' 1\r?$')) {
+                Add-RegistryRedFailure -Code 'Registry_HistoricalOverflowEndpointCacheMissing' -Message 'migration did not expose the exact overflow stable identity and occurrence to endpoint normalization'
+            }
         }
         if (@($historicalOverflow.Report -split "`r?`n" | Where-Object { $_ -ceq 'ROW bg2 1 slot legacy:slot-bg2-1-001-ext-1 4 1' }).Count -ne 1) {
             Add-RegistryRedFailure -Code 'Registry_HistoricalOverflowCompactRepurposed' -Message 'extension location did not allocate after historical overflow'
@@ -1317,6 +1327,9 @@ try {
         if (-not $reinstallExpected.Success -or
             @($reinstalledOverflow.Report -split "`r?`n" | Where-Object { $_ -ceq ('ROW bg2 1 slot ' + $reinstallExpected.Groups[1].Value + ' 3 1') }).Count -ne 1) {
             Add-RegistryRedFailure -Code 'Registry_PreserveReinstallOverflowDisabled' -Message 'registered preserve reinstall did not keep the historical overflow active at compact 3'
+        }
+        elseif ($reinstalledOverflow.Report -notmatch ('(?m)^CACHE ' + [regex]::Escape($reinstallExpected.Groups[1].Value) + ' 1\r?$')) {
+            Add-RegistryRedFailure -Code 'Registry_PreserveReinstallOverflowCacheMissing' -Message 'registered preserve reinstall did not expose the exact overflow endpoint identity'
         }
         if ($reinstalledOverflow.Report -notmatch '(?m)^ENDPOINT 1\r?$') {
             Add-RegistryRedFailure -Code 'Registry_PreserveReinstallOverflowEndpointLost' -Message 'registered preserve reinstall did not reconstruct the exact historical endpoint'
@@ -1596,6 +1609,90 @@ try {
     catch {
         $message = (($_.Exception.Message -split "`r?`n") | Select-Object -First 80) -join ' | '
         Add-RegistryRedFailure -Code 'Registry_AuthoredReplayIdentityExecutable' -Message $message
+    }
+
+    foreach ($readinessCase in @(
+        [pscustomobject]@{ Component = 123; Name = 'finalize-before-compacts'; Code = 'MAPPINGS_NOT_READY' },
+        [pscustomobject]@{ Component = 124; Name = 'write-before-finalize'; Code = 'CATALOG_NOT_FINALIZED' }
+    )) {
+        $readinessGame = Join-Path $scratchRoot ('registry-readiness-' + $readinessCase.Name)
+        New-MinimalFakeGame -GameRoot $readinessGame
+        try {
+            $null = Invoke-RegistryHarness -Component $readinessCase.Component -Name $readinessCase.Name -GameRoot $readinessGame -ExpectSuccess $false -ExpectedErrorCode $readinessCase.Code
+        }
+        catch {
+            $message = (($_.Exception.Message -split "`r?`n") | Select-Object -First 80) -join ' | '
+            Add-RegistryRedFailure -Code ('Registry_Readiness_' + $readinessCase.Code) -Message $message
+        }
+    }
+
+    $slotApiGame = Join-Path $scratchRoot 'registry-slot-api-game'
+    New-MinimalFakeGame -GameRoot $slotApiGame
+    try {
+        $slotApi = Invoke-RegistryHarness -Component 125 -Name 'slot-registration-api' -GameRoot $slotApiGame
+        if ($slotApi.Report -notmatch '(?m)^REGAPI compact=1 ready=1 finalized=1\r?$' -or
+            $slotApi.Report -notmatch '(?m)^ROW bg2 1 slot core:slot-api 1 1\r?$') {
+            Add-RegistryRedFailure -Code 'Registry_SlotApiContract' -Message 'slot registration did not reconcile and finalize a compact through the public API'
+        }
+    }
+    catch {
+        $message = (($_.Exception.Message -split "`r?`n") | Select-Object -First 80) -join ' | '
+        Add-RegistryRedFailure -Code 'Registry_SlotApiExecutable' -Message $message
+    }
+
+    $slotTombstoneGame = Join-Path $scratchRoot 'registry-slot-tombstone-api-game'
+    New-MinimalFakeGame -GameRoot $slotTombstoneGame
+    try {
+        $slotTombstone = Invoke-RegistryHarness -Component 126 -Name 'slot-tombstone-api' -GameRoot $slotTombstoneGame
+        if ($slotTombstone.Report -notmatch '(?m)^TOMBSTONES old=7/0 fresh=8/0 max=8\r?$' -or
+            $slotTombstone.Report -notmatch '(?m)^ROW bg2 1 slot ext:slot-fresh-disabled 8 0\r?$' -or
+            $slotTombstone.Report -notmatch '(?m)^ROW bg2 1 slot ext:slot-old-active 7 0\r?$') {
+            Add-RegistryRedFailure -Code 'Registry_SlotTombstoneContract' -Message 'disabled endpoint slots were not persisted monotonically as immutable registry tombstones'
+        }
+    }
+    catch {
+        $message = (($_.Exception.Message -split "`r?`n") | Select-Object -First 80) -join ' | '
+        Add-RegistryRedFailure -Code 'Registry_SlotTombstoneExecutable' -Message $message
+    }
+    $slotResurrectionGame = Join-Path $scratchRoot 'registry-slot-resurrection-game'
+    New-MinimalFakeGame -GameRoot $slotResurrectionGame
+    try {
+        $null = Invoke-RegistryHarness -Component 127 -Name 'slot-tombstone-resurrection' -GameRoot $slotResurrectionGame -ExpectSuccess $false -ExpectedErrorCode 'TOMBSTONE_REAPPEAR'
+    }
+    catch {
+        $message = (($_.Exception.Message -split "`r?`n") | Select-Object -First 80) -join ' | '
+        Add-RegistryRedFailure -Code 'Registry_SlotTombstoneResurrection' -Message $message
+    }
+
+    $endpointRegistryGame = Join-Path $scratchRoot 'endpoint-registry-integration-game'
+    New-MinimalFakeGame -GameRoot $endpointRegistryGame
+    try {
+        $endpointRegistry = Invoke-RegistryHarness -Component 128 -Name 'endpoint-registry-integration' -GameRoot $endpointRegistryGame
+        if ($endpointRegistry.Report -notmatch '(?m)^ENDPOINT_REGISTRY compact=1 registry=0 catalog=0\r?$') {
+            Add-RegistryRedFailure -Code 'Registry_EndpointTombstoneIntegration' -Message 'disabled endpoint slot did not retain one positive compact in both normalized states'
+        }
+        $null = Invoke-RegistryHarness -Component 129 -Name 'endpoint-registry-resurrection' -GameRoot $endpointRegistryGame -ExpectSuccess $false -ExpectedErrorDomain 'FLIR_ENDPOINT_ERR' -ExpectedErrorCode 'SLOT_TOMBSTONE_REAPPEAR'
+    }
+    catch {
+        $message = (($_.Exception.Message -split "`r?`n") | Select-Object -First 100) -join ' | '
+        Add-RegistryRedFailure -Code 'Registry_EndpointTombstoneLifecycle' -Message $message
+    }
+
+    $generatedReplayGame = Join-Path $scratchRoot 'generated-extension-replay-game'
+    New-MinimalFakeGame -GameRoot $generatedReplayGame
+    try {
+        $generatedFirst = Invoke-RegistryHarness -Component 130 -Name 'generated-extension-first' -GameRoot $generatedReplayGame
+        if ($generatedFirst.Report -notmatch '(?m)^GENERATED_DISABLE_FIRST enabled=0 value=1\r?$') {
+            Add-RegistryRedFailure -Code 'Registry_GeneratedDisableFirstInstall' -Message 'first install did not persist the disabled generated slot at its positive compact'
+        }
+        $generatedReplay = Invoke-RegistryHarness -Component 131 -Name 'generated-extension-replay' -GameRoot $generatedReplayGame
+        if ($generatedReplay.Report -notmatch '(?m)^GENERATED_DISABLE_REPLAY enabled=0 value=1\r?$') {
+            Add-RegistryRedFailure -Code 'Registry_GeneratedDisableReplay' -Message 'second install did not replay the generated-slot disable with its original compact'
+        }
+    }
+    catch {
+        $message = (($_.Exception.Message -split "`r?`n") | Select-Object -First 100) -join ' | '
+        Add-RegistryRedFailure -Code 'Registry_GeneratedDisableLifecycle' -Message $message
     }
 
     if ($redFailures.Count -ne 0) {
