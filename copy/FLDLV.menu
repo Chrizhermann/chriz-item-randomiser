@@ -1,0 +1,12 @@
+menu
+{
+	name 'FLDLV_POLL'
+	align center center
+
+	label
+	{
+		name 'FLDLV_POLL_TICK'
+		area 0 0 1 1
+		enabled "FLDLV._MenuPoll()"
+	}
+}

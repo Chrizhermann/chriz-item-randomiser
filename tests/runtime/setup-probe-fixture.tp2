@@ -1,0 +1,439 @@
+BACKUP ~flirtpfx/backup~
+AUTHOR ~FLIR Task 10 test fixture~
+VERSION ~1~
+
+BEGIN ~FLIR synthetic runtime probe fixture~
+DESIGNATED 0
+
+// This profile marker is deliberately distinct from the owner's live EET
+// engine.lua.  The public wrapper also canonicalizes the game root, but the
+// component keeps its own fail-closed guard in case the TP2 is invoked by hand.
+REQUIRE_PREDICATE (FILE_EXISTS ~engine.lua~)
+  ~FLIR_PROBE_ERR DISPOSABLE_PROFILE_REQUIRED~
+REQUIRE_PREDICATE (FILE_CONTAINS_EVALUATED (~engine.lua~ ~engine_name = "Baldur's Gate - Enhanced Edition Trilogy - IR Test b600e94"~))
+  ~FLIR_PROBE_ERR DISPOSABLE_PROFILE_REQUIRED~
+REQUIRE_PREDICATE (FILE_EXISTS ~override/M___EEex.lua~)
+  ~FLIR_PROBE_ERR EEEX_REQUIRED~
+
+OUTER_SPRINT flir_probe_source EVALUATE_BUFFER ~%argv[0]%~
+OUTER_SPRINT flir_probe_nonce EVALUATE_BUFFER ~%argv[1]%~
+OUTER_SPRINT flir_probe_config_source EVALUATE_BUFFER ~%argv[2]%~
+
+ACTION_IF NOT (FILE_EXISTS ~%flir_probe_source%~)
+  OR NOT (FILE_EXISTS ~%flir_probe_config_source%~) BEGIN
+  FAIL ~FLIR_PROBE_ERR PRIVATE_DONOR_REQUIRED~
+END
+
+ACTION_IF (FILE_EXISTS_IN_GAME ~FLRTPFL.ITM~)
+  OR (FILE_EXISTS_IN_GAME ~FLRTPIT.ITM~)
+  OR (FILE_EXISTS_IN_GAME ~FLRTPJ.ITM~)
+  OR (FILE_EXISTS_IN_GAME ~FLRTPK.ITM~)
+  OR (FILE_EXISTS_IN_GAME ~FLRTPU.CRE~)
+  OR (FILE_EXISTS_IN_GAME ~FLRTPD1.CRE~)
+  OR (FILE_EXISTS_IN_GAME ~FLRTPD2.CRE~)
+  OR (FILE_EXISTS_IN_GAME ~FLRTPL.CRE~)
+  OR (FILE_EXISTS_IN_GAME ~FLRTPF.CRE~)
+  OR (FILE_EXISTS_IN_GAME ~FLRTPRA.ARE~)
+  OR (FILE_EXISTS_IN_GAME ~M_FLRTP.LUA~) BEGIN
+  FAIL ~FLIR_PROBE_ERR SYNTHETIC_RESOURCE_COLLISION~
+END
+
+// A deliberately boring item with no abilities fills controlled inventory
+// slots.  It is a new resref, so no real item or randomized content is used.
+CREATE ITM ~FLRTPFL~
+  WRITE_LONG 0x08 0xffffffff
+  WRITE_LONG 0x0c 0xffffffff
+  WRITE_LONG 0x50 0xffffffff
+  WRITE_LONG 0x54 0xffffffff
+  WRITE_LONG 0x64 0x72
+  WRITE_SHORT 0x68 0
+  WRITE_LONG 0x6a 0x72
+  WRITE_SHORT 0x70 0
+
+// Three ability headers give the runtime one independently observable use
+// count per engine charge field.  Delivery probes use values below these
+// maxima, never guessed defaults.
+CREATE ITM ~FLRTPIT~
+  WRITE_LONG 0x08 0xffffffff
+  WRITE_LONG 0x0c 0xffffffff
+  WRITE_LONG 0x50 0xffffffff
+  WRITE_LONG 0x54 0xffffffff
+  WRITE_LONG 0x64 0x72
+  WRITE_SHORT 0x68 3
+  WRITE_LONG 0x6a (0x72 + 3 * 0x38)
+  WRITE_SHORT 0x70 0
+  INSERT_BYTES 0x72 (3 * 0x38)
+  FOR (flir_probe_ability = 0; flir_probe_ability < 3; ++flir_probe_ability) BEGIN
+    SET flir_probe_header = 0x72 + flir_probe_ability * 0x38
+    WRITE_BYTE (flir_probe_header + 0x00) 3
+    WRITE_BYTE (flir_probe_header + 0x0c) 1
+    WRITE_SHORT (flir_probe_header + 0x0e) 1
+  END
+  WRITE_SHORT (0x72 + 0 * 0x38 + 0x22) 7
+  WRITE_SHORT (0x72 + 1 * 0x38 + 0x22) 11
+  WRITE_SHORT (0x72 + 2 * 0x38 + 0x22) 13
+
+CREATE ITM ~FLRTPJ~
+  WRITE_LONG 0x08 0xffffffff
+  WRITE_LONG 0x0c 0xffffffff
+  WRITE_LONG 0x50 0xffffffff
+  WRITE_LONG 0x54 0xffffffff
+  WRITE_LONG 0x64 0x72
+  WRITE_SHORT 0x68 3
+  WRITE_LONG 0x6a (0x72 + 3 * 0x38)
+  WRITE_SHORT 0x70 0
+  INSERT_BYTES 0x72 (3 * 0x38)
+  FOR (flir_probe_ability = 0; flir_probe_ability < 3; ++flir_probe_ability) BEGIN
+    SET flir_probe_header = 0x72 + flir_probe_ability * 0x38
+    WRITE_BYTE (flir_probe_header + 0x00) 3
+    WRITE_BYTE (flir_probe_header + 0x0c) 1
+    WRITE_SHORT (flir_probe_header + 0x0e) 1
+  END
+  WRITE_SHORT (0x72 + 0 * 0x38 + 0x22) 17
+  WRITE_SHORT (0x72 + 1 * 0x38 + 0x22) 19
+  WRITE_SHORT (0x72 + 2 * 0x38 + 0x22) 23
+
+CREATE ITM ~FLRTPK~
+  WRITE_LONG 0x08 0xffffffff
+  WRITE_LONG 0x0c 0xffffffff
+  WRITE_LONG 0x50 0xffffffff
+  WRITE_LONG 0x54 0xffffffff
+  WRITE_LONG 0x64 0x72
+  WRITE_SHORT 0x68 3
+  WRITE_LONG 0x6a (0x72 + 3 * 0x38)
+  WRITE_SHORT 0x70 0
+  INSERT_BYTES 0x72 (3 * 0x38)
+  FOR (flir_probe_ability = 0; flir_probe_ability < 3; ++flir_probe_ability) BEGIN
+    SET flir_probe_header = 0x72 + flir_probe_ability * 0x38
+    WRITE_BYTE (flir_probe_header + 0x00) 3
+    WRITE_BYTE (flir_probe_header + 0x0c) 1
+    WRITE_SHORT (flir_probe_header + 0x0e) 1
+  END
+  WRITE_SHORT (0x72 + 0 * 0x38 + 0x22) 29
+  WRITE_SHORT (0x72 + 1 * 0x38 + 0x22) 31
+  WRITE_SHORT (0x72 + 2 * 0x38 + 0x22) 37
+
+// Empty, living, neutral target with a unique script name.
+CREATE CRE ~FLRTPU~
+  WRITE_LONG 0x08 0xffffffff
+  WRITE_LONG 0x0c 0xffffffff
+  WRITE_LONG 0x20 0
+  WRITE_SHORT 0x24 100
+  WRITE_SHORT 0x26 100
+  WRITE_LONG 0x28 0x6100
+  WRITE_BYTE 0x52 20
+  WRITE_BYTE 0x53 2
+  WRITE_BYTE 0x234 1
+  WRITE_BYTE 0x237 1
+  WRITE_BYTE 0x238 10
+  WRITE_BYTE 0x23a 10
+  WRITE_BYTE 0x23b 10
+  WRITE_BYTE 0x23c 10
+  WRITE_BYTE 0x23d 10
+  WRITE_BYTE 0x23e 10
+  WRITE_BYTE 0x23f 10
+  WRITE_LONG 0x244 0x40000000
+  WRITE_BYTE 0x270 128
+  WRITE_BYTE 0x271 1
+  WRITE_BYTE 0x272 1
+  WRITE_BYTE 0x273 2
+  WRITE_BYTE 0x275 1
+  WRITE_BYTE 0x27b 0x22
+  WRITE_ASCIIE 0x280 ~FLRTPU~ #32
+  ADD_CRE_ITEM ~FLRTPFL~ #0 #0 #0 ~IDENTIFIED~ ~INV~
+
+// Two different CRE resources intentionally share one script name.  Runtime
+// resolution must observe two matches and reject the endpoint.
+CREATE CRE ~FLRTPD1~
+  WRITE_LONG 0x08 0xffffffff
+  WRITE_LONG 0x0c 0xffffffff
+  WRITE_LONG 0x20 0
+  WRITE_SHORT 0x24 100
+  WRITE_SHORT 0x26 100
+  WRITE_LONG 0x28 0x6100
+  WRITE_BYTE 0x52 20
+  WRITE_BYTE 0x53 2
+  WRITE_BYTE 0x234 1
+  WRITE_BYTE 0x237 1
+  WRITE_BYTE 0x238 10
+  WRITE_BYTE 0x23a 10
+  WRITE_BYTE 0x23b 10
+  WRITE_BYTE 0x23c 10
+  WRITE_BYTE 0x23d 10
+  WRITE_BYTE 0x23e 10
+  WRITE_BYTE 0x23f 10
+  WRITE_LONG 0x244 0x40000000
+  WRITE_BYTE 0x270 128
+  WRITE_BYTE 0x271 1
+  WRITE_BYTE 0x272 1
+  WRITE_BYTE 0x273 2
+  WRITE_BYTE 0x275 1
+  WRITE_BYTE 0x27b 0x22
+  WRITE_ASCIIE 0x280 ~FLRTPD~ #32
+  ADD_CRE_ITEM ~FLRTPFL~ #0 #0 #0 ~IDENTIFIED~ ~INV~
+
+CREATE CRE ~FLRTPD2~
+  WRITE_LONG 0x08 0xffffffff
+  WRITE_LONG 0x0c 0xffffffff
+  WRITE_LONG 0x20 0
+  WRITE_SHORT 0x24 100
+  WRITE_SHORT 0x26 100
+  WRITE_LONG 0x28 0x6100
+  WRITE_BYTE 0x52 20
+  WRITE_BYTE 0x53 2
+  WRITE_BYTE 0x234 1
+  WRITE_BYTE 0x237 1
+  WRITE_BYTE 0x238 10
+  WRITE_BYTE 0x23a 10
+  WRITE_BYTE 0x23b 10
+  WRITE_BYTE 0x23c 10
+  WRITE_BYTE 0x23d 10
+  WRITE_BYTE 0x23e 10
+  WRITE_BYTE 0x23f 10
+  WRITE_LONG 0x244 0x40000000
+  WRITE_BYTE 0x270 128
+  WRITE_BYTE 0x271 1
+  WRITE_BYTE 0x272 1
+  WRITE_BYTE 0x273 2
+  WRITE_BYTE 0x275 1
+  WRITE_BYTE 0x27b 0x22
+  WRITE_ASCIIE 0x280 ~FLRTPD~ #32
+  ADD_CRE_ITEM ~FLRTPFL~ #0 #0 #0 ~IDENTIFIED~ ~INV~
+
+// Fifteen backpack entries leave exactly the final inventory slot free.
+CREATE CRE ~FLRTPL~
+  WRITE_LONG 0x08 0xffffffff
+  WRITE_LONG 0x0c 0xffffffff
+  WRITE_LONG 0x20 0
+  WRITE_SHORT 0x24 100
+  WRITE_SHORT 0x26 100
+  WRITE_LONG 0x28 0x6100
+  WRITE_BYTE 0x52 20
+  WRITE_BYTE 0x53 2
+  WRITE_BYTE 0x234 1
+  WRITE_BYTE 0x237 1
+  WRITE_BYTE 0x238 10
+  WRITE_BYTE 0x23a 10
+  WRITE_BYTE 0x23b 10
+  WRITE_BYTE 0x23c 10
+  WRITE_BYTE 0x23d 10
+  WRITE_BYTE 0x23e 10
+  WRITE_BYTE 0x23f 10
+  WRITE_LONG 0x244 0x40000000
+  WRITE_BYTE 0x270 128
+  WRITE_BYTE 0x271 1
+  WRITE_BYTE 0x272 1
+  WRITE_BYTE 0x273 2
+  WRITE_BYTE 0x275 1
+  WRITE_BYTE 0x27b 0x22
+  WRITE_ASCIIE 0x280 ~FLRTPL~ #32
+  FOR (flir_probe_fill_count = 0; flir_probe_fill_count < 15; ++flir_probe_fill_count) BEGIN
+    ADD_CRE_ITEM ~FLRTPFL~ #0 #0 #0 ~IDENTIFIED~ ~INV~
+  END
+
+// Sixteen backpack entries make GiveItemCreate's full-inventory behavior
+// deterministic without touching a party member or story creature.
+CREATE CRE ~FLRTPF~
+  WRITE_LONG 0x08 0xffffffff
+  WRITE_LONG 0x0c 0xffffffff
+  WRITE_LONG 0x20 0
+  WRITE_SHORT 0x24 100
+  WRITE_SHORT 0x26 100
+  WRITE_LONG 0x28 0x6100
+  WRITE_BYTE 0x52 20
+  WRITE_BYTE 0x53 2
+  WRITE_BYTE 0x234 1
+  WRITE_BYTE 0x237 1
+  WRITE_BYTE 0x238 10
+  WRITE_BYTE 0x23a 10
+  WRITE_BYTE 0x23b 10
+  WRITE_BYTE 0x23c 10
+  WRITE_BYTE 0x23d 10
+  WRITE_BYTE 0x23e 10
+  WRITE_BYTE 0x23f 10
+  WRITE_LONG 0x244 0x40000000
+  WRITE_BYTE 0x270 128
+  WRITE_BYTE 0x271 1
+  WRITE_BYTE 0x272 1
+  WRITE_BYTE 0x273 2
+  WRITE_BYTE 0x275 1
+  WRITE_BYTE 0x27b 0x22
+  WRITE_ASCIIE 0x280 ~FLRTPF~ #32
+  FOR (flir_probe_fill_count = 0; flir_probe_fill_count < 16; ++flir_probe_fill_count) BEGIN
+    ADD_CRE_ITEM ~FLRTPFL~ #0 #0 #0 ~IDENTIFIED~ ~INV~
+  END
+
+// The wrapper supplies a temporary copy of the caller's already-visible
+// disposable area with a private FLIRPB01 envelope.  Only its WED, explored
+// mask, and inert visual geometry are retained.  Every gameplay-bearing
+// donor table is disabled; controlled synthetic tables are appended instead.
+COPY ~%flir_probe_source%~ ~override/FLRTPRA.ARE~
+  PATCH_IF BUFFER_LENGTH < 0x11c + 28 BEGIN
+    PATCH_FAIL ~FLIR_PROBE_ERR INVALID_PRIVATE_DONOR~
+  END
+  READ_ASCII 0x00 flir_probe_area_signature (8)
+  READ_ASCII (BUFFER_LENGTH - 28) flir_probe_envelope_magic (8)
+  READ_ASCII (BUFFER_LENGTH - 20) flir_probe_envelope_nonce (16)
+  READ_SHORT (BUFFER_LENGTH - 4) flir_probe_anchor_x
+  READ_SHORT (BUFFER_LENGTH - 2) flir_probe_anchor_y
+  PATCH_IF NOT ("%flir_probe_area_signature%" STRING_EQUAL_CASE ~AREAV1.0~)
+    OR NOT ("%flir_probe_envelope_magic%" STRING_EQUAL_CASE ~FLIRPB01~)
+    OR NOT ("%flir_probe_envelope_nonce%" STRING_EQUAL_CASE "%flir_probe_nonce%")
+    OR flir_probe_anchor_x < 96
+    OR flir_probe_anchor_x > 32000
+    OR flir_probe_anchor_y < 96
+    OR flir_probe_anchor_y > 32000 BEGIN
+    PATCH_FAIL ~FLIR_PROBE_ERR INVALID_PRIVATE_DONOR~
+  END
+  DELETE_BYTES (BUFFER_LENGTH - 28) 28
+
+  SET flir_probe_actor_offset = BUFFER_LENGTH
+  INSERT_BYTES flir_probe_actor_offset (5 * 0x110)
+
+  WRITE_ASCIIE (flir_probe_actor_offset + 0x00) ~FLRTPU~ #32
+  WRITE_SHORT (flir_probe_actor_offset + 0x20) flir_probe_anchor_x
+  WRITE_SHORT (flir_probe_actor_offset + 0x22) flir_probe_anchor_y
+  WRITE_SHORT (flir_probe_actor_offset + 0x24) flir_probe_anchor_x
+  WRITE_SHORT (flir_probe_actor_offset + 0x26) flir_probe_anchor_y
+  WRITE_LONG (flir_probe_actor_offset + 0x28) 1
+  WRITE_LONG (flir_probe_actor_offset + 0x88) 0
+  WRITE_LONG (flir_probe_actor_offset + 0x8c) 0
+  WRITE_LONG (flir_probe_actor_offset + 0x38) 0xffffffff
+  WRITE_LONG (flir_probe_actor_offset + 0x40) 0xffffffff
+  WRITE_ASCIIE (flir_probe_actor_offset + 0x80) ~FLRTPU~ #8
+
+  SET flir_probe_actor = flir_probe_actor_offset + 0x110
+  WRITE_ASCIIE (flir_probe_actor + 0x00) ~FLRTPD1~ #32
+  WRITE_SHORT (flir_probe_actor + 0x20) (flir_probe_anchor_x + 32)
+  WRITE_SHORT (flir_probe_actor + 0x22) flir_probe_anchor_y
+  WRITE_SHORT (flir_probe_actor + 0x24) (flir_probe_anchor_x + 32)
+  WRITE_SHORT (flir_probe_actor + 0x26) flir_probe_anchor_y
+  WRITE_LONG (flir_probe_actor + 0x28) 1
+  WRITE_LONG (flir_probe_actor + 0x88) 0
+  WRITE_LONG (flir_probe_actor + 0x8c) 0
+  WRITE_LONG (flir_probe_actor + 0x38) 0xffffffff
+  WRITE_LONG (flir_probe_actor + 0x40) 0xffffffff
+  WRITE_ASCIIE (flir_probe_actor + 0x80) ~FLRTPD1~ #8
+
+  SET flir_probe_actor = flir_probe_actor_offset + 2 * 0x110
+  WRITE_ASCIIE (flir_probe_actor + 0x00) ~FLRTPD2~ #32
+  WRITE_SHORT (flir_probe_actor + 0x20) (flir_probe_anchor_x + 64)
+  WRITE_SHORT (flir_probe_actor + 0x22) flir_probe_anchor_y
+  WRITE_SHORT (flir_probe_actor + 0x24) (flir_probe_anchor_x + 64)
+  WRITE_SHORT (flir_probe_actor + 0x26) flir_probe_anchor_y
+  WRITE_LONG (flir_probe_actor + 0x28) 1
+  WRITE_LONG (flir_probe_actor + 0x88) 0
+  WRITE_LONG (flir_probe_actor + 0x8c) 0
+  WRITE_LONG (flir_probe_actor + 0x38) 0xffffffff
+  WRITE_LONG (flir_probe_actor + 0x40) 0xffffffff
+  WRITE_ASCIIE (flir_probe_actor + 0x80) ~FLRTPD2~ #8
+
+  SET flir_probe_actor = flir_probe_actor_offset + 3 * 0x110
+  WRITE_ASCIIE (flir_probe_actor + 0x00) ~FLRTPL~ #32
+  WRITE_SHORT (flir_probe_actor + 0x20) (flir_probe_anchor_x + 96)
+  WRITE_SHORT (flir_probe_actor + 0x22) flir_probe_anchor_y
+  WRITE_SHORT (flir_probe_actor + 0x24) (flir_probe_anchor_x + 96)
+  WRITE_SHORT (flir_probe_actor + 0x26) flir_probe_anchor_y
+  WRITE_LONG (flir_probe_actor + 0x28) 1
+  WRITE_LONG (flir_probe_actor + 0x88) 0
+  WRITE_LONG (flir_probe_actor + 0x8c) 0
+  WRITE_LONG (flir_probe_actor + 0x38) 0xffffffff
+  WRITE_LONG (flir_probe_actor + 0x40) 0xffffffff
+  WRITE_ASCIIE (flir_probe_actor + 0x80) ~FLRTPL~ #8
+
+  SET flir_probe_actor = flir_probe_actor_offset + 4 * 0x110
+  WRITE_ASCIIE (flir_probe_actor + 0x00) ~FLRTPF~ #32
+  WRITE_SHORT (flir_probe_actor + 0x20) (flir_probe_anchor_x + 128)
+  WRITE_SHORT (flir_probe_actor + 0x22) flir_probe_anchor_y
+  WRITE_SHORT (flir_probe_actor + 0x24) (flir_probe_anchor_x + 128)
+  WRITE_SHORT (flir_probe_actor + 0x26) flir_probe_anchor_y
+  WRITE_LONG (flir_probe_actor + 0x28) 1
+  WRITE_LONG (flir_probe_actor + 0x88) 0
+  WRITE_LONG (flir_probe_actor + 0x8c) 0
+  WRITE_LONG (flir_probe_actor + 0x38) 0xffffffff
+  WRITE_LONG (flir_probe_actor + 0x40) 0xffffffff
+  WRITE_ASCIIE (flir_probe_actor + 0x80) ~FLRTPF~ #8
+
+  SET flir_probe_container_offset = BUFFER_LENGTH
+  INSERT_BYTES flir_probe_container_offset (2 * 0xc0)
+  WRITE_ASCIIE (flir_probe_container_offset + 0x00) ~FLRTPC~ #32
+  WRITE_SHORT (flir_probe_container_offset + 0x20) flir_probe_anchor_x
+  WRITE_SHORT (flir_probe_container_offset + 0x22) (flir_probe_anchor_y + 48)
+  WRITE_SHORT (flir_probe_container_offset + 0x24) 8
+  WRITE_SHORT (flir_probe_container_offset + 0x34) flir_probe_anchor_x
+  WRITE_SHORT (flir_probe_container_offset + 0x36) (flir_probe_anchor_y + 48)
+  WRITE_SHORT (flir_probe_container_offset + 0x38) (flir_probe_anchor_x - 16)
+  WRITE_SHORT (flir_probe_container_offset + 0x3a) (flir_probe_anchor_y + 32)
+  WRITE_SHORT (flir_probe_container_offset + 0x3c) (flir_probe_anchor_x + 16)
+  WRITE_SHORT (flir_probe_container_offset + 0x3e) (flir_probe_anchor_y + 64)
+  WRITE_LONG (flir_probe_container_offset + 0x40) 0
+  WRITE_LONG (flir_probe_container_offset + 0x44) 1
+  WRITE_LONG (flir_probe_container_offset + 0x50) 0
+  WRITE_SHORT (flir_probe_container_offset + 0x54) 0
+
+  SET flir_probe_pile_offset = flir_probe_container_offset + 0xc0
+  WRITE_ASCIIE (flir_probe_pile_offset + 0x00) ~FLRTPP~ #32
+  WRITE_SHORT (flir_probe_pile_offset + 0x20) (flir_probe_anchor_x + 64)
+  WRITE_SHORT (flir_probe_pile_offset + 0x22) (flir_probe_anchor_y + 48)
+  WRITE_SHORT (flir_probe_pile_offset + 0x24) 4
+  WRITE_SHORT (flir_probe_pile_offset + 0x34) (flir_probe_anchor_x + 64)
+  WRITE_SHORT (flir_probe_pile_offset + 0x36) (flir_probe_anchor_y + 48)
+  WRITE_SHORT (flir_probe_pile_offset + 0x38) (flir_probe_anchor_x + 48)
+  WRITE_SHORT (flir_probe_pile_offset + 0x3a) (flir_probe_anchor_y + 32)
+  WRITE_SHORT (flir_probe_pile_offset + 0x3c) (flir_probe_anchor_x + 80)
+  WRITE_SHORT (flir_probe_pile_offset + 0x3e) (flir_probe_anchor_y + 64)
+  WRITE_LONG (flir_probe_pile_offset + 0x40) 1
+  WRITE_LONG (flir_probe_pile_offset + 0x44) 1
+  WRITE_LONG (flir_probe_pile_offset + 0x50) 0
+  WRITE_SHORT (flir_probe_pile_offset + 0x54) 0
+
+  SET flir_probe_item_offset = BUFFER_LENGTH
+  INSERT_BYTES flir_probe_item_offset (2 * 0x14)
+  WRITE_ASCIIE (flir_probe_item_offset + 0x00) ~FLRTPFL~ #8
+  WRITE_LONG (flir_probe_item_offset + 0x10) 1
+  WRITE_ASCIIE (flir_probe_item_offset + 0x14) ~FLRTPFL~ #8
+  WRITE_LONG (flir_probe_item_offset + 0x24) 1
+
+  SET flir_probe_song_offset = BUFFER_LENGTH
+  INSERT_BYTES flir_probe_song_offset 0x90
+  SET flir_probe_rest_offset = BUFFER_LENGTH
+  INSERT_BYTES flir_probe_rest_offset 0xe4
+
+  // Saving is required for the controlled lifecycle probe.  Rest and travel
+  // stay disabled so the disposable synthetic area cannot act as gameplay.
+  WRITE_LONG 0x14 0x60
+  WRITE_LONG 0x54 flir_probe_actor_offset
+  WRITE_SHORT 0x58 5
+  WRITE_SHORT 0x5a 0
+  WRITE_LONG 0x5c BUFFER_LENGTH
+  WRITE_LONG 0x60 BUFFER_LENGTH
+  WRITE_LONG 0x64 0
+  WRITE_LONG 0x68 BUFFER_LENGTH
+  WRITE_LONG 0x6c 0
+  WRITE_LONG 0x70 flir_probe_container_offset
+  WRITE_SHORT 0x74 2
+  WRITE_SHORT 0x76 2
+  WRITE_LONG 0x78 flir_probe_item_offset
+  WRITE_LONG 0x7c BUFFER_LENGTH
+  WRITE_SHORT 0x80 0
+  WRITE_SHORT 0x82 0
+  WRITE_LONG 0x84 BUFFER_LENGTH
+  WRITE_LONG 0x88 BUFFER_LENGTH
+  WRITE_LONG 0x8c 0
+  WRITE_SHORT 0x90 0
+  WRITE_SHORT 0x92 0
+  WRITE_ASCIIE 0x94 ~~ #8
+  WRITE_LONG 0xa4 0
+  WRITE_LONG 0xa8 BUFFER_LENGTH
+  WRITE_LONG 0xac 0
+  WRITE_LONG 0xb0 BUFFER_LENGTH
+  WRITE_LONG 0xb4 0
+  WRITE_LONG 0xb8 BUFFER_LENGTH
+  WRITE_LONG 0xbc flir_probe_song_offset
+  WRITE_LONG 0xc0 flir_probe_rest_offset
+  WRITE_LONG 0xc4 BUFFER_LENGTH
+  WRITE_LONG 0xc8 0
+  WRITE_LONG 0xcc BUFFER_LENGTH
+  WRITE_LONG 0xd0 0
+
+COPY ~%flir_probe_config_source%~ ~override/M_FLRTP.lua~

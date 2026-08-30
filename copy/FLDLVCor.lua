@@ -150,6 +150,14 @@ local ENDPOINT_KINDS = {
     legacy_adapter = true,
 }
 
+local GROUND_STATIC_POLICIES = {
+    ["derived-unique"] = true,
+    authored = true,
+    ["authored-entrance"] = true,
+    ["authored-nearest"] = true,
+    ["authored-static"] = true,
+}
+
 local function validate_manifest(manifest)
     if type(manifest) ~= "table" then
         return nil, "MANIFEST_SHAPE"
@@ -242,14 +250,25 @@ local function validate_manifest(manifest)
             return nil, "MANIFEST_ENDPOINTS"
         end
         if endpoint.target_kind == "legacy_adapter" then
-            if endpoint.external_delivery ~= 1 or endpoint.fallback_id ~= "-" then
+            if endpoint.capacity ~= 1 or endpoint.static_policy ~= "legacy-external" or
+                not is_nonempty_string(endpoint.target_identity) or
+                endpoint.adapter ~= endpoint.target_identity or
+                endpoint.external_delivery ~= 1 or endpoint.fallback_id ~= "-" then
                 return nil, "MANIFEST_ENDPOINTS"
             end
-        elseif endpoint.external_delivery ~= 0 then
-            return nil, "MANIFEST_ENDPOINTS"
-        end
-        if endpoint.target_kind == "ground" and endpoint.fallback_id ~= "-" then
-            return nil, "MANIFEST_ENDPOINTS"
+        elseif endpoint.target_kind == "ground" then
+            if endpoint.target_identity ~= "-" or endpoint.fallback_id ~= "-" or
+                not GROUND_STATIC_POLICIES[endpoint.static_policy] or
+                endpoint.external_delivery ~= 0 then
+                return nil, "MANIFEST_ENDPOINTS"
+            end
+        else
+            if not is_nonempty_string(endpoint.target_identity) or
+                endpoint.static_policy ~= "runtime-resolve" or
+                endpoint.fallback_id == "-" or endpoint.fallback_id == "" or
+                endpoint.external_delivery ~= 0 then
+                return nil, "MANIFEST_ENDPOINTS"
+            end
         end
         endpoint_ids[endpoint_id] = true
     end

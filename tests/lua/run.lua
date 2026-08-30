@@ -38,6 +38,10 @@ local fake_chunk, fake_error = loadfile(test_directory .. "/fake_engine.lua", "t
 assert(fake_chunk, fake_error)
 local FakeEngine = assert(fake_chunk(), "fake_engine.lua did not return its module")
 
+local eeex_chunk, eeex_error = loadfile(test_directory .. "/fake_eeex.lua", "t", module_environment)
+assert(eeex_chunk, eeex_error)
+local FakeEEex = assert(eeex_chunk(), "fake_eeex.lua did not return its module")
+
 local tests = {}
 local function test(name, body)
     assert(type(name) == "string" and name:match("^[A-Za-z0-9_]+$"), "invalid test name")
@@ -61,6 +65,8 @@ end
 local context = {
     Core = Core,
     FakeEngine = FakeEngine,
+    FakeEEex = FakeEEex,
+    repository_root = repository_root,
     test = test,
     equal = equal,
     truthy = truthy,
@@ -70,6 +76,7 @@ for _, filename in ipairs({
     "test_manifest.lua",
     "test_delivery.lua",
     "test_persistence.lua",
+    "test_adapter.lua",
 }) do
     local chunk, load_error = loadfile(test_directory .. "/" .. filename, "t", module_environment)
     assert(chunk, load_error)

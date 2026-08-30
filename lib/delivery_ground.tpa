@@ -1,0 +1,247 @@
+// Install-time materialization of the empty type-4 containers used by
+// manifest ground endpoints. The public action macro consumes the finalized
+// flir_endpoint_* arrays produced by endpoints.tpa.
+
+DEFINE_ACTION_FUNCTION flir_delivery_ground_fail
+  STR_VAR
+    code = ~~
+BEGIN
+  FAIL ~FLIR_DELIVERY_ERR %code%~
+END
+
+// Patch the current ARE for every unique coordinate collected under
+// flir_delivery_ground_patch_area. All candidate piles are validated before
+// bytes are inserted, so ambiguity and occupancy fail without a partial ARE.
+DEFINE_PATCH_MACRO flir_delivery_materialize_ground_area BEGIN
+  PATCH_IF BUFFER_LENGTH < 0x11c BEGIN
+    PATCH_FAIL ~FLIR_DELIVERY_ERR GROUND_INVALID_ARE~
+  END
+  READ_ASCII 0x00 flir_delivery_ground_signature (8)
+  PATCH_IF NOT (~%flir_delivery_ground_signature%~ STRING_EQUAL_CASE ~AREAV1.0~) BEGIN
+    PATCH_FAIL ~FLIR_DELIVERY_ERR GROUND_INVALID_ARE~
+  END
+
+  READ_LONG 0x70 flir_delivery_ground_container_offset
+  READ_SHORT 0x74 flir_delivery_ground_container_count
+  READ_SHORT 0x76 flir_delivery_ground_item_count
+  SET flir_delivery_ground_original_length = BUFFER_LENGTH
+
+  PATCH_IF flir_delivery_ground_container_count > 0
+        AND (flir_delivery_ground_container_offset < 0x11c
+             OR flir_delivery_ground_container_offset
+                  + flir_delivery_ground_container_count * 0xc0 > BUFFER_LENGTH) BEGIN
+    PATCH_FAIL ~FLIR_DELIVERY_ERR GROUND_INVALID_ARE~
+  END
+
+  SET flir_delivery_ground_append_count = 0
+  FOR (flir_delivery_ground_i = 1;
+       flir_delivery_ground_i <= flir_delivery_ground_patch_count;
+       ++flir_delivery_ground_i) BEGIN
+    SET flir_delivery_ground_x = $flir_delivery_ground_coordinate_x(~%flir_delivery_ground_patch_area%~ ~%flir_delivery_ground_i%~)
+    SET flir_delivery_ground_y = $flir_delivery_ground_coordinate_y(~%flir_delivery_ground_patch_area%~ ~%flir_delivery_ground_i%~)
+    PATCH_IF flir_delivery_ground_x <= 1 OR flir_delivery_ground_x > 32767
+          OR flir_delivery_ground_y <= 1 OR flir_delivery_ground_y > 32767 BEGIN
+      PATCH_FAIL ~FLIR_DELIVERY_ERR GROUND_COORDINATES~
+    END
+
+    SET flir_delivery_ground_matches = 0
+    SET flir_delivery_ground_occupied = 0
+    FOR (flir_delivery_ground_container_i = 0;
+         flir_delivery_ground_container_i < flir_delivery_ground_container_count;
+         ++flir_delivery_ground_container_i) BEGIN
+      SET flir_delivery_ground_container = flir_delivery_ground_container_offset
+                                           + flir_delivery_ground_container_i * 0xc0
+      READ_SHORT (flir_delivery_ground_container + 0x20) flir_delivery_ground_container_x
+      READ_SHORT (flir_delivery_ground_container + 0x22) flir_delivery_ground_container_y
+      READ_SHORT (flir_delivery_ground_container + 0x24) flir_delivery_ground_container_type
+      PATCH_IF flir_delivery_ground_container_type = 4
+            AND flir_delivery_ground_container_x = flir_delivery_ground_x
+            AND flir_delivery_ground_container_y = flir_delivery_ground_y BEGIN
+        SET flir_delivery_ground_matches += 1
+        READ_LONG (flir_delivery_ground_container + 0x44) flir_delivery_ground_container_items
+        PATCH_IF flir_delivery_ground_container_items != 0 BEGIN
+          SET flir_delivery_ground_occupied = 1
+        END
+      END
+    END
+
+    PATCH_IF flir_delivery_ground_matches > 1 BEGIN
+      PATCH_FAIL ~FLIR_DELIVERY_ERR GROUND_AMBIGUOUS~
+    END
+    PATCH_IF flir_delivery_ground_matches = 1
+          AND flir_delivery_ground_occupied = 1 BEGIN
+      PATCH_FAIL ~FLIR_DELIVERY_ERR GROUND_OCCUPIED~
+    END
+    PATCH_IF flir_delivery_ground_matches = 0 BEGIN
+      SET flir_delivery_ground_append_count += 1
+    END
+  END
+
+  PATCH_IF flir_delivery_ground_append_count > 0 BEGIN
+    PATCH_IF flir_delivery_ground_container_count
+             + flir_delivery_ground_append_count > 0xffff BEGIN
+      PATCH_FAIL ~FLIR_DELIVERY_ERR GROUND_CONTAINER_LIMIT~
+    END
+
+    SET flir_delivery_ground_insert_offset = BUFFER_LENGTH
+    PATCH_IF flir_delivery_ground_container_count > 0 BEGIN
+      SET flir_delivery_ground_insert_offset = flir_delivery_ground_container_offset
+                                               + flir_delivery_ground_container_count * 0xc0
+    END
+    SET flir_delivery_ground_insert_size = flir_delivery_ground_append_count * 0xc0
+    INSERT_BYTES flir_delivery_ground_insert_offset flir_delivery_ground_insert_size
+
+    // Every later table moves with the insertion. The container table itself
+    // remains anchored at 0x70 and grows into the inserted records.
+    PATCH_FOR_EACH flir_delivery_ground_header_offset IN
+      0x54 0x5c 0x60 0x68 0x78 0x7c 0x84 0x88
+      0xa0 0xa8 0xb0 0xb8 0xbc 0xc0 0xc4 BEGIN
+      READ_LONG flir_delivery_ground_header_offset flir_delivery_ground_later_offset
+      PATCH_IF flir_delivery_ground_later_offset != 0
+            AND flir_delivery_ground_later_offset > flir_delivery_ground_original_length BEGIN
+        PATCH_FAIL ~FLIR_DELIVERY_ERR GROUND_INVALID_ARE~
+      END
+      PATCH_IF flir_delivery_ground_later_offset != 0
+            AND flir_delivery_ground_later_offset >= flir_delivery_ground_insert_offset BEGIN
+        WRITE_LONG flir_delivery_ground_header_offset
+          (flir_delivery_ground_later_offset + flir_delivery_ground_insert_size)
+      END
+    END
+
+    PATCH_IF flir_delivery_ground_container_count = 0 BEGIN
+      SET flir_delivery_ground_container_offset = flir_delivery_ground_insert_offset
+      WRITE_LONG 0x70 flir_delivery_ground_container_offset
+    END
+
+    SET flir_delivery_ground_written = 0
+    FOR (flir_delivery_ground_i = 1;
+         flir_delivery_ground_i <= flir_delivery_ground_patch_count;
+         ++flir_delivery_ground_i) BEGIN
+      SET flir_delivery_ground_x = $flir_delivery_ground_coordinate_x(~%flir_delivery_ground_patch_area%~ ~%flir_delivery_ground_i%~)
+      SET flir_delivery_ground_y = $flir_delivery_ground_coordinate_y(~%flir_delivery_ground_patch_area%~ ~%flir_delivery_ground_i%~)
+      SET flir_delivery_ground_matches = 0
+      FOR (flir_delivery_ground_container_i = 0;
+           flir_delivery_ground_container_i < flir_delivery_ground_container_count;
+           ++flir_delivery_ground_container_i) BEGIN
+        SET flir_delivery_ground_container = flir_delivery_ground_container_offset
+                                             + flir_delivery_ground_container_i * 0xc0
+        READ_SHORT (flir_delivery_ground_container + 0x20) flir_delivery_ground_container_x
+        READ_SHORT (flir_delivery_ground_container + 0x22) flir_delivery_ground_container_y
+        READ_SHORT (flir_delivery_ground_container + 0x24) flir_delivery_ground_container_type
+        PATCH_IF flir_delivery_ground_container_type = 4
+              AND flir_delivery_ground_container_x = flir_delivery_ground_x
+              AND flir_delivery_ground_container_y = flir_delivery_ground_y BEGIN
+          SET flir_delivery_ground_matches += 1
+        END
+      END
+
+      PATCH_IF flir_delivery_ground_matches = 0 BEGIN
+        SET flir_delivery_ground_container = flir_delivery_ground_insert_offset
+                                             + flir_delivery_ground_written * 0xc0
+        SPRINT flir_delivery_ground_name ~FLDLV_%flir_delivery_ground_x%_%flir_delivery_ground_y%~
+        WRITE_ASCIIE (flir_delivery_ground_container + 0x00) ~%flir_delivery_ground_name%~ #32
+        WRITE_SHORT (flir_delivery_ground_container + 0x20) flir_delivery_ground_x
+        WRITE_SHORT (flir_delivery_ground_container + 0x22) flir_delivery_ground_y
+        WRITE_SHORT (flir_delivery_ground_container + 0x24) 4
+        WRITE_SHORT (flir_delivery_ground_container + 0x34) flir_delivery_ground_x
+        WRITE_SHORT (flir_delivery_ground_container + 0x36) flir_delivery_ground_y
+
+        SET flir_delivery_ground_min_x = flir_delivery_ground_x - 16
+        SET flir_delivery_ground_min_y = flir_delivery_ground_y - 16
+        SET flir_delivery_ground_max_x = flir_delivery_ground_x + 16
+        SET flir_delivery_ground_max_y = flir_delivery_ground_y + 16
+        PATCH_IF flir_delivery_ground_min_x < 0 BEGIN
+          SET flir_delivery_ground_min_x = 0
+        END
+        PATCH_IF flir_delivery_ground_min_y < 0 BEGIN
+          SET flir_delivery_ground_min_y = 0
+        END
+        PATCH_IF flir_delivery_ground_max_x > 32767 BEGIN
+          SET flir_delivery_ground_max_x = 32767
+        END
+        PATCH_IF flir_delivery_ground_max_y > 32767 BEGIN
+          SET flir_delivery_ground_max_y = 32767
+        END
+        WRITE_SHORT (flir_delivery_ground_container + 0x38) flir_delivery_ground_min_x
+        WRITE_SHORT (flir_delivery_ground_container + 0x3a) flir_delivery_ground_min_y
+        WRITE_SHORT (flir_delivery_ground_container + 0x3c) flir_delivery_ground_max_x
+        WRITE_SHORT (flir_delivery_ground_container + 0x3e) flir_delivery_ground_max_y
+        WRITE_LONG (flir_delivery_ground_container + 0x40) flir_delivery_ground_item_count
+        WRITE_LONG (flir_delivery_ground_container + 0x44) 0
+        WRITE_LONG (flir_delivery_ground_container + 0x50) 0
+        WRITE_SHORT (flir_delivery_ground_container + 0x54) 0
+        SET flir_delivery_ground_written += 1
+      END
+    END
+
+    PATCH_IF flir_delivery_ground_written != flir_delivery_ground_append_count BEGIN
+      PATCH_FAIL ~FLIR_DELIVERY_ERR GROUND_INTERNAL_COUNT~
+    END
+    SET flir_delivery_ground_container_count += flir_delivery_ground_append_count
+    WRITE_SHORT 0x74 flir_delivery_ground_container_count
+  END
+END
+
+// Collect enabled ground endpoints by physical (area,x,y) identity, preflight
+// every referenced ARE, then patch each area once. This ordering prevents a
+// missing later area from leaving earlier areas partially materialized.
+DEFINE_ACTION_MACRO flir_delivery_materialize_ground_endpoints BEGIN
+  ACTION_CLEAR_ARRAY flir_delivery_ground_seen_coordinate
+  ACTION_CLEAR_ARRAY flir_delivery_ground_seen_area
+  ACTION_CLEAR_ARRAY flir_delivery_ground_area_order
+  ACTION_CLEAR_ARRAY flir_delivery_ground_area_coordinate_count
+  ACTION_CLEAR_ARRAY flir_delivery_ground_coordinate_x
+  ACTION_CLEAR_ARRAY flir_delivery_ground_coordinate_y
+  OUTER_SET flir_delivery_ground_area_count = 0
+
+  ACTION_IF NOT VARIABLE_IS_SET flir_endpoint_count BEGIN
+    OUTER_SET flir_endpoint_count = 0
+  END
+  OUTER_FOR (flir_delivery_ground_endpoint_i = 1;
+             flir_delivery_ground_endpoint_i <= flir_endpoint_count;
+             ++flir_delivery_ground_endpoint_i) BEGIN
+    OUTER_SPRINT flir_delivery_ground_endpoint $flir_endpoint_order(~%flir_delivery_ground_endpoint_i%~)
+    ACTION_IF $flir_endpoint_enabled(~%flir_delivery_ground_endpoint%~) = 1
+          AND $flir_endpoint_target_kind(~%flir_delivery_ground_endpoint%~) STRING_EQUAL_CASE ~ground~ BEGIN
+      OUTER_TEXT_SPRINT flir_delivery_ground_area_exact $flir_endpoint_area(~%flir_delivery_ground_endpoint%~)
+      OUTER_SPRINT flir_delivery_ground_area_key ~%flir_delivery_ground_area_exact%~
+      ACTION_TO_LOWER flir_delivery_ground_area_key
+      OUTER_SET flir_delivery_ground_endpoint_x = $flir_endpoint_x(~%flir_delivery_ground_endpoint%~)
+      OUTER_SET flir_delivery_ground_endpoint_y = $flir_endpoint_y(~%flir_delivery_ground_endpoint%~)
+      OUTER_SPRINT flir_delivery_ground_coordinate_key ~%flir_delivery_ground_area_key%|%flir_delivery_ground_endpoint_x%|%flir_delivery_ground_endpoint_y%~
+      ACTION_IF NOT VARIABLE_IS_SET $flir_delivery_ground_seen_coordinate(~%flir_delivery_ground_coordinate_key%~) BEGIN
+        OUTER_SET $flir_delivery_ground_seen_coordinate(~%flir_delivery_ground_coordinate_key%~) = 1
+        ACTION_IF NOT VARIABLE_IS_SET $flir_delivery_ground_seen_area(~%flir_delivery_ground_area_key%~) BEGIN
+          OUTER_SET $flir_delivery_ground_seen_area(~%flir_delivery_ground_area_key%~) = 1
+          OUTER_SET flir_delivery_ground_area_count += 1
+          OUTER_SPRINT $flir_delivery_ground_area_order(~%flir_delivery_ground_area_count%~) ~%flir_delivery_ground_area_key%~
+          OUTER_SET $flir_delivery_ground_area_coordinate_count(~%flir_delivery_ground_area_key%~) = 0
+        END
+        OUTER_SET $flir_delivery_ground_area_coordinate_count(~%flir_delivery_ground_area_key%~) += 1
+        OUTER_SET flir_delivery_ground_coordinate_i = $flir_delivery_ground_area_coordinate_count(~%flir_delivery_ground_area_key%~)
+        OUTER_SET $flir_delivery_ground_coordinate_x(~%flir_delivery_ground_area_key%~ ~%flir_delivery_ground_coordinate_i%~) = flir_delivery_ground_endpoint_x
+        OUTER_SET $flir_delivery_ground_coordinate_y(~%flir_delivery_ground_area_key%~ ~%flir_delivery_ground_coordinate_i%~) = flir_delivery_ground_endpoint_y
+      END
+    END
+  END
+
+  OUTER_FOR (flir_delivery_ground_area_i = 1;
+             flir_delivery_ground_area_i <= flir_delivery_ground_area_count;
+             ++flir_delivery_ground_area_i) BEGIN
+    OUTER_SPRINT flir_delivery_ground_area $flir_delivery_ground_area_order(~%flir_delivery_ground_area_i%~)
+    ACTION_IF NOT FILE_EXISTS_IN_GAME ~%flir_delivery_ground_area%.are~ BEGIN
+      LAF flir_delivery_ground_fail STR_VAR code = ~GROUND_MISSING_AREA~ END
+    END
+  END
+
+  OUTER_FOR (flir_delivery_ground_area_i = 1;
+             flir_delivery_ground_area_i <= flir_delivery_ground_area_count;
+             ++flir_delivery_ground_area_i) BEGIN
+    OUTER_SPRINT flir_delivery_ground_area $flir_delivery_ground_area_order(~%flir_delivery_ground_area_i%~)
+    OUTER_SPRINT flir_delivery_ground_patch_area ~%flir_delivery_ground_area%~
+    OUTER_SET flir_delivery_ground_patch_count = $flir_delivery_ground_area_coordinate_count(~%flir_delivery_ground_area%~)
+    COPY_EXISTING ~%flir_delivery_ground_area%.are~ ~override~
+      LAUNCH_PATCH_MACRO flir_delivery_materialize_ground_area
+    BUT_ONLY
+  END
+END

@@ -88,11 +88,21 @@ DEFINE_ACTION_MACRO flir_delivery_probe_capabilities BEGIN
   END
 
   OUTER_SPRINT flir_delivery_symbol_file ~EEex_Action.lua~
-  OUTER_SPRINT flir_delivery_symbol_name ~EEex_Action_QueueResponseStringOnAIBase~
+  OUTER_SPRINT flir_delivery_symbol_name ~EEex_Action_ParseResponseString~
+  LAM flir_delivery_require_symbol
+  OUTER_SPRINT flir_delivery_symbol_name ~EEex_Action_QueueScriptFileResponseOnAIBase~
+  LAM flir_delivery_require_symbol
+
+  OUTER_SPRINT flir_delivery_symbol_file ~EEex_Area.lua~
+  OUTER_SPRINT flir_delivery_symbol_name ~EEex_Area_GetVisible~
   LAM flir_delivery_require_symbol
 
   OUTER_SPRINT flir_delivery_symbol_file ~EEex_GameObject.lua~
+  OUTER_SPRINT flir_delivery_symbol_name ~EEex_GameObject_CastUserType~
+  LAM flir_delivery_require_symbol
   OUTER_SPRINT flir_delivery_symbol_name ~EEex_GameObject_Get~
+  LAM flir_delivery_require_symbol
+  OUTER_SPRINT flir_delivery_symbol_name ~EEex_GameObject_IsSprite~
   LAM flir_delivery_require_symbol
 
   OUTER_SPRINT flir_delivery_symbol_file ~EEex_GameState.lua~
@@ -122,7 +132,13 @@ DEFINE_ACTION_MACRO flir_delivery_probe_capabilities BEGIN
   OUTER_SPRINT flir_delivery_symbol_file ~EEex_Sprite.lua~
   OUTER_SPRINT flir_delivery_symbol_name ~EEex_Sprite_AddLoadedListener~
   LAM flir_delivery_require_symbol
-  OUTER_SPRINT flir_delivery_symbol_name ~EEex_Sprite_GetInPortrait~
+
+  OUTER_SPRINT flir_delivery_symbol_file ~EEex_Trigger.lua~
+  OUTER_SPRINT flir_delivery_symbol_name ~EEex_Trigger_EvalConditionalStringAsAIBase~
+  LAM flir_delivery_require_symbol
+
+  OUTER_SPRINT flir_delivery_symbol_file ~EEex_Utility.lua~
+  OUTER_SPRINT flir_delivery_symbol_name ~EEex_Utility_IterateCPtrList~
   LAM flir_delivery_require_symbol
 
   // %MNL%? matches the optional CR before LF, so the exact active line is
@@ -208,4 +224,7 @@ DEFINE_ACTION_MACRO flir_delivery_publish_manifest BEGIN
     LAF flir_delivery_fail STR_VAR code = ~WRONG_BACKEND~ END
   END
   LAM flir_manifest_write
+  COPY ~randomiser/copy/M_FLDLV.lua~ ~override/M_FLDLV.lua~
+       ~randomiser/copy/FLDLVCor.lua~ ~override/FLDLVCor.lua~
+       ~randomiser/copy/FLDLV.menu~ ~override/FLDLV.menu~
 END

@@ -1,0 +1,147 @@
+// Hermetic fake-game harness for install-time ground endpoint materialization.
+// argv[0] = production delivery_ground.tpa
+
+BACKUP ~delivery-ground-harness/backup~
+AUTHOR ~BG2 Item Randomiser delivery-ground test harness~
+
+ALWAYS
+  INCLUDE ~%argv[0]%~
+END
+
+DEFINE_ACTION_MACRO flir_ground_harness_reset BEGIN
+  OUTER_SET flir_endpoint_count = 0
+  ACTION_CLEAR_ARRAY flir_endpoint_order
+  ACTION_CLEAR_ARRAY flir_endpoint_target_kind
+  ACTION_CLEAR_ARRAY flir_endpoint_area
+  ACTION_CLEAR_ARRAY flir_endpoint_x
+  ACTION_CLEAR_ARRAY flir_endpoint_y
+  ACTION_CLEAR_ARRAY flir_endpoint_enabled
+END
+
+// Inputs: flir_ground_harness_id, area, kind, x, y, enabled.
+DEFINE_ACTION_MACRO flir_ground_harness_add BEGIN
+  OUTER_SET flir_endpoint_count += 1
+  OUTER_SPRINT $flir_endpoint_order(~%flir_endpoint_count%~) ~%flir_ground_harness_id%~
+  OUTER_SPRINT $flir_endpoint_target_kind(~%flir_ground_harness_id%~) ~%flir_ground_harness_kind%~
+  OUTER_SPRINT $flir_endpoint_area(~%flir_ground_harness_id%~) ~%flir_ground_harness_area%~
+  OUTER_SET $flir_endpoint_x(~%flir_ground_harness_id%~) = flir_ground_harness_x
+  OUTER_SET $flir_endpoint_y(~%flir_ground_harness_id%~) = flir_ground_harness_y
+  OUTER_SET $flir_endpoint_enabled(~%flir_ground_harness_id%~) = flir_ground_harness_enabled
+END
+
+DEFINE_ACTION_MACRO flir_ground_harness_base BEGIN
+  LAM flir_ground_harness_reset
+
+  OUTER_SPRINT flir_ground_harness_id ~test:new~
+  OUTER_SPRINT flir_ground_harness_area ~FLGRD01~
+  OUTER_SPRINT flir_ground_harness_kind ~ground~
+  OUTER_SET flir_ground_harness_x = 100
+  OUTER_SET flir_ground_harness_y = 200
+  OUTER_SET flir_ground_harness_enabled = 1
+  LAM flir_ground_harness_add
+
+  // A provider alias for the same physical endpoint must not append twice.
+  OUTER_SPRINT flir_ground_harness_id ~test:new-alias~
+  LAM flir_ground_harness_add
+
+  // This coordinate already has exactly one empty type-4 pile and is reused.
+  OUTER_SPRINT flir_ground_harness_id ~test:reuse~
+  OUTER_SET flir_ground_harness_x = 300
+  OUTER_SET flir_ground_harness_y = 400
+  LAM flir_ground_harness_add
+
+  // Disabled endpoints are tombstones and must not trigger area preflight.
+  OUTER_SPRINT flir_ground_harness_id ~test:disabled~
+  OUTER_SPRINT flir_ground_harness_area ~NOAREA~
+  OUTER_SET flir_ground_harness_x = 500
+  OUTER_SET flir_ground_harness_y = 600
+  OUTER_SET flir_ground_harness_enabled = 0
+  LAM flir_ground_harness_add
+
+  // Non-ground endpoints are outside this materializer.
+  OUTER_SPRINT flir_ground_harness_id ~test:container~
+  OUTER_SPRINT flir_ground_harness_kind ~container~
+  OUTER_SET flir_ground_harness_enabled = 1
+  LAM flir_ground_harness_add
+END
+
+BEGIN ~materialize missing pile and reuse existing pile~ DESIGNATED 0
+  LAM flir_ground_harness_base
+  LAM flir_delivery_materialize_ground_endpoints
+
+BEGIN ~repeat materialization byte-identically~ DESIGNATED 1
+  LAM flir_ground_harness_base
+  LAM flir_delivery_materialize_ground_endpoints
+
+BEGIN ~reject ambiguous matching piles~ DESIGNATED 2
+  LAM flir_ground_harness_reset
+  OUTER_SPRINT flir_ground_harness_id ~test:ambiguous~
+  OUTER_SPRINT flir_ground_harness_area ~FLGRD02~
+  OUTER_SPRINT flir_ground_harness_kind ~ground~
+  OUTER_SET flir_ground_harness_x = 700
+  OUTER_SET flir_ground_harness_y = 800
+  OUTER_SET flir_ground_harness_enabled = 1
+  LAM flir_ground_harness_add
+  LAM flir_delivery_materialize_ground_endpoints
+
+BEGIN ~reject an occupied matching pile~ DESIGNATED 3
+  LAM flir_ground_harness_reset
+  OUTER_SPRINT flir_ground_harness_id ~test:occupied~
+  OUTER_SPRINT flir_ground_harness_area ~FLGRD03~
+  OUTER_SPRINT flir_ground_harness_kind ~ground~
+  OUTER_SET flir_ground_harness_x = 900
+  OUTER_SET flir_ground_harness_y = 1000
+  OUTER_SET flir_ground_harness_enabled = 1
+  LAM flir_ground_harness_add
+  LAM flir_delivery_materialize_ground_endpoints
+
+BEGIN ~preflight every area before writing any area~ DESIGNATED 4
+  LAM flir_ground_harness_reset
+  OUTER_SPRINT flir_ground_harness_id ~test:valid-first~
+  OUTER_SPRINT flir_ground_harness_area ~FLGRD04~
+  OUTER_SPRINT flir_ground_harness_kind ~ground~
+  OUTER_SET flir_ground_harness_x = 1100
+  OUTER_SET flir_ground_harness_y = 1200
+  OUTER_SET flir_ground_harness_enabled = 1
+  LAM flir_ground_harness_add
+
+  OUTER_SPRINT flir_ground_harness_id ~test:missing-second~
+  OUTER_SPRINT flir_ground_harness_area ~FLMISS~
+  OUTER_SET flir_ground_harness_x = 1300
+  OUTER_SET flir_ground_harness_y = 1400
+  LAM flir_ground_harness_add
+  LAM flir_delivery_materialize_ground_endpoints
+
+BEGIN ~roll back an earlier area when a later area is ambiguous~ DESIGNATED 5
+  LAM flir_ground_harness_reset
+  OUTER_SPRINT flir_ground_harness_id ~test:rollback-valid-before-ambiguous~
+  OUTER_SPRINT flir_ground_harness_area ~FLGRD05~
+  OUTER_SPRINT flir_ground_harness_kind ~ground~
+  OUTER_SET flir_ground_harness_x = 1500
+  OUTER_SET flir_ground_harness_y = 1600
+  OUTER_SET flir_ground_harness_enabled = 1
+  LAM flir_ground_harness_add
+
+  OUTER_SPRINT flir_ground_harness_id ~test:rollback-ambiguous~
+  OUTER_SPRINT flir_ground_harness_area ~FLGRD06~
+  OUTER_SET flir_ground_harness_x = 1700
+  OUTER_SET flir_ground_harness_y = 1800
+  LAM flir_ground_harness_add
+  LAM flir_delivery_materialize_ground_endpoints
+
+BEGIN ~roll back an earlier area when a later area is occupied~ DESIGNATED 6
+  LAM flir_ground_harness_reset
+  OUTER_SPRINT flir_ground_harness_id ~test:rollback-valid-before-occupied~
+  OUTER_SPRINT flir_ground_harness_area ~FLGRD07~
+  OUTER_SPRINT flir_ground_harness_kind ~ground~
+  OUTER_SET flir_ground_harness_x = 1900
+  OUTER_SET flir_ground_harness_y = 2000
+  OUTER_SET flir_ground_harness_enabled = 1
+  LAM flir_ground_harness_add
+
+  OUTER_SPRINT flir_ground_harness_id ~test:rollback-occupied~
+  OUTER_SPRINT flir_ground_harness_area ~FLGRD08~
+  OUTER_SET flir_ground_harness_x = 2100
+  OUTER_SET flir_ground_harness_y = 2200
+  LAM flir_ground_harness_add
+  LAM flir_delivery_materialize_ground_endpoints

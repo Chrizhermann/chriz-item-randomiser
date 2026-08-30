@@ -34,6 +34,9 @@ if ($deliveryManifestSource -notmatch 'FILE_EXISTS_IN_GAME\s+["~]fl#irreg\.2da["
     $deliveryManifestSource -notmatch 'COPY_EXISTING\s+-\s+["~]fl#irreg\.2da["~]') {
     throw 'The production selector cannot preserve a registry stored in the effective game resource set.'
 }
+if ($deliveryManifestSource -match 'EEex_Action_QueueResponseStringOnAIBase|EEex_Sprite_GetInPortrait') {
+    throw 'The production capability gate still requires an obsolete queue API or an unused portrait helper.'
+}
 
 if ([string]::IsNullOrWhiteSpace($WeiduPath)) {
     $WeiduPath = 'C:\Users\chris\Games\EET-IR-Test-b600e94\bg2\EET\bin\win32\x86_64\weidu.exe'
@@ -83,10 +86,16 @@ if (-not $scratchRoot.StartsWith($resolvedTempRoot + '\', [System.StringComparis
 $utf8NoBom = [System.Text.UTF8Encoding]::new($false)
 $requiredApiSources = [ordered]@{
     'EEex_Action.lua' = @(
-        'function EEex_Action_QueueResponseStringOnAIBase(response, actor) end'
+        'function EEex_Action_ParseResponseString(responseString) end',
+        'function EEex_Action_QueueScriptFileResponseOnAIBase(response, actor) end'
+    )
+    'EEex_Area.lua' = @(
+        'function EEex_Area_GetVisible() end'
     )
     'EEex_GameObject.lua' = @(
-        'function EEex_GameObject_Get(objectID) end'
+        'function EEex_GameObject_CastUserType(object) end',
+        'function EEex_GameObject_Get(objectID) end',
+        'function EEex_GameObject_IsSprite(object, allowDead) end'
     )
     'EEex_GameState.lua' = @(
         'function EEex_GameState_AddDestroyedListener(listener) end',
@@ -104,8 +113,13 @@ $requiredApiSources = [ordered]@{
         'function EEex_Resource_Fetch(resref, extension) end'
     )
     'EEex_Sprite.lua' = @(
-        'function EEex_Sprite_AddLoadedListener(listener) end',
-        'function EEex_Sprite_GetInPortrait(portraitIndex) end'
+        'function EEex_Sprite_AddLoadedListener(listener) end'
+    )
+    'EEex_Trigger.lua' = @(
+        'function EEex_Trigger_EvalConditionalStringAsAIBase(condition, actor) end'
+    )
+    'EEex_Utility.lua' = @(
+        'function EEex_Utility_IterateCPtrList(list, callback) end'
     )
 }
 
@@ -145,12 +159,12 @@ function New-DeliveryBackendFixture {
                 $sourceLines = @('function EEex_Action_UnrelatedSyntheticApi() end')
             }
             elseif ($CapabilityMode -eq 'CommentedSymbol') {
-                $sourceLines = @('-- function EEex_Action_QueueResponseStringOnAIBase(response, actor) end')
+                $sourceLines = @('-- function EEex_Action_QueueScriptFileResponseOnAIBase(response, actor) end')
             }
             elseif ($CapabilityMode -eq 'BlockCommentedSymbol') {
                 $sourceLines = @(
                     '--[[',
-                    'function EEex_Action_QueueResponseStringOnAIBase(response, actor) end',
+                    'function EEex_Action_QueueScriptFileResponseOnAIBase(response, actor) end',
                     ']]'
                 )
             }

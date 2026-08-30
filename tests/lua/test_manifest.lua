@@ -34,6 +34,76 @@ return function(context)
         equal(code, "MANIFEST_ENDPOINTS")
     end)
 
+    test("ManifestEnforcesStaticPolicyByTargetKind", function()
+        local invalid = {
+            function(manifest)
+                manifest.endpoints_by_id.primary.static_policy = "authored-static"
+            end,
+            function(manifest)
+                manifest.endpoints_by_id.container.static_policy = "same-area"
+            end,
+            function(manifest)
+                manifest.endpoints_by_id.fallback.static_policy = "runtime-resolve"
+            end,
+            function(manifest)
+                manifest.endpoints_by_id.fallback.target_identity = "named-pile"
+            end,
+            function(manifest)
+                manifest.endpoints_by_id.adapter = {
+                    area = "artest", target_kind = "legacy_adapter",
+                    target_identity = "test-hook", x = 0, y = 0, capacity = 1,
+                    static_policy = "legacy", fallback_id = "-",
+                    adapter = "test-hook", external_delivery = 1, enabled = 1,
+                }
+            end,
+            function(manifest)
+                manifest.endpoints_by_id.group = {
+                    area = "artest", target_kind = "group",
+                    target_identity = "test.flg", x = 0, y = 0, capacity = 1,
+                    static_policy = "authored", fallback_id = "fallback",
+                    adapter = "-", external_delivery = 0, enabled = 1,
+                }
+            end,
+        }
+        for _, mutate in ipairs(invalid) do
+            local manifest = FakeEngine.manifest()
+            mutate(manifest)
+            local controller, code = Core.new(FakeEngine.new(), manifest)
+            equal(controller, nil, "invalid target/static-policy combination was accepted")
+            equal(code, "MANIFEST_ENDPOINTS")
+        end
+
+        for _, policy in ipairs({
+            "derived-unique", "authored", "authored-entrance",
+            "authored-nearest", "authored-static",
+        }) do
+            local manifest = FakeEngine.manifest()
+            manifest.endpoints_by_id.fallback.static_policy = policy
+            local controller, code = Core.new(FakeEngine.new(), manifest)
+            truthy(controller, code)
+        end
+
+        local legacy = FakeEngine.manifest()
+        legacy.endpoints_by_id.adapter = {
+            area = "artest", target_kind = "legacy_adapter",
+            target_identity = "test-hook", x = 0, y = 0, capacity = 1,
+            static_policy = "legacy-external", fallback_id = "-",
+            adapter = "test-hook", external_delivery = 1, enabled = 1,
+        }
+        local controller, code = Core.new(FakeEngine.new(), legacy)
+        truthy(controller, code)
+
+        local group = FakeEngine.manifest()
+        group.endpoints_by_id.group = {
+            area = "artest", target_kind = "group", target_identity = "test.flg",
+            x = 0, y = 0, capacity = 1, static_policy = "runtime-resolve",
+            fallback_id = "fallback", adapter = "-", external_delivery = 0,
+            enabled = 1,
+        }
+        controller, code = Core.new(FakeEngine.new(), group)
+        truthy(controller, code)
+    end)
+
     test("ManifestAcceptsModPrefixInEightByteResref", function()
         local manifest = FakeEngine.manifest()
         manifest.tokens_by_global.fl1t1.item_resref = "#tstitem"
@@ -120,7 +190,7 @@ return function(context)
             function(manifest)
                 manifest.endpoints_by_id.other = {
                     area = "other-area", target_kind = "ground", target_identity = "-",
-                    x = 1, y = 2, capacity = 1, static_policy = "same-area",
+                    x = 1, y = 2, capacity = 1, static_policy = "authored-static",
                     fallback_id = "-", adapter = "-", external_delivery = 0, enabled = 1,
                 }
                 manifest.unit_overrides["test:unit-a"] = {
@@ -219,11 +289,11 @@ return function(context)
         manifest.endpoints_by_id.adapter = {
             area = "artest",
             target_kind = "legacy_adapter",
-            target_identity = "-",
+            target_identity = "test-hook",
             x = 0,
             y = 0,
             capacity = 1,
-            static_policy = "legacy",
+            static_policy = "legacy-external",
             fallback_id = "-",
             adapter = "test-hook",
             external_delivery = 1,
