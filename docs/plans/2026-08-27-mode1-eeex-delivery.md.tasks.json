@@ -51,13 +51,13 @@
     {
       "id": 8,
       "subject": "Task 9: Build the pure Lua delivery transaction state machine",
-      "status": "in_progress",
+      "status": "completed",
       "blockedBy": [7]
     },
     {
       "id": 9,
       "subject": "Task 10: Add the EEex v0.11 bootstrap, render poll, and isolated API probes",
-      "status": "pending",
+      "status": "in_progress",
       "blockedBy": [8]
     },
     {
@@ -85,5 +85,5 @@
       "blockedBy": [12]
     }
   ],
-  "lastUpdated": "2026-08-30T12:43:04.4872917+09:00"
+  "lastUpdated": "2026-08-30T13:21:53.0913051+09:00"
 }
