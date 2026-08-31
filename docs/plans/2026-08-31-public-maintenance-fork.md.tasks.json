@@ -21,21 +21,21 @@
     {
       "id": 3,
       "subject": "Task 4: Build and preflight the immutable v8.1 package",
-      "status": "in_progress",
+      "status": "completed",
       "blockedBy": [2]
     },
     {
       "id": 4,
       "subject": "Task 5: Rename and configure the public repository",
-      "status": "pending",
+      "status": "completed",
       "blockedBy": [3]
     },
     {
       "id": 5,
       "subject": "Task 6: Publish and verify v8.1",
-      "status": "pending",
+      "status": "completed",
       "blockedBy": [4]
     }
   ],
-  "lastUpdated": "2026-08-31T19:50:10.6530131+09:00"
+  "lastUpdated": "2026-08-31T20:08:15.4717799+09:00"
 }
