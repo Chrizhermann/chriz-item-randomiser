@@ -1,0 +1,41 @@
+{
+  "planPath": "docs/plans/2026-08-31-public-maintenance-fork.md",
+  "tasks": [
+    {
+      "id": 0,
+      "subject": "Task 1: Add the public landing page and mod metadata",
+      "status": "pending"
+    },
+    {
+      "id": 1,
+      "subject": "Task 2: Reframe the HTML manual without erasing upstream history",
+      "status": "pending",
+      "blockedBy": [0]
+    },
+    {
+      "id": 2,
+      "subject": "Task 3: Prove the reframe has no runtime delta",
+      "status": "pending",
+      "blockedBy": [0, 1]
+    },
+    {
+      "id": 3,
+      "subject": "Task 4: Build and preflight the immutable v8.1 package",
+      "status": "pending",
+      "blockedBy": [2]
+    },
+    {
+      "id": 4,
+      "subject": "Task 5: Rename and configure the public repository",
+      "status": "pending",
+      "blockedBy": [3]
+    },
+    {
+      "id": 5,
+      "subject": "Task 6: Publish and verify v8.1",
+      "status": "pending",
+      "blockedBy": [4]
+    }
+  ],
+  "lastUpdated": "2026-08-31T18:55:23.4042161+09:00"
+}
