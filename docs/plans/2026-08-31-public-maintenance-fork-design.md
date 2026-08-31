@@ -1,6 +1,6 @@
 # Item Randomiser Public Maintenance Fork Design
 
-**Date:** 2026-08-31  
+**Date:** 2026-08-31
 **Status:** Approved
 
 ## Context
@@ -20,7 +20,7 @@ without changing the technical identity that WeiDU installations and saved games
 - Repository: **`Chrizhermann/chriz-item-randomiser`**.
 - Attribution shown prominently:
 
-  > Original mod by Fredrik Lindgren (Wisp)  
+  > Original mod by Fredrik Lindgren (Wisp) <br />
   > Maintained by Christopher Hermann for Chriz's BG Collection
 
 - Describe the project as a **public maintained fork**, not as the official upstream
@@ -109,4 +109,3 @@ The change is documentation, metadata, and repository presentation only. Verific
 
 No game installation or in-game test is required because runtime behavior and installed
 identifiers do not change. The live game directory and saves remain out of scope.
-

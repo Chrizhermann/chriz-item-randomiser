@@ -47,7 +47,7 @@ Use this structure and wording:
 ```markdown
 # Item Randomiser
 
-> Original mod by Fredrik Lindgren (Wisp)  
+> Original mod by Fredrik Lindgren (Wisp) <br />
 > Maintained by Christopher Hermann for Chriz's BG Collection
 
 Item Randomiser is a large-scale random treasure mod for Baldur's Gate and Baldur's
@@ -362,4 +362,3 @@ Require:
 Provide the new repository and release links, commit/tag, artifact SHA-256, canonical test
 result, explicit no-runtime-change boundary, license status, and confirmation that the live
 game and saves were untouched.
-
