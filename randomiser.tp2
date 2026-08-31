@@ -1,6 +1,6 @@
 BACKUP "randomiser/backup"
-AUTHOR "Wisp, gibberlings3.net/forums"
-VERSION "8"
+AUTHOR "Fredrik Lindgren (Wisp); maintained by Christopher Hermann (https://github.com/Chrizhermann/chriz-item-randomiser)"
+VERSION "8.1"
 README "randomiser/readme-randomiser.html"
 
 ALWAYS
