@@ -4,24 +4,24 @@
     {
       "id": 0,
       "subject": "Task 1: Add the public landing page and mod metadata",
-      "status": "pending"
+      "status": "completed"
     },
     {
       "id": 1,
       "subject": "Task 2: Reframe the HTML manual without erasing upstream history",
-      "status": "pending",
+      "status": "completed",
       "blockedBy": [0]
     },
     {
       "id": 2,
       "subject": "Task 3: Prove the reframe has no runtime delta",
-      "status": "pending",
+      "status": "completed",
       "blockedBy": [0, 1]
     },
     {
       "id": 3,
       "subject": "Task 4: Build and preflight the immutable v8.1 package",
-      "status": "pending",
+      "status": "in_progress",
       "blockedBy": [2]
     },
     {
@@ -37,5 +37,5 @@
       "blockedBy": [4]
     }
   ],
-  "lastUpdated": "2026-08-31T18:55:23.4042161+09:00"
+  "lastUpdated": "2026-08-31T19:50:10.6530131+09:00"
 }
