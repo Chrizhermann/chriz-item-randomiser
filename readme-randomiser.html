@@ -10,14 +10,23 @@
 
 <h1>Item Randomiser</h1>
 <div class="section">
-  <p><strong><a href="http://www.gibberlings3.net/">A Gibberlings Three Mod</a></strong><br />
-  <strong>Author:</strong> Fredrik Lindgren <acronym title="also known as">aka</acronym> <a href="http://forums.gibberlings3.net/index.php?showuser=2376">Wisp</a>   <acronym title="also known as">aka</acronym> Irrbloss.<br />
-  <strong>On the web: <a href="http://www.gibberlings3.net/item_rand/index.php">Home page</a></strong> and <strong><a href="http://forums.gibberlings3.net/index.php?showforum=170">Forum</a></strong>.</p>
-  <p><strong>Version 8 &ndash; <a href="http://gibberlings3.net/forums/index.php?showtopic=25430">Check for the most recent version</a></strong>.<br />
+  <!-- Maintained by Christopher Hermann for Chriz's BG Collection. -->
+  <p><strong>Original mod:</strong> Fredrik Lindgren, also known as Wisp or Irrbloss.<br />
+  <strong>Maintained fork:</strong> Christopher Hermann for Chriz's BG Collection.<br />
+  <strong>Current project:</strong> <a href="https://github.com/Chrizhermann/chriz-item-randomiser">GitHub repository</a> and <a href="https://github.com/Chrizhermann/chriz-item-randomiser/releases/latest">latest release</a>.<br />
+  <strong>Original project:</strong> <a href="https://github.com/FredrikLindgren/randomiser">source repository</a>, <a href="http://www.gibberlings3.net/item_rand/index.php">Gibberlings Three page</a>, and <a href="http://forums.gibberlings3.net/index.php?showforum=170">forum</a>.</p>
+  <p><strong>Version 8.1</strong><br />
   <strong>Languages:</strong> English, Polish.<br />
   <strong>Platforms:</strong> Windows, Mac OS X, Linux.</p>
 </div>
 
+
+<h2>About this maintained fork</h2>
+<div class="section">
+  <p>This is a publicly maintained fork of Wisp's Item Randomiser. It preserves the original design and installer identity and remains usable independently of Chriz's BG Collection.</p>
+
+  <p>Version 8 and later add a cross-campaign assignment fix, manifest-driven delivery on capable EEex installs, durable delivery verification across a later engine boundary, extension registries, and validation before source removal. Mode 2 retains its existing install-time path.</p>
+</div>
 
 <h2>Overview</h2>
 <div class="section">
@@ -108,36 +117,16 @@
 
 <h2>Installation</h2>
 <div class="section">
+  <p>The release ZIP contains the <code>randomiser/</code> runtime folder and does not bundle a WeiDU launcher. Obtain a current WeiDU executable for your platform from the <a href="https://github.com/WeiDUorg/weidu/releases/latest">official WeiDU releases</a>, place it in the game directory beside <code>chitin.key</code>, copy or rename it under the <code>setup-randomiser</code> basename, and run it normally.</p>
+
   <strong>Windows</strong>
-<!--
-  <p>The Item Randomiser mod is packaged as an ordinary ZIP archive,
-    containing the mod files itself, as well as a copy of WeiDU, the
-    program used to install mods. Unpack the archive to your game
-    directory.</p>
-
-  <p>If performed correctly, you should have the folder randomiser and
-    the file setup-randomiser.exe in the same directory as the game
-    file chitin.key.</p>
-
-  <p>Install by running the file setup-randomiser.exe or as you would
-    otherwise install mods. The mod can be uninstalled in the same
-    manner.</p>-->
-
-  <p>The Item Randomiser mod is packaged and installed with <acronym title="Weimer Dialogue Utilities">WeiDU</acronym> and is distributed as a self-extracting archive. To install, simply double-click the archive and follow the instructions on screen.</p>
-
-  <p>Alternatively the files can be extracted from the archive using <a href="http://www.rarlab.com/">WinRAR</a>. If properly extracted, you should have a randomiser folder and setup-randomiser.exe in your game folder. To install, simply double-click setup-randomiser.exe and follow the instructions on screen.</p>
-
-  <p>Please run setup-randomiser.exe in your game folder to reinstall, uninstall or otherwise change components.</p>
+  <p>Extract the <code>randomiser</code> folder into the game directory beside <code>chitin.key</code>. Place a Windows WeiDU executable there as <code>setup-randomiser.exe</code>, then double-click <code>setup-randomiser.exe</code> and follow the prompts.</p>
 
   <strong>Mac OS X</strong>
-  <p><em>If the mod was previously installed, uninstall it before extracting the new version.</em> The Item Randomiser mod is packaged and installed with <acronym title="Weimer Dialogue Utilities">WeiDU</acronym>. To install, simply extract the contents of the mod into your game folder. If properly extracted, you should have a randomiser folder, setup-randomiser, and setup-randomiser.command in your game folder. To install, simply double-click setup-randomiser.command and follow the instructions on screen.</p>
+  <p>Extract the <code>randomiser</code> folder into the game directory beside <code>chitin.key</code>. Place a Mac OS X WeiDU executable there as <code>setup-randomiser</code>, make it executable if necessary, then run <code>./setup-randomiser</code> from that directory and follow the prompts.</p>
 
   <strong>Linux</strong>
-  <p>Extract the contents of the mod to the folder of the game you wish to modify. Download the latest version of <acronym title="Weimer Dialogue Utilities">WeiDU</acronym> for Linux from <a href="http://www.weidu.org/users/thebigg/">WeiDU.org</a> and copy WeiDU, WeInstall and tolower to somewhere in your path (/usr/local/bin/ or /usr/bin/ , for example). Following that, open a terminal, cd to your game installation directory, run 'tolower' and answer Y to both queries.</p>
-
-  <p>You can avoid running the second option (linux.ini) if you've already run it once in the same directory. To save time, the archive is already tolowered, so there's no need to run the first option (lowercasing file names) either if you've extracted only this mod since the last time you lowercased filenames. If you're unsure, running tolower and choosing both options is the safe bet.</p>
-
-  <p>Run <strong>WeInstall randomiser</strong> in your game folder to install the mod.</p>
+  <p>Extract the <code>randomiser</code> folder into the game directory beside <code>chitin.key</code>. Place a Linux WeiDU executable there as <code>setup-randomiser</code>, make it executable, then run <code>./setup-randomiser</code> from that directory and follow the prompts.</p>
 
 </div>
 
@@ -302,12 +291,13 @@
 
   <p>Players using Mode 1 will experience a brief pause (or "lag") when they start a new game. This pause is caused by the fairly long scripts used to randomise the items and can be considered a game limitation.</p>
 
-  <p>Mode 1 of the Item Randomiser places the randomised items at their locations when you first enter the area where the item is supposed to show up. The placement of the item may be delayed by as much as a few seconds from the time when you first enter the area. This can cause problems if the item is supposed to be given to a creature and that creature is killed too soon. This should not normally be a problem, but it is an issue worth noting. This issue does not occur with area containers.
-  This can notably happen at the Twisted Rune lair. Mining the area with traps or delayed spells before the enemy appears can result in Twisted Rune members dying before they receive their randomised item.</p>
+  <p>On the maintained manifest backend, delivery is verified after a later engine boundary and uses a guarded fallback policy when the intended recipient cannot safely retain the item. On the legacy BCS backend, recipient delivery may still be delayed briefly after area entry, so rapidly removing an intended recipient can prevent reliable handoff.</p>
 </div>
 
-<h2>Acknowledgements</h2>
+<h2>Original Acknowledgements</h2>
 <div class="section">
+  <p>The first-person acknowledgements below are preserved from Wisp's original readme.</p>
+
   <p>I would like to thank Gibberlings Three for hosting this mod and cmorgan in particular.</p>
 
   <p>This mod was largely made possible by <acronym title="Stratagems Scripting Language">SSL</acronym> and I would like to thank DavidW for making <acronym title="Stratagems Scripting Language">SSL</acronym> available to others and for taking the time to explain some it its functions and capabilities.</p>
@@ -334,8 +324,13 @@
   </p>
 </div>
 
-<h2>Version History</h2>
+<h2>Maintained Fork Version History</h2>
 <div class="section">
+  <p><b>2026-08-31&mdash;version 8.1:</b></p>
+  <ul>
+    <li>Updated the public identity, attribution, documentation, metadata, and packaging. No gameplay behavior changed.</li>
+  </ul>
+
   <p><b>2026-08-31&mdash;version 8:</b></p>
   <ul>
     <li>Fixed a Mode 1 campaign-completion collision on EET and BGT that could leave later-campaign items undistributed.</li>
@@ -344,6 +339,10 @@
     <li>Kept Mode 2 on its existing install-time path and added hermetic compatibility and transaction tests.</li>
   </ul>
 
+</div>
+
+<h2>Original Version History</h2>
+<div class="section">
   <p><b>2018-09-21&mdash;version 7:</b></p>
   <ul>
     <li>No changes. This is a maintenance release concerning packaging
