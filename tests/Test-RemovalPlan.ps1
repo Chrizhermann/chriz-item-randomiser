@@ -634,6 +634,43 @@ try {
         throw 'Mode 1 did not publish fl#removeditems.2da after applying a fresh removal plan.'
     }
 
+    $creSlots = Invoke-RemovalHarness -Component 16 -Name 'cre-slot-relocation' -Case $fixtures.creSlotRelocation
+    Assert-ReportContainsExactlyOnce -Report $creSlots.Report -Line 'PLAN applied=2 disabled=0'
+    Assert-ReportContainsExactlyOnce -Report $creSlots.Report -Line 'REMOVED 1 17 cre-slots-first'
+    Assert-ReportContainsExactlyOnce -Report $creSlots.Report -Line 'REMOVED 1 18 cre-slots-last'
+    $creSlotsBytes = [System.IO.File]::ReadAllBytes((Join-Path $creSlots.RunDirectory 'override\slots.cre'))
+    $creItemsOffset = [BitConverter]::ToUInt32($creSlotsBytes, 0x2bc)
+    $creItemCount = [BitConverter]::ToUInt32($creSlotsBytes, 0x2c0)
+    $creSlotsOffset = [BitConverter]::ToUInt32($creSlotsBytes, 0x2b8)
+    if ($creItemCount -ne 2) {
+        throw 'Multiple CRE item deletions did not preserve the two unrelated item records.'
+    }
+    $expectedSlotsOffset = $creItemsOffset + $creItemCount * 0x14
+    if ($creSlotsOffset -ne $expectedSlotsOffset) {
+        throw "CRE slot table offset does not follow the compacted item table: expected $expectedSlotsOffset, found $creSlotsOffset."
+    }
+    $survivingResrefs = for ($index = 0; $index -lt $creItemCount; $index++) {
+        [System.Text.Encoding]::ASCII.GetString($creSlotsBytes, $creItemsOffset + 0x14 * $index, 8).Trim([char] 0)
+    }
+    if (($survivingResrefs -join ',') -cne 'keepone,keeptwo') {
+        throw "Multiple CRE item deletions retained the wrong item records: $($survivingResrefs -join ',')."
+    }
+    $expectedSlotReferences = @{ 22 = 0; 24 = 1 }
+    for ($slot = 0; $slot -lt 37; $slot++) {
+        $slotReference = [BitConverter]::ToUInt16($creSlotsBytes, $creSlotsOffset + 2 * $slot)
+        if ($expectedSlotReferences.ContainsKey($slot)) {
+            if ($slotReference -ne $expectedSlotReferences[$slot]) {
+                throw "Surviving CRE slot $slot references item $slotReference instead of $($expectedSlotReferences[$slot])."
+            }
+        }
+        elseif ($slotReference -ne 0xffff) {
+            throw "Removed or unused CRE slot $slot contains unexpected item reference $slotReference."
+        }
+        if ($slotReference -ne 0xffff -and $slotReference -ge $creItemCount) {
+            throw "CRE slot $slot contains out-of-range item reference $slotReference for $creItemCount items."
+        }
+    }
+
     $sourceReplace = Invoke-RemovalHarness -Component 3 -Name 'source-replace' -Case $fixtures.sourceReplace
     Assert-ReportContainsExactlyOnce -Report $sourceReplace.Report -Line 'COUNT 1'
     Assert-ReportContainsExactlyOnce -Report $sourceReplace.Report -Line 'SOURCE movitm present.cre 1 8 moved-ident'
@@ -749,6 +786,7 @@ try {
     Write-Output 'PASS RemovalPlan_ValidationBeforeMutation'
     Write-Output 'PASS RemovalPlan_MissingAndZeroSourcesDisable'
     Write-Output 'PASS RemovalPlan_CreAreStoVirtualExactApply'
+    Write-Output 'PASS RemovalPlan_CreMultiDeletePreservesSlotTable'
     Write-Output 'PASS RemovalPlan_AreFinalSectionOffsetRelocated'
     Write-Output 'PASS RemovalPlan_ExtraTokensAndCharges'
     Write-Output 'PASS RemovalPlan_DriftAndDeterministicRuns'

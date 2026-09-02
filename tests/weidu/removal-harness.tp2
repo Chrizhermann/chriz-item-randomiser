@@ -381,6 +381,28 @@ COPY ~%argv[5]%~ ~%argv[3]%~
   INSERT_BYTES 0 19
   WRITE_ASCIIE 0 ~CAPACITY_RECHECK_OK~ #19
 
+BEGIN ~Removal harness: multiple CRE item deletions preserve the slot table~ DESIGNATED 16
+LAM flir_removal_harness_reset
+OUTER_SPRINT h_tier ~1~
+
+OUTER_SPRINT h_item ~rmfirst~
+OUTER_SPRINT h_replacement ~blank~
+OUTER_SPRINT h_source ~slots.cre~
+OUTER_SPRINT h_token ~17~
+OUTER_SPRINT h_ident ~cre-slots-first~
+LAM flir_removal_harness_add_item
+
+OUTER_SPRINT h_item ~rmlast~
+OUTER_SPRINT h_replacement ~blank~
+OUTER_SPRINT h_source ~slots.cre~
+OUTER_SPRINT h_token ~18~
+OUTER_SPRINT h_ident ~cre-slots-last~
+LAM flir_removal_harness_add_item
+
+LAM flir_removal_plan_build
+LAM flir_removal_plan_apply
+LAM flir_removal_harness_write_report
+
 BEGIN ~Removal harness: BG1 legacy adapter plans a real CRE removal~ DESIGNATED 6
 LAM flir_removal_harness_reset
 OUTER_SET BG1 = 1

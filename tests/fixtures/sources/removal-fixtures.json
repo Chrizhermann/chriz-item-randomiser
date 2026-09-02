@@ -42,6 +42,21 @@
       "script.bcs": "IF\\n  True()\\nTHEN RESPONSE #100\\n  // bcsitm\\nEND\\n"
     }
   },
+  "creSlotRelocation": {
+    "items": [
+      { "resref": "rmfirst", "category": 1, "charges": [0, 0, 0] },
+      { "resref": "rmlast", "category": 1, "charges": [0, 0, 0] }
+    ],
+    "creatures": {
+      "slots.cre": [
+        { "resref": "rmfirst", "slot": 21, "charges": [1, 0, 0], "flags": 1 },
+        { "resref": "keepone", "slot": 22, "charges": [2, 0, 0], "flags": 1 },
+        { "resref": "rmlast", "slot": 23, "charges": [3, 0, 0], "flags": 1 },
+        { "resref": "keeptwo", "slot": 24, "charges": [4, 0, 0], "flags": 1 }
+      ],
+      "fltier1.cre": []
+    }
+  },
   "ambiguous": {
     "items": [
       { "resref": "ambitm", "category": 1, "charges": [0, 0, 0] },

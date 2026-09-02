@@ -1907,7 +1907,7 @@ DEFINE_PATCH_MACRO flir_removal_apply_cre_resource BEGIN
             WRITE_SHORT flir_cre_slots_off + 2 * flir_slot flir_slot_ref - 1
           END
         END
-        PATCH_FOR_EACH flir_off IN 0x2a0 0x2a8 0x2b0 0x2b8 0x2c4 BEGIN
+        PATCH_FOR_EACH flir_off IN 0x2a0 0x2a8 0x2b0 0x2c4 BEGIN
           READ_LONG flir_off flir_value ELSE 0
           PATCH_IF flir_value > flir_cre_items_off BEGIN
             WRITE_LONG flir_off flir_value - 0x14
