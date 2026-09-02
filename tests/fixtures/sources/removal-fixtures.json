@@ -52,7 +52,8 @@
         { "resref": "rmfirst", "slot": 21, "charges": [1, 0, 0], "flags": 1 },
         { "resref": "keepone", "slot": 22, "charges": [2, 0, 0], "flags": 1 },
         { "resref": "rmlast", "slot": 23, "charges": [3, 0, 0], "flags": 1 },
-        { "resref": "keeptwo", "slot": 24, "charges": [4, 0, 0], "flags": 1 }
+        { "resref": "keeptwo", "slot": 24, "charges": [4, 0, 0], "flags": 1 },
+        { "resref": "keepmag", "slot": 37, "charges": [5, 0, 0], "flags": 1 }
       ],
       "fltier1.cre": []
     }

@@ -288,14 +288,16 @@ function New-CreFixture {
     param([string] $Path, [object[]] $Items)
     $itemsOffset = 0x300
     $slotsOffset = $itemsOffset + 0x14 * $Items.Count
-    $buffer = New-Object byte[] ($slotsOffset + 37 * 2)
+    $buffer = New-Object byte[] ($slotsOffset + 40 * 2)
     Write-AsciiFixed $buffer 0 'CRE V1.0' 8
     Write-U32 $buffer 0x2b8 $slotsOffset
     Write-U32 $buffer 0x2bc $itemsOffset
     Write-U32 $buffer 0x2c0 $Items.Count
-    for ($slot = 0; $slot -lt 37; $slot++) {
+    for ($slot = 0; $slot -lt 38; $slot++) {
         Write-U16 $buffer ($slotsOffset + 2 * $slot) 0xffff
     }
+    Write-U16 $buffer ($slotsOffset + 2 * 38) 0x1357
+    Write-U16 $buffer ($slotsOffset + 2 * 39) 0x2468
     for ($index = 0; $index -lt $Items.Count; $index++) {
         Write-ItemRecord $buffer ($itemsOffset + 0x14 * $index) $Items[$index] 0x14
         if ($null -ne $Items[$index].slot) {
@@ -642,8 +644,8 @@ try {
     $creItemsOffset = [BitConverter]::ToUInt32($creSlotsBytes, 0x2bc)
     $creItemCount = [BitConverter]::ToUInt32($creSlotsBytes, 0x2c0)
     $creSlotsOffset = [BitConverter]::ToUInt32($creSlotsBytes, 0x2b8)
-    if ($creItemCount -ne 2) {
-        throw 'Multiple CRE item deletions did not preserve the two unrelated item records.'
+    if ($creItemCount -ne 3) {
+        throw 'Multiple CRE item deletions did not preserve the three unrelated item records.'
     }
     $expectedSlotsOffset = $creItemsOffset + $creItemCount * 0x14
     if ($creSlotsOffset -ne $expectedSlotsOffset) {
@@ -652,11 +654,11 @@ try {
     $survivingResrefs = for ($index = 0; $index -lt $creItemCount; $index++) {
         [System.Text.Encoding]::ASCII.GetString($creSlotsBytes, $creItemsOffset + 0x14 * $index, 8).Trim([char] 0)
     }
-    if (($survivingResrefs -join ',') -cne 'keepone,keeptwo') {
+    if (($survivingResrefs -join ',') -cne 'keepone,keeptwo,keepmag') {
         throw "Multiple CRE item deletions retained the wrong item records: $($survivingResrefs -join ',')."
     }
-    $expectedSlotReferences = @{ 22 = 0; 24 = 1 }
-    for ($slot = 0; $slot -lt 37; $slot++) {
+    $expectedSlotReferences = @{ 22 = 0; 24 = 1; 37 = 2 }
+    for ($slot = 0; $slot -lt 38; $slot++) {
         $slotReference = [BitConverter]::ToUInt16($creSlotsBytes, $creSlotsOffset + 2 * $slot)
         if ($expectedSlotReferences.ContainsKey($slot)) {
             if ($slotReference -ne $expectedSlotReferences[$slot]) {
@@ -669,6 +671,10 @@ try {
         if ($slotReference -ne 0xffff -and $slotReference -ge $creItemCount) {
             throw "CRE slot $slot contains out-of-range item reference $slotReference for $creItemCount items."
         }
+    }
+    if ([BitConverter]::ToUInt16($creSlotsBytes, $creSlotsOffset + 2 * 38) -ne 0x1357 -or
+        [BitConverter]::ToUInt16($creSlotsBytes, $creSlotsOffset + 2 * 39) -ne 0x2468) {
+        throw 'CRE Selected Weapon or Selected Ability changed while item slot references were renumbered.'
     }
 
     $sourceReplace = Invoke-RemovalHarness -Component 3 -Name 'source-replace' -Case $fixtures.sourceReplace

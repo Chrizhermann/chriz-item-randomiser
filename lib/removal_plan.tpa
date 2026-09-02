@@ -1899,7 +1899,7 @@ DEFINE_PATCH_MACRO flir_removal_apply_cre_resource BEGIN
           SET flir_cre_slots_off -= 0x14
           WRITE_LONG 0x2b8 flir_cre_slots_off
         END
-        FOR (flir_slot = 0; flir_slot < 37; ++flir_slot) BEGIN
+        FOR (flir_slot = 0; flir_slot < 38; ++flir_slot) BEGIN
           READ_SHORT flir_cre_slots_off + 2 * flir_slot flir_slot_ref ELSE 0xffff
           PATCH_IF flir_slot_ref = flir_idx BEGIN
             WRITE_SHORT flir_cre_slots_off + 2 * flir_slot 0xffff
