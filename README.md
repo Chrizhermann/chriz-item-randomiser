@@ -31,6 +31,12 @@ your platform under the usual `setup-randomiser` name, then run it normally.
 The package directory, TP2 name, component numbers, and `fl*` runtime identifiers
 remain unchanged for WeiDU and saved-game compatibility.
 
+## Development
+
+The [experimental post-install configurator](docs/post-install-configurator.md)
+indexes installed items and prepares reusable configuration drafts. Campaign
+activation and collection UI integration are still in development.
+
 ## License and provenance
 
 The upstream repository does not declare a repository-wide license. This fork does

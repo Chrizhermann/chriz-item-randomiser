@@ -1,5 +1,15 @@
 # Hermetic unit tests
 
+The experimental post-install scanner/configuration tests are standalone Python
+tests and do not require WeiDU, Lua, or an installed game:
+
+```powershell
+python -m unittest discover -s tests -p 'test_postinstall_*.py' -v
+```
+
+See [the configurator notes](../docs/post-install-configurator.md) for scope and
+limitations. The existing runtime/installer matrix below remains separate.
+
 Run the repository checks from the repository root:
 
 ```powershell
