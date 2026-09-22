@@ -2,8 +2,10 @@
 
 This development tool reads installed EE item definitions and creates reusable
 **drafts**. It does not activate those drafts in the game yet. Physical source and
-target binding is available as a development interface; campaign persistence,
-source suppression, assignment, and collection UI integration remain later work.
+target binding is available as a development interface. A separate
+[campaign protocol prototype](campaign-runtime-prototype.md) models revision
+capture, saved assignments, and guarded source/delivery transactions. Engine
+integration, actual source suppression, and collection UI integration remain open.
 
 The intended player workflow is: finish installing mods, scan/customize once, and
 start any number of fresh randomized adventures with those settings. Later changes

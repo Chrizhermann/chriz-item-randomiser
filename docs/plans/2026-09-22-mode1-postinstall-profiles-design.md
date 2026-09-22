@@ -125,6 +125,10 @@ both progression-aware and deliberately unrestricted profiles.
    new-game assignment, and exact-once delivery. This is a required feasibility
    gate, not an API assumed to exist. Do not modify shared installed resources
    per campaign as a shortcut that changes older saves.
+   The logical controller, immutable campaign compiler, and synthetic persistence
+   tests are implemented. The native engine feasibility gate remains open; see
+   [prototype contracts](../campaign-runtime-prototype.md) and
+   [source evidence](../runtime-feasibility-evidence.md).
 4. **Playable narrow vertical slice.** Two campaigns on one disposable installation,
    with different selected pools and no reinstall. Reload each, verify frozen
    assignments, correct originals for excluded items, exact quantities, and
@@ -141,13 +145,18 @@ draft editing/rebase, immutable revisions, and a JSON command interface. On
 world-resource discovery, physical record binding, registered grant metadata,
 explicit target capacities, and immutable bound drafts. Its synthetic tests cover
 the resource reader, binary formats, binding rules and complete command workflow.
-The combined post-install suite passes 118 synthetic tests on 2026-09-22.
-No game installation or live-engine validation was performed; milestone 3 onward
-remains open. No production item/target/curse choices have been added.
+The campaign compiler brings the post-install suite to 138 synthetic tests on
+2026-09-22. The separate campaign protocol suite passes 85 tests: 28 host scenarios
+in each of Lua 5.1, Lua 5.3, and LuaJIT 2.1, plus a command-to-Lua integration test
+covering all three runtimes and two synthetic save stores. These tests do not use
+the game engine. Milestone 3's native integration gate and milestones 4-6 remain
+open. No production item/target/curse choices have been added.
 
 The first tooling revision produces item catalogues and drafts only. It must label
 item-only prepared outputs `draft-needs-source-binding`; bound outputs are
 `draft-needs-runtime-adapter`. There is no active runtime pointer.
+Compiled campaign experiments are `prototype-not-playable`; their separate
+`prototype-next.json` pointer is not consumed by the installed mod.
 It does not patch game resources, invoke WeiDU, edit saves, or claim that physical
 record binding proves safe runtime suppression. Output remains outside the game tree.
 

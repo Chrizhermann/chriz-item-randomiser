@@ -12,6 +12,7 @@ from .profiles import (ProfileError, edit_profile, ensure_output_outside_game,
                        rebase_profile, search_items, validate_catalog,
                        validate_profile, write_json)
 from .resources import ScanError, scan_game
+from .campaigns import read_campaign, write_campaign
 from .sources import (bind_profile, inspect_sources, new_binding_plan,
                       prepare_bound_profile, read_bound_profile, scan_world,
                       search_targets)
@@ -89,6 +90,16 @@ def parser() -> argparse.ArgumentParser:
             child.add_argument("--plan", type=Path, required=True)
         if operation == "prepare":
             child.add_argument("--store", type=Path, required=True)
+    prototype = commands.add_parser("prototype", help="Compile experimental campaign data; never activates gameplay")
+    prototype_ops = prototype.add_subparsers(dest="operation", required=True)
+    for operation in ("prepare", "inspect"):
+        child = prototype_ops.add_parser(operation)
+        child.add_argument("--store", type=Path, required=True)
+        if operation == "inspect":
+            child.add_argument("--revision")
+        else:
+            for field in ("catalog", "world", "profile", "plan"):
+                child.add_argument("--" + field, type=Path, required=True)
     return result
 
 
@@ -106,8 +117,12 @@ def run(args: argparse.Namespace) -> dict:
         return read_prepared(args.store, args.revision)
     if args.command == "binding" and args.operation == "inspect":
         return read_bound_profile(args.store, args.revision)
+    if args.command == "prototype" and args.operation == "inspect":
+        return read_campaign(args.store, args.revision)
     catalog = read_json(args.catalog)
     validate_catalog(catalog)
+    if args.command == "prototype":
+        return write_campaign(read_json(args.profile), catalog, read_json(args.world), read_json(args.plan), args.store)
     if args.command == "world":
         if args.operation == "scan":
             destination = ensure_output_outside_game(args.out, catalog)

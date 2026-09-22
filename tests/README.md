@@ -15,6 +15,21 @@ It covers physical ownership, repeated copies, exact charges/flags/stock, explic
 target capacities, optional resources, corrupted input, immutable revisions, and
 unchanged game bytes. The existing runtime/installer matrix below remains separate.
 
+The logical campaign prototype has an additional suite using the test-only
+`lupa` package (validated with 2.8). Its distribution must include `lua51`,
+`lua53`, and `luajit21`; missing engines fail the suite rather than skip checks.
+
+```powershell
+python -m unittest discover -s tests -p 'test_campaign_runtime.py' -v
+```
+
+This executes the same host scenarios in Lua 5.1, Lua 5.3, and LuaJIT 2.1, then
+tests the configuration command through generated Lua with two independent
+synthetic save stores. It covers frozen revisions/assignments, exact payloads,
+interrupted writes, observation ordering, stale callbacks, and no mutation replay.
+No EEex or engine APIs are invoked. See the
+[prototype contract](../docs/campaign-runtime-prototype.md) for what remains unproved.
+
 Run the repository checks from the repository root:
 
 ```powershell
@@ -67,8 +82,9 @@ parse-checks every harness and production TPA/TP2 first-class source it discover
 The order is intentional: the campaign-sentinel fixture and other PowerShell tests run first,
 then WeiDU parse-checks and any Lua unit suite, and the Mode boundary guard runs last. Lua 5.3.3
 provides syntax and unit coverage when `tests\lua\run.lua` exists. There is no standalone LuaJIT
-executable in this test setup; LuaJIT 5.1 coverage is performed only inside the isolated EET game
-through the serialized EEex Remote Console.
+executable in this test setup. The separate Lupa suite above provides synthetic
+LuaJIT coverage for the new campaign protocol; it does not exercise this runner's
+production runtime or establish in-engine compatibility.
 
 ## Intentional RED during the redesign
 
