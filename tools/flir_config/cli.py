@@ -12,6 +12,9 @@ from .profiles import (ProfileError, edit_profile, ensure_output_outside_game,
                        rebase_profile, search_items, validate_catalog,
                        validate_profile, write_json)
 from .resources import ScanError, scan_game
+from .sources import (bind_profile, inspect_sources, new_binding_plan,
+                      prepare_bound_profile, read_bound_profile, scan_world,
+                      search_targets)
 
 
 def parser() -> argparse.ArgumentParser:
@@ -53,6 +56,39 @@ def parser() -> argparse.ArgumentParser:
     inspect = commands.add_parser("inspect", help="Read a verified prepared draft revision")
     inspect.add_argument("--store", type=Path, required=True)
     inspect.add_argument("--revision")
+    world = commands.add_parser("world", help="Discover physical sources and candidate targets (contains location information)")
+    world_ops = world.add_subparsers(dest="operation", required=True)
+    for operation in ("scan", "sources", "targets"):
+        child = world_ops.add_parser(operation)
+        child.add_argument("--catalog", type=Path, required=True)
+        if operation == "scan":
+            child.add_argument("--out", type=Path, required=True)
+        else:
+            child.add_argument("--world", type=Path, required=True)
+            child.add_argument("--offset", type=int, default=0)
+            child.add_argument("--limit", type=int, default=20)
+        if operation == "sources":
+            child.add_argument("--item", required=True)
+        elif operation == "targets":
+            child.add_argument("--query", default="")
+            child.add_argument("--kind", choices=("cre-template", "actor", "container", "store"))
+    binding = commands.add_parser("binding", help="Author explicit source and target choices; no game activation")
+    binding_ops = binding.add_subparsers(dest="operation", required=True)
+    for operation in ("create", "validate", "prepare", "inspect"):
+        child = binding_ops.add_parser(operation)
+        if operation == "inspect":
+            child.add_argument("--store", type=Path, required=True)
+            child.add_argument("--revision")
+            continue
+        child.add_argument("--catalog", type=Path, required=True)
+        child.add_argument("--world", type=Path, required=True)
+        child.add_argument("--profile", type=Path, required=True)
+        if operation == "create":
+            child.add_argument("--out", type=Path, required=True)
+        else:
+            child.add_argument("--plan", type=Path, required=True)
+        if operation == "prepare":
+            child.add_argument("--store", type=Path, required=True)
     return result
 
 
@@ -68,8 +104,34 @@ def run(args: argparse.Namespace) -> dict:
                 "item_count": len(catalog["items"]), "warnings": catalog.get("warnings", [])}
     if args.command == "inspect":
         return read_prepared(args.store, args.revision)
+    if args.command == "binding" and args.operation == "inspect":
+        return read_bound_profile(args.store, args.revision)
     catalog = read_json(args.catalog)
     validate_catalog(catalog)
+    if args.command == "world":
+        if args.operation == "scan":
+            destination = ensure_output_outside_game(args.out, catalog)
+            world = scan_world(catalog)
+            write_json(destination, world)
+            return {"world_path": str(destination), "fingerprint": world["fingerprint"],
+                    "source_records": len(world["sources"]), "target_candidates": len(world["targets"])}
+        world = read_json(args.world)
+        if args.operation == "sources":
+            return inspect_sources(world, catalog, args.item, offset=args.offset, limit=args.limit)
+        return search_targets(world, catalog, args.query, kind=args.kind, offset=args.offset, limit=args.limit)
+    if args.command == "binding":
+        world, profile = read_json(args.world), read_json(args.profile)
+        if args.operation == "create":
+            plan = new_binding_plan(profile, catalog, world)
+            destination = ensure_output_outside_game(args.out, catalog)
+            write_json(destination, plan)
+            return {"plan_path": str(destination), "state": "needs-explicit-source-and-target-choices"}
+        plan = read_json(args.plan)
+        if args.operation == "prepare":
+            return prepare_bound_profile(profile, catalog, world, plan, args.store)
+        body = bind_profile(profile, catalog, world, plan)
+        return {"valid": True, "state": body["state"], "reward_units": body["reward_units"],
+                "target_capacity": body["target_capacity"], "skipped": body["skipped"]}
     if args.command == "search":
         return search_items(catalog, args.query, category=args.category,
                             offset=args.offset, limit=args.limit)

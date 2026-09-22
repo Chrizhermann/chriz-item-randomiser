@@ -8,7 +8,12 @@ python -m unittest discover -s tests -p 'test_postinstall_*.py' -v
 ```
 
 See [the configurator notes](../docs/post-install-configurator.md) for scope and
-limitations. The existing runtime/installer matrix below remains separate.
+limitations and [source binding drafts](../docs/source-binding-drafts.md) for the
+world-resource and binding contracts. The suite constructs all ITM/CRE/ARE/STO,
+KEY/BIFF, and script fixtures in temporary directories; no real game is discovered.
+It covers physical ownership, repeated copies, exact charges/flags/stock, explicit
+target capacities, optional resources, corrupted input, immutable revisions, and
+unchanged game bytes. The existing runtime/installer matrix below remains separate.
 
 Run the repository checks from the repository root:
 

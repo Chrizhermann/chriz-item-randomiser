@@ -1,8 +1,9 @@
 # Experimental post-install configurator
 
 This development tool reads installed EE item definitions and creates reusable
-**drafts**. It does not activate those drafts in the game yet. Source binding,
-campaign persistence, assignment, and collection UI integration remain later work.
+**drafts**. It does not activate those drafts in the game yet. Physical source and
+target binding is available as a development interface; campaign persistence,
+source suppression, assignment, and collection UI integration remain later work.
 
 The intended player workflow is: finish installing mods, scan/customize once, and
 start any number of fresh randomized adventures with those settings. Later changes
@@ -55,9 +56,11 @@ experimental and is not yet a stable collection integration contract.
 - Keep the installation idle while scanning. Input file identities and directory
   inventories are checked again before success; ordinary concurrent changes abort
   the scan. This is not an atomic filesystem snapshot.
-- Does not scan save files, recursive mod backup folders, world item occurrences,
-  scripts, or destination creatures. Mod ownership and gameplay eligibility are not
-  inferred from resource names.
+- The basic `scan` command does not scan save files, mod backups, or world sources.
+  The separate `world scan` command indexes physical CRE/ARE/STO records and BCS/DLG
+  resource hashes. Mod ownership and gameplay eligibility are never inferred from
+  resource names. See [source binding](source-binding-drafts.md) for its explicit
+  coverage and limitations.
 - Its fingerprint covers item content and resolved search metadata. It is not a
   compatibility fingerprint for the complete installation or a running campaign.
 
@@ -86,6 +89,7 @@ python -m unittest discover -s tests -p 'test_postinstall_*.py' -v
 
 These tests construct synthetic game archives in temporary directories. They cover
 resource precedence, localized names, binary bounds, bounded search, stale profiles,
-concurrent scan changes, immutable revisions, command workflows, and unchanged game bytes. They do not prove
+concurrent scan changes, exact physical inventory records, explicit source/target
+choices, immutable revisions, command workflows, and unchanged game bytes. They do not prove
 live New Game behavior; that belongs to the isolated runtime milestone in the
 [approved design](plans/2026-09-22-mode1-postinstall-profiles-design.md).

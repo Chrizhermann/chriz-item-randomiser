@@ -114,10 +114,12 @@ both progression-aware and deliberately unrestricted profiles.
 1. **Post-install discovery and draft configuration.** Read effective ITM/TLK data,
    bounded search, reusable draft editing, explicit rebase after a changed scan,
    immutable prepared draft revisions, JSON interface for collection integration.
-   No gameplay activation or source mutation. Current implementation scope.
+   No gameplay activation or source mutation. Implemented.
 2. **Source and target binding.** Index exact inventory/container/store occurrences;
    model registered script/dialogue sources; bind compatible destinations and
    capacities; distinguish unknown, ambiguous, optional, and guaranteed sources.
+   The offline draft layer is implemented; runtime guarantees remain gated on
+   milestone 3. See [source binding drafts](../source-binding-drafts.md).
 3. **Runtime source/assignment prototype.** Demonstrate the supported EEex surface
    for campaign-specific original-source handling, persistent revision capture,
    new-game assignment, and exact-once delivery. This is a required feasibility
@@ -135,13 +137,19 @@ both progression-aware and deliberately unrestricted profiles.
 
 Milestone 1 is implemented on `codex/mode1-postinstall-profiles`: scanner, search,
 draft editing/rebase, immutable revisions, and a JSON command interface. On
-2026-09-22 all 47 synthetic scanner/profile tests passed. No game installation or
-live-engine validation was performed; milestones 2 onward remain open.
+2026-09-22 the first 47 synthetic scanner/profile tests passed. Milestone 2 adds
+world-resource discovery, physical record binding, registered grant metadata,
+explicit target capacities, and immutable bound drafts. Its synthetic tests cover
+the resource reader, binary formats, binding rules and complete command workflow.
+The combined post-install suite passes 118 synthetic tests on 2026-09-22.
+No game installation or live-engine validation was performed; milestone 3 onward
+remains open. No production item/target/curse choices have been added.
 
 The first tooling revision produces item catalogues and drafts only. It must label
-prepared outputs `draft-needs-source-binding`; there is no active runtime pointer.
-It does not patch game resources, invoke WeiDU, edit saves, or claim a scan binds
-source instances. Output is required outside the scanned game tree.
+item-only prepared outputs `draft-needs-source-binding`; bound outputs are
+`draft-needs-runtime-adapter`. There is no active runtime pointer.
+It does not patch game resources, invoke WeiDU, edit saves, or claim that physical
+record binding proves safe runtime suppression. Output remains outside the game tree.
 
 Root KEY/uncompressed BIFF, effective override ITMs, and EE UTF-8 TLKs are the first
 supported formats. Unsupported compressed archives or unmerged DLC must be detected
