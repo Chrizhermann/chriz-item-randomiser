@@ -17,12 +17,15 @@ The old New Game area/pointer were restored; compatible updated modules and the
 new immutable creature revision remain in the disposable installation for its
 new named saves 48-50. No production content choices or remote pushes were made.
 
-The next gate is **automatic death-drop provenance**: the four observed item
-pointers changed between creature inventory and ground. The runtime correctly
-keeps its held phase; do not infer an operation-bound lootable receipt from a
-matching nearby item. Death during delivery and the other native edge cases
-below remain untested. Unvisited-source feasibility is still a separate open
-gate. Both are engineering work before real content review.
+The follow-on [native death-drop diagnostic](native-death-drop-provenance-20260926.md)
+captured all four exact inventory-to-message-to-ground transfers and verified
+pickup of the three rewards. It also observed a freed item address reused for
+a different reward. **Automatic runtime receipts and durable recovery remain
+the next gate**; the runtime correctly keeps its held phase. The diagnostic's
+new manual save was refused, while the older accepted looted save reloaded.
+Death during delivery and the other native edge cases below remain untested.
+Unvisited-source feasibility is still a separate open gate. These are engineering
+work before real content review.
 
 ## Handoff: Claude to Codex (2026-09-26)
 

@@ -6,6 +6,10 @@ BG2600, followed by held-item save/load, controlled death after delivery, actual
 pickup and another save/load. It does not accept general encounter delivery,
 death during an in-flight operation, or automatic verification of death drops.
 
+The later [death-drop diagnostic](native-death-drop-provenance-20260926.md)
+traced exact item/message/pile ownership and actual pickup. Automatic runtime
+receipts remain open; that diagnostic also records its own manual-save refusal.
+
 ## Handoff and preparation
 
 Codex fast-forwarded `codex/mode1-postinstall-profiles` from `3068a79` to
