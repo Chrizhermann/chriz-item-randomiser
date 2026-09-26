@@ -222,7 +222,7 @@ staging was restored. General continuous coverage, unfinished-save recovery,
 and unvisited-original suppression remain open. All further game work remains
 isolated and subject to the reservation below.
 
-The [unvisited-container loading diagnostic](unvisited-container-loading-20260927.md)
+The unvisited-container loading diagnostic (commit `9959517`, now retired)
 then passed first entry and same-process save/reload, with 18 exact raw events and
 836 offline tests. Saving reordered containers and repacked item indexes, so
 original physical indexes cannot identify saved originals by themselves. All

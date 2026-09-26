@@ -37,6 +37,12 @@ The [experimental post-install configurator](docs/post-install-configurator.md)
 indexes installed items and prepares reusable configuration drafts. Campaign
 activation and collection UI integration are still in development.
 
+Use the disposable EET installation and its separate profile for game tests;
+rebuild it when needed. Keep supporting tools small and reuse the existing
+console and character helper. Tests should cover mod behavior and reproduced
+bugs. Avoid adding lab integrity frameworks or another report for every run.
+See [tests/README.md](tests/README.md) for the current test commands.
+
 ## License and provenance
 
 The upstream repository does not declare a repository-wide license. This fork does
