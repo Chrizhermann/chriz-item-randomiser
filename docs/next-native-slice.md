@@ -230,6 +230,12 @@ staging was restored and the game closed. Campaign-local suppression, pre-access
 decision availability and early reward delivery remain unproven; the next bounded
 test uses only the authored FLPRU1 area and its test items.
 
+The [synthetic source gate](unvisited-source-gate-20260927.md) implements that
+bounded test, with 854 passing offline tests including generated-instruction
+emulation. It captures an explicit saved choice before area loading and skips
+only the exact authored original. Native acceptance is pending; it does not
+change source receipts or enable early deliveries.
+
 Offline research, diagnostics, synthetic adapters/tests and test-fixture preparation
 can continue autonomously. Before installation access or a game test, check other
 tasks and processes and acquire the shared reservation. No desktop control is
