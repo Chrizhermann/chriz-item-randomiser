@@ -5,7 +5,8 @@ The output is not a general installation scan or a supported content profile.
 Variant "ground-piles" is the accepted fixture; "creatures" gives the same three
 rewards to two disposable, killable recipients for native creature acceptance.
 "quiet-creatures" retains those fixture actors while suppressing ambient actors,
-area scripting, spawn points, and rest encounters for diagnostic save tests.
+spawn points, and rest encounters for diagnostic save tests. The area script is
+preserved because EET also uses it for new-game setup and the chapter screen.
 Binary layouts: IESDP gam_v2.0.htm, are_v1.htm, cre_v1.htm, itm_v1.htm.
 Native accessibility and source loading must still be checked in the engine.
 """
@@ -157,7 +158,8 @@ def add_area_fixture(original: bytes, variant: str = "ground-piles") -> bytes:
         # Point at a new actor table containing only fixture records. The old
         # table remains inert raw bytes so all other ARE section offsets hold.
         actor_count = 0
-        result[0x94:0x9C] = bytes(8)  # Disable the area's ambient script.
+        # Preserve the area script: BG2600 also initializes EET's new game and
+        # advances to Chptxt0. Clearing it breaks the startup contract.
         struct.pack_into("<I", result, 0x64, 0)  # No spawn points are active.
         rest_offset = u32(original, 0xC0)
         if rest_offset:
@@ -326,8 +328,8 @@ def build(game: Path, output: Path, variant: str = "ground-piles") -> dict:
         limitations.insert(2, "Creature transport, final flags, death drop and held-item "
                               "save/reload are unproven until native acceptance")
     if variant == "quiet-creatures":
-        limitations.insert(2, "Diagnostic area suppresses ambient actors, area script, "
-                              "spawn points and rest encounters; engine behavior remains unverified")
+        limitations.insert(2, "Diagnostic area suppresses ambient actors, spawn points "
+                              "and rest encounters, retaining its startup script; engine behavior remains unverified")
     report = {"state": "staged-not-installed", "variant": variant, "game": str(game),
         "output": str(output), "revision": revision, "area": AREA,
         "source_ids": list(native["sources"]), "target_ids": list(native["targets"]),

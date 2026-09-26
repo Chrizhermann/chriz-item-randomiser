@@ -269,7 +269,7 @@ class Mode1FixtureTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Unknown fixture variant"):
             add_area_fixture(before, "shops")
 
-    def test_quiet_area_has_only_fixture_actors_and_no_ambient_creation(self):
+    def test_quiet_area_preserves_startup_script_and_removes_ambient_actors_spawns_rest(self):
         before = make_are([item_record()], [("OldChest", 0, 1)],
             [("OldActor", make_cre([item_record()]))])
         spawn_offset = len(before)
@@ -278,6 +278,7 @@ class Mode1FixtureTests(unittest.TestCase):
         rest_offset = len(before)
         before.extend(b"\x55" * 0xE4)
         struct.pack_into("<I", before, 0xC0, rest_offset)
+        before[0x94:0x9C] = b"BG2600\0\0"
         before = bytes(before)
         original = parse_are(before)
         after = add_area_fixture(before, "quiet-creatures")
@@ -288,7 +289,8 @@ class Mode1FixtureTests(unittest.TestCase):
         self.assertEqual([row["flags"] for row in quiet["actors"]], [5, 5, 5, 1, 1])
         self.assertEqual([row["cre_resref"] for row in quiet["actors"]],
             ["flprs1", "flprs2", "flprs3", "flprc1", "flprc2"])
-        self.assertEqual(quiet["script"], "")
+        self.assertEqual(quiet["script"], "bg2600")
+        self.assertEqual(after[0x94:0x9C], before[0x94:0x9C])
         self.assertEqual(struct.unpack_from("<I", after, 0x64)[0], 0)
         self.assertEqual(after[rest_offset:rest_offset + 0xE4], bytes(0xE4))
         self.assertEqual(quiet["containers"], original["containers"])
@@ -303,7 +305,7 @@ class Mode1FixtureTests(unittest.TestCase):
         old_cre = original["actors"][0]
         start, size = old_cre["embedded_cre_offset"], old_cre["embedded_cre_size"]
         self.assertEqual(after[start:start + size], before[start:start + size])
-        changed = set(range(0x54, 0x5A)) | set(range(0x64, 0x68)) | set(range(0x94, 0x9C))
+        changed = set(range(0x54, 0x5A)) | set(range(0x64, 0x68))
         changed.update(range(rest_offset, rest_offset + 0xE4))
         self.assertTrue(all(left == right for index, (left, right) in enumerate(zip(before, after))
                             if index not in changed))
@@ -314,6 +316,10 @@ class Mode1FixtureTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             game, originals = synthetic_game(root)
+            # A populated area distinguishes actor removal from ordinary
+            # creature fixtures even when both preserve the startup script.
+            originals["BG2600.ARE"] = bytes(make_are([], [], [("Ambient", make_cre([]))]))
+            (game / "override" / "BG2600.ARE").write_bytes(originals["BG2600.ARE"])
             quiet_output, ordinary_output = root / "quiet", root / "ordinary"
             quiet_report = build(game, quiet_output, "quiet-creatures")
             ordinary_report = build(game, ordinary_output, "creatures")

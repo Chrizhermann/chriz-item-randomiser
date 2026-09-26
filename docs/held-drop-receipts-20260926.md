@@ -40,7 +40,7 @@ Opaque request tokens are retained by reference. Only a stopped, stable,
 non-overflowed snapshot with complete watched chains returns candidates.
 
 `FLPRHeld` accepts only the quiet synthetic revision
-`0d3ede4e2caa0665b9753645169fbc5ce0f681870709da66d90bc08ba5e83877`.
+`c0acc859837a30315637e16d73c427393ca2694d0cd54eeb7d45ed82eee78e91`.
 It arms the existing guarded diagnostic once, observes the 12 events produced by
 three rewards plus a control item, stops the capture, validates actual snapshot
 metadata, and checks each exact ground heap item twice on later engine ticks.
@@ -56,7 +56,8 @@ Similarly, an unobserved replacement between the two ground observations is
 outside this controlled fixture's claim.
 
 The new `quiet-creatures` fixture removes ambient actors from its active actor
-table and disables its area script, spawns, and rest encounters. It retains the
+table and disables spawns and rest encounters. It preserves the area script
+because EET uses that script for new-game setup and the chapter screen. It retains the
 three sources, two recipients, unrelated control item, and original non-actor
 sections. Exact actor indexes and immutable identities are recomputed. The two
 older fixture variants remain byte-identical to their earlier outputs.
@@ -70,10 +71,28 @@ The earlier recorded 12-row native trace was also replayed offline through the
 new correlator, producing the three reward candidates with the recorded ground
 item/container pointers. This replay is not a new engine test.
 
-Fresh native receipt/save acceptance is pending. The prepared evidence and
-bounded launch/stage/restore helpers are in ignored
-`work/mode1-held-receipts-20260926/`. No installation was accessed or process
-launched while the conflicting script-engine chat was active.
+Fresh native receipt/save acceptance is pending. The initial native attempt,
+after competing chats became idle, captured a new campaign but stalled after
+character acceptance. The chapter-finish command remained unclaimed; it was not
+resent. No receipt hooks, death action, pickup, or new named save ran.
+
+That first quiet revision (`0d3ede4e...`) had cleared BG2600's area script.
+Inspection of the installed script established that it performs EET startup
+initialization and `IncrementChapter("Chptxt0")`; removing it was a fixture
+contract error. The corrected revision above preserves those bytes, with a
+regression test using a nonempty script. The full suite still passes 777 tests.
+Whether this also explains the complete polling stall awaits native retry.
+
+The stalled process did not finish after a standard close request. A diagnostic
+minidump and the unclaimed command were preserved, then the owned desktop job
+was closed. Game/loader were absent, the exact saved command was removed only
+after process exit, all 17 staged files were restored, all 70 protected files
+retained their hashes, and the reservation was released. The corrected attempt
+must use a fresh process and campaign, not replay the failed request.
+
+Evidence and bounded stage/launch/restore helpers are in ignored
+`work/mode1-held-receipts-20260926/`; the corrected retry is prepared separately
+under `work/mode1-held-receipts-20260927/`.
 
 ## Remaining gates
 

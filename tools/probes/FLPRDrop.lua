@@ -9,7 +9,7 @@ assert(EEex_Active and FLPR and FLPR.Host and FLPR.Host.status == "complete",
     "DROP_TRACE_REQUIRES_ISOLATED_FIXTURE")
 local revisions = {
     ["5c41781045d88881207731401341286d591908699eee1ac03bf7eebcf4da9790"] = true,
-    ["0d3ede4e2caa0665b9753645169fbc5ce0f681870709da66d90bc08ba5e83877"] = true,
+    ["c0acc859837a30315637e16d73c427393ca2694d0cd54eeb7d45ed82eee78e91"] = true,
 }
 assert(revisions[FLPR.Host.controller.manifest.revision],
     "DROP_TRACE_WRONG_REVISION")

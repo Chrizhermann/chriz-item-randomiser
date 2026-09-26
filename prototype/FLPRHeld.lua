@@ -5,7 +5,7 @@
 -- is claimed. This joins proven native trace events to the saved Core receipt.
 local Held = {}
 Held.__index = Held
-Held.REVISION = "0d3ede4e2caa0665b9753645169fbc5ce0f681870709da66d90bc08ba5e83877"
+Held.REVISION = "c0acc859837a30315637e16d73c427393ca2694d0cd54eeb7d45ed82eee78e91"
 Held.MAX_TICKS = 300
 
 local function require_result(value, reason)
