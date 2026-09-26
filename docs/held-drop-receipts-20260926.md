@@ -79,7 +79,9 @@ launched while the conflicting script-engine chat was active.
 
 - Native acceptance of the quiet fixture and confirmed receipt through save/load.
 - Continuous item-lifetime tracking before death, including replacement and
-  transformation; pointer/name/payload snapshots alone are insufficient.
+  transformation; pointer/name/payload snapshots alone are insufficient. New
+  [offline destruction-path evidence](native-item-lifetime-evidence.md) identifies
+  two candidate endpoints, but no lifetime hook has been executed.
 - Recovery of unfinished transfers and held bindings after loading. Saving after
   death but before all confirmations may retain a mixed held/confirmed state;
   the session trace is lost and the held remainder is intentionally not replayed.
