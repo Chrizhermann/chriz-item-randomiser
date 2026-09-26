@@ -192,8 +192,12 @@ def _resref(raw: bytes) -> str:
         name = body.decode("ascii")
     except UnicodeDecodeError as exc:
         raise ScanError("A resource reference is not ASCII.") from exc
-    if not name or any(ord(c) < 33 or ord(c) > 126 or c in '/\\:*?"<>|' for c in name):
-        raise ScanError("Invalid item resource reference.")
+    # Real EET resources include internal spaces (for example MONKTU 8.DLG).
+    # Preserve those exact identities in KEY, override and caller lookups; do
+    # not strip whitespace or admit path components / Windows metacharacters.
+    if (not name or name != name.strip(" ") or name in (".", "..") or
+            any(ord(c) < 32 or ord(c) > 126 or c in '/\\:*?"<>|' for c in name)):
+        raise ScanError("Invalid resource reference.")
     return name.lower()
 
 

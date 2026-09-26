@@ -6,3 +6,4 @@ fl-inlined/
 ssl/*.baf
 __pycache__/
 *.py[cod]
+work/

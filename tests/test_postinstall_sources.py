@@ -103,12 +103,68 @@ class SourceBindingTests(unittest.TestCase):
         with self.assertRaisesRegex(ScanError, "Installed items changed"):
             scan_world(self.catalog)
 
+    def test_truncated_cre_slot_table_names_resource(self):
+        (self.override / "actor.cre").write_bytes(make_cre([])[:-1])
+        with self.assertRaisesRegex(ScanError,
+                r"cre:actor: Invalid or truncated CRE item slots") as raised:
+            scan_world(self.catalog)
+        self.assertIsInstance(raised.exception.__cause__, ScanError)
+
+    def test_embedded_cre_failure_names_area_and_actor_record(self):
+        embedded = make_cre([])[:-1]
+        (self.override / "area.are").write_bytes(make_are([], [],
+            [("External", "ACTOR"), ("Embedded", embedded)]))
+        with self.assertRaisesRegex(ScanError,
+                r"are:area: ARE actor 1 embedded CRE: Invalid or truncated CRE item slots") as raised:
+            scan_world(self.catalog)
+        self.assertIsInstance(raised.exception.__cause__, ScanError)
+        self.assertIsInstance(raised.exception.__cause__.__cause__, ScanError)
+
+    def test_malformed_store_names_resource(self):
+        (self.override / "shop.sto").write_bytes(b"BAD")
+        with self.assertRaisesRegex(ScanError, r"sto:shop: Truncated STOR header") as raised:
+            scan_world(self.catalog)
+        self.assertIsInstance(raised.exception.__cause__, ScanError)
+
+    def test_failed_world_cli_scan_never_writes_partial_or_replaces_output(self):
+        catalog_path, world_path = self.root / "catalog.json", self.root / "world.json"
+        write_json(catalog_path, self.catalog)
+        (self.override / "actor.cre").write_bytes(make_cre([])[:-1])
+        args = ("world", "scan", "--catalog", catalog_path, "--out", world_path)
+        first = self.cli(*args, success=False)
+        self.assertIn("cre:actor: Invalid or truncated CRE item slots", first["error"])
+        self.assertFalse(world_path.exists())
+        original = b'{"existing":"leave this exact content intact"}\n'
+        world_path.write_bytes(original)
+        second = self.cli(*args, success=False)
+        self.assertIn("cre:actor: Invalid or truncated CRE item slots", second["error"])
+        self.assertEqual(world_path.read_bytes(), original)
+
     def test_script_change_changes_world_fingerprint(self):
         (self.override / "grant.bcs").write_bytes(b"SC\nchanged grant\nSC")
         changed = scan_world(self.catalog)
         self.assertNotEqual(changed["fingerprint"], self.world["fingerprint"])
         with self.assertRaisesRegex(ProfileError, "stale"):
             bind_profile(self.profile, self.catalog, changed, self.plan())
+
+    def test_internal_space_dialogue_resource_is_fingerprinted_and_bound(self):
+        path = self.override / "MONKTU 8.DLG"
+        path.write_bytes(b"DLG V1.0fixture dialogue")
+        before = snapshot(self.game)
+        world = scan_world(self.catalog)
+        row = next(row for row in world["resources"] if row["id"] == "dlg:monktu 8")
+        self.assertEqual(row["sha256"], hashlib.sha256(path.read_bytes()).hexdigest())
+        plan = new_binding_plan(self.profile, self.catalog, world)
+        plan["sources"] = self.plan()["sources"]
+        plan["targets"] = self.plan()["targets"]
+        self.assertEqual(bind_profile(self.profile, self.catalog, world, plan)["world_fingerprint"], world["fingerprint"])
+        self.assertEqual(snapshot(self.game), before)
+
+    def test_world_resource_validator_rejects_edge_spaces_and_path_metacharacters(self):
+        for name in (" bad", "bad ", " ", ".", "..", "a/b", "a\\b", "a:b", "a*b", "a?b",
+                     'a"b', "a<b", "a>b", "a|b", "a\tb", "a\nb", "a\x7fb"):
+            with self.subTest(name=name), self.assertRaises(ProfileError):
+                source_module._resref(name)
 
     def test_concurrent_change_during_parse_rejects_whole_world_scan(self):
         original = source_module.parse_sto

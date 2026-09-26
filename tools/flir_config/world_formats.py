@@ -86,17 +86,32 @@ class _Sections:
             previous_end, previous_label = end, label
 
 
-def _items(data: bytes, offset: int, count: int, stride: int) -> list[dict]:
-    return [{
-        "resref": _reference(data, base), "record_index": index,
-        "byte_offset": base, "expiration": _u16(data, base + 8),
-        "charges": [_u16(data, base + at) for at in (10, 12, 14)],
-        "flags": _u32(data, base + 16),
-    } for index in range(count) for base in [offset + index * stride]]
+def _items(data: bytes, offset: int, count: int, stride: int, *, allow_invalid: bool = False) -> list[dict]:
+    # An all-NUL reference is an observed empty physical record, not an item.
+    # Keep its payload and index: later slot/container references still use the
+    # original table. Malformed names fail by default; creature discovery may
+    # preserve their exact eight bytes for quarantine without guessing a name.
+    result = []
+    for index in range(count):
+        base = offset + index * stride
+        row = {"record_index": index, "byte_offset": base,
+               "expiration": _u16(data, base + 8),
+               "charges": [_u16(data, base + at) for at in (10, 12, 14)],
+               "flags": _u32(data, base + 16)}
+        try:
+            row["resref"] = _reference(data, base, optional=True)
+        except ScanError:
+            if not allow_invalid:
+                raise
+            row["resref"] = ""
+            row["raw_resref_hex"] = data[base:base + 8].hex()
+        result.append(row)
+    return result
 
 
-def parse_cre(data: bytes) -> dict:
-    """Read a CRE V1.0 template; unslotted/aliased records remain explicit."""
+def parse_cre(data: bytes, *, allow_dangling_slots: bool = False,
+              allow_invalid_items: bool = False) -> dict:
+    """Read a CRE; only discovery may opt into retaining dangling slot words."""
     _header(data, b"CRE V1.0", 0x2D4)
     sections = _Sections(data, 0x2D4)
     for off, stride, label in (
@@ -114,20 +129,25 @@ def parse_cre(data: bytes) -> dict:
     sections.add(_u32(data, 0x2C4), effect_count, 48 if effect_version == 0 else 264, "CRE effects")
     sections.verify()
 
-    items = _items(data, items_offset, count, 20)
+    items = _items(data, items_offset, count, 20, allow_invalid=allow_invalid_items)
     for item in items:
         item["slots"] = []
     slots: list[int | None] = []
+    dangling = False
     for slot in range(38):
         item_index = _u16(data, slots_offset + slot * 2)
         if item_index == 0xFFFF:
             slots.append(None)
         elif item_index >= count:
-            raise ScanError(f"CRE item slot {slot} refers to an absent item record.")
+            if not allow_dangling_slots:
+                raise ScanError(f"CRE item slot {slot} refers to an absent item record: "
+                                f"index {item_index}, table count {count}.")
+            slots.append(item_index)
+            dangling = True
         else:
             slots.append(item_index)
             items[item_index]["slots"].append(slot)
-    return {
+    result = {
         "format": "CRE V1.0", "name_strref": _u32(data, 8),
         "script_name": _text(data, 0x280, 32),
         "items": items, "slots": slots, "item_slots_offset": slots_offset,
@@ -137,6 +157,18 @@ def parse_cre(data: bytes) -> dict:
         "unslotted_item_indexes": [item["record_index"] for item in items if not item["slots"]],
         "aliased_item_indexes": [item["record_index"] for item in items if len(item["slots"]) > 1],
     }
+    invalid_items = [row["record_index"] for row in items if "raw_resref_hex" in row]
+    if dangling or invalid_items:
+        # Keep the header values and complete raw table. Do not invent a source
+        # row or reinterpret an absent index as the empty-slot sentinel.
+        result["inventory_diagnostics"] = {
+            "cre_offset": 0, "item_count": count, "items_offset": items_offset,
+            "item_slots_offset": slots_offset,
+            "slot_words": [_u16(data, slots_offset + slot * 2) for slot in range(40)],
+        }
+        if invalid_items:
+            result["inventory_diagnostics"]["invalid_item_indexes"] = invalid_items
+    return result
 
 
 def _are_sections(data: bytes) -> _Sections:
@@ -168,7 +200,8 @@ def _are_sections(data: bytes) -> _Sections:
     return sections
 
 
-def parse_are(data: bytes) -> dict:
+def parse_are(data: bytes, *, allow_dangling_slots: bool = False,
+              allow_invalid_items: bool = False, allow_incomplete_actors: bool = False) -> dict:
     """Read ARE V1.0 physical records, preserving unresolved ownership."""
     _header(data, b"AREAV1.0", 0x11C)
     sections = _are_sections(data)
@@ -206,13 +239,15 @@ def parse_are(data: bytes) -> dict:
         cre_offset, cre_size = _u32(data, base + 0x88), _u32(data, base + 0x8C)
         if (flags & 1) and (cre_offset or cre_size):
             raise ScanError(f"ARE actor {index} has conflicting external and embedded CRE storage.")
-        if bool(cre_offset) != bool(cre_size):
+        incomplete = bool(cre_offset) != bool(cre_size)
+        if incomplete and not allow_incomplete_actors:
             raise ScanError(f"ARE actor {index} has incomplete embedded CRE storage.")
         # With no stored CRE, importers can use the external resref even if the
         # unloaded flag was not set. Do not manufacture an embedded inventory
         # from that flag alone. Any actual blob must have both offset and size.
-        external = not cre_offset
-        sections.add(cre_offset, cre_size, 1, f"ARE actor {index} embedded CRE")
+        external = not cre_offset and not incomplete
+        if not incomplete:
+            sections.add(cre_offset, cre_size, 1, f"ARE actor {index} embedded CRE")
         actors.append({
             "record_index": index, "byte_offset": base, "name": _text(data, base, 32),
             "x": _u16(data, base + 0x20), "y": _u16(data, base + 0x22),
@@ -221,13 +256,23 @@ def parse_are(data: bytes) -> dict:
             "embedded_cre_offset": cre_offset, "embedded_cre_size": cre_size,
             "embedded_cre": None,
         })
+        if incomplete:
+            # Preserve the raw offset/size instead of guessing a blob boundary
+            # or silently treating this actor as a valid external template.
+            actors[-1]["storage_diagnostics"] = {"reason": "incomplete-embedded-cre"}
     sections.verify()
     for actor in actors:
-        if not actor["embedded_cre_size"]:
+        if not actor["embedded_cre_size"] or "storage_diagnostics" in actor:
             continue
         start, size = actor["embedded_cre_offset"], actor["embedded_cre_size"]
-        cre = parse_cre(data[start:start + size])
+        try:
+            cre = parse_cre(data[start:start + size], allow_dangling_slots=allow_dangling_slots,
+                            allow_invalid_items=allow_invalid_items)
+        except ScanError as exc:
+            raise ScanError(f"ARE actor {actor['record_index']} embedded CRE: {exc}") from exc
         cre["item_slots_offset"] += start
+        if "inventory_diagnostics" in cre:
+            cre["inventory_diagnostics"]["cre_offset"] = start
         # Empty item tables have no meaningful offset to rebase.
         if cre["items"]:
             cre["items_offset"] += start

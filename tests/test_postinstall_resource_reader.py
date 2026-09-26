@@ -90,6 +90,40 @@ class ResourceReaderTests(unittest.TestCase):
             with self.assertRaisesRegex(ScanError, "not selected"):
                 game.names("sto")
 
+    def test_internal_spaces_keep_exact_names_in_key_override_and_lookup(self) -> None:
+        names = [("MONKTU 8", 1011, 2), ("TEST CRE", 1009, 17), ("TEST ITM", 1005, 11)]
+        (self.root / "chitin.key").write_bytes(key(names))
+        with GameResources(self.root, RESOURCE_TYPES) as game:
+            for extension, name in (("dlg", "monktu 8"), ("cre", "test cre"), ("itm", "test itm")):
+                self.assertEqual(game.names(extension), [name])
+                self.assertEqual(game.origin(extension, name.upper()), "biff")
+                self.assertTrue(game.read(extension, name.upper()))
+        (self.root / "override" / "MONKTU 8.DLG").write_bytes(b"effective dialogue")
+        before = self.snapshot()
+        with GameResources(self.root, RESOURCE_TYPES) as game:
+            self.assertEqual(game.read("dlg", "monktu 8"), b"effective dialogue")
+            self.assertEqual(game.origin("dlg", "monktu 8"), "override")
+        self.assertEqual(self.snapshot(), before)
+
+    def test_key_and_override_reject_edge_spaces_controls_and_path_metacharacters(self) -> None:
+        invalid = (" BAD", "BAD ", " ", ".", "..", "A/B", "A\\B", "A:B", "A*B", "A?B",
+                   'A"B', "A<B", "A>B", "A|B", "A\tB", "A\nB", "A\x7fB")
+        for name in invalid:
+            with self.subTest(name=name):
+                (self.root / "chitin.key").write_bytes(key([(name, 1009, 17)]))
+                with self.assertRaisesRegex(ScanError, "Invalid resource reference"):
+                    with GameResources(self.root, {"cre": 1009}):
+                        pass
+                # Mock unsafe directory-entry names so this safety test does
+                # not depend on the host permitting them as real filenames.
+                entry = unittest.mock.Mock()
+                entry.suffix, entry.stem = ".cre", name
+                with patch.object(Path, "iterdir", return_value=iter([entry])), \
+                        patch.object(resource_module, "_child", return_value=self.root / "override"):
+                    with self.assertRaisesRegex(ScanError, "Invalid resource reference"):
+                        resource_module._override_resources(self.root, {"cre": 1009}, unittest.mock.Mock())
+
+
     def test_key_aliases_share_locator_but_keep_names_and_index_is_cached(self) -> None:
         (self.root / "chitin.key").write_bytes(key(self.records + [("ALIAS", 1009, 17)]))
         with patch.object(resource_module, "_biff_index", wraps=resource_module._biff_index) as index:

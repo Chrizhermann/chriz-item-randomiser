@@ -46,6 +46,77 @@ empty stock, missing item definitions, orphan records and shared ownership canno
 be selected for ordinary finite relocation. T2 dynamic containers are marked;
 their generated contents are outside this physical scan.
 
+An all-NUL item reference is retained as an empty physical record, with `item`
+and `record.resref` equal to `""` and concern `empty-item-reference`. Its original
+index, byte offset, payload, slots/container ownership, and stock fields remain
+in the catalogue and its fingerprint. Later records are never renumbered. Empty
+records cannot be selected for relocation or compiled into campaign rewards;
+they do not appear in item search. The `world scan` response includes their
+aggregate `empty_item_records` count within `source_records`, without exposing
+locations. A nonempty reference with a missing definition retains the separate
+`missing-item-definition` concern. Malformed nonempty references fail by default;
+CRE discovery alone can preserve them for the quarantine described below.
+
+This is structural preservation, not a claim about how the engine handles an
+empty record. Resource identities, selected items, and compiled item payloads
+still require nonempty names. Existing v1 catalogues without empty records retain
+the same content and fingerprints; older readers reject the newly representable
+empty-record catalogues rather than silently treating them as loot.
+
+A dangling CRE slot is different: its raw word points beyond the declared item
+table, so there is no physical item record to retain or relocate. Discovery keeps
+the complete 40-word slot table and original header offsets in
+`selector.inventory_diagnostics` on the creature target, including creatures
+with zero items. `cre_offset` locates an embedded CRE in its ARE; the item and
+slot offsets in the diagnostic stay relative to that CRE. Physical item rows keep
+their original indexes, payloads, and valid slot references. No missing rows are
+invented and no dangling word is converted to `0xFFFF`.
+
+Affected source records also carry `record.inventory_diagnostics`. External ARE
+actors inherit their template's data as `selector.template_inventory_diagnostics`.
+All affected sources and targets have concern `dangling-inventory-reference` and
+cannot be bound or compiled for relocation/delivery. The world validator checks
+the raw table, owner offsets, item count and rows, valid slot ownership, inherited
+data, and derived concern. Removing only the concern or recomputing a fingerprint
+does not enable an affected record. The campaign artifact validator independently
+rejects both the concern and diagnostic fields.
+
+Worlds with these diagnostics use `flir-world-catalog-v2`; older readers therefore
+reject them. Worlds without them retain their existing v1 representation and
+fingerprint behavior. The CLI reports `dangling_inventory_owners` and
+`dangling_inventory_slots`, counting physical owners once rather than counting
+their external actor references as additional inventories. Binding unrelated,
+valid sources and targets in the same catalogue remains possible. Truncated or
+overlapping resource structures still fail the entire scan. Fixture builders and
+save inspectors retain strict default parsing; only discovery opts into this
+diagnostic representation.
+
+Malformed CRE item names are likewise preserved after the table's bounds and
+section ownership pass validation. The row retains its exact eight name bytes
+as `raw_resref_hex`, plus every normal payload field, index, and valid slot. Its
+`resref`/`item` is `""` because no valid item identity can be assigned. The row's
+concern is `invalid-item-reference`, distinct from a genuine all-NUL
+`empty-item-reference`. Its owner diagnostic adds `invalid_item_indexes`, matching
+exactly those malformed rows. The owner, all its source records, and external
+actor references receive `invalid-inventory-reference` and cannot be selected.
+The compiler also rejects raw-name evidence even if its concern was removed.
+
+The CLI reports `invalid_item_records` and `invalid_inventory_owners` separately
+from empty rows and dangling slot counts. This behavior covers standalone and
+embedded CRE inventories; malformed ARE container or STO item names still fail.
+There is no generic catch-and-skip fallback for unreadable resources.
+
+Area actors with only one of the embedded CRE offset/size fields populated are
+also retained in v2 discovery as `storage_diagnostics` with reason
+`incomplete-embedded-cre`. Their original actor fields, indexes, and byte offsets
+remain intact. They carry `unresolved-creature-storage`; no external template
+fallback or invented inventory is assigned to them. The CLI reports their
+`unresolved_actor_storage` count. These candidates cannot receive rewards, and
+the validator rejects physical sources attributed to them. Imported campaigns
+also reject unequal zero/nonzero offset/size even if the diagnostic was stripped.
+Strict parsing remains the default. Conflicting storage flags, overlapping
+nonempty CRE blobs, and truncated actor tables still fail the scan.
+
 Item identities and effective ITM hashes must match the earlier item catalogue.
 The world fingerprint additionally covers all scanned resources, source records,
 and target candidates. It ignores archive packaging and the absolute game path.

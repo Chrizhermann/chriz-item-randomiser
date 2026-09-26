@@ -13,7 +13,7 @@ from .profiles import (ProfileError, edit_profile, ensure_output_outside_game,
                        validate_profile, write_json)
 from .resources import ScanError, scan_game
 from .campaigns import read_campaign, write_campaign
-from .sources import (bind_profile, inspect_sources, new_binding_plan,
+from .sources import (bind_profile, inventory_diagnostic_counts, inspect_sources, new_binding_plan,
                       prepare_bound_profile, read_bound_profile, scan_world,
                       search_targets)
 
@@ -129,7 +129,10 @@ def run(args: argparse.Namespace) -> dict:
             world = scan_world(catalog)
             write_json(destination, world)
             return {"world_path": str(destination), "fingerprint": world["fingerprint"],
-                    "source_records": len(world["sources"]), "target_candidates": len(world["targets"])}
+                    "source_records": len(world["sources"]), "target_candidates": len(world["targets"]),
+                    "empty_item_records": sum("empty-item-reference" in row["concerns"]
+                                              for row in world["sources"]),
+                    **inventory_diagnostic_counts(world)}
         world = read_json(args.world)
         if args.operation == "sources":
             return inspect_sources(world, catalog, args.item, offset=args.offset, limit=args.limit)

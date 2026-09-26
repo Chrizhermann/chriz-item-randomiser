@@ -128,3 +128,61 @@ exact-copy ambiguity, changed next-run settings, interrupted writes, reloads,
 quarantine, delayed observations, stale callbacks, and compiler-to-Lua integration.
 These checks establish the logical protocol, not game-engine acceptance. No live
 game, installed mod, or player save was modified or used to claim persistence.
+
+### Separate native fixture
+
+The opt-in disposable BG1 fixture now has bounded native delivery and serialized
+save evidence. Its current results, remaining checks, and QA save-render crash
+are tracked in [native fixture status](native-fixture-status.md). Those results
+do not activate the general adapter through the normal installer or establish
+full-game acceptance.
+
+The [26 September follow-up](native-acceptance-20260926.md) separately verified
+B reload in a fresh process and two new campaigns under unchanged B settings.
+It also records the first fresh campaign's manual-save refusal, the QA diagnostic
+fix, the accepted initial autosave evidence, and complete test-process cleanup.
+
+### Scanner status and installation check
+
+A read-only scan of the isolated EET installation on 2026-09-22 indexed 3,544
+effective items. Resource access also read all 8,209 CREs and 1,016 AREs, with its
+installation snapshot checks passing. These are item-index and resource-access
+results, **not a completed world/source catalogue**.
+
+The resource reader and world resource-identity validator now retain legitimate
+internal spaces such as `MONKTU 8.DLG` in KEY entries and override filenames.
+Leading/trailing spaces, control characters, path separators, and unsafe filename
+metacharacters remain rejected.
+
+The earlier world scan stopped at `BDABIS1D.CRE`: its physical inventory record 0
+contains an all-NUL item resref, although slot 0 references that record. Record 1
+contains `S1-4` and is referenced by slot 9. The parser raised
+`Invalid world resource reference.` On 2026-09-23 the offline scanner was changed
+to preserve empty physical records explicitly, including their payload and
+ownership, and reject them for binding/compilation. Valid subsequent records keep
+their original indexes. See [the representation contract](source-binding-drafts.md).
+
+The authorized read-only rescan ran on 2026-09-24 after the other local BG tasks
+were idle and no game or installer process was running. The item scan succeeded
+with 3,544 items and explicit `en_US` localization. Direct raw-byte comparison
+also confirmed the real `BDABIS1D.CRE` preserves both physical records, their
+payloads, indexes, and slots under the new parser.
+
+That first world scan **failed**: `BDCORPSE.CRE` has zero item records, while slots
+21 and 22 reference indexes 0 and 1. Unlike an existing record with an empty
+resref, those records do not exist. The scanner retained its strict rejection;
+no resource was skipped and no world catalogue was published. The subsequent
+offline change now preserves these references as owner diagnostics and excludes
+affected sources/targets from binding and compilation. The retry passed that
+resource but stopped at a malformed item name in `OHDFaer.CRE`. CRE discovery now
+preserves those raw name bytes and likewise quarantines the owner. The last newly
+observed shape, incomplete embedded actor storage, is also retained as unresolved
+and excluded from target selection. The final scan completed with 41,577 source
+records and 24,305 target candidates; the installation-snapshot check passed.
+This completes physical discovery, including explicit diagnostics, not runtime
+acceptance or interpretation of all scripted grants.
+See [the rescan evidence](installation-scan-20260924.md) for byte-level details.
+
+All results were saved outside the installation. This check launched no game or
+installer and changed no installed resource or save. A successful parse remains
+discovery evidence, not proof of safe general runtime suppression or lootability.

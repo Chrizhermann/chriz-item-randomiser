@@ -15,9 +15,14 @@ from pathlib import Path
 from .profiles import (HEX256, ProfileError, _digest, ensure_output_outside_game,
                        read_json, validate_catalog, validate_profile, write_json)
 from .resources import GameResources, ITEM_SEMANTIC_FIELDS, RESOURCE_TYPES, ScanError
-from .world_formats import parse_are, parse_cre, parse_sto
+from .world_formats import _reference, parse_are, parse_cre, parse_sto
 
 WORLD_SCHEMA = "flir-world-catalog-v1"
+DIAGNOSTIC_WORLD_SCHEMA = "flir-world-catalog-v2"
+DANGLING_INVENTORY = "dangling-inventory-reference"
+INVALID_INVENTORY = "invalid-inventory-reference"
+INVALID_ITEM = "invalid-item-reference"
+UNRESOLVED_STORAGE = "unresolved-creature-storage"
 PLAN_SCHEMA = "flir-binding-plan-v1"
 COVERAGE = "physical-records-and-bcs-dlg-hashes"
 KINDS = ("itm", "cre", "are", "sto", "bcs", "dlg")
@@ -38,7 +43,11 @@ def _source(resource: str, owner: str, kind: str, row: dict,
 def _cre_sources(resource: str, owner: str, cre: dict, kind: str) -> list[dict]:
     result = []
     for item in cre["items"]:
+        item = deepcopy(item)
         concerns = ["template-instance-scope"] if kind == "cre-template" else ["actor-availability"]
+        if "inventory_diagnostics" in cre:
+            item["inventory_diagnostics"] = deepcopy(cre["inventory_diagnostics"])
+            concerns.extend(_inventory_concerns(cre["inventory_diagnostics"]))
         if not item["slots"]:
             concerns.append("unreferenced-inventory-record")
         if len(item["slots"]) > 1:
@@ -73,13 +82,23 @@ def scan_world(catalog: dict) -> dict:
                 world["resources"].append({"id": resource, "kind": kind,
                                            "resref": resref, "sha256": digest, "byte_length": len(data)})
                 if kind == "cre":
-                    cre = parse_cre(data)
+                    try:
+                        cre = parse_cre(data, allow_dangling_slots=True, allow_invalid_items=True)
+                    except ScanError as exc:
+                        raise ScanError(f"{resource}: {exc}") from exc
                     world["sources"].extend(_cre_sources(resource, resource, cre, "cre-template"))
+                    selector = {"script_name": cre["script_name"]}
+                    if "inventory_diagnostics" in cre:
+                        selector["inventory_diagnostics"] = deepcopy(cre["inventory_diagnostics"])
                     world["targets"].append({"id": resource, "resource": resource,
-                        "kind": "cre-template", "selector": {"script_name": cre["script_name"]},
+                        "kind": "cre-template", "selector": selector,
                         "concerns": ["template-instance-scope", "lootability-unverified"]})
                 elif kind == "are":
-                    area = parse_are(data)
+                    try:
+                        area = parse_are(data, allow_dangling_slots=True, allow_invalid_items=True,
+                                         allow_incomplete_actors=True)
+                    except ScanError as exc:
+                        raise ScanError(f"{resource}: {exc}") from exc
                     containers = {row["record_index"]: row for row in area["containers"]}
                     for container in area["containers"]:
                         target_id = f"{resource}/container/{container['record_index']}"
@@ -107,16 +126,24 @@ def scan_world(catalog: dict) -> dict:
                         target_id = f"{resource}/actor/{actor['record_index']}"
                         selector = {key: deepcopy(value) for key, value in actor.items() if key != "embedded_cre"}
                         concerns = ["actor-availability", "lootability-unverified"]
-                        if actor["embedded_cre"] is not None:
+                        if "storage_diagnostics" in actor:
+                            concerns.append(UNRESOLVED_STORAGE)
+                            world["schema"] = DIAGNOSTIC_WORLD_SCHEMA
+                        elif actor["embedded_cre"] is not None:
                             world["sources"].extend(_cre_sources(resource, target_id, actor["embedded_cre"], "embedded-cre"))
                             selector["script_name"] = actor["embedded_cre"]["script_name"]
+                            if "inventory_diagnostics" in actor["embedded_cre"]:
+                                selector["inventory_diagnostics"] = deepcopy(actor["embedded_cre"]["inventory_diagnostics"])
                         else:
                             selector["template_resource"] = f"cre:{actor['cre_resref']}" if actor["cre_resref"] else None
                             concerns.append("external-cre-template")
                         world["targets"].append({"id": target_id, "resource": resource,
                             "kind": "actor", "selector": selector, "concerns": concerns})
                 elif kind == "sto":
-                    store = parse_sto(data)
+                    try:
+                        store = parse_sto(data)
+                    except ScanError as exc:
+                        raise ScanError(f"{resource}: {exc}") from exc
                     world["targets"].append({"id": resource, "resource": resource,
                         "kind": "store", "selector": {key: value for key, value in store.items() if key != "items"},
                         "concerns": ["store-access-unverified"]})
@@ -131,11 +158,23 @@ def scan_world(catalog: dict) -> dict:
                         world["sources"].append(_source(resource, resource, "store", item, concerns))
         resource_ids = {row["id"] for row in world["resources"]}
         for row in world["sources"]:
-            if row["item"] not in item_index:
+            if "raw_resref_hex" in row["record"]:
+                row["concerns"].append(INVALID_ITEM)
+            elif row["item"] == "":
+                row["concerns"].append("empty-item-reference")
+            elif row["item"] not in item_index:
                 row["concerns"].append("missing-item-definition")
             row["concerns"] = sorted(set(row["concerns"]))
+        target_index = {row["id"]: row for row in world["targets"]}
         for row in world["targets"]:
             reference = row["selector"].get("template_resource")
+            template = target_index.get(reference)
+            if template and "inventory_diagnostics" in template["selector"]:
+                row["selector"]["template_inventory_diagnostics"] = deepcopy(template["selector"]["inventory_diagnostics"])
+            if any(key in row["selector"] for key in ("inventory_diagnostics", "template_inventory_diagnostics")):
+                diag = row["selector"].get("inventory_diagnostics", row["selector"].get("template_inventory_diagnostics"))
+                row["concerns"].extend(_inventory_concerns(diag))
+                world["schema"] = DIAGNOSTIC_WORLD_SCHEMA
             if row["kind"] == "actor" and "external-cre-template" in row["concerns"] and reference not in resource_ids:
                 row["concerns"].append("missing-creature-template")
             row["concerns"] = sorted(set(row["concerns"]))
@@ -185,7 +224,8 @@ def _indexed(rows: list[dict], label: str) -> dict:
 def _resref(value: object) -> str:
     text = _text(value, "resource name")
     if (not 1 <= len(text) <= 8 or text != text.lower() or
-            any(ord(c) > 126 or c in '/\\:*?"<>| ' for c in text)):
+            text != text.strip(" ") or text in (".", "..") or
+            any(ord(c) > 126 or c in '/\\:*?"<>|' for c in text)):
         raise ProfileError("Invalid resource name")
     return text
 
@@ -200,10 +240,31 @@ def _indexes(value: object, label: str, high: int = 0xFFFFFFFF) -> list:
     return value
 
 
+def _inventory_concerns(diag: dict) -> list[str]:
+    if not isinstance(diag, dict):
+        raise ProfileError("Invalid inventory diagnostics")
+    _integer(diag.get("item_count"), "inventory diagnostic item count")
+    words = diag.get("slot_words")
+    if not isinstance(words, list) or len(words) != 40:
+        raise ProfileError("Inventory diagnostics require all 40 raw slot words")
+    for word in words:
+        _integer(word, "inventory diagnostic slot word", high=0xFFFF)
+    if "invalid_item_indexes" in diag:
+        _indexes(diag["invalid_item_indexes"], "invalid inventory item")
+    concerns = []
+    if any(word != 0xFFFF and word >= diag["item_count"] for word in diag["slot_words"][:38]):
+        concerns.append(DANGLING_INVENTORY)
+    if diag.get("invalid_item_indexes"):
+        concerns.append(INVALID_INVENTORY)
+    return concerns
+
+
 def _source_concerns(row: dict, targets: dict, item_ids: set) -> list[str]:
     record = row["record"]
     concerns = []
     if row["kind"] in ("cre-template", "embedded-cre"):
+        if "inventory_diagnostics" in record:
+            concerns.extend(_inventory_concerns(record["inventory_diagnostics"]))
         concerns.append("template-instance-scope" if row["kind"] == "cre-template" else "actor-availability")
         if not record["slots"]:
             concerns.append("unreferenced-inventory-record")
@@ -224,16 +285,111 @@ def _source_concerns(row: dict, targets: dict, item_ids: set) -> list[str]:
             concerns.append("unknown-stock-supply")
     if row["kind"] != "store" and record["flags"] & 8:
         concerns.append("undroppable-instance")
-    if row["item"] not in item_ids:
+    if "raw_resref_hex" in record:
+        concerns.append(INVALID_ITEM)
+    elif row["item"] == "":
+        concerns.append("empty-item-reference")
+    elif row["item"] not in item_ids:
         concerns.append("missing-item-definition")
     return sorted(concerns)
+
+
+def _validate_world_inventory_diagnostics(world: dict, resources: dict,
+                                          sources: dict, targets: dict) -> None:
+    """Check preserved raw slot tables and derive quarantine, including aliases."""
+    owner_rows = {}
+    for row in sources.values():
+        if row["kind"] in ("cre-template", "embedded-cre"):
+            owner_rows.setdefault(row["owner"], []).append(row["record"])
+    direct_count = 0
+    unresolved_count = 0
+    for target in targets.values():
+        selector = target["selector"]
+        unresolved = "storage_diagnostics" in selector
+        if unresolved:
+            unresolved_count += 1
+        direct = "inventory_diagnostics" in selector
+        inherited = "template_inventory_diagnostics" in selector
+        external = target["kind"] == "actor" and not selector["embedded_cre_size"] and not unresolved
+        if direct:
+            direct_count += 1
+            if target["kind"] == "cre-template":
+                base, end = 0, resources[target["resource"]]["byte_length"]
+            elif target["kind"] == "actor" and not external:
+                base = selector["embedded_cre_offset"]
+                end = base + selector["embedded_cre_size"]
+            else:
+                raise ProfileError("Inventory diagnostics need a physical creature owner")
+            diag = selector["inventory_diagnostics"]
+            fields = {"cre_offset", "item_count", "items_offset", "item_slots_offset", "slot_words"}
+            if isinstance(diag, dict) and "invalid_item_indexes" in diag:
+                fields.add("invalid_item_indexes")
+            _fields(diag, fields, "inventory diagnostics")
+            for key in ("cre_offset", "item_count", "items_offset", "item_slots_offset"):
+                _integer(diag[key], "inventory diagnostics " + key)
+            if diag["cre_offset"] != base:
+                raise ProfileError("Inventory diagnostics name the wrong creature offset")
+            slot_start = base + diag["item_slots_offset"]
+            if slot_start < base + 0x2D4 or slot_start + 80 > end:
+                raise ProfileError("Inventory diagnostic slots lie outside their creature")
+            words = diag["slot_words"]
+            if not isinstance(words, list) or len(words) != 40:
+                raise ProfileError("Inventory diagnostics require all 40 raw slot words")
+            for word in words:
+                _integer(word, "inventory diagnostic slot word", high=0xFFFF)
+            count = diag["item_count"]
+            rows = owner_rows.get(target["id"], [])
+            if count != len(rows) or sorted(row["record_index"] for row in rows) != list(range(count)):
+                raise ProfileError("Inventory diagnostics disagree with physical item records")
+            invalid_indexes = sorted(row["record_index"] for row in rows if "raw_resref_hex" in row)
+            if "invalid_item_indexes" in diag:
+                _indexes(diag["invalid_item_indexes"], "invalid inventory item")
+                if not diag["invalid_item_indexes"] or diag["invalid_item_indexes"] != invalid_indexes:
+                    raise ProfileError("Inventory diagnostics disagree with invalid item records")
+            elif invalid_indexes:
+                raise ProfileError("Inventory diagnostics omit invalid item records")
+            if not _inventory_concerns(diag):
+                raise ProfileError("Inventory diagnostics contain no invalid references")
+            # Empty tables have no byte span; their unused offset is retained.
+            item_start, item_end = base + diag["items_offset"], base + diag["items_offset"] + count * 20
+            if count and (item_start < base + 0x2D4 or item_end > end or
+                          max(item_start, slot_start) < min(item_end, slot_start + 80)):
+                raise ProfileError("Inventory diagnostic item and slot sections overlap or exceed their creature")
+            for row in rows:
+                index = row["record_index"]
+                if (row["byte_offset"] != item_start + index * 20 or
+                        row["slots"] != [slot for slot, word in enumerate(words[:38]) if word == index]):
+                    raise ProfileError("Inventory diagnostics disagree with item offsets or slots")
+        template = targets.get(selector.get("template_resource")) if external else None
+        expected = template["selector"].get("inventory_diagnostics") if template else None
+        if inherited != (expected is not None) or (inherited and selector["template_inventory_diagnostics"] != expected):
+            raise ProfileError("Actor inventory diagnostics disagree with its template")
+        diag = selector.get("inventory_diagnostics", selector.get("template_inventory_diagnostics"))
+        expected_concerns = _inventory_concerns(diag) if diag is not None else []
+        for concern in (DANGLING_INVENTORY, INVALID_INVENTORY):
+            if (concern in target["concerns"]) != (concern in expected_concerns):
+                raise ProfileError("Target concerns disagree with its inventory diagnostics")
+    if (world["schema"] == DIAGNOSTIC_WORLD_SCHEMA) != bool(direct_count or unresolved_count):
+        raise ProfileError("World schema disagrees with its inventory diagnostics")
+
+
+def inventory_diagnostic_counts(world: dict) -> dict:
+    """Aggregate direct owners only; external actor references are not copies."""
+    diagnostics = [row["selector"]["inventory_diagnostics"] for row in world["targets"]
+                   if "inventory_diagnostics" in row["selector"]]
+    return {"dangling_inventory_owners": sum(DANGLING_INVENTORY in _inventory_concerns(diag) for diag in diagnostics),
+            "dangling_inventory_slots": sum(word != 0xFFFF and word >= diag["item_count"]
+                for diag in diagnostics for word in diag["slot_words"][:38]),
+            "invalid_inventory_owners": sum(INVALID_INVENTORY in _inventory_concerns(diag) for diag in diagnostics),
+            "invalid_item_records": sum("raw_resref_hex" in row["record"] for row in world["sources"]),
+            "unresolved_actor_storage": sum("storage_diagnostics" in row["selector"] for row in world["targets"])}
 
 
 def validate_world(world: dict, catalog: dict) -> dict:
     item_index = validate_catalog(catalog)
     _fields(world, {"schema", "game_root", "catalog_fingerprint", "coverage", "resources",
                     "sources", "targets", "fingerprint"}, "world catalogue")
-    if world["schema"] != WORLD_SCHEMA or world["coverage"] != COVERAGE:
+    if world["schema"] not in (WORLD_SCHEMA, DIAGNOSTIC_WORLD_SCHEMA) or world["coverage"] != COVERAGE:
         raise ProfileError("Unsupported world catalogue coverage")
     if world["catalog_fingerprint"] != catalog["fingerprint"]:
         raise ProfileError("World catalogue belongs to another item scan")
@@ -268,6 +424,11 @@ def validate_world(world: dict, catalog: dict) -> dict:
         if resource_kind != expected_kind:
             raise ProfileError("Target kind disagrees with its resource")
         selector = row["selector"]
+        unresolved = "storage_diagnostics" in selector
+        if (UNRESOLVED_STORAGE in row["concerns"]) != unresolved:
+            raise ProfileError("Target concerns disagree with its creature storage")
+        if unresolved and row["kind"] != "actor":
+            raise ProfileError("Only area actors can have unresolved creature storage")
         if row["kind"] in ("actor", "container"):
             index = _integer(selector.get("record_index"), "target record index")
             _integer(selector.get("byte_offset"), "target byte offset")
@@ -288,7 +449,15 @@ def validate_world(world: dict, catalog: dict) -> dict:
                 _integer(selector.get("embedded_cre_offset"), "embedded creature offset")
                 _integer(selector.get("embedded_cre_size"), "embedded creature size")
                 template = selector.get("template_resource")
-                if not selector["embedded_cre_size"]:
+                incomplete = bool(selector["embedded_cre_offset"]) != bool(selector["embedded_cre_size"])
+                if unresolved:
+                    diag = _fields(selector["storage_diagnostics"], {"reason"}, "actor storage diagnostics")
+                    if (diag["reason"] != "incomplete-embedded-cre" or not incomplete or selector["flags"] & 1 or
+                            any(key in selector for key in ("template_resource", "inventory_diagnostics", "template_inventory_diagnostics"))):
+                        raise ProfileError("Actor storage diagnostics disagree with raw storage fields")
+                elif incomplete:
+                    raise ProfileError("Incomplete actor storage is missing its diagnostics")
+                elif not selector["embedded_cre_size"]:
                     if not isinstance(template, str) or not template.startswith("cre:"):
                         raise ProfileError("Invalid external creature template")
                     _resref(template[4:])
@@ -309,7 +478,22 @@ def validate_world(world: dict, catalog: dict) -> dict:
         record = row["record"]
         if not isinstance(record, dict) or record.get("resref") != row["item"]:
             raise ProfileError("Invalid source item record")
-        _resref(row["item"])
+        # Only physical observations can have an empty item reference. Keep
+        # _resref strict for resources, selected items and compiled campaigns.
+        if row["item"] != "":
+            _resref(row["item"])
+        if "raw_resref_hex" in record:
+            raw = record["raw_resref_hex"]
+            if (row["kind"] not in ("cre-template", "embedded-cre") or row["item"] != "" or
+                    not isinstance(raw, str) or re.fullmatch(r"[0-9a-f]{16}", raw) is None or
+                    "inventory_diagnostics" not in record):
+                raise ProfileError("Invalid raw creature item reference")
+            try:
+                _reference(bytes.fromhex(raw), 0, optional=True)
+            except ScanError:
+                pass
+            else:
+                raise ProfileError("Raw invalid item reference is actually a valid or empty reference")
         for key in ("record_index", "byte_offset", "expiration", "flags"):
             _integer(record.get(key), f"source {key}")
         record_end = record["byte_offset"] + (28 if row["kind"] == "store" else 20)
@@ -329,6 +513,15 @@ def validate_world(world: dict, catalog: dict) -> dict:
         for charge in charges:
             _integer(charge, "source charge", high=0xFFFF)
         if row["kind"] in ("cre-template", "embedded-cre"):
+            owner_target = targets.get(owner)
+            if owner_target is None:
+                raise ProfileError("Creature source has no matching owner target")
+            owner_selector = owner_target["selector"]
+            if "storage_diagnostics" in owner_selector:
+                raise ProfileError("Unresolved actor storage cannot own physical item records")
+            if (("inventory_diagnostics" in record) != ("inventory_diagnostics" in owner_selector) or
+                    record.get("inventory_diagnostics") != owner_selector.get("inventory_diagnostics")):
+                raise ProfileError("Source inventory diagnostics disagree with its owner")
             _indexes(record.get("slots"), "inventory slot", 37)
             for slot in record["slots"]:
                 key = (owner, slot)
@@ -343,7 +536,9 @@ def validate_world(world: dict, catalog: dict) -> dict:
                 selector = target["selector"]
                 if record["byte_offset"] < selector["embedded_cre_offset"] or record_end > selector["embedded_cre_offset"] + selector["embedded_cre_size"]:
                     raise ProfileError("Embedded inventory lies outside its actor")
-        elif row["kind"] == "container":
+        elif "inventory_diagnostics" in record:
+            raise ProfileError("Only creature sources can carry inventory diagnostics")
+        if row["kind"] == "container":
             container_records[(row["resource"], record["record_index"])] = record
             owners = _indexes(record.get("container_indexes"), "container owner")
             if record.get("container_index") != (owners[0] if len(owners) == 1 else None):
@@ -375,6 +570,7 @@ def validate_world(world: dict, catalog: dict) -> dict:
             record = container_records.get((target["resource"], index))
             if record is None or target["selector"]["record_index"] not in record["container_indexes"]:
                 raise ProfileError("Container owner range disagrees with its source records")
+    _validate_world_inventory_diagnostics(world, resources, sources, targets)
     if not isinstance(world["fingerprint"], str) or world["fingerprint"] != world_fingerprint(world):
         raise ProfileError("World catalogue content changed; scan again")
     return {"resources": resources, "sources": sources, "targets": targets}
@@ -427,7 +623,8 @@ def new_binding_plan(profile: dict, catalog: dict, world: dict) -> dict:
 
 UNUSABLE_SOURCE = {"unreferenced-inventory-record", "aliased-inventory-record", "unowned-item-record",
                    "shared-container-record", "infinite-stock", "empty-stock", "unknown-stock-supply",
-                   "missing-item-definition"}
+                   "missing-item-definition", "empty-item-reference", DANGLING_INVENTORY,
+                   INVALID_INVENTORY, INVALID_ITEM}
 
 
 def bind_profile(profile: dict, catalog: dict, world: dict, plan: dict) -> dict:
@@ -539,9 +736,13 @@ def bind_profile(profile: dict, catalog: dict, world: dict, plan: dict) -> dict:
                 raise ProfileError("Required target is absent")
             skipped.append({"kind": "target", "id": identity, "reason": "optional-resource-absent"})
             continue
+        if UNRESOLVED_STORAGE in target["concerns"]:
+            raise ProfileError("Target has unresolved creature storage and cannot receive rewards")
         if (target["kind"] == "actor" and not target["selector"]["embedded_cre_size"] and
                 target["selector"]["template_resource"] not in indexes["resources"]):
             raise ProfileError("Target refers to a missing creature template")
+        if {DANGLING_INVENTORY, INVALID_INVENTORY}.intersection(target["concerns"]):
+            raise ProfileError("Target has invalid inventory references and cannot receive rewards")
         targets.append({"target": deepcopy(target), "capacity": choice["capacity"],
                         "resource_sha256": indexes["resources"][target["resource"]]["sha256"]})
         capacity += choice["capacity"]

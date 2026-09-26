@@ -90,6 +90,8 @@ Reuse the Azamantes delivery work: no recipient action queues, verify an exact n
 item instance, and commit only after a later engine observation. Test actual
 lootability for early deaths, full inventories, scripted replacements, and reloads.
 An unspawned target is deferred, not treated as a reason for an early free drop.
+The legacy FLDLV resref/charge count delta is transport precedent, not proof of
+the new runtime's required operation-bound instance, full payload, and lootability.
 
 Add selected vanilla destinations missing from Mode 1, plus optional destinations
 from the owner's SoD/other mods when installed. Several item assignments can share
@@ -126,13 +128,23 @@ both progression-aware and deliberately unrestricted profiles.
    gate, not an API assumed to exist. Do not modify shared installed resources
    per campaign as a shortcut that changes older saves.
    The logical controller, immutable campaign compiler, and synthetic persistence
-   tests are implemented. The native engine feasibility gate remains open; see
+   tests are implemented. The native engine gate has passed for the bounded
+   three-item starting-area fixture; general source/target support remains open. See
    [prototype contracts](../campaign-runtime-prototype.md) and
    [source evidence](../runtime-feasibility-evidence.md).
 4. **Playable narrow vertical slice.** Two campaigns on one disposable installation,
    with different selected pools and no reinstall. Reload each, verify frozen
    assignments, correct originals for excluded items, exact quantities, and
-   lootable rewards. No live-game acceptance claim from synthetic tests alone.
+   lootable rewards. The three-item, one-area fixture has native evidence for
+   actual pickup in A, a two-item B configuration that preserves its excluded
+   original, and A's reload while B was selected. On 2026-09-26, B also reloaded
+   in a fresh process while A was selected; two further fresh B campaigns kept
+   distinct seeds and exact saved item ownership without a reinstall. The first
+   fresh B campaign's manual save was refused, so its preserved initial autosave
+   is the evidence for that run; the second passed a normal named save. See
+   [native fixture status](../native-fixture-status.md) and
+   [26 September acceptance](../native-acceptance-20260926.md) for the exact
+   evidence and limits. This does not accept general source/target adapters.
 5. **Collection/standalone UI and approved content.** Integrate scan/configuration
    with the collection and add approved item/target packs and placement presets.
 6. **Curses and crossovers.** Implement after creative review and per-feature checks.
@@ -149,8 +161,12 @@ The campaign compiler brings the post-install suite to 138 synthetic tests on
 2026-09-22. The separate campaign protocol suite passes 85 tests: 28 host scenarios
 in each of Lua 5.1, Lua 5.3, and LuaJIT 2.1, plus a command-to-Lua integration test
 covering all three runtimes and two synthetic save stores. These tests do not use
-the game engine. Milestone 3's native integration gate and milestones 4-6 remain
-open. No production item/target/curse choices have been added.
+the game engine. Later native fixture results establish the bounded milestone 3
+case and the listed milestone 4 checks, including fresh-process B reload and two
+more fresh B campaigns. General source/target adapters and milestones 5-6 remain
+open; the first fresh B campaign's manual-save refusal is covered by its retained
+initial autosave, not a successful named save.
+No production item/target/curse choices have been added.
 
 The first tooling revision produces item catalogues and drafts only. It must label
 item-only prepared outputs `draft-needs-source-binding`; bound outputs are

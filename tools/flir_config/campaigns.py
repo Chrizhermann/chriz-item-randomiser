@@ -14,7 +14,8 @@ from pathlib import Path
 
 from .profiles import (HEX256, PROFILE_ID, ProfileError, _digest, canonical_bytes,
                        ensure_output_outside_game, read_json, write_json)
-from .sources import UNUSABLE_SOURCE, bind_profile
+from .sources import (DANGLING_INVENTORY, INVALID_INVENTORY, UNRESOLVED_STORAGE,
+                      UNUSABLE_SOURCE, bind_profile)
 
 CAMPAIGN_SCHEMA = "flir-campaign-prototype-v1"
 POINTER_SCHEMA = "flir-prototype-next-v1"
@@ -94,6 +95,8 @@ def _validate_source(row: dict) -> int:
     record = source["record"]
     if not isinstance(record, dict) or record.get("resref") != source["item"]:
         raise ProfileError("Invalid campaign inventory record")
+    if "inventory_diagnostics" in record or "raw_resref_hex" in record:
+        raise ProfileError("Campaign source has quarantined inventory diagnostics")
     for key in ("record_index", "byte_offset", "flags"):
         _integer(record.get(key), "source " + key)
     _integer(record.get("expiration"), "source expiration", high=0xFFFF)
@@ -145,16 +148,24 @@ def _validate_target(row: dict) -> int:
     kind = target["kind"]
     if kind not in ("cre-template", "actor", "container", "store"):
         raise ProfileError("Invalid campaign target kind")
-    _concerns(target)
+    if {DANGLING_INVENTORY, INVALID_INVENTORY, UNRESOLVED_STORAGE}.intersection(_concerns(target)):
+        raise ProfileError("Campaign target has invalid inventory references")
     resource = _resource(target["resource"], {"cre-template": "cre", "actor": "are",
                                              "container": "are", "store": "sto"}[kind])
     identity = _text(row["id"], "target identity")
     selector = target["selector"]
     if not isinstance(selector, dict):
         raise ProfileError("Invalid campaign target selector")
+    if any(key in selector for key in ("inventory_diagnostics", "template_inventory_diagnostics", "storage_diagnostics")):
+        raise ProfileError("Campaign target has quarantined inventory diagnostics")
     if kind in ("actor", "container"):
         index = _integer(selector.get("record_index"), "target record index")
         _integer(selector.get("byte_offset"), "target byte offset")
+        if kind == "actor":
+            offset = _integer(selector.get("embedded_cre_offset"), "target embedded creature offset")
+            size = _integer(selector.get("embedded_cre_size"), "target embedded creature size")
+            if bool(offset) != bool(size):
+                raise ProfileError("Campaign actor target has incomplete creature storage")
         expected = f"{resource}/{kind}/{index}"
     else:
         expected = resource
