@@ -1,6 +1,10 @@
 -- Pure assembly builder for the opt-in, synthetic FLPRU1 suppression probe.
 -- No installation or engine access. Exposed separately for instruction emulation.
-return function(buffer, image_base)
+return function(buffer, image_base, policy)
+    if policy ~= nil then
+        assert(type(policy) == 'table' and policy.schema == 'flpr-campaign-gate-policy-v1'
+            and type(policy.scan) == 'string', 'SOURCE_GATE_POLICY_INVALID')
+    end
     local save = [[
         pushfq
         push rax
@@ -38,6 +42,31 @@ return function(buffer, image_base)
         mov rax, qword ptr ds:[r10+40]
         mov qword ptr ds:[r11+8], rax
     ]]
+    if policy then
+        -- Runtime protection must outlive diagnostic capacity. Overflow is a
+        -- permanent observation failure, but the exact selected original still
+        -- takes the guarded path. Reserve a separate, never-ringed witness row.
+        -- Campaign callers allocate header + 2049 rows, not the probe's 2048.
+        allocate = [[
+            mov r11, 1
+            lock xadd qword ptr ds:[r10+8], r11
+            cmp r11, 2048
+            jb gate_row_ready
+            mov qword ptr ds:[r10+16], 1
+            mov r11, 2047
+            gate_row_ready:
+            shl r11, 7
+            add r11, r10
+            add r11, 128
+        ]]
+        for offset=0,120,8 do
+            allocate = allocate .. 'mov qword ptr ds:[r11+'..offset..'], 0\n'
+        end
+        allocate = allocate .. [[
+            mov rax, qword ptr ds:[r10+40]
+            mov qword ptr ds:[r11+8], rax
+        ]]
+    end
     local finish = [[
         jmp gate_done
         gate_overflow:
@@ -64,6 +93,37 @@ return function(buffer, image_base)
         mov qword ptr ds:[r11+40], rax
         mov qword ptr ds:[r11], 1
     ]] .. finish
+    local scan = policy and policy.scan or [[
+        gate_scan:
+        mov r11, 0x5f31555f52504c46
+        cmp qword ptr ds:[rax], r11
+        jne gate_scan_next
+        cmp qword ptr ds:[rax+8], 0x45444f4d
+        jne gate_scan_next
+        cmp qword ptr ds:[rax+16], 0
+        jne gate_scan_next
+        cmp qword ptr ds:[rax+24], 0
+        jne gate_scan_next
+        inc qword ptr ds:[r10+80]
+        mov edx, dword ptr ds:[rax+0x28]
+        mov qword ptr ds:[r10+88], rdx
+        gate_scan_next:
+        add rax, 84
+        dec rcx
+        jne gate_scan
+        cmp qword ptr ds:[r10+80], 0
+        je gate_capture_log
+        mov qword ptr ds:[r10+72], 3
+        cmp qword ptr ds:[r10+80], 1
+        jne gate_capture_log
+        mov qword ptr ds:[r10+72], 4
+        cmp qword ptr ds:[r10+88], 1
+        je gate_capture_valid
+        cmp qword ptr ds:[r10+88], 2
+        jne gate_capture_log
+        gate_capture_valid:
+        mov qword ptr ds:[r10+72], 0
+]]
     local capture = save .. [[
         mov qword ptr ds:[r10+32], 0
         mov qword ptr ds:[r10+72], 5
@@ -96,35 +156,7 @@ return function(buffer, image_base)
         add rax, r14
         test rcx, rcx
         je gate_capture_log
-        gate_scan:
-        mov r11, 0x5f31555f52504c46
-        cmp qword ptr ds:[rax], r11
-        jne gate_scan_next
-        cmp qword ptr ds:[rax+8], 0x45444f4d
-        jne gate_scan_next
-        cmp qword ptr ds:[rax+16], 0
-        jne gate_scan_next
-        cmp qword ptr ds:[rax+24], 0
-        jne gate_scan_next
-        inc qword ptr ds:[r10+80]
-        mov edx, dword ptr ds:[rax+0x28]
-        mov qword ptr ds:[r10+88], rdx
-        gate_scan_next:
-        add rax, 84
-        dec rcx
-        jne gate_scan
-        cmp qword ptr ds:[r10+80], 0
-        je gate_capture_log
-        mov qword ptr ds:[r10+72], 3
-        cmp qword ptr ds:[r10+80], 1
-        jne gate_capture_log
-        mov qword ptr ds:[r10+72], 4
-        cmp qword ptr ds:[r10+88], 1
-        je gate_capture_valid
-        cmp qword ptr ds:[r10+88], 2
-        jne gate_capture_log
-        gate_capture_valid:
-        mov qword ptr ds:[r10+72], 0
+]] .. scan .. '\n' .. [[
         gate_capture_log:
     ]] .. allocate .. [[
         mov rax, qword ptr ds:[r10+48]
@@ -233,11 +265,160 @@ return function(buffer, image_base)
         gate_item_publish:
         mov qword ptr ds:[r11], 3
     ]] .. finish
+    if policy then
+        -- These are exact, internal template fragments, not user replacements.
+        -- Refuse a refactor that would silently lose one of the policy changes.
+        local function replace_once(code, before, after)
+            local first,last=code:find(before,1,true)
+            assert(first and not code:find(before,last+1,true), 'CAMPAIGN_GATE_TEMPLATE_CHANGED')
+            return code:sub(1,first-1)..after..code:sub(last+1)
+        end
+        enter=replace_once(enter,'mov qword ptr ds:[r10+120], 0',
+            'mov qword ptr ds:[r10+120], 0\nmov qword ptr ds:[r10+112], 0')
+        capture=replace_once(capture,[[        cmp qword ptr ds:[r10+16], 0
+        jne gate_capture_publish
+]],'')
+        item=replace_once(item,[[        cmp qword ptr ds:[r10+16], 0
+        jne gate_item_publish
+]],'')
+        local witness=''
+        for offset=0,120,8 do
+            witness=witness..'mov rax, qword ptr ds:[r11+'..offset..']\n'..
+                'mov qword ptr ds:[r10+'..(128+2048*128+offset)..'], rax\n'
+        end
+        witness=witness..'mov qword ptr ds:[r10+112], 1\n'
+        item=replace_once(item,[[        mov qword ptr ds:[r11+24], 1
+        mov qword ptr ds:[r11], 3
+]],[[        mov qword ptr ds:[r11+24], 1
+        mov qword ptr ds:[r11], 3
+]]..witness)
+    end
+    local area_enter,area_exit
+    if policy and policy.provenance then
+        local p=policy.provenance
+        local function natural(v) return type(v)=='number' and v==math.floor(v) and v>0 end
+        assert(natural(p.expected) and natural(p.length) and p.length>=256 and p.length<=1048576
+            and natural(p.container_offset) and p.container_offset+192<=p.length
+            and natural(p.item_offset) and p.item_offset+80<=p.length, 'CAMPAIGN_GATE_PROVENANCE_INVALID')
+        -- 64 independent invocation slots, after the dedicated removal witness.
+        -- Match the constructor's saved caller frame AND its exact call site.
+        -- Raw pointers alone can be recycled after Unmarshal has returned.
+        local context=128+2049*128
+        local first=context+32
+        local last=first+64*64
+        local clear=[[
+            lea r11, [r10+@FIRST@]
+            gate_clear_loop:
+            cmp qword ptr [r11], rbp
+            jne gate_clear_next
+            mov qword ptr [r11+24], 0
+            mov qword ptr [r11], 0
+            gate_clear_next:
+            add r11, 64
+            lea rax, [r10+@LAST@]
+            cmp r11, rax
+            jb gate_clear_loop
+        ]]
+        area_enter=save..clear..[[
+            inc qword ptr [r10+@CONTEXT@]
+            cmp qword ptr [r10], 1
+            jne gate_area_done
+            cmp r8d, @LENGTH@
+            jne gate_area_done
+            test rdx, rdx
+            je gate_area_done
+            test rcx, rcx
+            je gate_area_done
+            mov r8, @EXPECTED@
+            xor r11d, r11d
+            gate_compare_loop:
+            mov rax, qword ptr [rdx+r11]
+            cmp rax, qword ptr [r8+r11]
+            jne gate_area_done
+            add r11, 8
+            cmp r11, @QBYTES@
+            jb gate_compare_loop
+        ]]
+        for offset=math.floor(p.length/8)*8,p.length-1 do
+            area_enter=area_enter..'mov al, byte ptr [rdx+'..offset..']\n'..
+                'cmp al, byte ptr [r8+'..offset..']\njne gate_area_done\n'
+        end
+        area_enter=area_enter..[[
+            lea r11, [r10+@FIRST@]
+            gate_claim_loop:
+            xor eax, eax
+            lock cmpxchg qword ptr [r11], rbp
+            je gate_claimed
+            add r11, 64
+            lea rax, [r10+@LAST@]
+            cmp r11, rax
+            jb gate_claim_loop
+            inc qword ptr [r10+@CONTEXT_OVERFLOW@]
+            mov qword ptr [r10+16], 1
+            jmp gate_area_done
+            gate_claimed:
+            mov qword ptr [r11+24], 0
+            mov qword ptr [r11+8], rcx
+            mov qword ptr [r11+16], rdx
+            mov rax, qword ptr [r10+40]
+            mov qword ptr [r11+32], rax
+            lea rax, [rdx+@ITEMS@]
+            mov qword ptr [r11+40], rax
+            lea rax, [rdx+@CONTAINERS@]
+            mov qword ptr [r11+48], rax
+            mov qword ptr [r11+24], 1
+            inc qword ptr [r10+@CONTEXT_ACCEPTED@]
+            gate_area_done:
+        ]]..restore
+        area_exit=save..clear..restore
+        local check=[[
+            mov rdx, @CALL_RETURN@
+            cmp qword ptr [rbp+0xB8], rdx
+            jne gate_item_publish
+            mov r8, qword ptr [rbp+0xB0]
+            lea r9, [r10+@FIRST@]
+            gate_context_loop:
+            cmp qword ptr [r9], r8
+            je gate_context_found
+            add r9, 64
+            lea rdx, [r10+@LAST@]
+            cmp r9, rdx
+            jb gate_context_loop
+            jmp gate_item_publish
+            gate_context_found:
+            cmp qword ptr [r9+24], 1
+            jne gate_item_publish
+            mov rdx, qword ptr [r10+40]
+            cmp qword ptr [r9+32], rdx
+            jne gate_item_publish
+            mov rdx, qword ptr [rbp-0x60]
+            cmp qword ptr [r9+8], rdx
+            jne gate_item_publish
+            mov rdx, qword ptr [rbp-0x78]
+            cmp qword ptr [r9+40], rdx
+            jne gate_item_publish
+            cmp qword ptr [r9+48], r14
+            jne gate_item_publish
+        ]]
+        local marker='        cmp qword ptr ss:[rbp-0x68], 0'
+        local pos=assert(item:find(marker,1,true),'CAMPAIGN_GATE_TEMPLATE_CHANGED')
+        item=item:sub(1,pos-1)..check..item:sub(pos)
+        local substitutions={FIRST=first,LAST=last,CONTEXT=context,
+            CONTEXT_OVERFLOW=context+8,CONTEXT_ACCEPTED=context+16,
+            LENGTH=p.length,QBYTES=math.floor(p.length/8)*8,EXPECTED=p.expected,
+            ITEMS=p.item_offset,CONTAINERS=p.container_offset,CALL_RETURN=image_base+0x18D9CE}
+        local function substitute(code)
+            for key,value in pairs(substitutions) do code=code:gsub('@'..key..'@',string.format('%.0f',value)) end
+            return code
+        end
+        area_enter,area_exit,item=substitute(area_enter),substitute(area_exit),substitute(item)
+    end
     local function expand(code, prefix)
         return (code:gsub('@BUFFER@', string.format('%.0f', buffer))
             :gsub('@SKIP@', string.format('%.0f', image_base+0x1906FC))
             :gsub('gate_', prefix .. '_'))
     end
     return {enter=expand(enter,'gate_enter'), capture=expand(capture,'gate_capture'),
-        item=expand(item,'gate_item')}
+        item=expand(item,'gate_item'), area_enter=area_enter and expand(area_enter,'gate_area_enter'),
+        area_exit=area_exit and expand(area_exit,'gate_area_exit')}
 end

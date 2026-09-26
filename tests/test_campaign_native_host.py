@@ -252,9 +252,26 @@ function cases.held_receipt_for_non_creature_target_is_quarantined_and_stops(Cor
     assert(f.host:inspect().assignments[1].delivery_phase==Core.PHASE.quarantined)
 end
 
-local function bootstrap(Core,Host,Globals,text)
+local function bootstrap(Core,Host,Globals,text,options)
+    options=options or {}
     local f=setup(Core,Host)
     local listeners={}
+    f.bootstrap_events={}; f.prepare_calls={}; f.factory_calls={}
+    f.pristine_bytes='AREAV1.0'..string.rep('\0',0x70-8)..'\212\104\0\0'..
+        string.rep('\0',4)..'\20\107\0\0'..string.rep('\0',27492-0x7C)
+    f.pristine_opens=0
+    f.native_fixture={revision=f.manifest.revision,ready_detail=f.ready_detail}
+    if options.gate then
+        local id="are:flpru1/container/1"
+        f.manifest.sources[1].id=id
+        f.manifest.sources[1].record.id=id
+        f.manifest.sources[1].record.kind="container"
+        f.native_fixture.sources={[id]={kind="guarded-container",area="FLPRU1",script_name="FLPRU1A",
+            x=1140,y=650,identity=string.rep("a",64),
+            payload={resref="flpri1",charges={0,0,0},expiration=0,flags=1}}}
+        f.native_fixture.source_gate={schema="flpr-unvisited-fixture-gate-v1",source_id=id}
+        f.native_fixture.resource_hashes={['FLPRU1.ARE']=string.rep('1',64)}
+    end
     EEex_Active=true; FLPR=nil
     EEex_GameState_GetGlobalInt=function(key) return f.storage:get(key) end
     EEex_GameState_SetGlobalInt=function(key,value) return f.storage:set(key,value) end
@@ -266,21 +283,88 @@ local function bootstrap(Core,Host,Globals,text)
     Infinity_DisplayString=function() end
     EEexRemote={Poll=function() f.remote_polls=(f.remote_polls or 0)+1; return "" end}
     print=function(message) f.last_log=message end
+    io={open=function(path,mode)
+        assert(options.gate and path=='flpr-fixture/FLPRU1.pristine.are' and mode=='rb',
+            'UNEXPECTED_FIXTURE_FILE_OPEN')
+        f.bootstrap_events[#f.bootstrap_events+1]='pristine_open'
+        f.pristine_opens=f.pristine_opens+1
+        if options.missing_pristine then return nil end
+        return {read=function(_,form)
+                assert(form=='*a'); f.bootstrap_events[#f.bootstrap_events+1]='pristine_read'
+                return f.pristine_bytes
+            end,
+            close=function()
+                f.bootstrap_events[#f.bootstrap_events+1]='pristine_close'
+                return true
+            end}
+    end}
     EngineGlobals={g_pBaldurChitin={m_pObjectGame={m_worldTime={m_gameTime=0}}}}
     startCampaignData={{id="BG1"},{id="BG2"}}; currentCampaign=1
-    startEngine={OnNewGameButtonClick=function() f.new_game_clicked=(f.new_game_clicked or 0)+1 end}
+    startEngine={OnNewGameButtonClick=function()
+        f.bootstrap_events[#f.bootstrap_events+1]="newgame"
+        f.new_game_clicked=(f.new_game_clicked or 0)+1
+    end}
     createCharScreen={AcceptCharacter=function(_,difficulty)
+        f.bootstrap_events[#f.bootstrap_events+1]="engine_accept"
         f.accept_count=(f.accept_count or 0)+1
         f.accepted_state=f.values.flpr_state; f.accepted_fresh=f.values.FLPR_FRESH
         return difficulty
     end}
+    local host_module=Host
+    if options.gate then
+        host_module={new=function(deps)
+            f.bootstrap_events[#f.bootstrap_events+1]="host_new"
+            assert(f.gate_installed,"HOST_BEFORE_GATE_INSTALL")
+            return Host.new(deps)
+        end}
+    end
     local modules={ ["override/FLPRCore.lua"]=Core,["override/FLPRGlob.lua"]=Globals,
-        ["override/FLPRHost.lua"]=Host,["override/FLPRNat.lua"]={new=function(_,fixture) return f.make_native(fixture) end},
+        ["override/FLPRHost.lua"]=host_module,["override/FLPRNat.lua"]={new=function(_,fixture) return f.make_native(fixture) end},
         ["override/FLPRQA.lua"]={new=function() return {poll=function() end} end}}
+    if options.gate then
+        local builder,compiler={},{}
+        f.builder,f.compiler=builder,compiler
+        modules["flpr-fixture/FLPRGateAsm.lua"]=builder
+        modules["flpr-fixture/FLPRCampaignPolicy.lua"]=compiler
+        modules["override/FLPRGat.lua"]={install=function(env,bundle,build,compile,pristine)
+            f.bootstrap_events[#f.bootstrap_events+1]="install"
+            assert(env==_G and bundle.manifest==f.manifest and bundle.fixture==f.native_fixture)
+            assert(build==builder and compile==compiler)
+            assert(type(pristine)=='table' and pristine.bytes==f.pristine_bytes and
+                #pristine.bytes==27492 and pristine.resource_sha256==
+                bundle.fixture.resource_hashes['FLPRU1.ARE'])
+            if options.install_fail then error("GATE_INSTALL_FAILED") end
+            f.gate_installed=true
+            return {
+                reset=function()
+                    f.bootstrap_events[#f.bootstrap_events+1]="reset"
+                    f.reset_calls=(f.reset_calls or 0)+1
+                end,
+                prepare_new=function(_,selected,controller)
+                    f.bootstrap_events[#f.bootstrap_events+1]="prepare"
+                    f.prepare_calls[#f.prepare_calls+1]={bundle=selected,controller=controller,
+                        state=f.values.flpr_state,fresh=f.values.FLPR_FRESH}
+                    assert(selected.manifest==f.manifest and selected.fixture==f.native_fixture)
+                    return true
+                end,
+                adapter=function(_,selected,native)
+                    f.bootstrap_events[#f.bootstrap_events+1]="factory"
+                    f.factory_calls[#f.factory_calls+1]={bundle=selected,native=native}
+                    return {observe_guard=function() end,observe_removal=function() end,destroy=function() end}
+                end,
+            }
+        end}
+    end
     loadfile=function(path)
         if modules[path] then return function() return modules[path] end end
+        if options.gate and path=="flpr-fixture/source-gate.lua" then
+            return function() return options.missing_pinned and string.rep("e",64) or f.manifest.revision end
+        end
         if path=="flpr-fixture/campaign-store/revisions/"..f.manifest.revision..".native.lua" then
-            return function() return {revision=f.manifest.revision,ready_detail=f.ready_detail} end
+            return function()
+                f.native_fixture.ready_detail=f.ready_detail
+                return f.native_fixture
+            end
         end
         if path=="flpr-fixture/next.lua" then return function() return f.next_revision end end
         local revision=path:match("revisions/([0-9a-f]+)%.lua$")
@@ -288,14 +372,62 @@ local function bootstrap(Core,Host,Globals,text)
         return nil
     end
     assert((loadstring or load)(text))()
-    assert(FLPR.Disabled==nil,tostring(FLPR.Disabled)); f.root=FLPR; f.listeners=listeners
+    if not options.allow_disabled then assert(FLPR.Disabled==nil,tostring(FLPR.Disabled)) end
+    f.root=FLPR; f.listeners=listeners
     return f
 end
 function cases.bootstrap_accept_captures_before_engine_accept(Core,Host,Globals,text)
-    local f=bootstrap(Core,Host,Globals,text); f.root.NewGame(); f.values.FLPR_FRESH=1
+    local f=bootstrap(Core,Host,Globals,text)
+    assert(f.pristine_opens==0 and f.root.SourceGate==nil)
+    f.root.NewGame(); f.values.FLPR_FRESH=1
     assert(f.root.AcceptCharacter(2)==2 and f.accepted_state==2 and f.accepted_fresh==0)
     assert(f.new_game_clicked==1 and f.accept_count==1)
     local seed=f.values.flpr_seed; assert(f.root.AcceptCharacter(3)==3 and f.values.flpr_seed==seed)
+end
+function cases.bootstrap_opt_in_gate_installs_prepares_once_and_binds_frozen_native(Core,Host,Globals,text)
+    local f=bootstrap(Core,Host,Globals,text,{gate=true})
+    assert(f.gate_installed and f.pristine_opens==1 and
+        table.concat(f.bootstrap_events,",")=="pristine_open,pristine_read,pristine_close,install,host_new")
+    assert(f.new_game_clicked==nil and f.values.flpr_state==nil and f.accept_count==nil)
+    f.root.NewGame(); f.values.FLPR_FRESH=1
+    assert(f.reset_calls==1 and f.bootstrap_events[#f.bootstrap_events-1]=="reset" and
+        f.bootstrap_events[#f.bootstrap_events]=="newgame")
+    assert(f.root.AcceptCharacter(2)==2)
+    assert(#f.prepare_calls==1 and f.prepare_calls[1].state==2 and f.prepare_calls[1].fresh==1)
+    assert(f.prepare_calls[1].bundle.manifest==f.manifest and
+        f.prepare_calls[1].bundle.fixture==f.native_fixture)
+    assert(f.accepted_state==2 and f.accepted_fresh==0)
+    assert(table.concat(f.bootstrap_events,",")==
+        "pristine_open,pristine_read,pristine_close,install,host_new,reset,newgame,prepare,engine_accept")
+    local seed=f.values.flpr_seed
+    assert(f.root.AcceptCharacter(3)==3)
+    assert(#f.prepare_calls==1 and f.values.flpr_seed==seed and f.accept_count==2)
+    f.next_revision=string.rep("e",64)
+    f.root.Poll()
+    EngineGlobals.g_pBaldurChitin.m_pObjectGame.m_worldTime.m_gameTime=1
+    f.root.Poll()
+    assert(#f.factory_calls==1 and f.factory_calls[1].bundle==f.root.Host.bundle and
+        f.factory_calls[1].native==f.root.Host.native)
+    assert(f.factory_calls[1].bundle.manifest.revision==f.manifest.revision and
+        f.factory_calls[1].bundle.fixture==f.native_fixture)
+    assert(f.bootstrap_events[#f.bootstrap_events]=="factory")
+end
+function cases.bootstrap_opt_in_gate_failure_disables_before_capture_acceptance(Core,Host,Globals,text)
+    for _,variant in ipairs({"missing_pinned","missing_pristine","install_fail"}) do
+        local options={gate=true,allow_disabled=true}
+        options[variant]=true
+        local f=bootstrap(Core,Host,Globals,text,options)
+        local expected=(variant=="missing_pinned" and "SOURCE_GATE_REVISION_UNAVAILABLE") or
+            (variant=="missing_pristine" and "SOURCE_GATE_PRISTINE_MISSING") or "GATE_INSTALL_FAILED"
+        assert(f.root.Disabled and tostring(f.root.Disabled):find(expected,1,true))
+        assert(f.root.Host==nil and f.gate_installed==nil and f.values.flpr_state==nil)
+        assert(#f.prepare_calls==0 and #f.factory_calls==0)
+        assert(f.pristine_opens==(variant=="missing_pinned" and 0 or 1))
+        f.root.NewGame(); f.values.FLPR_FRESH=1
+        local ok=pcall(function() f.root.AcceptCharacter(2) end)
+        assert(not ok and f.accept_count==nil and f.values.flpr_state==nil and f.seeds==0)
+        assert(#f.prepare_calls==0 and #f.factory_calls==0)
+    end
 end
 function cases.bootstrap_no_intent_accept_cannot_capture(Core,Host,Globals,text)
     local f=bootstrap(Core,Host,Globals,text); f.values.FLPR_FRESH=1

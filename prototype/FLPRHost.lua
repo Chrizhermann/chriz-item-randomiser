@@ -19,7 +19,10 @@ end
 function Host:destroy()
     if self.controller then self.controller:destroy() end
     if self.native then self.native:destroy() end
+    if self.guard then self.guard:destroy() end
     self.controller, self.native, self.pending = nil, nil, nil
+    self.guard, self.guard_index, self.guard_pending, self.removal_pending = nil, nil, nil, nil
+    self.guard_bound, self.guard_monitor = nil, nil
     self.last_tick, self.bundle, self.error = nil, nil, nil
     self.deferred = {}
     self.status = "waiting"
@@ -33,6 +36,28 @@ end
 local function require_result(value, failure)
     if value == nil or value == false then error(failure or "HOST_OPERATION_FAILED", 0) end
     return value
+end
+
+-- This opt-in descriptor covers one authored diagnostic source only. Missing
+-- integration must fail before a source is mistaken for a visible creature.
+local function guarded_index(bundle)
+    local config, found = bundle.fixture.source_gate, nil
+    for id, endpoint in pairs(bundle.fixture.sources or {}) do
+        if endpoint.kind == "guarded-container" then
+            assert(config and id == config.source_id and not found, "SOURCE_GUARD_CONFIG_INVALID")
+            found = id
+        end
+    end
+    if config == nil then return nil end
+    assert(type(config) == "table" and config.schema == "flpr-unvisited-fixture-gate-v1" and
+        found == config.source_id, "SOURCE_GUARD_CONFIG_INVALID")
+    for index, source in ipairs(bundle.manifest.sources) do
+        if source.id == found then
+            assert(source.quantity == 1 and source.record.kind == "container", "SOURCE_GUARD_CONFIG_INVALID")
+            return index
+        end
+    end
+    error("SOURCE_GUARD_CONFIG_INVALID", 0)
 end
 
 function Host:_initialize()
@@ -56,7 +81,15 @@ function Host:_initialize()
         if deps.storage:get("FLPR_FRESH") == 1 then deps.storage:set("FLPR_FRESH", 0) end
     end
     self.bundle = assert(selected, "REVISION_UNAVAILABLE")
+    self.guard_index = guarded_index(selected)
     self.native = require_result(deps.native(selected.fixture))
+    if self.guard_index then
+        assert(type(deps.source_guard) == "function", "SOURCE_GUARD_ADAPTER_MISSING")
+        self.guard = require_result(deps.source_guard(selected, self.native))
+        assert(type(self.guard) == "table" and type(self.guard.observe_guard) == "function" and
+            type(self.guard.observe_removal) == "function" and type(self.guard.destroy) == "function",
+            "SOURCE_GUARD_ADAPTER_INVALID")
+    end
     self.status = "running"
     if deps.storage:get(deps.core.G.journal) ~= 0 then
         -- No item-pointer provenance survives loading. Do not replay or infer
@@ -73,8 +106,13 @@ function Host:capture_new(handoff)
         if state == 2 and deps.storage:get("FLPR_FRESH") == 0 then return end
         assert(state == 0 and deps.storage:get("FLPR_FRESH") == 1, "FRESH_TEMPLATE_REQUIRED")
         local selected = require_result(deps.next(), "NEXT_REVISION_UNAVAILABLE")
+        local guarded = guarded_index(selected)
+        if guarded then assert(type(deps.prepare_source_guard) == "function", "SOURCE_GUARD_PREPARER_MISSING") end
         local controller = require_result(deps.core.new(deps.storage, function() return nil end))
         require_result(controller:capture(selected.manifest, deps.seed(), "confirmed-new-game"))
+        -- Before engine character acceptance can load an original's area, the
+        -- native adapter must already protect this exact frozen campaign.
+        if guarded then require_result(deps.prepare_source_guard(selected, controller)) end
         deps.storage:set("FLPR_FRESH", 0)
         assert(deps.storage:get("FLPR_FRESH") == 0, "FRESH_MARKER_WRITE_FAILED")
         self.status = "waiting"
@@ -85,9 +123,21 @@ end
 
 function Host:_step(tick)
     if self.status == "waiting" then self:_initialize() end
-    if self.status ~= "running" then return end
+    if self.status ~= "running" and self.status ~= "complete" then return end
     self.controller:on_observation_boundary()
     require_result(self.native:on_observation_boundary(tick))
+    if self.guard_bound then
+        -- The bound source can become physically confirmed below. Until then,
+        -- every reward operation depends on uninterrupted protection, including
+        -- rewards whose own source was removed earlier.
+        local phase
+        for _, assignment in ipairs(require_result(self.controller:assignments())) do
+            if assignment.source == self.guard_index then phase = assignment.source_phase; break end
+        end
+        if phase == self.deps.core.PHASE.protected then
+            assert(self.controller:source_guard_active(self.guard_index), "SOURCE_GUARD_INACTIVE")
+        end
+    end
     if self.pending then
         local receipt, reason = self.native:observe(self.pending)
         if receipt == nil and reason == "DELIVERY_SETTLING" then
@@ -99,14 +149,43 @@ function Host:_step(tick)
         self.pending = nil
         return
     end
+    if self.guard_pending then
+        local receipt, reason = self.guard:observe_guard(self.guard_pending)
+        require_result(receipt, reason)
+        require_result(self.controller:confirm_source_guard(receipt))
+        self.guard_pending, self.guard_bound, self.guard_monitor = nil, true, true
+        return
+    end
     local assignments = require_result(self.controller:assignments())
-    -- Suppress the entire fixture pool before exposing any relocated rewards.
+    self.guard_monitor = false
+    -- Every original must be removed or protected before exposing any rewards.
     for index, source in ipairs(self.bundle.manifest.sources) do
         local phase
         for _, assignment in ipairs(assignments) do
             if assignment.source == index then phase = assignment.source_phase; break end
         end
-        if phase ~= 2 then
+        if index == self.guard_index and phase ~= self.deps.core.PHASE.confirmed then
+            assert(phase == self.deps.core.PHASE.pending or phase == self.deps.core.PHASE.protected,
+                "SOURCE_NOT_READY")
+            self.guard_monitor = true
+            if not self.guard_bound then
+                self.guard_pending = require_result(self.controller:source_guard_request(index))
+                return
+            end
+            if self.removal_pending then
+                local receipt, reason = self.guard:observe_removal(self.removal_pending)
+                if receipt == nil and reason == "SOURCE_NOT_LOADED" then
+                    -- Waiting for physical proof never withholds an already
+                    -- protected source's reward and never repeats suppression.
+                else
+                    require_result(receipt, reason)
+                    require_result(self.controller:confirm_guarded_source_removal(receipt))
+                    self.removal_pending, self.guard_bound, self.guard_monitor = nil, nil, false
+                end
+            else
+                self.removal_pending = require_result(self.controller:guarded_source_removal_request(index))
+            end
+        elseif phase ~= 2 then
             assert(phase == 0, "SOURCE_NOT_READY")
             local witness = require_result(self.native:inspect_source(source.id))
             local command = require_result(self.controller:begin_source(index, witness))
@@ -138,12 +217,15 @@ function Host:_step(tick)
     end
     -- Deferred rewards keep the campaign running; nothing is placed elsewhere.
     if waiting then return end
-    self.status = "complete"
-    if self.deps.report then self.deps.report("complete") end
+    if self.status ~= "complete" then
+        self.status = "complete"
+        if self.deps.report then self.deps.report("complete") end
+    end
 end
 
 function Host:poll()
-    if self.status == "disabled" or self.status == "inactive" or self.status == "complete" then return end
+    if self.status == "disabled" or self.status == "inactive" or
+        (self.status == "complete" and not self.guard_monitor) then return end
     local ok, failure = pcall(function()
         if not self.deps.world() then return end
         local tick = self.deps.tick()
@@ -157,7 +239,8 @@ function Host:poll()
 end
 
 function Host:inspect()
-    local result = { status = self.status, error = self.error, tick = self.last_tick, deferred = {} }
+    local result = { status = self.status, error = self.error, tick = self.last_tick, deferred = {},
+        source_guard_monitor = self.guard_monitor == true }
     for unit, deferral in pairs(self.deferred) do
         result.deferred[#result.deferred + 1] = { unit = unit, reason = deferral.reason, retry = deferral.retry }
     end

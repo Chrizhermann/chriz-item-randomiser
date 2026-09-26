@@ -7,12 +7,14 @@ Core.MAX_UNITS = 4096
 -- Held means an exact, operation-bound instance was placed on a living
 -- creature target. Its later lootability is not claimed; only deliveries
 -- can be held, and only for creature-kind targets.
-Core.PHASE = { pending = 0, in_flight = 1, confirmed = 2, quarantined = 3, held = 4 }
+-- Protected is source-only: a live pre-access guard is bound to an unvisited
+-- original. It is not evidence that the original has already been removed.
+Core.PHASE = { pending = 0, in_flight = 1, confirmed = 2, quarantined = 3, held = 4, protected = 5 }
 Core.CREATURE_TARGET_KINDS = { actor = true, ["cre-template"] = true }
 Core.G = { state = "flpr_state", seed = "flpr_seed", units = "flpr_units",
     sources = "flpr_sources", targets = "flpr_targets", sequence = "flpr_sequence",
     journal = "flpr_jkind", index = "flpr_jindex", nonce = "flpr_jnonce",
-    provenance = "flpr_prov" }
+    provenance = "flpr_prov", guard = "flpr_guard" }
 local G = Core.G
 local Controller = {}
 Controller.__index = Controller
@@ -119,13 +121,31 @@ local function creature_target(manifest, shape, slot_index)
         Core.CREATURE_TARGET_KINDS[target.record.kind] == true
 end
 
+local function guard_source(source)
+    return source ~= nil and source.quantity == 1 and source.record.kind == "container"
+end
+
+local function lease_active(lease)
+    if type(lease) ~= "table" or lease.revoked or type(lease.active) ~= "function" then return false end
+    local ok, active = pcall(lease.active)
+    -- Protection cannot resume under an old lease after an observed gap. A
+    -- fresh, exact adapter proof is needed, and never while delivery is pending.
+    if not ok or active ~= true then lease.revoked = true; return false end
+    return true
+end
+
+function Controller:_clear_guards()
+    self.source_guards, self.guard_requests, self.guard_removal_requests = {}, {}, {}
+end
+
 function Core.new(storage, resolve_revision)
     if type(storage) ~= "table" or type(storage.get) ~= "function" or
         type(storage.set) ~= "function" or type(resolve_revision) ~= "function" then
         return nil, "ADAPTER_INVALID"
     end
     return setmetatable({ storage = storage, resolve_revision = resolve_revision, session = {},
-        boundary = 0, issued_boundary = 0, held_requests = {} }, Controller)
+        boundary = 0, issued_boundary = 0, held_requests = {},
+        source_guards = {}, guard_requests = {}, guard_removal_requests = {} }, Controller)
 end
 
 function Controller:_get(key)
@@ -140,11 +160,15 @@ function Controller:_set(key, value)
 end
 
 function Controller:_phase(prefix, index)
-    -- Encode phases as 1..5. EEex returns zero for an absent GLOBAL, which
+    -- EEex returns zero for an absent GLOBAL, which
     -- must never turn a lost delivered/suppressed marker into a fresh attempt.
-    -- Sources have no held phase.
+    -- Sources have no held phase. Protected sources require the additive
+    -- guard protocol version; legacy saves retain their old phase meanings.
     local stored = self:_get(name(prefix, index))
-    if not integer(stored, 1, prefix == "d" and 5 or 4) then error("PHASE_MISSING_OR_INVALID") end
+    if not integer(stored, 1, prefix == "d" and 5 or 6) or
+        (prefix == "s" and (stored == 5 or (stored == 6 and self:_get(G.guard) ~= 1))) then
+        error("PHASE_MISSING_OR_INVALID")
+    end
     return stored - 1
 end
 
@@ -198,6 +222,7 @@ function Controller:capture(manifest, seed, handoff)
     local assignments = shuffled_slots(shape.slots, seed)
     self.session, self.boundary, self.issued_boundary = {}, 0, 0
     self.held_requests = {}
+    self:_clear_guards()
     self:_set(G.state, 1) -- incomplete initialization is never resumed/rerolled
     self:_write_hash("r", frozen.revision)
     self:_set(G.seed, seed)
@@ -209,6 +234,7 @@ function Controller:capture(manifest, seed, handoff)
     self:_set(G.index, 0)
     self:_set(G.nonce, 0)
     self:_set(G.provenance, 1)
+    self:_set(G.guard, 1)
     for index = 1, #frozen.sources do self:_set_phase("s", index, 0) end
     for index = 1, #shape.units do
         self:_set(name("a", index), assignments[index])
@@ -224,6 +250,7 @@ function Controller:restore()
     self.manifest, self.shape = nil, nil
     self.session = {}
     self.held_requests = {}
+    self:_clear_guards()
     self.boundary, self.issued_boundary = 0, 0
     local state = self:_get(G.state)
     if state == 0 then return nil, "INACTIVE" end
@@ -246,11 +273,16 @@ function Controller:restore()
     local expected = shuffled_slots(shape.slots, self:_get(G.seed))
     local provenance = self:_get(G.provenance)
     if provenance ~= 0 and provenance ~= 1 then return nil, "PROVENANCE_VERSION_INVALID" end
+    local guard = self:_get(G.guard)
+    if guard ~= 0 and guard ~= 1 then return nil, "GUARD_VERSION_INVALID" end
     local held_nonces = {}
     local pending_sources, pending_rewards = 0, 0
     for index = 1, #frozen.sources do
         local phase = self:_phase("s", index)
-        if not integer(phase, 0, 3) then return nil, "SOURCE_STATE_INVALID" end
+        if not integer(phase, 0, 3) and not
+            (phase == Core.PHASE.protected and guard == 1 and guard_source(frozen.sources[index])) then
+            return nil, "SOURCE_STATE_INVALID"
+        end
         if phase == 1 then pending_sources = pending_sources + 1 end
     end
     for index, unit in ipairs(shape.units) do
@@ -274,7 +306,10 @@ function Controller:restore()
         elseif provenance == 1 and phase == Core.PHASE.held then
             return nil, "HELD_NONCE_MISSING"
         end
-        if phase > 0 and self:_phase("s", unit.source) ~= 2 then return nil, "UNSUPPRESSED_REWARD" end
+        local source_phase = self:_phase("s", unit.source)
+        if phase > 0 and source_phase ~= Core.PHASE.confirmed and source_phase ~= Core.PHASE.protected then
+            return nil, "UNSUPPRESSED_REWARD"
+        end
         if phase == 1 then pending_rewards = pending_rewards + 1 end
     end
     local journal, index = self:_get(G.journal), self:_get(G.index)
@@ -312,6 +347,7 @@ function Controller:destroy()
     self.manifest, self.shape = nil, nil
     self.session = {}
     self.held_requests = {}
+    self:_clear_guards()
     self.boundary, self.issued_boundary = 0, 0
 end
 
@@ -354,7 +390,10 @@ function Controller:_begin(kind, index, witness)
             return nil, "SOURCE_MISMATCH"
         end
     else
-        if self:_phase("s", source_index) ~= 2 then return nil, "SOURCE_NOT_SUPPRESSED" end
+        local phase = self:_phase("s", source_index)
+        if phase == Core.PHASE.protected then
+            if not lease_active(self.source_guards[source_index]) then return nil, "SOURCE_GUARD_INACTIVE" end
+        elseif phase ~= Core.PHASE.confirmed then return nil, "SOURCE_NOT_SUPPRESSED" end
         local slot = self.shape.slots[self:_get(name("a", index))]
         if not slot or witness.target_id ~= self.manifest.targets[slot.target].id or witness.accepts ~= 1 then
             return nil, "TARGET_UNAVAILABLE"
@@ -413,6 +452,12 @@ function Controller:observe(receipt)
     end
     local source_index = kind == 1 and index or self.shape.units[index].source
     local source = self.manifest.sources[source_index]
+    if kind == 2 and self:_phase("s", source_index) == Core.PHASE.protected and
+        not lease_active(self.source_guards[source_index]) then
+        -- A pending delivery remains observe-only; losing its source guard
+        -- must never clear the journal and authorize a second creation.
+        return nil, "SOURCE_GUARD_INACTIVE"
+    end
     local valid = same_payload(receipt.payload, source.record.record)
     local outcome = Core.PHASE.quarantined
     if kind == 1 then
@@ -438,6 +483,108 @@ function Controller:observe(receipt)
     self:_set_phase(kind == 1 and "s" or "d", index, outcome)
     self:_set(G.journal, 0)
     if outcome == Core.PHASE.quarantined then return nil, "MUTATION_QUARANTINED" end
+    return true
+end
+
+-- Guard observations do not mutate the world or use the mutation journal.
+-- The trusted adapter must establish protection before source access, retain
+-- exact campaign/source binding, and revoke its lease on any lifecycle change.
+function Controller:source_guard_request(index)
+    if not self:_active() then return nil, "INACTIVE" end
+    if not integer(index, 1, #self.manifest.sources) then return nil, "INDEX_INVALID" end
+    if self:_get(G.journal) ~= 0 then return nil, "MUTATION_PENDING" end
+    local source = self.manifest.sources[index]
+    if self:_get(G.guard) ~= 1 or not guard_source(source) then return nil, "SOURCE_GUARD_UNAVAILABLE" end
+    local phase = self:_phase("s", index)
+    if phase ~= Core.PHASE.pending and phase ~= Core.PHASE.protected then return nil, "SOURCE_NOT_GUARDABLE" end
+    local pending = self.guard_requests[index]
+    if not pending or pending.phase ~= phase then
+        pending = { token = {}, boundary = self.boundary, phase = phase }
+        self.guard_requests[index] = pending
+    end
+    return { kind = "source-guard", mode = "observe-only", index = index,
+        session = self.session, token = pending.token, revision = self.manifest.revision,
+        source_id = source.id, resource_sha256 = source.resource_sha256,
+        quantity = source.quantity, payload = copy(source.record.record) }
+end
+
+function Controller:source_guard_active(index)
+    if not self:_active() then return nil, "INACTIVE" end
+    if not integer(index, 1, #self.manifest.sources) then return nil, "INDEX_INVALID" end
+    if self:_phase("s", index) ~= Core.PHASE.protected then return false end
+    return lease_active(self.source_guards[index])
+end
+
+local function matching_guard_receipt(receipt, expected)
+    for _, field in ipairs({ "kind", "mode", "index", "session", "token", "revision",
+        "source_id", "resource_sha256", "quantity", "guard_generation" }) do
+        if receipt[field] ~= expected[field] then return false end
+    end
+    return same_payload(receipt.payload, expected.payload)
+end
+
+function Controller:confirm_source_guard(receipt)
+    if not self:_active() then return nil, "INACTIVE" end
+    if type(receipt) ~= "table" or not integer(receipt.index, 1, #self.manifest.sources) then
+        return nil, "RECEIPT_MISMATCH"
+    end
+    local index, pending = receipt.index, self.guard_requests[receipt.index]
+    if not pending or receipt.session ~= self.session or receipt.token ~= pending.token or
+        self:_phase("s", index) ~= pending.phase then return nil, "RECEIPT_MISMATCH" end
+    if self.boundary <= pending.boundary then return nil, "LATER_OBSERVATION_REQUIRED" end
+    local expected, reason = self:source_guard_request(index)
+    if not expected then return nil, reason end
+    if not matching_guard_receipt(receipt, expected) then return nil, "RECEIPT_MISMATCH" end
+    local lease = { active = receipt.active, generation = receipt.generation }
+    if receipt.pre_access ~= 1 or receipt.exact_source_bound ~= 1 or
+        not integer(receipt.generation, 1, 2147483647) or not lease_active(lease) then
+        return nil, "SOURCE_GUARD_UNPROVEN"
+    end
+    -- A checked phase write is the only persistent commit. Publish the lease
+    -- afterward: even a write that lands then throws cannot authorize reward
+    -- creation without a new, successful observation. Old tokens are consumed.
+    self.source_guards[index], self.guard_requests[index], self.guard_removal_requests[index] = nil, nil, nil
+    self:_set_phase("s", index, Core.PHASE.protected)
+    self.source_guards[index] = lease
+    return true
+end
+
+function Controller:guarded_source_removal_request(index)
+    if not self:_active() then return nil, "INACTIVE" end
+    if not integer(index, 1, #self.manifest.sources) then return nil, "INDEX_INVALID" end
+    if self:_get(G.journal) ~= 0 then return nil, "MUTATION_PENDING" end
+    if self:_phase("s", index) ~= Core.PHASE.protected then return nil, "SOURCE_NOT_PROTECTED" end
+    local lease = self.source_guards[index]
+    if not lease_active(lease) then return nil, "SOURCE_GUARD_INACTIVE" end
+    local source = self.manifest.sources[index]
+    local pending = self.guard_removal_requests[index]
+    if not pending or pending.lease ~= lease then
+        pending = { token = {}, boundary = self.boundary, lease = lease }
+        self.guard_removal_requests[index] = pending
+    end
+    return { kind = "guarded-source-removal", mode = "observe-only", index = index,
+        session = self.session, token = pending.token, revision = self.manifest.revision,
+        source_id = source.id, resource_sha256 = source.resource_sha256,
+        quantity = source.quantity, payload = copy(source.record.record), guard_generation = lease.generation }
+end
+
+function Controller:confirm_guarded_source_removal(receipt)
+    if not self:_active() then return nil, "INACTIVE" end
+    if type(receipt) ~= "table" or not integer(receipt.index, 1, #self.manifest.sources) then
+        return nil, "RECEIPT_MISMATCH"
+    end
+    local index, pending = receipt.index, self.guard_removal_requests[receipt.index]
+    if not pending or receipt.session ~= self.session or receipt.token ~= pending.token or
+        self.source_guards[index] ~= pending.lease then return nil, "RECEIPT_MISMATCH" end
+    if self.boundary <= pending.boundary then return nil, "LATER_OBSERVATION_REQUIRED" end
+    local expected, reason = self:guarded_source_removal_request(index)
+    if not expected then return nil, reason end
+    if not matching_guard_receipt(receipt, expected) then return nil, "RECEIPT_MISMATCH" end
+    if receipt.exact_source_event ~= 1 or receipt.removed ~= expected.quantity or receipt.remaining ~= 0 then
+        return nil, "GUARDED_REMOVAL_UNPROVEN"
+    end
+    self.source_guards[index], self.guard_requests[index], self.guard_removal_requests[index] = nil, nil, nil
+    self:_set_phase("s", index, Core.PHASE.confirmed)
     return true
 end
 

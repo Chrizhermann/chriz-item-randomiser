@@ -7,6 +7,8 @@ rewards to two disposable, killable recipients for native creature acceptance.
 "quiet-creatures" retains those fixture actors while suppressing ambient actors,
 spawn points, and rest encounters for diagnostic save tests. The area script is
 preserved because EET also uses it for new-game setup and the chapter screen.
+"unvisited-creatures" keeps that BG2600 behavior while moving only FLPRI1's
+selected physical source to an authored, separate FLPRU1 area.
 Binary layouts: IESDP gam_v2.0.htm, are_v1.htm, cre_v1.htm, itm_v1.htm.
 Native accessibility and source loading must still be checked in the engine.
 """
@@ -24,6 +26,7 @@ from flir_config.campaigns import (CAMPAIGN_SCHEMA, POINTER_SCHEMA,
     RUNTIME_REQUIREMENTS, STATE, _render_lua, _validate_campaign)
 from flir_config.profiles import _digest, canonical_bytes
 from flir_config.world_formats import parse_are, parse_cre
+from build_unvisited_fixture import make_unvisited_area
 
 AREA = "bg2600"
 ITEM_BASES = ("sw1h01", "ax1h01", "blun04")
@@ -33,15 +36,17 @@ TARGET_POSITIONS = ((1140, 650), (1200, 650), (1260, 650))
 # "creatures" gives the rewards to two disposable, killable actors instead:
 # FLPRC1 holds two (empty inventory) and FLPRC2 one (beside an unrelated
 # disposable FLPRX1 that must never change). Capacities are fixture-only.
-VARIANTS = ("ground-piles", "creatures", "quiet-creatures")
-CREATURE_VARIANTS = ("creatures", "quiet-creatures")
+VARIANTS = ("ground-piles", "creatures", "quiet-creatures", "unvisited-creatures")
+CREATURE_VARIANTS = ("creatures", "quiet-creatures", "unvisited-creatures")
+QUIET_VARIANTS = ("quiet-creatures", "unvisited-creatures")
 # Recipients stand on accepted pile positions 1 and 3, which the party reached.
 CREATURE_TARGETS = (("FLPRC1", TARGET_POSITIONS[0], 2), ("FLPRC2", TARGET_POSITIONS[2], 1))
 UNRELATED_ITEM, UNRELATED_BASE, UNRELATED_OWNER = "FLPRX1", ITEM_BASES[0], "FLPRC2"
 CREATURE_READY_DETAIL = "have been given to the two test cows near the Candlekeep entrance."
 FIXTURE_RESOURCES = (*(f"FLPRS{index}.CRE" for index in range(1, 4)),
     *(f"FLPRI{index}.ITM" for index in range(1, 4)),
-    *(name + ".CRE" for name, _, _ in CREATURE_TARGETS), UNRELATED_ITEM + ".ITM")
+    *(name + ".CRE" for name, _, _ in CREATURE_TARGETS), UNRELATED_ITEM + ".ITM",
+    "FLPRU1.ARE")
 
 
 def u16(data: bytes, offset: int) -> int:
@@ -154,7 +159,7 @@ def add_area_fixture(original: bytes, variant: str = "ground-piles") -> bytes:
     piles = TARGET_POSITIONS if variant == "ground-piles" else ()
     result = bytearray(original)
     actor_count, container_count = len(parsed["actors"]), len(parsed["containers"])
-    if variant == "quiet-creatures":
+    if variant in QUIET_VARIANTS:
         # Point at a new actor table containing only fixture records. The old
         # table remains inert raw bytes so all other ARE section offsets hold.
         actor_count = 0
@@ -210,6 +215,67 @@ def _creature_targets(area: dict, hashes: dict[str, str], manifest: dict, native
                                  "template_sha256": hashes[name + ".CRE"]})}
 
 
+def _unvisited_source(resources: dict[str, bytes], hashes: dict[str, str],
+                      manifest: dict, native: dict) -> None:
+    """Bind only the exact authored item at physical ARE index 1."""
+    data = resources.get("FLPRU1.ARE")
+    if data is None:
+        raise ValueError("Unvisited fixture requires FLPRU1.ARE")
+    area = parse_are(data)
+    expected_containers = (("FLPRU1A", 1140, 650, 1, 2),
+                           ("FLPRU1B", 1200, 650, 3, 1),
+                           ("FLPRU1C", 1260, 650, 4, 0))
+    expected_items = ("flprx1", "flpri1", "flprx1", "flpri2")
+    if (area["script"] or area["actors"] or len(area["containers"]) != 3 or
+            len(area["items"]) != 4 or area["orphan_item_indexes"] != [0] or
+            area["aliased_item_indexes"] or u16(data, 0x5A) != 0 or
+            u32(data, 0x64) != 0):
+        raise ValueError("Unexpected authored FLPRU1 structure")
+    rest_offset = u32(data, 0xC0)
+    if rest_offset and data[rest_offset:rest_offset + 0xE4] != bytes(0xE4):
+        raise ValueError("Unexpected authored FLPRU1 rest encounters")
+    for container, (name, x, y, first, count) in zip(area["containers"], expected_containers):
+        base = container["byte_offset"]
+        if (container["name"], container["x"], container["y"], container["type"],
+                container["flags"], container["first_item_index"], container["item_count"],
+                container["item_indexes"]) != (name, x, y, 4, 0, first, count,
+                                                list(range(first, first + count))):
+            raise ValueError("Unexpected authored FLPRU1 container")
+        if (u16(data, base + 0x26) != 0 or
+                struct.unpack_from("<4H", data, base + 0x38) !=
+                (x - 12, y - 8, x + 12, y + 8)):
+            raise ValueError("Unexpected authored FLPRU1 container geometry")
+        expected = bytearray(0xC0)
+        struct.pack_into("<32s3H", expected, 0, name.encode("ascii"), x, y, 4)
+        struct.pack_into("<4H", expected, 0x38, x - 12, y - 8, x + 12, y + 8)
+        struct.pack_into("<II", expected, 0x40, first, count)
+        struct.pack_into("<I", expected, 0x84, 0xFFFFFFFF)
+        if data[base:base + 0xC0] != expected:
+            raise ValueError("Unexpected authored FLPRU1 container bytes")
+    for index, (record, name) in enumerate(zip(area["items"], expected_items)):
+        owners = [] if index == 0 else [0] if index in (1, 2) else [1]
+        if ((record["record_index"], record["resref"], record["expiration"],
+                record["charges"], record["flags"], record["container_indexes"]) !=
+                (index, name, 0, [0, 0, 0], 1, owners)):
+            raise ValueError("Unexpected authored FLPRU1 item payload or ownership")
+        if data[record["byte_offset"]:record["byte_offset"] + 20] != struct.pack(
+                "<8s4HI", name.upper().encode("ascii"), 0, 0, 0, 0, 1):
+            raise ValueError("Unexpected authored FLPRU1 item bytes")
+    record = area["items"][1]
+    owner = "are:flpru1/container/0"
+    identity = owner + "/item/1"
+    source = {"id": identity, "item": record["resref"], "resource": "are:flpru1",
+              "owner": owner, "kind": "container", "record": deepcopy(record), "concerns": []}
+    resource_hash = hashes["FLPRU1.ARE"]
+    manifest["sources"].append({"id": identity, "quantity": 1, "record": source,
+                                "resource_sha256": resource_hash})
+    native["sources"][identity] = {"kind": "guarded-container", "area": "FLPRU1",
+        "script_name": "FLPRU1A", "x": 1140, "y": 650,
+        "payload": {key: deepcopy(record[key]) for key in ("resref", "expiration", "charges", "flags")},
+        "identity": _digest({"source": source, "resource_sha256": resource_hash})}
+    native["source_gate"] = {"schema": "flpr-unvisited-fixture-gate-v1", "source_id": identity}
+
+
 def compile_fixture(resources: dict[str, bytes], inputs: dict[str, str],
                     variant: str = "ground-piles") -> tuple[dict, dict]:
     """Validate an exact fixture artifact; no claim to a complete game scan."""
@@ -227,8 +293,9 @@ def compile_fixture(resources: dict[str, bytes], inputs: dict[str, str],
         "resource_hashes": hashes, "input_hashes": inputs}
     if variant in CREATURE_VARIANTS:
         # Added only here: the accepted ground-pile artifacts must stay byte-identical.
-        manifest["profile_id"] = ("native-mode1-quiet-creature-fixture"
-            if variant == "quiet-creatures" else "native-mode1-creature-fixture")
+        manifest["profile_id"] = ({"creatures": "native-mode1-creature-fixture",
+            "quiet-creatures": "native-mode1-quiet-creature-fixture",
+            "unvisited-creatures": "native-mode1-unvisited-creature-fixture"}[variant])
         cre = parse_cre(resources[UNRELATED_OWNER + ".CRE"])
         native.update({"variant": variant, "ready_detail": CREATURE_READY_DETAIL,
             "unrelated_items": {UNRELATED_OWNER: [{key: deepcopy(record[key])
@@ -236,6 +303,10 @@ def compile_fixture(resources: dict[str, bytes], inputs: dict[str, str],
     for index in range(1, 4):
         resref = f"flprs{index}"
         cre = parse_cre(resources[resref.upper() + ".CRE"])
+        if variant == "unvisited-creatures" and index == 1:
+            if cre["items"]:
+                raise ValueError("Unvisited fixture FLPRS1.CRE must be empty")
+            continue
         record = cre["items"][0]
         identity = f"cre:{resref}/item/0"
         source = {"id": identity, "item": record["resref"], "resource": "cre:" + resref,
@@ -247,6 +318,8 @@ def compile_fixture(resources: dict[str, bytes], inputs: dict[str, str],
         native["sources"][identity] = {"area": AREA.upper(), "script_name": resref.upper(),
             "payload": {key: deepcopy(record[key]) for key in ("resref", "expiration", "charges", "flags")},
             "identity": _digest({"source": source, "resource_sha256": source_hash})}
+    if variant == "unvisited-creatures":
+        _unvisited_source(resources, hashes, manifest, native)
     piles = area["containers"][-3:] if variant == "ground-piles" else []
     for container in piles:
         identity = f"are:{AREA}/container/{container['record_index']}"
@@ -296,8 +369,11 @@ def build(game: Path, output: Path, variant: str = "ground-piles") -> dict:
     for index, base in enumerate(ITEM_BASES, 1):
         item = originals[base.upper() + ".ITM"]
         resources[f"FLPRI{index}.ITM"] = item
-        resources[f"FLPRS{index}.CRE"] = make_source_cre(originals["COW.CRE"], f"FLPRS{index}",
-            item_payload(f"flpri{index}", item))
+        resources[f"FLPRS{index}.CRE"] = (make_target_cre(originals["COW.CRE"], "FLPRS1")
+            if variant == "unvisited-creatures" and index == 1 else
+            make_source_cre(originals["COW.CRE"], f"FLPRS{index}", item_payload(f"flpri{index}", item)))
+    if variant == "unvisited-creatures":
+        resources["FLPRU1.ARE"] = make_unvisited_area(originals["BG2600.ARE"])
     if variant in CREATURE_VARIANTS:
         unrelated = originals[UNRELATED_BASE.upper() + ".ITM"]
         resources[UNRELATED_ITEM + ".ITM"] = unrelated
@@ -327,9 +403,11 @@ def build(game: Path, output: Path, variant: str = "ground-piles") -> dict:
     if variant in CREATURE_VARIANTS:
         limitations.insert(2, "Creature transport, final flags, death drop and held-item "
                               "save/reload are unproven until native acceptance")
-    if variant == "quiet-creatures":
+    if variant in QUIET_VARIANTS:
         limitations.insert(2, "Diagnostic area suppresses ambient actors, spawn points "
                               "and rest encounters, retaining its startup script; engine behavior remains unverified")
+    if variant == "unvisited-creatures":
+        limitations.insert(2, "FLPRU1 guarded-container source and early reward timing need native verification")
     report = {"state": "staged-not-installed", "variant": variant, "game": str(game),
         "output": str(output), "revision": revision, "area": AREA,
         "source_ids": list(native["sources"]), "target_ids": list(native["targets"]),
@@ -344,7 +422,8 @@ def main() -> None:
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--variant", choices=VARIANTS, default="ground-piles",
                         help="ground-piles is accepted; creatures keeps ambient actors; "
-                             "quiet-creatures isolates five synthetic actors")
+                             "quiet-creatures isolates five synthetic actors; "
+                             "unvisited-creatures moves source 1 to FLPRU1")
     args = parser.parse_args()
     print(json.dumps(build(args.game, args.output, args.variant), indent=2))
 

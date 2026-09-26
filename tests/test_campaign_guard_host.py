@@ -1,0 +1,312 @@
+"""Synthetic source-guard host integration on three Lua runtimes.
+
+Real Core and Host, numeric save GLOBALs, fake world and adapters; no engine.
+"""
+from pathlib import Path
+import unittest
+
+from lupa.lua51 import LuaRuntime as Lua51
+from lupa.lua53 import LuaRuntime as Lua53
+from lupa.luajit21 import LuaRuntime as LuaJIT
+
+
+ROOT = Path(__file__).resolve().parents[1]
+CORE = (ROOT / "prototype/FLPRCore.lua").read_text(encoding="utf-8")
+HOST = (ROOT / "prototype/FLPRHost.lua").read_text(encoding="utf-8")
+CASES = r'''
+local cases={}
+local GUARDED="are:flpru1/container/0/item/1"
+local PHYSICAL="cre:flprs2/item/0"
+local function copy(value)
+    if type(value)~="table" then return value end
+    local result={}
+    for key,item in pairs(value) do result[key]=copy(item) end
+    return result
+end
+local function payload(ref)
+    return {resref=ref,charges={0,0,0},expiration=0,flags=1}
+end
+local function setup(Core,Host,options)
+    options=options or {}
+    local f={values={},tick=0,events={},reports={},prepares={},guards={},natives={},
+        loaded=false,lease_active=true,next_calls=0,seeds=0,world=true}
+    local revision=string.rep("a",64)
+    local manifest={schema=Core.SCHEMA,state="prototype-not-playable",revision=revision,
+        bound_revision=string.rep("b",64),world_fingerprint=string.rep("c",64),
+        profile_id="guard-host-synthetic",sources={},targets={}}
+    manifest.sources[1]={id=GUARDED,quantity=1,resource_sha256=string.rep("1",64),
+        record={id=GUARDED,kind="container",record=payload("flpri1")}}
+    manifest.sources[2]={id=PHYSICAL,quantity=1,resource_sha256=string.rep("2",64),
+        record={id=PHYSICAL,kind="cre-template",record=payload("flpri2")}}
+    manifest.targets[1]={id="are:flpru1/container/1",capacity=2,
+        resource_sha256=string.rep("3",64),record={id="are:flpru1/container/1",kind="container"}}
+    local descriptor={schema="flpr-unvisited-fixture-gate-v1",source_id=GUARDED}
+    local fixture={revision=revision,sources={[GUARDED]={kind="guarded-container"}}}
+    if not options.physical_only then fixture.source_gate=descriptor
+    else fixture.sources[GUARDED].kind="physical" end
+    if options.bad_schema then fixture.source_gate.schema="wrong" end
+    if options.bad_id then fixture.source_gate.source_id="wrong" end
+    if options.bad_endpoint then fixture.sources[GUARDED].kind="physical" end
+    f.manifest=manifest
+    f.bundle={manifest=manifest,fixture=fixture}
+    f.bundles={[revision]=f.bundle}
+    f.next_revision=revision
+    f.storage={}
+    function f.storage:get(key) return f.values[key] or 0 end
+    function f.storage:set(key,value) f.values[key]=value end
+    local function native_factory(value)
+        local native={fixture=value}
+        f.natives[#f.natives+1]=native
+        function native:on_observation_boundary(tick) self.tick=tick; return true end
+        function native:inspect_source(id)
+            f.source_inspections=(f.source_inspections or 0)+1
+            if id==GUARDED then assert(options.physical_only,"GUARDED_SOURCE_INSPECTED_PHYSICALLY") end
+            assert(id==PHYSICAL or (options.physical_only and id==GUARDED))
+            return {identity=string.rep("d",64),source_id=id,exact_matches=1,
+                quantity=1,payload=payload(id==GUARDED and "flpri1" or "flpri2")}
+        end
+        function native:inspect_target(id)
+            f.target_inspections=(f.target_inspections or 0)+1
+            return {identity=string.rep("e",64),target_id=id,accepts=1}
+        end
+        function native:execute(command)
+            assert(options.physical_only or command.source_id~=GUARDED or command.kind~="suppress",
+                "GUARDED_SOURCE_EXECUTED_PHYSICALLY")
+            if command.kind=="deliver" then
+                assert(f.values.flpr_s0002==3,"PHYSICAL_SOURCE_NOT_CONFIRMED")
+                assert(f.values.flpr_s0001==(options.physical_only and 3 or 6),
+                    "GUARDED_SOURCE_NOT_PROTECTED")
+            end
+            f.events[#f.events+1]={kind=command.kind,source_id=command.source_id,
+                tick=f.tick,nonce=command.nonce}
+            self.pending=command
+            return true
+        end
+        function native:observe(command)
+            assert(self.pending==command)
+            local receipt=copy(command); receipt.session=command.session
+            if command.kind=="suppress" then receipt.removed=1; receipt.remaining=0
+            else receipt.created=1; receipt.nonce_bound_instance=1; receipt.lootable=1 end
+            self.pending=nil
+            return receipt
+        end
+        function native:destroy() self.destroyed=true; self.pending=nil end
+        return native
+    end
+    local function guard_factory(bundle)
+        local adapter={bundle=bundle}
+        f.guards[#f.guards+1]=adapter
+        function adapter:observe_guard(request)
+            f.guard_observations=(f.guard_observations or 0)+1
+            assert(request.kind=="source-guard" and request.mode=="observe-only")
+            assert(request.source_id==GUARDED and request.revision==bundle.manifest.revision)
+            assert(request.resource_sha256==bundle.manifest.sources[1].resource_sha256)
+            local receipt=copy(request)
+            receipt.session=request.session; receipt.token=request.token
+            receipt.pre_access=1; receipt.exact_source_bound=1
+            receipt.generation=#f.guards
+            receipt.active=function()
+                if f.lease_error then error("LEASE_THROW") end
+                return not adapter.destroyed and f.lease_active
+            end
+            return receipt
+        end
+        function adapter:observe_removal(request)
+            f.removal_observations=(f.removal_observations or 0)+1
+            assert(request.kind=="guarded-source-removal" and request.source_id==GUARDED)
+            if not f.loaded then return nil,"SOURCE_NOT_LOADED" end
+            local receipt=copy(request)
+            receipt.session=request.session; receipt.token=request.token
+            receipt.exact_source_event=1; receipt.removed=1; receipt.remaining=0
+            return receipt
+        end
+        function adapter:destroy() self.destroyed=true end
+        return adapter
+    end
+    f.deps={core=Core,storage=f.storage,
+        resolve=function(id) return f.bundles[id] end,
+        next=function() f.next_calls=f.next_calls+1; return f.bundles[f.next_revision] end,
+        seed=function() f.seeds=f.seeds+1; return 1000+f.seeds end,
+        native=native_factory,source_guard=guard_factory,
+        prepare_source_guard=function(bundle,controller)
+            f.prepares[#f.prepares+1]={bundle=bundle,state=f.values.flpr_state,
+                fresh=f.values.FLPR_FRESH,controller=controller}
+            if options.prepare_failure then return nil,"PREPARE_FAILED" end
+            return true
+        end,
+        world=function() return f.world end,tick=function() return f.tick end,
+        report=function(status,reason) f.reports[#f.reports+1]={status,reason} end}
+    if options.missing_prepare then f.deps.prepare_source_guard=nil end
+    if options.missing_source_guard then f.deps.source_guard=nil end
+    f.host=Host.new(f.deps)
+    function f:capture()
+        self.values.FLPR_FRESH=1
+        return self.host:capture_new("confirmed-bg1-character-accept")
+    end
+    function f:poll()
+        self.tick=self.tick+1
+        self.host:poll()
+    end
+    function f:poll_until(predicate)
+        for _=1,30 do
+            self:poll()
+            if predicate(self) then return end
+            if self.host.status=="disabled" then break end
+        end
+        error("POLL_CONDITION_UNMET:"..tostring(self.host.error))
+    end
+    return f
+end
+
+function cases.capture_prepares_guard_after_commit_before_marker_consumption(Core,Host)
+    local f=setup(Core,Host)
+    assert(f:capture())
+    assert(#f.prepares==1 and f.prepares[1].bundle==f.bundle)
+    assert(f.prepares[1].state==2 and f.prepares[1].fresh==1)
+    assert(f.values.FLPR_FRESH==0 and f.seeds==1 and f.next_calls==1)
+    assert(f.host:capture_new("confirmed-bg1-character-accept"))
+    assert(#f.prepares==1 and f.seeds==1 and f.next_calls==1)
+end
+
+function cases.missing_preparer_rejects_before_capture(Core,Host)
+    local f=setup(Core,Host,{missing_prepare=true})
+    assert(not f:capture() and f.host.status=="disabled")
+    assert(f.values.flpr_state==nil and f.values.FLPR_FRESH==1)
+    assert(f.seeds==0 and f.next_calls==1 and #f.events==0)
+end
+
+function cases.failed_prepare_commits_but_never_redraws(Core,Host)
+    local f=setup(Core,Host,{prepare_failure=true})
+    assert(not f:capture() and f.host.status=="disabled")
+    assert(f.values.flpr_state==2 and f.values.FLPR_FRESH==1)
+    assert(f.seeds==1 and f.next_calls==1 and #f.events==0)
+    assert(not f.host:capture_new("confirmed-bg1-character-accept"))
+    assert(f.seeds==1 and f.next_calls==1)
+end
+
+function cases.malformed_descriptor_or_missing_adapter_fails_closed(Core,Host)
+    for _,option in ipairs({"bad_schema","bad_id","bad_endpoint","missing_source_guard"}) do
+        local f=setup(Core,Host,{[option]=true})
+        local captured=f:capture()
+        if captured then f:poll_until(function(x) return x.host.status=="disabled" end) end
+        assert(f.host.status=="disabled",option)
+        assert(#f.events==0 and f.next_calls==1)
+        if option=="missing_source_guard" then
+            assert(f.values.flpr_state==2 and f.seeds==1)
+        else assert(f.values.flpr_state==nil and f.seeds==0) end
+    end
+end
+
+function cases.guarded_source_is_protected_before_any_delivery_and_original_unloaded(Core,Host)
+    local f=setup(Core,Host); assert(f:capture())
+    f:poll_until(function(x) return x.host.status=="complete" end)
+    assert(f.values.flpr_s0001==6 and f.values.flpr_s0002==3)
+    assert(f.values.flpr_d0001==3 and f.values.flpr_d0002==3)
+    assert(not f.loaded and #f.guards==1 and (f.guard_observations or 0)>=1)
+    assert(f.source_inspections==1)
+    assert(#f.events==3 and f.events[1].kind=="suppress" and f.events[1].source_id==PHYSICAL)
+    assert(f.events[2].kind=="deliver" and f.events[3].kind=="deliver")
+    assert(#f.reports==1 and f.reports[1][1]=="complete")
+    assert(f.host.guard_monitor==true)
+    local targets=f.target_inspections
+    for _=1,4 do f:poll() end
+    assert(#f.events==3 and #f.reports==1 and f.values.flpr_s0001==6)
+    assert(f.target_inspections==targets)
+end
+
+function cases.complete_monitor_later_commits_only_exact_source_removal(Core,Host)
+    local f=setup(Core,Host); assert(f:capture())
+    f:poll_until(function(x) return x.host.status=="complete" end)
+    local events=#f.events
+    f.loaded=true
+    f:poll_until(function(x) return x.values.flpr_s0001==3 end)
+    assert(f.host.status=="complete" and #f.events==events and #f.reports==1)
+    assert((f.removal_observations or 0)>=1 and f.host.guard_monitor==false)
+end
+
+function cases.protected_restore_rebinds_frozen_revision_with_fresh_adapter(Core,Host)
+    local f=setup(Core,Host); assert(f:capture())
+    f:poll_until(function(x) return x.host.status=="complete" end)
+    local old=f.guards[1]
+    f.host:destroy()
+    assert(old.destroyed and f.values.flpr_s0001==6)
+    local new_revision=string.rep("f",64)
+    local new_manifest=copy(f.manifest); new_manifest.revision=new_revision
+    f.bundles[new_revision]={manifest=new_manifest,fixture={revision=new_revision}}
+    f.next_revision=new_revision
+    f.host=Host.new(f.deps)
+    f:poll_until(function(x) return x.host.status=="complete" and #x.guards==2 end)
+    assert(f.guards[2]~=old and f.guards[2].bundle==f.bundle)
+    assert(f.seeds==1 and f.next_calls==1 and f.values.flpr_s0001==6)
+    assert(#f.events==3)
+end
+
+function cases.revoked_or_throwing_guard_disables_without_rebind(Core,Host)
+    for _,failure in ipairs({"false","throw"}) do
+        local f=setup(Core,Host); assert(f:capture())
+        f:poll_until(function(x) return x.values.flpr_s0001==6 end)
+        if failure=="throw" then f.lease_error=true else f.lease_active=false end
+        f:poll_until(function(x) return x.host.status=="disabled" end)
+        local count=#f.events
+        f.lease_active=true
+        for _=1,5 do f:poll() end
+        assert(f.host.status=="disabled" and #f.guards==1 and #f.events==count)
+    end
+end
+
+function cases.completed_host_still_detects_guard_loss(Core,Host)
+    local f=setup(Core,Host); assert(f:capture())
+    f:poll_until(function(x) return x.host.status=="complete" end)
+    f.lease_active=false
+    f:poll_until(function(x) return x.host.status=="disabled" end)
+    assert(#f.guards==1 and #f.events==3 and f.values.flpr_s0001==6)
+end
+
+function cases.physically_confirmed_guarded_source_restores_without_rebind(Core,Host)
+    local f=setup(Core,Host); assert(f:capture())
+    f:poll_until(function(x) return x.host.status=="complete" end)
+    f.loaded=true
+    f:poll_until(function(x) return x.values.flpr_s0001==3 end)
+    f.host:destroy()
+    f.host=Host.new(f.deps)
+    f:poll_until(function(x) return x.host.status=="complete" end)
+    assert(#f.guards==2 and (f.guard_observations or 0)==1)
+    assert(f.values.flpr_s0001==3 and f.host.guard_monitor==false)
+    assert(#f.events==3)
+end
+
+function cases.pending_delivery_reload_never_replays(Core,Host)
+    local f=setup(Core,Host); assert(f:capture())
+    f:poll_until(function(x) return x.values.flpr_jkind==2 end)
+    local count=#f.events
+    f.host:destroy()
+    f.host=Host.new(f.deps)
+    f:poll_until(function(x) return x.host.status=="disabled" end)
+    assert(#f.events==count and f.values.flpr_jkind==2)
+end
+
+function cases.ordinary_physical_campaign_unchanged(Core,Host)
+    local f=setup(Core,Host,{physical_only=true,missing_prepare=true,missing_source_guard=true})
+    assert(f:capture())
+    f:poll_until(function(x) return x.host.status=="complete" end)
+    assert(f.values.flpr_s0001==3 and f.values.flpr_s0002==3)
+    assert(#f.events==4 and f.events[1].kind=="suppress" and f.events[2].kind=="suppress")
+    assert(#f.guards==0 and #f.prepares==0)
+end
+
+return cases
+'''
+
+
+class GuardHostTests(unittest.TestCase):
+    def test_lua_cases(self):
+        for runtime in (Lua51, Lua53, LuaJIT):
+            lua = runtime(unpack_returned_tuples=True)
+            core, host, cases = lua.execute(CORE), lua.execute(HOST), lua.execute(CASES)
+            for name in sorted(cases.keys()):
+                with self.subTest(runtime=runtime.__module__, case=name):
+                    cases[name](core, host)
+
+
+if __name__ == "__main__":
+    unittest.main()

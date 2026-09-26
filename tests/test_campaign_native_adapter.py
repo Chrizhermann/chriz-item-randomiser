@@ -61,6 +61,173 @@ local function setup(Native)
         header=header,calls=calls,queue=queue,message=message,fixture=fixture,item=item,command=command,source_id=source_id,target_id=target_id}
 end
 local function fail(value,reason,want) assert(value==nil and reason==want,tostring(reason).." ~= "..want) end
+local function guarded(f,N)
+    local old_id=f.source_id
+    local source=f.fixture.sources[old_id]
+    f.fixture.sources[old_id]=nil
+    local id="are:flpru1/container/1"
+    source.kind="guarded-container"; source.area="FLPRU1"; source.script_name="FLPRU1A"
+    source.x=1140; source.y=650; source.payload.flags=1
+    f.fixture.sources[id]=source
+    f.fixture.source_gate={schema="flpr-unvisited-fixture-gate-v1",source_id=id}
+    f.adapter=N.new(f.api,f.fixture)
+    f.guarded_id=id
+    local session={}
+    f.command=function(kind,nonce)
+        return {mode="execute-once",kind=kind,session=session,nonce=nonce or 2,index=1,
+            revision=string.rep("c",64),identity=kind=="suppress" and source.identity or string.rep("b",64),
+            source_id=id,target_id=f.target_id,quantity=1,payload=source.payload}
+    end
+    return f
+end
+local function invalid(N,f,want)
+    local ok,reason=pcall(function() N.new(f.api,f.fixture) end)
+    assert(not ok and tostring(reason):find(want,1,true),tostring(reason))
+end
+local function guarded_world(N)
+    local f=guarded(setup(N),N)
+    f.area.address=901
+    f.area.m_resref={get=function() return "FLPRU1" end}
+    local container={address=701,sprite=false,m_scriptName={get=function() return "FLPRU1A" end},
+        m_containerType=4,m_pos={x=1140,y=650},
+        m_lstItems={f.item("FLPRI1",801,1),f.item("FLPRX1",802,7)}}
+    f.objects[3]=container
+    f.area.m_lVertSort={3}
+    f.container=container
+    f.api.EEex_Resource_Demand=function() error("READ_ONLY_RESOURCE_DEMAND") end
+    f.api.EEex_Action_ExecuteResponseStringOnAIBaseInstantly=function() error("READ_ONLY_MUTATION") end
+    return f
+end
+
+function cases.guarded_remaining_counts_exact_visible_container_without_mutation(N)
+    local f=guarded_world(N)
+    local other=f.container.m_lstItems[2]
+    other.m_useCount1=3; other.m_useCount2=4; other.m_useCount3=5; other.m_wear=55
+    local result=assert(f.adapter:guarded_source_remaining(f.guarded_id,"901","701"))
+    assert(result.remaining==1 and result.area_pointer=="901" and result.owner_pointer=="701")
+    assert(other.address==802 and other.cResRef:get()=="FLPRX1" and other.m_flags==7 and
+        other.m_useCount1==3 and other.m_useCount2==4 and other.m_useCount3==5 and other.m_wear==55)
+    assert(f.container.m_lstItems[1].address==801 and #f.calls==0)
+    table.remove(f.container.m_lstItems,1)
+    result=assert(f.adapter:guarded_source_remaining(f.guarded_id,"901","701"))
+    assert(result.remaining==0 and other.address==802 and other.m_flags==7)
+    table.insert(f.container.m_lstItems,1,f.item("FLPRI1",803,0))
+    result=assert(f.adapter:guarded_source_remaining(f.guarded_id,"901","701"))
+    assert(result.remaining==1)
+end
+function cases.guarded_remaining_rejects_unavailable_or_changed_area_before_owner_access(N)
+    local f=guarded_world(N)
+    local visible=f.api.EEex_Area_GetVisible
+    f.api.EEex_Area_GetVisible=function() return nil end
+    local x,e=f.adapter:guarded_source_remaining(f.guarded_id,"901","701"); fail(x,e,"AREA_UNAVAILABLE")
+    f.api.EEex_Area_GetVisible=visible
+    f.area.m_resref={get=function() return "BG2600" end}
+    x,e=f.adapter:guarded_source_remaining(f.guarded_id,"901","701"); fail(x,e,"AREA_UNAVAILABLE")
+    f.area.m_resref={get=function() return "FLPRU1" end}
+    f.api.EEex_GameObject_Get=function() error("OWNER_ACCESSED_BEFORE_AREA_CHECK") end
+    x,e=f.adapter:guarded_source_remaining(f.guarded_id,"902","701"); fail(x,e,"AREA_CHANGED")
+    assert(f.container.m_lstItems[1].address==801 and #f.calls==0)
+end
+function cases.guarded_remaining_requires_unique_matching_owner_and_geometry(N)
+    for _,variant in ipairs({"missing","duplicate","pointer","x","y","type"}) do
+        local f=guarded_world(N)
+        if variant=="missing" then f.area.m_lVertSort={}
+        elseif variant=="duplicate" then
+            f.objects[4]={address=702,sprite=false,m_scriptName=f.container.m_scriptName,
+                m_containerType=4,m_pos={x=1140,y=650},m_lstItems={}}
+            f.area.m_lVertSort={3,4}
+        elseif variant=="x" then f.container.m_pos.x=1141
+        elseif variant=="y" then f.container.m_pos.y=651
+        elseif variant=="type" then f.container.m_containerType=1 end
+        local pointer=variant=="pointer" and "702" or "701"
+        local want=(variant=="missing" and "OWNER_MISSING") or
+            (variant=="duplicate" and "OWNER_AMBIGUOUS") or
+            (variant=="pointer" and "OWNER_CHANGED") or "TARGET_NOT_FIXTURE_GROUND_PILE"
+        local x,e=f.adapter:guarded_source_remaining(f.guarded_id,"901",pointer); fail(x,e,want)
+        assert(f.container.m_lstItems[1].address==801 and #f.calls==0)
+    end
+end
+function cases.guarded_remaining_rejects_unknown_wrong_kind_or_pointer(N)
+    local f=guarded_world(N)
+    local x,e=f.adapter:guarded_source_remaining("unknown","901","701"); fail(x,e,"SOURCE_UNKNOWN")
+    x,e=f.adapter:guarded_source_remaining(f.guarded_id,901,"701"); fail(x,e,"SOURCE_POINTER_INVALID")
+    x,e=f.adapter:guarded_source_remaining(f.guarded_id,"901","0"); fail(x,e,"SOURCE_POINTER_INVALID")
+    local ordinary=setup(N)
+    ordinary.api.EEex_Area_GetVisible=function() error("WRONG_KIND_AREA_ACCESS") end
+    x,e=ordinary.adapter:guarded_source_remaining(ordinary.source_id,"901","701")
+    fail(x,e,"SOURCE_NOT_GUARDED")
+end
+
+function cases.guarded_source_never_resolves_or_destroys_original(N)
+    local f=guarded(setup(N),N)
+    f.api.EEex_Area_GetVisible=function() error("SOURCE_AREA_ACCESSED") end
+    f.api.EEex_Resource_Demand=function() error("SOURCE_RESOURCE_ACCESSED") end
+    local x,e=f.adapter:inspect_source(f.guarded_id); fail(x,e,"SOURCE_GUARD_REQUIRED")
+    x,e=f.adapter:execute(f.command("suppress")); fail(x,e,"SOURCE_GUARD_REQUIRED")
+    assert(f.slots[21].address==301 and #f.calls==0 and f.adapter.pending==nil)
+    assert(f.adapter.attempted[f.command("suppress").session]==nil)
+end
+function cases.guarded_source_declared_endpoint_is_exact(N)
+    for _,variant in ipairs({"area","script_name","x","y","resref","expiration","charge1","charge2","charge3","flags","second"}) do
+        local f=guarded(setup(N),N)
+        local endpoint=f.fixture.sources[f.guarded_id]
+        if variant=="area" then endpoint.area="BG2600"
+        elseif variant=="script_name" then endpoint.script_name="FLPRU1B"
+        elseif variant=="x" then endpoint.x=1141
+        elseif variant=="y" then endpoint.y=651
+        elseif variant=="resref" then endpoint.payload.resref="flpri2"
+        elseif variant=="expiration" then endpoint.payload.expiration=1
+        elseif variant=="charge1" then endpoint.payload.charges[1]=1
+        elseif variant=="charge2" then endpoint.payload.charges[2]=1
+        elseif variant=="charge3" then endpoint.payload.charges[3]=1
+        elseif variant=="flags" then endpoint.payload.flags=0
+        else
+            f.fixture.sources.other={kind="guarded-container",area="FLPRU1",script_name="FLPRU1A",
+                x=1140,y=650,identity=string.rep("d",64),
+                payload={resref="flpri2",charges={0,0,0},expiration=0,flags=1}}
+        end
+        invalid(N,f,variant=="expiration" and "NATIVE_PAYLOAD_UNSUPPORTED" or "NATIVE_GUARDED_SOURCE_INVALID")
+    end
+end
+function cases.guarded_source_gate_and_kind_are_required(N)
+    for _,variant in ipairs({"missing","schema","source_id","ungated","unknown"}) do
+        local f=guarded(setup(N),N)
+        if variant=="missing" then f.fixture.source_gate=nil
+        elseif variant=="schema" then f.fixture.source_gate.schema="other"
+        elseif variant=="source_id" then f.fixture.source_gate.source_id="wrong"
+        elseif variant=="ungated" then f.fixture.sources[f.guarded_id].kind=nil
+        else f.fixture.sources[f.guarded_id].kind="unexpected" end
+        invalid(N,f,variant=="unknown" and "NATIVE_SOURCE_KIND_UNSUPPORTED" or "NATIVE_SOURCE_GATE_INVALID")
+    end
+    local f=setup(N); f.fixture.sources[f.source_id].kind="unexpected"
+    invalid(N,f,"NATIVE_SOURCE_KIND_UNSUPPORTED")
+end
+function cases.guarded_declared_payload_delivers_without_original_access(N)
+    local f=guarded(setup(N),N)
+    local area_reads,resources=0,0
+    f.api.EEex_Area_GetVisible=function() area_reads=area_reads+1; return f.area end
+    f.api.EEex_Resource_Demand=function(ref,ext)
+        resources=resources+1; assert(ref=="flpri1" and ext=="ITM"); return f.header
+    end
+    f.api.EEex_Action_ExecuteResponseStringOnAIBaseInstantly=function(action,owner)
+        f.calls[#f.calls+1]=action; assert(owner==f.target)
+        owner.m_lstItems[1]=f.item("FLPRI1",401,1)
+    end
+    local a=f.adapter; assert(a:inspect_target(f.target_id)); assert(a:on_observation_boundary(1))
+    local command=f.command("deliver"); assert(a:execute(command)); assert(a:on_observation_boundary(2))
+    local receipt=assert(a:observe(command))
+    assert(receipt.created==1 and receipt.payload.flags==1 and receipt.payload.resref=="flpri1")
+    assert(#f.calls==1 and f.calls[1]=='CreateItem("flpri1",0,0,0)')
+    assert(area_reads>0 and resources>0 and f.slots[21].address==301)
+end
+function cases.guarded_resref_stays_exclusive_in_delivery_queue(N)
+    local f=guarded(setup(N),N)
+    assert(f.adapter.source_resrefs.flpri1==true)
+    assert(f.adapter:inspect_target(f.target_id)); assert(f.adapter:on_observation_boundary(1))
+    f.queue[1]=f.message(601,99,"FLPRI1",1)
+    local x,e=f.adapter:execute(f.command("deliver")); fail(x,e,"DELIVERY_QUEUE_NOT_EXCLUSIVE")
+    assert(#f.calls==0 and f.slots[21].address==301)
+end
 
 function cases.removal_is_exact_and_waits_for_game_time(N)
     local f=setup(N); local a=f.adapter

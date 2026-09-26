@@ -63,7 +63,7 @@ function Native.new(api, fixture)
     for _, name in ipairs(required) do assert(type(api[name]) == "function", name .. "_MISSING") end
     local self = setmetatable({ api = api, sources = {}, targets = {}, reservations = {},
         attempted = {}, tick = nil, pending = nil, last_error = nil, source_resrefs = {}, held = {} }, Adapter)
-    local identities, source_resrefs, creatures = {}, self.source_resrefs, false
+    local identities, source_resrefs, creatures, guarded_id = {}, self.source_resrefs, false, nil
     for _, kind in ipairs({ "sources", "targets" }) do
         assert(type(fixture[kind]) == "table", "NATIVE_CONFIG_INVALID")
         for id, endpoint in pairs(fixture[kind]) do
@@ -74,10 +74,21 @@ function Native.new(api, fixture)
             local copy = { area = resref(endpoint.area), script_name = endpoint.script_name:lower(),
                 identity = endpoint.identity }
             if kind == "sources" then
+                copy.kind = endpoint.kind == nil and "creature" or endpoint.kind
+                assert(copy.kind == "creature" or copy.kind == "guarded-container", "NATIVE_SOURCE_KIND_UNSUPPORTED")
                 copy.sprite = true
                 copy.payload = assert(payload(endpoint.payload), "NATIVE_PAYLOAD_UNSUPPORTED")
                 assert(copy.payload.resref:match("^flpri[123]$") and not source_resrefs[copy.payload.resref],
                     "NATIVE_FIXTURE_RESOURCE_NOT_UNIQUE")
+                if copy.kind == "guarded-container" then
+                    assert(not guarded_id and copy.area == "flpru1" and copy.script_name == "flpru1a" and
+                        endpoint.x == 1140 and endpoint.y == 650 and copy.payload.resref == "flpri1" and
+                        copy.payload.expiration == 0 and copy.payload.flags == 1 and
+                        copy.payload.charges[1] == 0 and copy.payload.charges[2] == 0 and
+                        copy.payload.charges[3] == 0, "NATIVE_GUARDED_SOURCE_INVALID")
+                    guarded_id = id
+                    copy.sprite, copy.x, copy.y = false, endpoint.x, endpoint.y
+                end
                 source_resrefs[copy.payload.resref] = true
             else
                 -- The accepted fixture predates this field; absent means a ground pile.
@@ -93,6 +104,12 @@ function Native.new(api, fixture)
             end
             self[kind][id] = copy
         end
+    end
+    if guarded_id or fixture.source_gate ~= nil then
+        local gate = fixture.source_gate
+        assert(guarded_id and type(gate) == "table" and
+            gate.schema == "flpr-unvisited-fixture-gate-v1" and gate.source_id == guarded_id,
+            "NATIVE_SOURCE_GATE_INVALID")
     end
     if creatures then
         for _, name in ipairs(creature_required) do assert(type(api[name]) == "function", name .. "_MISSING") end
@@ -117,8 +134,8 @@ function Adapter:_creature_state(object)
     return nil
 end
 
-function Adapter:_resolve(endpoint, kind)
-    local api, area = self.api, self.api.EEex_Area_GetVisible()
+function Adapter:_resolve(endpoint, kind, visible_area)
+    local api, area = self.api, visible_area or self.api.EEex_Area_GetVisible()
     if not area or text(area.m_resref) ~= endpoint.area then return nil, "AREA_UNAVAILABLE" end
     local found, matches, seen = nil, 0, {}
     for _, field in ipairs(lists) do
@@ -303,6 +320,7 @@ end
 function Adapter:inspect_source(id)
     local endpoint = self.sources[id]
     if not endpoint then return nil, "SOURCE_UNKNOWN" end
+    if endpoint.kind == "guarded-container" then return nil, "SOURCE_GUARD_REQUIRED" end
     self.reservations[endpoint.identity] = nil
     local supported, reason = self:_supported(endpoint.payload)
     if not supported then return nil, reason end
@@ -317,6 +335,29 @@ function Adapter:inspect_source(id)
     self.reservations[endpoint.identity] = { owner = owner, items = items, selected = selected, kind = "suppress", id = id }
     return { identity = endpoint.identity, source_id = id, exact_matches = 1,
         quantity = 1, payload = payload(endpoint.payload) }
+end
+
+-- Corroborates a guard event against the exact visible area and container.
+-- A missing area or owner is never evidence that the guarded item was removed.
+function Adapter:guarded_source_remaining(id, area_pointer, owner_pointer)
+    local endpoint = self.sources[id]
+    if not endpoint then return nil, "SOURCE_UNKNOWN" end
+    if endpoint.kind ~= "guarded-container" then return nil, "SOURCE_NOT_GUARDED" end
+    if type(area_pointer) ~= "string" or area_pointer == "" or area_pointer == "0" or
+        type(owner_pointer) ~= "string" or owner_pointer == "" or owner_pointer == "0" then
+        return nil, "SOURCE_POINTER_INVALID"
+    end
+    local area = self.api.EEex_Area_GetVisible()
+    if not area or text(area.m_resref) ~= endpoint.area then return nil, "AREA_UNAVAILABLE" end
+    if pointer(self.api, area) ~= area_pointer then return nil, "AREA_CHANGED" end
+    local owner, reason = self:_resolve(endpoint, "guard-observe", area)
+    if not owner then return nil, reason end
+    if owner.pointer ~= owner_pointer then return nil, "OWNER_CHANGED" end
+    local remaining = 0
+    for _, item in ipairs(self:_items(owner, false)) do
+        if item.payload.resref == endpoint.payload.resref then remaining = remaining + 1 end
+    end
+    return { remaining = remaining, area_pointer = area_pointer, owner_pointer = owner_pointer }
 end
 
 function Adapter:inspect_target(id)
@@ -361,11 +402,14 @@ function Adapter:execute(command)
     if type(command) ~= "table" or command.mode ~= "execute-once" or type(command.session) ~= "table" or
         not integer(command.nonce, 1, 2147483647) or not integer(command.index, 1, 4096) or
         command.quantity ~= 1 or not hash(command.revision) then return nil, "COMMAND_INVALID" end
+    local source = self.sources[command.source_id]
+    if command.kind == "suppress" and source and source.kind == "guarded-container" then
+        return nil, "SOURCE_GUARD_REQUIRED"
+    end
     if self.tick == nil then return nil, "OBSERVATION_CLOCK_MISSING" end
     local tried = self.attempted[command.session]
     if tried and tried[command.nonce] then return nil, "ALREADY_ATTEMPTED" end
     local reserved = self.reservations[command.identity]
-    local source = self.sources[command.source_id]
     if not reserved or not source or reserved.kind ~= command.kind or
         not same(payload(command.payload), source.payload) then return nil, "RESERVATION_MISMATCH" end
     local kind = command.kind == "suppress" and "source" or "target"

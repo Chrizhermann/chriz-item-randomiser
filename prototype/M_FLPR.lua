@@ -45,8 +45,25 @@ local ok, failure = pcall(function()
         assert(fixture.revision == revision, "NATIVE_REVISION_MISMATCH")
         return { manifest = manifest, fixture = fixture }
     end
+    -- Only the disposable test payload supplies this opt-in file. Installing
+    -- here precedes New Game/GAM loading; first-world polling would be too late.
+    local prepare_source_guard, source_guard
+    local gate_config = loadfile("flpr-fixture/source-gate.lua")
+    if gate_config then
+        local revision = gate_config()
+        local guarded = assert(resolve(revision), "SOURCE_GATE_REVISION_UNAVAILABLE")
+        local Gate = module("override/FLPRGat.lua")
+        local file=assert(io.open("flpr-fixture/FLPRU1.pristine.are","rb"),"SOURCE_GATE_PRISTINE_MISSING")
+        local bytes=file:read("*a"); assert(file:close())
+        root.SourceGate = Gate.install(_G, guarded,
+            module("flpr-fixture/FLPRGateAsm.lua"), module("flpr-fixture/FLPRCampaignPolicy.lua"),
+            {bytes=bytes,resource_sha256=guarded.fixture.resource_hashes['FLPRU1.ARE']})
+        prepare_source_guard = function(bundle, controller) return root.SourceGate:prepare_new(bundle, controller) end
+        source_guard = function(bundle, native) return root.SourceGate:adapter(bundle, native) end
+    end
     root.Host = Host.new({
         core = Core, storage = storage, resolve = resolve,
+        prepare_source_guard = prepare_source_guard, source_guard = source_guard,
         next = function() return resolve(module("flpr-fixture/next.lua")) end,
         native = function(value) return Native.new(_G, value) end,
         seed = function()
@@ -151,6 +168,7 @@ function root.NewGame()
     root.NewGameIntent = nil
     if root.Held then root.Held:destroy(); root.Held = nil end
     if root.Host then root.Host:destroy() end
+    if root.SourceGate then root.SourceGate:reset() end
     local bg1 = startCampaignData[currentCampaign] and startCampaignData[currentCampaign].id == "BG1"
     startEngine:OnNewGameButtonClick()
     root.NewGameIntent = bg1 and true or nil
