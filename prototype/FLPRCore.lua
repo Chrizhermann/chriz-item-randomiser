@@ -4,6 +4,11 @@
 local Core = {}
 Core.SCHEMA = "flir-campaign-prototype-v1"
 Core.MAX_UNITS = 4096
+-- Held means an exact, operation-bound instance was placed on a living
+-- creature target. Its later lootability is not claimed; only deliveries
+-- can be held, and only for creature-kind targets.
+Core.PHASE = { pending = 0, in_flight = 1, confirmed = 2, quarantined = 3, held = 4 }
+Core.CREATURE_TARGET_KINDS = { actor = true, ["cre-template"] = true }
 Core.G = { state = "flpr_state", seed = "flpr_seed", units = "flpr_units",
     sources = "flpr_sources", targets = "flpr_targets", sequence = "flpr_sequence",
     journal = "flpr_jkind", index = "flpr_jindex", nonce = "flpr_jnonce" }
@@ -106,6 +111,13 @@ local function validate(manifest)
     return { units = units, slots = slots }
 end
 
+local function creature_target(manifest, shape, slot_index)
+    local slot = shape.slots[slot_index]
+    local target = slot and manifest.targets[slot.target]
+    return target ~= nil and type(target.record) == "table" and
+        Core.CREATURE_TARGET_KINDS[target.record.kind] == true
+end
+
 function Core.new(storage, resolve_revision)
     if type(storage) ~= "table" or type(storage.get) ~= "function" or
         type(storage.set) ~= "function" or type(resolve_revision) ~= "function" then
@@ -127,10 +139,11 @@ function Controller:_set(key, value)
 end
 
 function Controller:_phase(prefix, index)
-    -- Encode phases as 1..4. EEex returns zero for an absent GLOBAL, which
+    -- Encode phases as 1..5. EEex returns zero for an absent GLOBAL, which
     -- must never turn a lost delivered/suppressed marker into a fresh attempt.
+    -- Sources have no held phase.
     local stored = self:_get(name(prefix, index))
-    if not integer(stored, 1, 4) then error("PHASE_MISSING_OR_INVALID") end
+    if not integer(stored, 1, prefix == "d" and 5 or 4) then error("PHASE_MISSING_OR_INVALID") end
     return stored - 1
 end
 
@@ -234,7 +247,10 @@ function Controller:restore()
     end
     for index, unit in ipairs(shape.units) do
         local phase = self:_phase("d", index)
-        if self:_get(name("a", index)) ~= expected[index] or not integer(phase, 0, 3) then
+        if self:_get(name("a", index)) ~= expected[index] or not integer(phase, 0, 4) then
+            return nil, "ASSIGNMENT_INVALID"
+        end
+        if phase == Core.PHASE.held and not creature_target(frozen, shape, expected[index]) then
             return nil, "ASSIGNMENT_INVALID"
         end
         if phase > 0 and self:_phase("s", unit.source) ~= 2 then return nil, "UNSUPPRESSED_REWARD" end
@@ -250,9 +266,12 @@ function Controller:restore()
             return nil, "JOURNAL_INVALID"
         end
         local phase = self:_phase(journal == 1 and "s" or "d", index)
-        -- Phase 2 means the observation was committed just before a save cut
-        -- off journal clearing. Restore only cleans that journal; never repeats.
-        if phase ~= 1 and phase ~= 2 and phase ~= 3 then return nil, "JOURNAL_INVALID" end
+        -- Phase 2 (or held, for deliveries) means the observation was committed
+        -- just before a save cut off journal clearing. Restore only cleans that
+        -- journal; never repeats.
+        if phase ~= 1 and phase ~= 2 and phase ~= 3 and phase ~= Core.PHASE.held then
+            return nil, "JOURNAL_INVALID"
+        end
         if pending_sources + pending_rewards ~= (phase == 1 and 1 or 0) then return nil, "JOURNAL_INVALID" end
         if (journal == 1 and pending_rewards ~= 0) or (journal == 2 and pending_sources ~= 0) then return nil, "JOURNAL_INVALID" end
         if phase ~= 1 then self:_set(G.journal, 0) end
@@ -369,16 +388,25 @@ function Controller:observe(receipt)
     local source_index = kind == 1 and index or self.shape.units[index].source
     local source = self.manifest.sources[source_index]
     local valid = same_payload(receipt.payload, source.record.record)
+    local outcome = Core.PHASE.quarantined
     if kind == 1 then
-        valid = valid and receipt.removed == source.quantity and receipt.remaining == 0
-    else
+        if valid and receipt.removed == source.quantity and receipt.remaining == 0 then
+            outcome = Core.PHASE.confirmed
+        end
+    elseif valid and receipt.created == 1 and receipt.nonce_bound_instance == 1 then
         -- The host must prove THIS nonce's new instance, not an old matching
-        -- copy or just a count increase. It must also prove actual lootability.
-        valid = valid and receipt.created == 1 and receipt.nonce_bound_instance == 1 and receipt.lootable == 1
+        -- copy or just a count increase. Confirmation also needs lootability;
+        -- a creature target may instead report the instance as held.
+        if receipt.lootable == 1 and receipt.held == nil then
+            outcome = Core.PHASE.confirmed
+        elseif receipt.lootable == 0 and receipt.held == 1 and
+            creature_target(self.manifest, self.shape, self:_get(name("a", index))) then
+            outcome = Core.PHASE.held
+        end
     end
-    self:_set_phase(kind == 1 and "s" or "d", index, valid and 2 or 3)
+    self:_set_phase(kind == 1 and "s" or "d", index, outcome)
     self:_set(G.journal, 0)
-    if not valid then return nil, "MUTATION_QUARANTINED" end
+    if outcome == Core.PHASE.quarantined then return nil, "MUTATION_QUARANTINED" end
     return true
 end
 

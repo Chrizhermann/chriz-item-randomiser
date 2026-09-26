@@ -428,4 +428,76 @@ function cases.GlobalWriteReadbackMustMatchBeforeOperationsArePublished(Core)
     equal(f.values.flpr_state, nil)
 end
 
+local function creature_targets(f, kind)
+    for _, target in ipairs(f.manifest.targets) do target.record.kind = kind end
+end
+
+local function held_receipt(f, operation)
+    local receipt = f:delivery_receipt(operation)
+    receipt.lootable, receipt.held = 0, 1
+    return receipt
+end
+
+function cases.CreatureTargetMayHoldExactInstanceWithoutClaimingLootability(Core)
+    for _, kind in ipairs({ "actor", "cre-template" }) do
+        local f = fixture(Core)
+        creature_targets(f, kind)
+        assert(f:capture()); f:suppress(1)
+        local operation = assert(f.controller:begin_delivery(1, f:delivery_witness(1)))
+        f.controller:on_observation_boundary()
+        assert(f.controller:observe(held_receipt(f, operation)))
+        equal(f.controller:assignments()[1].delivery_phase, Core.PHASE.held)
+        equal(f.values.flpr_jkind, 0)
+        failed("ALREADY_ATTEMPTED", f.controller:begin_delivery(1, f:delivery_witness(1)))
+        f.controller = f:new_controller(); assert(f.controller:restore())
+        equal(f.controller:assignments()[1].delivery_phase, Core.PHASE.held)
+        failed("ALREADY_ATTEMPTED", f.controller:begin_delivery(1, f:delivery_witness(1)))
+    end
+end
+
+function cases.HeldReceiptQuarantinesForNonCreatureOrContradictoryEvidence(Core)
+    for _, variant in ipairs({ "container", "untyped", "both", "missing", "malformed" }) do
+        local f = fixture(Core)
+        if variant == "container" then creature_targets(f, "container")
+        elseif variant ~= "untyped" then creature_targets(f, "actor") end
+        assert(f:capture()); f:suppress(1)
+        local operation = assert(f.controller:begin_delivery(1, f:delivery_witness(1)))
+        f.controller:on_observation_boundary()
+        local receipt = held_receipt(f, operation)
+        if variant == "both" then receipt.lootable = 1
+        elseif variant == "missing" then receipt.held = nil
+        elseif variant == "malformed" then receipt.held = 2 end
+        failed("MUTATION_QUARANTINED", f.controller:observe(receipt))
+        equal(f.controller:assignments()[1].delivery_phase, Core.PHASE.quarantined)
+    end
+end
+
+function cases.HeldPhaseIsNeverValidForSourcesOrNonCreatureTargetsOnRestore(Core)
+    local f = fixture(Core)
+    assert(f:capture()); f:suppress(1)
+    f.values.flpr_d0001 = Core.PHASE.held + 1
+    f.controller = f:new_controller()
+    failed("ASSIGNMENT_INVALID", f.controller:restore())
+    f.values.flpr_d0001 = Core.PHASE.pending + 1
+    f.values.flpr_s0001 = Core.PHASE.held + 1
+    f.controller = f:new_controller()
+    local ok, reason = pcall(function() return f.controller:restore() end)
+    assert(not ok and tostring(reason):find("PHASE_MISSING_OR_INVALID", 1, true))
+end
+
+function cases.HeldCommitRecoversInterruptedJournalClearWithoutRepeat(Core)
+    local f = fixture(Core)
+    creature_targets(f, "actor")
+    assert(f:capture()); f:suppress(1)
+    local operation = assert(f.controller:begin_delivery(1, f:delivery_witness(1)))
+    f.controller:on_observation_boundary()
+    f.fail_before = f.writes + 2
+    assert(not pcall(function() f.controller:observe(held_receipt(f, operation)) end))
+    f.fail_before = nil
+    f.controller = f:new_controller(); assert(f.controller:restore())
+    equal(f.values.flpr_jkind, 0)
+    equal(f.controller:assignments()[1].delivery_phase, Core.PHASE.held)
+    failed("ALREADY_ATTEMPTED", f.controller:begin_delivery(1, f:delivery_witness(1)))
+end
+
 return cases

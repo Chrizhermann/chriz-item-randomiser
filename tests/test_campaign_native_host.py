@@ -46,6 +46,9 @@ local function setup(Core,Host)
             return nil,"MISSING_SOURCE"
         end
         function native:inspect_target(id)
+            f.target_inspections=(f.target_inspections or 0)+1
+            local reason=f.unavailable or (f.unavailable_targets and f.unavailable_targets[id])
+            if reason then return nil,reason end
             return {identity=string.rep("d",64),target_id=id,accepts=1}
         end
         function native:on_observation_boundary(tick)
@@ -67,6 +70,7 @@ local function setup(Core,Host)
             end
             local receipt=copy(command); receipt.session=command.session
             if command.kind=="suppress" then receipt.removed,receipt.remaining=1,0
+            elseif f.held then receipt.created,receipt.nonce_bound_instance,receipt.lootable,receipt.held=1,1,0,1
             else receipt.created,receipt.nonce_bound_instance,receipt.lootable=1,1,1 end
             self.pending=nil; return receipt
         end
@@ -199,6 +203,53 @@ function cases.incomplete_capture_never_redraws(Core,Host)
     local f=setup(Core,Host); f.values.flpr_state=1; f.values.FLPR_FRESH=1; f:poll(); f:poll()
     assert(f.host.status=="disabled" and f.host.error=="CAPTURE_INCOMPLETE")
     assert(f.seeds==0 and f.next_calls==0 and #f.events==0)
+end
+function cases.unavailable_targets_defer_without_journal_backoff_then_deliver(Core,Host)
+    local f=setup(Core,Host); assert(f:capture()); f.unavailable="OWNER_MISSING"
+    for i=1,8 do f:poll() end
+    assert(f.host.status=="running" and #f.events==3 and f.values.flpr_jkind==0)
+    local deferred=f.host:inspect().deferred
+    assert(#deferred==3 and deferred[1].reason=="OWNER_MISSING" and deferred[1].unit==1)
+    local inspections=f.target_inspections; f.unavailable=nil
+    for i=1,5 do f:poll() end
+    assert(#f.events==3 and f.target_inspections==inspections)
+    f:poll(f.tick+Host.DEFER_TICKS)
+    assert(#f.events==4 and f.events[4].kind=="deliver")
+    f:finish(); assert(#f.events==6 and #f.host:inspect().deferred==0)
+end
+function cases.one_unavailable_target_defers_only_its_own_reward(Core,Host)
+    local f=setup(Core,Host); assert(f:capture())
+    f.unavailable_targets={["are:bg2600/container/5"]="AREA_UNAVAILABLE"}
+    for i=1,20 do f:poll() end
+    assert(f.host.status=="running" and #f.events==5 and f.values.flpr_jkind==0)
+    local deferred=f.host:inspect().deferred
+    assert(#deferred==1 and deferred[1].reason=="AREA_UNAVAILABLE")
+    for _,event in ipairs(f.events) do assert(event.target~="are:bg2600/container/5") end
+    f.unavailable_targets=nil; f:poll(f.tick+Host.DEFER_TICKS); f:finish()
+    assert(#f.events==6)
+end
+function cases.unexpected_target_failure_still_disables_before_journal(Core,Host)
+    local f=setup(Core,Host); assert(f:capture()); f.unavailable="TARGET_NOT_FIXTURE_GROUND_PILE"
+    for i=1,8 do f:poll() end
+    assert(f.host.status=="disabled" and f.host.error=="TARGET_NOT_FIXTURE_GROUND_PILE")
+    assert(#f.events==3 and f.values.flpr_jkind==0)
+end
+function cases.held_creature_rewards_complete_and_never_redeliver_after_restore(Core,Host)
+    local f=setup(Core,Host)
+    for _,target in ipairs(f.manifest.targets) do target.record.kind="actor" end
+    f.held=true; assert(f:capture()); f:finish(); assert(#f.events==6)
+    for _,assignment in ipairs(f.host:inspect().assignments) do
+        assert(assignment.delivery_phase==Core.PHASE.held)
+    end
+    f.host:destroy(); f:poll(1); f:poll(2)
+    assert(f.host.status=="complete" and #f.events==6)
+end
+function cases.held_receipt_for_non_creature_target_is_quarantined_and_stops(Core,Host)
+    local f=setup(Core,Host); f.held=true; assert(f:capture())
+    for i=1,10 do f:poll() end
+    assert(f.host.status=="disabled" and f.host.error=="MUTATION_QUARANTINED" and #f.events==4)
+    -- Deliveries run in unit order, so the first unit carries the quarantine.
+    assert(f.host:inspect().assignments[1].delivery_phase==Core.PHASE.quarantined)
 end
 
 local function bootstrap(Core,Host,Globals,text)

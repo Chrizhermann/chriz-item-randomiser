@@ -2,10 +2,18 @@
 -- The caller owns the validated immutable artifact library and world boundary.
 local Host = {}
 Host.__index = Host
+-- An unavailable target is retried after this many game ticks (15/second).
+-- Deferral never creates anything or substitutes another recipient.
+Host.DEFER_TICKS = 30
+-- Target inspection failures that describe current availability, reported
+-- before the core journals anything. Every other failure disables the host.
+Host.DEFERRABLE = { AREA_UNAVAILABLE = true, OWNER_MISSING = true, OWNER_AMBIGUOUS = true,
+    TARGET_NOT_ALIVE = true, TARGET_PARTY_MEMBER = true, TARGET_FAMILIAR = true,
+    TARGET_INVENTORY_FULL = true, TARGET_QUEUE_BUSY = true, TARGET_NOT_EMPTY = true }
 
 function Host.new(deps)
     assert(type(deps) == "table" and deps.core and deps.storage)
-    return setmetatable({ deps = deps, status = "waiting", last_tick = nil }, Host)
+    return setmetatable({ deps = deps, status = "waiting", last_tick = nil, deferred = {} }, Host)
 end
 
 function Host:destroy()
@@ -13,6 +21,7 @@ function Host:destroy()
     if self.native then self.native:destroy() end
     self.controller, self.native, self.pending = nil, nil, nil
     self.last_tick, self.bundle, self.error = nil, nil, nil
+    self.deferred = {}
     self.status = "waiting"
 end
 
@@ -106,16 +115,29 @@ function Host:_step(tick)
             return
         end
     end
+    local phases, waiting = self.deps.core.PHASE, false
     for _, assignment in ipairs(assignments) do
-        if assignment.delivery_phase ~= 2 then
-            assert(assignment.delivery_phase == 0, "DELIVERY_NOT_READY")
-            local witness = require_result(self.native:inspect_target(assignment.target_id))
-            local command = require_result(self.controller:begin_delivery(assignment.unit, witness))
-            self.pending = command
-            require_result(self.native:execute(command))
-            return
+        local phase = assignment.delivery_phase
+        if phase ~= phases.confirmed and phase ~= phases.held then
+            assert(phase == phases.pending, "DELIVERY_NOT_READY")
+            local deferral = self.deferred[assignment.unit]
+            if not deferral or tick >= deferral.retry then
+                local witness, reason = self.native:inspect_target(assignment.target_id)
+                if witness then
+                    self.deferred[assignment.unit] = nil
+                    local command = require_result(self.controller:begin_delivery(assignment.unit, witness))
+                    self.pending = command
+                    require_result(self.native:execute(command))
+                    return
+                end
+                if not Host.DEFERRABLE[reason] then error(reason or "HOST_OPERATION_FAILED", 0) end
+                self.deferred[assignment.unit] = { reason = reason, retry = tick + Host.DEFER_TICKS }
+            end
+            waiting = true
         end
     end
+    -- Deferred rewards keep the campaign running; nothing is placed elsewhere.
+    if waiting then return end
     self.status = "complete"
     if self.deps.report then self.deps.report("complete") end
 end
@@ -135,7 +157,11 @@ function Host:poll()
 end
 
 function Host:inspect()
-    local result = { status = self.status, error = self.error, tick = self.last_tick }
+    local result = { status = self.status, error = self.error, tick = self.last_tick, deferred = {} }
+    for unit, deferral in pairs(self.deferred) do
+        result.deferred[#result.deferred + 1] = { unit = unit, reason = deferral.reason, retry = deferral.retry }
+    end
+    table.sort(result.deferred, function(a, b) return a.unit < b.unit end)
     if self.controller and self.controller.manifest then
         result.revision = self.controller.manifest.revision
         result.seed = self.deps.storage:get(self.deps.core.G.seed)

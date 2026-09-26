@@ -20,6 +20,28 @@ See [installation scan evidence](installation-scan-20260924.md).
 
 ### Creature delivery and several rewards on one target
 
+**Status (later on 2026-09-26):** the transport question is answered statically,
+and the synthetic side is implemented. Native acceptance has not run.
+
+- [Creature transport evidence](native-creature-transport-evidence.md):
+  `GiveItemCreate` queues `CMessageAddItem` (type 67, subtype 2) addressed to the
+  recipient. `Run` has no death check. It places the item in the first empty
+  backpack slot (internal 18–33), and when the backpack is full it displaces an
+  existing item to the ground.
+- `FLPRNat.lua` accepts `kind = "creature"` targets. It preflights a free backpack
+  slot and an exclusive queue, binds the exact message, and pins the resulting
+  pointer and slot across two later ticks. The result is **held**, not lootable.
+  A death during delivery is terminal, with no receipt and no replay.
+- `FLPRCore.lua` records held deliveries as phase 4, for creature-kind targets
+  only. `FLPRHost.lua` defers unavailable targets instead of disabling.
+- `tests/test_campaign_native_creature.py` covers every row of the table below
+  that synthetic tests can reach, in Lua 5.1, Lua 5.3 and LuaJIT. The full
+  offline suite passes 651 tests.
+
+Remaining for this item: a disposable creature-target fixture, then native runs
+of the table below, especially death timing, the death drop of a held item into
+a lootable pile, and save/reload of two held rewards on one actor.
+
 Use newly authored disposable actors and items. Do not pick a real boss, change a
 real encounter, or infer a default capacity for production content.
 

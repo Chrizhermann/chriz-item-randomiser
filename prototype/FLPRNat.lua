@@ -1,17 +1,24 @@
 -- Bounded native bridge for the disposable Mode 1 fixture, not arbitrary loot.
--- Unique creature sources; empty named type-4 ground piles; one unexpired,
--- nonstackable, droppable item per operation. No listeners or autoloading here.
+-- Unique creature sources; empty named type-4 ground piles or unique living
+-- creature targets; one unexpired, nonstackable, droppable item per operation.
+-- No listeners or autoloading here.
 local Native = {}
 -- The ordinary transport consumes this message on an engine update. Allow a
 -- conservative 20 game seconds (15 ticks/second), never unlimited settling.
 -- Paused time does not consume this allowance; this is not a wall-clock timer.
 Native.MAX_SETTLE_TICKS = 300
+-- CMessageAddItem::Run scans these internal backpack slots (see
+-- docs/native-creature-transport-evidence.md). A full backpack displaces an
+-- unrelated item to the ground, so creature delivery requires a free one.
+Native.BACKPACK_FIRST, Native.BACKPACK_LAST = 18, 33
+local FAMILIAR_ALLEGIANCE = 3
 local Adapter = {}
 Adapter.__index = Adapter
 local lists = { "m_lVertSort", "m_lVertSortBack", "m_lVertSortFlight", "m_lVertSortUnder" }
 local required = { "EEex_Area_GetVisible", "EEex_GameObject_Get", "EEex_GameObject_CastUserType",
     "EEex_GameObject_IsSprite", "EEex_Utility_IterateCPtrList", "EEex_UDToPtr",
     "EEex_Resource_Demand", "EEex_Action_ExecuteResponseStringOnAIBaseInstantly", "EEex_CastUD" }
+local creature_required = { "EEex_Sprite_GetPortraitIndex" }
 
 local function integer(value, lo, hi)
     return type(value) == "number" and value == math.floor(value) and value >= lo and value <= hi
@@ -55,8 +62,8 @@ function Native.new(api, fixture)
     assert(type(api) == "table" and type(fixture) == "table", "NATIVE_CONFIG_INVALID")
     for _, name in ipairs(required) do assert(type(api[name]) == "function", name .. "_MISSING") end
     local self = setmetatable({ api = api, sources = {}, targets = {}, reservations = {},
-        attempted = {}, tick = nil, pending = nil, last_error = nil }, Adapter)
-    local identities, source_resrefs = {}, {}
+        attempted = {}, tick = nil, pending = nil, last_error = nil, source_resrefs = {} }, Adapter)
+    local identities, source_resrefs, creatures = {}, self.source_resrefs, false
     for _, kind in ipairs({ "sources", "targets" }) do
         assert(type(fixture[kind]) == "table", "NATIVE_CONFIG_INVALID")
         for id, endpoint in pairs(fixture[kind]) do
@@ -67,18 +74,47 @@ function Native.new(api, fixture)
             local copy = { area = resref(endpoint.area), script_name = endpoint.script_name:lower(),
                 identity = endpoint.identity }
             if kind == "sources" then
+                copy.sprite = true
                 copy.payload = assert(payload(endpoint.payload), "NATIVE_PAYLOAD_UNSUPPORTED")
                 assert(copy.payload.resref:match("^flpri[123]$") and not source_resrefs[copy.payload.resref],
                     "NATIVE_FIXTURE_RESOURCE_NOT_UNIQUE")
                 source_resrefs[copy.payload.resref] = true
             else
-                assert(integer(endpoint.x, 0, 32767) and integer(endpoint.y, 0, 32767), "NATIVE_POSITION_INVALID")
-                copy.x, copy.y = endpoint.x, endpoint.y
+                -- The accepted fixture predates this field; absent means a ground pile.
+                copy.kind = endpoint.kind == nil and "ground-pile" or endpoint.kind
+                assert(copy.kind == "ground-pile" or copy.kind == "creature", "NATIVE_TARGET_KIND_UNSUPPORTED")
+                if copy.kind == "creature" then
+                    assert(endpoint.x == nil and endpoint.y == nil, "NATIVE_POSITION_INVALID")
+                    copy.sprite, creatures = true, true
+                else
+                    assert(integer(endpoint.x, 0, 32767) and integer(endpoint.y, 0, 32767), "NATIVE_POSITION_INVALID")
+                    copy.x, copy.y = endpoint.x, endpoint.y
+                end
             end
             self[kind][id] = copy
         end
     end
+    if creatures then
+        for _, name in ipairs(creature_required) do assert(type(api[name]) == "function", name .. "_MISSING") end
+    end
     return self
+end
+
+-- Returns nil for a usable creature target, otherwise the reason it cannot
+-- receive a reward now. None of these states permits a substitute recipient.
+function Adapter:_creature_state(object)
+    local api = self.api
+    if api.EEex_GameObject_IsSprite(object, false) ~= true then return "TARGET_NOT_ALIVE" end
+    local portrait = api.EEex_Sprite_GetPortraitIndex(object)
+    if portrait ~= -1 then
+        assert(integer(portrait, 0, 5), "NATIVE_PORTRAIT_INVALID")
+        return "TARGET_PARTY_MEMBER"
+    end
+    -- CMessageAddItem::Run forwards a familiar's item to the protagonist.
+    local typeAI = object.m_typeAI
+    assert(typeAI and integer(typeAI.m_EnemyAlly, 0, 255), "NATIVE_ALLEGIANCE_INVALID")
+    if typeAI.m_EnemyAlly == FAMILIAR_ALLEGIANCE then return "TARGET_FAMILIAR" end
+    return nil
 end
 
 function Adapter:_resolve(endpoint, kind)
@@ -95,9 +131,11 @@ function Adapter:_resolve(endpoint, kind)
             if not object then return end
             object = api.EEex_GameObject_CastUserType(object)
             if not object or text(object.m_scriptName) ~= endpoint.script_name then return end
+            -- Dead same-named sprites still count, so a corpse and its
+            -- replacement can never be mistaken for one continuous owner.
             local is_sprite = api.EEex_GameObject_IsSprite(object, true)
-            if (kind == "source" and is_sprite == true) or
-                (kind == "target" and is_sprite == false and object.m_lstItems ~= nil) then
+            if (endpoint.sprite and is_sprite == true) or
+                (not endpoint.sprite and is_sprite == false and object.m_lstItems ~= nil) then
                 matches, found = matches + 1, { object = object, id = id, pointer = pointer(api, object) }
             end
         end)
@@ -105,6 +143,10 @@ function Adapter:_resolve(endpoint, kind)
     if matches ~= 1 then return nil, matches == 0 and "OWNER_MISSING" or "OWNER_AMBIGUOUS" end
     if kind == "source" then
         if api.EEex_GameObject_IsSprite(found.object, false) ~= true then return nil, "SOURCE_NOT_ALIVE" end
+    elseif endpoint.kind == "creature" then
+        local reason = self:_creature_state(found.object)
+        -- The unusable owner is returned only for read-only diagnostics.
+        if reason then return nil, reason, found end
     elseif found.object.m_containerType ~= 4 or not found.object.m_pos or
         found.object.m_pos.x ~= endpoint.x or found.object.m_pos.y ~= endpoint.y then
         return nil, "TARGET_NOT_FIXTURE_GROUND_PILE"
@@ -124,12 +166,12 @@ function Adapter:_item(item, slot)
     return { pointer = pointer(self.api, item), slot = slot, payload = signature }
 end
 
-function Adapter:_items(owner, kind)
+function Adapter:_items(owner, sprite)
     local result = {}
     local function append(item, slot)
         if item then result[#result + 1] = self:_item(item, slot) end
     end
-    if kind == "source" then
+    if sprite then
         local equipment = owner.object.m_equipment
         assert(equipment and equipment.m_items, "NATIVE_INVENTORY_MISSING")
         for slot = 0, 38 do append(equipment.m_items:get(slot), slot) end
@@ -146,14 +188,17 @@ function Adapter:_queue()
     local chitin = globals and globals.g_pBaldurChitin
     local handler = chitin and chitin.m_cMessageHandler
     assert(handler and handler.m_messageList, "NATIVE_MESSAGE_QUEUE_MISSING")
+    -- addresses maps every live message pointer to its base-class target id.
     local result = { addresses = {}, additions = {} }
     self.api.EEex_Utility_IterateCPtrList(handler.m_messageList, function(message)
         local address = pointer(self.api, message)
         assert(not result.addresses[address], "NATIVE_DUPLICATE_MESSAGE_POINTER")
-        result.addresses[address] = true
-        -- This type/subtype pair is verified from this fixture's 2.6.6 binary.
-        -- Never cast an unrelated base message to the larger item-message type.
-        if message:virtual_GetMsgType() == 67 and message:virtual_GetMsgSubType() == 12 then
+        assert(integer(message.m_targetId, -2147483648, 2147483647), "NATIVE_MESSAGE_FIELDS_INVALID")
+        result.addresses[address] = message.m_targetId
+        -- These type/subtype pairs are verified from this fixture's 2.6.6 binary.
+        -- Never cast an unrelated base message to a larger item-message type.
+        local subtype = message:virtual_GetMsgType() == 67 and message:virtual_GetMsgSubType() or nil
+        if subtype == 12 then
             assert(message:virtual_GetCommType() == 1, "NATIVE_MESSAGE_COMM_UNSUPPORTED")
             local typed = self.api.EEex_CastUD(message, "CMessageContainerAddItem")
             assert(typed and integer(message.m_targetId, 0, 2147483647) and
@@ -161,8 +206,19 @@ function Adapter:_queue()
                 integer(typed.m_slotNum, -32768, 32767) and
                 integer(typed.m_bCompressContainer, 0, 1), "NATIVE_MESSAGE_FIELDS_INVALID")
             local item = self:_item(typed.m_item)
-            result.additions[#result.additions + 1] = { pointer = address, target = message.m_targetId,
-                source = message.m_sourceId, slot = typed.m_slotNum, compress = typed.m_bCompressContainer,
+            result.additions[#result.additions + 1] = { form = "container", pointer = address,
+                target = message.m_targetId, source = message.m_sourceId, slot = typed.m_slotNum,
+                compress = typed.m_bCompressContainer, payload = item.payload, embedded_item_pointer = item.pointer }
+        elseif subtype == 2 then
+            -- CMessageAddItem: GiveItemCreate's creature transport. It has no
+            -- slot field; Run chooses the backpack slot when it executes.
+            assert(message:virtual_GetCommType() == 1, "NATIVE_MESSAGE_COMM_UNSUPPORTED")
+            local typed = self.api.EEex_CastUD(message, "CMessageAddItem")
+            assert(typed and integer(message.m_targetId, 0, 2147483647) and
+                integer(message.m_sourceId, 0, 2147483647), "NATIVE_MESSAGE_FIELDS_INVALID")
+            local item = self:_item(typed.m_item)
+            result.additions[#result.additions + 1] = { form = "creature", pointer = address,
+                target = message.m_targetId, source = message.m_sourceId,
                 payload = item.payload, embedded_item_pointer = item.pointer }
         end
     end)
@@ -176,8 +232,61 @@ local function conflicts(message, owner_id, item)
 end
 
 local function same_message(first, second)
-    return first.pointer == second.pointer and first.target == second.target and first.source == second.source and
-        first.slot == second.slot and first.compress == second.compress and same(first.payload, second.payload)
+    return first.form == second.form and first.pointer == second.pointer and first.target == second.target and
+        first.source == second.source and first.slot == second.slot and first.compress == second.compress and
+        same(first.payload, second.payload)
+end
+
+-- A creature target is exclusive only if no queued message of any type is
+-- addressed to it and no queued item message carries a fixture resource.
+-- `ignore` excludes the operation's own bound message pointer.
+local function creature_conflict(queue, owner_id, resrefs, ignore)
+    for address, target in pairs(queue.addresses) do
+        if address ~= ignore and target == owner_id then return true end
+    end
+    for _, message in ipairs(queue.additions) do
+        if message.pointer ~= ignore and resrefs[message.payload.resref] then return true end
+    end
+    return false
+end
+
+local function addition_at(queue, address)
+    for _, message in ipairs(queue.additions) do
+        if message.pointer == address then return message end
+    end
+end
+
+local function empty_backpack(items)
+    local used, empty = {}, {}
+    for _, item in ipairs(items) do used[item.slot] = true end
+    for slot = Native.BACKPACK_FIRST, Native.BACKPACK_LAST do
+        if not used[slot] then empty[#empty + 1] = slot end
+    end
+    return empty
+end
+
+-- Every earlier slot must keep its pointer and payload, and exactly one
+-- previously empty backpack slot may gain an item. Stack merges, displacement
+-- to the ground, or any other change fail instead of guessing ownership.
+local function placed_item(before, after, empty)
+    local old, free, added = {}, {}, {}
+    for _, item in ipairs(before) do old[item.slot] = item end
+    for _, slot in ipairs(empty) do free[slot] = true end
+    for _, current in ipairs(after) do
+        local previous = old[current.slot]
+        if previous then
+            if previous.pointer ~= current.pointer or not same(previous.payload, current.payload) then
+                return nil, "INVENTORY_CHANGED"
+            end
+            old[current.slot] = nil
+        else
+            added[#added + 1] = current
+        end
+    end
+    if next(old) ~= nil then return nil, "INVENTORY_CHANGED" end
+    if #added == 0 then return nil, "DELIVERY_MESSAGE_LOST" end
+    if #added ~= 1 or not free[added[1].slot] then return nil, "DELIVERY_PLACEMENT_UNEXPECTED" end
+    return added[1]
 end
 
 function Adapter:_supported(item)
@@ -199,7 +308,7 @@ function Adapter:inspect_source(id)
     if not supported then return nil, reason end
     local owner; owner, reason = self:_resolve(endpoint, "source")
     if not owner then return nil, reason end
-    local items, selected, matches = self:_items(owner, "source"), nil, 0
+    local items, selected, matches = self:_items(owner, true), nil, 0
     for _, item in ipairs(items) do
         if item.payload.resref == endpoint.payload.resref then matches, selected = matches + 1, item end
     end
@@ -216,7 +325,15 @@ function Adapter:inspect_target(id)
     self.reservations[endpoint.identity] = nil
     local owner, reason = self:_resolve(endpoint, "target")
     if not owner then return nil, reason end
-    local items = self:_items(owner, "target")
+    local items = self:_items(owner, endpoint.sprite)
+    if endpoint.kind == "creature" then
+        -- Checked before the core journals anything, so these are deferrals.
+        local empty = empty_backpack(items)
+        if #empty == 0 then return nil, "TARGET_INVENTORY_FULL" end
+        if creature_conflict(self:_queue(), owner.id, self.source_resrefs) then return nil, "TARGET_QUEUE_BUSY" end
+        self.reservations[endpoint.identity] = { owner = owner, items = items, kind = "deliver", id = id, empty = empty }
+        return { identity = endpoint.identity, target_id = id, accepts = 1 }
+    end
     if #items ~= 0 then return nil, "TARGET_NOT_EMPTY" end
     self.reservations[endpoint.identity] = { owner = owner, items = items, kind = "deliver", id = id }
     return { identity = endpoint.identity, target_id = id, accepts = 1 }
@@ -258,12 +375,18 @@ function Adapter:execute(command)
     local owner, reason = self:_resolve(endpoint, kind)
     if not owner then return nil, reason end
     if owner.id ~= reserved.owner.id or owner.pointer ~= reserved.owner.pointer then return nil, "OWNER_CHANGED" end
-    local before = self:_items(owner, kind)
+    local before = self:_items(owner, endpoint.sprite)
     if not unchanged(reserved.items, before) then return nil, "INVENTORY_CHANGED" end
     local supported; supported, reason = self:_supported(source.payload)
     if not supported then return nil, reason end
+    local creature = kind == "target" and endpoint.kind == "creature"
     local before_queue
-    if kind == "target" then
+    if creature then
+        before_queue = self:_queue()
+        if creature_conflict(before_queue, owner.id, self.source_resrefs) then
+            return nil, "DELIVERY_QUEUE_NOT_EXCLUSIVE"
+        end
+    elseif kind == "target" then
         before_queue = self:_queue()
         for _, message in ipairs(before_queue.additions) do
             if conflicts(message, owner.id, source.payload) then return nil, "DELIVERY_QUEUE_NOT_EXCLUSIVE" end
@@ -278,16 +401,39 @@ function Adapter:execute(command)
         before = before, removed = reserved.selected, tick = self.tick, complete = false }
     self.reservations[command.identity] = nil
     local p = source.payload
-    local action = kind == "source" and string.format('DestroyItem("%s")', p.resref) or
-        string.format('CreateItem("%s",%d,%d,%d)', p.resref, p.charges[1], p.charges[2], p.charges[3])
+    local action
+    if kind == "source" then
+        action = string.format('DestroyItem("%s")', p.resref)
+    elseif creature then
+        -- Queues one CMessageAddItem from and to this creature. CreateItem on a
+        -- non-party creature would instead fill unusual slots without Equip.
+        action = string.format('GiveItemCreate("%s",Myself,%d,%d,%d)', p.resref, p.charges[1], p.charges[2], p.charges[3])
+    else
+        action = string.format('CreateItem("%s",%d,%d,%d)', p.resref, p.charges[1], p.charges[2], p.charges[3])
+    end
     -- No item iterator is active here. Pending/attempted are published first;
     -- an exception must disable this adapter, never cause a blind action retry.
     self.api.EEex_Action_ExecuteResponseStringOnAIBaseInstantly(action, owner.object)
-    local after = self:_items(owner, kind)
+    local after = self:_items(owner, endpoint.sprite)
     if kind == "source" then
         if not unchanged(reserved.items, after, reserved.selected) then
             self.last_error = "REMOVAL_NOT_EXACT"; return nil, self.last_error
         end
+    elseif creature then
+        -- The static evidence shows no synchronous creature placement. Require
+        -- an untouched inventory plus exactly one new queued message, and bind
+        -- that message to this nonce; later observations prove the result.
+        local after_queue, added = self:_queue(), {}
+        for address in pairs(after_queue.addresses) do
+            if not before_queue.addresses[address] then added[#added + 1] = address end
+        end
+        local message = #added == 1 and addition_at(after_queue, added[1]) or nil
+        if not unchanged(reserved.items, after) or not message or message.form ~= "creature" or
+            message.target ~= owner.id or message.source ~= owner.id or not same(message.payload, p) or
+            creature_conflict(after_queue, owner.id, self.source_resrefs, message.pointer) then
+            self.last_error = "CREATED_INSTANCE_UNPROVEN"; return nil, self.last_error
+        end
+        self.pending.queued, self.pending.empty = message, reserved.empty
     else
         local after_queue, added, conflicting = self:_queue(), {}, 0
         for _, message in ipairs(after_queue.additions) do
@@ -334,10 +480,23 @@ function Adapter:observe(command)
         self.last_error = "DELIVERY_SETTLING_TIMEOUT"
         return nil, self.last_error
     end
-    local owner, reason = self:_resolve(pending.endpoint, pending.kind)
-    if not owner then return nil, reason end
+    local owner, reason, unusable = self:_resolve(pending.endpoint, pending.kind)
+    if not owner then
+        if reason == "TARGET_NOT_ALIVE" and unusable and unusable.id == pending.owner.id and
+            unusable.pointer == pending.owner.pointer then
+            -- CMessageAddItem::Run has no death check: the item may now be in
+            -- a corpse or in a death drop. Never resume or claim this receipt.
+            pending.complete = false
+            self.last_error = "TARGET_DIED_DURING_DELIVERY"
+            return nil, self.last_error
+        end
+        return nil, reason
+    end
     if owner.id ~= pending.owner.id or owner.pointer ~= pending.owner.pointer then return nil, "OWNER_CHANGED" end
-    local items = self:_items(owner, pending.kind)
+    local items = self:_items(owner, pending.endpoint.sprite)
+    if pending.kind == "target" and pending.endpoint.kind == "creature" then
+        return self:_observe_creature(pending, receipt, owner, items)
+    end
     if pending.kind == "source" then
         -- Compare every other slot/pointer/payload, not merely the selected count.
         local removed
@@ -393,6 +552,43 @@ function Adapter:observe(command)
     return receipt
 end
 
+function Adapter:_observe_creature(pending, receipt, owner, items)
+    local queue, queued = self:_queue(), pending.queued
+    if creature_conflict(queue, owner.id, self.source_resrefs, queued.pointer) then
+        return nil, "DELIVERY_QUEUE_CONFLICT"
+    end
+    local present = queue.addresses[queued.pointer] ~= nil
+    if not pending.created_pointer then
+        if present then
+            local current = addition_at(queue, queued.pointer)
+            if not current or not same_message(current, queued) then return nil, "DELIVERY_QUEUE_CONFLICT" end
+            if not unchanged(pending.before, items) then return nil, "DELIVERY_EARLY_ITEM" end
+            return nil, "DELIVERY_SETTLING"
+        end
+        -- The exact message has been consumed. Its Run heap-copies the item into
+        -- one previously empty backpack slot; pin that actual pointer and slot,
+        -- then demand another later tick before publishing anything.
+        local placed, failure = placed_item(pending.before, items, pending.empty)
+        if not placed then return nil, failure end
+        if not same(placed.payload, receipt.payload) then return nil, "DELIVERY_PAYLOAD_CHANGED" end
+        pending.created_pointer, pending.created_slot, pending.pinned_tick = placed.pointer, placed.slot, self.tick
+        return nil, "DELIVERY_SETTLING"
+    end
+    if present then return nil, "DELIVERY_MESSAGE_REUSED" end
+    if self.tick <= pending.pinned_tick then return nil, "DELIVERY_SETTLING" end
+    local placed = placed_item(pending.before, items, pending.empty)
+    if not placed or placed.pointer ~= pending.created_pointer or placed.slot ~= pending.created_slot or
+        not same(placed.payload, receipt.payload) then return nil, "CREATED_INSTANCE_CHANGED" end
+    local supported, reason = self:_supported(receipt.payload)
+    if not supported then return nil, reason end
+    -- Held by a living, non-party creature in its backpack. That is not proof
+    -- of lootability: the death drop must be verified separately in the engine.
+    receipt.created, receipt.nonce_bound_instance, receipt.lootable, receipt.held = 1, 1, 0, 1
+    receipt.holder, receipt.slot = "creature", placed.slot
+    self.pending = nil
+    return receipt
+end
+
 function Adapter:diagnostics()
     local result = { tick = self.tick, last_error = self.last_error, sources = {}, targets = {} }
     local area = self.api.EEex_Area_GetVisible()
@@ -400,14 +596,17 @@ function Adapter:diagnostics()
     if self.pending then
         result.pending = { kind = self.pending.receipt.kind, nonce = self.pending.receipt.nonce,
             complete = self.pending.complete, created_pointer = self.pending.created_pointer,
-            queued = self.pending.queued, pinned_tick = self.pending.pinned_tick }
+            created_slot = self.pending.created_slot, queued = self.pending.queued,
+            pinned_tick = self.pending.pinned_tick, empty = self.pending.empty }
     end
     for _, kind in ipairs({ "sources", "targets" }) do
         for id, endpoint in pairs(self[kind]) do
             local label = kind == "sources" and "source" or "target"
-            local owner, reason = self:_resolve(endpoint, label)
-            result[kind][id] = owner and { object_id = owner.id, pointer = owner.pointer,
-                items = self:_items(owner, label) } or { unavailable = reason }
+            local owner, reason, unusable = self:_resolve(endpoint, label)
+            -- A dead or party-owned creature's inventory is evidence, not a target.
+            local seen = owner or unusable
+            result[kind][id] = seen and { object_id = seen.id, pointer = seen.pointer, unavailable = reason,
+                items = self:_items(seen, endpoint.sprite) } or { unavailable = reason }
         end
     end
     return result

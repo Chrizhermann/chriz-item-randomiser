@@ -89,6 +89,23 @@ and actual lootability. A matching pre-existing item or an increased count is no
 sufficient. Bad outcome evidence quarantines the transaction without automatic
 replay. Missing targets defer delivery and do not create a fallback pile.
 
+A creature-kind target (`actor` or `cre-template`) may instead report the exact
+instance as **held**: `created = 1`, `nonce_bound_instance = 1`, `lootable = 0`,
+`held = 1`. The core stores delivery phase 4 (GLOBAL value 5). This counts as
+attempted and is never delivered again, but it is deliberately distinct from
+confirmed lootability. A held receipt for another target kind, a receipt
+claiming both states, or a held source phase is quarantined or rejected on
+restore. Proving that the creature's death drop makes the item lootable is a
+separate native check. See [creature transport evidence](native-creature-transport-evidence.md).
+
+The fixture host defers a delivery when target inspection reports current
+unavailability: absent, elsewhere, ambiguous, dead, party-owned, a familiar, a
+full backpack, a busy message queue, or a non-empty pile. Inspection happens
+before the core journals anything. A deferred reward is retried after
+`Host.DEFER_TICKS` game ticks, other rewards continue, and the campaign stays
+running rather than complete. Deferral never places anything elsewhere. Any
+other inspection failure still disables the host.
+
 Each command also carries an opaque Lua session table. A receipt must preserve
 that exact reference; it cannot serialize or deep-copy it. Restore/destroy/new
 capture renew the reference, rejecting callbacks left over from another session
