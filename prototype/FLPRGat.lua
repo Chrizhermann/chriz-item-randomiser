@@ -73,7 +73,7 @@ function Gate.install(api,bundle,build,compile,pristine)
     assert(api.EEex_Active and not api.FLPR_SOURCE_GATE and not api.FLPR_AREA_TRACE and
         not api.FLPR_CAMPAIGN_GATE, 'CAMPAIGN_GATE_INSTALL_CONTEXT_INVALID')
     assert(type(api.EEex_GameState_AddDestroyedListener)=='function' and
-        type(api.EEex_GameState_GetGlobalInt)=='function' and type(api.EEex_WriteLString)=='function',
+        type(api.EEex_GameState_GetGlobalInt)=='function' and type(api.EEex_Write8)=='function',
         'CAMPAIGN_GATE_LIFECYCLE_MISSING')
     local policy=compile(revision,index)
     local base=api.EEex_GetImageBase()
@@ -87,7 +87,11 @@ function Gate.install(api,bundle,build,compile,pristine)
     local buffer=api.EEex_Malloc(MEMORY_SIZE+#pristine.bytes)
     assert(buffer and buffer~=0,'CAMPAIGN_GATE_ALLOC_FAILED')
     for offset=0,MEMORY_SIZE-1,8 do api.EEex_Write64(buffer+offset,0) end
-    api.EEex_WriteLString(buffer+MEMORY_SIZE,pristine.bytes,#pristine.bytes)
+    -- WriteLString uses C-string semantics and truncates binary data at NUL.
+    for offset=1,#pristine.bytes do
+        local byte=pristine.bytes:byte(offset)
+        api.EEex_Write8(buffer+MEMORY_SIZE+offset-1,byte>=128 and byte-256 or byte)
+    end
     for offset=1,#pristine.bytes do
         assert(api.EEex_ReadU8(buffer+MEMORY_SIZE+offset-1)==pristine.bytes:byte(offset),
             'CAMPAIGN_GATE_PRISTINE_COPY_FAILED')

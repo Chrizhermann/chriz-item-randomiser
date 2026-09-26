@@ -171,8 +171,9 @@ held-to-ground confirmations, ordinary pickup, serialized saves, and reload of
 the confirmed and looted states without duplication or a new seed. The test
 game closed normally and all staged files were restored. These results remain
 limited to the explicitly controlled fixture; general held-item lifetime
-tracking, unfinished-save recovery, and unvisited-original suppression remain
-open.
+tracking and unfinished-save recovery remain open. The later
+[campaign source guard](campaign-source-guards-20260927.md) separately verifies
+early reward pickup and unvisited-original suppression for one authored container.
 
 ### Scanner status and installation check
 

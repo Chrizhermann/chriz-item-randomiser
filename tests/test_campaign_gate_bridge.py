@@ -98,11 +98,11 @@ local function fixture(Core)
     function f.api.EEex_Write64(address,value)
         f.writes=f.writes+1; f:poke(address,value,8)
     end
-    function f.api.EEex_WriteLString(address,value,length)
-        f.string_writes=(f.string_writes or 0)+1
-        assert(length==#value)
-        f:pokestring(address,value)
-        if f.copy_corrupt then f.bytes[address+f.copy_corrupt]=0xFF end
+    function f.api.EEex_Write8(address,value)
+        assert(value>=-128 and value<=127,'native Write8 accepts signed bytes')
+        f.byte_writes=(f.byte_writes or 0)+1
+        f.bytes[address]=value%256
+        if f.copy_corrupt==f.byte_writes-1 then f.bytes[address]=0xFF end
     end
     function f.api.EEex_DisableCodeProtection() f.events[#f.events+1]='unprotect' end
     function f.api.EEex_EnableCodeProtection() f.events[#f.events+1]='protect' end
@@ -181,7 +181,7 @@ function cases.full_authored_bundle_and_install_contract(Core,Gate,build,compile
     local f=fixture(Core); local gate=f:install(Gate,build,compile)
     assert(gate.installed and gate.revision==f.revision and gate.index==1)
     assert(f.allocations==1 and f.malloc_size==MEMORY_SIZE+27492)
-    assert(f.string_writes==1 and #f.hooks==5 and #f.callbacks==1 and f:q(0)==1)
+    assert(f.byte_writes==27492 and #f.hooks==5 and #f.callbacks==1 and f:q(0)==1)
     assert(f:peek(BUFFER+MEMORY_SIZE+0x70,4)==0x68D4 and
         f:peek(BUFFER+MEMORY_SIZE+0x78,4)==0x6B14)
     assert(gate.policy.provenance.expected==BUFFER+MEMORY_SIZE and
@@ -237,7 +237,7 @@ function cases.pristine_rejection_and_copy_failure_precede_hooks(Core,Gate,build
     for _,offset in ipairs({0,0x70,27491}) do
         local f=fixture(Core); f.copy_corrupt=offset
         fails('CAMPAIGN_GATE_PRISTINE_COPY_FAILED',function() f:install(Gate,build,compile) end)
-        assert(f.allocations==1 and f.string_writes==1 and #f.hooks==0 and #f.events==0)
+        assert(f.allocations==1 and f.byte_writes==27492 and #f.hooks==0 and #f.events==0)
         assert(f.api.FLPR_CAMPAIGN_GATE==nil)
     end
 end

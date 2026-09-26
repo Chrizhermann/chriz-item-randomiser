@@ -212,31 +212,18 @@ and reopen coverage. Repeated-spawn sources need an explicit occurrence rule.
 
 ### 27 September continuation
 
-The [quiet fixture receipt run](held-drop-receipts-20260926.md) passed native
-death/drop/pickup and confirmed/looted reload checks. The next
-[item-lifetime diagnostic](native-item-lifetime-20260927.md) passes 812 offline
-tests and a bounded native capture: both destructor hooks executed, two normal
-drops were accepted, and one deliberately destroyed/recreated original was
-rejected without changing campaign receipts. The game closed normally and all
-staging was restored. General continuous coverage, unfinished-save recovery,
-and unvisited-original suppression remain open. All further game work remains
-isolated and subject to the reservation below.
+The [integrated campaign guard](campaign-source-guards-20260927.md) now passes
+New Game, reward pickup before visiting the source, exact original suppression,
+and A/B save independence in the same and a fresh process. The completed
+load-only and standalone choice diagnostics have been retired; their relevant
+[engine findings](unvisited-source-gate-20260927.md) remain documented.
 
-The unvisited-container loading diagnostic (commit `9959517`, now retired)
-then passed first entry and same-process save/reload, with 18 exact raw events and
-836 offline tests. Saving reordered containers and repacked item indexes, so
-original physical indexes cannot identify saved originals by themselves. All
-staging was restored and the game closed. Campaign-local suppression, pre-access
-decision availability and early reward delivery remain unproven; the next bounded
-test uses only the authored FLPRU1 area and its test items.
-
-The [synthetic source gate](unvisited-source-gate-20260927.md) then passed 863
-offline tests, a 26-event native selected/excluded/missing-mode sequence, and a
-19-event fresh-process check. It captures an explicit saved choice before area
-loading and skips only the exact authored original. Both processes closed and
-all staging was restored. Actual New Game enrollment and the early-delivery
-protocol remain next: protected-before-access needs its own state and live guard
-authorization, distinct from confirmed physical source removal.
+Next are the returned-copy and save-before-confirmation cases in that same
+fixture, followed by broader source adapters. The
+[item-lifetime diagnostic](native-item-lifetime-20260927.md) established bounded
+drop/destructor behavior; continuous creature receipt tracking and unfinished-save
+recovery still need integration. All sessions closed and staged files were
+restored. Keep further game work isolated and subject to the reservation below.
 
 Offline research, diagnostics, synthetic adapters/tests and test-fixture preparation
 can continue autonomously. Before installation access or a game test, check other
