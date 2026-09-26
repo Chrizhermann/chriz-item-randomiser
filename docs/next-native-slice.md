@@ -4,6 +4,24 @@ Prepared 2026-09-26 after the [bounded native acceptance](native-acceptance-2026
 This is the engineering backlog and acceptance contract, not evidence that the
 new adapters work. Christopher does not need to select real content for this work.
 
+## Handoff: Claude to Codex (2026-09-26)
+
+Claude continued this slice while Codex was out of tokens. The local branch
+`claude/randomizer-improvements-expansion-1a3ef3` builds on Codex's checkpoint
+`3068a79`. That checkpoint is Codex's own pending work, committed without
+`work/`, which is now ignored. On top of it:
+
+- `ee04e54`: synthetic creature delivery with held rewards (adapter, core
+  phase 4, host deferral, [transport evidence](native-creature-transport-evidence.md)).
+- `3b730ab`: the creature-target fixture variant.
+- This documentation update.
+
+Nothing was pushed or installed, no game was launched, and the isolated install
+and profile were not touched. Both worktrees share the repository, so Codex
+continues with `git merge --ff-only claude/randomizer-improvements-expansion-1a3ef3`
+in its own worktree. The next step is staging the creature fixture, described
+under the creature item below.
+
 ## Starting evidence
 
 The three synthetic weapons in one BG1 starting area have verified source
@@ -21,7 +39,8 @@ See [installation scan evidence](installation-scan-20260924.md).
 ### Creature delivery and several rewards on one target
 
 **Status (later on 2026-09-26):** the transport question is answered statically,
-and the synthetic side is implemented. Native acceptance has not run.
+the synthetic side is implemented, and a disposable creature fixture can be built.
+Native acceptance has not run.
 
 - [Creature transport evidence](native-creature-transport-evidence.md):
   `GiveItemCreate` queues `CMessageAddItem` (type 67, subtype 2) addressed to the
@@ -35,12 +54,22 @@ and the synthetic side is implemented. Native acceptance has not run.
 - `FLPRCore.lua` records held deliveries as phase 4, for creature-kind targets
   only. `FLPRHost.lua` defers unavailable targets instead of disabling.
 - `tests/test_campaign_native_creature.py` covers every row of the table below
-  that synthetic tests can reach, in Lua 5.1, Lua 5.3 and LuaJIT. The full
-  offline suite passes 651 tests.
+  that synthetic tests can reach, in Lua 5.1, Lua 5.3 and LuaJIT.
+- `tools/build_mode1_fixture.py --variant creatures` builds the disposable
+  creature fixture. FLPRC1 (capacity 2) starts empty. FLPRC2 (capacity 1) holds
+  an unrelated disposable `FLPRX1` in CRE file slot 21, which Codex's live
+  source probe showed loads into internal slot 18. Both are killable,
+  script-free neutral cows standing on accepted pile positions 1 and 3.
+  Rebuilt from `fixture-input-v2`, the default variant matches all 13 outputs of
+  the accepted `payload-v2` byte for byte. From the same inputs, the creature
+  revision is `5c41781045d88881207731401341286d591908699eee1ac03bf7eebcf4da9790`.
+  A synthetic end-to-end run of that output through the real Core, Host and Nat
+  ends with all three rewards held. The full offline suite passes 662 tests.
 
-Remaining for this item: a disposable creature-target fixture, then native runs
-of the table below, especially death timing, the death drop of a held item into
-a lootable pile, and save/reload of two held rewards on one actor.
+Remaining for this item: native runs of the table below using the creature
+fixture, especially death timing, the death drop of a held item into a lootable
+pile, and save/reload of two held rewards on one actor. The staging steps are
+below.
 
 Use newly authored disposable actors and items. Do not pick a real boss, change a
 real encounter, or infer a default capacity for production content.
@@ -73,6 +102,50 @@ reused as assumptions for a creature. Then exercise:
 Actual pickup and saved ownership must close the successful drop cases. Logical
 and synthetic tests can guard the decision rules but cannot establish native
 death, transport, or inventory behavior.
+
+#### Staging the creature fixture
+
+These steps change the disposable install, so they need the reservation
+described under coordination below. Nothing here has been run yet.
+
+1. Build offline from the recorded pristine inputs:
+   `python tools/build_mode1_fixture.py --game work/mode1-native-slice/fixture-input-v2 --output work/mode1-native-slice/payload-creatures --variant creatures`.
+   The reported revision must be the one above. A different value means the
+   inputs or code differ: investigate before staging.
+2. Back up every installed file you will replace. At minimum, keep the current
+   `BG2600.ARE`, which is the only way back to ground-pile New Games.
+3. Copy the payload's override files. `BG2600.ARE` is replaced, and
+   `FLPRC1.CRE`, `FLPRC2.CRE` and `FLPRX1.ITM` are new. The other outputs
+   should match v2's staged bytes; check their hashes rather than assume it.
+4. Add the revision's `.json` and `.lua`, and `fixture-native.lua` as
+   `<revision>.native.lua`, to `flpr-fixture/campaign-store/revisions/`. Keep
+   the older revisions, because existing saves resolve them.
+5. Stage all four changed prototype files: `FLPRCore.lua` (the held phase),
+   `FLPRHost.lua` (deferral), `FLPRNat.lua` (the creature path) and `M_FLPR.lua`
+   (the ready text). `stage_v2.py` copied only three of these. Without the new
+   core, a held receipt is quarantined.
+6. Point `flpr-fixture/next.lua` at the creature revision. While this ARE is
+   installed, the ground-pile revisions cannot complete a New Game, because
+   their piles do not exist. Their deliveries would defer indefinitely.
+
+Then, in order:
+
+- **Regression first:** load an accepted A save, such as `IR QA A Looted`, with
+  the new modules. It must restore without recapture or replay.
+- **One New Game:** expect the text "Randomiser test ready: 3 test weapons
+  have been given to the two test cows near the Candlekeep entrance." Expect two
+  rewards in FLPRC1's slots 18 and 19, FLPRX1 unchanged in FLPRC2's slot 18 with
+  one reward in 19, empty sources, and every delivery phase held (GLOBAL value
+  5). This run also settles three open questions: the live
+  `EEex_CastUD(message, "CMessageAddItem")` binding, instant `GiveItemCreate`
+  execution, and the final item flags. The adapter requires flags 1. Any
+  mismatch stops with `DELIVERY_PAYLOAD_CHANGED` and no replay. Record it
+  rather than relaxing the check.
+- **Then the table's native rows:** save/reload with two held rewards; death of
+  a recipient after its reward is held, following the exact item into its drop
+  pile through pickup and a saved game (record whether its pointer survives the
+  drop); and death between queueing and `Run`, if a trustworthy way to cause it
+  exists. The recipients have 6 HP and zero XP value.
 
 ### An original in an unvisited area
 

@@ -96,8 +96,11 @@ this fixture does not claim crash recovery during relocation.
 The [next engineering slice](next-native-slice.md) defines creature-drop and
 unvisited-source checks using synthetic content, before owner review of real
 items, destinations, and reward counts.
-General distant sources, shop stock, creature reward drops, target capacity greater than one,
-multiplayer, and full-world scanning remain outside this slice. The earlier EET
+Creature recipients and target capacity greater than one now have synthetic
+support and a disposable fixture variant (`build_mode1_fixture.py --variant
+creatures`), but no native acceptance. The accepted ground-pile fixture is
+unchanged byte for byte. General distant sources, shop stock, creature reward
+drops, multiplayer, and full-world scanning remain outside this slice. The earlier EET
 world scan stopped on `BDABIS1D.CRE`'s referenced empty item record. The scanner
 now retains and flags that record shape, confirmed against the real resource on
 2026-09-24. The read-only rescan indexed 3,544 items and diagnosed dangling-slot
@@ -111,15 +114,16 @@ See [the rescan evidence](installation-scan-20260924.md).
 
 ## Automated checks
 
-564 checks pass on 2026-09-26: 183 post-install scanner/profile tests; 85 logical campaign
-checks; 66 host, 108 native adapter, 23 fixture/helper/save-inspector,
-90 queued QA runtime, and 9 QA menu staging checks.
+662 checks pass on 2026-09-26: 183 post-install scanner/profile tests; 97 logical campaign
+checks; 87 host, 108 native container adapter, 60 native creature adapter,
+28 fixture builder/helper/save-inspector, 90 queued QA runtime, and 9 QA menu
+staging checks.
 Lua behavior is exercised under Lua 5.1, Lua 5.3, and LuaJIT. Use unittest for
 these Windows runs: pytest's faulthandler labels caught LuaJIT runtime-error
 exceptions as fatal even when their assertions pass and the process exits zero.
 No assertions or validations were disabled.
 The latest run used `python -m unittest discover -s tests -q` and completed
-in 9.984 seconds; the test suite itself used no game or installation access. Thirteen empty-inventory
+in 9.348 seconds; the test suite itself used no game or installation access. Thirteen empty-inventory
 checks reproduce the earlier scanner failure and guard source binding/compilation.
 Four additional integration checks cover resource/embedded-actor error context
 and failed scans preserving absent or preexisting output files.
