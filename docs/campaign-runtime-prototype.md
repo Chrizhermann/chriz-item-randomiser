@@ -159,6 +159,11 @@ B reload in a fresh process and two new campaigns under unchanged B settings.
 It also records the first fresh campaign's manual-save refusal, the QA diagnostic
 fix, the accepted initial autosave evidence, and complete test-process cleanup.
 
+The later [creature continuation](native-creature-acceptance-20260926.md) verified
+multiple held rewards, save/load, controlled death after delivery and actual
+pickup. Death changed item pointers; the runtime still records those deliveries
+as held rather than inventing an automatic lootable receipt.
+
 ### Scanner status and installation check
 
 A read-only scan of the isolated EET installation on 2026-09-22 indexed 3,544

@@ -5,6 +5,11 @@ Prepared 2026-09-26 for the [next Mode 1 slice](next-native-slice.md). This is
 live engine acceptance. No game or installer was launched, and no installed file,
 profile or save was changed.
 
+The later [native acceptance](native-creature-acceptance-20260926.md) verified the
+message binding, transport, final flags, held save/reload and a controlled death
+after delivery. This document retains the earlier static evidence and its original
+limits; automatic death-drop provenance and death during delivery remain open.
+
 ## Sources
 
 - A scratch copy of the fixture's `Baldur.exe`, SHA-256

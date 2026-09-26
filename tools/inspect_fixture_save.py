@@ -19,8 +19,11 @@ from flir_config.resources import ScanError
 from flir_config.world_formats import parse_are, parse_cre
 
 ITEMS = {f"flpri{index}" for index in range(1, 4)}
+UNRELATED_ITEM = "flprx1"
 SOURCE_NAMES = {f"flprs{index}" for index in range(1, 4)}
-TARGET_NAMES = {f"flprt{index}" for index in range(1, 4)}
+GROUND_TARGET_NAMES = {f"flprt{index}" for index in range(1, 4)}
+CREATURE_TARGET_NAMES = {"flprc1", "flprc2"}
+VARIANTS = ("ground-piles", "creatures")
 MAX_FILE = 512 * 1024 * 1024
 MAX_AREA = 64 * 1024 * 1024
 
@@ -39,11 +42,18 @@ def text(data: bytes, offset: int, size: int) -> str:
     return span(data, offset, size, "text field").split(b"\0", 1)[0].decode("latin-1")
 
 
-def fixture_items(items: list[dict]) -> list[dict]:
-    return [dict(item) for item in items if item["resref"] in ITEMS]
+def fixture_items(items: list[dict], variant: str = "ground-piles") -> list[dict]:
+    selected = ITEMS if variant == "ground-piles" else ITEMS | {UNRELATED_ITEM}
+    records = [dict(item) for item in items if item["resref"] in selected]
+    if variant == "creatures":
+        # CItem's wear word is called expiration in the shared binary parser.
+        # Expose both names so a held-item comparison can check it explicitly.
+        for record in records:
+            record["wear"] = record["expiration"]
+    return records
 
 
-def parse_gam(data: bytes) -> dict:
+def parse_gam(data: bytes, variant: str = "ground-piles") -> dict:
     if len(data) < 0xB4 or data[:8] != b"GAMEV2.0":
         raise ScanError("Expected a complete GAME V2.0 header.")
     offset, count = number(data, 0x38), number(data, 0x3C)
@@ -77,7 +87,7 @@ def parse_gam(data: bytes) -> dict:
         party.append({"party_record_index": index, "party_order": number(data, base + 2, "H"),
                       "script_name": cre["script_name"], "area": text(data, base + 0x18, 8).lower(),
                       "x": number(data, base + 0x20, "H"), "y": number(data, base + 0x22, "H"),
-                      "fixture_items": fixture_items(cre["items"]),
+                      "fixture_items": fixture_items(cre["items"], variant),
                       "unslotted_item_indexes": cre["unslotted_item_indexes"],
                       "aliased_item_indexes": cre["aliased_item_indexes"]})
     previous_end = 0
@@ -91,7 +101,8 @@ def parse_gam(data: bytes) -> dict:
     phase_labels = {1: "fresh", 2: "inflight", 3: "verified", 4: "quarantined"}
     phases = {}
     for prefix, label in (("S", "sources"), ("D", "deliveries")):
-        phases[label] = {name: {"stored": value, "phase": phase_labels.get(value, "invalid")}
+        labels = phase_labels if prefix == "S" else {**phase_labels, 5: "held"}
+        phases[label] = {name: {"stored": value, "phase": labels.get(value, "invalid")}
                          for name, value in sorted(variables.items()) if re.fullmatch(f"FLPR_{prefix}[0-9]{{4}}", name)}
     return {"format": "GAME V2.0", "game_time": number(data, 8),
             "current_area_header": text(data, 0x58, 8).lower(),
@@ -138,31 +149,39 @@ def extract_bg2600(data: bytes) -> tuple[bytes | None, int]:
     return selected, entry_count
 
 
-def inspect_area(data: bytes) -> dict:
+def inspect_area(data: bytes, variant: str = "ground-piles") -> dict:
     area = parse_are(data)
     sources, targets, elsewhere = [], [], []
     for actor in area["actors"]:
         embedded = actor["embedded_cre"]
         identity = embedded["script_name"].lower() if embedded else actor["name"].lower()
+        names = {identity, actor["name"].lower()}
         entry = {"actor_record_index": actor["record_index"], "actor_name": actor["name"],
                  "script_name": embedded["script_name"] if embedded else None,
                  "cre_resref": actor["cre_resref"], "x": actor["x"], "y": actor["y"],
                  "inventory_observed": embedded is not None,
-                 "fixture_items": fixture_items(embedded["items"]) if embedded else None}
-        if identity in SOURCE_NAMES or actor["name"].lower() in SOURCE_NAMES:
+                 "fixture_items": fixture_items(embedded["items"], variant) if embedded else None}
+        if variant == "creatures":
+            entry["all_item_count"] = len(embedded["items"]) if embedded else None
+            entry["unslotted_item_indexes"] = embedded["unslotted_item_indexes"] if embedded else None
+            entry["aliased_item_indexes"] = embedded["aliased_item_indexes"] if embedded else None
+        if names & SOURCE_NAMES:
             sources.append(entry)
+        elif variant == "creatures" and names & CREATURE_TARGET_NAMES:
+            # Retain each occurrence: an actor name alone is not a unique owner.
+            targets.append(entry)
         elif embedded and entry["fixture_items"]:
             elsewhere.append({"kind": "other_actor", **entry})
     for container in area["containers"]:
-        selected = fixture_items(container["items"])
+        selected = fixture_items(container["items"], variant)
         entry = {key: container[key] for key in ("record_index", "name", "type", "flags", "x", "y")}
         entry["fixture_items"] = selected
         entry["all_item_count"] = container["item_count"]
-        if container["name"].lower() in TARGET_NAMES:
+        if variant == "ground-piles" and container["name"].lower() in GROUND_TARGET_NAMES:
             targets.append(entry)
         elif selected:
             elsewhere.append({"kind": "other_container", **entry})
-    orphans = fixture_items([area["items"][index] for index in area["orphan_item_indexes"]])
+    orphans = fixture_items([area["items"][index] for index in area["orphan_item_indexes"]], variant)
     if orphans:
         elsewhere.append({"kind": "unowned_area_records", "fixture_items": orphans})
     return {"format": "ARE V1.0", "sources": sources, "targets": targets,
@@ -170,7 +189,9 @@ def inspect_area(data: bytes) -> dict:
             "area_item_record_count": len(area["items"])}
 
 
-def inspect_save(save: Path) -> dict:
+def inspect_save(save: Path, variant: str = "ground-piles") -> dict:
+    if variant not in VARIANTS:
+        raise ScanError(f"Unknown fixture variant: {variant}.")
     directory = save.resolve(strict=True)
     if not directory.is_dir():
         raise ScanError("The named save must be a directory.")
@@ -187,16 +208,18 @@ def inspect_save(save: Path) -> dict:
     if any(size > MAX_FILE for size, _, _ in before.values()):
         raise ScanError("Save file exceeds the inspector size limit.")
     blobs = {name: path.read_bytes() for name, path in paths.items()}
-    gam = parse_gam(blobs["baldur.gam"])
+    gam = parse_gam(blobs["baldur.gam"], variant)
     area_data, members = extract_bg2600(blobs["baldur.sav"])
-    area = inspect_area(area_data) if area_data is not None else None
+    area = inspect_area(area_data, variant) if area_data is not None else None
     if before != {name: stamp(path) for name, path in paths.items()}:
         raise ScanError("Save changed during inspection; inspect after saving has completed.")
     groups = {"sources": area["sources"] if area else [], "targets": area["targets"] if area else [],
               "party": gam["party"], "elsewhere_in_area": area["elsewhere_in_area"] if area else []}
+    selected_items = ITEMS if variant == "ground-piles" else ITEMS | {UNRELATED_ITEM}
     counts = {group: {item: sum(1 for owner in owners for record in (owner["fixture_items"] or [])
-                              if record["resref"] == item) for item in sorted(ITEMS)} for group, owners in groups.items()}
-    return {"schema": "flpr-fixture-save-observation-v1", "save_directory": str(directory),
+                              if record["resref"] == item) for item in sorted(selected_items)}
+              for group, owners in groups.items()}
+    result = {"schema": "flpr-fixture-save-observation-v1", "save_directory": str(directory),
             "files": {name: {"sha256": hashlib.sha256(blobs[name]).hexdigest(), "size": before[name][0],
                               "mtime_ns": before[name][1]} for name in paths},
             "gam": gam, "sav_member_count": members, "bg2600": area, "observed_record_counts": counts,
@@ -206,19 +229,30 @@ def inspect_save(save: Path) -> dict:
                             "observed_inventories": sum(1 for actor in groups["sources"]
                             if (actor["script_name"] or actor["actor_name"]).lower() == name and actor["inventory_observed"])}
                             for name in sorted(SOURCE_NAMES)},
-                         "expected_targets": {name: sum(1 for target in groups["targets"]
-                            if target["name"].lower() == name) for name in sorted(TARGET_NAMES)}},
+                         "expected_targets": ({name: {"matching_actors": sum(1 for actor in groups["targets"]
+                             if name in {actor["actor_name"].lower(), (actor["script_name"] or "").lower()}),
+                             "observed_inventories": sum(1 for actor in groups["targets"]
+                             if name in {actor["actor_name"].lower(), (actor["script_name"] or "").lower()}
+                             and actor["inventory_observed"])} for name in sorted(CREATURE_TARGET_NAMES)}
+                             if variant == "creatures" else
+                             {name: sum(1 for target in groups["targets"]
+                              if target["name"].lower() == name) for name in sorted(GROUND_TARGET_NAMES)})},
             "limits": ["Counts describe serialized physical item records, not item usability or general lootability.",
                        "Missing BG2600 or external actor CREs are unobserved; no install template is substituted.",
                        "Only party CREs and saved BG2600 are inspected; other areas, stores and bag contents are excluded."]}
+    if variant == "creatures":
+        result["variant"] = variant
+    return result
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--save", required=True, type=Path, help="Exact isolated save directory to read.")
+    parser.add_argument("--variant", choices=VARIANTS, default="ground-piles",
+                        help="Observe the accepted ground piles or the two creature recipients.")
     args = parser.parse_args()
     try:
-        result = inspect_save(args.save)
+        result = inspect_save(args.save, args.variant)
     except (OSError, ScanError) as exc:
         print(json.dumps({"error": str(exc)}), file=sys.stderr)
         return 1

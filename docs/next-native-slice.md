@@ -4,6 +4,26 @@ Prepared 2026-09-26 after the [bounded native acceptance](native-acceptance-2026
 This is the engineering backlog and acceptance contract, not evidence that the
 new adapters work. Christopher does not need to select real content for this work.
 
+## Codex continuation after handoff (2026-09-26)
+
+Integrated the handoff through `1151182` and completed the bounded
+[native creature sequence](native-creature-acceptance-20260926.md): older A
+regression, two rewards on FLPRC1 and one on FLPRC2, preservation of FLPRX1,
+held save/reload, controlled death after delivery, ground pickup and looted
+save/reload. The extended save inspector and full offline suite pass 665 tests.
+
+All owned test processes stopped normally and the shared reservation was released.
+The old New Game area/pointer were restored; compatible updated modules and the
+new immutable creature revision remain in the disposable installation for its
+new named saves 48-50. No production content choices or remote pushes were made.
+
+The next gate is **automatic death-drop provenance**: the four observed item
+pointers changed between creature inventory and ground. The runtime correctly
+keeps its held phase; do not infer an operation-bound lootable receipt from a
+matching nearby item. Death during delivery and the other native edge cases
+below remain untested. Unvisited-source feasibility is still a separate open
+gate. Both are engineering work before real content review.
+
 ## Handoff: Claude to Codex (2026-09-26)
 
 Claude continued this slice while Codex was out of tokens. The local branch
@@ -38,9 +58,9 @@ See [installation scan evidence](installation-scan-20260924.md).
 
 ### Creature delivery and several rewards on one target
 
-**Status (later on 2026-09-26):** the transport question is answered statically,
-the synthetic side is implemented, and a disposable creature fixture can be built.
-Native acceptance has not run.
+**Status at Claude's handoff:** the transport question was answered statically,
+the synthetic side implemented, and the disposable creature fixture prepared.
+The Codex continuation above records the subsequent bounded native acceptance.
 
 - [Creature transport evidence](native-creature-transport-evidence.md):
   `GiveItemCreate` queues `CMessageAddItem` (type 67, subtype 2) addressed to the
@@ -66,10 +86,9 @@ Native acceptance has not run.
   A synthetic end-to-end run of that output through the real Core, Host and Nat
   ends with all three rewards held. The full offline suite passes 662 tests.
 
-Remaining for this item: native runs of the table below using the creature
-fixture, especially death timing, the death drop of a held item into a lootable
-pile, and save/reload of two held rewards on one actor. The staging steps are
-below.
+Remaining for this item: automatic drop provenance, death timing, and native
+runs of the table's remaining edge cases. The held save/reload, controlled
+post-delivery drop, and pickup have passed as recorded above.
 
 Use newly authored disposable actors and items. Do not pick a real boss, change a
 real encounter, or infer a default capacity for production content.
@@ -105,8 +124,9 @@ death, transport, or inventory behavior.
 
 #### Staging the creature fixture
 
-These steps change the disposable install, so they need the reservation
-described under coordination below. Nothing here has been run yet.
+These steps were used for the bounded continuation. A new test needs fresh
+backups, process checks and the reservation described below; do not rerun the
+consumed evidence scripts or overwrite the previous run's outputs.
 
 1. Build offline from the recorded pristine inputs:
    `python tools/build_mode1_fixture.py --game work/mode1-native-slice/fixture-input-v2 --output work/mode1-native-slice/payload-creatures --variant creatures`.

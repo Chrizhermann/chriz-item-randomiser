@@ -52,7 +52,8 @@ class FixtureSaveInspectorTests(unittest.TestCase):
     def test_revision_numeric_globals_signed_journal_and_encoded_phases(self):
         variables = [(f"flpr_r{index:02}", index) for index in range(1, 17)]
         variables += [("FLPR_SEED", 7654), ("FLPR_STATE", 2), ("FLPR_DONE", 1), ("FLPR_FRESH", 0),
-                      ("FLPR_JKIND", -1), ("FLPR_S0001", 3), ("FLPR_D0001", 4), ("FLPR_A0001", 2),
+                      ("FLPR_JKIND", -1), ("FLPR_S0001", 3), ("FLPR_D0001", 4),
+                      ("FLPR_S0002", 5), ("FLPR_D0002", 5), ("FLPR_A0001", 2),
                       ("UNRELATED", 99)]
         result = parse_gam(gam(variables))
         self.assertEqual(result["revision"], "".join(f"{index:04x}" for index in range(1, 17)))
@@ -60,6 +61,10 @@ class FixtureSaveInspectorTests(unittest.TestCase):
         self.assertNotIn("UNRELATED", result["globals"])
         self.assertEqual(result["phases"]["sources"]["FLPR_S0001"]["phase"], "verified")
         self.assertEqual(result["phases"]["deliveries"]["FLPR_D0001"]["phase"], "quarantined")
+        self.assertEqual(result["phases"]["sources"]["FLPR_S0002"],
+                         {"stored": 5, "phase": "invalid"})
+        self.assertEqual(result["phases"]["deliveries"]["FLPR_D0002"],
+                         {"stored": 5, "phase": "held"})
         self.assertEqual(result["seed"], 7654)
         self.assertEqual(result["assignments"], {"FLPR_A0001": 2})
 
@@ -91,6 +96,91 @@ class FixtureSaveInspectorTests(unittest.TestCase):
                          (7, [2, 3, 4], 9, [21]))
         self.assertEqual(result["bg2600"]["targets"][0]["type"], 4)
         self.assertEqual(result["coverage"]["expected_sources"]["flprs1"]["observed_inventories"], 1)
+
+    def test_default_ground_variant_retains_target_shape_and_count_meaning(self):
+        area = make_are([item_record("FLPRI1"), item_record("FLPRX1")],
+                        [("FLPRT1", 0, 1), ("OTHER", 1, 1)],
+                        [("FLPRC1", named_cre("FLPRC1", [item_record("FLPRI2")]))])
+        with tempfile.TemporaryDirectory() as directory:
+            folder = Path(directory)
+            (folder / "BALDUR.gam").write_bytes(gam())
+            (folder / "BALDUR.SAV").write_bytes(sav([("BG2600.ARE", area)]))
+            default = inspect_save(folder)
+            explicit = inspect_save(folder, "ground-piles")
+        self.assertEqual(default, explicit)
+        self.assertNotIn("variant", default)
+        self.assertEqual(default["coverage"]["expected_targets"],
+                         {"flprt1": 1, "flprt2": 0, "flprt3": 0})
+        self.assertEqual(default["observed_record_counts"]["targets"],
+                         {"flpri1": 1, "flpri2": 0, "flpri3": 0})
+        self.assertEqual(default["observed_record_counts"]["elsewhere_in_area"]["flpri2"], 1)
+        self.assertNotIn("flprx1", default["observed_record_counts"]["elsewhere_in_area"])
+
+    def test_creature_recipients_preserve_two_held_rewards_and_unrelated_inventory(self):
+        first = named_cre("FLPRC1", [
+            item_record("FLPRI1", expiration=7, charges=(2, 3, 4), flags=1),
+            item_record("FLPRI2", expiration=8, charges=(5, 6, 7), flags=9)])
+        second = named_cre("FLPRC2", [
+            item_record("FLPRX1", expiration=11, charges=(12, 13, 14), flags=17),
+            item_record("FLPRI3", expiration=0, charges=(8, 9, 10), flags=1)])
+        other = named_cre("OTHER", [item_record("FLPRI1")])
+        party = named_cre("PLAYER", [item_record("FLPRI3"), item_record("FLPRX1")])
+        area = make_are([item_record("FLPRI2"), item_record("FLPRI3")],
+                        [("OTHERBOX", 0, 1)],
+                        [("FLPRC1", first), ("FLPRC2", second), ("OTHER", other)])
+        with tempfile.TemporaryDirectory() as directory:
+            folder = Path(directory)
+            (folder / "BALDUR.gam").write_bytes(gam(
+                variables=[("FLPR_D0001", 5), ("FLPR_D0002", 5), ("FLPR_D0003", 5)],
+                party=[party]))
+            (folder / "BALDUR.SAV").write_bytes(sav([("BG2600.ARE", area)]))
+            result = inspect_save(folder, "creatures")
+        self.assertEqual(result["variant"], "creatures")
+        self.assertEqual([row["phase"] for row in result["gam"]["phases"]["deliveries"].values()],
+                         ["held", "held", "held"])
+        self.assertEqual(result["coverage"]["expected_targets"], {
+            "flprc1": {"matching_actors": 1, "observed_inventories": 1},
+            "flprc2": {"matching_actors": 1, "observed_inventories": 1}})
+        self.assertEqual([actor["actor_record_index"] for actor in result["bg2600"]["targets"]], [0, 1])
+        self.assertEqual([actor["all_item_count"] for actor in result["bg2600"]["targets"]], [2, 2])
+        first_items = result["bg2600"]["targets"][0]["fixture_items"]
+        self.assertEqual([(row["resref"], row["record_index"], row["slots"])
+                          for row in first_items], [("flpri1", 0, [21]), ("flpri2", 1, [22])])
+        self.assertEqual((first_items[0]["charges"], first_items[0]["wear"], first_items[0]["flags"]),
+                         ([2, 3, 4], 7, 1))
+        self.assertEqual((first_items[1]["charges"], first_items[1]["wear"], first_items[1]["flags"]),
+                         ([5, 6, 7], 8, 9))
+        second_items = result["bg2600"]["targets"][1]["fixture_items"]
+        self.assertEqual([(row["resref"], row["record_index"], row["slots"])
+                          for row in second_items], [("flprx1", 0, [21]), ("flpri3", 1, [22])])
+        self.assertEqual((second_items[0]["charges"], second_items[0]["wear"], second_items[0]["flags"]),
+                         ([12, 13, 14], 11, 17))
+        self.assertEqual(result["observed_record_counts"]["targets"],
+                         {"flpri1": 1, "flpri2": 1, "flpri3": 1, "flprx1": 1})
+        self.assertEqual(result["observed_record_counts"]["party"],
+                         {"flpri1": 0, "flpri2": 0, "flpri3": 1, "flprx1": 1})
+        self.assertEqual(result["observed_record_counts"]["elsewhere_in_area"],
+                         {"flpri1": 1, "flpri2": 1, "flpri3": 1, "flprx1": 0})
+        self.assertEqual([row["kind"] for row in result["bg2600"]["elsewhere_in_area"]],
+                         ["other_actor", "other_container", "unowned_area_records"])
+
+    def test_duplicate_missing_and_external_creature_targets_report_observation_gaps(self):
+        resident = named_cre("FLPRC1", [item_record("FLPRI1")])
+        area = make_are(actors=[("FLPRC1", resident), ("FLPRC1", "FLPRC1")])
+        with tempfile.TemporaryDirectory() as directory:
+            folder = Path(directory)
+            (folder / "BALDUR.gam").write_bytes(gam())
+            (folder / "BALDUR.SAV").write_bytes(sav([("BG2600.ARE", area)]))
+            result = inspect_save(folder, "creatures")
+        self.assertEqual(len(result["bg2600"]["targets"]), 2)
+        self.assertEqual(result["coverage"]["expected_targets"]["flprc1"],
+                         {"matching_actors": 2, "observed_inventories": 1})
+        self.assertEqual(result["coverage"]["expected_targets"]["flprc2"],
+                         {"matching_actors": 0, "observed_inventories": 0})
+        self.assertFalse(result["bg2600"]["targets"][1]["inventory_observed"])
+        self.assertIsNone(result["bg2600"]["targets"][1]["fixture_items"])
+        self.assertIsNone(result["bg2600"]["targets"][1]["all_item_count"])
+        self.assertEqual(result["observed_record_counts"]["targets"]["flpri1"], 1)
 
     def test_external_source_is_unobserved_instead_of_substituted_from_install(self):
         result = inspect_area(make_are(actors=[("FLPRS1", "FLPRS1")]))
