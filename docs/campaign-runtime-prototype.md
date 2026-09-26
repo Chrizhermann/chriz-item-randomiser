@@ -166,8 +166,13 @@ as held rather than inventing an automatic lootable receipt.
 
 The [controlled receipt continuation](held-drop-receipts-20260926.md) adds saved
 delivery identities and an explicitly armed observer for a new quiet fixture.
-Its offline checks pass; fresh native receipt/save acceptance remains pending.
-General held-item lifetime tracking and unfinished-save recovery remain open.
+Its 777 offline checks pass. A fresh native run verified three automatic
+held-to-ground confirmations, ordinary pickup, serialized saves, and reload of
+the confirmed and looted states without duplication or a new seed. The test
+game closed normally and all staged files were restored. These results remain
+limited to the explicitly controlled fixture; general held-item lifetime
+tracking, unfinished-save recovery, and unvisited-original suppression remain
+open.
 
 ### Scanner status and installation check
 

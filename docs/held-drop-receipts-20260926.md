@@ -71,32 +71,93 @@ The earlier recorded 12-row native trace was also replayed offline through the
 new correlator, producing the three reward candidates with the recorded ground
 item/container pointers. This replay is not a new engine test.
 
-Fresh native receipt/save acceptance is pending. The initial native attempt,
-after competing chats became idle, captured a new campaign but stalled after
-character acceptance. The chapter-finish command remained unclaimed; it was not
-resent. No receipt hooks, death action, pickup, or new named save ran.
+### Native acceptance: 27 September local time
+
+The corrected quiet fixture passed a fresh native run on the isolated non-input
+desktop after the potentially conflicting BG chats became idle. The character
+helper completed all 15 steps, including the chapter screen, without desktop
+input. The campaign used seed `1281232896` and retained the saved delivery
+identities `[5,6,7]` throughout the run.
+
+Two ordinary `Kill(Myself)` actions produced a stopped, stable 12-event trace
+without overflow: three rewards plus the unrelated control. The observer linked
+each original owner/slot/item through its transfer message to the exact ground
+item/container and payload, checked the ground items again on a later tick, and
+confirmed all three deliveries. A real reused heap address was handled in order:
+FLPRI1's former held pointer became FLPRI2's ground pointer after FLPRI1 had been
+copied into its message. Both message addresses were also reused only after
+their earlier consumption. Pickup then used ordinary `MoveToPoint`/`PickUpItem`
+actions; all three rewards reached the party and the control stayed on the
+ground. The fixture harness issued each mutation once.
+
+| New named save | Delivery state | Three rewards | Control |
+| --- | --- | --- | --- |
+| `000000051-IR Quiet Held 0927` | held | recipients, one copy each | recipient |
+| `000000052-IR Quiet Confirmed 0927` | confirmed | ground, one copy each | ground |
+| `000000053-IR Quiet Looted 0927` | confirmed | party, one copy each | ground |
+
+Read-only inspection of each exact named save verified all three original source
+inventories contained no fixture rewards, both recipient inventories were observed, and each of
+the four fixture item types had exactly one physical record across the party
+and saved BG2600. Comparing FLPR GLOBALs from held to confirmed found only the
+three delivery-phase changes; the confirmed and looted FLPR GLOBALs were equal.
+The immutable revision, seed, assignments, source phases, and nonces persisted.
+
+Both confirmed and looted saves were loaded through the ordinary menu path in
+the same process. Each restored the expected item placement and confirmed
+phases with no attached observer, no additional seed, no recreated originals,
+and no duplicate rewards. This validates already-confirmed recovery only: the
+held save was inspected but was not reloaded in this run.
+
+The game exited through its normal Quit button. The owned game and loader were
+absent before the desktop guard was released; all 17 staged paths were restored,
+all 73 protected files retained their hashes, and the reservation was removed.
+The three new saves and their immutable manifest remain in the isolated test
+profile/store. No installer ran or ordinary desktop was selected.
+
+Evidence is under `work/mode1-held-receipts-20260927/`: numbered console responses,
+the 12-row trace, the three serialized save observations, `acceptance-check.json`
+(independent artifact review), `saved-acceptance.json` (saved-state/reload checks
+with input hashes), and `native-released.json`. The full offline suite on the
+same implementation passed **777 tests** before this run.
+
+### Earlier failed startup and correction
+
+The initial native attempt, after competing chats became idle, captured a new
+campaign but stalled after character acceptance. The chapter-finish command
+remained unclaimed; it was not resent. No receipt hooks, death action, pickup,
+or new named save ran.
 
 That first quiet revision (`0d3ede4e...`) had cleared BG2600's area script.
 Inspection of the installed script established that it performs EET startup
 initialization and `IncrementChapter("Chptxt0")`; removing it was a fixture
 contract error. The corrected revision above preserves those bytes, with a
-regression test using a nonempty script. The full suite still passes 777 tests.
-Whether this also explains the complete polling stall awaits native retry.
+regression test using a nonempty script. The full suite still passes 777 tests,
+and the corrected fixture completed startup in the accepted run above. That
+successful retry does not independently establish the old polling stall's
+complete causal mechanism.
 
 The stalled process did not finish after a standard close request. A diagnostic
 minidump and the unclaimed command were preserved, then the owned desktop job
 was closed. Game/loader were absent, the exact saved command was removed only
 after process exit, all 17 staged files were restored, all 70 protected files
-retained their hashes, and the reservation was released. The corrected attempt
-must use a fresh process and campaign, not replay the failed request.
+retained their hashes, and the reservation was released.
 
-Evidence and bounded stage/launch/restore helpers are in ignored
-`work/mode1-held-receipts-20260926/`; the corrected retry is prepared separately
-under `work/mode1-held-receipts-20260927/`.
+Offline inspection of that minidump found one saved thread instruction pointer
+inside `NtGdiDdDDIWaitForVerticalBlankEvent` in `win32u.dll`, with raw stack
+addresses in the OpenGL presentation path. The local DLL matches the dump's
+image size, timestamp, checksum, and version. This is one graphics-path snapshot,
+not an unwound stack, measured wait duration, or proof of a renderer deadlock.
+It does not establish the cause of the polling stall. The startup-script defect
+above is a separate resource-level finding.
+
+Failed-attempt evidence and bounded stage/launch/restore helpers remain in
+ignored `work/mode1-held-receipts-20260926/`. The corrected run used fresh
+helpers, reservation, process, requests, and evidence under the 27 September
+directory; no old job or ambiguous request was rerun.
 
 ## Remaining gates
 
-- Native acceptance of the quiet fixture and confirmed receipt through save/load.
 - Continuous item-lifetime tracking before death, including replacement and
   transformation; pointer/name/payload snapshots alone are insufficient. New
   [offline destruction-path evidence](native-item-lifetime-evidence.md) identifies
