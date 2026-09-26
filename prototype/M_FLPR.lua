@@ -63,7 +63,10 @@ local ok, failure = pcall(function()
                 storage:set("flpr_done", 1)
                 assert(storage:get("flpr_done") == 1, "COMPLETION_MARKER_WRITE_FAILED")
                 local count = #assert(root.Host.controller:assignments())
-                Infinity_DisplayString("Randomiser test ready: " .. count .. " test weapons have been placed near the Candlekeep entrance.")
+                -- The creature fixture variant names its recipients; absent means ground piles.
+                local detail = root.Host.bundle.fixture.ready_detail
+                if type(detail) ~= "string" then detail = "have been placed near the Candlekeep entrance." end
+                Infinity_DisplayString("Randomiser test ready: " .. count .. " test weapons " .. detail)
             else
                 print("FLPR fixture stopped: " .. tostring(reason))
             end

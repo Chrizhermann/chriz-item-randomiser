@@ -2,6 +2,8 @@
 
 Reads only explicitly named override resources; never reads or writes saves.
 The output is not a general installation scan or a supported content profile.
+Variant "ground-piles" is the accepted fixture; "creatures" gives the same three
+rewards to two disposable, killable recipients for native creature acceptance.
 Binary layouts: IESDP gam_v2.0.htm, are_v1.htm, cre_v1.htm, itm_v1.htm.
 Native accessibility and source loading must still be checked in the engine.
 """
@@ -24,6 +26,18 @@ AREA = "bg2600"
 ITEM_BASES = ("sw1h01", "ax1h01", "blun04")
 SOURCE_POSITIONS = ((3349, 339), (3389, 339), (3429, 339))
 TARGET_POSITIONS = ((1140, 650), (1200, 650), (1260, 650))
+# "ground-piles" is the accepted fixture and must stay byte-identical.
+# "creatures" gives the rewards to two disposable, killable actors instead:
+# FLPRC1 holds two (empty inventory) and FLPRC2 one (beside an unrelated
+# disposable FLPRX1 that must never change). Capacities are fixture-only.
+VARIANTS = ("ground-piles", "creatures")
+# Recipients stand on accepted pile positions 1 and 3, which the party reached.
+CREATURE_TARGETS = (("FLPRC1", TARGET_POSITIONS[0], 2), ("FLPRC2", TARGET_POSITIONS[2], 1))
+UNRELATED_ITEM, UNRELATED_BASE, UNRELATED_OWNER = "FLPRX1", ITEM_BASES[0], "FLPRC2"
+CREATURE_READY_DETAIL = "have been given to the two test cows near the Candlekeep entrance."
+FIXTURE_RESOURCES = (*(f"FLPRS{index}.CRE" for index in range(1, 4)),
+    *(f"FLPRI{index}.ITM" for index in range(1, 4)),
+    *(name + ".CRE" for name, _, _ in CREATURE_TARGETS), UNRELATED_ITEM + ".ITM")
 
 
 def u16(data: bytes, offset: int) -> int:
@@ -76,7 +90,7 @@ def item_payload(resref: str, data: bytes) -> dict:
             "charges": charges + [0] * (3 - len(charges)), "flags": 1}
 
 
-def make_source_cre(original: bytes, script_name: str, payload: dict) -> bytes:
+def _fixture_cre(original: bytes, script_name: str, payload: dict | None) -> bytes:
     parse_cre(original)
     result = bytearray(original)
     result[0x248:0x270] = b"\0" * 40  # Five creature scripts.
@@ -88,58 +102,105 @@ def make_source_cre(original: bytes, script_name: str, payload: dict) -> bytes:
         struct.pack_into("<II", result, offset, 0, 0)
     result[0x270] = 128  # Neutral; no actions are scripted.
     item_offset = len(result)
-    result.extend(struct.pack("<8s4HI", payload["resref"].encode("ascii"),
-        payload["expiration"], *payload["charges"], payload["flags"]))
+    if payload is not None:
+        result.extend(struct.pack("<8s4HI", payload["resref"].encode("ascii"),
+            payload["expiration"], *payload["charges"], payload["flags"]))
     slots_offset = len(result)
     slots = [0xFFFF] * 38 + [1000, 0]
-    slots[21] = 0  # First ordinary inventory slot; never equipped.
+    if payload is not None:
+        slots[21] = 0  # First ordinary inventory slot; never equipped.
     result.extend(struct.pack("<40H", *slots))
-    struct.pack_into("<III", result, 0x2B8, slots_offset, item_offset, 1)
+    struct.pack_into("<III", result, 0x2B8, slots_offset, item_offset, int(payload is not None))
     parsed = parse_cre(result)
-    assert len(parsed["items"]) == 1 and parsed["items"][0]["slots"] == [21]
+    expected = [] if payload is None else [[21]]
+    assert [item["slots"] for item in parsed["items"]] == expected
     return bytes(result)
 
 
-def add_area_fixture(original: bytes) -> bytes:
+def make_source_cre(original: bytes, script_name: str, payload: dict) -> bytes:
+    return _fixture_cre(original, script_name, payload)
+
+
+def make_target_cre(original: bytes, script_name: str, payload: dict | None = None) -> bytes:
+    """A disposable reward recipient; an optional payload is unrelated inventory."""
+    return _fixture_cre(original, script_name, payload)
+
+
+def _actor(name: str, x: int, y: int, flags: int) -> bytes:
+    actor = bytearray(0x110)
+    struct.pack_into("<32s4HI", actor, 0, name.encode("ascii"), x, y, x, y, flags)
+    struct.pack_into("<i", actor, 0x38, -1)
+    struct.pack_into("<I", actor, 0x40, 0xFFFFFF)
+    struct.pack_into("<8s", actor, 0x80, name.encode("ascii"))
+    return bytes(actor)
+
+
+def add_area_fixture(original: bytes, variant: str = "ground-piles") -> bytes:
+    if variant not in VARIANTS:
+        raise ValueError("Unknown fixture variant")
     parsed = parse_are(original)
     if any(row["name"].upper().startswith("FLPR") for key in ("actors", "containers")
            for row in parsed[key]):
         raise ValueError("Area already contains fixture records")
+    # Actor flags 5: external CRE, invulnerable, so sources survive until
+    # suppressed. Flags 1: external CRE only, so death tests can kill recipients.
+    actors = [_actor(f"FLPRS{index}", x, y, 5) for index, (x, y) in enumerate(SOURCE_POSITIONS, 1)]
+    if variant == "creatures":
+        actors += [_actor(name, x, y, 1) for name, (x, y), _ in CREATURE_TARGETS]
+    piles = TARGET_POSITIONS if variant == "ground-piles" else ()
     result = bytearray(original)
     actor_count, container_count = len(parsed["actors"]), len(parsed["containers"])
-    if max(actor_count, container_count) > 65532:
+    if actor_count + len(actors) > 0xFFFF or container_count + len(piles) > 0xFFFF:
         raise ValueError("Area fixture exceeds record count limits")
     # Copy complete existing tables to EOF: embedded offsets stay absolute and
     # every original non-header byte stays in place. Only table pointers change.
     actor_offset = len(result)
     result.extend(original[u32(original, 0x54):u32(original, 0x54) + actor_count * 0x110])
-    for index, (x, y) in enumerate(SOURCE_POSITIONS, 1):
-        actor = bytearray(0x110)
-        name = f"FLPRS{index}".encode("ascii")
-        struct.pack_into("<32s4HI", actor, 0, name, x, y, x, y, 5)
-        struct.pack_into("<i", actor, 0x38, -1)
-        struct.pack_into("<I", actor, 0x40, 0xFFFFFF)
-        struct.pack_into("<8s", actor, 0x80, name)
+    for actor in actors:
         result.extend(actor)
-    struct.pack_into("<IH", result, 0x54, actor_offset, actor_count + 3)
-    container_offset = len(result)
-    result.extend(original[u32(original, 0x70):u32(original, 0x70) + container_count * 0xC0])
-    for index, (x, y) in enumerate(TARGET_POSITIONS, 1):
-        container = bytearray(0xC0)
-        struct.pack_into("<32s3H", container, 0, f"FLPRT{index}".encode("ascii"), x, y, 4)
-        # Ground piles use location/bounding box; no polygon, owner, lock or trap.
-        struct.pack_into("<4H", container, 0x38, x - 12, y - 8, x + 12, y + 8)
-        struct.pack_into("<I", container, 0x84, 0xFFFFFFFF)
-        result.extend(container)
-    struct.pack_into("<IH", result, 0x70, container_offset, container_count + 3)
+    struct.pack_into("<IH", result, 0x54, actor_offset, actor_count + len(actors))
+    if piles:
+        container_offset = len(result)
+        result.extend(original[u32(original, 0x70):u32(original, 0x70) + container_count * 0xC0])
+        for index, (x, y) in enumerate(piles, 1):
+            container = bytearray(0xC0)
+            struct.pack_into("<32s3H", container, 0, f"FLPRT{index}".encode("ascii"), x, y, 4)
+            # Ground piles use location/bounding box; no polygon, owner, lock or trap.
+            struct.pack_into("<4H", container, 0x38, x - 12, y - 8, x + 12, y + 8)
+            struct.pack_into("<I", container, 0x84, 0xFFFFFFFF)
+            result.extend(container)
+        struct.pack_into("<IH", result, 0x70, container_offset, container_count + len(piles))
     after = parse_are(result)
-    assert len(after["actors"]) == actor_count + 3
-    assert len(after["containers"]) == container_count + 3
+    assert len(after["actors"]) == actor_count + len(actors)
+    assert len(after["containers"]) == container_count + len(piles)
     return bytes(result)
 
 
-def compile_fixture(resources: dict[str, bytes], inputs: dict[str, str]) -> tuple[dict, dict]:
+def _creature_targets(area: dict, hashes: dict[str, str], manifest: dict, native: dict) -> None:
+    """Bind each recipient to its exact ARE actor record and external CRE."""
+    for name, _, capacity in CREATURE_TARGETS:
+        rows = [row for row in area["actors"] if row["name"] == name]
+        if len(rows) != 1 or rows[0]["cre_resref"] != name.lower() or rows[0]["embedded_cre_size"]:
+            raise ValueError(f"Fixture area must contain exactly one external-CRE actor {name}")
+        actor = rows[0]
+        identity = f"are:{AREA}/actor/{actor['record_index']}"
+        # Same record shape as the post-install world scan's actor targets.
+        selector = {key: deepcopy(value) for key, value in actor.items() if key != "embedded_cre"}
+        selector["template_resource"] = "cre:" + name.lower()
+        target = {"id": identity, "resource": "are:" + AREA, "kind": "actor", "selector": selector,
+            "concerns": ["actor-availability", "external-cre-template", "lootability-unverified"]}
+        manifest["targets"].append({"id": identity, "capacity": capacity, "record": target,
+                                    "resource_sha256": hashes["BG2600.ARE"]})
+        native["targets"][identity] = {"kind": "creature", "area": AREA.upper(), "script_name": name,
+            "identity": _digest({"target": target, "resource_sha256": hashes["BG2600.ARE"],
+                                 "template_sha256": hashes[name + ".CRE"]})}
+
+
+def compile_fixture(resources: dict[str, bytes], inputs: dict[str, str],
+                    variant: str = "ground-piles") -> tuple[dict, dict]:
     """Validate an exact fixture artifact; no claim to a complete game scan."""
+    if variant not in VARIANTS:
+        raise ValueError("Unknown fixture variant")
     area = parse_are(resources["BG2600.ARE"])
     hashes = {key: digest(value) for key, value in sorted(resources.items())}
     context = {"scope": "disposable-bg1-fixture-only", "inputs": inputs, "outputs": hashes}
@@ -150,6 +211,13 @@ def compile_fixture(resources: dict[str, bytes], inputs: dict[str, str]) -> tupl
     native = {"schema": "flir-native-fixture-v1", "area": AREA.upper(),
         "fresh_global": "FLPR_FRESH", "sources": {}, "targets": {},
         "resource_hashes": hashes, "input_hashes": inputs}
+    if variant == "creatures":
+        # Added only here: the accepted ground-pile artifacts must stay byte-identical.
+        manifest["profile_id"] = "native-mode1-creature-fixture"
+        cre = parse_cre(resources[UNRELATED_OWNER + ".CRE"])
+        native.update({"variant": variant, "ready_detail": CREATURE_READY_DETAIL,
+            "unrelated_items": {UNRELATED_OWNER: [{key: deepcopy(record[key])
+                for key in ("resref", "expiration", "charges", "flags")} for record in cre["items"]]}})
     for index in range(1, 4):
         resref = f"flprs{index}"
         cre = parse_cre(resources[resref.upper() + ".CRE"])
@@ -164,7 +232,8 @@ def compile_fixture(resources: dict[str, bytes], inputs: dict[str, str]) -> tupl
         native["sources"][identity] = {"area": AREA.upper(), "script_name": resref.upper(),
             "payload": {key: deepcopy(record[key]) for key in ("resref", "expiration", "charges", "flags")},
             "identity": _digest({"source": source, "resource_sha256": source_hash})}
-    for container in area["containers"][-3:]:
+    piles = area["containers"][-3:] if variant == "ground-piles" else []
+    for container in piles:
         identity = f"are:{AREA}/container/{container['record_index']}"
         selector = {key: value for key, value in container.items() if key != "items"}
         target = {"id": identity, "resource": "are:" + AREA, "kind": "container",
@@ -174,6 +243,8 @@ def compile_fixture(resources: dict[str, bytes], inputs: dict[str, str]) -> tupl
         native["targets"][identity] = {"area": AREA.upper(), "script_name": container["name"],
             "x": container["x"], "y": container["y"],
             "identity": _digest({"target": target, "resource_sha256": hashes["BG2600.ARE"]})}
+    if variant == "creatures":
+        _creature_targets(area, hashes, manifest, native)
     for key in ("sources", "targets"):
         manifest[key].sort(key=lambda row: row["id"])
     manifest["revision"] = _digest(manifest)
@@ -182,7 +253,9 @@ def compile_fixture(resources: dict[str, bytes], inputs: dict[str, str]) -> tupl
     return manifest, native
 
 
-def build(game: Path, output: Path) -> dict:
+def build(game: Path, output: Path, variant: str = "ground-piles") -> dict:
+    if variant not in VARIANTS:
+        raise ValueError("Unknown fixture variant")
     game, output = game.resolve(strict=True), output.resolve()
     if output.is_relative_to(game) or game.is_relative_to(output):
         raise ValueError("Fixture output must be outside, and not contain, the game directory")
@@ -200,19 +273,25 @@ def build(game: Path, output: Path) -> dict:
     rows = [line.split() for line in start.splitlines()]
     if [row[1].upper() for row in rows if len(row) >= 2 and row[0] == "START_AREA"] != ["BG2600"]:
         raise ValueError("Fixture requires the BG2600 BG1 campaign start")
-    for index in range(1, 4):
-        if (override / f"FLPRS{index}.CRE").exists() or (override / f"FLPRI{index}.ITM").exists():
-            raise ValueError("Selected game already contains fixture resources")
+    # Either variant needs pristine inputs, never an earlier fixture's output.
+    if any((override / name).exists() for name in FIXTURE_RESOURCES):
+        raise ValueError("Selected game already contains fixture resources")
     resources = {"BALDUR.GAM": mark_initial_gam(originals["BALDUR.GAM"]),
-                 "BG2600.ARE": add_area_fixture(originals["BG2600.ARE"])}
+                 "BG2600.ARE": add_area_fixture(originals["BG2600.ARE"], variant)}
     for index, base in enumerate(ITEM_BASES, 1):
         item = originals[base.upper() + ".ITM"]
         resources[f"FLPRI{index}.ITM"] = item
         resources[f"FLPRS{index}.CRE"] = make_source_cre(originals["COW.CRE"], f"FLPRS{index}",
             item_payload(f"flpri{index}", item))
+    if variant == "creatures":
+        unrelated = originals[UNRELATED_BASE.upper() + ".ITM"]
+        resources[UNRELATED_ITEM + ".ITM"] = unrelated
+        for name, _, _ in CREATURE_TARGETS:
+            resources[name + ".CRE"] = make_target_cre(originals["COW.CRE"], name,
+                item_payload(UNRELATED_ITEM.lower(), unrelated) if name == UNRELATED_OWNER else None)
     inputs = {name: digest(data) for name, data in sorted(originals.items())}
     inputs["BGSTARTA.2DA"] = digest((override / "BGSTARTA.2DA").read_bytes())
-    manifest, native = compile_fixture(resources, inputs)
+    manifest, native = compile_fixture(resources, inputs, variant)
     # All in-memory binary and manifest checks pass before any output is made.
     (output / "override").mkdir(parents=True)
     for name, data in resources.items():
@@ -226,13 +305,17 @@ def build(game: Path, output: Path) -> dict:
         "revision": revision}))
     (output / "fixture-native.json").write_bytes(canonical_bytes(native))
     (output / "fixture-native.lua").write_bytes(_render_lua(native))
-    report = {"state": "staged-not-installed", "game": str(game), "output": str(output),
-        "revision": revision, "area": AREA, "source_ids": list(native["sources"]),
-        "target_ids": list(native["targets"]), "inputs": inputs,
-        "outputs": native["resource_hashes"],
-        "limitations": ["Fixture-only resource fingerprint; not a full game scan",
-            "Initial GAM marker, source loading and pile access need live verification",
-            "No save files read or changed; no game files written"]}
+    access = "pile access" if variant == "ground-piles" else "recipient spawning"
+    limitations = ["Fixture-only resource fingerprint; not a full game scan",
+        f"Initial GAM marker, source loading and {access} need live verification",
+        "No save files read or changed; no game files written"]
+    if variant == "creatures":
+        limitations.insert(2, "Creature transport, final flags, death drop and held-item "
+                              "save/reload are unproven until native acceptance")
+    report = {"state": "staged-not-installed", "variant": variant, "game": str(game),
+        "output": str(output), "revision": revision, "area": AREA,
+        "source_ids": list(native["sources"]), "target_ids": list(native["targets"]),
+        "inputs": inputs, "outputs": native["resource_hashes"], "limitations": limitations}
     (output / "fixture-report.json").write_bytes(canonical_bytes(report))
     return report
 
@@ -241,8 +324,10 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--game", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
+    parser.add_argument("--variant", choices=VARIANTS, default="ground-piles",
+                        help="ground-piles is the accepted fixture; creatures targets two killable actors")
     args = parser.parse_args()
-    print(json.dumps(build(args.game, args.output), indent=2))
+    print(json.dumps(build(args.game, args.output, args.variant), indent=2))
 
 
 if __name__ == "__main__":

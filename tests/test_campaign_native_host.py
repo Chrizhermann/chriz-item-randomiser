@@ -280,7 +280,7 @@ local function bootstrap(Core,Host,Globals,text)
     loadfile=function(path)
         if modules[path] then return function() return modules[path] end end
         if path=="flpr-fixture/campaign-store/revisions/"..f.manifest.revision..".native.lua" then
-            return function() return {revision=f.manifest.revision} end
+            return function() return {revision=f.manifest.revision,ready_detail=f.ready_detail} end
         end
         if path=="flpr-fixture/next.lua" then return function() return f.next_revision end end
         local revision=path:match("revisions/([0-9a-f]+)%.lua$")
@@ -315,6 +315,29 @@ function cases.bootstrap_destroy_clears_intent(Core,Host,Globals,text)
     local f=bootstrap(Core,Host,Globals,text); f.root.NewGame(); assert(f.root.NewGameIntent)
     f.listeners.destroy(); assert(f.root.NewGameIntent==nil and f.root.Host.status=="waiting")
     f.values.FLPR_FRESH=1; f.root.AcceptCharacter(2); assert(f.values.flpr_state==nil)
+end
+local function bootstrap_to_complete(f)
+    f.root.NewGame(); f.values.FLPR_FRESH=1; assert(f.root.AcceptCharacter(2)==2)
+    local shown={}
+    Infinity_DisplayString=function(message) shown[#shown+1]=message end
+    local clock=EngineGlobals.g_pBaldurChitin.m_pObjectGame.m_worldTime
+    for i=1,25 do clock.m_gameTime=clock.m_gameTime+1; f.root.Poll() end
+    assert(f.root.Host.status=="complete",tostring(f.root.Host.error))
+    assert(f.values.flpr_done==1)
+    return shown
+end
+function cases.bootstrap_ready_message_keeps_the_accepted_ground_pile_text(Core,Host,Globals,text)
+    local shown=bootstrap_to_complete(bootstrap(Core,Host,Globals,text))
+    assert(#shown==1 and shown[1]==
+        "Randomiser test ready: 3 test weapons have been placed near the Candlekeep entrance.",tostring(shown[1]))
+end
+function cases.bootstrap_ready_message_uses_the_fixture_detail(Core,Host,Globals,text)
+    local f=bootstrap(Core,Host,Globals,text)
+    f.ready_detail="have been given to the two test cows near the Candlekeep entrance."
+    local shown=bootstrap_to_complete(f)
+    assert(#shown==1 and shown[1]==
+        "Randomiser test ready: 3 test weapons have been given to the two test cows near the Candlekeep entrance.",
+        tostring(shown[1]))
 end
 function cases.bootstrap_save_load_blocks_background_remote_poll(Core,Host,Globals,text)
     local f=bootstrap(Core,Host,Globals,text)
