@@ -218,8 +218,11 @@ and A/B save independence in the same and a fresh process. The completed
 load-only and standalone choice diagnostics have been retired; their relevant
 [engine findings](unvisited-source-gate-20260927.md) remain documented.
 
-Next are the returned-copy and save-before-confirmation cases in that same
-fixture, followed by broader source adapters. The
+The returned-copy and save-before-confirmation cases now pass, including fresh
+process reloads. The guard also accepts a different configured area, container,
+item record and payload; its second native fixture passed pickup, original
+suppression and save/reload. Next remove the single-container configuration limit
+before adding other source families. The
 [item-lifetime diagnostic](native-item-lifetime-20260927.md) established bounded
 drop/destructor behavior; continuous creature receipt tracking and unfinished-save
 recovery still need integration. All sessions closed and staged files were

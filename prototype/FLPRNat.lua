@@ -78,16 +78,14 @@ function Native.new(api, fixture)
                 assert(copy.kind == "creature" or copy.kind == "guarded-container", "NATIVE_SOURCE_KIND_UNSUPPORTED")
                 copy.sprite = true
                 copy.payload = assert(payload(endpoint.payload), "NATIVE_PAYLOAD_UNSUPPORTED")
-                assert(copy.payload.resref:match("^flpri[123]$") and not source_resrefs[copy.payload.resref],
+                assert(not source_resrefs[copy.payload.resref],
                     "NATIVE_FIXTURE_RESOURCE_NOT_UNIQUE")
                 if copy.kind == "guarded-container" then
-                    assert(not guarded_id and copy.area == "flpru1" and copy.script_name == "flpru1a" and
-                        endpoint.x == 1140 and endpoint.y == 650 and copy.payload.resref == "flpri1" and
-                        copy.payload.expiration == 0 and copy.payload.flags == 1 and
-                        copy.payload.charges[1] == 0 and copy.payload.charges[2] == 0 and
-                        copy.payload.charges[3] == 0, "NATIVE_GUARDED_SOURCE_INVALID")
+                    assert(not guarded_id and integer(endpoint.x,0,32767) and integer(endpoint.y,0,32767) and
+                        integer(endpoint.container_type or 4,0,65535), "NATIVE_GUARDED_SOURCE_INVALID")
                     guarded_id = id
                     copy.sprite, copy.x, copy.y = false, endpoint.x, endpoint.y
+                    copy.container_type = endpoint.container_type or 4
                 end
                 source_resrefs[copy.payload.resref] = true
             else
@@ -158,13 +156,13 @@ function Adapter:_resolve(endpoint, kind, visible_area)
         end)
     end
     if matches ~= 1 then return nil, matches == 0 and "OWNER_MISSING" or "OWNER_AMBIGUOUS" end
-    if kind == "source" then
+    if kind == "source" and endpoint.sprite then
         if api.EEex_GameObject_IsSprite(found.object, false) ~= true then return nil, "SOURCE_NOT_ALIVE" end
     elseif endpoint.kind == "creature" then
         local reason = self:_creature_state(found.object)
         -- The unusable owner is returned only for read-only diagnostics.
         if reason then return nil, reason, found end
-    elseif found.object.m_containerType ~= 4 or not found.object.m_pos or
+    elseif found.object.m_containerType ~= (endpoint.container_type or 4) or not found.object.m_pos or
         found.object.m_pos.x ~= endpoint.x or found.object.m_pos.y ~= endpoint.y then
         return nil, "TARGET_NOT_FIXTURE_GROUND_PILE"
     end
@@ -306,8 +304,10 @@ local function placed_item(before, after, empty)
     return added[1]
 end
 
-function Adapter:_supported(item)
-    local header = self.api.EEex_Resource_Demand(item.resref, "ITM")
+function Native.supported(api, item)
+    item = payload(item)
+    if not item then return nil, "NATIVE_PAYLOAD_UNSUPPORTED" end
+    local header = api.EEex_Resource_Demand(item.resref, "ITM")
     if not header or not integer(header.maxStackable, 0, 1) or
         not integer(header.itemFlags, 0, 4294967295) then return nil, "ITEM_NOT_NONSTACKABLE" end
     -- Resource bit 2 enables movement/drop, bit 3 makes the ground icon visible.
@@ -714,6 +714,7 @@ function Adapter:verify_held_drop(request, candidate)
     if creature_conflict(self:_queue(), found, self.source_resrefs) then return nil, "DROP_QUEUE_CONFLICT" end
     return true
 end
+function Adapter:_supported(item) return Native.supported(self.api, item) end
 
 function Adapter:diagnostics()
     local result = { tick = self.tick, last_error = self.last_error, sources = {}, targets = {} }

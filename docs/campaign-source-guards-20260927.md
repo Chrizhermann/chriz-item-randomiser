@@ -1,8 +1,9 @@
 # Mode 1: reward before visiting its original area
 
-The integrated authored fixture passed native New Game, early reward pickup,
-source suppression and selected/excluded campaign reload checks on 27 September.
-This is a working prototype for one container on the pinned Windows build;
+The integrated fixture passed native New Game, early reward pickup, source
+suppression, selected/excluded campaign reload, returned-item and interrupted
+confirmation checks on 27 September. A second configured source also passed.
+This is a working prototype for one configured container on the pinned Windows build;
 general source support and the player-facing configuration UI remain unfinished.
 
 ## Implementation
@@ -15,8 +16,10 @@ general source support and the player-facing configuration UI remain unfinished.
   delivery. Ordinary visible sources retain their existing removal flow.
 - `FLPRGat.lua`, `FLPRCampaignPolicy.lua`, and `FLPRGateAsm.lua`: install before
   area loading and select policy from the full saved campaign revision and source
-  phase. The implementation is restricted to one authored FLPRU1 container and
-  the pinned BG2EE executable; this is not general source support yet.
+  phase. Area, container, item record and payload now come from the campaign
+  manifest and pristine ARE; they are no longer restricted to FLPRU1/FLPRI1.
+  One guard and one selected revision per process remain the prototype limit,
+  along with the pinned BG2EE executable.
 - The guard compares the complete authored ARE input and ties the result to the
   same area-load invocation and constructor inputs. Saved area records can move;
   matching an item name or original index alone would delete a returned copy.
@@ -25,6 +28,7 @@ general source support and the player-facing configuration UI remain unfinished.
 - `FLPRNat.lua`: creates the declared reward and observes removal. It does not
   demand or mutate the unvisited resource. Payload, owner and quantity checks
   concern player items, not the integrity of the disposable lab.
+  Bootstrap checks item delivery eligibility before installing suppression.
 
 ## Native result
 
@@ -62,6 +66,40 @@ parse checks also passed. The legacy sentinel dependency check remains unverifie
 because its old decompiled-script fixture was removed with its lab; see
 [repository checks](../tests/README.md).
 
+### Returned items and interrupted confirmation
+
+Campaign A's returned FLPRI1 survived save/reload in its original container after
+confirmed removal (save 62). For the interruption case, host confirmation was
+temporarily held while the native gate suppressed the original. Save 63 therefore
+contains no original but still records protected source state 6. Reloading it
+preserved all three collected rewards without replaying suppression or delivery.
+A player-returned FLPRI1 saved in that protected state also survived (save 64).
+Both interrupted saves passed again in a fresh process. Absence was never
+misreported as a confirmed removal receipt.
+
+Evidence: `work/campaign-guard-return-20260927/` and
+`work/campaign-guard-return-reload-20260927/`. These use ordinary death, pickup
+and drop actions on synthetic content; the held host poll is test instrumentation.
+
+### Configured container
+
+Campaign C (`8f516963...`, seed `1490592260`) binds
+`are:flprv2/container/1/item/3`: FLPRX2 in the type-1 `FLPRV2 chest` at 1200,650.
+It delivered all three rewards before visiting FLPRV2. Ordinary death and pickup
+put them in the player's inventory. First entry removed exactly FLPRX2 from the
+configured chest, preserved both FLPRI1 and FLPRX1 in the other container, and
+confirmed removal. Save 65 (`IR Configured Source 0927`) reloaded with the same
+seed, assignments and items, without repeating suppression.
+
+The first launch exposed a wrong ARE item-count offset before hooks installed:
+the count is a word at 0x76, not the vertex offset at 0x7C. The parser and its
+synthetic fixture were corrected before the successful run. Evidence:
+`work/configured-container-native-20260927/` (bootstrap failure) and
+`work/configured-container-native2-20260927/` (successful run). All sessions quit
+normally; all 28 staged paths were restored and the reservation released.
+After the offset fix, the complete Python suite passed (903 tests). No new lab
+tooling was added; the changes extend the runtime and its focused regressions.
+
 ## Continue
 
 Build the authored `unvisited-creatures` fixture with `build_mode1_fixture.py`
@@ -71,11 +109,11 @@ The prepared selected/excluded profiles are in
 profile, remote console and character helper are sufficient; rebuild the test
 copy if necessary. No installer or game may overlap another BG task.
 
-The completed one-shot staging helper is
-`work/campaign-guard-native-20260927/prepare.py`; do not rerun consumed requests.
-Next verify a player-returned copy survives reload and a save between suppression
-and host confirmation cannot cause a duplicate reward. These native cases remain
-unverified. This fixture observes physical pickup but keeps delivery phase 4
-(held); the general lifetime observer is not integrated. Creature/store/script
-source interception and real content choices are subsequent work. No fallback
-or gameplay policy is chosen here.
+The completed one-shot staging helpers under `work/` show the setup used; do not
+rerun consumed requests. The existing lab and helpers are sufficient. Next extend
+the single configured guard to the selected container-source list, keeping each
+source tied to its saved campaign. This does not yet support arbitrary selected
+revisions in one process. Creature/store/script interception remains separate.
+The fixture observes physical pickup but keeps delivery phase 4 (held); the
+general lifetime observer is not integrated. Real items, targets, capacities and
+fallback policies remain Christopher's choices.

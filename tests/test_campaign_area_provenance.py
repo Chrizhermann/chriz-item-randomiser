@@ -57,8 +57,18 @@ def pristine_blob():
     return bytes(blob)
 
 
-@lru_cache(maxsize=1)
-def generated_hooks():
+def configured_blob():
+    blob = bytearray(1021)
+    blob[:8] = b'AREAV1.0'
+    blob[224:256] = b'Longer Chest Name'.ljust(32, b'\0')
+    struct.pack_into('<4H', blob, 224+0x20, 303, 507, 1, 99)
+    struct.pack_into('<2I', blob, 224+0x40, 2, 2)
+    blob[840:860] = b'SW1H01\0\0' + struct.pack('<4HI', 0, 7, 8, 9, 0)
+    return bytes(blob)
+
+
+@lru_cache(maxsize=2)
+def generated_hooks(configured=False):
     outputs = []
     for runtime in (Lua51, Lua53, LuaJIT):
         lua = runtime(unpack_returned_tuples=True)
@@ -67,10 +77,17 @@ def generated_hooks():
         policy_factory = lua.execute('return assert(loadfile(policy_path))()')
         assembly_factory = lua.execute('return assert(loadfile(asm_path))()')
         policy = policy_factory(REVISION, 1)
+        blob = configured_blob() if configured else pristine_blob()
         policy['provenance'] = lua.table_from({
-            'expected': EXPECTED, 'length': LENGTH,
-            'container_offset': CONTAINER_OFFSET, 'item_offset': ITEM_OFFSET,
+            'expected': EXPECTED, 'length': len(blob),
+            'container_offset': 224 if configured else CONTAINER_OFFSET,
+            'item_offset': 800 if configured else ITEM_OFFSET,
         })
+        if configured:
+            policy['source'] = lua.table_from({
+                'area': 'ARTEST', 'name': blob[224:256], 'payload': blob[840:860], 'index': 2,
+                'inventory': blob[224+0x40:224+0x48], 'position': blob[224+0x20:224+0x28],
+            })
         output = assembly_factory(BUFFER, IMAGE, policy)
         outputs.append({name: output[name] for name in HOOKS})
     assert outputs[0] == outputs[1] == outputs[2]
@@ -78,11 +95,11 @@ def generated_hooks():
     return outputs[0]
 
 
-@lru_cache(maxsize=1)
-def compiled_hooks():
+@lru_cache(maxsize=2)
+def compiled_hooks(configured=False):
     assembler = Ks(KS_ARCH_X86, KS_MODE_64)
     binaries = {}
-    for name, source in generated_hooks().items():
+    for name, source in generated_hooks(configured).items():
         source = re.sub(r'\b(?:ds|ss):', '', source)
         source = source.replace('#MANUAL_HOOK_EXIT(1)', 'nop')
         binary, _ = assembler.asm(source, HOOKS[name])
@@ -91,16 +108,18 @@ def compiled_hooks():
 
 
 class ProvenanceMachine(GateMachine):
-    def __init__(self, blob=None):
+    def __init__(self, blob=None, configured=False):
         super().__init__()
         self.uc.mem_map(0x130000, 0x30000)
-        self.expected = pristine_blob() if blob is None else blob
+        self.expected = (configured_blob() if configured else pristine_blob()) if blob is None else blob
         self.write(EXPECTED, self.expected)
         self.write(RAW, self.expected)
-        for name, binary in compiled_hooks().items():
+        for name, binary in compiled_hooks(configured).items():
             self.uc.mem_write(HOOKS[name], binary + b'\x90')
         self.sentinels = {name: HOOKS[name] + len(binary)
-                          for name, binary in compiled_hooks().items()}
+                          for name, binary in compiled_hooks(configured).items()}
+        if configured:
+            self.write(AREA+0x204, b'ARTEST\0\0')
         self.write_q(CTOR_FRAME-0x60, AREA)
         self.write_q(CTOR_FRAME-0x68, AREA+0x1000)
         self.write_q(CTOR_FRAME-0x78, ITEMS)
@@ -149,6 +168,21 @@ class ProvenanceMachine(GateMachine):
 
 
 class CampaignAreaProvenanceTests(unittest.TestCase):
+    def test_configured_area_chest_item_index_and_charges_select_one_record(self):
+        machine = ProvenanceMachine(configured=True)
+        self.assertEqual(machine.capture(), 1)
+        machine.hook('area_enter', length=1021)
+        self.assertEqual(machine.read_q(FIRST+48), RAW+224)
+        self.assertEqual(machine.item_hook(container=RAW+224, table=RAW+800, index=1), 'continue')
+        self.assertEqual(machine.item_hook(container=RAW+224, table=RAW+800, index=2), 'skip')
+        self.assertEqual(machine.read_q(BUFFER+96), 1)
+        saved = ProvenanceMachine(configured=True)
+        saved.capture(phase=6)
+        saved.write(RAW+1000, b'\x01')  # Changed saved area with an identical returned item.
+        saved.hook('area_enter', length=1021)
+        self.assertEqual(saved.item_hook(container=RAW+224, table=RAW+800, index=2), 'continue')
+        self.assertEqual(saved.read_q(BUFFER+96), 0)
+
     def test_exact_full_blob_publishes_context_and_allows_one_skip(self):
         machine = ProvenanceMachine()
         self.assertEqual(machine.capture(), 1)

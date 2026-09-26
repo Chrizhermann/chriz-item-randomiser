@@ -1,4 +1,4 @@
--- Opt-in campaign bridge for the authored FLPRU1 fixture only. Never installed
+-- Opt-in campaign bridge for one configured ARE container. Never installed
 -- by the normal TP2. Caller pins executable/helper/resource hashes before use.
 -- build = tools/probes/FLPRGateAsm.lua; compile = FLPRCampaignPolicy.lua.
 local Gate = {}
@@ -7,7 +7,6 @@ local Adapter = {}; Adapter.__index = Adapter
 local CAPACITY, HEADER, STRIDE = 2048, 128, 128
 local CONTEXT=HEADER+(CAPACITY+1)*STRIDE
 local MEMORY_SIZE=CONTEXT+32+64*64
-local ID = 'are:flpru1/container/0/item/1'
 local sites = {
     {rva=0x292A84,size=8,code='enter',bytes='48894df8488d4dc8488945a8410fb6f944884c2460'},
     {rva=0x292F45,size=7,code='capture',bytes='8bd6413974242c0f86c40400000f1f400066660f1f84'},
@@ -25,51 +24,88 @@ local function integer(value,lo,hi)
     return type(value)=='number' and value==math.floor(value) and value>=lo and value<=hi
 end
 local function payload(value)
-    return type(value)=='table' and value.resref=='flpri1' and value.expiration==0 and value.flags==1 and
-        type(value.charges)=='table' and value.charges[1]==0 and value.charges[2]==0 and value.charges[3]==0
+    if type(value)~='table' or type(value.resref)~='string' or #value.resref<1 or #value.resref>8 or
+        value.resref:find('[^a-z0-9#_%-]') or value.expiration~=0 or
+        (value.flags~=0 and value.flags~=1) or type(value.charges)~='table' then return false end
+    for i=1,3 do if not integer(value.charges[i],0,65535) then return false end end
+    return true
+end
+local function same_payload(a,b)
+    return payload(a) and payload(b) and a.resref==b.resref and a.flags==b.flags and
+        a.charges[1]==b.charges[1] and a.charges[2]==b.charges[2] and a.charges[3]==b.charges[3]
 end
 local function validate(bundle)
     assert(type(bundle)=='table' and type(bundle.manifest)=='table' and type(bundle.fixture)=='table',
         'CAMPAIGN_GATE_CONFIG_INVALID')
     local m,f=bundle.manifest,bundle.fixture
     assert(hash(m.revision) and f.revision==m.revision and type(f.source_gate)=='table' and
-        f.source_gate.schema=='flpr-unvisited-fixture-gate-v1' and f.source_gate.source_id==ID,
+        f.source_gate.schema=='flpr-unvisited-fixture-gate-v1' and type(f.source_gate.source_id)=='string',
         'CAMPAIGN_GATE_CONFIG_INVALID')
+    local id=f.source_gate.source_id
+    local area,container,record=id:match('^are:([a-z0-9#_%-]+)/container/(%d+)/item/(%d+)$')
+    container,record=tonumber(container),tonumber(record)
+    assert(area and #area<=8 and integer(container,0,65534) and integer(record,0,2147483646),
+        'CAMPAIGN_GATE_SOURCE_INVALID')
     local index,selected
     for i,source in ipairs(m.sources) do
-        if source.id==ID then assert(not selected,'CAMPAIGN_GATE_SOURCE_DUPLICATED'); index,selected=i,source end
+        if source.id==id then assert(not selected,'CAMPAIGN_GATE_SOURCE_DUPLICATED'); index,selected=i,source end
     end
     assert(index and selected.quantity==1 and hash(selected.resource_sha256) and
-        selected.record.kind=='container' and selected.record.id==ID and
-        selected.record.resource=='are:flpru1' and selected.record.owner=='are:flpru1/container/0' and
-        selected.record.record.record_index==1 and payload(selected.record.record),
+        selected.record.kind=='container' and selected.record.id==id and
+        selected.record.resource=='are:'..area and selected.record.owner=='are:'..area..'/container/'..container and
+        selected.record.record.record_index==record and payload(selected.record.record),
         'CAMPAIGN_GATE_SOURCE_INVALID')
-    local endpoint=f.sources and f.sources[ID]
-    assert(endpoint and endpoint.kind=='guarded-container' and endpoint.area=='FLPRU1' and
-        endpoint.script_name=='FLPRU1A' and endpoint.x==1140 and endpoint.y==650 and
-        payload(endpoint.payload) and f.resource_hashes and
-        f.resource_hashes['FLPRU1.ARE']==selected.resource_sha256, 'CAMPAIGN_GATE_BINDING_INVALID')
-    return m.revision,index,selected.resource_sha256
+    local endpoint=f.sources and f.sources[id]
+    assert(endpoint and endpoint.kind=='guarded-container' and type(endpoint.area)=='string' and
+        endpoint.area:lower()==area and type(endpoint.script_name)=='string' and
+        #endpoint.script_name>0 and #endpoint.script_name<=32 and not endpoint.script_name:find('%z') and
+        integer(endpoint.x,0,32767) and integer(endpoint.y,0,32767) and
+        integer(endpoint.container_type or 4,0,65535) and
+        same_payload(endpoint.payload,selected.record.record) and f.resource_hashes and
+        f.resource_hashes[area:upper()..'.ARE']==selected.resource_sha256, 'CAMPAIGN_GATE_BINDING_INVALID')
+    local p=endpoint.payload
+    return m.revision,index,selected.resource_sha256,{id=id,area=area,container=container,record=record,
+        name=endpoint.script_name,x=endpoint.x,y=endpoint.y,container_type=endpoint.container_type or 4,
+        payload={resref=p.resref,expiration=0,flags=p.flags,charges={p.charges[1],p.charges[2],p.charges[3]}}}
 end
 local function hex(value)
     return (value:gsub('.',function(c) return string.format('%02x',c:byte()) end))
 end
-local NAME_RAW=hex('FLPRU1A'..string.rep('\0',25))
-local PAYLOAD_RAW=hex('FLPRI1'..string.rep('\0',10)..'\1\0\0\0')
-
 function Gate.install(api,bundle,build,compile,pristine)
-    local revision,index,resource_hash=validate(bundle)
+    local revision,index,resource_hash,binding=validate(bundle)
     -- The isolated harness hashes this immutable copy, the ARE and both frozen
     -- manifests before launch. Runtime copies it to separate owned memory; it
     -- must never compare a resource buffer to itself or demand an unloaded ARE.
     assert(type(pristine)=='table' and pristine.resource_sha256==resource_hash and
-        type(pristine.bytes)=='string' and #pristine.bytes==27492 and
+        type(pristine.bytes)=='string' and #pristine.bytes>=0x11C and #pristine.bytes<=2147483647 and
         pristine.bytes:sub(1,8)=='AREAV1.0', 'CAMPAIGN_GATE_PRISTINE_INVALID')
+    local bytes=pristine.bytes
+    local function u16(offset)
+        local a,b=bytes:byte(offset+1,offset+2); return a+b*256
+    end
     local function u32(offset)
         local a,b,c,d=pristine.bytes:byte(offset+1,offset+4)
         return a+b*256+c*65536+d*16777216
     end
-    assert(u32(0x70)==0x68D4 and u32(0x78)==0x6B14,'CAMPAIGN_GATE_PRISTINE_LAYOUT_INVALID')
+    local containers,items,item_count=u32(0x70),u32(0x78),u16(0x76)
+    assert(containers>=0x11C and containers+u16(0x74)*192<=#bytes and binding.container<u16(0x74) and
+        items>=0x11C and items+item_count*20<=#bytes and binding.record<item_count,
+        'CAMPAIGN_GATE_PRISTINE_LAYOUT_INVALID')
+    local owner=containers+binding.container*192
+    local item=items+binding.record*20
+    local name=bytes:sub(owner+1,owner+32)
+    local raw=bytes:sub(item+1,item+20)
+    assert(name:match('^[^%z]*'):lower()==binding.name:lower() and u16(owner+0x20)==binding.x and
+        u16(owner+0x22)==binding.y and u16(owner+0x24)==binding.container_type and
+        u32(owner+0x40)<=binding.record and binding.record<u32(owner+0x40)+u32(owner+0x44) and
+        u32(owner+0x40)+u32(owner+0x44)<=item_count and
+        raw:sub(1,8):match('^[^%z]*'):lower()==binding.payload.resref and u16(item+8)==0 and
+        u16(item+10)==binding.payload.charges[1] and u16(item+12)==binding.payload.charges[2] and
+        u16(item+14)==binding.payload.charges[3] and u32(item+16)==binding.payload.flags,
+        'CAMPAIGN_GATE_PRISTINE_BINDING_MISMATCH')
+    local expected={name_raw=hex(name),payload_raw=hex(raw),index=binding.record,
+        detail1_raw=hex(bytes:sub(owner+0x41,owner+0x48)),
+        detail2_raw=hex(bytes:sub(owner+0x21,owner+0x28))}
     assert(api.EEex_Active and not api.FLPR_SOURCE_GATE and not api.FLPR_AREA_TRACE and
         not api.FLPR_CAMPAIGN_GATE, 'CAMPAIGN_GATE_INSTALL_CONTEXT_INVALID')
     assert(type(api.EEex_GameState_AddDestroyedListener)=='function' and
@@ -97,9 +133,11 @@ function Gate.install(api,bundle,build,compile,pristine)
             'CAMPAIGN_GATE_PRISTINE_COPY_FAILED')
     end
     policy.provenance={expected=buffer+MEMORY_SIZE,length=#pristine.bytes,
-        container_offset=u32(0x70),item_offset=u32(0x78)}
+        container_offset=owner,item_offset=items}
+    policy.source={area=binding.area,name=name,payload=raw,index=binding.record,
+        inventory=bytes:sub(owner+0x41,owner+0x48),position=bytes:sub(owner+0x21,owner+0x28)}
     local self=setmetatable({api=api,base=base,buffer=buffer,revision=revision,index=index,
-        resource_hash=resource_hash,policy=policy,detours={},installed=false},Runtime)
+        resource_hash=resource_hash,binding=binding,expected=expected,policy=policy,detours={},installed=false},Runtime)
     api.FLPR_CAMPAIGN_GATE=self -- partial installation is never retried in-process
     local assembly=build(buffer,base,policy)
     api.EEex_DisableCodeProtection()
@@ -151,7 +189,7 @@ function Runtime:_row(index)
     return {kind=q(0),generation=q(8),mode=q(16),decision=q(24),
         object_pointer=tostring(q(32)),other_value=tostring(q(40)),index=q(48),
         name_raw=self:_raw(row+56,32),payload_raw=self:_raw(row+88,20),
-        detail1=q(112),detail2=q(120)}
+        detail1=q(112),detail2=q(120),detail1_raw=self:_raw(row+112,8),detail2_raw=self:_raw(row+120,8)}
 end
 function Runtime:inspect()
     local count,generation,destroys,active=self:_q(8),self:_q(40),self:_q(104),self:_q(24)
@@ -179,8 +217,11 @@ function Runtime:_intact()
     return true
 end
 function Runtime:_bundle(bundle)
-    local revision,index,resource_hash=validate(bundle)
-    assert(revision==self.revision and index==self.index and resource_hash==self.resource_hash,
+    local revision,index,resource_hash,binding=validate(bundle)
+    local b=self.binding
+    assert(revision==self.revision and index==self.index and resource_hash==self.resource_hash and
+        binding.id==b.id and binding.name==b.name and binding.x==b.x and binding.y==b.y and
+        binding.container_type==b.container_type and same_payload(binding.payload,b.payload),
         'CAMPAIGN_GATE_REVISION_MISMATCH')
 end
 
@@ -245,15 +286,16 @@ function Adapter:destroy() self.destroyed=true; self.bound=nil end
 function Adapter:_request(request,kind)
     local gate=self.gate
     return not self.destroyed and type(request)=='table' and request.kind==kind and request.mode=='observe-only'
-        and request.index==gate.index and request.revision==gate.revision and request.source_id==ID
-        and request.resource_sha256==gate.resource_hash and request.quantity==1 and payload(request.payload)
+        and request.index==gate.index and request.revision==gate.revision and request.source_id==gate.binding.id
+        and request.resource_sha256==gate.resource_hash and request.quantity==1 and same_payload(request.payload,gate.binding.payload)
         and type(request.session)=='table' and type(request.token)=='table'
 end
 local function receipt(request)
     local result={}
     for _,key in ipairs({'kind','mode','index','revision','source_id','resource_sha256','quantity',
         'session','token','guard_generation'}) do result[key]=request[key] end
-    result.payload={resref='flpri1',expiration=0,flags=1,charges={0,0,0}}
+    local p=request.payload
+    result.payload={resref=p.resref,expiration=0,flags=p.flags,charges={p.charges[1],p.charges[2],p.charges[3]}}
     return result
 end
 function Adapter:observe_guard(request)
@@ -286,11 +328,13 @@ function Adapter:observe_removal(request)
     end
     local witness=snapshot.witness
     if not witness then return nil,'SOURCE_NOT_LOADED' end
+    local expected=self.gate.expected
     if snapshot.load_skips~=1 or witness.kind~=3 or witness.generation~=snapshot.generation or
-        witness.mode~=1 or witness.decision~=1 or witness.index~=1 or witness.name_raw~=NAME_RAW or
-        witness.payload_raw~=PAYLOAD_RAW or witness.detail1~=0x200000001 or witness.detail2~=0x4028a0474 or
+        witness.mode~=1 or witness.decision~=1 or witness.index~=expected.index or witness.name_raw~=expected.name_raw or
+        witness.payload_raw~=expected.payload_raw or witness.detail1_raw~=expected.detail1_raw or
+        witness.detail2_raw~=expected.detail2_raw or
         witness.object_pointer=='0' or witness.other_value=='0' then return nil,'CAMPAIGN_GATE_WITNESS_INVALID' end
-    local world; world,reason=self.native:guarded_source_remaining(ID,witness.object_pointer,witness.other_value)
+    local world; world,reason=self.native:guarded_source_remaining(self.gate.binding.id,witness.object_pointer,witness.other_value)
     if not world then
         if reason=='AREA_UNAVAILABLE' then return nil,'SOURCE_NOT_LOADED' end
         return nil,reason

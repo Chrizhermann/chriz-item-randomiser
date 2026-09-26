@@ -1,4 +1,4 @@
--- Pure assembly builder for the opt-in, synthetic FLPRU1 suppression probe.
+-- Pure assembly builder for configured container suppression.
 -- No installation or engine access. Exposed separately for instruction emulation.
 return function(buffer, image_base, policy)
     if policy ~= nil then
@@ -292,14 +292,45 @@ return function(buffer, image_base, policy)
 ]],[[        mov qword ptr ds:[r11+24], 1
         mov qword ptr ds:[r11], 3
 ]]..witness)
+        if policy.source then
+            local s=policy.source
+            assert(type(s.area)=='string' and #s.area>=1 and #s.area<=8 and
+                not s.area:find('[^a-zA-Z0-9#_%-]') and type(s.name)=='string' and #s.name==32 and
+                type(s.payload)=='string' and #s.payload==20 and type(s.inventory)=='string' and
+                #s.inventory==8 and type(s.position)=='string' and #s.position==8 and
+                type(s.index)=='number' and s.index==math.floor(s.index) and s.index>=0 and
+                s.index<=2147483646,'CAMPAIGN_GATE_SOURCE_BINDING_INVALID')
+            local function literal(bytes)
+                local out={}
+                for i=#bytes,1,-1 do out[#out+1]=string.format('%02x',bytes:byte(i)) end
+                return '0x'..table.concat(out)
+            end
+            item=replace_once(item,'mov r11, 0x315552504c46',
+                'mov r11, '..literal(s.area:upper()..string.rep('\0',8-#s.area)))
+            item=replace_once(item,'mov rdx, 0x41315552504c46','mov rdx, '..literal(s.name:sub(1,8)))
+            for offset=8,24,8 do
+                item=replace_once(item,'cmp qword ptr ds:[r14+'..offset..'], 0',
+                    'mov rdx, '..literal(s.name:sub(offset+1,offset+8))..'\n'..
+                    'cmp qword ptr ds:[r14+'..offset..'], rdx')
+            end
+            item=replace_once(item,'mov rdx, 0x314952504c46','mov rdx, '..literal(s.payload:sub(1,8)))
+            item=replace_once(item,'cmp r15d, 1','cmp r15d, '..string.format('%.0f',s.index))
+            item=replace_once(item,'mov rdx, 0x200000001','mov rdx, '..literal(s.inventory))
+            item=replace_once(item,'mov rdx, 0x4028a0474','mov rdx, '..literal(s.position))
+            item=replace_once(item,'test rcx, rcx',
+                'mov rdx, '..literal(s.payload:sub(9,16))..'\ncmp rcx, rdx')
+            item=replace_once(item,'cmp dword ptr ds:[rax+16], 1',
+                'cmp dword ptr ds:[rax+16], '..literal(s.payload:sub(17,20)))
+        end
     end
     local area_enter,area_exit
     if policy and policy.provenance then
         local p=policy.provenance
         local function natural(v) return type(v)=='number' and v==math.floor(v) and v>0 end
-        assert(natural(p.expected) and natural(p.length) and p.length>=256 and p.length<=1048576
+        assert(natural(p.expected) and natural(p.length) and p.length>=256 and p.length<=2147483647
             and natural(p.container_offset) and p.container_offset+192<=p.length
-            and natural(p.item_offset) and p.item_offset+80<=p.length, 'CAMPAIGN_GATE_PROVENANCE_INVALID')
+            and natural(p.item_offset) and p.item_offset+((policy.source and policy.source.index or 3)+1)*20<=p.length,
+            'CAMPAIGN_GATE_PROVENANCE_INVALID')
         -- 64 independent invocation slots, after the dedicated removal witness.
         -- Match the constructor's saved caller frame AND its exact call site.
         -- Raw pointers alone can be recycled after Unmarshal has returned.

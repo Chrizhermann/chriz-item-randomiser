@@ -319,7 +319,13 @@ local function bootstrap(Core,Host,Globals,text,options)
         end}
     end
     local modules={ ["override/FLPRCore.lua"]=Core,["override/FLPRGlob.lua"]=Globals,
-        ["override/FLPRHost.lua"]=host_module,["override/FLPRNat.lua"]={new=function(_,fixture) return f.make_native(fixture) end},
+        ["override/FLPRHost.lua"]=host_module,["override/FLPRNat.lua"]={
+            new=function(_,fixture) return f.make_native(fixture) end,
+            supported=function(_,item)
+                assert(item.resref=='flpri1')
+                if options.unsupported_item then return nil,'ITEM_NOT_NONSTACKABLE' end
+                return true
+            end},
         ["override/FLPRQA.lua"]={new=function() return {poll=function() end} end}}
     if options.gate then
         local builder,compiler={},{}
@@ -383,6 +389,11 @@ function cases.bootstrap_accept_captures_before_engine_accept(Core,Host,Globals,
     assert(f.root.AcceptCharacter(2)==2 and f.accepted_state==2 and f.accepted_fresh==0)
     assert(f.new_game_clicked==1 and f.accept_count==1)
     local seed=f.values.flpr_seed; assert(f.root.AcceptCharacter(3)==3 and f.values.flpr_seed==seed)
+end
+function cases.bootstrap_unsupported_item_stops_before_source_suppression(Core,Host,Globals,text)
+    local f=bootstrap(Core,Host,Globals,text,{gate=true,unsupported_item=true,allow_disabled=true})
+    assert(f.root.Disabled:find('ITEM_NOT_NONSTACKABLE',1,true) and not f.gate_installed)
+    assert(f.root.Host==nil and not f.accept_count)
 end
 function cases.bootstrap_opt_in_gate_installs_prepares_once_and_binds_frozen_native(Core,Host,Globals,text)
     local f=bootstrap(Core,Host,Globals,text,{gate=true})

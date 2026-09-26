@@ -168,26 +168,37 @@ function cases.guarded_source_never_resolves_or_destroys_original(N)
     assert(f.adapter.attempted[f.command("suppress").session]==nil)
 end
 function cases.guarded_source_declared_endpoint_is_exact(N)
-    for _,variant in ipairs({"area","script_name","x","y","resref","expiration","charge1","charge2","charge3","flags","second"}) do
+    for _,variant in ipairs({"x","y","type","expiration","charge","flags","second"}) do
         local f=guarded(setup(N),N)
         local endpoint=f.fixture.sources[f.guarded_id]
-        if variant=="area" then endpoint.area="BG2600"
-        elseif variant=="script_name" then endpoint.script_name="FLPRU1B"
-        elseif variant=="x" then endpoint.x=1141
-        elseif variant=="y" then endpoint.y=651
-        elseif variant=="resref" then endpoint.payload.resref="flpri2"
+        if variant=="x" then endpoint.x=-1
+        elseif variant=="y" then endpoint.y=32768
+        elseif variant=="type" then endpoint.container_type=-1
         elseif variant=="expiration" then endpoint.payload.expiration=1
-        elseif variant=="charge1" then endpoint.payload.charges[1]=1
-        elseif variant=="charge2" then endpoint.payload.charges[2]=1
-        elseif variant=="charge3" then endpoint.payload.charges[3]=1
-        elseif variant=="flags" then endpoint.payload.flags=0
+        elseif variant=="charge" then endpoint.payload.charges[2]=65536
+        elseif variant=="flags" then endpoint.payload.flags=8
         else
             f.fixture.sources.other={kind="guarded-container",area="FLPRU1",script_name="FLPRU1A",
                 x=1140,y=650,identity=string.rep("d",64),
                 payload={resref="flpri2",charges={0,0,0},expiration=0,flags=1}}
         end
-        invalid(N,f,variant=="expiration" and "NATIVE_PAYLOAD_UNSUPPORTED" or "NATIVE_GUARDED_SOURCE_INVALID")
+        invalid(N,f,(variant=="expiration" or variant=="charge" or variant=="flags") and
+            "NATIVE_PAYLOAD_UNSUPPORTED" or "NATIVE_GUARDED_SOURCE_INVALID")
     end
+end
+function cases.configured_container_uses_declared_item_geometry_and_type(N)
+    local f=guarded_world(N); local e=f.fixture.sources[f.guarded_id]
+    e.area="ARTEST"; e.script_name="Other Chest"; e.x=301; e.y=502; e.container_type=1
+    e.payload.resref="sw1h01"; e.payload.charges={7,8,9}; e.payload.flags=0
+    f.area.m_resref={get=function() return "ARTEST" end}
+    f.container.m_scriptName={get=function() return "Other Chest" end}
+    f.container.m_pos={x=301,y=502}; f.container.m_containerType=1
+    f.container.m_lstItems[1]=f.item("SW1H01",801,0)
+    f.adapter=N.new(f.api,f.fixture)
+    assert(f.adapter:guarded_source_remaining(f.guarded_id,"901","701").remaining==1)
+    table.remove(f.container.m_lstItems,1)
+    assert(f.adapter:guarded_source_remaining(f.guarded_id,"901","701").remaining==0)
+    assert(f.container.m_lstItems[1].cResRef:get()=="FLPRX1" and #f.calls==0)
 end
 function cases.guarded_source_gate_and_kind_are_required(N)
     for _,variant in ipairs({"missing","schema","source_id","ungated","unknown"}) do
@@ -485,14 +496,19 @@ function cases.queued_item_pointer_must_survive_second_observation(N)
     f.target.m_lstItems[1]=f.item("FLPRI1",702); a:on_observation_boundary(3)
     x,e=a:observe(command); fail(x,e,"CREATED_INSTANCE_CHANGED")
 end
-function cases.duplicate_or_nonfixture_source_resources_are_rejected(N)
+function cases.duplicate_source_resources_are_rejected(N)
     local f=setup(N); f.fixture.sources.other={area="BG2600",script_name="FLPRS2",identity=string.rep("d",64),
         payload={resref="flpri1",charges={0,0,0},expiration=0,flags=0}}
     local ok,e=pcall(function() N.new(f.api,f.fixture) end)
     assert(not ok and tostring(e):find("NATIVE_FIXTURE_RESOURCE_NOT_UNIQUE",1,true))
-    f.fixture.sources.other=nil; f.fixture.sources[f.source_id].payload.resref="OTHER"
-    ok,e=pcall(function() N.new(f.api,f.fixture) end)
-    assert(not ok and tostring(e):find("NATIVE_FIXTURE_RESOURCE_NOT_UNIQUE",1,true))
+end
+function cases.configured_item_resref_removes_only_the_selected_copy(N)
+    local f=setup(N); f.fixture.sources[f.source_id].payload.resref="sw1h01"
+    f.slots[21]=f.item("SW1H01",301)
+    local a=N.new(f.api,f.fixture); assert(a:inspect_source(f.source_id)); a:on_observation_boundary(1)
+    local command=f.command("suppress"); assert(a:execute(command)); a:on_observation_boundary(2)
+    assert(a:observe(command).removed==1 and f.slots[21]==nil and f.slots[22].address==302)
+    assert(#f.calls==1 and f.calls[1]=='DestroyItem("sw1h01")')
 end
 return cases
 '''

@@ -25,9 +25,31 @@ local function u32(value)
     return string.char(value%256,math.floor(value/256)%256,math.floor(value/65536)%256,
         math.floor(value/16777216)%256)
 end
-local function pristine_bytes()
-    return 'AREAV1.0'..string.rep('\0',0x70-8)..u32(0x68D4)..
-        string.rep('\0',0x78-0x74)..u32(0x6B14)..string.rep('\0',27492-0x7C)
+local function u16(value) return string.char(value%256,math.floor(value/256)%256) end
+local function pristine_bytes(options)
+    options=options or {}
+    local length,containers,items=options.length or 27492,options.containers or 0x68D4,
+        options.items or 0x6B14
+    local container,item=options.container or 0,options.item or 1
+    local name,resref=options.name or 'FLPRU1A',options.resref or 'FLPRI1'
+    local x,y,container_type=options.x or 1140,options.y or 650,options.container_type or 4
+    local charges,flags=options.charges or {0,0,0},options.flags or 1
+    local bytes=string.rep('\0',length)
+    local function put(offset,value)
+        bytes=bytes:sub(1,offset)..value..bytes:sub(offset+#value+1)
+    end
+    put(0,'AREAV1.0')
+    put(0x70,u32(containers)); put(0x74,u16(3))
+    put(0x76,u16(4)); put(0x78,u32(items))
+    put(0x7C,u32(19152)) -- Vertex offset, independent of the item count.
+    local owner=containers+container*192
+    put(owner,name..string.rep('\0',32-#name))
+    put(owner+0x20,u16(x)..u16(y)..u16(container_type))
+    put(owner+0x40,u32(container==0 and 1 or item)..u32(container==0 and 2 or 1))
+    local record=items+item*20
+    put(record,resref..string.rep('\0',8-#resref)..u16(0)..u16(charges[1])..
+        u16(charges[2])..u16(charges[3])..u32(flags))
+    return bytes
 end
 local signatures={
     {0x292A84,'48894df8488d4dc8488945a8410fb6f944884c2460'},
@@ -160,14 +182,18 @@ local function fixture(Core)
     end
     function f:publish_witness()
         local row=BUFFER+128+CAPACITY*STRIDE
+        local owner=self.gate.policy.provenance.container_offset
+        local item=self.gate.policy.provenance.item_offset+self.gate.binding.record*20
+        local bytes=self.pristine.bytes
         self:q(112,1); self:q(120,1)
         self:poke(row,3,8); self:poke(row+8,self:q(40),8)
         self:poke(row+16,1,8); self:poke(row+24,1,8)
         self:poke(row+32,4000,8); self:poke(row+40,5000,8)
-        self:poke(row+48,1,8)
-        self:pokestring(row+56,'FLPRU1A'..string.rep('\0',25))
-        self:pokestring(row+88,'FLPRI1'..string.rep('\0',10)..'\1\0\0\0')
-        self:poke(row+112,0x200000001,8); self:poke(row+120,0x4028a0474,8)
+        self:poke(row+48,self.gate.binding.record,8)
+        self:pokestring(row+56,bytes:sub(owner+1,owner+32))
+        self:pokestring(row+88,bytes:sub(item+1,item+20))
+        self:pokestring(row+112,bytes:sub(owner+0x41,owner+0x48))
+        self:pokestring(row+120,bytes:sub(owner+0x21,owner+0x28))
         return row
     end
     return f
@@ -390,6 +416,55 @@ function cases.exact_witness_and_world_absence_commit_physical_source(Core,Gate,
     assert(f.last_world[1]==ID and f.last_world[2]=='4000' and f.last_world[3]=='5000')
     assert(f.controller:confirm_guarded_source_removal(result))
     assert(f.values.flpr_s0001==3 and f.values.flpr_jkind==0)
+end
+
+function cases.configured_second_container_uses_its_own_bytes_and_witness(Core,Gate,build,compile)
+    local f=fixture(Core)
+    local id='are:flprv2/container/1/item/3'
+    local new_payload={resref='flprx2',expiration=0,charges={2,3,4},flags=0}
+    local source=f.manifest.sources[1].record
+    source.id=id; source.item='flprx2'; source.resource='are:flprv2'
+    source.owner='are:flprv2/container/1'
+    source.record={record_index=3,resref='flprx2',expiration=0,charges={2,3,4},flags=0}
+    f.manifest.sources[1].id=id
+    f.bundle.fixture.source_gate.source_id=id
+    f.bundle.fixture.sources={[id]={kind='guarded-container',area='FLPRV2',
+        script_name='FLPRV2B',x=1234,y=789,container_type=5,
+        payload=clone(new_payload),identity=string.rep('3',64)}}
+    f.bundle.fixture.resource_hashes={['FLPRV2.ARE']=string.rep('1',64)}
+    f.pristine.bytes=pristine_bytes({length=0x7200,containers=0x6200,items=0x6800,
+        container=1,item=3,name='FLPRV2B',resref='FLPRX2',x=1234,y=789,
+        container_type=5,charges={2,3,4},flags=0})
+    local gate=f:install(Gate,build,compile)
+    local source_bytes=gate.policy.source
+    assert(gate.binding.id==id and gate.binding.container==1 and gate.binding.record==3)
+    assert(gate.policy.provenance.container_offset==0x6200+192 and
+        gate.policy.provenance.item_offset==0x6800 and gate.policy.provenance.length==0x7200)
+    assert(source_bytes.area=='flprv2' and source_bytes.index==3 and
+        source_bytes.name=='FLPRV2B'..string.rep('\0',25) and
+        source_bytes.payload=='FLPRX2'..string.rep('\0',2)..u16(0)..u16(2)..u16(3)..u16(4)..u32(0))
+    local assembly=f.hooks[3][5][1]
+    local function literal(bytes)
+        local result={}
+        for i=#bytes,1,-1 do result[#result+1]=string.format('%02x',bytes:byte(i)) end
+        return '0x'..table.concat(result)
+    end
+    assert(assembly:find('cmp r15d, 3',1,true) and
+        assembly:find('mov r11, '..literal('FLPRV2'..string.rep('\0',2)),1,true) and
+        assembly:find('mov rdx, '..literal(source_bytes.payload:sub(1,8)),1,true) and
+        assembly:find('mov rdx, '..literal(source_bytes.inventory),1,true) and
+        assembly:find('mov rdx, '..literal(source_bytes.position),1,true))
+    f:capture(); f:prepare(); f:adapter(); f:bind()
+    local request=assert(f.controller:guarded_source_removal_request(1))
+    f.controller:on_observation_boundary()
+    local row=f:publish_witness(); f.remaining=0
+    f:poke(row+98,9,1)
+    local result,reason=f.adapter_instance:observe_removal(request)
+    assert(result==nil and reason=='CAMPAIGN_GATE_WITNESS_INVALID')
+    f:poke(row+98,2,1)
+    result=assert(f.adapter_instance:observe_removal(request))
+    assert(f.last_world[1]==id and f.controller:confirm_guarded_source_removal(result))
+    assert(f.values.flpr_s0001==3)
 end
 
 return cases
