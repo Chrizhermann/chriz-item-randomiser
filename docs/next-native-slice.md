@@ -214,9 +214,13 @@ and reopen coverage. Repeated-spawn sources need an explicit occurrence rule.
 
 The [quiet fixture receipt run](held-drop-receipts-20260926.md) passed native
 death/drop/pickup and confirmed/looted reload checks. The next
-[item-lifetime diagnostic](native-item-lifetime-20260927.md) is implemented and
-passes 812 offline tests; its two additional destructor hooks still await native
-execution. All game work remains isolated and subject to the reservation below.
+[item-lifetime diagnostic](native-item-lifetime-20260927.md) passes 812 offline
+tests and a bounded native capture: both destructor hooks executed, two normal
+drops were accepted, and one deliberately destroyed/recreated original was
+rejected without changing campaign receipts. The game closed normally and all
+staging was restored. General continuous coverage, unfinished-save recovery,
+and unvisited-original suppression remain open. All further game work remains
+isolated and subject to the reservation below.
 
 Offline research, diagnostics, synthetic adapters/tests and test-fixture preparation
 can continue autonomously. Before installation access or a game test, check other

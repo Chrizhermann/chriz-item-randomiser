@@ -2,8 +2,11 @@
 
 Research on 2026-09-26 identified two native destruction endpoints that could
 help distinguish an original reward from a replacement allocated at its old
-address. No lifetime hooks were installed or executed. These findings do not
-remove the [controlled receipt observer's limitations](held-drop-receipts-20260926.md).
+address. No lifetime hooks were installed or executed during that research.
+The subsequent [bounded native diagnostic](native-item-lifetime-20260927.md)
+executed both endpoints and distinguished normal drops from a destroyed/recreated
+original. Neither step removes the
+[controlled receipt observer's limitations](held-drop-receipts-20260926.md).
 
 Only the previously copied BG2:EE executable was inspected: SHA256
 `fc821a4806a0305b84fd85f1aad2bd472c8db642ed34b4494ae62351cae1c580`, preferred

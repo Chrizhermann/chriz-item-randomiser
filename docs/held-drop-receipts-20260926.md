@@ -160,8 +160,10 @@ directory; no old job or ambiguous request was rerun.
 
 - Continuous item-lifetime tracking before death, including replacement and
   transformation; pointer/name/payload snapshots alone are insufficient. New
-  [offline destruction-path evidence](native-item-lifetime-evidence.md) identifies
-  two candidate endpoints, but no lifetime hook has been executed.
+  [offline destruction-path evidence](native-item-lifetime-evidence.md) identified
+  two endpoints. A subsequent [bounded native diagnostic](native-item-lifetime-20260927.md)
+  executed both and distinguished a deliberately destroyed/recreated original
+  from two normal drops; general continuous coverage remains open.
 - Recovery of unfinished transfers and held bindings after loading. Saving after
   death but before all confirmations may retain a mixed held/confirmed state;
   the session trace is lost and the held remainder is intentionally not replayed.
