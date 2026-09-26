@@ -66,20 +66,62 @@ tests check installation/lifecycle/snapshot guards on three Lua runtimes.
 The extra test dependencies are `keystone-engine==0.9.2` and `unicorn==2.1.4`;
 they are required for these tests, without silent skips.
 
-All **854 offline tests passed** after adding the probe: ten new instruction
-tests and eight new wrapper tests. Install the test dependencies from
+All **863 offline tests passed**, including ten new instruction tests, eight
+new wrapper tests and nine trace-validator tests. Install the test dependencies from
 `tests/requirements.txt` in the chosen test environment. This run kept the new
 emulator libraries under the ignored evidence directory and supplied that path
 through `PYTHONPATH`; it did not modify the game's Python or Lua environment.
 
-Native acceptance is pending. The planned sequence creates selected and excluded
-save branches before visiting FLPRU1, reloads each before first entry, checks the
-exact live contents, saves the results, and reloads both in one process. These
-are deliberately branches of the already accepted quiet fixture, not evidence
-of fresh randomization or a new seed. Missing-mode loading must also retain the
-original. A separate fresh-process check and eventual early reward protocol
-remain necessary.
+The stopped trace validator consumes the exact GAM and ARE inputs in load order.
+It checks every record, physical index, payload, mode and per-load owner pointer;
+the observed world and saved contents are separate acceptance checks. Lead review
+caught an inverted area/owner mapping in the initial validator and its mock
+oracle. The corrected tests also feed the actual emulated producer's rows into
+the validator, and model the engine's saved C/B/A order with only two remaining
+items. All 863 tests passed after that correction.
 
-Fresh evidence belongs in `work/source-gate-20260927/`. All game access requires
-the shared reservation and an idle machine slot; staging is temporary and all
-owned processes must close before restoration and release.
+## Native acceptance
+
+The first process passed six ordered loads and 26 complete events. Mode 1 skipped
+exactly FLPRI1 in the pristine FLPRU1A container; mode 2 and an absent mode retained
+it. All observed FLPRX1/FLPRI2 payloads, three container identities, the empty
+container, existing assignments, seed and held phases were preserved. Selected
+and excluded saves were created before visiting FLPRU1, then after entry. The
+entered selected save contains two items, the excluded save three. Both reload
+correctly after the engine reverses container order and repacks item indexes.
+
+Private diagnostic saves created:
+
+- `000000055-IR Gate Selected Ready 0927`
+- `000000056-IR Gate Excluded Ready 0927`
+- `000000057-IR Gate Selected Entered 0927`
+- `000000058-IR Gate Excluded Entered 0927`
+
+The second, fresh process first loaded the two entered saves, then the two ready
+saves and first-entered FLPRU1 from each. Its 19 complete events match four exact
+GAM/ARE inputs. Already-removed FLPRI1 stayed absent; excluded FLPRI1 stayed
+present; the selected ready save caused exactly one new suppression for that
+newly constructed world. The trace/world area and owner pointers agree, and all
+full item payloads match the first process. No receipt or delivery state changed.
+These are branches of the accepted quiet fixture, not fresh campaigns or seeds.
+
+Both processes used separate non-input desktops and normal Quit. The first run
+restored 19 staged paths and verified 92 protected files; the second restored 19
+and verified 108, including all four new named saves. Both reservations were
+released with game and loader absent. A read-only completion check initially
+used the wrong main-menu target string; the saved status showed completion, and
+the corrected check succeeded without repeating the menu action. The fresh-run
+offline evidence helper also needed Windows case-insensitive path matching for
+`BALDUR.gam`; duplicate normalized keys are rejected.
+
+Evidence: `work/source-gate-20260927/trace-acceptance.json` and independently
+checked `artifact-acceptance.json`/`.md`; the fresh process is in
+`work/source-gate-reload-20260927/trace-acceptance.json` and
+`world-acceptance.json`. Both directories have `native-released.json`.
+
+This establishes bounded synthetic suppression and saved-policy isolation. The
+next gate is actual New Game enrollment and an explicit early-reward protocol:
+protected-before-access must not be represented as already physically removed.
+CRE/store/script sources, broad template coverage and failure recovery are still
+unproven. The temporary FLPRU1 resource must be staged before using these private
+diagnostic saves; no production content or runtime component was changed.
