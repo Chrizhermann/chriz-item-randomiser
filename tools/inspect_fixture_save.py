@@ -1,7 +1,7 @@
 """Read one explicitly named Mode 1 fixture save without modifying any files.
 
-GAM V2.0 / SAV V1.0 layouts follow IESDP. Only BG2600.ARE is decompressed;
-party inventories come from their embedded GAM CRE records. No resource search,
+GAM V2.0 / SAV V1.0 layouts follow IESDP. The fixture inspector decompresses
+only BG2600.ARE; party inventories come from their embedded GAM CRE records. No resource search,
 game directory, implicit save selection, or external CRE fallback is used.
 """
 from __future__ import annotations
@@ -115,7 +115,18 @@ def parse_gam(data: bytes, variant: str = "ground-piles") -> dict:
                             if re.fullmatch(r"FLPR_A[0-9]{4}", name)}, "party": party}
 
 
-def extract_bg2600(data: bytes) -> tuple[bytes | None, int]:
+def extract_area(data: bytes, area_name: str) -> tuple[bytes | None, int]:
+    """Read one SAV area by ASCII resref (1-8 letters/digits/underscores).
+
+    The caller may supply the resref alone or append ``.are``. Member matching
+    is exact and case-insensitive; other members are counted but not inflated.
+    """
+    if not isinstance(area_name, str) or not re.fullmatch(
+            r"[A-Za-z0-9_]{1,8}(?:\.are)?", area_name, re.IGNORECASE | re.ASCII):
+        raise ScanError("Expected a safe 1-8 character ARE resref or <resref>.are.")
+    resref = area_name[:-4] if area_name.lower().endswith(".are") else area_name
+    label = resref.upper()
+    member_name = f"{resref.lower()}.are"
     if data[:8] != b"SAV V1.0":
         raise ScanError("Expected SAV V1.0.")
     cursor, entry_count, selected = 8, 0, None
@@ -133,20 +144,25 @@ def extract_bg2600(data: bytes) -> tuple[bytes | None, int]:
         unpacked, packed = number(data, cursor), number(data, cursor + 4); cursor += 8
         compressed = span(data, cursor, packed, "SAV compressed member"); cursor += packed
         entry_count += 1
-        if name != "bg2600.are":
+        if name != member_name:
             continue
         if selected is not None:
-            raise ScanError("Duplicate BG2600.ARE members in save.")
+            raise ScanError(f"Duplicate {label}.ARE members in save.")
         if unpacked > MAX_AREA:
-            raise ScanError("Saved BG2600 exceeds the inspector size limit.")
+            raise ScanError(f"Saved {label} exceeds the inspector size limit.")
         stream = zlib.decompressobj()
         try:
             selected = stream.decompress(compressed, unpacked + 1)
         except zlib.error as exc:
-            raise ScanError("Invalid BG2600 zlib stream.") from exc
+            raise ScanError(f"Invalid {label} zlib stream.") from exc
         if not stream.eof or stream.unused_data or stream.unconsumed_tail or len(selected) != unpacked:
-            raise ScanError("BG2600 compressed length or declared size does not match.")
+            raise ScanError(f"{label} compressed length or declared size does not match.")
     return selected, entry_count
+
+
+def extract_bg2600(data: bytes) -> tuple[bytes | None, int]:
+    """Compatibility wrapper for the existing BG2600 fixture inspection."""
+    return extract_area(data, "BG2600")
 
 
 def inspect_area(data: bytes, variant: str = "ground-piles") -> dict:
