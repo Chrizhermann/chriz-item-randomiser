@@ -61,25 +61,48 @@ against the original's indexes. `extract_area` in the existing save inspector
 extracts just that explicitly named area with the same bounded decompression
 and duplicate checks as its retained BG2600 wrapper.
 
-## Validation and next acceptance sequence
+## Validation and native acceptance
 
 All **836 offline tests passed**. This includes the builder, raw trace validator,
 probe failure guards on three Lua runtimes, and named saved-area extraction.
 Static hook review matched both signatures and the register/stack mappings.
-Neither tests nor static review establish native execution.
+The subsequent native run accepted the bounded raw-loading diagnostic. It loaded
+the accepted `000000051-IR Quiet Held 0927` save, whose copied SAV has no FLPRU1.
+The stopped trace has 18 contiguous, published events without overflow: nine for
+first entry, then nine for reloading `000000054-IR Area First 0927` in the same
+process. Both loads match their respective exact ARE inputs, including all three
+containers, the empty container and the three referenced full item payloads.
+Constructor owner pointers match the later live container observations.
 
-The pending native sequence, after the other BG tasks are idle:
+The original table order is A, B, C, with referenced item indexes 1, 2 and 3.
+The engine saved C, B, A, omitted unreferenced item zero and moved FLPRI2 from
+physical index 3 to 0. The validator used the extracted saved ARE for the second
+load; retaining the original indexes would have been incorrect. Seed 1281232896,
+quiet revision, frozen assignments and all existing held phases stayed unchanged.
+No pickup, source suppression, new delivery or receipt occurred.
 
-1. Acquire the shared reservation, protect existing resources/saves and stage
-   only the isolated fixture. Load the already accepted quiet held save.
-2. Confirm its save lacks FLPRU1. Arm once and queue one ordinary area-travel
-   action to FLPRU1; capture entry, records and exit before the world observation.
-3. Observe the exact live container contents without pickup or creation. Save
-   under a new diagnostic name, copy the save, and extract its FLPRU1.ARE.
-4. Reload that save in the same process while the diagnostic remains armed.
-   Stop the trace and validate both loads against their respective raw inputs.
-5. Quit normally, restore staging, verify protected hashes and release the
-   reservation. Record failures rather than replaying consumed actions.
+The first travel request, `MoveBetweenAreas` (225), did not activate FLPRU1:
+the trace remained empty and the player's current-area pointer became absent.
+Two diagnostic reads also failed because their assumptions about CString access
+and that pointer were wrong. After reloading the accepted held save, the run used
+the inspected console party-travel path, `C:MoveToArea("FLPRU1")`, once. That
+completed entry. The original action was not replayed and its failure is not
+counted as successful travel. The root cause of its detached-player state has
+not been established.
+
+The process ran on a separate non-input Windows desktop. Normal Quit completed,
+both owned game/loader processes exited, all 19 staged paths were restored, all
+88 protected files were unchanged and the shared reservation was released.
+The named diagnostic save remains in the private test profile; its temporary
+FLPRU1 resource must be staged again before using it in another test.
+
+The pristine ARE SHA256 is
+`030f192096e370dda94e73753f513700735c1b9bbbc8a44e3f5305aabce60fe8`;
+the extracted saved ARE is
+`d8a3d30d724ccf284e8ba38621459e07eb0648623e2ba62eb2f9897769c0f1cd`.
+`trace-acceptance.json` records the lead's complete validation; independent
+`area-artifact-acceptance.json` also checks save absence/presence, live contents
+and unchanged campaign state. `native-released.json` records cleanup.
 
 Further work still needs an actual suppression mechanism, campaign decision
 availability before loading (including restore), early-delivery representation,

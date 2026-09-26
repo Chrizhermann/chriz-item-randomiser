@@ -222,6 +222,14 @@ staging was restored. General continuous coverage, unfinished-save recovery,
 and unvisited-original suppression remain open. All further game work remains
 isolated and subject to the reservation below.
 
+The [unvisited-container loading diagnostic](unvisited-container-loading-20260927.md)
+then passed first entry and same-process save/reload, with 18 exact raw events and
+836 offline tests. Saving reordered containers and repacked item indexes, so
+original physical indexes cannot identify saved originals by themselves. All
+staging was restored and the game closed. Campaign-local suppression, pre-access
+decision availability and early reward delivery remain unproven; the next bounded
+test uses only the authored FLPRU1 area and its test items.
+
 Offline research, diagnostics, synthetic adapters/tests and test-fixture preparation
 can continue autonomously. Before installation access or a game test, check other
 tasks and processes and acquire the shared reservation. No desktop control is
