@@ -21,17 +21,9 @@ and LuaJIT 2.1. Missing runtimes fail its checks. See the
 [configurator notes](../docs/post-install-configurator.md) and
 [campaign prototype contract](../docs/campaign-runtime-prototype.md) for scope.
 
-Run the PowerShell, WeiDU, and Lua checks from the repository root:
-
-```powershell
-pwsh -NoProfile -File .\tests\run-unit.ps1
-```
-
-The runner defaults to the disposable WeiDU and Lua executables under
-`C:\Users\chris\Games\EET-IR-Test-b600e94\bg2\EET\bin\win32\x86_64`
-and the sentinel BAF fixture under
-`C:\Users\chris\Games\EET-IR-Test-b600e94\decompile-sentinel-final-20260827-064808`.
-Supply other existing files and a fixture directory when needed:
+The complete legacy PowerShell/WeiDU/Lua runner requires explicit tool paths
+and an EET sentinel fixture (31 decompiled `fltier*.baf` scripts from a Mode 1
+installation). Run from the repository root with your own paths:
 
 ```powershell
 pwsh -NoProfile -File .\tests\run-unit.ps1 `
@@ -42,8 +34,8 @@ pwsh -NoProfile -File .\tests\run-unit.ps1 `
 
 Configured paths are resolved to absolute paths, must have no junction or
 symlink ancestor, and cannot be inside the hardcoded live game directory.
-The runner creates a unique scratch directory under this checkout's `work/`
-directory and passes it to child tests as `FL_IR_TEST_TEMP_ROOT`. It removes
+The runner creates a short, unique directory under the system temporary
+directory (WeiDU has path-length limits) and passes it as `FL_IR_TEST_TEMP_ROOT`. It removes
 that directory after success and leaves it for diagnosis after failure.
 
 The runner first checks sentinel dependencies and the other PowerShell
@@ -52,3 +44,7 @@ top-level `lib/*.tpa`, and `tests/weidu` TP2/TPA/TPP files with WeiDU. It
 runs `tests/lua/run.lua` when present and runs `Test-ModeBoundary.ps1` last.
 WeiDU is called with `--nogame`; the runner does not install or launch the
 game. Child output is shown, and any nonzero exit fails the run.
+
+The old local sentinel fixture was removed with its lab. That integration check
+is currently unverified; the other twelve PowerShell suites and the Lua suite
+passed independently with WeiDU 249 and short temporary paths on 27 September.

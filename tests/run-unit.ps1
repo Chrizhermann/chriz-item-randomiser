@@ -1,8 +1,8 @@
 [CmdletBinding()]
 param(
-    [string] $WeiduPath = 'C:\Users\chris\Games\EET-IR-Test-b600e94\bg2\EET\bin\win32\x86_64\weidu.exe',
-    [string] $LuaPath = 'C:\Users\chris\Games\EET-IR-Test-b600e94\bg2\EET\bin\win32\x86_64\lua.exe',
-    [string] $SentinelBafDirectory = 'C:\Users\chris\Games\EET-IR-Test-b600e94\decompile-sentinel-final-20260827-064808'
+    [Parameter(Mandatory = $true)][string] $WeiduPath,
+    [Parameter(Mandatory = $true)][string] $LuaPath,
+    [Parameter(Mandatory = $true)][string] $SentinelBafDirectory
 )
 
 $ErrorActionPreference = 'Stop'
@@ -10,7 +10,7 @@ Set-StrictMode -Version 2.0
 
 $repositoryRoot = [System.IO.Path]::GetFullPath((Split-Path -Parent $PSScriptRoot))
 $liveGameRoot = [System.IO.Path]::GetFullPath('C:\Games\Baldur''s Gate II Enhanced Edition modded')
-$scratchParent = [System.IO.Path]::GetFullPath((Join-Path $repositoryRoot 'work'))
+$scratchParent = [System.IO.Path]::GetFullPath([System.IO.Path]::GetTempPath()).TrimEnd('\', '/')
 $scratchRoot = $null
 $environmentBackup = @{}
 $runnerExitCode = 0
@@ -116,7 +116,7 @@ function Remove-OwnedScratch {
     $leaf = [System.IO.Path]::GetFileName($fullPath)
     if (
         -not [System.IO.Path]::GetDirectoryName($fullPath).Equals($scratchParent, [System.StringComparison]::OrdinalIgnoreCase) -or
-        $leaf -cnotmatch '^bgee-itemrandomiser-unit-[0-9a-f]{32}$'
+        $leaf -cnotmatch '^flir-[0-9a-f]{32}$'
     ) {
         throw "Refusing to remove an unowned scratch path: $fullPath"
     }
@@ -152,7 +152,8 @@ try {
         throw "Workspace scratch parent is not a directory: $scratchParent"
     }
     Assert-NoReparseAncestors -FullPath $scratchParent
-    $scratchRoot = Join-Path $scratchParent ('bgee-itemrandomiser-unit-' + [guid]::NewGuid().ToString('N'))
+    # WeiDU 249 can fail on long paths; keep scratch outside a deep worktree.
+    $scratchRoot = Join-Path $scratchParent ('flir-' + [guid]::NewGuid().ToString('N'))
     New-Item -ItemType Directory -Path $scratchRoot -ErrorAction Stop | Out-Null
 
     $powerShellHostPath = (Get-Process -Id $PID).Path
