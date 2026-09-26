@@ -4,6 +4,8 @@ Reads only explicitly named override resources; never reads or writes saves.
 The output is not a general installation scan or a supported content profile.
 Variant "ground-piles" is the accepted fixture; "creatures" gives the same three
 rewards to two disposable, killable recipients for native creature acceptance.
+"quiet-creatures" retains those fixture actors while suppressing ambient actors,
+area scripting, spawn points, and rest encounters for diagnostic save tests.
 Binary layouts: IESDP gam_v2.0.htm, are_v1.htm, cre_v1.htm, itm_v1.htm.
 Native accessibility and source loading must still be checked in the engine.
 """
@@ -30,7 +32,8 @@ TARGET_POSITIONS = ((1140, 650), (1200, 650), (1260, 650))
 # "creatures" gives the rewards to two disposable, killable actors instead:
 # FLPRC1 holds two (empty inventory) and FLPRC2 one (beside an unrelated
 # disposable FLPRX1 that must never change). Capacities are fixture-only.
-VARIANTS = ("ground-piles", "creatures")
+VARIANTS = ("ground-piles", "creatures", "quiet-creatures")
+CREATURE_VARIANTS = ("creatures", "quiet-creatures")
 # Recipients stand on accepted pile positions 1 and 3, which the party reached.
 CREATURE_TARGETS = (("FLPRC1", TARGET_POSITIONS[0], 2), ("FLPRC2", TARGET_POSITIONS[2], 1))
 UNRELATED_ITEM, UNRELATED_BASE, UNRELATED_OWNER = "FLPRX1", ITEM_BASES[0], "FLPRC2"
@@ -145,15 +148,24 @@ def add_area_fixture(original: bytes, variant: str = "ground-piles") -> bytes:
     # Actor flags 5: external CRE, invulnerable, so sources survive until
     # suppressed. Flags 1: external CRE only, so death tests can kill recipients.
     actors = [_actor(f"FLPRS{index}", x, y, 5) for index, (x, y) in enumerate(SOURCE_POSITIONS, 1)]
-    if variant == "creatures":
+    if variant in CREATURE_VARIANTS:
         actors += [_actor(name, x, y, 1) for name, (x, y), _ in CREATURE_TARGETS]
     piles = TARGET_POSITIONS if variant == "ground-piles" else ()
     result = bytearray(original)
     actor_count, container_count = len(parsed["actors"]), len(parsed["containers"])
+    if variant == "quiet-creatures":
+        # Point at a new actor table containing only fixture records. The old
+        # table remains inert raw bytes so all other ARE section offsets hold.
+        actor_count = 0
+        result[0x94:0x9C] = bytes(8)  # Disable the area's ambient script.
+        struct.pack_into("<I", result, 0x64, 0)  # No spawn points are active.
+        rest_offset = u32(original, 0xC0)
+        if rest_offset:
+            result[rest_offset:rest_offset + 0xE4] = bytes(0xE4)
     if actor_count + len(actors) > 0xFFFF or container_count + len(piles) > 0xFFFF:
         raise ValueError("Area fixture exceeds record count limits")
-    # Copy complete existing tables to EOF: embedded offsets stay absolute and
-    # every original non-header byte stays in place. Only table pointers change.
+    # Append the active actor table at EOF: embedded offsets stay absolute.
+    # The quiet variant leaves the old actor table inert and omits its records.
     actor_offset = len(result)
     result.extend(original[u32(original, 0x54):u32(original, 0x54) + actor_count * 0x110])
     for actor in actors:
@@ -211,9 +223,10 @@ def compile_fixture(resources: dict[str, bytes], inputs: dict[str, str],
     native = {"schema": "flir-native-fixture-v1", "area": AREA.upper(),
         "fresh_global": "FLPR_FRESH", "sources": {}, "targets": {},
         "resource_hashes": hashes, "input_hashes": inputs}
-    if variant == "creatures":
+    if variant in CREATURE_VARIANTS:
         # Added only here: the accepted ground-pile artifacts must stay byte-identical.
-        manifest["profile_id"] = "native-mode1-creature-fixture"
+        manifest["profile_id"] = ("native-mode1-quiet-creature-fixture"
+            if variant == "quiet-creatures" else "native-mode1-creature-fixture")
         cre = parse_cre(resources[UNRELATED_OWNER + ".CRE"])
         native.update({"variant": variant, "ready_detail": CREATURE_READY_DETAIL,
             "unrelated_items": {UNRELATED_OWNER: [{key: deepcopy(record[key])
@@ -243,7 +256,7 @@ def compile_fixture(resources: dict[str, bytes], inputs: dict[str, str],
         native["targets"][identity] = {"area": AREA.upper(), "script_name": container["name"],
             "x": container["x"], "y": container["y"],
             "identity": _digest({"target": target, "resource_sha256": hashes["BG2600.ARE"]})}
-    if variant == "creatures":
+    if variant in CREATURE_VARIANTS:
         _creature_targets(area, hashes, manifest, native)
     for key in ("sources", "targets"):
         manifest[key].sort(key=lambda row: row["id"])
@@ -283,7 +296,7 @@ def build(game: Path, output: Path, variant: str = "ground-piles") -> dict:
         resources[f"FLPRI{index}.ITM"] = item
         resources[f"FLPRS{index}.CRE"] = make_source_cre(originals["COW.CRE"], f"FLPRS{index}",
             item_payload(f"flpri{index}", item))
-    if variant == "creatures":
+    if variant in CREATURE_VARIANTS:
         unrelated = originals[UNRELATED_BASE.upper() + ".ITM"]
         resources[UNRELATED_ITEM + ".ITM"] = unrelated
         for name, _, _ in CREATURE_TARGETS:
@@ -309,9 +322,12 @@ def build(game: Path, output: Path, variant: str = "ground-piles") -> dict:
     limitations = ["Fixture-only resource fingerprint; not a full game scan",
         f"Initial GAM marker, source loading and {access} need live verification",
         "No save files read or changed; no game files written"]
-    if variant == "creatures":
+    if variant in CREATURE_VARIANTS:
         limitations.insert(2, "Creature transport, final flags, death drop and held-item "
                               "save/reload are unproven until native acceptance")
+    if variant == "quiet-creatures":
+        limitations.insert(2, "Diagnostic area suppresses ambient actors, area script, "
+                              "spawn points and rest encounters; engine behavior remains unverified")
     report = {"state": "staged-not-installed", "variant": variant, "game": str(game),
         "output": str(output), "revision": revision, "area": AREA,
         "source_ids": list(native["sources"]), "target_ids": list(native["targets"]),
@@ -325,7 +341,8 @@ def main() -> None:
     parser.add_argument("--game", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--variant", choices=VARIANTS, default="ground-piles",
-                        help="ground-piles is the accepted fixture; creatures targets two killable actors")
+                        help="ground-piles is accepted; creatures keeps ambient actors; "
+                             "quiet-creatures isolates five synthetic actors")
     args = parser.parse_args()
     print(json.dumps(build(args.game, args.output, args.variant), indent=2))
 

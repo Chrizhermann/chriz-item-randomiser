@@ -11,7 +11,8 @@ Core.PHASE = { pending = 0, in_flight = 1, confirmed = 2, quarantined = 3, held 
 Core.CREATURE_TARGET_KINDS = { actor = true, ["cre-template"] = true }
 Core.G = { state = "flpr_state", seed = "flpr_seed", units = "flpr_units",
     sources = "flpr_sources", targets = "flpr_targets", sequence = "flpr_sequence",
-    journal = "flpr_jkind", index = "flpr_jindex", nonce = "flpr_jnonce" }
+    journal = "flpr_jkind", index = "flpr_jindex", nonce = "flpr_jnonce",
+    provenance = "flpr_prov" }
 local G = Core.G
 local Controller = {}
 Controller.__index = Controller
@@ -124,7 +125,7 @@ function Core.new(storage, resolve_revision)
         return nil, "ADAPTER_INVALID"
     end
     return setmetatable({ storage = storage, resolve_revision = resolve_revision, session = {},
-        boundary = 0, issued_boundary = 0 }, Controller)
+        boundary = 0, issued_boundary = 0, held_requests = {} }, Controller)
 end
 
 function Controller:_get(key)
@@ -196,6 +197,7 @@ function Controller:capture(manifest, seed, handoff)
     if not shape then return nil, failure end
     local assignments = shuffled_slots(shape.slots, seed)
     self.session, self.boundary, self.issued_boundary = {}, 0, 0
+    self.held_requests = {}
     self:_set(G.state, 1) -- incomplete initialization is never resumed/rerolled
     self:_write_hash("r", frozen.revision)
     self:_set(G.seed, seed)
@@ -206,10 +208,12 @@ function Controller:capture(manifest, seed, handoff)
     self:_set(G.journal, 0)
     self:_set(G.index, 0)
     self:_set(G.nonce, 0)
+    self:_set(G.provenance, 1)
     for index = 1, #frozen.sources do self:_set_phase("s", index, 0) end
     for index = 1, #shape.units do
         self:_set(name("a", index), assignments[index])
         self:_set_phase("d", index, 0)
+        self:_set(name("n", index), 0)
     end
     self:_set(G.state, 2) -- publish only after all campaign fields round-trip
     self.manifest, self.shape = frozen, shape
@@ -219,6 +223,7 @@ end
 function Controller:restore()
     self.manifest, self.shape = nil, nil
     self.session = {}
+    self.held_requests = {}
     self.boundary, self.issued_boundary = 0, 0
     local state = self:_get(G.state)
     if state == 0 then return nil, "INACTIVE" end
@@ -239,6 +244,9 @@ function Controller:restore()
         return nil, "CAMPAIGN_SHAPE_MISMATCH"
     end
     local expected = shuffled_slots(shape.slots, self:_get(G.seed))
+    local provenance = self:_get(G.provenance)
+    if provenance ~= 0 and provenance ~= 1 then return nil, "PROVENANCE_VERSION_INVALID" end
+    local held_nonces = {}
     local pending_sources, pending_rewards = 0, 0
     for index = 1, #frozen.sources do
         local phase = self:_phase("s", index)
@@ -252,6 +260,19 @@ function Controller:restore()
         end
         if phase == Core.PHASE.held and not creature_target(frozen, shape, expected[index]) then
             return nil, "ASSIGNMENT_INVALID"
+        end
+        local nonce = self:_get(name("n", index))
+        if nonce ~= 0 then
+            if provenance ~= 1 or not integer(nonce, 2, self:_get(G.sequence)) or held_nonces[nonce] or
+                not creature_target(frozen, shape, expected[index]) or
+                (phase ~= Core.PHASE.held and phase ~= Core.PHASE.confirmed and
+                    not (phase == Core.PHASE.in_flight and self:_get(G.journal) == 2 and
+                        self:_get(G.index) == index and self:_get(G.nonce) == nonce)) then
+                return nil, "HELD_NONCE_INVALID"
+            end
+            held_nonces[nonce] = true
+        elseif provenance == 1 and phase == Core.PHASE.held then
+            return nil, "HELD_NONCE_MISSING"
         end
         if phase > 0 and self:_phase("s", unit.source) ~= 2 then return nil, "UNSUPPRESSED_REWARD" end
         if phase == 1 then pending_rewards = pending_rewards + 1 end
@@ -274,6 +295,10 @@ function Controller:restore()
         end
         if pending_sources + pending_rewards ~= (phase == 1 and 1 or 0) then return nil, "JOURNAL_INVALID" end
         if (journal == 1 and pending_rewards ~= 0) or (journal == 2 and pending_sources ~= 0) then return nil, "JOURNAL_INVALID" end
+        -- A cut after publishing held but before clearing its journal must
+        -- retain the same delivery identity; do not erase conflicting evidence.
+        if journal == 2 and self:_get(name("n", index)) ~= 0 and
+            self:_get(name("n", index)) ~= self:_get(G.nonce) then return nil, "HELD_NONCE_INVALID" end
         if phase ~= 1 then self:_set(G.journal, 0) end
     else
         return nil, "JOURNAL_INCOMPLETE"
@@ -286,6 +311,7 @@ function Controller:destroy()
     -- Called after the real game destruction boundary by a future host adapter.
     self.manifest, self.shape = nil, nil
     self.session = {}
+    self.held_requests = {}
     self.boundary, self.issued_boundary = 0, 0
 end
 
@@ -404,9 +430,63 @@ function Controller:observe(receipt)
             outcome = Core.PHASE.held
         end
     end
+    if outcome == Core.PHASE.held and self:_get(G.provenance) == 1 then
+        -- Publish the persistent delivery identity before the held phase.
+        -- A partial write cannot authorize another creation on restore.
+        self:_set(name("n", index), receipt.nonce)
+    end
     self:_set_phase(kind == 1 and "s" or "d", index, outcome)
     self:_set(G.journal, 0)
     if outcome == Core.PHASE.quarantined then return nil, "MUTATION_QUARANTINED" end
+    return true
+end
+
+-- A held reward is already created. This request authorizes observation only;
+-- it never changes the delivery phase or opens another mutation journal.
+function Controller:held_request(index)
+    if not self:_active() then return nil, "INACTIVE" end
+    if not integer(index, 1, #self.shape.units) then return nil, "INDEX_INVALID" end
+    if self:_phase("d", index) ~= Core.PHASE.held then return nil, "NOT_HELD" end
+    if self:_get(G.provenance) ~= 1 then return nil, "HELD_PROVENANCE_UNAVAILABLE" end
+    local nonce = self:_get(name("n", index))
+    if not integer(nonce, 2, self:_get(G.sequence)) then return nil, "HELD_NONCE_MISSING" end
+    local assignment = self:assignments()[index]
+    local pending = self.held_requests[index]
+    if not pending then
+        pending = { token = {}, boundary = self.boundary }
+        self.held_requests[index] = pending
+    end
+    return { kind = "verify-held-drop", mode = "observe-only", index = index,
+        session = self.session, token = pending.token, nonce = nonce,
+        revision = self.manifest.revision, source_id = assignment.source_id,
+        target_id = assignment.target_id,
+        payload = copy(self.manifest.sources[assignment.source].record.record) }
+end
+
+function Controller:confirm_held(receipt)
+    if not self:_active() then return nil, "INACTIVE" end
+    if type(receipt) ~= "table" or not integer(receipt.index, 1, #self.shape.units) then
+        return nil, "RECEIPT_MISMATCH"
+    end
+    local index, pending = receipt.index, self.held_requests[receipt.index]
+    if self:_phase("d", index) ~= Core.PHASE.held then return nil, "NOT_HELD" end
+    if not pending or receipt.session ~= self.session or receipt.token ~= pending.token then
+        return nil, "RECEIPT_MISMATCH"
+    end
+    if self.boundary <= pending.boundary then return nil, "LATER_OBSERVATION_REQUIRED" end
+    -- Avoid interleaving completion with the creation/suppression journal.
+    if self:_get(G.journal) ~= 0 then return nil, "MUTATION_PENDING" end
+    local expected, reason = self:held_request(index)
+    if not expected then return nil, reason end
+    for _, field in ipairs({ "kind", "mode", "nonce", "revision", "source_id", "target_id" }) do
+        if receipt[field] ~= expected[field] then return nil, "RECEIPT_MISMATCH" end
+    end
+    if not same_payload(receipt.payload, expected.payload) or receipt.exact_transferred_instance ~= 1 or
+        receipt.lootable ~= 1 then return nil, "HELD_DROP_UNPROVEN" end
+    -- Observation has no world side effect. One checked GLOBAL is the commit;
+    -- a save on either side retains held or confirmed, never pending creation.
+    self:_set_phase("d", index, Core.PHASE.confirmed)
+    self.held_requests[index] = nil
     return true
 end
 

@@ -2,6 +2,7 @@
 if not EEex_Active then return end
 FLPR = FLPR or {}
 local root = FLPR
+if root.Held then root.Held:destroy(); root.Held = nil end
 if root.Host then root.Host:destroy() end
 root.Disabled, root.Host, root.NewGameIntent = "INITIALIZING", nil, nil
 root.QA = nil
@@ -138,11 +139,17 @@ if not ok then root.Disabled = tostring(failure) end
 
 function root.Poll()
     if root.Host and not root.Disabled then root.Host:poll() end
+    if root.Held then
+        if root.Host and root.Host.status == "complete" and not root.Disabled then
+            root.Held:poll(EngineGlobals.g_pBaldurChitin.m_pObjectGame.m_worldTime.m_gameTime)
+        else root.Held:destroy() end
+    end
     return ""
 end
 
 function root.NewGame()
     root.NewGameIntent = nil
+    if root.Held then root.Held:destroy(); root.Held = nil end
     if root.Host then root.Host:destroy() end
     local bg1 = startCampaignData[currentCampaign] and startCampaignData[currentCampaign].id == "BG1"
     startEngine:OnNewGameButtonClick()
@@ -168,6 +175,7 @@ end
 
 root.OnDestroyed = function()
     root.NewGameIntent = nil
+    if root.Held then root.Held:destroy(); root.Held = nil end
     if root.Host then root.Host:destroy() end
 end
 

@@ -269,6 +269,82 @@ class Mode1FixtureTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Unknown fixture variant"):
             add_area_fixture(before, "shops")
 
+    def test_quiet_area_has_only_fixture_actors_and_no_ambient_creation(self):
+        before = make_are([item_record()], [("OldChest", 0, 1)],
+            [("OldActor", make_cre([item_record()]))])
+        spawn_offset = len(before)
+        before.extend(bytes(0xC8))
+        struct.pack_into("<II", before, 0x60, spawn_offset, 1)
+        rest_offset = len(before)
+        before.extend(b"\x55" * 0xE4)
+        struct.pack_into("<I", before, 0xC0, rest_offset)
+        before = bytes(before)
+        original = parse_are(before)
+        after = add_area_fixture(before, "quiet-creatures")
+        quiet = parse_are(after)
+        self.assertEqual([row["name"] for row in quiet["actors"]],
+            ["FLPRS1", "FLPRS2", "FLPRS3", "FLPRC1", "FLPRC2"])
+        self.assertEqual([row["record_index"] for row in quiet["actors"]], list(range(5)))
+        self.assertEqual([row["flags"] for row in quiet["actors"]], [5, 5, 5, 1, 1])
+        self.assertEqual([row["cre_resref"] for row in quiet["actors"]],
+            ["flprs1", "flprs2", "flprs3", "flprc1", "flprc2"])
+        self.assertEqual(quiet["script"], "")
+        self.assertEqual(struct.unpack_from("<I", after, 0x64)[0], 0)
+        self.assertEqual(after[rest_offset:rest_offset + 0xE4], bytes(0xE4))
+        self.assertEqual(quiet["containers"], original["containers"])
+        self.assertEqual(quiet["items"], original["items"])
+        self.assertEqual(struct.unpack_from("<IH", after, 0x54), (len(before), 5))
+        self.assertEqual(len(after), len(before) + 5 * 0x110)
+        # Existing sections and embedded CRE bytes retain their absolute offsets.
+        self.assertEqual(before[original["actors"][0]["byte_offset"]:
+                                original["actors"][0]["byte_offset"] + 0x110],
+                         after[original["actors"][0]["byte_offset"]:
+                               original["actors"][0]["byte_offset"] + 0x110])
+        old_cre = original["actors"][0]
+        start, size = old_cre["embedded_cre_offset"], old_cre["embedded_cre_size"]
+        self.assertEqual(after[start:start + size], before[start:start + size])
+        changed = set(range(0x54, 0x5A)) | set(range(0x64, 0x68)) | set(range(0x94, 0x9C))
+        changed.update(range(rest_offset, rest_offset + 0xE4))
+        self.assertTrue(all(left == right for index, (left, right) in enumerate(zip(before, after))
+                            if index not in changed))
+        with self.assertRaisesRegex(ValueError, "already contains"):
+            add_area_fixture(after, "quiet-creatures")
+
+    def test_quiet_builder_rebinds_manifest_and_native_to_new_actor_indexes(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            game, originals = synthetic_game(root)
+            quiet_output, ordinary_output = root / "quiet", root / "ordinary"
+            quiet_report = build(game, quiet_output, "quiet-creatures")
+            ordinary_report = build(game, ordinary_output, "creatures")
+            manifest = read_campaign(quiet_output / "campaign-store")
+            native = json.loads((quiet_output / "fixture-native.json").read_text())
+            area_bytes = (quiet_output / "override" / "BG2600.ARE").read_bytes()
+            area = parse_are(area_bytes)
+            self.assertEqual(manifest["profile_id"], "native-mode1-quiet-creature-fixture")
+            self.assertEqual(manifest["revision"], native["revision"])
+            self.assertEqual(manifest["revision"], quiet_report["revision"])
+            self.assertNotEqual(quiet_report["revision"], ordinary_report["revision"])
+            self.assertNotEqual(area_bytes, (ordinary_output / "override" / "BG2600.ARE").read_bytes())
+            self.assertEqual(quiet_report["target_ids"], ["are:bg2600/actor/3", "are:bg2600/actor/4"])
+            self.assertEqual(sorted(native["targets"]), quiet_report["target_ids"])
+            self.assertEqual({row["id"]: row["record"]["selector"]["name"]
+                              for row in manifest["targets"]},
+                             {"are:bg2600/actor/3": "FLPRC1", "are:bg2600/actor/4": "FLPRC2"})
+            self.assertEqual({row["record"]["selector"]["record_index"] for row in manifest["targets"]},
+                             {3, 4})
+            self.assertTrue(all(row["resource_sha256"] == quiet_report["outputs"]["BG2600.ARE"]
+                                for row in manifest["targets"]))
+            self.assertEqual({row["name"] for row in area["actors"]},
+                             {"FLPRS1", "FLPRS2", "FLPRS3", "FLPRC1", "FLPRC2"})
+            self.assertEqual(adapter_targets(quiet_output / "fixture-native.lua"),
+                {row["id"]: ("creature", row["record"]["selector"]["name"].lower(), True, None, None)
+                 for row in manifest["targets"]})
+            self.assertEqual({path.name: path.read_bytes() for path in (game / "override").iterdir()},
+                             originals)
+            self.assertEqual(build(game, root / "repeat", "quiet-creatures")["revision"],
+                             quiet_report["revision"])
+
     def test_full_creature_builder_binds_recipients_and_loads_in_the_adapter(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -312,16 +388,17 @@ class Mode1FixtureTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             game, _ = synthetic_game(root)
-            output = root / "payload"
-            revision = build(game, output, "creatures")["revision"]
-            manifest_lua = (output / "campaign-store" / "revisions" / (revision + ".lua")).read_text(encoding="utf-8")
-            native_lua = (output / "fixture-native.lua").read_text(encoding="utf-8")
-            for runtime in (Lua51, Lua53, LuaJIT21):
-                with self.subTest(runtime=runtime.__module__):
-                    lua = runtime(unpack_returned_tuples=True)
-                    run = lua.execute(CREATURE_RUN)
-                    self.assertTrue(run(lua.execute(CORE), lua.execute(HOST), lua.execute(ADAPTER),
-                                        lua.execute(manifest_lua), lua.execute(native_lua)))
+            for variant in ("creatures", "quiet-creatures"):
+                output = root / variant
+                revision = build(game, output, variant)["revision"]
+                manifest_lua = (output / "campaign-store" / "revisions" / (revision + ".lua")).read_text(encoding="utf-8")
+                native_lua = (output / "fixture-native.lua").read_text(encoding="utf-8")
+                for runtime in (Lua51, Lua53, LuaJIT21):
+                    with self.subTest(variant=variant, runtime=runtime.__module__):
+                        lua = runtime(unpack_returned_tuples=True)
+                        run = lua.execute(CREATURE_RUN)
+                        self.assertTrue(run(lua.execute(CORE), lua.execute(HOST), lua.execute(ADAPTER),
+                                            lua.execute(manifest_lua), lua.execute(native_lua)))
 
     def test_builder_refuses_unknown_variant_or_any_existing_fixture_resource(self):
         with tempfile.TemporaryDirectory() as temporary:

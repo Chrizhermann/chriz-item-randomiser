@@ -7,8 +7,11 @@
 assert(not FLPR_DROP_TRACE, "DROP_TRACE_ALREADY_INSTALLED")
 assert(EEex_Active and FLPR and FLPR.Host and FLPR.Host.status == "complete",
     "DROP_TRACE_REQUIRES_ISOLATED_FIXTURE")
-assert(FLPR.Host.controller.manifest.revision ==
-    "5c41781045d88881207731401341286d591908699eee1ac03bf7eebcf4da9790",
+local revisions = {
+    ["5c41781045d88881207731401341286d591908699eee1ac03bf7eebcf4da9790"] = true,
+    ["0d3ede4e2caa0665b9753645169fbc5ce0f681870709da66d90bc08ba5e83877"] = true,
+}
+assert(revisions[FLPR.Host.controller.manifest.revision],
     "DROP_TRACE_WRONG_REVISION")
 assert(EEex_Area_GetVisible().m_resref:get():lower() == "bg2600", "DROP_TRACE_WRONG_AREA")
 

@@ -491,13 +491,185 @@ function cases.HeldCommitRecoversInterruptedJournalClearWithoutRepeat(Core)
     assert(f:capture()); f:suppress(1)
     local operation = assert(f.controller:begin_delivery(1, f:delivery_witness(1)))
     f.controller:on_observation_boundary()
-    f.fail_before = f.writes + 2
+    -- Persistent nonce, held phase, then journal clear.
+    f.fail_before = f.writes + 3
     assert(not pcall(function() f.controller:observe(held_receipt(f, operation)) end))
     f.fail_before = nil
     f.controller = f:new_controller(); assert(f.controller:restore())
     equal(f.values.flpr_jkind, 0)
     equal(f.controller:assignments()[1].delivery_phase, Core.PHASE.held)
     failed("ALREADY_ATTEMPTED", f.controller:begin_delivery(1, f:delivery_witness(1)))
+end
+
+local function held_fixture(Core)
+    local f = fixture(Core)
+    creature_targets(f, "actor")
+    assert(f:capture()); f:suppress(1)
+    local operation = assert(f.controller:begin_delivery(1, f:delivery_witness(1)))
+    f.controller:on_observation_boundary()
+    assert(f.controller:observe(held_receipt(f, operation)))
+    return f, operation
+end
+
+local function drop_receipt(request)
+    local receipt = clone(request)
+    receipt.session, receipt.token = request.session, request.token
+    receipt.exact_transferred_instance, receipt.lootable = 1, 1
+    return receipt
+end
+
+function cases.HeldDropConfirmationIsObserveOnlyAndPersistsWithoutReplay(Core)
+    local f, operation = held_fixture(Core)
+    equal(f.values.flpr_n0001, operation.nonce)
+    local before = f.writes
+    local request = assert(f.controller:held_request(1))
+    equal(request.mode, "observe-only"); equal(request.nonce, operation.nonce)
+    equal(f.writes, before); equal(f.values.flpr_jkind, 0)
+    local receipt = drop_receipt(request)
+    failed("LATER_OBSERVATION_REQUIRED", f.controller:confirm_held(receipt))
+    f.controller:on_observation_boundary()
+    assert(f.controller:confirm_held(receipt))
+    equal(f.writes, before + 1)
+    equal(f.controller:assignments()[1].delivery_phase, Core.PHASE.confirmed)
+    failed("NOT_HELD", f.controller:confirm_held(receipt))
+    failed("ALREADY_ATTEMPTED", f.controller:begin_delivery(1, f:delivery_witness(1)))
+    f.controller = f:new_controller(); assert(f.controller:restore())
+    equal(f.controller:assignments()[1].delivery_phase, Core.PHASE.confirmed)
+    equal(f.values.flpr_n0001, operation.nonce)
+    failed("ALREADY_ATTEMPTED", f.controller:begin_delivery(1, f:delivery_witness(1)))
+end
+
+function cases.HeldDropRejectsWrongBindingOrUnprovenPayloadWithoutWriting(Core)
+    for _, field in ipairs({ "kind", "mode", "nonce", "revision", "source_id", "target_id", "session", "token" }) do
+        local f = held_fixture(Core)
+        local receipt = drop_receipt(assert(f.controller:held_request(1)))
+        receipt[field] = "wrong"
+        f.controller:on_observation_boundary()
+        local before = f.writes
+        failed("RECEIPT_MISMATCH", f.controller:confirm_held(receipt))
+        equal(f.writes, before)
+        equal(f.controller:assignments()[1].delivery_phase, Core.PHASE.held)
+    end
+    for _, alter in ipairs({
+        function(r) r.payload.charges[2] = 9 end,
+        function(r) r.payload.expiration = 0 end,
+        function(r) r.payload.flags = 3 end,
+        function(r) r.payload.resref = "another" end,
+        function(r) r.exact_transferred_instance = nil end,
+        function(r) r.lootable = 0 end,
+    }) do
+        local f = held_fixture(Core)
+        local receipt = drop_receipt(assert(f.controller:held_request(1)))
+        alter(receipt); f.controller:on_observation_boundary()
+        local before = f.writes
+        failed("HELD_DROP_UNPROVEN", f.controller:confirm_held(receipt))
+        equal(f.writes, before)
+    end
+end
+
+function cases.HeldRequestsAreStableWithinSessionAndInvalidAfterRestore(Core)
+    local f = held_fixture(Core)
+    local request = assert(f.controller:held_request(1))
+    local second = assert(f.controller:held_request(1))
+    equal(second.token, request.token)
+    second.payload.charges[1] = 99
+    equal(f.controller:held_request(1).payload.charges[1], 3)
+    f.controller = f:new_controller(); assert(f.controller:restore())
+    local fresh = assert(f.controller:held_request(1))
+    f.controller:on_observation_boundary()
+    failed("RECEIPT_MISMATCH", f.controller:confirm_held(drop_receipt(request)))
+    assert(f.controller:confirm_held(drop_receipt(fresh)))
+    f.controller:destroy()
+    failed("INACTIVE", f.controller:confirm_held(drop_receipt(fresh)))
+end
+
+function cases.LegacyHeldSavesRemainReadableButCannotInventProvenance(Core)
+    local f = held_fixture(Core)
+    f.values.flpr_prov, f.values.flpr_n0001 = nil, nil
+    f.controller = f:new_controller(); assert(f.controller:restore())
+    equal(f.controller:assignments()[1].delivery_phase, Core.PHASE.held)
+    failed("HELD_PROVENANCE_UNAVAILABLE", f.controller:held_request(1))
+    failed("ALREADY_ATTEMPTED", f.controller:begin_delivery(1, f:delivery_witness(1)))
+end
+
+function cases.HeldNonceValidationRejectsMissingCorruptOrRepeatedIdentity(Core)
+    for _, value in ipairs({ 0, -1, 1, 2147483647 }) do
+        local f = held_fixture(Core)
+        f.values.flpr_n0001 = value
+        f.controller = f:new_controller()
+        failed(value == 0 and "HELD_NONCE_MISSING" or "HELD_NONCE_INVALID", f.controller:restore())
+    end
+    local f = held_fixture(Core)
+    f:suppress(2)
+    local op = assert(f.controller:begin_delivery(2, f:delivery_witness(2)))
+    f.controller:on_observation_boundary()
+    assert(f.controller:observe(held_receipt(f, op)))
+    f.values.flpr_n0002 = f.values.flpr_n0001
+    failed("HELD_NONCE_INVALID", f:new_controller():restore())
+    f.values.flpr_prov = 2
+    failed("PROVENANCE_VERSION_INVALID", f:new_controller():restore())
+end
+
+function cases.HeldCommitEveryWriteCutRetainsNoReplayState(Core)
+    for _, when in ipairs({ "fail_before", "fail_after" }) do
+        for cut = 1, 3 do
+            local f = fixture(Core)
+            creature_targets(f, "actor")
+            assert(f:capture()); f:suppress(1)
+            local op = assert(f.controller:begin_delivery(1, f:delivery_witness(1)))
+            f.controller:on_observation_boundary()
+            f[when] = f.writes + cut
+            assert(not pcall(function() f.controller:observe(held_receipt(f, op)) end))
+            f[when] = nil
+            f.controller = f:new_controller(); assert(f.controller:restore())
+            local phase = f.controller:assignments()[1].delivery_phase
+            local committed = cut > 2 or (cut == 2 and when == "fail_after")
+            equal(phase, committed and Core.PHASE.held or Core.PHASE.in_flight)
+            failed(committed and "ALREADY_ATTEMPTED" or "MUTATION_PENDING",
+                f.controller:begin_delivery(1, f:delivery_witness(1)))
+        end
+    end
+end
+
+function cases.HeldConfirmationWriteFailureRemainsHeldOrConfirmedNeverPending(Core)
+    for _, when in ipairs({ "fail_before", "fail_after" }) do
+        local f = held_fixture(Core)
+        local receipt = drop_receipt(assert(f.controller:held_request(1)))
+        f.controller:on_observation_boundary()
+        f[when] = f.writes + 1
+        assert(not pcall(function() f.controller:confirm_held(receipt) end))
+        f[when] = nil
+        f.controller = f:new_controller(); assert(f.controller:restore())
+        equal(f.controller:assignments()[1].delivery_phase,
+            when == "fail_before" and Core.PHASE.held or Core.PHASE.confirmed)
+        equal(f.values.flpr_jkind, 0)
+        failed("ALREADY_ATTEMPTED", f.controller:begin_delivery(1, f:delivery_witness(1)))
+    end
+end
+
+function cases.HeldConfirmationCannotInterleaveAnUnfinishedWorldMutation(Core)
+    local f = held_fixture(Core)
+    local receipt = drop_receipt(assert(f.controller:held_request(1)))
+    f:source_operation(2)
+    f.controller:on_observation_boundary()
+    local before = f.writes
+    failed("MUTATION_PENDING", f.controller:confirm_held(receipt))
+    equal(f.writes, before)
+end
+
+function cases.RestoreDoesNotEraseJournalThatConflictsWithPublishedHeldIdentity(Core)
+    local f = fixture(Core)
+    creature_targets(f, "actor")
+    assert(f:capture()); f:suppress(1)
+    local op = assert(f.controller:begin_delivery(1, f:delivery_witness(1)))
+    f.controller:on_observation_boundary()
+    f.fail_before = f.writes + 3
+    assert(not pcall(function() f.controller:observe(held_receipt(f, op)) end))
+    f.fail_before = nil
+    f.values.flpr_n0001 = op.nonce - 1
+    local before = f.writes
+    failed("HELD_NONCE_INVALID", f:new_controller():restore())
+    equal(f.writes, before); equal(f.values.flpr_jkind, 2)
 end
 
 return cases

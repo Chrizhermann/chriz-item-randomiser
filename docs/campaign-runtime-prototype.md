@@ -164,6 +164,11 @@ multiple held rewards, save/load, controlled death after delivery and actual
 pickup. Death changed item pointers; the runtime still records those deliveries
 as held rather than inventing an automatic lootable receipt.
 
+The [controlled receipt continuation](held-drop-receipts-20260926.md) adds saved
+delivery identities and an explicitly armed observer for a new quiet fixture.
+Its offline checks pass; fresh native receipt/save acceptance remains pending.
+General held-item lifetime tracking and unfinished-save recovery remain open.
+
 ### Scanner status and installation check
 
 A read-only scan of the isolated EET installation on 2026-09-22 indexed 3,544

@@ -349,6 +349,19 @@ function cases.bootstrap_save_load_blocks_background_remote_poll(Core,Host,Globa
     Infinity_IsMenuOnStack=function(name) return name=="WORLD_ACTIONBAR" and 1 or nil end
     EEexRemote.Poll(); assert(f.remote_polls==1)
 end
+function cases.bootstrap_stops_held_capture_when_host_stops_or_world_changes(Core,Host,Globals,text)
+    for _, boundary in ipairs({"disabled", "new-game", "destroy"}) do
+        local f=bootstrap(Core,Host,Globals,text); bootstrap_to_complete(f)
+        local stopped,polled=0,0
+        f.root.Held={destroy=function() stopped=stopped+1 end,poll=function() polled=polled+1 end}
+        f.root.Poll(); assert(polled==1 and stopped==0)
+        if boundary=="disabled" then f.root.Host.status="disabled"; f.root.Poll()
+        elseif boundary=="new-game" then f.root.NewGame()
+        else f.listeners.destroy() end
+        assert(stopped==1 and polled==1)
+        if boundary~="disabled" then assert(f.root.Held==nil) end
+    end
+end
 return cases
 '''
 

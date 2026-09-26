@@ -62,7 +62,7 @@ function Native.new(api, fixture)
     assert(type(api) == "table" and type(fixture) == "table", "NATIVE_CONFIG_INVALID")
     for _, name in ipairs(required) do assert(type(api[name]) == "function", name .. "_MISSING") end
     local self = setmetatable({ api = api, sources = {}, targets = {}, reservations = {},
-        attempted = {}, tick = nil, pending = nil, last_error = nil, source_resrefs = {} }, Adapter)
+        attempted = {}, tick = nil, pending = nil, last_error = nil, source_resrefs = {}, held = {} }, Adapter)
     local identities, source_resrefs, creatures = {}, self.source_resrefs, false
     for _, kind in ipairs({ "sources", "targets" }) do
         assert(type(fixture[kind]) == "table", "NATIVE_CONFIG_INVALID")
@@ -396,6 +396,7 @@ function Adapter:execute(command)
     -- Retain the exact core session token, not the caller's mutable command table.
     local receipt = { session = command.session, kind = command.kind, index = command.index,
         nonce = command.nonce, revision = command.revision, identity = command.identity,
+        source_id = command.source_id, target_id = command.target_id,
         payload = payload(source.payload) }
     self.pending = { receipt = receipt, endpoint = endpoint, kind = kind, owner = owner,
         before = before, removed = reserved.selected, tick = self.tick, complete = false }
@@ -585,8 +586,89 @@ function Adapter:_observe_creature(pending, receipt, owner, items)
     -- of lootability: the death drop must be verified separately in the engine.
     receipt.created, receipt.nonce_bound_instance, receipt.lootable, receipt.held = 1, 1, 0, 1
     receipt.holder, receipt.slot = "creature", placed.slot
+    -- Session-only provenance. A save reload cannot reconstruct this record
+    -- by finding another item with the same name, address, or payload.
+    self.held[receipt.index] = { session=receipt.session, revision=receipt.revision,
+        nonce=receipt.nonce, source_id=receipt.source_id, target_id=receipt.target_id,
+        owner_id=owner.id, owner_pointer=owner.pointer, item_pointer=placed.pointer,
+        slot=placed.slot, payload=payload(placed.payload), endpoint=pending.endpoint }
     self.pending = nil
     return receipt
+end
+
+function Adapter:_held(request)
+    local held = type(request) == "table" and self.held[request.index]
+    if not held then return nil, "HELD_RELOAD_UNPROVEN" end
+    for _, key in ipairs({ "session", "revision", "nonce", "source_id", "target_id" }) do
+        if request[key] ~= held[key] then return nil, "HELD_BINDING_MISMATCH" end
+    end
+    if request.kind ~= "verify-held-drop" or request.mode ~= "observe-only" or
+        not same(payload(request.payload), held.payload) then return nil, "HELD_BINDING_MISMATCH" end
+    return held
+end
+
+-- Only the controlled fixture may use this snapshot to begin a death trace.
+-- It is not proof against unobserved remove/recreate at a recycled address.
+function Adapter:held_binding(request)
+    local held, reason = self:_held(request)
+    if not held then return nil, reason end
+    local owner; owner, reason = self:_resolve(held.endpoint, "target")
+    if not owner then return nil, reason end
+    if owner.id ~= held.owner_id or owner.pointer ~= held.owner_pointer then return nil, "OWNER_CHANGED" end
+    if creature_conflict(self:_queue(), owner.id, self.source_resrefs) then return nil, "HELD_QUEUE_CONFLICT" end
+    local matches, found = 0, nil
+    for _, item in ipairs(self:_items(owner, true)) do
+        if item.payload.resref == held.payload.resref then matches = matches + 1 end
+        if item.pointer == held.item_pointer and item.slot == held.slot and same(item.payload, held.payload) then found = item end
+    end
+    if not found or matches ~= 1 then return nil, "HELD_INSTANCE_CHANGED" end
+    return { owner_pointer=held.owner_pointer, original_item_pointer=held.item_pointer,
+        slot=held.slot, payload=payload(held.payload) }
+end
+
+-- Revalidate a stopped trace's exact heap copy in this known walkable fixture.
+-- Pointers from the trace are compared with live objects; never dereferenced.
+function Adapter:verify_held_drop(request, candidate)
+    local held, reason = self:_held(request)
+    if not held then return nil, reason end
+    if type(candidate) ~= "table" or candidate.owner_pointer ~= held.owner_pointer or
+        candidate.original_item_pointer ~= held.item_pointer or candidate.slot ~= held.slot then
+        return nil, "DROP_BINDING_MISMATCH"
+    end
+    local owner, unavailable, corpse = self:_resolve(held.endpoint, "target")
+    if owner or unavailable ~= "TARGET_NOT_ALIVE" or not corpse or
+        corpse.id ~= held.owner_id or corpse.pointer ~= held.owner_pointer then return nil, "DROP_OWNER_UNPROVEN" end
+    local api, area = self.api, self.api.EEex_Area_GetVisible()
+    if not area or text(area.m_resref) ~= "bg2600" then return nil, "AREA_UNAVAILABLE" end
+    if type(api.EEex_Sprite_GetInPortrait) ~= "function" then return nil, "PARTY_SCAN_UNAVAILABLE" end
+    local seen, matches, occurrences, found = {}, 0, 0, nil
+    local function scan(object, id, party)
+        if not object then return end
+        local ptr = pointer(api, object)
+        if seen[ptr] then return end
+        seen[ptr] = true
+        local sprite = api.EEex_GameObject_IsSprite(object, true)
+        if not sprite and not object.m_lstItems then return end
+        for _, item in ipairs(self:_items({object=object}, sprite)) do
+            if item.payload.resref == held.payload.resref then occurrences = occurrences + 1 end
+            if item.pointer == candidate.new_item_pointer then
+                matches = matches + 1
+                if not party and not sprite and object.m_containerType == 4 and
+                    ptr == candidate.container_pointer and same(item.payload, held.payload) then found = id end
+            end
+        end
+    end
+    for index = 0, 5 do scan(api.EEex_Sprite_GetInPortrait(index), nil, true) end
+    for _, field in ipairs(lists) do
+        assert(area[field], "NATIVE_AREA_LIST_MISSING")
+        api.EEex_Utility_IterateCPtrList(area[field], function(id)
+            local object = api.EEex_GameObject_Get(id)
+            if object then scan(api.EEex_GameObject_CastUserType(object), id, false) end
+        end)
+    end
+    if matches ~= 1 or occurrences ~= 1 or not found then return nil, "DROP_GROUND_INSTANCE_UNPROVEN" end
+    if creature_conflict(self:_queue(), found, self.source_resrefs) then return nil, "DROP_QUEUE_CONFLICT" end
+    return true
 end
 
 function Adapter:diagnostics()
@@ -614,7 +696,7 @@ end
 
 function Adapter:destroy()
     self.pending, self.tick, self.last_error = nil, nil, nil
-    self.reservations, self.attempted = {}, {}
+    self.reservations, self.attempted, self.held = {}, {}, {}
 end
 
 return Native

@@ -122,6 +122,60 @@ end
 local function unrelated_intact(f)
     assert(f.creature.slots[1].address == 311 and f.creature.slots[21].address == 312)
 end
+local function clone(value)
+    if type(value) ~= "table" then return value end
+    local result = {}
+    for key, entry in pairs(value) do result[key] = clone(entry) end
+    return result
+end
+local function equal_tree(actual, expected)
+    if type(actual) ~= "table" or type(expected) ~= "table" then
+        assert(actual == expected, "read-only observation changed world state")
+        return
+    end
+    for key, value in pairs(expected) do equal_tree(actual[key], value) end
+    for key in pairs(actual) do assert(expected[key] ~= nil, "observation added world state") end
+end
+local function read_only(f, operation)
+    local before = clone({objects=f.objects, queue=f.queue, party=f.party, calls=f.calls})
+    local result, reason = operation()
+    equal_tree({objects=f.objects, queue=f.queue, party=f.party, calls=f.calls}, before)
+    return result, reason
+end
+local function complete_held(f, index)
+    -- Suppress the source through the real adapter so later uniqueness scans
+    -- see the single delivered copy, as in the controlled campaign fixture.
+    local removal = f.command(index, index)
+    removal.kind, removal.target_id = "suppress", nil
+    removal.identity = f.fixture.sources[removal.source_id].identity
+    assert(f.adapter:inspect_source(removal.source_id)); f.boundary()
+    assert(f.adapter:execute(removal)); f.boundary(); assert(f.adapter:observe(removal))
+    local command = f.start(index)
+    f.update(); f.boundary()
+    local result, reason = f.adapter:observe(command); fail(result, reason, "DELIVERY_SETTLING")
+    f.boundary(); local receipt = assert(f.adapter:observe(command))
+    local request = {kind="verify-held-drop", mode="observe-only", index=command.index,
+        session=command.session, revision=command.revision, nonce=command.nonce,
+        source_id=command.source_id, target_id=command.target_id, payload=clone(command.payload), token={}}
+    return request, receipt, command
+end
+local function dropped(N)
+    local f = setup(N)
+    local request = complete_held(f, 1)
+    local binding = assert(f.adapter:held_binding(request))
+    f.creature.alive = false
+    f.creature.slots[binding.slot] = nil
+    f.ground_item = f.item("FLPRI1", 1801)
+    f.ground = {address=701, sprite=false, m_containerType=4, m_lstItems={f.ground_item},
+        m_scriptName={get=function() return "GROUND" end}}
+    f.objects[4] = f.ground; f.area.m_lVertSortBack = {4}
+    f.party = {}
+    f.api.EEex_Sprite_GetInPortrait = function(index) return f.party[index] end
+    local candidate = {owner_pointer=binding.owner_pointer, original_item_pointer=binding.original_item_pointer,
+        slot=binding.slot, new_item_pointer=tostring(f.ground_item.address),
+        container_pointer=tostring(f.ground.address), payload=clone(binding.payload)}
+    return f, request, candidate
+end
 
 function cases.one_reward_is_bound_to_its_message_and_held_after_two_later_ticks(N)
     local f = setup(N); local a = f.adapter
@@ -343,6 +397,207 @@ function cases.creature_target_configuration_is_strict(N)
     target.kind = "creature"; f.api.EEex_Sprite_GetPortraitIndex = nil
     ok, e = pcall(function() N.new(f.api, f.fixture) end)
     assert(not ok and tostring(e):find("EEex_Sprite_GetPortraitIndex_MISSING", 1, true))
+end
+function cases.held_binding_retains_each_completed_delivery_and_returns_payload_copies(N)
+    local f = setup(N)
+    local first, receipt, command = complete_held(f, 1)
+    local initial = assert(read_only(f, function() return f.adapter:held_binding(first) end))
+    assert(initial.owner_pointer == "201" and initial.slot == 18)
+    assert(initial.original_item_pointer == tostring(f.creature.slots[18].address))
+    assert(initial.payload.resref == "flpri1" and initial.payload.flags == 1)
+    -- None of these public tables may alias the adapter's retained payload.
+    initial.payload.charges[1] = 123; initial.payload.flags = 0
+    receipt.payload.charges[2] = 456; receipt.payload.resref = "other"
+    receipt.source_id = "changed"; receipt.nonce = 999; receipt.session = {}
+    command.payload.charges[3] = 789; command.revision = string.rep("f", 64)
+    local second = complete_held(f, 2)
+    local first_again = assert(read_only(f, function() return f.adapter:held_binding(first) end))
+    local second_binding = assert(read_only(f, function() return f.adapter:held_binding(second) end))
+    assert(first_again.slot == 18 and first_again.payload.charges[1] == 0 and
+        first_again.payload.charges[2] == 0 and first_again.payload.charges[3] == 0)
+    assert(first_again.payload.resref == "flpri1" and first_again.payload.flags == 1)
+    assert(second_binding.slot == 19 and second_binding.payload.resref == "flpri2")
+    assert(first_again.original_item_pointer ~= second_binding.original_item_pointer)
+    assert(f.adapter:diagnostics().pending == nil); unrelated_intact(f)
+end
+function cases.held_binding_is_absent_before_receipt_after_destroy_or_in_a_new_adapter(N)
+    local f = setup(N)
+    local command = f.start(1)
+    local request = clone(command); request.session = command.session
+    request.kind, request.mode = "verify-held-drop", "observe-only"
+    local x, e = read_only(f, function() return f.adapter:held_binding(request) end)
+    fail(x, e, "HELD_RELOAD_UNPROVEN")
+    f = setup(N); request = complete_held(f, 1)
+    local replacement = N.new(f.api, f.fixture)
+    x, e = read_only(f, function() return replacement:held_binding(request) end)
+    fail(x, e, "HELD_RELOAD_UNPROVEN")
+    f.adapter:destroy()
+    x, e = read_only(f, function() return f.adapter:held_binding(request) end)
+    fail(x, e, "HELD_RELOAD_UNPROVEN")
+    x, e = read_only(f, function() return f.adapter:verify_held_drop(request, {}) end)
+    fail(x, e, "HELD_RELOAD_UNPROVEN")
+end
+function cases.held_methods_reject_missing_or_changed_request_identity(N)
+    for _, key in ipairs({"index", "session", "revision", "nonce", "source_id", "target_id", "kind", "mode", "payload"}) do
+        for _, variant in ipairs({"missing", "changed"}) do
+            local f, request, candidate = dropped(N)
+            if variant == "missing" then request[key] = nil
+            elseif key == "session" then request[key] = {}
+            elseif key == "index" or key == "nonce" then request[key] = request[key] + 1
+            elseif key == "payload" then request.payload.flags = 0
+            else request[key] = "wrong" end
+            local want = key == "index" and "HELD_RELOAD_UNPROVEN" or "HELD_BINDING_MISMATCH"
+            local x, e = read_only(f, function() return f.adapter:held_binding(request) end); fail(x, e, want)
+            x, e = read_only(f, function() return f.adapter:verify_held_drop(request, candidate) end); fail(x, e, want)
+        end
+    end
+end
+function cases.held_methods_reject_malformed_request_payload_without_throwing(N)
+    for _, shape in ipairs({"number", "missing-charges", "scalar-charges", "extra-charge", "missing-charge"}) do
+        local f, request, candidate = dropped(N)
+        if shape == "number" then request.payload = 7
+        elseif shape == "missing-charges" then request.payload.charges = nil
+        elseif shape == "scalar-charges" then request.payload.charges = 7
+        elseif shape == "extra-charge" then request.payload.charges[4] = 0
+        else request.payload.charges[3] = nil end
+        local x, e = read_only(f, function() return f.adapter:held_binding(request) end)
+        fail(x, e, "HELD_BINDING_MISMATCH")
+        x, e = read_only(f, function() return f.adapter:verify_held_drop(request, candidate) end)
+        fail(x, e, "HELD_BINDING_MISMATCH")
+    end
+end
+function cases.held_binding_rejects_changed_owner_slot_item_payload_or_duplicate_name(N)
+    local wants = {pointer="OWNER_CHANGED", id="OWNER_CHANGED", missing="OWNER_MISSING",
+        renamed="OWNER_MISSING", duplicate="OWNER_AMBIGUOUS", corpse_twin="OWNER_AMBIGUOUS",
+        dead="TARGET_NOT_ALIVE", party="TARGET_PARTY_MEMBER", familiar="TARGET_FAMILIAR"}
+    for _, variant in ipairs({"pointer", "id", "missing", "renamed", "duplicate", "corpse_twin",
+        "dead", "party", "familiar", "item-pointer", "slot", "removed", "flags", "charge", "wear", "resref", "item-duplicate"}) do
+        local f = setup(N); local request = complete_held(f, 1)
+        local placed = f.creature.slots[18]
+        if variant == "pointer" then f.creature.address = 999
+        elseif variant == "id" then f.objects[3] = nil; f.objects[7] = f.creature; f.area.m_lVertSort = {1, 2, 7}
+        elseif variant == "missing" then f.objects[3] = nil
+        elseif variant == "renamed" then f.creature.m_scriptName = {get=function() return "OTHER" end}
+        elseif variant == "duplicate" or variant == "corpse_twin" then
+            local twin = f.sprite(202, "FLPRC1", {}); twin.alive = variant == "duplicate"
+            f.objects[4] = twin; f.area.m_lVertSortBack = {4}
+        elseif variant == "dead" then f.creature.alive = false
+        elseif variant == "party" then f.creature.portrait = 0
+        elseif variant == "familiar" then f.creature.m_typeAI.m_EnemyAlly = 3
+        elseif variant == "item-pointer" then f.creature.slots[18] = f.item("FLPRI1", 991)
+        elseif variant == "slot" then f.creature.slots[18] = nil; f.creature.slots[19] = placed
+        elseif variant == "removed" then f.creature.slots[18] = nil
+        elseif variant == "flags" then placed.m_flags = 0
+        elseif variant == "charge" then placed.m_useCount2 = 1
+        elseif variant == "wear" then placed.m_wear = 1
+        elseif variant == "resref" then placed.cResRef = {get=function() return "OTHER" end}
+        else f.creature.slots[19] = f.item("FLPRI1", 992) end
+        local x, e = read_only(f, function() return f.adapter:held_binding(request) end)
+        fail(x, e, wants[variant] or "HELD_INSTANCE_CHANGED")
+    end
+end
+function cases.held_binding_rejects_conflicting_queue_and_allows_unrelated_messages(N)
+    for _, variant in ipairs({"owner", "fixture-creature", "fixture-container", "unrelated"}) do
+        local f = setup(N); local request = complete_held(f, 1)
+        if variant == "owner" then f.queue[1] = f.message(3, "OTHER", 40)
+        elseif variant == "fixture-creature" then f.queue[1] = f.message(90, "FLPRI1", 2)
+        elseif variant == "fixture-container" then f.queue[1] = f.message(90, "FLPRI2", 12)
+        else f.queue[1] = f.message(90, "OTHER", 40) end
+        local x, e = read_only(f, function() return f.adapter:held_binding(request) end)
+        if variant == "unrelated" then assert(x) else fail(x, e, "HELD_QUEUE_CONFLICT") end
+    end
+end
+function cases.verify_held_drop_accepts_exact_dead_owner_and_unique_ground_heap_copy_without_writes(N)
+    local f, request, candidate = dropped(N)
+    -- One live object can appear in several area lists; it counts once.
+    f.area.m_lVertSortUnder = {3, 4}; f.area.m_lVertSortFlight = {4}
+    f.queue[1] = f.message(90, "OTHER", 40)
+    assert(read_only(f, function() return f.adapter:verify_held_drop(request, candidate) end))
+    assert(read_only(f, function() return f.adapter:verify_held_drop(request, candidate) end))
+    assert(#f.calls == 2 and #f.queue == 1 and #f.ground.m_lstItems == 1)
+    unrelated_intact(f)
+end
+function cases.verify_held_drop_rejects_missing_or_changed_candidate_binding(N)
+    for _, field in ipairs({"owner_pointer", "original_item_pointer", "slot", "new_item_pointer", "container_pointer"}) do
+        for _, variant in ipairs({"missing", "changed"}) do
+            local f, request, candidate = dropped(N)
+            if variant == "missing" then candidate[field] = nil
+            else candidate[field] = field == "slot" and 19 or "9999" end
+            local want = (field == "new_item_pointer" or field == "container_pointer") and
+                "DROP_GROUND_INSTANCE_UNPROVEN" or "DROP_BINDING_MISMATCH"
+            local x, e = read_only(f, function() return f.adapter:verify_held_drop(request, candidate) end)
+            fail(x, e, want)
+        end
+    end
+    local f, request = dropped(N)
+    local x, e = read_only(f, function() return f.adapter:verify_held_drop(request, nil) end)
+    fail(x, e, "DROP_BINDING_MISMATCH")
+end
+function cases.verify_held_drop_rejects_living_replaced_missing_or_ambiguous_owner(N)
+    for _, variant in ipairs({"alive", "pointer", "id", "missing", "renamed", "duplicate", "corpse-twin", "area"}) do
+        local f, request, candidate = dropped(N)
+        if variant == "alive" then f.creature.alive = true
+        elseif variant == "pointer" then f.creature.address = 999
+        elseif variant == "id" then f.objects[3] = nil; f.objects[7] = f.creature; f.area.m_lVertSort = {1, 2, 7}
+        elseif variant == "missing" then f.objects[3] = nil
+        elseif variant == "renamed" then f.creature.m_scriptName = {get=function() return "OTHER" end}
+        elseif variant == "area" then f.area.m_resref = {get=function() return "BG0100" end}
+        else
+            local twin = f.sprite(202, "FLPRC1", {}); twin.alive = variant == "duplicate"
+            f.objects[7] = twin; f.area.m_lVertSortFlight = {7}
+        end
+        local x, e = read_only(f, function() return f.adapter:verify_held_drop(request, candidate) end)
+        fail(x, e, "DROP_OWNER_UNPROVEN")
+    end
+end
+function cases.verify_held_drop_rejects_wrong_ground_instance_or_payload_and_duplicate_occurrences(N)
+    for _, variant in ipairs({"pointer", "container-pointer", "container-type", "missing", "flags", "charge", "wear", "resref",
+        "second-ground-copy", "same-pointer-twice", "copy-on-corpse", "copy-on-other-sprite"}) do
+        local f, request, candidate = dropped(N)
+        if variant == "pointer" then f.ground_item.address = 999
+        elseif variant == "container-pointer" then f.ground.address = 999
+        elseif variant == "container-type" then f.ground.m_containerType = 0
+        elseif variant == "missing" then f.ground.m_lstItems = {}
+        elseif variant == "flags" then f.ground_item.m_flags = 0
+        elseif variant == "charge" then f.ground_item.m_useCount3 = 1
+        elseif variant == "wear" then f.ground_item.m_wear = 1
+        elseif variant == "resref" then f.ground_item.cResRef = {get=function() return "OTHER" end}
+        elseif variant == "copy-on-corpse" then f.creature.slots[18] = f.item("FLPRI1", 888)
+        elseif variant == "copy-on-other-sprite" then f.source2.slots[18] = f.item("FLPRI1", 888)
+        else
+            local other_item = variant == "same-pointer-twice" and f.ground_item or f.item("FLPRI1", 888)
+            f.objects[5] = {address=702, sprite=false, m_containerType=4, m_lstItems={other_item},
+                m_scriptName={get=function() return "OTHERPILE" end}}
+            f.area.m_lVertSortUnder = {5}
+        end
+        local x, e = read_only(f, function() return f.adapter:verify_held_drop(request, candidate) end)
+        fail(x, e, "DROP_GROUND_INSTANCE_UNPROVEN")
+    end
+end
+function cases.verify_held_drop_rejects_party_owned_item_or_another_party_copy(N)
+    for _, variant in ipairs({"picked-up", "additional-copy", "party-only"}) do
+        local f, request, candidate = dropped(N)
+        local party = f.sprite(801, "PARTY", {}); party.portrait = 0
+        party.slots[18] = variant == "additional-copy" and f.item("FLPRI1", 888) or f.ground_item
+        if variant ~= "additional-copy" then f.ground.m_lstItems = {} end
+        f.party[0] = party
+        if variant ~= "party-only" then f.objects[5] = party; f.area.m_lVertSortUnder = {5} end
+        local x, e = read_only(f, function() return f.adapter:verify_held_drop(request, candidate) end)
+        fail(x, e, "DROP_GROUND_INSTANCE_UNPROVEN")
+    end
+    local f, request, candidate = dropped(N); f.api.EEex_Sprite_GetInPortrait = nil
+    local x, e = read_only(f, function() return f.adapter:verify_held_drop(request, candidate) end)
+    fail(x, e, "PARTY_SCAN_UNAVAILABLE")
+end
+function cases.verify_held_drop_rejects_container_or_fixture_queue_conflicts(N)
+    for _, variant in ipairs({"container", "fixture-creature", "fixture-container"}) do
+        local f, request, candidate = dropped(N)
+        if variant == "container" then f.queue[1] = f.message(4, "OTHER", 40)
+        elseif variant == "fixture-creature" then f.queue[1] = f.message(90, "FLPRI1", 2)
+        else f.queue[1] = f.message(90, "FLPRI2", 12) end
+        local x, e = read_only(f, function() return f.adapter:verify_held_drop(request, candidate) end)
+        fail(x, e, "DROP_QUEUE_CONFLICT")
+    end
 end
 return cases
 '''
