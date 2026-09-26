@@ -4,6 +4,16 @@
 -- fc821a4806a0305b84fd85f1aad2bd472c8db642ed34b4494ae62351cae1c580
 -- No Lua callbacks, engine calls, or retained userdata inside the native hooks.
 -- Buffer lifetime is the process lifetime; installation is deliberately one-shot.
+-- Explicit loadfile(... )({lifetime=true}) also records both CItem destructor
+-- entries. That diagnostic has a different schema and never arms FLPRHeld.
+local options = ...
+assert(options == nil or type(options) == "table", "DROP_TRACE_BAD_OPTIONS")
+if options then
+    for key, value in pairs(options) do
+        assert(key == "lifetime" and type(value) == "boolean", "DROP_TRACE_BAD_OPTIONS")
+    end
+end
+local lifetime = options and options.lifetime == true or false
 assert(not FLPR_DROP_TRACE, "DROP_TRACE_ALREADY_INSTALLED")
 assert(EEex_Active and FLPR and FLPR.Host and FLPR.Host.status == "complete",
     "DROP_TRACE_REQUIRES_ISOLATED_FIXTURE")
@@ -13,6 +23,11 @@ local revisions = {
 }
 assert(revisions[FLPR.Host.controller.manifest.revision],
     "DROP_TRACE_WRONG_REVISION")
+if lifetime then
+    assert(FLPR.Host.controller.manifest.revision ==
+        "c0acc859837a30315637e16d73c427393ca2694d0cd54eeb7d45ed82eee78e91"
+        and not FLPR.Held, "LIFETIME_TRACE_REQUIRES_QUIET_DIAGNOSTIC")
+end
 assert(EEex_Area_GetVisible().m_resref:get():lower() == "bg2600", "DROP_TRACE_WRONG_AREA")
 
 local sites = {
@@ -23,19 +38,27 @@ local sites = {
     {rva=0x210B03,
         bytes="0233ed0fb796b80000004c8bc5488bcbe83847f8ff80beba00000001750d488bcbe81710f8"},
 }
+if lifetime then
+    -- Full instruction validation windows; only the first complete five-byte
+    -- mov [rsp+8],rbx is displaced at each entry. No RIP-relative relocation.
+    sites[#sites+1] = {rva=0x1FAA30, entry=true,
+        bytes="48895c240848896c24104889742418574883ec20488d05c5e53900"}
+    sites[#sites+1] = {rva=0x1FAB10, entry=true,
+        bytes="48895c240848896c24104889742418574883ec208beac7411800000000"}
+end
 local base = EEex_GetImageBase()
 -- Validate ALL sites before modifying any, including the surrounding register
 -- setup and the instruction after each call. Refuse other hooks/builds here.
 for _, site in ipairs(sites) do
     local offset = 0
     for byte in site.bytes:gmatch("%x%x") do
-        assert(EEex_ReadU8(base + site.rva - 16 + offset) == tonumber(byte, 16),
+        assert(EEex_ReadU8(base + site.rva + (site.entry and 0 or -16) + offset) == tonumber(byte, 16),
             "DROP_TRACE_CODE_MISMATCH:" .. tostring(site.rva))
         offset = offset + 1
     end
 end
 
-local capacity, stride, header = 256, 64, 32
+local capacity, stride, header = lifetime and 4096 or 256, 64, 32
 local buffer = EEex_Malloc(header + capacity * stride)
 assert(buffer and buffer ~= 0, "DROP_TRACE_ALLOC_FAILED")
 for offset = 0, header + capacity * stride - 1, 8 do EEex_Write64(buffer + offset, 0) end
@@ -103,6 +126,23 @@ local code = {
         mov qword ptr ds:[r11+24], rbx
     ]], "rbp"),
 }
+if lifetime then
+    code[4] = assembly(4, [[
+        mov qword ptr ds:[r11+8], rcx
+        mov rax, qword ptr ss:[rsp+32]
+        mov qword ptr ds:[r11+16], rax
+        mov qword ptr ds:[r11+24], 0
+        mov qword ptr ds:[r11+32], 0
+    ]], "rcx")
+    code[5] = assembly(5, [[
+        mov qword ptr ds:[r11+8], rcx
+        mov rax, qword ptr ss:[rsp+32]
+        mov qword ptr ds:[r11+16], rax
+        mov qword ptr ds:[r11+24], 0
+        mov eax, edx
+        mov qword ptr ds:[r11+32], rax
+    ]], "rcx")
+end
 
 -- A partial installation must never be retried in this process. Restore code
 -- protection even if the assembler reports an error, and leave capture off.
@@ -112,9 +152,14 @@ EEex_DisableCodeProtection()
 local ok, failure = pcall(function()
     for index, site in ipairs(sites) do
         local address = base + site.rva
-        local original_target = address + 5 + EEex_Read32(address + 1)
-        local hook = site.before and EEex_HookBeforeCall or EEex_HookAfterCall
-        hook(address, code[index])
+        local original_target
+        if site.entry then
+            EEex_HookBeforeRestore(address, 0, 5, 5, code[index])
+        else
+            original_target = address + 5 + EEex_Read32(address + 1)
+            local hook = site.before and EEex_HookBeforeCall or EEex_HookAfterCall
+            hook(address, code[index])
+        end
         assert(EEex_ReadU8(address) == 0xE9, "DROP_TRACE_DETOUR_NOT_WRITTEN")
         local destination = address + 5 + EEex_Read32(address + 1)
         assert(destination > 0 and (destination < address - 16 or destination >= address + 21)
@@ -138,7 +183,8 @@ end
 function trace.inspect()
     local active = EEex_ReadU64(buffer + 24)
     local count = EEex_ReadU64(buffer + 8)
-    local result = {schema="flpr-drop-trace-v1", installed=trace.installed,
+    local result = {schema=lifetime and "flpr-drop-lifetime-trace-v1" or "flpr-drop-trace-v1",
+        installed=trace.installed,
         armed=EEex_ReadU64(buffer) == 1,
         overflow=EEex_ReadU64(buffer + 16) ~= 0 or count > capacity, events={}}
     for index = 0, math.min(count, capacity) - 1 do
@@ -165,4 +211,4 @@ function trace.inspect()
     return result
 end
 
-return {installed=true, sites=#sites, capacity=capacity, armed=false}
+return {installed=true, sites=#sites, capacity=capacity, armed=false,lifetime=lifetime}

@@ -210,6 +210,14 @@ and reopen coverage. Repeated-spawn sources need an explicit occurrence rule.
 
 ## Coordination and stopping points
 
+### 27 September continuation
+
+The [quiet fixture receipt run](held-drop-receipts-20260926.md) passed native
+death/drop/pickup and confirmed/looted reload checks. The next
+[item-lifetime diagnostic](native-item-lifetime-20260927.md) is implemented and
+passes 812 offline tests; its two additional destructor hooks still await native
+execution. All game work remains isolated and subject to the reservation below.
+
 Offline research, diagnostics, synthetic adapters/tests and test-fixture preparation
 can continue autonomously. Before installation access or a game test, check other
 tasks and processes and acquire the shared reservation. No desktop control is
