@@ -119,7 +119,7 @@ EE companion items are candidates for explicit creative review, not blanket
 inclusion. Availability follows the scanned installation. This content direction
 does not promise parity with Mode 2's install-time backend.
 
-Proposed preset organization, for owner review: separate item-pool templates and
+Approved preset organization: separate item-pool templates and
 destination templates, with ready-made configurations that combine both and their
 rules. Optional content packs are independent switches rather than a separate
 preset for every combination. Applying a template copies its choices into an
@@ -130,14 +130,23 @@ the resulting pool against destination capacity and progression constraints.
 Additional content does not implicitly enable cross-campaign placement. Exact
 item membership, targets, tiers and default combinations remain owner decisions.
 
+Retain optional random item loss: selected items can deliberately be omitted from
+a run, so the player cannot assume every selected reward will appear. Draw these
+omissions anew for each campaign and preserve them on reload. This is separate
+from leaving an item at its original location and from an unintended delivery bug.
+
 Create original curses for weapons, shields, armour/robes, helmets, cloaks, gloves,
 boots, belts, rings, and amulets. Frequency, severity, and appearance variation are
 separate options. Variants stay fixed within a campaign; identification and removal
 behavior are explicit and tested. The owner approves the creative designs.
 
 Future EET crossovers separate origin campaign, allowed destination campaigns, and
-power/progression tier. This supports BG2 items in BG1/SoD and the reverse, including
-both progression-aware and deliberately unrestricted profiles.
+power/progression tier. Normal crossover configurations preserve meaningful tiers
+while allowing BG2 items in BG1/SoD and the reverse; discuss the concrete mapping
+with the owner. At the lowest implementation priority, an explicit CHAOS option
+collapses all selected item and destination tiers into one: even a weak BG1 enemy
+can receive a top-tier selected reward. This changes placement balance, not the
+requirement that configured rewards can actually be obtained.
 
 ## Engineering milestones
 
