@@ -557,11 +557,23 @@ function cases.queued_item_pointer_must_survive_second_observation(N)
     f.target.m_lstItems[1]=f.item("FLPRI1",702); a:on_observation_boundary(3)
     x,e=a:observe(command); fail(x,e,"CREATED_INSTANCE_CHANGED")
 end
-function cases.duplicate_source_resources_are_rejected(N)
-    local f=setup(N); f.fixture.sources.other={area="BG2600",script_name="FLPRS2",identity=string.rep("d",64),
-        payload={resref="flpri1",charges={0,0,0},expiration=0,flags=0}}
-    local ok,e=pcall(function() N.new(f.api,f.fixture) end)
-    assert(not ok and tostring(e):find("NATIVE_FIXTURE_RESOURCE_NOT_UNIQUE",1,true))
+function cases.same_resref_guarded_originals_in_distinct_owners_remain_independent(N)
+    local f=two_guarded_world(N)
+    local first,second=f.container.m_lstItems[1],f.second.m_lstItems[1]
+    f.fixture.sources[f.second_id].payload.resref="flpri1"
+    f.second.m_lstItems[1]=f.item("FLPRI1",second.address,1)
+    f.adapter=N.new(f.api,f.fixture)
+    assert(f.adapter.source_resrefs.flpri1==true)
+    assert(f.adapter:guarded_source_remaining(f.guarded_id,"901","701").remaining==1)
+    assert(f.adapter:guarded_source_remaining(f.second_id,"901","702").remaining==1)
+    table.remove(f.second.m_lstItems,1)
+    assert(f.adapter:guarded_source_remaining(f.guarded_id,"901","701").remaining==1)
+    assert(f.adapter:guarded_source_remaining(f.second_id,"901","702").remaining==0)
+    assert(f.container.m_lstItems[1]==first)
+    table.remove(f.container.m_lstItems,1)
+    assert(f.adapter:guarded_source_remaining(f.guarded_id,"901","701").remaining==0)
+    assert(f.adapter:guarded_source_remaining(f.second_id,"901","702").remaining==0)
+    assert(#f.calls==0)
 end
 function cases.configured_item_resref_removes_only_the_selected_copy(N)
     local f=setup(N); f.fixture.sources[f.source_id].payload.resref="sw1h01"

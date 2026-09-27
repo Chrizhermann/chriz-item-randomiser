@@ -345,6 +345,28 @@ passed across the available Lua runtimes where applicable. This is not a full-su
 rerun. Browser inspection confirmed the pricing controls and legacy configuration
 loading; the editor is serving the existing saved scans and workspace.
 
+### Several selected originals of one item — 28 September
+
+The editor now uses independent source checkboxes, preserves selections through
+paging/save/load, and shows finite shop quantities. The native adapter accepts
+repeated item resrefs across distinct source owners and tracks creature rewards
+by their separate pointers, slots and payloads. A shop with capacity greater than
+one still rejects a pool that could assign it two identical rewards.
+
+The browser-created two-Chain-Mail sample (`9fdcd340...`, seed `1183639817`)
+relocated BG0504 container 8/item 17 and BG5001 container 3/item 5 to Zargal.
+Both arrived in separate inventory slots, dropped on normal death and were picked
+up. Each source guard suppressed exactly one original; all other item IDs and counts
+in both containers matched the scan. The unchecked BG0606 container 1 original
+remained present. This is not raw payload equality: a remaining potion's runtime
+flags/charges differed from its raw ARE record, so both observations are retained
+without claiming that stricter comparison passed.
+Evidence: `work/multiple-originals-20260928/acceptance.json`.
+The muted hidden game quit normally, 28 staged files were restored, and the
+reservation was released. This sample was not saved/reloaded; the general lifetime
+observer remains unfinished. Focused editor/export/adapter/host/gate tests passed;
+no full-suite rerun. The saved two-original configuration remains in the editor.
+
 For the next scripted sample, the original mod's BLPOOL grant is suitable:
 preserve its display, bite spell and Pool state change, replacing only BLUN12's
 grant. EEex SetTarget/LuaAction can capture LastTrigger and branch by saved

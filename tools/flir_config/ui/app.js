@@ -17,6 +17,7 @@ let targetInputDrafts = new Map();
 let basePriceDrafts = new Map();
 let shopPercentDraft = "120";
 let sourcePages = new Map();
+let sourceChoiceTouched = new Set();
 let expandedItems = new Set();
 let activeTab = "items";
 let dirty = false;
@@ -87,7 +88,7 @@ function post(path, value) {
   return request(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(value) });
 }
 
-function acceptState(state, message) {
+function acceptState(state, message, preserveSourceChoices = false) {
   if (!state || !state.profile || !state.plan) throw new Error("The local editor returned an incomplete configuration.");
   generation += 1;
   profile = state.profile;
@@ -98,6 +99,7 @@ function acceptState(state, message) {
   basePriceDrafts = new Map();
   shopPercentDraft = String(profile.shop_pricing?.percent ?? 120);
   sourcePages = new Map();
+  if (!preserveSourceChoices) sourceChoiceTouched = new Set();
   expandedItems = new Set();
   dirty = false;
   verified = false;
@@ -270,12 +272,11 @@ function renderSelected() {
 function renderSourcePicker(item, body) {
   const entry = sourceEntry(item);
   const ids = entry && Array.isArray(entry.source_ids) ? entry.source_ids : [];
-  let selection;
-  if (!ids.length) selection = "No original chosen. Choose one exact record below.";
-  else if (ids.length === 1) selection = `Chosen original: ${ids[0]}`;
-  else selection = `${ids.length} saved originals: ${ids.join(", ")}. Choosing a radio will replace them with one record.`;
+  const selection = ids.length
+    ? `${ids.length} ${ids.length === 1 ? "original" : "originals"} selected`
+    : "No originals selected. Choose one or more records below.";
   body.append(node("p", `source-selection${ids.length ? "" : " missing"}`, selection));
-  body.append(node("p", "source-note", "The record and its notes come from the world scan. Check this draft to confirm current runtime support."));
+  body.append(node("p", "source-note", "Each checked record moves its existing copies; a shop record moves its full finite stock. Check this draft to confirm current runtime support."));
   const page = sourcePages.get(item);
   if (!page || (page.loading && !page.records.length)) {
     body.append(node("p", "small-note", "Loading original records…"));
@@ -294,21 +295,23 @@ function renderSourcePicker(item, body) {
     return;
   }
   const group = node("fieldset", "source-list");
-  group.append(node("legend", "", "Exact original"));
+  group.append(node("legend", "", "Exact originals"));
   for (const source of page.records) {
     const label = node("label", "source-option");
-    const radio = node("input");
-    radio.type = "radio";
-    radio.name = `source-${item}`;
-    radio.value = source.id;
-    radio.checked = ids.length === 1 && ids[0] === source.id;
-    radio.addEventListener("change", () => chooseSource(item, source.id));
+    const checkbox = node("input");
+    checkbox.type = "checkbox";
+    checkbox.value = source.id;
+    checkbox.checked = ids.includes(source.id);
+    checkbox.addEventListener("change", () => setSourceSelected(item, source.id, checkbox.checked));
     const text = node("span");
+    const stock = source.concerns?.includes("infinite-stock")
+      ? "infinite stock"
+      : `${source.quantity.toLocaleString()} ${source.quantity === 1 ? "copy" : "copies"}`;
     text.append(node("span", "record-name", source.label || source.id),
-      node("span", "record-detail", `${source.id}${source.kind_label || source.kind ? ` · ${source.kind_label || source.kind}` : ""}`));
+      node("span", "record-detail", `${source.id}${source.kind_label || source.kind ? ` · ${source.kind_label || source.kind}` : ""} · ${stock}`));
     if (source.note) text.append(node("span", "record-detail", source.note));
     if (source.concerns && source.concerns.length) text.append(node("span", "record-detail", `Scan notes: ${source.concerns.join(", ")}`));
-    label.append(radio, text);
+    label.append(checkbox, text);
     group.append(label);
   }
   body.append(group);
@@ -340,12 +343,12 @@ async function fetchSources(item, append = false) {
     page.next = result.next_offset;
     page.total = result.total;
     const entry = sourceEntry(item);
-    if (!append && result.total === 1 && page.records.length === 1
+    if (!append && !sourceChoiceTouched.has(item) && result.total === 1 && page.records.length === 1
       && (!entry || (entry.policy === "relocate"
         && Array.isArray(entry.source_ids) && entry.source_ids.length === 0
         && (!Array.isArray(entry.registration_ids) || entry.registration_ids.length === 0)))
       && typeof page.records[0].id === "string" && page.records[0].id) {
-      chooseSource(item, page.records[0].id);
+      setSourceSelected(item, page.records[0].id, true, true);
     }
   } catch (error) {
     if (generation !== currentGeneration || !profile.items.includes(item) || sourcePages.get(item) !== page) return;
@@ -359,14 +362,17 @@ async function fetchSources(item, append = false) {
   }
 }
 
-function chooseSource(item, id) {
+function setSourceSelected(item, id, selected, automatic = false) {
   if (!profile.items.includes(item)) return;
+  if (!automatic) sourceChoiceTouched.add(item);
   let entry = sourceEntry(item);
   if (!entry) {
     entry = { item, policy: "relocate", source_ids: [], registration_ids: [] };
     plan.sources.push(entry);
   }
-  entry.source_ids = [id];
+  const ids = Array.isArray(entry.source_ids) ? entry.source_ids : [];
+  if (selected === ids.includes(id)) return;
+  entry.source_ids = selected ? [...ids, id] : ids.filter((choice) => choice !== id);
   changed();
   renderSelected();
 }
@@ -624,12 +630,12 @@ ui.newForm.addEventListener("submit", (event) => {
 ui.saveButton.addEventListener("click", () => {
   if (!localInputValid()) return;
   profile.name = ui.profileName.value.trim();
-  perform(async () => acceptState(await post("/api/save", { profile, plan, copy: false }), "Draft saved."), "Saving draft…");
+  perform(async () => acceptState(await post("/api/save", { profile, plan, copy: false }), "Draft saved.", true), "Saving draft…");
 });
 ui.copyButton.addEventListener("click", () => {
   if (!localInputValid()) return;
   profile.name = ui.profileName.value.trim();
-  perform(async () => acceptState(await post("/api/save", { profile, plan, copy: true }), "Copy saved as a new configuration."), "Saving copy…");
+  perform(async () => acceptState(await post("/api/save", { profile, plan, copy: true }), "Copy saved as a new configuration.", true), "Saving copy…");
 });
 ui.validateButton.addEventListener("click", () => {
   if (!localInputValid()) return;

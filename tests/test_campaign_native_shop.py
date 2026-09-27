@@ -111,6 +111,30 @@ function cases.bind_freezes_assignments_and_prices(Shop)
     f.fixture.shop_prices.synth001=999
     assert(f.read(entry.address+16,4)==375)
 end
+function cases.same_resref_in_distinct_shops_tracks_each_unit_purchase(Shop)
+    local f=setup()
+    local second_source,second_target='are:other/container/0/item/0','sto:other'
+    f.fixture.sources[second_source]={payload=f.payload}
+    f.fixture.targets[second_target]={kind='store',store='other'}
+    local assignments={f.assignment,
+        {unit=8,source_id=second_source,target_id=second_target,delivery_phase=0}}
+    f.controller={assignments=function() return assignments end}
+    local shop=Shop.install(f.api);shop:bind(f.fixture,f.controller)
+    local first,second=assert(shop.by_unit[7]),assert(shop.by_unit[8])
+    assert(#shop.entries==2 and first~=second and first.key=='FLPR_P0007' and second.key=='FLPR_P0008')
+    assert(ref(f,first.address)=='SHOP' and ref(f,second.address)=='OTHER')
+    assert(ref(f,first.address+8)=='SYNTH001' and ref(f,second.address+8)=='SYNTH001')
+    assert(shop:deliver(f.fixture.targets[f.target_id],f.payload,7))
+    assert(shop:deliver(f.fixture.targets[second_target],f.payload,8))
+    assert(f.calls[1].action=='AddStoreItem("shop","synth001",1,1)' and
+        f.calls[2].action=='AddStoreItem("other","synth001",1,1)')
+    assert(f.read(first.address+24,8)==1 and f.read(second.address+24,8)==1)
+    f.api.EEex_Write64(first.address+24,2);shop:sync_purchases()
+    assert(f.globals.FLPR_P0007==1 and f.globals.FLPR_P0008==nil)
+    assignments[1].delivery_phase=2;assignments[2].delivery_phase=2
+    shop:bind(f.fixture,f.controller)
+    assert(f.read(shop.by_unit[7].address+24,8)==2 and f.read(shop.by_unit[8].address+24,8)==1)
+end
 
 function cases.purchased_flag_retires_surcharge(Shop)
     local f=setup();f.globals.FLPR_P0007=1

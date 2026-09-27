@@ -57,7 +57,9 @@ folder outside the game. The editor needs only Python's standard library and
 does not open a browser automatically, launch the game, rescan, or run WeiDU.
 
 Search all scanned items by name or resource ID; a sole original is selected
-automatically, while multiple originals remain an explicit choice. Recipient
+automatically. Check several original records to relocate several copies of the
+same item; unchecked originals stay in place. Each source shows its copy count;
+a finite shop record moves its full stock quantity. Recipient
 search includes the scanned names and script/resource aliases, with filters for
 creatures, containers and shops. Creature templates without a bound spawn and
 unfinished destination types are labelled as such. Reward slots allow several
@@ -149,7 +151,9 @@ Keep that output between exports; restart the test game after deploying a new re
 Current runtime coverage includes static container originals, selected items on
 uniquely bound static actors, and finite shop stock. Destinations can be uniquely
 named ARE actors or shops allowing purchases. The current item restrictions remain:
-unexpired, nonstackable, visible droppable items with distinct selected resrefs.
+unexpired, nonstackable, visible droppable items. Several originals of the same
+item can be relocated from separate owners, including to one creature recipient.
+Ambiguous identical copies within a single source owner remain unsupported.
 Equipped originals need an explicit replacement. Export reports unsupported
 selections instead of silently omitting them; it does not certify an encounter.
 

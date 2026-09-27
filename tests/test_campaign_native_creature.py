@@ -176,6 +176,17 @@ local function dropped(N)
         container_pointer=tostring(f.ground.address), payload=clone(binding.payload)}
     return f, request, candidate
 end
+local function two_same_resref_held(N)
+    local f = setup(N)
+    f.source2.slots[21] = f.item("FLPRI1", 302)
+    f.fixture.sources[f.source_ids[2]].payload.resref = "flpri1"
+    f.adapter = N.new(f.api, f.fixture)
+    local first, receipt1 = complete_held(f, 1)
+    local first_item = f.creature.slots[18]
+    local second, receipt2 = complete_held(f, 2)
+    assert(f.creature.slots[18] == first_item and first_item.address ~= f.creature.slots[19].address)
+    return f, first, second, receipt1, receipt2
+end
 
 function cases.one_reward_is_bound_to_its_message_and_held_after_two_later_ticks(N)
     local f = setup(N); local a = f.adapter
@@ -231,6 +242,21 @@ function cases.two_rewards_to_one_creature_each_bind_their_own_instance(N)
     f.boundary(); local receipt2 = assert(a:observe(second))
     assert(receipt1.slot == 18 and receipt2.slot == 19 and receipt2.payload.resref == "flpri2")
     assert(f.creature.slots[18].cResRef:get() == "FLPRI1" and f.creature.slots[19].cResRef:get() == "FLPRI2")
+    unrelated_intact(f)
+end
+function cases.same_resref_originals_deliver_sequentially_as_distinct_held_instances(N)
+    local f, first, second, receipt1, receipt2 = two_same_resref_held(N)
+    assert(receipt1.slot == 18 and receipt2.slot == 19)
+    assert(receipt1.source_id ~= receipt2.source_id and receipt1.payload.resref == "flpri1" and
+        receipt2.payload.resref == "flpri1")
+    local binding1 = assert(read_only(f, function() return f.adapter:held_binding(first) end))
+    local binding2 = assert(read_only(f, function() return f.adapter:held_binding(second) end))
+    assert(binding1.slot == 18 and binding2.slot == 19 and
+        binding1.original_item_pointer == tostring(f.creature.slots[18].address) and
+        binding2.original_item_pointer == tostring(f.creature.slots[19].address) and
+        binding1.original_item_pointer ~= binding2.original_item_pointer)
+    assert(f.creature.slots[18].cResRef:get() == "FLPRI1" and
+        f.creature.slots[19].cResRef:get() == "FLPRI1")
     unrelated_intact(f)
 end
 function cases.absent_or_elsewhere_target_is_deferred_without_reservation(N)
@@ -544,6 +570,25 @@ function cases.verify_held_drop_accepts_exact_dead_owner_and_unique_ground_heap_
     assert(#f.calls == 2 and #f.queue == 1 and #f.ground.m_lstItems == 1)
     unrelated_intact(f)
 end
+function cases.same_resref_trace_backed_ground_copies_verify_independently(N)
+    local f, first, second = two_same_resref_held(N)
+    local binding1 = assert(f.adapter:held_binding(first))
+    local binding2 = assert(f.adapter:held_binding(second))
+    f.creature.alive = false
+    f.creature.slots[18], f.creature.slots[19] = nil, nil
+    local ground1, ground2 = f.item("FLPRI1", 1801), f.item("FLPRI1", 1802)
+    local ground = {address=701, sprite=false, m_containerType=4, m_lstItems={ground1,ground2},
+        m_scriptName={get=function() return "GROUND" end}}
+    f.objects[4] = ground; f.area.m_lVertSortBack = {4}
+    f.api.EEex_Sprite_GetInPortrait = function() return nil end
+    local function candidate(binding, item)
+        return {owner_pointer=binding.owner_pointer, original_item_pointer=binding.original_item_pointer,
+            slot=binding.slot, new_item_pointer=tostring(item.address),
+            container_pointer=tostring(ground.address), payload=clone(binding.payload)}
+    end
+    assert(read_only(f, function() return f.adapter:verify_held_drop(first,candidate(binding1,ground1)) end))
+    assert(read_only(f, function() return f.adapter:verify_held_drop(second,candidate(binding2,ground2)) end))
+end
 function cases.verify_held_drop_rejects_missing_or_changed_candidate_binding(N)
     for _, field in ipairs({"owner_pointer", "original_item_pointer", "slot", "new_item_pointer", "container_pointer"}) do
         for _, variant in ipairs({"missing", "changed"}) do
@@ -577,9 +622,9 @@ function cases.verify_held_drop_rejects_living_replaced_missing_or_ambiguous_own
         fail(x, e, "DROP_OWNER_UNPROVEN")
     end
 end
-function cases.verify_held_drop_rejects_wrong_ground_instance_or_payload_and_duplicate_occurrences(N)
+function cases.verify_held_drop_rejects_wrong_ground_instance_payload_or_pointer_alias(N)
     for _, variant in ipairs({"pointer", "container-pointer", "container-type", "missing", "flags", "charge", "wear", "resref",
-        "second-ground-copy", "same-pointer-twice", "copy-on-corpse", "copy-on-other-sprite"}) do
+        "same-pointer-twice", "original-still-on-corpse", "original-on-other-sprite"}) do
         local f, request, candidate = dropped(N)
         if variant == "pointer" then f.ground_item.address = 999
         elseif variant == "container-pointer" then f.ground.address = 999
@@ -589,11 +634,12 @@ function cases.verify_held_drop_rejects_wrong_ground_instance_or_payload_and_dup
         elseif variant == "charge" then f.ground_item.m_useCount3 = 1
         elseif variant == "wear" then f.ground_item.m_wear = 1
         elseif variant == "resref" then f.ground_item.cResRef = {get=function() return "OTHER" end}
-        elseif variant == "copy-on-corpse" then f.creature.slots[18] = f.item("FLPRI1", 888)
-        elseif variant == "copy-on-other-sprite" then f.source2.slots[18] = f.item("FLPRI1", 888)
+        elseif variant == "original-still-on-corpse" then
+            f.creature.slots[18] = f.item("FLPRI1", tonumber(candidate.original_item_pointer))
+        elseif variant == "original-on-other-sprite" then
+            f.source2.slots[18] = f.item("FLPRI1", tonumber(candidate.original_item_pointer))
         else
-            local other_item = variant == "same-pointer-twice" and f.ground_item or f.item("FLPRI1", 888)
-            f.objects[5] = {address=702, sprite=false, m_containerType=4, m_lstItems={other_item},
+            f.objects[5] = {address=702, sprite=false, m_containerType=4, m_lstItems={f.ground_item},
                 m_scriptName={get=function() return "OTHERPILE" end}}
             f.area.m_lVertSortUnder = {5}
         end
@@ -601,12 +647,12 @@ function cases.verify_held_drop_rejects_wrong_ground_instance_or_payload_and_dup
         fail(x, e, "DROP_GROUND_INSTANCE_UNPROVEN")
     end
 end
-function cases.verify_held_drop_rejects_party_owned_item_or_another_party_copy(N)
-    for _, variant in ipairs({"picked-up", "additional-copy", "party-only"}) do
+function cases.verify_held_drop_rejects_party_owned_candidate(N)
+    for _, variant in ipairs({"picked-up", "party-only"}) do
         local f, request, candidate = dropped(N)
         local party = f.sprite(801, "PARTY", {}); party.portrait = 0
-        party.slots[18] = variant == "additional-copy" and f.item("FLPRI1", 888) or f.ground_item
-        if variant ~= "additional-copy" then f.ground.m_lstItems = {} end
+        party.slots[18] = f.ground_item
+        f.ground.m_lstItems = {}
         f.party[0] = party
         if variant ~= "party-only" then f.objects[5] = party; f.area.m_lVertSortUnder = {5} end
         local x, e = read_only(f, function() return f.adapter:verify_held_drop(request, candidate) end)
@@ -615,6 +661,17 @@ function cases.verify_held_drop_rejects_party_owned_item_or_another_party_copy(N
     local f, request, candidate = dropped(N); f.api.EEex_Sprite_GetInPortrait = nil
     local x, e = read_only(f, function() return f.adapter:verify_held_drop(request, candidate) end)
     fail(x, e, "PARTY_SCAN_UNAVAILABLE")
+end
+function cases.verify_held_drop_allows_unrelated_same_resref_copies_with_distinct_pointers(N)
+    local f, request, candidate = dropped(N)
+    f.creature.slots[18] = f.item("FLPRI1", 888)
+    f.source2.slots[18] = f.item("FLPRI1", 889)
+    f.objects[5] = {address=702, sprite=false, m_containerType=4,
+        m_lstItems={f.item("FLPRI1", 890)}, m_scriptName={get=function() return "OTHERPILE" end}}
+    f.area.m_lVertSortUnder = {5}
+    local party = f.sprite(801, "PARTY", {[18]=f.item("FLPRI1", 891)})
+    party.portrait = 0; f.party[0] = party
+    assert(read_only(f, function() return f.adapter:verify_held_drop(request,candidate) end))
 end
 function cases.verify_held_drop_rejects_container_or_fixture_queue_conflicts(N)
     for _, variant in ipairs({"container", "fixture-creature", "fixture-container"}) do

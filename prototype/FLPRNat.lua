@@ -102,8 +102,6 @@ function Native.new(api, fixture)
                 assert(copy.kind == "creature" or guarded(copy), "NATIVE_SOURCE_KIND_UNSUPPORTED")
                 if not store_source then copy.sprite = true end
                 copy.payload = assert(payload(endpoint.payload), "NATIVE_PAYLOAD_UNSUPPORTED")
-                assert(not source_resrefs[copy.payload.resref],
-                    "NATIVE_FIXTURE_RESOURCE_NOT_UNIQUE")
                 if copy.kind == "guarded-container" then
                     assert(integer(endpoint.x,0,32767) and integer(endpoint.y,0,32767) and
                         integer(endpoint.container_type or 4,0,65535), "NATIVE_GUARDED_SOURCE_INVALID")
@@ -763,12 +761,28 @@ function Adapter:held_binding(request)
     if not owner then return nil, reason end
     if owner.id ~= held.owner_id or owner.pointer ~= held.owner_pointer then return nil, "OWNER_CHANGED" end
     if creature_conflict(self:_queue(), owner.id, self.source_resrefs) then return nil, "HELD_QUEUE_CONFLICT" end
+    local tracked, tracked_count = {}, 0
+    for _, binding in pairs(self.held) do
+        if binding.owner_id == held.owner_id and binding.owner_pointer == held.owner_pointer and
+            binding.payload.resref == held.payload.resref then
+            if tracked[binding.item_pointer] then return nil, "HELD_INSTANCE_CHANGED" end
+            tracked[binding.item_pointer] = binding
+            tracked_count = tracked_count + 1
+        end
+    end
     local matches, found = 0, nil
     for _, item in ipairs(self:_items(owner, true)) do
-        if item.payload.resref == held.payload.resref then matches = matches + 1 end
-        if item.pointer == held.item_pointer and item.slot == held.slot and same(item.payload, held.payload) then found = item end
+        if item.payload.resref == held.payload.resref then
+            matches = matches + 1
+            local binding = tracked[item.pointer]
+            if not binding or item.slot ~= binding.slot or not same(item.payload, binding.payload) then
+                return nil, "HELD_INSTANCE_CHANGED"
+            end
+            tracked[item.pointer] = nil
+            if item.pointer == held.item_pointer then found = item end
+        end
     end
-    if not found or matches ~= 1 then return nil, "HELD_INSTANCE_CHANGED" end
+    if not found or matches ~= tracked_count or next(tracked) then return nil, "HELD_INSTANCE_CHANGED" end
     return { owner_pointer=held.owner_pointer, original_item_pointer=held.item_pointer,
         slot=held.slot, payload=payload(held.payload) }
 end
@@ -788,7 +802,7 @@ function Adapter:verify_held_drop(request, candidate)
     local api, area = self.api, self.api.EEex_Area_GetVisible()
     if not area or text(area.m_resref) ~= "bg2600" then return nil, "AREA_UNAVAILABLE" end
     if type(api.EEex_Sprite_GetInPortrait) ~= "function" then return nil, "PARTY_SCAN_UNAVAILABLE" end
-    local seen, matches, occurrences, found = {}, 0, 0, nil
+    local seen, matches, original_occurrences, found = {}, 0, 0, nil
     local function scan(object, id, party)
         if not object then return end
         local ptr = pointer(api, object)
@@ -797,7 +811,7 @@ function Adapter:verify_held_drop(request, candidate)
         local sprite = api.EEex_GameObject_IsSprite(object, true)
         if not sprite and not object.m_lstItems then return end
         for _, item in ipairs(self:_items({object=object}, sprite)) do
-            if item.payload.resref == held.payload.resref then occurrences = occurrences + 1 end
+            if item.pointer == held.item_pointer then original_occurrences = original_occurrences + 1 end
             if item.pointer == candidate.new_item_pointer then
                 matches = matches + 1
                 if not party and not sprite and object.m_containerType == 4 and
@@ -813,7 +827,9 @@ function Adapter:verify_held_drop(request, candidate)
             if object then scan(api.EEex_GameObject_CastUserType(object), id, false) end
         end)
     end
-    if matches ~= 1 or occurrences ~= 1 or not found then return nil, "DROP_GROUND_INSTANCE_UNPROVEN" end
+    if matches ~= 1 or original_occurrences ~= 0 or not found then
+        return nil, "DROP_GROUND_INSTANCE_UNPROVEN"
+    end
     if creature_conflict(self:_queue(), found, self.source_resrefs) then return nil, "DROP_QUEUE_CONFLICT" end
     return true
 end

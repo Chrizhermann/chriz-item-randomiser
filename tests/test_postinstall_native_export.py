@@ -199,6 +199,47 @@ class NativeExportTests(unittest.TestCase):
                              f"{distinct}.native.json").read_bytes())
         self.assertEqual(set(native["shop_prices"]), {"synth001", "synth002"})
 
+    def test_several_originals_of_one_item_export_as_distinct_rewards(self):
+        record = item_record("SYNTH001", expiration=0, charges=(0, 0, 0), flags=1)
+        area = bytes(make_are([record, record, record],
+                             [("ChestOne", 0, 1), ("ChestTwo", 1, 1), ("Unselected", 2, 1)],
+                             [("External", "ACTOR")]))
+        (self.override / "area.are").write_bytes(area)
+        (self.override / "shop.sto").write_bytes(make_sto([]))
+        (self.override / "shop2.sto").write_bytes(make_sto([]))
+        self.refresh()
+        profile = edit_profile(new_profile(self.catalog, "copies", "Two copies"),
+                               self.catalog, include=["synth001"])
+        plan = new_binding_plan(profile, self.catalog, self.world)
+        plan["sources"] = [{"item": "synth001", "policy": "relocate",
+                            "source_ids": [self.second, self.first], "registration_ids": []}]
+        plan["targets"] = [{"id": "are:area/actor/0", "capacity": 2, "optional": False}]
+        revision = write_campaign(profile, self.catalog, self.world, plan, self.store)["revision"]
+        self.export(revision)
+        manifest = read_campaign(self.store, revision)
+        self.assertEqual([(s["id"], s["quantity"]) for s in manifest["sources"]],
+                         [(self.first, 1), (self.second, 1)])
+        native = json.loads((self.output / "campaign-store" / "revisions" /
+                             f"{revision}.native.json").read_bytes())
+        self.assertEqual(set(native["sources"]), {self.first, self.second})
+        self.assertEqual(len({s["identity"] for s in native["sources"].values()}), 2)
+        self.assertEqual(native["source_gate"]["source_ids"], [self.first, self.second])
+        self.assertEqual((self.output / "AREA.pristine.are").read_bytes(), area)
+
+        # Distinct original rows still contribute duplicate item units. Do not
+        # allow random assignment to collapse both into one unsupported shop row.
+        plan["targets"] = [{"id": "sto:shop", "capacity": 2, "optional": False}]
+        blocked = write_campaign(profile, self.catalog, self.world, plan, self.store)["revision"]
+        with self.assertRaisesRegex(ProfileError, "distinct copies.*single shop"):
+            self.export(blocked)
+        plan["targets"] = [{"id": shop, "capacity": 1, "optional": False}
+                           for shop in ("sto:shop", "sto:shop2")]
+        split = write_campaign(profile, self.catalog, self.world, plan, self.store)["revision"]
+        self.export(split)
+        exported = json.loads((self.output / "campaign-store" / "revisions" /
+                               f"{split}.native.json").read_bytes())
+        self.assertEqual(set(exported["targets"]), {"sto:shop", "sto:shop2"})
+
     def test_new_profile_preserves_old_native_revision_and_pristine_area(self):
         game_before = snapshot(self.game)
         current = self.write(("synth001", "synth002"))

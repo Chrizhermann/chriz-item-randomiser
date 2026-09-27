@@ -133,6 +133,7 @@ class Editor:
                 raise ProfileError("Unknown item")
             page = self.page(self.sources[item], offset)
             page["records"] = [{"id": s["id"], "kind": s["kind"], "concerns": s["concerns"],
+                "quantity": s["record"]["quantity"] if s["kind"] == "store" else 1,
                 "kind_label": KIND_LABELS[s["kind"]],
                 "label": (self.label(self.index["targets"][s["owner"]]) if s["owner"] in self.index["targets"]
                           else s["owner"]) + f" · item record {s['record']['record_index']}",

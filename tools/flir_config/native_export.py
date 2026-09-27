@@ -53,6 +53,7 @@ def _compile(manifest: dict, world: dict, index: dict, items: dict) -> tuple[dic
         native["shop_pricing"] = deepcopy(manifest.get("shop_pricing", DEFAULT_SHOP_PRICING))
         native["shop_prices"] = {}
     required, pristine, selected_items, selected_actors, selected_stores = set(), set(), set(), set(), set()
+    item_units = Counter()
 
     def use(resource: str) -> None:
         required.add(resource)
@@ -85,9 +86,8 @@ def _compile(manifest: dict, world: dict, index: dict, items: dict) -> tuple[dic
                  record["expiration"] == 0 and record["flags"] in (0, 1) and
                  item["stack_size"] <= 1 and item["flags"] & 12 == 12,
                  f"Native source requires an unexpired, nonstackable, visible droppable item: {identity}")
-        _require(source["item"] not in selected_items,
-                 f"Native export does not yet support selecting two copies of {source['item']}")
         selected_items.add(source["item"])
+        item_units[source["item"]] += selected["quantity"]
         if source["kind"] == "store":
             _require(source["resource"] not in selected_stores,
                      f"Native export currently supports one selected stock row per shop: {identity}")
@@ -184,7 +184,7 @@ def _compile(manifest: dict, world: dict, index: dict, items: dict) -> tuple[dic
             _require(target["resource"] not in selected_stores,
                      f"Experimental native export cannot use a selected source store as a target: {identity}")
             _require(not (selected["capacity"] > 1 and
-                          any(row["quantity"] > 1 for row in manifest["sources"])),
+                          any(quantity > 1 for quantity in item_units.values())),
                      "Experimental native export cannot assign distinct copies of one selected item "
                      "to a single shop yet; use store target capacity 1 for multi-copy sources")
             collisions = sorted({row["item"] for row in index["sources"].values()

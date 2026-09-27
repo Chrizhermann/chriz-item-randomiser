@@ -68,6 +68,27 @@ class EditorTests(unittest.TestCase):
         self.assertFalse(result["valid"])
         self.assertIn("capacity", result["message"].lower())
 
+    def test_multiple_originals_survive_save_copy_reload_and_prepare(self):
+        fx = self.fx
+        (fx.override / "actor.cre").write_bytes(make_cre([
+            item_record("SYNTH001", expiration=0, charges=(0, 0, 0), flags=1)]))
+        fx.refresh()
+        self.reset_editor()
+        e = self.editor
+        source_ids = [fx.first, "cre:actor/item/0"]
+        draft = deepcopy(e.draft)
+        draft["plan"]["sources"][0]["source_ids"] = source_ids
+        draft["plan"]["targets"][0]["capacity"] = 2
+        saved = e.post("/api/save", draft)
+        self.assertEqual(saved["plan"]["sources"][0]["source_ids"], source_ids)
+        copied = e.post("/api/save", {**draft, "copy": True})
+        self.assertEqual(copied["plan"]["sources"][0]["source_ids"], source_ids)
+        reloaded = Editor(fx.catalog, fx.world, e.workspace).post("/api/load", {"id": "sample"})
+        self.assertEqual(reloaded["plan"]["sources"][0]["source_ids"], source_ids)
+        prepared = e.post("/api/prepare", draft)
+        campaign = read_campaign(Path(prepared["store"]))
+        self.assertEqual([row["id"] for row in campaign["sources"]], source_ids)
+
     def test_creature_source_can_be_saved_and_checked_for_test_runtime(self):
         fx = self.fx
         (fx.override / "actor.cre").write_bytes(make_cre([
@@ -129,6 +150,7 @@ class EditorTests(unittest.TestCase):
                 self.assertEqual(request("/api/items?q=synth001")["items"][0]["resref"], "synth001")
                 source = request("/api/sources?item=synth001")["records"][0]
                 self.assertEqual(source["id"], self.fx.first)
+                self.assertEqual(source["quantity"], 1)
                 self.assertIn("ChestOne", source["label"])
                 self.assertEqual(request("/api/targets?q=EmbedDV")["records"][0]["id"], "are:area/actor/1")
                 self.assertTrue(request("/api/validate", e.draft)["runtime_supported"])
@@ -139,6 +161,17 @@ class EditorTests(unittest.TestCase):
             finally:
                 server.shutdown()
                 thread.join(timeout=5)
+
+    def test_source_results_show_full_finite_shop_stock(self):
+        fx = self.fx
+        (fx.override / "shop.sto").write_bytes(make_sto([
+            (item_record("SYNTH001", expiration=0, charges=(1, 0, 0), flags=1), 3, 0)]))
+        fx.refresh()
+        self.reset_editor()
+        records = self.editor.get("/api/sources", {"item": "synth001"})["records"]
+        shop = next(row for row in records if row["kind"] == "store")
+        self.assertEqual(shop["quantity"], 3)
+        self.assertEqual(next(row for row in records if row["kind"] == "container")["quantity"], 1)
 
 
 if __name__ == "__main__":
