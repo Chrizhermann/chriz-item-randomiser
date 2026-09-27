@@ -62,7 +62,7 @@ class NativeExportTests(unittest.TestCase):
     def export(self, revision=None):
         return export_native(self.store, self.catalog, self.world, self.output, revision)
 
-    def write_creature_source(self, kind, target):
+    def write_creature_source(self, kind, target, replacement=None):
         profile = edit_profile(new_profile(self.catalog, "native-creature", "Creature test"),
                                self.catalog, include=["synth001"])
         plan = new_binding_plan(profile, self.catalog, self.world)
@@ -70,6 +70,8 @@ class NativeExportTests(unittest.TestCase):
                       if row["kind"] == kind and row["item"] == "synth001")
         plan["sources"] = [{"item": "synth001", "policy": "relocate",
                             "source_ids": [source["id"]], "registration_ids": []}]
+        if replacement is not None:
+            plan["replacements"] = {source["id"]: replacement}
         plan["targets"] = [{"id": target, "capacity": 1, "optional": False}]
         return write_campaign(profile, self.catalog, self.world, plan, self.store)["revision"], source
 
@@ -226,15 +228,66 @@ class NativeExportTests(unittest.TestCase):
             self.export()
         self.assertFalse((self.output / "next.lua").exists())
 
-    def test_equipped_creature_source_is_explicitly_unsupported(self):
+    def test_equipped_creature_source_requires_explicit_replacement(self):
         (self.override / "actor.cre").write_bytes(make_cre([
             item_record("SYNTH001", expiration=0, charges=(0, 0, 0), flags=1)],
             slots={9: 0}))
         self.refresh()
         self.write_creature_source("cre-template", "are:area/actor/1")
-        with self.assertRaisesRegex(ProfileError, "backpack slot \\(21\\.\\.36\\)"):
+        with self.assertRaisesRegex(ProfileError, "needs explicit replacement equipment"):
             self.export()
         self.assertFalse((self.output / "next.lua").exists())
+
+    def test_equipped_replacement_and_blank_are_frozen_per_revision(self):
+        original = bytes(make_cre([
+            item_record("SYNTH001", expiration=0, charges=(2, 3, 4), flags=1)],
+            slots={9: 0}))
+        (self.override / "actor.cre").write_bytes(original)
+        self.refresh()
+        game_before = snapshot(self.game)
+
+        equipped, source = self.write_creature_source(
+            "cre-template", "are:area/actor/1", replacement="synth002")
+        self.export(equipped)
+        base = self.output / "campaign-store" / "revisions"
+        manifest_path = base / f"{equipped}.json"
+        native_path = base / f"{equipped}.native.json"
+        manifest = json.loads(manifest_path.read_bytes())
+        native = json.loads(native_path.read_bytes())
+        replacement = manifest["sources"][0]["replacement"]
+        self.assertEqual(replacement, {
+            "resref": "synth002",
+            "resource_sha256": next(item["sha256"] for item in self.catalog["items"]
+                                    if item["resref"] == "synth002")})
+        self.assertEqual(native["sources"][source["id"]]["replacement"], "synth002")
+        self.assertEqual(native["resource_hashes"]["SYNTH002.ITM"],
+                         replacement["resource_sha256"])
+        original_path, replaced_path = self.creature_artifacts(equipped)
+        replaced = replaced_path.read_bytes()
+        self.assertEqual(original_path.read_bytes(), original)
+        self.assertEqual(len(replaced), len(original))
+        self.assertEqual(replaced[:source["record"]["byte_offset"]],
+                         original[:source["record"]["byte_offset"]])
+        offset = source["record"]["byte_offset"]
+        self.assertEqual(replaced[offset:offset + 8], b"synth002")
+        self.assertEqual(replaced[offset + 8:], original[offset + 8:])
+        item = parse_cre(replaced)["items"][0]
+        self.assertEqual((item["resref"], item["slots"], item["charges"], item["flags"]),
+                         ("synth002", [9], [2, 3, 4], 1))
+
+        blank, _ = self.write_creature_source(
+            "cre-template", "are:area/actor/1", replacement="blank")
+        self.assertNotEqual(blank, equipped)
+        self.export(blank)
+        blank_manifest = json.loads((base / f"{blank}.json").read_bytes())
+        blank_native = json.loads((base / f"{blank}.native.json").read_bytes())
+        self.assertEqual(blank_manifest["sources"][0]["replacement"], {"resref": "blank"})
+        self.assertEqual(blank_native["sources"][source["id"]]["replacement"], "blank")
+        self.assertEqual(parse_cre(self.creature_artifacts(blank)[1].read_bytes())["items"], [])
+        self.assertEqual(replaced_path.read_bytes(), replaced)
+        self.assertEqual(json.loads(manifest_path.read_bytes()), manifest)
+        self.assertEqual(json.loads(native_path.read_bytes()), native)
+        self.assertEqual(snapshot(self.game), game_before)
 
     def test_duplicate_creature_resref_cannot_export_one_original(self):
         record = item_record("SYNTH001", expiration=0, charges=(0, 0, 0), flags=1)

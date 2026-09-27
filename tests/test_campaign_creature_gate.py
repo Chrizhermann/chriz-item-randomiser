@@ -27,13 +27,17 @@ class CreatureGateTests(unittest.TestCase):
     def setUp(self):
         self.build_fixture()
 
-    def build_fixture(self, embedded=False):
+    def build_fixture(self, embedded=False, equipped=False, replacement=None):
         fixture = export_tests.NativeExportTests()
         fixture.setUp()
         self.addCleanup(fixture.doCleanups)
-        self.original = bytes(make_cre([
-            item_record('SYNTH001', expiration=0, charges=(0, 0, 0), flags=1),
-            item_record('SYNTH002', expiration=0, charges=(2, 3, 4), flags=1)]))
+        self.original = bytes(make_cre(
+            [item_record('SYNTH001', expiration=0,
+                         charges=(2, 3, 4) if equipped else (0, 0, 0), flags=1)]
+            if equipped else [
+                item_record('SYNTH001', expiration=0, charges=(0, 0, 0), flags=1),
+                item_record('SYNTH002', expiration=0, charges=(2, 3, 4), flags=1)],
+            slots={9: 0} if equipped else None))
         if embedded:
             raw = bytearray(self.original)
             raw[0x280:0x2A0] = b'EmbeddedDV'.ljust(32, b'\0')
@@ -44,7 +48,8 @@ class CreatureGateTests(unittest.TestCase):
             (fixture.override/'actor.cre').write_bytes(self.original)
         fixture.refresh()
         revision, source = fixture.write_creature_source(
-            'embedded-cre' if embedded else 'cre-template', 'are:area/actor/1')
+            'embedded-cre' if embedded else 'cre-template', 'are:area/actor/1',
+            replacement=replacement)
         fixture.export(revision)
         base = fixture.output/'campaign-store/revisions'/revision
         self.removed = fixture.creature_artifacts(revision)[1].read_bytes()
@@ -91,7 +96,7 @@ class CreatureGateTests(unittest.TestCase):
         size = int(f.allocated_bytes)
         machine.write(BUFFER, bytes(f.bytes[i] or 0 for i in range(BUFFER, BUFFER+size)))
         machine.write(CRE_INPUT, self.original)
-        self.lua, self.f, self.machine = lua, f, machine
+        self.lua, self.f, self.machine, self.source = lua, f, machine, source
 
     def actor(self, actor_delta=0):
         machine, f = self.machine, self.f
@@ -143,6 +148,22 @@ class CreatureGateTests(unittest.TestCase):
         pointer = self.actor()
         self.assertEqual(pointer, self.f.gate.policy.creature.removed)
         self.assertEqual(bytes(self.machine.uc.mem_read(pointer, len(self.removed))), self.removed)
+
+    def test_equipped_replacement_reaches_emulated_constructor(self):
+        self.build_fixture(equipped=True, replacement='synth002')
+        source = self.source
+        self.assertEqual(self.f.manifest.sources[1].replacement.resref, 'synth002')
+        self.assertEqual(self.f.bundle.fixture.sources[source['id']].replacement, 'synth002')
+        item = export_tests.parse_cre(self.removed)['items'][0]
+        self.assertEqual((item['resref'], item['slots'], item['charges'], item['flags']),
+                         ('synth002', [9], [2, 3, 4], 1))
+
+        pointer = self.actor()
+        self.assertEqual(pointer, self.f.gate.policy.creature.removed)
+        self.assertEqual(bytes(self.machine.uc.mem_read(pointer, len(self.removed))), self.removed)
+        self.assertEqual(bytes(self.machine.uc.mem_read(CRE_INPUT, len(self.original))),
+                         self.original)
+        self.assertEqual(self.machine.read_q(BUFFER+120), 1)
 
     def test_saved_campaign_choice_controls_protection(self):
         f, machine = self.f, self.machine

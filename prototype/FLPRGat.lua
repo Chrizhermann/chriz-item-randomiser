@@ -80,14 +80,24 @@ local function validate(bundle,id)
             ((source.kind=='cre-template' and source.owner==source.resource) or
              (source.kind=='embedded-cre' and source.owner==endpoint.actor_owner and source.resource=='are:'..area)) and
             same_payload(endpoint.payload,source.record) and source.record.slots and
-            #source.record.slots==1 and integer(source.record.slots[1],21,36),
+            #source.record.slots==1 and integer(source.record.slots[1],0,37),
             'CAMPAIGN_GATE_BINDING_INVALID')
+        local replacement=selected.replacement and selected.replacement.resref
+        local slot=source.record.slots[1]
+        assert(endpoint.replacement==replacement and
+            ((slot>=21 and slot<=36) or replacement) and
+            (not replacement or replacement=='blank' or
+             (type(replacement)=='string' and #replacement>=1 and #replacement<=8 and
+              not replacement:find('[^a-z0-9#_%-]') and replacement~=endpoint.payload.resref and
+              hash(selected.replacement.resource_sha256) and
+              f.resource_hashes[replacement:upper()..'.ITM']==selected.replacement.resource_sha256)),
+            'CAMPAIGN_GATE_REPLACEMENT_INVALID')
         local kind,name=source.resource:match('^(%a+):([a-z0-9#_%-]+)$')
         assert(kind and f.resource_hashes[name:upper()..'.'..kind:upper()]==selected.resource_sha256 and
             hash(f.resource_hashes[area:upper()..'.ARE']), 'CAMPAIGN_GATE_BINDING_INVALID')
         return m.revision,index,selected.resource_sha256,{id=id,kind='creature',area=area,actor=actor,
             record=source.record.record_index,slot=source.record.slots[1],name=endpoint.script_name,
-            creature_resource=source.resource,payload=endpoint.payload,
+            creature_resource=source.resource,payload=endpoint.payload,replacement=replacement,
             area_hash=f.resource_hashes[area:upper()..'.ARE']}
     end
     local area,container,record=id:match('^are:([a-z0-9#_%-]+)/container/(%d+)/item/(%d+)$')
@@ -144,9 +154,19 @@ local function prepare_creature(api,bundle,build,compile,pristine,id,base,cache)
     local items,slots,count=u32(original,0x2BC),u32(original,0x2B8),u32(original,0x2C0)
     assert(items>=0x2D4 and items+count*20<=#original and binding.record<count and
         slots>=0x2D4 and slots+80<=#original and u16(original,slots+2*binding.slot)==binding.record and
-        u32(removed,0x2BC)==items and u32(removed,0x2B8)==slots and u32(removed,0x2C0)==count-1 and
-        u16(removed,slots+2*binding.slot)==65535, 'CAMPAIGN_GATE_CREATURE_LAYOUT_INVALID')
+        u32(removed,0x2BC)==items and u32(removed,0x2B8)==slots,
+        'CAMPAIGN_GATE_CREATURE_LAYOUT_INVALID')
     local item=items+binding.record*20
+    if binding.replacement and binding.replacement~='blank' then
+        -- As in del_cre_itm: replace only the resref. Keep slot, selected weapon,
+        -- charges and flags, so the original owner can still use the substitute.
+        local replacement=binding.replacement..string.rep('\0',8-#binding.replacement)
+        assert(removed==original:sub(1,item)..replacement..original:sub(item+9),
+            'CAMPAIGN_GATE_CREATURE_REPLACEMENT_MISMATCH')
+    else
+        assert(u32(removed,0x2C0)==count-1 and u16(removed,slots+2*binding.slot)==65535,
+            'CAMPAIGN_GATE_CREATURE_LAYOUT_INVALID')
+    end
     local raw,name=original:sub(item+1,item+20),original:sub(0x281,0x2A0)
     assert(name:match('^[^%z]*'):lower()==binding.name:lower() and
         raw:sub(1,8):match('^[^%z]*'):lower()==binding.payload.resref and u16(original,item+8)==0 and

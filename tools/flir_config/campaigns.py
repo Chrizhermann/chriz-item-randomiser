@@ -81,7 +81,8 @@ def _concerns(record: dict) -> list:
 
 
 def _validate_source(row: dict) -> int:
-    _fields(row, {"id", "quantity", "record", "resource_sha256"}, "source")
+    _fields(row, {"id", "quantity", "record", "resource_sha256"}
+            | ({"replacement"} if isinstance(row, dict) and "replacement" in row else set()), "source")
     _hash(row["resource_sha256"], "source resource fingerprint")
     quantity = _integer(row["quantity"], "source quantity", 1, MAX_REWARD_UNITS)
     source = _fields(row["record"], {"id", "item", "resource", "owner", "kind",
@@ -109,6 +110,16 @@ def _validate_source(row: dict) -> int:
     for charge in charges:
         _integer(charge, "source charge", high=0xFFFF)
     kind = source["kind"]
+    if "replacement" in row:
+        replacement = row["replacement"]
+        if not isinstance(replacement, dict) or kind not in ("cre-template", "embedded-cre"):
+            raise ProfileError("Campaign replacement requires a creature source")
+        name = _resref(replacement.get("resref"))
+        _fields(replacement, {"resref"} if name == "blank" else {"resref", "resource_sha256"}, "replacement")
+        if name == source["item"]:
+            raise ProfileError("Campaign replacement must differ from the relocated item")
+        if name != "blank":
+            _hash(replacement["resource_sha256"], "replacement fingerprint")
     resource = _resource(source["resource"], {"cre-template": "cre", "embedded-cre": "are",
                                            "container": "are", "store": "sto"}[kind])
     if kind in ("cre-template", "store") and owner != resource:
@@ -230,6 +241,8 @@ def compile_campaign(profile: dict, catalog: dict, world: dict, plan: dict) -> d
         body["sources"].append({"id": source["id"],
             "quantity": source["record"]["quantity"] if source["kind"] == "store" else 1,
             "record": deepcopy(source), "resource_sha256": selected["resource_sha256"]})
+        if "replacement" in selected:
+            body["sources"][-1]["replacement"] = deepcopy(selected["replacement"])
     for selected in bound["targets"]:
         target = selected["target"]
         body["targets"].append({"id": target["id"], "capacity": selected["capacity"],

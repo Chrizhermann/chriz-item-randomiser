@@ -115,14 +115,25 @@ def _compile(manifest: dict, world: dict, index: dict, items: dict) -> tuple[dic
             selected_actors.add(owner["id"])
             _require(creature_items[source["owner"], source["item"]] == 1,
                      f"Native source creature holds another copy of {source['item']}: {identity}")
-            _require(len(record["slots"]) == 1 and 21 <= record["slots"][0] <= 36,
-                     f"Native creature source currently supports only one backpack slot (21..36): {identity}")
+            _require(len(record["slots"]) == 1,
+                     f"Native creature source requires one inventory slot: {identity}")
+            replacement = selected.get("replacement")
+            _require(21 <= record["slots"][0] <= 36 or replacement is not None,
+                     f"Equipped creature source needs explicit replacement equipment (or blank): {identity}")
+            if replacement and replacement["resref"] != "blank":
+                resource = "itm:" + replacement["resref"]
+                _require(resource in index["resources"] and
+                         index["resources"][resource]["sha256"] == replacement["resource_sha256"],
+                         f"Replacement item changed or is absent: {identity}")
+                use(resource)
             native["sources"][identity] = {
                 "kind": "guarded-creature", "area": area, "script_name": name,
                 "actor_index": selector["record_index"],
                 "creature_resource": source["resource"], "actor_owner": owner["id"],
                 "payload": {key: record[key] for key in ("resref", "expiration", "charges", "flags")},
                 "identity": _digest({"source": selected, "owner": owner})}
+            if replacement:
+                native["sources"][identity]["replacement"] = replacement["resref"]
             use(owner["resource"])
         use(source["resource"]); use("itm:" + source["item"])
         pristine.add(owner["resource"])
@@ -196,8 +207,10 @@ def export_native(store: Path, catalog: dict, world: dict, output: Path,
                 original = resource_bytes[resource][offset:offset + size]
             base = f"campaign-store/revisions/{key}.source-{source_index}"
             pending[base + ".original.cre"] = original
+            replacement = selected_source.get("replacement", {}).get("resref", "blank")
             pending[base + ".removed.cre"] = rewrite_inventory(
-                original, {source["record"]["record_index"]: None})
+                original, {source["record"]["record_index"]:
+                           None if replacement == "blank" else replacement})
     for relative, data in pending.items():
         _write_immutable(_store_path(output, Path(relative)), data)
     revisions = sorted(manifests)

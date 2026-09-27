@@ -631,7 +631,12 @@ def bind_profile(profile: dict, catalog: dict, world: dict, plan: dict) -> dict:
     """Freeze explicit choices with evidence, never infer safe runtime behavior."""
     frozen = validate_profile(profile, catalog)
     indexes = validate_world(world, catalog)
-    _fields(plan, {"schema", "catalog_fingerprint", "world_fingerprint", "sources", "registrations", "targets"}, "binding plan")
+    _fields(plan, {"schema", "catalog_fingerprint", "world_fingerprint", "sources", "registrations", "targets"}
+            | ({"replacements"} if isinstance(plan, dict) and "replacements" in plan else set()), "binding plan")
+    replacements = plan.get("replacements", {})
+    if not isinstance(replacements, dict):
+        raise ProfileError("Creature replacements must map source identities to item resrefs or blank")
+    catalog_items = {item["resref"]: item for item in catalog["items"]}
     if plan["schema"] != PLAN_SCHEMA or plan["catalog_fingerprint"] != catalog["fingerprint"] or plan["world_fingerprint"] != world["fingerprint"]:
         raise ProfileError("Binding plan is stale or unsupported; review against the current scans")
     registrations = {}
@@ -693,6 +698,20 @@ def bind_profile(profile: dict, catalog: dict, world: dict, plan: dict) -> dict:
             selected_ids.add(identity)
             selected_sources.append({"kind": "physical", "source": deepcopy(row),
                                      "resource_sha256": indexes["resources"][row["resource"]]["sha256"]})
+            if identity in replacements:
+                replacement = replacements[identity]
+                if row["kind"] not in ("cre-template", "embedded-cre"):
+                    raise ProfileError("Replacement equipment requires a creature source")
+                _resref(replacement)
+                if replacement == item:
+                    raise ProfileError("Replacement must differ from the relocated item")
+                if replacement == "blank":
+                    selected_sources[-1]["replacement"] = {"resref": "blank"}
+                else:
+                    if replacement not in catalog_items:
+                        raise ProfileError(f"Replacement item is absent: {replacement}")
+                    selected_sources[-1]["replacement"] = {
+                        "resref": replacement, "resource_sha256": catalog_items[replacement]["sha256"]}
             reward_units += row["record"]["quantity"] if row["kind"] == "store" else 1
         for identity in choice["registration_ids"]:
             row = registrations.get(identity)
@@ -709,6 +728,8 @@ def bind_profile(profile: dict, catalog: dict, world: dict, plan: dict) -> dict:
         raise ProfileError("Choose explicit sources or additions for every selected item")
     if used_registrations != set(registrations):
         raise ProfileError("Unused source registrations must be removed from this binding plan")
+    if set(replacements) - selected_ids:
+        raise ProfileError("Replacement equipment refers to an unselected source")
     targets, target_ids = [], set()
     capacity = 0
     for choice in _rows(plan["targets"], "target choice"):

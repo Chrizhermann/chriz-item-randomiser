@@ -199,8 +199,8 @@ static ARE actor, using either an external CRE or an embedded CRE. An external
 template must map to exactly one scanned static actor. This does not establish
 scripted-spawn coverage or a general occurrence policy. Current limits are one
 selected original per actor, one copy of its resref, and the existing nonstackable,
-unexpired, droppable-item restrictions. Equipped originals are rejected until
-replacement-equipment handling is connected; they are not silently stripped.
+unexpired, droppable-item restrictions. Equipped originals require an explicit
+replacement choice; the staff example below now passes in game.
 
 The existing ARE load binding is reused. On the pinned executable, constructor
 calls at RVAs `18C448` and `18C591` receive raw CRE bytes in `rdx`, their size in
@@ -235,9 +235,28 @@ unverified; their offline checks are not substituted for those results.
 
 ## Continue
 
-Next extend creature originals to equipped items, using the original mod's
-replacement-equipment behavior as the reference. Keep the current container and
-backpack acceptance evidence intact; shop and scripted-reward support remain open.
+Equipped originals now use optional binding-plan `replacements`, mapping an exact
+source ID to a substitute resref or `blank`. The campaign freezes that choice and
+the substitute's resource hash. Replacement changes only the eight resref bytes,
+matching `del_cre_itm`; slot, charges, flags and selected weapon remain intact.
+The source compiler, exporter and native constructor checks pass (72 focused
+tests across the affected suites; no full-suite rerun).
+
+The original BG1 list's `staf02 -> staf01` rule for Silke passed natively as
+revision `9c596cf8...`, seed `350731521`. Zargal received and dropped the enchanted
+staff before BG3300 was visited, and pickup succeeded. First entry replaced only
+Silke's selected staff; live equipment showed `staf01` selected in engine slot 35.
+Save 72 (`IR Equipped Complete 0927`) reloaded with the same campaign and collected
+reward. Independent saved-CRE inspection confirmed the normal staff in CRE slot 9,
+weapon selector 0, and her other slotted item present. The authored CRE also has
+an unslotted `leat01` record; the private replacement preserves its bytes, but the
+engine does not retain that unreferenced row in the saved inventory.
+
+Evidence: `work/equipped-source-native-20260927/`. The muted, non-input-desktop
+session quit normally; all 26 staged paths were restored, Story Mode returned to
+0 before saving, and the reservation was released. This verifies one ordinary
+replacement, not special replacement rules or complete source-family coverage.
+Shop and scripted-reward support remain the next work.
 
 The existing test installation, private profile, remote console and character
 helper are sufficient; rebuild the test copy if necessary. Before live work,
