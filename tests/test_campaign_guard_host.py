@@ -17,6 +17,7 @@ CASES = r'''
 local cases={}
 local GUARDED="are:flpru1/container/0/item/1"
 local PHYSICAL="cre:flprs2/item/0"
+local SECOND_GUARDED="are:flpru2/container/0/item/1"
 local function copy(value)
     if type(value)~="table" then return value end
     local result={}
@@ -38,10 +39,22 @@ local function setup(Core,Host,options)
         record={id=GUARDED,kind="container",record=payload("flpri1")}}
     manifest.sources[2]={id=PHYSICAL,quantity=1,resource_sha256=string.rep("2",64),
         record={id=PHYSICAL,kind="cre-template",record=payload("flpri2")}}
+    if options.two_guarded then
+        manifest.sources[2]={id=SECOND_GUARDED,quantity=1,resource_sha256=string.rep("2",64),
+            record={id=SECOND_GUARDED,kind="container",record=payload("flpri2")}}
+        f.loaded_by_id={[GUARDED]=false,[SECOND_GUARDED]=false}
+        f.lease_active_by_id={[GUARDED]=true,[SECOND_GUARDED]=true}
+        f.guard_observations_by_id={}
+        f.removal_observations_by_id={}
+    end
     manifest.targets[1]={id="are:flpru1/container/1",capacity=2,
         resource_sha256=string.rep("3",64),record={id="are:flpru1/container/1",kind="container"}}
     local descriptor={schema="flpr-unvisited-fixture-gate-v1",source_id=GUARDED}
     local fixture={revision=revision,sources={[GUARDED]={kind="guarded-container"}}}
+    if options.two_guarded then
+        descriptor.source_id=nil; descriptor.source_ids={GUARDED,SECOND_GUARDED}
+        fixture.sources[SECOND_GUARDED]={kind="guarded-container"}
+    end
     if not options.physical_only then fixture.source_gate=descriptor
     else fixture.sources[GUARDED].kind="physical" end
     if options.bad_schema then fixture.source_gate.schema="wrong" end
@@ -60,7 +73,9 @@ local function setup(Core,Host,options)
         function native:on_observation_boundary(tick) self.tick=tick; return true end
         function native:inspect_source(id)
             f.source_inspections=(f.source_inspections or 0)+1
-            if id==GUARDED then assert(options.physical_only,"GUARDED_SOURCE_INSPECTED_PHYSICALLY") end
+            if id==GUARDED or id==SECOND_GUARDED then
+                assert(options.physical_only,"GUARDED_SOURCE_INSPECTED_PHYSICALLY")
+            end
             assert(id==PHYSICAL or (options.physical_only and id==GUARDED))
             return {identity=string.rep("d",64),source_id=id,exact_matches=1,
                 quantity=1,payload=payload(id==GUARDED and "flpri1" or "flpri2")}
@@ -70,10 +85,12 @@ local function setup(Core,Host,options)
             return {identity=string.rep("e",64),target_id=id,accepts=1}
         end
         function native:execute(command)
-            assert(options.physical_only or command.source_id~=GUARDED or command.kind~="suppress",
+            assert(options.physical_only or
+                (command.source_id~=GUARDED and command.source_id~=SECOND_GUARDED) or command.kind~="suppress",
                 "GUARDED_SOURCE_EXECUTED_PHYSICALLY")
             if command.kind=="deliver" then
-                assert(f.values.flpr_s0002==3,"PHYSICAL_SOURCE_NOT_CONFIRMED")
+                assert(f.values.flpr_s0002==(options.two_guarded and 6 or 3),
+                    "SECOND_SOURCE_NOT_READY")
                 assert(f.values.flpr_s0001==(options.physical_only and 3 or 6),
                     "GUARDED_SOURCE_NOT_PROTECTED")
             end
@@ -99,22 +116,37 @@ local function setup(Core,Host,options)
         function adapter:observe_guard(request)
             f.guard_observations=(f.guard_observations or 0)+1
             assert(request.kind=="source-guard" and request.mode=="observe-only")
-            assert(request.source_id==GUARDED and request.revision==bundle.manifest.revision)
-            assert(request.resource_sha256==bundle.manifest.sources[1].resource_sha256)
+            local index=request.source_id==GUARDED and 1 or request.source_id==SECOND_GUARDED and 2
+            assert(index and (options.two_guarded or index==1) and request.revision==bundle.manifest.revision)
+            assert(request.resource_sha256==bundle.manifest.sources[index].resource_sha256)
+            if f.guard_observations_by_id then
+                f.guard_observations_by_id[request.source_id]=(f.guard_observations_by_id[request.source_id] or 0)+1
+            end
             local receipt=copy(request)
             receipt.session=request.session; receipt.token=request.token
             receipt.pre_access=1; receipt.exact_source_bound=1
             receipt.generation=#f.guards
             receipt.active=function()
                 if f.lease_error then error("LEASE_THROW") end
+                if f.lease_active_by_id then
+                    return not adapter.destroyed and f.lease_active_by_id[request.source_id]
+                end
                 return not adapter.destroyed and f.lease_active
             end
             return receipt
         end
         function adapter:observe_removal(request)
             f.removal_observations=(f.removal_observations or 0)+1
-            assert(request.kind=="guarded-source-removal" and request.source_id==GUARDED)
-            if not f.loaded then return nil,"SOURCE_NOT_LOADED" end
+            local index=request.source_id==GUARDED and 1 or request.source_id==SECOND_GUARDED and 2
+            assert(request.kind=="guarded-source-removal" and index and (options.two_guarded or index==1))
+            if f.removal_observations_by_id then
+                f.removal_observations_by_id[request.source_id]=(f.removal_observations_by_id[request.source_id] or 0)+1
+            end
+            local loaded=f.loaded
+            if f.loaded_by_id then loaded=f.loaded_by_id[request.source_id] end
+            if not loaded then
+                return nil,"SOURCE_NOT_LOADED"
+            end
             local receipt=copy(request)
             receipt.session=request.session; receipt.token=request.token
             receipt.exact_source_event=1; receipt.removed=1; receipt.remaining=0
@@ -222,6 +254,45 @@ function cases.complete_monitor_later_commits_only_exact_source_removal(Core,Hos
     f:poll_until(function(x) return x.values.flpr_s0001==3 end)
     assert(f.host.status=="complete" and #f.events==events and #f.reports==1)
     assert((f.removal_observations or 0)>=1 and f.host.guard_monitor==false)
+end
+
+function cases.two_guards_keep_independent_removal_and_lease_state_across_reload(Core,Host)
+    local f=setup(Core,Host,{two_guarded=true}); assert(f:capture())
+    f:poll_until(function(x) return x.host.status=="complete" end)
+    assert(f.values.flpr_s0001==6 and f.values.flpr_s0002==6)
+    assert(f.values.flpr_d0001==3 and f.values.flpr_d0002==3)
+    assert(f.source_inspections==nil and #f.events==2)
+    assert(f.events[1].kind=="deliver" and f.events[2].kind=="deliver")
+    assert(f.guard_observations_by_id[GUARDED]==1 and
+        f.guard_observations_by_id[SECOND_GUARDED]==1)
+    assert(not f.loaded_by_id[GUARDED] and not f.loaded_by_id[SECOND_GUARDED])
+    assert(f.host.guard_monitor==true)
+
+    f.loaded_by_id[SECOND_GUARDED]=true
+    f:poll_until(function(x) return x.values.flpr_s0002==3 end)
+    assert(f.values.flpr_s0001==6 and f.host.status=="complete")
+    assert(f.host.guard_monitor==true and #f.events==2)
+    assert((f.removal_observations_by_id[SECOND_GUARDED] or 0)>=1)
+    f.lease_active_by_id[SECOND_GUARDED]=false
+    for _=1,3 do f:poll() end
+    assert(f.host.status=="complete" and f.values.flpr_s0001==6)
+
+    local first_observations=f.guard_observations_by_id[GUARDED]
+    local second_observations=f.guard_observations_by_id[SECOND_GUARDED]
+    local old=f.guards[1]
+    f.host:destroy()
+    assert(old.destroyed)
+    f.host=Host.new(f.deps)
+    f:poll_until(function(x) return x.host.status=="complete" and #x.guards==2 end)
+    assert(f.values.flpr_s0001==6 and f.values.flpr_s0002==3)
+    assert(f.guard_observations_by_id[GUARDED]==first_observations+1,
+        tostring(f.guard_observations_by_id[GUARDED]).." vs "..tostring(first_observations))
+    assert(f.guard_observations_by_id[SECOND_GUARDED]==second_observations)
+    assert(f.host.guard_monitor==true and #f.events==2)
+
+    f.lease_active_by_id[GUARDED]=false
+    f:poll_until(function(x) return x.host.status=="disabled" end)
+    assert(#f.events==2 and f.values.flpr_s0001==6 and f.values.flpr_s0002==3)
 end
 
 function cases.protected_restore_rebinds_frozen_revision_with_fresh_adapter(Core,Host)

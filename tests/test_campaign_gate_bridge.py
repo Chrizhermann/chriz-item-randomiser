@@ -115,7 +115,9 @@ local function fixture(Core)
     function f.api.EEex_ReadU64(address) return f:peek(address,8) end
     function f.api.EEex_Read32(address) return f:peek(address,4) end
     function f.api.EEex_Malloc(size)
-        f.allocations=f.allocations+1; f.malloc_size=size; return BUFFER
+        local address=BUFFER+(f.allocated_bytes or 0)
+        f.allocated_bytes=(f.allocated_bytes or 0)+size
+        f.allocations=f.allocations+1; f.malloc_size=size; return address
     end
     function f.api.EEex_Write64(address,value)
         f.writes=f.writes+1; f:poke(address,value,8)
@@ -180,16 +182,17 @@ local function fixture(Core)
         assert(self.controller:confirm_source_guard(receipt))
         return receipt
     end
-    function f:publish_witness()
-        local row=BUFFER+128+CAPACITY*STRIDE
-        local owner=self.gate.policy.provenance.container_offset
-        local item=self.gate.policy.provenance.item_offset+self.gate.binding.record*20
+    function f:publish_witness(gate)
+        gate=gate or self.gate
+        local row=gate.buffer+128+CAPACITY*STRIDE
+        local owner=gate.policy.provenance.container_offset
+        local item=gate.policy.provenance.item_offset+gate.binding.record*20
         local bytes=self.pristine.bytes
-        self:q(112,1); self:q(120,1)
-        self:poke(row,3,8); self:poke(row+8,self:q(40),8)
+        gate:_write(112,1); gate:_write(120,1)
+        self:poke(row,3,8); self:poke(row+8,gate:_q(40),8)
         self:poke(row+16,1,8); self:poke(row+24,1,8)
         self:poke(row+32,4000,8); self:poke(row+40,5000,8)
-        self:poke(row+48,self.gate.binding.record,8)
+        self:poke(row+48,gate.binding.record,8)
         self:pokestring(row+56,bytes:sub(owner+1,owner+32))
         self:pokestring(row+88,bytes:sub(item+1,item+20))
         self:pokestring(row+112,bytes:sub(owner+0x41,owner+0x48))
@@ -465,6 +468,49 @@ function cases.configured_second_container_uses_its_own_bytes_and_witness(Core,G
     result=assert(f.adapter_instance:observe_removal(request))
     assert(f.last_world[1]==id and f.controller:confirm_guarded_source_removal(result))
     assert(f.values.flpr_s0001==3)
+end
+
+function cases.multiple_sources_share_hooks_but_keep_separate_receipts(Core,Gate,build,compile)
+    local f=fixture(Core)
+    local second='are:flpru1/container/0/item/2'
+    local source=clone(f.manifest.sources[1])
+    source.id=second; source.record.id=second; source.record.record.record_index=2
+    source.record.record.resref='flprx1'; f.manifest.sources[2]=source
+    f.manifest.targets[1].capacity=2
+    local endpoint=clone(f.bundle.fixture.sources[ID]); endpoint.payload.resref='flprx1'
+    f.bundle.fixture.sources[second]=endpoint
+    f.bundle.fixture.source_gate.source_id=nil
+    f.bundle.fixture.source_gate.source_ids={ID,second}
+    local raw='FLPRX1\0\0'..string.rep('\0',8)..u32(1)
+    local offset=0x6B14+40
+    f.pristine.bytes=f.pristine.bytes:sub(1,offset)..raw..f.pristine.bytes:sub(offset+21)
+    f:install(Gate,build,compile); local members=f.gate.members
+    assert(#members==2 and #f.hooks==5 and #f.callbacks==1 and f.allocations==2)
+    assert(members[1].buffer~=members[2].buffer and f.byte_writes==#f.pristine.bytes)
+    assert(members[1].policy.provenance.expected==members[2].policy.provenance.expected)
+    f:capture()
+    for _,member in ipairs(members) do member:_write(40,1); member:_write(72,1) end
+    assert(f.gate:prepare_new(f.bundle,f.controller)); f:adapter()
+    local receipts={}
+    for index=1,2 do
+        local request=assert(f.controller:source_guard_request(index))
+        f.controller:on_observation_boundary()
+        receipts[index]=assert(f.adapter_instance:observe_guard(request))
+        assert(f.controller:confirm_source_guard(receipts[index]))
+    end
+    assert(f.values.flpr_s0001==6 and f.values.flpr_s0002==6)
+    local request=assert(f.controller:guarded_source_removal_request(2))
+    f:publish_witness(members[2]); f.remaining=0
+    f.controller:on_observation_boundary()
+    assert(f.controller:confirm_guarded_source_removal(assert(f.adapter_instance:observe_removal(request))))
+    assert(f.values.flpr_s0001==6 and f.values.flpr_s0002==3 and f.last_world[1]==second)
+    assert(receipts[1].active() and not members[1]:inspect().witness)
+    f.adapter_instance:destroy()
+    assert(not receipts[1].active() and not receipts[2].active())
+    f.gate:reset() -- New Game calls the group directly, before GAM loading.
+    for _,member in ipairs(members) do assert(member:_q(32)==0 and member:_q(112)==0) end
+    f.callbacks[1]()
+    for _,member in ipairs(members) do assert(member:_q(104)==2) end
 end
 
 return cases

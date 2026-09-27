@@ -2,8 +2,8 @@
 
 The integrated fixture passed native New Game, early reward pickup, source
 suppression, selected/excluded campaign reload, returned-item and interrupted
-confirmation checks on 27 September. A second configured source also passed.
-This is a working prototype for one configured container on the pinned Windows build;
+confirmation checks on 27 September. Several configured sources across two areas also passed.
+This is a working prototype for container sources on the pinned Windows build;
 general source support and the player-facing configuration UI remain unfinished.
 
 ## Implementation
@@ -18,8 +18,9 @@ general source support and the player-facing configuration UI remain unfinished.
   area loading and select policy from the full saved campaign revision and source
   phase. Area, container, item record and payload now come from the campaign
   manifest and pristine ARE; they are no longer restricted to FLPRU1/FLPRI1.
-  One guard and one selected revision per process remain the prototype limit,
-  along with the pinned BG2EE executable.
+  Each source has separate protection/removal state. They share five hook entry
+  points and a pristine copy per area. One selected revision per process and
+  the pinned BG2EE executable remain prototype limits.
 - The guard compares the complete authored ARE input and ties the result to the
   same area-load invocation and constructor inputs. Saved area records can move;
   matching an item name or original index alone would delete a returned copy.
@@ -100,6 +101,24 @@ normally; all 28 staged paths were restored and the reservation released.
 After the offset fix, the complete Python suite passed (903 tests). No new lab
 tooling was added; the changes extend the runtime and its focused regressions.
 
+### Several sources in one campaign
+
+Revision `88e96509...` relocates FLPRI1 and FLPRI2 from two FLPRU1 containers,
+plus FLPRX2 from FLPRV2. Seed `448563856` delivered all three before either area
+was visited. Pickup succeeded. Visiting FLPRV2 first confirmed only source 3;
+save 66 (`IR Multi Partial 0927`) preserved source states 6,6,3 and all rewards.
+Reloading and visiting FLPRU1 removed the other two originals while preserving
+FLPRX1. Save 67 (`IR Multi Complete 0927`) preserved states 3,3,3 and ownership.
+Both saves passed in a fresh process, including first visiting the still-unvisited
+area from save 66. A second New Game used seed `1900851915` and passed the reverse
+visit order; this small pool happened to produce the same target mapping.
+
+Evidence: `work/multiple-containers-native-20260927/` and
+`work/multiple-containers-reload-20260927/`. Both sessions quit normally; all 28
+staged paths were restored. The offline suite passed 910 tests. Review caught a
+missing group reset in the New Game path; the fix and focused regression passed
+before live testing. Full-catalogue performance has not been established.
+
 ## Continue
 
 Build the authored `unvisited-creatures` fixture with `build_mode1_fixture.py`
@@ -110,10 +129,8 @@ profile, remote console and character helper are sufficient; rebuild the test
 copy if necessary. No installer or game may overlap another BG task.
 
 The completed one-shot staging helpers under `work/` show the setup used; do not
-rerun consumed requests. The existing lab and helpers are sufficient. Next extend
-the single configured guard to the selected container-source list, keeping each
-source tied to its saved campaign. This does not yet support arbitrary selected
-revisions in one process. Creature/store/script interception remains separate.
+rerun consumed requests. The existing lab and helpers are sufficient. Next allow several saved configuration revisions in one process, so changing the
+next-run selection does not prevent older campaigns from loading. Creature/store/script interception remains separate.
 The fixture observes physical pickup but keeps delivery phase 4 (held); the
 general lifetime observer is not integrated. Real items, targets, capacities and
 fallback policies remain Christopher's choices.

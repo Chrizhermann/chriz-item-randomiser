@@ -332,7 +332,10 @@ local function bootstrap(Core,Host,Globals,text,options)
         f.builder,f.compiler=builder,compiler
         modules["flpr-fixture/FLPRGateAsm.lua"]=builder
         modules["flpr-fixture/FLPRCampaignPolicy.lua"]=compiler
-        modules["override/FLPRGat.lua"]={install=function(env,bundle,build,compile,pristine)
+        modules["override/FLPRGat.lua"]={
+            source_ids=function(fixture) return fixture.source_gate.source_ids or {fixture.source_gate.source_id} end,
+            install=function(env,bundle,build,compile,pristine)
+            pristine=pristine.FLPRU1
             f.bootstrap_events[#f.bootstrap_events+1]="install"
             assert(env==_G and bundle.manifest==f.manifest and bundle.fixture==f.native_fixture)
             assert(build==builder and compile==compiler)

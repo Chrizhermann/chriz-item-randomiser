@@ -63,7 +63,8 @@ function Native.new(api, fixture)
     for _, name in ipairs(required) do assert(type(api[name]) == "function", name .. "_MISSING") end
     local self = setmetatable({ api = api, sources = {}, targets = {}, reservations = {},
         attempted = {}, tick = nil, pending = nil, last_error = nil, source_resrefs = {}, held = {} }, Adapter)
-    local identities, source_resrefs, creatures, guarded_id = {}, self.source_resrefs, false, nil
+    local identities, source_resrefs, creatures, guarded_ids = {}, self.source_resrefs, false, {}
+    local guarded_count = 0
     for _, kind in ipairs({ "sources", "targets" }) do
         assert(type(fixture[kind]) == "table", "NATIVE_CONFIG_INVALID")
         for id, endpoint in pairs(fixture[kind]) do
@@ -81,9 +82,10 @@ function Native.new(api, fixture)
                 assert(not source_resrefs[copy.payload.resref],
                     "NATIVE_FIXTURE_RESOURCE_NOT_UNIQUE")
                 if copy.kind == "guarded-container" then
-                    assert(not guarded_id and integer(endpoint.x,0,32767) and integer(endpoint.y,0,32767) and
+                    assert(integer(endpoint.x,0,32767) and integer(endpoint.y,0,32767) and
                         integer(endpoint.container_type or 4,0,65535), "NATIVE_GUARDED_SOURCE_INVALID")
-                    guarded_id = id
+                    guarded_ids[id] = true
+                    guarded_count = guarded_count + 1
                     copy.sprite, copy.x, copy.y = false, endpoint.x, endpoint.y
                     copy.container_type = endpoint.container_type or 4
                 end
@@ -103,11 +105,29 @@ function Native.new(api, fixture)
             self[kind][id] = copy
         end
     end
-    if guarded_id or fixture.source_gate ~= nil then
+    if guarded_count > 0 or fixture.source_gate ~= nil then
         local gate = fixture.source_gate
-        assert(guarded_id and type(gate) == "table" and
-            gate.schema == "flpr-unvisited-fixture-gate-v1" and gate.source_id == guarded_id,
+        assert(guarded_count > 0 and type(gate) == "table" and
+            gate.schema == "flpr-unvisited-fixture-gate-v1" and
+            (gate.source_id == nil) ~= (gate.source_ids == nil),
             "NATIVE_SOURCE_GATE_INVALID")
+        if gate.source_id ~= nil then
+            assert(type(gate.source_id) == "string" and guarded_count == 1 and
+                guarded_ids[gate.source_id], "NATIVE_SOURCE_GATE_INVALID")
+        else
+            local ids, seen, count = gate.source_ids, {}, 0
+            assert(type(ids) == "table", "NATIVE_SOURCE_GATE_INVALID")
+            for index, id in pairs(ids) do
+                assert(integer(index, 1, guarded_count) and type(id) == "string" and
+                    guarded_ids[id] and not seen[id], "NATIVE_SOURCE_GATE_INVALID")
+                seen[id] = true
+                count = count + 1
+            end
+            assert(count == guarded_count, "NATIVE_SOURCE_GATE_INVALID")
+            for index = 1, count do
+                assert(ids[index] ~= nil, "NATIVE_SOURCE_GATE_INVALID")
+            end
+        end
     end
     if creatures then
         for _, name in ipairs(creature_required) do assert(type(api[name]) == "function", name .. "_MISSING") end

@@ -168,6 +168,58 @@ class ProvenanceMachine(GateMachine):
 
 
 class CampaignAreaProvenanceTests(unittest.TestCase):
+    def test_composed_sources_same_container_keep_independent_saved_phases(self):
+        blob = bytearray(pristine_blob())
+        blob[ITEM_OFFSET+40:ITEM_OFFSET+60] = b'FLPRI2\0\0' + b'\0'*8 + b'\x01\0\0\0'
+        second_buffer = 0x400000
+        machine = ProvenanceMachine(blob=bytes(blob))
+        machine.uc.mem_map(second_buffer, 0x50000)
+        machine.write_q(second_buffer, 1)
+        lua = LuaJIT(unpack_returned_tuples=True)
+        factory = lua.execute((ROOT / 'tools/probes/FLPRGateAsm.lua').read_text())
+        compiler = lua.execute((ROOT / 'tools/probes/FLPRCampaignPolicy.lua').read_text())
+        gate = lua.execute((ROOT / 'prototype/FLPRGat.lua').read_text())
+        assemblies = []
+        for index, buffer in enumerate((BUFFER, second_buffer), 1):
+            policy = compiler(REVISION, index)
+            policy['provenance'] = lua.table_from({
+                'expected': EXPECTED, 'length': len(blob),
+                'container_offset': CONTAINER_OFFSET, 'item_offset': ITEM_OFFSET,
+            })
+            policy['source'] = lua.table_from({
+                'area': 'FLPRU1', 'name': bytes(blob[CONTAINER_OFFSET:CONTAINER_OFFSET+32]),
+                'payload': bytes(blob[ITEM_OFFSET+index*20:ITEM_OFFSET+(index+1)*20]),
+                'index': index, 'inventory': bytes(blob[CONTAINER_OFFSET+0x40:CONTAINER_OFFSET+0x48]),
+                'position': bytes(blob[CONTAINER_OFFSET+0x20:CONTAINER_OFFSET+0x28]),
+            })
+            assemblies.append(factory(buffer, IMAGE, policy))
+        joined = gate.compose(lua.table_from(assemblies))
+        assembler = Ks(KS_ARCH_X86, KS_MODE_64)
+        for name in HOOKS:
+            source = re.sub(r'\b(?:ds|ss):', '', joined[name]).replace('#MANUAL_HOOK_EXIT(1)', 'nop')
+            binary, _ = assembler.asm(source, HOOKS[name])
+            machine.write(HOOKS[name], bytes(binary) + b'\x90')
+            machine.sentinels[name] = HOOKS[name] + len(binary)
+        # Source 1 is already removed. Source 2 remains protected in this save.
+        fields = expected_fields(phase=3) + [('FLPR_S0002', 6)]
+        length = machine.gam(fields, declared=0xB4+84*len(fields))
+        machine.run('enter', length=length); machine.run('capture')
+        self.assertEqual((machine.read_q(BUFFER+32), machine.read_q(second_buffer+32)), (2, 1))
+        machine.hook('area_enter')
+        self.assertEqual(machine.item_hook(index=1), 'continue')
+        self.assertEqual(machine.item_hook(index=2), 'skip')
+        self.assertEqual((machine.read_q(BUFFER+120), machine.read_q(second_buffer+120)), (0, 1))
+        self.assertEqual(machine.read_q(second_buffer+24), 0)
+        machine.hook('area_exit')
+        # New captured campaign: both records are selected and each skips once.
+        fields = expected_fields(phase=6) + [('FLPR_S0002', 6)]
+        length = machine.gam(fields, declared=0xB4+84*len(fields))
+        machine.run('enter', length=length); machine.run('capture'); machine.hook('area_enter')
+        self.assertEqual(machine.item_hook(index=1), 'skip')
+        self.assertEqual(machine.item_hook(index=2), 'skip')
+        self.assertEqual((machine.read_q(BUFFER+120), machine.read_q(second_buffer+120)), (1, 1))
+        self.assertEqual(machine.item_hook(index=2), 'continue')
+
     def test_configured_area_chest_item_index_and_charges_select_one_record(self):
         machine = ProvenanceMachine(configured=True)
         self.assertEqual(machine.capture(), 1)

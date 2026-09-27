@@ -1,9 +1,10 @@
--- Opt-in campaign bridge for one configured ARE container. Never installed
+-- Opt-in campaign bridge for configured ARE container sources. Never installed
 -- by the normal TP2. Caller pins executable/helper/resource hashes before use.
 -- build = tools/probes/FLPRGateAsm.lua; compile = FLPRCampaignPolicy.lua.
 local Gate = {}
 local Runtime = {}; Runtime.__index = Runtime
 local Adapter = {}; Adapter.__index = Adapter
+local Group = {}; Group.__index = Group
 local CAPACITY, HEADER, STRIDE = 2048, 128, 128
 local CONTEXT=HEADER+(CAPACITY+1)*STRIDE
 local MEMORY_SIZE=CONTEXT+32+64*64
@@ -34,14 +35,29 @@ local function same_payload(a,b)
     return payload(a) and payload(b) and a.resref==b.resref and a.flags==b.flags and
         a.charges[1]==b.charges[1] and a.charges[2]==b.charges[2] and a.charges[3]==b.charges[3]
 end
-local function validate(bundle)
+function Gate.source_ids(fixture)
+    local config=type(fixture)=='table' and fixture.source_gate
+    assert(type(config)=='table' and config.schema=='flpr-unvisited-fixture-gate-v1' and
+        (config.source_id==nil)~=(config.source_ids==nil), 'CAMPAIGN_GATE_CONFIG_INVALID')
+    local ids=config.source_ids or {config.source_id}
+    assert(type(ids)=='table' and #ids>0, 'CAMPAIGN_GATE_CONFIG_INVALID')
+    local seen,result,count={},{},0
+    for key,id in pairs(ids) do
+        assert(integer(key,1,#ids) and type(id)=='string' and not seen[id], 'CAMPAIGN_GATE_CONFIG_INVALID')
+        seen[id],result[key]=true,id
+        count=count+1
+    end
+    assert(count==#ids, 'CAMPAIGN_GATE_CONFIG_INVALID')
+    return result
+end
+local function validate(bundle,id)
     assert(type(bundle)=='table' and type(bundle.manifest)=='table' and type(bundle.fixture)=='table',
         'CAMPAIGN_GATE_CONFIG_INVALID')
     local m,f=bundle.manifest,bundle.fixture
-    assert(hash(m.revision) and f.revision==m.revision and type(f.source_gate)=='table' and
-        f.source_gate.schema=='flpr-unvisited-fixture-gate-v1' and type(f.source_gate.source_id)=='string',
-        'CAMPAIGN_GATE_CONFIG_INVALID')
-    local id=f.source_gate.source_id
+    assert(hash(m.revision) and f.revision==m.revision, 'CAMPAIGN_GATE_CONFIG_INVALID')
+    local found=false
+    for _,selected_id in ipairs(Gate.source_ids(f)) do if selected_id==id then found=true end end
+    assert(found, 'CAMPAIGN_GATE_SOURCE_INVALID')
     local area,container,record=id:match('^are:([a-z0-9#_%-]+)/container/(%d+)/item/(%d+)$')
     container,record=tonumber(container),tonumber(record)
     assert(area and #area<=8 and integer(container,0,65534) and integer(record,0,2147483646),
@@ -71,8 +87,9 @@ end
 local function hex(value)
     return (value:gsub('.',function(c) return string.format('%02x',c:byte()) end))
 end
-function Gate.install(api,bundle,build,compile,pristine)
-    local revision,index,resource_hash,binding=validate(bundle)
+local function prepare(api,bundle,build,compile,pristine,id,base,cache)
+    local revision,index,resource_hash,binding=validate(bundle,id)
+    pristine=pristine.bytes and pristine or pristine[binding.area:upper()]
     -- The isolated harness hashes this immutable copy, the ARE and both frozen
     -- manifests before launch. Runtime copies it to separate owned memory; it
     -- must never compare a resource buffer to itself or demand an unloaded ARE.
@@ -106,12 +123,51 @@ function Gate.install(api,bundle,build,compile,pristine)
     local expected={name_raw=hex(name),payload_raw=hex(raw),index=binding.record,
         detail1_raw=hex(bytes:sub(owner+0x41,owner+0x48)),
         detail2_raw=hex(bytes:sub(owner+0x21,owner+0x28))}
+    local policy=compile(revision,index)
+    local cached=cache[resource_hash]
+    local buffer=api.EEex_Malloc(MEMORY_SIZE+(cached and 0 or #pristine.bytes))
+    assert(buffer and buffer~=0,'CAMPAIGN_GATE_ALLOC_FAILED')
+    for offset=0,MEMORY_SIZE-1,8 do api.EEex_Write64(buffer+offset,0) end
+    local expected_pointer=cached or buffer+MEMORY_SIZE
+    if not cached then
+        -- WriteLString truncates binary data at NUL; Write8 takes signed bytes.
+        for offset=1,#pristine.bytes do
+            local byte=pristine.bytes:byte(offset)
+            api.EEex_Write8(expected_pointer+offset-1,byte>=128 and byte-256 or byte)
+        end
+        for offset=1,#pristine.bytes do
+            assert(api.EEex_ReadU8(expected_pointer+offset-1)==pristine.bytes:byte(offset),
+                'CAMPAIGN_GATE_PRISTINE_COPY_FAILED')
+        end
+        cache[resource_hash]=expected_pointer
+    end
+    policy.provenance={expected=expected_pointer,length=#pristine.bytes,
+        container_offset=owner,item_offset=items}
+    policy.source={area=binding.area,name=name,payload=raw,index=binding.record,
+        inventory=bytes:sub(owner+0x41,owner+0x48),position=bytes:sub(owner+0x21,owner+0x28)}
+    local self=setmetatable({api=api,base=base,buffer=buffer,revision=revision,index=index,
+        resource_hash=resource_hash,binding=binding,expected=expected,policy=policy,detours={},installed=false},Runtime)
+    return self,build(buffer,base,policy)
+end
+
+-- Each block preserves registers and flags. A matched item exits the shared
+-- hook immediately; other blocks see the original constructor inputs.
+function Gate.compose(assemblies)
+    local joined={}
+    for index,assembly in ipairs(assemblies) do
+        for name,code in pairs(assembly) do
+            joined[name]=(joined[name] or '')..code:gsub('gate_', 'source'..index..'_')..'\n'
+        end
+    end
+    return joined
+end
+function Gate.install(api,bundle,build,compile,pristine)
+    local ids=Gate.source_ids(bundle.fixture)
     assert(api.EEex_Active and not api.FLPR_SOURCE_GATE and not api.FLPR_AREA_TRACE and
         not api.FLPR_CAMPAIGN_GATE, 'CAMPAIGN_GATE_INSTALL_CONTEXT_INVALID')
     assert(type(api.EEex_GameState_AddDestroyedListener)=='function' and
         type(api.EEex_GameState_GetGlobalInt)=='function' and type(api.EEex_Write8)=='function',
         'CAMPAIGN_GATE_LIFECYCLE_MISSING')
-    local policy=compile(revision,index)
     local base=api.EEex_GetImageBase()
     for _,site in ipairs(sites) do
         local offset=0
@@ -120,26 +176,16 @@ function Gate.install(api,bundle,build,compile,pristine)
             offset=offset+1
         end
     end
-    local buffer=api.EEex_Malloc(MEMORY_SIZE+#pristine.bytes)
-    assert(buffer and buffer~=0,'CAMPAIGN_GATE_ALLOC_FAILED')
-    for offset=0,MEMORY_SIZE-1,8 do api.EEex_Write64(buffer+offset,0) end
-    -- WriteLString uses C-string semantics and truncates binary data at NUL.
-    for offset=1,#pristine.bytes do
-        local byte=pristine.bytes:byte(offset)
-        api.EEex_Write8(buffer+MEMORY_SIZE+offset-1,byte>=128 and byte-256 or byte)
+    local members,assemblies,cache={},{},{}
+    for _,id in ipairs(ids) do
+        local member,assembly=prepare(api,bundle,build,compile,pristine,id,base,cache)
+        members[#members+1],assemblies[#assemblies+1]=member,assembly
     end
-    for offset=1,#pristine.bytes do
-        assert(api.EEex_ReadU8(buffer+MEMORY_SIZE+offset-1)==pristine.bytes:byte(offset),
-            'CAMPAIGN_GATE_PRISTINE_COPY_FAILED')
-    end
-    policy.provenance={expected=buffer+MEMORY_SIZE,length=#pristine.bytes,
-        container_offset=owner,item_offset=items}
-    policy.source={area=binding.area,name=name,payload=raw,index=binding.record,
-        inventory=bytes:sub(owner+0x41,owner+0x48),position=bytes:sub(owner+0x21,owner+0x28)}
-    local self=setmetatable({api=api,base=base,buffer=buffer,revision=revision,index=index,
-        resource_hash=resource_hash,binding=binding,expected=expected,policy=policy,detours={},installed=false},Runtime)
+    local self=#members==1 and members[1] or setmetatable({members=members,installed=false},Group)
+    local assembly=#members==1 and assemblies[1] or Gate.compose(assemblies)
+    local detours={}
+    for _,member in ipairs(members) do member.detours=detours end
     api.FLPR_CAMPAIGN_GATE=self -- partial installation is never retried in-process
-    local assembly=build(buffer,base,policy)
     api.EEex_DisableCodeProtection()
     local ok,failure=pcall(function()
         for _,site in ipairs(sites) do
@@ -150,17 +196,20 @@ function Gate.install(api,bundle,build,compile,pristine)
                 local target=address+5+api.EEex_Read32(address+1)
                 assert(target>0 and (target<address or target>=address+#site.bytes/2),
                     'CAMPAIGN_GATE_DETOUR_INVALID')
-                self.detours[#self.detours+1]={address=address,target=target}
+                detours[#detours+1]={address=address,target=target}
             end
         end
     end)
     api.EEex_EnableCodeProtection()
     assert(ok,failure)
     api.EEex_GameState_AddDestroyedListener(function()
-        self:reset()
+        for _,member in ipairs(members) do member:reset() end
     end)
+    for _,member in ipairs(members) do
+        member.installed=true
+        api.EEex_Write64(member.buffer,1) -- before New Game / any saved GAM load
+    end
     self.installed=true
-    api.EEex_Write64(buffer,1) -- installed before New Game / any saved GAM load
     return self
 end
 
@@ -217,7 +266,7 @@ function Runtime:_intact()
     return true
 end
 function Runtime:_bundle(bundle)
-    local revision,index,resource_hash,binding=validate(bundle)
+    local revision,index,resource_hash,binding=validate(bundle,self.binding.id)
     local b=self.binding
     assert(revision==self.revision and index==self.index and resource_hash==self.resource_hash and
         binding.id==b.id and binding.name==b.name and binding.x==b.x and binding.y==b.y and
@@ -345,6 +394,36 @@ function Adapter:observe_removal(request)
     local result=receipt(request)
     result.exact_source_event,result.removed,result.remaining=1,1,0
     return result
+end
+
+function Group:prepare_new(bundle,controller)
+    assert(#Gate.source_ids(bundle.fixture)==#self.members, 'CAMPAIGN_GATE_REVISION_MISMATCH')
+    for _,member in ipairs(self.members) do member:_bundle(bundle) end
+    for _,member in ipairs(self.members) do member:prepare_new(bundle,controller) end
+    return true
+end
+function Group:reset()
+    for _,member in ipairs(self.members) do member:reset() end
+end
+function Group:inspect()
+    local result={installed=self.installed,sources={}}
+    for _,member in ipairs(self.members) do result.sources[member.binding.id]=member:inspect() end
+    return result
+end
+function Group:adapter(bundle,native)
+    assert(#Gate.source_ids(bundle.fixture)==#self.members, 'CAMPAIGN_GATE_REVISION_MISMATCH')
+    local adapters={}
+    for _,member in ipairs(self.members) do adapters[member.index]=member:adapter(bundle,native) end
+    local group={}
+    function group:destroy() for _,adapter in pairs(adapters) do adapter:destroy() end end
+    for _,method in ipairs({'observe_guard','observe_removal'}) do
+        group[method]=function(_,request)
+            local adapter=type(request)=='table' and adapters[request.index]
+            if not adapter then return nil,'CAMPAIGN_GATE_REQUEST_MISMATCH' end
+            return adapter[method](adapter,request)
+        end
+    end
+    return group
 end
 
 return Gate

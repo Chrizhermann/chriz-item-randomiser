@@ -53,19 +53,25 @@ local ok, failure = pcall(function()
         local revision = gate_config()
         local guarded = assert(resolve(revision), "SOURCE_GATE_REVISION_UNAVAILABLE")
         local Gate = module("override/FLPRGat.lua")
-        local endpoint=assert(guarded.fixture.sources[guarded.fixture.source_gate.source_id])
-        local area=endpoint.area
-        assert(type(area)=='string' and #area>=1 and #area<=8 and not area:find('[^A-Za-z0-9#_%-]'),
-            'SOURCE_GATE_AREA_INVALID')
-        local file=assert(io.open("flpr-fixture/"..area:upper()..".pristine.are","rb"),"SOURCE_GATE_PRISTINE_MISSING")
-        local bytes=file:read("*a"); assert(file:close())
-        -- Suppression can precede the first world tick. Verify delivery support
-        -- before installing it, including for a source in the starting area.
-        local supported,reason=Native.supported(_G,endpoint.payload)
-        assert(supported,reason)
+        local pristine={}
+        for _,id in ipairs(Gate.source_ids(guarded.fixture)) do
+            local endpoint=assert(guarded.fixture.sources[id])
+            local area=endpoint.area
+            assert(type(area)=='string' and #area>=1 and #area<=8 and not area:find('[^A-Za-z0-9#_%-]'),
+                'SOURCE_GATE_AREA_INVALID')
+            area=area:upper()
+            if not pristine[area] then
+                local file=assert(io.open("flpr-fixture/"..area..".pristine.are","rb"),"SOURCE_GATE_PRISTINE_MISSING")
+                pristine[area]={bytes=file:read("*a"),resource_sha256=guarded.fixture.resource_hashes[area..'.ARE']}
+                assert(file:close())
+            end
+            -- Suppression can precede the first world tick. Check every item
+            -- before installing any hook, including starting-area sources.
+            local supported,reason=Native.supported(_G,endpoint.payload)
+            assert(supported,reason)
+        end
         root.SourceGate = Gate.install(_G, guarded,
-            module("flpr-fixture/FLPRGateAsm.lua"), module("flpr-fixture/FLPRCampaignPolicy.lua"),
-            {bytes=bytes,resource_sha256=guarded.fixture.resource_hashes[area:upper()..'.ARE']})
+            module("flpr-fixture/FLPRGateAsm.lua"), module("flpr-fixture/FLPRCampaignPolicy.lua"),pristine)
         prepare_source_guard = function(bundle, controller) return root.SourceGate:prepare_new(bundle, controller) end
         source_guard = function(bundle, native) return root.SourceGate:adapter(bundle, native) end
     end

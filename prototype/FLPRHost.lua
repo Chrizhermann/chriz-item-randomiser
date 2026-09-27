@@ -21,8 +21,8 @@ function Host:destroy()
     if self.native then self.native:destroy() end
     if self.guard then self.guard:destroy() end
     self.controller, self.native, self.pending = nil, nil, nil
-    self.guard, self.guard_index, self.guard_pending, self.removal_pending = nil, nil, nil, nil
-    self.guard_bound, self.guard_monitor = nil, nil
+    self.guard, self.guarded, self.guard_pending = nil, nil, nil
+    self.guard_monitor = nil
     self.last_tick, self.bundle, self.error = nil, nil, nil
     self.deferred = {}
     self.status = "waiting"
@@ -38,26 +38,36 @@ local function require_result(value, failure)
     return value
 end
 
--- This opt-in descriptor covers one authored diagnostic source only. Missing
--- integration must fail before a source is mistaken for a visible creature.
-local function guarded_index(bundle)
-    local config, found = bundle.fixture.source_gate, nil
+-- Each configured source has independent protection and removal state.
+local function guarded_indices(bundle)
+    local config, endpoints = bundle.fixture.source_gate, {}
     for id, endpoint in pairs(bundle.fixture.sources or {}) do
-        if endpoint.kind == "guarded-container" then
-            assert(config and id == config.source_id and not found, "SOURCE_GUARD_CONFIG_INVALID")
-            found = id
-        end
+        if endpoint.kind == "guarded-container" then endpoints[id] = true end
     end
-    if config == nil then return nil end
+    if config == nil then
+        assert(next(endpoints) == nil, "SOURCE_GUARD_CONFIG_INVALID")
+        return nil
+    end
     assert(type(config) == "table" and config.schema == "flpr-unvisited-fixture-gate-v1" and
-        found == config.source_id, "SOURCE_GUARD_CONFIG_INVALID")
+        (config.source_id == nil) ~= (config.source_ids == nil), "SOURCE_GUARD_CONFIG_INVALID")
+    local ids = config.source_ids or {config.source_id}
+    assert(type(ids) == "table" and #ids > 0, "SOURCE_GUARD_CONFIG_INVALID")
+    local selected, result, count = {}, {}, 0
+    for key, id in pairs(ids) do
+        assert(type(key) == "number" and key == math.floor(key) and key >= 1 and key <= #ids and
+            type(id) == "string" and endpoints[id] and not selected[id], "SOURCE_GUARD_CONFIG_INVALID")
+        selected[id], endpoints[id] = true, nil
+        count = count + 1
+    end
+    assert(count == #ids and next(endpoints) == nil, "SOURCE_GUARD_CONFIG_INVALID")
     for index, source in ipairs(bundle.manifest.sources) do
-        if source.id == found then
+        if selected[source.id] then
             assert(source.quantity == 1 and source.record.kind == "container", "SOURCE_GUARD_CONFIG_INVALID")
-            return index
+            result[index], selected[source.id] = {}, nil
         end
     end
-    error("SOURCE_GUARD_CONFIG_INVALID", 0)
+    assert(next(selected) == nil, "SOURCE_GUARD_CONFIG_INVALID")
+    return result
 end
 
 function Host:_initialize()
@@ -81,9 +91,9 @@ function Host:_initialize()
         if deps.storage:get("FLPR_FRESH") == 1 then deps.storage:set("FLPR_FRESH", 0) end
     end
     self.bundle = assert(selected, "REVISION_UNAVAILABLE")
-    self.guard_index = guarded_index(selected)
+    self.guarded = guarded_indices(selected)
     self.native = require_result(deps.native(selected.fixture))
-    if self.guard_index then
+    if self.guarded then
         assert(type(deps.source_guard) == "function", "SOURCE_GUARD_ADAPTER_MISSING")
         self.guard = require_result(deps.source_guard(selected, self.native))
         assert(type(self.guard) == "table" and type(self.guard.observe_guard) == "function" and
@@ -106,7 +116,7 @@ function Host:capture_new(handoff)
         if state == 2 and deps.storage:get("FLPR_FRESH") == 0 then return end
         assert(state == 0 and deps.storage:get("FLPR_FRESH") == 1, "FRESH_TEMPLATE_REQUIRED")
         local selected = require_result(deps.next(), "NEXT_REVISION_UNAVAILABLE")
-        local guarded = guarded_index(selected)
+        local guarded = guarded_indices(selected)
         if guarded then assert(type(deps.prepare_source_guard) == "function", "SOURCE_GUARD_PREPARER_MISSING") end
         local controller = require_result(deps.core.new(deps.storage, function() return nil end))
         require_result(controller:capture(selected.manifest, deps.seed(), "confirmed-new-game"))
@@ -126,16 +136,12 @@ function Host:_step(tick)
     if self.status ~= "running" and self.status ~= "complete" then return end
     self.controller:on_observation_boundary()
     require_result(self.native:on_observation_boundary(tick))
-    if self.guard_bound then
-        -- The bound source can become physically confirmed below. Until then,
-        -- every reward operation depends on uninterrupted protection, including
-        -- rewards whose own source was removed earlier.
-        local phase
-        for _, assignment in ipairs(require_result(self.controller:assignments())) do
-            if assignment.source == self.guard_index then phase = assignment.source_phase; break end
-        end
-        if phase == self.deps.core.PHASE.protected then
-            assert(self.controller:source_guard_active(self.guard_index), "SOURCE_GUARD_INACTIVE")
+    local assignments = require_result(self.controller:assignments())
+    local source_phases = {}
+    for _, assignment in ipairs(assignments) do source_phases[assignment.source] = assignment.source_phase end
+    for index, state in pairs(self.guarded or {}) do
+        if state.bound and source_phases[index] == self.deps.core.PHASE.protected then
+            assert(self.controller:source_guard_active(index), "SOURCE_GUARD_INACTIVE")
         end
     end
     if self.pending then
@@ -153,38 +159,35 @@ function Host:_step(tick)
         local receipt, reason = self.guard:observe_guard(self.guard_pending)
         require_result(receipt, reason)
         require_result(self.controller:confirm_source_guard(receipt))
-        self.guard_pending, self.guard_bound, self.guard_monitor = nil, true, true
+        self.guarded[self.guard_pending.index].bound = true
+        self.guard_pending, self.guard_monitor = nil, true
         return
     end
-    local assignments = require_result(self.controller:assignments())
     self.guard_monitor = false
     -- Every original must be removed or protected before exposing any rewards.
     for index, source in ipairs(self.bundle.manifest.sources) do
-        local phase
-        for _, assignment in ipairs(assignments) do
-            if assignment.source == index then phase = assignment.source_phase; break end
-        end
-        if index == self.guard_index and phase ~= self.deps.core.PHASE.confirmed then
+        local phase, state = source_phases[index], self.guarded and self.guarded[index]
+        if state and phase ~= self.deps.core.PHASE.confirmed then
             assert(phase == self.deps.core.PHASE.pending or phase == self.deps.core.PHASE.protected,
                 "SOURCE_NOT_READY")
-            self.guard_monitor = true
-            if not self.guard_bound then
+            if not state.bound then
                 self.guard_pending = require_result(self.controller:source_guard_request(index))
                 return
             end
-            if self.removal_pending then
-                local receipt, reason = self.guard:observe_removal(self.removal_pending)
+            if state.removal_pending then
+                local receipt, reason = self.guard:observe_removal(state.removal_pending)
                 if receipt == nil and reason == "SOURCE_NOT_LOADED" then
                     -- Waiting for physical proof never withholds an already
                     -- protected source's reward and never repeats suppression.
                 else
                     require_result(receipt, reason)
                     require_result(self.controller:confirm_guarded_source_removal(receipt))
-                    self.removal_pending, self.guard_bound, self.guard_monitor = nil, nil, false
+                    state.removal_pending, state.bound, phase = nil, nil, self.deps.core.PHASE.confirmed
                 end
             else
-                self.removal_pending = require_result(self.controller:guarded_source_removal_request(index))
+                state.removal_pending = require_result(self.controller:guarded_source_removal_request(index))
             end
+            if phase ~= self.deps.core.PHASE.confirmed then self.guard_monitor = true end
         elseif phase ~= 2 then
             assert(phase == 0, "SOURCE_NOT_READY")
             local witness = require_result(self.native:inspect_source(source.id))

@@ -98,6 +98,66 @@ local function guarded_world(N)
     f.api.EEex_Action_ExecuteResponseStringOnAIBaseInstantly=function() error("READ_ONLY_MUTATION") end
     return f
 end
+local function two_guarded_world(N)
+    local f=guarded_world(N)
+    local second_id="are:flpru1/container/2"
+    f.fixture.sources[second_id]={kind="guarded-container",area="FLPRU1",script_name="FLPRU1B",
+        x=1200,y=700,identity=string.rep("d",64),
+        payload={resref="flpri2",charges={0,0,0},expiration=0,flags=1}}
+    f.fixture.source_gate={schema="flpr-unvisited-fixture-gate-v1",
+        source_ids={f.guarded_id,second_id}}
+    local second={address=702,sprite=false,m_scriptName={get=function() return "FLPRU1B" end},
+        m_containerType=4,m_pos={x=1200,y=700},
+        m_lstItems={f.item("FLPRI2",811,1),f.item("FLPRX2",812,7)}}
+    f.objects[4]=second
+    f.area.m_lVertSort={3,4}
+    f.adapter=N.new(f.api,f.fixture)
+    f.second_id, f.second=second_id, second
+    return f
+end
+
+function cases.two_guarded_sources_observe_independent_selected_and_excluded_originals(N)
+    local f=two_guarded_world(N)
+    local first_selected,first_excluded=f.container.m_lstItems[1],f.container.m_lstItems[2]
+    local second_selected,second_excluded=f.second.m_lstItems[1],f.second.m_lstItems[2]
+    assert(f.adapter:guarded_source_remaining(f.guarded_id,"901","701").remaining==1)
+    assert(f.adapter:guarded_source_remaining(f.second_id,"901","702").remaining==1)
+    table.remove(f.second.m_lstItems,1)
+    assert(f.adapter:guarded_source_remaining(f.guarded_id,"901","701").remaining==1)
+    assert(f.adapter:guarded_source_remaining(f.second_id,"901","702").remaining==0)
+    assert(f.container.m_lstItems[1]==first_selected and f.container.m_lstItems[2]==first_excluded)
+    assert(f.second.m_lstItems[1]==second_excluded and second_selected.address==811)
+    table.remove(f.container.m_lstItems,1)
+    assert(f.adapter:guarded_source_remaining(f.guarded_id,"901","701").remaining==0)
+    assert(f.adapter:guarded_source_remaining(f.second_id,"901","702").remaining==0)
+    assert(f.container.m_lstItems[1]==first_excluded and f.second.m_lstItems[1]==second_excluded)
+    assert(#f.calls==0)
+end
+
+function cases.guard_gate_list_must_name_every_guarded_source_once(N)
+    for _,variant in ipairs({"missing","unknown","ordinary","repeated","sparse","nonarray","mixed","singular"}) do
+        local f=two_guarded_world(N)
+        local first,second=f.guarded_id,f.second_id
+        if variant=="missing" then f.fixture.source_gate.source_ids={first}
+        elseif variant=="unknown" then f.fixture.source_gate.source_ids={first,"unknown"}
+        elseif variant=="ordinary" then
+            local id="cre:other/item/0"
+            f.fixture.sources[id]={area="FLPRU1",script_name="OTHER",identity=string.rep("e",64),
+                payload={resref="flpri3",charges={0,0,0},expiration=0,flags=0}}
+            f.fixture.source_gate.source_ids={first,id}
+        elseif variant=="repeated" then f.fixture.source_gate.source_ids={first,first}
+        elseif variant=="sparse" then f.fixture.source_gate.source_ids={[1]=first,[3]=second}
+        elseif variant=="nonarray" then f.fixture.source_gate.source_ids={one=first,two=second}
+        elseif variant=="mixed" then f.fixture.source_gate.source_id=first
+        else f.fixture.source_gate={schema="flpr-unvisited-fixture-gate-v1",source_id=first} end
+        invalid(N,f,"NATIVE_SOURCE_GATE_INVALID")
+    end
+    local f=two_guarded_world(N)
+    f.fixture.source_gate.source_ids={f.second_id,f.guarded_id}
+    assert(N.new(f.api,f.fixture):guarded_source_remaining(f.guarded_id,"901","701").remaining==1)
+    f.fixture.source_gate.source_ids={}
+    invalid(N,f,"NATIVE_SOURCE_GATE_INVALID")
+end
 
 function cases.guarded_remaining_counts_exact_visible_container_without_mutation(N)
     local f=guarded_world(N)
@@ -168,7 +228,7 @@ function cases.guarded_source_never_resolves_or_destroys_original(N)
     assert(f.adapter.attempted[f.command("suppress").session]==nil)
 end
 function cases.guarded_source_declared_endpoint_is_exact(N)
-    for _,variant in ipairs({"x","y","type","expiration","charge","flags","second"}) do
+    for _,variant in ipairs({"x","y","type","expiration","charge","flags","undeclared"}) do
         local f=guarded(setup(N),N)
         local endpoint=f.fixture.sources[f.guarded_id]
         if variant=="x" then endpoint.x=-1
@@ -183,7 +243,8 @@ function cases.guarded_source_declared_endpoint_is_exact(N)
                 payload={resref="flpri2",charges={0,0,0},expiration=0,flags=1}}
         end
         invalid(N,f,(variant=="expiration" or variant=="charge" or variant=="flags") and
-            "NATIVE_PAYLOAD_UNSUPPORTED" or "NATIVE_GUARDED_SOURCE_INVALID")
+            "NATIVE_PAYLOAD_UNSUPPORTED" or
+            (variant=="undeclared" and "NATIVE_SOURCE_GATE_INVALID" or "NATIVE_GUARDED_SOURCE_INVALID"))
     end
 end
 function cases.configured_container_uses_declared_item_geometry_and_type(N)

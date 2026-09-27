@@ -221,8 +221,9 @@ load-only and standalone choice diagnostics have been retired; their relevant
 The returned-copy and save-before-confirmation cases now pass, including fresh
 process reloads. The guard also accepts a different configured area, container,
 item record and payload; its second native fixture passed pickup, original
-suppression and save/reload. Next remove the single-container configuration limit
-before adding other source families. The
+suppression and save/reload. Several container sources now also pass together across two areas, with mixed
+source-state saves and a second New Game. Next allow changed configuration
+revisions to coexist with older saved campaigns, before adding other source families. The
 [item-lifetime diagnostic](native-item-lifetime-20260927.md) established bounded
 drop/destructor behavior; continuous creature receipt tracking and unfinished-save
 recovery still need integration. All sessions closed and staged files were
