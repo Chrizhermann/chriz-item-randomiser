@@ -5,7 +5,7 @@ const ui = Object.fromEntries([
   "appShell", "gameContext", "savedSelect", "newButton", "profileName",
   "saveButton", "copyButton", "validateButton", "prepareButton", "status", "validation", "itemsTab",
   "enemiesTab", "searchLabel", "librarySearch", "searchSummary", "libraryResults",
-  "recipientFilterRow", "recipientKind", "moreResults", "dirtyMark", "itemCount", "targetCount", "selectedItems",
+  "recipientFilterRow", "moreResults", "dirtyMark", "itemCount", "targetCount", "selectedItems",
   "selectedTargets", "workspacePath", "newDialog", "newForm", "newName", "cancelNew"
 ].map((id) => [id, $(id)]));
 
@@ -367,12 +367,21 @@ function removeTarget(id) {
   renderResults();
 }
 
+function selectedRecipientKinds() {
+  return [...ui.recipientFilterRow.querySelectorAll("input:checked")].map((input) => input.value);
+}
+
 function renderResults() {
   const search = searches[activeTab];
   ui.libraryResults.replaceChildren();
   ui.moreResults.hidden = search.next === null || search.next === undefined || search.loading;
+  if (activeTab === "enemies" && !selectedRecipientKinds().length) {
+    ui.searchSummary.textContent = "Select at least one recipient type.";
+    ui.moreResults.hidden = true;
+    return;
+  }
   if (!search.query.trim()) {
-    ui.searchSummary.textContent = activeTab === "items" ? "Search to browse the scanned items." : "Search enemies and NPCs in the world scan.";
+    ui.searchSummary.textContent = activeTab === "items" ? "Search to browse the scanned items." : "Search creatures, containers and shops in the world scan.";
     return;
   }
   if (search.loading && !search.records.length) ui.searchSummary.textContent = "Searching the scan…";
@@ -404,6 +413,8 @@ async function searchPage(tab, append = false) {
   const search = searches[tab];
   const query = search.query.trim();
   if (!query) return;
+  const kinds = tab === "enemies" ? selectedRecipientKinds() : [];
+  if (tab === "enemies" && !kinds.length) return;
   if (append && (search.next === null || search.loading)) return;
   const offset = append ? search.next : 0;
   const sequence = ++search.sequence;
@@ -414,9 +425,21 @@ async function searchPage(tab, append = false) {
   }
   if (activeTab === tab) renderResults();
   try {
-    const path = tab === "items" ? "/api/items" : "/api/targets";
-    const kind = tab === "enemies" ? `&kind=${encodeURIComponent(ui.recipientKind.value)}` : "";
-    const result = await request(`${path}?q=${encodeURIComponent(query)}&offset=${offset}${kind}`);
+    const params = `q=${encodeURIComponent(query)}&offset=${offset}`;
+    let result;
+    if (tab === "items") {
+      result = await request(`/api/items?${params}`);
+    } else {
+      // Each kind has its own complete search page, so mixed filters retain
+      // accurate totals and cannot hide matches behind excluded result types.
+      const pages = await Promise.all((kinds.length === 3 ? ["all"] : kinds)
+        .map((kind) => request(`/api/targets?${params}&kind=${kind}`)));
+      result = {
+        records: pages.flatMap((page) => page.records),
+        total: pages.reduce((total, page) => total + page.total, 0),
+        next_offset: pages.find((page) => page.next_offset !== null)?.next_offset ?? null
+      };
+    }
     if (search.sequence !== sequence || search.query.trim() !== query) return;
     search.records = append ? [...search.records, ...(result.items || result.records || [])] : (result.items || result.records || []);
     search.total = result.total;
@@ -440,7 +463,7 @@ function setTab(tab) {
   ui.libraryResults.setAttribute("aria-labelledby", tab === "items" ? "itemsTab" : "enemiesTab");
   ui.recipientFilterRow.hidden = tab !== "enemies";
   ui.searchLabel.textContent = tab === "items" ? "Search items by name or resource ID" : "Search recipients by name or resource ID";
-  ui.librarySearch.placeholder = tab === "items" ? "Enter an item name or ID" : "Enter an enemy or NPC name or ID";
+  ui.librarySearch.placeholder = tab === "items" ? "Enter an item name or ID" : "Enter a name, area or resource ID";
   ui.librarySearch.value = searches[tab].query;
   renderResults();
   if (searches[tab].query.trim() && !searches[tab].searched && !searches[tab].loading) searchPage(tab);
@@ -489,7 +512,7 @@ ui.librarySearch.addEventListener("input", () => {
 });
 ui.itemsTab.addEventListener("click", () => setTab("items"));
 ui.enemiesTab.addEventListener("click", () => setTab("enemies"));
-ui.recipientKind.addEventListener("change", () => {
+ui.recipientFilterRow.addEventListener("change", () => {
   clearTimeout(searchTimer);
   const search = searches.enemies;
   search.records = [];

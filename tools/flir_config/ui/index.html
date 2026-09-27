@@ -57,15 +57,14 @@
             <button id="itemsTab" type="button" role="tab" aria-selected="true" aria-controls="libraryResults">Items</button>
             <button id="enemiesTab" type="button" role="tab" aria-selected="false" aria-controls="libraryResults">Recipients</button>
           </div>
-          <div id="recipientFilterRow" class="recipient-filter" hidden>
-            <label for="recipientKind">Recipient type</label>
-            <select id="recipientKind">
-              <option value="all">All types</option>
-              <option value="creature">Creatures</option>
-              <option value="container">Containers</option>
-              <option value="store">Shops</option>
-            </select>
-          </div>
+          <fieldset id="recipientFilterRow" class="recipient-filter" hidden>
+            <legend>Recipient types</legend>
+            <div class="recipient-filter-options">
+              <label><input type="checkbox" name="recipientKind" value="creature" checked>Creatures</label>
+              <label><input type="checkbox" name="recipientKind" value="container" checked>Containers</label>
+              <label><input type="checkbox" name="recipientKind" value="store" checked>Shops</label>
+            </div>
+          </fieldset>
           <label id="searchLabel" for="librarySearch">Search items by name or resource ID</label>
           <input id="librarySearch" type="search" autocomplete="off" placeholder="Enter an item name or ID">
           <p id="searchSummary" class="small-note">Search to browse the scanned items.</p>
