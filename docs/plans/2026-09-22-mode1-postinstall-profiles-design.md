@@ -87,6 +87,11 @@ behavior, not optional omissions. Reuse existing parsing, removal and delivery
 where suitable. New tests should target changed behavior and reproduced defects;
 representative integration checks suffice for unchanged paths.
 
+Before calling the replacement feature-complete, make one bounded comparison of
+the migrated modules against the old item/target selection rules, replacement
+equipment, charges, duplicate sources and special quest/script handling. Record
+actual missing behaviour as feature work; do not restart an exhaustive audit.
+
 The previously approved August design's requirement to reinstall for catalog
 changes is superseded for the new profile workflow. Its safety rules for stable
 identities and verified delivery still apply. Mode 2 remains a source of optional

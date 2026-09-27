@@ -43,6 +43,42 @@ data/file failures return `ok: false` with an `error` on stderr and a nonzero ex
 Command-line usage errors follow standard argparse behavior. This interface is
 experimental and is not yet a stable collection integration contract.
 
+## Local configuration editor
+
+Use the saved scans to open the standalone editor:
+
+```powershell
+python tools/randomiser_config.py ui --catalog 'D:/RandomiserDrafts/catalog.json' --world 'D:/RandomiserDrafts/world.json' --workspace 'D:/RandomiserDrafts/configurations'
+```
+
+Open the local URL printed at startup. Optional `--profile` and `--plan` load an
+existing draft pair; `--port` chooses a fixed port. The workspace is a dedicated
+folder outside the game. The editor needs only Python's standard library and
+does not open a browser automatically, launch the game, rescan, or run WeiDU.
+
+Search all scanned items by name or resource ID, choose the exact original copy,
+and search area actors for recipients. Reward slots allow several items per
+recipient. Save named configurations or use **Save a copy**; incomplete choices
+can be saved for later. Draft files contain the existing profile and binding plan
+under `profile` and `plan`. Existing files and CLI formats remain supported.
+
+**Check configuration** uses the existing campaign compiler and native endpoint
+checks. Unsupported source families remain editable drafts, with an explanation.
+**Prepare test settings** writes the existing campaign JSON/Lua format to the
+workspace's `prepared` folder, ready for the experimental export command below.
+It does not deploy or activate anything. Export still checks selected installation
+resources before they can be staged for a test. Collection integration, general
+runtime support and ordinary mod installation remain separate work.
+
+The editor reads only saved scan files and writes only configuration files. It
+serves on `127.0.0.1`; close the process when finished. Keep configurations and
+real scan data outside Git.
+
+Verified with the saved EET scan (3,544 items): search, exact source selection,
+recipient capacities, save/copy/reload, and preparation of the previously tested
+three-item BG1 campaign. The prepared revision matches the existing sample.
+This editor check did not launch or modify the game.
+
 ## Scan semantics
 
 - Scans the union of root KEY item entries and override-only item files.

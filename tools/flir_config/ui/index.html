@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Randomiser configuration</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <div class="page">
+    <header class="masthead">
+      <div class="identity">
+        <svg class="mark" viewBox="0 0 64 64" role="img" aria-label="Twenty-sided die mark">
+          <circle cx="32" cy="32" r="29" fill="none" stroke="currentColor" stroke-width="1.5"/>
+          <path d="M32 5 8 22l9 29h30l9-29L32 5Zm0 0v15M8 22l24-2 24 2M17 51l15-31 15 31M8 22l24 35 24-35" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/>
+        </svg>
+        <div>
+          <h1>Randomiser configuration</h1>
+          <p id="gameContext" class="subhead">Loading the scanned game…</p>
+        </div>
+      </div>
+      <p class="scope-note">Configuration editor <span aria-hidden="true">·</span> game testing is separate</p>
+    </header>
+
+    <main id="appShell" class="workspace" aria-busy="false">
+      <section class="toolbar" aria-label="Configuration controls">
+        <div class="saved-control">
+          <label for="savedSelect">Saved configurations</label>
+          <div class="inline-actions">
+            <select id="savedSelect" aria-label="Saved configurations"><option value="">Choose a saved configuration</option></select>
+            <button id="loadButton" type="button" class="button secondary">Load</button>
+            <button id="newButton" type="button" class="button secondary">New</button>
+          </div>
+        </div>
+        <div class="name-control">
+          <label for="profileName">Configuration name</label>
+          <input id="profileName" type="text" maxlength="120" autocomplete="off" placeholder="Name this configuration">
+        </div>
+        <div class="toolbar-actions">
+          <button id="saveButton" type="button" class="button primary">Save</button>
+          <button id="copyButton" type="button" class="button secondary">Save a copy</button>
+          <button id="validateButton" type="button" class="button secondary">Check configuration</button>
+          <button id="prepareButton" type="button" class="button secondary" disabled>Prepare test settings</button>
+        </div>
+      </section>
+
+      <p id="status" class="status" role="status" aria-live="polite">Loading configuration…</p>
+      <p id="validation" class="validation" role="status" aria-live="polite" hidden></p>
+
+      <div class="columns">
+        <section class="library panel" aria-labelledby="libraryTitle">
+          <div class="panel-heading">
+            <h2 id="libraryTitle">Library</h2>
+            <p>Find an item or a recipient in the current scan.</p>
+          </div>
+          <div class="tabs" role="tablist" aria-label="Library type">
+            <button id="itemsTab" type="button" role="tab" aria-selected="true" aria-controls="libraryResults">Items</button>
+            <button id="enemiesTab" type="button" role="tab" aria-selected="false" aria-controls="libraryResults">Recipients</button>
+          </div>
+          <label id="searchLabel" for="librarySearch">Search items by name or resource ID</label>
+          <input id="librarySearch" type="search" autocomplete="off" placeholder="Enter an item name or ID">
+          <p id="searchSummary" class="small-note">Search to browse the scanned items.</p>
+          <div id="libraryResults" class="result-list" role="tabpanel" aria-labelledby="itemsTab"></div>
+          <button id="moreResults" type="button" class="button secondary more" hidden>Show more results</button>
+        </section>
+
+        <section class="selection panel" aria-labelledby="selectionTitle">
+          <div class="panel-heading selection-heading">
+            <div>
+              <h2 id="selectionTitle">This configuration</h2>
+              <p>Choose each item's exact original, then add recipients that can carry rewards.</p>
+            </div>
+            <span id="dirtyMark" class="dirty-mark" hidden>Unsaved changes</span>
+          </div>
+          <div class="selection-section">
+            <div class="section-heading"><h3>Selected items</h3><span id="itemCount" class="count">0 items</span></div>
+            <div id="selectedItems" class="selected-list"></div>
+          </div>
+          <div class="selection-section">
+            <div class="section-heading"><h3>Reward recipients</h3><span id="targetCount" class="count">0 slots</span></div>
+            <div id="selectedTargets" class="selected-list"></div>
+          </div>
+        </section>
+      </div>
+      <footer class="workspace-footer"><span id="workspacePath"></span><span>Drafts are saved locally. Checking does not change the game.</span></footer>
+    </main>
+  </div>
+
+  <dialog id="newDialog" aria-labelledby="newTitle">
+    <form id="newForm" method="dialog">
+      <h2 id="newTitle">New configuration</h2>
+      <label for="newName">Name</label>
+      <input id="newName" type="text" maxlength="120" required autocomplete="off" placeholder="New configuration">
+      <div class="dialog-actions">
+        <button type="button" id="cancelNew" class="button secondary">Cancel</button>
+        <button type="submit" class="button primary">Create draft</button>
+      </div>
+    </form>
+  </dialog>
+</body>
+</html>

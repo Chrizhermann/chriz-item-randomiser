@@ -24,6 +24,12 @@ def parser() -> argparse.ArgumentParser:
         description="Scan installed EE items and author draft Randomiser profiles. "
                     "This tool does not modify the game or activate randomisation.")
     commands = result.add_subparsers(dest="command", required=True)
+    ui = commands.add_parser("ui", help="Open the local configuration editor over existing scans")
+    for field in ("catalog", "world", "workspace"):
+        ui.add_argument("--" + field, type=Path, required=True)
+    ui.add_argument("--profile", type=Path)
+    ui.add_argument("--plan", type=Path)
+    ui.add_argument("--port", type=int, default=0)
     scan = commands.add_parser("scan", help="Read the effective installed item resources")
     scan.add_argument("--game", type=Path, required=True)
     scan.add_argument("--language")
@@ -110,6 +116,9 @@ def parser() -> argparse.ArgumentParser:
 
 
 def run(args: argparse.Namespace) -> dict:
+    if args.command == "ui":
+        from .editor import serve
+        return serve(args.catalog, args.world, args.workspace, args.port, args.profile, args.plan)
     if args.command == "scan":
         # Check before the potentially expensive scan and re-check its canonical root.
         ensure_output_outside_game(args.out, {"game_root": str(args.game.resolve())})
