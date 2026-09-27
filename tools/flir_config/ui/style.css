@@ -260,6 +260,10 @@ input::placeholder {
   margin: 11px 0;
 }
 
+.recipient-filter {
+  margin-bottom: 16px;
+}
+
 .result-list {
   max-height: 540px;
   overflow: auto;
@@ -339,12 +343,40 @@ input::placeholder {
   justify-content: space-between;
   gap: 12px;
   align-items: baseline;
+  margin-bottom: 0;
+  list-style: none;
+  cursor: pointer;
+}
+
+.section-heading::-webkit-details-marker {
+  display: none;
+}
+
+.section-heading::before {
+  content: "▸";
+  color: var(--brass);
+  font-size: 1.1rem;
+}
+
+.section-heading h3 {
+  display: flex;
+  flex: 1;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.selection-section[open] > .section-heading {
   margin-bottom: 10px;
+}
+
+.selection-section[open] > .section-heading::before {
+  content: "▾";
 }
 
 .count {
   color: var(--muted);
   font-size: .9rem;
+  margin-left: auto;
 }
 
 .chosen-row {
@@ -379,7 +411,9 @@ input::placeholder {
 }
 
 .chosen-main .record-name,
-.chosen-main .record-detail {
+.chosen-main .record-detail,
+.source-option .record-name,
+.source-option .record-detail {
   display: block;
 }
 

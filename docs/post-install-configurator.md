@@ -56,10 +56,15 @@ existing draft pair; `--port` chooses a fixed port. The workspace is a dedicated
 folder outside the game. The editor needs only Python's standard library and
 does not open a browser automatically, launch the game, rescan, or run WeiDU.
 
-Search all scanned items by name or resource ID, choose the exact original copy,
-and search area actors for recipients. Reward slots allow several items per
-recipient. Save named configurations or use **Save a copy**; incomplete choices
-can be saved for later. Draft files contain the existing profile and binding plan
+Search all scanned items by name or resource ID; a sole original is selected
+automatically, while multiple originals remain an explicit choice. Recipient
+search includes the scanned names and script/resource aliases, with filters for
+creatures, containers and shops. Creature templates without a bound spawn and
+unfinished destination types are labelled as such. Reward slots allow several
+items per recipient. The selected item and recipient sections collapse separately.
+Selecting a saved configuration loads it immediately, confirming before unsaved
+edits are discarded. Save named configurations or use **Save a copy**; incomplete
+choices can be saved for later. Draft files contain the existing profile and binding plan
 under `profile` and `plan`. Existing files and CLI formats remain supported.
 
 **Check configuration** uses the existing campaign compiler and native endpoint

@@ -29,7 +29,6 @@
           <label for="savedSelect">Saved configurations</label>
           <div class="inline-actions">
             <select id="savedSelect" aria-label="Saved configurations"><option value="">Choose a saved configuration</option></select>
-            <button id="loadButton" type="button" class="button secondary">Load</button>
             <button id="newButton" type="button" class="button secondary">New</button>
           </div>
         </div>
@@ -58,6 +57,15 @@
             <button id="itemsTab" type="button" role="tab" aria-selected="true" aria-controls="libraryResults">Items</button>
             <button id="enemiesTab" type="button" role="tab" aria-selected="false" aria-controls="libraryResults">Recipients</button>
           </div>
+          <div id="recipientFilterRow" class="recipient-filter" hidden>
+            <label for="recipientKind">Recipient type</label>
+            <select id="recipientKind">
+              <option value="all">All types</option>
+              <option value="creature">Creatures</option>
+              <option value="container">Containers</option>
+              <option value="store">Shops</option>
+            </select>
+          </div>
           <label id="searchLabel" for="librarySearch">Search items by name or resource ID</label>
           <input id="librarySearch" type="search" autocomplete="off" placeholder="Enter an item name or ID">
           <p id="searchSummary" class="small-note">Search to browse the scanned items.</p>
@@ -73,14 +81,14 @@
             </div>
             <span id="dirtyMark" class="dirty-mark" hidden>Unsaved changes</span>
           </div>
-          <div class="selection-section">
-            <div class="section-heading"><h3>Selected items</h3><span id="itemCount" class="count">0 items</span></div>
+          <details class="selection-section" open>
+            <summary class="section-heading"><h3>Selected items <span id="itemCount" class="count">0 items</span></h3></summary>
             <div id="selectedItems" class="selected-list"></div>
-          </div>
-          <div class="selection-section">
-            <div class="section-heading"><h3>Reward recipients</h3><span id="targetCount" class="count">0 slots</span></div>
+          </details>
+          <details class="selection-section" open>
+            <summary class="section-heading"><h3>Reward recipients <span id="targetCount" class="count">0 slots</span></h3></summary>
             <div id="selectedTargets" class="selected-list"></div>
-          </div>
+          </details>
         </section>
       </div>
       <footer class="workspace-footer"><span id="workspacePath"></span><span>Drafts are saved locally. Checking does not change the game.</span></footer>

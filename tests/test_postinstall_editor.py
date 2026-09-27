@@ -14,7 +14,7 @@ from flir_config.editor import Editor, create_server
 from flir_config.profiles import edit_profile, new_profile
 from flir_config.sources import new_binding_plan
 from tests import test_postinstall_native_export as fixtures
-from tests.test_postinstall_world_formats import make_cre, item_record
+from tests.test_postinstall_world_formats import make_cre, make_sto, item_record
 
 
 class EditorTests(unittest.TestCase):
@@ -77,6 +77,35 @@ class EditorTests(unittest.TestCase):
         self.assertTrue(result["valid"], result)
         self.assertFalse(result["runtime_supported"])
         self.assertIn("source", result["message"])
+
+    def test_recipient_names_aliases_and_type_filters(self):
+        fx = self.fx
+        actor = next(row for row in fx.world["targets"] if row["id"] == "are:area/actor/0")
+        area = bytearray(fx.area)
+        start = actor["selector"]["byte_offset"]
+        area[start:start + 32] = b"Jon Irenicus".ljust(32, b"\0")
+        (fx.override / "area.are").write_bytes(area)
+        (fx.override / "merchant.sto").write_bytes(make_sto())
+        fx.refresh()
+        self.reset_editor()
+        e = self.editor
+        named = e.get("/api/targets", {"q": "Irenicus", "kind": "creature"})["records"]
+        self.assertEqual([r["id"] for r in named], ["are:area/actor/0"])
+        self.assertEqual(named[0]["label"], "Jon Irenicus (AREA)")
+        self.assertEqual(named[0]["kind_label"], "Creature")
+        aliases = e.get("/api/targets", {"q": "TestDV"})["records"]
+        self.assertIn("are:area/actor/0", [r["id"] for r in aliases])
+        self.assertEqual(e.get("/api/targets", {"q": "Irenicus", "kind": "container"})["total"], 0)
+        containers = e.get("/api/targets", {"q": "Chest", "kind": "container"})["records"]
+        self.assertEqual([r["kind_label"] for r in containers], ["Container", "Container"])
+        shop = e.get("/api/targets", {"q": "merchant", "kind": "store"})["records"][0]
+        self.assertEqual(shop["kind_label"], "Shop")
+        draft = deepcopy(e.draft)
+        draft["plan"]["targets"] = [{"id": containers[1]["id"], "capacity": 1, "optional": False}]
+        self.assertEqual(e.post("/api/save", draft)["targets"][0]["kind_label"], "Container")
+        result = e.post("/api/validate", draft)
+        self.assertTrue(result["valid"], result)
+        self.assertFalse(result["runtime_supported"])
 
     def test_http_search_load_and_check_share_the_real_editor(self):
         e = self.editor

@@ -17,6 +17,10 @@ from .profiles import (PROFILE_ID, ProfileError, ensure_output_outside_game,
 from .sources import new_binding_plan, validate_world
 
 
+KIND_LABELS = {"actor": "Creature", "cre-template": "Creature template",
+               "embedded-cre": "Creature", "container": "Container", "store": "Shop"}
+
+
 class Editor:
     def __init__(self, catalog: dict, world: dict, workspace: Path,
                  profile: dict | None = None, plan: dict | None = None):
@@ -27,7 +31,6 @@ class Editor:
         self.sources = defaultdict(list)
         for source in world["sources"]:
             self.sources[source["item"]].append(source)
-        self.actors = [row for row in world["targets"] if row["kind"] == "actor"]
         if (profile is None) != (plan is None):
             raise ProfileError("Supply both an initial profile and its binding plan")
         if profile is None:
@@ -72,13 +75,25 @@ class Editor:
     def label(self, target: dict) -> str:
         selector = target["selector"]
         template = self.index["targets"].get(selector.get("template_resource"), {})
-        name = (template.get("selector", {}).get("script_name") or selector.get("script_name") or
-                selector.get("name") or selector.get("cre_resref") or target["id"])
+        name = (selector.get("name") or selector.get("script_name") or
+                template.get("selector", {}).get("script_name") or selector.get("cre_resref") or target["id"])
         return f"{name} ({target['resource'].split(':', 1)[1].upper()})"
 
     def target(self, row: dict) -> dict:
+        notes = {"actor": "Encounter availability and drops need a game test.",
+                 "cre-template": "Creature definition; choosing a specific spawn still needs runtime support.",
+                 "container": "Container destination; delivery here still needs runtime support.",
+                 "store": "Shop destination; delivery here still needs runtime support."}
         return {"id": row["id"], "label": self.label(row), "kind": row["kind"],
-                "note": "Encounter availability and drops need a game test."}
+                "kind_label": KIND_LABELS[row["kind"]], "note": notes[row["kind"]]}
+
+    def search_text(self, row: dict) -> str:
+        selector = row["selector"]
+        template = self.index["targets"].get(selector.get("template_resource"), {})
+        names = [row["id"], self.label(row)]
+        for fields in (selector, template.get("selector", {})):
+            names.extend(fields.get(key, "") for key in ("name", "script_name", "cre_resref"))
+        return " ".join(names).casefold()
 
     def state(self) -> dict:
         saved = []
@@ -118,6 +133,7 @@ class Editor:
                 raise ProfileError("Unknown item")
             page = self.page(self.sources[item], offset)
             page["records"] = [{"id": s["id"], "kind": s["kind"], "concerns": s["concerns"],
+                "kind_label": KIND_LABELS[s["kind"]],
                 "label": (self.label(self.index["targets"][s["owner"]]) if s["owner"] in self.index["targets"]
                           else s["owner"]) + f" · item record {s['record']['record_index']}",
                 "note": ("Container source; check configuration for current runtime support."
@@ -125,12 +141,16 @@ class Editor:
                 for s in page["records"]]
             return page
         if route == "/api/targets":
+            kinds = {"all": set(KIND_LABELS), "creature": {"actor", "cre-template"},
+                     "container": {"container"}, "store": {"store"}}
+            kind = params.get("kind", "all")
+            if kind not in kinds:
+                raise ProfileError("Unknown recipient type")
             if not query:
                 return self.page([], 0)
             terms = query.casefold().split()
-            rows = [row for row in self.actors if all(term in
-                    (self.label(row) + " " + row["id"] + " " + row["selector"].get("cre_resref", "")).casefold()
-                    for term in terms)]
+            rows = [row for row in self.world["targets"] if row["kind"] in kinds[kind] and
+                    all(term in self.search_text(row) for term in terms)]
             page = self.page(rows, offset)
             page["records"] = [self.target(row) for row in page["records"]]
             return page

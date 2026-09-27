@@ -2,10 +2,10 @@
 
 const $ = (id) => document.getElementById(id);
 const ui = Object.fromEntries([
-  "appShell", "gameContext", "savedSelect", "loadButton", "newButton", "profileName",
+  "appShell", "gameContext", "savedSelect", "newButton", "profileName",
   "saveButton", "copyButton", "validateButton", "prepareButton", "status", "validation", "itemsTab",
   "enemiesTab", "searchLabel", "librarySearch", "searchSummary", "libraryResults",
-  "moreResults", "dirtyMark", "itemCount", "targetCount", "selectedItems",
+  "recipientFilterRow", "recipientKind", "moreResults", "dirtyMark", "itemCount", "targetCount", "selectedItems",
   "selectedTargets", "workspacePath", "newDialog", "newForm", "newName", "cancelNew"
 ].map((id) => [id, $(id)]));
 
@@ -118,6 +118,11 @@ function renderSaved(saved) {
   ui.savedSelect.value = saved.some((row) => row.id === profile.id) ? profile.id : "";
 }
 
+function restoreSavedSelection() {
+  ui.savedSelect.value = [...ui.savedSelect.options].some((option) => option.value === profile?.id)
+    ? profile.id : "";
+}
+
 function sourceEntry(item) {
   return plan.sources.find((row) => row.item === item);
 }
@@ -174,7 +179,7 @@ function renderSelected() {
     const heading = node("div", "result-row");
     const main = node("div", "result-main");
     main.append(node("div", "record-name", data.label || target.id),
-      node("div", "record-detail", `${target.id}${data.kind ? ` · ${data.kind}` : ""}`));
+      node("div", "record-detail", `${target.id}${data.kind_label || data.kind ? ` · ${data.kind_label || data.kind}` : ""}`));
     const remove = node("button", "text-button remove", "Remove");
     remove.type = "button";
     remove.setAttribute("aria-label", `Remove ${data.label || target.id}`);
@@ -254,7 +259,7 @@ function renderSourcePicker(item, body) {
     radio.addEventListener("change", () => chooseSource(item, source.id));
     const text = node("span");
     text.append(node("span", "record-name", source.label || source.id),
-      node("span", "record-detail", `${source.id}${source.kind ? ` · ${source.kind}` : ""}`));
+      node("span", "record-detail", `${source.id}${source.kind_label || source.kind ? ` · ${source.kind_label || source.kind}` : ""}`));
     if (source.note) text.append(node("span", "record-detail", source.note));
     if (source.concerns && source.concerns.length) text.append(node("span", "record-detail", `Scan notes: ${source.concerns.join(", ")}`));
     label.append(radio, text);
@@ -288,6 +293,14 @@ async function fetchSources(item, append = false) {
     page.records = append ? [...page.records, ...(result.records || [])] : (result.records || []);
     page.next = result.next_offset;
     page.total = result.total;
+    const entry = sourceEntry(item);
+    if (!append && result.total === 1 && page.records.length === 1
+      && (!entry || (entry.policy === "relocate"
+        && Array.isArray(entry.source_ids) && entry.source_ids.length === 0
+        && (!Array.isArray(entry.registration_ids) || entry.registration_ids.length === 0)))
+      && typeof page.records[0].id === "string" && page.records[0].id) {
+      chooseSource(item, page.records[0].id);
+    }
   } catch (error) {
     if (generation !== currentGeneration || !profile.items.includes(item) || sourcePages.get(item) !== page) return;
     page.error = error.message;
@@ -375,7 +388,7 @@ function renderResults() {
     const result = node("div", "result-row");
     const main = node("div", "result-main");
     main.append(node("div", "record-name", isItem ? row.name || id : row.label || id),
-      node("div", "record-detail", `${id}${isItem && row.category !== undefined ? ` · category ${row.category}` : row.kind ? ` · ${row.kind}` : ""}`));
+      node("div", "record-detail", `${id}${isItem && row.category !== undefined ? ` · category ${row.category}` : row.kind_label || row.kind ? ` · ${row.kind_label || row.kind}` : ""}`));
     if (row.note) main.append(node("div", "record-detail", row.note));
     const button = node("button", "button secondary", chosen ? "Added" : "Add");
     button.type = "button";
@@ -402,7 +415,8 @@ async function searchPage(tab, append = false) {
   if (activeTab === tab) renderResults();
   try {
     const path = tab === "items" ? "/api/items" : "/api/targets";
-    const result = await request(`${path}?q=${encodeURIComponent(query)}&offset=${offset}`);
+    const kind = tab === "enemies" ? `&kind=${encodeURIComponent(ui.recipientKind.value)}` : "";
+    const result = await request(`${path}?q=${encodeURIComponent(query)}&offset=${offset}${kind}`);
     if (search.sequence !== sequence || search.query.trim() !== query) return;
     search.records = append ? [...search.records, ...(result.items || result.records || [])] : (result.items || result.records || []);
     search.total = result.total;
@@ -424,6 +438,7 @@ function setTab(tab) {
   ui.itemsTab.setAttribute("aria-selected", String(tab === "items"));
   ui.enemiesTab.setAttribute("aria-selected", String(tab === "enemies"));
   ui.libraryResults.setAttribute("aria-labelledby", tab === "items" ? "itemsTab" : "enemiesTab");
+  ui.recipientFilterRow.hidden = tab !== "enemies";
   ui.searchLabel.textContent = tab === "items" ? "Search items by name or resource ID" : "Search recipients by name or resource ID";
   ui.librarySearch.placeholder = tab === "items" ? "Enter an item name or ID" : "Enter an enemy or NPC name or ID";
   ui.librarySearch.value = searches[tab].query;
@@ -474,13 +489,27 @@ ui.librarySearch.addEventListener("input", () => {
 });
 ui.itemsTab.addEventListener("click", () => setTab("items"));
 ui.enemiesTab.addEventListener("click", () => setTab("enemies"));
+ui.recipientKind.addEventListener("change", () => {
+  clearTimeout(searchTimer);
+  const search = searches.enemies;
+  search.records = [];
+  search.total = 0;
+  search.next = null;
+  search.loading = false;
+  search.searched = false;
+  search.sequence += 1;
+  if (activeTab === "enemies") renderResults();
+  if (search.query.trim()) searchPage("enemies");
+});
 ui.moreResults.addEventListener("click", () => searchPage(activeTab, true));
 ui.profileName.addEventListener("input", () => { if (profile) { profile.name = ui.profileName.value; changed(); } });
-ui.loadButton.addEventListener("click", () => {
+ui.savedSelect.addEventListener("change", () => {
   const id = ui.savedSelect.value;
-  if (!id) { setStatus("Choose a saved configuration to load.", true); return; }
-  if (!askDiscard()) return;
-  perform(async () => acceptState(await post("/api/load", { id }), "Saved configuration loaded."), "Loading configuration…");
+  if (!id || id === profile?.id || !askDiscard()) { restoreSavedSelection(); return; }
+  perform(async () => {
+    try { acceptState(await post("/api/load", { id }), "Saved configuration loaded."); }
+    catch (error) { restoreSavedSelection(); throw error; }
+  }, "Loading configuration…");
 });
 ui.newButton.addEventListener("click", () => {
   if (!askDiscard()) return;
