@@ -1,11 +1,10 @@
 # Experimental post-install configurator
 
 This development tool reads installed EE item definitions and creates reusable
-**drafts**. It does not activate those drafts in the game yet. Physical source and
-target binding is available as a development interface. A separate
-[campaign protocol prototype](campaign-runtime-prototype.md) models revision
-capture, saved assignments, and guarded source/delivery transactions. Engine
-integration, actual source suppression, and collection UI integration remain open.
+**drafts** with explicit source and target bindings. It can export the supported
+container-to-creature subset for the separate
+[native prototype](campaign-source-guards-20260927.md). It does not install or
+activate that runtime. General source coverage and collection UI remain open.
 
 The intended player workflow is: finish installing mods, scan/customize once, and
 start any number of fresh randomized adventures with those settings. Later changes
@@ -82,6 +81,35 @@ There is deliberately no runtime `active`/`ready` flag: these records are marked
 All catalog/profile/preparation outputs must be outside the scanned game directory.
 Nothing calls WeiDU or mutates installed resources. Do not distribute a real scan or
 personal configuration in the source repository.
+
+## Export experimental runtime settings
+
+After reviewing bindings and running `prototype prepare`, export the configuration
+for the existing native test runtime:
+
+```powershell
+python tools/randomiser_config.py prototype export --store 'D:/RandomiserDrafts/prototype' --catalog 'D:/RandomiserDrafts/catalog.json' --world 'D:/RandomiserDrafts/world.json' --out 'D:/RandomiserDrafts/flpr-fixture'
+```
+
+This reads the prepared next revision, derives native endpoints, and copies pristine
+source ARE bytes into the output. It reuses the existing resource reader and checks
+selected resource hashes against the scan. `--revision <sha256>` selects a specific
+prepared revision. Exporting another configuration into the same output keeps earlier
+revisions available for saves and changes only which configuration New Game selects.
+Keep that output between exports; restart the test game after deploying a new revision.
+
+Current runtime coverage is uniquely named static container sources to uniquely named
+ARE actor targets, with unexpired, nonstackable, visible droppable items. It reports
+unsupported selections instead of silently omitting them. Actor availability and
+ordinary death drops still need live testing; export does not certify an encounter.
+The current adapter requires distinct selected item resrefs and no second copy of
+the selected resref in its source container, so exports reject those cases too.
+The broader profile format and planned source types are unchanged.
+
+The output contains configuration only. It does **not** install the experimental
+runtime, activate the released mod, or modify the game. Collection UI, ordinary mod
+packaging, and general creature/store/script source interception remain unfinished.
+See [native source results](campaign-source-guards-20260927.md) for current evidence.
 
 ## Validation
 

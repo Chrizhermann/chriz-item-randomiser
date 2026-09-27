@@ -143,6 +143,21 @@ Evidence: `work/profile-switch-native-20260927/` and
 paths were restored and the reservation released. The full offline suite passed
 917 tests. This change reuses the existing lab helpers.
 
+### Configurator-produced settings
+
+The CLI now exports reviewed campaign bindings into the runtime configuration
+layout, retaining earlier exported revisions. Scanning the copied fixture
+resources, preparing A/B profiles and exporting them produced revision
+`5d6f5d37...` for the two-item selection. Its New Game (seed `669081018`) passed
+early delivery, ordinary creature death/pickup, both original-source removals
+and preservation of the excluded FLPRI2. No endpoint files were hand-edited.
+Evidence is in `work/configurator-export-20260927/` and
+`work/configurator-export-native-20260927/`. The game quit normally and all 28
+staged paths were restored. The offline suite passed 921 tests; a subsequent
+review reproduced a same-container duplicate-copy limitation and added an export
+rejection with a passing focused regression. This remains candidate configuration
+export for the supported subset, not a general mod installer.
+
 ## Continue
 
 Build the authored `unvisited-creatures` fixture with `build_mode1_fixture.py`

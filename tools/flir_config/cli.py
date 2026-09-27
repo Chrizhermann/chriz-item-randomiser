@@ -13,6 +13,7 @@ from .profiles import (ProfileError, edit_profile, ensure_output_outside_game,
                        validate_profile, write_json)
 from .resources import ScanError, scan_game
 from .campaigns import read_campaign, write_campaign
+from .native_export import export_native
 from .sources import (bind_profile, inventory_diagnostic_counts, inspect_sources, new_binding_plan,
                       prepare_bound_profile, read_bound_profile, scan_world,
                       search_targets)
@@ -92,11 +93,16 @@ def parser() -> argparse.ArgumentParser:
             child.add_argument("--store", type=Path, required=True)
     prototype = commands.add_parser("prototype", help="Compile experimental campaign data; never activates gameplay")
     prototype_ops = prototype.add_subparsers(dest="operation", required=True)
-    for operation in ("prepare", "inspect"):
+    for operation in ("prepare", "inspect", "export"):
         child = prototype_ops.add_parser(operation)
         child.add_argument("--store", type=Path, required=True)
         if operation == "inspect":
             child.add_argument("--revision")
+        elif operation == "export":
+            child.add_argument("--catalog", type=Path, required=True)
+            child.add_argument("--world", type=Path, required=True)
+            child.add_argument("--revision")
+            child.add_argument("--out", type=Path, required=True)
         else:
             for field in ("catalog", "world", "profile", "plan"):
                 child.add_argument("--" + field, type=Path, required=True)
@@ -122,6 +128,8 @@ def run(args: argparse.Namespace) -> dict:
     catalog = read_json(args.catalog)
     validate_catalog(catalog)
     if args.command == "prototype":
+        if args.operation == "export":
+            return export_native(args.store, catalog, read_json(args.world), args.out, args.revision)
         return write_campaign(read_json(args.profile), catalog, read_json(args.world), read_json(args.plan), args.store)
     if args.command == "world":
         if args.operation == "scan":
