@@ -1,4 +1,4 @@
-"""Export reviewed campaigns for the experimental container-to-creature runtime.
+"""Export reviewed container/creature sources for the experimental native runtime.
 
 This writes configuration outside the game. It does not install runtime hooks,
 change resources, choose gameplay content, or establish live target eligibility.
@@ -11,6 +11,7 @@ from collections import Counter
 from pathlib import Path
 
 from .campaigns import read_campaign, _render_lua, _store_path, _write_immutable
+from .creature_inventory import rewrite_inventory
 from .profiles import HEX256, ProfileError, _digest, canonical_bytes, ensure_output_outside_game, validate_catalog
 from .resources import GameResources, RESOURCE_TYPES
 from .sources import validate_world
@@ -40,7 +41,7 @@ def _compile(manifest: dict, world: dict, index: dict, items: dict) -> tuple[dic
     native = {"schema": "flir-native-fixture-v1", "revision": manifest["revision"],
               "sources": {}, "targets": {}, "resource_hashes": {},
               "ready_detail": "have been assigned to the selected recipients."}
-    required, pristine, selected_items = set(), set(), set()
+    required, pristine, selected_items, selected_actors = set(), set(), set(), set()
 
     def use(resource: str) -> None:
         required.add(resource)
@@ -58,24 +59,16 @@ def _compile(manifest: dict, world: dict, index: dict, items: dict) -> tuple[dic
                           for t in index["targets"].values() if t["kind"] == "actor")
     container_items = Counter((s["owner"], s["item"]) for s in index["sources"].values()
                               if s["kind"] == "container")
+    creature_items = Counter((s["owner"], s["item"]) for s in index["sources"].values()
+                             if s["kind"] in ("cre-template", "embedded-cre"))
     for selected in manifest["sources"]:
         source, identity = selected["record"], selected["id"]
-        _require(source["kind"] == "container", f"Native export does not yet support this source: {identity}")
+        _require(source["kind"] in ("container", "cre-template", "embedded-cre"),
+                 f"Native export does not yet support this source: {identity}")
         _require(index["sources"].get(identity) == source and
                  index["resources"][source["resource"]]["sha256"] == selected["resource_sha256"],
                  f"Selected source differs from the scan: {identity}")
-        owner = index["targets"][source["owner"]]
-        selector, record = owner["selector"], source["record"]
-        area, name = _area(source["resource"]), _name(selector["name"], identity)
-        _require(not selector["dynamic_item_table"] and
-                 container_names[source["resource"], name.lower()] == 1,
-                 f"Native source needs a unique static container name: {identity}")
-        _require(0 <= selector["x"] <= 32767 and 0 <= selector["y"] <= 32767,
-                 f"Native container coordinates are unsupported: {identity}")
-        # The current native confirmation counts this resref in its owner.
-        # An unselected duplicate must not prevent confirmation indefinitely.
-        _require(container_items[source["owner"], source["item"]] == 1,
-                 f"Native source container holds another copy of {source['item']}: {identity}")
+        record = source["record"]
         item = items[source["item"]]
         _require(re.fullmatch(r"[a-z0-9#_-]{1,8}", source["item"]) is not None and
                  record["expiration"] == 0 and record["flags"] in (0, 1) and
@@ -84,13 +77,55 @@ def _compile(manifest: dict, world: dict, index: dict, items: dict) -> tuple[dic
         _require(source["item"] not in selected_items,
                  f"Native export does not yet support selecting two copies of {source['item']}")
         selected_items.add(source["item"])
-        native["sources"][identity] = {
-            "kind": "guarded-container", "area": area, "script_name": name,
-            "x": selector["x"], "y": selector["y"], "container_type": selector["type"],
-            "payload": {key: record[key] for key in ("resref", "expiration", "charges", "flags")},
-            "identity": _digest({"source": selected, "owner": owner})}
+        if source["kind"] == "container":
+            owner = index["targets"][source["owner"]]
+            selector = owner["selector"]
+            area, name = _area(source["resource"]), _name(selector["name"], identity)
+            _require(not selector["dynamic_item_table"] and
+                     container_names[source["resource"], name.lower()] == 1,
+                     f"Native source needs a unique static container name: {identity}")
+            _require(0 <= selector["x"] <= 32767 and 0 <= selector["y"] <= 32767,
+                     f"Native container coordinates are unsupported: {identity}")
+            # The current native confirmation counts this resref in its owner.
+            # An unselected duplicate must not prevent confirmation indefinitely.
+            _require(container_items[source["owner"], source["item"]] == 1,
+                     f"Native source container holds another copy of {source['item']}: {identity}")
+            native["sources"][identity] = {
+                "kind": "guarded-container", "area": area, "script_name": name,
+                "x": selector["x"], "y": selector["y"], "container_type": selector["type"],
+                "payload": {key: record[key] for key in ("resref", "expiration", "charges", "flags")},
+                "identity": _digest({"source": selected, "owner": owner})}
+        else:
+            if source["kind"] == "cre-template":
+                actors = [target for target in index["targets"].values()
+                          if target["kind"] == "actor" and
+                          target["selector"].get("template_resource") == source["resource"]]
+                _require(len(actors) == 1,
+                         f"Native creature source needs exactly one static ARE actor for template "
+                         f"{source['resource']} (found {len(actors)}): {identity}")
+                owner = actors[0]
+            else:
+                owner = index["targets"][source["owner"]]
+            selector = owner["selector"]
+            area, name = _area(owner["resource"]), _name(actor_name(owner), identity)
+            _require(actor_names[owner["resource"], name.lower()] == 1,
+                     f"Native creature source needs a unique actor script name in its area: {identity}")
+            _require(owner["id"] not in selected_actors,
+                     f"Native export does not yet support two selected sources on one actor: {owner['id']}")
+            selected_actors.add(owner["id"])
+            _require(creature_items[source["owner"], source["item"]] == 1,
+                     f"Native source creature holds another copy of {source['item']}: {identity}")
+            _require(len(record["slots"]) == 1 and 21 <= record["slots"][0] <= 36,
+                     f"Native creature source currently supports only one backpack slot (21..36): {identity}")
+            native["sources"][identity] = {
+                "kind": "guarded-creature", "area": area, "script_name": name,
+                "actor_index": selector["record_index"],
+                "creature_resource": source["resource"], "actor_owner": owner["id"],
+                "payload": {key: record[key] for key in ("resref", "expiration", "charges", "flags")},
+                "identity": _digest({"source": selected, "owner": owner})}
+            use(owner["resource"])
         use(source["resource"]); use("itm:" + source["item"])
-        pristine.add(source["resource"])
+        pristine.add(owner["resource"])
 
     for selected in manifest["targets"]:
         target, identity = selected["record"], selected["id"]
@@ -124,9 +159,10 @@ def export_native(store: Path, catalog: dict, world: dict, output: Path,
     manifests = {p.stem: read_campaign(exported, p.stem)
                  for p in (exported / "revisions").glob("*.json") if HEX256.fullmatch(p.stem)}
     manifests[selected["revision"]] = selected
-    pending, required, pristine = {}, set(), set()
+    pending, required, pristine, compiled = {}, set(), set(), {}
     for key, manifest in sorted(manifests.items()):
         native, resources, areas = _compile(manifest, world, index, items)
+        compiled[key] = native
         required.update(resources); pristine.update(areas)
         base = "campaign-store/revisions/" + key
         pending[base + ".json"] = canonical_bytes(manifest)
@@ -134,14 +170,34 @@ def export_native(store: Path, catalog: dict, world: dict, output: Path,
         pending[base + ".native.json"] = canonical_bytes(native)
         pending[base + ".native.lua"] = _render_lua(native)
     # Reuse the scanner's resource reader; only selected resources are demanded.
+    resource_bytes = {}
     with GameResources(Path(catalog["game_root"]), {k: RESOURCE_TYPES[k] for k in ("itm", "are", "cre")}) as reader:
         for resource in sorted(required):
             kind, name = resource.split(":", 1)
             data = reader.read(kind, name)
             _require(hashlib.sha256(data).hexdigest() == index["resources"][resource]["sha256"],
                      f"Installed resource changed; rescan before export: {resource}")
+            if kind in ("are", "cre"):
+                resource_bytes[resource] = data
             if resource in pristine:
                 pending[name.upper() + ".pristine.are"] = data
+    for key, manifest in sorted(manifests.items()):
+        for source_index, selected_source in enumerate(manifest["sources"], 1):
+            source = selected_source["record"]
+            compiled_source = compiled[key]["sources"][selected_source["id"]]
+            if compiled_source["kind"] != "guarded-creature":
+                continue
+            resource = source["resource"]
+            if source["kind"] == "cre-template":
+                original = resource_bytes[resource]
+            else:
+                selector = index["targets"][compiled_source["actor_owner"]]["selector"]
+                offset, size = selector["embedded_cre_offset"], selector["embedded_cre_size"]
+                original = resource_bytes[resource][offset:offset + size]
+            base = f"campaign-store/revisions/{key}.source-{source_index}"
+            pending[base + ".original.cre"] = original
+            pending[base + ".removed.cre"] = rewrite_inventory(
+                original, {source["record"]["record_index"]: None})
     for relative, data in pending.items():
         _write_immutable(_store_path(output, Path(relative)), data)
     revisions = sorted(manifests)

@@ -444,6 +444,102 @@ return function(buffer, image_base, policy)
         end
         area_enter,area_exit,item=substitute(area_enter),substitute(area_exit),substitute(item)
     end
+    local actor
+    if policy and policy.creature then
+        local c=policy.creature
+        assert(policy.provenance and type(c.expected)=='number' and type(c.removed)=='number' and
+            type(c.length)=='number' and c.length>=0x2D4 and type(c.item_offset)=='number' and
+            c.item_offset>=0x2D4 and c.item_offset+20<=c.length,
+            'CAMPAIGN_GATE_CREATURE_INVALID')
+        -- At both ARE actor constructor calls: rbp is the ARE load frame,
+        -- r14 its CGameArea, r13 the authored actor, rdx/r8 the CRE bytes/size,
+        -- and rcx the allocated sprite. Supply private bytes before any item is
+        -- constructed; never write the engine's shared resource buffer.
+        local first=128+2049*128+32
+        actor=save..[[
+            cmp qword ptr [r10], 1
+            jne gate_actor_done
+            cmp qword ptr [r10+32], 1
+            jne gate_actor_done
+            lea r9, [r10+@FIRST@]
+            gate_actor_context:
+            cmp qword ptr [r9], rbp
+            je gate_actor_found
+            add r9, 64
+            lea rax, [r10+@LAST@]
+            cmp r9, rax
+            jb gate_actor_context
+            jmp gate_actor_done
+            gate_actor_found:
+            cmp qword ptr [r9+24], 1
+            jne gate_actor_done
+            cmp qword ptr [r9+8], r14
+            jne gate_actor_done
+            cmp qword ptr [r9+48], r13
+            jne gate_actor_done
+            mov rax, qword ptr [r10+40]
+            cmp qword ptr [r9+32], rax
+            jne gate_actor_done
+        ]]..allocate..[[
+            mov qword ptr [r11+32], r14
+            mov qword ptr [r11+40], rcx
+            mov qword ptr [r11+16], 1
+            mov qword ptr [r11+24], 2
+            cmp r8d, @LENGTH@
+            jne gate_actor_publish
+            test rdx, rdx
+            je gate_actor_publish
+            mov r8, @EXPECTED@
+            xor r9d, r9d
+            gate_actor_compare:
+            mov rax, qword ptr [rdx+r9]
+            cmp rax, qword ptr [r8+r9]
+            jne gate_actor_publish
+            add r9, 8
+            cmp r9, @QBYTES@
+            jb gate_actor_compare
+        ]]
+        for offset=math.floor(c.length/8)*8,c.length-1 do
+            actor=actor..'mov al, byte ptr [rdx+'..offset..']\ncmp al, byte ptr [r8+'..offset..
+                ']\njne gate_actor_publish\n'
+        end
+        actor=actor..'mov qword ptr [r11+48], '..c.index..'\n'
+        for offset=0,24,8 do
+            actor=actor..'mov rax, qword ptr [rdx+'..(0x280+offset)..']\n'..
+                'mov qword ptr [r11+'..(56+offset)..'], rax\n'
+        end
+        for offset=0,8,8 do
+            actor=actor..'mov rax, qword ptr [rdx+'..(c.item_offset+offset)..']\n'..
+                'mov qword ptr [r11+'..(88+offset)..'], rax\n'
+        end
+        actor=actor..'mov eax, dword ptr [rdx+'..(c.item_offset+16)..']\n'..
+            'mov dword ptr [r11+104], eax\n'..[[
+            mov qword ptr [r11+24], 3
+            cmp qword ptr [r10+120], 0
+            jne gate_actor_publish
+            inc qword ptr [r10+120]
+            inc qword ptr [r10+96]
+            mov qword ptr [r11+24], 1
+            mov qword ptr [r11], 3
+        ]]
+        for offset=0,120,8 do
+            actor=actor..'mov rax, qword ptr [r11+'..offset..']\n'..
+                'mov qword ptr [r10+'..(128+2048*128+offset)..'], rax\n'
+        end
+        actor=actor..[[
+            mov qword ptr [r10+112], 1
+            mov rax, @REMOVED@
+            mov qword ptr [rsp+32], rax
+            gate_actor_publish:
+            mov qword ptr [r11], 3
+            gate_actor_done:
+        ]]..restore
+        for key,value in pairs({FIRST=first,LAST=first+64*64,LENGTH=c.length,
+            EXPECTED=c.expected,REMOVED=c.removed,QBYTES=math.floor(c.length/8)*8}) do
+            actor=actor:gsub('@'..key..'@',string.format('%.0f',value))
+        end
+        item='' -- A creature member never intercepts container construction.
+    end
     local function expand(code, prefix)
         return (code:gsub('@BUFFER@', string.format('%.0f', buffer))
             :gsub('@SKIP@', string.format('%.0f', image_base+0x1906FC))
@@ -451,5 +547,6 @@ return function(buffer, image_base, policy)
     end
     return {enter=expand(enter,'gate_enter'), capture=expand(capture,'gate_capture'),
         item=expand(item,'gate_item'), area_enter=area_enter and expand(area_enter,'gate_area_enter'),
-        area_exit=area_exit and expand(area_exit,'gate_area_exit')}
+        area_exit=area_exit and expand(area_exit,'gate_area_exit'),
+        actor=actor and expand(actor,'gate_actor')}
 end

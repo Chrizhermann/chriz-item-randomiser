@@ -167,7 +167,12 @@ function cases.guard_receipt_requires_exact_positive_active_lease(Core)
     end
 end
 
-function cases.guard_is_only_for_single_container_and_quiet_journal(Core)
+function cases.guard_is_for_single_physical_container_or_creature_and_quiet_journal(Core)
+    for _,kind in ipairs({"container","cre-template","embedded-cre"}) do
+        local f=fixture(Core); f.manifest.sources[1].record.kind=kind; f:capture()
+        assert(f.controller:source_guard_request(1))
+        assert(f.values.flpr_s0001==1 and f.values.flpr_jkind==0)
+    end
     for _,change in ipairs({
         function(f) f.manifest.sources[1].quantity=2; f.manifest.targets[1].capacity=2 end,
         function(f) f.manifest.sources[1].record.kind="actor" end,

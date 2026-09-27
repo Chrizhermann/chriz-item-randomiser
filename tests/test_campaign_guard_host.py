@@ -36,7 +36,7 @@ local function setup(Core,Host,options)
         bound_revision=string.rep("b",64),world_fingerprint=string.rep("c",64),
         profile_id="guard-host-synthetic",sources={},targets={}}
     manifest.sources[1]={id=GUARDED,quantity=1,resource_sha256=string.rep("1",64),
-        record={id=GUARDED,kind="container",record=payload("flpri1")}}
+        record={id=GUARDED,kind=options.creature_kind or "container",record=payload("flpri1")}}
     manifest.sources[2]={id=PHYSICAL,quantity=1,resource_sha256=string.rep("2",64),
         record={id=PHYSICAL,kind="cre-template",record=payload("flpri2")}}
     if options.two_guarded then
@@ -50,7 +50,8 @@ local function setup(Core,Host,options)
     manifest.targets[1]={id="are:flpru1/container/1",capacity=2,
         resource_sha256=string.rep("3",64),record={id="are:flpru1/container/1",kind="container"}}
     local descriptor={schema="flpr-unvisited-fixture-gate-v1",source_id=GUARDED}
-    local fixture={revision=revision,sources={[GUARDED]={kind="guarded-container"}}}
+    local fixture={revision=revision,sources={[GUARDED]={
+        kind=options.creature_kind and "guarded-creature" or "guarded-container"}}}
     if options.two_guarded then
         descriptor.source_id=nil; descriptor.source_ids={GUARDED,SECOND_GUARDED}
         fixture.sources[SECOND_GUARDED]={kind="guarded-container"}
@@ -60,6 +61,7 @@ local function setup(Core,Host,options)
     if options.bad_schema then fixture.source_gate.schema="wrong" end
     if options.bad_id then fixture.source_gate.source_id="wrong" end
     if options.bad_endpoint then fixture.sources[GUARDED].kind="physical" end
+    if options.bad_creature_endpoint then fixture.sources[GUARDED].kind="guarded-creature" end
     f.manifest=manifest
     f.bundle={manifest=manifest,fixture=fixture}
     f.bundles={[revision]=f.bundle}
@@ -217,7 +219,8 @@ function cases.failed_prepare_commits_but_never_redraws(Core,Host)
 end
 
 function cases.malformed_descriptor_or_missing_adapter_fails_closed(Core,Host)
-    for _,option in ipairs({"bad_schema","bad_id","bad_endpoint","missing_source_guard"}) do
+    for _,option in ipairs({"bad_schema","bad_id","bad_endpoint",
+        "bad_creature_endpoint","missing_source_guard"}) do
         local f=setup(Core,Host,{[option]=true})
         local captured=f:capture()
         if captured then f:poll_until(function(x) return x.host.status=="disabled" end) end
@@ -244,6 +247,27 @@ function cases.guarded_source_is_protected_before_any_delivery_and_original_unlo
     for _=1,4 do f:poll() end
     assert(#f.events==3 and #f.reports==1 and f.values.flpr_s0001==6)
     assert(f.target_inspections==targets)
+end
+
+function cases.guarded_creature_delivers_before_visit_and_restores_without_reroll(Core,Host)
+    for _,kind in ipairs({"cre-template","embedded-cre"}) do
+        local f=setup(Core,Host,{creature_kind=kind}); assert(f:capture())
+        f:poll_until(function(x) return x.host.status=="complete" end)
+        assert(not f.loaded and f.values.flpr_s0001==6)
+        assert(f.values.flpr_d0001==3 and f.values.flpr_d0002==3)
+        assert(#f.events==3 and f.events[1].kind=="suppress")
+        assert(f.events[2].kind=="deliver" and f.events[3].kind=="deliver")
+        assert(f.events[2].tick < 30 and f.host.guard_monitor==true)
+
+        local old=f.guards[1]
+        f.host:destroy(); assert(old.destroyed)
+        f.host=Host.new(f.deps)
+        f:poll_until(function(x) return x.host.status=="complete" and #x.guards==2 end)
+        assert(not f.loaded and f.values.flpr_s0001==6)
+        assert(f.values.flpr_d0001==3 and f.values.flpr_d0002==3)
+        assert(f.seeds==1 and f.next_calls==1 and #f.events==3)
+        assert(f.host.guard_monitor==true)
+    end
 end
 
 function cases.complete_monitor_later_commits_only_exact_source_removal(Core,Host)

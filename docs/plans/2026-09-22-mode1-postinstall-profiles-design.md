@@ -140,6 +140,16 @@ boots, belts, rings, and amulets. Frequency, severity, and appearance variation 
 separate options. Variants stay fixed within a campaign; identification and removal
 behavior are explicit and tested. The owner approves the creative designs.
 
+Appearance randomization includes existing cursed items as well as new curses.
+Draw appearances each New Game and preserve the campaign mapping across reloads
+and switching saves; the original component 570's install-time changes are not
+sufficient. Preserve item identity, curse effects and gameplay stats. Define which
+visual surfaces change and what identification reveals during the design review.
+The separate generic-unidentified-appearance option belongs to chriz-bg-modpack.
+Expose stable component/marker identities so CEBG can make that option mutually
+exclusive with randomized cursed appearances, with standalone guards where
+practical; ordinary loot randomization remains compatible with generic appearances.
+
 Future EET crossovers separate origin campaign, allowed destination campaigns, and
 power/progression tier. Normal crossover configurations preserve meaningful tiers
 while allowing BG2 items in BG1/SoD and the reverse; discuss the concrete mapping

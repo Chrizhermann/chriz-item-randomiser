@@ -15,6 +15,7 @@ from flir_config.native_export import export_native
 from flir_config.profiles import ProfileError, edit_profile, new_profile
 from flir_config.resources import scan_game
 from flir_config.sources import new_binding_plan, scan_world
+from flir_config.world_formats import parse_cre
 from tests.test_postinstall_resources import make_game, make_itm, snapshot
 from tests.test_postinstall_world_formats import item_record, make_are, make_cre
 
@@ -60,6 +61,21 @@ class NativeExportTests(unittest.TestCase):
 
     def export(self, revision=None):
         return export_native(self.store, self.catalog, self.world, self.output, revision)
+
+    def write_creature_source(self, kind, target):
+        profile = edit_profile(new_profile(self.catalog, "native-creature", "Creature test"),
+                               self.catalog, include=["synth001"])
+        plan = new_binding_plan(profile, self.catalog, self.world)
+        source = next(row for row in self.world["sources"]
+                      if row["kind"] == kind and row["item"] == "synth001")
+        plan["sources"] = [{"item": "synth001", "policy": "relocate",
+                            "source_ids": [source["id"]], "registration_ids": []}]
+        plan["targets"] = [{"id": target, "capacity": 1, "optional": False}]
+        return write_campaign(profile, self.catalog, self.world, plan, self.store)["revision"], source
+
+    def creature_artifacts(self, revision):
+        base = self.output / "campaign-store" / "revisions" / f"{revision}.source-1"
+        return Path(str(base) + ".original.cre"), Path(str(base) + ".removed.cre")
 
     def test_new_profile_preserves_old_native_revision_and_pristine_area(self):
         game_before = snapshot(self.game)
@@ -129,6 +145,102 @@ class NativeExportTests(unittest.TestCase):
         (self.override / "area.are").write_bytes(area)
         self.refresh()
         self.write()
+        with self.assertRaisesRegex(ProfileError, "another copy"):
+            self.export()
+        self.assertFalse((self.output / "next.lua").exists())
+
+    def test_external_creature_source_exports_original_and_backpack_removal(self):
+        original = bytes(make_cre([
+            item_record("SYNTH001", expiration=0, charges=(0, 0, 0), flags=1),
+            item_record("SYNTH002", expiration=0, charges=(2, 3, 4), flags=1)]))
+        (self.override / "actor.cre").write_bytes(original)
+        self.refresh()
+        revision, source = self.write_creature_source("cre-template", "are:area/actor/1")
+        game_before = snapshot(self.game)
+        self.export(revision)
+
+        native = json.loads((self.output / "campaign-store" / "revisions" /
+                             f"{revision}.native.json").read_bytes())
+        self.assertEqual(native["source_gate"]["source_ids"], [source["id"]])
+        compiled_source = native["sources"][source["id"]]
+        self.assertRegex(compiled_source["identity"], r"^[0-9a-f]{64}$")
+        self.assertEqual({key: value for key, value in compiled_source.items()
+                          if key != "identity"}, {
+            "kind": "guarded-creature", "area": "AREA", "script_name": "TestDV",
+            "actor_index": 0, "creature_resource": "cre:actor",
+            "actor_owner": "are:area/actor/0",
+            "payload": {"resref": "synth001", "expiration": 0,
+                        "charges": [0, 0, 0], "flags": 1}})
+        self.assertEqual(set(native["resource_hashes"]), {"AREA.ARE", "ACTOR.CRE",
+                                                         "SYNTH001.ITM"})
+        original_path, removed_path = self.creature_artifacts(revision)
+        self.assertEqual(original_path.read_bytes(), original)
+        removed = removed_path.read_bytes()
+        self.assertEqual(len(removed), len(original))
+        self.assertEqual([row["resref"] for row in parse_cre(removed)["items"]], ["synth002"])
+        self.assertEqual(parse_cre(removed)["items"][0]["charges"], [2, 3, 4])
+        self.assertEqual(parse_cre(removed)["items"][0]["slots"], [22])
+        self.assertEqual((self.output / "AREA.pristine.are").read_bytes(), self.area)
+        self.assertEqual(snapshot(self.game), game_before)
+
+        later = self.write()
+        self.export(later)
+        self.assertNotEqual(later, revision)
+        self.assertEqual(original_path.read_bytes(), original)
+        self.assertEqual(removed_path.read_bytes(), removed)
+
+    def test_embedded_creature_source_exports_exact_embedded_bytes(self):
+        embedded = bytes(make_cre([
+            item_record("SYNTH001", expiration=0, charges=(0, 0, 0), flags=1),
+            item_record("SYNTH002", expiration=0, charges=(5, 6, 7), flags=1)]))
+        embedded = bytearray(embedded)
+        embedded[0x280:0x288] = b"EmbedDV\0"
+        area = bytes(make_are([], [], [("External", "ACTOR"), ("Embedded", bytes(embedded))]))
+        (self.override / "area.are").write_bytes(area)
+        self.refresh()
+        revision, source = self.write_creature_source("embedded-cre", "are:area/actor/0")
+        game_before = snapshot(self.game)
+        self.export(revision)
+
+        native = json.loads((self.output / "campaign-store" / "revisions" /
+                             f"{revision}.native.json").read_bytes())
+        self.assertEqual(native["sources"][source["id"]]["actor_owner"], "are:area/actor/1")
+        self.assertEqual(native["sources"][source["id"]]["actor_index"], 1)
+        self.assertEqual(native["sources"][source["id"]]["creature_resource"], "are:area")
+        original_path, removed_path = self.creature_artifacts(revision)
+        self.assertEqual(original_path.read_bytes(), bytes(embedded))
+        removed = removed_path.read_bytes()
+        self.assertEqual(len(removed), len(embedded))
+        self.assertEqual([row["resref"] for row in parse_cre(removed)["items"]], ["synth002"])
+        self.assertEqual((self.output / "AREA.pristine.are").read_bytes(), area)
+        self.assertEqual(snapshot(self.game), game_before)
+
+    def test_external_template_with_two_area_actors_is_unsupported(self):
+        (self.override / "actor.cre").write_bytes(make_cre([
+            item_record("SYNTH001", expiration=0, charges=(0, 0, 0), flags=1)]))
+        (self.override / "area.are").write_bytes(make_are([], [], [
+            ("First", "ACTOR"), ("Second", "ACTOR"), ("Recipient", make_cre([]))]))
+        self.refresh()
+        self.write_creature_source("cre-template", "are:area/actor/2")
+        with self.assertRaisesRegex(ProfileError, "exactly one static ARE actor.*found 2"):
+            self.export()
+        self.assertFalse((self.output / "next.lua").exists())
+
+    def test_equipped_creature_source_is_explicitly_unsupported(self):
+        (self.override / "actor.cre").write_bytes(make_cre([
+            item_record("SYNTH001", expiration=0, charges=(0, 0, 0), flags=1)],
+            slots={9: 0}))
+        self.refresh()
+        self.write_creature_source("cre-template", "are:area/actor/1")
+        with self.assertRaisesRegex(ProfileError, "backpack slot \\(21\\.\\.36\\)"):
+            self.export()
+        self.assertFalse((self.output / "next.lua").exists())
+
+    def test_duplicate_creature_resref_cannot_export_one_original(self):
+        record = item_record("SYNTH001", expiration=0, charges=(0, 0, 0), flags=1)
+        (self.override / "actor.cre").write_bytes(make_cre([record, record]))
+        self.refresh()
+        self.write_creature_source("cre-template", "are:area/actor/1")
         with self.assertRaisesRegex(ProfileError, "another copy"):
             self.export()
         self.assertFalse((self.output / "next.lua").exists())

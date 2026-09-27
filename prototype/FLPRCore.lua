@@ -122,7 +122,9 @@ local function creature_target(manifest, shape, slot_index)
 end
 
 local function guard_source(source)
-    return source ~= nil and source.quantity == 1 and source.record.kind == "container"
+    return source ~= nil and source.quantity == 1 and type(source.record) == "table" and
+        (source.record.kind == "container" or source.record.kind == "cre-template" or
+         source.record.kind == "embedded-cre")
 end
 
 local function lease_active(lease)

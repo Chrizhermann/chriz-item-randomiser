@@ -61,7 +61,7 @@ local ok, failure = pcall(function()
         end
         assert(count==#revisions,"SOURCE_GATE_REVISIONS_INVALID")
         local Gate = module("override/FLPRGat.lua")
-        local bundles,seen,pristine={},{},{}
+        local bundles,seen,pristine={},{},{creatures={}}
         for _,revision in ipairs(revisions) do
             assert(not seen[revision],"SOURCE_GATE_REVISION_DUPLICATED");seen[revision]=true
             local guarded = assert(resolve(revision), "SOURCE_GATE_REVISION_UNAVAILABLE")
@@ -79,6 +79,21 @@ local ok, failure = pcall(function()
                     assert(file:close())
                 end
                 assert(pristine[area].resource_sha256==resource_hash,"SOURCE_GATE_RESOURCE_CHANGED")
+                if endpoint.kind=='guarded-creature' then
+                    local source_index
+                    for index,source in ipairs(guarded.manifest.sources) do
+                        if source.id==id then source_index=index end
+                    end
+                    assert(source_index,"SOURCE_GATE_SOURCE_MISSING")
+                    local prefix="flpr-fixture/campaign-store/revisions/"..revision..".source-"..source_index
+                    local creature={}
+                    for _,kind in ipairs({'original','removed'}) do
+                        local file=assert(io.open(prefix..'.'..kind..'.cre','rb'),"SOURCE_GATE_CREATURE_MISSING")
+                        creature[kind]=file:read('*a'); assert(file:close())
+                    end
+                    pristine.creatures[revision]=pristine.creatures[revision] or {}
+                    pristine.creatures[revision][id]=creature
+                end
                 -- Check every profile's item before any suppression can run.
                 local supported,reason=Native.supported(_G,endpoint.payload)
                 assert(supported,reason)

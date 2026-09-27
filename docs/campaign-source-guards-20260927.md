@@ -5,7 +5,7 @@ suppression, selected/excluded campaign reload, returned-item and interrupted
 confirmation checks on 27 September. Several configured sources across two areas
 also passed, followed by three existing BG1 rewards across three real source areas.
 This is a working prototype for container sources on the pinned Windows build;
-general source support and the player-facing configuration UI remain unfinished.
+general source support and normal installer integration remain unfinished.
 
 ## Implementation
 
@@ -192,18 +192,50 @@ restart. Hidden desktops still play audio: when rebuilding this profile, mute
 ambient, SFX, voices, music and movies with `Infinity_ChangeOption(id, 0, 7)` for
 IDs 1, 2, 3, 4 and 22; verify with `Infinity_GetOption(id, 7)` before world testing.
 
+### Creature originals: implemented offline, native check pending
+
+The exporter and campaign guard now support a selected backpack item on a named
+static ARE actor, using either an external CRE or an embedded CRE. An external
+template must map to exactly one scanned static actor. This does not establish
+scripted-spawn coverage or a general occurrence policy. Current limits are one
+selected original per actor, one copy of its resref, and the existing nonstackable,
+unexpired, droppable-item restrictions. Equipped originals are rejected until
+replacement-equipment handling is connected; they are not silently stripped.
+
+The existing ARE load binding is reused. On the pinned executable, constructor
+calls at RVAs `18C448` and `18C591` receive raw CRE bytes in `rdx`, their size in
+`r8d`, actor record in `r13`, and area in `r14`. The hook substitutes an owned copy
+with the selected record removed. It never edits shared demanded CRE bytes.
+Inventory compaction follows the original mod's slot-remapping behavior; the
+private edit helper also supports replacements while preserving charges/flags.
+Weapon selection is a separate slot selector, with engine value 1000 for fists.
+
+Focused export, inventory, Core/Host, native adapter, and instruction-emulation
+checks pass. The complete synthetic path produces a removal witness accepted by
+the campaign controller, preserves the input CRE, and leaves other actors and
+saved AREs alone. Existing container checks still pass. These are offline results;
+the EEex call wrapper and actual creature load remain unverified in game.
+
+The next real-content sample is prepared under
+`work/creature-sources-20260927/sample/`: Leather Armor +1 (`leat02`) from
+`cre:delsvir/item/6` to Zargal (`are:bg3700/actor/39`), revision `dd7c0d54...`.
+Only saved scan data was used; it is not exported to or installed in the game.
+The installer chat was active, so no game installation or save was accessed.
+
 ## Continue
 
-Build the authored `unvisited-creatures` fixture with `build_mode1_fixture.py`
-using the existing copied inputs in `work/mode1-native-slice/fixture-input-v2`.
-The prepared selected/excluded profiles are in
-`work/campaign-source-guard-20260927/`. The existing test installation, private
-profile, remote console and character helper are sufficient; rebuild the test
-copy if necessary. No installer or game may overlap another BG task.
+After the other BG task is idle, export that prepared sample with the existing
+`export-native` command, then reuse the existing staging and private-game helpers.
+Check early delivery, first source visit, and save/reload before extending to
+equipped sources. Keep the current container acceptance evidence intact.
+
+The existing test installation, private profile, remote console and character
+helper are sufficient; rebuild the test copy if necessary. No installer or game
+may overlap another BG task.
 
 The completed one-shot staging helpers under `work/` show the setup used; do not
 rerun consumed requests. The existing lab and helpers are sufficient.
-Creature/store/script interception remains separate.
+Creature interception still needs its native check; store/script interception is unfinished.
 The fixture observes physical pickup but keeps delivery phase 4 (held); the
 general lifetime observer is not integrated. Choose representative existing
 content autonomously for technical tests. New gameplay selections, capacities

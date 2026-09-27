@@ -599,6 +599,22 @@ function cases.verify_held_drop_rejects_container_or_fixture_queue_conflicts(N)
         fail(x, e, "DROP_QUEUE_CONFLICT")
     end
 end
+function cases.guarded_creature_observation_uses_inventory_without_destroying_items(N)
+    local f=setup(N)
+    local id=f.source_ids[1]
+    f.fixture.sources[id].kind='guarded-creature'
+    f.fixture.source_gate={schema='flpr-unvisited-fixture-gate-v1',source_id=id}
+    f.area.address=99
+    f.adapter=N.new(f.api,f.fixture)
+    local result,reason=f.adapter:inspect_source(id)
+    fail(result,reason,'SOURCE_GUARD_REQUIRED')
+    assert(f.adapter:guarded_source_remaining(id,'99','101').remaining==1)
+    f.source1.slots[21]=nil
+    -- The read-only guard observer also works after this original owner died.
+    f.source1.alive=false
+    assert(f.adapter:guarded_source_remaining(id,'99','101').remaining==0)
+    assert(#f.calls==0 and f.source2.slots[21].cResRef:get()=='FLPRI2')
+end
 return cases
 '''
 

@@ -1,4 +1,4 @@
--- Opt-in campaign bridge for configured ARE container sources. Never installed
+-- Opt-in campaign bridge for configured ARE container and creature sources. Never installed
 -- by the normal TP2. Caller pins executable/helper/resource hashes before use.
 -- build = tools/probes/FLPRGateAsm.lua; compile = FLPRCampaignPolicy.lua.
 local Gate = {}
@@ -17,6 +17,10 @@ local sites = {
     {rva=0x18D9C9,bytes='e8322400004885c00f84e90000004c8b00418bd4488bc8'},
     {rva=0x18FE05,bytes='5556574154415541564157488d6c24804881ec80010000'},
     {rva=0x1906FC,bytes='418b464441ffc74103464041bc0000000044897c2450443bf80f8255fbffff4c8b6d98410f'},
+}
+local actor_sites = {
+    {rva=0x18C448,code='actor',call=true,bytes='e8d34d1b00498db580000000e93d010000'},
+    {rva=0x18C591,code='actor',call=true,bytes='e88a4c1b00488bf84885c00f8444010000'},
 }
 local function hash(value)
     return type(value)=='string' and #value==64 and not value:find('[^0-9a-f]')
@@ -58,6 +62,34 @@ local function validate(bundle,id)
     local found=false
     for _,selected_id in ipairs(Gate.source_ids(f)) do if selected_id==id then found=true end end
     assert(found, 'CAMPAIGN_GATE_SOURCE_INVALID')
+    local endpoint=f.sources and f.sources[id]
+    if endpoint and endpoint.kind=='guarded-creature' then
+        local index,selected
+        for i,source in ipairs(m.sources) do if source.id==id then index,selected=i,source end end
+        local area,actor=endpoint.actor_owner:match('^are:([a-z0-9#_%-]+)/actor/(%d+)$')
+        actor=tonumber(actor)
+        assert(index and selected.quantity==1 and hash(selected.resource_sha256) and area and
+            #area<=8 and integer(actor,0,65534) and endpoint.actor_index==actor and
+            endpoint.area:lower()==area and type(endpoint.script_name)=='string' and
+            #endpoint.script_name>0 and #endpoint.script_name<=32 and not endpoint.script_name:find('%z'),
+            'CAMPAIGN_GATE_SOURCE_INVALID')
+        local source=selected.record
+        assert((source.kind=='cre-template' or source.kind=='embedded-cre') and source.id==id and
+            source.resource==endpoint.creature_resource and
+            id==source.owner..'/item/'..source.record.record_index and
+            ((source.kind=='cre-template' and source.owner==source.resource) or
+             (source.kind=='embedded-cre' and source.owner==endpoint.actor_owner and source.resource=='are:'..area)) and
+            same_payload(endpoint.payload,source.record) and source.record.slots and
+            #source.record.slots==1 and integer(source.record.slots[1],21,36),
+            'CAMPAIGN_GATE_BINDING_INVALID')
+        local kind,name=source.resource:match('^(%a+):([a-z0-9#_%-]+)$')
+        assert(kind and f.resource_hashes[name:upper()..'.'..kind:upper()]==selected.resource_sha256 and
+            hash(f.resource_hashes[area:upper()..'.ARE']), 'CAMPAIGN_GATE_BINDING_INVALID')
+        return m.revision,index,selected.resource_sha256,{id=id,kind='creature',area=area,actor=actor,
+            record=source.record.record_index,slot=source.record.slots[1],name=endpoint.script_name,
+            creature_resource=source.resource,payload=endpoint.payload,
+            area_hash=f.resource_hashes[area:upper()..'.ARE']}
+    end
     local area,container,record=id:match('^are:([a-z0-9#_%-]+)/container/(%d+)/item/(%d+)$')
     container,record=tonumber(container),tonumber(record)
     assert(area and #area<=8 and integer(container,0,65534) and integer(record,0,2147483646),
@@ -71,7 +103,6 @@ local function validate(bundle,id)
         selected.record.resource=='are:'..area and selected.record.owner=='are:'..area..'/container/'..container and
         selected.record.record.record_index==record and payload(selected.record.record),
         'CAMPAIGN_GATE_SOURCE_INVALID')
-    local endpoint=f.sources and f.sources[id]
     assert(endpoint and endpoint.kind=='guarded-container' and type(endpoint.area)=='string' and
         endpoint.area:lower()==area and type(endpoint.script_name)=='string' and
         #endpoint.script_name>0 and #endpoint.script_name<=32 and not endpoint.script_name:find('%z') and
@@ -87,7 +118,71 @@ end
 local function hex(value)
     return (value:gsub('.',function(c) return string.format('%02x',c:byte()) end))
 end
+local function prepare_creature(api,bundle,build,compile,pristine,id,base,cache)
+    local revision,index,resource_hash,binding=validate(bundle,id)
+    local area=assert(pristine[binding.area:upper()], 'CAMPAIGN_GATE_PRISTINE_MISSING')
+    local cre=assert(pristine.creatures and pristine.creatures[revision] and pristine.creatures[revision][id],
+        'CAMPAIGN_GATE_CREATURE_MISSING')
+    local bytes,original,removed=area.bytes,cre.original,cre.removed
+    assert(area.resource_sha256==binding.area_hash and bytes:sub(1,8)=='AREAV1.0' and
+        original:sub(1,8)=='CRE V1.0' and #original>=0x2D4 and #original==#removed and
+        removed:sub(1,8)=='CRE V1.0', 'CAMPAIGN_GATE_PRISTINE_INVALID')
+    local function u16(data,offset) local a,b=data:byte(offset+1,offset+2); return a+b*256 end
+    local function u32(data,offset) return u16(data,offset)+u16(data,offset+2)*65536 end
+    local owner=u32(bytes,0x54)+binding.actor*272
+    assert(binding.actor<u16(bytes,0x58) and owner>=0x11C and owner+272<=#bytes,
+        'CAMPAIGN_GATE_PRISTINE_LAYOUT_INVALID')
+    local ref=bytes:sub(owner+0x81,owner+0x88):match('^[^%z]*'):lower()
+    if binding.creature_resource:sub(1,4)=='cre:' then
+        assert(ref==binding.creature_resource:sub(5),'CAMPAIGN_GATE_CREATURE_BINDING_MISMATCH')
+    else
+        local start,length=u32(bytes,owner+0x88),u32(bytes,owner+0x8C)
+        -- The engine tests only the first marker byte (e.g. "*EMBED").
+        assert((ref=='' or ref:sub(1,1)=='*') and length==#original and bytes:sub(start+1,start+length)==original,
+            'CAMPAIGN_GATE_CREATURE_BINDING_MISMATCH')
+    end
+    local items,slots,count=u32(original,0x2BC),u32(original,0x2B8),u32(original,0x2C0)
+    assert(items>=0x2D4 and items+count*20<=#original and binding.record<count and
+        slots>=0x2D4 and slots+80<=#original and u16(original,slots+2*binding.slot)==binding.record and
+        u32(removed,0x2BC)==items and u32(removed,0x2B8)==slots and u32(removed,0x2C0)==count-1 and
+        u16(removed,slots+2*binding.slot)==65535, 'CAMPAIGN_GATE_CREATURE_LAYOUT_INVALID')
+    local item=items+binding.record*20
+    local raw,name=original:sub(item+1,item+20),original:sub(0x281,0x2A0)
+    assert(name:match('^[^%z]*'):lower()==binding.name:lower() and
+        raw:sub(1,8):match('^[^%z]*'):lower()==binding.payload.resref and u16(original,item+8)==0 and
+        u16(original,item+10)==binding.payload.charges[1] and u16(original,item+12)==binding.payload.charges[2] and
+        u16(original,item+14)==binding.payload.charges[3] and u32(original,item+16)==binding.payload.flags,
+        'CAMPAIGN_GATE_PRISTINE_BINDING_MISMATCH')
+    local cached=cache[binding.area_hash]
+    local buffer=api.EEex_Malloc(MEMORY_SIZE+(cached and 0 or #bytes)+2*#original)
+    assert(buffer and buffer~=0,'CAMPAIGN_GATE_ALLOC_FAILED')
+    for offset=0,MEMORY_SIZE-1,8 do api.EEex_Write64(buffer+offset,0) end
+    local cursor=buffer+MEMORY_SIZE
+    local function copy(value)
+        local address=cursor
+        for offset=1,#value do
+            local byte=value:byte(offset)
+            api.EEex_Write8(address+offset-1,byte>=128 and byte-256 or byte)
+        end
+        cursor=cursor+#value
+        return address
+    end
+    local expected=cached or copy(bytes); cache[binding.area_hash]=expected
+    local policy=compile(revision,index)
+    -- Reuse the ARE invocation binding. Its owner pointer is this actor record.
+    policy.provenance={expected=expected,length=#bytes,container_offset=owner,item_offset=owner}
+    policy.creature={expected=copy(original),removed=copy(removed),length=#original,
+        item_offset=item,index=binding.record}
+    local self=setmetatable({api=api,base=base,buffer=buffer,revision=revision,index=index,
+        resource_hash=resource_hash,binding=binding,policy=policy,detours={},installed=false,
+        expected={name_raw=hex(name),payload_raw=hex(raw),index=binding.record,
+            detail1_raw=string.rep('0',16),detail2_raw=string.rep('0',16)}},Runtime)
+    return self,build(buffer,base,policy)
+end
 local function prepare(api,bundle,build,compile,pristine,id,base,cache)
+    if bundle.fixture.sources[id].kind=='guarded-creature' then
+        return prepare_creature(api,bundle,build,compile,pristine,id,base,cache)
+    end
     local revision,index,resource_hash,binding=validate(bundle,id)
     pristine=pristine.bytes and pristine or pristine[binding.area:upper()]
     -- The isolated harness hashes this immutable copy, the ARE and both frozen
@@ -170,7 +265,19 @@ function Gate.install(api,bundle,build,compile,pristine)
         type(api.EEex_GameState_GetGlobalInt)=='function' and type(api.EEex_Write8)=='function',
         'CAMPAIGN_GATE_LIFECYCLE_MISSING')
     local base=api.EEex_GetImageBase()
-    for _,site in ipairs(sites) do
+    local selected_sites={}
+    for _,site in ipairs(sites) do selected_sites[#selected_sites+1]=site end
+    local creatures=false
+    for _,selected in ipairs(bundles) do
+        for _,endpoint in pairs(selected.fixture.sources) do
+            if endpoint.kind=='guarded-creature' then creatures=true end
+        end
+    end
+    if creatures then
+        assert(type(api.EEex_HookBeforeCall)=='function','CAMPAIGN_GATE_CREATURE_HOOK_MISSING')
+        for _,site in ipairs(actor_sites) do selected_sites[#selected_sites+1]=site end
+    end
+    for _,site in ipairs(selected_sites) do
         local offset=0
         for byte in site.bytes:gmatch('%x%x') do
             assert(api.EEex_ReadU8(base+site.rva+offset)==tonumber(byte,16),'CAMPAIGN_GATE_CODE_MISMATCH')
@@ -198,10 +305,18 @@ function Gate.install(api,bundle,build,compile,pristine)
     api.FLPR_CAMPAIGN_GATE=self -- partial installation is never retried in-process
     api.EEex_DisableCodeProtection()
     local ok,failure=pcall(function()
-        for _,site in ipairs(sites) do
-            if site.code then
+        for _,site in ipairs(selected_sites) do
+            if site.code and assembly[site.code] and assembly[site.code]~='' then
                 local address=base+site.rva
-                api.EEex_HookBeforeRestore(address,0,site.size,site.size,{assembly[site.code]})
+                if site.call then
+                    api.EEex_HookBeforeCall(address,{assembly[site.code]})
+                    if api.EEex_HookIntegrityWatchdog_Load then
+                        api.EEex_HookIntegrityWatchdog_IgnoreRegisters(address,{
+                            api.EEex_HookIntegrityWatchdogRegister.RAX,api.EEex_HookIntegrityWatchdogRegister.RDX})
+                    end
+                else
+                    api.EEex_HookBeforeRestore(address,0,site.size,site.size,{assembly[site.code]})
+                end
                 assert(api.EEex_ReadU8(address)==0xE9,'CAMPAIGN_GATE_DETOUR_NOT_WRITTEN')
                 local target=address+5+api.EEex_Read32(address+1)
                 assert(target>0 and (target<address or target>=address+#site.bytes/2),
@@ -280,6 +395,9 @@ function Runtime:_bundle(bundle)
     local b=self.binding
     assert(revision==self.revision and index==self.index and resource_hash==self.resource_hash and
         binding.id==b.id and binding.name==b.name and binding.x==b.x and binding.y==b.y and
+        binding.kind==b.kind and binding.actor==b.actor and binding.area==b.area and
+        binding.record==b.record and binding.slot==b.slot and
+        binding.creature_resource==b.creature_resource and binding.area_hash==b.area_hash and
         binding.container_type==b.container_type and same_payload(binding.payload,b.payload),
         'CAMPAIGN_GATE_REVISION_MISMATCH')
 end

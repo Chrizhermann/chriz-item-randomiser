@@ -42,7 +42,9 @@ end
 local function guarded_indices(bundle)
     local config, endpoints = bundle.fixture.source_gate, {}
     for id, endpoint in pairs(bundle.fixture.sources or {}) do
-        if endpoint.kind == "guarded-container" then endpoints[id] = true end
+        if endpoint.kind == "guarded-container" or endpoint.kind == "guarded-creature" then
+            endpoints[id] = endpoint.kind
+        end
     end
     if config == nil then
         assert(next(endpoints) == nil, "SOURCE_GUARD_CONFIG_INVALID")
@@ -56,13 +58,18 @@ local function guarded_indices(bundle)
     for key, id in pairs(ids) do
         assert(type(key) == "number" and key == math.floor(key) and key >= 1 and key <= #ids and
             type(id) == "string" and endpoints[id] and not selected[id], "SOURCE_GUARD_CONFIG_INVALID")
-        selected[id], endpoints[id] = true, nil
+        selected[id], endpoints[id] = endpoints[id], nil
         count = count + 1
     end
     assert(count == #ids and next(endpoints) == nil, "SOURCE_GUARD_CONFIG_INVALID")
     for index, source in ipairs(bundle.manifest.sources) do
         if selected[source.id] then
-            assert(source.quantity == 1 and source.record.kind == "container", "SOURCE_GUARD_CONFIG_INVALID")
+            local endpoint_kind, source_kind = selected[source.id], source.record.kind
+            assert(source.quantity == 1 and
+                ((endpoint_kind == "guarded-container" and source_kind == "container") or
+                 (endpoint_kind == "guarded-creature" and
+                  (source_kind == "cre-template" or source_kind == "embedded-cre"))),
+                "SOURCE_GUARD_CONFIG_INVALID")
             result[index], selected[source.id] = {}, nil
         end
     end

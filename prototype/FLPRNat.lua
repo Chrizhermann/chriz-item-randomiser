@@ -23,6 +23,9 @@ local creature_required = { "EEex_Sprite_GetPortraitIndex" }
 local function integer(value, lo, hi)
     return type(value) == "number" and value == math.floor(value) and value >= lo and value <= hi
 end
+local function guarded(endpoint)
+    return endpoint.kind=='guarded-container' or endpoint.kind=='guarded-creature'
+end
 local function resref(value)
     return type(value) == "string" and #value >= 1 and #value <= 8 and
         not value:find("[^A-Za-z0-9#_-]") and value:lower() or nil
@@ -76,7 +79,7 @@ function Native.new(api, fixture)
                 identity = endpoint.identity }
             if kind == "sources" then
                 copy.kind = endpoint.kind == nil and "creature" or endpoint.kind
-                assert(copy.kind == "creature" or copy.kind == "guarded-container", "NATIVE_SOURCE_KIND_UNSUPPORTED")
+                assert(copy.kind == "creature" or guarded(copy), "NATIVE_SOURCE_KIND_UNSUPPORTED")
                 copy.sprite = true
                 copy.payload = assert(payload(endpoint.payload), "NATIVE_PAYLOAD_UNSUPPORTED")
                 assert(not source_resrefs[copy.payload.resref],
@@ -84,10 +87,12 @@ function Native.new(api, fixture)
                 if copy.kind == "guarded-container" then
                     assert(integer(endpoint.x,0,32767) and integer(endpoint.y,0,32767) and
                         integer(endpoint.container_type or 4,0,65535), "NATIVE_GUARDED_SOURCE_INVALID")
-                    guarded_ids[id] = true
-                    guarded_count = guarded_count + 1
                     copy.sprite, copy.x, copy.y = false, endpoint.x, endpoint.y
                     copy.container_type = endpoint.container_type or 4
+                end
+                if guarded(copy) then
+                    guarded_ids[id] = true
+                    guarded_count = guarded_count + 1
                 end
                 source_resrefs[copy.payload.resref] = true
             else
@@ -182,8 +187,8 @@ function Adapter:_resolve(endpoint, kind, visible_area)
         local reason = self:_creature_state(found.object)
         -- The unusable owner is returned only for read-only diagnostics.
         if reason then return nil, reason, found end
-    elseif found.object.m_containerType ~= (endpoint.container_type or 4) or not found.object.m_pos or
-        found.object.m_pos.x ~= endpoint.x or found.object.m_pos.y ~= endpoint.y then
+    elseif not endpoint.sprite and (found.object.m_containerType ~= (endpoint.container_type or 4) or not found.object.m_pos or
+        found.object.m_pos.x ~= endpoint.x or found.object.m_pos.y ~= endpoint.y) then
         return nil, "TARGET_NOT_FIXTURE_GROUND_PILE"
     end
     return found
@@ -340,7 +345,7 @@ end
 function Adapter:inspect_source(id)
     local endpoint = self.sources[id]
     if not endpoint then return nil, "SOURCE_UNKNOWN" end
-    if endpoint.kind == "guarded-container" then return nil, "SOURCE_GUARD_REQUIRED" end
+    if guarded(endpoint) then return nil, "SOURCE_GUARD_REQUIRED" end
     self.reservations[endpoint.identity] = nil
     local supported, reason = self:_supported(endpoint.payload)
     if not supported then return nil, reason end
@@ -357,12 +362,12 @@ function Adapter:inspect_source(id)
         quantity = 1, payload = payload(endpoint.payload) }
 end
 
--- Corroborates a guard event against the exact visible area and container.
+-- Corroborates a guard event against the exact visible area and owner.
 -- A missing area or owner is never evidence that the guarded item was removed.
 function Adapter:guarded_source_remaining(id, area_pointer, owner_pointer)
     local endpoint = self.sources[id]
     if not endpoint then return nil, "SOURCE_UNKNOWN" end
-    if endpoint.kind ~= "guarded-container" then return nil, "SOURCE_NOT_GUARDED" end
+    if not guarded(endpoint) then return nil, "SOURCE_NOT_GUARDED" end
     if type(area_pointer) ~= "string" or area_pointer == "" or area_pointer == "0" or
         type(owner_pointer) ~= "string" or owner_pointer == "" or owner_pointer == "0" then
         return nil, "SOURCE_POINTER_INVALID"
@@ -374,7 +379,7 @@ function Adapter:guarded_source_remaining(id, area_pointer, owner_pointer)
     if not owner then return nil, reason end
     if owner.pointer ~= owner_pointer then return nil, "OWNER_CHANGED" end
     local remaining = 0
-    for _, item in ipairs(self:_items(owner, false)) do
+    for _, item in ipairs(self:_items(owner, endpoint.sprite)) do
         if item.payload.resref == endpoint.payload.resref then remaining = remaining + 1 end
     end
     return { remaining = remaining, area_pointer = area_pointer, owner_pointer = owner_pointer }
@@ -423,7 +428,7 @@ function Adapter:execute(command)
         not integer(command.nonce, 1, 2147483647) or not integer(command.index, 1, 4096) or
         command.quantity ~= 1 or not hash(command.revision) then return nil, "COMMAND_INVALID" end
     local source = self.sources[command.source_id]
-    if command.kind == "suppress" and source and source.kind == "guarded-container" then
+    if command.kind == "suppress" and source and guarded(source) then
         return nil, "SOURCE_GUARD_REQUIRED"
     end
     if self.tick == nil then return nil, "OBSERVATION_CLOCK_MISSING" end
