@@ -4,8 +4,8 @@ The integrated fixture passed native New Game, early reward pickup, source
 suppression, selected/excluded campaign reload, returned-item and interrupted
 confirmation checks on 27 September. Several configured sources across two areas
 also passed, followed by three existing BG1 rewards across three real source areas.
-This is a working prototype for container sources on the pinned Windows build;
-general source support and normal installer integration remain unfinished.
+Container sources and one static creature backpack source now pass on the pinned
+Windows build; general source support and normal installer integration remain unfinished.
 
 ## Implementation
 
@@ -192,7 +192,7 @@ restart. Hidden desktops still play audio: when rebuilding this profile, mute
 ambient, SFX, voices, music and movies with `Infinity_ChangeOption(id, 0, 7)` for
 IDs 1, 2, 3, 4 and 22; verify with `Infinity_GetOption(id, 7)` before world testing.
 
-### Creature originals: implemented offline, native check pending
+### Creature originals: native backpack sample passed
 
 The exporter and campaign guard now support a selected backpack item on a named
 static ARE actor, using either an external CRE or an embedded CRE. An external
@@ -213,29 +213,40 @@ Weapon selection is a separate slot selector, with engine value 1000 for fists.
 Focused export, inventory, Core/Host, native adapter, and instruction-emulation
 checks pass. The complete synthetic path produces a removal witness accepted by
 the campaign controller, preserves the input CRE, and leaves other actors and
-saved AREs alone. Existing container checks still pass. These are offline results;
-the EEex call wrapper and actual creature load remain unverified in game.
+saved AREs alone. Existing container checks still pass.
 
-The next real-content sample is prepared under
-`work/creature-sources-20260927/sample/`: Leather Armor +1 (`leat02`) from
-`cre:delsvir/item/6` to Zargal (`are:bg3700/actor/39`), revision `dd7c0d54...`.
-Only saved scan data was used; it is not exported to or installed in the game.
-The installer chat was active, so no game installation or save was accessed.
+With Christopher's renewed test authorization, the configurator exported Leather
+Armor +1 (`leat02`) from `cre:delsvir/item/6` to Zargal
+(`are:bg3700/actor/39`), revision `dd7c0d54...`. New Game seed `1299614590`
+delivered it before BG1000 was visited. Ordinary death and pickup actions collected
+it. First entry to BG1000 suppressed exactly that original and confirmed removal.
+Save 71 (`IR Creature Complete 0927`) reloaded with the same seed and assignment,
+one collected copy, and confirmed source state. Independent saved-area inspection
+found Delsvir's original nine other item records, with only `leat02` absent.
+
+Evidence: `work/creature-source-native-20260927/`. The game ran muted on the
+non-input desktop and quit normally; all 26 staged paths were restored and the
+reservation released. Story Mode was temporarily enabled for inspection and
+restored to 0 before saving. The reused observation helpers needed single-source
+reporting and completed-host handling; no production fix was necessary. This
+checks the external-CRE constructor branch and same-process reload. Embedded-CRE
+native acceptance and a fresh-process reload of this creature sample remain
+unverified; their offline checks are not substituted for those results.
 
 ## Continue
 
-After the other BG task is idle, export that prepared sample with the existing
-`export-native` command, then reuse the existing staging and private-game helpers.
-Check early delivery, first source visit, and save/reload before extending to
-equipped sources. Keep the current container acceptance evidence intact.
+Next extend creature originals to equipped items, using the original mod's
+replacement-equipment behavior as the reference. Keep the current container and
+backpack acceptance evidence intact; shop and scripted-reward support remain open.
 
 The existing test installation, private profile, remote console and character
-helper are sufficient; rebuild the test copy if necessary. No installer or game
-may overlap another BG task.
+helper are sufficient; rebuild the test copy if necessary. Before live work,
+check actual game/installer activity and the shared reservation. Another chat
+doing offline code or synthetic tests is not itself a live-game conflict.
 
 The completed one-shot staging helpers under `work/` show the setup used; do not
 rerun consumed requests. The existing lab and helpers are sufficient.
-Creature interception still needs its native check; store/script interception is unfinished.
+Store/script interception is unfinished.
 The fixture observes physical pickup but keeps delivery phase 4 (held); the
 general lifetime observer is not integrated. Choose representative existing
 content autonomously for technical tests. New gameplay selections, capacities
