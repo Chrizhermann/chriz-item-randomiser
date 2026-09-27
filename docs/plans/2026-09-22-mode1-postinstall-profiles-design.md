@@ -111,9 +111,24 @@ from the owner's SoD/other mods when installed. Several item assignments can sha
 one target using its explicit capacity. New target inclusion is a creative decision
 and its reliability requires source-backed fixtures and isolated runtime evidence.
 
-Optional item packs include existing Mode 2-only items, Rogue Rebalancing, and extra
-EE items. Their availability is checked against the scanned installation. No promise
-of full Mode 2 behavior parity is required.
+Content priority (owner direction, 2026-09-27): provide the original Mode 1 and
+Mode 2 item and destination selections, with the original component options
+represented in configuration. Both feed the new Mode 1 campaign workflow. Add
+EE content, especially SoD, then CoC/RR; other popular mods can follow selectively.
+EE companion items are candidates for explicit creative review, not blanket
+inclusion. Availability follows the scanned installation. This content direction
+does not promise parity with Mode 2's install-time backend.
+
+Proposed preset organization, for owner review: separate item-pool templates and
+destination templates, with ready-made configurations that combine both and their
+rules. Optional content packs are independent switches rather than a separate
+preset for every combination. Applying a template copies its choices into an
+editable draft; Save a copy preserves a user's variation. Original component
+options that change behavior (rather than membership) stay explicit rules.
+Show which content is present, unavailable or awaiting runtime support, and check
+the resulting pool against destination capacity and progression constraints.
+Additional content does not implicitly enable cross-campaign placement. Exact
+item membership, targets, tiers and default combinations remain owner decisions.
 
 Create original curses for weapons, shields, armour/robes, helmets, cloaks, gloves,
 boots, belts, rings, and amulets. Frequency, severity, and appearance variation are
