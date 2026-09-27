@@ -15,6 +15,7 @@ from .profiles import (PROFILE_ID, ProfileError, ensure_output_outside_game,
                        new_profile, read_json, search_items, validate_catalog,
                        validate_profile, write_json)
 from .sources import new_binding_plan, validate_world
+from .scripted_sources import blpool_registration, SUPPORTED_HASHES
 
 
 KIND_LABELS = {"actor": "Creature", "cre-template": "Creature template",
@@ -131,7 +132,12 @@ class Editor:
             item = params.get("item", "").lower()
             if item not in self.items:
                 raise ProfileError("Unknown item")
-            page = self.page(self.sources[item], offset)
+            rows = list(self.sources[item])
+            if item == "blun12" and self.index["resources"].get("bcs:blpool", {}).get("sha256") in SUPPORTED_HASHES:
+                registration = blpool_registration(self.world)
+                rows.insert(0, {"id": registration["id"], "kind": "scripted", "concerns": [],
+                               "registration": registration})
+            page = self.page(rows, offset)
             page["records"] = [{"id": s["id"], "kind": s["kind"], "concerns": s["concerns"],
                 "quantity": s["record"]["quantity"] if s["kind"] == "store" else 1,
                 "kind_label": KIND_LABELS[s["kind"]],
@@ -139,6 +145,11 @@ class Editor:
                           else s["owner"]) + f" · item record {s['record']['record_index']}",
                 "note": ("Container source; check configuration for current runtime support."
                          if s["kind"] == "container" else "This source type still needs runtime support.")}
+                if s["kind"] != "scripted" else {
+                    **s, "quantity": 1, "kind_label": "Quest reward",
+                    "label": "Blood pool reward (BLPOOL)",
+                    "note": "Moves the Mace of Disruption; the pool's other actions remain. "
+                            "The installed script must match the supported reward before export."}
                 for s in page["records"]]
             return page
         if route == "/api/targets":

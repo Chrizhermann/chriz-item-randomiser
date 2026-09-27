@@ -367,12 +367,44 @@ reservation was released. This sample was not saved/reloaded; the general lifeti
 observer remains unfinished. Focused editor/export/adapter/host/gate tests passed;
 no full-suite rerun. The saved two-original configuration remains in the editor.
 
-For the next scripted sample, the original mod's BLPOOL grant is suitable:
-preserve its display, bite spell and Pool state change, replacing only BLUN12's
-grant. EEex SetTarget/LuaAction can capture LastTrigger and branch by saved
-campaign choice, with the original grant retained for unselected campaigns.
-This is researched, not implemented or live-tested. Do not treat script hash
-registration alone as source suppression.
+### Authored BLPOOL quest reward — 28 September
+
+The first scripted original is implemented and tested: `bcs:blpool/grant/pool-reward`
+relocates BLUN12 through the same campaign/delivery path as physical originals.
+The adapter follows the original mod's `baf/blpool.baf` and special-delivery code.
+A small static BCS patch branches on the campaign's saved `FLPR_QPOOL` flag.
+Selected campaigns replace the grant with an `FLPR_XPOOL` event witness; excluded
+campaigns keep the original grant. Both retain Clicked/Range/Pool conditions, the
+bite spell and Pool progression. Selected campaigns use the existing empty-pool
+display instead of falsely announcing a mace. No action interception hook is used.
+
+In the hidden, muted test session, campaign `561f093f...` (seed `355730995`)
+delivered the mace to Zargal before the source area was visited. It dropped on
+death and was picked up. The actual BLPOOL region then advanced Pool 0 → 1 → 2,
+set its consumed witness and confirmed source removal without adding a second
+mace. A repeat interaction left one mace. Interactions used the region's native
+`virtual_OnActionButton` after positioning the test character; this tests the
+engine's quest script, not OS mouse input.
+
+A second fresh campaign (`8d0e16f5...`, seed `1104926441`) excluded BLUN12 while
+randomising two physical originals. Its pool gave exactly one normal mace, left
+the relocation flags zero and gave no second copy on repeat interaction. Loading
+save `000000077-IR Pool Selected 0928` restored the first campaign's seed, selected
+and consumed flags, confirmed source phase and one party mace. Its serialized GAM
+independently contains those values. Evidence: `work/scripted-reward-20260928/`.
+Returning to the saved pool and interacting again retained Pool 2 and one mace.
+The game quit normally; 30 staged files were restored and the reservation released.
+
+Coverage is deliberately one reviewed BCS resource, not arbitrary BCS/DLG grants,
+scripted recipient rewards, modified versions of BLPOOL, or general quest safety.
+The bite action is preserved in compiled code; exact damage was not asserted on
+the protected test character. Death/drop/pickup are observed, while the existing
+general lifetime-observer integration remains unfinished (delivery still held).
+The editor exposes this supported quest original and preserves its registration.
+The normal TP2 still does not install the prototype.
+Focused compiler/export/editor and Lua guard tests passed, including a second
+export after installing the static patch. Browser selection, save and validation
+retained the reviewed registration. Tests use portable fixtures, not private scans.
 
 The existing test installation, private profile, remote console and character
 helper are sufficient; rebuild the test copy if necessary. Before live work,

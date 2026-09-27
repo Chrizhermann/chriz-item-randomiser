@@ -14,6 +14,7 @@ from .profiles import (ProfileError, edit_profile, ensure_output_outside_game,
 from .resources import ScanError, scan_game
 from .campaigns import read_campaign, write_campaign
 from .native_export import export_native
+from .templates import list_templates, build_template, POOL_CHOICES
 from .sources import (bind_profile, inventory_diagnostic_counts, inspect_sources, new_binding_plan,
                       prepare_bound_profile, read_bound_profile, scan_world,
                       search_targets)
@@ -24,6 +25,12 @@ def parser() -> argparse.ArgumentParser:
         description="Scan installed EE items and author draft Randomiser profiles. "
                     "This tool does not modify the game or activate randomisation.")
     commands = result.add_subparsers(dest="command", required=True)
+    templates = commands.add_parser("templates", help="List or export original pool drafts; not playable settings yet")
+    templates.add_argument("--id", choices=[row["id"] for row in list_templates()])
+    templates.add_argument("--items", choices=POOL_CHOICES)
+    templates.add_argument("--targets", choices=POOL_CHOICES)
+    templates.add_argument("--options", type=Path, help="JSON object of original component options")
+    templates.add_argument("--out", type=Path)
     ui = commands.add_parser("ui", help="Open the local configuration editor over existing scans")
     for field in ("catalog", "world", "workspace"):
         ui.add_argument("--" + field, type=Path, required=True)
@@ -116,6 +123,18 @@ def parser() -> argparse.ArgumentParser:
 
 
 def run(args: argparse.Namespace) -> dict:
+    if args.command == "templates":
+        if args.id is None:
+            return {"templates": list_templates()}
+        try:
+            draft = build_template(args.id, items=args.items, targets=args.targets,
+                                   options=read_json(args.options) if args.options else None)
+        except ValueError as exc:
+            raise ProfileError(str(exc)) from exc
+        if args.out:
+            write_json(args.out, draft)
+            return {"path": str(args.out), "state": draft["state"], "counts": draft["counts"]}
+        return draft
     if args.command == "ui":
         from .editor import serve
         return serve(args.catalog, args.world, args.workspace, args.port, args.profile, args.plan)

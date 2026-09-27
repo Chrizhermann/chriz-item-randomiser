@@ -344,7 +344,7 @@ function Gate.compose(assemblies)
     end
     return joined
 end
-function Gate.install(api,bundle,build,compile,pristine)
+function Gate.install(api,bundle,build,compile,pristine,Script)
     local bundles=bundle.manifest and {bundle} or bundle
     assert(type(bundles)=='table' and #bundles>0, 'CAMPAIGN_GATE_CONFIG_INVALID')
     assert(api.EEex_Active and not api.FLPR_SOURCE_GATE and not api.FLPR_AREA_TRACE and
@@ -354,14 +354,15 @@ function Gate.install(api,bundle,build,compile,pristine)
         'CAMPAIGN_GATE_LIFECYCLE_MISSING')
     local base=api.EEex_GetImageBase()
     local selected_sites={}
-    for _,site in ipairs(sites) do selected_sites[#selected_sites+1]=site end
-    local creatures,stores=false,false
+    local physical,creatures,stores=false,false,false
     for _,selected in ipairs(bundles) do
         for _,endpoint in pairs(selected.fixture.sources) do
+            if endpoint.kind~='guarded-script' then physical=true end
             if endpoint.kind=='guarded-creature' then creatures=true end
             if endpoint.kind=='guarded-store' then stores=true end
         end
     end
+    if physical then for _,site in ipairs(sites) do selected_sites[#selected_sites+1]=site end end
     if creatures then
         assert(type(api.EEex_HookBeforeCall)=='function','CAMPAIGN_GATE_CREATURE_HOOK_MISSING')
         for _,site in ipairs(actor_sites) do selected_sites[#selected_sites+1]=site end
@@ -383,13 +384,20 @@ function Gate.install(api,bundle,build,compile,pristine)
         assert(not by_revision[revision], 'CAMPAIGN_GATE_REVISION_DUPLICATED')
         local current={}; by_revision[revision]=current
         for _,id in ipairs(Gate.source_ids(selected.fixture)) do
-            local member,assembly=prepare(api,selected,build,compile,pristine,id,base,cache)
-            members[#members+1],assemblies[#assemblies+1]=member,assembly
+            local member,assembly
+            if selected.fixture.sources[id].kind=='guarded-script' then
+                assert(Script,'CAMPAIGN_SCRIPT_ADAPTER_MISSING')
+                member=Script.new(api,selected,id,pristine.scripts[revision][id])
+            else
+                member,assembly=prepare(api,selected,build,compile,pristine,id,base,cache)
+                assemblies[#assemblies+1]=assembly
+            end
+            members[#members+1]=member
             current[#current+1]=member
         end
     end
     local self=#members==1 and members[1] or setmetatable({members=members,by_revision=by_revision,installed=false},Group)
-    local assembly=#members==1 and assemblies[1] or Gate.compose(assemblies)
+    local assembly=Gate.compose(assemblies)
     local detours={}
     for _,member in ipairs(members) do member.detours=detours end
     api.FLPR_CAMPAIGN_GATE=self -- partial installation is never retried in-process
@@ -426,7 +434,7 @@ function Gate.install(api,bundle,build,compile,pristine)
     end)
     for _,member in ipairs(members) do
         member.installed=true
-        api.EEex_Write64(member.buffer,1) -- before New Game / any saved GAM load
+        if member.buffer then api.EEex_Write64(member.buffer,1) end -- before New Game / any saved GAM load
     end
     self.installed=true
     return self

@@ -149,7 +149,17 @@ revisions available for saves and changes only which configuration New Game sele
 Keep that output between exports; restart the test game after deploying a new revision.
 
 Current runtime coverage includes static container originals, selected items on
-uniquely bound static actors, and finite shop stock. Destinations can be uniquely
+uniquely bound static actors, finite shop stock, and the reviewed BLPOOL quest
+grant. BLPOOL appears as a quest-reward original for BLUN12 when the saved scan
+matches its supported script. Its exported conditional script uses saved campaign
+GLOBALS: selected campaigns suppress the mace grant, while excluded campaigns
+retain it. The bite and Pool progression remain; the selected branch displays the
+existing empty-pool message. Export includes `script-overrides/BLPOOL.BCS`, which
+must be staged in the test game's override alongside the runtime/configuration.
+The exporter recognises that exact installed patch on later exports and scans;
+changing configurations does not layer another patch or require reinstalling it.
+This is one authored script adapter, not general BCS/DLG grant coverage.
+Destinations can be uniquely
 named ARE actors or shops allowing purchases. The current item restrictions remain:
 unexpired, nonstackable, visible droppable items. Several originals of the same
 item can be relocated from separate owners, including to one creature recipient.
@@ -166,6 +176,39 @@ The output contains configuration only. It does **not** install the experimental
 runtime, activate the released mod, or modify the game. Collection UI, ordinary mod
 packaging, and general scripted source interception remain unfinished.
 See [native source results](campaign-source-guards-20260927.md) for current evidence.
+
+## Original preset drafts
+
+The `templates` command reads the original checked-in item/location tables and
+authored endpoint catalogs. It offers BG1, BG2 and EET Mode 1 drafts, each also
+available with Mode 2's additional rows **for the Mode 1 runtime**. Item and
+recipient pools can be chosen separately:
+
+```powershell
+python tools/randomiser_config.py templates
+python tools/randomiser_config.py templates --id eet-mode1 --out 'D:/RandomiserDrafts/original-mode1.json'
+python tools/randomiser_config.py templates --id eet-mode1 --items mode1+mode2 --targets mode1 --out 'D:/RandomiserDrafts/expanded-items.json'
+```
+
+`--options path.json` accepts the Boolean choices `scrolls`, `kangaxx`,
+`flail_heads`, `totsc_tome`, `more_spell_shield`, `cursed_disguise`, plus
+`loss_mode` (`none`/`some`), `loss_percent` and `unrandomized_percent` (0–100).
+These preserve intended component choices; they do not execute installer edits.
+Optional components default off. Disabled rows remain visible with `enabled:false`.
+Loss excludes the original Flail/Kangaxx tiers; unrandomized percentage concerns
+items with original sources. Those behavior rules still need runtime integration.
+
+The complete EET Mode 1 tables contain 505 item rows and 527 location rows;
+including Mode 2 rows gives 926 and 971. Repeated items, source replacements,
+tiers, tokens, identifiers, chances and row provenance are retained. These counts
+precede component and installation-availability filtering.
+
+**These are not playable configurations yet.** The current runtime still needs
+original tier/token rules, EET name conversion and bindings for the remaining
+virtual/scripted sources, grouped recipients and container destinations. Drafts
+are kept separate from prepared campaign settings so they cannot silently become
+one flat loot pool. New packs remain review material in
+[item-pack candidates](item-pack-candidates.md); no new tiers or inclusions are approved.
 
 ## Validation
 

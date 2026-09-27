@@ -1,7 +1,7 @@
 """Compile immutable inputs for the isolated logical campaign prototype.
 
 These artifacts do not activate the installed Randomiser or prove engine source
-suppression. Only already-bound physical inventory records are supported. The
+suppression. Physical records and the reviewed BLPOOL grant are supported. The
 Lua companion is generated data, never user-provided executable configuration.
 """
 
@@ -17,6 +17,8 @@ from .profiles import (DEFAULT_SHOP_PRICING, HEX256, PROFILE_ID, ProfileError,
                        read_json, validate_shop_pricing, write_json)
 from .sources import (DANGLING_INVENTORY, INVALID_INVENTORY, UNRESOLVED_STORAGE,
                       UNUSABLE_SOURCE, bind_profile)
+from .scripted_sources import (ITEM, SUPPORTED_HASHES, RESOURCE, SOURCE_ID,
+                               campaign_record, validate_registration)
 
 CAMPAIGN_SCHEMA = "flir-campaign-prototype-v1"
 POINTER_SCHEMA = "flir-prototype-next-v1"
@@ -87,7 +89,19 @@ def _validate_source(row: dict) -> int:
     _hash(row["resource_sha256"], "source resource fingerprint")
     quantity = _integer(row["quantity"], "source quantity", 1, MAX_REWARD_UNITS)
     source = _fields(row["record"], {"id", "item", "resource", "owner", "kind",
-                                     "record", "concerns"}, "source record")
+                                     "record", "concerns"} |
+                     ({"adapter_id", "selector"} if isinstance(row, dict) and
+                      isinstance(row.get("record"), dict) and
+                      row["record"].get("kind") == "scripted" else set()), "source record")
+    if source["kind"] == "scripted":
+        if (row["id"] != SOURCE_ID or row["quantity"] != 1 or
+                row["resource_sha256"] not in SUPPORTED_HASHES or
+                source != campaign_record({"id": SOURCE_ID, "item": ITEM,
+                    "resource": RESOURCE, "resource_sha256": row["resource_sha256"],
+                    "adapter_id": "blpool-v1", "selector": "pool-reward",
+                    "copies": 1, "optional": False}) or "replacement" in row):
+            raise ProfileError("Unsupported scripted campaign source")
+        return 1
     if source["kind"] not in ("cre-template", "embedded-cre", "container", "store"):
         raise ProfileError("Campaign prototype accepts only physical sources")
     if UNUSABLE_SOURCE.intersection(_concerns(source)):
@@ -229,8 +243,10 @@ def compile_campaign(profile: dict, catalog: dict, world: dict, plan: dict) -> d
     bound = bind_profile(profile, catalog, world, plan)
     if bound["additions"]:
         raise ProfileError("Campaign prototype does not support additional item copies")
-    if plan["registrations"] or any(row["kind"] != "physical" for row in bound["sources"]):
-        raise ProfileError("Campaign prototype does not support registered script sources")
+    for row in plan["registrations"]:
+        validate_registration(row)
+    if any(row["kind"] not in ("physical", "registered") for row in bound["sources"]):
+        raise ProfileError("Unsupported bound campaign source")
     if bound["reward_units"] > MAX_REWARD_UNITS:
         raise ProfileError(f"Campaign reward units exceed prototype limit {MAX_REWARD_UNITS}")
     # Reject oversized explicit choices even when an optional target is absent.
@@ -244,6 +260,12 @@ def compile_campaign(profile: dict, catalog: dict, world: dict, plan: dict) -> d
             "runtime_requirements": deepcopy(bound["runtime_requirements"])}
     for selected in bound["sources"]:
         source = selected["source"]
+        if selected["kind"] == "registered":
+            validate_registration(source)
+            body["sources"].append({"id": SOURCE_ID, "quantity": 1,
+                "record": campaign_record(source),
+                "resource_sha256": source["resource_sha256"]})
+            continue
         body["sources"].append({"id": source["id"],
             "quantity": source["record"]["quantity"] if source["kind"] == "store" else 1,
             "record": deepcopy(source), "resource_sha256": selected["resource_sha256"]})

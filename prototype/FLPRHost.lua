@@ -42,7 +42,8 @@ end
 local function guarded_indices(bundle)
     local config, endpoints = bundle.fixture.source_gate, {}
     for id, endpoint in pairs(bundle.fixture.sources or {}) do
-        if endpoint.kind == "guarded-container" or endpoint.kind == "guarded-creature" or endpoint.kind == "guarded-store" then
+        if endpoint.kind == "guarded-container" or endpoint.kind == "guarded-creature" or
+            endpoint.kind == "guarded-store" or endpoint.kind == "guarded-script" then
             endpoints[id] = endpoint.kind
         end
     end
@@ -66,7 +67,8 @@ local function guarded_indices(bundle)
         if selected[source.id] then
             local endpoint_kind, source_kind = selected[source.id], source.record.kind
             assert((endpoint_kind == "guarded-store" and source_kind == "store") or (source.quantity == 1 and
-                ((endpoint_kind == "guarded-container" and source_kind == "container") or
+                ((endpoint_kind == "guarded-script" and source_kind == "scripted") or
+                 (endpoint_kind == "guarded-container" and source_kind == "container") or
                  (endpoint_kind == "guarded-creature" and
                   (source_kind == "cre-template" or source_kind == "embedded-cre")))),
                 "SOURCE_GUARD_CONFIG_INVALID")

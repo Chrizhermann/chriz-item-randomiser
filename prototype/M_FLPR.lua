@@ -61,14 +61,24 @@ local ok, failure = pcall(function()
         end
         assert(count==#revisions,"SOURCE_GATE_REVISIONS_INVALID")
         local Gate = module("override/FLPRGat.lua")
-        local bundles,seen,pristine={},{},{creatures={},stores={}}
+        local bundles,seen,pristine={},{},{creatures={},stores={},scripts={}}
         for _,revision in ipairs(revisions) do
             assert(not seen[revision],"SOURCE_GATE_REVISION_DUPLICATED");seen[revision]=true
             local guarded = assert(resolve(revision), "SOURCE_GATE_REVISION_UNAVAILABLE")
             bundles[#bundles+1]=guarded
             for _,id in ipairs(Gate.source_ids(guarded.fixture)) do
                 local endpoint=assert(guarded.fixture.sources[id])
-                if endpoint.kind=='guarded-store' then
+                if endpoint.kind=='guarded-script' then
+                    local source_index
+                    for index,source in ipairs(guarded.manifest.sources) do
+                        if source.id==id then source_index=index end
+                    end
+                    assert(source_index,'SOURCE_GATE_SOURCE_MISSING')
+                    local path='flpr-fixture/campaign-store/revisions/'..revision..'.source-'..source_index..'.patched.bcs'
+                    local file=assert(io.open(path,'rb'),'SOURCE_GATE_SCRIPT_MISSING')
+                    pristine.scripts[revision]=pristine.scripts[revision] or {}
+                    pristine.scripts[revision][id]=file:read('*a'); assert(file:close())
+                elseif endpoint.kind=='guarded-store' then
                     local store=endpoint.store
                     assert(type(store)=='string' and #store>=1 and #store<=8 and
                         not store:find('[^A-Za-z0-9#_%-]'),'SOURCE_GATE_STORE_INVALID')
@@ -119,7 +129,8 @@ local ok, failure = pcall(function()
             end
         end
         root.SourceGate = Gate.install(_G, bundles,
-            module("flpr-fixture/FLPRGateAsm.lua"), module("flpr-fixture/FLPRCampaignPolicy.lua"),pristine)
+            module("flpr-fixture/FLPRGateAsm.lua"), module("flpr-fixture/FLPRCampaignPolicy.lua"),pristine,
+            module("override/FLPRScript.lua"))
         prepare_source_guard = function(bundle, controller) return root.SourceGate:prepare_new(bundle, controller) end
         source_guard = function(bundle, native) return root.SourceGate:adapter(bundle, native) end
     end

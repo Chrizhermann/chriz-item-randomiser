@@ -1,0 +1,207 @@
+"""Offline drafts of the original Randomiser item and location pools.
+
+``list_templates()`` describes the six bundled choices. ``build_template()``
+loads their checked-in WeiDU tables without changing the game or flattening
+repeated rewards into the user-profile item set. The result needs installation
+specific binding and tier-aware runtime support before it can be played.
+"""
+
+from __future__ import annotations
+
+from collections import Counter
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[2]
+SCHEMA = "flir-original-template-draft-v1"
+POOL_CHOICES = ("mode1", "mode1+mode2")
+DEFAULT_OPTIONS = {
+    "scrolls": False,             # component 530, tiers beginning with s
+    "kangaxx": False,             # component 520, tier ka
+    "flail_heads": False,         # component 540, tier fa
+    "totsc_tome": False,          # component 500, ident b2c variant
+    "more_spell_shield": False,   # component 560, independent store edit
+    "cursed_disguise": False,     # component 570, independent item edit
+    "loss_mode": "none",         # Mode 1 components 1100 / 1200
+    "loss_percent": 0,
+    "unrandomized_percent": 0,   # component 510, source-bearing items only
+}
+
+
+def list_templates() -> list[dict]:
+    """Return stable, compact descriptors for the original Mode 1 drafts."""
+    result = []
+    for campaign, label in (("bg1", "BG1"), ("bg2", "BG2"), ("eet", "EET")):
+        result.append({
+            "id": f"{campaign}-mode1",
+            "name": f"{label} original Mode 1",
+            "description": "Original in-game-script item and location pools, by tier.",
+        })
+        result.append({
+            "id": f"{campaign}-mode1-plus-mode2",
+            "name": f"{label} Mode 1 with Mode 2 additions",
+            "description": "Mode 1 runtime draft including the original Mode 2-only item and location rows.",
+        })
+    return result
+
+
+def _choice(value: str | None, default: str, label: str) -> str:
+    result = default if value is None else value
+    if result not in POOL_CHOICES:
+        raise ValueError(f"{label} must be 'mode1' or 'mode1+mode2'")
+    return result
+
+
+def _options(value: dict | None) -> dict:
+    if value is None:
+        return DEFAULT_OPTIONS.copy()
+    if not isinstance(value, dict) or set(value) - set(DEFAULT_OPTIONS):
+        raise ValueError("Unknown original-template option")
+    result = DEFAULT_OPTIONS | value
+    for key in ("scrolls", "kangaxx", "flail_heads", "totsc_tome",
+                "more_spell_shield", "cursed_disguise"):
+        if type(result[key]) is not bool:
+            raise ValueError(f"{key} must be a Boolean")
+    if result["loss_mode"] not in ("none", "some"):
+        raise ValueError("loss_mode must be 'none' or 'some'")
+    for key in ("loss_percent", "unrandomized_percent"):
+        if type(result[key]) is not int or not 0 <= result[key] <= 100:
+            raise ValueError(f"{key} must be an integer percentage from 0 to 100")
+    return result
+
+
+def _gate(tier: str) -> str | None:
+    if tier.startswith("s"):
+        return "scrolls"
+    return {"ka": "kangaxx", "fa": "flail_heads"}.get(tier)
+
+
+def _table_rows(path: Path, columns: int):
+    for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+        fields = line.split()
+        # Headers, blank lines, and historical one-word notes are not 2DA rows.
+        if len(fields) >= columns and fields[columns - 1].isdigit():
+            yield number, fields
+
+
+def _endpoint_index(campaign: str) -> dict[tuple[str, str, str, int], dict]:
+    path = ROOT / "lists" / "endpoints" / "base" / f"{campaign}.2da"
+    result = {}
+    for line, fields in _table_rows(path, 17):
+        key = (fields[2], fields[3], fields[4], int(fields[5]))
+        if key in result:
+            raise ValueError(f"Duplicate endpoint key in {path}:{line}")
+        result[key] = {
+            "id": fields[6], "kind": fields[9], "target_identity": fields[11],
+            "source_ref": f"lists/endpoints/base/{campaign}.2da:{line}",
+        }
+    return result
+
+
+def _load_items(campaign: str, family: str, options: dict) -> list[dict]:
+    relative = f"lists/items/{family}/{campaign}.2da"
+    occurrences: Counter[tuple[str, str]] = Counter()
+    result = []
+    for line, fields in _table_rows(ROOT / relative, 7):
+        item, replacement, source, tier, token, ident, chance = fields[:7]
+        occurrences[(tier, item)] += 1
+        gate = _gate(tier)
+        source_kind = source.rsplit(".", 1)[-1] if "." in source else source
+        runtime_support = ("needs-virtual-source-adapter" if source_kind in ("blank", "fl")
+                           else "needs-scripted-source-adapter" if source_kind in ("bcs", "dlg")
+                           else "needs-binding")
+        result.append({
+            "id": f"{campaign}:{family}:item:{line}", "campaign": campaign,
+            "family": family, "source_ref": f"{relative}:{line}",
+            "resref": item.lower(), "replacement": replacement.lower(),
+            "source": source.lower(), "source_kind": source_kind.lower(),
+            "tier": tier.lower(), "token": token.lower(), "ident": ident.lower(),
+            "chance": int(chance), "occurrence": occurrences[(tier, item)],
+            "option_gate": gate, "enabled": gate is None or options[gate],
+            "requires_game_conversion": campaign == "bg1",
+            "binding": "unbound", "runtime_support": runtime_support,
+        })
+    return result
+
+
+def _load_targets(campaign: str, family: str, options: dict) -> list[dict]:
+    relative = f"lists/locations/{family}/{campaign}.2da"
+    endpoints = _endpoint_index(campaign) if family == "base" else {}
+    occurrences: Counter[tuple[str, str, str]] = Counter()
+    result = []
+    for line, fields in _table_rows(ROOT / relative, 6):
+        raw, tier, target, area, ident, chance = fields[:6]
+        occurrences[(tier, raw, ident)] += 1
+        occurrence = occurrences[(tier, raw, ident)]
+        endpoint = endpoints.get((tier, raw, ident, occurrence))
+        if family == "base" and endpoint is None:
+            raise ValueError(f"Missing authored endpoint for {relative}:{line}")
+        gate = _gate(tier)
+        runtime_support = ("needs-endpoint-adapter" if endpoint is None
+                           else "needs-group-target-adapter" if endpoint["kind"] == "group"
+                           else "needs-legacy-script-adapter" if endpoint["kind"] == "legacy_adapter"
+                           else "needs-binding")
+        result.append({
+            "id": f"{campaign}:{family}:target:{line}", "campaign": campaign,
+            "family": family, "source_ref": f"{relative}:{line}",
+            "location": raw.lower(), "tier": tier.lower(),
+            "target": target.lower(), "area": area.lower(), "ident": ident.lower(),
+            "chance": int(chance), "occurrence": occurrence,
+            "option_gate": gate, "enabled": gate is None or options[gate],
+            "endpoint_id": endpoint["id"] if endpoint else None,
+            "endpoint_kind": endpoint["kind"] if endpoint else None,
+            "endpoint_source_ref": endpoint["source_ref"] if endpoint else None,
+            "requires_game_conversion": campaign == "bg1",
+            "binding": "unbound", "runtime_support": runtime_support,
+        })
+    return result
+
+
+def build_template(template_id: str, *, items: str | None = None,
+                   targets: str | None = None, options: dict | None = None) -> dict:
+    """Build a complete offline draft; separate pool overrides never switch runtime mode.
+
+    ``items`` and ``targets`` each accept ``mode1`` or ``mode1+mode2``.
+    Options are installer component choices and percentages; gated rows remain
+    present with ``enabled=False`` so the draft never silently loses content.
+    """
+    descriptors = {row["id"]: row for row in list_templates()}
+    if template_id not in descriptors:
+        raise ValueError(f"Unknown original template: {template_id}")
+    campaign = template_id.split("-", 1)[0]
+    default = "mode1+mode2" if template_id.endswith("-plus-mode2") else "mode1"
+    item_choice = _choice(items, default, "items")
+    target_choice = _choice(targets, default, "targets")
+    selected_options = _options(options)
+    campaigns = ("bg1", "bg2") if campaign == "eet" else (campaign,)
+    item_rows, target_rows = [], []
+    for part in campaigns:
+        for family in (("base", "mode2") if item_choice == "mode1+mode2" else ("base",)):
+            item_rows.extend(_load_items(part, family, selected_options))
+        for family in (("base", "mode2") if target_choice == "mode1+mode2" else ("base",)):
+            target_rows.extend(_load_targets(part, family, selected_options))
+    unsupported_sources = sum(row["source_kind"] in ("blank", "fl", "bcs", "dlg")
+                              for row in item_rows)
+    unsupported_targets = sum(row["endpoint_kind"] in ("group", "legacy_adapter")
+                              or row["endpoint_id"] is None for row in target_rows)
+    return {
+        "schema": SCHEMA, "state": "template-draft-awaiting-binding-and-tier-runtime",
+        "id": template_id, "name": descriptors[template_id]["name"],
+        "runtime_mode": "mode1", "campaigns": list(campaigns),
+        "choices": {"items": item_choice, "targets": target_choice},
+        "options": selected_options, "items": item_rows, "targets": target_rows,
+        "counts": {
+            "items": len(item_rows), "enabled_items": sum(row["enabled"] for row in item_rows),
+            "targets": len(target_rows), "enabled_targets": sum(row["enabled"] for row in target_rows),
+            "unbound_items": len(item_rows), "unbound_targets": len(target_rows),
+            "unsupported_source_rows": unsupported_sources,
+            "unsupported_target_rows": unsupported_targets,
+        },
+        "runtime_limitations": [
+            "Rows require installation-specific item, source, and target binding.",
+            "The current campaign runtime does not yet apply the original tier and token rules.",
+            "Virtual, scripted, group, and unadapted Mode 2 rows need runtime support.",
+            "BG1 resource names require game-specific conversion on EET, BGT, and Tutu.",
+            "Installer mod-compatibility and per-row availability filters need evaluation at binding.",
+        ],
+    }

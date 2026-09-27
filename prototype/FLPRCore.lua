@@ -124,7 +124,8 @@ end
 local function guard_source(source)
     return source ~= nil and type(source.record) == "table" and
         ((source.quantity == 1 and (source.record.kind == "container" or
-          source.record.kind == "cre-template" or source.record.kind == "embedded-cre")) or
+          source.record.kind == "cre-template" or source.record.kind == "embedded-cre" or
+          source.record.kind == "scripted")) or
          source.record.kind == "store")
 end
 

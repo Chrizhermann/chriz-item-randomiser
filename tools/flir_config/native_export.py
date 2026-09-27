@@ -1,4 +1,4 @@
-"""Export reviewed physical sources and targets for the experimental native runtime.
+"""Export reviewed physical and BLPOOL sources for the experimental native runtime.
 
 This writes configuration outside the game. It does not install runtime hooks,
 change resources, choose gameplay content, or establish live target eligibility.
@@ -19,6 +19,9 @@ from .profiles import (DEFAULT_SHOP_PRICING, HEX256, MAX_ITEM_PRICE, ProfileErro
                        validate_catalog)
 from .resources import GameResources, RESOURCE_TYPES
 from .sources import validate_world
+from .scripted_sources import (ADAPTER_ID, ITEM, PATCHED_SHA256, SUPPORTED_HASHES,
+                               PAYLOAD, RESOURCE, SELECTOR, SOURCE_ID,
+                               campaign_record, patch_blpool)
 
 
 def _require(condition: bool, message: str) -> None:
@@ -75,11 +78,21 @@ def _compile(manifest: dict, world: dict, index: dict, items: dict) -> tuple[dic
                              if s["kind"] in ("cre-template", "embedded-cre"))
     for selected in manifest["sources"]:
         source, identity = selected["record"], selected["id"]
-        _require(source["kind"] in ("container", "cre-template", "embedded-cre", "store"),
+        _require(source["kind"] in ("container", "cre-template", "embedded-cre", "store", "scripted"),
                  f"Native export does not yet support this source: {identity}")
-        _require(index["sources"].get(identity) == source and
-                 index["resources"][source["resource"]]["sha256"] == selected["resource_sha256"],
-                 f"Selected source differs from the scan: {identity}")
+        if source["kind"] == "scripted":
+            _require(identity == SOURCE_ID and selected["quantity"] == 1 and
+                     "replacement" not in selected and source == campaign_record({
+                         "id": SOURCE_ID, "item": ITEM, "resource": RESOURCE,
+                         "resource_sha256": selected["resource_sha256"], "adapter_id": ADAPTER_ID,
+                         "selector": SELECTOR, "copies": 1, "optional": False}) and
+                     selected["resource_sha256"] in SUPPORTED_HASHES and
+                     index["resources"].get(RESOURCE, {}).get("sha256") == selected["resource_sha256"],
+                     f"Scripted source differs from the reviewed scan: {identity}")
+        else:
+            _require(index["sources"].get(identity) == source and
+                     index["resources"][source["resource"]]["sha256"] == selected["resource_sha256"],
+                     f"Selected source differs from the scan: {identity}")
         record = source["record"]
         item = items[source["item"]]
         _require(re.fullmatch(r"[a-z0-9#_-]{1,8}", source["item"]) is not None and
@@ -88,6 +101,15 @@ def _compile(manifest: dict, world: dict, index: dict, items: dict) -> tuple[dic
                  f"Native source requires an unexpired, nonstackable, visible droppable item: {identity}")
         selected_items.add(source["item"])
         item_units[source["item"]] += selected["quantity"]
+        if source["kind"] == "scripted":
+            native["sources"][identity] = {
+                "kind": "guarded-script", "adapter_id": ADAPTER_ID,
+                "resource": "BLPOOL", "selector": SELECTOR,
+                "payload": deepcopy(PAYLOAD),
+                "identity": _digest({"source": selected})}
+            use(RESOURCE); use("itm:" + source["item"])
+            native["resource_hashes"]["BLPOOL.BCS"] = PATCHED_SHA256
+            continue
         if source["kind"] == "store":
             _require(source["resource"] not in selected_stores,
                      f"Native export currently supports one selected stock row per shop: {identity}")
@@ -236,13 +258,18 @@ def export_native(store: Path, catalog: dict, world: dict, output: Path,
         pending[base + ".native.lua"] = _render_lua(native)
     # Reuse the scanner's resource reader; only selected resources are demanded.
     resource_bytes = {}
-    with GameResources(Path(catalog["game_root"]), {k: RESOURCE_TYPES[k] for k in ("itm", "are", "cre", "sto")}) as reader:
+    with GameResources(Path(catalog["game_root"]), {k: RESOURCE_TYPES[k] for k in ("itm", "are", "cre", "sto", "bcs")}) as reader:
         for resource in sorted(required):
             kind, name = resource.split(":", 1)
             data = reader.read(kind, name)
-            _require(hashlib.sha256(data).hexdigest() == index["resources"][resource]["sha256"],
+            actual_hash = hashlib.sha256(data).hexdigest()
+            expected_hash = index["resources"][resource]["sha256"]
+            # Install the static quest branch once; later configuration exports
+            # may still use the original scan without reinstalling the mod.
+            own_script_patch = resource == RESOURCE and expected_hash in SUPPORTED_HASHES and actual_hash == PATCHED_SHA256
+            _require(actual_hash == expected_hash or own_script_patch,
                      f"Installed resource changed; rescan before export: {resource}")
-            if kind in ("are", "cre", "sto"):
+            if kind in ("are", "cre", "sto", "bcs"):
                 resource_bytes[resource] = data
             if resource in pristine:
                 pending[name.upper() + ".pristine.are"] = data
@@ -251,6 +278,16 @@ def export_native(store: Path, catalog: dict, world: dict, output: Path,
             source = selected_source["record"]
             compiled_source = compiled[key]["sources"][selected_source["id"]]
             base = f"campaign-store/revisions/{key}.source-{source_index}"
+            if compiled_source["kind"] == "guarded-script":
+                patched = patch_blpool(resource_bytes[source["resource"]])
+                _require(hashlib.sha256(patched).hexdigest() == PATCHED_SHA256,
+                         "BLPOOL patched BCS differs from the reviewed adapter")
+                pending[base + ".patched.bcs"] = patched
+                relative = "script-overrides/BLPOOL.BCS"
+                _require(relative not in pending or pending[relative] == patched,
+                         "Script override revisions disagree")
+                pending[relative] = patched
+                continue
             if compiled_source["kind"] == "guarded-store":
                 original = resource_bytes[source["resource"]]
                 pending[base + ".original.sto"] = original

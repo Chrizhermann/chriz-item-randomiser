@@ -271,7 +271,7 @@ function renderSelected() {
 
 function renderSourcePicker(item, body) {
   const entry = sourceEntry(item);
-  const ids = entry && Array.isArray(entry.source_ids) ? entry.source_ids : [];
+  const ids = [...(entry?.source_ids || []), ...(entry?.registration_ids || [])];
   const selection = ids.length
     ? `${ids.length} ${ids.length === 1 ? "original" : "originals"} selected`
     : "No originals selected. Choose one or more records below.";
@@ -370,9 +370,16 @@ function setSourceSelected(item, id, selected, automatic = false) {
     entry = { item, policy: "relocate", source_ids: [], registration_ids: [] };
     plan.sources.push(entry);
   }
-  const ids = Array.isArray(entry.source_ids) ? entry.source_ids : [];
+  const registration = sourcePages.get(item)?.records.find((row) => row.id === id)?.registration
+    || plan.registrations.find((row) => row.id === id);
+  const field = registration ? "registration_ids" : "source_ids";
+  const ids = Array.isArray(entry[field]) ? entry[field] : [];
   if (selected === ids.includes(id)) return;
-  entry.source_ids = selected ? [...ids, id] : ids.filter((choice) => choice !== id);
+  entry[field] = selected ? [...ids, id] : ids.filter((choice) => choice !== id);
+  if (registration) {
+    plan.registrations = plan.registrations.filter((row) => row.id !== id);
+    if (selected) plan.registrations.push(registration);
+  }
   changed();
   renderSelected();
 }
@@ -396,6 +403,7 @@ function removeItem(item) {
   if (profile.shop_pricing) delete profile.shop_pricing.base_prices[item];
   basePriceDrafts.delete(item);
   plan.sources = plan.sources.filter((row) => row.item !== item);
+  plan.registrations = plan.registrations.filter((row) => row.item !== item);
   sourcePages.delete(item);
   expandedItems.delete(item);
   changed();

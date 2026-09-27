@@ -25,7 +25,7 @@ local function integer(value, lo, hi)
 end
 local function guarded(endpoint)
     return endpoint.kind=='guarded-container' or endpoint.kind=='guarded-creature' or
-        endpoint.kind=='guarded-store'
+        endpoint.kind=='guarded-store' or endpoint.kind=='guarded-script'
 end
 local function resref(value)
     return type(value) == "string" and #value >= 1 and #value <= 8 and
@@ -75,8 +75,12 @@ function Native.new(api, fixture)
             assert(type(id) == "string" and type(endpoint) == "table" and
                 hash(endpoint.identity) and not identities[endpoint.identity], "NATIVE_ENDPOINT_INVALID")
             local store_source = kind == "sources" and endpoint.kind == "guarded-store"
+            local script_source = kind == "sources" and endpoint.kind == "guarded-script"
             local store_target = kind == "targets" and endpoint.kind == "store"
-            if store_source then
+            if script_source then
+                assert(endpoint.adapter_id == "blpool-v1" and endpoint.area == nil and
+                    endpoint.script_name == nil, "NATIVE_GUARDED_SCRIPT_INVALID")
+            elseif store_source then
                 assert(resref(endpoint.store) and endpoint.area == nil and endpoint.script_name == nil and
                     integer(endpoint.record_index, 0, 4294967295) and
                     integer(endpoint.quantity, 1, 4294967295), "NATIVE_GUARDED_STORE_INVALID")
@@ -89,7 +93,9 @@ function Native.new(api, fixture)
             end
             identities[endpoint.identity] = true
             local copy = { identity = endpoint.identity }
-            if store_source then
+            if script_source then
+                copy.adapter_id = endpoint.adapter_id
+            elseif store_source then
                 copy.store, copy.record_index, copy.quantity =
                     resref(endpoint.store), endpoint.record_index, endpoint.quantity
             elseif store_target then
@@ -100,7 +106,7 @@ function Native.new(api, fixture)
             if kind == "sources" then
                 copy.kind = endpoint.kind == nil and "creature" or endpoint.kind
                 assert(copy.kind == "creature" or guarded(copy), "NATIVE_SOURCE_KIND_UNSUPPORTED")
-                if not store_source then copy.sprite = true end
+                if not store_source and not script_source then copy.sprite = true end
                 copy.payload = assert(payload(endpoint.payload), "NATIVE_PAYLOAD_UNSUPPORTED")
                 if copy.kind == "guarded-container" then
                     assert(integer(endpoint.x,0,32767) and integer(endpoint.y,0,32767) and
@@ -395,7 +401,7 @@ function Adapter:guarded_source_remaining(id, area_pointer, owner_pointer)
     local endpoint = self.sources[id]
     if not endpoint then return nil, "SOURCE_UNKNOWN" end
     if not guarded(endpoint) then return nil, "SOURCE_NOT_GUARDED" end
-    if endpoint.kind == "guarded-store" then return nil, "SOURCE_GUARD_REQUIRED" end
+    if endpoint.kind == "guarded-store" or endpoint.kind == "guarded-script" then return nil, "SOURCE_GUARD_REQUIRED" end
     if type(area_pointer) ~= "string" or area_pointer == "" or area_pointer == "0" or
         type(owner_pointer) ~= "string" or owner_pointer == "" or owner_pointer == "0" then
         return nil, "SOURCE_POINTER_INVALID"
@@ -847,7 +853,9 @@ function Adapter:diagnostics()
     end
     for _, kind in ipairs({ "sources", "targets" }) do
         for id, endpoint in pairs(self[kind]) do
-            if endpoint.kind == "guarded-store" then
+            if endpoint.kind == "guarded-script" then
+                result[kind][id] = { unavailable = "SOURCE_GUARD_REQUIRED", adapter_id = endpoint.adapter_id }
+            elseif endpoint.kind == "guarded-store" then
                 result[kind][id] = { unavailable = "SOURCE_GUARD_REQUIRED", store = endpoint.store,
                     record_index = endpoint.record_index, quantity = endpoint.quantity }
             elseif endpoint.kind == "store" then
