@@ -79,6 +79,14 @@ Existing campaign tokens and delivery journals must retain their meanings. The
 new path needs an explicit migration/opt-in contract; old saves must not silently
 adopt freshly generated content or reinterpret a slot.
 
+Use the existing implementation as the behavioral reference for each migrated
+source family. For creatures, consult `lib/delete.tpa`, `del_cre_itm_stuff` and
+`del_cre_itm` in `lib/lib.tpa`, and the current `lib/removal_plan.tpa`: configured
+replacement equipment, duplicate-source handling and charges are part of that
+behavior, not optional omissions. Reuse existing parsing, removal and delivery
+where suitable. New tests should target changed behavior and reproduced defects;
+representative integration checks suffice for unchanged paths.
+
 The previously approved August design's requirement to reinstall for catalog
 changes is superseded for the new profile workflow. Its safety rules for stable
 identities and verified delivery still apply. Mode 2 remains a source of optional
