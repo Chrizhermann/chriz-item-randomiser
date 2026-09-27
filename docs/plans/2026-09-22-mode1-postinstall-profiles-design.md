@@ -149,6 +149,12 @@ The separate generic-unidentified-appearance option belongs to chriz-bg-modpack.
 Expose stable component/marker identities so CEBG can make that option mutually
 exclusive with randomized cursed appearances, with standalone guards where
 practical; ordinary loot randomization remains compatible with generic appearances.
+The Modpack integration contract is component **630**, label
+`cbm_unidentified_appearance`, marker **`CBMID.MRK`**. Check that marker (or the
+installed Modpack component) when enabling per-campaign cursed appearances.
+The Modpack option reciprocally rejects legacy Randomiser component 570 /
+`flrc570.mrk`; add the new cursed-appearance component/marker to the handover when
+assigned. These identifiers describe integration work, not a released feature.
 
 Future EET crossovers separate origin campaign, allowed destination campaigns, and
 power/progression tier. Normal crossover configurations preserve meaningful tiers
