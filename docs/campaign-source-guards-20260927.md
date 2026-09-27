@@ -2,7 +2,8 @@
 
 The integrated fixture passed native New Game, early reward pickup, source
 suppression, selected/excluded campaign reload, returned-item and interrupted
-confirmation checks on 27 September. Several configured sources across two areas also passed.
+confirmation checks on 27 September. Several configured sources across two areas
+also passed, followed by three existing BG1 rewards across three real source areas.
 This is a working prototype for container sources on the pinned Windows build;
 general source support and the player-facing configuration UI remain unfinished.
 
@@ -158,6 +159,39 @@ review reproduced a same-container duplicate-copy limitation and added an export
 rejection with a passing focused regression. This remains candidate configuration
 export for the supported subset, not a general mod installer.
 
+### Existing BG1 content
+
+The configurator exported three existing Randomiser items and two existing targets
+from the installation scan, checking the selected current resources. No runtime
+changes were needed. Revision `27b1c683...`, seed `1969154220`, assigned Flail +1
+(`blun03`) and Chain Mail +1 (`chan02`) to Zargal, and Halberd +1 (`halb02`) to
+Teyngan. This is a technical sample, not an approved new gameplay preset.
+
+Both recipients received their rewards before any source area was visited.
+Ordinary death and pickup actions collected all three. First visits removed the
+selected originals from BG4701 container 0, BG5001 container 3 and BG5202
+container 0, leaving their other loot present. Save 69 (`IR Real Early 0927`)
+reloaded with the same seed, collected items and still-protected sources. Save 70
+(`IR Real Complete 0927`) passed in a fresh process with all three collected
+rewards, confirmed removals, and no repeated suppression or delivery. Reading
+its saved areas independently confirmed the originals absent and other loot
+retained. Unrelated record bytes are not claimed identical: the engine normalizes
+some item flags and charges on load.
+
+Evidence: `work/existing-bg1-sample-20260927/`,
+`work/existing-bg1-native-20260927/`, and `work/existing-bg1-reload-20260927/`.
+Area travel and death were scripted; this verifies delivery and pickup, not combat
+balance. The test character died during the first source inspection, after the
+early checkpoint. Reloading that checkpoint and temporarily enabling Story Mode
+allowed inspection to finish; Story Mode was restored to 0 before save 70.
+Both sessions quit normally, all 28 staged paths were restored, and the reservation
+was released. No new lab tooling or production code was added for this sample.
+
+The private test profile now has all five audio volumes at 0, persisted across
+restart. Hidden desktops still play audio: when rebuilding this profile, mute
+ambient, SFX, voices, music and movies with `Infinity_ChangeOption(id, 0, 7)` for
+IDs 1, 2, 3, 4 and 22; verify with `Infinity_GetOption(id, 7)` before world testing.
+
 ## Continue
 
 Build the authored `unvisited-creatures` fixture with `build_mode1_fixture.py`
@@ -171,5 +205,6 @@ The completed one-shot staging helpers under `work/` show the setup used; do not
 rerun consumed requests. The existing lab and helpers are sufficient.
 Creature/store/script interception remains separate.
 The fixture observes physical pickup but keeps delivery phase 4 (held); the
-general lifetime observer is not integrated. Real items, targets, capacities and
-fallback policies remain Christopher's choices.
+general lifetime observer is not integrated. Choose representative existing
+content autonomously for technical tests. New gameplay selections, capacities
+and fallback policies remain Christopher's choices.
