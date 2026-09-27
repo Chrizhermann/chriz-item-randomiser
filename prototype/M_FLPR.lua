@@ -50,27 +50,41 @@ local ok, failure = pcall(function()
     local prepare_source_guard, source_guard
     local gate_config = loadfile("flpr-fixture/source-gate.lua")
     if gate_config then
-        local revision = gate_config()
-        local guarded = assert(resolve(revision), "SOURCE_GATE_REVISION_UNAVAILABLE")
-        local Gate = module("override/FLPRGat.lua")
-        local pristine={}
-        for _,id in ipairs(Gate.source_ids(guarded.fixture)) do
-            local endpoint=assert(guarded.fixture.sources[id])
-            local area=endpoint.area
-            assert(type(area)=='string' and #area>=1 and #area<=8 and not area:find('[^A-Za-z0-9#_%-]'),
-                'SOURCE_GATE_AREA_INVALID')
-            area=area:upper()
-            if not pristine[area] then
-                local file=assert(io.open("flpr-fixture/"..area..".pristine.are","rb"),"SOURCE_GATE_PRISTINE_MISSING")
-                pristine[area]={bytes=file:read("*a"),resource_sha256=guarded.fixture.resource_hashes[area..'.ARE']}
-                assert(file:close())
-            end
-            -- Suppression can precede the first world tick. Check every item
-            -- before installing any hook, including starting-area sources.
-            local supported,reason=Native.supported(_G,endpoint.payload)
-            assert(supported,reason)
+        local revisions = gate_config()
+        if type(revisions)=="string" then revisions={revisions} end
+        assert(type(revisions)=="table" and #revisions>0,"SOURCE_GATE_REVISIONS_INVALID")
+        local count=0
+        for key in pairs(revisions) do
+            assert(type(key)=="number" and key==math.floor(key) and key>=1 and key<=#revisions,
+                "SOURCE_GATE_REVISIONS_INVALID")
+            count=count+1
         end
-        root.SourceGate = Gate.install(_G, guarded,
+        assert(count==#revisions,"SOURCE_GATE_REVISIONS_INVALID")
+        local Gate = module("override/FLPRGat.lua")
+        local bundles,seen,pristine={},{},{}
+        for _,revision in ipairs(revisions) do
+            assert(not seen[revision],"SOURCE_GATE_REVISION_DUPLICATED");seen[revision]=true
+            local guarded = assert(resolve(revision), "SOURCE_GATE_REVISION_UNAVAILABLE")
+            bundles[#bundles+1]=guarded
+            for _,id in ipairs(Gate.source_ids(guarded.fixture)) do
+                local endpoint=assert(guarded.fixture.sources[id])
+                local area=endpoint.area
+                assert(type(area)=='string' and #area>=1 and #area<=8 and not area:find('[^A-Za-z0-9#_%-]'),
+                    'SOURCE_GATE_AREA_INVALID')
+                area=area:upper()
+                local resource_hash=guarded.fixture.resource_hashes[area..'.ARE']
+                if not pristine[area] then
+                    local file=assert(io.open("flpr-fixture/"..area..".pristine.are","rb"),"SOURCE_GATE_PRISTINE_MISSING")
+                    pristine[area]={bytes=file:read("*a"),resource_sha256=resource_hash}
+                    assert(file:close())
+                end
+                assert(pristine[area].resource_sha256==resource_hash,"SOURCE_GATE_RESOURCE_CHANGED")
+                -- Check every profile's item before any suppression can run.
+                local supported,reason=Native.supported(_G,endpoint.payload)
+                assert(supported,reason)
+            end
+        end
+        root.SourceGate = Gate.install(_G, bundles,
             module("flpr-fixture/FLPRGateAsm.lua"), module("flpr-fixture/FLPRCampaignPolicy.lua"),pristine)
         prepare_source_guard = function(bundle, controller) return root.SourceGate:prepare_new(bundle, controller) end
         source_guard = function(bundle, native) return root.SourceGate:adapter(bundle, native) end

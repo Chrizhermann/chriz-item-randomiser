@@ -19,8 +19,9 @@ general source support and the player-facing configuration UI remain unfinished.
   phase. Area, container, item record and payload now come from the campaign
   manifest and pristine ARE; they are no longer restricted to FLPRU1/FLPRI1.
   Each source has separate protection/removal state. They share five hook entry
-  points and a pristine copy per area. One selected revision per process and
-  the pinned BG2EE executable remain prototype limits.
+  points and a pristine copy per area. Several saved revisions can coexist;
+  each uses its own source indexes and protection state. The pinned BG2EE
+  executable remains a prototype limit.
 - The guard compares the complete authored ARE input and ties the result to the
   same area-load invocation and constructor inputs. Saved area records can move;
   matching an item name or original index alone would delete a returned copy.
@@ -119,6 +120,29 @@ staged paths were restored. The offline suite passed 910 tests. Review caught a
 missing group reset in the New Game path; the fix and focused regression passed
 before live testing. Full-catalogue performance has not been established.
 
+### Changing the next-run selection
+
+Revision `04283af3...` excludes FLPRI2 from the preceding three-source profile.
+Its new campaign (seed `2056225973`) delivered and allowed pickup of the two
+selected rewards, suppressed their originals, and left FLPRI2 in FLPRU1B.
+Loading old save 66 in the same process restored its three-source selection,
+original seed and collected rewards; first visiting FLPRU1 removed both of its
+selected originals. Loading new save 68 (`IR Profile B 0927`) restored only its
+two assignments and preserved the excluded original. Save 68 passed again in a
+fresh process, without another suppression or delivery.
+
+The fixture's `source-gate.lua` now accepts a list of immutable revisions to
+preload (the previous single string still works). `next.lua` selects the next
+New Game; saved campaigns select their own revision. Keep all revisions needed
+by saves, and restart the game after adding one to the preload list. All profiles
+must describe the same installed area resources. This removes the one-revision
+restriction without a TP2 reinstall; automatic export and player UI remain open.
+
+Evidence: `work/profile-switch-native-20260927/` and
+`work/profile-switch-reload-20260927/`. Both sessions quit normally; all 28 staged
+paths were restored and the reservation released. The full offline suite passed
+917 tests. This change reuses the existing lab helpers.
+
 ## Continue
 
 Build the authored `unvisited-creatures` fixture with `build_mode1_fixture.py`
@@ -129,8 +153,8 @@ profile, remote console and character helper are sufficient; rebuild the test
 copy if necessary. No installer or game may overlap another BG task.
 
 The completed one-shot staging helpers under `work/` show the setup used; do not
-rerun consumed requests. The existing lab and helpers are sufficient. Next allow several saved configuration revisions in one process, so changing the
-next-run selection does not prevent older campaigns from loading. Creature/store/script interception remains separate.
+rerun consumed requests. The existing lab and helpers are sufficient.
+Creature/store/script interception remains separate.
 The fixture observes physical pickup but keeps delivery phase 4 (held); the
 general lifetime observer is not integrated. Real items, targets, capacities and
 fallback policies remain Christopher's choices.

@@ -162,7 +162,8 @@ function Gate.compose(assemblies)
     return joined
 end
 function Gate.install(api,bundle,build,compile,pristine)
-    local ids=Gate.source_ids(bundle.fixture)
+    local bundles=bundle.manifest and {bundle} or bundle
+    assert(type(bundles)=='table' and #bundles>0, 'CAMPAIGN_GATE_CONFIG_INVALID')
     assert(api.EEex_Active and not api.FLPR_SOURCE_GATE and not api.FLPR_AREA_TRACE and
         not api.FLPR_CAMPAIGN_GATE, 'CAMPAIGN_GATE_INSTALL_CONTEXT_INVALID')
     assert(type(api.EEex_GameState_AddDestroyedListener)=='function' and
@@ -176,12 +177,21 @@ function Gate.install(api,bundle,build,compile,pristine)
             offset=offset+1
         end
     end
-    local members,assemblies,cache={},{},{}
-    for _,id in ipairs(ids) do
-        local member,assembly=prepare(api,bundle,build,compile,pristine,id,base,cache)
-        members[#members+1],assemblies[#assemblies+1]=member,assembly
+    local members,assemblies,cache,by_revision={},{},{},{}
+    local count=0
+    for key in pairs(bundles) do assert(integer(key,1,#bundles), 'CAMPAIGN_GATE_CONFIG_INVALID'); count=count+1 end
+    assert(count==#bundles, 'CAMPAIGN_GATE_CONFIG_INVALID')
+    for _,selected in ipairs(bundles) do
+        local revision=selected.manifest.revision
+        assert(not by_revision[revision], 'CAMPAIGN_GATE_REVISION_DUPLICATED')
+        local current={}; by_revision[revision]=current
+        for _,id in ipairs(Gate.source_ids(selected.fixture)) do
+            local member,assembly=prepare(api,selected,build,compile,pristine,id,base,cache)
+            members[#members+1],assemblies[#assemblies+1]=member,assembly
+            current[#current+1]=member
+        end
     end
-    local self=#members==1 and members[1] or setmetatable({members=members,installed=false},Group)
+    local self=#members==1 and members[1] or setmetatable({members=members,by_revision=by_revision,installed=false},Group)
     local assembly=#members==1 and assemblies[1] or Gate.compose(assemblies)
     local detours={}
     for _,member in ipairs(members) do member.detours=detours end
@@ -203,7 +213,7 @@ function Gate.install(api,bundle,build,compile,pristine)
     api.EEex_EnableCodeProtection()
     assert(ok,failure)
     api.EEex_GameState_AddDestroyedListener(function()
-        for _,member in ipairs(members) do member:reset() end
+        self:reset()
     end)
     for _,member in ipairs(members) do
         member.installed=true
@@ -396,24 +406,37 @@ function Adapter:observe_removal(request)
     return result
 end
 
+function Group:_members(bundle)
+    local members=self.by_revision[bundle.manifest.revision]
+    assert(members and #Gate.source_ids(bundle.fixture)==#members, 'CAMPAIGN_GATE_REVISION_MISMATCH')
+    for _,member in ipairs(members) do member:_bundle(bundle) end
+    return members
+end
 function Group:prepare_new(bundle,controller)
-    assert(#Gate.source_ids(bundle.fixture)==#self.members, 'CAMPAIGN_GATE_REVISION_MISMATCH')
-    for _,member in ipairs(self.members) do member:_bundle(bundle) end
-    for _,member in ipairs(self.members) do member:prepare_new(bundle,controller) end
+    local members=self:_members(bundle)
+    for _,member in ipairs(members) do member:prepare_new(bundle,controller) end
+    self.active_revision=bundle.manifest.revision
     return true
 end
 function Group:reset()
+    self.active_revision=nil
     for _,member in ipairs(self.members) do member:reset() end
 end
-function Group:inspect()
+function Group:inspect(revision)
+    revision=revision or self.active_revision
     local result={installed=self.installed,sources={}}
-    for _,member in ipairs(self.members) do result.sources[member.binding.id]=member:inspect() end
+    for _,member in ipairs(revision and assert(self.by_revision[revision]) or self.members) do
+        -- Before campaign capture, include revision in each key to avoid merging
+        -- two profiles which relocate the same physical record.
+        local id=revision and member.binding.id or member.revision..'/'..member.binding.id
+        result.sources[id]=member:inspect()
+    end
     return result
 end
 function Group:adapter(bundle,native)
-    assert(#Gate.source_ids(bundle.fixture)==#self.members, 'CAMPAIGN_GATE_REVISION_MISMATCH')
     local adapters={}
-    for _,member in ipairs(self.members) do adapters[member.index]=member:adapter(bundle,native) end
+    for _,member in ipairs(self:_members(bundle)) do adapters[member.index]=member:adapter(bundle,native) end
+    self.active_revision=bundle.manifest.revision
     local group={}
     function group:destroy() for _,adapter in pairs(adapters) do adapter:destroy() end end
     for _,method in ipairs({'observe_guard','observe_removal'}) do

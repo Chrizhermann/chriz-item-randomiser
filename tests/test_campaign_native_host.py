@@ -256,7 +256,7 @@ local function bootstrap(Core,Host,Globals,text,options)
     options=options or {}
     local f=setup(Core,Host)
     local listeners={}
-    f.bootstrap_events={}; f.prepare_calls={}; f.factory_calls={}
+    f.bootstrap_events={}; f.prepare_calls={}; f.factory_calls={}; f.supported_items={}
     f.pristine_bytes='AREAV1.0'..string.rep('\0',0x70-8)..'\212\104\0\0'..
         string.rep('\0',4)..'\20\107\0\0'..string.rep('\0',27492-0x7C)
     f.pristine_opens=0
@@ -271,7 +271,25 @@ local function bootstrap(Core,Host,Globals,text,options)
             payload={resref="flpri1",charges={0,0,0},expiration=0,flags=1}}}
         f.native_fixture.source_gate={schema="flpr-unvisited-fixture-gate-v1",source_id=id}
         f.native_fixture.resource_hashes={['FLPRU1.ARE']=string.rep('1',64)}
+        if options.multiple_pinned then
+            local second_revision=string.rep('e',64)
+            local second_id='are:flpru1/container/2'
+            local second_manifest=copy(f.manifest)
+            second_manifest.revision=second_revision
+            second_manifest.sources[1].id=second_id
+            second_manifest.sources[1].record.id=second_id
+            second_manifest.sources[1].record.record.resref='flpri2'
+            local second_fixture=copy(f.native_fixture)
+            second_fixture.revision=second_revision
+            second_fixture.sources={[second_id]=copy(f.native_fixture.sources[id])}
+            second_fixture.sources[second_id].script_name='FLPRU1B'
+            second_fixture.sources[second_id].payload.resref='flpri2'
+            second_fixture.source_gate.source_id=second_id
+            f.bundles[second_revision]={manifest=second_manifest,fixture=second_fixture}
+            f.pinned_revisions={f.manifest.revision,second_revision}
+        end
     end
+    f.bundles[f.manifest.revision].fixture=f.native_fixture
     EEex_Active=true; FLPR=nil
     EEex_GameState_GetGlobalInt=function(key) return f.storage:get(key) end
     EEex_GameState_SetGlobalInt=function(key,value) return f.storage:set(key,value) end
@@ -322,8 +340,11 @@ local function bootstrap(Core,Host,Globals,text,options)
         ["override/FLPRHost.lua"]=host_module,["override/FLPRNat.lua"]={
             new=function(_,fixture) return f.make_native(fixture) end,
             supported=function(_,item)
-                assert(item.resref=='flpri1')
-                if options.unsupported_item then return nil,'ITEM_NOT_NONSTACKABLE' end
+                assert(item.resref=='flpri1' or (options.multiple_pinned and item.resref=='flpri2'))
+                f.supported_items[#f.supported_items+1]=item.resref
+                if options.unsupported_item or (options.unsupported_second and item.resref=='flpri2') then
+                    return nil,'ITEM_NOT_NONSTACKABLE'
+                end
                 return true
             end},
         ["override/FLPRQA.lua"]={new=function() return {poll=function() end} end}}
@@ -334,16 +355,20 @@ local function bootstrap(Core,Host,Globals,text,options)
         modules["flpr-fixture/FLPRCampaignPolicy.lua"]=compiler
         modules["override/FLPRGat.lua"]={
             source_ids=function(fixture) return fixture.source_gate.source_ids or {fixture.source_gate.source_id} end,
-            install=function(env,bundle,build,compile,pristine)
-            pristine=pristine.FLPRU1
+            install=function(env,bundles,build,compile,pristine)
             f.bootstrap_events[#f.bootstrap_events+1]="install"
-            assert(env==_G and bundle.manifest==f.manifest and bundle.fixture==f.native_fixture)
+            assert(env==_G and type(bundles)=='table' and #bundles==(options.multiple_pinned and 2 or 1))
+            assert(bundles[1].manifest==f.manifest and bundles[1].fixture==f.native_fixture)
+            if options.multiple_pinned then
+                local second=f.bundles[f.pinned_revisions[2]]
+                assert(bundles[2].manifest==second.manifest and bundles[2].fixture==second.fixture)
+            end
             assert(build==builder and compile==compiler)
-            assert(type(pristine)=='table' and pristine.bytes==f.pristine_bytes and
-                #pristine.bytes==27492 and pristine.resource_sha256==
-                bundle.fixture.resource_hashes['FLPRU1.ARE'])
+            assert(type(pristine.FLPRU1)=='table' and pristine.FLPRU1.bytes==f.pristine_bytes and
+                #pristine.FLPRU1.bytes==27492 and pristine.FLPRU1.resource_sha256==
+                bundles[1].fixture.resource_hashes['FLPRU1.ARE'])
             if options.install_fail then error("GATE_INSTALL_FAILED") end
-            f.gate_installed=true
+            f.gate_installed=true; f.gate_bundles=bundles
             return {
                 reset=function()
                     f.bootstrap_events[#f.bootstrap_events+1]="reset"
@@ -367,12 +392,14 @@ local function bootstrap(Core,Host,Globals,text,options)
     loadfile=function(path)
         if modules[path] then return function() return modules[path] end end
         if options.gate and path=="flpr-fixture/source-gate.lua" then
-            return function() return options.missing_pinned and string.rep("e",64) or f.manifest.revision end
+            return function() return options.missing_pinned and string.rep("e",64) or
+                f.pinned_revisions or f.manifest.revision end
         end
-        if path=="flpr-fixture/campaign-store/revisions/"..f.manifest.revision..".native.lua" then
+        local native_revision=path:match("revisions/([0-9a-f]+)%.native%.lua$")
+        if native_revision and f.bundles[native_revision] then
             return function()
-                f.native_fixture.ready_detail=f.ready_detail
-                return f.native_fixture
+                if native_revision==f.manifest.revision then f.native_fixture.ready_detail=f.ready_detail end
+                return f.bundles[native_revision].fixture
             end
         end
         if path=="flpr-fixture/next.lua" then return function() return f.next_revision end end
@@ -397,6 +424,25 @@ function cases.bootstrap_unsupported_item_stops_before_source_suppression(Core,H
     local f=bootstrap(Core,Host,Globals,text,{gate=true,unsupported_item=true,allow_disabled=true})
     assert(f.root.Disabled:find('ITEM_NOT_NONSTACKABLE',1,true) and not f.gate_installed)
     assert(f.root.Host==nil and not f.accept_count)
+end
+function cases.bootstrap_second_profile_unsupported_stops_before_hooks_or_host(Core,Host,Globals,text)
+    local f=bootstrap(Core,Host,Globals,text,
+        {gate=true,multiple_pinned=true,unsupported_second=true,allow_disabled=true})
+    assert(f.root.Disabled:find('ITEM_NOT_NONSTACKABLE',1,true))
+    assert(table.concat(f.supported_items,',')=='flpri1,flpri2')
+    assert(f.pristine_opens==1 and not f.gate_installed and f.root.Host==nil)
+    assert(table.concat(f.bootstrap_events,',')=='pristine_open,pristine_read,pristine_close')
+end
+function cases.bootstrap_two_profiles_share_one_pristine_area_copy(Core,Host,Globals,text)
+    local f=bootstrap(Core,Host,Globals,text,{gate=true,multiple_pinned=true})
+    assert(f.root.Disabled==nil and f.gate_installed and f.root.Host)
+    assert(f.pristine_opens==1 and table.concat(f.supported_items,',')=='flpri1,flpri2')
+    assert(#f.gate_bundles==2 and f.gate_bundles[1].manifest==f.manifest and
+        f.gate_bundles[1].fixture==f.native_fixture)
+    local second=f.bundles[f.pinned_revisions[2]]
+    assert(f.gate_bundles[2].manifest==second.manifest and f.gate_bundles[2].fixture==second.fixture)
+    assert(table.concat(f.bootstrap_events,',')==
+        'pristine_open,pristine_read,pristine_close,install,host_new')
 end
 function cases.bootstrap_opt_in_gate_installs_prepares_once_and_binds_frozen_native(Core,Host,Globals,text)
     local f=bootstrap(Core,Host,Globals,text,{gate=true})

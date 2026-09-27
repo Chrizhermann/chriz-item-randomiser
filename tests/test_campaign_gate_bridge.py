@@ -513,6 +513,36 @@ function cases.multiple_sources_share_hooks_but_keep_separate_receipts(Core,Gate
     for _,member in ipairs(members) do assert(member:_q(104)==2) end
 end
 
+function cases.profiles_share_hooks_and_select_receipts_by_frozen_revision(Core,Gate,build,compile)
+    local f=fixture(Core)
+    local original=f.bundle; local changed=clone(original)
+    changed.manifest.revision=string.rep('e',64)
+    changed.fixture.revision=changed.manifest.revision
+    f.gate=Gate.install(f.api,{original,changed},build,compile,f.pristine)
+    assert(#f.gate.members==2 and #f.hooks==5 and #f.callbacks==1)
+    assert(f.byte_writes==#f.pristine.bytes)
+    local stale
+    for _,bundle in ipairs({changed,original}) do
+        f.gate:reset(); f.values={}
+        if stale then assert(not stale.active()) end
+        f.bundle=bundle; f.manifest=bundle.manifest
+        f.controller=assert(Core.new(f.storage,function() return f.manifest end))
+        f:capture()
+        for _,member in ipairs(f.gate.members) do member:_write(40,1); member:_write(72,1) end
+        assert(f.gate:prepare_new(bundle,f.controller)); f:adapter()
+        stale=f:bind()
+        for _,member in ipairs(f.gate.members) do
+            assert(member:_q(32)==(member.revision==bundle.manifest.revision and 1 or 0))
+        end
+        local inspection=f.gate:inspect()
+        assert(inspection.sources[ID].revision==bundle.manifest.revision)
+        local wrong=clone(f:guard_request()); wrong.revision=string.rep('f',64)
+        assert(not f.adapter_instance:observe_guard(wrong))
+    end
+    f.callbacks[1]()
+    assert(not stale.active() and f.gate.active_revision==nil)
+end
+
 return cases
 '''
 
