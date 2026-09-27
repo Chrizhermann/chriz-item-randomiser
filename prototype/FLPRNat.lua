@@ -24,7 +24,8 @@ local function integer(value, lo, hi)
     return type(value) == "number" and value == math.floor(value) and value >= lo and value <= hi
 end
 local function guarded(endpoint)
-    return endpoint.kind=='guarded-container' or endpoint.kind=='guarded-creature'
+    return endpoint.kind=='guarded-container' or endpoint.kind=='guarded-creature' or
+        endpoint.kind=='guarded-store'
 end
 local function resref(value)
     return type(value) == "string" and #value >= 1 and #value <= 8 and
@@ -71,16 +72,29 @@ function Native.new(api, fixture)
     for _, kind in ipairs({ "sources", "targets" }) do
         assert(type(fixture[kind]) == "table", "NATIVE_CONFIG_INVALID")
         for id, endpoint in pairs(fixture[kind]) do
-            assert(type(id) == "string" and type(endpoint) == "table" and resref(endpoint.area) and
-                type(endpoint.script_name) == "string" and #endpoint.script_name > 0 and
+            assert(type(id) == "string" and type(endpoint) == "table" and
                 hash(endpoint.identity) and not identities[endpoint.identity], "NATIVE_ENDPOINT_INVALID")
+            local store_source = kind == "sources" and endpoint.kind == "guarded-store"
+            if store_source then
+                assert(resref(endpoint.store) and endpoint.area == nil and endpoint.script_name == nil and
+                    integer(endpoint.record_index, 0, 4294967295) and
+                    integer(endpoint.quantity, 1, 4294967295), "NATIVE_GUARDED_STORE_INVALID")
+            else
+                assert(resref(endpoint.area) and type(endpoint.script_name) == "string" and
+                    #endpoint.script_name > 0, "NATIVE_ENDPOINT_INVALID")
+            end
             identities[endpoint.identity] = true
-            local copy = { area = resref(endpoint.area), script_name = endpoint.script_name:lower(),
-                identity = endpoint.identity }
+            local copy = { identity = endpoint.identity }
+            if store_source then
+                copy.store, copy.record_index, copy.quantity =
+                    resref(endpoint.store), endpoint.record_index, endpoint.quantity
+            else
+                copy.area, copy.script_name = resref(endpoint.area), endpoint.script_name:lower()
+            end
             if kind == "sources" then
                 copy.kind = endpoint.kind == nil and "creature" or endpoint.kind
                 assert(copy.kind == "creature" or guarded(copy), "NATIVE_SOURCE_KIND_UNSUPPORTED")
-                copy.sprite = true
+                if not store_source then copy.sprite = true end
                 copy.payload = assert(payload(endpoint.payload), "NATIVE_PAYLOAD_UNSUPPORTED")
                 assert(not source_resrefs[copy.payload.resref],
                     "NATIVE_FIXTURE_RESOURCE_NOT_UNIQUE")
@@ -368,6 +382,7 @@ function Adapter:guarded_source_remaining(id, area_pointer, owner_pointer)
     local endpoint = self.sources[id]
     if not endpoint then return nil, "SOURCE_UNKNOWN" end
     if not guarded(endpoint) then return nil, "SOURCE_NOT_GUARDED" end
+    if endpoint.kind == "guarded-store" then return nil, "SOURCE_GUARD_REQUIRED" end
     if type(area_pointer) ~= "string" or area_pointer == "" or area_pointer == "0" or
         type(owner_pointer) ~= "string" or owner_pointer == "" or owner_pointer == "0" then
         return nil, "SOURCE_POINTER_INVALID"
@@ -498,10 +513,30 @@ function Adapter:execute(command)
             if not before_queue.addresses[address] then added[#added + 1] = address end
         end
         local message = #added == 1 and addition_at(after_queue, added[1]) or nil
+        -- GiveItemCreate chooses identification from the ITM's lore value;
+        -- it does not accept the original inventory's identified flag. Bind
+        -- the newly created message first, then preserve that selected flag.
+        local created = message and payload(message.payload)
+        local identification_only = created and (created.flags == 0 or created.flags == 1)
+        if created then created.flags = p.flags end
         if not unchanged(reserved.items, after) or not message or message.form ~= "creature" or
-            message.target ~= owner.id or message.source ~= owner.id or not same(message.payload, p) or
+            message.target ~= owner.id or message.source ~= owner.id or not identification_only or not same(created, p) or
             creature_conflict(after_queue, owner.id, self.source_resrefs, message.pointer) then
             self.last_error = "CREATED_INSTANCE_UNPROVEN"; return nil, self.last_error
+        end
+        if message.payload.flags ~= p.flags then
+            local updated = false
+            self.api.EEex_Utility_IterateCPtrList(self.api.EngineGlobals.g_pBaldurChitin.m_cMessageHandler.m_messageList,
+                function(value)
+                    if pointer(self.api, value) ~= message.pointer then return end
+                    local item = self.api.EEex_CastUD(value, "CMessageAddItem").m_item
+                    assert(pointer(self.api, item) == message.embedded_item_pointer, "CREATED_INSTANCE_CHANGED")
+                    item.m_flags = p.flags
+                    assert(same(self:_item(item).payload, p), "CREATED_FLAGS_NOT_PRESERVED")
+                    updated = true
+                end)
+            assert(updated, "CREATED_INSTANCE_CHANGED")
+            message.payload.flags = p.flags
         end
         self.pending.queued, self.pending.empty = message, reserved.empty
     else
@@ -753,12 +788,17 @@ function Adapter:diagnostics()
     end
     for _, kind in ipairs({ "sources", "targets" }) do
         for id, endpoint in pairs(self[kind]) do
-            local label = kind == "sources" and "source" or "target"
-            local owner, reason, unusable = self:_resolve(endpoint, label)
-            -- A dead or party-owned creature's inventory is evidence, not a target.
-            local seen = owner or unusable
-            result[kind][id] = seen and { object_id = seen.id, pointer = seen.pointer, unavailable = reason,
-                items = self:_items(seen, endpoint.sprite) } or { unavailable = reason }
+            if endpoint.kind == "guarded-store" then
+                result[kind][id] = { unavailable = "SOURCE_GUARD_REQUIRED", store = endpoint.store,
+                    record_index = endpoint.record_index, quantity = endpoint.quantity }
+            else
+                local label = kind == "sources" and "source" or "target"
+                local owner, reason, unusable = self:_resolve(endpoint, label)
+                -- A dead or party-owned creature's inventory is evidence, not a target.
+                local seen = owner or unusable
+                result[kind][id] = seen and { object_id = seen.id, pointer = seen.pointer, unavailable = reason,
+                    items = self:_items(seen, endpoint.sprite) } or { unavailable = reason }
+            end
         end
     end
     return result

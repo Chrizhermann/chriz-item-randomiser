@@ -12,6 +12,7 @@ from pathlib import Path
 
 from .campaigns import read_campaign, _render_lua, _store_path, _write_immutable
 from .creature_inventory import rewrite_inventory
+from .store_inventory import rewrite_inventory as rewrite_store
 from .profiles import HEX256, ProfileError, _digest, canonical_bytes, ensure_output_outside_game, validate_catalog
 from .resources import GameResources, RESOURCE_TYPES
 from .sources import validate_world
@@ -41,7 +42,7 @@ def _compile(manifest: dict, world: dict, index: dict, items: dict) -> tuple[dic
     native = {"schema": "flir-native-fixture-v1", "revision": manifest["revision"],
               "sources": {}, "targets": {}, "resource_hashes": {},
               "ready_detail": "have been assigned to the selected recipients."}
-    required, pristine, selected_items, selected_actors = set(), set(), set(), set()
+    required, pristine, selected_items, selected_actors, selected_stores = set(), set(), set(), set(), set()
 
     def use(resource: str) -> None:
         required.add(resource)
@@ -63,7 +64,7 @@ def _compile(manifest: dict, world: dict, index: dict, items: dict) -> tuple[dic
                              if s["kind"] in ("cre-template", "embedded-cre"))
     for selected in manifest["sources"]:
         source, identity = selected["record"], selected["id"]
-        _require(source["kind"] in ("container", "cre-template", "embedded-cre"),
+        _require(source["kind"] in ("container", "cre-template", "embedded-cre", "store"),
                  f"Native export does not yet support this source: {identity}")
         _require(index["sources"].get(identity) == source and
                  index["resources"][source["resource"]]["sha256"] == selected["resource_sha256"],
@@ -77,7 +78,21 @@ def _compile(manifest: dict, world: dict, index: dict, items: dict) -> tuple[dic
         _require(source["item"] not in selected_items,
                  f"Native export does not yet support selecting two copies of {source['item']}")
         selected_items.add(source["item"])
-        if source["kind"] == "container":
+        if source["kind"] == "store":
+            _require(source["resource"] not in selected_stores,
+                     f"Native export currently supports one selected stock row per shop: {identity}")
+            selected_stores.add(source["resource"])
+            _require(sum(s["owner"] == source["owner"] and s["item"] == source["item"]
+                         for s in index["sources"].values()) == 1,
+                     f"Native source shop holds another row of {source['item']}: {identity}")
+            native["sources"][identity] = {
+                "kind": "guarded-store", "store": source["resource"][4:],
+                "record_index": record["record_index"], "quantity": selected["quantity"],
+                "payload": {key: record[key] for key in ("resref", "expiration", "charges", "flags")},
+                "identity": _digest({"source": selected})}
+            use(source["resource"]); use("itm:" + source["item"])
+            continue
+        elif source["kind"] == "container":
             owner = index["targets"][source["owner"]]
             selector = owner["selector"]
             area, name = _area(source["resource"]), _name(selector["name"], identity)
@@ -182,13 +197,13 @@ def export_native(store: Path, catalog: dict, world: dict, output: Path,
         pending[base + ".native.lua"] = _render_lua(native)
     # Reuse the scanner's resource reader; only selected resources are demanded.
     resource_bytes = {}
-    with GameResources(Path(catalog["game_root"]), {k: RESOURCE_TYPES[k] for k in ("itm", "are", "cre")}) as reader:
+    with GameResources(Path(catalog["game_root"]), {k: RESOURCE_TYPES[k] for k in ("itm", "are", "cre", "sto")}) as reader:
         for resource in sorted(required):
             kind, name = resource.split(":", 1)
             data = reader.read(kind, name)
             _require(hashlib.sha256(data).hexdigest() == index["resources"][resource]["sha256"],
                      f"Installed resource changed; rescan before export: {resource}")
-            if kind in ("are", "cre"):
+            if kind in ("are", "cre", "sto"):
                 resource_bytes[resource] = data
             if resource in pristine:
                 pending[name.upper() + ".pristine.are"] = data
@@ -196,6 +211,12 @@ def export_native(store: Path, catalog: dict, world: dict, output: Path,
         for source_index, selected_source in enumerate(manifest["sources"], 1):
             source = selected_source["record"]
             compiled_source = compiled[key]["sources"][selected_source["id"]]
+            base = f"campaign-store/revisions/{key}.source-{source_index}"
+            if compiled_source["kind"] == "guarded-store":
+                original = resource_bytes[source["resource"]]
+                pending[base + ".original.sto"] = original
+                pending[base + ".removed.sto"] = rewrite_store(original, {source["record"]["record_index"]})
+                continue
             if compiled_source["kind"] != "guarded-creature":
                 continue
             resource = source["resource"]
@@ -205,7 +226,6 @@ def export_native(store: Path, catalog: dict, world: dict, output: Path,
                 selector = index["targets"][compiled_source["actor_owner"]]["selector"]
                 offset, size = selector["embedded_cre_offset"], selector["embedded_cre_size"]
                 original = resource_bytes[resource][offset:offset + size]
-            base = f"campaign-store/revisions/{key}.source-{source_index}"
             pending[base + ".original.cre"] = original
             replacement = selected_source.get("replacement", {}).get("resref", "blank")
             pending[base + ".removed.cre"] = rewrite_inventory(

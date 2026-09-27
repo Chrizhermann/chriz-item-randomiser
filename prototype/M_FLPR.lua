@@ -61,24 +61,43 @@ local ok, failure = pcall(function()
         end
         assert(count==#revisions,"SOURCE_GATE_REVISIONS_INVALID")
         local Gate = module("override/FLPRGat.lua")
-        local bundles,seen,pristine={},{},{creatures={}}
+        local bundles,seen,pristine={},{},{creatures={},stores={}}
         for _,revision in ipairs(revisions) do
             assert(not seen[revision],"SOURCE_GATE_REVISION_DUPLICATED");seen[revision]=true
             local guarded = assert(resolve(revision), "SOURCE_GATE_REVISION_UNAVAILABLE")
             bundles[#bundles+1]=guarded
             for _,id in ipairs(Gate.source_ids(guarded.fixture)) do
                 local endpoint=assert(guarded.fixture.sources[id])
-                local area=endpoint.area
-                assert(type(area)=='string' and #area>=1 and #area<=8 and not area:find('[^A-Za-z0-9#_%-]'),
-                    'SOURCE_GATE_AREA_INVALID')
-                area=area:upper()
-                local resource_hash=guarded.fixture.resource_hashes[area..'.ARE']
-                if not pristine[area] then
-                    local file=assert(io.open("flpr-fixture/"..area..".pristine.are","rb"),"SOURCE_GATE_PRISTINE_MISSING")
-                    pristine[area]={bytes=file:read("*a"),resource_sha256=resource_hash}
-                    assert(file:close())
+                if endpoint.kind=='guarded-store' then
+                    local store=endpoint.store
+                    assert(type(store)=='string' and #store>=1 and #store<=8 and
+                        not store:find('[^A-Za-z0-9#_%-]'),'SOURCE_GATE_STORE_INVALID')
+                    local source_index
+                    for index,source in ipairs(guarded.manifest.sources) do
+                        if source.id==id then source_index=index end
+                    end
+                    assert(source_index,'SOURCE_GATE_SOURCE_MISSING')
+                    local prefix='flpr-fixture/campaign-store/revisions/'..revision..'.source-'..source_index
+                    local entry={resource_sha256=guarded.fixture.resource_hashes[store:upper()..'.STO']}
+                    for _,kind in ipairs({'original','removed'}) do
+                        local file=assert(io.open(prefix..'.'..kind..'.sto','rb'),'SOURCE_GATE_STORE_MISSING')
+                        entry[kind]=file:read('*a'); assert(file:close())
+                    end
+                    pristine.stores[revision]=pristine.stores[revision] or {}
+                    pristine.stores[revision][id]=entry
+                else
+                    local area=endpoint.area
+                    assert(type(area)=='string' and #area>=1 and #area<=8 and not area:find('[^A-Za-z0-9#_%-]'),
+                        'SOURCE_GATE_AREA_INVALID')
+                    area=area:upper()
+                    local resource_hash=guarded.fixture.resource_hashes[area..'.ARE']
+                    if not pristine[area] then
+                        local file=assert(io.open("flpr-fixture/"..area..".pristine.are","rb"),"SOURCE_GATE_PRISTINE_MISSING")
+                        pristine[area]={bytes=file:read("*a"),resource_sha256=resource_hash}
+                        assert(file:close())
+                    end
+                    assert(pristine[area].resource_sha256==resource_hash,"SOURCE_GATE_RESOURCE_CHANGED")
                 end
-                assert(pristine[area].resource_sha256==resource_hash,"SOURCE_GATE_RESOURCE_CHANGED")
                 if endpoint.kind=='guarded-creature' then
                     local source_index
                     for index,source in ipairs(guarded.manifest.sources) do

@@ -256,7 +256,45 @@ Evidence: `work/equipped-source-native-20260927/`. The muted, non-input-desktop
 session quit normally; all 26 staged paths were restored, Story Mode returned to
 0 before saving, and the reservation was released. This verifies one ordinary
 replacement, not special replacement rules or complete source-family coverage.
-Shop and scripted-reward support remain the next work.
+Shop sources are now covered by the next sample; shop recipients and scripted
+rewards still need runtime support.
+
+Finite shop sources use the original Mode 1 rule: remove the exact sale row and
+retain its quantity as reward units. The private STO rewrite preserves all other
+rows and sections. On the pinned executable, `CStore::SetResRef` at RVA `250765`
+receives the private bytes; `250967` verifies the actual constructed sale list.
+The SAV member hook at `405295` distinguishes already saved stores, so authored
+stock is not reapplied to saved inventory. Current export limits are one selected
+sale row per shop, no duplicate selected resref, and the existing item restrictions.
+
+Live sample `sto:inn3351/item/8` (`chan02`) -> Zargal passed with revision
+`5965da30...`, seed `1625428348`. Delivery initially exposed a real bug:
+`GiveItemCreate` determines identification from the item definition rather than
+the original inventory flag. The adapter now preserves that flag on its exactly
+identified new message before the engine consumes it; other flag bits remain
+unsupported. A corrected run delivered identified armour, ordinary death dropped
+it, and pickup succeeded. Opening INN3351 removed only that row. Save 73
+(`IR Shop Complete 0927`) and same-process reload preserved the campaign and
+collected item. Reopening recognized the saved STO and did not repeat removal.
+Independent SAV inspection found all 15 other sale rows byte-for-byte unchanged.
+
+Evidence: failed reproduction in `work/store-sources-native-20260927/`, accepted
+run and saved evidence in `work/store-sources-native-20260927b/`. The former was
+aborted after finding that the remote reader did not cover the shop menu; the
+latter temporarily added that menu to the existing console, then quit normally.
+All 27 staged paths were restored, Story Mode returned to 0 before saving, and
+the reservation was released. No real game or saves were changed. INN3351 is a
+type-2 inn resource: this checks its stock loading and persistence, not ordinary
+buy/sell transactions. Those, shop destinations and fresh-process acceptance
+remain unverified. Focused export, stock rewrite, emulated store lifecycle,
+creature regression and identification tests passed; no full-suite rerun.
+
+For the next scripted sample, the original mod's BLPOOL grant is suitable:
+preserve its display, bite spell and Pool state change, replacing only BLUN12's
+grant. EEex SetTarget/LuaAction can capture LastTrigger and branch by saved
+campaign choice, with the original grant retained for unselected campaigns.
+This is researched, not implemented or live-tested. Do not treat script hash
+registration alone as source suppression.
 
 The existing test installation, private profile, remote console and character
 helper are sufficient; rebuild the test copy if necessary. Before live work,
@@ -265,7 +303,7 @@ doing offline code or synthetic tests is not itself a live-game conflict.
 
 The completed one-shot staging helpers under `work/` show the setup used; do not
 rerun consumed requests. The existing lab and helpers are sufficient.
-Store/script interception is unfinished.
+Shop destinations and script interception are unfinished.
 The fixture observes physical pickup but keeps delivery phase 4 (held); the
 general lifetime observer is not integrated. Choose representative existing
 content autonomously for technical tests. New gameplay selections, capacities

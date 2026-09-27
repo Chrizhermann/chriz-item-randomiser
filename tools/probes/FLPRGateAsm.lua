@@ -540,6 +540,141 @@ return function(buffer, image_base, policy)
         end
         item='' -- A creature member never intercepts container construction.
     end
+    local store,saved_store,store_done
+    if policy and policy.store then
+        local s=policy.store
+        local function literal(bytes)
+            local out={}
+            for i=#bytes,1,-1 do out[#out+1]=string.format('%02x',bytes:byte(i)) end
+            return '0x'..table.concat(out)
+        end
+        local ref=s.ref:upper()..string.rep('\0',8-#s.ref)
+        -- CResRef copied by SetResRef can retain case; saved member names are
+        -- uppercase. Fold both forms, including their zero padding, equally.
+        local match_ref=[[
+            mov r9, 0x2020202020202020
+            or rax, r9
+            mov r8, @REF@
+            or r8, r9
+            cmp rax, r8
+        ]]
+        saved_store=save..[[
+            test r14d, r14d
+            jne gate_done
+            cmp word ptr [rbx+0x10], 0x3F6
+            jne gate_done
+            mov rax, qword ptr [rbp-0x20]
+        ]]..match_ref..[[
+            jne gate_done
+            mov qword ptr [r10+@CONTEXT@], 1
+            gate_done:
+        ]]..restore
+        store=save..[[
+            cmp qword ptr [r10], 1
+            jne gate_done
+            cmp qword ptr [r10+32], 1
+            jne gate_done
+            cmp qword ptr [r10+@CONTEXT@], 0
+            jne gate_done
+            mov rax, qword ptr [rbx]
+        ]]..match_ref..[[
+            jne gate_done
+            cmp qword ptr [r10+120], 0
+            jne gate_done
+        ]]..allocate..[[
+            mov qword ptr [r11+16], 1
+            mov qword ptr [r11+24], 2
+            mov qword ptr [r11+32], rbx
+            mov rdx, qword ptr [rsp+0x60]
+            mov qword ptr [r11+40], rdx
+            mov qword ptr [r11+48], @INDEX@
+            cmp dword ptr [rdx+0x48], @LENGTH@
+            jne gate_publish
+            mov r8, @EXPECTED@
+            xor r9d, r9d
+            gate_compare:
+            mov rax, qword ptr [rdi+r9]
+            cmp rax, qword ptr [r8+r9]
+            jne gate_publish
+            add r9, 8
+            cmp r9, @QBYTES@
+            jb gate_compare
+        ]]
+        for offset=math.floor(s.length/8)*8,s.length-1 do
+            store=store..'mov al, byte ptr [rdi+'..offset..']\ncmp al, byte ptr [r8+'..offset..
+                ']\njne gate_publish\n'
+        end
+        store=store..'mov rax, '..literal(ref)..'\nmov qword ptr [r11+56], rax\n'
+        for offset=0,8,8 do
+            store=store..'mov rax, '..literal(s.payload:sub(offset+1,offset+8))..
+                '\nmov qword ptr [r11+'..(88+offset)..'], rax\n'
+        end
+        store=store..'mov eax, '..literal(s.payload:sub(17,20))..'\nmov dword ptr [r11+104], eax\n'..
+            'mov rax, '..literal(s.payload:sub(21,28))..'\nmov qword ptr [r11+112], rax\n'..[[
+            mov qword ptr [r10+@PENDING@], rbx
+            mov qword ptr [r10+@ROW@], r11
+            mov qword ptr [r11+24], 1
+            mov rdi, @REMOVED@
+            gate_publish:
+            mov qword ptr [r11], 3
+            gate_done:
+        ]]..restore
+        -- The engine owns the newly constructed list. Check the actual result
+        -- before publishing a removal receipt; never retain its pointers for Lua.
+        store_done=save..[[
+            cmp qword ptr [r10+@PENDING@], rbx
+            jne gate_done
+            mov qword ptr [r10+@PENDING@], 0
+            mov r11, qword ptr [r10+@ROW@]
+            mov qword ptr [r11+24], 4
+            cmp dword ptr [rbx+0xB8], @COUNT@
+            jne gate_done
+            mov r8, qword ptr [rbx+0xA8]
+            mov r9, @REMOVED_ITEMS@
+            mov ecx, @COUNT@
+            test ecx, ecx
+            je gate_tail
+            gate_rows:
+            test r8, r8
+            je gate_done
+            mov rdx, qword ptr [r8+0x10]
+        ]]
+        for offset=0,16,8 do
+            store_done=store_done..'mov rax, qword ptr [rdx+'..offset..']\n'..
+                'cmp rax, qword ptr [r9+'..offset..']\njne gate_done\n'
+        end
+        store_done=store_done..[[
+            mov eax, dword ptr [rdx+24]
+            cmp eax, dword ptr [r9+24]
+            jne gate_done
+            mov r8, qword ptr [r8]
+            add r9, 28
+            dec ecx
+            jne gate_rows
+            gate_tail:
+            test r8, r8
+            jne gate_done
+            mov qword ptr [r11+24], 1
+            mov rax, qword ptr [r10+40]
+            mov qword ptr [r10+@COMPLETE@], rax
+            inc qword ptr [r10+120]
+            inc qword ptr [r10+96]
+        ]]
+        for offset=0,120,8 do
+            store_done=store_done..'mov rax, qword ptr [r11+'..offset..']\n'..
+                'mov qword ptr [r10+'..(128+2048*128+offset)..'], rax\n'
+        end
+        store_done=store_done..'mov qword ptr [r10+112], 1\ngate_done:\n'..restore
+        for key,value in pairs({REF=literal(ref),CONTEXT=s.context,PENDING=s.context+8,
+            ROW=s.context+24,COMPLETE=s.context+16,INDEX=s.index,LENGTH=s.length,EXPECTED=s.expected,
+            REMOVED=s.removed,REMOVED_ITEMS=s.removed+s.items,COUNT=s.count,QBYTES=math.floor(s.length/8)*8}) do
+            local replacement=type(value)=='number' and string.format('%.0f',value) or value
+            store=store:gsub('@'..key..'@',replacement)
+            saved_store=saved_store:gsub('@'..key..'@',replacement)
+            store_done=store_done:gsub('@'..key..'@',replacement)
+        end
+        item=''
+    end
     local function expand(code, prefix)
         return (code:gsub('@BUFFER@', string.format('%.0f', buffer))
             :gsub('@SKIP@', string.format('%.0f', image_base+0x1906FC))
@@ -548,5 +683,7 @@ return function(buffer, image_base, policy)
     return {enter=expand(enter,'gate_enter'), capture=expand(capture,'gate_capture'),
         item=expand(item,'gate_item'), area_enter=area_enter and expand(area_enter,'gate_area_enter'),
         area_exit=area_exit and expand(area_exit,'gate_area_exit'),
-        actor=actor and expand(actor,'gate_actor')}
+        actor=actor and expand(actor,'gate_actor'), store=store and expand(store,'gate_store'),
+        saved_store=saved_store and expand(saved_store,'gate_saved_store'),
+        store_done=store_done and expand(store_done,'gate_store_done')}
 end

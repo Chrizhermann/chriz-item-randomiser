@@ -21,7 +21,7 @@ local function setup(N)
     local function str(value) return {get=function() return value end} end
     local function item(ref, address, flags)
         return {cResRef=str(ref), m_useCount1=0, m_useCount2=0, m_useCount3=0,
-            m_wear=0, m_flags=flags or 1, address=address}
+            m_wear=0, m_flags=flags == nil and 1 or flags, address=address}
     end
     f.item = item
     local function sprite(address, name, slots)
@@ -195,6 +195,32 @@ function cases.one_reward_is_bound_to_its_message_and_held_after_two_later_ticks
     unrelated_intact(f); assert(#f.calls == 1)
     x, e = a:execute(command); fail(x, e, "ALREADY_ATTEMPTED")
 end
+function cases.creature_message_preserves_selected_identification_only(N)
+    for _, values in ipairs({{0, 1}, {1, 0}}) do
+        local engine_flag, selected_flag = values[1], values[2]
+        local f = setup(N)
+        f.fixture.sources[f.source_ids[1]].payload.flags = selected_flag
+        f.adapter = N.new(f.api, f.fixture)
+        local unrelated = f.message(77, "OTHER", 2)
+        unrelated.m_item.m_flags = 8
+        f.queue[1] = unrelated
+        f.api.EEex_Action_ExecuteResponseStringOnAIBaseInstantly = function(action, owner)
+            f.calls[#f.calls + 1] = action
+            local message = f.message(f.ids[owner], "FLPRI1", 2)
+            message.m_item.m_flags = engine_flag
+            f.queue[#f.queue + 1] = message
+        end
+        local command = f.start(1)
+        assert(#f.queue == 2 and f.queue[1] == unrelated)
+        assert(unrelated.m_item.m_flags == 8 and f.queue[2].m_item.m_flags == selected_flag)
+        f.update(); f.boundary()
+        local result, reason = f.adapter:observe(command); fail(result, reason, "DELIVERY_SETTLING")
+        f.boundary(); local receipt = assert(f.adapter:observe(command))
+        assert(receipt.payload.flags == selected_flag and f.creature.slots[18].m_flags == selected_flag)
+        assert(unrelated.m_item.m_flags == 8)
+        unrelated_intact(f)
+    end
+end
 function cases.two_rewards_to_one_creature_each_bind_their_own_instance(N)
     local f = setup(N); local a = f.adapter
     local first = f.start(1); f.update(); f.boundary(); a:observe(first); f.boundary()
@@ -268,7 +294,7 @@ function cases.unrelated_queue_traffic_is_neither_cast_nor_blocking(N)
     f.boundary(); assert(f.adapter:observe(command))
 end
 function cases.execute_requires_exactly_one_matching_bound_message(N)
-    for _, variant in ipairs({"none", "target", "source", "payload", "form", "extra", "synchronous"}) do
+    for _, variant in ipairs({"none", "target", "source", "payload-2", "payload-8", "form", "extra", "synchronous"}) do
         local f = setup(N); local a = f.adapter
         f.api.EEex_Action_ExecuteResponseStringOnAIBaseInstantly = function(action)
             f.calls[#f.calls + 1] = action
@@ -276,7 +302,8 @@ function cases.execute_requires_exactly_one_matching_bound_message(N)
             local m = f.message(3, "FLPRI1")
             if variant == "target" then m.m_targetId = 99
             elseif variant == "source" then m.m_sourceId = 99
-            elseif variant == "payload" then m.m_item.m_flags = 0
+            elseif variant == "payload-2" then m.m_item.m_flags = 2
+            elseif variant == "payload-8" then m.m_item.m_flags = 8
             elseif variant == "form" then m.virtual_GetMsgSubType = function() return 12 end
             elseif variant == "extra" then f.queue[#f.queue + 1] = f.message(99, "OTHER", 40)
             elseif variant == "synchronous" then f.creature.slots[18] = f.item("FLPRI1", 777) end

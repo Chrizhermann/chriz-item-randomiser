@@ -22,6 +22,11 @@ local actor_sites = {
     {rva=0x18C448,code='actor',call=true,bytes='e8d34d1b00498db580000000e93d010000'},
     {rva=0x18C591,code='actor',call=true,bytes='e88a4c1b00488bf84885c00f8444010000'},
 }
+local store_sites = {
+    {rva=0x250765,size=8,code='store',bytes='0f1047080f114308'},
+    {rva=0x405295,size=7,code='saved_store',bytes='c6435001498bcf'},
+    {rva=0x250967,size=5,code='store_done',bytes='4c8b742448'},
+}
 local function hash(value)
     return type(value)=='string' and #value==64 and not value:find('[^0-9a-f]')
 end
@@ -63,6 +68,25 @@ local function validate(bundle,id)
     for _,selected_id in ipairs(Gate.source_ids(f)) do if selected_id==id then found=true end end
     assert(found, 'CAMPAIGN_GATE_SOURCE_INVALID')
     local endpoint=f.sources and f.sources[id]
+    if endpoint and endpoint.kind=='guarded-store' then
+        local index,selected
+        for i,source in ipairs(m.sources) do if source.id==id then index,selected=i,source end end
+        local store,record=id:match('^sto:([a-z0-9#_%-]+)/item/(%d+)$')
+        record=tonumber(record)
+        assert(index and store and #store<=8 and integer(record,0,2147483646) and
+            hash(selected.resource_sha256) and integer(selected.quantity,1,2147483647),
+            'CAMPAIGN_GATE_SOURCE_INVALID')
+        local source=selected.record
+        assert(source.kind=='store' and source.id==id and source.resource=='sto:'..store and
+            source.owner==source.resource and source.record.record_index==record and
+            not source.record.infinite_supply and source.record.quantity==selected.quantity and
+            endpoint.store==store and endpoint.quantity==selected.quantity and endpoint.record_index==record and
+            same_payload(endpoint.payload,source.record) and
+            f.resource_hashes[store:upper()..'.STO']==selected.resource_sha256,
+            'CAMPAIGN_GATE_BINDING_INVALID')
+        return m.revision,index,selected.resource_sha256,{id=id,kind='store',store=store,
+            record=record,quantity=selected.quantity,payload=endpoint.payload}
+    end
     if endpoint and endpoint.kind=='guarded-creature' then
         local index,selected
         for i,source in ipairs(m.sources) do if source.id==id then index,selected=i,source end end
@@ -200,6 +224,50 @@ local function prepare_creature(api,bundle,build,compile,pristine,id,base,cache)
     return self,build(buffer,base,policy)
 end
 local function prepare(api,bundle,build,compile,pristine,id,base,cache)
+    if bundle.fixture.sources[id].kind=='guarded-store' then
+        local revision,index,resource_hash,binding=validate(bundle,id)
+        local sto=assert(pristine.stores and pristine.stores[revision] and pristine.stores[revision][id],
+            'CAMPAIGN_GATE_STORE_MISSING')
+        local original,removed=sto.original,sto.removed
+        assert(type(original)=='string' and #original>=0x9C and #original==#removed and
+            original:sub(1,8)=='STORV1.0' and removed:sub(1,8)=='STORV1.0',
+            'CAMPAIGN_GATE_PRISTINE_INVALID')
+        local function u16(data,offset) local a,b=data:byte(offset+1,offset+2); return a+b*256 end
+        local function u32(data,offset) return u16(data,offset)+u16(data,offset+2)*65536 end
+        local items,count=u32(original,0x34),u32(original,0x38)
+        local item=items+binding.record*28
+        assert(items>=0x9C and items+count*28<=#original and binding.record<count and
+            u32(removed,0x34)==items and u32(removed,0x38)==count-1,
+            'CAMPAIGN_GATE_STORE_LAYOUT_INVALID')
+        local raw=original:sub(item+1,item+28)
+        assert(raw:sub(1,8):match('^[^%z]*'):lower()==binding.payload.resref and u16(original,item+8)==0 and
+            u16(original,item+10)==binding.payload.charges[1] and u16(original,item+12)==binding.payload.charges[2] and
+            u16(original,item+14)==binding.payload.charges[3] and u32(original,item+16)==binding.payload.flags and
+            u32(original,item+20)==binding.quantity and u32(original,item+24)==0 and
+            removed:sub(items+1,items+(count-1)*28)==
+                original:sub(items+1,item)..original:sub(item+29,items+count*28),
+            'CAMPAIGN_GATE_PRISTINE_BINDING_MISMATCH')
+        local buffer=api.EEex_Malloc(MEMORY_SIZE+2*#original)
+        assert(buffer and buffer~=0,'CAMPAIGN_GATE_ALLOC_FAILED')
+        for offset=0,MEMORY_SIZE-1,8 do api.EEex_Write64(buffer+offset,0) end
+        local function copy(value,address)
+            for offset=1,#value do
+                local byte=value:byte(offset)
+                api.EEex_Write8(address+offset-1,byte>=128 and byte-256 or byte)
+            end
+            return address
+        end
+        local policy=compile(revision,index)
+        policy.store={expected=copy(original,buffer+MEMORY_SIZE),removed=copy(removed,buffer+MEMORY_SIZE+#original),
+            length=#original,items=items,count=count-1,index=binding.record,ref=binding.store,
+            context=CONTEXT,payload=raw}
+        local self=setmetatable({api=api,base=base,buffer=buffer,revision=revision,index=index,
+            resource_hash=resource_hash,binding=binding,policy=policy,detours={},installed=false,
+            expected={name_raw=hex(binding.store:upper()..string.rep('\0',32-#binding.store)),
+                payload_raw=hex(raw:sub(1,20)),index=binding.record,
+                detail1_raw=hex(raw:sub(21,28)),detail2_raw=string.rep('0',16)}},Runtime)
+        return self,build(buffer,base,policy)
+    end
     if bundle.fixture.sources[id].kind=='guarded-creature' then
         return prepare_creature(api,bundle,build,compile,pristine,id,base,cache)
     end
@@ -287,16 +355,18 @@ function Gate.install(api,bundle,build,compile,pristine)
     local base=api.EEex_GetImageBase()
     local selected_sites={}
     for _,site in ipairs(sites) do selected_sites[#selected_sites+1]=site end
-    local creatures=false
+    local creatures,stores=false,false
     for _,selected in ipairs(bundles) do
         for _,endpoint in pairs(selected.fixture.sources) do
             if endpoint.kind=='guarded-creature' then creatures=true end
+            if endpoint.kind=='guarded-store' then stores=true end
         end
     end
     if creatures then
         assert(type(api.EEex_HookBeforeCall)=='function','CAMPAIGN_GATE_CREATURE_HOOK_MISSING')
         for _,site in ipairs(actor_sites) do selected_sites[#selected_sites+1]=site end
     end
+    if stores then for _,site in ipairs(store_sites) do selected_sites[#selected_sites+1]=site end end
     for _,site in ipairs(selected_sites) do
         local offset=0
         for byte in site.bytes:gmatch('%x%x') do
@@ -336,6 +406,10 @@ function Gate.install(api,bundle,build,compile,pristine)
                     end
                 else
                     api.EEex_HookBeforeRestore(address,0,site.size,site.size,{assembly[site.code]})
+                    if site.code=='store' and api.EEex_HookIntegrityWatchdog_Load then
+                        api.EEex_HookIntegrityWatchdog_IgnoreRegisters(address,{
+                            api.EEex_HookIntegrityWatchdogRegister.RDI})
+                    end
                 end
                 assert(api.EEex_ReadU8(address)==0xE9,'CAMPAIGN_GATE_DETOUR_NOT_WRITTEN')
                 local target=address+5+api.EEex_Read32(address+1)
@@ -364,6 +438,9 @@ function Runtime:reset()
     api.EEex_Write64(buffer+32,0)
     api.EEex_Write64(buffer+48,0); api.EEex_Write64(buffer+56,0)
     api.EEex_Write64(buffer+112,0)
+    if self.binding.kind=='store' then
+        for offset=0,24,8 do api.EEex_Write64(buffer+CONTEXT+offset,0) end
+    end
     api.EEex_Write64(buffer+104,api.EEex_ReadU64(buffer+104)+1)
     for offset=CONTEXT+32,MEMORY_SIZE-1,64 do
         api.EEex_Write64(buffer+offset+24,0); api.EEex_Write64(buffer+offset,0)
@@ -398,6 +475,7 @@ function Runtime:inspect()
         result.events[#result.events+1]=row
     end
     if self:_q(112)==1 then result.witness=self:_row(CAPACITY) end
+    if self.binding.kind=='store' then result.store_completed=generation>0 and self:_q(CONTEXT+16)==generation end
     result.stable=published and active==0 and self:_q(24)==0 and self:_q(8)==count and
         self:_q(40)==generation and self:_q(104)==destroys and self:_q(32)==result.mode
     return result
@@ -418,6 +496,7 @@ function Runtime:_bundle(bundle)
         binding.kind==b.kind and binding.actor==b.actor and binding.area==b.area and
         binding.record==b.record and binding.slot==b.slot and
         binding.creature_resource==b.creature_resource and binding.area_hash==b.area_hash and
+        binding.store==b.store and binding.quantity==b.quantity and
         binding.container_type==b.container_type and same_payload(binding.payload,b.payload),
         'CAMPAIGN_GATE_REVISION_MISMATCH')
 end
@@ -484,7 +563,7 @@ function Adapter:_request(request,kind)
     local gate=self.gate
     return not self.destroyed and type(request)=='table' and request.kind==kind and request.mode=='observe-only'
         and request.index==gate.index and request.revision==gate.revision and request.source_id==gate.binding.id
-        and request.resource_sha256==gate.resource_hash and request.quantity==1 and same_payload(request.payload,gate.binding.payload)
+        and request.resource_sha256==gate.resource_hash and request.quantity==(gate.binding.quantity or 1) and same_payload(request.payload,gate.binding.payload)
         and type(request.session)=='table' and type(request.token)=='table'
 end
 local function receipt(request)
@@ -531,6 +610,12 @@ function Adapter:observe_removal(request)
         witness.payload_raw~=expected.payload_raw or witness.detail1_raw~=expected.detail1_raw or
         witness.detail2_raw~=expected.detail2_raw or
         witness.object_pointer=='0' or witness.other_value=='0' then return nil,'CAMPAIGN_GATE_WITNESS_INVALID' end
+    if self.gate.binding.kind=='store' then
+        if not snapshot.store_completed then return nil,'SOURCE_NOT_LOADED' end
+        local result=receipt(request)
+        result.exact_source_event,result.removed,result.remaining=1,request.quantity,0
+        return result
+    end
     local world; world,reason=self.native:guarded_source_remaining(self.gate.binding.id,witness.object_pointer,witness.other_value)
     if not world then
         if reason=='AREA_UNAVAILABLE' then return nil,'SOURCE_NOT_LOADED' end

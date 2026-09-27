@@ -15,9 +15,9 @@ from flir_config.native_export import export_native
 from flir_config.profiles import ProfileError, edit_profile, new_profile
 from flir_config.resources import scan_game
 from flir_config.sources import new_binding_plan, scan_world
-from flir_config.world_formats import parse_cre
+from flir_config.world_formats import parse_cre, parse_sto
 from tests.test_postinstall_resources import make_game, make_itm, snapshot
-from tests.test_postinstall_world_formats import item_record, make_are, make_cre
+from tests.test_postinstall_world_formats import item_record, make_are, make_cre, make_sto
 
 
 class NativeExportTests(unittest.TestCase):
@@ -78,6 +78,44 @@ class NativeExportTests(unittest.TestCase):
     def creature_artifacts(self, revision):
         base = self.output / "campaign-store" / "revisions" / f"{revision}.source-1"
         return Path(str(base) + ".original.cre"), Path(str(base) + ".removed.cre")
+
+    def write_store_source(self):
+        profile = edit_profile(new_profile(self.catalog, "native-store", "Store test"),
+                               self.catalog, include=["synth001"])
+        plan = new_binding_plan(profile, self.catalog, self.world)
+        source = next(row for row in self.world["sources"]
+                      if row["kind"] == "store" and row["item"] == "synth001")
+        plan["sources"] = [{"item": "synth001", "policy": "relocate",
+                            "source_ids": [source["id"]], "registration_ids": []}]
+        plan["targets"] = [{"id": "are:area/actor/0", "capacity": source["record"]["quantity"],
+                            "optional": False}]
+        return write_campaign(profile, self.catalog, self.world, plan, self.store)["revision"], source
+
+    def test_finite_store_row_exports_exact_private_before_and_after(self):
+        original = bytes(make_sto([
+            (item_record("SYNTH002", expiration=0, charges=(1, 2, 3), flags=1), 2, 0),
+            (item_record("SYNTH001", expiration=0, charges=(4, 5, 6), flags=1), 3, 0),
+            (item_record("SYNTH002", expiration=0, charges=(7, 8, 9), flags=1), 1, 0)], gap=5))
+        (self.override / "shop.sto").write_bytes(original)
+        self.refresh()
+        revision, source = self.write_store_source()
+        before = snapshot(self.game)
+        self.export(revision)
+        base = self.output / "campaign-store" / "revisions" / f"{revision}.source-1"
+        native = json.loads((self.output / "campaign-store" / "revisions" /
+                             f"{revision}.native.json").read_bytes())
+        endpoint = native["sources"][source["id"]]
+        self.assertEqual({key: value for key, value in endpoint.items() if key != "identity"}, {
+            "kind": "guarded-store", "store": "shop", "record_index": 1, "quantity": 3,
+            "payload": {"resref": "synth001", "expiration": 0, "charges": [4, 5, 6],
+                        "flags": 1}})
+        self.assertEqual(Path(str(base) + ".original.sto").read_bytes(), original)
+        removed = Path(str(base) + ".removed.sto").read_bytes()
+        self.assertEqual(len(removed), len(original))
+        self.assertEqual([(row["resref"], row["quantity"], row["charges"])
+                          for row in parse_sto(removed)["items"]],
+                         [("synth002", 2, [1, 2, 3]), ("synth002", 1, [7, 8, 9])])
+        self.assertEqual(snapshot(self.game), before)
 
     def test_new_profile_preserves_old_native_revision_and_pristine_area(self):
         game_before = snapshot(self.game)
