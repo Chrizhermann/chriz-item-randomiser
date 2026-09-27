@@ -4,8 +4,9 @@ The integrated fixture passed native New Game, early reward pickup, source
 suppression, selected/excluded campaign reload, returned-item and interrupted
 confirmation checks on 27 September. Several configured sources across two areas
 also passed, followed by three existing BG1 rewards across three real source areas.
-Container sources and one static creature backpack source now pass on the pinned
-Windows build; general source support and normal installer integration remain unfinished.
+Container, static creature and finite shop sources now pass representative samples
+on the pinned Windows build. Shop destinations and purchase pricing are described
+below. General source support and normal installer integration remain unfinished.
 
 ## Implementation
 
@@ -256,8 +257,7 @@ Evidence: `work/equipped-source-native-20260927/`. The muted, non-input-desktop
 session quit normally; all 26 staged paths were restored, Story Mode returned to
 0 before saving, and the reservation was released. This verifies one ordinary
 replacement, not special replacement rules or complete source-family coverage.
-Shop sources are now covered by the next sample; shop recipients and scripted
-rewards still need runtime support.
+Shop sources and recipients are covered below; scripted rewards still need runtime support.
 
 Finite shop sources use the original Mode 1 rule: remove the exact sale row and
 retain its quantity as reward units. The private STO rewrite preserves all other
@@ -285,9 +285,65 @@ latter temporarily added that menu to the existing console, then quit normally.
 All 27 staged paths were restored, Story Mode returned to 0 before saving, and
 the reservation was released. No real game or saves were changed. INN3351 is a
 type-2 inn resource: this checks its stock loading and persistence, not ordinary
-buy/sell transactions. Those, shop destinations and fresh-process acceptance
-remain unverified. Focused export, stock rewrite, emulated store lifecycle,
+buy/sell transactions. The later shop-destination sample checks those separately.
+Focused export, stock rewrite, emulated store lifecycle,
 creature regression and identification tests passed; no full-suite rerun.
+
+### Shop destinations and campaign purchase prices — 28 September
+
+`FLPRShop.lua` now delivers through native `AddStoreItem` and normal store saving.
+The six pinned hooks preserve the appended item's payload, quote its campaign base
+price before ordinary merchant modifiers, keep resale copies separate while the
+reward remains for sale, and consume the surcharge when that reward leaves stock.
+`shop_pricing` defaults to 120% with optional per-item base prices; campaign manifests
+freeze these choices. Old manifests and their native exports retain their original
+field set and hashes. The UI exposes both controls.
+
+The representative campaign (`1b73dc84...`, seed `649613330`) moves identified
+`chan02` from INN3351 row 8 into RIBALD before visiting the source. A test override
+of 2,000 multiplied by 120% yields a 2,400 base and a 3,960 quoted purchase price
+with this party's merchant modifier. Temporarily disabling only the surcharge
+quoted 2,640, and all 139 ordinary stock prices and records stayed unchanged.
+Selling a separate control copy left two distinct rows priced 3,960 and 2,640.
+Save 74 (`IR Shop Stock 0928`) retained both across same- and fresh-process loading.
+
+The corrected purchase took exactly 3,960 gold (100,520 -> 96,560), delivered one
+identified armour, and left the ordinary copy at 2,640. Resale still offered 400.
+The engine temporarily sets zero charge slots to one on purchase, then serializes
+this uncharged armour with zeros; this is ordinary `CStore::GetItem` behavior.
+Opening INN3351 removed exactly the selected original. Save 75 (`IR Shop Bought
+0928`) independently contains one party copy, `FLPR_P0001=1`, confirmed source and
+delivery phases, all 15 other source rows, and all 139 original Ribald rows unchanged.
+Fresh-process loading of save 75 also passed: the same campaign, completed source
+and delivery state, ordinary 2,640 stock price and 400 resale quote were retained.
+Selling the bought reward merged it into the ordinary stock at quantity two, with
+no restored surcharge. A final purchase from save 74 using the completed removal
+hook again charged exactly 3,960 and consumed the campaign price flag. Save 76
+(`IR Shop Final 0928`) contains the same campaign globals, party reward and exact
+saved source/destination STO bytes as save 75.
+
+The duplicate-copy sample exposed an engine selection bug: refreshing stock copied
+one selected row to both equivalent items. The hook now matches quoted price and
+consumes each old selection once. An initial hook placement caused a reproduced
+crash because `2E7E08` is an existing branch landing; the corrected hook goes between
+the CMP and CMOVE at `2E7E00`, leaving that landing intact. Accepted session `d`
+then selected and bought only the intended reward. Failed evidence was retained.
+The removal hook at `25052A` compares the actual store resref, item resref and
+priced row pointer before consuming the adjustment, covering the shared Buy/Steal
+removal path without relying on a stale pointer alone. The final Buy path passed
+natively; Steal transactions have not yet been tested.
+
+Evidence is under `work/shop-recipients-native-20260928` and suffixes `b` through `e`.
+All sessions used the muted non-input desktop; the last quit normally, restored
+28 staged files and released the reservation. These checks cover one finite armour
+reward, not multiplayer, every item family, or ordinary installer integration.
+Current exports reject a destination already stocking a selected item and a shop
+used as both selected source and target. Multiple distinct items may share a shop;
+multi-copy sources currently require shop capacity one.
+All 337 focused profile/compiler/export/editor/native adapter/shop/host checks
+passed across the available Lua runtimes where applicable. This is not a full-suite
+rerun. Browser inspection confirmed the pricing controls and legacy configuration
+loading; the editor is serving the existing saved scans and workspace.
 
 For the next scripted sample, the original mod's BLPOOL grant is suitable:
 preserve its display, bite spell and Pool state change, replacing only BLUN12's
@@ -303,7 +359,7 @@ doing offline code or synthetic tests is not itself a live-game conflict.
 
 The completed one-shot staging helpers under `work/` show the setup used; do not
 rerun consumed requests. The existing lab and helpers are sufficient.
-Shop destinations and script interception are unfinished.
+General shop coverage and script interception are unfinished.
 The fixture observes physical pickup but keeps delivery phase 4 (held); the
 general lifetime observer is not integrated. Choose representative existing
 content autonomously for technical tests. New gameplay selections, capacities

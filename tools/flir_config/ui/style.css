@@ -67,6 +67,18 @@ h3 {
   margin: 0;
 }
 
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 .page {
   max-width: 1450px;
   margin: auto;
@@ -361,6 +373,56 @@ input::placeholder {
   padding-top: 4px;
 }
 
+.shop-pricing {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 18px;
+  padding: 0 0 18px;
+}
+
+.shop-pricing p {
+  margin: 5px 0 0;
+  color: var(--muted);
+  font-size: .9rem;
+  line-height: 1.4;
+}
+
+.shop-percent-control {
+  flex: 0 0 155px;
+}
+
+.shop-percent-control label {
+  font-size: .88rem;
+}
+
+.percent-input {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.percent-input input {
+  width: 95px;
+}
+
+.base-price-row {
+  margin-bottom: 15px;
+}
+
+.base-price-row label {
+  font-size: .9rem;
+}
+
+.base-price-row input {
+  width: min(220px, 100%);
+}
+
+.base-price-row .small-note {
+  display: block;
+  margin: 5px 0 0;
+}
+
 .selection-section {
   border-top: 1px solid var(--line);
   padding-top: 18px;
@@ -622,6 +684,10 @@ dialog h2 {
 }
 
 @media (max-width:480px) {
+  .shop-pricing {
+    align-items: flex-start;
+    flex-direction: column;
+  }
   .inline-actions {
     flex-wrap: wrap;
   }

@@ -12,8 +12,9 @@ import tempfile
 from copy import deepcopy
 from pathlib import Path
 
-from .profiles import (HEX256, PROFILE_ID, ProfileError, _digest, canonical_bytes,
-                       ensure_output_outside_game, read_json, write_json)
+from .profiles import (DEFAULT_SHOP_PRICING, HEX256, PROFILE_ID, ProfileError,
+                       _digest, canonical_bytes, ensure_output_outside_game,
+                       read_json, validate_shop_pricing, write_json)
 from .sources import (DANGLING_INVENTORY, INVALID_INVENTORY, UNRESOLVED_STORAGE,
                       UNUSABLE_SOURCE, bind_profile)
 
@@ -186,7 +187,7 @@ def _validate_target(row: dict) -> int:
 
 
 def _validate_campaign(body: dict) -> dict:
-    _fields(body, _FIELDS, "artifact")
+    _fields(body, _FIELDS | ({"shop_pricing"} if isinstance(body, dict) and "shop_pricing" in body else set()), "artifact")
     if body["schema"] != CAMPAIGN_SCHEMA or body["state"] != STATE:
         raise ProfileError("Unsupported campaign prototype schema or state")
     for key in ("revision", "bound_revision", "world_fingerprint"):
@@ -211,6 +212,10 @@ def _validate_campaign(body: dict) -> dict:
         totals[key] = total
     if totals["targets"] < totals["sources"]:
         raise ProfileError("Campaign target capacity cannot hold its selected reward records")
+    if "shop_pricing" in body:
+        selected = sorted({row["record"]["item"] for row in body["sources"]})
+        validate_shop_pricing(body["shop_pricing"], selected,
+                              {resref: {"price": 0} for resref in selected})
     payload = {key: value for key, value in body.items() if key != "revision"}
     if _digest(payload) != body["revision"]:
         raise ProfileError("Campaign prototype was modified")
@@ -235,6 +240,7 @@ def compile_campaign(profile: dict, catalog: dict, world: dict, plan: dict) -> d
     body = {"schema": CAMPAIGN_SCHEMA, "state": STATE,
             "bound_revision": bound["fingerprint"], "profile_id": bound["profile"]["id"],
             "world_fingerprint": bound["world_fingerprint"], "sources": [], "targets": [],
+            "shop_pricing": deepcopy(bound["profile"].get("shop_pricing", DEFAULT_SHOP_PRICING)),
             "runtime_requirements": deepcopy(bound["runtime_requirements"])}
     for selected in bound["sources"]:
         source = selected["source"]

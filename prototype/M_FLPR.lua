@@ -127,7 +127,15 @@ local ok, failure = pcall(function()
         core = Core, storage = storage, resolve = resolve,
         prepare_source_guard = prepare_source_guard, source_guard = source_guard,
         next = function() return resolve(module("flpr-fixture/next.lua")) end,
-        native = function(value) return Native.new(_G, value) end,
+        native = function(value)
+            local has_shop=false
+            for _,target in pairs(value.targets) do if target.kind=='store' then has_shop=true end end
+            if has_shop then
+                if not root.Shop then root.Shop=module('override/FLPRShop.lua').install(_G) end
+                root.Shop:bind(value,root.Host.controller)
+            elseif root.Shop then root.Shop:reset() end
+            return Native.new(_G, value)
+        end,
         seed = function()
             root.SeedSerial = root.SeedSerial + 1
             return (os.time() * 16807 + Infinity_GetClockTicks() * 48271 + root.SeedSerial) % 2147483646 + 1

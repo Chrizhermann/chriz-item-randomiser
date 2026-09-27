@@ -1,4 +1,4 @@
-"""Export reviewed container/creature sources for the experimental native runtime.
+"""Export reviewed physical sources and targets for the experimental native runtime.
 
 This writes configuration outside the game. It does not install runtime hooks,
 change resources, choose gameplay content, or establish live target eligibility.
@@ -8,12 +8,15 @@ from __future__ import annotations
 import hashlib
 import re
 from collections import Counter
+from copy import deepcopy
 from pathlib import Path
 
 from .campaigns import read_campaign, _render_lua, _store_path, _write_immutable
 from .creature_inventory import rewrite_inventory
 from .store_inventory import rewrite_inventory as rewrite_store
-from .profiles import HEX256, ProfileError, _digest, canonical_bytes, ensure_output_outside_game, validate_catalog
+from .profiles import (DEFAULT_SHOP_PRICING, HEX256, MAX_ITEM_PRICE, ProfileError,
+                       _digest, canonical_bytes, ensure_output_outside_game,
+                       validate_catalog)
 from .resources import GameResources, RESOURCE_TYPES
 from .sources import validate_world
 
@@ -42,6 +45,13 @@ def _compile(manifest: dict, world: dict, index: dict, items: dict) -> tuple[dic
     native = {"schema": "flir-native-fixture-v1", "revision": manifest["revision"],
               "sources": {}, "targets": {}, "resource_hashes": {},
               "ready_detail": "have been assigned to the selected recipients."}
+    # Existing actor-only native artifacts are immutable. Their campaigns lack
+    # pricing, so recompilation must retain the exact old native field set.
+    has_shop_pricing = "shop_pricing" in manifest or any(
+        row["record"]["kind"] == "store" for row in manifest["targets"])
+    if has_shop_pricing:
+        native["shop_pricing"] = deepcopy(manifest.get("shop_pricing", DEFAULT_SHOP_PRICING))
+        native["shop_prices"] = {}
     required, pristine, selected_items, selected_actors, selected_stores = set(), set(), set(), set(), set()
 
     def use(resource: str) -> None:
@@ -153,12 +163,41 @@ def _compile(manifest: dict, world: dict, index: dict, items: dict) -> tuple[dic
         use(source["resource"]); use("itm:" + source["item"])
         pristine.add(owner["resource"])
 
+    if has_shop_pricing:
+        percent = native["shop_pricing"]["percent"]
+        overrides = native["shop_pricing"]["base_prices"]
+        for resref in sorted(selected_items):
+            base = overrides.get(resref, items[resref]["price"])
+            effective = base * percent // 100
+            _require(effective <= MAX_ITEM_PRICE,
+                     f"Experimental native shop price exceeds 32-bit gold range: {resref}")
+            native["shop_prices"][resref] = effective
+
     for selected in manifest["targets"]:
         target, identity = selected["record"], selected["id"]
-        _require(target["kind"] == "actor", f"Native export needs an ARE actor target: {identity}")
         _require(index["targets"].get(identity) == target and
                  index["resources"][target["resource"]]["sha256"] == selected["resource_sha256"],
                  f"Selected target differs from the scan: {identity}")
+        if target["kind"] == "store":
+            _require(target["selector"]["flags"] & 1,
+                     f"Experimental native store target does not allow the player to buy: {identity}")
+            _require(target["resource"] not in selected_stores,
+                     f"Experimental native export cannot use a selected source store as a target: {identity}")
+            _require(not (selected["capacity"] > 1 and
+                          any(row["quantity"] > 1 for row in manifest["sources"])),
+                     "Experimental native export cannot assign distinct copies of one selected item "
+                     "to a single shop yet; use store target capacity 1 for multi-copy sources")
+            collisions = sorted({row["item"] for row in index["sources"].values()
+                                 if row["kind"] == "store" and row["resource"] == target["resource"]
+                                 and row["item"] in selected_items})
+            _require(not collisions,
+                     f"Experimental native store target already stocks selected item(s) "
+                     f"{', '.join(collisions)}; AddStoreItem merges rows and cannot attribute inserted copies: {identity}")
+            use(target["resource"])
+            native["targets"][identity] = {"kind": "store", "store": target["resource"][4:],
+                                           "identity": _digest({"target": selected})}
+            continue
+        _require(target["kind"] == "actor", f"Native export needs an ARE actor or store target: {identity}")
         name = _name(actor_name(target), identity)
         _require(actor_names[target["resource"], name.lower()] == 1,
                  f"Native target needs a unique actor script name in its area: {identity}")

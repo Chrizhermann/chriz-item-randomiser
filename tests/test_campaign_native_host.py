@@ -260,7 +260,12 @@ local function bootstrap(Core,Host,Globals,text,options)
     f.pristine_bytes='AREAV1.0'..string.rep('\0',0x70-8)..'\212\104\0\0'..
         string.rep('\0',4)..'\20\107\0\0'..string.rep('\0',27492-0x7C)
     f.pristine_opens=0
-    f.native_fixture={revision=f.manifest.revision,ready_detail=f.ready_detail}
+    f.native_fixture={revision=f.manifest.revision,ready_detail=f.ready_detail,targets={}}
+    for i,target in ipairs(f.manifest.targets) do
+        -- Match the native fixture shape consumed by the adapter and bootstrap.
+        f.native_fixture.targets[target.id]={kind="ground-pile",area="BG2600",
+            script_name="FLPRT"..i,identity=string.rep(tostring(i+3),64),x=100+i,y=200}
+    end
     if options.gate then
         local id="are:flpru1/container/1"
         f.manifest.sources[1].id=id

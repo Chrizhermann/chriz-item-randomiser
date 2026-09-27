@@ -37,10 +37,13 @@ class EditorTests(unittest.TestCase):
     def test_save_reload_copy_and_incomplete_draft_keep_choices(self):
         e = self.editor
         draft = deepcopy(e.draft)
+        draft["profile"]["shop_pricing"] = {"percent": 135, "base_prices": {"synth001": 650}}
         saved = e.post("/api/save", draft)
+        self.assertEqual(saved["profile"]["shop_pricing"], draft["profile"]["shop_pricing"])
         self.assertEqual(saved["plan"], draft["plan"])
         copied = e.post("/api/save", {**draft, "copy": True})
         self.assertNotEqual(copied["profile"]["id"], draft["profile"]["id"])
+        self.assertEqual(copied["profile"]["shop_pricing"], draft["profile"]["shop_pricing"])
         self.assertEqual(len(copied["saved"]), 2)
         incomplete = deepcopy(draft)
         incomplete["profile"]["items"].append("synth002")
@@ -65,7 +68,7 @@ class EditorTests(unittest.TestCase):
         self.assertFalse(result["valid"])
         self.assertIn("capacity", result["message"].lower())
 
-    def test_creature_source_can_be_saved_but_is_not_marked_runtime_ready(self):
+    def test_creature_source_can_be_saved_and_checked_for_test_runtime(self):
         fx = self.fx
         (fx.override / "actor.cre").write_bytes(make_cre([
             item_record("SYNTH001", expiration=0, charges=(0, 0, 0), flags=1)]))
@@ -75,8 +78,8 @@ class EditorTests(unittest.TestCase):
         self.assertEqual(e.post("/api/save", e.draft)["plan"], e.draft["plan"])
         result = e.post("/api/validate", e.draft)
         self.assertTrue(result["valid"], result)
-        self.assertFalse(result["runtime_supported"])
-        self.assertIn("source", result["message"])
+        self.assertTrue(result["runtime_supported"], result)
+        self.assertIn("Game testing and deployment are separate", result["message"])
 
     def test_recipient_names_aliases_and_type_filters(self):
         fx = self.fx

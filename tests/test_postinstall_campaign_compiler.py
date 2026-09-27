@@ -77,6 +77,7 @@ class CampaignCompilerTests(unittest.TestCase):
         bound = bind_profile(self.profile, self.catalog, self.world, plan)
         body = self.compile(plan)
         self.assertEqual((self.profile, self.catalog, self.world, plan), before)
+
         self.assertEqual(snapshot(self.game), game_before)
         self.assertEqual(body["schema"], "flir-campaign-prototype-v1")
         self.assertEqual(body["state"], "prototype-not-playable")
@@ -95,6 +96,31 @@ class CampaignCompilerTests(unittest.TestCase):
         self.assertNotIn("assignments", body)
         body["sources"][0]["record"]["record"]["charges"][0] = 123
         self.assertEqual((self.profile, self.catalog, self.world, plan), before)
+
+    def test_shop_pricing_is_frozen_per_revision_and_legacy_campaign_reads(self):
+        first = self.compile()
+        self.assertEqual(first["shop_pricing"], {"percent": 120, "base_prices": {}})
+        self.profile = edit_profile(self.profile, self.catalog,
+                                    shop_price_percent=150,
+                                    shop_base_prices={"SYNTH001": 250})
+        second = self.compile()
+        self.assertEqual(second["shop_pricing"],
+                         {"percent": 150, "base_prices": {"synth001": 250}})
+        self.assertNotEqual(first["revision"], second["revision"])
+        self.assertEqual(first["shop_pricing"], {"percent": 120, "base_prices": {}})
+        legacy_profile = deepcopy(self.profile)
+        del legacy_profile["shop_pricing"]
+        legacy = compile_campaign(legacy_profile, self.catalog, self.world, self.plan())
+        del legacy["shop_pricing"]
+        self.store.mkdir(parents=True)
+        (self.store / "revisions").mkdir()
+        old_revision = self.replace_artifact(legacy)
+        self.assertNotIn("shop_pricing", read_campaign(self.store, old_revision))
+        tampered = deepcopy(second)
+        tampered["shop_pricing"]["base_prices"] = {"absent": 1}
+        self.rehash(tampered)
+        with self.assertRaisesRegex(ProfileError, "selected"):
+            campaigns._validate_campaign(tampered)
 
     def test_all_target_kinds_and_multiple_capacities_are_preserved_in_sorted_order(self):
         plan = self.plan(["sto:shop/item/0"], capacity=3)

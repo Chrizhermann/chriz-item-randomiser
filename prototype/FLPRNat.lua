@@ -75,10 +75,14 @@ function Native.new(api, fixture)
             assert(type(id) == "string" and type(endpoint) == "table" and
                 hash(endpoint.identity) and not identities[endpoint.identity], "NATIVE_ENDPOINT_INVALID")
             local store_source = kind == "sources" and endpoint.kind == "guarded-store"
+            local store_target = kind == "targets" and endpoint.kind == "store"
             if store_source then
                 assert(resref(endpoint.store) and endpoint.area == nil and endpoint.script_name == nil and
                     integer(endpoint.record_index, 0, 4294967295) and
                     integer(endpoint.quantity, 1, 4294967295), "NATIVE_GUARDED_STORE_INVALID")
+            elseif store_target then
+                assert(resref(endpoint.store) and endpoint.area == nil and endpoint.script_name == nil and
+                    endpoint.x == nil and endpoint.y == nil, "NATIVE_STORE_TARGET_INVALID")
             else
                 assert(resref(endpoint.area) and type(endpoint.script_name) == "string" and
                     #endpoint.script_name > 0, "NATIVE_ENDPOINT_INVALID")
@@ -88,6 +92,8 @@ function Native.new(api, fixture)
             if store_source then
                 copy.store, copy.record_index, copy.quantity =
                     resref(endpoint.store), endpoint.record_index, endpoint.quantity
+            elseif store_target then
+                copy.store = resref(endpoint.store)
             else
                 copy.area, copy.script_name = resref(endpoint.area), endpoint.script_name:lower()
             end
@@ -112,11 +118,12 @@ function Native.new(api, fixture)
             else
                 -- The accepted fixture predates this field; absent means a ground pile.
                 copy.kind = endpoint.kind == nil and "ground-pile" or endpoint.kind
-                assert(copy.kind == "ground-pile" or copy.kind == "creature", "NATIVE_TARGET_KIND_UNSUPPORTED")
+                assert(copy.kind == "ground-pile" or copy.kind == "creature" or copy.kind == "store",
+                    "NATIVE_TARGET_KIND_UNSUPPORTED")
                 if copy.kind == "creature" then
                     assert(endpoint.x == nil and endpoint.y == nil, "NATIVE_POSITION_INVALID")
                     copy.sprite, creatures = true, true
-                else
+                elseif copy.kind == "ground-pile" then
                     assert(integer(endpoint.x, 0, 32767) and integer(endpoint.y, 0, 32767), "NATIVE_POSITION_INVALID")
                     copy.x, copy.y = endpoint.x, endpoint.y
                 end
@@ -150,6 +157,14 @@ function Native.new(api, fixture)
     end
     if creatures then
         for _, name in ipairs(creature_required) do assert(type(api[name]) == "function", name .. "_MISSING") end
+    end
+    for _, endpoint in pairs(self.targets) do
+        if endpoint.kind == "store" then
+            local shop = api.FLPR and api.FLPR.Shop
+            assert(type(shop) == "table" and type(shop.inspect_target) == "function" and
+                type(shop.deliver) == "function", "NATIVE_SHOP_SERVICE_MISSING")
+            break
+        end
     end
     return self
 end
@@ -404,6 +419,12 @@ function Adapter:inspect_target(id)
     local endpoint = self.targets[id]
     if not endpoint then return nil, "TARGET_UNKNOWN" end
     self.reservations[endpoint.identity] = nil
+    if endpoint.kind == "store" then
+        local ready, reason = self.api.FLPR.Shop:inspect_target(endpoint)
+        if not ready then return nil, reason or "SHOP_TARGET_UNAVAILABLE" end
+        self.reservations[endpoint.identity] = { kind = "deliver", id = id }
+        return { identity = endpoint.identity, target_id = id, accepts = 1 }
+    end
     local owner, reason = self:_resolve(endpoint, "target")
     if not owner then return nil, reason end
     local items = self:_items(owner, endpoint.sprite)
@@ -456,6 +477,23 @@ function Adapter:execute(command)
     local endpoint = kind == "source" and source or self.targets[command.target_id]
     if not endpoint or endpoint.identity ~= command.identity or
         reserved.id ~= (kind == "source" and command.source_id or command.target_id) then return nil, "RESERVATION_MISMATCH" end
+    if kind == "target" and endpoint.kind == "store" then
+        tried = tried or {}; self.attempted[command.session] = tried; tried[command.nonce] = true
+        local receipt = { session = command.session, kind = command.kind, index = command.index,
+            nonce = command.nonce, revision = command.revision, identity = command.identity,
+            source_id = command.source_id, target_id = command.target_id,
+            payload = payload(source.payload) }
+        self.pending = { receipt = receipt, endpoint = endpoint, kind = kind,
+            tick = self.tick, complete = false }
+        self.reservations[command.identity] = nil
+        local delivered, reason = self.api.FLPR.Shop:deliver(endpoint, source.payload, command.index)
+        if not delivered then
+            self.last_error = reason or "SHOP_DELIVERY_UNPROVEN"
+            return nil, self.last_error
+        end
+        self.pending.complete = true
+        return true
+    end
     local owner, reason = self:_resolve(endpoint, kind)
     if not owner then return nil, reason end
     if owner.id ~= reserved.owner.id or owner.pointer ~= reserved.owner.pointer then return nil, "OWNER_CHANGED" end
@@ -584,6 +622,11 @@ function Adapter:observe(command)
         pending.complete = false
         self.last_error = "DELIVERY_SETTLING_TIMEOUT"
         return nil, self.last_error
+    end
+    if pending.kind == "target" and pending.endpoint.kind == "store" then
+        receipt.created, receipt.nonce_bound_instance, receipt.lootable = 1, 1, 1
+        self.pending = nil
+        return receipt
     end
     local owner, reason, unusable = self:_resolve(pending.endpoint, pending.kind)
     if not owner then
@@ -791,6 +834,8 @@ function Adapter:diagnostics()
             if endpoint.kind == "guarded-store" then
                 result[kind][id] = { unavailable = "SOURCE_GUARD_REQUIRED", store = endpoint.store,
                     record_index = endpoint.record_index, quantity = endpoint.quantity }
+            elseif endpoint.kind == "store" then
+                result[kind][id] = { store = endpoint.store, identity = endpoint.identity }
             else
                 local label = kind == "sources" and "source" or "target"
                 local owner, reason, unusable = self:_resolve(endpoint, label)

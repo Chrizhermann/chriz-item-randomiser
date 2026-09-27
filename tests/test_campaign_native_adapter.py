@@ -571,6 +571,70 @@ function cases.configured_item_resref_removes_only_the_selected_copy(N)
     assert(a:observe(command).removed==1 and f.slots[21]==nil and f.slots[22].address==302)
     assert(#f.calls==1 and f.calls[1]=='DestroyItem("sw1h01")')
 end
+local function store_target(N, delivery)
+    local f=setup(N)
+    f.fixture.targets[f.target_id]={kind="store",store="SHOP01",identity=string.rep("b",64)}
+    local calls={inspect=0,deliver=0}
+    f.api.FLPR={Shop={
+        inspect_target=function(_,endpoint)
+            calls.inspect=calls.inspect+1
+            assert(endpoint.kind=="store" and endpoint.store=="shop01")
+            return true
+        end,
+        deliver=function(_,endpoint,item,index)
+            calls.deliver=calls.deliver+1
+            assert(endpoint.store=="shop01" and item.resref=="flpri1" and index==1)
+            return delivery()
+        end,
+    }}
+    f.adapter=N.new(f.api,f.fixture)
+    f.api.EEex_Area_GetVisible=function() error("STORE_ROUTE_RESOLVED_AREA") end
+    f.api.EEex_GameObject_Get=function() error("STORE_ROUTE_RESOLVED_OWNER") end
+    f.api.EEex_Action_ExecuteResponseStringOnAIBaseInstantly=function() error("STORE_ROUTE_USED_ACTOR_ACTION") end
+    return f,calls
+end
+function cases.store_target_uses_service_and_receipt_needs_later_tick(N)
+    local f,calls=store_target(N,function() return true end)
+    local a=f.adapter
+    local witness=assert(a:inspect_target(f.target_id))
+    assert(witness.identity==string.rep("b",64) and witness.target_id==f.target_id and witness.accepts==1)
+    assert(a:on_observation_boundary(1))
+    local command=f.command("deliver")
+    assert(a:execute(command))
+    assert(calls.inspect==1 and calls.deliver==1 and #f.calls==0)
+    local x,e=a:observe(command); fail(x,e,"LATER_GAME_TICK_REQUIRED")
+    x,e=a:execute(command); fail(x,e,"MUTATION_PENDING")
+    assert(a:on_observation_boundary(2))
+    local receipt=assert(a:observe(command))
+    assert(receipt.session==command.session and receipt.kind=="deliver" and
+        receipt.index==command.index and receipt.nonce==command.nonce and
+        receipt.revision==command.revision and receipt.identity==command.identity and
+        receipt.source_id==command.source_id and receipt.target_id==command.target_id and
+        receipt.created==1 and receipt.nonce_bound_instance==1 and receipt.lootable==1)
+    f.api.EEex_Area_GetVisible=function() return nil end
+    local store=a:diagnostics().targets[f.target_id]
+    assert(store.store=="shop01" and store.identity==string.rep("b",64) and store.unavailable==nil)
+    x,e=a:execute(command); fail(x,e,"ALREADY_ATTEMPTED")
+    assert(calls.deliver==1)
+end
+function cases.store_target_failure_is_not_retried(N)
+    local f,calls=store_target(N,function() return nil,"SHOP_WRITE_FAILED" end)
+    local a=f.adapter
+    assert(a:inspect_target(f.target_id)); a:on_observation_boundary(1)
+    local command=f.command("deliver")
+    local x,e=a:execute(command); fail(x,e,"SHOP_WRITE_FAILED")
+    assert(calls.deliver==1 and a.pending and not a.pending.complete)
+    x,e=a:execute(command); fail(x,e,"MUTATION_PENDING")
+    a:on_observation_boundary(2)
+    x,e=a:observe(command); fail(x,e,"SHOP_WRITE_FAILED")
+    assert(calls.deliver==1)
+end
+function cases.store_target_requires_service_only_when_declared(N)
+    local f=setup(N)
+    assert(N.new(f.api,f.fixture))
+    f.fixture.targets[f.target_id]={kind="store",store="SHOP01",identity=string.rep("b",64)}
+    invalid(N,f,"NATIVE_SHOP_SERVICE_MISSING")
+end
 return cases
 '''
 

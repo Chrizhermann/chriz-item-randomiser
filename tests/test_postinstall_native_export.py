@@ -10,9 +10,9 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
 
-from flir_config.campaigns import _render_lua, write_campaign
+from flir_config.campaigns import _render_lua, read_campaign, write_campaign
 from flir_config.native_export import export_native
-from flir_config.profiles import ProfileError, edit_profile, new_profile
+from flir_config.profiles import ProfileError, _digest, canonical_bytes, edit_profile, new_profile
 from flir_config.resources import scan_game
 from flir_config.sources import new_binding_plan, scan_world
 from flir_config.world_formats import parse_cre, parse_sto
@@ -49,9 +49,12 @@ class NativeExportTests(unittest.TestCase):
         self.catalog = scan_game(self.game)
         self.world = scan_world(self.catalog)
 
-    def write(self, items=("synth001",), target="are:area/actor/0"):
+    def write(self, items=("synth001",), target="are:area/actor/0", *,
+              shop_price_percent=None, shop_base_prices=None):
         profile = edit_profile(new_profile(self.catalog, "native-test", "Native test"),
-                               self.catalog, include=list(items))
+                               self.catalog, include=list(items),
+                               shop_price_percent=shop_price_percent,
+                               shop_base_prices=shop_base_prices)
         plan = new_binding_plan(profile, self.catalog, self.world)
         ids = {"synth001": self.first, "synth002": self.second}
         plan["sources"] = [{"item": item, "policy": "relocate", "source_ids": [ids[item]],
@@ -79,7 +82,7 @@ class NativeExportTests(unittest.TestCase):
         base = self.output / "campaign-store" / "revisions" / f"{revision}.source-1"
         return Path(str(base) + ".original.cre"), Path(str(base) + ".removed.cre")
 
-    def write_store_source(self):
+    def write_store_source(self, target="are:area/actor/0", target_capacity=None):
         profile = edit_profile(new_profile(self.catalog, "native-store", "Store test"),
                                self.catalog, include=["synth001"])
         plan = new_binding_plan(profile, self.catalog, self.world)
@@ -87,8 +90,13 @@ class NativeExportTests(unittest.TestCase):
                       if row["kind"] == "store" and row["item"] == "synth001")
         plan["sources"] = [{"item": "synth001", "policy": "relocate",
                             "source_ids": [source["id"]], "registration_ids": []}]
-        plan["targets"] = [{"id": "are:area/actor/0", "capacity": source["record"]["quantity"],
+        quantity = source["record"]["quantity"]
+        capacity = quantity if target_capacity is None else target_capacity
+        plan["targets"] = [{"id": target, "capacity": capacity,
                             "optional": False}]
+        if capacity < quantity:
+            plan["targets"].append({"id": "are:area/actor/0", "capacity": quantity - capacity,
+                                    "optional": False})
         return write_campaign(profile, self.catalog, self.world, plan, self.store)["revision"], source
 
     def test_finite_store_row_exports_exact_private_before_and_after(self):
@@ -117,9 +125,91 @@ class NativeExportTests(unittest.TestCase):
                          [("synth002", 2, [1, 2, 3]), ("synth002", 1, [7, 8, 9])])
         self.assertEqual(snapshot(self.game), before)
 
+    def test_empty_store_target_exports_identity_hash_and_frozen_shop_prices(self):
+        (self.override / "shop.sto").write_bytes(make_sto([]))
+        self.refresh()
+        revision = self.write(target="sto:shop", shop_price_percent=150,
+                              shop_base_prices={"synth001": 250})
+        before = snapshot(self.game)
+        self.export(revision)
+        native = json.loads((self.output / "campaign-store" / "revisions" /
+                             f"{revision}.native.json").read_bytes())
+        self.assertEqual(native["shop_pricing"],
+                         {"percent": 150, "base_prices": {"synth001": 250}})
+        self.assertEqual(native["shop_prices"], {"synth001": 375})
+        target = native["targets"]["sto:shop"]
+        self.assertEqual((target["kind"], target["store"]), ("store", "shop"))
+        self.assertEqual(target["identity"],
+                         _digest({"target": read_campaign(self.store, revision)["targets"][0]}))
+        self.assertEqual(native["resource_hashes"]["SHOP.STO"],
+                         next(row["sha256"] for row in self.world["resources"]
+                              if row["id"] == "sto:shop"))
+        self.assertEqual(snapshot(self.game), before)
+
+    def test_store_target_requires_buy_permission_without_restricting_store_type(self):
+        store = make_sto([])
+        struct.pack_into("<I", store, 0x10, 2)  # Player may sell, but cannot buy.
+        (self.override / "shop.sto").write_bytes(store)
+        self.refresh()
+        blocked = self.write(target="sto:shop")
+        with self.assertRaisesRegex(ProfileError, "does not allow the player to buy"):
+            self.export(blocked)
+        self.assertFalse((self.output / "next.lua").exists())
+
+        struct.pack_into("<I", store, 0x08, 1)  # Inn with merchandise.
+        struct.pack_into("<I", store, 0x10, 1)
+        (self.override / "shop.sto").write_bytes(store)
+        self.refresh()
+        allowed = self.write(target="sto:shop")
+        self.export(allowed)
+        native = json.loads((self.output / "campaign-store" / "revisions" /
+                             f"{allowed}.native.json").read_bytes())
+        self.assertEqual(native["targets"]["sto:shop"]["kind"], "store")
+
+    def test_store_target_rejects_existing_selected_stock_and_source_overlap(self):
+        (self.override / "shop.sto").write_bytes(make_sto([
+            (item_record("SYNTH001", expiration=0, charges=(0, 0, 0), flags=1), 3, 0)]))
+        self.refresh()
+        revision = self.write(target="sto:shop")
+        with self.assertRaisesRegex(ProfileError, "AddStoreItem merges rows"):
+            self.export(revision)
+        self.assertFalse((self.output / "next.lua").exists())
+        revision, _ = self.write_store_source(target="sto:shop")
+        with self.assertRaisesRegex(ProfileError, "selected source store as a target"):
+            self.export(revision)
+        self.assertFalse((self.output / "next.lua").exists())
+
+    def test_multi_copy_source_needs_store_capacity_one_but_distinct_items_can_share_shop(self):
+        (self.override / "origin.sto").write_bytes(make_sto([
+            (item_record("SYNTH001", expiration=0, charges=(0, 0, 0), flags=1), 2, 0)]))
+        (self.override / "shop.sto").write_bytes(make_sto([]))
+        self.refresh()
+        revision, _ = self.write_store_source(target="sto:shop")
+        with self.assertRaisesRegex(ProfileError, "distinct copies.*single shop"):
+            self.export(revision)
+        self.assertFalse((self.output / "next.lua").exists())
+        split, _ = self.write_store_source(target="sto:shop", target_capacity=1)
+        self.export(split)
+        native = json.loads((self.output / "campaign-store" / "revisions" /
+                             f"{split}.native.json").read_bytes())
+        self.assertEqual(set(native["targets"]), {"sto:shop", "are:area/actor/0"})
+        distinct = self.write(items=("synth001", "synth002"), target="sto:shop")
+        self.export(distinct)
+        native = json.loads((self.output / "campaign-store" / "revisions" /
+                             f"{distinct}.native.json").read_bytes())
+        self.assertEqual(set(native["shop_prices"]), {"synth001", "synth002"})
+
     def test_new_profile_preserves_old_native_revision_and_pristine_area(self):
         game_before = snapshot(self.game)
-        a = self.write(("synth001", "synth002"))
+        current = self.write(("synth001", "synth002"))
+        legacy = read_campaign(self.store, current)
+        del legacy["shop_pricing"]
+        legacy["revision"] = _digest({key: value for key, value in legacy.items()
+                                      if key != "revision"})
+        a = legacy["revision"]
+        revision_base = self.store / "revisions" / a
+        Path(str(revision_base) + ".json").write_bytes(canonical_bytes(legacy))
+        Path(str(revision_base) + ".lua").write_bytes(_render_lua(legacy))
         first = self.export(a)
         self.assertEqual((first["revision"], first["revisions"], first["state"]),
                          (a, [a], "experimental-native-config"))
@@ -130,6 +220,8 @@ class NativeExportTests(unittest.TestCase):
         self.assertEqual(set(a_native["sources"]), {self.first, self.second})
         self.assertEqual(a_native["source_gate"]["source_ids"], [self.first, self.second])
         self.assertEqual(a_native["targets"]["are:area/actor/0"]["script_name"], "TestDV")
+        self.assertNotIn("shop_pricing", a_native)
+        self.assertNotIn("shop_prices", a_native)
         pristine = self.output / "AREA.pristine.are"
         self.assertEqual(pristine.read_bytes(), self.area)
 
@@ -143,6 +235,8 @@ class NativeExportTests(unittest.TestCase):
                                f"{b}.native.json").read_bytes())
         self.assertEqual(list(b_native["sources"]), [self.first])
         self.assertEqual(b_native["source_gate"]["source_ids"], [self.first])
+        self.assertEqual(b_native["shop_pricing"], {"percent": 120, "base_prices": {}})
+        self.assertEqual(b_native["shop_prices"], {"synth001": 360})
         self.assertEqual((self.output / "source-gate.lua").read_bytes(), _render_lua(sorted([a, b])))
         self.assertEqual((self.output / "next.lua").read_bytes(), _render_lua(b))
         self.assertEqual(snapshot(self.game), game_before)

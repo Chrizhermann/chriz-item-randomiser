@@ -83,7 +83,7 @@ class Editor:
         notes = {"actor": "Encounter availability and drops need a game test.",
                  "cre-template": "Creature definition; choosing a specific spawn still needs runtime support.",
                  "container": "Container destination; delivery here still needs runtime support.",
-                 "store": "Shop destination; delivery here still needs runtime support."}
+                 "store": "Shop destination; prototype delivery is available when this configuration passes its check."}
         return {"id": row["id"], "label": self.label(row), "kind": row["kind"],
                 "kind_label": KIND_LABELS[row["kind"]], "note": notes[row["kind"]]}
 

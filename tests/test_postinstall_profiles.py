@@ -81,6 +81,40 @@ class ProfileTests(unittest.TestCase):
         results["items"][0]["name"] = "Changed in caller"
         self.assertEqual(self.catalog, original_catalog)
 
+    def test_shop_pricing_defaults_edits_and_exclusion(self) -> None:
+        self.assertEqual(self.profile["shop_pricing"], {"percent": 120, "base_prices": {}})
+        selected = edit_profile(self.profile, self.catalog, include=["FLA", "flb"],
+                                shop_price_percent=175, shop_base_prices={"FLA": 250})
+        self.assertEqual(selected["shop_pricing"], {"percent": 175, "base_prices": {"fla": 250}})
+        self.assertEqual(self.profile["shop_pricing"]["base_prices"], {})
+        cleared = edit_profile(selected, self.catalog, shop_base_prices={"fla": None})
+        self.assertEqual(cleared["shop_pricing"]["base_prices"], {})
+        excluded = edit_profile(selected, self.catalog, exclude=["FLA"])
+        self.assertEqual(excluded["shop_pricing"]["base_prices"], {})
+        self.assertEqual(selected["shop_pricing"]["base_prices"], {"fla": 250})
+
+    def test_shop_pricing_validates_selected_items_and_engine_price_range(self) -> None:
+        selected = edit_profile(self.profile, self.catalog, include=["fla"])
+        for pricing in ({"percent": True, "base_prices": {}},
+                        {"percent": -1, "base_prices": {}},
+                        {"percent": 0x100000000, "base_prices": {}},
+                        {"percent": 120, "base_prices": {"flb": 1}},
+                        {"percent": 120, "base_prices": {"FLA": 1}},
+                        {"percent": 120, "base_prices": {"fla": -1}},
+                        {"percent": 120, "base_prices": {"fla": True}},
+                        {"percent": 120, "base_prices": {"fla": 0x100000000}},
+                        {"percent": 120, "base_prices": {"fla": 0xFFFFFFFF}}):
+            changed = deepcopy(selected)
+            changed["shop_pricing"] = pricing
+            with self.subTest(pricing=pricing), self.assertRaises(ProfileError):
+                validate_profile(changed, self.catalog)
+        with self.assertRaisesRegex(ProfileError, "selected"):
+            edit_profile(selected, self.catalog, shop_base_prices={"flb": 2})
+        legacy = deepcopy(selected)
+        del legacy["shop_pricing"]
+        self.assertEqual(validate_profile(legacy, self.catalog), legacy)
+        self.assertNotIn("shop_pricing", edit_profile(legacy, self.catalog, name="Older draft"))
+
     def test_unknown_and_conflicting_edits_fail(self) -> None:
         for kwargs in ({"include": ["missing"]}, {"exclude": ["missing"]},
                        {"include": ["fla"], "exclude": ["FLA"]}):

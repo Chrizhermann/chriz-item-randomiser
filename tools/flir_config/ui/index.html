@@ -80,6 +80,17 @@
             </div>
             <span id="dirtyMark" class="dirty-mark" hidden>Unsaved changes</span>
           </div>
+          <section class="shop-pricing" aria-labelledby="shopPricingTitle">
+            <div>
+              <h3 id="shopPricingTitle">Randomized shop prices</h3>
+              <p>120% means 20% higher prices for randomized shop stock only. Usual shop markups and discounts still apply.</p>
+            </div>
+            <div class="shop-percent-control">
+              <label for="shopPercent">Base price multiplier</label>
+              <div class="percent-input"><input id="shopPercent" type="number" min="0" max="4294967295" step="1" inputmode="numeric" value="120" aria-describedby="shopPercentHint"><span aria-hidden="true">%</span></div>
+              <span id="shopPercentHint" class="visually-hidden">Whole percentage from 0 to 4,294,967,295</span>
+            </div>
+          </section>
           <details class="selection-section" open>
             <summary class="section-heading"><h3>Selected items <span id="itemCount" class="count">0 items</span></h3></summary>
             <div id="selectedItems" class="selected-list"></div>

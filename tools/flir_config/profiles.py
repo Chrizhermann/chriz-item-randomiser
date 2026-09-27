@@ -23,6 +23,30 @@ PREPARED_SCHEMA = "flir-prepared-profile-v1"
 HEX256 = re.compile(r"^[0-9a-f]{64}$")
 PROFILE_ID = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
 PROFILE_FIELDS = {"schema", "id", "name", "catalog_fingerprint", "items"}
+DEFAULT_SHOP_PRICING = {"percent": 120, "base_prices": {}}
+MAX_ITEM_PRICE = 0xFFFFFFFF
+
+
+def validate_shop_pricing(pricing: object, items: list[str], index: dict[str, dict]) -> dict:
+    """Validate prices for selected rewards without changing catalogue item prices."""
+    if not isinstance(pricing, dict) or set(pricing) != {"percent", "base_prices"}:
+        raise ProfileError("Shop pricing needs percent and base_prices")
+    percent = pricing["percent"]
+    if type(percent) is not int or not 0 <= percent <= MAX_ITEM_PRICE:
+        raise ProfileError("Shop price percent must be a nonnegative 32-bit integer")
+    prices = pricing["base_prices"]
+    if not isinstance(prices, dict):
+        raise ProfileError("Shop base prices must map selected items to gold amounts")
+    for resref, price in prices.items():
+        if not isinstance(resref, str) or resref not in items:
+            raise ProfileError("Shop base prices must refer to selected item identities")
+        if type(price) is not int or not 0 <= price <= MAX_ITEM_PRICE:
+            raise ProfileError(f"Invalid shop base price: {resref}")
+    for resref in items:
+        base = prices.get(resref, index[resref]["price"])
+        if base * percent // 100 > MAX_ITEM_PRICE:
+            raise ProfileError(f"Effective shop price exceeds 32-bit gold range: {resref}")
+    return deepcopy(pricing)
 
 
 class ProfileError(ValueError):
@@ -131,7 +155,7 @@ def validate_catalog(catalog: dict) -> dict[str, dict]:
 
 def validate_profile(profile: dict, catalog: dict, *, allow_rebase: bool = False) -> dict:
     index = validate_catalog(catalog)
-    if set(profile) != PROFILE_FIELDS or profile.get("schema") != PROFILE_SCHEMA:
+    if set(profile) not in (PROFILE_FIELDS, PROFILE_FIELDS | {"shop_pricing"}) or profile.get("schema") != PROFILE_SCHEMA:
         raise ProfileError("Unsupported profile schema or fields")
     if not isinstance(profile["id"], str) or not PROFILE_ID.fullmatch(profile["id"]):
         raise ProfileError("Profile ID must use 1-64 lowercase letters, digits, hyphens or underscores")
@@ -155,17 +179,22 @@ def validate_profile(profile: dict, catalog: dict, *, allow_rebase: bool = False
     missing = [x for x in profile["items"] if x not in index]
     if missing:
         raise ProfileError("Selected items absent from this scan: " + ", ".join(missing))
+    if "shop_pricing" in profile:
+        validate_shop_pricing(profile["shop_pricing"], profile["items"], index)
     return deepcopy(profile)
 
 
 def new_profile(catalog: dict, profile_id: str, name: str) -> dict:
     profile = {"schema": PROFILE_SCHEMA, "id": profile_id, "name": name,
-               "catalog_fingerprint": catalog.get("fingerprint"), "items": []}
+               "catalog_fingerprint": catalog.get("fingerprint"), "items": [],
+               "shop_pricing": deepcopy(DEFAULT_SHOP_PRICING)}
     return validate_profile(profile, catalog)
 
 
 def edit_profile(profile: dict, catalog: dict, *, include: list[str] | None = None,
-                 exclude: list[str] | None = None, name: str | None = None) -> dict:
+                 exclude: list[str] | None = None, name: str | None = None,
+                 shop_price_percent: int | None = None,
+                 shop_base_prices: dict[str, int | None] | None = None) -> dict:
     edited = validate_profile(profile, catalog)
     included = {x.lower() for x in include or []}
     excluded = {x.lower() for x in exclude or []}
@@ -176,6 +205,26 @@ def edit_profile(profile: dict, catalog: dict, *, include: list[str] | None = No
     if unknown:
         raise ProfileError("Unknown item identities: " + ", ".join(sorted(unknown)))
     edited["items"] = sorted((set(edited["items"]) | included) - excluded)
+    if "shop_pricing" in edited:
+        for resref in excluded:
+            edited["shop_pricing"]["base_prices"].pop(resref, None)
+    if shop_price_percent is not None or shop_base_prices is not None:
+        pricing = edited.setdefault("shop_pricing", deepcopy(DEFAULT_SHOP_PRICING))
+        if shop_price_percent is not None:
+            pricing["percent"] = shop_price_percent
+        if shop_base_prices is not None:
+            if not isinstance(shop_base_prices, dict) or any(not isinstance(key, str) for key in shop_base_prices):
+                raise ProfileError("Shop base price edits must map item identities to gold amounts")
+            normalized = {key.lower(): value for key, value in shop_base_prices.items()}
+            if len(normalized) != len(shop_base_prices):
+                raise ProfileError("Duplicate shop base price item identity")
+            if set(normalized) - set(edited["items"]):
+                raise ProfileError("Shop base price edits must refer to selected items")
+            for resref, price in normalized.items():
+                if price is None:
+                    pricing["base_prices"].pop(resref, None)
+                else:
+                    pricing["base_prices"][resref] = price
     if name is not None:
         edited["name"] = name
     return validate_profile(edited, catalog)

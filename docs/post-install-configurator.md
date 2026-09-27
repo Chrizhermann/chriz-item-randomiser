@@ -2,7 +2,7 @@
 
 This development tool reads installed EE item definitions and creates reusable
 **drafts** with explicit source and target bindings. It can export the supported
-container-to-creature subset for the separate
+supported container, creature and shop bindings for the separate
 [native prototype](campaign-source-guards-20260927.md). It does not install or
 activate that runtime. General source coverage and collection UI remain open.
 
@@ -66,6 +66,13 @@ Selecting a saved configuration loads it immediately, confirming before unsaved
 edits are discarded. Save named configurations or use **Save a copy**; incomplete
 choices can be saved for later. Draft files contain the existing profile and binding plan
 under `profile` and `plan`. Existing files and CLI formats remain supported.
+
+**Randomized shop prices** defaults to 120% (20% higher). Each selected item can
+also override its base price; blank uses the scanned item's price. The multiplier
+applies to that base, before the game's usual merchant markup and discounts.
+Only randomized sale stock receives this adjustment. Ordinary stock, shared item
+definitions and resale values are unchanged. Pricing is saved with the configuration
+and frozen into each campaign, so editing the next run does not reprice older saves.
 
 **Check configuration** uses the existing campaign compiler and native endpoint
 checks. Unsupported source families remain editable drafts, with an explanation.
@@ -139,17 +146,21 @@ prepared revision. Exporting another configuration into the same output keeps ea
 revisions available for saves and changes only which configuration New Game selects.
 Keep that output between exports; restart the test game after deploying a new revision.
 
-Current runtime coverage is uniquely named static container sources to uniquely named
-ARE actor targets, with unexpired, nonstackable, visible droppable items. It reports
-unsupported selections instead of silently omitting them. Actor availability and
-ordinary death drops still need live testing; export does not certify an encounter.
-The current adapter requires distinct selected item resrefs and no second copy of
-the selected resref in its source container, so exports reject those cases too.
-The broader profile format and planned source types are unchanged.
+Current runtime coverage includes static container originals, selected items on
+uniquely bound static actors, and finite shop stock. Destinations can be uniquely
+named ARE actors or shops allowing purchases. The current item restrictions remain:
+unexpired, nonstackable, visible droppable items with distinct selected resrefs.
+Equipped originals need an explicit replacement. Export reports unsupported
+selections instead of silently omitting them; it does not certify an encounter.
+
+Shop destinations currently cannot also be selected source shops, or already stock
+a selected item. Multiple distinct rewards can share a shop; for multi-copy sources,
+shop capacity must be one until per-copy stock attribution is supported. These are
+experimental runtime limits, not a reduction of the intended configuration features.
 
 The output contains configuration only. It does **not** install the experimental
 runtime, activate the released mod, or modify the game. Collection UI, ordinary mod
-packaging, and general creature/store/script source interception remain unfinished.
+packaging, and general scripted source interception remain unfinished.
 See [native source results](campaign-source-guards-20260927.md) for current evidence.
 
 ## Validation

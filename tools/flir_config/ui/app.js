@@ -6,7 +6,7 @@ const ui = Object.fromEntries([
   "saveButton", "copyButton", "validateButton", "prepareButton", "status", "validation", "itemsTab",
   "enemiesTab", "searchLabel", "librarySearch", "searchSummary", "libraryResults",
   "recipientFilterRow", "moreResults", "dirtyMark", "itemCount", "targetCount", "selectedItems",
-  "selectedTargets", "workspacePath", "newDialog", "newForm", "newName", "cancelNew"
+  "selectedTargets", "shopPercent", "workspacePath", "newDialog", "newForm", "newName", "cancelNew"
 ].map((id) => [id, $(id)]));
 
 let profile = null;
@@ -14,6 +14,8 @@ let plan = null;
 let selectedItems = new Map();
 let selectedTargets = new Map();
 let targetInputDrafts = new Map();
+let basePriceDrafts = new Map();
+let shopPercentDraft = "120";
 let sourcePages = new Map();
 let expandedItems = new Set();
 let activeTab = "items";
@@ -93,6 +95,8 @@ function acceptState(state, message) {
   selectedItems = new Map((state.items || []).map((row) => [row.resref, row]));
   selectedTargets = new Map((state.targets || []).map((row) => [row.id, row]));
   targetInputDrafts = new Map();
+  basePriceDrafts = new Map();
+  shopPercentDraft = String(profile.shop_pricing?.percent ?? 120);
   sourcePages = new Map();
   expandedItems = new Set();
   dirty = false;
@@ -101,6 +105,7 @@ function acceptState(state, message) {
   ui.dirtyMark.hidden = true;
   ui.validation.hidden = true;
   ui.profileName.value = profile.name;
+  ui.shopPercent.value = shopPercentDraft;
   ui.workspacePath.textContent = state.workspace ? `Draft workspace: ${state.workspace}` : "";
   const catalogue = state.catalog || {};
   const count = Number.isInteger(catalogue.item_count) ? `${catalogue.item_count.toLocaleString()} scanned items` : "Scanned items";
@@ -135,6 +140,16 @@ function getTarget(id) {
   return selectedTargets.get(id) || { id, label: id };
 }
 
+function shopPricing() {
+  if (!profile.shop_pricing) profile.shop_pricing = { percent: 120, base_prices: {} };
+  return profile.shop_pricing;
+}
+
+function wholeNumber(value, min, max = Number.MAX_SAFE_INTEGER) {
+  return /^\d+$/.test(value) && Number.isSafeInteger(Number(value))
+    && Number(value) >= min && Number(value) <= max;
+}
+
 function renderSelected() {
   if (!profile || !plan) return;
   ui.selectedItems.replaceChildren();
@@ -153,6 +168,37 @@ function renderSelected() {
     summary.append(title);
     details.append(summary);
     const body = node("div", "chosen-body");
+    const basePrice = node("div", "base-price-row");
+    const priceLabel = node("label", "", "Optional base price (gold)");
+    const priceInput = node("input");
+    priceInput.type = "number";
+    priceInput.min = "0";
+    priceInput.max = "4294967295";
+    priceInput.step = "1";
+    priceInput.inputMode = "numeric";
+    priceInput.id = `base-price-${item}`;
+    priceInput.placeholder = Number.isInteger(data.price) ? String(data.price) : "Catalog price";
+    priceInput.value = basePriceDrafts.has(item) ? basePriceDrafts.get(item)
+      : String(profile.shop_pricing?.base_prices?.[item] ?? "");
+    priceLabel.htmlFor = priceInput.id;
+    priceInput.setAttribute("aria-label", `Optional base price in gold for ${data.name || item}`);
+    priceInput.addEventListener("input", () => {
+      changed();
+      if (priceInput.value === "") {
+        if (profile.shop_pricing) delete profile.shop_pricing.base_prices[item];
+        basePriceDrafts.delete(item);
+      } else if (priceInput.validity.valid && wholeNumber(priceInput.value, 0, 4294967295)) {
+        shopPricing().base_prices[item] = Number(priceInput.value);
+        basePriceDrafts.delete(item);
+      } else {
+        basePriceDrafts.set(item, priceInput.value);
+      }
+    });
+    const priceHint = node("span", "small-note", Number.isInteger(data.price)
+      ? `Catalog base price: ${data.price.toLocaleString()} gold. Leave blank to use it.`
+      : "Leave blank to use the catalog base price.");
+    basePrice.append(priceLabel, priceInput, priceHint);
+    body.append(basePrice);
     renderSourcePicker(item, body);
     const actions = node("div", "chosen-actions");
     const remove = node("button", "text-button remove", "Remove item");
@@ -341,6 +387,8 @@ function addItem(row) {
 
 function removeItem(item) {
   profile.items = profile.items.filter((id) => id !== item);
+  if (profile.shop_pricing) delete profile.shop_pricing.base_prices[item];
+  basePriceDrafts.delete(item);
   plan.sources = plan.sources.filter((row) => row.item !== item);
   sourcePages.delete(item);
   expandedItems.delete(item);
@@ -476,7 +524,24 @@ function localInputValid() {
     ui.profileName.setCustomValidity("");
     return false;
   }
-  const invalid = [...ui.selectedTargets.querySelectorAll("input")]
+  if (!ui.shopPercent.validity.valid || !wholeNumber(ui.shopPercent.value, 0, 4294967295)) {
+    ui.shopPercent.setCustomValidity("Enter a whole percentage from 0 to 4,294,967,295.");
+    ui.shopPercent.reportValidity();
+    ui.shopPercent.setCustomValidity("");
+    setStatus("The shop price multiplier must be a whole percentage from 0 to 4,294,967,295.", true);
+    return false;
+  }
+  const invalidPrice = [...ui.selectedItems.querySelectorAll(".base-price-row input")]
+    .find((input) => input.value !== "" && (!input.validity.valid || !wholeNumber(input.value, 0, 4294967295)));
+  if (invalidPrice) {
+    invalidPrice.closest("details").open = true;
+    invalidPrice.setCustomValidity("Enter a whole gold amount from 0 to 4,294,967,295, or leave it blank.");
+    invalidPrice.reportValidity();
+    invalidPrice.setCustomValidity("");
+    setStatus("An item base price must be a whole gold amount, or blank to use its catalog price.", true);
+    return false;
+  }
+  const invalid = [...ui.selectedTargets.querySelectorAll(".capacity-row input")]
     .find((input) => !input.validity.valid || !/^\d+$/.test(input.value));
   if (invalid) {
     invalid.setCustomValidity("Enter a whole number from 1 to 4096.");
@@ -526,6 +591,14 @@ ui.recipientFilterRow.addEventListener("change", () => {
 });
 ui.moreResults.addEventListener("click", () => searchPage(activeTab, true));
 ui.profileName.addEventListener("input", () => { if (profile) { profile.name = ui.profileName.value; changed(); } });
+ui.shopPercent.addEventListener("input", () => {
+  if (!profile) return;
+  shopPercentDraft = ui.shopPercent.value;
+  changed();
+  if (ui.shopPercent.validity.valid && wholeNumber(shopPercentDraft, 0, 4294967295)) {
+    shopPricing().percent = Number(shopPercentDraft);
+  }
+});
 ui.savedSelect.addEventListener("change", () => {
   const id = ui.savedSelect.value;
   if (!id || id === profile?.id || !askDiscard()) { restoreSavedSelection(); return; }

@@ -1,8 +1,10 @@
 # Isolated native Mode 1 fixture status
 
-Updated 2026-09-26. This is engineering evidence for three synthetic weapons in one
-BG1 starting area, not acceptance of the full Randomiser or its configuration UI.
-The normal TP2 does not install this prototype.
+The sections below preserve the initial synthetic fixture evidence from 26 September.
+For the current container, creature and shop work, see
+[integrated runtime results](campaign-source-guards-20260927.md).
+The normal TP2 does not install this prototype; these samples are not acceptance
+of the complete Randomiser.
 
 The isolated install is `C:\Users\chris\Games\EET-IR-Mode1-20260922\game`.
 Its private profile is `EET IR Mode1 Test - 20260922`; the normal modded game
