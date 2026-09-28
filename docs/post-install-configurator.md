@@ -159,8 +159,9 @@ must be staged in the test game's override alongside the runtime/configuration.
 The exporter recognises that exact installed patch on later exports and scans;
 changing configurations does not layer another patch or require reinstalling it.
 This is one authored script adapter, not general BCS/DLG grant coverage.
-Destinations can be uniquely
-named ARE actors or shops allowing purchases. The current item restrictions remain:
+Destinations can be uniquely named ARE actors, static containers (including
+stocked chests), or shops allowing purchases. Container delivery appends rewards
+without changing existing contents, locks or traps. The current item restrictions remain:
 unexpired, nonstackable, visible droppable items. Several originals of the same
 item can be relocated from separate owners, including to one creature recipient.
 Ambiguous identical copies within a single source owner remain unsupported.
@@ -196,16 +197,26 @@ python tools/randomiser_config.py templates --id eet-mode1 --items mode1+mode2 -
 These preserve intended component choices; they do not execute installer edits.
 Optional components default off. Disabled rows remain visible with `enabled:false`.
 Loss excludes the original Flail/Kangaxx tiers; unrandomized percentage concerns
-items with original sources. Those behavior rules still need runtime integration.
+items with original sources. These draft choices still need automatic binding to
+the runtime configuration.
 
 The complete EET Mode 1 tables contain 505 item rows and 527 location rows;
 including Mode 2 rows gives 926 and 971. Repeated items, source replacements,
 tiers, tokens, identifiers, chances and row provenance are retained. These counts
 precede component and installation-availability filtering.
 
-**These are not playable configurations yet.** The current runtime still needs
-original tier/token rules, EET name conversion and bindings for the remaining
-virtual/scripted sources, grouped recipients and container destinations. Drafts
+Bound plans now accept optional `randomization` metadata: source tiers and loss
+exemptions, a tier for each recipient slot, loss/keep percentages, and ident-paired
+slots excluded when an original is kept. Each New Game draws within those tiers;
+saves retain their assignments. Kept originals remain available normally, while
+lost rewards have their originals removed and no replacement delivered. Mixed
+keep settings currently require enough spare capacity for every exclusion outcome;
+the compiler uses a conservative bound until original overflow allocation is wired.
+The editor does not yet expose these advanced settings.
+
+**The full original drafts are not playable configurations yet.** Remaining work
+includes original overflow/token expansion, EET name conversion and bindings for
+virtual/scripted sources and grouped recipients, plus installation-specific filters. Drafts
 are kept separate from prepared campaign settings so they cannot silently become
 one flat loot pool. New packs remain review material in
 [item-pack candidates](item-pack-candidates.md); no new tiers or inclusions are approved.

@@ -632,7 +632,8 @@ def bind_profile(profile: dict, catalog: dict, world: dict, plan: dict) -> dict:
     frozen = validate_profile(profile, catalog)
     indexes = validate_world(world, catalog)
     _fields(plan, {"schema", "catalog_fingerprint", "world_fingerprint", "sources", "registrations", "targets"}
-            | ({"replacements"} if isinstance(plan, dict) and "replacements" in plan else set()), "binding plan")
+            | ({"replacements"} if isinstance(plan, dict) and "replacements" in plan else set())
+            | ({"randomization"} if isinstance(plan, dict) and "randomization" in plan else set()), "binding plan")
     replacements = plan.get("replacements", {})
     if not isinstance(replacements, dict):
         raise ProfileError("Creature replacements must map source identities to item resrefs or blank")

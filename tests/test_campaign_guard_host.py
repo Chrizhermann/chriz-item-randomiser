@@ -389,6 +389,26 @@ function cases.ordinary_physical_campaign_unchanged(Core,Host)
     assert(#f.guards==0 and #f.prepares==0)
 end
 
+function cases.kept_guarded_source_requests_no_guard_removal_or_delivery(Core,Host)
+    local f=setup(Core,Host)
+    local target=f.manifest.targets[1].id
+    f.manifest.randomization={loss_percent=0,unrandomized_percent=100,
+        sources={
+            [GUARDED]={tier="low",loss_exempt=false,exclude_targets={{id=target,ordinal=1}}},
+            [PHYSICAL]={tier="low",loss_exempt=false,exclude_targets={{id=target,ordinal=2}}},
+        },targets={[target]={"low","low"}}}
+    assert(f:capture())
+    f:poll_until(function(x) return x.host.status=="complete" end)
+    for _,assignment in ipairs(f.host.controller:assignments()) do
+        assert(assignment.source_phase==Core.PHASE.kept and assignment.delivery_phase==Core.PHASE.kept)
+    end
+    assert(#f.events==0 and not f.guard_observations and not f.removal_observations)
+    assert(not f.source_inspections and not f.target_inspections)
+    f.host:destroy(); f.host=Host.new(f.deps)
+    f:poll_until(function(x) return x.host.status=="complete" end)
+    assert(#f.events==0 and not f.guard_observations and not f.removal_observations)
+end
+
 return cases
 '''
 

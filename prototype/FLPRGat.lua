@@ -514,6 +514,7 @@ function Runtime:prepare_new(bundle,controller)
     assert(controller and controller.manifest and controller.manifest.revision==self.revision,
         'CAMPAIGN_GATE_CAPTURE_REQUIRED')
     assert(self.api.EEex_GameState_GetGlobalInt('FLPR_FRESH')==1,'CAMPAIGN_GATE_FRESH_REQUIRED')
+    if controller.source_is_kept and controller:source_is_kept(self.index) then return true end
     for _,field in ipairs(self.policy.fields) do
         assert(self.api.EEex_GameState_GetGlobalInt(field.name)==(field.phase and 1 or field.value),
             'CAMPAIGN_GATE_CAPTURE_MISMATCH')

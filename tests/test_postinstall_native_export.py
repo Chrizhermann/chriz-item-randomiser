@@ -292,6 +292,53 @@ class NativeExportTests(unittest.TestCase):
                 self.assertEqual(native["targets"][f"are:area/actor/{index}"]["script_name"], name)
                 self.assertEqual(native["targets"][f"are:area/actor/{index}"]["kind"], "creature")
 
+    def test_nonempty_container_target_exports_static_identity_with_repeated_capacity(self):
+        area = bytes(make_are([
+            item_record("SYNTH001", expiration=0, charges=(0, 0, 0), flags=1),
+            item_record("SYNTH001", expiration=0, charges=(0, 0, 0), flags=1),
+            item_record("SYNTH002", expiration=0, charges=(3, 4, 5), flags=1)],
+            [("OriginOne", 0, 1), ("OriginTwo", 1, 1), ("RewardChest", 2, 1)],
+            [("External", "ACTOR")]))
+        (self.override / "area.are").write_bytes(area)
+        self.refresh()
+        profile = edit_profile(new_profile(self.catalog, "container-target", "Container target"),
+                               self.catalog, include=["synth001"])
+        plan = new_binding_plan(profile, self.catalog, self.world)
+        plan["sources"] = [{"item": "synth001", "policy": "relocate",
+                            "source_ids": ["are:area/container/0/item/0",
+                                           "are:area/container/1/item/1"],
+                            "registration_ids": []}]
+        identity = "are:area/container/2"
+        plan["targets"] = [{"id": identity, "capacity": 2, "optional": False}]
+        revision = write_campaign(profile, self.catalog, self.world, plan, self.store)["revision"]
+        before = snapshot(self.game)
+        self.export(revision)
+        native = json.loads((self.output / "campaign-store" / "revisions" /
+                             f"{revision}.native.json").read_bytes())
+        selected_target = read_campaign(self.store, revision)["targets"][0]
+        self.assertEqual(selected_target["capacity"], 2)
+        self.assertEqual(native["targets"][identity], {
+            "kind": "container", "area": "AREA", "script_name": "RewardChest",
+            "x": 111, "y": 222, "container_type": 2,
+            "identity": _digest({"target": selected_target})})
+        self.assertEqual(native["resource_hashes"]["AREA.ARE"],
+                         next(row["sha256"] for row in self.world["resources"]
+                              if row["id"] == "are:area"))
+        self.assertEqual(snapshot(self.game), before)
+        self.assertEqual((self.override / "area.are").read_bytes(), area)
+
+    def test_ambiguous_container_target_name_is_rejected(self):
+        area = make_are([item_record("SYNTH001", expiration=0,
+                                     charges=(0, 0, 0), flags=1)],
+                        [("SourceChest", 0, 1), ("Duplicate", 1, 0),
+                         ("Duplicate", 1, 0)], [("External", "ACTOR")])
+        (self.override / "area.are").write_bytes(area)
+        self.refresh()
+        self.write(target="are:area/container/1")
+        with self.assertRaisesRegex(ProfileError, "unique static container name"):
+            self.export()
+        self.assertFalse((self.output / "next.lua").exists())
+
     def test_stackable_item_fails_before_publishing_next_pointer(self):
         stackable = bytearray((self.override / "synth001.itm").read_bytes())
         struct.pack_into("<H", stackable, 0x38, 20)

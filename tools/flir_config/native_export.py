@@ -219,7 +219,22 @@ def _compile(manifest: dict, world: dict, index: dict, items: dict) -> tuple[dic
             native["targets"][identity] = {"kind": "store", "store": target["resource"][4:],
                                            "identity": _digest({"target": selected})}
             continue
-        _require(target["kind"] == "actor", f"Native export needs an ARE actor or store target: {identity}")
+        if target["kind"] == "container":
+            selector = target["selector"]
+            name = _name(selector["name"], identity)
+            _require(not selector["dynamic_item_table"] and
+                     container_names[target["resource"], name.lower()] == 1,
+                     f"Native target needs a unique static container name: {identity}")
+            _require(0 <= selector["x"] <= 32767 and 0 <= selector["y"] <= 32767,
+                     f"Native container coordinates are unsupported: {identity}")
+            use(target["resource"])
+            native["targets"][identity] = {
+                "kind": "container", "area": _area(target["resource"]),
+                "script_name": name, "x": selector["x"], "y": selector["y"],
+                "container_type": selector["type"],
+                "identity": _digest({"target": selected})}
+            continue
+        _require(target["kind"] == "actor", f"Native export needs an ARE actor, container or store target: {identity}")
         name = _name(actor_name(target), identity)
         _require(actor_names[target["resource"], name.lower()] == 1,
                  f"Native target needs a unique actor script name in its area: {identity}")

@@ -134,6 +134,85 @@ class CampaignCompilerTests(unittest.TestCase):
             self.assertEqual(row["record"], by_id[row["id"]])
         self.assertEqual(sum(row["capacity"] for row in body["targets"]), 9)
 
+    def test_randomization_roundtrips_with_tier_slots_and_exclusion(self):
+        plan = self.plan(["are:area/container/0/item/0", "cre:actor/item/1"], capacity=2)
+        target = "are:area/actor/1"
+        plan["randomization"] = {
+            "sources": {
+                "are:area/container/0/item/0": {
+                    "tier": "low", "loss_exempt": False,
+                    "exclude_targets": [{"id": target, "ordinal": 1}]},
+                "cre:actor/item/1": {
+                    "tier": "low", "loss_exempt": True, "exclude_targets": []}},
+            "targets": {target: ["low", "low"]},
+            "loss_percent": 25, "unrandomized_percent": 40}
+        old = self.compile(self.plan(["are:area/container/0/item/0", "cre:actor/item/1"], capacity=2))
+        bound = bind_profile(self.profile, self.catalog, self.world, plan)
+        self.assertEqual(bound["plan"]["randomization"], plan["randomization"])
+        result = self.write(plan)
+        campaign = read_campaign(self.store, result["revision"])
+        self.assertEqual(campaign["randomization"], plan["randomization"])
+        self.assertEqual(campaign["bound_revision"], bound["fingerprint"])
+        self.assertNotEqual(campaign["revision"], old["revision"])
+        self.assertNotIn("randomization", old)
+
+    def test_randomization_rejects_per_tier_shortage_despite_total_capacity(self):
+        plan = self.plan(["are:area/container/0/item/0", "cre:actor/item/1"], capacity=2)
+        plan["randomization"] = {
+            "sources": {identity: {"tier": "low", "loss_exempt": False,
+                                   "exclude_targets": []}
+                        for identity in plan["sources"][0]["source_ids"]},
+            "targets": {"are:area/actor/1": ["low", "high"]},
+            "loss_percent": 0, "unrandomized_percent": 0}
+        with self.assertRaisesRegex(ProfileError, "tier capacity is short"):
+            self.compile(plan)
+
+    def test_mixed_keep_exclusions_need_spare_capacity_before_publication(self):
+        sources = ["are:area/container/0/item/0", "cre:actor/item/1"]
+        plan = self.plan(sources, capacity=2)
+        target = plan["targets"][0]["id"]
+        plan["randomization"] = {
+            "sources": {
+                sources[0]: {"tier": "low", "loss_exempt": False,
+                             "exclude_targets": [{"id": target, "ordinal": 1},
+                                                 {"id": target, "ordinal": 2}]},
+                sources[1]: {"tier": "low", "loss_exempt": False,
+                             "exclude_targets": []}},
+            "targets": {target: ["low", "low"]},
+            "loss_percent": 0, "unrandomized_percent": 50}
+        with self.assertRaisesRegex(ProfileError, "needs more target capacity"):
+            self.write(plan)
+        self.assertFalse(self.store.exists())
+
+        spare = deepcopy(plan)
+        spare["targets"][0]["capacity"] = 3
+        spare["randomization"]["targets"][target].append("low")
+        self.assertEqual(self.compile(spare)["randomization"], spare["randomization"])
+
+        all_kept = deepcopy(plan)
+        all_kept["randomization"]["unrandomized_percent"] = 100
+        self.assertEqual(self.compile(all_kept)["randomization"], all_kept["randomization"])
+
+    def test_randomization_rejects_invalid_references_and_rehashed_drift(self):
+        plan = self.plan()
+        source, target = plan["sources"][0]["source_ids"][0], plan["targets"][0]["id"]
+        plan["randomization"] = {
+            "sources": {source: {"tier": "low", "loss_exempt": False,
+                                "exclude_targets": [{"id": target, "ordinal": 1}]}},
+            "targets": {target: ["low"]},
+            "loss_percent": 0, "unrandomized_percent": 0}
+        good = self.compile(plan)
+        invalid = deepcopy(plan)
+        invalid["randomization"]["sources"][source]["exclude_targets"] = [
+            {"id": "are:area/actor/absent", "ordinal": 1}]
+        with self.assertRaisesRegex(ProfileError, "distinct selected targets"):
+            self.compile(invalid)
+        drifted = deepcopy(good)
+        drifted["randomization"]["targets"][target] = ["high"]
+        self.rehash(drifted)
+        with self.assertRaisesRegex(ProfileError, "tier capacity is short"):
+            campaigns._validate_campaign(drifted)
+
     def test_rejects_additions_and_registered_sources_including_skipped_optional(self):
         plan = self.plan()
         plan["sources"] = [{"item": "synth001", "policy": "add", "copies": 1}]

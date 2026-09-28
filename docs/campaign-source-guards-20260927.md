@@ -406,6 +406,38 @@ Focused compiler/export/editor and Lua guard tests passed, including a second
 export after installing the static patch. Browser selection, save and validation
 retained the reviewed registration. Tests use portable fixtures, not private scans.
 
+### Tiered draws and stocked container recipients — 28 September
+
+Bound campaigns now draw independently within named tiers and support optional
+item loss and keeping originals. The latter also excludes explicitly paired
+recipient slots. Source guards leave kept originals alone; loss still removes
+the originals. Static container recipients append rewards to existing contents
+through native CreateItem, including multiple rewards in one container.
+
+A four-item sample from the original BG1 tables used tiers 24/25 and three stocked
+containers. Two New Games produced different assignments (`1667914810` and
+`420430067`) within those tiers. All four originals were suppressed in campaign A;
+campaign B also exercised two rewards sharing one chest. Saves 78/79 independently
+contain the expected assignments, source phases and chest inventories. Loading
+save 78 after two later configurations restored its original revision and draw;
+revisiting BG1401 retained all 14 items and their live payloads without duplicates.
+Ordinary unused charge fields normalize during serialization; exact serialized
+payload equality was checked for the selected noncharged rewards only.
+
+Separate 100% keep/loss campaigns passed at all four sources: keep left originals
+present and added nothing; loss removed originals and added nothing. These two
+variants were not saved/reloaded live. The sample did not test ordinary chest
+pickup, and lock/trap preservation is covered synthetically. A review reproduced
+a mixed-keep capacity shortfall; compiler/runtime preflight now reject insufficient
+capacity before capture, with a focused regression. That preflight correction was
+tested offline after the live session.
+
+Evidence: `work/tier-containers-20260928/acceptance.json`. The muted non-input
+desktop session quit normally, Story Mode returned to 0, 30 staged paths were
+restored, and the reservation was released. Full original presets still need
+binding, groups, remaining scripted/virtual rewards, token expansion and overflow
+allocation. The existing original tables and rules remain the source for that work.
+
 The existing test installation, private profile, remote console and character
 helper are sufficient; rebuild the test copy if necessary. Before live work,
 check actual game/installer activity and the shared reservation. Another chat

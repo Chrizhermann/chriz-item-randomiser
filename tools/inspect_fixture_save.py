@@ -101,7 +101,8 @@ def parse_gam(data: bytes, variant: str = "ground-piles") -> dict:
     phase_labels = {1: "fresh", 2: "inflight", 3: "verified", 4: "quarantined"}
     phases = {}
     for prefix, label in (("S", "sources"), ("D", "deliveries")):
-        labels = phase_labels if prefix == "S" else {**phase_labels, 5: "held"}
+        labels = ({**phase_labels, 6: "protected", 7: "kept"} if prefix == "S"
+                  else {**phase_labels, 5: "held", 7: "kept", 8: "lost"})
         phases[label] = {name: {"stored": value, "phase": labels.get(value, "invalid")}
                          for name, value in sorted(variables.items()) if re.fullmatch(f"FLPR_{prefix}[0-9]{{4}}", name)}
     return {"format": "GAME V2.0", "game_time": number(data, 8),

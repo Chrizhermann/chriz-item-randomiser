@@ -78,6 +78,145 @@ local function fixture(Core, revision, quantity)
     return f
 end
 
+local function tiered(f)
+    local first, second = f.manifest.sources[1].id, f.manifest.sources[2].id
+    local target_a, target_b = f.manifest.targets[1].id, f.manifest.targets[2].id
+    f.manifest.randomization = {
+        loss_percent = 0, unrandomized_percent = 0,
+        sources = {
+            [first] = {tier = "low", loss_exempt = false,
+                exclude_targets = {{id = target_a, ordinal = 1}}},
+            [second] = {tier = "high", loss_exempt = true,
+                exclude_targets = {{id = target_a, ordinal = 2}}},
+        },
+        targets = {
+            [target_a] = {"low", "high", "low"},
+            [target_b] = {"high", "low"},
+        },
+    }
+    return f.manifest.randomization
+end
+
+function cases.TieredCopiesUseOnlyMatchingSlotsIncludingMultipleTargetSlots(Core)
+    local f = fixture(Core, nil, 3)
+    local rules = tiered(f)
+    assert(f:capture(17))
+    local seen, at_first_target = {}, 0
+    for _, assignment in ipairs(f.controller:assignments()) do
+        equal(assignment.outcome, "deliver")
+        equal(assignment.tier, rules.targets[assignment.target_id][assignment.ordinal])
+        local key = assignment.target_id .. "/" .. assignment.ordinal
+        assert(not seen[key]); seen[key] = true
+        if assignment.target_id == f.manifest.targets[1].id then at_first_target = at_first_target + 1 end
+    end
+    equal(at_first_target >= 2, true)
+    equal(#f.controller:assignments(), 4)
+end
+
+function cases.TieredSeedReproducesAcrossFreshCampaignsAndReload(Core)
+    local first, second = fixture(Core, nil, 3), fixture(Core, nil, 3)
+    tiered(first); tiered(second)
+    assert(first:capture(29)); assert(second:capture(29))
+    for index, assignment in ipairs(first.controller:assignments()) do
+        local other = second.controller:assignments()[index]
+        equal(assignment.target_id, other.target_id)
+        equal(assignment.ordinal, other.ordinal)
+        equal(assignment.outcome, other.outcome)
+    end
+    local first_saved, second_saved = clone(first.values), clone(second.values)
+    first.values, second.values = first_saved, second_saved
+    local first_loaded, second_loaded = first:new_controller(), second:new_controller()
+    assert(first_loaded:restore()); assert(second_loaded:restore())
+    for index, assignment in ipairs(first_loaded:assignments()) do
+        local other = second_loaded:assignments()[index]
+        equal(assignment.target_id, other.target_id)
+        equal(assignment.ordinal, other.ordinal)
+        equal(assignment.outcome, other.outcome)
+    end
+end
+
+function cases.LossRemovesOriginalButOnlyExemptSourceGetsDelivery(Core)
+    local f = fixture(Core, nil, 2)
+    local rules = tiered(f); rules.loss_percent = 100
+    assert(f:capture(17))
+    local assignments = f.controller:assignments()
+    for index = 1, 2 do
+        equal(assignments[index].outcome, "lost")
+        equal(assignments[index].target_id, nil)
+        equal(assignments[index].delivery_phase, Core.PHASE.lost)
+    end
+    equal(assignments[3].outcome, "deliver")
+    f:suppress(1); f:suppress(2)
+    failed("ALREADY_ATTEMPTED", f.controller:begin_delivery(1,
+        {identity = string.rep("d", 64), target_id = f.manifest.targets[1].id, accepts = 1}))
+    assert(f.controller:begin_delivery(3, f:delivery_witness(3)))
+end
+
+function cases.KeptOriginalsNeverRequestMutationAndExcludeLinkedSlots(Core)
+    local f = fixture(Core)
+    local rules = tiered(f); rules.unrandomized_percent = 100
+    assert(f:capture(17))
+    for index, assignment in ipairs(f.controller:assignments()) do
+        equal(assignment.outcome, "kept")
+        equal(assignment.source_phase, Core.PHASE.kept)
+        equal(assignment.delivery_phase, Core.PHASE.kept)
+        equal(assignment.target_id, nil)
+        failed("ALREADY_ATTEMPTED", f.controller:begin_source(index, f:source_witness(index)))
+        failed("ALREADY_ATTEMPTED", f.controller:begin_delivery(index,
+            {identity = string.rep("d", 64), target_id = f.manifest.targets[1].id, accepts = 1}))
+    end
+    assert(f:new_controller():restore())
+    local selective = fixture(Core)
+    local selective_rules = tiered(selective)
+    selective_rules.unrandomized_percent = 50
+    selective_rules.sources[selective.manifest.sources[2].id].tier = "low"
+    selective_rules.sources[selective.manifest.sources[2].id].exclude_targets = {}
+    local found = false
+    for seed = 1, 40 do
+        local candidate = fixture(Core)
+        candidate.manifest.randomization = clone(selective_rules)
+        assert(candidate:capture(seed))
+        local rows = candidate.controller:assignments()
+        if rows[1].outcome == "kept" and rows[2].outcome == "deliver" then
+            assert(rows[2].target_id ~= candidate.manifest.targets[1].id or rows[2].ordinal ~= 1)
+            found = true; break
+        end
+    end
+    assert(found, "NO_SELECTIVE_KEEP_SEED")
+end
+
+function cases.MixedKeepExclusionsNeedSpareTierCapacityBeforeCapture(Core)
+    local function configure(f, spare, percent)
+        local rules = tiered(f)
+        local first, second = f.manifest.sources[1].id, f.manifest.sources[2].id
+        local target = f.manifest.targets[1].id
+        rules.unrandomized_percent = percent
+        rules.sources[first].exclude_targets = {
+            {id = target, ordinal = 1}, {id = target, ordinal = 2}}
+        rules.sources[second].tier = "low"
+        rules.sources[second].exclude_targets = {}
+        rules.targets[target] = spare and {"low", "low", "low"} or {"low", "low", "high"}
+        rules.targets[f.manifest.targets[2].id] = {"high", "high"}
+    end
+    local unsafe = fixture(Core)
+    configure(unsafe, false, 50)
+    failed("KEEP_CAPACITY_SHORTFALL", unsafe:capture(2))
+    equal(unsafe.writes, 0); assert(next(unsafe.values) == nil)
+
+    local spare = fixture(Core)
+    configure(spare, true, 50)
+    assert(spare:capture(2))
+    equal(spare.values.flpr_state, 2)
+    assert(spare:new_controller():restore())
+
+    local all_kept = fixture(Core)
+    configure(all_kept, false, 100)
+    assert(all_kept:capture(2))
+    for _, assignment in ipairs(all_kept.controller:assignments()) do
+        equal(assignment.outcome, "kept")
+    end
+end
+
 function cases.ExplicitNewGameHandoffIsRequired(Core)
     local f = fixture(Core)
     failed("NEW_GAME_HANDOFF_REQUIRED", f.controller:capture(f.manifest, 17))

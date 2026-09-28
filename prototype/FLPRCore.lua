@@ -9,7 +9,8 @@ Core.MAX_UNITS = 4096
 -- can be held, and only for creature-kind targets.
 -- Protected is source-only: a live pre-access guard is bound to an unvisited
 -- original. It is not evidence that the original has already been removed.
-Core.PHASE = { pending = 0, in_flight = 1, confirmed = 2, quarantined = 3, held = 4, protected = 5 }
+Core.PHASE = { pending = 0, in_flight = 1, confirmed = 2, quarantined = 3, held = 4, protected = 5,
+    kept = 6, lost = 7 }
 Core.CREATURE_TARGET_KINDS = { actor = true, ["cre-template"] = true }
 Core.G = { state = "flpr_state", seed = "flpr_seed", units = "flpr_units",
     sources = "flpr_sources", targets = "flpr_targets", sequence = "flpr_sequence",
@@ -111,6 +112,55 @@ local function validate(manifest)
         for ordinal = 1, target.capacity do slots[#slots + 1] = { target = index, ordinal = ordinal } end
     end
     if #slots < #units then return nil, "CAPACITY_SHORTFALL" end
+    local rules = manifest.randomization
+    if rules then
+        if type(rules) ~= "table" or type(rules.sources) ~= "table" or type(rules.targets) ~= "table" or
+            not integer(rules.loss_percent, 0, 100) or not integer(rules.unrandomized_percent, 0, 100) then
+            return nil, "RANDOMIZATION_INVALID"
+        end
+        local function tier(value)
+            return type(value) == "string" and #value > 0 and #value <= 64 and not value:find("[^a-z0-9:_%-]")
+        end
+        local capacity, required, targets, keep_reserve = {}, {}, {}, {}
+        for _, target in ipairs(manifest.targets) do
+            local tiers = rules.targets[target.id]
+            if not array(tiers, Core.MAX_UNITS) or #tiers ~= target.capacity then return nil, "TIER_TARGET_INVALID" end
+            targets[target.id] = target
+            for _, value in ipairs(tiers) do
+                if not tier(value) then return nil, "TIER_TARGET_INVALID" end
+                capacity[value] = (capacity[value] or 0) + 1
+            end
+        end
+        for _, source in ipairs(manifest.sources) do
+            local rule = rules.sources[source.id]
+            if type(rule) ~= "table" or not tier(rule.tier) or type(rule.loss_exempt) ~= "boolean" or
+                not array(rule.exclude_targets, Core.MAX_UNITS) then return nil, "TIER_SOURCE_INVALID" end
+            required[rule.tier] = (required[rule.tier] or 0) + source.quantity
+            local seen, excluded_tiers = {}, {}
+            for _, excluded in ipairs(rule.exclude_targets) do
+                local target = type(excluded) == "table" and targets[excluded.id]
+                if not target or not integer(excluded.ordinal, 1, target.capacity) then return nil, "TIER_EXCLUSION_INVALID" end
+                local key = excluded.id .. "/" .. excluded.ordinal
+                if seen[key] then return nil, "TIER_EXCLUSION_INVALID" end
+                seen[key] = true
+                local value = rules.targets[excluded.id][excluded.ordinal]
+                excluded_tiers[value] = (excluded_tiers[value] or 0) + 1
+            end
+            -- Conservative capacity bound until original overflow allocation is
+            -- connected. A keep decision must never make a new run undeliverable.
+            for value, count in pairs(excluded_tiers) do
+                local removed = value == rule.tier and source.quantity or 0
+                keep_reserve[value] = (keep_reserve[value] or 0) + math.max(0, count - removed)
+            end
+        end
+        for value, count in pairs(required) do
+            if (capacity[value] or 0) < count then return nil, "TIER_CAPACITY_SHORTFALL" end
+            if rules.unrandomized_percent > 0 and rules.unrandomized_percent < 100 and
+                (capacity[value] or 0) < count + (keep_reserve[value] or 0) then
+                return nil, "KEEP_CAPACITY_SHORTFALL"
+            end
+        end
+    end
     return { units = units, slots = slots }
 end
 
@@ -169,7 +219,7 @@ function Controller:_phase(prefix, index)
     -- Sources have no held phase. Protected sources require the additive
     -- guard protocol version; legacy saves retain their old phase meanings.
     local stored = self:_get(name(prefix, index))
-    if not integer(stored, 1, prefix == "d" and 5 or 6) or
+    if not integer(stored, 1, prefix == "d" and 8 or 7) or (prefix == "d" and stored == 6) or
         (prefix == "s" and (stored == 5 or (stored == 6 and self:_get(G.guard) ~= 1))) then
         error("PHASE_MISSING_OR_INVALID")
     end
@@ -196,22 +246,67 @@ function Controller:_read_hash(prefix)
     return table.concat(pieces)
 end
 
-local function shuffled_slots(slots, seed)
-    local result = {}
-    for index = 1, #slots do result[index] = index end
+local function random_draw(seed)
     -- Park-Miller stays exact below 2^53 in LuaJIT/Lua 5.1 doubles. Rejection
     -- avoids modulo bias; this private generator does not alter math.random.
     local state, range = seed, 2147483646
-    local function draw(maximum)
+    return function(maximum)
         local cutoff = range - range % maximum
         repeat state = (state * 16807) % 2147483647 until state - 1 < cutoff
         return (state - 1) % maximum + 1
     end
+end
+
+local function shuffle(result, draw)
     for index = #result, 2, -1 do
         local selected = draw(index)
         result[index], result[selected] = result[selected], result[index]
     end
     return result
+end
+
+local function campaign_assignments(manifest, shape, seed)
+    local draw, result, kept = random_draw(seed), {}, {}
+    local rules = manifest.randomization
+    if not rules then
+        for index = 1, #shape.slots do result[index] = index end
+        return shuffle(result, draw), kept
+    end
+    -- Preserve an excluded original and its ident-paired location together.
+    -- Loss is a separate choice: remove the original but award no replacement.
+    local excluded, pools = {}, {}
+    for index, source in ipairs(manifest.sources) do
+        if rules.unrandomized_percent > 0 and draw(100) <= rules.unrandomized_percent then
+            kept[index] = true
+            for _, target in ipairs(rules.sources[source.id].exclude_targets) do
+                excluded[target.id .. "/" .. target.ordinal] = true
+            end
+        end
+    end
+    for index, slot in ipairs(shape.slots) do
+        local target = manifest.targets[slot.target]
+        if not excluded[target.id .. "/" .. slot.ordinal] then
+            local tier = rules.targets[target.id][slot.ordinal]
+            pools[tier] = pools[tier] or {}
+            pools[tier][#pools[tier] + 1] = index
+        end
+    end
+    local tiers = {}
+    for tier in pairs(pools) do tiers[#tiers + 1] = tier end
+    table.sort(tiers) -- pairs order differs across Lua versions.
+    for _, tier in ipairs(tiers) do shuffle(pools[tier], draw) end
+    for index, unit in ipairs(shape.units) do
+        local rule = rules.sources[manifest.sources[unit.source].id]
+        if kept[unit.source] then result[index] = -1
+        elseif not rule.loss_exempt and rules.loss_percent > 0 and draw(100) <= rules.loss_percent then
+            result[index] = 0
+        else
+            local pool = pools[rule.tier]
+            if not pool or #pool == 0 then return nil, "TIER_CAPACITY_SHORTFALL" end
+            result[index] = table.remove(pool)
+        end
+    end
+    return result, kept
 end
 
 function Controller:capture(manifest, seed, handoff)
@@ -223,7 +318,8 @@ function Controller:capture(manifest, seed, handoff)
     if not ok then return nil, "MANIFEST_INVALID" end
     local shape, failure = validate(frozen)
     if not shape then return nil, failure end
-    local assignments = shuffled_slots(shape.slots, seed)
+    local assignments, kept = campaign_assignments(frozen, shape, seed)
+    if not assignments then return nil, kept end
     self.session, self.boundary, self.issued_boundary = {}, 0, 0
     self.held_requests = {}
     self:_clear_guards()
@@ -239,10 +335,11 @@ function Controller:capture(manifest, seed, handoff)
     self:_set(G.nonce, 0)
     self:_set(G.provenance, 1)
     self:_set(G.guard, 1)
-    for index = 1, #frozen.sources do self:_set_phase("s", index, 0) end
+    for index = 1, #frozen.sources do self:_set_phase("s", index, kept[index] and Core.PHASE.kept or 0) end
     for index = 1, #shape.units do
         self:_set(name("a", index), assignments[index])
-        self:_set_phase("d", index, 0)
+        self:_set_phase("d", index, assignments[index] == -1 and Core.PHASE.kept or
+            (assignments[index] == 0 and Core.PHASE.lost or 0))
         self:_set(name("n", index), 0)
     end
     self:_set(G.state, 2) -- publish only after all campaign fields round-trip
@@ -274,7 +371,8 @@ function Controller:restore()
         not integer(self:_get(G.sequence), 1, 2147483647) then
         return nil, "CAMPAIGN_SHAPE_MISMATCH"
     end
-    local expected = shuffled_slots(shape.slots, self:_get(G.seed))
+    local expected, kept = campaign_assignments(frozen, shape, self:_get(G.seed))
+    if not expected then return nil, kept end
     local provenance = self:_get(G.provenance)
     if provenance ~= 0 and provenance ~= 1 then return nil, "PROVENANCE_VERSION_INVALID" end
     local guard = self:_get(G.guard)
@@ -283,7 +381,9 @@ function Controller:restore()
     local pending_sources, pending_rewards = 0, 0
     for index = 1, #frozen.sources do
         local phase = self:_phase("s", index)
-        if not integer(phase, 0, 3) and not
+        if kept[index] then
+            if phase ~= Core.PHASE.kept then return nil, "SOURCE_STATE_INVALID" end
+        elseif not integer(phase, 0, 3) and not
             (phase == Core.PHASE.protected and guard == 1 and guard_source(frozen.sources[index])) then
             return nil, "SOURCE_STATE_INVALID"
         end
@@ -291,7 +391,10 @@ function Controller:restore()
     end
     for index, unit in ipairs(shape.units) do
         local phase = self:_phase("d", index)
-        if self:_get(name("a", index)) ~= expected[index] or not integer(phase, 0, 4) then
+        local disposition = expected[index] == -1 and Core.PHASE.kept or
+            (expected[index] == 0 and Core.PHASE.lost or nil)
+        if self:_get(name("a", index)) ~= expected[index] or
+            (disposition and phase ~= disposition) or (not disposition and not integer(phase, 0, 4)) then
             return nil, "ASSIGNMENT_INVALID"
         end
         if phase == Core.PHASE.held and not creature_target(frozen, shape, expected[index]) then
@@ -311,7 +414,7 @@ function Controller:restore()
             return nil, "HELD_NONCE_MISSING"
         end
         local source_phase = self:_phase("s", unit.source)
-        if phase > 0 and source_phase ~= Core.PHASE.confirmed and source_phase ~= Core.PHASE.protected then
+        if phase > 0 and not disposition and source_phase ~= Core.PHASE.confirmed and source_phase ~= Core.PHASE.protected then
             return nil, "UNSUPPRESSED_REWARD"
         end
         if phase == 1 then pending_rewards = pending_rewards + 1 end
@@ -368,14 +471,23 @@ function Controller:assignments()
     if not self:_active() then return nil, "INACTIVE" end
     local result = {}
     for index, unit in ipairs(self.shape.units) do
-        local slot = self.shape.slots[self:_get(name("a", index))]
-        if not slot then return nil, "ASSIGNMENT_INVALID" end
+        local selected = self:_get(name("a", index))
+        local slot = self.shape.slots[selected]
+        if not slot and selected ~= 0 and selected ~= -1 then return nil, "ASSIGNMENT_INVALID" end
         result[index] = { unit = index, source = unit.source, copy = unit.copy,
             source_id = self.manifest.sources[unit.source].id,
-            target_id = self.manifest.targets[slot.target].id, ordinal = slot.ordinal,
+            target_id = slot and self.manifest.targets[slot.target].id, ordinal = slot and slot.ordinal,
             source_phase = self:_phase("s", unit.source), delivery_phase = self:_phase("d", index) }
+        if self.manifest.randomization then
+            result[index].tier = self.manifest.randomization.sources[result[index].source_id].tier
+            result[index].outcome = selected == -1 and "kept" or (selected == 0 and "lost" or "deliver")
+        end
     end
     return copy(result)
+end
+
+function Controller:source_is_kept(index)
+    return self:_active() and self:_phase("s", index) == Core.PHASE.kept
 end
 
 function Controller:_begin(kind, index, witness)

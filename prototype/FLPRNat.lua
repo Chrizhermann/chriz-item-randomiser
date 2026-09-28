@@ -122,14 +122,18 @@ function Native.new(api, fixture)
             else
                 -- The accepted fixture predates this field; absent means a ground pile.
                 copy.kind = endpoint.kind == nil and "ground-pile" or endpoint.kind
-                assert(copy.kind == "ground-pile" or copy.kind == "creature" or copy.kind == "store",
+                assert(copy.kind == "ground-pile" or copy.kind == "container" or copy.kind == "creature" or copy.kind == "store",
                     "NATIVE_TARGET_KIND_UNSUPPORTED")
                 if copy.kind == "creature" then
                     assert(endpoint.x == nil and endpoint.y == nil, "NATIVE_POSITION_INVALID")
                     copy.sprite, creatures = true, true
-                elseif copy.kind == "ground-pile" then
+                elseif copy.kind == "ground-pile" or copy.kind == "container" then
                     assert(integer(endpoint.x, 0, 32767) and integer(endpoint.y, 0, 32767), "NATIVE_POSITION_INVALID")
                     copy.x, copy.y = endpoint.x, endpoint.y
+                    if copy.kind == "container" then
+                        assert(integer(endpoint.container_type, 0, 65535), "NATIVE_CONTAINER_TYPE_INVALID")
+                        copy.container_type = endpoint.container_type
+                    end
                 end
             end
             self[kind][id] = copy
@@ -440,7 +444,7 @@ function Adapter:inspect_target(id)
         self.reservations[endpoint.identity] = { owner = owner, items = items, kind = "deliver", id = id, empty = empty }
         return { identity = endpoint.identity, target_id = id, accepts = 1 }
     end
-    if #items ~= 0 then return nil, "TARGET_NOT_EMPTY" end
+    if endpoint.kind == "ground-pile" and #items ~= 0 then return nil, "TARGET_NOT_EMPTY" end
     self.reservations[endpoint.identity] = { owner = owner, items = items, kind = "deliver", id = id }
     return { identity = endpoint.identity, target_id = id, accepts = 1 }
 end
@@ -587,12 +591,13 @@ function Adapter:execute(command)
             if not before_queue.addresses[message.pointer] then added[#added + 1] = message end
             if conflicts(message, owner.id, p) then conflicting = conflicting + 1 end
         end
-        if #after == 1 and same(after[1].payload, p) and #added == 0 and conflicting == 0 then
-            self.pending.created_pointer = after[1].pointer
-        elseif #after == 0 and #added == 1 and conflicting == 1 and added[1].target == owner.id and added[1].source == owner.id and
+        local placed = placed_item(before, after, {#before + 1})
+        if placed and same(placed.payload, p) and #added == 0 and conflicting == 0 then
+            self.pending.created_pointer = placed.pointer
+        elseif unchanged(before, after) and #added == 1 and conflicting == 1 and added[1].target == owner.id and added[1].source == owner.id and
             added[1].slot == 32767 and same(added[1].payload, p) then
             -- The engine queues an embedded CItem value, then Run() heap-copies
-            -- it and appends to this empty container. Message and inventory
+            -- it and appends to the container, preserving its earlier contents. Message and inventory
             -- pointers are intentionally different. Bind the exact new message
             -- to this nonce before allowing later observations to establish the
             -- resulting pointer; never resubmit CreateItem.
@@ -670,18 +675,19 @@ function Adapter:observe(command)
             end
             if not pending.created_pointer then
                 if matching then
-                    if #items ~= 0 then return nil, "DELIVERY_EARLY_ITEM" end
+                    if not unchanged(pending.before, items) then return nil, "DELIVERY_EARLY_ITEM" end
                     return nil, "DELIVERY_SETTLING"
                 end
                 if queue.addresses[pending.queued.pointer] then return nil, "DELIVERY_MESSAGE_REUSED" end
-                if #items ~= 1 or items[1].slot ~= 1 or not same(items[1].payload, receipt.payload) then
+                local placed = placed_item(pending.before, items, {#pending.before + 1})
+                if not placed or not same(placed.payload, receipt.payload) then
                     return nil, "DELIVERY_MESSAGE_LOST"
                 end
                 -- The exact message has been consumed. Its append operation
-                -- produced the sole full-payload item in this exclusively
-                -- owned fixture target. Pin that actual heap copy, then demand
+                -- produced one new full-payload item and preserved existing
+                -- contents. Pin that actual heap copy, then demand
                 -- another game tick before publishing the receipt.
-                pending.created_pointer, pending.pinned_tick = items[1].pointer, self.tick
+                pending.created_pointer, pending.pinned_tick = placed.pointer, self.tick
                 return nil, "DELIVERY_SETTLING"
             end
             if self.tick <= pending.pinned_tick then return nil, "DELIVERY_SETTLING" end
@@ -692,12 +698,13 @@ function Adapter:observe(command)
                 if conflicts(message, owner.id, receipt.payload) then return nil, "DELIVERY_QUEUE_CONFLICT" end
             end
         end
-        if #items ~= 1 or items[1].pointer ~= pending.created_pointer or
-            not same(items[1].payload, receipt.payload) then return nil, "CREATED_INSTANCE_CHANGED" end
+        local placed = placed_item(pending.before, items, {#pending.before + 1})
+        if not placed or placed.pointer ~= pending.created_pointer or
+            not same(placed.payload, receipt.payload) then return nil, "CREATED_INSTANCE_CHANGED" end
         local supported; supported, reason = self:_supported(receipt.payload)
         if not supported then return nil, reason end
-        -- This is restricted to a known reachable fixture ground pile; it is
-        -- not a claim that arbitrary creature inventory implies lootability.
+        -- Container access (locks, traps, and normal opening) remains the
+        -- engine's responsibility. Only its inventory has gained a reward.
         receipt.created, receipt.nonce_bound_instance, receipt.lootable = 1, 1, 1
     end
     self.pending = nil

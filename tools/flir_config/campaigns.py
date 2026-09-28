@@ -8,7 +8,9 @@ Lua companion is generated data, never user-provided executable configuration.
 from __future__ import annotations
 
 import os
+import re
 import tempfile
+from collections import Counter
 from copy import deepcopy
 from pathlib import Path
 
@@ -200,8 +202,70 @@ def _validate_target(row: dict) -> int:
     return capacity
 
 
+def _validate_randomization(value: object, sources: list[dict], targets: list[dict]) -> None:
+    metadata = _fields(value, {"sources", "targets", "loss_percent",
+                               "unrandomized_percent"}, "randomization")
+    source_rows = {row["id"]: row for row in sources}
+    target_rows = {row["id"]: row for row in targets}
+    source_metadata, target_metadata = metadata["sources"], metadata["targets"]
+    if (not isinstance(source_metadata, dict) or set(source_metadata) != set(source_rows)
+            or not isinstance(target_metadata, dict) or set(target_metadata) != set(target_rows)):
+        raise ProfileError("Randomization must name exactly the selected sources and targets")
+    for key in ("loss_percent", "unrandomized_percent"):
+        _integer(metadata[key], "randomization " + key, high=100)
+
+    def tier(value: object) -> str:
+        if not isinstance(value, str) or re.fullmatch(r"[a-z0-9:_-]{1,64}", value) is None:
+            raise ProfileError("Invalid randomization tier")
+        return value
+
+    target_capacity = Counter()
+    for identity, row in target_rows.items():
+        slots = target_metadata[identity]
+        if not isinstance(slots, list) or len(slots) != row["capacity"]:
+            raise ProfileError("Randomization target tiers must match target capacity")
+        target_capacity.update(tier(name) for name in slots)
+
+    source_units, keep_reserve = Counter(), Counter()
+    for identity, row in source_rows.items():
+        details = _fields(source_metadata[identity],
+                          {"tier", "loss_exempt", "exclude_targets"}, "randomization source")
+        name = tier(details["tier"])
+        if type(details["loss_exempt"]) is not bool:
+            raise ProfileError("Invalid randomization loss exemption")
+        exclusions = details["exclude_targets"]
+        if not isinstance(exclusions, list):
+            raise ProfileError("Invalid randomization target exclusions")
+        seen_targets, excluded_tiers = set(), Counter()
+        for entry in exclusions:
+            _fields(entry, {"id", "ordinal"}, "randomization target exclusion")
+            target_id = entry["id"]
+            if not isinstance(target_id, str) or target_id not in target_rows:
+                raise ProfileError("Randomization exclusions need distinct selected targets")
+            _integer(entry["ordinal"], "randomization target ordinal",
+                     1, target_rows[target_id]["capacity"])
+            if (target_id, entry["ordinal"]) in seen_targets:
+                raise ProfileError("Randomization exclusions need distinct selected targets")
+            seen_targets.add((target_id, entry["ordinal"]))
+            excluded_tiers[target_metadata[target_id][entry["ordinal"] - 1]] += 1
+        # Reserve for each possible keep decision independently. Shared exclusions
+        # can overestimate this bound; no runtime overflow policy is installed yet.
+        for excluded_tier, count in excluded_tiers.items():
+            keep_reserve[excluded_tier] += max(0, count - (row["quantity"] if excluded_tier == name else 0))
+        source_units[name] += row["quantity"]
+    for name, count in source_units.items():
+        if target_capacity[name] < count:
+            raise ProfileError(f"Randomization tier capacity is short for {name}: "
+                               f"{target_capacity[name]} target slots for {count} source units")
+        if (0 < metadata["unrandomized_percent"] < 100
+                and target_capacity[name] < count + keep_reserve[name]):
+            raise ProfileError(f"Randomization tier {name} needs more target capacity "
+                               "to guarantee room after keeping originals")
+
+
 def _validate_campaign(body: dict) -> dict:
-    _fields(body, _FIELDS | ({"shop_pricing"} if isinstance(body, dict) and "shop_pricing" in body else set()), "artifact")
+    _fields(body, _FIELDS | ({"shop_pricing"} if isinstance(body, dict) and "shop_pricing" in body else set())
+            | ({"randomization"} if isinstance(body, dict) and "randomization" in body else set()), "artifact")
     if body["schema"] != CAMPAIGN_SCHEMA or body["state"] != STATE:
         raise ProfileError("Unsupported campaign prototype schema or state")
     for key in ("revision", "bound_revision", "world_fingerprint"):
@@ -226,6 +290,8 @@ def _validate_campaign(body: dict) -> dict:
         totals[key] = total
     if totals["targets"] < totals["sources"]:
         raise ProfileError("Campaign target capacity cannot hold its selected reward records")
+    if "randomization" in body:
+        _validate_randomization(body["randomization"], body["sources"], body["targets"])
     if "shop_pricing" in body:
         selected = sorted({row["record"]["item"] for row in body["sources"]})
         validate_shop_pricing(body["shop_pricing"], selected,
@@ -277,6 +343,8 @@ def compile_campaign(profile: dict, catalog: dict, world: dict, plan: dict) -> d
             "record": deepcopy(target), "resource_sha256": selected["resource_sha256"]})
     for key in ("sources", "targets"):
         body[key].sort(key=lambda row: row["id"])
+    if "randomization" in bound["plan"]:
+        body["randomization"] = deepcopy(bound["plan"]["randomization"])
     body["revision"] = _digest(body)
     return _validate_campaign(body)
 

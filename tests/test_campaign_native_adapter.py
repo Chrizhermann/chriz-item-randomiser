@@ -379,6 +379,68 @@ function cases.delivers_exact_instance_to_empty_ground_pile(N)
     assert(receipt.created==1 and receipt.nonce_bound_instance==1 and receipt.lootable==1)
     local x,e=a:execute(command); fail(x,e,"ALREADY_ATTEMPTED"); assert(#f.calls==1)
 end
+local function stocked_container(f,N)
+    f.fixture.targets[f.target_id].kind="container"
+    f.fixture.targets[f.target_id].container_type=4
+    local first,second=f.item("OLDONE",501,1),f.item("OLDTWO",502,7)
+    second.m_useCount1=3
+    f.target.m_lstItems={first,second}
+    f.target.m_locked=1; f.target.m_trapActivated=1; f.target.m_trapDetectionDiff=67
+    f.adapter=N.new(f.api,f.fixture)
+    return first,second
+end
+function cases.stocked_locked_trapped_container_appends_synchronously(N)
+    local f=setup(N); local first,second=stocked_container(f,N)
+    f.api.EEex_Action_ExecuteResponseStringOnAIBaseInstantly=function(action,owner)
+        f.calls[#f.calls+1]=action
+        owner.m_lstItems[3]=f.item("FLPRI1",701)
+    end
+    local a=f.adapter; assert(a:inspect_target(f.target_id)); a:on_observation_boundary(1)
+    local command=f.command("deliver"); assert(a:execute(command))
+    assert(#f.target.m_lstItems==3 and f.target.m_lstItems[1]==first and f.target.m_lstItems[2]==second)
+    a:on_observation_boundary(2); local receipt=assert(a:observe(command))
+    assert(receipt.created==1 and receipt.nonce_bound_instance==1 and receipt.lootable==1)
+    assert(first.address==501 and first.m_flags==1 and second.address==502 and second.m_flags==7 and second.m_useCount1==3)
+    assert(f.target.m_locked==1 and f.target.m_trapActivated==1 and f.target.m_trapDetectionDiff==67)
+    assert(#f.calls==1 and f.calls[1]=='CreateItem("flpri1",0,0,0)')
+end
+function cases.stocked_container_queued_append_then_second_reward(N)
+    local f=setup(N); local first,second=stocked_container(f,N)
+    local serial=0
+    f.api.EEex_Action_ExecuteResponseStringOnAIBaseInstantly=function(action)
+        serial=serial+1; f.calls[#f.calls+1]=action
+        f.queue[#f.queue+1]=f.message(600+serial)
+    end
+    local a=f.adapter; assert(a:inspect_target(f.target_id)); a:on_observation_boundary(1)
+    local command=f.command("deliver"); assert(a:execute(command))
+    assert(#f.target.m_lstItems==2 and #f.queue==1)
+    a:on_observation_boundary(2); local x,e=a:observe(command); fail(x,e,"DELIVERY_SETTLING")
+    f.queue[1]=nil; f.target.m_lstItems[3]=f.item("FLPRI1",701)
+    a:on_observation_boundary(3); x,e=a:observe(command); fail(x,e,"DELIVERY_SETTLING")
+    a:on_observation_boundary(4); assert(a:observe(command))
+    assert(a:inspect_target(f.target_id)); a:on_observation_boundary(5)
+    local second_command=f.command("deliver",3); second_command.index=2
+    assert(a:execute(second_command)); assert(#f.target.m_lstItems==3 and #f.queue==1)
+    a:on_observation_boundary(6); x,e=a:observe(second_command); fail(x,e,"DELIVERY_SETTLING")
+    f.queue[1]=nil; f.target.m_lstItems[4]=f.item("FLPRI1",702)
+    a:on_observation_boundary(7); x,e=a:observe(second_command); fail(x,e,"DELIVERY_SETTLING")
+    a:on_observation_boundary(8); local receipt=assert(a:observe(second_command))
+    assert(receipt.created==1 and receipt.nonce_bound_instance==1 and receipt.lootable==1)
+    assert(#f.target.m_lstItems==4 and f.target.m_lstItems[1]==first and f.target.m_lstItems[2]==second)
+    assert(f.target.m_lstItems[3].address==701 and f.target.m_lstItems[4].address==702)
+    assert(f.target.m_locked==1 and f.target.m_trapActivated==1 and #f.calls==2)
+end
+function cases.stocked_container_rejects_changed_old_item_during_queued_append(N)
+    local f=setup(N); local first=stocked_container(f,N)
+    f.api.EEex_Action_ExecuteResponseStringOnAIBaseInstantly=function(action)
+        f.calls[#f.calls+1]=action; f.queue[1]=f.message(601)
+    end
+    local a=f.adapter; assert(a:inspect_target(f.target_id)); a:on_observation_boundary(1)
+    local command=f.command("deliver"); assert(a:execute(command))
+    f.queue[1]=nil; first.m_flags=5; f.target.m_lstItems[3]=f.item("FLPRI1",701)
+    a:on_observation_boundary(2); local x,e=a:observe(command); fail(x,e,"DELIVERY_MESSAGE_LOST")
+    assert(#f.calls==1)
+end
 function cases.target_must_be_empty_and_exact_ground_pile(N)
     local f=setup(N); f.target.m_lstItems[1]=f.item("OTHER",501)
     local x,e=f.adapter:inspect_target(f.target_id); fail(x,e,"TARGET_NOT_EMPTY")

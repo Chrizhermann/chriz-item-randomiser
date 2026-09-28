@@ -129,7 +129,7 @@ class EditorTests(unittest.TestCase):
         self.assertEqual(e.post("/api/save", draft)["targets"][0]["kind_label"], "Container")
         result = e.post("/api/validate", draft)
         self.assertTrue(result["valid"], result)
-        self.assertFalse(result["runtime_supported"])
+        self.assertTrue(result["runtime_supported"], result)
 
     def test_http_search_load_and_check_share_the_real_editor(self):
         e = self.editor

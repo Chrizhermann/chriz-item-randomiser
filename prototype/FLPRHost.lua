@@ -176,7 +176,9 @@ function Host:_step(tick)
     -- Every original must be removed or protected before exposing any rewards.
     for index, source in ipairs(self.bundle.manifest.sources) do
         local phase, state = source_phases[index], self.guarded and self.guarded[index]
-        if state and phase ~= self.deps.core.PHASE.confirmed then
+        if phase == self.deps.core.PHASE.kept then
+            -- This campaign left the item at its original source.
+        elseif state and phase ~= self.deps.core.PHASE.confirmed then
             assert(phase == self.deps.core.PHASE.pending or phase == self.deps.core.PHASE.protected,
                 "SOURCE_NOT_READY")
             if not state.bound then
@@ -209,7 +211,7 @@ function Host:_step(tick)
     local phases, waiting = self.deps.core.PHASE, false
     for _, assignment in ipairs(assignments) do
         local phase = assignment.delivery_phase
-        if phase ~= phases.confirmed and phase ~= phases.held then
+        if phase ~= phases.confirmed and phase ~= phases.held and phase ~= phases.kept and phase ~= phases.lost then
             assert(phase == phases.pending, "DELIVERY_NOT_READY")
             local deferral = self.deferred[assignment.unit]
             if not deferral or tick >= deferral.retry then

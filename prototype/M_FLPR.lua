@@ -161,11 +161,19 @@ local ok, failure = pcall(function()
             if status == "complete" then
                 storage:set("flpr_done", 1)
                 assert(storage:get("flpr_done") == 1, "COMPLETION_MARKER_WRITE_FAILED")
-                local count = #assert(root.Host.controller:assignments())
+                local count, kept, lost = 0, 0, 0
+                for _, assignment in ipairs(assert(root.Host.controller:assignments())) do
+                    if assignment.outcome == "kept" then kept = kept + 1
+                    elseif assignment.outcome == "lost" then lost = lost + 1
+                    else count = count + 1 end
+                end
                 -- The creature fixture variant names its recipients; absent means ground piles.
                 local detail = root.Host.bundle.fixture.ready_detail
                 if type(detail) ~= "string" then detail = "have been placed near the Candlekeep entrance." end
-                Infinity_DisplayString("Randomiser test ready: " .. count .. " test weapons " .. detail)
+                local message = "Randomiser test ready: " .. count .. " rewards " .. detail
+                if kept > 0 then message = message .. " " .. kept .. " left at their originals." end
+                if lost > 0 then message = message .. " " .. lost .. " omitted for this adventure." end
+                Infinity_DisplayString(message)
             else
                 print("FLPR fixture stopped: " .. tostring(reason))
             end

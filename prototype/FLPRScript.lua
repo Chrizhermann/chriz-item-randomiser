@@ -51,6 +51,7 @@ function Member:prepare_new(bundle,controller)
         'CAMPAIGN_SCRIPT_CAPTURE_REQUIRED')
     assert(api.EEex_GameState_GetGlobalInt(SELECTED)==0 and api.EEex_GameState_GetGlobalInt(CONSUMED)==0,
         'CAMPAIGN_SCRIPT_ALREADY_STARTED')
+    if controller.source_is_kept and controller:source_is_kept(self.index) then return true end
     api.EEex_GameState_SetGlobalInt(SELECTED,1)
     assert(api.EEex_GameState_GetGlobalInt(SELECTED)==1,'CAMPAIGN_SCRIPT_SELECTION_FAILED')
     return true

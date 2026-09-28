@@ -48,6 +48,7 @@ class Editor:
         profile = validate_profile(data["profile"], self.catalog)
         plan = deepcopy(data["plan"])
         expected = {"schema", "catalog_fingerprint", "world_fingerprint", "sources", "targets", "registrations"}
+        expected |= set(plan) & {"randomization", "replacements"}
         if (set(plan) != expected or plan["schema"] != "flir-binding-plan-v1" or
                 plan["catalog_fingerprint"] != self.catalog["fingerprint"] or
                 plan["world_fingerprint"] != self.world["fingerprint"] or
@@ -83,7 +84,7 @@ class Editor:
     def target(self, row: dict) -> dict:
         notes = {"actor": "Encounter availability and drops need a game test.",
                  "cre-template": "Creature definition; choosing a specific spawn still needs runtime support.",
-                 "container": "Container destination; delivery here still needs runtime support.",
+                 "container": "Container destination; existing contents, locks and traps are preserved.",
                  "store": "Shop destination; prototype delivery is available when this configuration passes its check."}
         return {"id": row["id"], "label": self.label(row), "kind": row["kind"],
                 "kind_label": KIND_LABELS[row["kind"]], "note": notes[row["kind"]]}

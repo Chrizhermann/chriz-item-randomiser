@@ -3,7 +3,7 @@
 ``list_templates()`` describes the six bundled choices. ``build_template()``
 loads their checked-in WeiDU tables without changing the game or flattening
 repeated rewards into the user-profile item set. The result needs installation
-specific binding and tier-aware runtime support before it can be played.
+specific binding and remaining original-rule adapters before it can be played.
 """
 
 from __future__ import annotations
@@ -199,7 +199,7 @@ def build_template(template_id: str, *, items: str | None = None,
         },
         "runtime_limitations": [
             "Rows require installation-specific item, source, and target binding.",
-            "The current campaign runtime does not yet apply the original tier and token rules.",
+            "Tiered draws, loss and kept originals work for bound plans; original overflow and token expansion still need integration.",
             "Virtual, scripted, group, and unadapted Mode 2 rows need runtime support.",
             "BG1 resource names require game-specific conversion on EET, BGT, and Tutu.",
             "Installer mod-compatibility and per-row availability filters need evaluation at binding.",

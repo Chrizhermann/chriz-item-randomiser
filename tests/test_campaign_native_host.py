@@ -341,6 +341,7 @@ local function bootstrap(Core,Host,Globals,text,options)
             return Host.new(deps)
         end}
     end
+    local script_module={new=function() error('UNEXPECTED_SCRIPT_SOURCE') end}
     local modules={ ["override/FLPRCore.lua"]=Core,["override/FLPRGlob.lua"]=Globals,
         ["override/FLPRHost.lua"]=host_module,["override/FLPRNat.lua"]={
             new=function(_,fixture) return f.make_native(fixture) end,
@@ -352,7 +353,8 @@ local function bootstrap(Core,Host,Globals,text,options)
                 end
                 return true
             end},
-        ["override/FLPRQA.lua"]={new=function() return {poll=function() end} end}}
+        ["override/FLPRQA.lua"]={new=function() return {poll=function() end} end},
+        ["override/FLPRScript.lua"]=script_module}
     if options.gate then
         local builder,compiler={},{}
         f.builder,f.compiler=builder,compiler
@@ -360,7 +362,7 @@ local function bootstrap(Core,Host,Globals,text,options)
         modules["flpr-fixture/FLPRCampaignPolicy.lua"]=compiler
         modules["override/FLPRGat.lua"]={
             source_ids=function(fixture) return fixture.source_gate.source_ids or {fixture.source_gate.source_id} end,
-            install=function(env,bundles,build,compile,pristine)
+            install=function(env,bundles,build,compile,pristine,script)
             f.bootstrap_events[#f.bootstrap_events+1]="install"
             assert(env==_G and type(bundles)=='table' and #bundles==(options.multiple_pinned and 2 or 1))
             assert(bundles[1].manifest==f.manifest and bundles[1].fixture==f.native_fixture)
@@ -368,7 +370,7 @@ local function bootstrap(Core,Host,Globals,text,options)
                 local second=f.bundles[f.pinned_revisions[2]]
                 assert(bundles[2].manifest==second.manifest and bundles[2].fixture==second.fixture)
             end
-            assert(build==builder and compile==compiler)
+            assert(build==builder and compile==compiler and script==script_module)
             assert(type(pristine.FLPRU1)=='table' and pristine.FLPRU1.bytes==f.pristine_bytes and
                 #pristine.FLPRU1.bytes==27492 and pristine.FLPRU1.resource_sha256==
                 bundles[1].fixture.resource_hashes['FLPRU1.ARE'])
@@ -526,14 +528,14 @@ end
 function cases.bootstrap_ready_message_keeps_the_accepted_ground_pile_text(Core,Host,Globals,text)
     local shown=bootstrap_to_complete(bootstrap(Core,Host,Globals,text))
     assert(#shown==1 and shown[1]==
-        "Randomiser test ready: 3 test weapons have been placed near the Candlekeep entrance.",tostring(shown[1]))
+        "Randomiser test ready: 3 rewards have been placed near the Candlekeep entrance.",tostring(shown[1]))
 end
 function cases.bootstrap_ready_message_uses_the_fixture_detail(Core,Host,Globals,text)
     local f=bootstrap(Core,Host,Globals,text)
     f.ready_detail="have been given to the two test cows near the Candlekeep entrance."
     local shown=bootstrap_to_complete(f)
     assert(#shown==1 and shown[1]==
-        "Randomiser test ready: 3 test weapons have been given to the two test cows near the Candlekeep entrance.",
+        "Randomiser test ready: 3 rewards have been given to the two test cows near the Candlekeep entrance.",
         tostring(shown[1]))
 end
 function cases.bootstrap_save_load_blocks_background_remote_poll(Core,Host,Globals,text)
