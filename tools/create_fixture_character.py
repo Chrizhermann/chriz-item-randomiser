@@ -30,7 +30,6 @@ from uuid import uuid4
 
 PROTECTED_GAME = Path.home() / "Games" / "EET-IR-Mode1-20260922" / "game"
 PROFILE_TEXT = 'engine_name = "EET IR Mode1 Test - 20260922"\nengine_mode = 1\n'
-REMOTE_CLIENT = Path(r"C:\src\private\eeex-remote-console\tools\eeex-remote.ps1")
 CHARACTER_NAME = "Abdel - Fighter - Chaotic Good"
 MENUS = (
     "START", "START_SP", "START_CAMPAIGN_SELECT", "WORLD_ACTIONBAR",
@@ -231,9 +230,21 @@ def write_json(path: Path, value: object) -> None:
     path.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
+def sibling_remote_client(repository: Path = Path(__file__).resolve().parents[1]) -> Path:
+    """The EEex Remote Console client in the checkout beside this repository.
+
+    Worktrees resolve to their main checkout, so every worktree uses the same client.
+    """
+    common = subprocess.run(["git", "-C", str(repository), "rev-parse", "--git-common-dir"],
+                            capture_output=True, text=True)
+    checkout = (repository / common.stdout.strip()).resolve().parent if common.returncode == 0 else repository
+    return checkout.parent / "eeex-remote-console" / "tools" / "eeex-remote.ps1"
+
+
 def drive(game: Path, name: str, evidence: Path, powershell: str, *, timeout: int = 10,
-          client: Path = REMOTE_CLIENT, finish_prologue: bool = False, run=subprocess.run) -> dict:
+          client: Path | None = None, finish_prologue: bool = False, run=subprocess.run) -> dict:
     """Submit each step once. `run` is injectable for offline failure tests."""
+    client = client or sibling_remote_client()
     evidence.mkdir(parents=True, exist_ok=False)
     report = {"schema": "flpr-character-creation-v1", "game": str(game), "name": name,
               "started_at": utc_now(), "status": "running", "steps": []}
@@ -309,8 +320,9 @@ def main(argv: list[str] | None = None) -> int:
         validate_name(args.name)
         game = validate_game(args.game)
         require_idle_ipc(game)
-        if not REMOTE_CLIENT.is_file():
-            raise FixtureError(f"Remote console client is missing: {REMOTE_CLIENT}")
+        client = sibling_remote_client()
+        if not client.is_file():
+            raise FixtureError(f"Remote console client is missing: {client}")
         powershell = shutil.which("pwsh") or shutil.which("powershell")
         if not powershell:
             raise FixtureError("PowerShell is required for the sibling EEex Remote Console client.")
@@ -326,7 +338,8 @@ def main(argv: list[str] | None = None) -> int:
             lock = candidate
         except FileExistsError:
             raise FixtureError(f"Another helper may be active. Inspect its lock before retrying: {candidate}")
-        report = drive(game, args.name, evidence, powershell, finish_prologue=args.finish_prologue)
+        report = drive(game, args.name, evidence, powershell, client=client,
+                       finish_prologue=args.finish_prologue)
         print(report["note"])
         print(f"Evidence: {evidence}")
         return 0

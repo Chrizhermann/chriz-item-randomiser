@@ -21,7 +21,7 @@
 - Baseline decompiles: `%USERPROFILE%\Games\EET-IR-Test-b600e94\decompile-all-b600e94`
 - WeiDU 24900: `%USERPROFILE%\Games\EET-IR-Test-b600e94\bg2\EET\bin\win32\x86_64\weidu.exe`
 - Lua 5.3.3: `%USERPROFILE%\Games\EET-IR-Test-b600e94\bg2\EET\bin\win32\x86_64\lua.exe`
-- Remote Console tools: `C:\src\private\eeex-remote-console\tools`
+- Remote Console tools: `tools` in the `eeex-remote-console` checkout beside this repository
 - Isolated profile: `%USERPROFILE%\OneDrive\Documents\Baldur's Gate - Enhanced Edition Trilogy - IR Test b600e94`
 
 Never run any command in `C:\Games\Baldur's Gate II Enhanced Edition modded`, never write the

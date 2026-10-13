@@ -152,6 +152,18 @@ class FixtureCharacterTests(unittest.TestCase):
         self.assertEqual(len(calls), 15)
         self.assertEqual(report["status"], "awaiting-loot-confirmation")
 
+    def test_remote_client_is_beside_the_main_checkout_from_any_worktree(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        root = Path(temporary.name).resolve()
+        main, worktree = root / "repository", root / "elsewhere" / "worktree"
+        subprocess.run(["git", "init", "-q", str(main)], check=True)
+        subprocess.run(["git", "-C", str(main), "worktree", "add", "-q", "--orphan", "-b", "other",
+                        str(worktree)], check=True)
+        expected = root / "eeex-remote-console" / "tools" / "eeex-remote.ps1"
+        self.assertEqual(helper.sibling_remote_client(main), expected)
+        self.assertEqual(helper.sibling_remote_client(worktree), expected)
+
 
 if __name__ == "__main__":
     unittest.main()
