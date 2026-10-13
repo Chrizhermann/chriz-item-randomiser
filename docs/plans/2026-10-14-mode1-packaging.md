@@ -139,8 +139,8 @@ its authored line endings). `.gitattributes`, symlinks and submodules are refuse
 than guessed. `--verify` rebuilds and compares an existing ZIP byte for byte.
 
 Built from `f4a9dfb` with the 8.1.1 file list, the 662 files match the published 8.1.1
-asset byte for byte; only the ZIP container differs. The package built from `913ffef`
-has 711 files, 8,359,908 bytes uncompressed, a largest entry of 1,472,788 bytes
+asset byte for byte; only the ZIP container differs. The package built from `ce10fda`
+has 711 files, 8,360,947 bytes uncompressed, a largest entry of 1,472,788 bytes
 (`languages/iconv/libiconv-1.9.2-1-src.7z`), a maximum compression ratio of 14.8, a
 path depth of five and one TP2 (`randomiser/randomiser.tp2`). That is within the
 archive limits CEBG uses for the 8.1.1 asset (1,024 entries, 4 MiB per entry, 16 MiB in
