@@ -195,6 +195,11 @@
   <p><strong>Randomise items: Mode 2: Randomise with <acronym title="Weimer Dialogue Utilities">WeiDU</acronym>. Some items are lost</strong><br />
   This subcomponent works like the other subcomponent using Mode 2, except there is a chance per item that some items are lost during the randomisation. Lost items will not appear in the game world until the items are re-randomised. When you install this component you will be asked to input the chance for having items randomly be lost. Prior to version 4 of Item Randomiser, the chance was pre-set to 10&nbsp;%.</p>
 
+  <h3>Experimental campaign randomiser</h3>
+
+  <p><strong>Experimental campaign randomiser: configure items after installation (requires EEex with LuaJIT)</strong><br />
+  This component installs a campaign randomiser that runs in the game through <acronym title="Enhanced Edition Extender">EEex</acronym>. It requires the Enhanced Edition Trilogy and EEex with its LuaJIT component. It cannot be combined with the Mode 1 or Mode 2 subcomponents or with More Spell Shield scrolls; the other randomisation options have no effect with it. Install it after every mod that changes the user interface or the new-game template (<code>UI.MENU</code>, <code>BALDUR.GAM</code>).<br />Installing the component changes nothing in play: until a configuration is applied, new games start as usual. After the whole mod stack is installed, close the game and use the configurator in <code>randomiser/tools</code> to scan the game and apply a configuration. The configurator currently requires Python 3.10 or later. Each new Baldur&rsquo;s Gate campaign is then randomised when its first character is accepted, and existing saves keep the settings they started with. Applied settings are not recorded by WeiDU: uninstalling this component does not remove them.</p>
+
   <h3>Components for unequipping items from creature groups</h3>
 
   <p>These components are only available for Mode 2 and only if installed after the main component. Mode 2 does its best to equip creatures who receive random items with said item. This can result in beholders wearing armour or dragons wearing helms, or other strange things. The components listed below offer the player the choice of having all items unequipped from a specific group of creatures. Only creatures who are eligible for receiving random items are affected by these components. But they will unequip all droppable equipment from the creatures and not just items Item Randomiser has equipped them with.</p>
@@ -326,6 +331,12 @@
 
 <h2>Maintained Fork Version History</h2>
 <div class="section">
+  <p><b>Unreleased:</b></p>
+  <ul>
+    <li>Added an experimental component that installs the campaign randomiser runtime for EET with EEex; it is configured after installation. It excludes install-time Mode 1 and Mode 2 and More Spell Shield scrolls.</li>
+    <li>Release packages are now built reproducibly from a Git commit.</li>
+  </ul>
+
   <p><b>2026-09-03&mdash;version 8.1.1:</b></p>
   <ul>
     <li>Fixed Mode 1 physical creature-item removal so inventory slot offsets and references remain valid, preventing duplicated or missing loot and equipment.</li>

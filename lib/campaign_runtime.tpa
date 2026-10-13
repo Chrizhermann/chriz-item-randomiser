@@ -1,0 +1,145 @@
+// Component 1500: the post-install campaign runtime.
+//
+// Installs the runtime modules (prototype/, three tools/probes modules), hooks
+// UI.MENU's single-player New Game and character acceptance calls through
+// M_FLPRUI.lua, and marks the BALDUR.GAM new-game template with GLOBAL
+// FLPR_FRESH = 1. Every input is checked before the first write, so a refused
+// install leaves the game unchanged; uninstall restores UI.MENU and BALDUR.GAM
+// from backup. Configurator output written after installation is not tracked.
+
+// The runtime needs Lua's io and os libraries. EEex's LuaJIT component
+// provides them by writing exactly this line; comments must not satisfy it.
+DEFINE_ACTION_MACRO flir_campaign_runtime_require_luajit BEGIN
+  OUTER_SET flir_rt_mode_keys = 0
+  OUTER_SET flir_rt_mode_matches = 0
+  OUTER_SET flir_rt_mode_suffixes = 0
+  ACTION_IF FILE_EXISTS ~InfinityLoader.ini~ BEGIN
+    COPY - ~InfinityLoader.ini~ ~InfinityLoader.ini~
+      COUNT_REGEXP_INSTANCES ~^LuaPatchMode=~ flir_rt_mode_keys
+      COUNT_REGEXP_INSTANCES ~^LuaPatchMode=REPLACE_INTERNAL_WITH_EXTERNAL~ flir_rt_mode_matches
+      COUNT_REGEXP_INSTANCES ~^LuaPatchMode=REPLACE_INTERNAL_WITH_EXTERNAL[^%WNL%%MNL%%LNL%]~ flir_rt_mode_suffixes
+    BUT_ONLY
+  END
+  ACTION_IF flir_rt_mode_keys != 1 OR flir_rt_mode_matches != 1 OR flir_rt_mode_suffixes != 0 BEGIN
+    FAIL @101510
+  END
+END
+
+// A New Game or character acceptance call that is not hooked would start an
+// unrandomised campaign without notice, so unrecognised call forms refuse the
+// install. Multiplayer connectionScreen:OnNewGameButtonClick stays untouched.
+// Existing FLPRUI_ calls were written outside this installer; uninstalling it
+// would leave them calling missing functions.
+DEFINE_ACTION_MACRO flir_campaign_runtime_check_menu BEGIN
+  ACTION_IF !FILE_EXISTS_IN_GAME ~UI.MENU~ BEGIN
+    FAIL @101512
+  END
+  COPY_EXISTING - ~UI.MENU~ ~...randomiser/fl-inlined/flir-ui.menu~
+    COUNT_REGEXP_INSTANCES CASE_SENSITIVE EXACT_MATCH ~startEngine:OnNewGameButtonClick(~ flir_rt_new_game
+    COUNT_REGEXP_INSTANCES CASE_SENSITIVE EXACT_MATCH ~connectionScreen:OnNewGameButtonClick(~ flir_rt_multiplayer
+    COUNT_REGEXP_INSTANCES CASE_SENSITIVE ~[:.]OnNewGameButtonClick~ flir_rt_new_game_any
+    COUNT_REGEXP_INSTANCES CASE_SENSITIVE EXACT_MATCH ~createCharScreen:AcceptCharacter(~ flir_rt_accept
+    COUNT_REGEXP_INSTANCES CASE_SENSITIVE ~[:.]AcceptCharacter~ flir_rt_accept_any
+    COUNT_REGEXP_INSTANCES CASE_SENSITIVE EXACT_MATCH ~FLPRUI_~ flir_rt_hooked
+  BUT_ONLY
+  ACTION_IF flir_rt_new_game < 1 OR flir_rt_accept < 1 OR flir_rt_hooked != 0
+         OR flir_rt_new_game + flir_rt_multiplayer != flir_rt_new_game_any
+         OR flir_rt_accept != flir_rt_accept_any BEGIN
+    FAIL @101512
+  END
+END
+
+// GAMEV2.0 variables are 84-byte records: name (32), type word at 0x20,
+// integer value at 0x28. An existing FLPR_FRESH = 1 is accepted unchanged.
+DEFINE_ACTION_MACRO flir_campaign_runtime_check_gam BEGIN
+  ACTION_IF !FILE_EXISTS_IN_GAME ~BALDUR.GAM~ BEGIN
+    FAIL @101513
+  END
+  OUTER_SET flir_rt_gam_valid = 0
+  OUTER_SET flir_rt_fresh = 0
+  OUTER_SET flir_rt_fresh_value = 0
+  COPY_EXISTING - ~BALDUR.GAM~ ~...randomiser/fl-inlined/flir-baldur.gam~
+    PATCH_IF BUFFER_LENGTH >= 0xb4 BEGIN
+      READ_ASCII 0 flir_rt_signature (8)
+      READ_LONG 0x38 flir_rt_var_offset
+      READ_LONG 0x3c flir_rt_var_count
+      PATCH_IF (~%flir_rt_signature%~ STRING_EQUAL ~GAMEV2.0~) AND flir_rt_var_count >= 0 AND
+               (flir_rt_var_count = 0 OR (flir_rt_var_offset >= 0xb4 AND
+                flir_rt_var_offset + flir_rt_var_count * 84 <= BUFFER_LENGTH)) BEGIN
+        SET flir_rt_gam_valid = 1
+        FOR (flir_rt_i = 0; flir_rt_i < flir_rt_var_count; ++flir_rt_i) BEGIN
+          READ_ASCII (flir_rt_var_offset + flir_rt_i * 84) flir_rt_name (32) NULL
+          PATCH_IF (~%flir_rt_name%~ STRING_EQUAL_CASE ~FLPR_FRESH~) BEGIN
+            SET flir_rt_fresh += 1
+            READ_LONG (flir_rt_var_offset + flir_rt_i * 84 + 0x28) flir_rt_fresh_value
+          END
+        END
+      END
+    END
+  BUT_ONLY
+  ACTION_IF !flir_rt_gam_valid BEGIN
+    FAIL @101513
+  END
+  ACTION_IF flir_rt_fresh > 1 OR (flir_rt_fresh = 1 AND flir_rt_fresh_value != 1) BEGIN
+    FAIL @101514
+  END
+END
+
+// Same layout as the native test fixture: copy the variable table to the end
+// of the file, append the marker and point the header at the new table.
+DEFINE_ACTION_MACRO flir_campaign_runtime_mark_gam BEGIN
+  ACTION_IF flir_rt_fresh = 0 BEGIN
+    COPY_EXISTING ~BALDUR.GAM~ ~override~
+      READ_LONG 0x38 flir_rt_var_offset
+      READ_LONG 0x3c flir_rt_var_count
+      SET flir_rt_table = BUFFER_LENGTH
+      INSERT_BYTES flir_rt_table ((flir_rt_var_count + 1) * 84)
+      FOR (flir_rt_i = 0; flir_rt_i < flir_rt_var_count * 84; flir_rt_i += 4) BEGIN
+        READ_LONG (flir_rt_var_offset + flir_rt_i) flir_rt_long
+        WRITE_LONG (flir_rt_table + flir_rt_i) flir_rt_long
+      END
+      SET flir_rt_marker = flir_rt_table + flir_rt_var_count * 84
+      WRITE_ASCII flir_rt_marker ~FLPR_FRESH~ (32)
+      WRITE_SHORT (flir_rt_marker + 0x20) 1
+      WRITE_LONG (flir_rt_marker + 0x28) 1
+      WRITE_LONG 0x38 flir_rt_table
+      WRITE_LONG 0x3c (flir_rt_var_count + 1)
+  END
+END
+
+DEFINE_ACTION_MACRO flir_campaign_runtime_install BEGIN
+  LAM flir_campaign_runtime_require_luajit
+  LAM flir_campaign_runtime_check_menu
+  LAM flir_campaign_runtime_check_gam
+
+  // M_FLPR.lua loads these from override and the three pure builders from
+  // flpr-fixture/, the folder the configurator's settings are applied to.
+  COPY ~%MOD_FOLDER%/prototype/M_FLPRUI.lua~ ~override~
+       ~%MOD_FOLDER%/prototype/M_FLPR.lua~ ~override~
+       ~%MOD_FOLDER%/prototype/FLPRCore.lua~ ~override~
+       ~%MOD_FOLDER%/prototype/FLPRCur.lua~ ~override~
+       ~%MOD_FOLDER%/prototype/FLPRGat.lua~ ~override~
+       ~%MOD_FOLDER%/prototype/FLPRGlob.lua~ ~override~
+       ~%MOD_FOLDER%/prototype/FLPRHost.lua~ ~override~
+       ~%MOD_FOLDER%/prototype/FLPRNat.lua~ ~override~
+       ~%MOD_FOLDER%/prototype/FLPRQA.lua~ ~override~
+       ~%MOD_FOLDER%/prototype/FLPRScript.lua~ ~override~
+       ~%MOD_FOLDER%/prototype/FLPRShop.lua~ ~override~
+       ~%MOD_FOLDER%/prototype/FLPRSpell.lua~ ~override~
+       ~%MOD_FOLDER%/prototype/FLPRRun.menu~ ~override~
+  MKDIR ~flpr-fixture~
+  COPY ~%MOD_FOLDER%/tools/probes/FLPRGateAsm.lua~ ~flpr-fixture~
+       ~%MOD_FOLDER%/tools/probes/FLPRCampaignPolicy.lua~ ~flpr-fixture~
+       ~%MOD_FOLDER%/tools/probes/FLPRInventoryAsm.lua~ ~flpr-fixture~
+
+  COPY_EXISTING ~UI.MENU~ ~override~
+    REPLACE_TEXTUALLY CASE_SENSITIVE EXACT_MATCH ~startEngine:OnNewGameButtonClick(~ ~FLPRUI_NewGame(~
+    REPLACE_TEXTUALLY CASE_SENSITIVE EXACT_MATCH ~createCharScreen:AcceptCharacter(~ ~FLPRUI_AcceptCharacter(~
+  BUT_ONLY
+
+  LAM flir_campaign_runtime_mark_gam
+
+  COPY ~...blank~ ~override/flrandomiser3.mrk~
+    INSERT_BYTES 0 1
+    WRITE_BYTE 0 1
+END

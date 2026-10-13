@@ -29,6 +29,18 @@
 @101200="Mode 1: Randomise with in-game scripts. Some items are lost"
 @101300="Mode 2: Randomise with WeiDU. No items are lost"
 @101400="Mode 2: Randomise with WeiDU. Some items are lost"
+@101500=~Experimental campaign randomiser: configure items after installation (requires EEex with LuaJIT)~
+@101501=~This component requires Enhanced Edition Trilogy (EET).~
+@101502=~This component requires EEex. Please install EEex first.~
+@101503=~This component cannot be combined with install-time randomisation (Mode 1 or Mode 2).~
+@101504=~This component cannot be combined with "More Spell Shield scrolls"; its configurator offers that option for each campaign.~
+@101505=~A separately staged campaign runtime (override/M_FLPR.lua) is present. Please remove it before installing this component.~
+@101506=~This option is not available with the experimental campaign randomiser; its configurator offers it for each campaign.~
+@101507=~This component cannot be combined with the experimental campaign randomiser.~
+@101510=~This component requires the EEex LuaJIT component: InfinityLoader.ini must contain exactly one LuaPatchMode line, LuaPatchMode=REPLACE_INTERNAL_WITH_EXTERNAL. Installation stopped.~
+@101512=~UI.MENU has no single-player New Game call (startEngine:OnNewGameButtonClick) or character acceptance call (createCharScreen:AcceptCharacter) in a form this component can hook, or it already calls FLPRUI_ functions. Installation stopped.~
+@101513=~BALDUR.GAM is missing or is not a GAMEV2.0 new-game template. Installation stopped.~
+@101514=~BALDUR.GAM already defines the global FLPR_FRESH more than once or with a value other than 1. Installation stopped.~
 
 @105000="Components for unequipping items from creature groups"
 @105001="This component is only available for Mode 2"

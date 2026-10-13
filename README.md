@@ -34,8 +34,19 @@ remain unchanged for WeiDU and saved-game compatibility.
 ## Development
 
 The [experimental post-install configurator](docs/post-install-configurator.md)
-indexes installed items and prepares reusable configuration drafts. Campaign
-activation and collection UI integration are still in development.
+indexes installed items and prepares reusable configuration drafts. Component
+1500 installs the campaign runtime it configures on EET with EEex and LuaJIT; see
+the [packaging plan](docs/plans/2026-10-14-mode1-packaging.md) for its contract and
+what still blocks a release. Collection UI integration is still in development.
+
+Release packages are built from a commit, never the working tree, and are
+byte-reproducible with the same zlib version. `tools/release-package.json` lists
+the published files:
+
+```powershell
+python tools/build_release.py --commit HEAD --out <directory>
+python tools/build_release.py --commit <commit> --verify <zip>
+```
 
 Use the disposable EET installation and its separate profile for game tests;
 rebuild it when needed. Keep supporting tools small and reuse the existing

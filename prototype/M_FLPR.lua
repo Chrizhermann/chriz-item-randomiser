@@ -1,4 +1,4 @@
--- Explicitly staged only by the isolated fixture installer, never normal TP2.
+-- Installed by randomiser.tp2 component 1500 or staged by the isolated fixture installer.
 if not EEex_Active then return end
 FLPR = FLPR or {}
 local root = FLPR

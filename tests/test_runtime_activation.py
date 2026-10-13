@@ -1,0 +1,98 @@
+"""The configurator accepts a runtime that randomiser.tp2 component 1500 installed.
+
+Such an install has no configuration yet, so Apply must not require an
+existing next-game pointer, while a hand-staged test runtime still needs one.
+"""
+from copy import deepcopy
+from pathlib import Path
+import sys
+import tempfile
+import unittest
+from unittest.mock import patch
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
+from flir_config.activation import validate_runtime
+from flir_config.campaigns import _render_lua
+from flir_config.editor import Editor
+from flir_config.profiles import ProfileError
+from tests import test_postinstall_editor as editor_tests
+
+INSTALLED = {
+    "override/M_FLPR.lua": b"-- runtime\n",
+    "override/FLPRRun.menu": b"menu\n",
+    "override/M_FLPRUI.lua": b"-- adapter\n",
+    "override/flrandomiser3.mrk": b"\x01",
+    "flpr-fixture/FLPRGateAsm.lua": b"return {}\n",
+}
+
+
+def write(game: Path, files: dict[str, bytes]) -> None:
+    for name, data in files.items():
+        path = game / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(data)
+
+
+class ValidateRuntimeTests(unittest.TestCase):
+    def setUp(self):
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        self.game = Path(folder.name) / "game"
+        self.game.mkdir()
+        self.catalog = {"game_root": str(self.game)}
+
+    def check(self, files: dict[str, bytes]) -> Path:
+        write(self.game, files)
+        return validate_runtime(self.game, self.catalog)
+
+    def test_installed_runtime_needs_no_configuration(self):
+        self.assertEqual(self.check(INSTALLED), self.game.resolve())
+
+    def test_staged_runtime_still_needs_its_pointer(self):
+        staged = {"override/M_FLPR.lua": b"-- lab\n", "override/FLPRRun.menu": b"menu\n"}
+        with self.assertRaisesRegex(ProfileError, "flpr-fixture/next.lua"):
+            self.check(staged)
+        self.assertEqual(self.check({"flpr-fixture/next.lua": b"return nil\n"}), self.game.resolve())
+
+    def test_incomplete_installs_are_refused(self):
+        for missing, message in (("override/M_FLPRUI.lua", "flpr-fixture/next.lua"),
+                                 ("override/flrandomiser3.mrk", "flpr-fixture/next.lua"),
+                                 ("override/FLPRRun.menu", "override/FLPRRun.menu"),
+                                 ("override/M_FLPR.lua", "override/M_FLPR.lua")):
+            with self.subTest(missing):
+                files = {name: data for name, data in INSTALLED.items() if name != missing}
+                for name in INSTALLED:
+                    (self.game / name).unlink(missing_ok=True)
+                with self.assertRaisesRegex(ProfileError, message):
+                    self.check(files)
+
+    def test_other_game_is_refused(self):
+        other = self.game.parent / "other"
+        other.mkdir()
+        write(other, INSTALLED)
+        with self.assertRaisesRegex(ProfileError, "used by this scan"):
+            validate_runtime(other, self.catalog)
+
+
+class InstalledRuntimeApplyTests(unittest.TestCase):
+    def setUp(self):
+        self.base = editor_tests.EditorTests("test_draft_editor_cannot_activate_game")
+        self.base.setUp()
+        self.addCleanup(self.base.doCleanups)
+
+    def test_first_apply_publishes_pointer_and_keeps_installed_files(self):
+        fx, original = self.base.fx, self.base.editor
+        write(fx.game, INSTALLED)
+        self.assertFalse((fx.game / "flpr-fixture/next.lua").exists())
+        editor = Editor(fx.catalog, fx.world, original.workspace, **deepcopy(original.draft),
+                        apply_game=fx.game)
+        self.assertTrue(editor.state()["apply_enabled"])
+        with patch("flir_config.activation.require_closed"):
+            result = editor.post("/api/apply", editor.draft)
+        self.assertEqual((fx.game / "flpr-fixture/next.lua").read_bytes(), _render_lua(result["revision"]))
+        for name, data in INSTALLED.items():
+            self.assertEqual((fx.game / name).read_bytes(), data, name)
+
+
+if __name__ == "__main__":
+    unittest.main()

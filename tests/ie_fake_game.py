@@ -1261,6 +1261,22 @@ def component_body(tp2: str, component: int) -> str:
     raise MatrixFailure(f"component {component} is absent")
 
 
+# Component 1500 (campaign runtime) and the install-time modes exclude each
+# other. This precondition only decides whether a Mode 2 component installs, not
+# what it does, so it is the one line a Mode 2 body may add to the baseline. The
+# campaign runtime installer suite checks that it refuses Mode 2 under WeiDU.
+MODE2_RUNTIME_EXCLUSION = "REQUIRE_PREDICATE !FILE_EXISTS_IN_GAME flrandomiser3.mrk @101507"
+
+
+def body_without_runtime_exclusion(body: str) -> str | None:
+    """Return the body without its single runtime exclusion, or None without one."""
+    lines = body.split("\n")
+    if lines.count(MODE2_RUNTIME_EXCLUSION) != 1:
+        return None
+    lines.remove(MODE2_RUNTIME_EXCLUSION)
+    return "\n".join(lines)
+
+
 def normalize_text_bytes(data: bytes) -> bytes:
     """Compare tracked text independent of checkout line-ending policy."""
     return data.replace(b"\r\n", b"\n")
@@ -1368,10 +1384,16 @@ def run_mode2_parity(args: argparse.Namespace) -> int:
         encoding="utf-8", errors="replace"
     )
     for component in contract["mode2_components"]:  # type: ignore[index]
+        candidate_body = body_without_runtime_exclusion(
+            component_body(candidate_tp2, int(component))
+        )
+        reporter.check(
+            f"Mode2Parity_Component{component}ExcludesCampaignRuntime",
+            candidate_body is not None,
+        )
         reporter.check(
             f"Mode2Parity_Component{component}BodyMatchesBaseline",
-            component_body(candidate_tp2, int(component))
-            == component_body(baseline_tp2, int(component)),
+            candidate_body == component_body(baseline_tp2, int(component)),
         )
 
     exact_paths = (

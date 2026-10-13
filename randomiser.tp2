@@ -98,6 +98,7 @@ REQUIRE_PREDICATE GAME_IS "soa tob bgt" @105002
 BEGIN @100560 GROUP @100499 DESIGNATED 560                                                                             //More Spell Shield scrolls
 REQUIRE_PREDICATE !FILE_EXISTS_IN_GAME flrandomiser1.mrk AND !FILE_EXISTS_IN_GAME flrandomiser2.mrk @100023
 REQUIRE_PREDICATE GAME_IS ~soa tob bgt bg2ee eet~ @105002
+REQUIRE_PREDICATE !FILE_EXISTS_IN_GAME flrandomiser3.mrk @101506
 
   COPY_EXISTING udduer01.sto override
     READ_LONG 0x34 sale_off
@@ -123,6 +124,7 @@ REQUIRE_PREDICATE !MOD_IS_INSTALLED cursed_items.tp2 0 @100027
 
 BEGIN @101100 SUBCOMPONENT @101000 DESIGNATED 1100                                                                     //Randomise items: No items are lost
                                                                                                                        //Marker file: flrandomiser1.mrk
+REQUIRE_PREDICATE !FILE_EXISTS_IN_GAME flrandomiser3.mrk @101507
   ACTION_IF GAME_IS ~bg1 totsc~ BEGIN
     FAIL @100015
   END
@@ -197,6 +199,7 @@ BEGIN @101100 SUBCOMPONENT @101000 DESIGNATED 1100                              
 
 BEGIN @101200 SUBCOMPONENT @101000 DESIGNATED 1200                                                                     //Randomise items: Some items are lost
                                                                                                                        //Marker file: flrandomiser1.mrk
+REQUIRE_PREDICATE !FILE_EXISTS_IN_GAME flrandomiser3.mrk @101507
   ACTION_IF GAME_IS ~bg1 totsc~ BEGIN
     FAIL @100015
   END
@@ -271,6 +274,7 @@ BEGIN @101200 SUBCOMPONENT @101000 DESIGNATED 1200                              
 
 BEGIN @101300 SUBCOMPONENT @101000 DESIGNATED 1300                                                                     //WeiDU randomisation: no items are lost
                                                                                                                        //Marker file: flrandomiser2.mrk
+REQUIRE_PREDICATE !FILE_EXISTS_IN_GAME flrandomiser3.mrk @101507
   OUTER_SET lost = 0
   OUTER_SET weidu_action = 1
 
@@ -289,6 +293,7 @@ BEGIN @101300 SUBCOMPONENT @101000 DESIGNATED 1300                              
 
 BEGIN @101400 SUBCOMPONENT @101000 DESIGNATED 1400                                                                     //WeiDU randomisation: some items are lost
                                                                                                                        //Marker file: flrandomiser2.mrk
+REQUIRE_PREDICATE !FILE_EXISTS_IN_GAME flrandomiser3.mrk @101507
   OUTER_SET lost = 1
   OUTER_SET weidu_action = 1
 
@@ -304,6 +309,17 @@ BEGIN @101400 SUBCOMPONENT @101000 DESIGNATED 1400                              
 
   INCLUDE "randomiser/lib/weidu_action.tpa"
 
+
+BEGIN @101500 DESIGNATED 1500 LABEL ~flir-campaign-runtime~                                                            //Campaign runtime, configured after installation
+                                                                                                                       //Marker file: flrandomiser3.mrk
+REQUIRE_PREDICATE GAME_IS ~eet~ @101501
+REQUIRE_PREDICATE FILE_EXISTS ~override/M___EEex.lua~ @101502
+REQUIRE_PREDICATE !FILE_EXISTS_IN_GAME flrandomiser1.mrk AND !FILE_EXISTS_IN_GAME flrandomiser2.mrk @101503
+REQUIRE_PREDICATE !MOD_IS_INSTALLED randomiser.tp2 560 @101504
+REQUIRE_PREDICATE (!FILE_EXISTS ~override/M_FLPR.lua~) OR (MOD_IS_INSTALLED randomiser.tp2 1500) @101505               //Not its own earlier installation
+
+  INCLUDE "randomiser/lib/campaign_runtime.tpa"                                                                        //Runtime files, UI hooks and the new-game marker
+  LAM flir_campaign_runtime_install
 
 
 BEGIN @105005 GROUP @105000 DESIGNATED 5005                                                                            //Beholders have no items equipped
