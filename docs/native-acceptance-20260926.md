@@ -73,13 +73,13 @@ orchestration must await command completion, not merely receipt of a session ID.
 ## Background operation and cleanup
 
 The script-engine task granted an exclusive game/installer window. A shared
-reservation at `C:\Users\chris\.codex\coordination\bg-game-install.lock`
+reservation at `%USERPROFILE%\.codex\coordination\bg-game-install.lock`
 identified its owner and a random token; its advisory deadline did not authorize
 another task to steal it. Other game/installer processes were checked before
 launch. No conflicting task was interrupted.
 
 Tests ran only in
-`C:\Users\chris\Games\EET-IR-Mode1-20260922\game`, using its private
+`%USERPROFILE%\Games\EET-IR-Mode1-20260922\game`, using its private
 `EET IR Mode1 Test - 20260922` profile. The loader and game ran on a separate,
 non-input Windows desktop. A synthetic child/grandchild probe first verified
 desktop inheritance; the actual game window was then observed on that desktop.

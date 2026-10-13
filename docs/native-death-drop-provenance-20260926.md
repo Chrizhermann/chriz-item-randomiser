@@ -9,7 +9,7 @@ durable transfer recovery, or general encounter support.
 ## Scope and inputs
 
 Baseline `7a9f03d`, following the [creature acceptance](native-creature-acceptance-20260926.md).
-Only `C:\Users\chris\Games\EET-IR-Mode1-20260922\game` and its private profile
+Only `%USERPROFILE%\Games\EET-IR-Mode1-20260922\game` and its private profile
 `EET IR Mode1 Test - 20260922` were used. The existing
 `000000048-IR Creatures Held 0926` was loaded; no character/campaign was created
 and no installer ran. Revision:

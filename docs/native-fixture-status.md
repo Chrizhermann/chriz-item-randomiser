@@ -6,7 +6,7 @@ For the current container, creature and shop work, see
 The normal TP2 does not install this prototype; these samples are not acceptance
 of the complete Randomiser.
 
-The isolated install is `C:\Users\chris\Games\EET-IR-Mode1-20260922\game`.
+The isolated install is `%USERPROFILE%\Games\EET-IR-Mode1-20260922\game`.
 Its private profile is `EET IR Mode1 Test - 20260922`; the normal modded game
 and player saves were not changed. All diagnostics under `work/` are local
 generated state and must not be committed.

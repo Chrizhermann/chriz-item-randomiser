@@ -28,7 +28,7 @@ import tempfile
 from uuid import uuid4
 
 
-PROTECTED_GAME = Path(r"C:\Users\chris\Games\EET-IR-Mode1-20260922\game")
+PROTECTED_GAME = Path.home() / "Games" / "EET-IR-Mode1-20260922" / "game"
 PROFILE_TEXT = 'engine_name = "EET IR Mode1 Test - 20260922"\nengine_mode = 1\n'
 REMOTE_CLIENT = Path(r"C:\src\private\eeex-remote-console\tools\eeex-remote.ps1")
 CHARACTER_NAME = "Abdel - Fighter - Chaotic Good"

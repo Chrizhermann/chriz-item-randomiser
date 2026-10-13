@@ -31,7 +31,7 @@ in 14.619 seconds; the suite itself accessed no game or installation.
 
 ## Native results
 
-Only `C:\Users\chris\Games\EET-IR-Mode1-20260922\game` and its private
+Only `%USERPROFILE%\Games\EET-IR-Mode1-20260922\game` and its private
 `EET IR Mode1 Test - 20260922` profile were used. Before staging, the accepted
 fixture outputs were hash-checked and all changed files backed up. Older named
 test saves, manifest companions, engine profile selection and UI were hashed.

@@ -7,7 +7,7 @@ and save/load preservation. The full original preset collection is still unfinis
 remaining Mode 2 quest handlers and original special options are being migrated.
 
 **Persistent playtest, 2026-10-12:** the lab at
-`C:\Users\chris\Games\EET-IR-Mode1-20260922` now keeps the runtime installed.
+`%USERPROFILE%\Games\EET-IR-Mode1-20260922` now keeps the runtime installed.
 Its `Configure Randomiser` shortcut enables the editor's **Apply for next game**;
 `Play Randomiser Test` launches EEex. The original EET Mode 1 configuration is
 already active. Start a new **BG1** campaign, or load **Mode1 Ready to Try**.

@@ -9,7 +9,7 @@ results, not full-game randomizer or runtime-lootability acceptance.
 
 ## Scope and evidence
 
-Only `C:\Users\chris\Games\EET-IR-Mode1-20260922\game` was scanned. The two
+Only `%USERPROFILE%\Games\EET-IR-Mode1-20260922\game` was scanned. The two
 specified BG tasks and other local tasks were idle, with no game or installer
 process running before game access. No desktop control, game launch, remote
 console, installer, or save access was used.

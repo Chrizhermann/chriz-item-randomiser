@@ -9,7 +9,7 @@ below is verified against the live install/saves unless marked *hypothesis*.
   installs, no override writes, no WeiDU runs there. The only sanctioned write is the EEex
   remote-console IPC (`override/eeex_remote_cmd.lua` + result JSON), used by the client below.
 - Never uninstall any WeiDU.log entry. Never hand-edit WeiDU.log, .dlg or .baf files.
-- Saves live in `C:\Users\chris\OneDrive\Documents\Baldur's Gate - Enhanced Edition Trilogy\save\`
+- Saves live in `%USERPROFILE%\OneDrive\Documents\Baldur's Gate - Enhanced Edition Trilogy\save\`
   (NOT the BG2EE folder). Live line = **`000000476-yaga dead`** (ToB, ch. 21). Never write
   to saves directly — the owner saves in-game after a console operation.
 - **No item-location spoilers** for content the owner has not reached (they play blind).

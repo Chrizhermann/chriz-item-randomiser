@@ -10,7 +10,7 @@ lifetime error, not evidence that the native item adapter caused the crash.
 ## Preserved evidence
 
 - Small dump:
-  `C:\Users\chris\Games\EET-IR-Mode1-20260922\game\InfinityLoader_Crash\InfinityLoader_Crash_0_small.dmp`
+  `%USERPROFILE%\Games\EET-IR-Mode1-20260922\game\InfinityLoader_Crash\InfinityLoader_Crash_0_small.dmp`
 - Dump timestamp: `2026-09-22 23:21:12 Asia/Seoul`
   (`2026-09-22T14:21:12Z` in the minidump header).
 - Size: `93,458,889` bytes.

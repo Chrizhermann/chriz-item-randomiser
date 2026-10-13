@@ -28,7 +28,7 @@ if ($setup -notmatch 'STRING_EQUAL_CASE\s+~AREAV1\.0~' -or
     $setup -match 'AREA V1\.0' -or $wrapper -match "'AREA V1\.0'") {
     throw 'The donor gate does not compare the exact eight-byte ARE signature and version.'
 }
-if ($wrapper -notmatch [regex]::Escape("C:\Users\chris\Games\EET-IR-Test-b600e94\bg2") -or
+if ($wrapper -notmatch [regex]::Escape("Join-Path `$env:USERPROFILE 'Games\EET-IR-Test-b600e94\bg2'") -or
     $wrapper -notmatch [regex]::Escape("C:\Games\Baldur's Gate II Enhanced Edition modded")) {
     throw 'The wrapper does not name both the one allowed disposable root and forbidden live root.'
 }
