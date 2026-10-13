@@ -71,7 +71,7 @@ if ($specialSource -notmatch '(?is)blpool\.bcs.*?Get_Tra\s*=\s*1.*?tra_array\s*=
 }
 
 if ([string]::IsNullOrWhiteSpace($WeiduPath)) {
-    $WeiduPath = 'C:\Users\chris\Games\EET-IR-Test-b600e94\bg2\EET\bin\win32\x86_64\weidu.exe'
+    $WeiduPath = Join-Path $env:USERPROFILE 'Games\EET-IR-Test-b600e94\bg2\EET\bin\win32\x86_64\weidu.exe'
 }
 if ([string]::IsNullOrWhiteSpace($TempRoot)) {
     $TempRoot = [System.IO.Path]::GetTempPath()

@@ -9,7 +9,7 @@ below is verified against the live install/saves unless marked *hypothesis*.
   installs, no override writes, no WeiDU runs there. The only sanctioned write is the EEex
   remote-console IPC (`override/eeex_remote_cmd.lua` + result JSON), used by the client below.
 - Never uninstall any WeiDU.log entry. Never hand-edit WeiDU.log, .dlg or .baf files.
-- Saves live in `C:\Users\chris\OneDrive\Documents\Baldur's Gate - Enhanced Edition Trilogy\save\`
+- Saves live in `%USERPROFILE%\OneDrive\Documents\Baldur's Gate - Enhanced Edition Trilogy\save\`
   (NOT the BG2EE folder). Live line = **`000000476-yaga dead`** (ToB, ch. 21). Never write
   to saves directly — the owner saves in-game after a console operation.
 - **No item-location spoilers** for content the owner has not reached (they play blind).
@@ -100,14 +100,16 @@ dropped only their +1 two-handed swords.
 
 ### 1.4 Execution record (historical — do not rerun)
 
-Client repo: `C:\src\private\eeex-remote-console` (README has the full protocol).
+Client repo: the `eeex-remote-console` checkout beside this repository (README has the full
+protocol).
 
-This is the exact command that was used successfully, retained only for provenance:
+This is the command that was used successfully, retained only for provenance. The local
+checkout paths are shown as placeholders:
 
 ```powershell
-& "C:\src\private\eeex-remote-console\tools\eeex-remote.ps1" `
+& "<eeex-remote-console>\tools\eeex-remote.ps1" `
     "C:\Games\Baldur's Gate II Enhanced Edition modded\override" `
-    '@C:\src\private\bgee-itemrandomiser-fix\research\2026-08-live-audit\handover_v4.lua' 30
+    '@<this repository>\research\2026-08-live-audit\handover_v4.lua' 30
 ```
 
 Use proven-safe EEex primitives only: `EEex_GameState_GetGlobalInt` / `SetGlobalInt`,
@@ -136,8 +138,8 @@ drops and continue from `000000040-Interval-Save`.
 
 ### 2.0 Repository status
 
-The working repository already exists locally at
-`C:\src\private\bgee-itemrandomiser-fix`. Its history contains the unmodified import
+The working repository already exists locally as the owner's
+`bgee-itemrandomiser-fix` checkout. Its history contains the unmodified import
 (`0da5eff`), the EET/BGT `flSqueaked` fix (`b600e94`), and this audit/handover
 (`a25c11e`, plus any later handover-status commit).
 

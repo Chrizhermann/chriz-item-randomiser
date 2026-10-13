@@ -42,7 +42,7 @@ if ($deliveryManifestSource -match 'EEex_Action_(?:QueueResponseStringOnAIBase|Q
 }
 
 if ([string]::IsNullOrWhiteSpace($WeiduPath)) {
-    $WeiduPath = 'C:\Users\chris\Games\EET-IR-Test-b600e94\bg2\EET\bin\win32\x86_64\weidu.exe'
+    $WeiduPath = Join-Path $env:USERPROFILE 'Games\EET-IR-Test-b600e94\bg2\EET\bin\win32\x86_64\weidu.exe'
 }
 if ([string]::IsNullOrWhiteSpace($TempRoot)) {
     $TempRoot = [System.IO.Path]::GetTempPath()

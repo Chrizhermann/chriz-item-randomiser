@@ -26,12 +26,14 @@ from typing import Iterable, Mapping, Sequence
 
 
 FORBIDDEN_ACCESS_ROOT = Path(r"C:\Games")
+# Derived from the current profile; Documents may or may not be redirected to OneDrive.
+_PROFILE = Path.home()
+_EET_SAVES = Path("Baldur's Gate - Enhanced Edition Trilogy") / "save"
 FORBIDDEN_SCRATCH_ROOTS = (
     FORBIDDEN_ACCESS_ROOT,
-    Path(r"C:\Users\chris\Games\EET-IR-Test-b600e94"),
-    Path(
-        r"C:\Users\chris\OneDrive\Documents\Baldur's Gate - Enhanced Edition Trilogy\save"
-    ),
+    _PROFILE / "Games" / "EET-IR-Test-b600e94",
+    _PROFILE / "OneDrive" / "Documents" / _EET_SAVES,
+    _PROFILE / "Documents" / _EET_SAVES,
 )
 SCRATCH_PREFIX = "bgee-itemrandomiser-task11-"
 EXPECTED_PUBLICATION_ASSETS = {

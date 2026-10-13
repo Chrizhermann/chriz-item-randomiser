@@ -1,6 +1,7 @@
 import os, re, struct, zlib, json, sys, pickle
 
-SAVE = r"C:\Users\chris\OneDrive\Documents\Baldur's Gate - Enhanced Edition Trilogy\save\000000476-yaga dead"
+SAVE = os.path.join(os.path.expanduser("~"), "OneDrive", "Documents",
+                    "Baldur's Gate - Enhanced Edition Trilogy", "save", "000000476-yaga dead")
 GAME = r"C:\Games\Baldur's Gate II Enhanced Edition modded"
 SCR  = os.path.dirname(os.path.abspath(__file__))
 

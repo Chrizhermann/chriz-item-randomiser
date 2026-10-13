@@ -4,14 +4,14 @@ param(
     [ValidateSet('Install', 'Uninstall')]
     [string] $Action,
 
-    [string] $GameRoot = 'C:\Users\chris\Games\EET-IR-Test-b600e94\bg2',
+    [string] $GameRoot = (Join-Path $env:USERPROFILE 'Games\EET-IR-Test-b600e94\bg2'),
 
     [string] $WeiduPath = ''
 )
 
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'ProbeFixture.Helpers.ps1')
-$allowedRootLiteral = 'C:\Users\chris\Games\EET-IR-Test-b600e94\bg2'
+$allowedRootPath = Join-Path $env:USERPROFILE 'Games\EET-IR-Test-b600e94\bg2'
 $forbiddenRootLiteral = "C:\Games\Baldur's Gate II Enhanced Edition modded"
 
 function ConvertTo-NormalizedFullPath {
@@ -54,7 +54,7 @@ function Assert-DisposableRoot {
     param([Parameter(Mandatory = $true)][string] $Path)
 
     $resolved = ConvertTo-NormalizedFullPath $Path
-    $allowed = ConvertTo-NormalizedFullPath $allowedRootLiteral
+    $allowed = ConvertTo-NormalizedFullPath $allowedRootPath
     $forbidden = ConvertTo-NormalizedFullPath $forbiddenRootLiteral
     if (-not $resolved.Equals($allowed, [System.StringComparison]::OrdinalIgnoreCase) -or
         (Test-IsWithinPath -Candidate $resolved -Root $forbidden)) {
