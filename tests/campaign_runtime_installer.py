@@ -424,6 +424,12 @@ def run_suite(args: argparse.Namespace) -> int:
                 installed(result) and order == [earlier, "randomiser/randomiser.tp2"]
                 and game.entries(1500) == 1, result)
     suite.check("Repush_GameIdentical", game.data() == after)
+    # WeiDU 249 also re-installs an installed earlier component from the install list alone.
+    result = game.run("--force-install-list", "10", tp2=earlier)
+    order = [line.casefold().split("~")[1] for line in active_weidu_log(game.root)]
+    suite.check("Repush_InstallListAloneKeepsRuntimeBehindEarlierMod",
+                installed(result) and order == [earlier, "randomiser/randomiser.tp2"]
+                and game.entries(1500) == 1 and game.data() == after, result)
 
     # Polish loads the English setup strings first; the new strings have no Polish text.
     game = suite.game()
@@ -463,6 +469,16 @@ def run_suite(args: argparse.Namespace) -> int:
         ("MenuPartlyHooked", MENU + b"FLPRUI_NewGame()\r\n"),
     ):
         suite.refusal(name, message[101512], refused, menu=menu)
+
+    # Renaming a UI mod's own definition would replace the adapter's global function.
+    for name, menu in (
+        ("MenuDefinesNewGame", MENU + b"`\r\nfunction startEngine:OnNewGameButtonClick()\r\nend\r\n`\r\n"),
+        ("MenuDefinesAcceptAfterTab",
+         MENU + b"`\r\nfunction\tcreateCharScreen:AcceptCharacter(difficulty)\r\nend\r\n`\r\n"),
+        ("MenuDefinesAcceptOnNextLine",
+         UI_MOD_MENU + b"`\nfunction\n\tcreateCharScreen:AcceptCharacter(difficulty)\nend\n`\n"),
+    ):
+        suite.refusal(name, message[101515], refused, menu=menu)
 
     out_of_bounds = bytearray(gam([("CHAPTER", 0)]))
     struct.pack_into("<I", out_of_bounds, 0x3C, 2)

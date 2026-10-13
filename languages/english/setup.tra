@@ -41,6 +41,7 @@
 @101512=~UI.MENU has no single-player New Game call (startEngine:OnNewGameButtonClick) or character acceptance call (createCharScreen:AcceptCharacter) in a form this component can hook, or it already calls FLPRUI_ functions. Installation stopped.~
 @101513=~BALDUR.GAM is missing or is not a GAMEV2.0 new-game template. Installation stopped.~
 @101514=~BALDUR.GAM already defines the global FLPR_FRESH more than once or with a value other than 1. Installation stopped.~
+@101515=~UI.MENU defines startEngine:OnNewGameButtonClick or createCharScreen:AcceptCharacter itself; this component can only hook calls to them. Installation stopped.~
 
 @105000="Components for unequipping items from creature groups"
 @105001="This component is only available for Mode 2"

@@ -63,7 +63,10 @@ Actions:
    `FLPRUI_AcceptCharacter(`. At least one of each must exist; any other call shape of
    either function fails the install, because an unhooked path would start an
    unrandomised campaign silently. A `UI.MENU` that already calls `FLPRUI_` functions
-   also fails: an uninstall would restore those calls without the adapter. Multiplayer
+   also fails: an uninstall would restore those calls without the adapter. So does one
+   that defines either method (`function startEngine:OnNewGameButtonClick(`, with any
+   whitespace after `function`): the patch would rename the definition into a global
+   `FLPRUI_` function that replaces the adapter. Multiplayer
    `connectionScreen:OnNewGameButtonClick` is left alone. Verified call shapes: the
    reference EET `UI.MENU`, LeUI 4.9.1, Infinity UI 1.17 and the EEUITweaks 4.0.7
    chargen fragments.
@@ -182,10 +185,15 @@ must not be published until the version is decided.
   directory name is also a development name.
 - **B5 Coverage.** BG1 starts on EET only; direct SoD, BG2 and ToB starts are
   unsupported, as is the remaining parity work listed above.
-- **B6 Runtime test failures.** In the snapshot, 15 native host tests (five tests in
-  each Lua runtime) fail in `M_FLPR.lua`'s campaign preparation (`bundle.fixture.sources`
-  is nil). This predates the packaging work and belongs to the runtime's development
-  branch; it must be resolved before the runtime ships.
+
+Resolved here: in the snapshot, 15 native host tests (five in each Lua runtime) failed
+in `M_FLPR.lua`'s campaign preparation, which reads each source's
+`reward_selected_global` from the native fixture. The tests' fixtures had no `sources`
+endpoints; every version of the exporter and the fixture builder writes one for each
+manifest source, so no supported bundle lacks them. The fixtures now have that shape,
+and the runtime stops the capture with `FIXTURE_SOURCES_MISSING` or
+`SOURCE_ENDPOINT_MISSING` instead of an index error, so a missing endpoint can never
+skip a reward quest's selection flag silently.
 
 ## Decisions for Christopher
 
@@ -201,13 +209,14 @@ must not be published until the version is decided.
 
 ## Verification
 
-- `tests/Test-CampaignRuntimeInstaller.ps1` (WeiDU 249, synthetic EET games; 104 checks,
+- `tests/Test-CampaignRuntimeInstaller.ps1` (WeiDU 249, synthetic EET games; 111 checks,
   from the working tree and from the built ZIP with `-PackagePath`): install, uninstall,
   re-install, re-install over the installed component, uninstall and install in one run,
-  re-install behind a reinstalled earlier mod, already-patched inputs, override-resident
-  and archived `UI.MENU`/`BALDUR.GAM`, UI-mod call shapes, an applied `next.lua`,
-  exclusions in both directions, missing prerequisites, rollback of failed installs and
-  the Polish language, with KEY, BIFF, TLK and unrelated override files byte-checked.
+  re-install behind a reinstalled earlier mod (also from the install list alone),
+  already-patched inputs, override-resident and archived `UI.MENU`/`BALDUR.GAM`, UI-mod
+  call shapes, redefined UI methods, an applied `next.lua`, exclusions in both
+  directions, missing prerequisites, rollback of failed installs and the Polish
+  language, with KEY, BIFF, TLK and unrelated override files byte-checked.
 - `tests/Test-Mode2Parity.ps1` (32 checks) and the other PowerShell suites that run
   without a Lua 5.3 interpreter or sentinel BAFs pass as on the snapshot. `Manifest`,
   `RuntimeProbes` and `SentinelDependencies` need those and were not run.
@@ -216,7 +225,8 @@ must not be published until the version is decided.
   manifest integrity and coverage of every file the TP2 component copies.
 - `tests/test_runtime_ui_adapter.py`: adapter routing in Lua 5.1, Lua 5.3 and LuaJIT.
 - `tests/test_runtime_activation.py`: the configurator accepts the installed runtime.
-- The full Python suite has the same 27 errors as the snapshot: 12 modules need the
-  `keystone` assembler, which is not installed here, and the 15 tests of B6.
+- The full Python suite, with `keystone-engine` 0.9.2 and `unicorn` 2.1.4 from a local
+  test environment on `PYTHONPATH` and `FL_IR_TEST_TEMP_ROOT=%TEMP%\flir-t`: 1293 tests
+  pass; 3 skip because optional lab caches and evidence are not in the source tree.
 - Not verified: any in-game behavior of the TP2-installed runtime, the adapter in the
   engine's own Lua, UI mods in a running game and EEex versions other than 1.2.

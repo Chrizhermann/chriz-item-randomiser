@@ -220,9 +220,16 @@ local ok, failure = pcall(function()
         core = Core, storage = storage, resolve = resolve,
         prepare_source_guard = prepare_source_guard, source_guard = source_guard,
         prepare_campaign = function(bundle, controller)
+            -- The exporter writes an endpoint for every manifest source. Without
+            -- one, a reward quest's selection flag would be skipped silently.
+            local endpoints = bundle.fixture.sources
+            assert(type(endpoints) == "table", "FIXTURE_SOURCES_MISSING")
+            for _, source in ipairs(bundle.manifest.sources) do
+                assert(type(endpoints[source.id]) == "table", "SOURCE_ENDPOINT_MISSING")
+            end
             storage:set('FLPR_QM2_42',0)
             for index,source in ipairs(bundle.manifest.sources) do
-                local flag=bundle.fixture.sources[source.id].reward_selected_global
+                local flag=endpoints[source.id].reward_selected_global
                 if flag then storage:set(flag,controller:source_is_kept(index) and 0 or 1) end
             end
             -- Only filled locations replace the original quest conditions.

@@ -29,7 +29,9 @@ END
 // unrandomised campaign without notice, so unrecognised call forms refuse the
 // install. Multiplayer connectionScreen:OnNewGameButtonClick stays untouched.
 // Existing FLPRUI_ calls were written outside this installer; uninstalling it
-// would leave them calling missing functions.
+// would leave them calling missing functions. A UI mod that defines either
+// method would have its definition renamed into a global FLPRUI_ function that
+// replaces the adapter, so definitions refuse the install too.
 DEFINE_ACTION_MACRO flir_campaign_runtime_check_menu BEGIN
   ACTION_IF !FILE_EXISTS_IN_GAME ~UI.MENU~ BEGIN
     FAIL @101512
@@ -41,7 +43,13 @@ DEFINE_ACTION_MACRO flir_campaign_runtime_check_menu BEGIN
     COUNT_REGEXP_INSTANCES CASE_SENSITIVE EXACT_MATCH ~createCharScreen:AcceptCharacter(~ flir_rt_accept
     COUNT_REGEXP_INSTANCES CASE_SENSITIVE ~[:.]AcceptCharacter~ flir_rt_accept_any
     COUNT_REGEXP_INSTANCES CASE_SENSITIVE EXACT_MATCH ~FLPRUI_~ flir_rt_hooked
+    COUNT_REGEXP_INSTANCES CASE_SENSITIVE
+      ~function[ %TAB%%WNL%%MNL%%LNL%]+\(startEngine:OnNewGameButtonClick\|createCharScreen:AcceptCharacter\)~
+      flir_rt_defined
   BUT_ONLY
+  ACTION_IF flir_rt_defined != 0 BEGIN
+    FAIL @101515
+  END
   ACTION_IF flir_rt_new_game < 1 OR flir_rt_accept < 1 OR flir_rt_hooked != 0
          OR flir_rt_new_game + flir_rt_multiplayer != flir_rt_new_game_any
          OR flir_rt_accept != flir_rt_accept_any BEGIN

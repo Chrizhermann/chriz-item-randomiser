@@ -20,6 +20,20 @@ local function copy(t)
     if type(t)~="table" then return t end
     local r={}; for k,v in pairs(t) do r[k]=copy(v) end; return r
 end
+-- The native fixture shape the exporter and the fixture builder write: an
+-- endpoint for every manifest source and target.
+local function native_fixture(manifest)
+    local fixture={revision=manifest.revision,sources={},targets={}}
+    for i,source in ipairs(manifest.sources) do
+        fixture.sources[source.id]={area="BG2600",script_name="FLPRS"..i,
+            identity=string.rep(tostring(i),64),payload=copy(source.record.record)}
+    end
+    for i,target in ipairs(manifest.targets) do
+        fixture.targets[target.id]={kind="ground-pile",area="BG2600",
+            script_name="FLPRT"..i,identity=string.rep(tostring(i+3),64),x=100+i,y=200}
+    end
+    return fixture
+end
 local function setup(Core,Host)
     local f={values={},tick=0,world=true,seeds=0,next_calls=0,resolves={},events={},reports={},native_instances={}}
     local manifest={schema=Core.SCHEMA,state="prototype-not-playable",revision=string.rep("a",64),
@@ -32,7 +46,7 @@ local function setup(Core,Host)
         manifest.targets[i]={id=id,capacity=1,record={id=id},resource_sha256=string.rep(tostring(i+3),64)}
     end
     f.manifest=manifest; f.next_revision=manifest.revision
-    f.bundles={[manifest.revision]={manifest=manifest,fixture={revision=manifest.revision}}}
+    f.bundles={[manifest.revision]={manifest=manifest,fixture=native_fixture(manifest)}}
     f.storage={get=function(_,name) return f.values[name] or 0 end,
         set=function(_,name,value) f.values[name]=value end}
     f.make_native=function(fixture)
@@ -156,7 +170,7 @@ function cases.destroy_restore_uses_frozen_revision_not_next_profile(Core,Host)
     assert(#f.events==1 and not f.host.pending)
     local original_seed=f.values.flpr_seed
     local next_manifest=copy(f.manifest); next_manifest.revision=string.rep("e",64)
-    f.bundles[next_manifest.revision]={manifest=next_manifest,fixture={revision=next_manifest.revision}}
+    f.bundles[next_manifest.revision]={manifest=next_manifest,fixture=native_fixture(next_manifest)}
     f.next_revision=next_manifest.revision
     local old_native=f.host.native; f.host:destroy(); assert(old_native.destroyed)
     f:poll(1); f:poll(2)
@@ -260,20 +274,18 @@ local function bootstrap(Core,Host,Globals,text,options)
     f.pristine_bytes='AREAV1.0'..string.rep('\0',0x70-8)..'\212\104\0\0'..
         string.rep('\0',4)..'\20\107\0\0'..string.rep('\0',27492-0x7C)
     f.pristine_opens=0
-    f.native_fixture={revision=f.manifest.revision,ready_detail=f.ready_detail,targets={}}
-    for i,target in ipairs(f.manifest.targets) do
-        -- Match the native fixture shape consumed by the adapter and bootstrap.
-        f.native_fixture.targets[target.id]={kind="ground-pile",area="BG2600",
-            script_name="FLPRT"..i,identity=string.rep(tostring(i+3),64),x=100+i,y=200}
-    end
+    -- Match the native fixture shape consumed by the adapter and bootstrap.
+    f.native_fixture=native_fixture(f.manifest)
+    f.native_fixture.ready_detail=f.ready_detail
     if options.gate then
         local id="are:flpru1/container/1"
+        f.native_fixture.sources[f.manifest.sources[1].id]=nil
         f.manifest.sources[1].id=id
         f.manifest.sources[1].record.id=id
         f.manifest.sources[1].record.kind="container"
-        f.native_fixture.sources={[id]={kind="guarded-container",area="FLPRU1",script_name="FLPRU1A",
+        f.native_fixture.sources[id]={kind="guarded-container",area="FLPRU1",script_name="FLPRU1A",
             x=1140,y=650,identity=string.rep("a",64),
-            payload={resref="flpri1",charges={0,0,0},expiration=0,flags=1}}}
+            payload={resref="flpri1",charges={0,0,0},expiration=0,flags=1}}
         f.native_fixture.source_gate={schema="flpr-unvisited-fixture-gate-v1",source_id=id}
         f.native_fixture.resource_hashes={['FLPRU1.ARE']=string.rep('1',64)}
         if options.multiple_pinned then
@@ -286,7 +298,8 @@ local function bootstrap(Core,Host,Globals,text,options)
             second_manifest.sources[1].record.record.resref='flpri2'
             local second_fixture=copy(f.native_fixture)
             second_fixture.revision=second_revision
-            second_fixture.sources={[second_id]=copy(f.native_fixture.sources[id])}
+            second_fixture.sources[id]=nil
+            second_fixture.sources[second_id]=copy(f.native_fixture.sources[id])
             second_fixture.sources[second_id].script_name='FLPRU1B'
             second_fixture.sources[second_id].payload.resref='flpri2'
             second_fixture.source_gate.source_id=second_id
@@ -504,6 +517,32 @@ function cases.bootstrap_missing_marker_stops_before_engine_accept(Core,Host,Glo
     local f=bootstrap(Core,Host,Globals,text); f.root.NewGame()
     assert(not pcall(function() f.root.AcceptCharacter(2) end))
     assert(f.accept_count==nil and f.values.flpr_state==nil and f.root.Host.status=="disabled")
+end
+local function refused_accept(f,code)
+    f.root.NewGame(); f.values.FLPR_FRESH=1
+    local ok,failure=pcall(function() return f.root.AcceptCharacter(2) end)
+    assert(not ok and tostring(failure):find(code,1,true),tostring(failure))
+    assert(f.accept_count==nil and f.root.Host.status=="disabled" and
+        f.root.Host.error:find(code,1,true))
+    -- Nothing is written for the campaign's reward quests.
+    assert(f.values.FLPR_QM2_42==nil)
+end
+function cases.bootstrap_fixture_without_sources_stops_before_engine_accept(Core,Host,Globals,text)
+    local f=bootstrap(Core,Host,Globals,text); f.native_fixture.sources=nil
+    refused_accept(f,"FIXTURE_SOURCES_MISSING")
+end
+function cases.bootstrap_source_without_endpoint_stops_before_engine_accept(Core,Host,Globals,text)
+    local f=bootstrap(Core,Host,Globals,text)
+    f.native_fixture.sources[f.manifest.sources[2].id]=nil
+    refused_accept(f,"SOURCE_ENDPOINT_MISSING")
+end
+function cases.bootstrap_accept_sets_reward_selection_flags(Core,Host,Globals,text)
+    local f=bootstrap(Core,Host,Globals,text)
+    f.native_fixture.sources[f.manifest.sources[2].id].reward_selected_global="FLPR_QREWARD"
+    f.root.NewGame(); f.values.FLPR_FRESH=1
+    assert(f.root.AcceptCharacter(2)==2 and f.accept_count==1)
+    -- Without randomization rules no source keeps its original reward.
+    assert(f.values.FLPR_QREWARD==1 and f.values.FLPR_QM2_42==0)
 end
 function cases.bootstrap_other_campaign_is_not_armed(Core,Host,Globals,text)
     local f=bootstrap(Core,Host,Globals,text); currentCampaign=2; f.root.NewGame()
