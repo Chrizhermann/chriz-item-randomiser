@@ -6,10 +6,11 @@ Run the repository checks from the repository root:
 pwsh -NoProfile -File .\tests\run-unit.ps1
 ```
 
-The runner has three fixed, disposable defaults. It reads the WeiDU and Lua executables from
-`C:\Users\chris\Games\EET-IR-Test-b600e94\bg2\EET\bin\win32\x86_64` and the final sentinel
+The runner has three disposable defaults under the current user profile. It reads the WeiDU and
+Lua executables from
+`%USERPROFILE%\Games\EET-IR-Test-b600e94\bg2\EET\bin\win32\x86_64` and the final sentinel
 fixture from
-`C:\Users\chris\Games\EET-IR-Test-b600e94\decompile-sentinel-final-20260827-064808`.
+`%USERPROFILE%\Games\EET-IR-Test-b600e94\decompile-sentinel-final-20260827-064808`.
 It does not infer a game directory and does not pass a game directory to WeiDU.
 
 Safe alternate copies can be supplied explicitly:

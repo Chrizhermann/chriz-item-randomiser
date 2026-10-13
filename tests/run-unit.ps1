@@ -1,8 +1,8 @@
 [CmdletBinding()]
 param(
-    [string] $WeiduPath = 'C:\Users\chris\Games\EET-IR-Test-b600e94\bg2\EET\bin\win32\x86_64\weidu.exe',
-    [string] $LuaPath = 'C:\Users\chris\Games\EET-IR-Test-b600e94\bg2\EET\bin\win32\x86_64\lua.exe',
-    [string] $SentinelBafDirectory = 'C:\Users\chris\Games\EET-IR-Test-b600e94\decompile-sentinel-final-20260827-064808'
+    [string] $WeiduPath = (Join-Path $env:USERPROFILE 'Games\EET-IR-Test-b600e94\bg2\EET\bin\win32\x86_64\weidu.exe'),
+    [string] $LuaPath = (Join-Path $env:USERPROFILE 'Games\EET-IR-Test-b600e94\bg2\EET\bin\win32\x86_64\lua.exe'),
+    [string] $SentinelBafDirectory = (Join-Path $env:USERPROFILE 'Games\EET-IR-Test-b600e94\decompile-sentinel-final-20260827-064808')
 )
 
 $ErrorActionPreference = 'Stop'

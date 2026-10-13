@@ -56,7 +56,7 @@ unobservable locked endpoint. Remove nonce and stale-ACK cases.
 Run:
 
 ```powershell
-& 'C:\Users\chris\Games\EET-IR-Test-b600e94\bg2\EET\bin\win32\x86_64\lua.exe' .\tests\lua\run.lua
+& "$env:USERPROFILE\Games\EET-IR-Test-b600e94\bg2\EET\bin\win32\x86_64\lua.exe" .\tests\lua\run.lua
 ```
 
 Expected: FAIL because `execute_delivery`, `EXECUTING`, and `VERIFIED` do not
@@ -280,7 +280,7 @@ without bypassing them.
 ### Task 5: Reinstall and runtime-test only the disposable EET copy
 
 **Files:**
-- Copy tracked candidate files into: `C:\Users\chris\Games\EET-IR-Test-b600e94\bg2\randomiser`
+- Copy tracked candidate files into: `%USERPROFILE%\Games\EET-IR-Test-b600e94\bg2\randomiser`
 - Do not modify: `C:\Games\Baldur's Gate II Enhanced Edition modded`
 
 **Step 1: Verify both game processes are absent**
@@ -299,7 +299,7 @@ between repository source and staged files.
 
 **Step 3: Reinstall component 1100 in one WeiDU process**
 
-From `C:\Users\chris\Games\EET-IR-Test-b600e94\bg2` run:
+From `%USERPROFILE%\Games\EET-IR-Test-b600e94\bg2` run:
 
 ```powershell
 'y' | & .\Setup-Randomiser.exe --game . --use-lang en_US --language 0 `

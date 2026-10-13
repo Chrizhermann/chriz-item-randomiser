@@ -16,13 +16,13 @@
 
 ## Fixed test boundaries
 
-- Repository: `C:\Users\chris\.codex\worktrees\d9c1\bgee-itemrandomiser-fix`
-- Disposable EET game: `C:\Users\chris\Games\EET-IR-Test-b600e94\bg2`
-- Baseline decompiles: `C:\Users\chris\Games\EET-IR-Test-b600e94\decompile-all-b600e94`
-- WeiDU 24900: `C:\Users\chris\Games\EET-IR-Test-b600e94\bg2\EET\bin\win32\x86_64\weidu.exe`
-- Lua 5.3.3: `C:\Users\chris\Games\EET-IR-Test-b600e94\bg2\EET\bin\win32\x86_64\lua.exe`
-- Remote Console tools: `C:\src\private\eeex-remote-console\tools`
-- Isolated profile: `C:\Users\chris\OneDrive\Documents\Baldur's Gate - Enhanced Edition Trilogy - IR Test b600e94`
+- Repository: `%USERPROFILE%\.codex\worktrees\d9c1\bgee-itemrandomiser-fix`
+- Disposable EET game: `%USERPROFILE%\Games\EET-IR-Test-b600e94\bg2`
+- Baseline decompiles: `%USERPROFILE%\Games\EET-IR-Test-b600e94\decompile-all-b600e94`
+- WeiDU 24900: `%USERPROFILE%\Games\EET-IR-Test-b600e94\bg2\EET\bin\win32\x86_64\weidu.exe`
+- Lua 5.3.3: `%USERPROFILE%\Games\EET-IR-Test-b600e94\bg2\EET\bin\win32\x86_64\lua.exe`
+- Remote Console tools: `tools` in the `eeex-remote-console` checkout beside this repository
+- Isolated profile: `%USERPROFILE%\OneDrive\Documents\Baldur's Gate - Enhanced Edition Trilogy - IR Test b600e94`
 
 Never run any command in `C:\Games\Baldur's Gate II Enhanced Edition modded`, never write the
 standard EET profile, never edit any save directly, and never run `handover_v4.lua`.
@@ -50,7 +50,7 @@ Run:
 
 ```powershell
 pwsh -NoProfile -File .\tests\Test-SentinelDependencies.ps1 `
-  -BafDirectory 'C:\Users\chris\Games\EET-IR-Test-b600e94\decompile-all-b600e94'
+  -BafDirectory "$env:USERPROFILE\Games\EET-IR-Test-b600e94\decompile-all-b600e94"
 ```
 
 Expected: nonzero exit with the aggregate line showing one BG2/SoA sentinel has 18 expected
@@ -72,7 +72,7 @@ Do not change `sslvar`, tier ordering, RNG, or Mode 2 files.
 Run:
 
 ```powershell
-& 'C:\Users\chris\Games\EET-IR-Test-b600e94\bg2\EET\bin\win32\x86_64\weidu.exe' `
+& "$env:USERPROFILE\Games\EET-IR-Test-b600e94\bg2\EET\bin\win32\x86_64\weidu.exe" `
   --nogame --parse-check TPA .\lib\ssl.tpa
 ```
 
@@ -531,7 +531,7 @@ deduplication.
 Run:
 
 ```powershell
-& 'C:\Users\chris\Games\EET-IR-Test-b600e94\bg2\EET\bin\win32\x86_64\lua.exe' .\tests\lua\run.lua
+& "$env:USERPROFILE\Games\EET-IR-Test-b600e94\bg2\EET\bin\win32\x86_64\lua.exe" .\tests\lua\run.lua
 ```
 
 Expected RED: `FLDLVCor.lua` is missing.
@@ -715,7 +715,7 @@ content or expose item/location joins.
 **Step 2: Deploy candidate source to the disposable mod folder**
 
 Copy only tracked candidate files needed by the installer into
-`C:\Users\chris\Games\EET-IR-Test-b600e94\bg2\randomiser`. Do not mirror-delete the directory
+`%USERPROFILE%\Games\EET-IR-Test-b600e94\bg2\randomiser`. Do not mirror-delete the directory
 and do not overwrite its backup/state directories.
 
 **Step 3: Reinstall component 1100**

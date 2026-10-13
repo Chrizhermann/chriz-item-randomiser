@@ -218,7 +218,7 @@ git commit -m "docs: frame Item Randomiser as maintained fork"
 ### Task 4: Build and preflight the immutable v8.1 package
 
 **Files:**
-- Create outside repository: `C:\Users\chris\.codex\artifacts\bgee-itemrandomiser-v8.1-<commit>\randomiser-v8.1.zip`
+- Create outside repository: `%USERPROFILE%\.codex\artifacts\bgee-itemrandomiser-v8.1-<commit>\randomiser-v8.1.zip`
 
 **Step 1: Verify release commit state**
 
