@@ -123,10 +123,10 @@ class Game:
         self.root = root
         self.weidu = weidu
 
-    def run(self, *arguments: str, tp2: str = "randomiser/randomiser.tp2") -> ProcessResult:
+    def run(self, *arguments: str, tp2: str = "randomiser/randomiser.tp2", language: int = 0) -> ProcessResult:
         return run_process(
             [str(self.weidu), tp2, "--game", ".", *arguments,
-             "--language", "0", "--use-lang", "en_US", "--no-exit-pause", "--quick-log"],
+             "--language", str(language), "--use-lang", "en_US", "--no-exit-pause", "--quick-log"],
             self.root, "WeiDU " + tp2)
 
     def install(self, component: int = 1500) -> ProcessResult:
@@ -424,6 +424,14 @@ def run_suite(args: argparse.Namespace) -> int:
                 installed(result) and order == [earlier, "randomiser/randomiser.tp2"]
                 and game.entries(1500) == 1, result)
     suite.check("Repush_GameIdentical", game.data() == after)
+
+    # Polish loads the English setup strings first; the new strings have no Polish text.
+    game = suite.game()
+    result = game.run("--force-install-list", "1500", language=1)
+    suite.check("PolishLanguage_Installs", installed(result) and game.active(1500), result)
+    game = suite.game(override={"M___EEex.lua": None})
+    result = game.run("--force-install-list", "1500", language=1)
+    suite.check("PolishLanguage_SkipsWithEnglishText", skipped(result, message[101502]), result)
 
     log = b"// Log of Currently Installed WeiDU Mods\r\n~RANDOMISER/RANDOMISER.TP2~ #0 #560 // More Spell Shield scrolls\r\n"
     suite.refusal("SpellShieldInstalled", message[101504], skipped, files={"WeiDU.log": log})

@@ -45,6 +45,18 @@ runs `tests/lua/run.lua` when present and runs `Test-ModeBoundary.ps1` last.
 WeiDU is called with `--nogame`; the runner does not install or launch the
 game. Child output is shown, and any nonzero exit fails the run.
 
+Component 1500 (campaign runtime) has a WeiDU suite on synthetic EET games that
+needs only WeiDU 249 and a short temporary directory. `run-unit.ps1` runs it with the
+other `Test-*.ps1` scripts; on its own:
+
+```powershell
+pwsh -NoProfile -File .\tests\Test-CampaignRuntimeInstaller.ps1 `
+    -WeiduPath 'D:\DisposableTools\weidu.exe' -TempRoot 'D:\Temp\flir'
+```
+
+It stages the files the release package publishes from the working tree. Add
+`-PackagePath <zip>` to install a ZIP built by `tools/build_release.py` instead.
+
 The old local sentinel fixture was removed with its lab. That integration check
 is currently unverified; the other twelve PowerShell suites and the Lua suite
 passed independently with WeiDU 249 and short temporary paths on 27 September.
