@@ -64,7 +64,7 @@ class ResourceReaderTests(unittest.TestCase):
                 for path in self.root.rglob("*") if path.is_file()}
 
     def test_canonical_type_codes(self) -> None:
-        self.assertEqual(RESOURCE_TYPES, {"itm": 0x3ED, "bcs": 0x3EF, "cre": 0x3F1,
+        self.assertEqual(RESOURCE_TYPES, {"itm": 0x3ED, "spl": 0x3EE, "bcs": 0x3EF, "cre": 0x3F1,
                                           "are": 0x3F2, "dlg": 0x3F3, "sto": 0x3F6})
 
     def test_all_selected_types_are_separate_case_insensitive_and_read_only(self) -> None:

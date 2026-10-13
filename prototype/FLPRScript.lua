@@ -1,10 +1,19 @@
--- The authored BLPOOL branch reads saved GLOBALs. No native action hook is
--- needed: an unselected campaign runs the original GiveItemCreate branch.
+-- Reviewed compiled quest branches read saved GLOBALs. An unselected source
+-- grants its original item; selected sources witness the omitted grant.
 local Script = {}
 local Member = {}; Member.__index = Member
 local Adapter = {}; Adapter.__index = Adapter
 local ID = 'bcs:blpool/grant/pool-reward'
 local SELECTED, CONSUMED = 'FLPR_QPOOL', 'FLPR_XPOOL'
+local QUESTS = {
+    [ID] = {quest='pool',resource='bcs:blpool',selected=SELECTED,consumed=CONSUMED},
+    ['original-source:bg2:base:item:9'] = {quest='altar',resource='bcs:troalt',
+        selected='FLPR_QALTAR',consumed='FLPR_XALTAR'},
+    ['original-source:bg2:base:item:109'] = {quest='book',resource='bcs:ppbook',
+        selected='FLPR_QBOOK',consumed='FLPR_XBOOK'},
+    ['original-source:bg2:mode2:item:69'] = {quest='key',resource='spl:spin621',
+        selected='FLPR_QKEY',consumed='FLPR_XKEY',adapter='spell-key-v1',extension='SPL'},
+}
 
 local function same(a,b)
     return a and b and a.resref==b.resref and a.expiration==b.expiration and a.flags==b.flags and
@@ -15,27 +24,88 @@ local function read(path)
     local file=assert(io.open(path,'rb'),'CAMPAIGN_SCRIPT_PATCH_MISSING')
     local bytes=file:read('*a'); assert(file:close()); return bytes
 end
+local function pool_event_action(expected)
+    local nl=expected:find('\r\n',1,true) and '\r\n' or '\n'
+    local obj='0 0 0 0 0 0 0 0 0 0 0 0 ""OB'..nl
+    return 'AC'..nl..'30OB'..nl..obj..'OB'..nl..obj..'OB'..nl..obj..
+        '1 0 0 0 0"GLOBALFLPR_EPOOL" "" AC'..nl
+end
+local function compatible_pool_patch(expected,actual)
+    if actual==expected then return true end
+    -- Only the two reviewed event actions may extend the immutable legacy
+    -- revision artifact. Removing them must recover its exact original bytes.
+    if #expected~=2658 or #actual~=2928 or
+        not expected:find('GLOBALFLPR_QPOOL',1,true) or
+        not expected:find('GLOBALFLPR_XPOOL',1,true) then return false end
+    local event=pool_event_action(expected)
+    local first=actual:find(event,1,true)
+    local second=first and actual:find(event,first+#event,true)
+    if not second or actual:find(event,second+#event,true) then return false end
+    return actual:sub(1,first-1)..actual:sub(first+#event,second-1)..
+        actual:sub(second+#event)==expected
+end
 
 function Script.new(api,bundle,id,expected)
     local index,source
     for i,row in ipairs(bundle.manifest.sources) do if row.id==id then index,source=i,row end end
     local endpoint=bundle.fixture.sources[id]
-    assert(id==ID and source and source.quantity==1 and source.record.kind=='scripted' and
-        source.record.adapter_id=='blpool-v1' and source.record.resource=='bcs:blpool' and
-        source.record.selector=='pool-reward' and endpoint.kind=='guarded-script' and
-        endpoint.adapter_id=='blpool-v1' and same(endpoint.payload,source.record.record),
-        'CAMPAIGN_SCRIPT_BINDING_INVALID')
-    assert(type(expected)=='string' and #expected>0 and
-        read('override/BLPOOL.BCS')==expected,'CAMPAIGN_SCRIPT_PATCH_CHANGED')
+    local spec=QUESTS[id]
+    if endpoint and endpoint.adapter_id=='mode2-reward-v1' then
+        -- The exporter binds this endpoint to the original table row and its
+        -- reviewed grant. Derive the saved flags from that row, not table order.
+        local row=id:match('^original%-source:bg2:mode2:item:([0-9]+)$')
+        local resource=source and source.record and source.record.resource
+        local extension,name
+        if type(resource)=='string' then extension,name=resource:match('^(%a+):([a-z0-9_#%-]+)$') end
+        if row and (extension=='bcs' or extension=='dlg') and name then
+            spec={quest=name,resource=resource,extension=extension:upper(),adapter='mode2-reward-v1',
+                selected='FLPR_QM2_'..row,consumed='FLPR_XM2_'..row}
+        end
+    end
+    local legacy=source and source.record and source.record.adapter_id=='blpool-v1'
+    local valid=spec and source and endpoint and type(source.record)=='table' and
+        source.quantity==1 and endpoint.kind=='guarded-script' and
+        same(endpoint.payload,source.record.record)
+    if legacy then
+        valid=valid and source.record.kind=='scripted' and id==ID and source.record.resource=='bcs:blpool' and
+            source.record.selector=='pool-reward' and endpoint.adapter_id=='blpool-v1'
+    else
+        valid=valid and source.record.kind=='authored-source' and
+            source.record.adapter_id=='original-source-v1' and
+            source.record.resource==spec.resource and endpoint.adapter_id==(spec.adapter or 'original-quest-v1') and
+            endpoint.quest==spec.quest and endpoint.resource==spec.resource and
+            endpoint.selected_global==spec.selected and endpoint.consumed_global==spec.consumed
+    end
+    assert(valid,'CAMPAIGN_SCRIPT_BINDING_INVALID')
+    local resources=endpoint.resources or {spec.resource}
+    assert(type(resources)=='table' and #resources>0,'CAMPAIGN_SCRIPT_BINDING_INVALID')
+    local primary=false
+    for _,resource in ipairs(resources) do
+        local extension,name=resource:match('^(%a+):([a-z0-9_#%-]+)$')
+        assert(name and #name<=8 and (extension=='dlg' or extension=='bcs' or extension=='spl'),
+            'CAMPAIGN_SCRIPT_BINDING_INVALID')
+        primary=primary or resource==spec.resource
+        local bytes=endpoint.resources and type(expected)=='table' and expected[resource] or expected
+        assert(type(bytes)=='string' and #bytes>0,'CAMPAIGN_SCRIPT_PATCH_CHANGED')
+        local actual=read('override/'..name:upper()..'.'..extension:upper())
+        assert((legacy and compatible_pool_patch(bytes,actual)) or actual==bytes,
+            'CAMPAIGN_SCRIPT_PATCH_CHANGED')
+    end
+    assert(primary,'CAMPAIGN_SCRIPT_BINDING_INVALID')
     assert(type(api.EEex_GameState_SetGlobalInt)=='function','CAMPAIGN_SCRIPT_GLOBALS_MISSING')
+    if spec.adapter=='spell-key-v1' then
+        assert(api.FLPR and api.FLPR.Spell and api.FLPR.Spell.callback==api.FLPRKEY and
+            type(api.FLPRKEY)=='function','CAMPAIGN_SPELL_SERVICE_MISSING')
+    end
     return setmetatable({api=api,revision=bundle.manifest.revision,index=index,
         resource_hash=source.resource_sha256,binding={id=id,payload=endpoint.payload},
+        selected=spec.selected,consumed=spec.consumed,spell=spec.adapter=='spell-key-v1',
         generation=1,installed=false},Member)
 end
 
 function Member:_bundle(bundle)
     local source=bundle.manifest.sources[self.index]
-    assert(bundle.manifest.revision==self.revision and source and source.id==ID and
+    assert(bundle.manifest.revision==self.revision and source and source.id==self.binding.id and
         source.resource_sha256==self.resource_hash and same(source.record.record,self.binding.payload),
         'CAMPAIGN_SCRIPT_REVISION_MISMATCH')
 end
@@ -45,21 +115,28 @@ function Member:reset()
 end
 function Member:prepare_new(bundle,controller)
     self:_bundle(bundle)
+    assert(not self:_error(),self:_error())
     local api=self.api
     assert(controller and controller.manifest and controller.manifest.revision==self.revision and
         api.EEex_GameState_GetGlobalInt('FLPR_FRESH')==1,
         'CAMPAIGN_SCRIPT_CAPTURE_REQUIRED')
-    assert(api.EEex_GameState_GetGlobalInt(SELECTED)==0 and api.EEex_GameState_GetGlobalInt(CONSUMED)==0,
+    assert(api.EEex_GameState_GetGlobalInt(self.selected)==0 and api.EEex_GameState_GetGlobalInt(self.consumed)==0,
         'CAMPAIGN_SCRIPT_ALREADY_STARTED')
     if controller.source_is_kept and controller:source_is_kept(self.index) then return true end
-    api.EEex_GameState_SetGlobalInt(SELECTED,1)
-    assert(api.EEex_GameState_GetGlobalInt(SELECTED)==1,'CAMPAIGN_SCRIPT_SELECTION_FAILED')
+    api.EEex_GameState_SetGlobalInt(self.selected,1)
+    assert(api.EEex_GameState_GetGlobalInt(self.selected)==1,'CAMPAIGN_SCRIPT_SELECTION_FAILED')
     return true
 end
 function Member:inspect()
     return {installed=self.installed,generation=self.generation,
-        selected=self.api.EEex_GameState_GetGlobalInt(SELECTED),
-        consumed=self.api.EEex_GameState_GetGlobalInt(CONSUMED)}
+        selected=self.api.EEex_GameState_GetGlobalInt(self.selected),
+        consumed=self.api.EEex_GameState_GetGlobalInt(self.consumed),last_error=self:_error()}
+end
+function Member:_error()
+    if not self.spell then return nil end
+    local service=self.api.FLPR and self.api.FLPR.Spell
+    if not service or service.callback~=self.api.FLPRKEY then return 'CAMPAIGN_SPELL_SERVICE_MISSING' end
+    return service.last_error and ('CAMPAIGN_SPELL_CALLBACK_FAILED:'..service.last_error) or nil
 end
 function Member:adapter(bundle)
     self:_bundle(bundle)
@@ -67,13 +144,13 @@ function Member:adapter(bundle)
 end
 function Adapter:destroy() self.destroyed=true end
 function Adapter:_active()
-    return not self.destroyed and self.gate.installed and self.generation==self.gate.generation and
-        self.gate.api.EEex_GameState_GetGlobalInt(SELECTED)==1
+    return not self.destroyed and not self.gate:_error() and self.gate.installed and self.generation==self.gate.generation and
+        self.gate.api.EEex_GameState_GetGlobalInt(self.gate.selected)==1
 end
 function Adapter:_request(request,kind)
     local gate=self.gate
     return self:_active() and type(request)=='table' and request.kind==kind and request.mode=='observe-only' and
-        request.index==gate.index and request.revision==gate.revision and request.source_id==ID and
+        request.index==gate.index and request.revision==gate.revision and request.source_id==gate.binding.id and
         request.resource_sha256==gate.resource_hash and request.quantity==1 and
         same(request.payload,gate.binding.payload) and type(request.session)=='table' and type(request.token)=='table'
 end
@@ -86,6 +163,7 @@ local function receipt(request)
     return result
 end
 function Adapter:observe_guard(request)
+    if self.gate:_error() then return nil,self.gate:_error() end
     if not self:_request(request,'source-guard') then return nil,'CAMPAIGN_SCRIPT_REQUEST_MISMATCH' end
     self.session=request.session
     local result=receipt(request)
@@ -94,9 +172,10 @@ function Adapter:observe_guard(request)
     return result
 end
 function Adapter:observe_removal(request)
+    if self.gate:_error() then return nil,self.gate:_error() end
     if not self:_request(request,'guarded-source-removal') or request.session~=self.session or
         request.guard_generation~=self.generation then return nil,'CAMPAIGN_SCRIPT_REQUEST_MISMATCH' end
-    if self.gate.api.EEex_GameState_GetGlobalInt(CONSUMED)~=1 then return nil,'SOURCE_NOT_LOADED' end
+    if self.gate.api.EEex_GameState_GetGlobalInt(self.gate.consumed)~=1 then return nil,'SOURCE_NOT_LOADED' end
     local result=receipt(request)
     result.exact_source_event,result.removed,result.remaining=1,1,0
     return result

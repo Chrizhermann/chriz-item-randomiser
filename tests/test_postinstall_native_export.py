@@ -166,28 +166,31 @@ class NativeExportTests(unittest.TestCase):
                              f"{allowed}.native.json").read_bytes())
         self.assertEqual(native["targets"]["sto:shop"]["kind"], "store")
 
-    def test_store_target_rejects_existing_selected_stock_and_source_overlap(self):
+    def test_store_target_preserves_existing_stock_and_source_overlap(self):
         (self.override / "shop.sto").write_bytes(make_sto([
             (item_record("SYNTH001", expiration=0, charges=(0, 0, 0), flags=1), 3, 0)]))
         self.refresh()
         revision = self.write(target="sto:shop")
-        with self.assertRaisesRegex(ProfileError, "AddStoreItem merges rows"):
-            self.export(revision)
-        self.assertFalse((self.output / "next.lua").exists())
-        revision, _ = self.write_store_source(target="sto:shop")
-        with self.assertRaisesRegex(ProfileError, "selected source store as a target"):
-            self.export(revision)
-        self.assertFalse((self.output / "next.lua").exists())
+        before = snapshot(self.game)
+        self.export(revision)
+        revision, source = self.write_store_source(target="sto:shop")
+        self.export(revision)
+        native = json.loads((self.output / "campaign-store" / "revisions" /
+                             f"{revision}.native.json").read_bytes())
+        self.assertEqual(native["targets"]["sto:shop"]["store"], "shop")
+        self.assertEqual(native["sources"][source["id"]]["store"], "shop")
+        self.assertEqual(snapshot(self.game), before)
 
-    def test_multi_copy_source_needs_store_capacity_one_but_distinct_items_can_share_shop(self):
+    def test_multi_copy_and_distinct_items_can_share_shop(self):
         (self.override / "origin.sto").write_bytes(make_sto([
             (item_record("SYNTH001", expiration=0, charges=(0, 0, 0), flags=1), 2, 0)]))
         (self.override / "shop.sto").write_bytes(make_sto([]))
         self.refresh()
         revision, _ = self.write_store_source(target="sto:shop")
-        with self.assertRaisesRegex(ProfileError, "distinct copies.*single shop"):
-            self.export(revision)
-        self.assertFalse((self.output / "next.lua").exists())
+        self.export(revision)
+        manifest = read_campaign(self.store, revision)
+        self.assertEqual(manifest["sources"][0]["quantity"], 2)
+        self.assertEqual(manifest["targets"][0]["capacity"], 2)
         split, _ = self.write_store_source(target="sto:shop", target_capacity=1)
         self.export(split)
         native = json.loads((self.output / "campaign-store" / "revisions" /
@@ -226,12 +229,13 @@ class NativeExportTests(unittest.TestCase):
         self.assertEqual(native["source_gate"]["source_ids"], [self.first, self.second])
         self.assertEqual((self.output / "AREA.pristine.are").read_bytes(), area)
 
-        # Distinct original rows still contribute duplicate item units. Do not
-        # allow random assignment to collapse both into one unsupported shop row.
+        # Both originals remain separate reward units even at one recipient.
         plan["targets"] = [{"id": "sto:shop", "capacity": 2, "optional": False}]
-        blocked = write_campaign(profile, self.catalog, self.world, plan, self.store)["revision"]
-        with self.assertRaisesRegex(ProfileError, "distinct copies.*single shop"):
-            self.export(blocked)
+        combined = write_campaign(profile, self.catalog, self.world, plan, self.store)["revision"]
+        self.export(combined)
+        manifest = read_campaign(self.store, combined)
+        self.assertEqual(len(manifest["sources"]), 2)
+        self.assertEqual(manifest["targets"][0]["capacity"], 2)
         plan["targets"] = [{"id": shop, "capacity": 1, "optional": False}
                            for shop in ("sto:shop", "sto:shop2")]
         split = write_campaign(profile, self.catalog, self.world, plan, self.store)["revision"]
@@ -281,6 +285,24 @@ class NativeExportTests(unittest.TestCase):
         self.assertEqual((self.output / "source-gate.lua").read_bytes(), _render_lua(sorted([a, b])))
         self.assertEqual((self.output / "next.lua").read_bytes(), _render_lua(b))
         self.assertEqual(snapshot(self.game), game_before)
+
+    def test_rescan_can_add_unrelated_resources_without_rewriting_saved_configuration(self):
+        revision = self.write()
+        self.export(revision)
+        native = self.output / "campaign-store" / "revisions" / f"{revision}.native.json"
+        before, fingerprint = native.read_bytes(), self.world["fingerprint"]
+        (self.override / "extra.itm").write_bytes(make_itm())
+        self.refresh()
+        self.assertNotEqual(self.world["fingerprint"], fingerprint)
+        self.export(revision)
+        self.assertEqual(native.read_bytes(), before)
+        # Changed selected content still needs a new configuration/scan binding.
+        changed = bytearray(self.area)
+        changed[0x30] ^= 1
+        (self.override / "area.are").write_bytes(changed)
+        self.refresh()
+        with self.assertRaisesRegex(ProfileError, "differs from the scan"):
+            self.export(revision)
 
     def test_embedded_and_external_actor_names_become_native_creature_targets(self):
         for index, name in ((0, "TestDV"), (1, "EmbedDV")):
@@ -339,16 +361,19 @@ class NativeExportTests(unittest.TestCase):
             self.export()
         self.assertFalse((self.output / "next.lua").exists())
 
-    def test_stackable_item_fails_before_publishing_next_pointer(self):
+    def test_stackable_item_exports_exact_payload_without_changing_game(self):
         stackable = bytearray((self.override / "synth001.itm").read_bytes())
         struct.pack_into("<H", stackable, 0x38, 20)
         (self.override / "synth001.itm").write_bytes(stackable)
         self.refresh()
         self.write()
         game_before = snapshot(self.game)
-        with self.assertRaises(ProfileError):
-            self.export()
-        self.assertFalse((self.output / "next.lua").exists())
+        result = self.export()
+        native = json.loads((self.output / 'campaign-store/revisions' /
+                             (result['revision'] + '.native.json')).read_bytes())
+        self.assertEqual(native['sources'][self.first]['payload'], {
+            'resref': 'synth001', 'expiration': 0, 'flags': 1, 'charges': [0, 0, 0]})
+        self.assertTrue((self.output / "next.lua").exists())
         self.assertEqual(snapshot(self.game), game_before)
 
     def test_expired_source_fails_before_publishing_next_pointer(self):
@@ -437,16 +462,21 @@ class NativeExportTests(unittest.TestCase):
         self.assertEqual((self.output / "AREA.pristine.are").read_bytes(), area)
         self.assertEqual(snapshot(self.game), game_before)
 
-    def test_external_template_with_two_area_actors_is_unsupported(self):
+    def test_external_template_with_two_area_actors_exports_template_guard(self):
         (self.override / "actor.cre").write_bytes(make_cre([
             item_record("SYNTH001", expiration=0, charges=(0, 0, 0), flags=1)]))
+        recipient = make_cre([])
+        recipient[0x280:0x2a0] = b'RecipientDV'.ljust(32, b'\0')
         (self.override / "area.are").write_bytes(make_are([], [], [
-            ("First", "ACTOR"), ("Second", "ACTOR"), ("Recipient", make_cre([]))]))
+            ("First", "ACTOR"), ("Second", "ACTOR"), ("Recipient", recipient)]))
         self.refresh()
-        self.write_creature_source("cre-template", "are:area/actor/2")
-        with self.assertRaisesRegex(ProfileError, "exactly one static ARE actor.*found 2"):
-            self.export()
-        self.assertFalse((self.output / "next.lua").exists())
+        revision, source = self.write_creature_source("cre-template", "are:area/actor/2")
+        self.export()
+        native = json.loads((self.output / 'campaign-store/revisions' /
+                             (revision + '.native.json')).read_bytes())
+        self.assertEqual(native['sources'][source['id']]['kind'], 'guarded-template')
+        self.assertEqual(self.creature_artifacts(revision)[0].read_bytes(),
+                         (self.override / 'actor.cre').read_bytes())
 
     def test_equipped_creature_source_requires_explicit_replacement(self):
         (self.override / "actor.cre").write_bytes(make_cre([
@@ -457,6 +487,29 @@ class NativeExportTests(unittest.TestCase):
         with self.assertRaisesRegex(ProfileError, "needs explicit replacement equipment"):
             self.export()
         self.assertFalse((self.output / "next.lua").exists())
+
+    def test_container_source_replacement_is_frozen_in_native_fixture(self):
+        profile = edit_profile(new_profile(self.catalog, "container-replacement", "Container replacement"),
+                               self.catalog, include=["synth001"])
+        plan = new_binding_plan(profile, self.catalog, self.world)
+        plan["sources"] = [{"item": "synth001", "policy": "relocate",
+                            "source_ids": [self.first], "registration_ids": []}]
+        plan["targets"] = [{"id": "are:area/actor/0", "capacity": 1, "optional": False}]
+        plan["replacements"] = {self.first: "synth002"}
+        before = snapshot(self.game)
+        revision = write_campaign(profile, self.catalog, self.world, plan, self.store)["revision"]
+        self.export(revision)
+        base = self.output / "campaign-store" / "revisions"
+        manifest = json.loads((base / f"{revision}.json").read_bytes())
+        native = json.loads((base / f"{revision}.native.json").read_bytes())
+        replacement_hash = next(item["sha256"] for item in self.catalog["items"]
+                                if item["resref"] == "synth002")
+        self.assertEqual(manifest["sources"][0]["replacement"],
+                         {"resref": "synth002", "resource_sha256": replacement_hash})
+        self.assertEqual(native["sources"][self.first]["kind"], "guarded-container")
+        self.assertEqual(native["sources"][self.first]["replacement"], "synth002")
+        self.assertEqual(native["resource_hashes"]["SYNTH002.ITM"], replacement_hash)
+        self.assertEqual(snapshot(self.game), before)
 
     def test_equipped_replacement_and_blank_are_frozen_per_revision(self):
         original = bytes(make_cre([

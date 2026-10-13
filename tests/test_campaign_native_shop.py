@@ -27,7 +27,7 @@ local function setup()
     end
     for _,site in ipairs({
         {0x28CA79,'e8e22cfcff'}, {0x28CA7E,'488d8c2470010000'},
-        {0x24FB9A,'488d4f108bf0'}, {0x25052A,'488b48108b4118'},
+        {0x24FB9A,'488d4f108bf0'}, {0x24F860,'488bd3488d8ea0000000'},
         {0x24F487,'0f8582000000'}, {0x2E7E00,'6639421c490f44f9'},
     }) do
         local offset=0
@@ -94,13 +94,25 @@ local function ref(f,address)
     return table.concat(chars)
 end
 
+function cases.bind_ignores_kept_and_lost_rewards_and_prices_tome_variant(Shop)
+    local f=setup(); local shop=Shop.install(f.api)
+    f.assignment.payload={resref='book03',expiration=0,charges={0,0,0},flags=0}
+    f.fixture.shop_prices.book03=1200
+    f.controller.assignments=function() return {
+        {unit=1,source_id=f.source_id,outcome='kept'},
+        {unit=2,source_id=f.source_id,outcome='lost'},f.assignment} end
+    shop:bind(f.fixture,f.controller)
+    assert(#shop.entries==1 and shop.entries[1].item=='book03')
+    assert(f.read(shop.entries[1].address+16,4)==1200)
+end
+
 function cases.bind_freezes_assignments_and_prices(Shop)
     local f=setup();local shop=Shop.install(f.api)
     local hooks=0
     for _ in pairs(f.hooks) do hooks=hooks+1 end
     assert(hooks==6 and f.hooks[f.base+0x2E7E00])
     local selection=table.concat(f.hooks[f.base+0x2E7E00])
-    assert(selection:find('cmp eax,dword ptr ds:[rbx+0x20]',1,true))
+    assert(selection:find('cmp eax,dword ptr ds:[rbx+0x18]',1,true))
     assert(selection:find('mov dword ptr ds:[r9+0x10],0',1,true))
     shop:bind(f.fixture,f.controller)
     local entry=assert(shop.by_unit[7])
@@ -166,17 +178,21 @@ function cases.deliver_publishes_exact_payload_then_activates_unit(Shop)
         call.charges[3]==4 and call.flags==1)
     assert(ref(f,f.buffer+8)=='SHOP' and ref(f,f.buffer+16)=='SYNTH001')
     assert(f.read(shop.by_unit[7].address+24,8)==1 and f.read(f.buffer,8)==0)
+    assert(f.globals.FLPR_SH0007==5 and f.read(shop.by_unit[7].address+40,8)==5)
+    f.assignment.delivery_phase=2
+    shop:bind(f.fixture,f.controller)
+    assert(f.read(shop.by_unit[7].address+40,8)==5)
     assert(shop.last_delivery.unit==7 and shop.last_delivery.before_count==4 and
         shop.last_delivery.after_count==5)
 end
 
-function cases.failed_or_colliding_delivery_does_not_activate(Shop)
+function cases.failed_or_unproven_delivery_does_not_activate(Shop)
     for _,mode in ipairs({'error','collision'}) do
         local f=setup();f.action_mode=mode
         local shop=Shop.install(f.api);shop:bind(f.fixture,f.controller)
         local ok,reason=shop:deliver(f.fixture.targets[f.target_id],f.payload,7)
         assert(ok==nil and type(reason)=='string')
-        if mode=='collision' then assert(reason=='SHOP_ITEM_ALREADY_STOCKED')
+        if mode=='collision' then assert(reason=='SHOP_INSERTION_UNPROVEN')
         else assert(reason:find('fixture action failed',1,true)) end
         assert(f.read(shop.by_unit[7].address+24,8)==0 and f.read(f.buffer,8)==0)
         assert(shop.last_delivery==nil and f.globals.FLPR_P0007==nil)

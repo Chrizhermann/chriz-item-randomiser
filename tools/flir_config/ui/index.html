@@ -30,6 +30,7 @@
           <div class="inline-actions">
             <select id="savedSelect" aria-label="Saved configurations"><option value="">Choose a saved configuration</option></select>
             <button id="newButton" type="button" class="button secondary">New</button>
+            <button id="presetButton" type="button" class="button secondary">Start from a preset</button>
           </div>
         </div>
         <div class="name-control">
@@ -46,6 +47,8 @@
 
       <p id="status" class="status" role="status" aria-live="polite">Loading configuration…</p>
       <p id="validation" class="validation" role="status" aria-live="polite" hidden></p>
+      <p id="applySafetyNote" class="small-note" hidden>Close the game before applying a configuration. Existing saves retain their settings.</p>
+      <p id="applyDevelopmentNote" class="small-note" hidden>Start a new BG1 campaign for this playtest. Mode 2 additions and some optional quest rules are still in development.</p>
 
       <div class="columns">
         <section class="library panel" aria-labelledby="libraryTitle">
@@ -113,6 +116,75 @@
       <div class="dialog-actions">
         <button type="button" id="cancelNew" class="button secondary">Cancel</button>
         <button type="submit" class="button primary">Create draft</button>
+      </div>
+    </form>
+  </dialog>
+  <dialog id="presetDialog" class="preset-dialog" aria-labelledby="presetTitle">
+    <form id="presetForm">
+      <h2 id="presetTitle">Start from an original preset</h2>
+      <p class="small-note">Choose the original item and recipient pools separately. The new draft still needs a configuration check for this installation.</p>
+      <div class="preset-grid">
+        <div>
+          <label for="presetSelect">Game preset</label>
+          <select id="presetSelect" required><option value="">Choose a preset</option></select>
+        </div>
+        <div>
+          <label for="presetItems">Item pool</label>
+          <select id="presetItems">
+            <option value="mode1">Original Mode 1</option>
+            <option value="mode1+mode2">Mode 1 plus Mode 2 additions</option>
+          </select>
+        </div>
+        <div>
+          <label for="presetTargets">Recipient pool</label>
+          <select id="presetTargets">
+            <option value="mode1">Original Mode 1</option>
+            <option value="mode1+mode2">Mode 1 plus Mode 2 additions</option>
+          </select>
+        </div>
+      </div>
+      <fieldset class="preset-options">
+        <legend>Original options</legend>
+        <label><input id="presetScrolls" type="checkbox"> Include spell scrolls</label>
+        <label><input id="presetKangaxx" type="checkbox"> Include Kangaxx items</label>
+        <label><input id="presetFlailHeads" type="checkbox"> Include flail heads</label>
+        <label><input id="presetTotscTome" type="checkbox"> ToTSC tome variant</label>
+        <label><input id="presetMoreSpellShield" type="checkbox"> More Spell Shield copies</label>
+        <label><input id="presetCursedDisguise" type="checkbox"> Cursed disguise item</label>
+      </fieldset>
+      <div class="preset-grid">
+        <div>
+          <label for="presetLossMode">Original item loss</label>
+          <select id="presetLossMode">
+            <option value="none">Keep original copies</option>
+            <option value="some">Lose a percentage</option>
+          </select>
+        </div>
+        <div>
+          <label for="presetLossPercent">Loss percentage</label>
+          <div class="percent-input"><input id="presetLossPercent" type="number" min="0" max="100" step="1" inputmode="numeric" value="0" disabled><span aria-hidden="true">%</span></div>
+        </div>
+        <div>
+          <label for="presetUnrandomizedPercent">Leave items in place</label>
+          <div class="percent-input"><input id="presetUnrandomizedPercent" type="number" min="0" max="100" step="1" inputmode="numeric" value="0"><span aria-hidden="true">%</span></div>
+        </div>
+      </div>
+      <p id="presetError" class="validation error" role="alert" hidden></p>
+      <div class="dialog-actions">
+        <button type="button" id="cancelPreset" class="button secondary">Cancel</button>
+        <button type="submit" class="button primary">Create preset draft</button>
+      </div>
+    </form>
+  </dialog>
+  <dialog id="tierDialog" aria-labelledby="tierTitle">
+    <form id="tierForm">
+      <h2 id="tierTitle">Choose a tier</h2>
+      <p id="tierPrompt" class="small-note"></p>
+      <label for="tierSelect">Existing tier</label>
+      <select id="tierSelect" required></select>
+      <div class="dialog-actions">
+        <button type="button" id="cancelTier" class="button secondary">Cancel</button>
+        <button type="submit" class="button primary">Use this tier</button>
       </div>
     </form>
   </dialog>

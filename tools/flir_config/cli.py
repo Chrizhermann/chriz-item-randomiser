@@ -23,7 +23,7 @@ from .sources import (bind_profile, inventory_diagnostic_counts, inspect_sources
 def parser() -> argparse.ArgumentParser:
     result = argparse.ArgumentParser(
         description="Scan installed EE items and author draft Randomiser profiles. "
-                    "This tool does not modify the game or activate randomisation.")
+                    "Game changes require the editor's explicit --apply-game opt-in.")
     commands = result.add_subparsers(dest="command", required=True)
     templates = commands.add_parser("templates", help="List or export original pool drafts; not playable settings yet")
     templates.add_argument("--id", choices=[row["id"] for row in list_templates()])
@@ -37,6 +37,8 @@ def parser() -> argparse.ArgumentParser:
     ui.add_argument("--profile", type=Path)
     ui.add_argument("--plan", type=Path)
     ui.add_argument("--port", type=int, default=0)
+    ui.add_argument("--apply-game", type=Path,
+                    help="Enable applying settings to this explicitly installed test runtime")
     scan = commands.add_parser("scan", help="Read the effective installed item resources")
     scan.add_argument("--game", type=Path, required=True)
     scan.add_argument("--language")
@@ -137,7 +139,8 @@ def run(args: argparse.Namespace) -> dict:
         return draft
     if args.command == "ui":
         from .editor import serve
-        return serve(args.catalog, args.world, args.workspace, args.port, args.profile, args.plan)
+        return serve(args.catalog, args.world, args.workspace, args.port, args.profile, args.plan,
+                     args.apply_game)
     if args.command == "scan":
         # Check before the potentially expensive scan and re-check its canonical root.
         ensure_output_outside_game(args.out, {"game_root": str(args.game.resolve())})

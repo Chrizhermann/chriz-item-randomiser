@@ -16,6 +16,18 @@ from .profiles import (HEX256, ProfileError, _digest, ensure_output_outside_game
                        read_json, validate_catalog, validate_profile, write_json)
 from .resources import GameResources, ITEM_SEMANTIC_FIELDS, RESOURCE_TYPES, ScanError
 from .world_formats import _reference, parse_are, parse_cre, parse_sto
+from .virtual_sources import ADAPTER_ID as VIRTUAL_ADAPTER_ID
+from .virtual_sources import validate_registration as validate_virtual_registration
+from .original_options import is_spell_shield_row, spell_shield_spec
+from .cursed_disguises import cursed_disguise_spec, validate_cursed_disguise_spec
+from .original_registrations import (SOURCE_ADAPTER as ORIGINAL_SOURCE_ADAPTER,
+                                     TARGET_ADAPTER as ORIGINAL_TARGET_ADAPTER,
+                                     SHIPPED_REPLACEMENT,
+                                     table_rows as original_table_rows,
+                                     target_record as original_target_record,
+                                     shipped_replacement_hash,
+                                     validate_source_registration as validate_original_source,
+                                     validate_target_registration as validate_original_target)
 
 WORLD_SCHEMA = "flir-world-catalog-v1"
 DIAGNOSTIC_WORLD_SCHEMA = "flir-world-catalog-v2"
@@ -25,7 +37,7 @@ INVALID_ITEM = "invalid-item-reference"
 UNRESOLVED_STORAGE = "unresolved-creature-storage"
 PLAN_SCHEMA = "flir-binding-plan-v1"
 COVERAGE = "physical-records-and-bcs-dlg-hashes"
-KINDS = ("itm", "cre", "are", "sto", "bcs", "dlg")
+KINDS = ("itm", "cre", "are", "sto", "bcs", "dlg", "spl")
 
 
 def world_fingerprint(world: dict) -> str:
@@ -633,24 +645,70 @@ def bind_profile(profile: dict, catalog: dict, world: dict, plan: dict) -> dict:
     indexes = validate_world(world, catalog)
     _fields(plan, {"schema", "catalog_fingerprint", "world_fingerprint", "sources", "registrations", "targets"}
             | ({"replacements"} if isinstance(plan, dict) and "replacements" in plan else set())
-            | ({"randomization"} if isinstance(plan, dict) and "randomization" in plan else set()), "binding plan")
+            | ({"randomization"} if isinstance(plan, dict) and "randomization" in plan else set())
+            | (set(plan) & {"original_template_id", "original_choices", "original_options",
+                            "target_registrations", "spell_shield", "cursed_disguises"} if isinstance(plan, dict) else set()), "binding plan")
     replacements = plan.get("replacements", {})
     if not isinstance(replacements, dict):
         raise ProfileError("Creature replacements must map source identities to item resrefs or blank")
     catalog_items = {item["resref"]: item for item in catalog["items"]}
     if plan["schema"] != PLAN_SCHEMA or plan["catalog_fingerprint"] != catalog["fingerprint"] or plan["world_fingerprint"] != world["fingerprint"]:
         raise ProfileError("Binding plan is stale or unsupported; review against the current scans")
+    original_keys = {"original_template_id", "original_choices", "original_options",
+                     "target_registrations"}
+    present_original = set(plan) & original_keys
+    if present_original and present_original != original_keys:
+        raise ProfileError("Original plan metadata is incomplete")
+    source_rows, target_rows = (original_table_rows(catalog, world, plan)
+                                if present_original else ({}, {}))
+    shield = plan.get("spell_shield")
+    if present_original and plan["original_options"].get("more_spell_shield"):
+        expected = spell_shield_spec(world, randomized=any(
+            row["enabled"] and is_spell_shield_row(row) for row in source_rows.values()))
+        if shield != expected:
+            raise ProfileError("Spell Shield stock metadata disagrees with the scan and original options")
+    elif "spell_shield" in plan:
+        raise ProfileError("Spell Shield stock metadata requires its original option")
+    if present_original and plan["original_options"].get("cursed_disguise"):
+        disguise = plan.get("cursed_disguises")
+        validate_cursed_disguise_spec(disguise)
+        expected = cursed_disguise_spec({name: row["sha256"] for name, row in catalog_items.items()},
+                                        game=disguise["game"], item_revisions=disguise["item_revisions"])
+        if disguise != expected:
+            raise ProfileError("Cursed-disguise resources differ from the scanned catalogue")
+    elif "cursed_disguises" in plan:
+        raise ProfileError("Cursed disguises require their original option")
     registrations = {}
     grant_sites = set()
+    reserved_physical_ids = set()
     for registration in _rows(plan["registrations"], "registration"):
-        _fields(registration, {"id", "item", "resource", "resource_sha256", "adapter_id", "selector", "copies", "optional"}, "registration")
+        if registration.get("adapter_id") == VIRTUAL_ADAPTER_ID:
+            validate_virtual_registration(registration)
+            item = catalog_items.get(registration["item"])
+            if item is None or item["sha256"] != registration["resource_sha256"]:
+                raise ProfileError("Virtual source must match the selected installed ITM")
+        elif registration.get("adapter_id") == ORIGINAL_SOURCE_ADAPTER:
+            if not present_original:
+                raise ProfileError("Original source needs original plan metadata")
+            physical_ids = validate_original_source(registration, source_rows, world, spell_shield=shield)
+            resource = indexes["resources"].get(registration["resource"])
+            if resource is None or resource["sha256"] != registration["resource_sha256"]:
+                raise ProfileError("Original source resource changed or is absent")
+            if reserved_physical_ids.intersection(physical_ids):
+                raise ProfileError("Original source physical records overlap")
+            reserved_physical_ids.update(physical_ids)
+        else:
+            _fields(registration, {"id", "item", "resource", "resource_sha256", "adapter_id", "selector", "copies", "optional"}, "registration")
         identity = _text(registration["id"], "registration identity")
         if identity in registrations:
             raise ProfileError("Duplicate registered source identity")
         for key in ("item", "resource", "adapter_id", "selector"):
             _text(registration[key], f"registration {key}")
-        if not registration["resource"].startswith(("bcs:", "dlg:")):
-            raise ProfileError("Registered sources must identify a BCS or DLG resource")
+        allowed_kinds = (("itm:",) if registration["adapter_id"] == VIRTUAL_ADAPTER_ID else
+                         ("cre:", "bcs:", "dlg:", "spl:", "sto:") if registration["adapter_id"] == ORIGINAL_SOURCE_ADAPTER else
+                         ("bcs:", "dlg:"))
+        if not registration["resource"].startswith(allowed_kinds):
+            raise ProfileError("Registered source has an unsupported resource kind")
         _resref(registration["resource"][4:])
         if not isinstance(registration["resource_sha256"], str) or not HEX256.fullmatch(registration["resource_sha256"]):
             raise ProfileError("Invalid registered resource fingerprint")
@@ -694,6 +752,8 @@ def bind_profile(profile: dict, catalog: dict, world: dict, plan: dict) -> dict:
             row = indexes["sources"].get(identity)
             if row is None or row["item"] != item or identity in selected_ids:
                 raise ProfileError("Selected physical source is missing, mismatched or duplicated")
+            if identity in reserved_physical_ids:
+                raise ProfileError("Direct physical source overlaps an original registration")
             if UNUSABLE_SOURCE.intersection(row["concerns"]):
                 raise ProfileError("Selected physical source is not a finite, unambiguous inventory record")
             selected_ids.add(identity)
@@ -701,18 +761,26 @@ def bind_profile(profile: dict, catalog: dict, world: dict, plan: dict) -> dict:
                                      "resource_sha256": indexes["resources"][row["resource"]]["sha256"]})
             if identity in replacements:
                 replacement = replacements[identity]
-                if row["kind"] not in ("cre-template", "embedded-cre"):
-                    raise ProfileError("Replacement equipment requires a creature source")
+                if row["kind"] not in ("cre-template", "embedded-cre", "container"):
+                    raise ProfileError("Replacement equipment requires a creature or container source")
                 _resref(replacement)
                 if replacement == item:
                     raise ProfileError("Replacement must differ from the relocated item")
                 if replacement == "blank":
                     selected_sources[-1]["replacement"] = {"resref": "blank"}
                 else:
-                    if replacement not in catalog_items:
+                    replacement_hash = (catalog_items[replacement]["sha256"]
+                                        if replacement in catalog_items else None)
+                    if replacement_hash is None and replacement == SHIPPED_REPLACEMENT:
+                        authored = source_rows.get("bg2:base:item:86")
+                        if (authored is not None and authored["enabled"] and
+                                authored["replacement"] == replacement and
+                                identity in authored["source_ids"]):
+                            replacement_hash = shipped_replacement_hash()
+                    if replacement_hash is None:
                         raise ProfileError(f"Replacement item is absent: {replacement}")
                     selected_sources[-1]["replacement"] = {
-                        "resref": replacement, "resource_sha256": catalog_items[replacement]["sha256"]}
+                        "resref": replacement, "resource_sha256": replacement_hash}
             reward_units += row["record"]["quantity"] if row["kind"] == "store" else 1
         for identity in choice["registration_ids"]:
             row = registrations.get(identity)
@@ -731,11 +799,36 @@ def bind_profile(profile: dict, catalog: dict, world: dict, plan: dict) -> dict:
         raise ProfileError("Unused source registrations must be removed from this binding plan")
     if set(replacements) - selected_ids:
         raise ProfileError("Replacement equipment refers to an unselected source")
+    original_targets = {}
+    for registration in _rows(plan.get("target_registrations", []), "original target registration"):
+        if not present_original:
+            raise ProfileError("Original target needs original plan metadata")
+        validate_original_target(registration, target_rows)
+        identity = registration["id"]
+        if identity in original_targets:
+            raise ProfileError("Duplicate original target registration")
+        resource = indexes["resources"].get(registration["resource"])
+        if resource is None or resource["sha256"] != registration["resource_sha256"]:
+            raise ProfileError("Original target area changed or is absent")
+        original_targets[identity] = registration
     targets, target_ids = [], set()
+    used_original_targets = set()
     capacity = 0
     for choice in _rows(plan["targets"], "target choice"):
         _fields(choice, {"id", "capacity", "optional"}, "target choice")
         identity = _text(choice["id"], "target identity")
+        if identity in original_targets:
+            registration = original_targets[identity]
+            if (identity in target_ids or choice["capacity"] != registration["capacity"] or
+                    choice["optional"] is not False):
+                raise ProfileError("Original target choice disagrees with its registration")
+            target_ids.add(identity)
+            used_original_targets.add(identity)
+            targets.append({"target": original_target_record(registration),
+                            "capacity": choice["capacity"],
+                            "resource_sha256": registration["resource_sha256"]})
+            capacity += choice["capacity"]
+            continue
         parts = identity.split("/")
         base = parts[0].split(":")
         if len(base) != 2 or base[0] not in ("cre", "are", "sto"):
@@ -768,9 +861,13 @@ def bind_profile(profile: dict, catalog: dict, world: dict, plan: dict) -> dict:
         targets.append({"target": deepcopy(target), "capacity": choice["capacity"],
                         "resource_sha256": indexes["resources"][target["resource"]]["sha256"]})
         capacity += choice["capacity"]
+    if used_original_targets != set(original_targets):
+        raise ProfileError("Unused original target registrations must be removed")
     if reward_units == 0:
         raise ProfileError("No available reward records remain after optional source resolution")
-    if capacity < reward_units:
+    overflow = (isinstance(plan.get("randomization"), dict) and
+                plan["randomization"].get("overflow") is True)
+    if capacity < reward_units and not overflow:
         raise ProfileError(f"Target capacity {capacity} cannot hold {reward_units} selected reward records")
     result = {"schema": "flir-bound-draft-v1", "state": "draft-needs-runtime-adapter",
               "profile": frozen, "catalog_fingerprint": catalog["fingerprint"],

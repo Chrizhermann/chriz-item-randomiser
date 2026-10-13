@@ -1,4 +1,4 @@
-"""Local draft editor over saved scans; never reads or writes game resources."""
+"""Local configuration editor; test-game activation requires explicit CLI opt-in."""
 from __future__ import annotations
 
 from collections import defaultdict
@@ -16,6 +16,7 @@ from .profiles import (PROFILE_ID, ProfileError, ensure_output_outside_game,
                        validate_profile, write_json)
 from .sources import new_binding_plan, validate_world
 from .scripted_sources import blpool_registration, SUPPORTED_HASHES
+from .templates import list_templates
 
 
 KIND_LABELS = {"actor": "Creature", "cre-template": "Creature template",
@@ -24,16 +25,25 @@ KIND_LABELS = {"actor": "Creature", "cre-template": "Creature template",
 
 class Editor:
     def __init__(self, catalog: dict, world: dict, workspace: Path,
-                 profile: dict | None = None, plan: dict | None = None):
+                 profile: dict | None = None, plan: dict | None = None,
+                 apply_game: Path | None = None):
         self.items = validate_catalog(catalog)
         self.index = validate_world(world, catalog)
         self.catalog, self.world = catalog, world
         self.workspace = ensure_output_outside_game(workspace, catalog)
+        self.apply_game = None
+        if apply_game is not None:
+            from .activation import validate_runtime
+            self.apply_game = validate_runtime(apply_game, catalog)
         self.sources = defaultdict(list)
         for source in world["sources"]:
             self.sources[source["item"]].append(source)
         if (profile is None) != (plan is None):
             raise ProfileError("Supply both an initial profile and its binding plan")
+        applied = self.workspace / "prepared/last-applied.json"
+        if profile is None and self.apply_game is not None and applied.is_file():
+            previous = read_json(self.path(read_json(applied)["id"]))
+            profile, plan = previous["profile"], previous["plan"]
         if profile is None:
             profile = new_profile(catalog, self.new_id(), "My next adventure")
             plan = new_binding_plan(profile, catalog, world)
@@ -48,11 +58,13 @@ class Editor:
         profile = validate_profile(data["profile"], self.catalog)
         plan = deepcopy(data["plan"])
         expected = {"schema", "catalog_fingerprint", "world_fingerprint", "sources", "targets", "registrations"}
-        expected |= set(plan) & {"randomization", "replacements"}
+        expected |= set(plan) & {"randomization", "replacements", "original_options",
+                                 "original_choices", "original_template_id", "target_registrations"}
         if (set(plan) != expected or plan["schema"] != "flir-binding-plan-v1" or
                 plan["catalog_fingerprint"] != self.catalog["fingerprint"] or
                 plan["world_fingerprint"] != self.world["fingerprint"] or
-                any(not isinstance(plan[k], list) for k in ("sources", "targets", "registrations"))):
+                any(not isinstance(plan[k], list) for k in ("sources", "targets", "registrations")) or
+                ("target_registrations" in plan and not isinstance(plan["target_registrations"], list))):
             raise ProfileError("These selections belong to a different scan or an unsupported draft")
         return {"profile": profile, "plan": plan}
 
@@ -103,12 +115,23 @@ class Editor:
             value = self.checked(read_json(path))
             saved.append({key: value["profile"][key] for key in ("id", "name")})
         targets = []
+        authored_targets = {row.get("id"): row for row in self.draft["plan"].get("target_registrations", [])}
         for choice in self.draft["plan"]["targets"]:
             row = self.index["targets"].get(choice["id"])
-            targets.append({**(self.target(row) if row else
-                                {"id": choice["id"], "label": choice["id"], "kind": "missing"}),
+            authored = authored_targets.get(choice["id"], {}).get("authored", {})
+            if row:
+                label = self.target(row)
+            elif authored:
+                name = authored.get("target") or authored.get("endpoint_id") or choice["id"]
+                area = authored.get("area_resource") or authored.get("area") or ""
+                label = {"id": choice["id"], "label": f"{name} ({area})",
+                         "kind": "original", "kind_label": "Original recipient"}
+            else:
+                label = {"id": choice["id"], "label": choice["id"], "kind": "missing"}
+            targets.append({**label,
                             "capacity": choice["capacity"]})
-        return {**deepcopy(self.draft), "items": [self.items[i] for i in self.draft["profile"]["items"]],
+        return {**deepcopy(self.draft), "apply_enabled": self.apply_game is not None,
+                "items": [self.items[i] for i in self.draft["profile"]["items"]],
                 "targets": targets, "saved": saved, "workspace": str(self.workspace),
                 "catalog": {"item_count": len(self.items), "language": self.catalog["language"],
                             "game_name": Path(self.catalog["game_root"]).parent.name}}
@@ -123,6 +146,8 @@ class Editor:
     def get(self, route: str, params: dict) -> dict:
         if route == "/api/state":
             return self.state()
+        if route == "/api/templates":
+            return list_templates()
         offset = int(params.get("offset", "0"))
         query = params.get("q", "").strip()
         if route == "/api/items":
@@ -175,6 +200,23 @@ class Editor:
         elif route == "/api/new":
             profile = new_profile(self.catalog, self.new_id(), data.get("name") or "My next adventure")
             self.draft = {"profile": profile, "plan": new_binding_plan(profile, self.catalog, self.world)}
+        elif route == "/api/template":
+            # Import here so the editor's ordinary draft workflow remains usable
+            # independently of optional original-table runtime integration.
+            from .original_configuration import build_original_configuration
+            generated = build_original_configuration(
+                self.catalog, self.world, data["id"], items=data.get("items"),
+                targets=data.get("targets"), options=data.get("options"))
+            candidate = deepcopy(generated)
+            candidate["profile"]["id"] = self.new_id()
+            checked = self.checked(candidate)
+            previous = self.draft
+            self.draft = checked
+            try:
+                return self.state()
+            except Exception:
+                self.draft = previous
+                raise
         elif route == "/api/save":
             draft = self.checked(data)
             if data.get("copy") is True:
@@ -183,13 +225,32 @@ class Editor:
             self.draft = draft
         elif route == "/api/validate":
             return self.check(self.checked(data))
-        elif route == "/api/prepare":
+        elif route in ("/api/prepare", "/api/apply"):
+            if route == "/api/apply" and self.apply_game is None:
+                raise ProfileError("Game activation is not enabled for this editor")
             draft = self.checked(data)
             result = self.check(draft)
             if not result["runtime_supported"]:
                 raise ProfileError(result["message"])
             store = ensure_output_outside_game(self.workspace / "prepared", self.catalog)
             prepared = write_campaign(draft["profile"], self.catalog, self.world, draft["plan"], store)
+            if route == "/api/apply":
+                from .activation import require_closed, deploy_export
+                from .native_export import export_native
+                require_closed(self.apply_game)
+                output = self.workspace / "native"
+                export_native(store, self.catalog, self.world, output, prepared["revision"])
+                write_json(self.path(draft["profile"]["id"]), draft)
+                deploy_export(self.apply_game, output)
+                self.draft = draft
+                try:
+                    write_json(store / "last-applied.json", {"id": draft["profile"]["id"]})
+                except OSError as exc:
+                    raise ProfileError("Game settings were applied and saved, but the editor could not "
+                                       "remember the selection for reopening: " + str(exc)) from exc
+                return {"revision": prepared["revision"], "game": str(self.apply_game),
+                        "message": "Saved and applied. Start a new BG1 campaign in the test game. "
+                                   "Each new game randomizes afresh; existing saves keep their settings."}
             return {"revision": prepared["revision"], "store": str(store),
                     "message": "Test settings prepared. They can now be exported for the test game; "
                                "nothing was installed or activated."}
@@ -253,9 +314,11 @@ def create_server(editor: Editor, port: int = 0) -> HTTPServer:
 
 
 def serve(catalog: Path, world: Path, workspace: Path, port: int = 0,
-          profile: Path | None = None, plan: Path | None = None) -> dict:
+          profile: Path | None = None, plan: Path | None = None,
+          apply_game: Path | None = None) -> dict:
     editor = Editor(read_json(catalog), read_json(world), workspace,
-                    read_json(profile) if profile else None, read_json(plan) if plan else None)
+                    read_json(profile) if profile else None, read_json(plan) if plan else None,
+                    apply_game=apply_game)
     with create_server(editor, port) as server:
         print(json.dumps({"url": f"http://127.0.0.1:{server.server_port}",
                           "workspace": str(editor.workspace)}), flush=True)

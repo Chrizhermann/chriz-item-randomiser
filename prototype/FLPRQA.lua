@@ -90,7 +90,7 @@ function Runner:_step()
     if self.step=="begin" then
         assert(start_screen_ready(a), "QA_FOREGROUND_SCREEN_CHANGED")
         if a.menu("WORLD_ACTIONBAR") then
-            assert(a.world_ready(self.revision) or self.kind=="load", "QA_WORLD_NOT_READY")
+            assert(self.kind~="save" or a.world_ready(self.revision), "QA_WORLD_NOT_READY")
             self.step="options"; self.events[#self.events+1]={button="world-options",frame=frame}; a.open_options()
         elseif a.menu("START_SP") then self:_issue("START_SP","FLPR_QA_START_LOAD","load-list")
         else self:_issue("START","FLPR_QA_SINGLE","single") end

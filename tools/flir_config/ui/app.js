@@ -2,11 +2,17 @@
 
 const $ = (id) => document.getElementById(id);
 const ui = Object.fromEntries([
-  "appShell", "gameContext", "savedSelect", "newButton", "profileName",
-  "saveButton", "copyButton", "validateButton", "prepareButton", "status", "validation", "itemsTab",
+  "appShell", "gameContext", "savedSelect", "newButton", "presetButton", "profileName",
+  "saveButton", "copyButton", "validateButton", "prepareButton", "status", "validation",
+  "applySafetyNote", "applyDevelopmentNote", "itemsTab",
   "enemiesTab", "searchLabel", "librarySearch", "searchSummary", "libraryResults",
   "recipientFilterRow", "moreResults", "dirtyMark", "itemCount", "targetCount", "selectedItems",
-  "selectedTargets", "shopPercent", "workspacePath", "newDialog", "newForm", "newName", "cancelNew"
+  "selectedTargets", "shopPercent", "workspacePath", "newDialog", "newForm", "newName", "cancelNew",
+  "presetDialog", "presetForm", "presetSelect", "presetItems", "presetTargets", "presetScrolls",
+  "presetKangaxx", "presetFlailHeads", "presetTotscTome", "presetMoreSpellShield",
+  "presetCursedDisguise", "presetLossMode", "presetLossPercent", "presetUnrandomizedPercent",
+  "presetError", "cancelPreset", "tierDialog", "tierForm", "tierTitle", "tierPrompt",
+  "tierSelect", "cancelTier"
 ].map((id) => [id, $(id)]));
 
 let profile = null;
@@ -23,8 +29,11 @@ let activeTab = "items";
 let dirty = false;
 let busy = false;
 let verified = false;
+let applyEnabled = false;
 let generation = 0;
 let searchTimer = null;
+let presetTemplates = null;
+let pendingItemTiers = new Map();
 const searches = {
   items: { query: "", records: [], total: 0, next: null, sequence: 0, loading: false, searched: false },
   enemies: { query: "", records: [], total: 0, next: null, sequence: 0, loading: false, searched: false }
@@ -101,9 +110,14 @@ function acceptState(state, message, preserveSourceChoices = false) {
   sourcePages = new Map();
   if (!preserveSourceChoices) sourceChoiceTouched = new Set();
   expandedItems = new Set();
+  pendingItemTiers = new Map();
   dirty = false;
   verified = false;
+  applyEnabled = state.apply_enabled === true;
   ui.prepareButton.disabled = true;
+  ui.prepareButton.textContent = applyEnabled ? "Apply for next game" : "Prepare test settings";
+  ui.applySafetyNote.hidden = !applyEnabled;
+  ui.applyDevelopmentNote.hidden = !applyEnabled;
   ui.dirtyMark.hidden = true;
   ui.validation.hidden = true;
   ui.profileName.value = profile.name;
@@ -145,6 +159,58 @@ function getTarget(id) {
 function shopPricing() {
   if (!profile.shop_pricing) profile.shop_pricing = { percent: 120, base_prices: {} };
   return profile.shop_pricing;
+}
+
+function tierRules() {
+  return plan?.randomization || null;
+}
+
+function namedTiers() {
+  const rules = tierRules();
+  if (!rules) return [];
+  const names = new Set([
+    ...Object.values(rules.sources || {}).map((row) => row.tier),
+    ...Object.values(rules.targets || {}).flat()
+  ]);
+  return [...names].filter((value) => typeof value === "string" && value).sort();
+}
+
+function chooseTier(prompt) {
+  const tiers = namedTiers();
+  if (!tiers.length) {
+    setStatus("This preset has no existing tier to choose. Check its original pool settings.", true);
+    return Promise.resolve(null);
+  }
+  ui.tierPrompt.textContent = prompt;
+  ui.tierSelect.replaceChildren(new Option("Choose a tier", ""));
+  for (const tier of tiers) ui.tierSelect.add(new Option(tier, tier));
+  ui.tierSelect.value = "";
+  ui.tierDialog.returnValue = "";
+  return new Promise((resolve) => {
+    ui.tierDialog.addEventListener("close", () => {
+      resolve(tiers.includes(ui.tierDialog.returnValue) ? ui.tierDialog.returnValue : null);
+    }, { once: true });
+    ui.tierDialog.showModal();
+    ui.tierSelect.focus();
+  });
+}
+
+function pruneTargetExclusions(id, maximum = 0) {
+  const rules = tierRules();
+  if (!rules) return;
+  for (const entry of Object.values(rules.sources || {})) {
+    entry.exclude_targets = (entry.exclude_targets || []).filter((choice) =>
+      choice.id !== id || (maximum > 0 && choice.ordinal <= maximum));
+  }
+}
+
+function pruneSourceRules(ids) {
+  const rules = tierRules();
+  for (const id of ids) {
+    if (rules) delete rules.sources[id];
+    if (rules?.row_filters) delete rules.row_filters.sources[id];
+    if (plan.replacements) delete plan.replacements[id];
+  }
 }
 
 function wholeNumber(value, min, max = Number.MAX_SAFE_INTEGER) {
@@ -245,23 +311,49 @@ function renderSelected() {
     label.htmlFor = input.id;
     input.setAttribute("aria-label", `Reward slots for ${data.label || target.id}`);
     input.addEventListener("input", () => {
-      changed();
-      if (input.validity.valid && /^\d+$/.test(input.value)) {
-        target.capacity = Number(input.value);
-        targetInputDrafts.delete(target.id);
-        const total = plan.targets.reduce((sum, entry) => sum + entry.capacity, 0);
-        ui.targetCount.textContent = `${total} ${total === 1 ? "slot" : "slots"}`;
-      } else {
-        targetInputDrafts.set(target.id, input.value);
-      }
+      targetInputDrafts.set(target.id, input.value);
     });
-    input.addEventListener("change", () => {
-      if (!input.validity.valid || !/^\d+$/.test(input.value)) {
+    input.addEventListener("change", async () => {
+      if (!input.validity.valid || !wholeNumber(input.value, 1, 4096)) {
         input.setCustomValidity("Enter a whole number from 1 to 4096.");
         input.reportValidity();
         input.setCustomValidity("");
         setStatus("Reward slots must be a whole number from 1 to 4096.", true);
+        return;
       }
+      const next = Number(input.value);
+      if (next === target.capacity) { targetInputDrafts.delete(target.id); return; }
+      const rules = tierRules();
+      if (rules) {
+        const slots = rules.targets?.[target.id];
+        if (!Array.isArray(slots) || slots.length !== target.capacity) {
+          input.value = String(target.capacity);
+          targetInputDrafts.delete(target.id);
+          setStatus("This recipient's preset tiers need review before changing its slots.", true);
+          return;
+        }
+        if (next > target.capacity) {
+          setBusy(true);
+          let tier;
+          try { tier = await chooseTier(`Choose a tier for ${next - target.capacity} new reward slot${next - target.capacity === 1 ? "" : "s"} on ${data.label || target.id}.`); }
+          finally { setBusy(false); }
+          if (!tier) {
+            input.value = String(target.capacity);
+            targetInputDrafts.delete(target.id);
+            return;
+          }
+          slots.push(...Array(next - target.capacity).fill(tier));
+        } else {
+          slots.length = next;
+          pruneTargetExclusions(target.id, next);
+        }
+      }
+      target.capacity = next;
+      const registration = (plan.target_registrations || []).find((row) => row.id === target.id);
+      if (registration) registration.capacity = next;
+      targetInputDrafts.delete(target.id);
+      changed();
+      renderSelected();
     });
     capacity.append(label, input);
     row.append(heading, capacity);
@@ -272,11 +364,27 @@ function renderSelected() {
 function renderSourcePicker(item, body) {
   const entry = sourceEntry(item);
   const ids = [...(entry?.source_ids || []), ...(entry?.registration_ids || [])];
+  const authoredRegistrations = (plan.registrations || []).filter((row) =>
+    row.item === item && row.adapter_id === "original-source-v1" && ids.includes(row.id));
   const selection = ids.length
     ? `${ids.length} ${ids.length === 1 ? "original" : "originals"} selected`
     : "No originals selected. Choose one or more records below.";
   body.append(node("p", `source-selection${ids.length ? "" : " missing"}`, selection));
   body.append(node("p", "source-note", "Each checked record moves its existing copies; a shop record moves its full finite stock. Check this draft to confirm current runtime support."));
+  for (const registration of authoredRegistrations) {
+    const authored = registration.authored || {};
+    const label = node("label", "source-option");
+    const checkbox = node("input");
+    checkbox.type = "checkbox";
+    checkbox.checked = true;
+    checkbox.setAttribute("aria-label", `Keep original source ${authored.source || registration.id}`);
+    checkbox.addEventListener("change", () => setSourceSelected(item, registration.id, checkbox.checked));
+    const text = node("span");
+    text.append(node("span", "record-name", authored.source || registration.id),
+      node("span", "record-detail", `${authored.campaign || "Original"} · tier ${authored.tier || "?"} · ${authored.source_ref || registration.id}`));
+    label.append(checkbox, text);
+    body.append(label);
+  }
   const page = sourcePages.get(item);
   if (!page || (page.loading && !page.records.length)) {
     body.append(node("p", "small-note", "Loading original records…"));
@@ -291,7 +399,9 @@ function renderSourcePicker(item, body) {
     return;
   }
   if (!page.records.length) {
-    body.append(node("p", "small-note", "No original record was found for this item. This draft cannot be used yet."));
+    body.append(node("p", "small-note", authoredRegistrations.length
+      ? "No additional physical records were found for this item."
+      : "No original record was found for this item. This draft cannot be used yet."));
     return;
   }
   const group = node("fieldset", "source-list");
@@ -343,7 +453,7 @@ async function fetchSources(item, append = false) {
     page.next = result.next_offset;
     page.total = result.total;
     const entry = sourceEntry(item);
-    if (!append && !sourceChoiceTouched.has(item) && result.total === 1 && page.records.length === 1
+    if (!tierRules() && !append && !sourceChoiceTouched.has(item) && result.total === 1 && page.records.length === 1
       && (!entry || (entry.policy === "relocate"
         && Array.isArray(entry.source_ids) && entry.source_ids.length === 0
         && (!Array.isArray(entry.registration_ids) || entry.registration_ids.length === 0)))
@@ -362,20 +472,38 @@ async function fetchSources(item, append = false) {
   }
 }
 
-function setSourceSelected(item, id, selected, automatic = false) {
+async function setSourceSelected(item, id, selected, automatic = false) {
   if (!profile.items.includes(item)) return;
   if (!automatic) sourceChoiceTouched.add(item);
   let entry = sourceEntry(item);
+  if (entry && entry.policy !== "relocate") {
+    setStatus("This item's source policy needs review before selecting an original record.", true);
+    renderSelected();
+    return;
+  }
   if (!entry) {
     entry = { item, policy: "relocate", source_ids: [], registration_ids: [] };
-    plan.sources.push(entry);
   }
   const registration = sourcePages.get(item)?.records.find((row) => row.id === id)?.registration
     || plan.registrations.find((row) => row.id === id);
   const field = registration ? "registration_ids" : "source_ids";
   const ids = Array.isArray(entry[field]) ? entry[field] : [];
   if (selected === ids.includes(id)) return;
+  const rules = tierRules();
+  if (selected && rules) {
+    let tier = pendingItemTiers.get(item);
+    if (!tier) {
+      setBusy(true);
+      try { tier = await chooseTier(`Choose the tier for this original record of ${getItem(item).name || item}.`); }
+      finally { setBusy(false); }
+    }
+    if (!tier) { renderSelected(); return; }
+    rules.sources[id] = { tier, loss_exempt: false, exclude_targets: [] };
+    if (rules.row_filters) rules.row_filters.sources[id] = { chance: 100, group: "" };
+  }
+  if (!sourceEntry(item)) plan.sources.push(entry);
   entry[field] = selected ? [...ids, id] : ids.filter((choice) => choice !== id);
+  if (!selected) pruneSourceRules([id]);
   if (registration) {
     plan.registrations = plan.registrations.filter((row) => row.id !== id);
     if (selected) plan.registrations.push(registration);
@@ -384,8 +512,16 @@ function setSourceSelected(item, id, selected, automatic = false) {
   renderSelected();
 }
 
-function addItem(row) {
+async function addItem(row) {
   if (profile.items.includes(row.resref)) return;
+  if (tierRules()) {
+    setBusy(true);
+    let tier;
+    try { tier = await chooseTier(`Choose the tier for new item ${row.name || row.resref}. Its selected original records will use this tier.`); }
+    finally { setBusy(false); }
+    if (!tier) return;
+    pendingItemTiers.set(row.resref, tier);
+  }
   profile.items.push(row.resref);
   profile.items.sort();
   if (!sourceEntry(row.resref)) plan.sources.push({ item: row.resref, policy: "relocate", source_ids: [], registration_ids: [] });
@@ -399,6 +535,8 @@ function addItem(row) {
 }
 
 function removeItem(item) {
+  const entry = sourceEntry(item);
+  if (entry) pruneSourceRules([...(entry.source_ids || []), ...(entry.registration_ids || [])]);
   profile.items = profile.items.filter((id) => id !== item);
   if (profile.shop_pricing) delete profile.shop_pricing.base_prices[item];
   basePriceDrafts.delete(item);
@@ -406,13 +544,24 @@ function removeItem(item) {
   plan.registrations = plan.registrations.filter((row) => row.item !== item);
   sourcePages.delete(item);
   expandedItems.delete(item);
+  pendingItemTiers.delete(item);
   changed();
   renderSelected();
   renderResults();
 }
 
-function addTarget(row) {
+async function addTarget(row) {
   if (plan.targets.some((entry) => entry.id === row.id)) return;
+  const rules = tierRules();
+  if (rules) {
+    setBusy(true);
+    let tier;
+    try { tier = await chooseTier(`Choose the tier for new recipient ${row.label || row.id}.`); }
+    finally { setBusy(false); }
+    if (!tier) return;
+    rules.targets[row.id] = [tier];
+    if (rules.row_filters) rules.row_filters.targets[row.id] = { chance: 100, group: "" };
+  }
   plan.targets.push({ id: row.id, capacity: 1, optional: false });
   plan.targets.sort((a, b) => a.id.localeCompare(b.id));
   selectedTargets.set(row.id, row);
@@ -422,7 +571,16 @@ function addTarget(row) {
 }
 
 function removeTarget(id) {
+  const rules = tierRules();
+  if (rules) {
+    delete rules.targets[id];
+    if (rules.row_filters) delete rules.row_filters.targets[id];
+    pruneTargetExclusions(id);
+  }
   plan.targets = plan.targets.filter((row) => row.id !== id);
+  if (plan.target_registrations) {
+    plan.target_registrations = plan.target_registrations.filter((row) => row.id !== id);
+  }
   targetInputDrafts.delete(id);
   changed();
   renderSelected();
@@ -635,6 +793,79 @@ ui.newForm.addEventListener("submit", (event) => {
   ui.newDialog.close();
   perform(async () => acceptState(await post("/api/new", { name }), "New draft created."), "Creating draft…");
 });
+ui.presetButton.addEventListener("click", () => {
+  perform(async () => {
+    if (!presetTemplates) presetTemplates = await request("/api/templates");
+    ui.presetSelect.replaceChildren(new Option("Choose a preset", ""));
+    for (const row of presetTemplates) ui.presetSelect.add(new Option(row.name, row.id));
+    ui.presetSelect.value = "";
+    ui.presetItems.value = "mode1";
+    ui.presetTargets.value = "mode1";
+    for (const input of [ui.presetScrolls, ui.presetKangaxx, ui.presetFlailHeads,
+                         ui.presetTotscTome, ui.presetMoreSpellShield, ui.presetCursedDisguise]) {
+      input.checked = false;
+    }
+    ui.presetLossMode.value = "none";
+    ui.presetLossPercent.value = "0";
+    ui.presetLossPercent.disabled = true;
+    ui.presetUnrandomizedPercent.value = "0";
+    ui.presetError.hidden = true;
+    ui.presetDialog.showModal();
+    ui.presetSelect.focus();
+    setStatus("Choose preset settings to create a new draft.");
+  }, "Loading presets…");
+});
+ui.presetSelect.addEventListener("change", () => {
+  const choice = ui.presetSelect.value.endsWith("-plus-mode2") ? "mode1+mode2" : "mode1";
+  ui.presetItems.value = choice;
+  ui.presetTargets.value = choice;
+});
+ui.presetLossMode.addEventListener("change", () => {
+  ui.presetLossPercent.disabled = ui.presetLossMode.value !== "some";
+  if (ui.presetLossPercent.disabled) ui.presetLossPercent.value = "0";
+});
+ui.cancelPreset.addEventListener("click", () => ui.presetDialog.close());
+ui.cancelTier.addEventListener("click", () => ui.tierDialog.close(""));
+ui.tierForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  if (ui.tierForm.reportValidity()) ui.tierDialog.close(ui.tierSelect.value);
+});
+ui.presetForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  if (!ui.presetForm.reportValidity() || !askDiscard()) return;
+  const wholePercent = (input) => /^\d+$/.test(input.value) && Number(input.value) <= 100;
+  if (!wholePercent(ui.presetUnrandomizedPercent) ||
+      (ui.presetLossMode.value === "some" && !wholePercent(ui.presetLossPercent))) {
+    ui.presetError.textContent = "Percentages must be whole numbers from 0 to 100.";
+    ui.presetError.hidden = false;
+    return;
+  }
+  const options = {
+    scrolls: ui.presetScrolls.checked,
+    kangaxx: ui.presetKangaxx.checked,
+    flail_heads: ui.presetFlailHeads.checked,
+    totsc_tome: ui.presetTotscTome.checked,
+    more_spell_shield: ui.presetMoreSpellShield.checked,
+    cursed_disguise: ui.presetCursedDisguise.checked,
+    loss_mode: ui.presetLossMode.value,
+    loss_percent: ui.presetLossMode.value === "some" ? Number(ui.presetLossPercent.value) : 0,
+    unrandomized_percent: Number(ui.presetUnrandomizedPercent.value)
+  };
+  perform(async () => {
+    try {
+      const state = await post("/api/template", {
+        id: ui.presetSelect.value, items: ui.presetItems.value,
+        targets: ui.presetTargets.value, options
+      });
+      acceptState(state, "Preset draft created. Check configuration for current runtime support.");
+      ui.presetDialog.close();
+    } catch (error) {
+      ui.presetError.textContent = error instanceof Error ? error.message : String(error);
+      ui.presetError.hidden = false;
+      throw error;
+    }
+  }, "Creating preset draft…");
+});
 ui.saveButton.addEventListener("click", () => {
   if (!localInputValid()) return;
   profile.name = ui.profileName.value.trim();
@@ -665,6 +896,15 @@ ui.validateButton.addEventListener("click", () => {
 ui.prepareButton.addEventListener("click", () => {
   if (!verified || !localInputValid()) return;
   perform(async () => {
+    if (applyEnabled) {
+      const result = await post("/api/apply", { profile, plan });
+      const message = result.message || "Configuration applied for the next game.";
+      acceptState(await request("/api/state"), message);
+      ui.validation.hidden = false;
+      ui.validation.className = "validation supported";
+      ui.validation.textContent = message;
+      return;
+    }
     const result = await post("/api/prepare", { profile, plan });
     const location = result.store ? ` Saved in ${result.store}.` : "";
     ui.validation.hidden = false;

@@ -73,7 +73,7 @@ class _ScanSnapshot:
 
 # Ordinary (non-tileset) resource types used by the configurator. Verified from
 # https://gibberlings3.github.io/iesdp/file_formats/general.htm
-RESOURCE_TYPES = {"itm": 1005, "bcs": 1007, "cre": 1009, "are": 1010, "dlg": 1011, "sto": 1014}
+RESOURCE_TYPES = {"itm": 1005, "spl": 1006, "bcs": 1007, "cre": 1009, "are": 1010, "dlg": 1011, "sto": 1014}
 ITM_TYPE = RESOURCE_TYPES["itm"]
 ITEM_SEMANTIC_FIELDS = (
     "resref", "name", "unidentified_name", "identified_name", "category",

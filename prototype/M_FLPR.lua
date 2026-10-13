@@ -34,6 +34,10 @@ local ok, failure = pcall(function()
     local Native = module("override/FLPRNat.lua")
     local Host = module("override/FLPRHost.lua")
     local QA = module("override/FLPRQA.lua")
+    if not root.Spell then
+        local spell=loadfile('override/FLPRSpell.lua')
+        if spell then root.Spell=spell().install(_G) end
+    end
     local storage = assert(Globals.new(_G))
     local function resolve(revision)
         if type(revision) ~= "string" or #revision ~= 64 or revision:find("[^0-9a-f]") then return nil end
@@ -52,7 +56,7 @@ local ok, failure = pcall(function()
     if gate_config then
         local revisions = gate_config()
         if type(revisions)=="string" then revisions={revisions} end
-        assert(type(revisions)=="table" and #revisions>0,"SOURCE_GATE_REVISIONS_INVALID")
+        assert(type(revisions)=="table","SOURCE_GATE_REVISIONS_INVALID")
         local count=0
         for key in pairs(revisions) do
             assert(type(key)=="number" and key==math.floor(key) and key>=1 and key<=#revisions,
@@ -61,23 +65,88 @@ local ok, failure = pcall(function()
         end
         assert(count==#revisions,"SOURCE_GATE_REVISIONS_INVALID")
         local Gate = module("override/FLPRGat.lua")
-        local bundles,seen,pristine={},{},{creatures={},stores={},scripts={}}
+        local bundles,seen,pristine={},{},{creatures={},stores={},scripts={},templates={},spell_shield={},cursed={},auxiliary={}}
+        local Cursed
+        local needs_inventory=false
         for _,revision in ipairs(revisions) do
             assert(not seen[revision],"SOURCE_GATE_REVISION_DUPLICATED");seen[revision]=true
             local guarded = assert(resolve(revision), "SOURCE_GATE_REVISION_UNAVAILABLE")
             bundles[#bundles+1]=guarded
+            if guarded.fixture.cursed_disguises then
+                Cursed=Cursed or module('override/FLPRCur.lua')
+                local assets={};pristine.cursed[revision]=assets
+                for _,item in ipairs(guarded.fixture.cursed_disguises.items) do
+                    local entry={variants={}};assets[item.resref]=entry
+                    local prefix='flpr-fixture/campaign-store/revisions/'..revision..'.cursed/'..item.resref..'.'
+                    for index=0,#item.variants do
+                        local path=prefix..(index==0 and 'original' or tostring(index))..'.itm'
+                        local file=assert(io.open(path,'rb'),'CURSED_ITEM_ASSET_MISSING')
+                        local bytes=file:read('*a');assert(file:close())
+                        if index==0 then entry.original=bytes else entry.variants[index]=bytes end
+                    end
+                end
+            end
+            if guarded.fixture.spell_shield then
+                needs_inventory=true
+                local entry={}
+                for _,kind in ipairs({'original','effective'}) do
+                    local path='flpr-fixture/campaign-store/revisions/'..revision..'.spell-shield.'..kind..'.sto'
+                    local file=assert(io.open(path,'rb'),'SPELL_SHIELD_STORE_MISSING')
+                    entry[kind]=file:read('*a');assert(file:close())
+                end
+                pristine.spell_shield[revision]=entry
+            end
             for _,id in ipairs(Gate.source_ids(guarded.fixture)) do
                 local endpoint=assert(guarded.fixture.sources[id])
-                if endpoint.kind=='guarded-script' then
+                if endpoint.auxiliary_creatures then
+                    needs_inventory=true
+                    local source_index
+                    for index,source in ipairs(guarded.manifest.sources) do if source.id==id then source_index=index end end
+                    assert(source_index,'SOURCE_GATE_SOURCE_MISSING')
+                    pristine.auxiliary[revision]=pristine.auxiliary[revision] or {}
+                    local entries={};pristine.auxiliary[revision][id]=entries
+                    for number,auxiliary in ipairs(endpoint.auxiliary_creatures) do
+                        local path='flpr-fixture/campaign-store/revisions/'..revision..'.source-'..
+                            source_index..'.duplicate-'..number..'.original.cre'
+                        local file=assert(io.open(path,'rb'),'SOURCE_GATE_TEMPLATE_MISSING')
+                        entries[auxiliary.resource]=file:read('*a');assert(file:close())
+                    end
+                end
+                if endpoint.kind=='guarded-template' or endpoint.multiple_stock then needs_inventory=true end
+                if endpoint.kind=='guarded-template' then
+                    local source_index
+                    for index,source in ipairs(guarded.manifest.sources) do if source.id==id then source_index=index end end
+                    local path='flpr-fixture/campaign-store/revisions/'..revision..'.source-'..assert(source_index)..'.original.cre'
+                    local file=assert(io.open(path,'rb'),'SOURCE_GATE_TEMPLATE_MISSING')
+                    pristine.templates[revision]=pristine.templates[revision] or {}
+                    pristine.templates[revision][id]=file:read('*a');assert(file:close())
+                elseif endpoint.kind=='guarded-script' then
                     local source_index
                     for index,source in ipairs(guarded.manifest.sources) do
                         if source.id==id then source_index=index end
                     end
                     assert(source_index,'SOURCE_GATE_SOURCE_MISSING')
-                    local path='flpr-fixture/campaign-store/revisions/'..revision..'.source-'..source_index..'.patched.bcs'
+                    local extension=endpoint.adapter_id=='spell-key-v1' and 'spl' or 'bcs'
+                    if endpoint.adapter_id=='mode2-reward-v1' then
+                        extension=assert(endpoint.resource:match('^(%a+):'))
+                        assert(extension=='dlg' or extension=='bcs','SOURCE_GATE_SCRIPT_KIND_INVALID')
+                    end
+                    local path='flpr-fixture/campaign-store/revisions/'..revision..'.source-'..source_index..'.patched.'..extension
                     local file=assert(io.open(path,'rb'),'SOURCE_GATE_SCRIPT_MISSING')
                     pristine.scripts[revision]=pristine.scripts[revision] or {}
                     pristine.scripts[revision][id]=file:read('*a'); assert(file:close())
+                    if endpoint.resources then
+                        local routes={}
+                        for number,resource in ipairs(endpoint.resources) do
+                            local kind=assert(resource:match('^(%a+):'))
+                            assert(kind=='dlg' or kind=='bcs','SOURCE_GATE_SCRIPT_KIND_INVALID')
+                            local route='flpr-fixture/campaign-store/revisions/'..revision..'.source-'..
+                                source_index..'.route-'..number..'.patched.'..kind
+                            local entry=assert(io.open(route,'rb'),'SOURCE_GATE_SCRIPT_MISSING')
+                            routes[resource]=entry:read('*a');assert(entry:close())
+                        end
+                        pristine.scripts[revision][id]=routes
+                    end
                 elseif endpoint.kind=='guarded-store' then
                     local store=endpoint.store
                     assert(type(store)=='string' and #store>=1 and #store<=8 and
@@ -128,15 +197,45 @@ local ok, failure = pcall(function()
                 assert(supported,reason)
             end
         end
-        root.SourceGate = Gate.install(_G, bundles,
-            module("flpr-fixture/FLPRGateAsm.lua"), module("flpr-fixture/FLPRCampaignPolicy.lua"),pristine,
-            module("override/FLPRScript.lua"))
-        prepare_source_guard = function(bundle, controller) return root.SourceGate:prepare_new(bundle, controller) end
-        source_guard = function(bundle, native) return root.SourceGate:adapter(bundle, native) end
+        if #bundles > 0 then
+            root.SourceGate = Gate.install(_G, bundles,
+                module("flpr-fixture/FLPRGateAsm.lua"), module("flpr-fixture/FLPRCampaignPolicy.lua"),pristine,
+                module("override/FLPRScript.lua"),needs_inventory and module("flpr-fixture/FLPRInventoryAsm.lua") or nil,Cursed)
+            prepare_source_guard = function(bundle, controller)
+                local unshey = 0
+                for index, source in ipairs(bundle.manifest.sources) do
+                    if source.record.authored and source.record.authored.source == 'unshey.fl'
+                        and not controller:source_is_kept(index) then unshey = 1 end
+                end
+                storage:set('FLPR_QUNSHEY', unshey)
+                local options = bundle.manifest.original_options or {}
+                storage:set('FLPR_KANGAXX', options.kangaxx and 1 or 0)
+                storage:set('FLPR_FLAIL', options.flail_heads and 1 or 0)
+                return root.SourceGate:prepare_new(bundle, controller)
+            end
+            source_guard = function(bundle, native) return root.SourceGate:adapter(bundle, native) end
+        end
     end
     root.Host = Host.new({
         core = Core, storage = storage, resolve = resolve,
         prepare_source_guard = prepare_source_guard, source_guard = source_guard,
+        prepare_campaign = function(bundle, controller)
+            storage:set('FLPR_QM2_42',0)
+            for index,source in ipairs(bundle.manifest.sources) do
+                local flag=bundle.fixture.sources[source.id].reward_selected_global
+                if flag then storage:set(flag,controller:source_is_kept(index) and 0 or 1) end
+            end
+            -- Only filled locations replace the original quest conditions.
+            for _, flag in ipairs({'FLPR_CKEEP1', 'FLPR_CKEEP2', 'FLPR_CKEEP3',
+                'FLPR_CSAMIA', 'FLPR_CSAFANA', 'FLPR_CPPCHST'}) do storage:set(flag, 0) end
+            for _, assignment in ipairs(assert(controller:assignments())) do
+                local endpoint = assignment.target_id and bundle.fixture.targets[assignment.target_id]
+                if endpoint and endpoint.loot_latch then
+                    storage:set(endpoint.loot_latch.activation_global, 1)
+                end
+            end
+            return true
+        end,
         next = function() return resolve(module("flpr-fixture/next.lua")) end,
         native = function(value)
             local has_shop=false
@@ -145,7 +244,8 @@ local ok, failure = pcall(function()
                 if not root.Shop then root.Shop=module('override/FLPRShop.lua').install(_G) end
                 root.Shop:bind(value,root.Host.controller)
             elseif root.Shop then root.Shop:reset() end
-            return Native.new(_G, value)
+            return Native.new(_G, value, storage:get(Core.G.seed),
+                function(unit) return assert(root.Host.controller:reward_payload(unit)) end)
         end,
         seed = function()
             root.SeedSerial = root.SeedSerial + 1
@@ -179,6 +279,28 @@ local ok, failure = pcall(function()
             end
         end,
     })
+    -- EEex_LuaAction's NORMAL return holds the speaker before EscapeArea until
+    -- its randomized inventory is ready. DONE resumes the original dialogue.
+    function FLPR_Transfer(speaker, target_id)
+        -- Dialogue parsing strips spaces and colons from Lua chunks. Authored
+        -- Mode 2 inventory rewards pass their numeric row; expand it here.
+        if type(target_id)=='number' then
+            target_id='original-target:bg2:mode2:target:'..tostring(target_id)
+        end
+        if storage:get(Core.G.state)==0 then return -1 end -- Existing non-randomized campaign.
+        local host=root.Host
+        if root.Disabled or not host or not host.native or host.status=='disabled' then return 0 end
+        local success,result=pcall(function()
+            return host.native:transfer_inventory_reward(speaker,target_id,
+                assert(host.controller:assignments()),Core.PHASE)
+        end)
+        if not success then
+            root.Disabled='CAMPAIGN_INVENTORY_TRANSFER_FAILED:'..tostring(result)
+            host:_disable(root.Disabled)
+            return 0
+        end
+        return result
+    end
     root.QA = QA.new({
         clock=Infinity_GetClockTicks, frame=Infinity_GetFrameCounter,
         menu=function(name) return not not Infinity_IsMenuOnStack(name) end,
@@ -221,7 +343,23 @@ local ok, failure = pcall(function()
         world_ready=function(revision)
             local host=root.Host
             assert(host and host.status~="disabled",host and host.error or "HOST_MISSING")
-            return host.status=="complete" and host.controller.manifest.revision==revision
+            if root.Disabled or (host.status~='running' and host.status~='complete') or
+                not host.controller or host.controller.manifest.revision~=revision or
+                host.pending or host.guard_pending or storage:get(Core.G.journal)~=0 then return false end
+            local assignments=host.controller:assignments()
+            if not assignments then return false end
+            local phases={}
+            for _,row in ipairs(assignments) do phases[row.source]=row.source_phase end
+            for index in ipairs(host.controller.manifest.sources) do
+                local phase=phases[index]
+                if phase~=Core.PHASE.confirmed and phase~=Core.PHASE.kept and phase~=Core.PHASE.protected then
+                    return false
+                end
+                if phase==Core.PHASE.protected and not host.controller:source_guard_active(index) then return false end
+            end
+            -- Safe to exercise save/load while unvisited recipients still defer
+            -- delivery. This does not change Host's gameplay completion state.
+            return true
         end,
         report=function(value)
             local function quote(s)
@@ -244,6 +382,10 @@ end)
 if not ok then root.Disabled = tostring(failure) end
 
 function root.Poll()
+    if root.Spell and root.Spell.last_error and root.Host and not root.Disabled then
+        root.Disabled='CAMPAIGN_SPELL_CALLBACK_FAILED:'..root.Spell.last_error
+        root.Host:_disable(root.Disabled)
+    end
     if root.Host and not root.Disabled then root.Host:poll() end
     if root.Held then
         if root.Host and root.Host.status == "complete" and not root.Disabled then

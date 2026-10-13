@@ -1,6 +1,6 @@
 -- Bounded native bridge for the disposable Mode 1 fixture, not arbitrary loot.
--- Unique creature sources; empty named type-4 ground piles or unique living
--- creature targets; one unexpired, nonstackable, droppable item per operation.
+-- Unique creature sources; named containers or unique living creature targets;
+-- one unexpired, droppable item record per operation, with exact stack charges.
 -- No listeners or autoloading here.
 local Native = {}
 -- The ordinary transport consumes this message on an engine update. Allow a
@@ -25,7 +25,8 @@ local function integer(value, lo, hi)
 end
 local function guarded(endpoint)
     return endpoint.kind=='guarded-container' or endpoint.kind=='guarded-creature' or
-        endpoint.kind=='guarded-store' or endpoint.kind=='guarded-script'
+        endpoint.kind=='guarded-store' or endpoint.kind=='guarded-script' or
+        endpoint.kind=='guarded-template'
 end
 local function resref(value)
     return type(value) == "string" and #value >= 1 and #value <= 8 and
@@ -41,7 +42,7 @@ local function hash(value)
 end
 local function payload(value)
     if type(value) ~= "table" or not resref(value.resref) or value.expiration ~= 0 or
-        (value.flags ~= 0 and value.flags ~= 1) or type(value.charges) ~= "table" then return nil end
+        not integer(value.flags, 0, 3) or type(value.charges) ~= "table" then return nil end
     local charges = {}
     for index = 1, 3 do
         if not integer(value.charges[index], 0, 65535) then return nil end
@@ -56,17 +57,26 @@ local function same(a, b)
     return a and b and a.resref == b.resref and a.expiration == b.expiration and a.flags == b.flags and
         a.charges[1] == b.charges[1] and a.charges[2] == b.charges[2] and a.charges[3] == b.charges[3]
 end
+local function constructor_payload(actual, expected)
+    -- CreateItem/GiveItemCreate choose only identification from the ITM.
+    -- The source's stolen bit must be set on the one proven new instance.
+    local created = payload(actual)
+    if not created or (created.flags ~= 0 and created.flags ~= 1) then return false end
+    created.flags = expected.flags
+    return same(created, expected)
+end
 local function pointer(api, object)
     local address = api.EEex_UDToPtr(object)
     assert(address ~= nil and address ~= 0, "NATIVE_POINTER_UNAVAILABLE")
     return tostring(address)
 end
 
-function Native.new(api, fixture)
+function Native.new(api, fixture, seed, reward_payload)
     assert(type(api) == "table" and type(fixture) == "table", "NATIVE_CONFIG_INVALID")
     for _, name in ipairs(required) do assert(type(api[name]) == "function", name .. "_MISSING") end
     local self = setmetatable({ api = api, sources = {}, targets = {}, reservations = {},
-        attempted = {}, tick = nil, pending = nil, last_error = nil, source_resrefs = {}, held = {} }, Adapter)
+        attempted = {}, tick = nil, pending = nil, last_error = nil, source_resrefs = {}, held = {},
+        seed=seed, reward_payload=reward_payload, container_latched={} }, Adapter)
     local identities, source_resrefs, creatures, guarded_ids = {}, self.source_resrefs, false, {}
     local guarded_count = 0
     for _, kind in ipairs({ "sources", "targets" }) do
@@ -76,9 +86,48 @@ function Native.new(api, fixture)
                 hash(endpoint.identity) and not identities[endpoint.identity], "NATIVE_ENDPOINT_INVALID")
             local store_source = kind == "sources" and endpoint.kind == "guarded-store"
             local script_source = kind == "sources" and endpoint.kind == "guarded-script"
+            local template_source = kind == "sources" and endpoint.kind == "guarded-template"
+            local virtual_source = kind == "sources" and endpoint.kind == "virtual"
             local store_target = kind == "targets" and endpoint.kind == "store"
-            if script_source then
-                assert(endpoint.adapter_id == "blpool-v1" and endpoint.area == nil and
+            local group_target = kind == "targets" and endpoint.kind == "group"
+            local quest_target = kind == "targets" and endpoint.kind == "quest"
+            if quest_target then
+                local spell=endpoint.recipient_local=='FLPR_RKEY' and endpoint.event_global=='FLPR_EKEY'
+                local scripted=endpoint.adapter_id=='mode2-reward-v1' and
+                    type(endpoint.recipient_local)=='string' and type(endpoint.event_global)=='string' and
+                    endpoint.recipient_local:match('^FLPR_R[A-Z0-9_]+$') and
+                    endpoint.recipient_local:sub(7)==endpoint.event_global:sub(7)
+                local marked=spell or scripted
+                assert(((marked and endpoint.area=='*') or
+                    (endpoint.recipient_local==nil and resref(endpoint.area))) and type(endpoint.event_global)=='string' and
+                    endpoint.event_global:match('^FLPR_E[A-Z0-9_]+$') and
+                    type(api.EEex_GameState_GetGlobalInt)=='function' and
+                    type(api.EEex_Sprite_GetInPortrait)=='function','NATIVE_QUEST_INVALID')
+                if marked then
+                    assert(type(api.EEex_Sprite_GetLocalInt)=='function','NATIVE_QUEST_RECIPIENT_API_MISSING')
+                end
+                if spell then
+                    assert(api.FLPR and api.FLPR.Spell and api.FLPR.Spell.callback==api.FLPRKEY and
+                        type(api.FLPRKEY)=='function','CAMPAIGN_SPELL_SERVICE_MISSING')
+                end
+            elseif group_target then
+                assert(resref(endpoint.area) and integer(seed,1,2147483646) and
+                    type(endpoint.members)=='table' and #endpoint.members>0 and type(endpoint.eligible)=='table',
+                    'NATIVE_GROUP_INVALID')
+                for _,member in ipairs(endpoint.members) do
+                    assert(resref(member.resref) and type(member.script_name)=='string' and #member.script_name>0,
+                        'NATIVE_GROUP_MEMBER_INVALID')
+                end
+            elseif virtual_source then
+                assert(endpoint.area == nil and endpoint.script_name == nil, "NATIVE_VIRTUAL_SOURCE_INVALID")
+            elseif template_source then
+                local reference = type(endpoint.creature_resource) == "string" and
+                    endpoint.creature_resource:match("^cre:(.+)$")
+                assert(resref(reference) and endpoint.area == nil and endpoint.script_name == nil,
+                    "NATIVE_GUARDED_TEMPLATE_INVALID")
+            elseif script_source then
+                assert((endpoint.adapter_id == "blpool-v1" or endpoint.adapter_id == "original-quest-v1" or
+                    endpoint.adapter_id == 'spell-key-v1' or endpoint.adapter_id == 'mode2-reward-v1') and endpoint.area == nil and
                     endpoint.script_name == nil, "NATIVE_GUARDED_SCRIPT_INVALID")
             elseif store_source then
                 assert(resref(endpoint.store) and endpoint.area == nil and endpoint.script_name == nil and
@@ -93,7 +142,40 @@ function Native.new(api, fixture)
             end
             identities[endpoint.identity] = true
             local copy = { identity = endpoint.identity }
-            if script_source then
+            if endpoint.inventory_reward ~= nil then
+                assert(kind=='targets' and endpoint.kind=='creature' and endpoint.inventory_reward==true,
+                    'NATIVE_INVENTORY_REWARD_INVALID')
+                copy.inventory_reward=true
+            end
+            if endpoint.claim_global then
+                assert(kind=='targets' and endpoint.kind=='container' and
+                    type(endpoint.claim_global)=='string' and endpoint.claim_global:match('^FLPR_EM2_[0-9]+$') and
+                    type(api.EEex_GameState_GetGlobalInt)=='function','NATIVE_QUEST_INVALID')
+                copy.claim_global=endpoint.claim_global
+            end
+            if quest_target then
+                copy.area,copy.quest_event=endpoint.area=='*' and '*' or resref(endpoint.area),endpoint.event_global
+                copy.recipient_local=endpoint.recipient_local
+                copy.spell_event=endpoint.recipient_local=='FLPR_RKEY'
+            elseif group_target then
+                copy.area,copy.members,copy.eligible=resref(endpoint.area),{},{}
+                for n,member in ipairs(endpoint.members) do
+                    copy.members[n]={resref=member.resref,script_name=member.script_name:lower()}
+                end
+                for item,candidates in pairs(endpoint.eligible) do
+                    assert(resref(item) and type(candidates)=='table' and #candidates>0,'NATIVE_GROUP_CANDIDATES_INVALID')
+                    copy.eligible[item]={}
+                    for n,index in ipairs(candidates) do
+                        assert(integer(index,1,#copy.members),'NATIVE_GROUP_CANDIDATES_INVALID')
+                        copy.eligible[item][n]=index
+                    end
+                end
+            elseif virtual_source then
+                -- Explicit additional stock has only a payload, never an owner.
+            elseif template_source then
+                -- The constructor input is protected by Gate, not a live actor.
+                copy.creature_resource = "cre:" .. resref(endpoint.creature_resource:sub(5))
+            elseif script_source then
                 copy.adapter_id = endpoint.adapter_id
             elseif store_source then
                 copy.store, copy.record_index, copy.quantity =
@@ -105,8 +187,8 @@ function Native.new(api, fixture)
             end
             if kind == "sources" then
                 copy.kind = endpoint.kind == nil and "creature" or endpoint.kind
-                assert(copy.kind == "creature" or guarded(copy), "NATIVE_SOURCE_KIND_UNSUPPORTED")
-                if not store_source and not script_source then copy.sprite = true end
+                assert(copy.kind == "creature" or copy.kind == "virtual" or guarded(copy), "NATIVE_SOURCE_KIND_UNSUPPORTED")
+                if not store_source and not script_source and not template_source and not virtual_source then copy.sprite = true end
                 copy.payload = assert(payload(endpoint.payload), "NATIVE_PAYLOAD_UNSUPPORTED")
                 if copy.kind == "guarded-container" then
                     assert(integer(endpoint.x,0,32767) and integer(endpoint.y,0,32767) and
@@ -121,10 +203,10 @@ function Native.new(api, fixture)
                 source_resrefs[copy.payload.resref] = true
             else
                 -- The accepted fixture predates this field; absent means a ground pile.
-                copy.kind = endpoint.kind == nil and "ground-pile" or endpoint.kind
-                assert(copy.kind == "ground-pile" or copy.kind == "container" or copy.kind == "creature" or copy.kind == "store",
+                copy.kind = quest_target and 'creature' or (endpoint.kind == nil and "ground-pile" or endpoint.kind)
+                assert(copy.kind == "ground-pile" or copy.kind == "container" or copy.kind == "creature" or copy.kind == "group" or copy.kind == "store",
                     "NATIVE_TARGET_KIND_UNSUPPORTED")
-                if copy.kind == "creature" then
+                if copy.kind == "creature" or copy.kind == "group" then
                     assert(endpoint.x == nil and endpoint.y == nil, "NATIVE_POSITION_INVALID")
                     copy.sprite, creatures = true, true
                 elseif copy.kind == "ground-pile" or copy.kind == "container" then
@@ -136,12 +218,34 @@ function Native.new(api, fixture)
                     end
                 end
             end
+            if endpoint.loot_latch ~= nil then
+                local latch=endpoint.loot_latch
+                assert(kind=='targets' and copy.kind=='container' and type(latch)=='table' and
+                    type(latch.activation_global)=='string' and #latch.activation_global<=32 and
+                    latch.activation_global:match('^FLPR_C[A-Z0-9_]+$') and
+                    type(latch.latch_global)=='string' and #latch.latch_global<=32 and
+                    latch.latch_global:match('^[A-Za-z][A-Za-z0-9_]*$') and
+                    (latch.latch_scope=='GLOBAL' or latch.latch_scope==copy.area:upper()),
+                    'NATIVE_CONTAINER_LATCH_INVALID')
+                assert(type(api.EEex_GameState_GetGlobalInt)=='function',
+                    'NATIVE_CONTAINER_LATCH_API_MISSING')
+                if latch.latch_scope=='GLOBAL' then
+                    assert(type(api.EEex_GameState_SetGlobalInt)=='function',
+                        'NATIVE_CONTAINER_LATCH_API_MISSING')
+                else
+                    assert(type(api.EEex_Area_GetVariableInt)=='function' and
+                        type(api.EEex_Area_SetVariableInt)=='function','NATIVE_CONTAINER_LATCH_API_MISSING')
+                end
+                copy.loot_latch={activation_global=latch.activation_global,
+                    latch_global=latch.latch_global,latch_scope=latch.latch_scope}
+            end
             self[kind][id] = copy
         end
     end
     if guarded_count > 0 or fixture.source_gate ~= nil then
         local gate = fixture.source_gate
-        assert(guarded_count > 0 and type(gate) == "table" and
+        assert((guarded_count > 0 or type(fixture.spell_shield)=='table' or
+            type(fixture.cursed_disguises)=='table') and type(gate) == "table" and
             gate.schema == "flpr-unvisited-fixture-gate-v1" and
             (gate.source_id == nil) ~= (gate.source_ids == nil),
             "NATIVE_SOURCE_GATE_INVALID")
@@ -179,13 +283,13 @@ end
 
 -- Returns nil for a usable creature target, otherwise the reason it cannot
 -- receive a reward now. None of these states permits a substitute recipient.
-function Adapter:_creature_state(object)
+function Adapter:_creature_state(object, party_reward)
     local api = self.api
     if api.EEex_GameObject_IsSprite(object, false) ~= true then return "TARGET_NOT_ALIVE" end
     local portrait = api.EEex_Sprite_GetPortraitIndex(object)
     if portrait ~= -1 then
         assert(integer(portrait, 0, 5), "NATIVE_PORTRAIT_INVALID")
-        return "TARGET_PARTY_MEMBER"
+        if not party_reward then return "TARGET_PARTY_MEMBER" end
     end
     -- CMessageAddItem::Run forwards a familiar's item to the protagonist.
     local typeAI = object.m_typeAI
@@ -196,8 +300,47 @@ end
 
 function Adapter:_resolve(endpoint, kind, visible_area)
     local api, area = self.api, visible_area or self.api.EEex_Area_GetVisible()
-    if not area or text(area.m_resref) ~= endpoint.area then return nil, "AREA_UNAVAILABLE" end
-    local found, matches, seen = nil, 0, {}
+    if not area or (endpoint.area~='*' and text(area.m_resref) ~= endpoint.area) then return nil, "AREA_UNAVAILABLE" end
+    if endpoint.claim_global and api.EEex_GameState_GetGlobalInt(endpoint.claim_global)~=1 then
+        return nil,'QUEST_NOT_CLAIMED'
+    end
+    if endpoint.quest_event then
+        if endpoint.spell_event then
+            local service=api.FLPR and api.FLPR.Spell
+            if not service or service.callback~=api.FLPRKEY then return nil,'CAMPAIGN_SPELL_SERVICE_MISSING' end
+            if service.last_error then return nil,'CAMPAIGN_SPELL_CALLBACK_FAILED:'..service.last_error end
+        end
+        if api.EEex_GameState_GetGlobalInt(endpoint.quest_event)~=1 then return nil,'QUEST_NOT_CLAIMED' end
+        local object
+        if endpoint.recipient_local then
+            local matches,seen=0,{}
+            local function scan(candidate)
+                if not candidate then return end
+                candidate=api.EEex_GameObject_CastUserType(candidate)
+                if not candidate or api.EEex_GameObject_IsSprite(candidate,true)~=true then return end
+                local address=pointer(api,candidate)
+                if seen[address] then return end
+                seen[address]=true
+                if api.EEex_Sprite_GetLocalInt(candidate,endpoint.recipient_local)==1 then
+                    matches,object=matches+1,candidate
+                end
+            end
+            for _,field in ipairs(lists) do
+                assert(area[field],'NATIVE_AREA_LIST_MISSING')
+                api.EEex_Utility_IterateCPtrList(area[field],function(id)
+                    assert(integer(id,0,2147483647),'NATIVE_OBJECT_ID_INVALID')
+                    scan(api.EEex_GameObject_Get(id))
+                end)
+            end
+            for index=0,5 do scan(api.EEex_Sprite_GetInPortrait(index)) end
+            if matches~=1 then return nil,matches==0 and 'OWNER_MISSING' or 'OWNER_AMBIGUOUS' end
+        else object=api.EEex_Sprite_GetInPortrait(0) end
+        if not object then return nil,'OWNER_MISSING' end
+        local reason=self:_creature_state(object,true)
+        if reason then return nil,reason end
+        return {object=object,id=object.m_id,pointer=pointer(api,object)}
+    end
+    local found, matches, seen, wrong_container = nil, 0, {}, false
     for _, field in ipairs(lists) do
         assert(area[field], "NATIVE_AREA_LIST_MISSING")
         api.EEex_Utility_IterateCPtrList(area[field], function(id)
@@ -213,11 +356,18 @@ function Adapter:_resolve(endpoint, kind, visible_area)
             local is_sprite = api.EEex_GameObject_IsSprite(object, true)
             if (endpoint.sprite and is_sprite == true) or
                 (not endpoint.sprite and is_sprite == false and object.m_lstItems ~= nil) then
+                if not endpoint.sprite and (not object.m_pos or object.m_pos.x~=endpoint.x or
+                    object.m_pos.y~=endpoint.y or object.m_containerType~=(endpoint.container_type or 4)) then
+                    wrong_container=true;return
+                end
                 matches, found = matches + 1, { object = object, id = id, pointer = pointer(api, object) }
             end
         end)
     end
-    if matches ~= 1 then return nil, matches == 0 and "OWNER_MISSING" or "OWNER_AMBIGUOUS" end
+    if matches ~= 1 then
+        if matches==0 and wrong_container then return nil,'TARGET_NOT_FIXTURE_GROUND_PILE' end
+        return nil, matches == 0 and "OWNER_MISSING" or "OWNER_AMBIGUOUS"
+    end
     if kind == "source" and endpoint.sprite then
         if api.EEex_GameObject_IsSprite(found.object, false) ~= true then return nil, "SOURCE_NOT_ALIVE" end
     elseif endpoint.kind == "creature" then
@@ -304,6 +454,39 @@ function Adapter:_queue()
     return result
 end
 
+function Adapter:_preserve_message_flags(message, expected)
+    if message.payload.flags == expected.flags then return true end
+    local updated = false
+    self.api.EEex_Utility_IterateCPtrList(self.api.EngineGlobals.g_pBaldurChitin.m_cMessageHandler.m_messageList,
+        function(value)
+            if pointer(self.api, value) ~= message.pointer then return end
+            local type_name = message.form == "creature" and "CMessageAddItem" or "CMessageContainerAddItem"
+            local item = self.api.EEex_CastUD(value, type_name).m_item
+            assert(pointer(self.api, item) == message.embedded_item_pointer, "CREATED_INSTANCE_CHANGED")
+            item.m_flags = expected.flags
+            assert(same(self:_item(item).payload, expected), "CREATED_FLAGS_NOT_PRESERVED")
+            updated = true
+        end)
+    assert(updated, "CREATED_INSTANCE_CHANGED")
+    message.payload.flags = expected.flags
+    return true
+end
+
+function Adapter:_preserve_container_flags(owner, created, expected)
+    if created.payload.flags == expected.flags then return true end
+    local updated = false
+    self.api.EEex_Utility_IterateCPtrList(owner.object.m_lstItems, function(item)
+        if pointer(self.api, item) ~= created.pointer then return end
+        assert(same(self:_item(item).payload, created.payload), "CREATED_INSTANCE_CHANGED")
+        item.m_flags = expected.flags
+        assert(same(self:_item(item).payload, expected), "CREATED_FLAGS_NOT_PRESERVED")
+        updated = true
+    end)
+    assert(updated, "CREATED_INSTANCE_CHANGED")
+    created.payload.flags = expected.flags
+    return true
+end
+
 local function conflicts(message, owner_id, item)
     return message.target == owner_id or message.payload.resref == item.resref
 end
@@ -370,13 +553,13 @@ function Native.supported(api, item)
     item = payload(item)
     if not item then return nil, "NATIVE_PAYLOAD_UNSUPPORTED" end
     local header = api.EEex_Resource_Demand(item.resref, "ITM")
-    if not header or not integer(header.maxStackable, 0, 1) or
-        not integer(header.itemFlags, 0, 4294967295) then return nil, "ITEM_NOT_NONSTACKABLE" end
+    if not header or not integer(header.maxStackable, 0, 65535) or
+        not integer(header.itemFlags, 0, 4294967295) then return nil, "ITEM_STACK_LIMIT_UNAVAILABLE" end
     -- Resource bit 2 enables movement/drop, bit 3 makes the ground icon visible.
     if math.floor(header.itemFlags / 4) % 2 ~= 1 or math.floor(header.itemFlags / 8) % 2 ~= 1 then
         return nil, "ITEM_NOT_VISIBLE_DROPPABLE"
     end
-    return true
+    return true, nil, header.maxStackable
 end
 
 function Adapter:inspect_source(id)
@@ -405,7 +588,8 @@ function Adapter:guarded_source_remaining(id, area_pointer, owner_pointer)
     local endpoint = self.sources[id]
     if not endpoint then return nil, "SOURCE_UNKNOWN" end
     if not guarded(endpoint) then return nil, "SOURCE_NOT_GUARDED" end
-    if endpoint.kind == "guarded-store" or endpoint.kind == "guarded-script" then return nil, "SOURCE_GUARD_REQUIRED" end
+    if endpoint.kind == "guarded-store" or endpoint.kind == "guarded-script" or
+        endpoint.kind == "guarded-template" then return nil, "SOURCE_GUARD_REQUIRED" end
     if type(area_pointer) ~= "string" or area_pointer == "" or area_pointer == "0" or
         type(owner_pointer) ~= "string" or owner_pointer == "" or owner_pointer == "0" then
         return nil, "SOURCE_POINTER_INVALID"
@@ -423,9 +607,111 @@ function Adapter:guarded_source_remaining(id, area_pointer, owner_pointer)
     return { remaining = remaining, area_pointer = area_pointer, owner_pointer = owner_pointer }
 end
 
-function Adapter:inspect_target(id)
-    local endpoint = self.targets[id]
+function Adapter:_reward(source_id, unit)
+    local source = self.sources[source_id]
+    if not source then return nil end
+    if not self.reward_payload then return source.payload end
+    local result = assert(payload(self.reward_payload(unit)), 'REWARD_PAYLOAD_INVALID')
+    self.source_resrefs[result.resref] = true
+    return result
+end
+
+-- These dialogue rewards already live in the speaker's inventory, so combat
+-- and pickpocketing remain valid alternatives. Wait for delivery to settle,
+-- then use the original transfer action; never recreate a missing item.
+function Adapter:transfer_inventory_reward(speaker, target_id, assignments, phases)
+    local endpoint=self.targets[target_id]
+    if not endpoint then return -1 end -- Target excluded from this campaign.
+    assert(endpoint.inventory_reward, 'NATIVE_INVENTORY_REWARD_INVALID')
+    local rewards={}
+    for _,assignment in ipairs(assignments) do
+        if assignment.target_id==target_id then
+            if assignment.delivery_phase~=phases.held and assignment.delivery_phase~=phases.confirmed then
+                return 0
+            end
+            rewards[#rewards+1]=assert(self:_reward(assignment.source_id,assignment.unit),
+                'NATIVE_INVENTORY_REWARD_MISSING')
+        end
+    end
+    if #rewards==0 then return -1 end
+    if self.pending then return 0 end
+    local owner,reason=self:_resolve(endpoint,'target')
+    assert(owner,reason)
+    assert(pointer(self.api,speaker)==owner.pointer,'NATIVE_INVENTORY_REWARD_SPEAKER_CHANGED')
+    for _,reward in ipairs(rewards) do
+        self.api.EEex_Action_ExecuteResponseStringOnAIBaseInstantly(
+            'GiveItem("'..reward.resref..'",LastTalkedToBy)',speaker)
+    end
+    return -1
+end
+
+function Adapter:_target(id, source_id, unit)
+    local endpoint=self.targets[id]
+    if not endpoint or endpoint.kind~='group' then return endpoint end
+    local source=self.sources[source_id]
+    if not source or not integer(unit,1,4096) then return nil end
+    local choices=endpoint.eligible[self:_reward(source_id, unit).resref]
+    if not choices then return nil end
+    local draw=((self.seed+unit*48271)%2147483647*16807)%2147483647
+    local member=endpoint.members[choices[draw%#choices+1]]
+    return {kind='creature',sprite=true,area=endpoint.area,script_name=member.script_name,
+        identity=endpoint.identity}
+end
+
+-- The original flrkeep/flrsamia/flrsafan scripts latch !Contains(reward),
+-- not party ownership. A frozen confirmed delivery is the prerequisite for
+-- observing that absence; an unloaded or unresolved container proves nothing.
+function Adapter:observe_container_latches(assignments, confirmed_phase)
+    local api,waiting=self.api,{}
+    for _,assignment in ipairs(assignments) do
+        local endpoint=self.targets[assignment.target_id]
+        local latch=endpoint and endpoint.loot_latch
+        if latch and assignment.delivery_phase==confirmed_phase and
+            api.EEex_GameState_GetGlobalInt(latch.activation_global)==1 then
+            local key=latch.latch_scope..'/'..latch.latch_global
+            if not self.container_latched[key] then
+                local area=api.EEex_Area_GetVisible()
+                local loaded=area and text(area.m_resref)==endpoint.area
+                local global=latch.latch_scope=='GLOBAL'
+                -- EEex_Area_{Get,Set}VariableInt access the loaded area's
+                -- saved m_variables; GameState functions only cover GLOBAL.
+                local function read()
+                    if global then return api.EEex_GameState_GetGlobalInt(latch.latch_global) end
+                    if loaded then return api.EEex_Area_GetVariableInt(area,latch.latch_global) end
+                end
+                if read()==1 then
+                    self.container_latched[key]=true
+                elseif loaded and not self.pending then
+                    local owner=self:_resolve(endpoint,'target',area)
+                    if owner then
+                        local reward=assert(self:_reward(assignment.source_id,assignment.unit),
+                            'NATIVE_CONTAINER_LATCH_REWARD_MISSING')
+                        local present=false
+                        for _,item in ipairs(self:_items(owner,false)) do
+                            if item.payload.resref==reward.resref then present=true;break end
+                        end
+                        if not present then
+                            if global then api.EEex_GameState_SetGlobalInt(latch.latch_global,1)
+                            else api.EEex_Area_SetVariableInt(area,latch.latch_global,1) end
+                            assert(read()==1,'NATIVE_CONTAINER_LATCH_WRITE_FAILED')
+                            self.container_latched[key]=true
+                        end
+                    end
+                end
+                waiting[key]=true
+            end
+        end
+    end
+    -- Samia's two slots share one latch: either absent reward satisfies both.
+    for key in pairs(waiting) do if not self.container_latched[key] then return true,true end end
+    return true,false
+end
+
+function Adapter:inspect_target(id, source_id, unit)
+    local endpoint = self:_target(id, source_id, unit)
     if not endpoint then return nil, "TARGET_UNKNOWN" end
+    local source = source_id and self.sources[source_id]
+    if source_id and not source then return nil, "SOURCE_UNKNOWN" end
     self.reservations[endpoint.identity] = nil
     if endpoint.kind == "store" then
         local ready, reason = self.api.FLPR.Shop:inspect_target(endpoint)
@@ -436,6 +722,17 @@ function Adapter:inspect_target(id)
     local owner, reason = self:_resolve(endpoint, "target")
     if not owner then return nil, reason end
     local items = self:_items(owner, endpoint.sprite)
+    if source then
+        local supported, stack_limit
+        local reward = self:_reward(source_id, unit)
+        supported, reason, stack_limit = self:_supported(reward)
+        if not supported then return nil, reason end
+        if stack_limit > 1 then
+            for _, item in ipairs(items) do
+                if item.payload.resref == reward.resref then return nil, "TARGET_STACK_COLLISION" end
+            end
+        end
+    end
     if endpoint.kind == "creature" then
         -- Checked before the core journals anything, so these are deferrals.
         local empty = empty_backpack(items)
@@ -475,6 +772,11 @@ function Adapter:execute(command)
     if command.kind == "suppress" and source and guarded(source) then
         return nil, "SOURCE_GUARD_REQUIRED"
     end
+    -- Suppression always uses the original item; an authored reward variant
+    -- (such as the TotSC tome) is resolved independently for this reward unit.
+    if command.kind == "deliver" and source then
+        source = {payload = self:_reward(command.source_id, command.index)}
+    end
     if self.tick == nil then return nil, "OBSERVATION_CLOCK_MISSING" end
     local tried = self.attempted[command.session]
     if tried and tried[command.nonce] then return nil, "ALREADY_ATTEMPTED" end
@@ -482,7 +784,7 @@ function Adapter:execute(command)
     if not reserved or not source or reserved.kind ~= command.kind or
         not same(payload(command.payload), source.payload) then return nil, "RESERVATION_MISMATCH" end
     local kind = command.kind == "suppress" and "source" or "target"
-    local endpoint = kind == "source" and source or self.targets[command.target_id]
+    local endpoint = kind == "source" and source or self:_target(command.target_id, command.source_id, command.index)
     if not endpoint or endpoint.identity ~= command.identity or
         reserved.id ~= (kind == "source" and command.source_id or command.target_id) then return nil, "RESERVATION_MISMATCH" end
     if kind == "target" and endpoint.kind == "store" then
@@ -507,8 +809,15 @@ function Adapter:execute(command)
     if owner.id ~= reserved.owner.id or owner.pointer ~= reserved.owner.pointer then return nil, "OWNER_CHANGED" end
     local before = self:_items(owner, endpoint.sprite)
     if not unchanged(reserved.items, before) then return nil, "INVENTORY_CHANGED" end
-    local supported; supported, reason = self:_supported(source.payload)
+    local supported, stack_limit; supported, reason, stack_limit = self:_supported(source.payload)
     if not supported then return nil, reason end
+    if kind == "target" and stack_limit > 1 then
+        -- A stack merge can consume the reward without creating a distinct
+        -- pointer. Reject it before the native action, preserving exact units.
+        for _, item in ipairs(before) do
+            if item.payload.resref == source.payload.resref then return nil, "TARGET_STACK_COLLISION" end
+        end
+    end
     local creature = kind == "target" and endpoint.kind == "creature"
     local before_queue
     if creature then
@@ -555,35 +864,21 @@ function Adapter:execute(command)
         -- an untouched inventory plus exactly one new queued message, and bind
         -- that message to this nonce; later observations prove the result.
         local after_queue, added = self:_queue(), {}
-        for address in pairs(after_queue.addresses) do
-            if not before_queue.addresses[address] then added[#added + 1] = address end
+        -- Party rewards also enqueue a "party gains item" notification. Bind
+        -- the new item message; unrelated feedback is not another delivery.
+        for _, entry in ipairs(after_queue.additions) do
+            if not before_queue.addresses[entry.pointer] then added[#added + 1] = entry.pointer end
         end
         local message = #added == 1 and addition_at(after_queue, added[1]) or nil
         -- GiveItemCreate chooses identification from the ITM's lore value;
         -- it does not accept the original inventory's identified flag. Bind
         -- the newly created message first, then preserve that selected flag.
-        local created = message and payload(message.payload)
-        local identification_only = created and (created.flags == 0 or created.flags == 1)
-        if created then created.flags = p.flags end
         if not unchanged(reserved.items, after) or not message or message.form ~= "creature" or
-            message.target ~= owner.id or message.source ~= owner.id or not identification_only or not same(created, p) or
+            message.target ~= owner.id or message.source ~= owner.id or not constructor_payload(message.payload, p) or
             creature_conflict(after_queue, owner.id, self.source_resrefs, message.pointer) then
             self.last_error = "CREATED_INSTANCE_UNPROVEN"; return nil, self.last_error
         end
-        if message.payload.flags ~= p.flags then
-            local updated = false
-            self.api.EEex_Utility_IterateCPtrList(self.api.EngineGlobals.g_pBaldurChitin.m_cMessageHandler.m_messageList,
-                function(value)
-                    if pointer(self.api, value) ~= message.pointer then return end
-                    local item = self.api.EEex_CastUD(value, "CMessageAddItem").m_item
-                    assert(pointer(self.api, item) == message.embedded_item_pointer, "CREATED_INSTANCE_CHANGED")
-                    item.m_flags = p.flags
-                    assert(same(self:_item(item).payload, p), "CREATED_FLAGS_NOT_PRESERVED")
-                    updated = true
-                end)
-            assert(updated, "CREATED_INSTANCE_CHANGED")
-            message.payload.flags = p.flags
-        end
+        self:_preserve_message_flags(message, p)
         self.pending.queued, self.pending.empty = message, reserved.empty
     else
         local after_queue, added, conflicting = self:_queue(), {}, 0
@@ -592,15 +887,17 @@ function Adapter:execute(command)
             if conflicts(message, owner.id, p) then conflicting = conflicting + 1 end
         end
         local placed = placed_item(before, after, {#before + 1})
-        if placed and same(placed.payload, p) and #added == 0 and conflicting == 0 then
+        if placed and constructor_payload(placed.payload, p) and #added == 0 and conflicting == 0 then
+            self:_preserve_container_flags(owner, placed, p)
             self.pending.created_pointer = placed.pointer
         elseif unchanged(before, after) and #added == 1 and conflicting == 1 and added[1].target == owner.id and added[1].source == owner.id and
-            added[1].slot == 32767 and same(added[1].payload, p) then
+            added[1].form == "container" and added[1].slot == 32767 and constructor_payload(added[1].payload, p) then
             -- The engine queues an embedded CItem value, then Run() heap-copies
             -- it and appends to the container, preserving its earlier contents. Message and inventory
             -- pointers are intentionally different. Bind the exact new message
             -- to this nonce before allowing later observations to establish the
             -- resulting pointer; never resubmit CreateItem.
+            self:_preserve_message_flags(added[1], p)
             self.pending.queued = added[1]
         else
             self.last_error = "CREATED_INSTANCE_UNPROVEN"; return nil, self.last_error
@@ -729,7 +1026,21 @@ function Adapter:_observe_creature(pending, receipt, owner, items)
         -- then demand another later tick before publishing anything.
         local placed, failure = placed_item(pending.before, items, pending.empty)
         if not placed then return nil, failure end
-        if not same(placed.payload, receipt.payload) then return nil, "DELIVERY_PAYLOAD_CHANGED" end
+        if not same(placed.payload, receipt.payload) then
+            -- CMessageAddItem::Run can identify a zero-lore item again while
+            -- copying it from the message. Preserve the source's flags on the
+            -- one proven new inventory instance, just as on its message.
+            local expected=payload(placed.payload)
+            expected.flags=receipt.payload.flags
+            if receipt.payload.flags%2~=0 or placed.payload.flags~=receipt.payload.flags+1 or
+                not same(expected,receipt.payload) then return nil,'DELIVERY_PAYLOAD_CHANGED' end
+            local item=owner.object.m_equipment.m_items:get(placed.slot)
+            assert(pointer(self.api,item)==placed.pointer and same(self:_item(item).payload,placed.payload),
+                'CREATED_INSTANCE_CHANGED')
+            item.m_flags=receipt.payload.flags
+            assert(same(self:_item(item).payload,receipt.payload),'CREATED_FLAGS_NOT_PRESERVED')
+            placed.payload.flags=receipt.payload.flags
+        end
         pending.created_pointer, pending.created_slot, pending.pinned_tick = placed.pointer, placed.slot, self.tick
         return nil, "DELIVERY_SETTLING"
     end
@@ -743,6 +1054,12 @@ function Adapter:_observe_creature(pending, receipt, owner, items)
     -- Held by a living, non-party creature in its backpack. That is not proof
     -- of lootability: the death drop must be verified separately in the engine.
     receipt.created, receipt.nonce_bound_instance, receipt.lootable, receipt.held = 1, 1, 0, 1
+    if pending.endpoint.quest_event and self.api.EEex_Sprite_GetPortraitIndex(owner.object)~=-1 then
+        receipt.lootable,receipt.held=1,nil
+        receipt.holder,receipt.slot='party',placed.slot
+        self.pending=nil
+        return receipt
+    end
     receipt.holder, receipt.slot = "creature", placed.slot
     -- Session-only provenance. A save reload cannot reconstruct this record
     -- by finding another item with the same name, address, or payload.
@@ -860,7 +1177,12 @@ function Adapter:diagnostics()
     end
     for _, kind in ipairs({ "sources", "targets" }) do
         for id, endpoint in pairs(self[kind]) do
-            if endpoint.kind == "guarded-script" then
+            if endpoint.kind == "guarded-template" then
+                result[kind][id] = { unavailable = "SOURCE_GUARD_REQUIRED",
+                    creature_resource = endpoint.creature_resource }
+            elseif endpoint.kind == "virtual" then
+                result[kind][id] = { payload = payload(endpoint.payload) }
+            elseif endpoint.kind == "guarded-script" then
                 result[kind][id] = { unavailable = "SOURCE_GUARD_REQUIRED", adapter_id = endpoint.adapter_id }
             elseif endpoint.kind == "guarded-store" then
                 result[kind][id] = { unavailable = "SOURCE_GUARD_REQUIRED", store = endpoint.store,
@@ -882,7 +1204,7 @@ end
 
 function Adapter:destroy()
     self.pending, self.tick, self.last_error = nil, nil, nil
-    self.reservations, self.attempted, self.held = {}, {}, {}
+    self.reservations, self.attempted, self.held, self.container_latched = {}, {}, {}, {}
 end
 
 return Native

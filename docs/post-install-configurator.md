@@ -1,10 +1,19 @@
 # Experimental post-install configurator
 
 This development tool reads installed EE item definitions and creates reusable
-**drafts** with explicit source and target bindings. It can export the supported
-supported container, creature and shop bindings for the separate
-[native prototype](campaign-source-guards-20260927.md). It does not install or
-activate that runtime. General source coverage and collection UI remain open.
+configurations with explicit source and target bindings. It can export the supported
+container, creature, shop and authored quest bindings for the separate
+[native prototype](campaign-source-guards-20260927.md). Runtime installation and
+general source coverage remain unfinished.
+
+For an already installed disposable test runtime, start the editor with
+`--apply-game <same-game-path-as-the-scan>` to enable **Apply for next game**.
+With the game closed, this saves the configuration, exports it and deploys the
+settings. Each new BG1 campaign gets a fresh draw; existing saves keep their
+revision. Keep the same configuration workspace, including its `native` folder,
+so earlier revisions remain available. The editor reopens the last applied choice.
+Without that explicit option, preparation still writes only outside the game.
+This is a development playtest workflow, not the normal TP2 installation.
 
 The intended player workflow is: finish installing mods, scan/customize once, and
 start any number of fresh randomized adventures with those settings. Later changes
@@ -80,11 +89,11 @@ and frozen into each campaign, so editing the next run does not reprice older sa
 checks. Unsupported source families remain editable drafts, with an explanation.
 **Prepare test settings** writes the existing campaign JSON/Lua format to the
 workspace's `prepared` folder, ready for the experimental export command below.
-It does not deploy or activate anything. Export still checks selected installation
+In draft-only mode it does not deploy or activate anything. Export still checks selected installation
 resources before they can be staged for a test. Collection integration, general
 runtime support and ordinary mod installation remain separate work.
 
-The editor reads only saved scan files and writes only configuration files. It
+Without `--apply-game`, the editor reads saved scan files and writes configuration files. It
 serves on `127.0.0.1`; close the process when finished. Keep configurations and
 real scan data outside Git.
 

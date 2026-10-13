@@ -17,11 +17,34 @@ from .store_inventory import rewrite_inventory as rewrite_store
 from .profiles import (DEFAULT_SHOP_PRICING, HEX256, MAX_ITEM_PRICE, ProfileError,
                        _digest, canonical_bytes, ensure_output_outside_game,
                        validate_catalog)
-from .resources import GameResources, RESOURCE_TYPES
-from .sources import validate_world
+from .resources import GameResources, RESOURCE_TYPES, _Tlk
+from .sources import validate_world, DANGLING_INVENTORY, INVALID_INVENTORY, UNRESOLVED_STORAGE
 from .scripted_sources import (ADAPTER_ID, ITEM, PATCHED_SHA256, SUPPORTED_HASHES,
                                PAYLOAD, RESOURCE, SELECTOR, SOURCE_ID,
                                campaign_record, patch_blpool)
+from .quest_rewards import (QUESTS, ORIGINAL_HASHES as QUEST_ORIGINAL_HASHES,
+                            PATCHED_HASHES as QUEST_PATCHED_HASHES,
+                            quest_spec, patch_quest, is_compatible_patch)
+from .unshey_reward import prepare_unshey_resources, original_unshey, patch_unshey_journal
+from .quest_options import (prepare_quest_options, patch_kangaxx_journal,
+                            original_dialogue, original_crypt)
+from .spell_rewards import (SPELL, PAYLOAD as KEY_PAYLOAD, patch_key_spell,
+                            ORIGINAL_SHA256 as KEY_ORIGINAL_HASH,
+                            PATCHED_SHA256 as KEY_PATCHED_HASH)
+from .original_options import SPELL_SHIELD_SOURCE, spell_shield_spec, patch_spell_shield_stock
+from .mode2_rewards import (SOURCE_REWARDS as MODE2_SOURCES, TARGET_REWARDS as MODE2_TARGETS,
+                            RESOURCE_REWARDS as MODE2_RESOURCES, ORIGINAL_HASHES as MODE2_ORIGINAL_HASHES,
+                            PATCHED_HASHES as MODE2_PATCHED_HASHES, source_spec as mode2_source_spec,
+                            target_spec as mode2_target_spec, patch_reward as patch_mode2_reward,
+                            prepare_reward_texts, original_reward as original_mode2_reward,
+                            TEXT_REFS as MODE2_TEXT_REFS, transfer_spec as mode2_transfer_spec)
+from .mode2_rewards import PHYSICAL_SOURCE_REWARDS, REWARDS as MODE2_REWARDS
+from .container_rewards import (RESOURCE_TARGETS as CONTAINER_RESOURCES,
+                                TEXT_RESOURCES as CONTAINER_TEXT_RESOURCES,
+                                patch_container_resource, original_container_resource,
+                                prepare_container_texts)
+from .original_catalog import container_target_spec
+from .cursed_disguises import validate_cursed_disguise_spec, prepare_cursed_disguises
 
 
 def _require(condition: bool, message: str) -> None:
@@ -43,8 +66,9 @@ def _area(resource: str) -> str:
 
 
 def _compile(manifest: dict, world: dict, index: dict, items: dict) -> tuple[dict, set[str], set[str]]:
-    _require(manifest["world_fingerprint"] == world["fingerprint"],
-             "Campaign and world scan differ; prepare against this scan before exporting")
+    # A rescan can discover unrelated resources (or a new resource type).
+    # Compare the selected records and resource hashes below; existing native
+    # revisions must still reproduce byte-for-byte when exported again.
     native = {"schema": "flir-native-fixture-v1", "revision": manifest["revision"],
               "sources": {}, "targets": {}, "resource_hashes": {},
               "ready_detail": "have been assigned to the selected recipients."}
@@ -55,20 +79,40 @@ def _compile(manifest: dict, world: dict, index: dict, items: dict) -> tuple[dic
     if has_shop_pricing:
         native["shop_pricing"] = deepcopy(manifest.get("shop_pricing", DEFAULT_SHOP_PRICING))
         native["shop_prices"] = {}
-    required, pristine, selected_items, selected_actors, selected_stores = set(), set(), set(), set(), set()
-    item_units = Counter()
+    required, pristine, selected_items, selected_actors = set(), set(), set(), set()
+    selected_owners = Counter(s["record"]["resource"] for s in manifest["sources"]
+                              if s["record"]["kind"] in ("cre-template", "store"))
 
     def use(resource: str) -> None:
         required.add(resource)
         kind, name = resource.split(":", 1)
-        native["resource_hashes"][name.upper() + "." + kind.upper()] = index["resources"][resource]["sha256"]
+        if resource in ("itm:flbhcryp", "itm:flrbelt1") and resource not in index["resources"]:
+            digest = hashlib.sha256((Path(__file__).resolve().parents[2] / ("copy/" + name + ".itm")).read_bytes()).hexdigest()
+        else:
+            _require(resource in index["resources"], f"Required reward resource is absent: {resource}")
+            digest = index["resources"][resource]["sha256"]
+        native["resource_hashes"][name.upper() + "." + kind.upper()] = digest
+        return digest
 
     def actor_name(target: dict) -> str | None:
         selector = target["selector"]
         template = index["targets"].get(selector.get("template_resource"))
         return (template["selector"].get("script_name") if template else selector.get("script_name"))
 
-    container_names = Counter((t["resource"], t["selector"]["name"].lower())
+    shield = manifest.get("spell_shield")
+    if shield is not None:
+        _require(shield == spell_shield_spec(world, randomized=bool(shield["source_id"])),
+                 "Spell Shield stock differs from the scan")
+        native["spell_shield"] = deepcopy(shield)
+        use(shield["resource"])
+    if "cursed_disguises" in manifest:
+        disguise = manifest["cursed_disguises"]
+        validate_cursed_disguise_spec(disguise)
+        for name, digest in disguise["resource_hashes"].items():
+            _require(use("itm:" + name) == digest, f"Cursed item appearance resource changed: {name}")
+
+    container_names = Counter((t["resource"], t["selector"]["name"].lower(),
+                               t["selector"]["x"], t["selector"]["y"], t["selector"]["type"])
                               for t in index["targets"].values() if t["kind"] == "container")
     actor_names = Counter((t["resource"], (actor_name(t) or "").lower())
                           for t in index["targets"].values() if t["kind"] == "actor")
@@ -78,9 +122,20 @@ def _compile(manifest: dict, world: dict, index: dict, items: dict) -> tuple[dic
                              if s["kind"] in ("cre-template", "embedded-cre"))
     for selected in manifest["sources"]:
         source, identity = selected["record"], selected["id"]
-        _require(source["kind"] in ("container", "cre-template", "embedded-cre", "store", "scripted"),
+        _require(source["kind"] in ("container", "cre-template", "embedded-cre", "store", "scripted", "virtual", "authored-source"),
                  f"Native export does not yet support this source: {identity}")
-        if source["kind"] == "scripted":
+        if source["kind"] == "virtual":
+            _require(source["resource"] == "itm:" + source["item"] and
+                     index["resources"][source["resource"]]["sha256"] == selected["resource_sha256"],
+                     f"Virtual item changed since the scan: {identity}")
+        elif source["kind"] == "authored-source" or (shield and identity == SPELL_SHIELD_SOURCE):
+            # A post-install rescan sees our campaign-aware DLG/BCS patch.
+            # Mode 2 bytes are verified against the reviewed original or an
+            # exactly regenerated own patch below, before writing any output.
+            _require(index["resources"][source["resource"]]["sha256"] == selected["resource_sha256"] or
+                     (identity in MODE2_SOURCES and source["resource"] in MODE2_RESOURCES),
+                     f"Authored source changed since the scan: {identity}")
+        elif source["kind"] == "scripted":
             _require(identity == SOURCE_ID and selected["quantity"] == 1 and
                      "replacement" not in selected and source == campaign_record({
                          "id": SOURCE_ID, "item": ITEM, "resource": RESOURCE,
@@ -96,11 +151,90 @@ def _compile(manifest: dict, world: dict, index: dict, items: dict) -> tuple[dic
         record = source["record"]
         item = items[source["item"]]
         _require(re.fullmatch(r"[a-z0-9#_-]{1,8}", source["item"]) is not None and
-                 record["expiration"] == 0 and record["flags"] in (0, 1) and
-                 item["stack_size"] <= 1 and item["flags"] & 12 == 12,
-                 f"Native source requires an unexpired, nonstackable, visible droppable item: {identity}")
+                 record["expiration"] == 0 and record["flags"] in (0, 1, 2, 3) and
+                 item["flags"] & 12 == 12,
+                 f"Native source requires an unexpired, visible droppable item: {identity}")
         selected_items.add(source["item"])
-        item_units[source["item"]] += selected["quantity"]
+        if source["kind"] == "authored-source" and source["resource"].startswith("cre:"):
+            records = [index["sources"][key] for key in source["physical_source_ids"]]
+            _require(bool(records) and all(row["resource"] == source["resource"] and
+                     row["item"] == source["item"] for row in records),
+                     f"Authored creature original differs from its physical records: {identity}")
+            endpoint = {"kind": "guarded-template", "creature_resource": source["resource"],
+                        "record_indices": [row["record"]["record_index"] for row in records],
+                        "payload": deepcopy(record), "identity": _digest({"source": selected})}
+            if source["authored"]["source"] == "unshey.fl":
+                endpoint["replacement"] = "flrbelt1"
+                use("itm:flrbelt1")
+                use("dlg:unshey")
+            native["sources"][identity] = endpoint
+            use(source["resource"]); use("itm:" + source["item"])
+            continue
+        if source["kind"] == "authored-source" and source["resource"] == SPELL["resource"]:
+            _require(identity == "original-source:bg2:mode2:item:69" and record == KEY_PAYLOAD and
+                     selected["resource_sha256"] in (KEY_ORIGINAL_HASH, KEY_PATCHED_HASH),
+                     f"Deck of Many Things source differs from reviewed spell: {identity}")
+            native["sources"][identity] = {
+                "kind": "guarded-script", "adapter_id": "spell-key-v1",
+                **{key: SPELL[key] for key in ("quest", "resource", "selected_global", "consumed_global")},
+                "payload": deepcopy(record), "identity": _digest({"source": selected})}
+            use(source["resource"]); use("itm:" + source["item"])
+            native["resource_hashes"]["SPIN621.SPL"] = KEY_PATCHED_HASH
+            continue
+        if source["kind"] == "authored-source" and identity in MODE2_SOURCES:
+            spec = mode2_source_spec(identity)
+            _require(source["resource"] == spec["resource"] and record == spec["payload"],
+                     f"Original Mode 2 source differs from its reviewed grant: {identity}")
+            native["sources"][identity] = {
+                "kind": "guarded-script", "adapter_id": "mode2-reward-v1",
+                **{key: spec[key] for key in ("quest", "resource", "selected_global", "consumed_global")},
+                "payload": deepcopy(record), "identity": _digest({"source": selected})}
+            for name in spec.get("required_transfers", ()):
+                duplicate = mode2_transfer_spec(name)
+                if identity not in duplicate["authored_source_ids"]:
+                    continue
+                records = [index["sources"].get(key) for key in duplicate["physical_source_ids"]]
+                _require(all(row and row["kind"] == "cre-template" and
+                             row["resource"] == duplicate["source_resource"] and
+                             row["record"] == duplicate["source_record"] for row in records) and
+                         use(duplicate["source_resource"]) == duplicate["source_resource_sha256"],
+                         f"Original reward's duplicate creature item changed: {identity}")
+                auxiliary = {
+                    "resource": duplicate["source_resource"],
+                    "resource_sha256": duplicate["source_resource_sha256"],
+                    "record_indices": [row["record"]["record_index"] for row in records],
+                    "payload": deepcopy(duplicate["payload"]),
+                    "selected_global": duplicate["selected_global"]}
+                if duplicate.get("replacement"):
+                    auxiliary["replacement"] = duplicate["replacement"]
+                    use("itm:" + duplicate["replacement"])
+                native["sources"][identity].setdefault("auxiliary_creatures", []).append(auxiliary)
+            # All alternate quest routes share the same saved selection flag.
+            # Their actual bytes are reviewed by patch_mode2_reward at export.
+            if len(spec["resources"]) > 1:
+                native["sources"][identity]["resources"] = list(spec["resources"])
+            for resource in spec["resources"]:
+                use(resource)
+            use("itm:" + source["item"])
+            continue
+        if source["kind"] == "authored-source":
+            spec = quest_spec(identity)
+            _require(source["resource"] == spec["resource"] and source["item"] == spec["item"] and
+                     selected["resource_sha256"] in (QUEST_ORIGINAL_HASHES[spec["resource"][4:]],
+                                                       QUEST_PATCHED_HASHES[spec["resource"][4:]]),
+                     f"Authored quest source differs from reviewed script: {identity}")
+            native["sources"][identity] = {
+                "kind": "guarded-script", "adapter_id": "original-quest-v1",
+                **{key: spec[key] for key in ("quest", "resource", "selected_global", "consumed_global")},
+                "payload": deepcopy(record), "identity": _digest({"source": selected})}
+            use(source["resource"]); use("itm:" + source["item"])
+            native["resource_hashes"][spec["resource"][4:].upper() + ".BCS"] = QUEST_PATCHED_HASHES[spec["resource"][4:]]
+            continue
+        if source["kind"] == "virtual":
+            native["sources"][identity] = {"kind": "virtual", "payload": deepcopy(record),
+                                             "identity": _digest({"source": selected})}
+            use(source["resource"])
+            continue
         if source["kind"] == "scripted":
             native["sources"][identity] = {
                 "kind": "guarded-script", "adapter_id": ADAPTER_ID,
@@ -111,17 +245,21 @@ def _compile(manifest: dict, world: dict, index: dict, items: dict) -> tuple[dic
             native["resource_hashes"]["BLPOOL.BCS"] = PATCHED_SHA256
             continue
         if source["kind"] == "store":
-            _require(source["resource"] not in selected_stores,
-                     f"Native export currently supports one selected stock row per shop: {identity}")
-            selected_stores.add(source["resource"])
-            _require(sum(s["owner"] == source["owner"] and s["item"] == source["item"]
-                         for s in index["sources"].values()) == 1,
+            stock_option = shield is not None and identity == shield["source_id"]
+            stock_rows = sum(s["owner"] == source["owner"] and s["item"] == source["item"]
+                             for s in index["sources"].values())
+            _require(stock_rows <= 1 if stock_option else stock_rows == 1,
                      f"Native source shop holds another row of {source['item']}: {identity}")
             native["sources"][identity] = {
                 "kind": "guarded-store", "store": source["resource"][4:],
-                "record_index": record["record_index"], "quantity": selected["quantity"],
+                "record_index": shield["record_index"] if stock_option else record["record_index"],
+                "quantity": selected["quantity"],
                 "payload": {key: record[key] for key in ("resref", "expiration", "charges", "flags")},
                 "identity": _digest({"source": selected})}
+            if stock_option:
+                native["sources"][identity]["stock_option"] = "more_spell_shield"
+            if selected_owners[source["resource"]] > 1 or (shield and source["resource"] == shield["resource"]):
+                native["sources"][identity]["multiple_stock"] = True
             use(source["resource"]); use("itm:" + source["item"])
             continue
         elif source["kind"] == "container":
@@ -129,7 +267,7 @@ def _compile(manifest: dict, world: dict, index: dict, items: dict) -> tuple[dic
             selector = owner["selector"]
             area, name = _area(source["resource"]), _name(selector["name"], identity)
             _require(not selector["dynamic_item_table"] and
-                     container_names[source["resource"], name.lower()] == 1,
+                     container_names[source["resource"], name.lower(), selector["x"], selector["y"], selector["type"]] == 1,
                      f"Native source needs a unique static container name: {identity}")
             _require(0 <= selector["x"] <= 32767 and 0 <= selector["y"] <= 32767,
                      f"Native container coordinates are unsupported: {identity}")
@@ -142,14 +280,32 @@ def _compile(manifest: dict, world: dict, index: dict, items: dict) -> tuple[dic
                 "x": selector["x"], "y": selector["y"], "container_type": selector["type"],
                 "payload": {key: record[key] for key in ("resref", "expiration", "charges", "flags")},
                 "identity": _digest({"source": selected, "owner": owner})}
+            if selected.get("replacement", {}).get("resref", "blank") != "blank":
+                replacement = selected["replacement"]
+                use("itm:" + replacement["resref"])
+                native["sources"][identity]["replacement"] = replacement["resref"]
         else:
             if source["kind"] == "cre-template":
                 actors = [target for target in index["targets"].values()
                           if target["kind"] == "actor" and
                           target["selector"].get("template_resource") == source["resource"]]
-                _require(len(actors) == 1,
-                         f"Native creature source needs exactly one static ARE actor for template "
-                         f"{source['resource']} (found {len(actors)}): {identity}")
+                if (len(actors) != 1 or selected_owners[source["resource"]] > 1 or
+                        actor_names[actors[0]["resource"], (actor_name(actors[0]) or "").lower()] != 1):
+                    replacement = selected.get("replacement")
+                    _require(len(record["slots"]) == 1 and
+                             (21 <= record["slots"][0] <= 36 or replacement is not None),
+                             f"Equipped creature source needs explicit replacement equipment (or blank): {identity}")
+                    endpoint = {"kind": "guarded-template", "creature_resource": source["resource"],
+                                "payload": {key: record[key] for key in ("resref", "expiration", "charges", "flags")},
+                                "identity": _digest({"source": selected})}
+                    if replacement:
+                        endpoint["replacement"] = replacement["resref"]
+                        if replacement["resref"] != "blank":
+                            _require(use("itm:" + replacement["resref"]) == replacement["resource_sha256"],
+                                     f"Replacement item changed: {identity}")
+                    native["sources"][identity] = endpoint
+                    use(source["resource"]); use("itm:" + source["item"])
+                    continue
                 owner = actors[0]
             else:
                 owner = index["targets"][source["owner"]]
@@ -169,8 +325,7 @@ def _compile(manifest: dict, world: dict, index: dict, items: dict) -> tuple[dic
                      f"Equipped creature source needs explicit replacement equipment (or blank): {identity}")
             if replacement and replacement["resref"] != "blank":
                 resource = "itm:" + replacement["resref"]
-                _require(resource in index["resources"] and
-                         index["resources"][resource]["sha256"] == replacement["resource_sha256"],
+                _require(use(resource) == replacement["resource_sha256"],
                          f"Replacement item changed or is absent: {identity}")
                 use(resource)
             native["sources"][identity] = {
@@ -185,6 +340,12 @@ def _compile(manifest: dict, world: dict, index: dict, items: dict) -> tuple[dic
         use(source["resource"]); use("itm:" + source["item"])
         pristine.add(owner["resource"])
 
+    for rule in manifest.get("randomization", {}).get("sources", {}).values():
+        for name in rule.get("reward_variants", []):
+            _require(name in items, f"Original reward variant is absent from the scan: {name}")
+            use("itm:" + name)
+            selected_items.add(name)
+
     if has_shop_pricing:
         percent = native["shop_pricing"]["percent"]
         overrides = native["shop_pricing"]["base_prices"]
@@ -195,26 +356,121 @@ def _compile(manifest: dict, world: dict, index: dict, items: dict) -> tuple[dic
                      f"Experimental native shop price exceeds 32-bit gold range: {resref}")
             native["shop_prices"][resref] = effective
 
+    # UDLESA's sword is an ordinary physical source. Its conversation must use
+    # the same kept/relocated decision without registering a second reward unit.
+    for selected in manifest["sources"]:
+        name = PHYSICAL_SOURCE_REWARDS.get(selected["id"])
+        if name:
+            reward = MODE2_REWARDS[name]
+            _require(selected["record"]["record"] == reward["source_record"] and
+                     use(reward["source_resource"]) == reward["source_resource_sha256"],
+                     f"Original inventory reward source changed: {selected['id']}")
+            native["sources"][selected["id"]]["reward_selected_global"] = reward["selected_global"]
+            for resource in reward["resources"]:
+                use(resource)
+
     for selected in manifest["targets"]:
         target, identity = selected["record"], selected["id"]
-        _require(index["targets"].get(identity) == target and
-                 index["resources"][target["resource"]]["sha256"] == selected["resource_sha256"],
+        authored = target.get("adapter_id") == "original-target-v1"
+        container_quest = container_target_spec(target["selector"]) if authored else None
+        _require((authored or index["targets"].get(identity) == target) and
+                 (index["resources"][target["resource"]]["sha256"] == selected["resource_sha256"] or
+                  (authored and target["selector"]["id"] in MODE2_TARGETS and
+                   target["resource"] in MODE2_RESOURCES)),
                  f"Selected target differs from the scan: {identity}")
+        if authored:
+            selector = target["selector"]
+            use(target["resource"])
+            reward = mode2_target_spec(selector["id"]) if selector["id"] in MODE2_TARGETS else None
+            if reward and reward.get("inventory_target"):
+                placement = reward["inventory_target"]
+                creature = index["targets"].get(placement["creature_resource"])
+                _require(creature is not None and
+                         creature["selector"]["script_name"].lower() == placement["script_name"].lower() and
+                         not {DANGLING_INVENTORY, INVALID_INVENTORY, UNRESOLVED_STORAGE}.intersection(creature["concerns"]),
+                         f"Original reward recipient changed: {identity}")
+                for resource in (*reward["resources"], placement["creature_resource"], "are:" + placement["area"].lower()):
+                    use(resource)
+                native["targets"][identity] = {
+                    "kind": "creature", "area": placement["area"].upper(),
+                    "script_name": _name(placement["script_name"], identity),
+                    "inventory_reward": True, "reward_resource": reward["resource"],
+                    "identity": _digest({"target": selected, "creature": creature})}
+                continue
+            if target["kind"] in ("group", "creature-target"):
+                resources = selector["members"] if target["kind"] == "group" else [selector["creature_resource"]]
+                members = []
+                for resource in resources:
+                    if resource not in index["resources"]:
+                        continue  # Original group tables also filter absent CREs.
+                    creature = index["targets"][resource]
+                    _require(not {DANGLING_INVENTORY, INVALID_INVENTORY, UNRESOLVED_STORAGE}.intersection(creature["concerns"]),
+                             f"Original recipient has inventory diagnostics: {resource}")
+                    name = _name(creature["selector"]["script_name"], identity)
+                    use(resource)
+                    members.append({"resref": resource[4:], "script_name": name})
+                _require(bool(members), f"Original recipient has no installed member: {identity}")
+                endpoint = {"kind": "group" if target["kind"] == "group" else "creature",
+                            "area": _area(target["resource"]), "identity": _digest({"target": selected})}
+                if target["kind"] == "group":
+                    endpoint["members"] = members
+                else:
+                    endpoint["script_name"] = members[0]["script_name"]
+                native["targets"][identity] = endpoint
+                continue
+            if target["kind"] == "scripted-target":
+                if selector["id"] in MODE2_TARGETS:
+                    spec = mode2_target_spec(selector["id"])
+                    for resource in spec["resources"]:
+                        use(resource)
+                    if spec["recipient_local"] is None:
+                        physical = index["targets"].get(spec["recipient"])
+                        _require(physical is not None and physical["kind"] == "container" and
+                                 physical["selector"]["trap_script"] == spec["quest"],
+                                 f"Original Mode 2 reward container changed: {identity}")
+                        selection = physical["selector"]
+                        use(physical["resource"])
+                        native["targets"][identity] = {
+                            "kind": "container", "area": _area(physical["resource"]),
+                            "script_name": _name(selection["name"], identity),
+                            "x": selection["x"], "y": selection["y"], "container_type": selection["type"],
+                            "claim_global": spec["event_global"], "reward_resource": spec["resource"],
+                            "identity": _digest({"target": selected, "container": physical})}
+                    else:
+                        native["targets"][identity] = {
+                            "kind": "quest", "area": "*", "adapter_id": "mode2-reward-v1",
+                            "resource": spec["resource"], "event_global": spec["event_global"],
+                            "recipient_local": spec["recipient_local"], "identity": _digest({"target": selected})}
+                    continue
+                if target["resource"] == SPELL["resource"]:
+                    _require(identity == "original-target:bg2:mode2:target:70" and
+                             selected["resource_sha256"] in (KEY_ORIGINAL_HASH, KEY_PATCHED_HASH),
+                             f"Unreviewed spell recipient: {identity}")
+                    native["targets"][identity] = {
+                        "kind": "quest", "area": "*", "resource": SPELL["resource"],
+                        "event_global": SPELL["event_global"], "recipient_local": SPELL["recipient_local"],
+                        "identity": _digest({"target": selected})}
+                    native["resource_hashes"]["SPIN621.SPL"] = KEY_PATCHED_HASH
+                    continue
+                name = selector["target"].removesuffix(".bcs")
+                _require(name in QUESTS, f"Unreviewed original quest recipient: {identity}")
+                use("bcs:" + name)
+                native["targets"][identity] = {"kind": "quest", "area": _area(target["resource"]),
+                    "resource": "bcs:" + name, "event_global": QUESTS[name]["event_global"],
+                    "identity": _digest({"target": selected})}
+                native["resource_hashes"][name.upper() + ".BCS"] = QUEST_PATCHED_HASHES[name]
+                continue
+            physical = [index["targets"][key] for key in selector["target_ids"] if key in index["targets"]]
+            _require(len(physical) == 1, f"Original recipient needs one physical binding: {identity}")
+            target = physical[0]
+            if container_quest:
+                _require(target["id"] == container_quest["physical_target_id"],
+                         f"Original container quest binding changed: {identity}")
+                for resource in container_quest["resources"]:
+                    use(resource)
         if target["kind"] == "store":
             _require(target["selector"]["flags"] & 1,
                      f"Experimental native store target does not allow the player to buy: {identity}")
-            _require(target["resource"] not in selected_stores,
-                     f"Experimental native export cannot use a selected source store as a target: {identity}")
-            _require(not (selected["capacity"] > 1 and
-                          any(quantity > 1 for quantity in item_units.values())),
-                     "Experimental native export cannot assign distinct copies of one selected item "
-                     "to a single shop yet; use store target capacity 1 for multi-copy sources")
-            collisions = sorted({row["item"] for row in index["sources"].values()
-                                 if row["kind"] == "store" and row["resource"] == target["resource"]
-                                 and row["item"] in selected_items})
-            _require(not collisions,
-                     f"Experimental native store target already stocks selected item(s) "
-                     f"{', '.join(collisions)}; AddStoreItem merges rows and cannot attribute inserted copies: {identity}")
             use(target["resource"])
             native["targets"][identity] = {"kind": "store", "store": target["resource"][4:],
                                            "identity": _digest({"target": selected})}
@@ -223,7 +479,7 @@ def _compile(manifest: dict, world: dict, index: dict, items: dict) -> tuple[dic
             selector = target["selector"]
             name = _name(selector["name"], identity)
             _require(not selector["dynamic_item_table"] and
-                     container_names[target["resource"], name.lower()] == 1,
+                     container_names[target["resource"], name.lower(), selector["x"], selector["y"], selector["type"]] == 1,
                      f"Native target needs a unique static container name: {identity}")
             _require(0 <= selector["x"] <= 32767 and 0 <= selector["y"] <= 32767,
                      f"Native container coordinates are unsupported: {identity}")
@@ -233,6 +489,10 @@ def _compile(manifest: dict, world: dict, index: dict, items: dict) -> tuple[dic
                 "script_name": name, "x": selector["x"], "y": selector["y"],
                 "container_type": selector["type"],
                 "identity": _digest({"target": selected})}
+            if container_quest:
+                native["targets"][identity]["loot_latch"] = {
+                    key: container_quest[key] for key in
+                    ("activation_global", "latch_global", "latch_scope")}
             continue
         _require(target["kind"] == "actor", f"Native export needs an ARE actor, container or store target: {identity}")
         name = _name(actor_name(target), identity)
@@ -246,9 +506,32 @@ def _compile(manifest: dict, world: dict, index: dict, items: dict) -> tuple[dic
             "script_name": name, "identity": _digest({"target": selected,
                 "template": index["resources"].get(template)})}
 
-    native["source_gate"] = {"schema": "flpr-unvisited-fixture-gate-v1",
-                             "source_ids": [s["id"] for s in manifest["sources"]]}
+    guarded_ids = [s["id"] for s in manifest["sources"] if s["record"]["kind"] != "virtual"]
+    if guarded_ids or shield or "cursed_disguises" in manifest:
+        native["source_gate"] = {"schema": "flpr-unvisited-fixture-gate-v1", "source_ids": guarded_ids}
+    options = manifest.get("original_options", {})
+    if options.get("kangaxx"):
+        for resource in ("dlg:hlskull", "bcs:crypt526", "bcs:crypt202"):
+            use(resource)
+    if options.get("flail_heads"):
+        use("dlg:kpglai01")
     return native, required, pristine
+
+
+def _export_tlk(installed: bytes, prepared: Path) -> bytes:
+    """Keep text references already used by saved, exported configurations."""
+    if not prepared.exists():
+        return installed
+    previous = prepared.read_bytes()
+    def extends(new: bytes, old: bytes) -> bool:
+        a, b = _Tlk(new), _Tlk(old)
+        return (a.count >= b.count and new[:10] == old[:10] and
+                new[18:18 + b.count * 26] == old[18:18 + b.count * 26] and
+                new[a.offset:a.offset + len(old) - b.offset] == old[b.offset:])
+    if extends(installed, previous):
+        return installed
+    _require(extends(previous, installed), "Game text changed since export; rescan into a fresh export directory")
+    return previous
 
 
 def export_native(store: Path, catalog: dict, world: dict, output: Path,
@@ -269,44 +552,213 @@ def export_native(store: Path, catalog: dict, world: dict, output: Path,
         base = "campaign-store/revisions/" + key
         pending[base + ".json"] = canonical_bytes(manifest)
         pending[base + ".lua"] = _render_lua(manifest)
-        pending[base + ".native.json"] = canonical_bytes(native)
-        pending[base + ".native.lua"] = _render_lua(native)
     # Reuse the scanner's resource reader; only selected resources are demanded.
     resource_bytes = {}
-    with GameResources(Path(catalog["game_root"]), {k: RESOURCE_TYPES[k] for k in ("itm", "are", "cre", "sto", "bcs")}) as reader:
+    with GameResources(Path(catalog["game_root"]), {k: RESOURCE_TYPES[k] for k in ("itm", "are", "cre", "sto", "bcs", "dlg", "spl")}) as reader:
         for resource in sorted(required):
             kind, name = resource.split(":", 1)
+            if resource in ("itm:flbhcryp", "itm:flrbelt1") and resource not in index["resources"]:
+                data = (Path(__file__).resolve().parents[2] / ("copy/" + name + ".itm")).read_bytes()
+                resource_bytes[resource] = data
+                pending["resource-overrides/" + name.upper() + ".ITM"] = data
+                continue
             data = reader.read(kind, name)
             actual_hash = hashlib.sha256(data).hexdigest()
             expected_hash = index["resources"][resource]["sha256"]
             # Install the static quest branch once; later configuration exports
             # may still use the original scan without reinstalling the mod.
             own_script_patch = resource == RESOURCE and expected_hash in SUPPORTED_HASHES and actual_hash == PATCHED_SHA256
-            _require(actual_hash == expected_hash or own_script_patch,
+            own_quest_patch = (kind == "bcs" and name in QUESTS and
+                               expected_hash in (QUEST_ORIGINAL_HASHES[name], QUEST_PATCHED_HASHES[name],
+                                                 PATCHED_SHA256 if name == "blpool" else "") and
+                               actual_hash == QUEST_PATCHED_HASHES[name])
+            own_mode2_patch = (resource in MODE2_RESOURCES and
+                               expected_hash == MODE2_ORIGINAL_HASHES[name] and actual_hash == MODE2_PATCHED_HASHES.get(name))
+            own_patch = False
+            if actual_hash != expected_hash:
+                recover = {"dlg:unshey": original_unshey,
+                           "dlg:hlskull": lambda value: original_dialogue("hlskull.dlg", value),
+                           "dlg:kpglai01": lambda value: original_dialogue("kpglai01.dlg", value),
+                           "bcs:crypt526": lambda value: original_crypt("crypt526.bcs", value),
+                           "bcs:crypt202": lambda value: original_crypt("crypt202.bcs", value)}.get(resource)
+                if recover:
+                    own_patch = hashlib.sha256(recover(data)).hexdigest() == expected_hash
+                if resource == SPELL["resource"]:
+                    own_patch = expected_hash == KEY_ORIGINAL_HASH and actual_hash == KEY_PATCHED_HASH
+                if resource in MODE2_RESOURCES:
+                    original = original_mode2_reward(resource, data)
+                    own_patch = original is not None and hashlib.sha256(original).hexdigest() == expected_hash
+                if resource in CONTAINER_RESOURCES:
+                    own_patch = hashlib.sha256(original_container_resource(resource, data)).hexdigest() == expected_hash
+            _require(actual_hash == expected_hash or own_script_patch or own_quest_patch or own_mode2_patch or own_patch,
                      f"Installed resource changed; rescan before export: {resource}")
-            if kind in ("are", "cre", "sto", "bcs"):
-                resource_bytes[resource] = data
+            resource_bytes[resource] = data
             if resource in pristine:
                 pending[name.upper() + ".pristine.are"] = data
+    kangaxx = any(m.get("original_options", {}).get("kangaxx") for m in manifests.values())
+    flail = any(m.get("original_options", {}).get("flail_heads") for m in manifests.values())
+    cursed = any("cursed_disguises" in m for m in manifests.values())
+    reward_texts = {}
+    container_texts = {}
+    text_rewards = required & MODE2_TEXT_REFS.keys()
+    container_text_resources = required & CONTAINER_TEXT_RESOURCES
+    if "dlg:unshey" in required or kangaxx or flail or cursed or text_rewards or container_text_resources:
+        root = Path(catalog["game_root"])
+        language = catalog["language"]
+        tlk_relative = (Path("dialog.tlk") if language == "default"
+                        else Path("lang") / language / "dialog.tlk")
+        tlk = _export_tlk((root / tlk_relative).read_bytes(), output / "game-overrides" / tlk_relative)
+        # The EE journal table is installed by EET as an override; reading this
+        # known filename avoids indexing unrelated long-named Lua helper files.
+        journal = (root / "override/BGEE.LUA").read_bytes()
+        patches = {}
+        if "dlg:unshey" in required:
+            dialogue, belt, tlk = prepare_unshey_resources(
+                resource_bytes["dlg:unshey"],
+                (Path(__file__).resolve().parents[2] / "copy/flrbelt1.itm").read_bytes(),
+                tlk, language=language)
+            patches.update({"unshey.dlg": dialogue, "flrbelt1.itm": belt})
+            journal = patch_unshey_journal(journal, dialogue)
+        quest_patches, tlk = prepare_quest_options(
+            {resource[4:] + "." + resource[:3]: data for resource, data in resource_bytes.items()},
+            tlk, kangaxx=kangaxx, flail_heads=flail, language=language)
+        patches.update(quest_patches)
+        if kangaxx:
+            journal = patch_kangaxx_journal(journal, patches["hlskull.dlg"])
+        if text_rewards:
+            tlk, reward_texts = prepare_reward_texts(tlk, text_rewards, language)
+        if container_text_resources:
+            tlk, container_texts = prepare_container_texts(tlk, container_text_resources, language)
+        for revision, manifest in sorted(manifests.items()):
+            if "cursed_disguises" not in manifest:
+                continue
+            fixture, assets, tlk = prepare_cursed_disguises(manifest["cursed_disguises"],
+                {name[4:]: data for name, data in resource_bytes.items() if name.startswith("itm:")},
+                tlk, language=language)
+            compiled[revision]["cursed_disguises"] = fixture
+            for name, data in assets.items():
+                pending[f"campaign-store/revisions/{revision}.cursed/{name}"] = data
+        pending["resource-overrides/BGEE.LUA"] = journal
+        pending["game-overrides/" + tlk_relative.as_posix()] = tlk
+        for name, data in patches.items():
+            pending["resource-overrides/" + name.upper()] = data
+        for native in compiled.values():
+            for name, data in patches.items():
+                if name.upper() in native["resource_hashes"]:
+                    native["resource_hashes"][name.upper()] = hashlib.sha256(data).hexdigest()
+    def stage_script(name: str, patched: bytes) -> None:
+        relative = "script-overrides/" + name.upper() + ".BCS"
+        prior = pending.get(relative)
+        if prior is None or prior == patched or is_compatible_patch(prior, patched):
+            pending[relative] = patched
+        elif not is_compatible_patch(patched, prior):
+            raise ProfileError(f"Script override revisions disagree: {name}")
+
+    # Each common static Mode 2 patch reads campaign flags. Prepare it once,
+    # retaining the same bytes for every revision that shares the resource.
+    mode2_patches = {}
+    for resource in MODE2_RESOURCES:
+        if resource not in required:
+            continue
+        patched = patch_mode2_reward(resource, resource_bytes[resource], refs=reward_texts.get(resource))
+        mode2_patches[resource] = patched
+        kind, name = resource.split(":")
+        filename = name.upper() + "." + kind.upper()
+        pending["resource-overrides/" + filename] = patched
+        for native in compiled.values():
+            if filename in native["resource_hashes"]:
+                native["resource_hashes"][filename] = hashlib.sha256(patched).hexdigest()
+
+    for resource in sorted(required & CONTAINER_RESOURCES.keys()):
+        patched = patch_container_resource(resource, resource_bytes[resource], refs=container_texts.get(resource))
+        kind, name = resource.split(":")
+        filename = name.upper() + "." + kind.upper()
+        pending["resource-overrides/" + filename] = patched
+        for native in compiled.values():
+            if filename in native["resource_hashes"]:
+                native["resource_hashes"][filename] = hashlib.sha256(patched).hexdigest()
+
     for key, manifest in sorted(manifests.items()):
+        native = compiled[key]
+        shield = manifest.get("spell_shield")
+        if shield:
+            prefix = f"campaign-store/revisions/{key}.spell-shield"
+            original = resource_bytes[shield["resource"]]
+            effective = patch_spell_shield_stock(original)
+            pending[prefix + ".original.sto"] = original
+            pending[prefix + ".effective.sto"] = effective
+        for endpoint in native["targets"].values():
+            mode2_resource = (endpoint.get("resource") if endpoint.get("adapter_id") == "mode2-reward-v1"
+                              else endpoint.get("reward_resource"))
+            if mode2_resource:
+                _require(mode2_resource in mode2_patches, "Mode 2 recipient patch is missing")
+            if endpoint["kind"] == "quest":
+                resource = endpoint["resource"]
+                if mode2_resource:
+                    pass  # The original grant has just been staged above.
+                elif resource == SPELL["resource"]:
+                    pending["resource-overrides/SPIN621.SPL"] = patch_key_spell(resource_bytes[resource])
+                else:
+                    stage_script(resource[4:], patch_quest(resource, resource_bytes[resource]))
+            if endpoint["kind"] == "group":
+                from .group_recipients import preferred_members
+                creatures = {member["resref"]: resource_bytes["cre:" + member["resref"]]
+                             for member in endpoint["members"]}
+                endpoint["eligible"] = {}
+                reward_items = {s["record"]["item"] for s in manifest["sources"]}
+                for rule in manifest.get("randomization", {}).get("sources", {}).values():
+                    reward_items.update(rule.get("reward_variants", []))
+                for item in sorted(reward_items):
+                    preferred = preferred_members(resource_bytes["itm:" + item], creatures)
+                    endpoint["eligible"][item] = [n for n, member in enumerate(endpoint["members"], 1)
+                                                 if member["resref"] in preferred]
+        base = "campaign-store/revisions/" + key
+        pending[base + ".native.json"] = canonical_bytes(native)
+        pending[base + ".native.lua"] = _render_lua(native)
         for source_index, selected_source in enumerate(manifest["sources"], 1):
             source = selected_source["record"]
             compiled_source = compiled[key]["sources"][selected_source["id"]]
             base = f"campaign-store/revisions/{key}.source-{source_index}"
+            for number, auxiliary in enumerate(compiled_source.get("auxiliary_creatures", ()), 1):
+                pending[base + f".duplicate-{number}.original.cre"] = resource_bytes[auxiliary["resource"]]
             if compiled_source["kind"] == "guarded-script":
-                patched = patch_blpool(resource_bytes[source["resource"]])
-                _require(hashlib.sha256(patched).hexdigest() == PATCHED_SHA256,
-                         "BLPOOL patched BCS differs from the reviewed adapter")
+                raw = resource_bytes[source["resource"]]
+                if compiled_source["adapter_id"] == "mode2-reward-v1":
+                    kind, name = source["resource"].split(":")
+                    patched = mode2_patches[source["resource"]]
+                    pending[base + ".patched." + kind] = patched
+                    for number, resource in enumerate(compiled_source.get("resources", ()), 1):
+                        extension = resource.split(":")[0]
+                        pending[base + f".route-{number}.patched." + extension] = mode2_patches[resource]
+                    pending["resource-overrides/" + name.upper() + "." + kind.upper()] = patched
+                    continue
+                if compiled_source["adapter_id"] == "spell-key-v1":
+                    patched = patch_key_spell(raw)
+                    pending[base + ".patched.spl"] = patched
+                    pending["resource-overrides/SPIN621.SPL"] = patched
+                    continue
+                elif compiled_source["adapter_id"] == "original-quest-v1":
+                    patched = patch_quest(source["resource"], raw)
+                elif hashlib.sha256(raw).hexdigest() == QUEST_PATCHED_HASHES["blpool"]:
+                    # Recover the immutable legacy form for old saved revisions.
+                    from .quest_rewards import _global_action, _newline
+                    patched = raw.replace(_global_action("FLPR_EPOOL", _newline(raw)), b"")
+                    _require(hashlib.sha256(patched).hexdigest() == PATCHED_SHA256,
+                             "BLPOOL compatible extension changed")
+                else:
+                    patched = patch_blpool(raw)
                 pending[base + ".patched.bcs"] = patched
-                relative = "script-overrides/BLPOOL.BCS"
-                _require(relative not in pending or pending[relative] == patched,
-                         "Script override revisions disagree")
-                pending[relative] = patched
+                stage_script(source["resource"][4:], patched)
                 continue
             if compiled_source["kind"] == "guarded-store":
                 original = resource_bytes[source["resource"]]
+                if compiled_source.get("stock_option") == "more_spell_shield":
+                    original = patch_spell_shield_stock(original)
                 pending[base + ".original.sto"] = original
-                pending[base + ".removed.sto"] = rewrite_store(original, {source["record"]["record_index"]})
+                pending[base + ".removed.sto"] = rewrite_store(original, {compiled_source["record_index"]})
+                continue
+            if compiled_source["kind"] == "guarded-template":
+                pending[base + ".original.cre"] = resource_bytes[source["resource"]]
                 continue
             if compiled_source["kind"] != "guarded-creature":
                 continue
@@ -323,9 +775,18 @@ def export_native(store: Path, catalog: dict, world: dict, output: Path,
                 original, {source["record"]["record_index"]:
                            None if replacement == "blank" else replacement})
     for relative, data in pending.items():
-        _write_immutable(_store_path(output, Path(relative)), data)
+        path = _store_path(output, Path(relative))
+        if relative.startswith("campaign-store/"):
+            _write_immutable(path, data)
+        else:
+            # These are the prepared common resources for all exported
+            # revisions; adding a compatible quest branch or TLK entry can
+            # update them without altering any campaign's assignments.
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(data)
     revisions = sorted(manifests)
-    _store_path(output, Path("source-gate.lua")).write_bytes(_render_lua(revisions))
+    guarded_revisions = [key for key in revisions if "source_gate" in compiled[key] or "spell_shield" in compiled[key]]
+    _store_path(output, Path("source-gate.lua")).write_bytes(_render_lua(guarded_revisions))
     _store_path(output, Path("next.lua")).write_bytes(_render_lua(selected["revision"]))
     return {"revision": selected["revision"], "revisions": revisions,
             "config_path": str(output), "state": "experimental-native-config"}

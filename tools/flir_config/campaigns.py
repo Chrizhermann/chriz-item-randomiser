@@ -21,6 +21,18 @@ from .sources import (DANGLING_INVENTORY, INVALID_INVENTORY, UNRESOLVED_STORAGE,
                       UNUSABLE_SOURCE, bind_profile)
 from .scripted_sources import (ITEM, SUPPORTED_HASHES, RESOURCE, SOURCE_ID,
                                campaign_record, validate_registration)
+from .virtual_sources import ADAPTER_ID as VIRTUAL_ADAPTER_ID
+from .virtual_sources import campaign_record as virtual_campaign_record
+from .virtual_sources import validate_registration as validate_virtual_registration
+from .original_registrations import (SOURCE_ADAPTER as ORIGINAL_SOURCE_ADAPTER,
+                                     TARGET_ADAPTER as ORIGINAL_TARGET_ADAPTER,
+                                     SHIPPED_REPLACEMENT, SHIPPED_REPLACEMENT_HASH,
+                                     source_record as original_source_record,
+                                     validate_campaign_source as validate_original_campaign_source,
+                                     validate_campaign_target as validate_original_campaign_target)
+from .templates import POOL_CHOICES, _options as original_options, list_templates
+from .original_options import SPELL_SHIELD_SOURCE, validate_spell_shield_spec
+from .cursed_disguises import validate_cursed_disguise_spec
 
 CAMPAIGN_SCHEMA = "flir-campaign-prototype-v1"
 POINTER_SCHEMA = "flir-prototype-next-v1"
@@ -85,7 +97,11 @@ def _concerns(record: dict) -> list:
     return concerns
 
 
-def _validate_source(row: dict) -> int:
+def _validate_source(row: dict, *, spell_shield: dict | None = None) -> int:
+    if (isinstance(row, dict) and isinstance(row.get("record"), dict) and
+            row["record"].get("adapter_id") == ORIGINAL_SOURCE_ADAPTER):
+        _fields(row, {"id", "quantity", "record", "resource_sha256"}, "source")
+        return validate_original_campaign_source(row, spell_shield=spell_shield)
     _fields(row, {"id", "quantity", "record", "resource_sha256"}
             | ({"replacement"} if isinstance(row, dict) and "replacement" in row else set()), "source")
     _hash(row["resource_sha256"], "source resource fingerprint")
@@ -94,7 +110,7 @@ def _validate_source(row: dict) -> int:
                                      "record", "concerns"} |
                      ({"adapter_id", "selector"} if isinstance(row, dict) and
                       isinstance(row.get("record"), dict) and
-                      row["record"].get("kind") == "scripted" else set()), "source record")
+                      row["record"].get("kind") in ("scripted", "virtual") else set()), "source record")
     if source["kind"] == "scripted":
         if (row["id"] != SOURCE_ID or row["quantity"] != 1 or
                 row["resource_sha256"] not in SUPPORTED_HASHES or
@@ -104,6 +120,18 @@ def _validate_source(row: dict) -> int:
                     "copies": 1, "optional": False}) or "replacement" in row):
             raise ProfileError("Unsupported scripted campaign source")
         return 1
+    if source["kind"] == "virtual":
+        registration = {"id": source["id"], "item": source["item"],
+                        "resource": source["resource"],
+                        "resource_sha256": row["resource_sha256"],
+                        "adapter_id": source["adapter_id"],
+                        "selector": source["selector"], "copies": quantity,
+                        "optional": False, "payload": source["record"]}
+        validate_virtual_registration(registration)
+        if (row["id"] != source["id"] or source != virtual_campaign_record(registration)
+                or "replacement" in row):
+            raise ProfileError("Unsupported virtual campaign source")
+        return quantity
     if source["kind"] not in ("cre-template", "embedded-cre", "container", "store"):
         raise ProfileError("Campaign prototype accepts only physical sources")
     if UNUSABLE_SOURCE.intersection(_concerns(source)):
@@ -129,14 +157,17 @@ def _validate_source(row: dict) -> int:
     kind = source["kind"]
     if "replacement" in row:
         replacement = row["replacement"]
-        if not isinstance(replacement, dict) or kind not in ("cre-template", "embedded-cre"):
-            raise ProfileError("Campaign replacement requires a creature source")
+        if not isinstance(replacement, dict) or kind not in ("cre-template", "embedded-cre", "container"):
+            raise ProfileError("Campaign replacement requires a creature or container source")
         name = _resref(replacement.get("resref"))
         _fields(replacement, {"resref"} if name == "blank" else {"resref", "resource_sha256"}, "replacement")
         if name == source["item"]:
             raise ProfileError("Campaign replacement must differ from the relocated item")
         if name != "blank":
             _hash(replacement["resource_sha256"], "replacement fingerprint")
+            if (name == SHIPPED_REPLACEMENT and
+                    replacement["resource_sha256"] != SHIPPED_REPLACEMENT_HASH):
+                raise ProfileError("Original flbhcryp replacement fingerprint changed")
     resource = _resource(source["resource"], {"cre-template": "cre", "embedded-cre": "are",
                                            "container": "are", "store": "sto"}[kind])
     if kind in ("cre-template", "store") and owner != resource:
@@ -169,6 +200,10 @@ def _validate_source(row: dict) -> int:
 
 
 def _validate_target(row: dict) -> int:
+    if (isinstance(row, dict) and isinstance(row.get("record"), dict) and
+            row["record"].get("adapter_id") == ORIGINAL_TARGET_ADAPTER):
+        _fields(row, {"id", "capacity", "record", "resource_sha256"}, "target")
+        return validate_original_campaign_target(row)
     _fields(row, {"id", "capacity", "record", "resource_sha256"}, "target")
     capacity = _integer(row["capacity"], "target capacity", 1, MAX_TARGET_CAPACITY)
     _hash(row["resource_sha256"], "target resource fingerprint")
@@ -204,7 +239,12 @@ def _validate_target(row: dict) -> int:
 
 def _validate_randomization(value: object, sources: list[dict], targets: list[dict]) -> None:
     metadata = _fields(value, {"sources", "targets", "loss_percent",
-                               "unrandomized_percent"}, "randomization")
+                               "unrandomized_percent"} |
+                       (set(value) & {"overflow", "row_filters"} if isinstance(value, dict) else set()),
+                       "randomization")
+    overflow = metadata.get("overflow", False)
+    if type(overflow) is not bool:
+        raise ProfileError("Invalid randomization overflow flag")
     source_rows = {row["id"]: row for row in sources}
     target_rows = {row["id"]: row for row in targets}
     source_metadata, target_metadata = metadata["sources"], metadata["targets"]
@@ -219,17 +259,46 @@ def _validate_randomization(value: object, sources: list[dict], targets: list[di
             raise ProfileError("Invalid randomization tier")
         return value
 
+    if "row_filters" in metadata:
+        filters = _fields(metadata["row_filters"], {"sources", "targets"}, "row filters")
+        for kind, selected in (("sources", source_rows), ("targets", target_rows)):
+            rows = filters[kind]
+            if not isinstance(rows, dict) or set(rows) != set(selected):
+                raise ProfileError("Row filters must name exactly the selected sources and targets")
+            for details in rows.values():
+                _fields(details, {"chance", "group"}, "row filter")
+                _integer(details["chance"], "row filter chance", high=100)
+                group = details["group"]
+                if group != "":
+                    tier(group)
+
     target_capacity = Counter()
+    eligible_slots = {}
     for identity, row in target_rows.items():
         slots = target_metadata[identity]
         if not isinstance(slots, list) or len(slots) != row["capacity"]:
             raise ProfileError("Randomization target tiers must match target capacity")
-        target_capacity.update(tier(name) for name in slots)
+        for ordinal, raw_name in enumerate(slots, 1):
+            name = tier(raw_name)
+            target_capacity[name] += 1
+            if row["record"]["kind"] in {"actor", "cre-template", "container", "store", "group", "creature-target"}:
+                eligible_slots.setdefault(name, set()).add((identity, ordinal))
 
     source_units, keep_reserve = Counter(), Counter()
+    all_exclusions = set()
     for identity, row in source_rows.items():
         details = _fields(source_metadata[identity],
-                          {"tier", "loss_exempt", "exclude_targets"}, "randomization source")
+                          {"tier", "loss_exempt", "exclude_targets"} |
+                          ({"reward_variants"} if isinstance(source_metadata[identity], dict)
+                           and "reward_variants" in source_metadata[identity] else set()),
+                          "randomization source")
+        if "reward_variants" in details:
+            variants = details["reward_variants"]
+            if (not isinstance(variants, list) or not 1 <= len(variants) <= MAX_REWARD_UNITS
+                    or any(not isinstance(item, str) or
+                           re.fullmatch(r"[a-z0-9#_-]{1,8}", item) is None for item in variants)
+                    or len(set(variants)) != len(variants)):
+                raise ProfileError("Invalid randomization reward variants")
         name = tier(details["tier"])
         if type(details["loss_exempt"]) is not bool:
             raise ProfileError("Invalid randomization loss exemption")
@@ -247,6 +316,7 @@ def _validate_randomization(value: object, sources: list[dict], targets: list[di
             if (target_id, entry["ordinal"]) in seen_targets:
                 raise ProfileError("Randomization exclusions need distinct selected targets")
             seen_targets.add((target_id, entry["ordinal"]))
+            all_exclusions.add((target_id, entry["ordinal"]))
             excluded_tiers[target_metadata[target_id][entry["ordinal"] - 1]] += 1
         # Reserve for each possible keep decision independently. Shared exclusions
         # can overestimate this bound; no runtime overflow policy is installed yet.
@@ -254,6 +324,13 @@ def _validate_randomization(value: object, sources: list[dict], targets: list[di
             keep_reserve[excluded_tier] += max(0, count - (row["quantity"] if excluded_tier == name else 0))
         source_units[name] += row["quantity"]
     for name, count in source_units.items():
+        if overflow:
+            if not eligible_slots.get(name):
+                raise ProfileError(f"Randomization overflow needs an eligible target in tier {name}")
+            if (metadata["unrandomized_percent"] > 0 and
+                    not (eligible_slots[name] - all_exclusions)):
+                raise ProfileError(f"Randomization overflow needs an unpaired target in tier {name}")
+            continue
         if target_capacity[name] < count:
             raise ProfileError(f"Randomization tier capacity is short for {name}: "
                                f"{target_capacity[name]} target slots for {count} source units")
@@ -265,7 +342,9 @@ def _validate_randomization(value: object, sources: list[dict], targets: list[di
 
 def _validate_campaign(body: dict) -> dict:
     _fields(body, _FIELDS | ({"shop_pricing"} if isinstance(body, dict) and "shop_pricing" in body else set())
-            | ({"randomization"} if isinstance(body, dict) and "randomization" in body else set()), "artifact")
+            | ({"randomization"} if isinstance(body, dict) and "randomization" in body else set())
+            | (set(body) & {"original_template_id", "original_choices", "original_options", "spell_shield", "cursed_disguises"}
+               if isinstance(body, dict) else set()), "artifact")
     if body["schema"] != CAMPAIGN_SCHEMA or body["state"] != STATE:
         raise ProfileError("Unsupported campaign prototype schema or state")
     for key in ("revision", "bound_revision", "world_fingerprint"):
@@ -274,8 +353,38 @@ def _validate_campaign(body: dict) -> dict:
         raise ProfileError("Invalid campaign profile identity")
     if body["runtime_requirements"] != RUNTIME_REQUIREMENTS:
         raise ProfileError("Campaign runtime requirements are missing or unsupported")
+    original_keys = {"original_template_id", "original_choices", "original_options"}
+    present_original = set(body) & original_keys
+    if present_original:
+        choices = body.get("original_choices")
+        try:
+            valid_options = original_options(body.get("original_options"))
+        except ValueError as exc:
+            raise ProfileError("Invalid original campaign settings") from exc
+        if (present_original != original_keys or
+                body["original_template_id"] not in {entry["id"] for entry in list_templates()} or
+                not isinstance(choices, dict) or set(choices) != {"items", "targets"} or
+                any(value not in POOL_CHOICES for value in choices.values()) or
+                not isinstance(body["original_options"], dict) or
+                valid_options != body["original_options"]):
+            raise ProfileError("Invalid original campaign settings")
+    shield = body.get("spell_shield")
+    if present_original and body["original_options"].get("more_spell_shield"):
+        validate_spell_shield_spec(shield)
+        randomized = (body["original_options"]["scrolls"] and
+                      body["original_choices"]["items"] == "mode1+mode2" and
+                      not body["original_template_id"].startswith("bg1-"))
+        if shield["source_id"] != (SPELL_SHIELD_SOURCE if randomized else ""):
+            raise ProfileError("Spell Shield source does not match original item pool choices")
+    elif "spell_shield" in body:
+        raise ProfileError("Spell Shield stock requires its original option")
+    if present_original and body["original_options"].get("cursed_disguise"):
+        validate_cursed_disguise_spec(body.get("cursed_disguises"))
+    elif "cursed_disguises" in body:
+        raise ProfileError("Cursed disguises require their original option")
     totals = {}
-    for key, validator in (("sources", _validate_source), ("targets", _validate_target)):
+    for key, validator in (("sources", lambda row: _validate_source(row, spell_shield=shield)),
+                           ("targets", _validate_target)):
         rows = body[key]
         if not isinstance(rows, list) or not 1 <= len(rows) <= MAX_REWARD_UNITS:
             raise ProfileError(f"Campaign {key} must contain 1-{MAX_REWARD_UNITS} records")
@@ -288,10 +397,18 @@ def _validate_campaign(body: dict) -> dict:
         if total > MAX_REWARD_UNITS:
             raise ProfileError(f"Campaign {key} total exceeds prototype limit {MAX_REWARD_UNITS}")
         totals[key] = total
-    if totals["targets"] < totals["sources"]:
-        raise ProfileError("Campaign target capacity cannot hold its selected reward records")
+    if shield and shield["source_id"] and sum(row["id"] == shield["source_id"] for row in body["sources"]) != 1:
+        raise ProfileError("Spell Shield option source is missing")
+    if not present_original and any(
+            row["record"].get("adapter_id") in
+            (ORIGINAL_SOURCE_ADAPTER, ORIGINAL_TARGET_ADAPTER)
+            for row in body["sources"] + body["targets"]):
+        raise ProfileError("Authored records need original campaign settings")
     if "randomization" in body:
         _validate_randomization(body["randomization"], body["sources"], body["targets"])
+    overflow = ("randomization" in body and body["randomization"].get("overflow") is True)
+    if totals["targets"] < totals["sources"] and not overflow:
+        raise ProfileError("Campaign target capacity cannot hold its selected reward records")
     if "shop_pricing" in body:
         selected = sorted({row["record"]["item"] for row in body["sources"]})
         validate_shop_pricing(body["shop_pricing"], selected,
@@ -310,7 +427,14 @@ def compile_campaign(profile: dict, catalog: dict, world: dict, plan: dict) -> d
     if bound["additions"]:
         raise ProfileError("Campaign prototype does not support additional item copies")
     for row in plan["registrations"]:
-        validate_registration(row)
+        if row.get("adapter_id") == VIRTUAL_ADAPTER_ID:
+            validate_virtual_registration(row)
+        elif row.get("adapter_id") == ORIGINAL_SOURCE_ADAPTER:
+            # bind_profile already compared this record with the authored
+            # table row, selected scan, and resource fingerprint.
+            continue
+        else:
+            validate_registration(row)
     if any(row["kind"] not in ("physical", "registered") for row in bound["sources"]):
         raise ProfileError("Unsupported bound campaign source")
     if bound["reward_units"] > MAX_REWARD_UNITS:
@@ -327,10 +451,20 @@ def compile_campaign(profile: dict, catalog: dict, world: dict, plan: dict) -> d
     for selected in bound["sources"]:
         source = selected["source"]
         if selected["kind"] == "registered":
-            validate_registration(source)
-            body["sources"].append({"id": SOURCE_ID, "quantity": 1,
-                "record": campaign_record(source),
-                "resource_sha256": source["resource_sha256"]})
+            if source["adapter_id"] == VIRTUAL_ADAPTER_ID:
+                validate_virtual_registration(source)
+                body["sources"].append({"id": source["id"],
+                    "quantity": source["copies"], "record": virtual_campaign_record(source),
+                    "resource_sha256": source["resource_sha256"]})
+            elif source["adapter_id"] == ORIGINAL_SOURCE_ADAPTER:
+                body["sources"].append({"id": source["id"], "quantity": source["copies"],
+                    "record": original_source_record(source),
+                    "resource_sha256": source["resource_sha256"]})
+            else:
+                validate_registration(source)
+                body["sources"].append({"id": SOURCE_ID, "quantity": 1,
+                    "record": campaign_record(source),
+                    "resource_sha256": source["resource_sha256"]})
             continue
         body["sources"].append({"id": source["id"],
             "quantity": source["record"]["quantity"] if source["kind"] == "store" else 1,
@@ -345,6 +479,13 @@ def compile_campaign(profile: dict, catalog: dict, world: dict, plan: dict) -> d
         body[key].sort(key=lambda row: row["id"])
     if "randomization" in bound["plan"]:
         body["randomization"] = deepcopy(bound["plan"]["randomization"])
+    if "original_template_id" in bound["plan"]:
+        for key in ("original_template_id", "original_choices", "original_options"):
+            body[key] = deepcopy(bound["plan"][key])
+    if "spell_shield" in bound["plan"]:
+        body["spell_shield"] = deepcopy(bound["plan"]["spell_shield"])
+    if "cursed_disguises" in bound["plan"]:
+        body["cursed_disguises"] = deepcopy(bound["plan"]["cursed_disguises"])
     body["revision"] = _digest(body)
     return _validate_campaign(body)
 

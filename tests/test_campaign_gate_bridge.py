@@ -1,17 +1,25 @@
-"""Synthetic Lua wrapper checks for the authored campaign source gate.
+"""Synthetic campaign source-gate wrapper and jump-chain checks.
 
-Hooks, memory, and world observations are mocked. This does not run x86 code
-or establish native engine timing, protection, or source removal.
+World observations and EEex services are mocked; the focused chain check runs
+x86 in an emulator. Neither establishes native engine timing or source removal.
 """
 from pathlib import Path
+import re
+import struct
+import sys
 import unittest
 
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / 'work/source-gate-20260927/analysis-deps'))
+
+from keystone import Ks, KS_ARCH_X86, KS_MODE_64
 from lupa.lua51 import LuaRuntime as Lua51
 from lupa.lua53 import LuaRuntime as Lua53
 from lupa.luajit21 import LuaRuntime as LuaJIT
+from unicorn import Uc, UC_ARCH_X86, UC_MODE_64, UC_HOOK_CODE
+from unicorn.x86_const import UC_X86_REG_RAX, UC_X86_REG_RSP, UC_X86_REG_EFLAGS
 
 
-ROOT = Path(__file__).resolve().parents[1]
 CORE = (ROOT / "prototype/FLPRCore.lua").read_text(encoding="utf-8")
 GATE = (ROOT / "prototype/FLPRGat.lua").read_text(encoding="utf-8")
 POLICY = (ROOT / "tools/probes/FLPRCampaignPolicy.lua").read_text(encoding="utf-8")
@@ -130,6 +138,60 @@ local function fixture(Core)
     end
     function f.api.EEex_DisableCodeProtection() f.events[#f.events+1]='unprotect' end
     function f.api.EEex_EnableCodeProtection() f.events[#f.events+1]='protect' end
+    -- Model EEex's table flattening and separate near allocations. The real
+    -- preprocessor rejects nested assembly tables, so this mock does too.
+    function f.api.EEex_FlattenTable(values)
+        local result={}
+        local function append(value)
+            if type(value)=='table' then
+                for _,nested in ipairs(value) do append(nested) end
+            else result[#result+1]=value end
+        end
+        append(values); return result
+    end
+    f.api.EEex_HookIntegrityWatchdog_HookEnter={'; watchdog entry\n'}
+    function f.api.EEex_HookIntegrityWatchdog_IgnoreRegisters() end
+    function f.api.EEex_HookIntegrityWatchdog_DefaultIgnoreStack() end
+    function f.api.EEex_RunWithAssemblyLabels(labels,action)
+        assert(labels[1][1]=='hook_address')
+        f.hook_address=labels[1][2]
+        local result=action(); f.hook_address=nil; return result
+    end
+    function f.api.EEex_StoreBytesAssembly(address,size)
+        local bytes={'.DB '}
+        for offset=0,size-1 do
+            if offset>0 then bytes[#bytes+1]=', ' end
+            bytes[#bytes+1]=f:peek(address+offset,1)
+        end
+        bytes[#bytes+1]='\n'; return bytes
+    end
+    f.jit={}
+    function f.api.EEex_JITNear(assembly)
+        assert(f.hook_address,'every chunk must retain native unwind context')
+        for _,value in ipairs(assembly) do
+            assert(type(value)=='string' or type(value)=='number','JIT assembly must be flat')
+        end
+        local address=BASE+0x800000+(f.jit_count or 0)*0x10000
+        f.jit_count=(f.jit_count or 0)+1
+        f.jit[address]=table.concat(assembly)
+        return address
+    end
+    function f.api.EEex_JITAt(address,assembly)
+        local code=table.concat(assembly)
+        local target=assert(tonumber(code:match('^jmp short (%d+)')))
+        local chunks,next_address={},target
+        while f.jit[next_address] do
+            local chunk=f.jit[next_address]; chunks[#chunks+1]=chunk
+            assert(#chunks<=f.jit_count,'chain cycle')
+            next_address=tonumber(chunk:match('jmp (%d+)%s*$'))
+        end
+        local _,padding=code:gsub('nop\n','')
+        local size=5+padding; local index=#f.hooks+1
+        f.hooks[index]={address,0,size,size,{table.concat(chunks,'\n')}}
+        f.events[#f.events+1]='hook'..index
+        if f.fail_hook==index then error('HOOK_FAILED') end
+        f:poke(address,0xE9,1); f:poke(address+1,target-address-5,4)
+    end
     function f.api.EEex_HookBeforeRestore(address,delay,size,return_delay,assembly)
         local index=#f.hooks+1
         f.hooks[index]={address,delay,size,return_delay,assembly}
@@ -548,6 +610,101 @@ return cases
 
 
 class CampaignGateBridgeTests(unittest.TestCase):
+    def test_jump_chain_keeps_stack_and_exits_once(self):
+        # The real watchdog is represented by flag-preserving counters. This
+        # checks the authored entry/exit placement, not the watchdog internals.
+        site, allocations, data, stack = 0x100000, 0x200000, 0x400000, 0x500000
+        normal, skip, bad, callee = site+5, site+0x100, site+0x200, site+0x300
+        for runtime in (Lua51, Lua53, LuaJIT):
+            for call in (False, True):
+                with self.subTest(runtime=runtime.__module__, call=call):
+                    lua = runtime(unpack_returned_tuples=True)
+                    gate = lua.execute(GATE)
+                    uc = Uc(UC_ARCH_X86, UC_MODE_64)
+                    for address, size in ((site, 0x1000), (allocations, 0x10000),
+                                          (data, 0x1000), (stack, 0x10000)):
+                        uc.mem_map(address, size)
+                    assembler = Ks(KS_ARCH_X86, KS_MODE_64)
+                    compiled, labels = [], {}
+
+                    def counter(offset):
+                        return f'pushfq\ninc qword ptr [{data+offset}]\npopfq\n'
+
+                    def emit(address, values):
+                        self.assertTrue(all(isinstance(value, (str, int))
+                                            for value in values.values()))
+                        code = ''.join(str(value) for value in values.values())
+                        for instance in (0, 1):
+                            code = code.replace(f'#MANUAL_HOOK_EXIT({instance})',
+                                                counter(8+8*instance))
+                        code = re.sub(r';[^\n]*', '', code).replace('jmp short ', 'jmp ')
+                        binary, _ = assembler.asm(code, address)
+                        uc.mem_write(address, bytes(binary))
+
+                    def jit(values):
+                        self.assertEqual(labels.get('hook_address'), site)
+                        address = allocations + 0x1000*len(compiled)
+                        compiled.append(address); emit(address, values); return address
+
+                    def scoped(pairs, action):
+                        labels.update((pair[1], pair[2]) for pair in pairs.values())
+                        result = action(); labels.clear(); return result
+
+                    api = lua.table_from({
+                        'EEex_HookIntegrityWatchdog_IgnoreRegisters': lambda *_: None,
+                        'EEex_HookIntegrityWatchdog_DefaultIgnoreStack': lambda *_: None,
+                        'EEex_HookIntegrityWatchdog_HookEnter': lua.table_from([counter(0)]),
+                        'EEex_RunWithAssemblyLabels': scoped,
+                        'EEex_JITNear': jit, 'EEex_JITAt': emit,
+                        'EEex_Read32': lambda _: callee-site-5,
+                        'EEex_StoreBytesAssembly': lambda *_: lua.table_from(
+                            ['mov rax, qword ptr [rsp+32]\n']),
+                    })
+                    api.EEex_FlattenTable = lua.eval('''function(values)
+                        local out={}
+                        local function add(value)
+                            if type(value)=='table' then
+                                for _,entry in ipairs(value) do add(entry) end
+                            else out[#out+1]=value end
+                        end
+                        add(values); return out
+                    end''')
+                    # Two indivisible source blocks exceed the partition limit.
+                    # Each checks a native stack argument after its own pushes.
+                    check = (f'pushfq\npush rax\nmov rax, [rsp+48]\ncmp rax, 12345\n'
+                             f'jne {bad}\npop rax\npopfq\n')
+                    first = counter(32)+check+';'+('padding '*1200)+'\n'
+                    second = (counter(40)+check+f'pushfq\ncmp qword ptr [{data+24}], 1\n'
+                              'je selected\npopfq\njmp done\nselected:\npopfq\n'
+                              f'#MANUAL_HOOK_EXIT(1)\njmp {skip}\ndone:\n;'+
+                              ('padding '*1200)+'\n')
+                    gate.install_chain(api, lua.table_from({'call': call, 'size': 5}),
+                                       site, lua.table_from([first, second]))
+                    self.assertEqual(len(compiled), 4)  # tail, two chunks, entry
+                    emit(callee, lua.table_from(['mov rax, [rsp+40]\nret\n']))
+                    stopped = []
+
+                    def stop_at_route(machine, address, *_):
+                        if address in (normal, skip, bad):
+                            stopped.append(address); machine.emu_stop()
+
+                    uc.hook_add(UC_HOOK_CODE, stop_at_route)
+                    for selected in (False, True):
+                        uc.mem_write(data, bytes(48))
+                        uc.mem_write(data+24, struct.pack('<Q', selected))
+                        rsp = stack+0x8000
+                        uc.mem_write(rsp+32, struct.pack('<Q', 12345))
+                        uc.reg_write(UC_X86_REG_RSP, rsp)
+                        uc.reg_write(UC_X86_REG_RAX, 6789)
+                        uc.reg_write(UC_X86_REG_EFLAGS, 0x246)
+                        stopped.clear(); uc.emu_start(site, 0, count=10000)
+                        self.assertEqual(stopped, [skip if selected else normal])
+                        self.assertEqual(uc.reg_read(UC_X86_REG_RSP), rsp)
+                        self.assertEqual(uc.reg_read(UC_X86_REG_EFLAGS), 0x246)
+                        self.assertEqual(uc.reg_read(UC_X86_REG_RAX), 6789 if selected else 12345)
+                        self.assertEqual(struct.unpack('<6Q', uc.mem_read(data, 48)),
+                                         (1, int(not selected), int(selected), int(selected), 1, 1))
+
     def test_lua_cases(self):
         for runtime in (Lua51, Lua53, LuaJIT):
             lua = runtime(unpack_returned_tuples=True)

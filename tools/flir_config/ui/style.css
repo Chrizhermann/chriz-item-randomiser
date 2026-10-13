@@ -627,6 +627,59 @@ dialog h2 {
   margin-bottom: 20px;
 }
 
+.preset-dialog {
+  width: min(600px,calc(100% - 24px));
+  max-height: min(90vh,850px);
+  overflow: auto;
+}
+
+.preset-dialog .small-note {
+  line-height: 1.45;
+  margin-bottom: 18px;
+}
+
+.preset-grid {
+  display: grid;
+  grid-template-columns: repeat(2,minmax(0,1fr));
+  gap: 15px;
+  margin-bottom: 18px;
+}
+
+.preset-options {
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  padding: 12px 15px;
+  margin: 0 0 18px;
+  display: grid;
+  grid-template-columns: repeat(2,minmax(0,1fr));
+  gap: 11px 16px;
+}
+
+.preset-options legend {
+  font-weight: 600;
+  padding: 0 5px;
+}
+
+.preset-options label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-weight: 400;
+}
+
+.preset-options input[type="checkbox"] {
+  width: 17px;
+  height: 17px;
+  flex: none;
+  margin: 0;
+  accent-color: var(--moss);
+}
+
+.preset-grid .percent-input input {
+  width: 100%;
+}
+
 .dialog-actions {
   display: flex;
   justify-content: flex-end;
@@ -684,6 +737,9 @@ dialog h2 {
 }
 
 @media (max-width:480px) {
+  .preset-grid, .preset-options {
+    grid-template-columns: 1fr;
+  }
   .shop-pricing {
     align-items: flex-start;
     flex-direction: column;

@@ -41,10 +41,11 @@ function Shop:bind(fixture, controller)
     self:reset()
     for _, assignment in ipairs(assert(controller:assignments())) do
         local endpoint = fixture.targets[assignment.target_id]
-        if endpoint.kind == 'store' then
-            local item = fixture.sources[assignment.source_id].payload.resref
+        if endpoint and endpoint.kind == 'store' then
+            local item = (assignment.payload or fixture.sources[assignment.source_id].payload).resref
             local entry = {unit=assignment.unit, store=endpoint.store, item=item,
-                key=string.format('FLPR_P%04d', assignment.unit)}
+                key=string.format('FLPR_P%04d', assignment.unit),
+                stock_key=string.format('FLPR_SH%04d', assignment.unit)}
             local index = #self.entries
             assert(index < LIMIT, 'SHOP_CAPACITY_EXCEEDED')
             entry.address = self.buffer+HEADER+index*STRIDE
@@ -56,6 +57,11 @@ function Shop:bind(fixture, controller)
             assert(purchased==0 or purchased==1, 'SHOP_PURCHASE_STATE_INVALID')
             self.api.EEex_Write64(entry.address+24,
                 purchased==1 and 2 or (assignment.delivery_phase==2 and 1 or 0))
+            -- One-based stock positions survive the STO save/cache path. Zero
+            -- retains the first-matching-row behavior of older test saves.
+            local stock = self.api.EEex_GameState_GetGlobalInt(entry.stock_key)
+            assert(stock >= 0 and stock == math.floor(stock), 'SHOP_STOCK_POSITION_INVALID')
+            self.api.EEex_Write64(entry.address+40, stock)
             self.entries[index+1], self.by_unit[entry.unit] = entry, entry
         end
     end
@@ -67,6 +73,8 @@ function Shop:sync_purchases()
         if self.api.EEex_ReadU64(entry.address+24)==2 then
             self.api.EEex_GameState_SetGlobalInt(entry.key,1)
         end
+        self.api.EEex_GameState_SetGlobalInt(entry.stock_key,
+            self.api.EEex_ReadU64(entry.address+40))
     end
 end
 
@@ -98,8 +106,10 @@ function Shop:deliver(endpoint,payload,unit)
     api.EEex_Write64(b,0)
     if not ok then return nil,tostring(failure) end
     local status=api.EEex_ReadU64(b+48)
-    if status~=3 then return nil,status==4 and 'SHOP_ITEM_ALREADY_STOCKED' or 'SHOP_INSERTION_UNPROVEN' end
+    if status~=3 then return nil,'SHOP_INSERTION_UNPROVEN' end
+    api.EEex_Write64(entry.address+40,api.EEex_ReadU64(b+64))
     api.EEex_Write64(entry.address+24,1)
+    self:sync_purchases()
     self.last_delivery={unit=unit,store=endpoint.store,item=payload.resref,
         before_count=api.EEex_ReadU64(b+40),after_count=api.EEex_ReadU64(b+64)}
     return true
@@ -111,7 +121,7 @@ function Shop.install(api)
         {rva=0x28CA79,bytes='e8e22cfcff',call=true},
         {rva=0x28CA7E,bytes='488d8c2470010000',size=8},
         {rva=0x24FB9A,bytes='488d4f108bf0',size=6},
-        {rva=0x25052A,bytes='488b48108b4118',size=7},
+        {rva=0x24F860,bytes='488bd3488d8ea0000000',size=10},
         {rva=0x24F487,bytes='0f8582000000',branch=true},
         -- The following MOV at 0x2E7E08 is also a branch destination. Leave it
         -- intact; place the hook between CMP and CMOVE, before that boundary.
@@ -141,23 +151,7 @@ function Shop.install(api)
         mov qword ptr ds:[r10+56],rcx
         mov eax,dword ptr ds:[rcx+0xB8]
         mov qword ptr ds:[r10+40],rax
-        mov r11,qword ptr ds:[rcx+0xA8]
-        shop_scan:
-        test r11,r11
-        je shop_before_ok
-        mov r8,qword ptr ds:[r11+16]
-        mov rax,qword ptr ds:[r8]
-        cmp rax,qword ptr ds:[r10+16]
-        je shop_collision
-        mov r11,qword ptr ds:[r11]
-        jmp shop_scan
-        shop_before_ok:
         mov qword ptr ds:[r10+48],2
-        jmp shop_before_done
-        shop_collision:
-        mov qword ptr ds:[r10+48],4
-    ]]..restore..[[
-        jmp #L(return_skip)
         shop_before_done:
     ]])
     local after=code([[
@@ -205,6 +199,13 @@ function Shop.install(api)
         cmp rax,qword ptr ds:[r10+8]
         jne shop_price_next
         mov r8d,dword ptr ss:[rsp+0x80]
+        mov rcx,qword ptr ds:[r10+40]
+        test rcx,rcx
+        je shop_price_lookup
+        dec rcx
+        cmp ecx,r8d
+        jne shop_price_next
+        shop_price_lookup:
         mov r11,qword ptr ds:[r15+0xA8]
         shop_price_row:
         test r11,r11
@@ -219,6 +220,8 @@ function Shop.install(api)
         mov rax,qword ptr ds:[r11]
         cmp rax,qword ptr ds:[r10+8]
         jne shop_price_done
+        cmp qword ptr ds:[r10+40],0
+        jne shop_price_owned
         mov r8,qword ptr ds:[r15+0xA8]
         shop_price_first:
         mov rcx,qword ptr ds:[r8+16]
@@ -232,6 +235,7 @@ function Shop.install(api)
         shop_price_distinct:
         cmp rcx,r11
         jne shop_price_done
+        shop_price_owned:
         mov qword ptr ds:[r10+32],r11
         mov eax,dword ptr ds:[r10+16]
         mov qword ptr ss:[rsp+48],rax
@@ -242,39 +246,94 @@ function Shop.install(api)
         jmp shop_price_scan
         shop_price_done:
     ]],base+0x2E7C45))
-    -- Retire the surcharge when this exact stock row is exhausted. At this site
-    -- RCX still identifies the store list, so a reused row address in another
-    -- shop cannot consume this reward. Buy and Steal share this removal path.
-    -- The callback writes its campaign GLOBAL before any subsequent save.
+    -- CompressItems deletes exhausted rows after buy/steal rollback is settled.
+    -- Persist positions here, when the list really changes, rather than when a
+    -- purchase first decrements stock (which may subsequently be restored).
     api.FLPR_ShopPurchases=function() self:sync_purchases() end
     local consumed=api.EEex_FlattenTable({save..'mov r10, '..b..'\n'..[[
-        mov rdx,qword ptr ds:[rax+0x10]
-        cmp dword ptr ds:[rdx+0x14],1
-        jne shop_removed_done
-        test byte ptr ds:[rdx+0x18],1
-        jne shop_removed_done
+        xor r8d,r8d
+        mov r11,qword ptr ds:[rsi+0xA8]
+        shop_removed_index:
+        test r11,r11
+        je shop_removed_done
+        cmp r11,rbx
+        je shop_removed_found
+        inc r8
+        mov r11,qword ptr ds:[r11]
+        jmp shop_removed_index
+        shop_removed_found:
+        inc r8
+        xor edx,edx
         mov r9,qword ptr ds:[r10+72]
         add r10,128
         shop_removed_scan:
         test r9,r9
-        je shop_removed_done
-        cmp qword ptr ds:[r10+24],1
-        jne shop_removed_next
-        mov rax,qword ptr ds:[rcx-0xA0]
+        je shop_removed_publish
+        mov rax,qword ptr ds:[rsi]
         cmp rax,qword ptr ds:[r10]
         jne shop_removed_next
-        mov rax,qword ptr ds:[rdx]
+        or edx,2
+        cmp qword ptr ds:[r10+24],1
+        jne shop_removed_next
+        mov rcx,qword ptr ds:[r10+40]
+        test rcx,rcx
+        je shop_removed_legacy
+        cmp rcx,r8
+        je shop_removed_owned
+        jb shop_removed_next
+        dec qword ptr ds:[r10+40]
+        or edx,1
+        jmp shop_removed_next
+        shop_removed_legacy:
+        mov rax,qword ptr ds:[rdi]
         cmp rax,qword ptr ds:[r10+8]
         jne shop_removed_next
-        cmp qword ptr ds:[r10+32],rdx
+        cmp qword ptr ds:[r10+32],rdi
         jne shop_removed_next
+        shop_removed_owned:
         mov qword ptr ds:[r10+24],2
-        jmp shop_removed_publish
+        mov qword ptr ds:[r10+40],0
+        or edx,1
         shop_removed_next:
         add r10,64
         dec r9
         jmp shop_removed_scan
         shop_removed_publish:
+        test edx,2
+        je shop_removed_done
+        mov rax,]]..(base+0x6650A0)..[[
+
+        mov rax,qword ptr ds:[rax]
+        test rax,rax
+        je shop_removed_sync
+        mov rax,qword ptr ds:[rax+0x1118]
+        test rax,rax
+        je shop_removed_sync
+        cmp qword ptr ds:[rax+0x7A0],rsi
+        jne shop_removed_sync
+        mov r11,qword ptr ds:[rax+0x6C8]
+        dec r8
+        shop_removed_ui:
+        test r11,r11
+        je shop_removed_sync
+        mov rcx,qword ptr ds:[r11+16]
+        mov eax,dword ptr ds:[rcx+0x18]
+        test eax,eax
+        js shop_removed_ui_next
+        cmp eax,r8d
+        jb shop_removed_ui_next
+        je shop_removed_ui_owned
+        dec dword ptr ds:[rcx+0x18]
+        jmp shop_removed_ui_next
+        shop_removed_ui_owned:
+        mov dword ptr ds:[rcx+0x18],-1
+        mov dword ptr ds:[rcx+0x10],0
+        shop_removed_ui_next:
+        mov r11,qword ptr ds:[r11]
+        jmp shop_removed_ui
+        shop_removed_sync:
+        test edx,1
+        je shop_removed_done
         #MAKE_SHADOW_SPACE(32)
     ]],api.EEex_GenLuaCall('FLPR_ShopPurchases'),[[
         call_error:
@@ -283,8 +342,19 @@ function Shop.install(api)
     ]]..restore})
     -- A player can sell another copy before buying the randomized one. Keep
     -- that ordinary copy in a separate row so it retains its ordinary price.
+    -- A failed buy/steal can restore a zero-quantity row before compression;
+    -- permit that engine rollback to merge into the original stock row.
     local separate=code([[
         jne shop_merge_done
+        cmp qword ptr ds:[r10],1
+        jne shop_merge_normal
+        mov rax,qword ptr ds:[rbp]
+        cmp rax,qword ptr ds:[r10+8]
+        jne shop_merge_normal
+        mov rax,qword ptr ds:[r13]
+        cmp rax,qword ptr ds:[r10+16]
+        je shop_merge_separate
+        shop_merge_normal:
         mov r9,qword ptr ds:[r10+72]
         add r10,128
         shop_merge_scan:
@@ -298,7 +368,24 @@ function Shop.install(api)
         mov rax,qword ptr ds:[r13]
         cmp rax,qword ptr ds:[r10+8]
         jne shop_merge_next
+        cmp dword ptr ds:[r13+0x14],0
+        je shop_merge_done
         mov r11,qword ptr ds:[rbp+0xA8]
+        mov rcx,qword ptr ds:[r10+40]
+        test rcx,rcx
+        je shop_merge_first
+        dec rcx
+        shop_merge_position:
+        test r11,r11
+        je shop_merge_next
+        test rcx,rcx
+        je shop_merge_position_found
+        mov r11,qword ptr ds:[r11]
+        dec rcx
+        jmp shop_merge_position
+        shop_merge_position_found:
+        mov r8,qword ptr ds:[r11+16]
+        jmp shop_merge_distinct
         shop_merge_first:
         mov r8,qword ptr ds:[r11+16]
         mov rax,qword ptr ds:[r8]
@@ -310,7 +397,8 @@ function Shop.install(api)
         jmp shop_merge_done
         shop_merge_distinct:
         cmp r8,r13
-        jne shop_merge_done
+        jne shop_merge_next
+        shop_merge_separate:
     ]]..restore..[[
         jmp #L(jmp_success)
         shop_merge_next:
@@ -320,8 +408,7 @@ function Shop.install(api)
         shop_merge_done:
     ]])
     -- UpdateStoreItems normally copies one selected entry to EVERY equivalent
-    -- item row. Match its quoted unit price too, and consume the old selection
-    -- once. This survives shifted indices when another stock row is removed.
+    -- item row. Match the actual stock position and consume the selection once.
     -- Header +80 is a permanent empty list node, used to end that match search.
     local selection=code([[
         jne shop_selection_done
@@ -339,8 +426,8 @@ function Shop.install(api)
         jne shop_selection_next
         cmp dword ptr ds:[r9+0x10],1
         jne shop_selection_reject
-        mov eax,dword ptr ds:[r9+0x20]
-        cmp eax,dword ptr ds:[rbx+0x20]
+        mov eax,dword ptr ds:[r9+0x18]
+        cmp eax,dword ptr ds:[rbx+0x18]
         jne shop_selection_reject
         mov dword ptr ds:[r9+0x10],0
         mov rax,]]..(b+80)..'\n'..[[

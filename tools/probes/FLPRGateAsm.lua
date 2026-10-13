@@ -321,6 +321,13 @@ return function(buffer, image_base, policy)
                 'mov rdx, '..literal(s.payload:sub(9,16))..'\ncmp rcx, rdx')
             item=replace_once(item,'cmp dword ptr ds:[rax+16], 1',
                 'cmp dword ptr ds:[rax+16], '..literal(s.payload:sub(17,20)))
+            if s.replacement_pointer then
+                assert(type(s.replacement_pointer)=='number' and s.replacement_pointer>0,
+                    'CAMPAIGN_GATE_REPLACEMENT_INVALID')
+                item=replace_once(item,'#MANUAL_HOOK_EXIT(1)\n        jmp @SKIP@',
+                    'mov r13, '..string.format('%.0f',s.replacement_pointer)..'\n'..
+                    '#MANUAL_HOOK_EXIT(1)\n        jmp '..string.format('%.0f',image_base+0x19027F))
+            end
         end
     end
     local area_enter,area_exit

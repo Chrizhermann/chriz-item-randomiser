@@ -343,16 +343,18 @@ function cases.main_menu_uses_only_quit_popup_main_menu_branch_and_observes_comp
         assert(#f.events==3)
     end
 end
-function cases.main_menu_requires_desktop_ready_world_and_valid_popup(QA)
+function cases.main_menu_allows_failed_campaign_but_requires_desktop_and_valid_popup(QA)
     local f=setup(QA); f.desktop=false
     assert(not pcall(function() f.runner:start_main_menu(revision) end))
     assert(#f.events==0)
     f=setup(QA,"START")
     assert(not pcall(function() f.runner:start_main_menu(revision) end))
     assert(#f.events==0)
-    f=setup(QA); f.ready=false
+    f=setup(QA); f.api.world_ready=function() error('CAMPAIGN_DISABLED') end
     f.runner:start_main_menu(revision); f:poll()
-    failed(f,"QA_WORLD_NOT_READY"); assert(#f.events==0)
+    assert(f.runner:inspect().status=='running' and #f.events==1)
+    f:next('ESC_MENU');f:next('POPUP_FOURBUTTON');f:next('START')
+    assert(f.runner:inspect().status=='complete' and #f.events==3)
     f=setup(QA); f.runner:start_main_menu(revision); f:poll()
     f:next("ESC_MENU"); f.main_popup=false; f:next("POPUP_FOURBUTTON")
     failed(f,"QA_UNEXPECTED_MAIN_MENU_POPUP"); assert(#f.events==2)

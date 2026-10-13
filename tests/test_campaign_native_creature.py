@@ -231,6 +231,21 @@ function cases.creature_message_preserves_selected_identification_only(N)
         assert(unrelated.m_item.m_flags == 8)
         unrelated_intact(f)
     end
+    -- Reproduced with RING43: the engine identifies the later heap copy too.
+    -- Preserve both an unidentified source and its independent stolen flag.
+    for _,selected in ipairs({0,2}) do
+        local f=setup(N)
+        f.fixture.sources[f.source_ids[1]].payload.flags=selected
+        f.adapter=N.new(f.api,f.fixture)
+        local command=f.start(1);f.update()
+        f.creature.slots[18].m_flags=selected+1
+        f.boundary()
+        local result,reason=f.adapter:observe(command);fail(result,reason,'DELIVERY_SETTLING')
+        assert(f.creature.slots[18].m_flags==selected)
+        f.boundary();local receipt=assert(f.adapter:observe(command))
+        assert(receipt.payload.flags==selected and #f.calls==1)
+        unrelated_intact(f)
+    end
 end
 function cases.two_rewards_to_one_creature_each_bind_their_own_instance(N)
     local f = setup(N); local a = f.adapter
@@ -331,7 +346,7 @@ function cases.execute_requires_exactly_one_matching_bound_message(N)
             elseif variant == "payload-2" then m.m_item.m_flags = 2
             elseif variant == "payload-8" then m.m_item.m_flags = 8
             elseif variant == "form" then m.virtual_GetMsgSubType = function() return 12 end
-            elseif variant == "extra" then f.queue[#f.queue + 1] = f.message(99, "OTHER", 40)
+            elseif variant == "extra" then f.queue[#f.queue + 1] = f.message(99, "OTHER", 2)
             elseif variant == "synchronous" then f.creature.slots[18] = f.item("FLPRI1", 777) end
             f.queue[#f.queue + 1] = m
         end
@@ -698,6 +713,104 @@ function cases.guarded_creature_observation_uses_inventory_without_destroying_it
     f.source1.alive=false
     assert(f.adapter:guarded_source_remaining(id,'99','101').remaining==0)
     assert(#f.calls==0 and f.source2.slots[21].cResRef:get()=='FLPRI2')
+end
+local function group_world(N)
+    local f=setup(N)
+    f.member2=f.sprite(202,'FLPRC2',{})
+    f.objects[4],f.ids[f.member2]=f.member2,4
+    f.area.m_lVertSort[#f.area.m_lVertSort+1]=4
+    f.fixture.targets[f.target_id]={kind='group',area='BG2600',identity=string.rep('c',64),
+        members={{resref='flprc1',script_name='FLPRC1'},
+                 {resref='flprc2',script_name='FLPRC2'}},
+        eligible={flpri1={1,2},flpri2={2}}}
+    f.adapter=N.new(f.api,f.fixture,17)
+    return f
+end
+function cases.group_target_replays_seeded_member_and_delivers_to_that_member(N)
+    local f=group_world(N)
+    local ready=assert(f.adapter:inspect_target(f.target_id,f.source_ids[1],1))
+    assert(ready.accepts==1)
+    local selected=f.adapter.reservations[string.rep('c',64)].owner
+    assert(selected.id==3 or selected.id==4)
+    local restored=N.new(f.api,f.fixture,17)
+    assert(restored:inspect_target(f.target_id,f.source_ids[1],1))
+    assert(restored.reservations[string.rep('c',64)].owner.id==selected.id)
+    f.boundary()
+    local command=f.command(1)
+    assert(f.adapter:execute(command))
+    assert(#f.queue==1 and f.queue[1].m_targetId==selected.id)
+    f.update(); f.boundary()
+    local receipt,reason=f.adapter:observe(command); fail(receipt,reason,'DELIVERY_SETTLING')
+    f.boundary(); receipt=assert(f.adapter:observe(command))
+    assert(receipt.held==1 and receipt.lootable==0 and receipt.holder=='creature')
+    assert(f.objects[selected.id].slots[18].cResRef:get()=='FLPRI1')
+    assert(#f.calls==1)
+end
+function cases.group_target_honors_eligible_member_and_queue_exclusion(N)
+    local f=group_world(N)
+    assert(f.adapter:inspect_target(f.target_id,f.source_ids[2],2))
+    assert(f.adapter.reservations[string.rep('c',64)].owner.id==4)
+    f.queue[1]=f.message(4,'FLPRI2',2)
+    local ready,reason=f.adapter:inspect_target(f.target_id,f.source_ids[2],2)
+    fail(ready,reason,'TARGET_QUEUE_BUSY')
+    assert(#f.calls==0)
+    f.fixture.targets[f.target_id].eligible.flpri2={3}
+    local ok,error=pcall(function() N.new(f.api,f.fixture,17) end)
+    assert(not ok and tostring(error):find('NATIVE_GROUP_CANDIDATES_INVALID',1,true))
+end
+function cases.quest_target_requires_event_then_delivers_to_party_portrait_zero(N)
+    local f=setup(N)
+    f.creature.portrait=0; f.creature.m_id=3
+    local create=f.api.EEex_Action_ExecuteResponseStringOnAIBaseInstantly
+    f.api.EEex_Action_ExecuteResponseStringOnAIBaseInstantly=function(action,owner)
+        create(action,owner)
+        -- Party delivery also emits ordinary gains-item feedback. It is not
+        -- an additional item instance and has no CMessageAddItem payload.
+        local feedback=f.message(0,'OTHER',16,0)
+        feedback.m_item=nil
+        feedback.virtual_GetCommType=function() return 4 end
+        f.queue[#f.queue+1]=feedback
+    end
+    local claimed=0
+    f.api.EEex_GameState_GetGlobalInt=function(name)
+        assert(name=='FLPR_EPOOL'); return claimed
+    end
+    f.api.EEex_Sprite_GetInPortrait=function(index)
+        assert(index==0); return f.creature
+    end
+    f.fixture.targets[f.target_id]={kind='quest',area='BG2600',
+        identity=string.rep('c',64),event_global='FLPR_EPOOL'}
+    f.adapter=N.new(f.api,f.fixture)
+    local ready,reason=f.adapter:inspect_target(f.target_id,f.source_ids[1],1)
+    fail(ready,reason,'QUEST_NOT_CLAIMED')
+    assert(#f.calls==0 and #f.queue==0)
+    claimed=1
+    assert(f.adapter:inspect_target(f.target_id,f.source_ids[1],1))
+    f.boundary()
+    local command=f.command(1)
+    assert(f.adapter:execute(command))
+    assert(#f.queue==2 and f.queue[1].m_targetId==3 and f.queue[1].m_sourceId==3)
+    assert(f.queue[1].virtual_GetMsgSubType()==2 and f.queue[1].virtual_GetCommType()==1)
+    assert(f.queue[2].m_targetId==0 and f.queue[2].m_sourceId==0)
+    assert(f.queue[2].virtual_GetMsgSubType()==16 and f.queue[2].virtual_GetCommType()==4)
+    assert(f.creature.slots[18]==nil and f.creature.slots[19]==nil)
+    f.update(); f.boundary()
+    local receipt; receipt,reason=f.adapter:observe(command)
+    fail(receipt,reason,'DELIVERY_SETTLING')
+    f.boundary(); receipt=assert(f.adapter:observe(command))
+    assert(receipt.created==1 and receipt.lootable==1 and receipt.held==nil)
+    assert(receipt.holder=='party' and receipt.slot==18)
+    equal_tree(receipt.payload,command.payload)
+    assert(f.creature.slots[18].cResRef:get()=='FLPRI1' and #f.calls==1)
+    local copies=0
+    for _,item in pairs(f.creature.slots) do
+        if item.cResRef:get()=='FLPRI1' then copies=copies+1 end
+    end
+    assert(copies==1 and #f.queue==0)
+    unrelated_intact(f)
+    local result; result,reason=f.adapter:execute(command)
+    fail(result,reason,'ALREADY_ATTEMPTED')
+    assert(#f.calls==1 and #f.queue==0)
 end
 return cases
 '''

@@ -18,6 +18,7 @@ from flir_config.profiles import (ProfileError, _digest, canonical_bytes,
                                  edit_profile, new_profile)
 from flir_config.resources import scan_game
 from flir_config.sources import bind_profile, new_binding_plan, scan_world, world_fingerprint
+from flir_config.virtual_sources import virtual_registration
 from test_postinstall_resources import make_game, snapshot
 from test_postinstall_world_formats import item_record, make_are, make_cre, make_sto
 
@@ -141,10 +142,15 @@ class CampaignCompilerTests(unittest.TestCase):
             "sources": {
                 "are:area/container/0/item/0": {
                     "tier": "low", "loss_exempt": False,
-                    "exclude_targets": [{"id": target, "ordinal": 1}]},
+                    "exclude_targets": [{"id": target, "ordinal": 1}],
+                    "reward_variants": ["book03", "book04"]},
                 "cre:actor/item/1": {
                     "tier": "low", "loss_exempt": True, "exclude_targets": []}},
             "targets": {target: ["low", "low"]},
+            "row_filters": {
+                "sources": {"are:area/container/0/item/0": {"chance": 45, "group": "bg1:pair"},
+                            "cre:actor/item/1": {"chance": 100, "group": ""}},
+                "targets": {target: {"chance": 60, "group": "bg1:pair"}}},
             "loss_percent": 25, "unrandomized_percent": 40}
         old = self.compile(self.plan(["are:area/container/0/item/0", "cre:actor/item/1"], capacity=2))
         bound = bind_profile(self.profile, self.catalog, self.world, plan)
@@ -155,6 +161,42 @@ class CampaignCompilerTests(unittest.TestCase):
         self.assertEqual(campaign["bound_revision"], bound["fingerprint"])
         self.assertNotEqual(campaign["revision"], old["revision"])
         self.assertNotIn("randomization", old)
+
+    def test_row_filters_and_reward_variants_reject_invalid_metadata(self):
+        plan = self.plan()
+        source, target = plan["sources"][0]["source_ids"][0], plan["targets"][0]["id"]
+        plan["randomization"] = {
+            "sources": {source: {"tier": "low", "loss_exempt": False,
+                                 "exclude_targets": [], "reward_variants": ["book03"]}},
+            "targets": {target: ["low"]}, "loss_percent": 0, "unrandomized_percent": 0,
+            "row_filters": {"sources": {source: {"chance": 0, "group": ""}},
+                            "targets": {target: {"chance": 100, "group": "bg1:pair"}}}}
+        self.compile(plan)
+        for kind in ("sources", "targets"):
+            for dangling in (False, True):
+                invalid = deepcopy(plan)
+                rows = invalid["randomization"]["row_filters"][kind]
+                if dangling:
+                    rows["absent"] = {"chance": 100, "group": ""}
+                else:
+                    rows.clear()
+                with self.subTest(kind=kind, dangling=dangling), self.assertRaisesRegex(
+                        ProfileError, "exactly the selected"):
+                    self.compile(invalid)
+        for field, values in (("chance", [-1, 101, True, 1.5, "10"]),
+                              ("group", [None, 1, " ", "a" * 65])):
+            for value in values:
+                invalid = deepcopy(plan)
+                invalid["randomization"]["row_filters"]["sources"][source][field] = value
+                with self.subTest(field=field, value=value), self.assertRaises(ProfileError):
+                    self.compile(invalid)
+        for variants in ([], ["book03", "book03"], ["BOOK03"], ["bad/name"],
+                         ["toolongname"], [None], "book03", ["book03"] * 4097):
+            invalid = deepcopy(plan)
+            invalid["randomization"]["sources"][source]["reward_variants"] = variants
+            with self.subTest(variants=repr(variants)[:80]), self.assertRaisesRegex(
+                    ProfileError, "reward variants"):
+                self.compile(invalid)
 
     def test_randomization_rejects_per_tier_shortage_despite_total_capacity(self):
         plan = self.plan(["are:area/container/0/item/0", "cre:actor/item/1"], capacity=2)
@@ -228,6 +270,79 @@ class CampaignCompilerTests(unittest.TestCase):
                 "copies": 1, "optional": optional}]
             with self.subTest(optional=optional), self.assertRaisesRegex(ProfileError, "registered script"):
                 self.compile(plan)
+
+    def test_virtual_original_mixes_with_physical_and_roundtrips_without_physical_row(self):
+        item_hash = next(row["sha256"] for row in self.catalog["items"]
+                         if row["resref"] == "synth001")
+        virtual = virtual_registration("synth001", "tier1:blank-row-4", 2,
+                                       item_hash, [0, 9, 0])
+        plan = self.plan(capacity=3)
+        plan["registrations"] = [virtual]
+        plan["sources"][0]["registration_ids"] = [virtual["id"]]
+        bound = bind_profile(self.profile, self.catalog, self.world, plan)
+        self.assertEqual(bound["reward_units"], 3)
+        self.assertEqual([row["kind"] for row in bound["sources"]],
+                         ["physical", "registered"])
+        self.assertNotIn(virtual["id"], {row["id"] for row in self.world["sources"]})
+        result = self.write(plan)
+        campaign = read_campaign(self.store, result["revision"])
+        row = next(row for row in campaign["sources"] if row["id"] == virtual["id"])
+        self.assertEqual(row["quantity"], 2)
+        self.assertEqual(row["resource_sha256"], item_hash)
+        self.assertEqual(row["record"], {
+            "id": virtual["id"], "item": "synth001", "resource": "itm:synth001",
+            "owner": "itm:synth001", "kind": "virtual", "adapter_id": "virtual-stock-v1",
+            "selector": "tier1:blank-row-4", "concerns": [],
+            "record": {"resref": "synth001", "expiration": 0,
+                       "charges": [0, 9, 0], "flags": 0}})
+        self.assertNotIn("replacement", row)
+
+    def test_virtual_registration_rejects_mismatched_itm_and_payload(self):
+        item_hash = next(row["sha256"] for row in self.catalog["items"]
+                         if row["resref"] == "synth001")
+        virtual = virtual_registration("synth001", "original-blank", 1,
+                                       item_hash, [0, 0, 0])
+        plan = self.plan()
+        plan["registrations"] = [virtual]
+        plan["sources"][0]["registration_ids"] = [virtual["id"]]
+        plan["targets"][0]["capacity"] = 2
+        stale = deepcopy(plan)
+        stale["registrations"][0]["resource_sha256"] = "0" * 64
+        with self.assertRaisesRegex(ProfileError, "installed ITM"):
+            self.compile(stale)
+        invalid = deepcopy(plan)
+        invalid["registrations"][0]["payload"]["charges"] = [0, -1, 0]
+        with self.assertRaisesRegex(ProfileError, "payload"):
+            self.compile(invalid)
+
+    def test_virtual_overflow_needs_eligible_and_unpaired_tier_destination(self):
+        item_hash = next(row["sha256"] for row in self.catalog["items"]
+                         if row["resref"] == "synth001")
+        virtual = virtual_registration("synth001", "blank-stock", 3,
+                                       item_hash, [0, 0, 0])
+        plan = self.plan()
+        plan["sources"][0]["source_ids"] = []
+        plan["sources"][0]["registration_ids"] = [virtual["id"]]
+        plan["registrations"] = [virtual]
+        source, target = virtual["id"], plan["targets"][0]["id"]
+        plan["randomization"] = {
+            "sources": {source: {"tier": "low", "loss_exempt": True,
+                                "exclude_targets": []}},
+            "targets": {target: ["low"]}, "loss_percent": 0,
+            "unrandomized_percent": 0, "overflow": True}
+        campaign = self.compile(plan)
+        self.assertEqual((campaign["sources"][0]["quantity"],
+                          campaign["targets"][0]["capacity"]), (3, 1))
+        blocked = deepcopy(plan)
+        blocked["randomization"]["overflow"] = False
+        with self.assertRaisesRegex(ProfileError, "capacity"):
+            self.compile(blocked)
+        blocked = deepcopy(plan)
+        blocked["randomization"]["unrandomized_percent"] = 100
+        blocked["randomization"]["sources"][source]["exclude_targets"] = [
+            {"id": target, "ordinal": 1}]
+        with self.assertRaisesRegex(ProfileError, "unpaired target"):
+            self.compile(blocked)
 
     def test_scan_and_plan_staleness_are_not_bypassed(self):
         plan = self.plan()

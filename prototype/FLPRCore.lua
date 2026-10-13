@@ -1,6 +1,6 @@
 -- Experimental campaign protocol. Never autoloaded or installed by the TP2.
--- Native lifecycle, exact removal, and lootable delivery adapters are unproven.
--- All world observations/receipts below must come from a separately verified host.
+-- Native lifecycle, removal, and delivery observations are supplied by the host.
+-- All world observations/receipts below must come from its verified adapters.
 local Core = {}
 Core.SCHEMA = "flir-campaign-prototype-v1"
 Core.MAX_UNITS = 4096
@@ -11,7 +11,8 @@ Core.MAX_UNITS = 4096
 -- original. It is not evidence that the original has already been removed.
 Core.PHASE = { pending = 0, in_flight = 1, confirmed = 2, quarantined = 3, held = 4, protected = 5,
     kept = 6, lost = 7 }
-Core.CREATURE_TARGET_KINDS = { actor = true, ["cre-template"] = true }
+Core.CREATURE_TARGET_KINDS = { actor = true, ["cre-template"] = true,
+    ["creature-target"] = true, group = true }
 Core.G = { state = "flpr_state", seed = "flpr_seed", units = "flpr_units",
     sources = "flpr_sources", targets = "flpr_targets", sequence = "flpr_sequence",
     journal = "flpr_jkind", index = "flpr_jindex", nonce = "flpr_jnonce",
@@ -111,17 +112,18 @@ local function validate(manifest)
         if #slots + target.capacity > Core.MAX_UNITS then return nil, "CAPACITY_LIMIT" end
         for ordinal = 1, target.capacity do slots[#slots + 1] = { target = index, ordinal = ordinal } end
     end
-    if #slots < #units then return nil, "CAPACITY_SHORTFALL" end
     local rules = manifest.randomization
+    if #slots < #units and not (rules and rules.overflow == true) then return nil, "CAPACITY_SHORTFALL" end
     if rules then
         if type(rules) ~= "table" or type(rules.sources) ~= "table" or type(rules.targets) ~= "table" or
-            not integer(rules.loss_percent, 0, 100) or not integer(rules.unrandomized_percent, 0, 100) then
+            not integer(rules.loss_percent, 0, 100) or not integer(rules.unrandomized_percent, 0, 100) or
+            (rules.overflow ~= nil and type(rules.overflow) ~= "boolean") then
             return nil, "RANDOMIZATION_INVALID"
         end
         local function tier(value)
             return type(value) == "string" and #value > 0 and #value <= 64 and not value:find("[^a-z0-9:_%-]")
         end
-        local capacity, required, targets, keep_reserve = {}, {}, {}, {}
+        local capacity, required, targets, keep_reserve, excluded_slots = {}, {}, {}, {}, {}
         for _, target in ipairs(manifest.targets) do
             local tiers = rules.targets[target.id]
             if not array(tiers, Core.MAX_UNITS) or #tiers ~= target.capacity then return nil, "TIER_TARGET_INVALID" end
@@ -135,6 +137,15 @@ local function validate(manifest)
             local rule = rules.sources[source.id]
             if type(rule) ~= "table" or not tier(rule.tier) or type(rule.loss_exempt) ~= "boolean" or
                 not array(rule.exclude_targets, Core.MAX_UNITS) then return nil, "TIER_SOURCE_INVALID" end
+            if rule.reward_variants ~= nil then
+                if not array(rule.reward_variants, Core.MAX_UNITS) or #rule.reward_variants == 0 then
+                    return nil, "REWARD_VARIANTS_INVALID"
+                end
+                for _, variant in ipairs(rule.reward_variants) do
+                    if type(variant) ~= "string" or #variant < 1 or #variant > 8 or
+                        variant:find("[^a-z0-9#_%-]") then return nil, "REWARD_VARIANTS_INVALID" end
+                end
+            end
             required[rule.tier] = (required[rule.tier] or 0) + source.quantity
             local seen, excluded_tiers = {}, {}
             for _, excluded in ipairs(rule.exclude_targets) do
@@ -143,6 +154,7 @@ local function validate(manifest)
                 local key = excluded.id .. "/" .. excluded.ordinal
                 if seen[key] then return nil, "TIER_EXCLUSION_INVALID" end
                 seen[key] = true
+                excluded_slots[key] = true
                 local value = rules.targets[excluded.id][excluded.ordinal]
                 excluded_tiers[value] = (excluded_tiers[value] or 0) + 1
             end
@@ -153,11 +165,40 @@ local function validate(manifest)
                 keep_reserve[value] = (keep_reserve[value] or 0) + math.max(0, count - removed)
             end
         end
+        if rules.row_filters ~= nil then
+            local filters = rules.row_filters
+            if type(filters) ~= "table" then return nil, "ROW_FILTER_INVALID" end
+            for _, kind in ipairs({"sources", "targets"}) do
+                if type(filters[kind]) ~= "table" then return nil, "ROW_FILTER_INVALID" end
+                local known = {}
+                for _, row in ipairs(manifest[kind]) do
+                    known[row.id] = true
+                    local rule = filters[kind][row.id]
+                    if type(rule) ~= "table" or not integer(rule.chance, 0, 100) or
+                        type(rule.group) ~= "string" or #rule.group > 64 or
+                        (rule.group ~= "" and not tier(rule.group)) then return nil, "ROW_FILTER_INVALID" end
+                end
+                for id in pairs(filters[kind]) do if not known[id] then return nil, "ROW_FILTER_INVALID" end end
+            end
+        end
         for value, count in pairs(required) do
-            if (capacity[value] or 0) < count then return nil, "TIER_CAPACITY_SHORTFALL" end
-            if rules.unrandomized_percent > 0 and rules.unrandomized_percent < 100 and
+            if not rules.overflow and (capacity[value] or 0) < count then return nil, "TIER_CAPACITY_SHORTFALL" end
+            if not rules.overflow and rules.unrandomized_percent > 0 and rules.unrandomized_percent < 100 and
                 (capacity[value] or 0) < count + (keep_reserve[value] or 0) then
                 return nil, "KEEP_CAPACITY_SHORTFALL"
+            end
+            if rules.overflow then
+                local available = false
+                for _, slot in ipairs(slots) do
+                    local target = manifest.targets[slot.target]
+                    local kind = target.record.kind
+                    if rules.targets[target.id][slot.ordinal] == value and
+                        (kind == "actor" or kind == "cre-template" or kind == "creature-target" or kind == "container" or kind == "store" or kind == "group") and
+                        (rules.unrandomized_percent == 0 or not excluded_slots[target.id .. "/" .. slot.ordinal]) then
+                        available = true; break
+                    end
+                end
+                if not available then return nil, "OVERFLOW_TARGET_MISSING" end
             end
         end
     end
@@ -175,7 +216,7 @@ local function guard_source(source)
     return source ~= nil and type(source.record) == "table" and
         ((source.quantity == 1 and (source.record.kind == "container" or
           source.record.kind == "cre-template" or source.record.kind == "embedded-cre" or
-          source.record.kind == "scripted")) or
+          source.record.kind == "scripted" or source.record.kind == "authored-source")) or
          source.record.kind == "store")
 end
 
@@ -274,9 +315,31 @@ local function campaign_assignments(manifest, shape, seed)
     end
     -- Preserve an excluded original and its ident-paired location together.
     -- Loss is a separate choice: remove the original but award no replacement.
-    local excluded, pools = {}, {}
+    local excluded, pools, filtered_groups = {}, {}, {}
+    local filters = rules.row_filters
+    local rejected_sources, rejected_targets = {}, {}
     for index, source in ipairs(manifest.sources) do
-        if rules.unrandomized_percent > 0 and draw(100) <= rules.unrandomized_percent then
+        local rule = filters and filters.sources[source.id]
+        local rejected = source.record.kind ~= "virtual" and rules.unrandomized_percent > 0 and
+            draw(100) <= rules.unrandomized_percent
+        if not rejected and rule and rule.chance < 100 then rejected = draw(100) > rule.chance end
+        if rejected then
+            rejected_sources[index] = true
+            if rule and rule.group ~= "" then filtered_groups[rule.group] = true end
+        end
+    end
+    if filters then
+        for index, target in ipairs(manifest.targets) do
+            local rule = filters.targets[target.id]
+            if rule.chance < 100 and draw(100) > rule.chance then
+                rejected_targets[index] = true
+                if rule.group ~= "" then filtered_groups[rule.group] = true end
+            end
+        end
+    end
+    for index, source in ipairs(manifest.sources) do
+        local rule = filters and filters.sources[source.id]
+        if rejected_sources[index] or (rule and filtered_groups[rule.group]) then
             kept[index] = true
             for _, target in ipairs(rules.sources[source.id].exclude_targets) do
                 excluded[target.id .. "/" .. target.ordinal] = true
@@ -285,16 +348,40 @@ local function campaign_assignments(manifest, shape, seed)
     end
     for index, slot in ipairs(shape.slots) do
         local target = manifest.targets[slot.target]
-        if not excluded[target.id .. "/" .. slot.ordinal] then
+        local rule = filters and filters.targets[target.id]
+        if not excluded[target.id .. "/" .. slot.ordinal] and not rejected_targets[slot.target] and
+            not (rule and filtered_groups[rule.group]) then
             local tier = rules.targets[target.id][slot.ordinal]
             pools[tier] = pools[tier] or {}
             pools[tier][#pools[tier] + 1] = index
         end
     end
-    local tiers = {}
+    local tiers, required = {}, {}
+    for index, source in ipairs(manifest.sources) do
+        if not kept[index] then
+            local tier = rules.sources[source.id].tier
+            required[tier] = (required[tier] or 0) + source.quantity
+        end
+    end
     for tier in pairs(pools) do tiers[#tiers + 1] = tier end
     table.sort(tiers) -- pairs order differs across Lua versions.
-    for _, tier in ipairs(tiers) do shuffle(pools[tier], draw) end
+    for _, tier in ipairs(tiers) do
+        local pool = pools[tier]
+        if rules.overflow and #pool < (required[tier] or 0) then
+            local eligible = {}
+            for _, slot_index in ipairs(pool) do
+                local kind = manifest.targets[shape.slots[slot_index].target].record.kind
+                if kind == "actor" or kind == "cre-template" or kind == "creature-target" or kind == "container" or kind == "store" or kind == "group" then
+                    eligible[#eligible + 1] = slot_index
+                end
+            end
+            if #eligible == 0 then return nil, "OVERFLOW_TARGET_MISSING" end
+            -- Original fixes.tpa permits several rewards at an ordinary
+            -- location. Each reward still owns its separate delivery state.
+            while #pool < required[tier] do pool[#pool + 1] = eligible[draw(#eligible)] end
+        end
+        shuffle(pool, draw)
+    end
     for index, unit in ipairs(shape.units) do
         local rule = rules.sources[manifest.sources[unit.source].id]
         if kept[unit.source] then result[index] = -1
@@ -306,7 +393,16 @@ local function campaign_assignments(manifest, shape, seed)
             result[index] = table.remove(pool)
         end
     end
-    return result, kept
+    local rewards = {}
+    for index, unit in ipairs(shape.units) do
+        local source = manifest.sources[unit.source]
+        local variants = rules.sources[source.id].reward_variants
+        if variants and result[index] > 0 then
+            rewards[index] = copy(source.record.record)
+            rewards[index].resref = variants[draw(#variants)]
+        end
+    end
+    return result, kept, rewards
 end
 
 function Controller:capture(manifest, seed, handoff)
@@ -318,8 +414,9 @@ function Controller:capture(manifest, seed, handoff)
     if not ok then return nil, "MANIFEST_INVALID" end
     local shape, failure = validate(frozen)
     if not shape then return nil, failure end
-    local assignments, kept = campaign_assignments(frozen, shape, seed)
+    local assignments, kept, rewards = campaign_assignments(frozen, shape, seed)
     if not assignments then return nil, kept end
+    shape.rewards = rewards or {}
     self.session, self.boundary, self.issued_boundary = {}, 0, 0
     self.held_requests = {}
     self:_clear_guards()
@@ -335,7 +432,12 @@ function Controller:capture(manifest, seed, handoff)
     self:_set(G.nonce, 0)
     self:_set(G.provenance, 1)
     self:_set(G.guard, 1)
-    for index = 1, #frozen.sources do self:_set_phase("s", index, kept[index] and Core.PHASE.kept or 0) end
+    for index, source in ipairs(frozen.sources) do
+        -- Original blank rows deliberately add stock; they have no original
+        -- to suppress or to leave in place under the keep-originals option.
+        self:_set_phase("s", index, kept[index] and Core.PHASE.kept or
+            (source.record.kind == "virtual" and Core.PHASE.confirmed or Core.PHASE.pending))
+    end
     for index = 1, #shape.units do
         self:_set(name("a", index), assignments[index])
         self:_set_phase("d", index, assignments[index] == -1 and Core.PHASE.kept or
@@ -371,8 +473,9 @@ function Controller:restore()
         not integer(self:_get(G.sequence), 1, 2147483647) then
         return nil, "CAMPAIGN_SHAPE_MISMATCH"
     end
-    local expected, kept = campaign_assignments(frozen, shape, self:_get(G.seed))
+    local expected, kept, rewards = campaign_assignments(frozen, shape, self:_get(G.seed))
     if not expected then return nil, kept end
+    shape.rewards = rewards or {}
     local provenance = self:_get(G.provenance)
     if provenance ~= 0 and provenance ~= 1 then return nil, "PROVENANCE_VERSION_INVALID" end
     local guard = self:_get(G.guard)
@@ -482,12 +585,20 @@ function Controller:assignments()
             result[index].tier = self.manifest.randomization.sources[result[index].source_id].tier
             result[index].outcome = selected == -1 and "kept" or (selected == 0 and "lost" or "deliver")
         end
+        if self.shape.rewards[index] then result[index].payload = copy(self.shape.rewards[index]) end
     end
     return copy(result)
 end
 
 function Controller:source_is_kept(index)
     return self:_active() and self:_phase("s", index) == Core.PHASE.kept
+end
+
+function Controller:reward_payload(index)
+    if not self:_active() then return nil, "INACTIVE" end
+    if not integer(index, 1, #self.shape.units) then return nil, "INDEX_INVALID" end
+    local source = self.manifest.sources[self.shape.units[index].source]
+    return copy(self.shape.rewards[index] or source.record.record)
 end
 
 function Controller:_begin(kind, index, witness)
@@ -529,7 +640,7 @@ function Controller:_begin(kind, index, witness)
         session = self.session, mode = "execute-once",
         nonce = nonce, revision = self.manifest.revision, identity = witness.identity,
         source_id = source.id, quantity = kind == 1 and source.quantity or 1,
-        payload = copy(source.record.record) }
+        payload = kind == 2 and self:reward_payload(index) or copy(source.record.record) }
     if kind == 2 then
         local slot = self.shape.slots[self:_get(name("a", index))]
         result.target_id, result.ordinal = self.manifest.targets[slot.target].id, slot.ordinal
@@ -553,7 +664,7 @@ function Controller:pending_observation()
         session = self.session, mode = "observe-only", nonce = self:_get(G.nonce),
         revision = self.manifest.revision, identity = self:_read_hash("w"),
         source_id = source.id, quantity = kind == 1 and source.quantity or 1,
-        payload = copy(source.record.record) }
+        payload = kind == 2 and self:reward_payload(index) or copy(source.record.record) }
 end
 
 function Controller:observe(receipt)
@@ -574,7 +685,7 @@ function Controller:observe(receipt)
         -- must never clear the journal and authorize a second creation.
         return nil, "SOURCE_GUARD_INACTIVE"
     end
-    local valid = same_payload(receipt.payload, source.record.record)
+    local valid = same_payload(receipt.payload, kind == 2 and self:reward_payload(index) or source.record.record)
     local outcome = Core.PHASE.quarantined
     if kind == 1 then
         if valid and receipt.removed == source.quantity and receipt.remaining == 0 then
@@ -723,7 +834,7 @@ function Controller:held_request(index)
         session = self.session, token = pending.token, nonce = nonce,
         revision = self.manifest.revision, source_id = assignment.source_id,
         target_id = assignment.target_id,
-        payload = copy(self.manifest.sources[assignment.source].record.record) }
+        payload = self:reward_payload(index) }
 end
 
 function Controller:confirm_held(receipt)

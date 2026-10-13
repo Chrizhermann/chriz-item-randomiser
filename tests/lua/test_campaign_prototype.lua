@@ -185,6 +185,222 @@ function cases.KeptOriginalsNeverRequestMutationAndExcludeLinkedSlots(Core)
     assert(found, "NO_SELECTIVE_KEEP_SEED")
 end
 
+function cases.VirtualStockStillDeliversWhenPhysicalOriginalsAreKept(Core)
+    local f = fixture(Core)
+    local rules = tiered(f)
+    local virtual = f.manifest.sources[2]
+    virtual.record.kind = "virtual"
+    rules.unrandomized_percent = 100
+    assert(f:capture(17))
+    local assignments = f.controller:assignments()
+    equal(assignments[1].outcome, "kept")
+    equal(assignments[1].source_phase, Core.PHASE.kept)
+    equal(assignments[2].outcome, "deliver")
+    equal(assignments[2].source_phase, Core.PHASE.confirmed)
+    assert(assignments[2].target_id ~= f.manifest.targets[1].id or assignments[2].ordinal ~= 1)
+    failed("ALREADY_ATTEMPTED", f.controller:begin_source(1, f:source_witness(1)))
+    failed("ALREADY_ATTEMPTED", f.controller:begin_source(2, f:source_witness(2)))
+    assert(f.controller:begin_delivery(2, f:delivery_witness(2)))
+    assert(f:new_controller():restore())
+end
+
+local function row_filters(f)
+    local rules = tiered(f)
+    rules.row_filters = {sources = {}, targets = {}}
+    for _, kind in ipairs({"sources", "targets"}) do
+        for _, row in ipairs(f.manifest[kind]) do
+            rules.row_filters[kind][row.id] = {chance = 100, group = ""}
+        end
+    end
+    return rules.row_filters
+end
+
+function cases.RejectedLocationKeepsEverySourceSharingItsOriginalIdent(Core)
+    local f = fixture(Core)
+    local filters = row_filters(f)
+    for _, source in ipairs(f.manifest.sources) do
+        filters.sources[source.id].group = "bg1:paired"
+    end
+    local target = filters.targets[f.manifest.targets[1].id]
+    target.group, target.chance = "bg1:paired", 0
+    assert(f:capture(19))
+    for index, assignment in ipairs(f.controller:assignments()) do
+        equal(assignment.outcome, "kept")
+        equal(assignment.source_phase, Core.PHASE.kept)
+        failed("ALREADY_ATTEMPTED", f.controller:begin_source(index, f:source_witness(index)))
+    end
+    assert(f:new_controller():restore())
+end
+
+function cases.RejectedUnpairedSourceDoesNotExcludeUnrelatedRows(Core)
+    local f = fixture(Core)
+    local filters = row_filters(f)
+    filters.sources[f.manifest.sources[1].id].chance = 0
+    assert(f:capture(19))
+    equal(f.controller:assignments()[1].outcome, "kept")
+    equal(f.controller:assignments()[2].outcome, "deliver")
+end
+
+function cases.RejectedVirtualStockIsNotCreatedOrSuppressed(Core)
+    local f = fixture(Core)
+    local filters = row_filters(f)
+    f.manifest.sources[2].record.kind = "virtual"
+    filters.sources[f.manifest.sources[2].id].chance = 0
+    assert(f:capture(19))
+    local assignment = f.controller:assignments()[2]
+    equal(assignment.outcome, "kept")
+    equal(assignment.source_phase, Core.PHASE.kept)
+    equal(assignment.delivery_phase, Core.PHASE.kept)
+    assert(f:new_controller():restore())
+end
+
+function cases.TargetChanceRollAppliesToWholeRowAndSurvivesRestore(Core)
+    local found_included, found_excluded = false, false
+    for seed = 1, 50 do
+        local f = fixture(Core)
+        local filters = row_filters(f)
+        local target_a = f.manifest.targets[1].id
+        filters.targets[target_a].chance = 50
+        f.manifest.randomization.sources[f.manifest.sources[1].id].exclude_targets = {}
+        f.manifest.randomization.sources[f.manifest.sources[2].id].exclude_targets = {}
+        assert(f:capture(seed))
+        local assignments = f.controller:assignments()
+        if assignments[1].target_id == target_a or assignments[2].target_id == target_a then
+            found_included = true
+        else found_excluded = true end
+        local restored = f:new_controller()
+        assert(restored:restore())
+        for index, assignment in ipairs(restored:assignments()) do
+            equal(assignment.target_id, assignments[index].target_id)
+            equal(assignment.ordinal, assignments[index].ordinal)
+        end
+    end
+    assert(found_included and found_excluded, "ROW_CHANCE_NEVER_VARIED")
+end
+
+function cases.RejectedOnlyTierLocationFailsBeforeCampaignWrites(Core)
+    local f = fixture(Core)
+    local filters = row_filters(f)
+    for _, target in ipairs(f.manifest.targets) do filters.targets[target.id].chance = 0 end
+    failed("TIER_CAPACITY_SHORTFALL", f:capture(19))
+    equal(f.writes, 0)
+end
+
+function cases.RowFiltersRejectMissingRowsAndInvalidChanceBeforeWrites(Core)
+    local f = fixture(Core)
+    local filters = row_filters(f)
+    filters.sources[f.manifest.sources[1].id].chance = 101
+    failed("ROW_FILTER_INVALID", f:capture(19))
+    equal(f.writes, 0)
+    filters.sources[f.manifest.sources[1].id] = nil
+    failed("ROW_FILTER_INVALID", f:capture(19))
+    equal(f.writes, 0)
+end
+
+function cases.TomeVariantKeepsSuppressionOriginalAndPersistsDeliveryProof(Core)
+    local f = fixture(Core)
+    local rules = tiered(f)
+    local source = f.manifest.sources[1]
+    source.record.record.resref = "book08"
+    rules.sources[source.id].reward_variants = {"book03"}
+    assert(f:capture(19))
+    local assignment = f.controller:assignments()[1]
+    equal(assignment.payload.resref, "book03")
+    equal(source.record.record.resref, "book08")
+    local suppression = f:source_operation(1)
+    equal(suppression.payload.resref, "book08")
+    f.controller:on_observation_boundary()
+    assert(f.controller:observe(f:source_receipt(suppression)))
+    local delivery = assert(f.controller:begin_delivery(1, f:delivery_witness(1)))
+    equal(delivery.payload.resref, "book03")
+    local restored = f:new_controller()
+    assert(restored:restore())
+    equal(restored:pending_observation().payload.resref, "book03")
+    local request = restored:pending_observation()
+    restored:on_observation_boundary()
+    assert(restored:observe(f:delivery_receipt(request)))
+    equal(restored:assignments()[1].delivery_phase, Core.PHASE.confirmed)
+    equal(restored:reward_payload(1).charges[1], source.record.record.charges[1])
+    assert(f:new_controller():restore())
+end
+
+function cases.TomeVariantsReachAllSixChoicesAndSurviveRestore(Core)
+    local seen = {}
+    for seed = 1, 90 do
+        local f = fixture(Core)
+        local rules = tiered(f)
+        rules.sources[f.manifest.sources[1].id].reward_variants = {
+            "book03", "book04", "book05", "book06", "book07", "book08"}
+        assert(f:capture(seed))
+        local chosen = f.controller:reward_payload(1).resref
+        seen[chosen] = true
+        local restored = f:new_controller()
+        assert(restored:restore())
+        equal(restored:reward_payload(1).resref, chosen)
+    end
+    local count = 0
+    for _ in pairs(seen) do count = count + 1 end
+    equal(count, 6)
+end
+
+local function overflow_fixture(Core)
+    local f = fixture(Core, nil, 3)
+    local first, second = f.manifest.sources[1].id, f.manifest.sources[2].id
+    local target_a, target_b = f.manifest.targets[1].id, f.manifest.targets[2].id
+    f.manifest.targets[1].capacity = 1
+    f.manifest.targets[1].record.kind = "container"
+    f.manifest.targets[2].capacity = 1
+    f.manifest.targets[2].record.kind = "container"
+    f.manifest.randomization = {
+        overflow = true, loss_percent = 0, unrandomized_percent = 0,
+        sources = {
+            [first] = {tier = "low", loss_exempt = false, exclude_targets = {}},
+            [second] = {tier = "low", loss_exempt = false, exclude_targets = {}},
+        },
+        targets = {[target_a] = {"low"}, [target_b] = {"high"}},
+    }
+    return f
+end
+
+function cases.OverflowSharesEligibleSlotButPersistsSeparateDeliveries(Core)
+    local f = overflow_fixture(Core)
+    assert(f:capture(23))
+    local assignments = f.controller:assignments()
+    equal(#assignments, 4)
+    for _, assignment in ipairs(assignments) do
+        equal(assignment.outcome, "deliver")
+        equal(assignment.target_id, f.manifest.targets[1].id)
+        equal(assignment.ordinal, 1)
+    end
+    f:suppress(1); f:suppress(2)
+    local first = assert(f.controller:begin_delivery(1, f:delivery_witness(1)))
+    f.controller:on_observation_boundary()
+    assert(f.controller:observe(f:delivery_receipt(first)))
+    local restored = f:new_controller()
+    assert(restored:restore())
+    f.controller = restored
+    equal(f.controller:assignments()[1].delivery_phase, Core.PHASE.confirmed)
+    equal(f.controller:assignments()[2].delivery_phase, Core.PHASE.pending)
+    local second = assert(f.controller:begin_delivery(2, f:delivery_witness(2)))
+    assert(second.index ~= first.index and second.nonce ~= first.nonce)
+    f.controller:on_observation_boundary()
+    assert(f.controller:observe(f:delivery_receipt(second)))
+    equal(f.controller:assignments()[1].delivery_phase, Core.PHASE.confirmed)
+    equal(f.controller:assignments()[2].delivery_phase, Core.PHASE.confirmed)
+end
+
+function cases.OverflowRejectsWhenKeptOriginalExcludesLastEligibleSlot(Core)
+    local f = overflow_fixture(Core)
+    f.manifest.sources[1].quantity = 1
+    f.manifest.sources[2].record.kind = "virtual"
+    f.manifest.randomization.unrandomized_percent = 100
+    f.manifest.randomization.sources[f.manifest.sources[1].id].exclude_targets = {
+        {id = f.manifest.targets[1].id, ordinal = 1}}
+    failed("OVERFLOW_TARGET_MISSING", f:capture(23))
+    equal(f.writes, 0)
+    assert(next(f.values) == nil)
+end
+
 function cases.MixedKeepExclusionsNeedSpareTierCapacityBeforeCapture(Core)
     local function configure(f, spare, percent)
         local rules = tiered(f)

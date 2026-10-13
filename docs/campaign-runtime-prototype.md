@@ -1,11 +1,122 @@
 # Experimental campaign protocol
 
-This implements the logical part of milestone 3 in the
-[Mode 1 design](plans/2026-09-22-mode1-postinstall-profiles-design.md). It is
-**not playable or installed by the TP2**. The existing delivery backend is unchanged.
-The compiler consumes explicitly reviewed physical source/target bindings; the
-Lua controller models campaign capture and the source/delivery transaction rules.
-Neither performs native item mutation or detects a real New Game.
+The per-campaign runtime is playable in the disposable EET lab;
+it is **not yet installed by the normal TP2 or ready for release**. The original
+Mode 1 preset has passed a live 321-reward campaign test, fresh-game randomization,
+and save/load preservation. The full original preset collection is still unfinished:
+remaining Mode 2 quest handlers and original special options are being migrated.
+
+**Persistent playtest, 2026-10-12:** the lab at
+`C:\Users\chris\Games\EET-IR-Mode1-20260922` now keeps the runtime installed.
+Its `Configure Randomiser` shortcut enables the editor's **Apply for next game**;
+`Play Randomiser Test` launches EEex. The original EET Mode 1 configuration is
+already active. Start a new **BG1** campaign, or load **Mode1 Ready to Try**.
+Direct SoD/BG2/ToB starts remain unsupported by this prototype.
+
+The refreshed scan and original preset compiled 321 reward units. The editor's
+real HTTP apply completed, a cold hidden/muted game reached Candlekeep, and save
+`000000089-Mode1 Ready to Try` reloaded with all 321 assignments and seed unchanged.
+This verifies setup, capture and persistence, not a full playthrough of every
+reward. The game was closed normally afterward. The old three-item fixture
+actors/piles were removed by reversing their exact known addition to BG2600;
+other area data and existing saves were preserved. Current scans/configurations
+live beside the game; evidence is under ignored `work/playtest-20261012/`.
+The editor/activation/export batch passed 31 tests, including revision retention,
+saved-choice reopening, and refusing a different workspace that omits old guards.
+The private test profile has audible volumes for manual play; mute it again
+before future automated launches. No new encounter decisions were made.
+
+Latest live evidence (2026-09-29/30), under ignored
+`work/original-preset-runtime-20260929/live-store-console/`:
+
+- Two fresh games used different seeds with the same full Mode 1 configuration.
+  Loading the earlier full-preset save preserved all 321 assignments and states.
+- One shop accepted two identical randomized swords alongside an ordinary sword.
+  Buying either kind preserved the other rows and their individual prices; saving
+  and loading retained purchases without replenishing stock. Randomized items used
+  120% pricing; ordinary stock retained its normal price.
+- The extra Spell Shield option provided three scrolls on a fresh game. Buying one,
+  saving, starting another game, and reloading the save gave counts 2, 3, and 2.
+  Its randomized-source variant remains to be checked live.
+- The original cursed-disguise option passed a subsequent lab test in
+  `work/original-preset-runtime-20260929/live-cursed2/`: two fresh campaigns chose
+  different appearances, and loading the first save restored all eight choices.
+  Every demanded item matched its exported variant; engine-owned original bytes
+  were unchanged. Option-off and Item Revisions behavior have offline coverage;
+  equipping each curse and a cold-process reload remain untested.
+- The next session, `work/original-preset-runtime-20260929/live-mode2-routes/`,
+  exercised the real ASYSTA01 reward script: the assigned ring appeared once with
+  its charges intact, alongside the ordinary puzzle key. PPChest's assigned item
+  disappearing set its saved quest flag; save/load kept it absent without a
+  respawn. This used the engine's DestroyItem action, not a manual pickup. SCYARRYl's
+  alternate inventory copy stayed suppressed after loading a consumed reward state;
+  the BHOISIG dialogue itself was not played. The first test character died on area
+  entry; a fresh private character with temporary survival effects completed this
+  test. No production gameplay protection was added.
+- TRGENI01, LOUTCAPT, AMCLER01, and UDLESA retain carried rewards for dialogue,
+  theft, or combat. In `work/original-preset-runtime-20260929/live-inventory-parser-fixed/`,
+  the real reward conversations delivered exactly one RING43 from the genie,
+  SW1H23 from Dennis, and DAGG11 from the Amkethran priest. Original quest items
+  were taken and the speakers departed normally. Tests used prepared quest-entry
+  conditions, not complete playthroughs of those quests. UDLESA has focused
+  offline coverage; its duel has not been exercised live.
+- The genie test also preserved the ordinary BLUN05 replacement and passed
+  save/load in `000000085-IR NPC Reward 0930`: seed 702817910, assignments,
+  completed quest, departed genie, and exactly one party ring remained intact.
+  The priest result is saved separately as `IR NPC Priest 0930`.
+- Those tests exposed and fixed two dialogue issues: the engine strips spaces
+  and colons from embedded Lua commands, and instant DestroySelf could remove
+  the genie before his queued handover. Callbacks now use parenthesized returns
+  with numeric target rows; the genie's own departure waits behind his handover.
+  A separate engine identification change during NPC delivery is normalized
+  only after the new item is bound to its exact delivered inventory slot.
+- The combined nine-reward batch in `live-quest-batch-fixed/` passed the actual
+  SPIN621 Key spell, Unshey's plain-belt turn-in, BHOISIG's reward conversation,
+  two wards placed on and picked up from one altar, and Kangaxx's key-recognition
+  dialogue. Prepared quest conditions were used. Save `000000087-IR Quest Batch
+  0930` preserved all nine assignments and exact party item payloads on reload.
+  UDLESA's replacement weapon and assigned ring were present, but the prepared
+  post-duel conversation did not open; crypt ward consumption was not exercised
+  by the attempted script click. Both remain unverified.
+- That batch reproduced two defects. Party GiveItemCreate queues a separate
+  gains-item notification (type 67/subtype 16) alongside the item message; the
+  adapter now counts new item messages instead of unrelated feedback. The Key
+  spell and temple reward passed after this correction. Flail conditions and
+  grants now use separate CRLF lines: space-joined commands produced dialogue
+  parser errors and Glaicas left without handing over the heads. The Flail fix
+  still needs its prepared cold-session check in `live-quest-batch-cold/`.
+  The follow-up offline check used the copied real dialogue/crypt resources:
+  all eight Flail conditions and three grant branches have separate commands,
+  and all four option patches recover their exact original resources.
+- The fresh-process follow-up in `live-quest-batch-cold/` passed the Key spell
+  and Glaicas's complete three-head handover without hot-loading either fix.
+  UDLESA's original surrender dialogue also transferred the assigned RING41
+  once and retained his ordinary replacement weapon. Its prepared quest entry
+  needed both `NumDead("uddrow37",4)` and HP below 6, alongside the duel globals;
+  the earlier setup had left his higher-priority wandering block eligible.
+  Save `000000088-IR Corrected Batch` retained all nine assignments, every item,
+  and their slots on reload. RING41's unused first charge field changed 1 to 0;
+  the actual ITM has zero ability headers. Other payload fields were unchanged.
+  The crypt click did not advance `UsedCrypt` or consume a ward, so that engine
+  interaction remains unverified. The game was closed normally, 39 temporary
+  files and three ward-support files restored, and the shared lock released.
+
+TOLGER and the two Sahuagin king templates need their original alternate-carrier
+behavior preserved. The original installer puts the same assignment on both
+templates and appears to rely on route exclusivity; no explicit cross-carrier
+retirement flag was found in the original rules. Those routes need review before
+adding a new retirement rule. They are not covered by the single-carrier transfer
+above. SAHTREAS also removes and re-grants its
+reward on a quest branch, so the simple container loot latch is insufficient.
+These remain implementation work, as does original automatic equipment placement.
+GORLUM's LUM3 clue also remains: reuse the existing campaign item-view hook to
+select the original reward-specific description (or @1099 fallback), changing
+only the ITM description field at 0x54. A generic-only text replacement would
+lose original behavior. No separate hook or note framework is needed.
+
+The game was closed, all temporarily staged files restored, and the shared game
+test reservation released. The sections below include earlier protocol milestones;
+their historical test counts and limitations are not the current acceptance status.
 
 ## Prepare experimental input
 

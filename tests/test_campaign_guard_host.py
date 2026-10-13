@@ -409,6 +409,95 @@ function cases.kept_guarded_source_requests_no_guard_removal_or_delivery(Core,Ho
     assert(#f.events==0 and not f.guard_observations and not f.removal_observations)
 end
 
+function cases.full_preset_guards_batch_across_one_boundary_and_fail_closed(Core,Host)
+    for _,failure_index in ipairs({0,154}) do
+        local f=setup(Core,Host,{two_guarded=true})
+        local count=302
+        f.manifest.sources={}; f.manifest.targets[1].capacity=count
+        f.bundle.fixture.sources={}; f.bundle.fixture.source_gate.source_ids={}
+        for index=1,count do
+            local id=string.format('are:batch/container/%04d/item/0',index)
+            f.manifest.sources[index]={id=id,quantity=1,resource_sha256=string.rep('1',64),
+                record={id=id,kind='container',record=payload('flpri1')}}
+            f.bundle.fixture.sources[id]={kind='guarded-container'}
+            f.bundle.fixture.source_gate.source_ids[index]=id
+        end
+        local function receipt(request,adapter)
+            local result=copy(request); result.session=request.session; result.token=request.token
+            result.pre_access=1; result.exact_source_bound=1; result.generation=1
+            result.active=function() return not adapter.destroyed end
+            return result
+        end
+        f.deps.source_guard=function()
+            local adapter={}
+            function adapter:observe_guard(request)
+                assert(f.host.controller.boundary==f.request_boundary+1,'GUARD_BOUNDARY_CHANGED')
+                f.guard_observations=(f.guard_observations or 0)+1
+                if request.index==failure_index then return nil,'GUARD_BATCH_FAILURE' end
+                return receipt(request,self)
+            end
+            function adapter:observe_removal()
+                f.removal_observations=(f.removal_observations or 0)+1
+                return nil,'SOURCE_NOT_LOADED'
+            end
+            function adapter:destroy() self.destroyed=true end
+            return adapter
+        end
+        local native_factory=f.deps.native
+        f.deps.native=function(fixture)
+            local native=native_factory(fixture)
+            function native:inspect_target()
+                for index=1,count do
+                    assert(f.host.controller:source_guard_active(index),'REWARD_BEFORE_ALL_GUARDS')
+                end
+                f.target_inspections=(f.target_inspections or 0)+1
+                return nil,'AREA_UNAVAILABLE'
+            end
+            return native
+        end
+        assert(f:capture())
+        local seed=f.values.flpr_seed
+        for reload=1,(failure_index==0 and 2 or 1) do
+            f:poll(); f:poll() -- First advancing boundary issues the complete batch.
+            assert(f.host.status=='running',tostring(f.host.error))
+            assert(#f.host.guard_pending==count and #f.events==0 and not f.host.pending)
+            f.request_boundary=f.host.controller.boundary
+            for index=1,count do
+                assert(f.host.controller.guard_requests[index].boundary==f.request_boundary)
+                assert(not f.host.guarded[index].removal_pending)
+            end
+            local request=f.host.guard_pending[1]
+            local ok,reason=f.host.controller:confirm_source_guard(receipt(request,f.host.guard))
+            assert(ok==nil and reason=='LATER_OBSERVATION_REQUIRED')
+            local observations=f.guard_observations or 0
+            local inspections=f.target_inspections or 0
+            f.host:poll() -- Same engine tick cannot consume the batch.
+            assert((f.guard_observations or 0)==observations and #f.host.guard_pending==count)
+            f:poll() -- Every confirmation is on this later boundary, with no delivery.
+            assert(#f.events==0 and not f.host.pending and f.values.flpr_jkind==0)
+            assert((f.target_inspections or 0)==inspections and not f.source_inspections)
+            if failure_index~=0 then
+                assert(f.host.status=='disabled' and f.host.error=='GUARD_BATCH_FAILURE')
+                assert(f.guard_observations==failure_index)
+                for _=1,3 do f:poll() end
+                assert(f.guard_observations==failure_index and #f.events==0)
+            else
+                assert(f.host.status=='running' and not f.host.guard_pending)
+                assert(f.guard_observations==observations+count)
+                for index=1,count do
+                    assert(f.host.guarded[index].bound and f.host.controller:source_guard_active(index))
+                    assert(not f.host.guarded[index].removal_pending)
+                end
+                f:poll() -- Removal observations are requested only after registration.
+                assert(f.target_inspections==inspections+count and #f.events==0)
+                for index=1,count do assert(f.host.guarded[index].removal_pending) end
+                assert(f.values.flpr_seed==seed and f.seeds==1 and f.next_calls==1)
+                f.host:destroy(); f.host=Host.new(f.deps)
+            end
+        end
+    end
+end
+
 return cases
 '''
 

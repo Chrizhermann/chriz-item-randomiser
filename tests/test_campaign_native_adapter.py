@@ -84,6 +84,17 @@ local function invalid(N,f,want)
     local ok,reason=pcall(function() N.new(f.api,f.fixture) end)
     assert(not ok and tostring(reason):find(want,1,true),tostring(reason))
 end
+function cases.original_options_work_without_relocated_sources(N)
+    for _,option in ipairs({'cursed_disguises','spell_shield'}) do
+        local f=setup(N)
+        f.fixture.sources={};f.fixture.targets={}
+        f.fixture.source_gate={schema='flpr-unvisited-fixture-gate-v1',source_ids={}}
+        f.fixture[option]={}
+        assert(N.new(f.api,f.fixture))
+        f.fixture[option]=nil
+        invalid(N,f,'NATIVE_SOURCE_GATE_INVALID')
+    end
+end
 local function guarded_world(N)
     local f=guarded(setup(N),N)
     f.area.address=901
@@ -292,6 +303,41 @@ function cases.guarded_declared_payload_delivers_without_original_access(N)
     assert(#f.calls==1 and f.calls[1]=='CreateItem("flpri1",0,0,0)')
     assert(area_reads>0 and resources>0 and f.slots[21].address==301)
 end
+function cases.virtual_payload_only_source_delivers_without_owner_or_guard(N)
+    local f=setup(N)
+    local original=f.fixture.sources[f.source_id]
+    f.fixture.sources[f.source_id]={kind="virtual",identity=original.identity,payload=original.payload}
+    f.adapter=N.new(f.api,f.fixture)
+    assert(f.adapter.source_resrefs.flpri1==true)
+    assert(f.adapter:inspect_target(f.target_id))
+    assert(f.adapter:on_observation_boundary(1))
+    local command=f.command("deliver")
+    assert(f.adapter:execute(command))
+    assert(f.adapter:on_observation_boundary(2))
+    local receipt=assert(f.adapter:observe(command))
+    assert(receipt.created==1 and receipt.nonce_bound_instance==1 and receipt.lootable==1)
+    assert(receipt.source_id==f.source_id and receipt.payload.resref=="flpri1")
+    assert(#f.calls==1 and f.calls[1]=='CreateItem("flpri1",0,0,0)')
+    assert(f.slots[21].address==301)
+end
+function cases.guarded_template_source_has_no_world_owner_and_delivers_declared_payload(N)
+    local f=setup(N)
+    local original=f.fixture.sources[f.source_id]
+    f.fixture.sources[f.source_id]={kind="guarded-template",creature_resource="cre:FLPRS1",
+        identity=original.identity,payload=original.payload}
+    f.fixture.source_gate={schema="flpr-unvisited-fixture-gate-v1",source_id=f.source_id}
+    f.adapter=N.new(f.api,f.fixture)
+    local x,e=f.adapter:inspect_source(f.source_id); fail(x,e,"SOURCE_GUARD_REQUIRED")
+    x,e=f.adapter:guarded_source_remaining(f.source_id,"901","701")
+    fail(x,e,"SOURCE_GUARD_REQUIRED")
+    local source=f.adapter:diagnostics().sources[f.source_id]
+    assert(source.unavailable=="SOURCE_GUARD_REQUIRED" and source.creature_resource=="cre:flprs1")
+    assert(f.adapter:inspect_target(f.target_id)); f.adapter:on_observation_boundary(1)
+    local command=f.command("deliver")
+    assert(f.adapter:execute(command)); f.adapter:on_observation_boundary(2)
+    assert(f.adapter:observe(command).created==1)
+    assert(#f.calls==1 and f.slots[21].address==301)
+end
 function cases.guarded_resref_stays_exclusive_in_delivery_queue(N)
     local f=guarded(setup(N),N)
     assert(f.adapter.source_resrefs.flpri1==true)
@@ -333,6 +379,19 @@ function cases.identified_payload_is_preserved_in_witness_and_source_receipt(N)
     a:on_observation_boundary(2); local receipt=assert(a:observe(command))
     assert(receipt.payload.flags==1 and receipt.removed==1)
 end
+function cases.stolen_original_flag_is_preserved_in_source_receipt(N)
+    local f=setup(N)
+    f.fixture.sources[f.source_id].payload.flags=2
+    f.slots[21].m_flags=2
+    local a=N.new(f.api,f.fixture)
+    local witness=assert(a:inspect_source(f.source_id))
+    assert(witness.payload.flags==2)
+    a:on_observation_boundary(1)
+    local command=f.command("suppress")
+    assert(a:execute(command))
+    a:on_observation_boundary(2)
+    assert(a:observe(command).payload.flags==2)
+end
 function cases.identified_delivery_preserves_exact_flags(N)
     local f=setup(N); f.fixture.sources[f.source_id].payload.flags=1
     local a=N.new(f.api,f.fixture); assert(a:inspect_target(f.target_id)); a:on_observation_boundary(1)
@@ -342,15 +401,49 @@ function cases.identified_delivery_preserves_exact_flags(N)
     local command=f.command("deliver"); assert(a:execute(command)); a:on_observation_boundary(2)
     local receipt=assert(a:observe(command)); assert(receipt.payload.flags==1 and receipt.created==1)
 end
-function cases.identified_configuration_rejects_unidentified_source_or_delivery(N)
+function cases.stolen_flag_is_set_on_proven_synchronous_container_item(N)
+    local f=setup(N)
+    f.fixture.sources[f.source_id].payload.flags=2
+    local a=N.new(f.api,f.fixture)
+    assert(a:inspect_target(f.target_id)); a:on_observation_boundary(1)
+    local command=f.command("deliver")
+    assert(a:execute(command))
+    assert(f.target.m_lstItems[1].m_flags==2 and #f.calls==1)
+    a:on_observation_boundary(2)
+    local receipt=assert(a:observe(command))
+    assert(receipt.payload.flags==2 and receipt.created==1)
+end
+function cases.stolen_identified_flag_is_set_on_bound_queued_container_item(N)
+    local f=setup(N)
+    f.fixture.sources[f.source_id].payload.flags=3
+    f.api.EEex_Action_ExecuteResponseStringOnAIBaseInstantly=function(action)
+        f.calls[#f.calls+1]=action; f.queue[1]=f.message(601)
+    end
+    local a=N.new(f.api,f.fixture)
+    assert(a:inspect_target(f.target_id)); a:on_observation_boundary(1)
+    local command=f.command("deliver")
+    assert(a:execute(command))
+    assert(f.queue[1].m_item.m_flags==3 and #f.calls==1)
+    f.queue[1]=nil; f.target.m_lstItems[1]=f.item("FLPRI1",701,3)
+    a:on_observation_boundary(2)
+    local x,e=a:observe(command); fail(x,e,"DELIVERY_SETTLING")
+    a:on_observation_boundary(3)
+    local receipt=assert(a:observe(command))
+    assert(receipt.payload.flags==3 and receipt.created==1)
+end
+function cases.identified_configuration_rejects_unidentified_source_but_corrects_new_delivery(N)
     local f=setup(N); f.fixture.sources[f.source_id].payload.flags=1
     local a=N.new(f.api,f.fixture)
     local x,e=a:inspect_source(f.source_id); fail(x,e,"SOURCE_PAYLOAD_MISMATCH")
     assert(a:inspect_target(f.target_id)); a:on_observation_boundary(1)
-    x,e=a:execute(f.command("deliver")); fail(x,e,"CREATED_INSTANCE_UNPROVEN")
+    local command=f.command("deliver")
+    assert(a:execute(command))
+    assert(f.target.m_lstItems[1].m_flags==1)
+    a:on_observation_boundary(2)
+    assert(a:observe(command).payload.flags==1)
 end
-function cases.stolen_nonstealable_and_nondroppable_flags_are_unsupported(N)
-    for _,flags in ipairs({2,4,8,9}) do
+function cases.nonstealable_and_nondroppable_flags_are_unsupported(N)
+    for _,flags in ipairs({4,8,9}) do
         local f=setup(N); f.fixture.sources[f.source_id].payload.flags=flags
         local ok,reason=pcall(function() N.new(f.api,f.fixture) end)
         assert(not ok and tostring(reason):find("NATIVE_PAYLOAD_UNSUPPORTED",1,true))
@@ -372,6 +465,23 @@ function cases.item_replacement_between_inspect_and_execute_rejected(N)
     local f=setup(N); local a=f.adapter; assert(a:inspect_source(f.source_id)); a:on_observation_boundary(1)
     f.slots[21]=f.item("FLPRI1",888); local x,e=a:execute(f.command("suppress")); fail(x,e,"INVENTORY_CHANGED")
 end
+function cases.tome_variant_delivers_selected_reward_and_keeps_original_payload(N)
+    local f=setup(N)
+    local reward={resref='book03',charges={0,0,0},expiration=0,flags=0}
+    local a=N.new(f.api,f.fixture,123,function(unit) assert(unit==1); return reward end)
+    assert(a:inspect_source(f.source_id).payload.resref=='flpri1')
+    f.api.EEex_Action_ExecuteResponseStringOnAIBaseInstantly=function(action,owner)
+        assert(action=='CreateItem("book03",0,0,0)')
+        owner.m_lstItems[1]=f.item('BOOK03',401)
+    end
+    assert(a:inspect_target(f.target_id,f.source_id,1)); a:on_observation_boundary(1)
+    local command=f.command('deliver'); command.payload=reward
+    assert(a:execute(command)); a:on_observation_boundary(2)
+    local receipt=assert(a:observe(command))
+    assert(receipt.payload.resref=='book03' and receipt.created==1)
+    assert(a.sources[f.source_id].payload.resref=='flpri1')
+end
+
 function cases.delivers_exact_instance_to_empty_ground_pile(N)
     local f=setup(N); local a=f.adapter; assert(a:inspect_target(f.target_id)); a:on_observation_boundary(1)
     local command=f.command("deliver"); assert(a:execute(command)); assert(f.calls[1]=='CreateItem("flpri1",0,0,0)')
@@ -476,13 +586,87 @@ function cases.pending_reload_is_never_replayed(N)
     local x,e=a:execute(command); fail(x,e,"COMMAND_INVALID")
     x,e=a:observe(command); fail(x,e,"PENDING_RELOAD_UNPROVEN"); assert(#f.calls==0)
 end
-function cases.stackable_or_invisible_or_nondroppable_resource_rejected(N)
-    local f=setup(N); f.header.maxStackable=20
-    local x,e=f.adapter:inspect_source(f.source_id); fail(x,e,"ITEM_NOT_NONSTACKABLE")
+function cases.invalid_stack_limit_or_invisible_or_nondroppable_resource_rejected(N)
+    local f=setup(N); f.header.maxStackable=65536
+    local x,e=f.adapter:inspect_source(f.source_id); fail(x,e,"ITEM_STACK_LIMIT_UNAVAILABLE")
     f.header.maxStackable=1; f.header.itemFlags=4
     x,e=f.adapter:inspect_source(f.source_id); fail(x,e,"ITEM_NOT_VISIBLE_DROPPABLE")
     f.header.itemFlags=8
     x,e=f.adapter:inspect_source(f.source_id); fail(x,e,"ITEM_NOT_VISIBLE_DROPPABLE")
+end
+function cases.original_scroll_stack_delivers_one_exact_record_to_stocked_container(N)
+    local f=setup(N)
+    f.header.maxStackable=20
+    local source=f.fixture.sources[f.source_id]
+    source.payload.resref="scrl66"; source.payload.charges={7,0,0}
+    f.slots[21]=f.item("SCRL66",301); f.slots[21].m_useCount1=7
+    f.fixture.targets[f.target_id].kind="container"
+    f.fixture.targets[f.target_id].container_type=4
+    local old=f.item("OTHER",501,1)
+    f.target.m_lstItems[1]=old
+    f.api.EEex_Action_ExecuteResponseStringOnAIBaseInstantly=function(action,owner)
+        f.calls[#f.calls+1]=action
+        owner.m_lstItems[2]=f.item("SCRL66",601)
+        owner.m_lstItems[2].m_useCount1=7
+    end
+    local a=N.new(f.api,f.fixture)
+    assert(a:inspect_source(f.source_id).payload.charges[1]==7)
+    assert(a:inspect_target(f.target_id)); a:on_observation_boundary(1)
+    local command=f.command("deliver")
+    assert(a:execute(command))
+    a:on_observation_boundary(2)
+    local receipt=assert(a:observe(command))
+    assert(receipt.created==1 and receipt.payload.resref=="scrl66" and receipt.payload.charges[1]==7)
+    assert(f.target.m_lstItems[1]==old and f.target.m_lstItems[2].m_useCount1==7)
+    assert(#f.calls==1 and f.calls[1]=='CreateItem("scrl66",7,0,0)')
+end
+function cases.stolen_scroll_stack_uses_one_bound_creature_message(N)
+    local f=setup(N)
+    f.header.maxStackable=20
+    local source=f.fixture.sources[f.source_id]
+    source.payload.resref="scrl66"; source.payload.charges={7,0,0}; source.payload.flags=2
+    local target=f.fixture.targets[f.target_id]
+    target.kind="creature"; target.x=nil; target.y=nil
+    f.target.sprite=true; f.target.alive=true; f.target.m_typeAI={m_EnemyAlly=2}
+    local inventory={}
+    f.target.m_equipment={m_items={get=function(_,slot) return inventory[slot] end}}
+    f.api.EEex_Sprite_GetPortraitIndex=function() return -1 end
+    f.api.EEex_CastUD=function(object,kind) assert(kind=="CMessageAddItem"); return object end
+    f.api.EEex_Action_ExecuteResponseStringOnAIBaseInstantly=function(action,owner)
+        assert(owner==f.target)
+        f.calls[#f.calls+1]=action
+        f.queue[1]=f.message(601,2,"SCRL66",0,32767,2)
+        f.queue[1].m_item.m_useCount1=7
+    end
+    local a=N.new(f.api,f.fixture)
+    assert(a:inspect_target(f.target_id,f.source_id)); a:on_observation_boundary(1)
+    local command=f.command("deliver")
+    assert(a:execute(command))
+    assert(f.queue[1].m_item.m_flags==2 and f.queue[1].m_item.m_useCount1==7)
+    f.queue[1]=nil; inventory[18]=f.item("SCRL66",701,2); inventory[18].m_useCount1=7
+    a:on_observation_boundary(2)
+    local x,e=a:observe(command); fail(x,e,"DELIVERY_SETTLING")
+    a:on_observation_boundary(3)
+    local receipt=assert(a:observe(command))
+    assert(receipt.held==1 and receipt.payload.flags==2 and receipt.payload.charges[1]==7)
+    assert(#f.calls==1 and f.calls[1]=='GiveItemCreate("scrl66",Myself,7,0,0)')
+end
+function cases.stackable_scroll_rejects_existing_same_resref_before_native_action(N)
+    local f=setup(N)
+    f.header.maxStackable=20
+    local source=f.fixture.sources[f.source_id]
+    source.payload.resref="scrl66"; source.payload.charges={7,0,0}
+    f.fixture.targets[f.target_id].kind="container"
+    f.fixture.targets[f.target_id].container_type=4
+    f.target.m_lstItems[1]=f.item("SCRL66",501)
+    f.target.m_lstItems[1].m_useCount1=2
+    local a=N.new(f.api,f.fixture)
+    local x,e=a:inspect_target(f.target_id,f.source_id)
+    fail(x,e,"TARGET_STACK_COLLISION")
+    assert(#f.calls==0)
+    assert(a:inspect_target(f.target_id)); a:on_observation_boundary(1)
+    x,e=a:execute(f.command("deliver")); fail(x,e,"TARGET_STACK_COLLISION")
+    assert(#f.calls==0 and f.target.m_lstItems[1].m_useCount1==2)
 end
 function cases.clock_missing_backwards_and_invalid_rejected(N)
     local f=setup(N); local a=f.adapter; assert(a:inspect_source(f.source_id))
@@ -559,7 +743,7 @@ function cases.foreign_destination_wrong_slot_or_payload_message_is_rejected(N)
             if variant=="destination" then m.m_targetId=99
             elseif variant=="source" then m.m_sourceId=99
             elseif variant=="slot" then m.m_slotNum=0
-            elseif variant=="payload" then m.m_item.m_flags=1
+            elseif variant=="payload" then m.m_item.m_useCount1=1
             elseif variant=="extra" then f.queue[2]=f.message(602,99,"OTHER") end
             f.queue[1]=m
         end

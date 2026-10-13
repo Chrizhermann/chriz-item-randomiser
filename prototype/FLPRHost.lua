@@ -9,7 +9,8 @@ Host.DEFER_TICKS = 30
 -- before the core journals anything. Every other failure disables the host.
 Host.DEFERRABLE = { AREA_UNAVAILABLE = true, OWNER_MISSING = true, OWNER_AMBIGUOUS = true,
     TARGET_NOT_ALIVE = true, TARGET_PARTY_MEMBER = true, TARGET_FAMILIAR = true,
-    TARGET_INVENTORY_FULL = true, TARGET_QUEUE_BUSY = true, TARGET_NOT_EMPTY = true }
+    TARGET_INVENTORY_FULL = true, TARGET_QUEUE_BUSY = true, TARGET_NOT_EMPTY = true,
+    TARGET_STACK_COLLISION = true, QUEST_NOT_CLAIMED = true }
 
 function Host.new(deps)
     assert(type(deps) == "table" and deps.core and deps.storage)
@@ -22,7 +23,7 @@ function Host:destroy()
     if self.guard then self.guard:destroy() end
     self.controller, self.native, self.pending = nil, nil, nil
     self.guard, self.guarded, self.guard_pending = nil, nil, nil
-    self.guard_monitor = nil
+    self.guard_monitor, self.container_latch_monitor = nil, nil
     self.last_tick, self.bundle, self.error = nil, nil, nil
     self.deferred = {}
     self.status = "waiting"
@@ -43,7 +44,8 @@ local function guarded_indices(bundle)
     local config, endpoints = bundle.fixture.source_gate, {}
     for id, endpoint in pairs(bundle.fixture.sources or {}) do
         if endpoint.kind == "guarded-container" or endpoint.kind == "guarded-creature" or
-            endpoint.kind == "guarded-store" or endpoint.kind == "guarded-script" then
+            endpoint.kind == "guarded-store" or endpoint.kind == "guarded-script" or
+            endpoint.kind == "guarded-template" then
             endpoints[id] = endpoint.kind
         end
     end
@@ -54,7 +56,9 @@ local function guarded_indices(bundle)
     assert(type(config) == "table" and config.schema == "flpr-unvisited-fixture-gate-v1" and
         (config.source_id == nil) ~= (config.source_ids == nil), "SOURCE_GUARD_CONFIG_INVALID")
     local ids = config.source_ids or {config.source_id}
-    assert(type(ids) == "table" and #ids > 0, "SOURCE_GUARD_CONFIG_INVALID")
+    assert(type(ids) == "table" and (#ids > 0 or type(bundle.fixture.spell_shield) == "table" or
+        type(bundle.fixture.cursed_disguises) == "table"),
+        "SOURCE_GUARD_CONFIG_INVALID")
     local selected, result, count = {}, {}, 0
     for key, id in pairs(ids) do
         assert(type(key) == "number" and key == math.floor(key) and key >= 1 and key <= #ids and
@@ -67,10 +71,10 @@ local function guarded_indices(bundle)
         if selected[source.id] then
             local endpoint_kind, source_kind = selected[source.id], source.record.kind
             assert((endpoint_kind == "guarded-store" and source_kind == "store") or (source.quantity == 1 and
-                ((endpoint_kind == "guarded-script" and source_kind == "scripted") or
+                ((endpoint_kind == "guarded-script" and (source_kind == "scripted" or source_kind == "authored-source")) or
                  (endpoint_kind == "guarded-container" and source_kind == "container") or
-                 (endpoint_kind == "guarded-creature" and
-                  (source_kind == "cre-template" or source_kind == "embedded-cre")))),
+                 ((endpoint_kind == "guarded-creature" or endpoint_kind == "guarded-template") and
+                  (source_kind == "cre-template" or source_kind == "embedded-cre" or source_kind == "authored-source")))),
                 "SOURCE_GUARD_CONFIG_INVALID")
             result[index], selected[source.id] = {}, nil
         end
@@ -129,6 +133,7 @@ function Host:capture_new(handoff)
         if guarded then assert(type(deps.prepare_source_guard) == "function", "SOURCE_GUARD_PREPARER_MISSING") end
         local controller = require_result(deps.core.new(deps.storage, function() return nil end))
         require_result(controller:capture(selected.manifest, deps.seed(), "confirmed-new-game"))
+        if deps.prepare_campaign then require_result(deps.prepare_campaign(selected,controller)) end
         -- Before engine character acceptance can load an original's area, the
         -- native adapter must already protect this exact frozen campaign.
         if guarded then require_result(deps.prepare_source_guard(selected, controller)) end
@@ -143,6 +148,7 @@ end
 function Host:_step(tick)
     if self.status == "waiting" then self:_initialize() end
     if self.status ~= "running" and self.status ~= "complete" then return end
+    if self.guard and self.guard.check then require_result(self.guard:check()) end
     self.controller:on_observation_boundary()
     require_result(self.native:on_observation_boundary(tick))
     local assignments = require_result(self.controller:assignments())
@@ -164,14 +170,34 @@ function Host:_step(tick)
         self.pending = nil
         return
     end
+    if self.native.observe_container_latches then
+        local observed,monitor=self.native:observe_container_latches(assignments,self.deps.core.PHASE.confirmed)
+        require_result(observed,monitor)
+        self.container_latch_monitor=monitor==true
+    end
     if self.guard_pending then
-        local receipt, reason = self.guard:observe_guard(self.guard_pending)
-        require_result(receipt, reason)
-        require_result(self.controller:confirm_source_guard(receipt))
-        self.guarded[self.guard_pending.index].bound = true
+        for _, request in ipairs(self.guard_pending) do
+            local receipt, reason = self.guard:observe_guard(request)
+            require_result(receipt, reason)
+            require_result(self.controller:confirm_source_guard(receipt))
+            self.guarded[request.index].bound = true
+        end
         self.guard_pending, self.guard_monitor = nil, true
         return
     end
+    -- Guard requests are independent observations. Register them together, then
+    -- confirm each on the next boundary before any source or reward mutation.
+    local requests = {}
+    for index in ipairs(self.bundle.manifest.sources) do
+        local phase, state = source_phases[index], self.guarded and self.guarded[index]
+        if state and not state.bound and phase ~= self.deps.core.PHASE.confirmed and
+            phase ~= self.deps.core.PHASE.kept then
+            assert(phase == self.deps.core.PHASE.pending or phase == self.deps.core.PHASE.protected,
+                "SOURCE_NOT_READY")
+            requests[#requests + 1] = require_result(self.controller:source_guard_request(index))
+        end
+    end
+    if #requests > 0 then self.guard_pending = requests; return end
     self.guard_monitor = false
     -- Every original must be removed or protected before exposing any rewards.
     for index, source in ipairs(self.bundle.manifest.sources) do
@@ -181,10 +207,7 @@ function Host:_step(tick)
         elseif state and phase ~= self.deps.core.PHASE.confirmed then
             assert(phase == self.deps.core.PHASE.pending or phase == self.deps.core.PHASE.protected,
                 "SOURCE_NOT_READY")
-            if not state.bound then
-                self.guard_pending = require_result(self.controller:source_guard_request(index))
-                return
-            end
+            assert(state.bound, "SOURCE_GUARD_INACTIVE")
             if state.removal_pending then
                 local receipt, reason = self.guard:observe_removal(state.removal_pending)
                 if receipt == nil and reason == "SOURCE_NOT_LOADED" then
@@ -215,7 +238,7 @@ function Host:_step(tick)
             assert(phase == phases.pending, "DELIVERY_NOT_READY")
             local deferral = self.deferred[assignment.unit]
             if not deferral or tick >= deferral.retry then
-                local witness, reason = self.native:inspect_target(assignment.target_id)
+                local witness, reason = self.native:inspect_target(assignment.target_id, assignment.source_id, assignment.unit)
                 if witness then
                     self.deferred[assignment.unit] = nil
                     local command = require_result(self.controller:begin_delivery(assignment.unit, witness))
@@ -239,7 +262,7 @@ end
 
 function Host:poll()
     if self.status == "disabled" or self.status == "inactive" or
-        (self.status == "complete" and not self.guard_monitor) then return end
+        (self.status == "complete" and not self.guard_monitor and not self.container_latch_monitor) then return end
     local ok, failure = pcall(function()
         if not self.deps.world() then return end
         local tick = self.deps.tick()
@@ -254,7 +277,8 @@ end
 
 function Host:inspect()
     local result = { status = self.status, error = self.error, tick = self.last_tick, deferred = {},
-        source_guard_monitor = self.guard_monitor == true }
+        source_guard_monitor = self.guard_monitor == true,
+        container_latch_monitor = self.container_latch_monitor == true }
     for unit, deferral in pairs(self.deferred) do
         result.deferred[#result.deferred + 1] = { unit = unit, reason = deferral.reason, retry = deferral.retry }
     end
