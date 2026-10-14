@@ -204,7 +204,11 @@ python tools/randomiser_config.py templates --id eet-mode1 --items mode1+mode2 -
 `flail_heads`, `totsc_tome`, `more_spell_shield`, `cursed_disguise`, plus
 `loss_mode` (`none`/`some`), `loss_percent` and `unrandomized_percent` (0–100).
 These preserve intended component choices; they do not execute installer edits.
-Optional components default off. Disabled rows remain visible with `enabled:false`.
+Optional components default off here. The editor's "Start from a preset" dialog
+opens on the recommended default instead: `eet-mode1` with `flail_heads` and
+`totsc_tome` (the original Mode 1 without item loss, plus the Flail of Ages heads and
+the randomised Tales of the Sword Coast tome); every choice stays editable.
+Disabled rows remain visible with `enabled:false`.
 Loss excludes the original Flail/Kangaxx tiers; unrandomized percentage concerns
 items with original sources. These draft choices still need automatic binding to
 the runtime configuration.

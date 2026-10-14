@@ -10,7 +10,8 @@ Install the post-install Mode 1 campaign runtime (`prototype/`) through the norm
 `randomiser.tp2`, build a reproducible release ZIP, and record what Chriz Easy BG
 (CEBG) needs to offer it. Mode 2 routes, original special-option parity, automatic
 equipment placement and the reward-specific clue route remain separate work. The
-default configuration was decided on 2026-10-14 (see Decisions) and is not built yet.
+default configuration was decided on 2026-10-14 (see Decisions); the configurator's
+preset dialog opens on it, and the installer does not apply it yet.
 
 The branch starts from a snapshot of `codex/mode1-postinstall-profiles` (head
 `39b665b` plus its uncommitted work as of 2026-10-12), taken without touching that

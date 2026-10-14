@@ -62,6 +62,10 @@ class EditorTests(unittest.TestCase):
         descriptors = editor.get("/api/templates", {})
         self.assertEqual([row["id"] for row in descriptors[:2]],
                          ["bg1-mode1", "bg1-mode1-plus-mode2"])
+        recommended = editor.get("/api/recommended", {})
+        self.assertEqual(recommended["id"], "eet-mode1")
+        self.assertIn(recommended["id"], [row["id"] for row in descriptors])
+        self.assertTrue(recommended["options"]["flail_heads"] and recommended["options"]["totsc_tome"])
         original = deepcopy(editor.draft)
         calls = []
         module = ModuleType("flir_config.original_configuration")

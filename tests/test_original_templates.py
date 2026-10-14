@@ -5,7 +5,8 @@ import sys
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
-from flir_config.templates import build_template, list_templates  # noqa: E402
+from flir_config.templates import (DEFAULT_OPTIONS, build_template, list_templates,  # noqa: E402
+                                   recommended_preset)
 
 
 class OriginalTemplateTests(unittest.TestCase):
@@ -78,6 +79,22 @@ class OriginalTemplateTests(unittest.TestCase):
                             if row["family"] == "mode2"))
         self.assertTrue(all(row["runtime_support"] == "needs-endpoint-adapter"
                             for row in reverse["targets"] if row["family"] == "mode2"))
+
+    def test_recommended_preset_is_mode1_without_loss_plus_flail_heads_and_tome(self):
+        preset = recommended_preset("eet")
+        self.assertEqual((preset["id"], preset["items"], preset["targets"]), ("eet-mode1", "mode1", "mode1"))
+        self.assertEqual(preset["options"], DEFAULT_OPTIONS | {"flail_heads": True, "totsc_tome": True})
+        self.assertEqual(preset["options"]["loss_mode"], "none")
+        draft = build_template(preset["id"], items=preset["items"], targets=preset["targets"],
+                               options=preset["options"])
+        self.assertTrue(any(row["option_gate"] == "flail_heads" and row["enabled"] for row in draft["items"]))
+        self.assertFalse(any(row["option_gate"] in ("scrolls", "kangaxx") and row["enabled"]
+                             for row in draft["items"]))
+        self.assertEqual(recommended_preset("bg1")["id"], "bg1-mode1")
+        preset["options"]["kangaxx"] = True
+        self.assertFalse(recommended_preset("eet")["options"]["kangaxx"])
+        with self.assertRaises(ValueError):
+            recommended_preset("iwd")
 
     def test_invalid_choices_fail_closed(self):
         with self.assertRaises(ValueError):

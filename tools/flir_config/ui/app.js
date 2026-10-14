@@ -32,6 +32,7 @@ let verified = false;
 let applyEnabled = false;
 let generation = 0;
 let searchTimer = null;
+let recommendedPreset = null;
 let presetTemplates = null;
 let pendingItemTiers = new Map();
 const searches = {
@@ -796,19 +797,24 @@ ui.newForm.addEventListener("submit", (event) => {
 ui.presetButton.addEventListener("click", () => {
   perform(async () => {
     if (!presetTemplates) presetTemplates = await request("/api/templates");
+    if (!recommendedPreset) recommendedPreset = await request("/api/recommended");
     ui.presetSelect.replaceChildren(new Option("Choose a preset", ""));
     for (const row of presetTemplates) ui.presetSelect.add(new Option(row.name, row.id));
-    ui.presetSelect.value = "";
-    ui.presetItems.value = "mode1";
-    ui.presetTargets.value = "mode1";
-    for (const input of [ui.presetScrolls, ui.presetKangaxx, ui.presetFlailHeads,
-                         ui.presetTotscTome, ui.presetMoreSpellShield, ui.presetCursedDisguise]) {
-      input.checked = false;
-    }
-    ui.presetLossMode.value = "none";
-    ui.presetLossPercent.value = "0";
-    ui.presetLossPercent.disabled = true;
-    ui.presetUnrandomizedPercent.value = "0";
+    // Opens on the recommended default; every choice stays editable.
+    const preset = recommendedPreset;
+    ui.presetSelect.value = preset.id;
+    ui.presetItems.value = preset.items;
+    ui.presetTargets.value = preset.targets;
+    ui.presetScrolls.checked = preset.options.scrolls;
+    ui.presetKangaxx.checked = preset.options.kangaxx;
+    ui.presetFlailHeads.checked = preset.options.flail_heads;
+    ui.presetTotscTome.checked = preset.options.totsc_tome;
+    ui.presetMoreSpellShield.checked = preset.options.more_spell_shield;
+    ui.presetCursedDisguise.checked = preset.options.cursed_disguise;
+    ui.presetLossMode.value = preset.options.loss_mode;
+    ui.presetLossPercent.value = String(preset.options.loss_percent);
+    ui.presetLossPercent.disabled = preset.options.loss_mode !== "some";
+    ui.presetUnrandomizedPercent.value = String(preset.options.unrandomized_percent);
     ui.presetError.hidden = true;
     ui.presetDialog.showModal();
     ui.presetSelect.focus();

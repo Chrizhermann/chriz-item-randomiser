@@ -16,7 +16,7 @@ from .profiles import (PROFILE_ID, ProfileError, ensure_output_outside_game,
                        validate_profile, write_json)
 from .sources import new_binding_plan, validate_world
 from .scripted_sources import blpool_registration, SUPPORTED_HASHES
-from .templates import list_templates
+from .templates import list_templates, recommended_preset
 
 
 KIND_LABELS = {"actor": "Creature", "cre-template": "Creature template",
@@ -148,6 +148,9 @@ class Editor:
             return self.state()
         if route == "/api/templates":
             return list_templates()
+        if route == "/api/recommended":
+            # Component 1500 installs only on EET so far; other games follow with B5.
+            return recommended_preset("eet")
         offset = int(params.get("offset", "0"))
         query = params.get("q", "").strip()
         if route == "/api/items":
