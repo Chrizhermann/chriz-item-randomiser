@@ -9,8 +9,8 @@ game. A public release stays gated on the blockers below.
 Install the post-install Mode 1 campaign runtime (`prototype/`) through the normal
 `randomiser.tp2`, build a reproducible release ZIP, and record what Chriz Easy BG
 (CEBG) needs to offer it. Mode 2 routes, original special-option parity, automatic
-equipment placement and the reward-specific clue route remain separate work. No
-default configuration, preset or seed is chosen here.
+equipment placement and the reward-specific clue route remain separate work. The
+default configuration was decided on 2026-10-14 (see Decisions) and is not built yet.
 
 The branch starts from a snapshot of `codex/mode1-postinstall-profiles` (head
 `39b665b` plus its uncommitted work as of 2026-10-12), taken without touching that
@@ -33,8 +33,11 @@ and the `tools/probes/FLPRDrop.lua` diagnostic.
 
 ## Installation: component 1500
 
-`DESIGNATED 1500`, `LABEL ~flir-campaign-runtime~`, no prompts. Preconditions, each
-with its reason:
+`DESIGNATED 1500`, `LABEL ~flir-campaign-runtime~`, no prompts. It is the first choice of
+the "Randomise items" group (`SUBCOMPONENT @101000`), shown as "New randomiser
+(recommended)"; the four 8.1.1 modes follow as "Old randomiser (stable)". The group offers
+one choice; the predicates below also keep the two apart for install lists and later
+runs. Preconditions, each with its reason:
 
 - `GAME_IS ~eet~`. The runtime captures a campaign only on a BG1 New Game, and its
   native source gate checks code bytes of the BG2:EE 2.6.6.0 executable. EET is the
@@ -214,7 +217,14 @@ must not be published until the version is decided.
   package contains; a lab stages both into `override`. The runtime exposes read-only
   `FLPR.Core` and `FLPR.Storage` for them. The data folder is now `randomiser-campaigns/`.
 - **B5 Coverage.** BG1 starts on EET only; direct SoD, BG2 and ToB starts are
-  unsupported, as is the remaining parity work listed above.
+  unsupported, as is the remaining parity work listed above. BG:EE (with SoD) and BG2:EE
+  without EET must work before a release (decided 2026-10-14); the runtime has to tell
+  the platforms apart rather than assume EET.
+- **B6 Engine 2.7.3.0.** The native hooks are pinned to the BG2:EE 2.6.6.0 executable
+  (relative addresses and code bytes in `FLPRGat.lua` and `FLPRNat.lua`). The current
+  Steam BG:EE and BG2:EE and the CEBG reference game are 2.7.3.0, which EEex 1.2 also
+  supports. There the runtime refuses every New Game with the "not supported yet" popup.
+  Every native site needs a 2.7.3.0 port and an in-game check on that version.
 
 Resolved here: in the snapshot, 15 native host tests (five in each Lua runtime) failed
 in `M_FLPR.lua`'s campaign preparation, which reads each source's
@@ -225,17 +235,25 @@ and the runtime stops the capture with `FIXTURE_SOURCES_MISSING` or
 `SOURCE_ENDPOINT_MISSING` instead of an index error, so a missing endpoint can never
 skip a reward quest's selection flag silently.
 
-## Decisions for Christopher
+## Decisions
 
-- **Component name and description** shown to players. The TRA strings are provisional.
-- **Placement**: separate component (current) or a fifth choice in the "Randomise items"
-  group.
-- **Release timing and version**: hold until B1-B3 are solved (recommended), publish as
-  an experimental component for Python users, or a CEBG-only prerelease; 8.2.0 or 9.0.0.
-- **Default configuration**: none (current), the original EET Mode 1 preset, or a
-  curated selection.
-- **CEBG preset**: whether 1500 replaces 1100 by default, and dropping 500-570 then.
-- **B1 route** (options above).
+Christopher decided on 2026-10-14:
+
+- **Names and placement**: "New randomiser (recommended)", the default choice and
+  exclusive with the old one; the 8.1.1 modes are "Old randomiser (stable)". No
+  "experimental" label. Implemented as the first choice of the "Randomise items" group.
+- **Releases**: normal mod releases, no prereleases, once the blockers are solved.
+- **Distribution**: a standalone and a CEBG version; neither needs Python (B1).
+- **Default configuration**: the original Mode 1 "no items are lost" (1100) plus the Flail
+  of Ages heads (540, `flail_heads`) and the randomised Tales of the Sword Coast tome (500,
+  `totsc_tome`); every other option off. It is not an EET-only preset (B5).
+- **Mode 2 routes** are built in this mod.
+
+Open:
+
+- **Version and packaging**: both randomisers in this mod's one installer as v9.0
+  (proposed), or the new one as a separate mod.
+- **B1 route** (options above), now constrained to Python-free for both versions.
 
 ## Verification
 
@@ -248,9 +266,9 @@ skip a reward quest's selection flag silently.
   directions, missing prerequisites, rollback of failed installs and the Polish
   language, with KEY, BIFF, TLK and unrelated override files byte-checked, and the seven
   messages appended to the game text with matching references in `M_FLPRTXT.lua`.
-- `tests/Test-Mode2Parity.ps1` (32 checks) and the other PowerShell suites that run
-  without a Lua 5.3 interpreter or sentinel BAFs pass as on the snapshot. `Manifest`,
-  `RuntimeProbes` and `SentinelDependencies` need those and were not run.
+- `tests/Test-Mode2Parity.ps1` (32 checks) and the other 14 PowerShell suites pass, with a
+  Lua 5.3 interpreter for `Manifest` and `RuntimeProbes`. `SentinelDependencies` and
+  `run-unit.ps1` need the sentinel BAFs of a lab that no longer exists and were not run.
 - WeiDU `--parse-check` of `randomiser.tp2` and every `lib/*.tpa`.
 - `tests/test_release_package.py`: EOL parity with Git, determinism, refused inputs,
   manifest integrity and coverage of every file the TP2 component copies.

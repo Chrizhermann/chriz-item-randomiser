@@ -122,6 +122,18 @@ REQUIRE_PREDICATE !MOD_IS_INSTALLED cursed_items.tp2 0 @100027
   COPY_EXISTING sw1h01.itm "override/flrc570.mrk"
 
 
+BEGIN @101500 SUBCOMPONENT @101000 DESIGNATED 1500 LABEL ~flir-campaign-runtime~                                       //New randomiser: each new adventure, through EEex
+                                                                                                                       //Marker file: flrandomiser3.mrk
+REQUIRE_PREDICATE GAME_IS ~eet~ @101501
+REQUIRE_PREDICATE FILE_EXISTS ~override/M___EEex.lua~ @101502
+REQUIRE_PREDICATE !FILE_EXISTS_IN_GAME flrandomiser1.mrk AND !FILE_EXISTS_IN_GAME flrandomiser2.mrk @101503
+REQUIRE_PREDICATE !MOD_IS_INSTALLED randomiser.tp2 560 @101504
+REQUIRE_PREDICATE (!FILE_EXISTS ~override/M_FLPR.lua~) OR (MOD_IS_INSTALLED randomiser.tp2 1500) @101505               //Not its own earlier installation
+
+  INCLUDE "randomiser/lib/campaign_runtime.tpa"                                                                        //Runtime files, UI hooks and the new-game marker
+  LAM flir_campaign_runtime_install
+
+
 BEGIN @101100 SUBCOMPONENT @101000 DESIGNATED 1100                                                                     //Randomise items: No items are lost
                                                                                                                        //Marker file: flrandomiser1.mrk
 REQUIRE_PREDICATE !FILE_EXISTS_IN_GAME flrandomiser3.mrk @101507
@@ -308,18 +320,6 @@ REQUIRE_PREDICATE !FILE_EXISTS_IN_GAME flrandomiser3.mrk @101507
   INCLUDE "randomiser/lib/fixes.tpa"
 
   INCLUDE "randomiser/lib/weidu_action.tpa"
-
-
-BEGIN @101500 DESIGNATED 1500 LABEL ~flir-campaign-runtime~                                                            //Campaign runtime, configured after installation
-                                                                                                                       //Marker file: flrandomiser3.mrk
-REQUIRE_PREDICATE GAME_IS ~eet~ @101501
-REQUIRE_PREDICATE FILE_EXISTS ~override/M___EEex.lua~ @101502
-REQUIRE_PREDICATE !FILE_EXISTS_IN_GAME flrandomiser1.mrk AND !FILE_EXISTS_IN_GAME flrandomiser2.mrk @101503
-REQUIRE_PREDICATE !MOD_IS_INSTALLED randomiser.tp2 560 @101504
-REQUIRE_PREDICATE (!FILE_EXISTS ~override/M_FLPR.lua~) OR (MOD_IS_INSTALLED randomiser.tp2 1500) @101505               //Not its own earlier installation
-
-  INCLUDE "randomiser/lib/campaign_runtime.tpa"                                                                        //Runtime files, UI hooks and the new-game marker
-  LAM flir_campaign_runtime_install
 
 
 BEGIN @105005 GROUP @105000 DESIGNATED 5005                                                                            //Beholders have no items equipped
