@@ -24,11 +24,12 @@ is `tools/release-package.json`; nothing outside it is published.
 | Group | Paths | Installed by |
 | --- | --- | --- |
 | Existing installer | `randomiser.tp2`, `randomiser.ini`, readmes, `baf`, `copy`, `d`, `languages`, `lib`, `lists`, `ssl`, `style` | components as in 8.1.1 |
-| Campaign runtime | `prototype/M_FLPR.lua`, `M_FLPRUI.lua`, `FLPRCore`, `FLPRGlob`, `FLPRNat`, `FLPRHost`, `FLPRQA`, `FLPRSpell`, `FLPRGat`, `FLPRCur`, `FLPRScript`, `FLPRShop` (`.lua`), `FLPRRun.menu`; `tools/probes/FLPRGateAsm.lua`, `FLPRCampaignPolicy.lua`, `FLPRInventoryAsm.lua` | component 1500 |
+| Campaign runtime | `prototype/M_FLPR.lua`, `M_FLPRUI.lua`, `FLPRCore`, `FLPRGlob`, `FLPRNat`, `FLPRHost`, `FLPRSpell`, `FLPRGat`, `FLPRCur`, `FLPRScript`, `FLPRShop` (`.lua`), `FLPRRun.menu`; `tools/probes/FLPRGateAsm.lua`, `FLPRCampaignPolicy.lua`, `FLPRInventoryAsm.lua` | component 1500 |
 | Configurator | `tools/randomiser_config.py`, `tools/flir_config/` (including `ui/`) | run from the mod folder after installation |
 
-Not shipped: `docs`, `research`, `tests`, fixture/QA helpers in `tools/`, the unused
-`FLPRDrop`/`FLPRHeld`/`FLPRLife` modules and the `tools/probes/FLPRDrop.lua` diagnostic.
+Not shipped: `docs`, `research`, `tests`, fixture/QA helpers in `tools/`, the lab automation in
+`tools/lab/` (`FLPRQA.lua`, `M_FLPRQA.lua`), the unused `FLPRDrop`/`FLPRHeld`/`FLPRLife` modules
+and the `tools/probes/FLPRDrop.lua` diagnostic.
 
 ## Installation: component 1500
 
@@ -55,10 +56,14 @@ with its reason:
 
 Actions:
 
-1. Copy the runtime modules, `FLPRRun.menu` and the UI adapter `M_FLPRUI.lua` to
-   `override`, and the three gate/policy modules to `flpr-fixture/`, the paths the
-   runtime loads them from.
-2. Patch `UI.MENU`: every `startEngine:OnNewGameButtonClick(` becomes
+1. Copy the runtime modules, `FLPRRun.menu`, the UI adapter `M_FLPRUI.lua` and the three
+   gate/policy modules to `override`, where the runtime loads them from, and create
+   `randomiser-campaigns/`, the folder the configurator applies settings to.
+2. Add the seven player messages (`languages/<language>/in-game.tra` @1700-@1706) to the
+   game text and write `override/M_FLPRTXT.lua`, which maps each message to its string
+   reference, so the messages appear in the installation language. Polish falls back to
+   English until translated.
+3. Patch `UI.MENU`: every `startEngine:OnNewGameButtonClick(` becomes
    `FLPRUI_NewGame(` and every `createCharScreen:AcceptCharacter(` becomes
    `FLPRUI_AcceptCharacter(`. At least one of each must exist; any other call shape of
    either function fails the install, because an unhooked path would start an
@@ -70,19 +75,20 @@ Actions:
    `connectionScreen:OnNewGameButtonClick` is left alone. Verified call shapes: the
    reference EET `UI.MENU`, LeUI 4.9.1, Infinity UI 1.17 and the EEUITweaks 4.0.7
    chargen fragments.
-3. Add the GLOBAL `FLPR_FRESH = 1` to the `BALDUR.GAM` new-game template by moving its
+4. Add the GLOBAL `FLPR_FRESH = 1` to the `BALDUR.GAM` new-game template by moving its
    variable table to the end of the file and appending the marker. This is the exact
    layout the native fixture used in every live test. An existing `FLPR_FRESH = 1` is
    accepted unchanged; another value or a duplicate fails. EET's SoA, tutorial and
    Black Pits starts share this template; the runtime only captures BG1 starts, so the
    marker stays inert there.
-4. Write `override/flrandomiser3.mrk`.
+5. Write `override/flrandomiser3.mrk`.
 
-Until a configuration is applied (`flpr-fixture/next.lua` absent), the adapter passes
-New Game and character acceptance straight to the engine: games start unrandomised, as
-before. Once applied, a BG1 New Game goes through `FLPR.NewGame`. If the runtime is not
-running then (game started without EEex), the New Game button fails with an error
-instead of silently starting an unrandomised campaign. The adapter detects the
+Until a configuration is applied (`randomiser-campaigns/next.lua` absent), the adapter
+passes New Game and character acceptance straight to the engine: games start
+unrandomised, as before. Once applied, New Game goes through `FLPR.NewGame`. Whenever the
+new adventure cannot be randomised, the engine's two-button popup says why and offers
+"Start without randomiser" or Cancel; an adventure never starts unrandomised silently
+(see "Player messages"). The adapter detects the
 configuration with `io.open`; the engine's internal Lua has no `io`, so it falls back to
 `loadfile`, and a configuration that exists but does not compile still counts. Without
 both functions it cannot see a configuration and passes through; LuaJIT, which the
@@ -92,18 +98,43 @@ component requires, provides both.
 
 After the whole mod stack is installed, the player scans the game (`scan`, `world`) and
 applies a configuration from the editor with the game closed (`ui ... --apply-game`). Apply
-writes `flpr-fixture/` data, campaign-aware dialogue/script/spell resources and the
+writes `randomiser-campaigns/` data, campaign-aware dialogue/script/spell resources and the
 `BGEE.LUA` journal in `override`, and appends strings to `lang/<language>/dialog.tlk`.
 WeiDU does not track these writes. `activation.validate_runtime` now accepts this
 component's installation as well as the hand-staged lab layout.
 
 Uninstalling 1500 restores `UI.MENU` and `BALDUR.GAM` byte for byte and removes every
-file the component created. WeiDU does not track folders, so the `flpr-fixture` folder
-it created stays behind empty. Uninstall cannot remove what the configurator wrote; see
-B2. Re-installing over the installed component and an uninstall and install in one
-WeiDU run leave the game byte-identical, also with an applied `flpr-fixture/next.lua`;
+file the component created. WeiDU keeps the seven appended game-text strings, unused, as
+it does for every mod; a re-install finds and reuses them. WeiDU does not track folders,
+so the `randomiser-campaigns` folder it created stays behind empty. Uninstall cannot
+remove what the configurator wrote; see B2. Re-installing over the installed component
+and an uninstall and install in one WeiDU run leave the game byte-identical, also with an
+applied `randomiser-campaigns/next.lua`;
 so does WeiDU's temporary uninstall and re-install of 1500 behind a reinstalled earlier
 mod.
+
+## Player messages
+
+Texts are `in-game.tra` @1700-@1706 (see Installation, step 2); `M_FLPRUI.lua` keeps the
+English text as a fallback. Failure details go to `randomiser-campaigns/last-error.txt`
+(latest failure only) and the EEex console; the messages name that file.
+
+| Situation | What the player sees |
+| --- | --- |
+| Configuration applied, game started without InfinityLoader/EEex | New Game popup: not running, start with `InfinityLoader.exe` |
+| The runtime could not start (a native hook found other engine code) | New Game popup: this game version is not supported yet |
+| The runtime could not start (missing or damaged configuration files) | New Game popup: could not randomise this adventure |
+| A New Game outside BG1 (SoD, SoA, ToB, Black Pits starts) | New Game popup: only BG1 starts so far |
+| Capture fails at character acceptance (for example a later mod replaced `BALDUR.GAM`) | Popup: could not randomise; Cancel keeps character creation open for a retry |
+| Capture succeeded | Message log, once, when the world first appears: items are randomised |
+| The runtime stops in a randomised adventure, or one is loaded while it cannot run | Message log, once per loaded game: stopped working, unplaced items may be missing |
+
+Each popup offers "Start without randomiser" (the engine's own New Game or character
+acceptance, unrandomised) and Cancel. Capture is atomic: every GLOBAL written while
+capturing is restored and the source gate is disarmed when any step fails, so starting
+without randomiser leaves no partial campaign. Messages appear in the engine's
+`POPUP_TWOBUTTON`, whose text area holds about four lines; translations should stay
+similarly short.
 
 ## EEex dependency
 
@@ -176,13 +207,12 @@ must not be published until the version is decided.
   runtime (`FLPR_Transfer` through EEex) and break once it is uninstalled. Needs a
   configurator "remove applied settings" with pre-apply receipts, run before uninstall,
   or moving the static campaign-aware patches into the WeiDU component.
-- **B3 Failure messages.** A configured runtime that cannot capture (EEex inactive,
-  missing revision, executable mismatch, a later `UI.MENU`/`BALDUR.GAM` overwrite) stops
-  character acceptance with a Lua error and no player-facing message.
-- **B4 Test hooks in the runtime.** `M_FLPR.lua` wraps `EEexRemote.Poll`, adds a chapter
-  screen render listener, runs the QA driver and writes `flpr-fixture/qa-status.json`.
-  CEBG can install EEex Remote Console, so these affect players. The `flpr-fixture`
-  directory name is also a development name.
+- **B3 Failure messages.** Resolved; see "Player messages".
+- **B4 Test hooks in the runtime.** Resolved: the Remote Console poll wrapper, the chapter
+  screen render listener, the QA driver and its `qa-status.json` moved to the lab-only
+  `tools/lab/M_FLPRQA.lua` and `tools/lab/FLPRQA.lua`, which neither the TP2 nor the
+  package contains; a lab stages both into `override`. The runtime exposes read-only
+  `FLPR.Core` and `FLPR.Storage` for them. The data folder is now `randomiser-campaigns/`.
 - **B5 Coverage.** BG1 starts on EET only; direct SoD, BG2 and ToB starts are
   unsupported, as is the remaining parity work listed above.
 

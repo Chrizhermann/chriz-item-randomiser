@@ -1,31 +1,50 @@
--- Installed by randomiser.tp2 component 1500 or staged by the isolated fixture installer.
+-- Installed by randomiser.tp2 component 1500. Lab automation lives in the
+-- separate lab-only tools/lab/M_FLPRQA.lua and is never installed for players.
 if not EEex_Active then return end
 FLPR = FLPR or {}
 local root = FLPR
 if root.Held then root.Held:destroy(); root.Held = nil end
 if root.Host then root.Host:destroy() end
 root.Disabled, root.Host, root.NewGameIntent = "INITIALIZING", nil, nil
-root.QA = nil
 root.SeedSerial = root.SeedSerial or 0
-
--- Remote commands are evaluated during drawing. Save/load transitions can
--- release bitmap userdata still referenced by that drawing pass (live crash
--- evidence in docs/native-save-render-crash.md). Only the finite QA runner may
--- queue normal button events here; arbitrary remote calls remain blocked.
--- Gate centrally so a background overlay cannot claim the command either.
-if EEexRemote and type(EEexRemote.Poll) == "function" then
-    root.RemotePollOriginal = root.RemotePollOriginal or EEexRemote.Poll
-    EEexRemote.Poll = function(...)
-        if root.QA then root.QA:poll() end
-        for _, name in ipairs({ "SAVE", "SAVE_NEWSAVE", "LOAD" }) do
-            if Infinity_IsMenuOnStack(name) then return "" end
-        end
-        return root.RemotePollOriginal(...)
-    end
-end
+-- Applied configurations, kept campaign revisions and pristine resource copies.
+local DATA = "randomiser-campaigns/"
+root.DATA = DATA
 
 local function module(path)
     return assert(loadfile(path))()
+end
+
+-- Player-facing text comes from M_FLPRUI.lua, installed with this file.
+local function text(key)
+    if type(FLPRUI_Text) == "function" then return FLPRUI_Text(key) end
+    return key
+end
+
+-- The details behind a player-facing message, for bug reports. The messages
+-- name this file; only the latest failure is kept.
+local function record(context, reason)
+    local line = context .. ": " .. tostring(reason)
+    print("Item Randomiser " .. line)
+    local file = io.open(DATA .. "last-error.txt", "w")
+    if file then
+        file:write(os.date("%Y-%m-%d %H:%M:%S "), line, "\n")
+        file:close()
+    end
+end
+
+-- Every native hook checks the engine's code before patching it, so a code
+-- mismatch means an engine build this runtime does not support yet.
+local function failure_message(reason)
+    return tostring(reason):find("CODE_MISMATCH", 1, true) and "unsupported" or "setup_failed"
+end
+
+-- Tells the player once per loaded game when its randomised items can no
+-- longer be handled. A game that was never randomised needs no message.
+local function warn_stopped()
+    if root.Warned or EEex_GameState_GetGlobalInt("flpr_state") == 0 then return end
+    root.Warned = true
+    Infinity_DisplayString(text("stopped"))
 end
 
 local ok, failure = pcall(function()
@@ -33,26 +52,28 @@ local ok, failure = pcall(function()
     local Globals = module("override/FLPRGlob.lua")
     local Native = module("override/FLPRNat.lua")
     local Host = module("override/FLPRHost.lua")
-    local QA = module("override/FLPRQA.lua")
     if not root.Spell then
         local spell=loadfile('override/FLPRSpell.lua')
         if spell then root.Spell=spell().install(_G) end
     end
     local storage = assert(Globals.new(_G))
+    -- Read-only handles for diagnostics, such as the lab automation module.
+    root.Core, root.Storage = Core, storage
     local function resolve(revision)
         if type(revision) ~= "string" or #revision ~= 64 or revision:find("[^0-9a-f]") then return nil end
-        local fn = loadfile("flpr-fixture/campaign-store/revisions/" .. revision .. ".lua")
+        local fn = loadfile(DATA.."campaign-store/revisions/" .. revision .. ".lua")
         if not fn then return nil end
         local manifest = fn()
         assert(type(manifest) == "table" and manifest.revision == revision, "REVISION_MISMATCH")
-        local fixture = module("flpr-fixture/campaign-store/revisions/" .. revision .. ".native.lua")
+        local fixture = module(DATA.."campaign-store/revisions/" .. revision .. ".native.lua")
         assert(fixture.revision == revision, "NATIVE_REVISION_MISMATCH")
         return { manifest = manifest, fixture = fixture }
     end
-    -- Only the disposable test payload supplies this opt-in file. Installing
-    -- here precedes New Game/GAM loading; first-world polling would be too late.
+    -- An applied configuration lists every revision whose sources the gate
+    -- guards. Installing here precedes New Game/GAM loading; first-world
+    -- polling would be too late.
     local prepare_source_guard, source_guard
-    local gate_config = loadfile("flpr-fixture/source-gate.lua")
+    local gate_config = loadfile(DATA.."source-gate.lua")
     if gate_config then
         local revisions = gate_config()
         if type(revisions)=="string" then revisions={revisions} end
@@ -77,7 +98,7 @@ local ok, failure = pcall(function()
                 local assets={};pristine.cursed[revision]=assets
                 for _,item in ipairs(guarded.fixture.cursed_disguises.items) do
                     local entry={variants={}};assets[item.resref]=entry
-                    local prefix='flpr-fixture/campaign-store/revisions/'..revision..'.cursed/'..item.resref..'.'
+                    local prefix=DATA..'campaign-store/revisions/'..revision..'.cursed/'..item.resref..'.'
                     for index=0,#item.variants do
                         local path=prefix..(index==0 and 'original' or tostring(index))..'.itm'
                         local file=assert(io.open(path,'rb'),'CURSED_ITEM_ASSET_MISSING')
@@ -90,7 +111,7 @@ local ok, failure = pcall(function()
                 needs_inventory=true
                 local entry={}
                 for _,kind in ipairs({'original','effective'}) do
-                    local path='flpr-fixture/campaign-store/revisions/'..revision..'.spell-shield.'..kind..'.sto'
+                    local path=DATA..'campaign-store/revisions/'..revision..'.spell-shield.'..kind..'.sto'
                     local file=assert(io.open(path,'rb'),'SPELL_SHIELD_STORE_MISSING')
                     entry[kind]=file:read('*a');assert(file:close())
                 end
@@ -106,7 +127,7 @@ local ok, failure = pcall(function()
                     pristine.auxiliary[revision]=pristine.auxiliary[revision] or {}
                     local entries={};pristine.auxiliary[revision][id]=entries
                     for number,auxiliary in ipairs(endpoint.auxiliary_creatures) do
-                        local path='flpr-fixture/campaign-store/revisions/'..revision..'.source-'..
+                        local path=DATA..'campaign-store/revisions/'..revision..'.source-'..
                             source_index..'.duplicate-'..number..'.original.cre'
                         local file=assert(io.open(path,'rb'),'SOURCE_GATE_TEMPLATE_MISSING')
                         entries[auxiliary.resource]=file:read('*a');assert(file:close())
@@ -116,7 +137,7 @@ local ok, failure = pcall(function()
                 if endpoint.kind=='guarded-template' then
                     local source_index
                     for index,source in ipairs(guarded.manifest.sources) do if source.id==id then source_index=index end end
-                    local path='flpr-fixture/campaign-store/revisions/'..revision..'.source-'..assert(source_index)..'.original.cre'
+                    local path=DATA..'campaign-store/revisions/'..revision..'.source-'..assert(source_index)..'.original.cre'
                     local file=assert(io.open(path,'rb'),'SOURCE_GATE_TEMPLATE_MISSING')
                     pristine.templates[revision]=pristine.templates[revision] or {}
                     pristine.templates[revision][id]=file:read('*a');assert(file:close())
@@ -131,7 +152,7 @@ local ok, failure = pcall(function()
                         extension=assert(endpoint.resource:match('^(%a+):'))
                         assert(extension=='dlg' or extension=='bcs','SOURCE_GATE_SCRIPT_KIND_INVALID')
                     end
-                    local path='flpr-fixture/campaign-store/revisions/'..revision..'.source-'..source_index..'.patched.'..extension
+                    local path=DATA..'campaign-store/revisions/'..revision..'.source-'..source_index..'.patched.'..extension
                     local file=assert(io.open(path,'rb'),'SOURCE_GATE_SCRIPT_MISSING')
                     pristine.scripts[revision]=pristine.scripts[revision] or {}
                     pristine.scripts[revision][id]=file:read('*a'); assert(file:close())
@@ -140,7 +161,7 @@ local ok, failure = pcall(function()
                         for number,resource in ipairs(endpoint.resources) do
                             local kind=assert(resource:match('^(%a+):'))
                             assert(kind=='dlg' or kind=='bcs','SOURCE_GATE_SCRIPT_KIND_INVALID')
-                            local route='flpr-fixture/campaign-store/revisions/'..revision..'.source-'..
+                            local route=DATA..'campaign-store/revisions/'..revision..'.source-'..
                                 source_index..'.route-'..number..'.patched.'..kind
                             local entry=assert(io.open(route,'rb'),'SOURCE_GATE_SCRIPT_MISSING')
                             routes[resource]=entry:read('*a');assert(entry:close())
@@ -156,7 +177,7 @@ local ok, failure = pcall(function()
                         if source.id==id then source_index=index end
                     end
                     assert(source_index,'SOURCE_GATE_SOURCE_MISSING')
-                    local prefix='flpr-fixture/campaign-store/revisions/'..revision..'.source-'..source_index
+                    local prefix=DATA..'campaign-store/revisions/'..revision..'.source-'..source_index
                     local entry={resource_sha256=guarded.fixture.resource_hashes[store:upper()..'.STO']}
                     for _,kind in ipairs({'original','removed'}) do
                         local file=assert(io.open(prefix..'.'..kind..'.sto','rb'),'SOURCE_GATE_STORE_MISSING')
@@ -171,7 +192,7 @@ local ok, failure = pcall(function()
                     area=area:upper()
                     local resource_hash=guarded.fixture.resource_hashes[area..'.ARE']
                     if not pristine[area] then
-                        local file=assert(io.open("flpr-fixture/"..area..".pristine.are","rb"),"SOURCE_GATE_PRISTINE_MISSING")
+                        local file=assert(io.open(DATA..area..".pristine.are","rb"),"SOURCE_GATE_PRISTINE_MISSING")
                         pristine[area]={bytes=file:read("*a"),resource_sha256=resource_hash}
                         assert(file:close())
                     end
@@ -183,7 +204,7 @@ local ok, failure = pcall(function()
                         if source.id==id then source_index=index end
                     end
                     assert(source_index,"SOURCE_GATE_SOURCE_MISSING")
-                    local prefix="flpr-fixture/campaign-store/revisions/"..revision..".source-"..source_index
+                    local prefix=DATA.."campaign-store/revisions/"..revision..".source-"..source_index
                     local creature={}
                     for _,kind in ipairs({'original','removed'}) do
                         local file=assert(io.open(prefix..'.'..kind..'.cre','rb'),"SOURCE_GATE_CREATURE_MISSING")
@@ -199,8 +220,8 @@ local ok, failure = pcall(function()
         end
         if #bundles > 0 then
             root.SourceGate = Gate.install(_G, bundles,
-                module("flpr-fixture/FLPRGateAsm.lua"), module("flpr-fixture/FLPRCampaignPolicy.lua"),pristine,
-                module("override/FLPRScript.lua"),needs_inventory and module("flpr-fixture/FLPRInventoryAsm.lua") or nil,Cursed)
+                module("override/FLPRGateAsm.lua"), module("override/FLPRCampaignPolicy.lua"),pristine,
+                module("override/FLPRScript.lua"),needs_inventory and module("override/FLPRInventoryAsm.lua") or nil,Cursed)
             prepare_source_guard = function(bundle, controller)
                 local unshey = 0
                 for index, source in ipairs(bundle.manifest.sources) do
@@ -243,7 +264,7 @@ local ok, failure = pcall(function()
             end
             return true
         end,
-        next = function() return resolve(module("flpr-fixture/next.lua")) end,
+        next = function() return resolve(module(DATA.."next.lua")) end,
         native = function(value)
             local has_shop=false
             for _,target in pairs(value.targets) do if target.kind=='store' then has_shop=true end end
@@ -268,21 +289,10 @@ local ok, failure = pcall(function()
             if status == "complete" then
                 storage:set("flpr_done", 1)
                 assert(storage:get("flpr_done") == 1, "COMPLETION_MARKER_WRITE_FAILED")
-                local count, kept, lost = 0, 0, 0
-                for _, assignment in ipairs(assert(root.Host.controller:assignments())) do
-                    if assignment.outcome == "kept" then kept = kept + 1
-                    elseif assignment.outcome == "lost" then lost = lost + 1
-                    else count = count + 1 end
-                end
-                -- The creature fixture variant names its recipients; absent means ground piles.
-                local detail = root.Host.bundle.fixture.ready_detail
-                if type(detail) ~= "string" then detail = "have been placed near the Candlekeep entrance." end
-                local message = "Randomiser test ready: " .. count .. " rewards " .. detail
-                if kept > 0 then message = message .. " " .. kept .. " left at their originals." end
-                if lost > 0 then message = message .. " " .. lost .. " omitted for this adventure." end
-                Infinity_DisplayString(message)
             else
-                print("FLPR fixture stopped: " .. tostring(reason))
+                record("campaign", reason)
+                -- A failed capture was undone (state 0); AcceptCharacter asks the player.
+                warn_stopped()
             end
         end,
     })
@@ -308,92 +318,25 @@ local ok, failure = pcall(function()
         end
         return result
     end
-    root.QA = QA.new({
-        clock=Infinity_GetClockTicks, frame=Infinity_GetFrameCounter,
-        menu=function(name) return not not Infinity_IsMenuOnStack(name) end,
-        screen=Infinity_GetCurrentScreenName,
-        transitioning=function() return not not Infinity_GetTransitionInProgress() end,
-        options_active=function() return e:GetActiveEngine()==optionsScreen end,
-        open_options=function()
-            assert(Infinity_IsMenuOnStack("LEFT_SIDEBAR") and sidebarsGreyed~=1,"QA_SIDEBAR_UNAVAILABLE")
-            local raw=assert(Infinity_FindItemWithBam("GUILS10",7),"QA_OPTIONS_BUTTON_MISSING")
-            local item=EEex_PtrToUD(EEex_LightUDToPtr(raw),"uiItem")
-            assert(EEex_UDToPtr(item.menu)==EEex_UDToPtr(EEex_Menu_Find("LEFT_SIDEBAR")) and
-                item.area.x==3 and item.area.y==399 and item.area.w==73 and item.area.h==55,
-                "QA_OPTIONS_BUTTON_UNEXPECTED")
-            Infinity_ClickItem(raw)
-        end,
-        click=function(name,menu)
-            assert(Infinity_IsMenuOnStack(menu),"QA_WRONG_MENU")
-            local item=assert(nameToItem[name],"QA_BUTTON_MISSING:"..name)
-            Infinity_ClickItem(item)
-        end,
-        saves=function() return assert(gameSaves.files) end,
-        select_save=function(index) currentSave=index end,
-        save_name=function(name) newSaveName=name end,
-        new_save_selected=function() return currentSave==0 end,
-        load_popup=function() return Popup2Button and Popup2Button.info==19531 and Popup2Button.okText=="LOAD_BUTTON" end,
-        popup_info=function()
-            local reference=TEXT_popup_info
-            if reference==nil then return nil,nil end
-            local ok,reason=pcall(getStringFromAmbiguousSource,reference)
-            return reference,ok and reason or nil
-        end,
-        desktop_ui=function() return e:IsTouchUI()==false end,
-        main_menu_popup=function()
-            return Popup4Button and Popup4Button.info==16456 and
-                Popup4Button.leftText=="MAIN_MENU_BUTTON" and type(Popup4Button.leftFunc)=="function" and
-                Popup4Button.farLeftText=="CANCEL_BUTTON" and Popup4Button.rightText=="QUIT_BUTTON" and
-                Popup4Button.farRightText=="SAVE_BUTTON"
-        end,
-        can_save_load=function() return canClickSaveLoad()==true end,
-        world_ready=function(revision)
-            local host=root.Host
-            assert(host and host.status~="disabled",host and host.error or "HOST_MISSING")
-            if root.Disabled or (host.status~='running' and host.status~='complete') or
-                not host.controller or host.controller.manifest.revision~=revision or
-                host.pending or host.guard_pending or storage:get(Core.G.journal)~=0 then return false end
-            local assignments=host.controller:assignments()
-            if not assignments then return false end
-            local phases={}
-            for _,row in ipairs(assignments) do phases[row.source]=row.source_phase end
-            for index in ipairs(host.controller.manifest.sources) do
-                local phase=phases[index]
-                if phase~=Core.PHASE.confirmed and phase~=Core.PHASE.kept and phase~=Core.PHASE.protected then
-                    return false
-                end
-                if phase==Core.PHASE.protected and not host.controller:source_guard_active(index) then return false end
-            end
-            -- Safe to exercise save/load while unvisited recipients still defer
-            -- delivery. This does not change Host's gameplay completion state.
-            return true
-        end,
-        report=function(value)
-            local function quote(s)
-                return '"'..tostring(s):gsub('[%z\1-\31\\"]',function(c)
-                    if c=='\\' then return '\\\\' elseif c=='"' then return '\\"' end
-                    return string.format('\\u%04x',string.byte(c))
-                end)..'"'
-            end
-            local fields={}
-            for _,key in ipairs({"status","kind","target","revision","step","error"}) do
-                if value[key] then fields[#fields+1]=quote(key)..":"..quote(value[key]) end
-            end
-            fields[#fields+1]='"event_count":'..#value.events
-            local file=assert(io.open("flpr-fixture/qa-status.json","w"))
-            assert(file:write("{"..table.concat(fields,",").."}\n")); assert(file:close())
-        end,
-    })
     root.Disabled = nil
 end)
-if not ok then root.Disabled = tostring(failure) end
+if not ok then
+    root.Disabled = tostring(failure)
+    record("start", root.Disabled)
+end
 
 function root.Poll()
     if root.Spell and root.Spell.last_error and root.Host and not root.Disabled then
         root.Disabled='CAMPAIGN_SPELL_CALLBACK_FAILED:'..root.Spell.last_error
         root.Host:_disable(root.Disabled)
     end
-    if root.Host and not root.Disabled then root.Host:poll() end
+    if root.Disabled then warn_stopped()
+    elseif root.Host then root.Host:poll() end
+    -- Confirms randomisation once, when the captured adventure first reaches the world.
+    if root.Announce and root.Host and (root.Host.status == "running" or root.Host.status == "complete") then
+        if root.Storage:get(root.Core.G.seed) == root.Announce then Infinity_DisplayString(text("ready")) end
+        root.Announce = nil
+    end
     if root.Held then
         if root.Host and root.Host.status == "complete" and not root.Disabled then
             root.Held:poll(EngineGlobals.g_pBaldurChitin.m_pObjectGame.m_worldTime.m_gameTime)
@@ -402,22 +345,49 @@ function root.Poll()
     return ""
 end
 
-function root.NewGame()
-    root.NewGameIntent = nil
+-- Leaves no trace of an attempted capture, so the engine starts this new
+-- adventure unrandomised.
+local function forget_new_game()
+    root.NewGameIntent, root.Announce, root.Warned = nil, nil, nil
     if root.Held then root.Held:destroy(); root.Held = nil end
     if root.Host then root.Host:destroy() end
     if root.SourceGate then root.SourceGate:reset() end
-    local bg1 = startCampaignData[currentCampaign] and startCampaignData[currentCampaign].id == "BG1"
+end
+
+-- Only BG1 starts can be randomised so far. Every other New Game asks before
+-- it starts unrandomised.
+function root.NewGame()
+    forget_new_game()
+    local campaign = startCampaignData[currentCampaign]
+    local refusal
+    if root.Disabled then refusal = failure_message(root.Disabled)
+    elseif not (campaign and campaign.id == "BG1") then refusal = "other_campaign" end
+    if refusal then
+        return FLPRUI_Ask(refusal, function() startEngine:OnNewGameButtonClick() end)
+    end
     startEngine:OnNewGameButtonClick()
-    root.NewGameIntent = bg1 and true or nil
+    root.NewGameIntent = true
 end
 
 function root.AcceptCharacter(difficulty)
-    if root.NewGameIntent then
-        assert(not root.Disabled and root.Host, root.Disabled or "HOST_MISSING")
-        assert(root.Host:capture_new("confirmed-bg1-character-accept"))
+    if not root.NewGameIntent then return createCharScreen:AcceptCharacter(difficulty) end
+    local captured, reason
+    if root.Disabled or not root.Host then
+        reason = root.Disabled or "HOST_MISSING"
+    else
+        captured, reason = root.Host:capture_new("confirmed-bg1-character-accept")
     end
-    return createCharScreen:AcceptCharacter(difficulty)
+    if captured then
+        root.Announce = root.Storage:get(root.Core.G.seed)
+        return createCharScreen:AcceptCharacter(difficulty)
+    end
+    -- capture_new undid its GLOBAL writes; also disarm whatever the source gate
+    -- prepared for it. Cancel keeps character creation open for a retry.
+    if root.SourceGate then root.SourceGate:reset() end
+    return FLPRUI_Ask(failure_message(reason), function()
+        forget_new_game()
+        createCharScreen:AcceptCharacter(difficulty)
+    end)
 end
 
 function root.Inspect()
@@ -430,13 +400,14 @@ function root.Inspect()
 end
 
 root.OnDestroyed = function()
-    root.NewGameIntent = nil
+    root.NewGameIntent, root.Warned = nil, nil
     if root.Held then root.Held:destroy(); root.Held = nil end
     if root.Host then root.Host:destroy() end
 end
 
+-- The heartbeat also runs when the runtime could not start, so a randomised
+-- save loaded in that state still tells the player.
 root.OnMenusLoaded = function()
-    if root.Disabled then return end
     EEex_Menu_LoadFile("FLPRRun")
     local menu = assert(EEex_Menu_Find("WORLD_ACTIONBAR"))
     local old_open = EEex_Menu_GetItemFunction(menu.reference_onOpen)
@@ -455,14 +426,4 @@ if not root.Registered then
     root.Registered = true
     EEex_GameState_AddDestroyedListener(function() FLPR.OnDestroyed() end)
     EEex_Menu_AddAfterMainFileLoadedListener(function() FLPR.OnMenusLoaded() end)
-end
-
--- The narration hides WORLD_ACTIONBAR. Poll from its existing named text item
--- instead of adding an overlay that changes the current-screen identity.
--- Only the explicit QA script presses Done; ordinary narration is unaffected.
-if not root.ChapterConsoleRegistered and type(EEex_Menu_AddBeforeUIItemRenderListener) == "function" then
-    root.ChapterConsoleRegistered = true
-    EEex_Menu_AddBeforeUIItemRenderListener("text_CHAPTERSCROLL_item", function()
-        if EEexRemote then EEexRemote.Poll() end
-    end)
 end

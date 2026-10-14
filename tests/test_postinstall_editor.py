@@ -129,7 +129,7 @@ class EditorTests(unittest.TestCase):
 
     def test_apply_retains_old_campaign_and_reopens_saved_configuration(self):
         fx, original = self.fx, self.editor
-        for name in ("override/M_FLPR.lua", "override/FLPRRun.menu", "flpr-fixture/next.lua"):
+        for name in ("override/M_FLPR.lua", "override/FLPRRun.menu", "randomiser-campaigns/next.lua"):
             path = fx.game / name
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text("test runtime")
@@ -138,7 +138,7 @@ class EditorTests(unittest.TestCase):
         e = Editor(fx.catalog, fx.world, original.workspace, **original.draft, apply_game=fx.game)
         with patch("flir_config.activation.require_closed"):
             first = e.post("/api/apply", e.draft)
-            old = fx.game / "flpr-fixture/campaign-store/revisions" / (first["revision"] + ".lua")
+            old = fx.game / "randomiser-campaigns/campaign-store/revisions" / (first["revision"] + ".lua")
             before = old.read_bytes()
             draft = deepcopy(e.draft)
             draft["profile"]["name"] = "Changed next adventure"
@@ -146,23 +146,23 @@ class EditorTests(unittest.TestCase):
             second = e.post("/api/apply", draft)
         self.assertNotEqual(first["revision"], second["revision"])
         self.assertEqual(old.read_bytes(), before)
-        self.assertEqual((fx.game / "flpr-fixture/next.lua").read_bytes(), _render_lua(second["revision"]))
+        self.assertEqual((fx.game / "randomiser-campaigns/next.lua").read_bytes(), _render_lua(second["revision"]))
         self.assertEqual(unrelated.read_bytes(), b"preserve unrelated mod content")
         self.assertEqual((fx.override / "area.are").read_bytes(), fx.area)
         reopened = Editor(fx.catalog, fx.world, e.workspace, apply_game=fx.game)
         self.assertEqual(reopened.draft, draft)
         self.assertTrue(reopened.state()["apply_enabled"])
-        pointer = (fx.game / "flpr-fixture/next.lua").read_bytes()
+        pointer = (fx.game / "randomiser-campaigns/next.lua").read_bytes()
         with patch("flir_config.activation.require_closed", side_effect=ProfileError("Close this test game")):
             with self.assertRaisesRegex(ProfileError, "Close this test game"):
                 e.post("/api/apply", original.draft)
-        self.assertEqual((fx.game / "flpr-fixture/next.lua").read_bytes(), pointer)
+        self.assertEqual((fx.game / "randomiser-campaigns/next.lua").read_bytes(), pointer)
         other = Editor(fx.catalog, fx.world, fx.root / "another-editor",
                        **original.draft, apply_game=fx.game)
         with patch("flir_config.activation.require_closed"):
             with self.assertRaisesRegex(ProfileError, "older saves"):
                 other.post("/api/apply", other.draft)
-        self.assertEqual((fx.game / "flpr-fixture/next.lua").read_bytes(), pointer)
+        self.assertEqual((fx.game / "randomiser-campaigns/next.lua").read_bytes(), pointer)
 
     def test_draft_editor_cannot_activate_game(self):
         self.assertFalse(self.editor.state()["apply_enabled"])

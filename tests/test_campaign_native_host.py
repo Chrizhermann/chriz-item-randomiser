@@ -14,6 +14,8 @@ CORE = (ROOT / "prototype/FLPRCore.lua").read_text(encoding="utf-8")
 HOST = (ROOT / "prototype/FLPRHost.lua").read_text(encoding="utf-8")
 GLOBALS = (ROOT / "prototype/FLPRGlob.lua").read_text(encoding="utf-8")
 BOOTSTRAP = (ROOT / "prototype/M_FLPR.lua").read_text(encoding="utf-8")
+# The engine loads both installed M_ files; M_FLPR.lua shows the messages of M_FLPRUI.lua.
+UI = (ROOT / "prototype/M_FLPRUI.lua").read_text(encoding="utf-8")
 CASES = r'''
 local cases={}
 local function copy(t)
@@ -47,8 +49,22 @@ local function setup(Core,Host)
     end
     f.manifest=manifest; f.next_revision=manifest.revision
     f.bundles={[manifest.revision]={manifest=manifest,fixture=native_fixture(manifest)}}
+    -- Same transaction contract as FLPRGlob.lua: rollback restores what each
+    -- GLOBAL read before its first write, so an absent GLOBAL becomes 0.
     f.storage={get=function(_,name) return f.values[name] or 0 end,
-        set=function(_,name,value) f.values[name]=value end}
+        set=function(self,name,value)
+            local undo=f.transaction
+            if undo and undo.previous[name]==nil then
+                undo.previous[name]=self:get(name); undo.order[#undo.order+1]=name
+            end
+            f.values[name]=value
+        end,
+        begin=function() assert(f.transaction==nil,"STORAGE_TRANSACTION_ACTIVE"); f.transaction={previous={},order={}} end,
+        commit=function() assert(f.transaction,"STORAGE_TRANSACTION_MISSING"); f.transaction=nil end,
+        rollback=function()
+            local undo=f.transaction; f.transaction=nil
+            for i=#undo.order,1,-1 do f.values[undo.order[i]]=undo.previous[undo.order[i]] end
+        end}
     f.make_native=function(fixture)
         local native={fixture=fixture}
         f.native_instances[#f.native_instances+1]=native
@@ -248,6 +264,29 @@ function cases.unexpected_target_failure_still_disables_before_journal(Core,Host
     assert(f.host.status=="disabled" and f.host.error=="TARGET_NOT_FIXTURE_GROUND_PILE")
     assert(#f.events==3 and f.values.flpr_jkind==0)
 end
+-- Without values written by an earlier part of the capture, a failed capture
+-- would leave a half-captured campaign the next New Game cannot repair.
+function cases.failed_capture_restores_every_global_and_can_retry(Core,Host)
+    local f=setup(Core,Host)
+    f.values.FLPR_QOTHER=7
+    f.deps.prepare_campaign=function(_,controller)
+        f.values_seen=f.values.flpr_state
+        f.storage:set("FLPR_QOTHER",1); f.storage:set("FLPR_QNEW",1)
+        if f.refuse then return nil,"PREPARE_REFUSED" end
+        return true
+    end
+    f.refuse=true
+    local x,e=f:capture(); fail(x,e,"PREPARE_REFUSED")
+    assert(f.values_seen==2 and f.host.status=="disabled" and f.transaction==nil)
+    assert(f.values.FLPR_FRESH==1 and f.values.FLPR_QOTHER==7 and f.values.FLPR_QNEW==0)
+    for name,value in pairs(f.values) do
+        assert(not name:find("^flpr_") or value==0,name)
+    end
+    assert(#f.reports==1 and f.reports[1][1]=="disabled" and f.reports[1][2]=="PREPARE_REFUSED")
+    f.refuse=nil; f.host:destroy(); assert(f:capture())
+    assert(f.values.flpr_state==2 and f.values.FLPR_FRESH==0 and f.values.FLPR_QOTHER==1 and f.seeds==2)
+    f:finish(); assert(#f.events==6)
+end
 function cases.held_creature_rewards_complete_and_never_redeliver_after_restore(Core,Host)
     local f=setup(Core,Host)
     for _,target in ipairs(f.manifest.targets) do target.record.kind="actor" end
@@ -276,7 +315,6 @@ local function bootstrap(Core,Host,Globals,text,options)
     f.pristine_opens=0
     -- Match the native fixture shape consumed by the adapter and bootstrap.
     f.native_fixture=native_fixture(f.manifest)
-    f.native_fixture.ready_detail=f.ready_detail
     if options.gate then
         local id="are:flpru1/container/1"
         f.native_fixture.sources[f.manifest.sources[1].id]=nil
@@ -316,11 +354,23 @@ local function bootstrap(Core,Host,Globals,text,options)
     Infinity_GetClockTicks=function() return 100 end
     Infinity_IsMenuOnStack=function(name) return name=="WORLD_ACTIONBAR" and f.world end
     Infinity_GetCurrentScreenName=function() return "world" end
-    Infinity_DisplayString=function() end
-    EEexRemote={Poll=function() f.remote_polls=(f.remote_polls or 0)+1; return "" end}
+    f.shown={}
+    Infinity_DisplayString=function(message) f.shown[#f.shown+1]=message end
+    -- The engine's popup (util.lua) and string table, as M_FLPRUI.lua uses them.
+    f.popups={}; uiStrings={CANCEL_BUTTON="Cancel"}; FLPR_TEXT=nil
+    popup2Button=function(info,ok_text,ok_func,cancel_text,cancel_func)
+        f.popups[#f.popups+1]={text=uiStrings[info],ok=uiStrings[ok_text],start=ok_func,
+            cancel=uiStrings[cancel_text],cancel_func=cancel_func}
+    end
     print=function(message) f.last_log=message end
     io={open=function(path,mode)
-        assert(options.gate and path=='flpr-fixture/FLPRU1.pristine.are' and mode=='rb',
+        if path=='randomiser-campaigns/last-error.txt' then
+            assert(mode=='w','UNEXPECTED_ERROR_FILE_MODE')
+            local parts={}
+            return {write=function(_,...) for _,part in ipairs({...}) do parts[#parts+1]=part end end,
+                close=function() f.error_file=table.concat(parts); return true end}
+        end
+        assert(options.gate and path=='randomiser-campaigns/FLPRU1.pristine.are' and mode=='rb',
             'UNEXPECTED_FIXTURE_FILE_OPEN')
         f.bootstrap_events[#f.bootstrap_events+1]='pristine_open'
         f.pristine_opens=f.pristine_opens+1
@@ -366,13 +416,12 @@ local function bootstrap(Core,Host,Globals,text,options)
                 end
                 return true
             end},
-        ["override/FLPRQA.lua"]={new=function() return {poll=function() end} end},
         ["override/FLPRScript.lua"]=script_module}
     if options.gate then
         local builder,compiler={},{}
         f.builder,f.compiler=builder,compiler
-        modules["flpr-fixture/FLPRGateAsm.lua"]=builder
-        modules["flpr-fixture/FLPRCampaignPolicy.lua"]=compiler
+        modules["override/FLPRGateAsm.lua"]=builder
+        modules["override/FLPRCampaignPolicy.lua"]=compiler
         modules["override/FLPRGat.lua"]={
             source_ids=function(fixture) return fixture.source_gate.source_ids or {fixture.source_gate.source_id} end,
             install=function(env,bundles,build,compile,pristine,script)
@@ -387,7 +436,8 @@ local function bootstrap(Core,Host,Globals,text,options)
             assert(type(pristine.FLPRU1)=='table' and pristine.FLPRU1.bytes==f.pristine_bytes and
                 #pristine.FLPRU1.bytes==27492 and pristine.FLPRU1.resource_sha256==
                 bundles[1].fixture.resource_hashes['FLPRU1.ARE'])
-            if options.install_fail then error("GATE_INSTALL_FAILED") end
+            if options.install_fail then error(options.install_fail==true and "GATE_INSTALL_FAILED" or
+                options.install_fail) end
             f.gate_installed=true; f.gate_bundles=bundles
             return {
                 reset=function()
@@ -399,6 +449,7 @@ local function bootstrap(Core,Host,Globals,text,options)
                     f.prepare_calls[#f.prepare_calls+1]={bundle=selected,controller=controller,
                         state=f.values.flpr_state,fresh=f.values.FLPR_FRESH}
                     assert(selected.manifest==f.manifest and selected.fixture==f.native_fixture)
+                    if options.prepare_fail then return nil,"GATE_PREPARE_FAILED" end
                     return true
                 end,
                 adapter=function(_,selected,native)
@@ -411,18 +462,15 @@ local function bootstrap(Core,Host,Globals,text,options)
     end
     loadfile=function(path)
         if modules[path] then return function() return modules[path] end end
-        if options.gate and path=="flpr-fixture/source-gate.lua" then
+        if options.gate and path=="randomiser-campaigns/source-gate.lua" then
             return function() return options.missing_pinned and string.rep("e",64) or
                 f.pinned_revisions or f.manifest.revision end
         end
         local native_revision=path:match("revisions/([0-9a-f]+)%.native%.lua$")
         if native_revision and f.bundles[native_revision] then
-            return function()
-                if native_revision==f.manifest.revision then f.native_fixture.ready_detail=f.ready_detail end
-                return f.bundles[native_revision].fixture
-            end
+            return function() return f.bundles[native_revision].fixture end
         end
-        if path=="flpr-fixture/next.lua" then return function() return f.next_revision end end
+        if path=="randomiser-campaigns/next.lua" then return function() return f.next_revision end end
         local revision=path:match("revisions/([0-9a-f]+)%.lua$")
         if revision and f.bundles[revision] then return function() return f.bundles[revision].manifest end end
         return nil
@@ -492,20 +540,42 @@ function cases.bootstrap_opt_in_gate_installs_prepares_once_and_binds_frozen_nat
         f.factory_calls[1].bundle.fixture==f.native_fixture)
     assert(f.bootstrap_events[#f.bootstrap_events]=="factory")
 end
+-- A refused New Game or character acceptance shows the engine's two-button
+-- popup: "Start without randomiser" (start) or Cancel (nothing happens).
+local function popup(f,key)
+    assert(#f.popups==1,"expected one popup, got "..#f.popups)
+    local shown=table.remove(f.popups)
+    assert(shown.text==FLPRUI_Text(key) and shown.ok==FLPRUI_Text("start_plain") and
+        shown.cancel=="Cancel" and shown.cancel_func==nil,tostring(shown.text))
+    return shown
+end
+local function captured_nothing(f)
+    for name,value in pairs(f.values) do
+        assert(name=="FLPR_FRESH" or value==0,name.."="..tostring(value))
+    end
+end
 function cases.bootstrap_opt_in_gate_failure_disables_before_capture_acceptance(Core,Host,Globals,text)
-    for _,variant in ipairs({"missing_pinned","missing_pristine","install_fail"}) do
+    for _,variant in ipairs({"missing_pinned","missing_pristine","install_fail","code_mismatch"}) do
         local options={gate=true,allow_disabled=true}
-        options[variant]=true
+        if variant=="code_mismatch" then options.install_fail="CAMPAIGN_GATE_CODE_MISMATCH"
+        else options[variant]=true end
         local f=bootstrap(Core,Host,Globals,text,options)
         local expected=(variant=="missing_pinned" and "SOURCE_GATE_REVISION_UNAVAILABLE") or
-            (variant=="missing_pristine" and "SOURCE_GATE_PRISTINE_MISSING") or "GATE_INSTALL_FAILED"
+            (variant=="missing_pristine" and "SOURCE_GATE_PRISTINE_MISSING") or
+            (variant=="install_fail" and "GATE_INSTALL_FAILED") or "CAMPAIGN_GATE_CODE_MISMATCH"
         assert(f.root.Disabled and tostring(f.root.Disabled):find(expected,1,true))
+        assert(f.error_file:find("start: ",1,true) and f.error_file:find(expected,1,true),f.error_file)
         assert(f.root.Host==nil and f.gate_installed==nil and f.values.flpr_state==nil)
         assert(#f.prepare_calls==0 and #f.factory_calls==0)
-        assert(f.pristine_opens==(variant=="missing_pinned" and 0 or 1))
-        f.root.NewGame(); f.values.FLPR_FRESH=1
-        local ok=pcall(function() f.root.AcceptCharacter(2) end)
-        assert(not ok and f.accept_count==nil and f.values.flpr_state==nil and f.seeds==0)
+        assert(f.pristine_opens==((variant=="missing_pinned") and 0 or 1))
+        f.root.NewGame()
+        local shown=popup(f,variant=="code_mismatch" and "unsupported" or "setup_failed")
+        assert(f.new_game_clicked==nil and f.root.NewGameIntent==nil)
+        shown.start()
+        assert(f.new_game_clicked==1 and f.root.NewGameIntent==nil)
+        f.values.FLPR_FRESH=1
+        assert(f.root.AcceptCharacter(2)==2 and f.accept_count==1 and f.accepted_fresh==1)
+        assert(f.values.flpr_state==nil and f.seeds==0 and #f.popups==0)
         assert(#f.prepare_calls==0 and #f.factory_calls==0)
     end
 end
@@ -513,28 +583,53 @@ function cases.bootstrap_no_intent_accept_cannot_capture(Core,Host,Globals,text)
     local f=bootstrap(Core,Host,Globals,text); f.values.FLPR_FRESH=1
     f.root.AcceptCharacter(2); assert(f.values.flpr_state==nil and f.accepted_fresh==1)
 end
-function cases.bootstrap_missing_marker_stops_before_engine_accept(Core,Host,Globals,text)
-    local f=bootstrap(Core,Host,Globals,text); f.root.NewGame()
-    assert(not pcall(function() f.root.AcceptCharacter(2) end))
-    assert(f.accept_count==nil and f.values.flpr_state==nil and f.root.Host.status=="disabled")
-end
-local function refused_accept(f,code)
-    f.root.NewGame(); f.values.FLPR_FRESH=1
-    local ok,failure=pcall(function() return f.root.AcceptCharacter(2) end)
-    assert(not ok and tostring(failure):find(code,1,true),tostring(failure))
+-- The capture is undone; Cancel keeps character creation open, and the start
+-- choice begins this adventure unrandomised.
+local function refused_accept(f,code,fresh)
+    f.root.NewGame(); f.values.FLPR_FRESH=fresh
+    assert(f.root.AcceptCharacter(2)==nil)
+    local shown=popup(f,"setup_failed")
     assert(f.accept_count==nil and f.root.Host.status=="disabled" and
-        f.root.Host.error:find(code,1,true))
-    -- Nothing is written for the campaign's reward quests.
-    assert(f.values.FLPR_QM2_42==nil)
+        f.root.Host.error:find(code,1,true) and f.error_file:find(code,1,true),tostring(f.error_file))
+    captured_nothing(f); assert((f.values.FLPR_FRESH or 0)==(fresh or 0))
+    assert(#f.shown==0)
+    shown.start()
+    assert(f.accept_count==1 and (f.accepted_state or 0)==0 and f.root.NewGameIntent==nil)
+    assert(f.root.Host.status=="waiting")
+    local clock=EngineGlobals.g_pBaldurChitin.m_pObjectGame.m_worldTime
+    for i=1,3 do clock.m_gameTime=clock.m_gameTime+1; f.root.Poll() end
+    assert(f.root.Host.status=="inactive" and #f.shown==0 and #f.events==0)
+    captured_nothing(f)
+end
+function cases.bootstrap_missing_marker_stops_before_engine_accept(Core,Host,Globals,text)
+    refused_accept(bootstrap(Core,Host,Globals,text),"FRESH_TEMPLATE_REQUIRED",nil)
 end
 function cases.bootstrap_fixture_without_sources_stops_before_engine_accept(Core,Host,Globals,text)
     local f=bootstrap(Core,Host,Globals,text); f.native_fixture.sources=nil
-    refused_accept(f,"FIXTURE_SOURCES_MISSING")
+    refused_accept(f,"FIXTURE_SOURCES_MISSING",1)
 end
 function cases.bootstrap_source_without_endpoint_stops_before_engine_accept(Core,Host,Globals,text)
     local f=bootstrap(Core,Host,Globals,text)
     f.native_fixture.sources[f.manifest.sources[2].id]=nil
-    refused_accept(f,"SOURCE_ENDPOINT_MISSING")
+    refused_accept(f,"SOURCE_ENDPOINT_MISSING",1)
+end
+function cases.bootstrap_refused_accept_can_be_cancelled_and_retried(Core,Host,Globals,text)
+    local f=bootstrap(Core,Host,Globals,text)
+    local sources=f.native_fixture.sources; f.native_fixture.sources=nil
+    f.root.NewGame(); f.values.FLPR_FRESH=1
+    f.root.AcceptCharacter(2); popup(f,"setup_failed")
+    assert(f.accept_count==nil and f.root.NewGameIntent)
+    f.native_fixture.sources=sources
+    assert(f.root.AcceptCharacter(2)==2 and #f.popups==0)
+    assert(f.accept_count==1 and f.accepted_state==2 and f.accepted_fresh==0)
+end
+function cases.bootstrap_failed_gate_preparation_disarms_the_gate(Core,Host,Globals,text)
+    local f=bootstrap(Core,Host,Globals,text,{gate=true,prepare_fail=true})
+    f.root.NewGame(); f.values.FLPR_FRESH=1; assert(f.reset_calls==1)
+    assert(f.root.AcceptCharacter(2)==nil and #f.prepare_calls==1 and f.reset_calls==2)
+    local shown=popup(f,"setup_failed"); captured_nothing(f)
+    assert(f.values.FLPR_FRESH==1 and f.error_file:find("GATE_PREPARE_FAILED",1,true))
+    shown.start(); assert(f.reset_calls==3 and f.accept_count==1 and f.accepted_fresh==1)
 end
 function cases.bootstrap_accept_sets_reward_selection_flags(Core,Host,Globals,text)
     local f=bootstrap(Core,Host,Globals,text)
@@ -544,10 +639,13 @@ function cases.bootstrap_accept_sets_reward_selection_flags(Core,Host,Globals,te
     -- Without randomization rules no source keeps its original reward.
     assert(f.values.FLPR_QREWARD==1 and f.values.FLPR_QM2_42==0)
 end
-function cases.bootstrap_other_campaign_is_not_armed(Core,Host,Globals,text)
+function cases.bootstrap_other_campaign_asks_before_starting_unrandomised(Core,Host,Globals,text)
     local f=bootstrap(Core,Host,Globals,text); currentCampaign=2; f.root.NewGame()
-    assert(f.root.NewGameIntent==nil); f.values.FLPR_FRESH=1; f.root.AcceptCharacter(2)
-    assert(f.values.flpr_state==nil)
+    local shown=popup(f,"other_campaign")
+    assert(f.new_game_clicked==nil and f.root.NewGameIntent==nil)
+    shown.start(); assert(f.new_game_clicked==1 and f.root.NewGameIntent==nil)
+    f.values.FLPR_FRESH=1; assert(f.root.AcceptCharacter(2)==2)
+    assert(f.values.flpr_state==nil and f.accepted_fresh==1 and f.error_file==nil)
 end
 function cases.bootstrap_destroy_clears_intent(Core,Host,Globals,text)
     local f=bootstrap(Core,Host,Globals,text); f.root.NewGame(); assert(f.root.NewGameIntent)
@@ -556,36 +654,54 @@ function cases.bootstrap_destroy_clears_intent(Core,Host,Globals,text)
 end
 local function bootstrap_to_complete(f)
     f.root.NewGame(); f.values.FLPR_FRESH=1; assert(f.root.AcceptCharacter(2)==2)
-    local shown={}
-    Infinity_DisplayString=function(message) shown[#shown+1]=message end
     local clock=EngineGlobals.g_pBaldurChitin.m_pObjectGame.m_worldTime
     for i=1,25 do clock.m_gameTime=clock.m_gameTime+1; f.root.Poll() end
     assert(f.root.Host.status=="complete",tostring(f.root.Host.error))
     assert(f.values.flpr_done==1)
-    return shown
+    return f.shown
 end
-function cases.bootstrap_ready_message_keeps_the_accepted_ground_pile_text(Core,Host,Globals,text)
-    local shown=bootstrap_to_complete(bootstrap(Core,Host,Globals,text))
-    assert(#shown==1 and shown[1]==
-        "Randomiser test ready: 3 rewards have been placed near the Candlekeep entrance.",tostring(shown[1]))
-end
-function cases.bootstrap_ready_message_uses_the_fixture_detail(Core,Host,Globals,text)
+function cases.bootstrap_confirms_randomisation_once_when_the_world_appears(Core,Host,Globals,text)
     local f=bootstrap(Core,Host,Globals,text)
-    f.ready_detail="have been given to the two test cows near the Candlekeep entrance."
     local shown=bootstrap_to_complete(f)
-    assert(#shown==1 and shown[1]==
-        "Randomiser test ready: 3 rewards have been given to the two test cows near the Candlekeep entrance.",
-        tostring(shown[1]))
+    assert(#shown==1 and shown[1]==FLPRUI_Text("ready"),tostring(shown[1]))
+    -- Reloading the same campaign restores it silently.
+    f.listeners.destroy()
+    local clock=EngineGlobals.g_pBaldurChitin.m_pObjectGame.m_worldTime
+    for i=1,3 do clock.m_gameTime=clock.m_gameTime+1; f.root.Poll() end
+    assert(f.root.Host.status=="complete" and #shown==1)
 end
-function cases.bootstrap_save_load_blocks_background_remote_poll(Core,Host,Globals,text)
+function cases.bootstrap_messages_use_the_installed_game_text(Core,Host,Globals,text)
     local f=bootstrap(Core,Host,Globals,text)
-    for _,blocked in ipairs({"SAVE","SAVE_NEWSAVE","LOAD"}) do
-        Infinity_IsMenuOnStack=function(name) return name==blocked and 1 or nil end
-        assert(EEexRemote.Poll()=="")
-    end
-    assert(f.remote_polls==nil)
-    Infinity_IsMenuOnStack=function(name) return name=="WORLD_ACTIONBAR" and 1 or nil end
-    EEexRemote.Poll(); assert(f.remote_polls==1)
+    FLPR_TEXT={ready=4711,other_campaign=4712,start_plain=4713}
+    Infinity_FetchString=function(ref) return ({[4711]="Gotowe.",[4712]="Tylko BG1.",[4713]="Bez"})[ref] end
+    bootstrap_to_complete(f)
+    assert(#f.shown==1 and f.shown[1]=="Gotowe.")
+    currentCampaign=2; f.root.NewGame()
+    local shown=table.remove(f.popups)
+    assert(shown.text=="Tylko BG1." and shown.ok=="Bez")
+    -- A key without a game-text entry keeps the English text.
+    assert(FLPRUI_Text("setup_failed"):find("could not randomise",1,true))
+    Infinity_FetchString=nil; FLPR_TEXT=nil
+end
+function cases.bootstrap_stopped_campaign_tells_the_player_once(Core,Host,Globals,text)
+    local f=bootstrap(Core,Host,Globals,text)
+    f.root.NewGame(); f.values.FLPR_FRESH=1; assert(f.root.AcceptCharacter(2)==2)
+    local clock=EngineGlobals.g_pBaldurChitin.m_pObjectGame.m_worldTime
+    clock.m_gameTime=clock.m_gameTime+1; f.root.Poll()
+    clock.m_gameTime=clock.m_gameTime+1; f.root.Poll()
+    assert(f.root.Host.status=="running" and #f.shown==1 and f.shown[1]==FLPRUI_Text("ready"))
+    f.fail_observe=true
+    for i=1,10 do clock.m_gameTime=clock.m_gameTime+1; f.root.Poll() end
+    assert(f.root.Host.status=="disabled" and f.error_file:find("campaign: NATIVE_OBSERVATION_FAILED",1,true),
+        tostring(f.error_file))
+    assert(#f.shown==2 and f.shown[2]==FLPRUI_Text("stopped"),tostring(f.shown[2]))
+end
+function cases.bootstrap_runtime_that_cannot_start_warns_each_randomised_game_once(Core,Host,Globals,text)
+    local f=bootstrap(Core,Host,Globals,text,{gate=true,allow_disabled=true,install_fail=true})
+    f.root.Poll(); f.root.Poll(); assert(#f.shown==0)
+    f.values.flpr_state=2
+    f.root.Poll(); f.root.Poll(); assert(#f.shown==1 and f.shown[1]==FLPRUI_Text("stopped"))
+    f.listeners.destroy(); f.root.Poll(); assert(#f.shown==2)
 end
 function cases.bootstrap_stops_held_capture_when_host_stops_or_world_changes(Core,Host,Globals,text)
     for _, boundary in ipairs({"disabled", "new-game", "destroy"}) do
@@ -609,6 +725,7 @@ CASE_NAMES = sorted(Lua51().execute(CASES).keys())
 def make_case(name):
     def run(self):
         lua = self.runtime(unpack_returned_tuples=True)
+        lua.execute(UI)
         lua.execute(CASES)[name](lua.execute(CORE), lua.execute(HOST), lua.execute(GLOBALS), BOOTSTRAP)
     return run
 

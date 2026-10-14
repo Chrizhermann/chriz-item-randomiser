@@ -5,7 +5,24 @@
 // M_FLPRUI.lua, and marks the BALDUR.GAM new-game template with GLOBAL
 // FLPR_FRESH = 1. Every input is checked before the first write, so a refused
 // install leaves the game unchanged; uninstall restores UI.MENU and BALDUR.GAM
-// from backup. Configurator output written after installation is not tracked.
+// from backup. Configurator output written after installation (to
+// randomiser-campaigns/) is not tracked.
+
+// Game-text references for the player messages in M_FLPRUI.lua and M_FLPR.lua
+// (in-game.tra @1700-@1706), so they appear in the language chosen here.
+<<<<<<<< ...randomiser/fl-inlined/M_FLPRTXT.lua
+-- Written by randomiser.tp2 component 1500: game-text references for the
+-- Item Randomiser messages in M_FLPRUI.lua.
+FLPR_TEXT = {
+    not_running = %flir_rt_text_not_running%,
+    unsupported = %flir_rt_text_unsupported%,
+    other_campaign = %flir_rt_text_other_campaign%,
+    setup_failed = %flir_rt_text_setup_failed%,
+    start_plain = %flir_rt_text_start_plain%,
+    ready = %flir_rt_text_ready%,
+    stopped = %flir_rt_text_stopped%,
+}
+>>>>>>>>
 
 // The runtime needs Lua's io and os libraries. EEex's LuaJIT component
 // provides them by writing exactly this line; comments must not satisfy it.
@@ -120,8 +137,9 @@ DEFINE_ACTION_MACRO flir_campaign_runtime_install BEGIN
   LAM flir_campaign_runtime_check_menu
   LAM flir_campaign_runtime_check_gam
 
-  // M_FLPR.lua loads these from override and the three pure builders from
-  // flpr-fixture/, the folder the configurator's settings are applied to.
+  // M_FLPR.lua loads all of these from override. The configurator applies its
+  // settings to randomiser-campaigns/, where the runtime also records the
+  // details behind a failure message (last-error.txt).
   COPY ~%MOD_FOLDER%/prototype/M_FLPRUI.lua~ ~override~
        ~%MOD_FOLDER%/prototype/M_FLPR.lua~ ~override~
        ~%MOD_FOLDER%/prototype/FLPRCore.lua~ ~override~
@@ -130,15 +148,23 @@ DEFINE_ACTION_MACRO flir_campaign_runtime_install BEGIN
        ~%MOD_FOLDER%/prototype/FLPRGlob.lua~ ~override~
        ~%MOD_FOLDER%/prototype/FLPRHost.lua~ ~override~
        ~%MOD_FOLDER%/prototype/FLPRNat.lua~ ~override~
-       ~%MOD_FOLDER%/prototype/FLPRQA.lua~ ~override~
        ~%MOD_FOLDER%/prototype/FLPRScript.lua~ ~override~
        ~%MOD_FOLDER%/prototype/FLPRShop.lua~ ~override~
        ~%MOD_FOLDER%/prototype/FLPRSpell.lua~ ~override~
        ~%MOD_FOLDER%/prototype/FLPRRun.menu~ ~override~
-  MKDIR ~flpr-fixture~
-  COPY ~%MOD_FOLDER%/tools/probes/FLPRGateAsm.lua~ ~flpr-fixture~
-       ~%MOD_FOLDER%/tools/probes/FLPRCampaignPolicy.lua~ ~flpr-fixture~
-       ~%MOD_FOLDER%/tools/probes/FLPRInventoryAsm.lua~ ~flpr-fixture~
+       ~%MOD_FOLDER%/tools/probes/FLPRGateAsm.lua~ ~override~
+       ~%MOD_FOLDER%/tools/probes/FLPRCampaignPolicy.lua~ ~override~
+       ~%MOD_FOLDER%/tools/probes/FLPRInventoryAsm.lua~ ~override~
+  MKDIR ~randomiser-campaigns~
+
+  OUTER_SET flir_rt_text_not_running = RESOLVE_STR_REF (@1700)
+  OUTER_SET flir_rt_text_unsupported = RESOLVE_STR_REF (@1701)
+  OUTER_SET flir_rt_text_other_campaign = RESOLVE_STR_REF (@1702)
+  OUTER_SET flir_rt_text_setup_failed = RESOLVE_STR_REF (@1703)
+  OUTER_SET flir_rt_text_start_plain = RESOLVE_STR_REF (@1704)
+  OUTER_SET flir_rt_text_ready = RESOLVE_STR_REF (@1705)
+  OUTER_SET flir_rt_text_stopped = RESOLVE_STR_REF (@1706)
+  COPY ~...randomiser/fl-inlined/M_FLPRTXT.lua~ ~override/M_FLPRTXT.lua~ EVALUATE_BUFFER
 
   COPY_EXISTING ~UI.MENU~ ~override~
     REPLACE_TEXTUALLY CASE_SENSITIVE EXACT_MATCH ~startEngine:OnNewGameButtonClick(~ ~FLPRUI_NewGame(~

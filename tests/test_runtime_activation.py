@@ -22,7 +22,7 @@ INSTALLED = {
     "override/FLPRRun.menu": b"menu\n",
     "override/M_FLPRUI.lua": b"-- adapter\n",
     "override/flrandomiser3.mrk": b"\x01",
-    "flpr-fixture/FLPRGateAsm.lua": b"return {}\n",
+    "override/FLPRGateAsm.lua": b"return {}\n",
 }
 
 
@@ -50,13 +50,13 @@ class ValidateRuntimeTests(unittest.TestCase):
 
     def test_staged_runtime_still_needs_its_pointer(self):
         staged = {"override/M_FLPR.lua": b"-- lab\n", "override/FLPRRun.menu": b"menu\n"}
-        with self.assertRaisesRegex(ProfileError, "flpr-fixture/next.lua"):
+        with self.assertRaisesRegex(ProfileError, "randomiser-campaigns/next.lua"):
             self.check(staged)
-        self.assertEqual(self.check({"flpr-fixture/next.lua": b"return nil\n"}), self.game.resolve())
+        self.assertEqual(self.check({"randomiser-campaigns/next.lua": b"return nil\n"}), self.game.resolve())
 
     def test_incomplete_installs_are_refused(self):
-        for missing, message in (("override/M_FLPRUI.lua", "flpr-fixture/next.lua"),
-                                 ("override/flrandomiser3.mrk", "flpr-fixture/next.lua"),
+        for missing, message in (("override/M_FLPRUI.lua", "randomiser-campaigns/next.lua"),
+                                 ("override/flrandomiser3.mrk", "randomiser-campaigns/next.lua"),
                                  ("override/FLPRRun.menu", "override/FLPRRun.menu"),
                                  ("override/M_FLPR.lua", "override/M_FLPR.lua")):
             with self.subTest(missing):
@@ -83,13 +83,13 @@ class InstalledRuntimeApplyTests(unittest.TestCase):
     def test_first_apply_publishes_pointer_and_keeps_installed_files(self):
         fx, original = self.base.fx, self.base.editor
         write(fx.game, INSTALLED)
-        self.assertFalse((fx.game / "flpr-fixture/next.lua").exists())
+        self.assertFalse((fx.game / "randomiser-campaigns/next.lua").exists())
         editor = Editor(fx.catalog, fx.world, original.workspace, **deepcopy(original.draft),
                         apply_game=fx.game)
         self.assertTrue(editor.state()["apply_enabled"])
         with patch("flir_config.activation.require_closed"):
             result = editor.post("/api/apply", editor.draft)
-        self.assertEqual((fx.game / "flpr-fixture/next.lua").read_bytes(), _render_lua(result["revision"]))
+        self.assertEqual((fx.game / "randomiser-campaigns/next.lua").read_bytes(), _render_lua(result["revision"]))
         for name, data in INSTALLED.items():
             self.assertEqual((fx.game / name).read_bytes(), data, name)
 

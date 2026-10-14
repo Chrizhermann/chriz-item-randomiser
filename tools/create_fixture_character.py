@@ -65,7 +65,7 @@ def validate_game(game: Path) -> Path:
         raise FixtureError("This helper is limited to the isolated EET Mode 1 fixture game.")
     if (resolved / "engine.lua").read_text(encoding="utf-8") != PROFILE_TEXT:
         raise FixtureError("The game does not use the expected private test profile.")
-    for relative in ("override/M_FLPR.lua", "override/M_EEexRC.lua", "flpr-fixture/next.lua"):
+    for relative in ("override/M_FLPR.lua", "override/M_EEexRC.lua", "randomiser-campaigns/next.lua"):
         if not (resolved / relative).is_file():
             raise FixtureError(f"Missing fixture support: {relative}")
     return resolved

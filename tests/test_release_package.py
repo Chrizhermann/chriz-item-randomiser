@@ -253,11 +253,13 @@ class RepositoryPackageTests(unittest.TestCase):
         self.assertIn("tools/flir_config/ui/index.html", selected)
         self.assertFalse([path for path in selected if path.startswith(("tests/", "docs/", "research/"))])
         self.assertNotIn("tools/probes/FLPRDrop.lua", selected)
+        # Lab automation is staged by labs only, never installed or published.
+        self.assertEqual(sorted(path for path in selected if path.startswith("tools/lab/")), [])
 
     def test_component_1500_sources_are_published(self):
         source = (ROOT / "lib/campaign_runtime.tpa").read_text(encoding="utf-8")
         copied = re.findall(r"~%MOD_FOLDER%/([^~]+)~", source)
-        self.assertGreaterEqual(len(copied), 16)
+        self.assertGreaterEqual(len(copied), 15)
         selected = set(build_release.select_files(self.spec, self.tree))
         self.assertEqual(sorted(set(copied) - selected), [])
         included = re.findall(r'INCLUDE "randomiser/([^"]+)"', (ROOT / "randomiser.tp2").read_text(encoding="utf-8"))

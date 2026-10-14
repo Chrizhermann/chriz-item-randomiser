@@ -25,7 +25,7 @@ class NativeExportTests(unittest.TestCase):
         temp = tempfile.TemporaryDirectory(prefix="flir-native-export-")
         self.addCleanup(temp.cleanup)
         self.root = Path(temp.name)
-        self.game, self.store, self.output = (self.root / name for name in ("game", "campaigns", "flpr-fixture"))
+        self.game, self.store, self.output = (self.root / name for name in ("game", "campaigns", "randomiser-campaigns"))
         make_game(self.game, [("SYNTH001", make_itm()), ("SYNTH002", make_itm())])
         self.override = self.game / "override"
         for name in ("synth001", "synth002"):

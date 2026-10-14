@@ -22,7 +22,6 @@
     "prototype/FLPRGlob.lua",
     "prototype/FLPRHost.lua",
     "prototype/FLPRNat.lua",
-    "prototype/FLPRQA.lua",
     "prototype/FLPRRun.menu",
     "prototype/FLPRScript.lua",
     "prototype/FLPRShop.lua",

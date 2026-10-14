@@ -85,8 +85,21 @@ return function(Core, Host, Native, manifest, fixture)
         end
     end
     local bundle = {manifest=manifest, fixture=fixture}
+    local storage = {get=function(_, key) return f.values[key] or 0 end}
+    function storage:set(key,value)
+        if self.undo and self.undo.previous[key]==nil then
+            self.undo.previous[key]=self:get(key); self.undo.order[#self.undo.order+1]=key
+        end
+        f.values[key]=value
+    end
+    function storage:begin() assert(not self.undo,'STORAGE_TRANSACTION_ACTIVE'); self.undo={previous={},order={}} end
+    function storage:commit() assert(self.undo,'STORAGE_TRANSACTION_MISSING'); self.undo=nil end
+    function storage:rollback()
+        local undo=self.undo; self.undo=nil
+        for i=#undo.order,1,-1 do f.values[undo.order[i]]=undo.previous[undo.order[i]] end
+    end
     local host = Host.new({core=Core,
-        storage={get=function(_, name) return f.values[name] or 0 end, set=function(_, name, value) f.values[name] = value end},
+        storage=storage,
         resolve=function(revision) if revision == manifest.revision then return bundle end end,
         next=function() return bundle end, seed=function() return 424242 end,
         native=function(value) return Native.new(api, value) end,

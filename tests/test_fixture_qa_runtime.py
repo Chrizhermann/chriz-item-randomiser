@@ -7,7 +7,7 @@ from lupa.lua53 import LuaRuntime as Lua53
 from lupa.luajit21 import LuaRuntime as LuaJIT21
 
 
-RUNTIME = (Path(__file__).resolve().parents[1] / "prototype/FLPRQA.lua").read_text(encoding="utf-8")
+RUNTIME = (Path(__file__).resolve().parents[1] / "tools/lab/FLPRQA.lua").read_text(encoding="utf-8")
 CASES = r'''
 local cases={}
 local revision=string.rep("a",64)

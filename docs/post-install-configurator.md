@@ -147,7 +147,7 @@ After reviewing bindings and running `prototype prepare`, export the configurati
 for the existing native test runtime:
 
 ```powershell
-python tools/randomiser_config.py prototype export --store 'D:/RandomiserDrafts/prototype' --catalog 'D:/RandomiserDrafts/catalog.json' --world 'D:/RandomiserDrafts/world.json' --out 'D:/RandomiserDrafts/flpr-fixture'
+python tools/randomiser_config.py prototype export --store 'D:/RandomiserDrafts/prototype' --catalog 'D:/RandomiserDrafts/catalog.json' --world 'D:/RandomiserDrafts/world.json' --out 'D:/RandomiserDrafts/export'
 ```
 
 This reads the prepared next revision, derives native endpoints, and copies pristine

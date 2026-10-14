@@ -24,6 +24,13 @@ local function method(name)
 end
 startEngine = {OnNewGameButtonClick = method("engine:new-game")}
 createCharScreen = {AcceptCharacter = method("engine:accept")}
+-- util.lua's popup and the string table it reads.
+uiStrings = {CANCEL_BUTTON = "Cancel"}
+popups = {}
+function popup2Button(info, okText, okFunc, cancelText, cancelFunc)
+    popups[#popups + 1] = {text = uiStrings[info], ok = uiStrings[okText], start = okFunc,
+        cancel = uiStrings[cancelText], cancel_func = cancelFunc}
+end
 '''
 RUNTIME = r'''
 FLPR = {
@@ -42,8 +49,8 @@ class UiAdapterTests(unittest.TestCase):
         self.addCleanup(os.chdir, previous)
 
     def configure(self, text='return "' + "a" * 64 + '"\n'):
-        Path("flpr-fixture").mkdir(exist_ok=True)
-        Path("flpr-fixture/next.lua").write_text(text, encoding="ascii")
+        Path("randomiser-campaigns").mkdir(exist_ok=True)
+        Path("randomiser-campaigns/next.lua").write_text(text, encoding="ascii")
 
     def lua(self, module, *, runtime=False, io=True, loadfile=True):
         lua = module.LuaRuntime()
@@ -86,7 +93,20 @@ class UiAdapterTests(unittest.TestCase):
                 lua.eval("FLPRUI_AcceptCharacter(currentDifficulty)")
                 self.assertEqual(self.calls(lua)[-1], ("runtime:accept",))
 
-    def test_new_game_refuses_a_configuration_without_its_runtime(self):
+    def asks_before_starting_unrandomised(self, lua):
+        """New Game shows the not-running popup; only its start choice reaches the engine."""
+        self.assertIsNone(lua.eval("FLPRUI_NewGame()"))
+        self.assertEqual(self.calls(lua), [])
+        popups = lua.globals().popups
+        self.assertEqual(len(popups), 1)
+        shown = popups[1]
+        self.assertEqual(shown.text, lua.eval('FLPRUI_Text("not_running")'))
+        self.assertIn("InfinityLoader.exe", shown.text)
+        self.assertEqual((shown.ok, shown.cancel, shown.cancel_func), ("Start without randomiser", "Cancel", None))
+        shown.start()
+        self.assertEqual(self.calls(lua), [("engine:new-game",)])
+
+    def test_new_game_asks_when_a_configuration_has_no_runtime(self):
         self.configure()
         for name, module in RUNTIMES:
             for partial in (False, True):
@@ -94,11 +114,43 @@ class UiAdapterTests(unittest.TestCase):
                     lua = self.lua(module)
                     if partial:  # M_FLPR.lua stopped before defining its entry points.
                         lua.execute("FLPR = {Disabled = 'INITIALIZING'}")
-                    with self.assertRaisesRegex(module.LuaError, "campaign runtime is not running"):
-                        lua.eval("FLPRUI_NewGame()")
-                    self.assertEqual(self.calls(lua), [])
+                    self.asks_before_starting_unrandomised(lua)
                     # Other character creation paths still reach the engine.
                     self.assertEqual(lua.eval("FLPRUI_AcceptCharacter(-1)"), "engine:accept")
+
+    def test_the_start_choice_keeps_the_original_new_game_arguments(self):
+        self.configure()
+        for name, module in RUNTIMES:
+            with self.subTest(name):
+                lua = self.lua(module)
+                self.assertIsNone(lua.execute("return FLPRUI_NewGame(7, 'x')"))
+                lua.globals().popups[1].start()
+                self.assertEqual(self.calls(lua), [("engine:new-game", 7, "x")])
+
+    def test_a_ui_without_the_engine_popup_refuses_instead_of_starting_unrandomised(self):
+        self.configure()
+        for name, module in RUNTIMES:
+            with self.subTest(name):
+                lua = self.lua(module)
+                lua.execute("popup2Button = nil")
+                with self.assertRaisesRegex(module.LuaError, "not running"):
+                    lua.eval("FLPRUI_NewGame()")
+                self.assertEqual(self.calls(lua), [])
+
+    def test_messages_use_the_installed_game_text_with_english_fallback(self):
+        for name, module in RUNTIMES:
+            with self.subTest(name):
+                lua = self.lua(module)
+                english = lua.eval('FLPRUI_Text("not_running")')
+                lua.execute('''FLPR_TEXT = {not_running = 12, ready = 13, stopped = -1}
+                    Infinity_FetchString = function(ref) return ({[12] = "Nie dziala.", [13] = ""})[ref] end''')
+                self.assertEqual(lua.eval('FLPRUI_Text("not_running")'), "Nie dziala.")
+                # Empty or invalid references, and keys without one, keep English.
+                self.assertEqual(lua.eval('FLPRUI_Text("ready")'), "Item Randomiser: this adventure's items are randomised.")
+                self.assertIn("stopped working", lua.eval('FLPRUI_Text("stopped")'))
+                self.assertIn("Baldur's Gate (BG1)", lua.eval('FLPRUI_Text("other_campaign")'))
+                lua.execute("Infinity_FetchString = nil")
+                self.assertEqual(lua.eval('FLPRUI_Text("not_running")'), english)
 
     def test_engine_lua_without_io_detects_the_configuration_through_loadfile(self):
         for name, module in RUNTIMES:
@@ -109,10 +161,7 @@ class UiAdapterTests(unittest.TestCase):
             self.configure(text)
             for name, module in RUNTIMES:
                 with self.subTest(name, configured=text[:6]):
-                    lua = self.lua(module, io=False)
-                    with self.assertRaisesRegex(module.LuaError, "campaign runtime is not running"):
-                        lua.eval("FLPRUI_NewGame()")
-                    self.assertEqual(self.calls(lua), [])
+                    self.asks_before_starting_unrandomised(self.lua(module, io=False))
 
     def test_without_io_or_loadfile_a_configuration_cannot_be_seen(self):
         # Documented limit: such an engine Lua starts New Game unrandomised.

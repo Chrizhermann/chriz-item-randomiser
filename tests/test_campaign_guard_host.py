@@ -68,7 +68,18 @@ local function setup(Core,Host,options)
     f.next_revision=revision
     f.storage={}
     function f.storage:get(key) return f.values[key] or 0 end
-    function f.storage:set(key,value) f.values[key]=value end
+    function f.storage:set(key,value)
+        if self.undo and self.undo.previous[key]==nil then
+            self.undo.previous[key]=self:get(key); self.undo.order[#self.undo.order+1]=key
+        end
+        f.values[key]=value
+    end
+    function f.storage:begin() assert(not self.undo,'STORAGE_TRANSACTION_ACTIVE'); self.undo={previous={},order={}} end
+    function f.storage:commit() assert(self.undo,'STORAGE_TRANSACTION_MISSING'); self.undo=nil end
+    function f.storage:rollback()
+        local undo=self.undo; self.undo=nil
+        for i=#undo.order,1,-1 do f.values[undo.order[i]]=undo.previous[undo.order[i]] end
+    end
     local function native_factory(value)
         local native={fixture=value}
         f.natives[#f.natives+1]=native
@@ -209,13 +220,15 @@ function cases.missing_preparer_rejects_before_capture(Core,Host)
     assert(f.seeds==0 and f.next_calls==1 and #f.events==0)
 end
 
-function cases.failed_prepare_commits_but_never_redraws(Core,Host)
+-- Capture is atomic: a failed guard preparation leaves no committed campaign
+-- (the player may start this adventure unrandomised), and a retry draws anew.
+function cases.failed_prepare_rolls_back_and_a_retry_captures_again(Core,Host)
     local f=setup(Core,Host,{prepare_failure=true})
-    assert(not f:capture() and f.host.status=="disabled")
-    assert(f.values.flpr_state==2 and f.values.FLPR_FRESH==1)
-    assert(f.seeds==1 and f.next_calls==1 and #f.events==0)
+    assert(not f:capture() and f.host.status=="disabled" and f.host.error=="PREPARE_FAILED")
+    assert(f.values.flpr_state==0 and f.values.FLPR_FRESH==1 and f.storage.undo==nil)
+    assert(f.prepares[1].state==2 and f.seeds==1 and f.next_calls==1 and #f.events==0)
     assert(not f.host:capture_new("confirmed-bg1-character-accept"))
-    assert(f.seeds==1 and f.next_calls==1)
+    assert(f.values.flpr_state==0 and f.seeds==2 and f.next_calls==2 and #f.prepares==2)
 end
 
 function cases.malformed_descriptor_or_missing_adapter_fails_closed(Core,Host)

@@ -43,8 +43,8 @@ class FixtureCharacterTests(unittest.TestCase):
             game.mkdir()
             other.mkdir()
             (game / "override").mkdir()
-            (game / "flpr-fixture").mkdir()
-            for name in ("override/M_FLPR.lua", "override/M_EEexRC.lua", "flpr-fixture/next.lua"):
+            (game / "randomiser-campaigns").mkdir()
+            for name in ("override/M_FLPR.lua", "override/M_EEexRC.lua", "randomiser-campaigns/next.lua"):
                 (game / name).touch()
             with patch.object(helper, "PROTECTED_GAME", game):
                 (game / "engine.lua").write_text(helper.PROFILE_TEXT, encoding="utf-8")

@@ -49,6 +49,8 @@ def require_closed(game: Path) -> None:
 # adapter, before any configuration exists. A hand-staged test runtime has no
 # marker and is recognised by its existing next-game pointer instead.
 INSTALLED_RUNTIME = ("override/flrandomiser3.mrk", "override/M_FLPRUI.lua")
+# Applied settings and kept campaign revisions; prototype/M_FLPR.lua reads them here.
+CAMPAIGN_DATA = "randomiser-campaigns"
 
 
 def validate_runtime(game: Path, catalog: dict) -> Path:
@@ -57,7 +59,7 @@ def validate_runtime(game: Path, catalog: dict) -> Path:
         raise ProfileError("The activation game must be the game used by this scan")
     required = ["override/M_FLPR.lua", "override/FLPRRun.menu"]
     if not all((game / name).is_file() for name in INSTALLED_RUNTIME):
-        required.append("flpr-fixture/next.lua")
+        required.append(CAMPAIGN_DATA + "/next.lua")
     for name in required:
         if not (game / name).is_file():
             raise ProfileError("Install the experimental runtime in this test game first: " + name)
@@ -69,7 +71,7 @@ def deploy_export(game: Path, output: Path) -> None:
     require_closed(game)
     if not all((output / name).is_file() for name in ("next.lua", "source-gate.lua")):
         raise ProfileError("The runtime export is incomplete")
-    if not _gate_revisions(game / "flpr-fixture/source-gate.lua") <= _gate_revisions(output / "source-gate.lua"):
+    if not _gate_revisions(game / CAMPAIGN_DATA / "source-gate.lua") <= _gate_revisions(output / "source-gate.lua"):
         raise ProfileError("Use this game's previous configuration workspace: this export is missing "
                            "settings needed by older saves")
     changes = {}
@@ -82,7 +84,7 @@ def deploy_export(game: Path, output: Path) -> None:
         elif relative.parts[0] == "game-overrides":
             relative = Path(*relative.parts[1:])
         else:
-            relative = Path("flpr-fixture") / relative
+            relative = Path(CAMPAIGN_DATA) / relative
         target = (game / relative).resolve()
         if not target.is_relative_to(game.resolve()):
             raise ProfileError("An export destination is outside the test game")
@@ -92,10 +94,10 @@ def deploy_export(game: Path, output: Path) -> None:
         if target.exists():
             if target.read_bytes() == content:
                 continue
-            if relative.as_posix().startswith("flpr-fixture/campaign-store/revisions/"):
+            if relative.as_posix().startswith(CAMPAIGN_DATA + "/campaign-store/revisions/"):
                 raise ProfileError("An older campaign revision differs: " + str(relative))
         changes[target] = content
-    pointer = game.resolve() / "flpr-fixture/next.lua"
+    pointer = game.resolve() / CAMPAIGN_DATA / "next.lua"
     ordered = sorted(changes, key=lambda path: (path == pointer, str(path)))
     # Roll back an actual copy error; no persistent lab-recovery framework.
     with TemporaryDirectory(prefix="apply-backup-", dir=output.parent) as temporary:

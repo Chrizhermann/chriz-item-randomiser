@@ -137,8 +137,8 @@ function cases.key_bootstrap_loads_spell_once_reads_spl_and_surfaces_error(Core,
             installs=installs+1;local service={callback=function() end}
             api.FLPRKEY=service.callback;return service
         end} end end
-        if path=='flpr-fixture/source-gate.lua' then return function() return f.manifest.revision end end
-        if path=='flpr-fixture/FLPRGateAsm.lua' or path=='flpr-fixture/FLPRCampaignPolicy.lua' then
+        if path=='randomiser-campaigns/source-gate.lua' then return function() return f.manifest.revision end end
+        if path=='override/FLPRGateAsm.lua' or path=='override/FLPRCampaignPolicy.lua' then
             return function() return {} end
         end
         if path=='override/FLPRGat.lua' then return function() return {
@@ -150,8 +150,10 @@ function cases.key_bootstrap_loads_spell_once_reads_spl_and_surfaces_error(Core,
         } end end
         return previous(path)
     end
+    local record=io.open
     io.open=function(path,mode)
-        assert(path=='flpr-fixture/campaign-store/revisions/'..f.manifest.revision..'.source-1.patched.spl')
+        if path=='randomiser-campaigns/last-error.txt' then return record(path,mode) end
+        assert(path=='randomiser-campaigns/campaign-store/revisions/'..f.manifest.revision..'.source-1.patched.spl')
         assert(mode=='rb');opened=opened+1
         return {read=function() return 'REVIEWED_SPL' end,close=function() return true end}
     end
@@ -163,38 +165,7 @@ function cases.key_bootstrap_loads_spell_once_reads_spl_and_surfaces_error(Core,
     service.last_error='callback failed'
     FLPR.Poll()
     assert(FLPR.Host.status=='disabled' and FLPR.Disabled=='CAMPAIGN_SPELL_CALLBACK_FAILED:callback failed')
-end
-function cases.qa_save_ready_allows_protected_running_campaign_without_completing_it(Core,Host,Globals,text)
-    local f=bootstrap(Core,Host,Globals,text)
-    local previous,ready=loadfile
-    loadfile=function(path)
-        if path=='override/FLPRQA.lua' then return function() return {new=function(deps)
-            ready=deps.world_ready;return {poll=function() end}
-        end} end end
-        return previous(path)
-    end
-    assert((loadstring or load)(text))();assert(FLPR.Disabled==nil,tostring(FLPR.Disabled))
-    local phases={Core.PHASE.confirmed,Core.PHASE.protected,Core.PHASE.kept}
-    local active=true
-    FLPR.Host.status='running'
-    FLPR.Host.controller={manifest={revision=f.manifest.revision,sources={{},{},{}}},
-        assignments=function()
-            return {{source=1,source_phase=phases[1],delivery_phase=0},
-                {source=2,source_phase=phases[2],delivery_phase=0},
-                {source=3,source_phase=phases[3],delivery_phase=Core.PHASE.kept}}
-        end,
-        source_guard_active=function(_,index) assert(index==2);return active end}
-    f.values[Core.G.journal]=0
-    assert(ready(f.manifest.revision) and FLPR.Host.status=='running')
-    assert(not ready(string.rep('f',64)))
-    for _,field in ipairs({'pending','guard_pending'}) do
-        FLPR.Host[field]={};assert(not ready(f.manifest.revision));FLPR.Host[field]=nil
-    end
-    f.values[Core.G.journal]=2;assert(not ready(f.manifest.revision));f.values[Core.G.journal]=0
-    active=false;assert(not ready(f.manifest.revision));active=true
-    phases[1]=Core.PHASE.pending;assert(not ready(f.manifest.revision));phases[1]=Core.PHASE.confirmed
-    FLPR.Disabled='fixture failure';assert(not ready(f.manifest.revision));FLPR.Disabled=nil
-    assert(ready(f.manifest.revision) and FLPR.Host.status=='running')
+    assert(f.error_file:find('campaign: CAMPAIGN_SPELL_CALLBACK_FAILED:callback failed',1,true))
 end
 '''
 
@@ -224,14 +195,6 @@ class SpellRuntimeTests(unittest.TestCase):
             lua = runtime(unpack_returned_tuples=True)
             with self.subTest(runtime=runtime.__module__):
                 lua.execute(fixture).key_bootstrap_loads_spell_once_reads_spl_and_surfaces_error(
-                    lua.execute(CORE), lua.execute(HOST), lua.execute(GLOBALS), BOOTSTRAP)
-
-    def test_qa_save_readiness_waits_for_protected_sources_and_no_mutation(self):
-        fixture = HOST_FIXTURE.rsplit("return cases", 1)[0] + BOOTSTRAP_CASE + "\nreturn cases"
-        for runtime in (Lua51, Lua53, LuaJIT):
-            lua = runtime(unpack_returned_tuples=True)
-            with self.subTest(runtime=runtime.__module__):
-                lua.execute(fixture).qa_save_ready_allows_protected_running_campaign_without_completing_it(
                     lua.execute(CORE), lua.execute(HOST), lua.execute(GLOBALS), BOOTSTRAP)
 
 

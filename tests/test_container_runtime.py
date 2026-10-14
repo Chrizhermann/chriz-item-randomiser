@@ -137,8 +137,19 @@ function cases.host_keeps_observing_after_completion_and_restores_saved_latch(N,
         if not ref then return original_action(action,owner) end
         assert(owner==f.container);owner.m_lstItems[#owner.m_lstItems+1]=f.item(ref,500)
     end
-    local storage={get=function(_,key) return f.globals[key] or 0 end,
-        set=function(_,key,value) f.globals[key]=value end}
+    local storage={get=function(_,key) return f.globals[key] or 0 end}
+    function storage:set(key,value)
+        if self.undo and self.undo.previous[key]==nil then
+            self.undo.previous[key]=self:get(key); self.undo.order[#self.undo.order+1]=key
+        end
+        f.globals[key]=value
+    end
+    function storage:begin() assert(not self.undo,'STORAGE_TRANSACTION_ACTIVE'); self.undo={previous={},order={}} end
+    function storage:commit() assert(self.undo,'STORAGE_TRANSACTION_MISSING'); self.undo=nil end
+    function storage:rollback()
+        local undo=self.undo; self.undo=nil
+        for i=#undo.order,1,-1 do f.globals[undo.order[i]]=undo.previous[undo.order[i]] end
+    end
     local tick,prepared,observations=0,0,0
     local deps={core=Core,storage=storage,resolve=function() return bundle end,
         next=function() return bundle end,seed=function() return 17 end,

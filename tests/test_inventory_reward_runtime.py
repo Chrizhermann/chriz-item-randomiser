@@ -71,7 +71,7 @@ class InventoryRewardRuntimeTests(unittest.TestCase):
 
     def test_callback_leaves_unmanaged_campaigns_and_waits_for_managed_loads(self):
         entry = (ROOT / "prototype/M_FLPR.lua").read_text(encoding="utf-8")
-        callback = "function FLPR_Transfer" + entry.split("function FLPR_Transfer", 1)[1].split("    root.QA =", 1)[0]
+        callback = "function FLPR_Transfer" + entry.split("function FLPR_Transfer", 1)[1].split("    root.Disabled = nil\n", 1)[0]
         lua = Lua51(unpack_returned_tuples=True)
         lua.execute(r'''
             local state=0

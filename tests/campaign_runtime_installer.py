@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import shutil
 import struct
 import subprocess
@@ -45,10 +46,16 @@ from flir_config.profiles import ProfileError  # noqa: E402
 RESOURCE_TYPES = {"ARE": 1010, "GAM": 1013, "MENU": 1032}
 RUNTIME_MODULES = (
     "M_FLPRUI.lua", "M_FLPR.lua", "FLPRCore.lua", "FLPRCur.lua", "FLPRGat.lua",
-    "FLPRGlob.lua", "FLPRHost.lua", "FLPRNat.lua", "FLPRQA.lua", "FLPRScript.lua",
+    "FLPRGlob.lua", "FLPRHost.lua", "FLPRNat.lua", "FLPRScript.lua",
     "FLPRShop.lua", "FLPRSpell.lua", "FLPRRun.menu",
 )
-FIXTURE_MODULES = ("FLPRGateAsm.lua", "FLPRCampaignPolicy.lua", "FLPRInventoryAsm.lua")
+GATE_MODULES = ("FLPRGateAsm.lua", "FLPRCampaignPolicy.lua", "FLPRInventoryAsm.lua")
+# Where the configurator applies settings; the installer only creates the folder.
+CAMPAIGN_DATA = "randomiser-campaigns"
+# M_FLPRTXT.lua keys and the in-game.tra strings they name, in installation order.
+MESSAGES = (("not_running", 1700), ("unsupported", 1701), ("other_campaign", 1702),
+            ("setup_failed", 1703), ("start_plain", 1704), ("ready", 1705), ("stopped", 1706))
+MESSAGE_FILE = "override/m_flprtxt.lua"
 MARKER = b"\x01"
 LUAJIT_INI = (b"[General]\r\n; LuaPatchMode=INTERNAL uses the engine's own Lua\r\n"
               b"LuaPatchMode=REPLACE_INTERNAL_WITH_EXTERNAL\r\nLuaLibrary=lua51.dll\r\n"
@@ -284,14 +291,52 @@ def uninstalled(result: ProcessResult) -> bool:
             and "SKIPPING" not in upper)
 
 
-def expected_install(game: Game, before: Mapping[str, bytes], menu: bytes, baldur: bytes,
-                     *, gam_written: bool = True) -> dict[str, bytes]:
+def tlk_strings(data: bytes) -> list[str]:
+    count, offset = struct.unpack_from("<II", data, 0x0A)
+    strings = []
+    for index in range(count):
+        base = 0x12 + index * 0x1A
+        start, length = struct.unpack_from("<II", data, base + 0x12)
+        text = data[offset + start:offset + start + length]
+        strings.append(text.decode("utf-8") if struct.unpack_from("<H", data, base)[0] & 1 else "")
+    return strings
+
+
+def in_game_messages(mod: Path) -> list[str]:
+    text = (mod / "languages" / "english" / "in-game.tra").read_text(encoding="utf-8")
+    strings = dict(re.findall(r"^@(\d+)=~([^~]*)~", text, re.M))
+    return [strings[str(number)] for _key, number in MESSAGES]
+
+
+def installed_messages(before: Mapping[str, bytes], after: Mapping[str, bytes],
+                       messages: Sequence[str]) -> dict[str, bytes] | None:
+    """The changed game text and message file, if each message key names its own new string."""
+    changed = [key for key in after if key.endswith("dialog.tlk") and after[key] != before.get(key)]
+    first = set()
+    for key in changed:
+        old, new = tlk_strings(before[key]), tlk_strings(after[key])
+        if new[:len(old)] != old or new[len(old):] != list(messages):
+            return None
+        first.add(len(old))
+    if len(first) != 1 or MESSAGE_FILE not in after:
+        return None
+    start = first.pop()
+    references = dict(re.findall(r"^\s*(\w+) = (\d+),\s*$", after[MESSAGE_FILE].decode("ascii"), re.M))
+    if references != {key: str(start + index) for index, (key, _number) in enumerate(MESSAGES)}:
+        return None
+    return {key: after[key] for key in changed + [MESSAGE_FILE]}
+
+
+def expected_install(game: Game, before: Mapping[str, bytes], after: Mapping[str, bytes], menu: bytes,
+                     baldur: bytes, *, gam_written: bool = True) -> dict[str, bytes]:
+    """Every installed byte; the game text only where it adds exactly the messages."""
     mod = game.root / "randomiser"
     expected = dict(before)
     for name in RUNTIME_MODULES:
         expected["override/" + name.casefold()] = (mod / "prototype" / name).read_bytes()
-    for name in FIXTURE_MODULES:
-        expected["flpr-fixture/" + name.casefold()] = (mod / "tools" / "probes" / name).read_bytes()
+    for name in GATE_MODULES:
+        expected["override/" + name.casefold()] = (mod / "tools" / "probes" / name).read_bytes()
+    expected.update(installed_messages(before, after, in_game_messages(mod)) or {})
     expected["override/ui.menu"] = patch_menu(menu)
     if gam_written:
         expected["override/baldur.gam"] = mark_initial_gam(baldur)
@@ -323,16 +368,24 @@ class Suite:
         result = game.install()
         self.check(f"{name}_Installs", installed(result) and game.active(1500), result)
         after = game.data()
-        expected = expected_install(game, before, menu, baldur, gam_written=gam_written)
+        self.check(f"{name}_AddsMessagesToGameText",
+                   installed_messages(before, after, in_game_messages(self.mod)) is not None)
+        expected = expected_install(game, before, after, menu, baldur, gam_written=gam_written)
         self.check(f"{name}_WritesOnlyRuntimeHooksAndMarker", after == expected)
+        self.check(f"{name}_CreatesCampaignDataFolder", (game.root / CAMPAIGN_DATA).is_dir())
         self.check(f"{name}_ConfiguratorAcceptsInstall", accepts(game.root))
         result = game.uninstall()
         self.check(f"{name}_Uninstalls", uninstalled(result) and not game.active(1500), result)
-        self.check(f"{name}_UninstallRestoresEveryByte", game.data() == before)
+        # WeiDU keeps the strings a component appended to the game text, unused;
+        # a re-install finds and reuses them.
+        added_text = {key: after[key] for key in after
+                      if key.endswith("dialog.tlk") and after[key] != before.get(key)}
+        self.check(f"{name}_UninstallRestoresEveryByteButAddedGameText",
+                   game.data() == {**before, **added_text})
         # WeiDU does not track folders: one it created stays behind, empty.
-        folder = game.root / "flpr-fixture"
-        self.check(f"{name}_UninstallLeavesNoFixtureFiles",
-                   any(key.startswith("flpr-fixture/") for key in before)
+        folder = game.root / CAMPAIGN_DATA
+        self.check(f"{name}_UninstallLeavesNoCampaignFiles",
+                   any(key.startswith(CAMPAIGN_DATA + "/") for key in before)
                    or not folder.exists() or not any(folder.iterdir()))
         self.check(f"{name}_ConfiguratorRefusesUninstalledRuntime", not accepts(game.root))
         result = game.install()
@@ -393,7 +446,7 @@ def run_suite(args: argparse.Namespace) -> int:
         "OverrideUiModWithAppliedSettings", UI_MOD_MENU, override_gam,
         menu_in_override=True, gam_in_override=True,
         ini=b"[General]\nLuaPatchMode=REPLACE_INTERNAL_WITH_EXTERNAL",
-        files={"flpr-fixture/next.lua": applied})
+        files={CAMPAIGN_DATA + "/next.lua": applied})
     suite.check("OverrideUiModWithAppliedSettings_KeepsMultiplayerCall",
                 b"connectionScreen:OnNewGameButtonClick()" in (game.root / "override/UI.MENU").read_bytes())
 

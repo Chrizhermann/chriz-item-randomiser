@@ -121,25 +121,38 @@ function Host:_initialize()
     end
 end
 
+-- Capture is atomic: a failure undoes every GLOBAL written while capturing, so
+-- the caller may start the same game without randomisation instead.
 function Host:capture_new(handoff)
     local ok, failure = pcall(function()
         assert(handoff == "confirmed-bg1-character-accept", "NEW_GAME_HANDOFF_REQUIRED")
-        local deps = self.deps
-        local state = deps.storage:get(deps.core.G.state)
-        if state == 2 and deps.storage:get("FLPR_FRESH") == 0 then return end
-        assert(state == 0 and deps.storage:get("FLPR_FRESH") == 1, "FRESH_TEMPLATE_REQUIRED")
+        local deps, storage = self.deps, self.deps.storage
+        assert(type(storage.begin) == "function" and type(storage.commit) == "function" and
+            type(storage.rollback) == "function", "STORAGE_TRANSACTION_UNSUPPORTED")
+        local state = storage:get(deps.core.G.state)
+        if state == 2 and storage:get("FLPR_FRESH") == 0 then return end
+        assert(state == 0 and storage:get("FLPR_FRESH") == 1, "FRESH_TEMPLATE_REQUIRED")
         local selected = require_result(deps.next(), "NEXT_REVISION_UNAVAILABLE")
         local guarded = guarded_indices(selected)
         if guarded then assert(type(deps.prepare_source_guard) == "function", "SOURCE_GUARD_PREPARER_MISSING") end
-        local controller = require_result(deps.core.new(deps.storage, function() return nil end))
-        require_result(controller:capture(selected.manifest, deps.seed(), "confirmed-new-game"))
-        if deps.prepare_campaign then require_result(deps.prepare_campaign(selected,controller)) end
-        -- Before engine character acceptance can load an original's area, the
-        -- native adapter must already protect this exact frozen campaign.
-        if guarded then require_result(deps.prepare_source_guard(selected, controller)) end
-        deps.storage:set("FLPR_FRESH", 0)
-        assert(deps.storage:get("FLPR_FRESH") == 0, "FRESH_MARKER_WRITE_FAILED")
-        self.status = "waiting"
+        storage:begin()
+        local captured, reason = pcall(function()
+            local controller = require_result(deps.core.new(storage, function() return nil end))
+            require_result(controller:capture(selected.manifest, deps.seed(), "confirmed-new-game"))
+            if deps.prepare_campaign then require_result(deps.prepare_campaign(selected,controller)) end
+            -- Before engine character acceptance can load an original's area, the
+            -- native adapter must already protect this exact frozen campaign.
+            if guarded then require_result(deps.prepare_source_guard(selected, controller)) end
+            storage:set("FLPR_FRESH", 0)
+            assert(storage:get("FLPR_FRESH") == 0, "FRESH_MARKER_WRITE_FAILED")
+        end)
+        if not captured then
+            storage:rollback()
+            error(reason, 0)
+        end
+        storage:commit()
+        -- A retry after a refused capture starts clean.
+        self.status, self.error = "waiting", nil
     end)
     if not ok then self:_disable(failure); return nil, failure end
     return true
