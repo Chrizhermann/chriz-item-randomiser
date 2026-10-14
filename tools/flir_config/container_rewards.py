@@ -19,7 +19,7 @@ import struct
 from .profiles import ProfileError
 from .quest_options import _Dialogue, _texts
 from .quest_rewards import _blocks, _global_guard, _newline
-from .unshey_reward import _append_texts
+from .game_text import _append_texts
 
 
 def _target(game, row, area, container, item, flag, latch, scope, resources):

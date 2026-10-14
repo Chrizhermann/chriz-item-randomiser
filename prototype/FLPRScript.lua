@@ -24,27 +24,6 @@ local function read(path)
     local file=assert(io.open(path,'rb'),'CAMPAIGN_SCRIPT_PATCH_MISSING')
     local bytes=file:read('*a'); assert(file:close()); return bytes
 end
-local function pool_event_action(expected)
-    local nl=expected:find('\r\n',1,true) and '\r\n' or '\n'
-    local obj='0 0 0 0 0 0 0 0 0 0 0 0 ""OB'..nl
-    return 'AC'..nl..'30OB'..nl..obj..'OB'..nl..obj..'OB'..nl..obj..
-        '1 0 0 0 0"GLOBALFLPR_EPOOL" "" AC'..nl
-end
-local function compatible_pool_patch(expected,actual)
-    if actual==expected then return true end
-    -- Only the two reviewed event actions may extend the immutable legacy
-    -- revision artifact. Removing them must recover its exact original bytes.
-    if #expected~=2658 or #actual~=2928 or
-        not expected:find('GLOBALFLPR_QPOOL',1,true) or
-        not expected:find('GLOBALFLPR_XPOOL',1,true) then return false end
-    local event=pool_event_action(expected)
-    local first=actual:find(event,1,true)
-    local second=first and actual:find(event,first+#event,true)
-    if not second or actual:find(event,second+#event,true) then return false end
-    return actual:sub(1,first-1)..actual:sub(first+#event,second-1)..
-        actual:sub(second+#event)==expected
-end
-
 function Script.new(api,bundle,id,expected)
     local index,source
     for i,row in ipairs(bundle.manifest.sources) do if row.id==id then index,source=i,row end end
@@ -87,9 +66,9 @@ function Script.new(api,bundle,id,expected)
         primary=primary or resource==spec.resource
         local bytes=endpoint.resources and type(expected)=='table' and expected[resource] or expected
         assert(type(bytes)=='string' and #bytes>0,'CAMPAIGN_SCRIPT_PATCH_CHANGED')
+        -- The game must still hold the bytes this revision was exported with.
         local actual=read('override/'..name:upper()..'.'..extension:upper())
-        assert((legacy and compatible_pool_patch(bytes,actual)) or actual==bytes,
-            'CAMPAIGN_SCRIPT_PATCH_CHANGED')
+        assert(actual==bytes,'CAMPAIGN_SCRIPT_PATCH_CHANGED')
     end
     assert(primary,'CAMPAIGN_SCRIPT_BINDING_INVALID')
     assert(type(api.EEex_GameState_SetGlobalInt)=='function','CAMPAIGN_SCRIPT_GLOBALS_MISSING')

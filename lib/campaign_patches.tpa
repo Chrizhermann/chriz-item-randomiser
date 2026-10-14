@@ -1,0 +1,638 @@
+// Component 1500: the quest and dialogue changes the new randomiser relies on.
+//
+// Each change keeps the original game under a GLOBAL that only the runtime
+// sets, and only for an adventure whose settings use it, so an adventure
+// without them plays as before. Each one finds what it changes by meaning
+// (the item a script creates, the journal entry a dialogue erases), not by
+// exact file contents, so other mods' changes to the same files are kept. One
+// that cannot be placed unambiguously is left out with a note, and
+// override/FLPRPAT.lua records it as unavailable for the configurator. WeiDU
+// tracks every change, so uninstalling the component restores the files.
+
+<<<<<<<< ...randomiser/fl-inlined/FLPRPAT.lua
+-- Written by randomiser.tp2 component 1500: the game changes it prepared for
+-- the new randomiser (status "applied"), or why it left one out. The
+-- configurator offers only what is applied here.
+FLPR_PATCHES = {
+    version = 1,
+    quest_pool = { status = "%flir_cp_pool%", resource = "BLPOOL.BCS" },
+    quest_altar = { status = "%flir_cp_altar%", resource = "TROALT.BCS" },
+    quest_book = { status = "%flir_cp_book%", resource = "PPBOOK.BCS" },
+    unshey = { status = "%flir_cp_unshey%", resource = "%flir_cp_unshey_file%", item = "%flir_cp_unshey_item%", journal = %flir_cp_unshey_journal% },
+    flail_heads = { status = "%flir_cp_flail%", resource = "%flir_cp_flail_file%" },
+    totsc_tome = { status = "applied", resource = "FLBHCRYP.ITM" },
+}
+>>>>>>>>
+
+// Glaicus (KPGLAI01) describes and hands over the flail heads he actually
+// holds; the states follow d/kpglai01.d. The entry transitions and the two
+// states the new ones continue to are found when installing.
+<<<<<<<< ...randomiser/fl-inlined/campaign/kpglai01.d
+APPEND ~%flir_cp_flail_dialogue%~
+  IF ~~ flprflaildesc
+    SAY @0
+      IF ~!HasItem("blun14a",Myself) !HasItem("blun14b",Myself) !HasItem("blun14c",Myself)~ GOTO flprnoflail
+      IF ~HasItem("blun14a",Myself) !HasItem("blun14b",Myself) !HasItem("blun14c",Myself)~ GOTO flpronehead
+      IF ~!HasItem("blun14a",Myself) HasItem("blun14b",Myself) !HasItem("blun14c",Myself)~ GOTO flpronehead
+      IF ~!HasItem("blun14a",Myself) !HasItem("blun14b",Myself) HasItem("blun14c",Myself)~ GOTO flpronehead
+      IF ~HasItem("blun14a",Myself) HasItem("blun14b",Myself) !HasItem("blun14c",Myself)~ GOTO flprtwohead
+      IF ~HasItem("blun14a",Myself) !HasItem("blun14b",Myself) HasItem("blun14c",Myself)~ GOTO flprtwohead
+      IF ~!HasItem("blun14a",Myself) HasItem("blun14b",Myself) HasItem("blun14c",Myself)~ GOTO flprtwohead
+      IF ~HasItem("blun14a",Myself) HasItem("blun14b",Myself) HasItem("blun14c",Myself)~ GOTO flprthreeheads
+  END
+
+  IF ~~ flprnoflail
+    SAY @1
+      IF ~~ GOTO flprnoflail2
+  END
+
+  IF ~~ flprnoflail2
+    SAY @2
+    =   @3
+      IF ~~ GOTO %flir_cp_flail_farewell%
+  END
+
+  IF ~~ flpronehead
+    SAY @4
+      IF ~~ DO ~GiveItem("blun14a",LastTalkedToBy) GiveItem("blun14b",LastTalkedToBy) GiveItem("blun14c",LastTalkedToBy)~ GOTO %flir_cp_flail_after%
+  END
+
+  IF ~~ flprtwohead
+    SAY @5
+      IF ~~ DO ~GiveItem("blun14a",LastTalkedToBy) GiveItem("blun14b",LastTalkedToBy) GiveItem("blun14c",LastTalkedToBy)~ GOTO flprtwohead2
+  END
+
+  IF ~~ flprtwohead2
+    SAY @6
+    =   @3
+      IF ~~ GOTO %flir_cp_flail_farewell%
+  END
+
+  IF ~~ flprthreeheads
+    SAY @7
+      IF ~~ DO ~GiveItem("blun14a",LastTalkedToBy) GiveItem("blun14b",LastTalkedToBy) GiveItem("blun14c",LastTalkedToBy)~ GOTO flprthreeheads2
+  END
+
+  IF ~~ flprthreeheads2
+    SAY @8
+      IF ~~ GOTO %flir_cp_flail_farewell%
+  END
+END
+
+%flir_cp_flail_entries%
+>>>>>>>>
+
+// Ends every response of a decompiled script block (IF ... END) with <line>:
+// before each later RESPONSE line and before END.
+DEFINE_PATCH_FUNCTION flir_cp_end_responses
+  STR_VAR
+    text = ~~
+    line = ~~
+  RET
+    text
+BEGIN
+  SET flir_cp_len = STRING_LENGTH ~%line%~
+  INNER_PATCH_SAVE text ~%text%~ BEGIN
+    SET flir_cp_pos = INDEX_BUFFER (~^[ %TAB%]*RESPONSE #~)
+    SET flir_cp_pos = INDEX_BUFFER (~^[ %TAB%]*RESPONSE #~ (flir_cp_pos + 1))
+    WHILE flir_cp_pos >= 0 BEGIN
+      INSERT_BYTES flir_cp_pos flir_cp_len
+      WRITE_ASCIIE flir_cp_pos ~%line%~ (flir_cp_len)
+      SET flir_cp_pos = INDEX_BUFFER (~^[ %TAB%]*RESPONSE #~ (flir_cp_pos + flir_cp_len + 1))
+    END
+    SET flir_cp_pos = RINDEX_BUFFER (~^END~)
+    INSERT_BYTES flir_cp_pos flir_cp_len
+    WRITE_ASCIIE flir_cp_pos ~%line%~ (flir_cp_len)
+  END
+END
+
+// Adds <condition> (one trigger and a line end) as the last state trigger of
+// a decompiled D state.
+DEFINE_PATCH_FUNCTION flir_cp_add_state_condition
+  STR_VAR
+    text = ~~
+    condition = ~~
+    nl = ~~
+  RET
+    text
+BEGIN
+  INNER_PATCH_SAVE text ~%text%~ BEGIN
+    SET flir_cp_then = INDEX_BUFFER (EXACT_MATCH "~ THEN BEGIN ")
+    PATCH_IF flir_cp_then > 0 BEGIN
+      READ_BYTE (flir_cp_then - 1) flir_cp_before
+      SPRINT flir_cp_insert ~%condition%~
+      PATCH_IF flir_cp_before != 10 BEGIN
+        SPRINT flir_cp_insert ~%nl%%condition%~
+      END
+      SET flir_cp_len = STRING_LENGTH ~%flir_cp_insert%~
+      INSERT_BYTES flir_cp_then flir_cp_len
+      WRITE_ASCIIE flir_cp_then ~%flir_cp_insert%~ (flir_cp_len)
+    END
+  END
+END
+
+// Splits the script block that creates <item> into two copies. Under
+// Global(<selected>) the grant becomes SetGlobal(<consumed>), which the runtime
+// reads instead, and an optional message is swapped (swap_from to swap_to);
+// under !Global(<selected>) the block is unchanged. Both copies end every
+// response with SetGlobal(<event>): the moment the runtime hands over the item
+// the adventure assigned to this reward. Run on a decompiled BCS; with
+// apply = 0 it only reports "ready" or why it cannot split the script.
+DEFINE_PATCH_FUNCTION flir_cp_split_grant
+  INT_VAR
+    apply = 0
+  STR_VAR
+    item = ~~
+    selected = ~~
+    consumed = ~~
+    event = ~~
+    swap_from = ~~
+    swap_to = ~~
+  RET
+    flir_cp_result
+BEGIN
+  SPRINT flir_cp_nl ~%LNL%~
+  PATCH_IF INDEX_BUFFER (EXACT_MATCH ~%WNL%~) >= 0 BEGIN
+    SPRINT flir_cp_nl ~%WNL%~
+  END
+  SPRINT flir_cp_grant ~^[ %TAB%]*\(GiveItemCreate\|CreateItem\)("%item%",[^%LNL%%MNL%]*~
+  COUNT_REGEXP_INSTANCES CASE_INSENSITIVE ~%flir_cp_grant%~ flir_cp_grants
+  SET flir_cp_at = INDEX_BUFFER (CASE_INSENSITIVE ~%flir_cp_grant%~)
+  SET flir_cp_start = (flir_cp_at < 0) ? (0 - 1) : RINDEX_BUFFER (~^IF[ %TAB%%MNL%]*$~ flir_cp_at)
+  SET flir_cp_then = (flir_cp_start < 0) ? (0 - 1) : INDEX_BUFFER (~^THEN[ %TAB%%MNL%]*$~ flir_cp_start)
+  SET flir_cp_end = (flir_cp_at < 0) ? (0 - 1) : INDEX_BUFFER (~^END[ %TAB%%MNL%]*$~ flir_cp_at)
+  PATCH_IF INDEX_BUFFER (CASE_INSENSITIVE ~"\(%selected%\|%consumed%\|%event%\)"~) >= 0 BEGIN
+    // Already split by a copy written outside WeiDU; a second split would nest.
+    SPRINT flir_cp_result ~prepared-elsewhere~
+  END ELSE PATCH_IF flir_cp_grants = 0 BEGIN
+    SPRINT flir_cp_result ~grant-missing~
+  END ELSE PATCH_IF flir_cp_grants > 1 BEGIN
+    SPRINT flir_cp_result ~grant-ambiguous~
+  END ELSE PATCH_IF flir_cp_start < 0 OR flir_cp_then < flir_cp_start OR flir_cp_then > flir_cp_at OR
+                    flir_cp_end < flir_cp_at BEGIN
+    SPRINT flir_cp_result ~block-unrecognised~
+  END ELSE BEGIN
+    SPRINT flir_cp_result ~ready~
+  END
+  PATCH_IF apply AND ~%flir_cp_result%~ STRING_EQUAL ~ready~ BEGIN
+    READ_ASCII flir_cp_start flir_cp_conditions (flir_cp_then - flir_cp_start)
+    READ_ASCII flir_cp_then flir_cp_kept (flir_cp_end + 3 - flir_cp_then)
+    SPRINT flir_cp_chosen ~%flir_cp_kept%~
+    INNER_PATCH_SAVE flir_cp_chosen ~%flir_cp_chosen%~ BEGIN
+      REPLACE_TEXTUALLY CASE_INSENSITIVE ~%flir_cp_grant%~ ~    SetGlobal("%consumed%","GLOBAL",1)~
+      PATCH_IF STRING_LENGTH ~%swap_from%~ > 0 BEGIN
+        REPLACE_TEXTUALLY CASE_INSENSITIVE EXACT_MATCH ~%swap_from%~ ~%swap_to%~
+      END
+    END
+    SPRINT flir_cp_line ~    SetGlobal("%event%","GLOBAL",1)%flir_cp_nl%~
+    LPF flir_cp_end_responses STR_VAR text = EVAL ~%flir_cp_chosen%~ line = EVAL ~%flir_cp_line%~
+      RET flir_cp_chosen = text END
+    LPF flir_cp_end_responses STR_VAR text = EVAL ~%flir_cp_kept%~ line = EVAL ~%flir_cp_line%~
+      RET flir_cp_kept = text END
+    SPRINT flir_cp_block ~%flir_cp_conditions%  Global("%selected%","GLOBAL",1)%flir_cp_nl%%flir_cp_chosen%%flir_cp_nl%%flir_cp_nl%%flir_cp_conditions%  !Global("%selected%","GLOBAL",1)%flir_cp_nl%%flir_cp_kept%~
+    DELETE_BYTES flir_cp_start (flir_cp_end + 3 - flir_cp_start)
+    SET flir_cp_len = STRING_LENGTH ~%flir_cp_block%~
+    INSERT_BYTES flir_cp_start flir_cp_len
+    WRITE_ASCIIE flir_cp_start ~%flir_cp_block%~ (flir_cp_len)
+    SPRINT flir_cp_result ~applied~
+  END
+END
+
+// Checks one quest script, then splits it if it can; sets flir_cp_result.
+DEFINE_ACTION_FUNCTION flir_cp_split_script
+  STR_VAR
+    script = ~~
+    item = ~~
+    selected = ~~
+    consumed = ~~
+    event = ~~
+    swap_from = ~~
+    swap_to = ~~
+  RET
+    flir_cp_result
+BEGIN
+  OUTER_SPRINT flir_cp_result ~absent~
+  ACTION_IF FILE_EXISTS_IN_GAME ~%script%.bcs~ BEGIN
+    COPY_EXISTING - ~%script%.bcs~ ~override~
+      DECOMPILE_BCS_TO_BAF
+      LPF flir_cp_split_grant STR_VAR item = EVAL ~%item%~ selected = EVAL ~%selected%~
+        consumed = EVAL ~%consumed%~ event = EVAL ~%event%~ RET flir_cp_result END
+    ACTION_IF ~%flir_cp_result%~ STRING_EQUAL ~ready~ BEGIN
+      COPY_EXISTING ~%script%.bcs~ ~override~
+        DECOMPILE_AND_PATCH BEGIN
+          LPF flir_cp_split_grant INT_VAR apply = 1 STR_VAR item = EVAL ~%item%~ selected = EVAL ~%selected%~
+            consumed = EVAL ~%consumed%~ event = EVAL ~%event%~ swap_from = EVAL ~%swap_from%~
+            swap_to = EVAL ~%swap_to%~ RET flir_cp_result END
+        END
+    END
+  END
+END
+
+// Copies every state of a decompiled dialogue. The originals get
+// !Global(<global>) on their state triggers; the copies get Global(<global>),
+// continue to their own copies and use <replacement> for <item>. In the copies
+// the quest's journal entry (the one erased when <item> is handed in) becomes
+// game text <journal>, and the states that add it say game text <say>. Copying every state keeps
+// the original order of state triggers, True() fallbacks included, in both
+// variants. With apply = 0 it only reports "ready" or why it cannot.
+DEFINE_PATCH_FUNCTION flir_cp_fork_dialogue
+  INT_VAR
+    apply = 0
+  STR_VAR
+    global = ~~
+    item = ~~
+    replacement = ~~
+    say = ~~
+    journal = ~~
+  RET
+    flir_cp_result
+    flir_cp_old_journal
+BEGIN
+  SPRINT flir_cp_nl ~%LNL%~
+  PATCH_IF INDEX_BUFFER (EXACT_MATCH ~%WNL%~) >= 0 BEGIN
+    SPRINT flir_cp_nl ~%WNL%~
+  END
+  SPRINT flir_cp_old_journal ~~
+  SET flir_cp_takes = 0
+  SET flir_cp_conflict = 0
+  SET flir_cp_pos = INDEX_BUFFER (EXACT_MATCH "DO ~")
+  WHILE flir_cp_pos >= 0 BEGIN
+    SET flir_cp_stop = INDEX_BUFFER (EXACT_MATCH "~" (flir_cp_pos + 4))
+    PATCH_IF flir_cp_stop > flir_cp_pos + 4 BEGIN
+      READ_ASCII (flir_cp_pos + 4) flir_cp_action (flir_cp_stop - flir_cp_pos - 4)
+      PATCH_IF INDEX (CASE_INSENSITIVE EXACT_MATCH ~TakePartyItem("%item%")~ ~%flir_cp_action%~) >= 0 BEGIN
+        SET flir_cp_takes += 1
+        INNER_PATCH ~%flir_cp_action%~ BEGIN
+          SET flir_cp_erase = INDEX_BUFFER (CASE_INSENSITIVE ~EraseJournalEntry([0-9]+)~)
+          WHILE flir_cp_erase >= 0 BEGIN
+            SET flir_cp_close = INDEX_BUFFER (EXACT_MATCH ~)~ flir_cp_erase)
+            READ_ASCII (flir_cp_erase + 18) flir_cp_number (flir_cp_close - flir_cp_erase - 18)
+            PATCH_IF STRING_LENGTH ~%flir_cp_old_journal%~ = 0 BEGIN
+              SPRINT flir_cp_old_journal ~%flir_cp_number%~
+            END ELSE PATCH_IF !(~%flir_cp_old_journal%~ STRING_EQUAL ~%flir_cp_number%~) BEGIN
+              SET flir_cp_conflict = 1
+            END
+            SET flir_cp_erase = INDEX_BUFFER (CASE_INSENSITIVE ~EraseJournalEntry([0-9]+)~ flir_cp_close)
+          END
+        END
+      END
+    END
+    SET flir_cp_pos = (flir_cp_stop < 0) ? (0 - 1) : INDEX_BUFFER (EXACT_MATCH "DO ~" (flir_cp_stop + 1))
+  END
+  PATCH_IF INDEX_BUFFER (CASE_INSENSITIVE ~"%global%"~) >= 0 BEGIN
+    SPRINT flir_cp_result ~prepared-elsewhere~
+  END ELSE PATCH_IF flir_cp_takes = 0 BEGIN
+    SPRINT flir_cp_result ~item-missing~
+  END ELSE PATCH_IF flir_cp_conflict OR STRING_LENGTH ~%flir_cp_old_journal%~ = 0 OR
+                    INDEX_BUFFER (~UNSOLVED_JOURNAL #%flir_cp_old_journal%[^0-9]~) < 0 BEGIN
+    SPRINT flir_cp_result ~journal-unrecognised~
+  END ELSE BEGIN
+    SPRINT flir_cp_result ~ready~
+  END
+  PATCH_IF apply AND ~%flir_cp_result%~ STRING_EQUAL ~ready~ BEGIN
+    SPRINT flir_cp_guard ~Global("%global%","GLOBAL",1)%flir_cp_nl%~
+    SPRINT flir_cp_copies ~~
+    SET flir_cp_pos = INDEX_BUFFER (~^IF[ %TAB%]~)
+    WHILE flir_cp_pos >= 0 BEGIN
+      SET flir_cp_stop = INDEX_BUFFER (~^END[ %TAB%%MNL%]*$~ flir_cp_pos)
+      READ_ASCII flir_cp_pos flir_cp_state (flir_cp_stop + 3 - flir_cp_pos)
+      SPRINT flir_cp_kept ~%flir_cp_state%~
+      SPRINT flir_cp_copy ~%flir_cp_state%~
+      // A state without a trigger is entered only from a transition.
+      PATCH_IF INDEX ("^IF[^~]*~~" ~%flir_cp_state%~) != 0 BEGIN
+        LPF flir_cp_add_state_condition STR_VAR text = EVAL ~%flir_cp_kept%~ condition = EVAL ~!%flir_cp_guard%~
+          nl = EVAL ~%flir_cp_nl%~ RET flir_cp_kept = text END
+        LPF flir_cp_add_state_condition STR_VAR text = EVAL ~%flir_cp_copy%~ condition = EVAL ~%flir_cp_guard%~
+          nl = EVAL ~%flir_cp_nl%~ RET flir_cp_copy = text END
+      END
+      INNER_PATCH_SAVE flir_cp_copy ~%flir_cp_copy%~ BEGIN
+        REPLACE_TEXTUALLY ~THEN BEGIN \([0-9]+\)~ ~THEN BEGIN flprq\1~
+        REPLACE_TEXTUALLY ~GOTO \([0-9]+\)~ ~GOTO flprq\1~
+        REPLACE_TEXTUALLY CASE_INSENSITIVE EXACT_MATCH ~"%item%"~ ~"%replacement%"~
+        REPLACE_TEXTUALLY CASE_INSENSITIVE EXACT_MATCH ~EraseJournalEntry(%flir_cp_old_journal%)~
+                                                       ~EraseJournalEntry(%journal%)~
+        PATCH_IF INDEX_BUFFER (~UNSOLVED_JOURNAL #%flir_cp_old_journal%[^0-9]~) >= 0 BEGIN
+          REPLACE_TEXTUALLY ~UNSOLVED_JOURNAL #%flir_cp_old_journal%\([^0-9]\)~ ~UNSOLVED_JOURNAL #%journal%\1~
+          REPLACE_TEXTUALLY ~SAY #[0-9]+~ ~SAY #%say%~
+        END
+      END
+      DELETE_BYTES flir_cp_pos (flir_cp_stop + 3 - flir_cp_pos)
+      SET flir_cp_len = STRING_LENGTH ~%flir_cp_kept%~
+      INSERT_BYTES flir_cp_pos flir_cp_len
+      WRITE_ASCIIE flir_cp_pos ~%flir_cp_kept%~ (flir_cp_len)
+      SPRINT flir_cp_copies ~%flir_cp_copies%%flir_cp_nl%%flir_cp_copy%%flir_cp_nl%~
+      SET flir_cp_pos = INDEX_BUFFER (~^IF[ %TAB%]~ (flir_cp_pos + flir_cp_len))
+    END
+    SET flir_cp_pos = BUFFER_LENGTH
+    SET flir_cp_len = STRING_LENGTH ~%flir_cp_copies%~
+    INSERT_BYTES flir_cp_pos flir_cp_len
+    WRITE_ASCIIE flir_cp_pos ~%flir_cp_copies%~ (flir_cp_len)
+    SPRINT flir_cp_result ~applied~
+  END
+END
+
+// Files the new journal text under the quest of the entry it replaces (the
+// EE quest journal of BGEE.LUA), as ADD_JOURNAL EXISTING TITLE does. The game
+// still shows an entry that is not filed, only outside its quest.
+DEFINE_ACTION_FUNCTION flir_cp_file_journal
+  INT_VAR
+    old = 0
+    new = 0
+  RET
+    flir_cp_filed
+BEGIN
+  OUTER_SET flir_cp_filed = 0
+  ACTION_IF FILE_EXISTS_IN_GAME ~bgee.lua~ BEGIN
+    OUTER_SPRINT flir_cp_entry ~^\([ %TAB%]*\)createEntry\([ %TAB%]*([ %TAB%]*[0-9]+,[ %TAB%]*-1,[ %TAB%]*\)~
+    COPY_EXISTING - ~bgee.lua~ ~override~
+      COUNT_REGEXP_INSTANCES ~%flir_cp_entry%%old%,~ flir_cp_entries
+      COUNT_REGEXP_INSTANCES ~%flir_cp_entry%%new%,~ flir_cp_filed
+    ACTION_IF flir_cp_entries = 1 AND flir_cp_filed = 0 BEGIN
+      COPY_EXISTING ~bgee.lua~ ~override~
+        REPLACE_TEXTUALLY ~%flir_cp_entry%%old%\(,[^%LNL%%MNL%]*[%MNL%]?%LNL%\)~ ~\1createEntry\2%old%\3\1createEntry\2%new%\3~
+      OUTER_SET flir_cp_filed = 1
+    END
+  END
+END
+
+// Unshey (BG1): under Global("FLPR_QUNSHEY") she asks for and takes the mod's
+// plain girdle (flrbelt1, which the runtime gives the ogre) instead of the
+// Girdle of Piercing, with the original mod's quest text (@112) and journal
+// entry (@113).
+DEFINE_ACTION_MACRO flir_cp_unshey BEGIN
+  LAF fl#bg1pal STR_VAR file = ~unshey.dlg~ RET flir_cp_unshey_file = file flir_cp_unshey_dialogue = resource END
+  LAF fl#bg1pal STR_VAR file = ~belt04.itm~ RET flir_cp_unshey_item = resource END
+  OUTER_SPRINT flir_cp_unshey ~absent~
+  OUTER_SET flir_cp_unshey_journal = 0
+  ACTION_IF FILE_EXISTS_IN_GAME ~%flir_cp_unshey_file%~ BEGIN
+    COPY_EXISTING - ~%flir_cp_unshey_file%~ ~override~
+      DECOMPILE_DLG_TO_D
+      LPF flir_cp_fork_dialogue STR_VAR global = ~FLPR_QUNSHEY~ item = EVAL ~%flir_cp_unshey_item%~
+        RET flir_cp_unshey = flir_cp_result END
+    ACTION_IF ~%flir_cp_unshey%~ STRING_EQUAL ~ready~ BEGIN
+      // Action text cannot hold translation references: resolve them first.
+      OUTER_SET flir_cp_unshey_say = RESOLVE_STR_REF (@112)
+      OUTER_SET flir_cp_unshey_new = RESOLVE_STR_REF (@113)
+      COPY ~%MOD_FOLDER%/copy/flrbelt1.itm~ ~override~
+        SAY 0x8 @114
+        SAY 0xc @114
+        SAY 0x50 @115
+      COPY_EXISTING ~%flir_cp_unshey_file%~ ~override~
+        DECOMPILE_AND_PATCH BEGIN
+          LPF flir_cp_fork_dialogue INT_VAR apply = 1
+            STR_VAR global = ~FLPR_QUNSHEY~ item = EVAL ~%flir_cp_unshey_item%~ replacement = ~flrbelt1~
+                    say = EVAL ~%flir_cp_unshey_say%~ journal = EVAL ~%flir_cp_unshey_new%~
+            RET flir_cp_unshey = flir_cp_result flir_cp_unshey_old = flir_cp_old_journal END
+        END
+      LAF flir_cp_file_journal INT_VAR old = flir_cp_unshey_old new = flir_cp_unshey_new
+        RET flir_cp_unshey_journal = flir_cp_filed END
+    END
+  END
+  OUTER_SPRINT flir_cp_unshey_file ~%flir_cp_unshey_dialogue%.DLG~
+  ACTION_TO_UPPER flir_cp_unshey_file
+  ACTION_TO_UPPER flir_cp_unshey_item
+END
+
+// Reads string <index> of the DLG table whose offset and count are at <table>.
+// flir_cp_ok is 0 if it lies outside the file or holds a tilde, which D text
+// cannot quote.
+DEFINE_PATCH_FUNCTION flir_cp_dlg_text
+  INT_VAR
+    table = 0
+    index = 0
+  RET
+    flir_cp_ok
+    flir_cp_text
+BEGIN
+  SET flir_cp_ok = 0
+  SPRINT flir_cp_text ~~
+  READ_LONG table flir_cp_text_table
+  READ_LONG (table + 4) flir_cp_text_count
+  PATCH_IF index < flir_cp_text_count AND flir_cp_text_table + (index + 1) * 8 <= BUFFER_LENGTH BEGIN
+    READ_LONG (flir_cp_text_table + index * 8) flir_cp_text_at
+    READ_LONG (flir_cp_text_table + index * 8 + 4) flir_cp_text_length
+    PATCH_IF flir_cp_text_at + flir_cp_text_length <= BUFFER_LENGTH BEGIN
+      PATCH_IF flir_cp_text_length > 0 BEGIN
+        READ_ASCII flir_cp_text_at flir_cp_text (flir_cp_text_length)
+      END
+      SET flir_cp_ok = INDEX (EXACT_MATCH "~" "%flir_cp_text%") < 0
+    END
+  END
+END
+
+// The D text of a copy of the transition at <offset> that continues to
+// flprflaildesc under Global("FLPR_FLAIL"). It keeps the original's trigger,
+// reply, action, journal entry and other flags, so changes other mods made to
+// the transition stay in both variants. Empty if it cannot be written as D.
+DEFINE_PATCH_FUNCTION flir_cp_copy_transition
+  INT_VAR
+    offset = 0
+  RET
+    flir_cp_copy
+BEGIN
+  READ_LONG offset flir_cp_flags
+  READ_LONG (offset + 0x4) flir_cp_reply
+  READ_LONG (offset + 0x8) flir_cp_journal
+  READ_LONG (offset + 0xc) flir_cp_trigger_index
+  READ_LONG (offset + 0x10) flir_cp_action_index
+  SET flir_cp_ok = 1
+  SPRINT flir_cp_trigger ~~
+  PATCH_IF (flir_cp_flags BAND 2) != 0 BEGIN
+    LPF flir_cp_dlg_text INT_VAR table = 0x20 index = flir_cp_trigger_index RET flir_cp_ok flir_cp_trigger = flir_cp_text END
+  END
+  SPRINT flir_cp_features ~~
+  PATCH_IF (flir_cp_flags BAND 1) != 0 BEGIN
+    SPRINT flir_cp_features ~ REPLY #%flir_cp_reply%~
+  END
+  PATCH_IF flir_cp_ok AND (flir_cp_flags BAND 4) != 0 BEGIN
+    LPF flir_cp_dlg_text INT_VAR table = 0x28 index = flir_cp_action_index RET flir_cp_ok flir_cp_action = flir_cp_text END
+    SPRINT flir_cp_features ~~~~~%flir_cp_features% DO ~%flir_cp_action%~ ~~~~~
+  END
+  // D sets the reply, trigger, action and journal bits itself; FLAGS adds the rest.
+  SET flir_cp_extra = flir_cp_flags BAND (BNOT 0x1f)
+  PATCH_IF (flir_cp_flags BAND 0x10) != 0 BEGIN
+    PATCH_IF (flir_cp_flags BAND 0x40) != 0 BEGIN
+      SPRINT flir_cp_features ~%flir_cp_features% UNSOLVED_JOURNAL #%flir_cp_journal%~
+      SET flir_cp_extra = flir_cp_extra BAND (BNOT 0x40)
+    END ELSE PATCH_IF (flir_cp_flags BAND 0x100) != 0 BEGIN
+      SPRINT flir_cp_features ~%flir_cp_features% SOLVED_JOURNAL #%flir_cp_journal%~
+      SET flir_cp_extra = flir_cp_extra BAND (BNOT 0x100)
+    END ELSE BEGIN
+      SPRINT flir_cp_features ~%flir_cp_features% JOURNAL #%flir_cp_journal%~
+    END
+  END
+  PATCH_IF flir_cp_extra != 0 BEGIN
+    SPRINT flir_cp_features ~%flir_cp_features% FLAGS %flir_cp_extra%~
+  END
+  SPRINT flir_cp_copy ~~
+  PATCH_IF flir_cp_ok BEGIN
+    SPRINT flir_cp_copy ~~~~~  IF ~%flir_cp_trigger% Global("FLPR_FLAIL","GLOBAL",1)~ THEN%flir_cp_features% GOTO flprflaildesc
+~~~~~
+  END
+END
+
+// Glaicus (KPGLAI01, Flail of Ages heads): the transitions into the state that
+// gives the first head (blun14c) lead, under Global("FLPR_FLAIL"), to the new
+// states instead. "After" is the state that giver continues to, "farewell" the
+// one that follows it.
+DEFINE_ACTION_MACRO flir_cp_flail BEGIN
+  OUTER_SPRINT flir_cp_flail_dialogue ~kpglai01~
+  OUTER_SPRINT flir_cp_flail_file ~KPGLAI01.DLG~
+  OUTER_SPRINT flir_cp_flail ~absent~
+  OUTER_SPRINT flir_cp_flail_entries ~~
+  ACTION_IF FILE_EXISTS_IN_GAME ~%flir_cp_flail_dialogue%.dlg~ BEGIN
+    COPY_EXISTING - ~%flir_cp_flail_dialogue%.dlg~ ~override~
+      SPRINT flir_cp_flail ~dialogue-unrecognised~
+      READ_ASCII 0 flir_cp_signature (8)
+      READ_LONG 0x08 flir_cp_states
+      READ_LONG 0x0c flir_cp_state_table
+      READ_LONG 0x10 flir_cp_transitions
+      READ_LONG 0x14 flir_cp_transition_table
+      READ_LONG 0x28 flir_cp_action_table
+      READ_LONG 0x2c flir_cp_actions
+      PATCH_IF (~%flir_cp_signature%~ STRING_EQUAL ~DLG V1.0~) AND BUFFER_LENGTH >= 0x30 AND
+               flir_cp_state_table + flir_cp_states * 16 <= BUFFER_LENGTH AND
+               flir_cp_transition_table + flir_cp_transitions * 32 <= BUFFER_LENGTH AND
+               flir_cp_action_table + flir_cp_actions * 8 <= BUFFER_LENGTH BEGIN
+        // The giver: a state whose every transition gives the head and
+        // continues in this dialogue, all to the same state.
+        SET flir_cp_givers = 0
+        FOR (flir_cp_s = 0; flir_cp_s < flir_cp_states; ++flir_cp_s) BEGIN
+          READ_LONG (flir_cp_state_table + flir_cp_s * 16 + 4) flir_cp_first
+          READ_LONG (flir_cp_state_table + flir_cp_s * 16 + 8) flir_cp_count
+          SET flir_cp_all = (flir_cp_count > 0 AND flir_cp_first + flir_cp_count <= flir_cp_transitions) ? 1 : 0
+          SET flir_cp_target = 0 - 1
+          FOR (flir_cp_k = 0; flir_cp_all AND flir_cp_k < flir_cp_count; ++flir_cp_k) BEGIN
+            SET flir_cp_t = flir_cp_transition_table + (flir_cp_first + flir_cp_k) * 32
+            READ_LONG flir_cp_t flir_cp_flags
+            READ_LONG (flir_cp_t + 0x10) flir_cp_action
+            READ_ASCII (flir_cp_t + 0x14) flir_cp_next (8) NULL
+            READ_LONG (flir_cp_t + 0x1c) flir_cp_next_state
+            PATCH_IF (flir_cp_flags BAND 4) = 0 OR (flir_cp_flags BAND 8) != 0 OR
+                     !(~%flir_cp_next%~ STRING_EQUAL_CASE ~%flir_cp_flail_dialogue%~) OR
+                     (flir_cp_target >= 0 AND flir_cp_next_state != flir_cp_target) BEGIN
+              SET flir_cp_all = 0
+            END ELSE BEGIN
+              SET flir_cp_target = flir_cp_next_state
+              LPF flir_cp_dlg_text INT_VAR table = 0x28 index = flir_cp_action RET flir_cp_all = flir_cp_ok flir_cp_text END
+              PATCH_IF flir_cp_all BEGIN
+                SET flir_cp_all = INDEX (CASE_INSENSITIVE ~GiveItem([ %TAB%]*"blun14c"~ ~%flir_cp_text%~) >= 0
+              END
+            END
+          END
+          PATCH_IF flir_cp_all BEGIN
+            SET flir_cp_givers += 1
+            SET flir_cp_giver = flir_cp_s
+            SET flir_cp_after = flir_cp_target
+          END
+        END
+        // "After" continues to a single next state: the farewell.
+        SET flir_cp_farewell = 0 - 1
+        PATCH_IF flir_cp_givers = 1 AND flir_cp_after < flir_cp_states BEGIN
+          READ_LONG (flir_cp_state_table + flir_cp_after * 16 + 4) flir_cp_first
+          READ_LONG (flir_cp_state_table + flir_cp_after * 16 + 8) flir_cp_count
+          PATCH_IF flir_cp_count = 1 AND flir_cp_first < flir_cp_transitions BEGIN
+            SET flir_cp_t = flir_cp_transition_table + flir_cp_first * 32
+            READ_LONG flir_cp_t flir_cp_flags
+            READ_ASCII (flir_cp_t + 0x14) flir_cp_next (8) NULL
+            READ_LONG (flir_cp_t + 0x1c) flir_cp_next_state
+            PATCH_IF (flir_cp_flags BAND 8) = 0 AND (~%flir_cp_next%~ STRING_EQUAL_CASE ~%flir_cp_flail_dialogue%~) AND
+                     flir_cp_next_state < flir_cp_states BEGIN
+              SET flir_cp_farewell = flir_cp_next_state
+            END
+          END
+        END
+        // Every transition of this dialogue that continues to the giver keeps
+        // its target under !Global("FLPR_FLAIL"); a copy leads to the new states.
+        SET flir_cp_unwritable = 0
+        PATCH_IF flir_cp_farewell >= 0 BEGIN
+          FOR (flir_cp_s = 0; flir_cp_s < flir_cp_states; ++flir_cp_s) BEGIN
+            READ_LONG (flir_cp_state_table + flir_cp_s * 16 + 4) flir_cp_first
+            READ_LONG (flir_cp_state_table + flir_cp_s * 16 + 8) flir_cp_count
+            SPRINT flir_cp_list ~~
+            SPRINT flir_cp_copies ~~
+            FOR (flir_cp_k = 0; flir_cp_k < flir_cp_count AND flir_cp_first + flir_cp_k < flir_cp_transitions; ++flir_cp_k) BEGIN
+              SET flir_cp_t = flir_cp_transition_table + (flir_cp_first + flir_cp_k) * 32
+              READ_LONG flir_cp_t flir_cp_flags
+              READ_ASCII (flir_cp_t + 0x14) flir_cp_next (8) NULL
+              READ_LONG (flir_cp_t + 0x1c) flir_cp_next_state
+              PATCH_IF (flir_cp_flags BAND 8) = 0 AND (~%flir_cp_next%~ STRING_EQUAL_CASE ~%flir_cp_flail_dialogue%~) AND
+                       flir_cp_next_state = flir_cp_giver BEGIN
+                SPRINT flir_cp_list ~%flir_cp_list% %flir_cp_k%~
+                LPF flir_cp_copy_transition INT_VAR offset = flir_cp_t RET flir_cp_copy END
+                PATCH_IF STRING_LENGTH ~%flir_cp_copy%~ = 0 BEGIN
+                  SET flir_cp_unwritable = 1
+                END
+                SPRINT flir_cp_copies ~%flir_cp_copies%%flir_cp_copy%~
+              END
+            END
+            PATCH_IF STRING_LENGTH ~%flir_cp_list%~ > 0 BEGIN
+              SPRINT flir_cp_flail_entries ~~~~~%flir_cp_flail_entries%ADD_TRANS_TRIGGER ~%flir_cp_flail_dialogue%~ %flir_cp_s% ~!Global("FLPR_FLAIL","GLOBAL",1)~ DO%flir_cp_list%
+EXTEND_BOTTOM ~%flir_cp_flail_dialogue%~ %flir_cp_s%
+%flir_cp_copies%END
+~~~~~
+            END
+          END
+        END
+        PATCH_IF STRING_LENGTH ~%flir_cp_flail_entries%~ > 0 AND !flir_cp_unwritable AND
+                 INDEX_BUFFER (CASE_INSENSITIVE ~FLPR_FLAIL~) < 0 BEGIN
+          SPRINT flir_cp_flail ~ready~
+          SET flir_cp_flail_after = flir_cp_after
+          SET flir_cp_flail_farewell = flir_cp_farewell
+        END ELSE PATCH_IF INDEX_BUFFER (CASE_INSENSITIVE ~FLPR_FLAIL~) >= 0 BEGIN
+          SPRINT flir_cp_flail ~prepared-elsewhere~
+        END
+      END
+    ACTION_IF ~%flir_cp_flail%~ STRING_EQUAL ~ready~ BEGIN
+      COMPILE EVALUATE_BUFFER ~...randomiser/fl-inlined/campaign/kpglai01.d~
+      OUTER_SPRINT flir_cp_flail ~applied~
+    END
+  END
+END
+
+// Reports a change left out: the configurator will not offer it.
+DEFINE_ACTION_FUNCTION flir_cp_report
+  STR_VAR
+    name = ~~
+    result = ~~
+BEGIN
+  ACTION_IF !(~%result%~ STRING_EQUAL ~applied~) BEGIN
+    OUTER_SPRINT flir_cp_name ~%name%~
+    // override/FLPRPAT.lua keeps the code; players read the reason.
+    OUTER_SPRINT flir_cp_reason ~%result%~
+    ACTION_IF ~%result%~ STRING_EQUAL ~absent~ BEGIN OUTER_SPRINT flir_cp_reason @101521 END
+    ACTION_IF ~%result%~ STRING_EQUAL ~prepared-elsewhere~ BEGIN OUTER_SPRINT flir_cp_reason @101522 END
+    ACTION_IF ~%result%~ STRING_EQUAL ~grant-missing~ BEGIN OUTER_SPRINT flir_cp_reason @101523 END
+    ACTION_IF ~%result%~ STRING_EQUAL ~grant-ambiguous~ BEGIN OUTER_SPRINT flir_cp_reason @101524 END
+    ACTION_IF ~%result%~ STRING_EQUAL ~block-unrecognised~ BEGIN OUTER_SPRINT flir_cp_reason @101525 END
+    ACTION_IF ~%result%~ STRING_EQUAL ~item-missing~ BEGIN OUTER_SPRINT flir_cp_reason @101526 END
+    ACTION_IF ~%result%~ STRING_EQUAL ~journal-unrecognised~ BEGIN OUTER_SPRINT flir_cp_reason @101527 END
+    ACTION_IF ~%result%~ STRING_EQUAL ~dialogue-unrecognised~ BEGIN OUTER_SPRINT flir_cp_reason @101528 END
+    PRINT @101520
+  END
+END
+
+DEFINE_ACTION_MACRO flir_campaign_patches_install BEGIN
+  // The three BG2 quest rewards of the original mod's Mode 1. In the pool's
+  // selected copy, "nothing else of interest" (35878) replaces the line
+  // about finding a mace (35877).
+  LAF flir_cp_split_script STR_VAR script = ~blpool~ item = ~BLUN12~ selected = ~FLPR_QPOOL~
+    consumed = ~FLPR_XPOOL~ event = ~FLPR_EPOOL~
+    swap_from = ~DisplayString(Myself,35877)~ swap_to = ~DisplayString(Myself,35878)~
+    RET flir_cp_pool = flir_cp_result END
+  LAF flir_cp_split_script STR_VAR script = ~troalt~ item = ~BLUN23~ selected = ~FLPR_QALTAR~
+    consumed = ~FLPR_XALTAR~ event = ~FLPR_EALTAR~ RET flir_cp_altar = flir_cp_result END
+  LAF flir_cp_split_script STR_VAR script = ~ppbook~ item = ~ring09~ selected = ~FLPR_QBOOK~
+    consumed = ~FLPR_XBOOK~ event = ~FLPR_EBOOK~ RET flir_cp_book = flir_cp_result END
+  LAM flir_cp_unshey
+  LAM flir_cp_flail
+  // The shipped stand-in for the TotSC tome.
+  COPY ~%MOD_FOLDER%/copy/flbhcryp.itm~ ~override~
+
+  LAF flir_cp_report STR_VAR name = ~BLPOOL.BCS~ result = EVAL ~%flir_cp_pool%~ END
+  LAF flir_cp_report STR_VAR name = ~TROALT.BCS~ result = EVAL ~%flir_cp_altar%~ END
+  LAF flir_cp_report STR_VAR name = ~PPBOOK.BCS~ result = EVAL ~%flir_cp_book%~ END
+  LAF flir_cp_report STR_VAR name = EVAL ~%flir_cp_unshey_file%~ result = EVAL ~%flir_cp_unshey%~ END
+  LAF flir_cp_report STR_VAR name = ~KPGLAI01.DLG~ result = EVAL ~%flir_cp_flail%~ END
+  COPY ~...randomiser/fl-inlined/FLPRPAT.lua~ ~override/FLPRPAT.lua~ EVALUATE_BUFFER
+END

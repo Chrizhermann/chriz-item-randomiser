@@ -93,6 +93,29 @@ class InstalledRuntimeApplyTests(unittest.TestCase):
         for name, data in INSTALLED.items():
             self.assertEqual((fx.game / name).read_bytes(), data, name)
 
+    def test_apply_copies_only_the_files_of_the_latest_export(self):
+        fx, original = self.base.fx, self.base.editor
+        write(fx.game, INSTALLED)
+        editor = Editor(fx.catalog, fx.world, original.workspace, **deepcopy(original.draft),
+                        apply_game=fx.game)
+        # An older export left a quest script and game text in the reused folder.
+        output = original.workspace / "native"
+        write(output, {"resource-overrides/BLPOOL.BCS": b"older configurator patch",
+                       "script-overrides/BLPOOL.BCS": b"older configurator patch",
+                       "game-overrides/dialog.tlk": b"older game text"})
+        game_text = (fx.game / "dialog.tlk").read_bytes()
+        with patch("flir_config.activation.require_closed"):
+            editor.post("/api/apply", editor.draft)
+        self.assertEqual((fx.game / "dialog.tlk").read_bytes(), game_text)
+        for name in ("override/BLPOOL.BCS", "randomiser-campaigns/script-overrides"):
+            self.assertFalse((fx.game / name).exists(), name)
+        listing = (output / "export-files.json")
+        listing.write_bytes(b'{"schema": "flir-export-files-v1", "files": ["next.lua"]}')
+        with patch("flir_config.activation.require_closed"), \
+                self.assertRaisesRegex(ProfileError, "export is incomplete"):
+            from flir_config.activation import deploy_export
+            deploy_export(fx.game, output)
+
 
 if __name__ == "__main__":
     unittest.main()

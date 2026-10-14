@@ -17,6 +17,7 @@ from .original_options import is_spell_shield_row, spell_shield_spec, tome_varia
 from .original_registrations import is_unreferenced_creature_source
 from .mode2_rewards import SOURCE_REWARDS as MODE2_SOURCES, source_spec as mode2_source_spec
 from .cursed_disguises import cursed_disguise_spec, item_revisions_installed
+from .prepared import QUEST_CHANGES, applied, applied_changes, left_out
 from .profiles import ProfileError, edit_profile, new_profile, validate_catalog
 from .resources import GameResources, RESOURCE_TYPES
 from .scripted_sources import blpool_registration
@@ -35,6 +36,21 @@ _PAYLOAD_FIELDS = ("resref", "expiration", "charges", "flags")
 
 def _tier(row: dict) -> str:
     return f"{row['campaign']}:{row['tier']}"
+
+
+def _source_change(row: dict) -> str | None:
+    """The change component 1500 makes at install that this reward row needs."""
+    if row["adapter"] == "unshey":
+        return "unshey"
+    resource = row["source_resource"] or ""
+    if row["adapter"] == "scripted" and resource.startswith("bcs:"):
+        return QUEST_CHANGES.get(resource[4:])
+    return None
+
+
+def _target_change(row: dict) -> str | None:
+    target = row["target"]
+    return QUEST_CHANGES.get(target[:-4]) if target.endswith(".bcs") else None
 
 
 def _item_defaults(catalog: dict, item_hashes: dict[str, str],
@@ -93,8 +109,22 @@ def build_original_configuration(catalog: dict, world: dict, template_id: str, *
     index = validate_world(world, catalog)
     draft = resolve_template(catalog, world, template_id,
                              items=items, targets=targets, options=options)
-    enabled_sources = [row for row in draft["items"] if row["enabled"]]
-    enabled_targets = [row for row in draft["targets"] if row["enabled"]]
+    if draft["options"].get("flail_heads") and not applied(world["game_root"], "flail_heads"):
+        raise ProfileError("The flail heads option needs Glaicus's conversation as component 1500 "
+                           "prepares it: " + left_out(world["game_root"], "flail_heads"))
+    # A reward whose script or conversation component 1500 could not prepare
+    # stays as installed: its rows are left out, and the player is told why.
+    prepared = applied_changes(world["game_root"])
+    unprepared = defaultdict(list)
+    enabled_sources, enabled_targets = [], []
+    for rows, change_of, enabled in ((draft["items"], _source_change, enabled_sources),
+                                     (draft["targets"], _target_change, enabled_targets)):
+        for row in rows:
+            change = change_of(row) if row["enabled"] else None
+            if change and change not in prepared:
+                unprepared[change].append(row["id"])
+            elif row["enabled"]:
+                enabled.append(row)
     shield = (spell_shield_spec(world, randomized=any(is_spell_shield_row(row) for row in enabled_sources))
               if draft["options"].get("more_spell_shield") else None)
     # The old installer omits a physical source row only when the exact item
@@ -248,4 +278,5 @@ def build_original_configuration(catalog: dict, world: dict, template_id: str, *
     plan["registrations"].sort(key=lambda row: row["id"])
     plan["target_registrations"].sort(key=lambda row: row["id"])
     plan["targets"].sort(key=lambda row: row["id"])
-    return {"profile": profile, "plan": plan}
+    return {"profile": profile, "plan": plan,
+            "left_out": [left_out(world["game_root"], change) for change in sorted(unprepared)]}

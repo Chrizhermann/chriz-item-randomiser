@@ -11,7 +11,7 @@ const ui = Object.fromEntries([
   "presetDialog", "presetForm", "presetSelect", "presetItems", "presetTargets", "presetScrolls",
   "presetKangaxx", "presetFlailHeads", "presetTotscTome", "presetMoreSpellShield",
   "presetCursedDisguise", "presetLossMode", "presetLossPercent", "presetUnrandomizedPercent",
-  "presetError", "cancelPreset", "tierDialog", "tierForm", "tierTitle", "tierPrompt",
+  "presetNote", "presetError", "cancelPreset", "tierDialog", "tierForm", "tierTitle", "tierPrompt",
   "tierSelect", "cancelTier"
 ].map((id) => [id, $(id)]));
 
@@ -815,6 +815,11 @@ ui.presetButton.addEventListener("click", () => {
     ui.presetLossPercent.value = String(preset.options.loss_percent);
     ui.presetLossPercent.disabled = preset.options.loss_mode !== "some";
     ui.presetUnrandomizedPercent.value = String(preset.options.unrandomized_percent);
+    // Options whose game change component 1500 could not make at install.
+    const unavailable = preset.unavailable || {};
+    ui.presetFlailHeads.disabled = "flail_heads" in unavailable;
+    ui.presetNote.textContent = Object.values(unavailable).map((reason) => reason + ".").join(" ");
+    ui.presetNote.hidden = !ui.presetNote.textContent;
     ui.presetError.hidden = true;
     ui.presetDialog.showModal();
     ui.presetSelect.focus();
@@ -863,7 +868,9 @@ ui.presetForm.addEventListener("submit", (event) => {
         id: ui.presetSelect.value, items: ui.presetItems.value,
         targets: ui.presetTargets.value, options
       });
-      acceptState(state, "Preset draft created. Check configuration for current runtime support.");
+      const leftOut = (state.left_out || []).map((reason) => " " + reason + ".").join("");
+      acceptState(state, "Preset draft created. Check configuration for current runtime support." +
+        (leftOut ? " Rewards that stay as installed:" + leftOut : ""));
       ui.presetDialog.close();
     } catch (error) {
       ui.presetError.textContent = error instanceof Error ? error.message : String(error);

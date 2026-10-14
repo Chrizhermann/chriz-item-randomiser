@@ -11,6 +11,7 @@ from collections import Counter
 from copy import deepcopy
 from pathlib import Path
 
+from .activation import EXPORT_FILES, EXPORT_FILES_SCHEMA
 from .campaigns import read_campaign, _render_lua, _store_path, _write_immutable
 from .creature_inventory import rewrite_inventory
 from .store_inventory import rewrite_inventory as rewrite_store
@@ -19,13 +20,10 @@ from .profiles import (DEFAULT_SHOP_PRICING, HEX256, MAX_ITEM_PRICE, ProfileErro
                        validate_catalog)
 from .resources import GameResources, RESOURCE_TYPES, _Tlk
 from .sources import validate_world, DANGLING_INVENTORY, INVALID_INVENTORY, UNRESOLVED_STORAGE
-from .scripted_sources import (ADAPTER_ID, ITEM, PATCHED_SHA256, SUPPORTED_HASHES,
-                               PAYLOAD, RESOURCE, SELECTOR, SOURCE_ID,
-                               campaign_record, patch_blpool)
-from .quest_rewards import (QUESTS, ORIGINAL_HASHES as QUEST_ORIGINAL_HASHES,
-                            PATCHED_HASHES as QUEST_PATCHED_HASHES,
-                            quest_spec, patch_quest, is_compatible_patch)
-from .unshey_reward import prepare_unshey_resources, original_unshey, patch_unshey_journal
+from .scripted_sources import (ADAPTER_ID, ITEM, PAYLOAD, RESOURCE, SELECTOR, SOURCE_ID,
+                               campaign_record)
+from .quest_rewards import QUESTS, quest_spec
+from .prepared import QUEST_CHANGES, applied, require_installed
 from .quest_options import (prepare_quest_options, patch_kangaxx_journal,
                             original_dialogue, original_crypt)
 from .spell_rewards import (SPELL, PAYLOAD as KEY_PAYLOAD, patch_key_spell,
@@ -86,11 +84,11 @@ def _compile(manifest: dict, world: dict, index: dict, items: dict) -> tuple[dic
     def use(resource: str) -> None:
         required.add(resource)
         kind, name = resource.split(":", 1)
-        if resource in ("itm:flbhcryp", "itm:flrbelt1") and resource not in index["resources"]:
-            digest = hashlib.sha256((Path(__file__).resolve().parents[2] / ("copy/" + name + ".itm")).read_bytes()).hexdigest()
-        else:
-            _require(resource in index["resources"], f"Required reward resource is absent: {resource}")
-            digest = index["resources"][resource]["sha256"]
+        # Component 1500 installs the mod's stand-in items with its other changes.
+        _require(resource in index["resources"] or resource not in ("itm:flbhcryp", "itm:flrbelt1"),
+                 f"Component 1500 did not install {resource}; reinstall it, then rescan")
+        _require(resource in index["resources"], f"Required reward resource is absent: {resource}")
+        digest = index["resources"][resource]["sha256"]
         native["resource_hashes"][name.upper() + "." + kind.upper()] = digest
         return digest
 
@@ -136,12 +134,13 @@ def _compile(manifest: dict, world: dict, index: dict, items: dict) -> tuple[dic
                      (identity in MODE2_SOURCES and source["resource"] in MODE2_RESOURCES),
                      f"Authored source changed since the scan: {identity}")
         elif source["kind"] == "scripted":
+            _require(applied(world["game_root"], "quest_pool"),
+                     f"Component 1500 did not prepare BLPOOL.BCS; reinstall it, then rescan: {identity}")
             _require(identity == SOURCE_ID and selected["quantity"] == 1 and
                      "replacement" not in selected and source == campaign_record({
                          "id": SOURCE_ID, "item": ITEM, "resource": RESOURCE,
                          "resource_sha256": selected["resource_sha256"], "adapter_id": ADAPTER_ID,
                          "selector": SELECTOR, "copies": 1, "optional": False}) and
-                     selected["resource_sha256"] in SUPPORTED_HASHES and
                      index["resources"].get(RESOURCE, {}).get("sha256") == selected["resource_sha256"],
                      f"Scripted source differs from the reviewed scan: {identity}")
         else:
@@ -220,15 +219,13 @@ def _compile(manifest: dict, world: dict, index: dict, items: dict) -> tuple[dic
         if source["kind"] == "authored-source":
             spec = quest_spec(identity)
             _require(source["resource"] == spec["resource"] and source["item"] == spec["item"] and
-                     selected["resource_sha256"] in (QUEST_ORIGINAL_HASHES[spec["resource"][4:]],
-                                                       QUEST_PATCHED_HASHES[spec["resource"][4:]]),
-                     f"Authored quest source differs from reviewed script: {identity}")
+                     applied(world["game_root"], QUEST_CHANGES[spec["resource"][4:]]),
+                     f"Component 1500 did not prepare this quest reward; reinstall it, then rescan: {identity}")
             native["sources"][identity] = {
                 "kind": "guarded-script", "adapter_id": "original-quest-v1",
                 **{key: spec[key] for key in ("quest", "resource", "selected_global", "consumed_global")},
                 "payload": deepcopy(record), "identity": _digest({"source": selected})}
             use(source["resource"]); use("itm:" + source["item"])
-            native["resource_hashes"][spec["resource"][4:].upper() + ".BCS"] = QUEST_PATCHED_HASHES[spec["resource"][4:]]
             continue
         if source["kind"] == "virtual":
             native["sources"][identity] = {"kind": "virtual", "payload": deepcopy(record),
@@ -242,7 +239,6 @@ def _compile(manifest: dict, world: dict, index: dict, items: dict) -> tuple[dic
                 "payload": deepcopy(PAYLOAD),
                 "identity": _digest({"source": selected})}
             use(RESOURCE); use("itm:" + source["item"])
-            native["resource_hashes"]["BLPOOL.BCS"] = PATCHED_SHA256
             continue
         if source["kind"] == "store":
             stock_option = shield is not None and identity == shield["source_id"]
@@ -454,11 +450,12 @@ def _compile(manifest: dict, world: dict, index: dict, items: dict) -> tuple[dic
                     continue
                 name = selector["target"].removesuffix(".bcs")
                 _require(name in QUESTS, f"Unreviewed original quest recipient: {identity}")
+                _require(applied(world["game_root"], QUEST_CHANGES[name]),
+                         f"Component 1500 did not prepare this quest reward; reinstall it, then rescan: {identity}")
                 use("bcs:" + name)
                 native["targets"][identity] = {"kind": "quest", "area": _area(target["resource"]),
                     "resource": "bcs:" + name, "event_global": QUESTS[name]["event_global"],
                     "identity": _digest({"target": selected})}
-                native["resource_hashes"][name.upper() + ".BCS"] = QUEST_PATCHED_HASHES[name]
                 continue
             physical = [index["targets"][key] for key in selector["target_ids"] if key in index["targets"]]
             _require(len(physical) == 1, f"Original recipient needs one physical binding: {identity}")
@@ -557,28 +554,14 @@ def export_native(store: Path, catalog: dict, world: dict, output: Path,
     with GameResources(Path(catalog["game_root"]), {k: RESOURCE_TYPES[k] for k in ("itm", "are", "cre", "sto", "bcs", "dlg", "spl")}) as reader:
         for resource in sorted(required):
             kind, name = resource.split(":", 1)
-            if resource in ("itm:flbhcryp", "itm:flrbelt1") and resource not in index["resources"]:
-                data = (Path(__file__).resolve().parents[2] / ("copy/" + name + ".itm")).read_bytes()
-                resource_bytes[resource] = data
-                pending["resource-overrides/" + name.upper() + ".ITM"] = data
-                continue
             data = reader.read(kind, name)
             actual_hash = hashlib.sha256(data).hexdigest()
             expected_hash = index["resources"][resource]["sha256"]
-            # Install the static quest branch once; later configuration exports
-            # may still use the original scan without reinstalling the mod.
-            own_script_patch = resource == RESOURCE and expected_hash in SUPPORTED_HASHES and actual_hash == PATCHED_SHA256
-            own_quest_patch = (kind == "bcs" and name in QUESTS and
-                               expected_hash in (QUEST_ORIGINAL_HASHES[name], QUEST_PATCHED_HASHES[name],
-                                                 PATCHED_SHA256 if name == "blpool" else "") and
-                               actual_hash == QUEST_PATCHED_HASHES[name])
             own_mode2_patch = (resource in MODE2_RESOURCES and
                                expected_hash == MODE2_ORIGINAL_HASHES[name] and actual_hash == MODE2_PATCHED_HASHES.get(name))
             own_patch = False
             if actual_hash != expected_hash:
-                recover = {"dlg:unshey": original_unshey,
-                           "dlg:hlskull": lambda value: original_dialogue("hlskull.dlg", value),
-                           "dlg:kpglai01": lambda value: original_dialogue("kpglai01.dlg", value),
+                recover = {"dlg:hlskull": lambda value: original_dialogue("hlskull.dlg", value),
                            "bcs:crypt526": lambda value: original_crypt("crypt526.bcs", value),
                            "bcs:crypt202": lambda value: original_crypt("crypt202.bcs", value)}.get(resource)
                 if recover:
@@ -590,19 +573,26 @@ def export_native(store: Path, catalog: dict, world: dict, output: Path,
                     own_patch = original is not None and hashlib.sha256(original).hexdigest() == expected_hash
                 if resource in CONTAINER_RESOURCES:
                     own_patch = hashlib.sha256(original_container_resource(resource, data)).hexdigest() == expected_hash
-            _require(actual_hash == expected_hash or own_script_patch or own_quest_patch or own_mode2_patch or own_patch,
+            _require(actual_hash == expected_hash or own_mode2_patch or own_patch,
                      f"Installed resource changed; rescan before export: {resource}")
+            # Component 1500 changed these files when it was installed; the
+            # export only checks that they still carry its changes.
+            if kind == "bcs" and name in QUEST_CHANGES:
+                require_installed(catalog["game_root"], QUEST_CHANGES[name], data)
+            elif resource == "dlg:unshey":
+                require_installed(catalog["game_root"], "unshey", data)
+            elif resource == "dlg:kpglai01":
+                require_installed(catalog["game_root"], "flail_heads", data)
             resource_bytes[resource] = data
             if resource in pristine:
                 pending[name.upper() + ".pristine.are"] = data
     kangaxx = any(m.get("original_options", {}).get("kangaxx") for m in manifests.values())
-    flail = any(m.get("original_options", {}).get("flail_heads") for m in manifests.values())
     cursed = any("cursed_disguises" in m for m in manifests.values())
     reward_texts = {}
     container_texts = {}
     text_rewards = required & MODE2_TEXT_REFS.keys()
     container_text_resources = required & CONTAINER_TEXT_RESOURCES
-    if "dlg:unshey" in required or kangaxx or flail or cursed or text_rewards or container_text_resources:
+    if kangaxx or cursed or text_rewards or container_text_resources:
         root = Path(catalog["game_root"])
         language = catalog["language"]
         tlk_relative = (Path("dialog.tlk") if language == "default"
@@ -611,18 +601,9 @@ def export_native(store: Path, catalog: dict, world: dict, output: Path,
         # The EE journal table is installed by EET as an override; reading this
         # known filename avoids indexing unrelated long-named Lua helper files.
         journal = (root / "override/BGEE.LUA").read_bytes()
-        patches = {}
-        if "dlg:unshey" in required:
-            dialogue, belt, tlk = prepare_unshey_resources(
-                resource_bytes["dlg:unshey"],
-                (Path(__file__).resolve().parents[2] / "copy/flrbelt1.itm").read_bytes(),
-                tlk, language=language)
-            patches.update({"unshey.dlg": dialogue, "flrbelt1.itm": belt})
-            journal = patch_unshey_journal(journal, dialogue)
-        quest_patches, tlk = prepare_quest_options(
+        patches, tlk = prepare_quest_options(
             {resource[4:] + "." + resource[:3]: data for resource, data in resource_bytes.items()},
-            tlk, kangaxx=kangaxx, flail_heads=flail, language=language)
-        patches.update(quest_patches)
+            tlk, kangaxx=kangaxx, language=language)
         if kangaxx:
             journal = patch_kangaxx_journal(journal, patches["hlskull.dlg"])
         if text_rewards:
@@ -646,13 +627,6 @@ def export_native(store: Path, catalog: dict, world: dict, output: Path,
             for name, data in patches.items():
                 if name.upper() in native["resource_hashes"]:
                     native["resource_hashes"][name.upper()] = hashlib.sha256(data).hexdigest()
-    def stage_script(name: str, patched: bytes) -> None:
-        relative = "script-overrides/" + name.upper() + ".BCS"
-        prior = pending.get(relative)
-        if prior is None or prior == patched or is_compatible_patch(prior, patched):
-            pending[relative] = patched
-        elif not is_compatible_patch(patched, prior):
-            raise ProfileError(f"Script override revisions disagree: {name}")
 
     # Each common static Mode 2 patch reads campaign flags. Prepare it once,
     # retaining the same bytes for every revision that shares the resource.
@@ -694,12 +668,11 @@ def export_native(store: Path, catalog: dict, world: dict, output: Path,
                 _require(mode2_resource in mode2_patches, "Mode 2 recipient patch is missing")
             if endpoint["kind"] == "quest":
                 resource = endpoint["resource"]
+                # An original quest's script was prepared by component 1500.
                 if mode2_resource:
                     pass  # The original grant has just been staged above.
                 elif resource == SPELL["resource"]:
                     pending["resource-overrides/SPIN621.SPL"] = patch_key_spell(resource_bytes[resource])
-                else:
-                    stage_script(resource[4:], patch_quest(resource, resource_bytes[resource]))
             if endpoint["kind"] == "group":
                 from .group_recipients import preferred_members
                 creatures = {member["resref"]: resource_bytes["cre:" + member["resref"]]
@@ -737,18 +710,9 @@ def export_native(store: Path, catalog: dict, world: dict, output: Path,
                     pending[base + ".patched.spl"] = patched
                     pending["resource-overrides/SPIN621.SPL"] = patched
                     continue
-                elif compiled_source["adapter_id"] == "original-quest-v1":
-                    patched = patch_quest(source["resource"], raw)
-                elif hashlib.sha256(raw).hexdigest() == QUEST_PATCHED_HASHES["blpool"]:
-                    # Recover the immutable legacy form for old saved revisions.
-                    from .quest_rewards import _global_action, _newline
-                    patched = raw.replace(_global_action("FLPR_EPOOL", _newline(raw)), b"")
-                    _require(hashlib.sha256(patched).hexdigest() == PATCHED_SHA256,
-                             "BLPOOL compatible extension changed")
-                else:
-                    patched = patch_blpool(raw)
-                pending[base + ".patched.bcs"] = patched
-                stage_script(source["resource"][4:], patched)
+                # Component 1500's installed script: the runtime checks that the
+                # game still has exactly these bytes.
+                pending[base + ".patched.bcs"] = raw
                 continue
             if compiled_source["kind"] == "guarded-store":
                 original = resource_bytes[source["resource"]]
@@ -788,5 +752,7 @@ def export_native(store: Path, catalog: dict, world: dict, output: Path,
     guarded_revisions = [key for key in revisions if "source_gate" in compiled[key] or "spell_shield" in compiled[key]]
     _store_path(output, Path("source-gate.lua")).write_bytes(_render_lua(guarded_revisions))
     _store_path(output, Path("next.lua")).write_bytes(_render_lua(selected["revision"]))
+    _store_path(output, Path(EXPORT_FILES)).write_bytes(canonical_bytes(
+        {"schema": EXPORT_FILES_SCHEMA, "files": sorted({*pending, "source-gate.lua", "next.lua"})}))
     return {"revision": selected["revision"], "revisions": revisions,
             "config_path": str(output), "state": "experimental-native-config"}

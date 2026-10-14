@@ -42,6 +42,15 @@
 @101513=~BALDUR.GAM is missing or is not a GAMEV2.0 new-game template. Installation stopped.~
 @101514=~BALDUR.GAM already defines the global FLPR_FRESH more than once or with a value other than 1. Installation stopped.~
 @101515=~UI.MENU defines startEngine:OnNewGameButtonClick or createCharScreen:AcceptCharacter itself; this component can only hook calls to them. Installation stopped.~
+@101520=~Note: the new randomiser cannot prepare %flir_cp_name%, because %flir_cp_reason%. It stays as installed, and the configurator will not offer what depends on it.~
+@101521=~the game has no such file~
+@101522=~it already contains changes from an earlier version of this randomiser~
+@101523=~it no longer gives the reward~
+@101524=~it gives the reward more than once~
+@101525=~it gives the reward in an unexpected way~
+@101526=~it no longer takes the quest item~
+@101527=~its journal entries have an unexpected form~
+@101528=~the conversation has an unexpected form~
 
 @105000="Components for unequipping items from creature groups"
 @105001="This component is only available for Mode 2"

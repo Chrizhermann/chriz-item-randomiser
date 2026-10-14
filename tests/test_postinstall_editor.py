@@ -17,6 +17,7 @@ from flir_config.profiles import edit_profile, new_profile
 from flir_config.profiles import ProfileError
 from flir_config.sources import new_binding_plan
 from tests import test_postinstall_native_export as fixtures
+from tests.test_postinstall_blpool_script import write_registry
 from tests.test_postinstall_world_formats import make_cre, make_sto, item_record
 
 
@@ -65,7 +66,19 @@ class EditorTests(unittest.TestCase):
         recommended = editor.get("/api/recommended", {})
         self.assertEqual(recommended["id"], "eet-mode1")
         self.assertIn(recommended["id"], [row["id"] for row in descriptors])
+        # Without component 1500's record, Glaicus's conversation is not prepared.
+        self.assertFalse(recommended["options"]["flail_heads"])
+        self.assertIn("KPGLAI01.DLG", recommended["unavailable"]["flail_heads"])
+        self.assertTrue(recommended["options"]["totsc_tome"])
+        write_registry(self.fx.game)
+        recommended = editor.get("/api/recommended", {})
         self.assertTrue(recommended["options"]["flail_heads"] and recommended["options"]["totsc_tome"])
+        self.assertEqual(recommended["unavailable"], {})
+        write_registry(self.fx.game, flail_heads="dialogue-unrecognised")
+        recommended = editor.get("/api/recommended", {})
+        self.assertFalse(recommended["options"]["flail_heads"])
+        self.assertEqual(recommended["unavailable"]["flail_heads"],
+                         "KPGLAI01.DLG was left as installed (the conversation has an unexpected form)")
         original = deepcopy(editor.draft)
         calls = []
         module = ModuleType("flir_config.original_configuration")
@@ -82,6 +95,7 @@ class EditorTests(unittest.TestCase):
                 "id": target_id, "capacity": 1,
                 "authored": {"target": "container1", "area_resource": "are:bg5500"}}]
             result["plan"]["targets"] = [{"id": target_id, "capacity": 1, "optional": False}]
+            result["left_out"] = ["BLPOOL.BCS was left as installed (it gives the reward more than once)"]
             return result
 
         module.build_original_configuration = build
@@ -92,6 +106,9 @@ class EditorTests(unittest.TestCase):
             self.assertEqual(calls[0][2:], ("bg1-mode1", "mode1+mode2", "mode1",
                                            {"scrolls": True}))
             self.assertEqual(state["profile"]["name"], "BG1 original")
+            self.assertEqual(state["left_out"],
+                             ["BLPOOL.BCS was left as installed (it gives the reward more than once)"])
+            self.assertNotIn("left_out", editor.draft)
             self.assertNotEqual(state["profile"]["id"], original["profile"]["id"])
             self.assertEqual(editor.post("/api/save", editor.draft)["plan"]["randomization"],
                              {"tier_rows": ["original-choice"]})

@@ -13,7 +13,7 @@ from flir_config import quest_options as options
 from flir_config.profiles import ProfileError
 from flir_config.resources import _Tlk
 from test_postinstall_resources import make_tlk
-from test_unshey_reward import parse_dialogue
+from test_game_text import parse_dialogue
 
 
 def dialogue_fixture(name):
@@ -65,7 +65,7 @@ def outgoing(dialogue, state):
 
 class OriginalQuestOptionTests(unittest.TestCase):
     def setUp(self):
-        self.resources = {name: dialogue_fixture(name) for name in ("hlskull.dlg", "kpglai01.dlg")}
+        self.resources = {"hlskull.dlg": dialogue_fixture("hlskull.dlg")}
         self.resources.update({"crypt526.bcs": crypt_fixture("AR0526"),
                                "crypt202.bcs": crypt_fixture("AR0202")})
         patched = patch.dict(options.ORIGINAL_HASHES,
@@ -104,34 +104,6 @@ class OriginalQuestOptionTests(unittest.TestCase):
         self.assertEqual(final[2], self.refs[20])
         self.assertEqual(new["actions"][final[4]], b'SetGlobal("KangaxxQuest","GLOBAL",1)\r\n')
 
-    def test_flail_all_eight_head_combinations_keep_the_authored_give_and_exit_routes(self):
-        new = parse_dialogue(options.patch_flail(self.resources["kpglai01.dlg"], {i: self.refs[i] for i in range(9)}))
-        self.assertEqual(len(new["states"]), 20)
-        cases = outgoing(new, 10)
-        self.assertEqual(len(cases), 8)
-        seen = set()
-        for transition in cases:
-            condition = new["transition_triggers"][transition[3]].decode()
-            lines = condition.splitlines()
-            self.assertEqual(len(lines), 3)
-            for head, line in zip("abc", lines):
-                self.assertIn(line, (f'HasItem("blun14{head}",Myself)',
-                                     f'!HasItem("blun14{head}",Myself)'))
-            bits = tuple(not line.startswith("!") for line in lines)
-            seen.add(bits)
-            self.assertEqual(transition[6], (11, 14, 15, 18)[sum(bits)])
-        self.assertEqual(len(seen), 8)
-        for state, next_state in ((14, 9), (15, 16), (18, 19)):
-            transition = outgoing(new, state)[0]
-            self.assertEqual(transition[6], next_state)
-            self.assertEqual(new["actions"][transition[4]].decode().splitlines(),
-                             [f'GiveItem("blun14{head}",LastTalkedToBy)' for head in "abc"])
-        self.assertEqual(outgoing(new, 13)[0][6], 7)
-        self.assertEqual(outgoing(new, 17)[0][6], 7)
-        self.assertEqual(outgoing(new, 19)[0][6], 7)
-        excluded, selected = outgoing(new, 5)
-        self.assertEqual(excluded[6], 6); self.assertEqual(selected[6], 10)
-
     def test_crypt_enforces_one_ward_and_quest_only_for_selected_campaign(self):
         for name in ("crypt526.bcs", "crypt202.bcs"):
             original = self.resources[name]
@@ -153,7 +125,7 @@ class OriginalQuestOptionTests(unittest.TestCase):
             self.assertEqual(options.patch_crypt(name, data, {1500: 100, 1501: 101}), data)
 
     def test_complete_prepare_uses_authored_last_ward_text_and_is_idempotent(self):
-        output, tlk = options.prepare_quest_options(self.resources, make_tlk(["old"]), kangaxx=True, flail_heads=True)
+        output, tlk = options.prepare_quest_options(self.resources, make_tlk(["old"]), kangaxx=True)
         self.assertEqual(set(output), set(self.resources) | {"flrward1.itm", "flrward1.bam"})
         parsed = _Tlk(tlk)
         ward = output["flrward1.itm"]
@@ -161,7 +133,7 @@ class OriginalQuestOptionTests(unittest.TestCase):
         self.assertEqual(parsed.text(struct.unpack_from("<I", ward, 8)[0], set()), "Ward Stone")
         description = parsed.text(struct.unpack_from("<I", ward, 0x54)[0], set())
         self.assertTrue(description.startswith("The cardinal points"))
-        self.assertEqual(options.prepare_quest_options(output, tlk, kangaxx=True, flail_heads=True), (output, tlk))
+        self.assertEqual(options.prepare_quest_options(output, tlk, kangaxx=True), (output, tlk))
 
     def test_no_selected_options_changes_nothing(self):
         original = make_tlk(["old"])

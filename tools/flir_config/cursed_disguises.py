@@ -13,7 +13,7 @@ import re
 from .original_options import cursed_disguise_choices, patch_cursed_disguise
 from .profiles import HEX256, ProfileError
 from .quest_options import _texts
-from .unshey_reward import _append_texts
+from .game_text import _append_texts
 
 ALGORITHM = "park-miller-cursed-v1"
 SEED_RANGE = 2147483646

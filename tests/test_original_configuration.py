@@ -11,8 +11,10 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
 from flir_config.original_configuration import build_original_configuration  # noqa: E402
+from flir_config.profiles import ProfileError  # noqa: E402
 from flir_config.resources import scan_game  # noqa: E402
 from flir_config.sources import scan_world  # noqa: E402
+from test_postinstall_blpool_script import write_registry  # noqa: E402
 from test_postinstall_resources import make_game, make_itm, snapshot  # noqa: E402
 from test_postinstall_world_formats import item_record, make_are, make_cre  # noqa: E402
 
@@ -120,6 +122,50 @@ class OriginalConfigurationTests(unittest.TestCase):
         with patch("flir_config.original_configuration.resolve_template", return_value=draft):
             disabled = build_original_configuration(self.catalog, self.world, "eet-mode1")["plan"]
         self.assertNotIn("reward_variants", disabled["randomization"]["sources"][self.physical])
+
+    def test_rewards_component_1500_did_not_prepare_stay_as_installed(self):
+        draft = self._draft()
+        draft["items"].append(source_row("pool", adapter="scripted", resource="bcs:blpool",
+                                         item="blun12", ident="x"))
+        draft["items"].append(source_row("unshey", adapter="unshey", resource="cre:ogreunsh",
+                                         item="belt04", ident="x"))
+        draft["targets"].append({**target_row("altar", "x", "24"), "target": "troalt.bcs"})
+        before = snapshot(self.root)
+        for statuses, expected in (
+                (None, ["TROALT.BCS was not prepared: component 1500 of this version is not installed",
+                        "BLPOOL.BCS was not prepared: component 1500 of this version is not installed",
+                        "UNSHEY.DLG was not prepared: component 1500 of this version is not installed"]),
+                ({"quest_pool": "grant-missing", "quest_altar": "absent", "unshey": "item-missing"},
+                 ["TROALT.BCS was left as installed (the game has no such file)",
+                  "BLPOOL.BCS was left as installed (it no longer gives the reward)",
+                  "UNSHEY.DLG was left as installed (it no longer takes the quest item)"])):
+            if statuses:
+                write_registry(self.root, **statuses)
+                before = snapshot(self.root)
+            with self.subTest(statuses=statuses), \
+                    patch("flir_config.original_configuration.resolve_template", return_value=draft):
+                result = build_original_configuration(self.catalog, self.world, "eet-mode1")
+            self.assertEqual(result["left_out"], expected)
+            plan = result["plan"]
+            self.assertEqual(result["profile"]["items"], ["synth001"])
+            self.assertEqual(len(plan["target_registrations"]), 2)
+            self.assertFalse(any(row["id"].endswith(("pool", "unshey", "altar"))
+                                 for row in plan["registrations"] + plan["target_registrations"]))
+            self.assertEqual(snapshot(self.root), before)
+
+    def test_flail_heads_option_needs_the_prepared_conversation(self):
+        draft = self._draft()
+        draft["options"]["flail_heads"] = True
+        for statuses in (None, {"flail_heads": "dialogue-unrecognised"}):
+            if statuses:
+                write_registry(self.root, **statuses)
+            with self.subTest(statuses=statuses), \
+                    patch("flir_config.original_configuration.resolve_template", return_value=draft), \
+                    self.assertRaisesRegex(ProfileError, "flail heads option needs.*KPGLAI01.DLG"):
+                build_original_configuration(self.catalog, self.world, "eet-mode1")
+        write_registry(self.root)
+        with patch("flir_config.original_configuration.resolve_template", return_value=draft):
+            self.assertEqual(build_original_configuration(self.catalog, self.world, "eet-mode1")["left_out"], [])
 
     def test_zero_match_source_omitted_while_target_rows_remain(self):
         with patch("flir_config.original_configuration.resolve_template",

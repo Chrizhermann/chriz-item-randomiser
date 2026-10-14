@@ -15,7 +15,8 @@ from .profiles import (PROFILE_ID, ProfileError, ensure_output_outside_game,
                        new_profile, read_json, search_items, validate_catalog,
                        validate_profile, write_json)
 from .sources import new_binding_plan, validate_world
-from .scripted_sources import blpool_registration, SUPPORTED_HASHES
+from .prepared import applied, left_out
+from .scripted_sources import blpool_registration
 from .templates import list_templates, recommended_preset
 
 
@@ -150,7 +151,13 @@ class Editor:
             return list_templates()
         if route == "/api/recommended":
             # Component 1500 installs only on EET so far; other games follow with B5.
-            return recommended_preset("eet")
+            preset = recommended_preset("eet")
+            # An option whose change component 1500 could not make is not offered.
+            preset["unavailable"] = {}
+            if not applied(self.world["game_root"], "flail_heads"):
+                preset["options"]["flail_heads"] = False
+                preset["unavailable"]["flail_heads"] = left_out(self.world["game_root"], "flail_heads")
+            return preset
         offset = int(params.get("offset", "0"))
         query = params.get("q", "").strip()
         if route == "/api/items":
@@ -162,7 +169,8 @@ class Editor:
             if item not in self.items:
                 raise ProfileError("Unknown item")
             rows = list(self.sources[item])
-            if item == "blun12" and self.index["resources"].get("bcs:blpool", {}).get("sha256") in SUPPORTED_HASHES:
+            if (item == "blun12" and "bcs:blpool" in self.index["resources"] and
+                    applied(self.world["game_root"], "quest_pool")):
                 registration = blpool_registration(self.world)
                 rows.insert(0, {"id": registration["id"], "kind": "scripted", "concerns": [],
                                "registration": registration})
@@ -178,7 +186,7 @@ class Editor:
                     **s, "quantity": 1, "kind_label": "Quest reward",
                     "label": "Blood pool reward (BLPOOL)",
                     "note": "Moves the Mace of Disruption; the pool's other actions remain. "
-                            "The installed script must match the supported reward before export."}
+                            "Component 1500 prepared the pool's script when it was installed."}
                 for s in page["records"]]
             return page
         if route == "/api/targets":
@@ -216,7 +224,7 @@ class Editor:
             previous = self.draft
             self.draft = checked
             try:
-                return self.state()
+                return {**self.state(), "left_out": generated["left_out"]}
             except Exception:
                 self.draft = previous
                 raise

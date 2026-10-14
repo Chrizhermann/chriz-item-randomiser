@@ -173,6 +173,11 @@ DEFINE_ACTION_MACRO flir_campaign_runtime_install BEGIN
 
   LAM flir_campaign_runtime_mark_gam
 
+  // Quest and dialogue changes for the configurator's options; they never
+  // stop the installation.
+  INCLUDE ~%MOD_FOLDER%/lib/campaign_patches.tpa~
+  LAM flir_campaign_patches_install
+
   COPY ~...blank~ ~override/flrandomiser3.mrk~
     INSERT_BYTES 0 1
     WRITE_BYTE 0 1

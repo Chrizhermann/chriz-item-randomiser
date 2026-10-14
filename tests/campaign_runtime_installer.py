@@ -39,11 +39,14 @@ from ie_fake_game import (  # noqa: E402
     write_bytes,
 )
 import build_release  # noqa: E402
+import campaign_patch_fixtures as fixtures  # noqa: E402
 from build_mode1_fixture import mark_initial_gam  # noqa: E402
 from flir_config.activation import validate_runtime  # noqa: E402
+from flir_config.prepared import REASONS, read_prepared  # noqa: E402
 from flir_config.profiles import ProfileError  # noqa: E402
 
-RESOURCE_TYPES = {"ARE": 1010, "GAM": 1013, "MENU": 1032}
+RESOURCE_TYPES = {"ITM": 1005, "BCS": 1007, "IDS": 1008, "ARE": 1010, "DLG": 1011, "GAM": 1013,
+                  "MENU": 1032, "LUA": 1033}
 RUNTIME_MODULES = (
     "M_FLPRUI.lua", "M_FLPR.lua", "FLPRCore.lua", "FLPRCur.lua", "FLPRGat.lua",
     "FLPRGlob.lua", "FLPRHost.lua", "FLPRNat.lua", "FLPRScript.lua",
@@ -207,12 +210,14 @@ def build_game(root: Path, mod: Path, weidu: Path, *, menu: bytes | None = MENU,
                baldur: bytes | None = DEFAULT_GAM, menu_in_override: bool = False,
                gam_in_override: bool = False, ini: bytes | None = LUAJIT_INI,
                override: Mapping[str, bytes | None] = {}, files: Mapping[str, bytes] = {},
-               eet: bool = True) -> Game:
+               eet: bool = True, biff: Sequence[tuple[str, str, bytes]] = (),
+               tlk: bytes | None = None) -> Game:
     """Synthetic EET game with EEex, LuaJIT and unrelated mod data.
 
-    A menu, template, INI or override file given as None is absent.
+    A menu, template, INI or override file given as None is absent. <biff>
+    adds archived resources, <tlk> replaces the one-entry game text.
     """
-    resources = [("OH6000", "ARE", b"synthetic EET marker")]
+    resources = [("OH6000", "ARE", b"synthetic EET marker"), *biff]
     files = dict(files)
     contents = {"EET.flag": b"1" if eet else None, "M___EEex.lua": b"EEex_Active = true\n",
                 "UNRELATED.ITM": b"ITM V1  unrelated mod item", "M_OTHER.lua": b"-- another mod\n"}
@@ -230,8 +235,8 @@ def build_game(root: Path, mod: Path, weidu: Path, *, menu: bytes | None = MENU,
     bif = build_biff(resources)
     write_bytes(root / "data" / "runtime.bif", bif)
     write_bytes(root / "chitin.key", build_key(resources, len(bif)))
-    write_bytes(root / "dialog.tlk", build_tlk())
-    write_bytes(root / "lang" / "en_us" / "dialog.tlk", build_tlk())
+    write_bytes(root / "dialog.tlk", build_tlk() if tlk is None else tlk)
+    write_bytes(root / "lang" / "en_us" / "dialog.tlk", build_tlk() if tlk is None else tlk)
     (root / "override").mkdir(parents=True, exist_ok=True)
     for name, data in contents.items():
         if data is not None:
@@ -309,13 +314,17 @@ def in_game_messages(mod: Path) -> list[str]:
 
 
 def installed_messages(before: Mapping[str, bytes], after: Mapping[str, bytes],
-                       messages: Sequence[str]) -> dict[str, bytes] | None:
-    """The changed game text and message file, if each message key names its own new string."""
+                       messages: Sequence[str], texts: int = 0) -> dict[str, bytes] | None:
+    """The changed game text and message file, if each message key names its own new string.
+
+    <texts> more strings follow the messages: the quest and dialogue changes'.
+    """
     changed = [key for key in after if key.endswith("dialog.tlk") and after[key] != before.get(key)]
     first = set()
     for key in changed:
         old, new = tlk_strings(before[key]), tlk_strings(after[key])
-        if new[:len(old)] != old or new[len(old):] != list(messages):
+        if (new[:len(old)] != old or new[len(old):len(old) + len(messages)] != list(messages)
+                or len(new) != len(old) + len(messages) + texts):
             return None
         first.add(len(old))
     if len(first) != 1 or MESSAGE_FILE not in after:
@@ -328,7 +337,7 @@ def installed_messages(before: Mapping[str, bytes], after: Mapping[str, bytes],
 
 
 def expected_install(game: Game, before: Mapping[str, bytes], after: Mapping[str, bytes], menu: bytes,
-                     baldur: bytes, *, gam_written: bool = True) -> dict[str, bytes]:
+                     baldur: bytes, *, gam_written: bool = True, texts: int = 0) -> dict[str, bytes]:
     """Every installed byte; the game text only where it adds exactly the messages."""
     mod = game.root / "randomiser"
     expected = dict(before)
@@ -336,12 +345,39 @@ def expected_install(game: Game, before: Mapping[str, bytes], after: Mapping[str
         expected["override/" + name.casefold()] = (mod / "prototype" / name).read_bytes()
     for name in GATE_MODULES:
         expected["override/" + name.casefold()] = (mod / "tools" / "probes" / name).read_bytes()
-    expected.update(installed_messages(before, after, in_game_messages(mod)) or {})
+    expected.update(installed_messages(before, after, in_game_messages(mod), texts) or {})
     expected["override/ui.menu"] = patch_menu(menu)
     if gam_written:
         expected["override/baldur.gam"] = mark_initial_gam(baldur)
     expected["override/flrandomiser3.mrk"] = MARKER
+    expected["override/flbhcryp.itm"] = (mod / "copy" / "flbhcryp.itm").read_bytes()
+    # The record's wording is the installer's; its entries are checked separately.
+    if RECORD in after:
+        expected[RECORD] = after[RECORD]
     return expected
+
+
+# Component 1500's record of its game changes, and their states in a game
+# without any of the files they change.
+RECORD = "override/flprpat.lua"
+NOTHING_TO_PREPARE = {"quest_pool": "absent", "quest_altar": "absent", "quest_book": "absent",
+                      "unshey": "absent", "flail_heads": "absent", "totsc_tome": "applied"}
+CHANGE_FILES = {"quest_pool": "BLPOOL.BCS", "quest_altar": "TROALT.BCS", "quest_book": "PPBOOK.BCS",
+                "unshey": "UNSHEY.DLG", "flail_heads": "KPGLAI01.DLG", "totsc_tome": "FLBHCRYP.ITM"}
+
+
+def recorded(game: Game, statuses: Mapping[str, str], journal: int = 0) -> bool:
+    """FLPRPAT.lua, as the configurator reads it, lists exactly these states."""
+    record = read_prepared(game.root)
+    return ({name: entry.get("status") for name, entry in record.items()} == dict(statuses)
+            and {name: entry.get("resource") for name, entry in record.items()} == CHANGE_FILES
+            and record["unshey"].get("item") == "BELT04" and record["unshey"].get("journal") == journal)
+
+
+def noted(result: ProcessResult, statuses: Mapping[str, str]) -> bool:
+    """The installer told the player about every change it left out."""
+    return all(f"cannot prepare {CHANGE_FILES[name]}, because {REASONS[status]}." in result.output
+               for name, status in statuses.items() if status != "applied")
 
 
 class Suite:
@@ -356,22 +392,32 @@ class Suite:
     def check(self, name: str, condition: bool, result: ProcessResult | None = None) -> None:
         self.report.check(name, condition, describe(result) if result is not None and not condition else "")
 
-    def lifecycle(self, name: str, menu: bytes, baldur: bytes, gam_written: bool = True, **options) -> Game:
+    def lifecycle(self, name: str, menu: bytes = MENU, baldur: bytes = DEFAULT_GAM, gam_written: bool = True,
+                  changes: Callable[[str, Game, dict, dict], tuple[dict[str, bytes], int]] | None = None,
+                  **options) -> Game:
         """Install, check every byte, uninstall exactly, then reinstall identically.
 
         Re-installing over the installed component covers a player's Re-install,
         WeiDU's one-run uninstall and install, and a recovery that installs the
-        same list again.
+        same list again. <changes> checks the quest and dialogue changes and
+        returns their files and the number of strings they add; by default the
+        game has none of the files they change.
         """
         game = self.game(menu=menu, baldur=baldur, **options)
         before = game.data()
         result = game.install()
         self.check(f"{name}_Installs", installed(result) and game.active(1500), result)
         after = game.data()
+        if changes is None:
+            self.check(f"{name}_RecordsNothingToPrepare", recorded(game, NOTHING_TO_PREPARE))
+            changed, texts = {}, 0
+        else:
+            changed, texts = changes(name, game, before, after)
         self.check(f"{name}_AddsMessagesToGameText",
-                   installed_messages(before, after, in_game_messages(self.mod)) is not None)
-        expected = expected_install(game, before, after, menu, baldur, gam_written=gam_written)
-        self.check(f"{name}_WritesOnlyRuntimeHooksAndMarker", after == expected)
+                   installed_messages(before, after, in_game_messages(self.mod), texts) is not None)
+        expected = expected_install(game, before, after, menu, baldur, gam_written=gam_written, texts=texts)
+        expected.update(changed)
+        self.check(f"{name}_WritesOnlyExpectedFiles", after == expected)
         self.check(f"{name}_CreatesCampaignDataFolder", (game.root / CAMPAIGN_DATA).is_dir())
         self.check(f"{name}_ConfiguratorAcceptsInstall", accepts(game.root))
         result = game.uninstall()
@@ -406,6 +452,121 @@ class Suite:
         self.check(f"{name}_Refused", kind(result, message), result)
         self.check(f"{name}_LeavesGameUnchanged", game.data() == before and not game.active(1500))
 
+    def problems(self, name: str, problems: Sequence[str]) -> None:
+        self.report.check(name, not problems, "; ".join(problems) if DEBUG else f"{len(problems)} differences")
+
+    def quest_changes(self, compiled: Mapping[str, bytes]) -> None:
+        """Every change made, to original files in the archive and modded ones in override."""
+        mod = self.mod
+
+        def changes(name: str, game: Game, before: dict, after: dict) -> tuple[dict[str, bytes], int]:
+            self.check(f"{name}_RecordsEveryChange",
+                       recorded(game, {change: "applied" for change in CHANGE_FILES}, journal=1))
+            for script in ("blpool", "troalt", "ppbook"):
+                self.check(f"{name}_Splits{script.upper()}",
+                           after.get(f"override/{script}.bcs") == compiled[f"x{script}.bcs"])
+            tlk = after["lang/en_us/dialog.tlk"]
+            texts = fixtures.tra_strings((mod / "languages/english/in-game.tra").read_text(encoding="utf-8"))
+            ee_texts = fixtures.tra_strings((mod / "languages/bgee/english/in-game.tra").read_text(encoding="utf-8"))
+            say, journal = text_ref(tlk, texts[112]), text_ref(tlk, texts[113])
+            unshey = fixtures.expected_unshey(
+                fixtures.read_dialogue(compiled["unshey.dlg"]), item="BELT04", replacement="flrbelt1",
+                old_journal=fixtures.UNSHEY_JOURNAL, journal=journal, say=say)
+            self.problems(f"{name}_ForksUnsheysDialogue", fixtures.dialogue_problems(
+                unshey, fixtures.read_dialogue(after.get("override/unshey.dlg", b"DLG V1.0" + bytes(48)))))
+            belt = bytearray((mod / "copy" / "flrbelt1.itm").read_bytes())
+            name_ref = text_ref(tlk, texts[114])
+            struct.pack_into("<II", belt, 0x8, name_ref, name_ref)
+            struct.pack_into("<I", belt, 0x50, text_ref(tlk, texts[115], ee_texts.get(115)))
+            files = {"override/flrbelt1.itm": bytes(belt),
+                     "override/bgee.lua": fixtures.quest_table(fixtures.UNSHEY_JOURNAL, journal),
+                     **{f"override/{script}.bcs": compiled[f"x{script}.bcs"]
+                        for script in ("blpool", "troalt", "ppbook")}}
+            self.check(f"{name}_AddsUnsheysGirdle", after.get("override/flrbelt1.itm") == files["override/flrbelt1.itm"])
+            self.check(f"{name}_FilesNewJournalEntryUnderItsQuest",
+                       after.get("override/bgee.lua") == files["override/bgee.lua"])
+            original = fixtures.read_dialogue(compiled["kpglai01.dlg"])
+            patched = fixtures.read_dialogue(after.get("override/kpglai01.dlg", b"DLG V1.0" + bytes(48)))
+            problems = fixtures.glaicus_problems(original, patched)
+            heads = fixtures.tra_strings((mod / "languages/english/kpglai01.tra").read_text(encoding="utf-8"))
+            says = [state["say"] for state in patched[len(original):]]
+            if says != [text_ref(tlk, heads[number]) for number in (0, 1, 2, 3, 4, 5, 6, 3, 7, 8)]:
+                problems.append(f"the new states say {says}")
+            self.problems(f"{name}_LeadsGlaicusToFlailHeads", problems)
+            # Both dialogues are checked by structure above.
+            files.update({key: after[key] for key in ("override/unshey.dlg", "override/kpglai01.dlg")
+                          if key in after})
+            return files, 13
+
+        self.lifecycle(
+            "QuestChanges", changes=changes, tlk=fixtures.text_tlk(),
+            biff=[("BLPOOL", "BCS", compiled["blpool.bcs"]), ("UNSHEY", "DLG", compiled["unshey.dlg"]),
+                  ("BGEE", "LUA", fixtures.quest_table(fixtures.UNSHEY_JOURNAL))],
+            override={**fixtures.ids_files(), "TROALT.BCS": compiled["troalt.bcs"],
+                      "PPBOOK.BCS": compiled["ppbook.bcs"], "KPGLAI01.DLG": compiled["kpglai01.dlg"]})
+
+    def left_out(self, name: str, compiled: Mapping[str, bytes], statuses: Mapping[str, str],
+                 *, archived: bool) -> None:
+        """Files the installer cannot change unambiguously stay as installed, with a note."""
+        resources = [(Path(key).stem.upper(), Path(key).suffix[1:].upper(), data)
+                     for key, data in compiled.items()]
+        quests = {f"{stem}.{extension}": data for stem, extension, data in resources}
+        game = self.game(tlk=fixtures.text_tlk(), biff=resources if archived else (),
+                         override={**fixtures.ids_files(), **({} if archived else quests)})
+        before = game.data()
+        result = game.install()
+        self.check(f"{name}_Installs", installed(result) and game.active(1500), result)
+        after = game.data()
+        self.check(f"{name}_RecordsWhatWasLeftOut", recorded(game, statuses))
+        self.check(f"{name}_TellsThePlayer", noted(result, statuses), result)
+        self.check(f"{name}_LeavesQuestFilesAsInstalled",
+                   after == expected_install(game, before, after, MENU, DEFAULT_GAM))
+        result = game.uninstall()
+        added_text = {key: after[key] for key in after
+                      if key.endswith("dialog.tlk") and after[key] != before.get(key)}
+        self.check(f"{name}_UninstallRestoresEveryByteButAddedGameText",
+                   uninstalled(result) and game.data() == {**before, **added_text}, result)
+
+
+def text_ref(tlk: bytes, *texts: str | None) -> int:
+    """The one game-text entry that reads one of <texts>; line breaks may differ."""
+    wanted = {text.replace("\r\n", "\n") for text in texts if text is not None}
+    found = [index for index, value in enumerate(tlk_strings(tlk)) if value.replace("\r\n", "\n") in wanted]
+    return found[0] if len(found) == 1 else -1
+
+
+# Compiles the fixture sources in a scratch game.
+FIXTURE_TP2 = (b"BACKUP ~fixc/backup~\r\nAUTHOR ~synthetic~\r\n"
+               b"BEGIN ~Synthetic quest files~\r\nCOMPILE ~fixc/src~\r\n")
+
+
+def compile_fixtures(scratch: Path, weidu: Path) -> dict[str, dict[str, bytes]]:
+    """Each group of fixture sources, compiled by WeiDU in a scratch game of its own."""
+    compiled = {}
+    for group, sources in fixtures.SOURCES.items():
+        root = scratch / f"compile-{group}"
+        resources = [("OH6000", "ARE", b"synthetic marker")]
+        bif = build_biff(resources)
+        write_bytes(root / "data" / "runtime.bif", bif)
+        write_bytes(root / "chitin.key", build_key(resources, len(bif)))
+        write_bytes(root / "dialog.tlk", fixtures.text_tlk())
+        write_bytes(root / "lang" / "en_us" / "dialog.tlk", fixtures.text_tlk())
+        for name, data in fixtures.ids_files().items():
+            write_bytes(root / "override" / name, data)
+        for name, text in sources.items():
+            write_bytes(root / "fixc" / "src" / name, text.encode("ascii"))
+        write_bytes(root / "fixc" / "fixc.tp2", FIXTURE_TP2)
+        result = Game(root, weidu).run("--force-install-list", "0", tp2="fixc/fixc.tp2")
+        if not installed(result):
+            raise MatrixFailure(f"FAIL CompileFixtures_{group} ({describe(result)})")
+        output = {path.name.casefold(): path.read_bytes() for path in (root / "override").iterdir()}
+        compiled[group] = {}
+        for name in sources:
+            stem, extension = name.rsplit(".", 1)
+            key = stem + (".bcs" if extension == "baf" else ".dlg")
+            compiled[group][key] = output[key]
+    return compiled
+
 
 def accepts(game: Path) -> bool:
     try:
@@ -439,6 +600,18 @@ def run_suite(args: argparse.Namespace) -> int:
     suite = Suite(scratch, mod, weidu, reporter)
 
     suite.lifecycle("ArchivedTemplates", MENU, DEFAULT_GAM)
+
+    # Component 1500's quest and dialogue changes, on synthetic files.
+    compiled = compile_fixtures(scratch, weidu)
+    suite.quest_changes(compiled["applied"])
+    suite.left_out("QuestFilesLeftOut", compiled["left-out"], {
+        "quest_pool": "grant-ambiguous", "quest_altar": "grant-missing", "quest_book": "prepared-elsewhere",
+        "unshey": "item-missing", "flail_heads": "dialogue-unrecognised", "totsc_tome": "applied"},
+        archived=False)
+    suite.left_out("QuestFilesLeftOutInArchive",
+                   {**compiled["left-out-2"], "bgee.lua": fixtures.quest_table(fixtures.UNSHEY_JOURNAL)}, {
+        **NOTHING_TO_PREPARE, "unshey": "journal-unrecognised", "flail_heads": "prepared-elsewhere"},
+        archived=True)
 
     override_gam = gam([("SPRITE_IS_DEADX", 1), ("CHAPTER", 2)], b"\xff" * 33)
     applied = b'return "' + b"a" * 64 + b'"\n'

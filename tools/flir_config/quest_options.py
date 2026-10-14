@@ -1,8 +1,10 @@
-"""Campaign-gated original Kangaxx and Flail of Ages quest alterations.
+"""Campaign-gated original Kangaxx quest alterations.
 
 Only the reviewed compiled resources are accepted. Old dialogue transitions
-remain under the inverse campaign flag; new routes follow d/hlskull.d and
-d/kpglai01.d exactly. All functions operate on bytes supplied by the caller.
+remain under the inverse campaign flag; new routes follow d/hlskull.d
+exactly. All functions operate on bytes supplied by the caller. Component
+1500 makes the Flail of Ages change itself when it is installed
+(lib/campaign_patches.tpa).
 """
 from __future__ import annotations
 
@@ -13,14 +15,12 @@ import struct
 
 from .profiles import ProfileError
 from .quest_rewards import _blocks, _global_guard, _newline
-from .unshey_reward import _append_texts, _string, _table
+from .game_text import _append_texts, _string, _table
 
 ROOT = Path(__file__).resolve().parents[2]
 KANGAXX_GLOBAL = "FLPR_KANGAXX"
-FLAIL_GLOBAL = "FLPR_FLAIL"
 ORIGINAL_HASHES = {
     "hlskull.dlg": "c7ea5cd17d5cffe9368bd980200a05fee7e78eacadf3a6cb41de882df62f56bd",
-    "kpglai01.dlg": "d5a9aa3bf97d0300c1339081cd8869707446562c5276f775f68d1cf7e0588cd5",
     "crypt526.bcs": "9230a20a9177fe1eef1723fba0e8daa07e949663682a3bddf18e585c0482efe6",
     "crypt202.bcs": "ac8fd01b37e902f4484f0cf136def8411be5682aa396ebaabcb1c3723f748aaf",
 }
@@ -55,7 +55,7 @@ def _seal(data: bytes, original: bytes, refs: dict[int, int]) -> bytes:
 
 def original_dialogue(name: str, data: bytes) -> bytes:
     """Recover only exact original bytes or a fully verified patch made here."""
-    if name not in ("hlskull.dlg", "kpglai01.dlg"):
+    if name != "hlskull.dlg":
         raise ProfileError("Unsupported original-option dialogue")
     if hashlib.sha256(data).hexdigest() == ORIGINAL_HASHES[name]:
         return data
@@ -73,8 +73,7 @@ def original_dialogue(name: str, data: bytes) -> bytes:
         raise ProfileError("Invalid original-option dialogue recovery references")
     original = header + data[0x34:size]
     _check(original, ORIGINAL_HASHES[name], name)
-    patch = _patch_hlskull if name == "hlskull.dlg" else _patch_flail
-    if patch(original, refs, ORIGINAL_HASHES[name]) != data:
+    if _patch_hlskull(original, refs, ORIGINAL_HASHES[name]) != data:
         raise ProfileError("Original-option dialogue patch changed")
     return original
 
@@ -190,42 +189,8 @@ def _patch_hlskull(data: bytes, refs: dict[int, int], expected: str) -> bytes:
     return _seal(dlg.render(), data, refs)
 
 
-def _patch_flail(data: bytes, refs: dict[int, int], expected: str) -> bytes:
-    _check(data, expected, "KPGLAI01.DLG")
-    _refs(refs, range(9))
-    dlg = _Dialogue(data, "KPGLAI01")
-    if len(dlg.states) != 10 or len(dlg.transitions) != 12:
-        raise ProfileError("Original Flail dialogue layout changed")
-    desc, none, none2, none3, one, two, two2, two3, three, three2 = range(10, 20)
-    tr = dlg.transition
-    branches = []
-    # Same mutually exclusive eight cases as d/kpglai01.d.
-    for bits in (0, 1, 2, 4, 3, 5, 6, 7):
-        count = bits.bit_count()
-        trigger = "\r\n".join(f'{"" if bits & (1 << index) else "!"}HasItem("blun14{head}",Myself)'
-                           for index, head in enumerate("abc"))
-        branches.append(tr((none, one, two, three)[count], trigger=trigger))
-    give = "\r\n".join(f'GiveItem("blun14{head}",LastTalkedToBy)' for head in "abc")
-    dlg.state(refs[0], branches)
-    dlg.state(refs[1], [tr(none2)])
-    dlg.state(refs[2], [tr(none3)])
-    dlg.state(refs[3], [tr(7)])
-    dlg.state(refs[4], [tr(9, action=give)])
-    dlg.state(refs[5], [tr(two2, action=give)])
-    dlg.state(refs[6], [tr(two3)])
-    dlg.state(refs[3], [tr(7)])
-    dlg.state(refs[7], [tr(three2, action=give)])
-    dlg.state(refs[8], [tr(7)])
-    dlg.branch(5, 0, FLAIL_GLOBAL, target=desc)
-    return _seal(dlg.render(), data, refs)
-
-
 def patch_hlskull(data: bytes, refs: dict[int, int]) -> bytes:
     return _patch_hlskull(original_dialogue("hlskull.dlg", data), refs, ORIGINAL_HASHES["hlskull.dlg"])
-
-
-def patch_flail(data: bytes, refs: dict[int, int]) -> bytes:
-    return _patch_flail(original_dialogue("kpglai01.dlg", data), refs, ORIGINAL_HASHES["kpglai01.dlg"])
 
 
 def patch_kangaxx_journal(lua: bytes, patched_dialogue: bytes) -> bytes:
@@ -345,15 +310,15 @@ def ward_item(refs: dict[int, int]) -> bytes:
 
 
 def prepare_quest_options(resources: dict[str, bytes], tlk: bytes, *,
-                          kangaxx: bool = False, flail_heads: bool = False,
+                          kangaxx: bool = False,
                           language: str = "en_us") -> tuple[dict[str, bytes], bytes]:
     """Return selected patched resources and TLK, leaving file writes to caller.
 
     Input resource keys are lowercase filenames. Kangaxx needs HLSKULL.DLG and
-    CRYPT526/CRYPT202.BCS; Flail needs KPGLAI01.DLG. Generated ward ITM/BAM are
-    included in Kangaxx output. The caller sets both campaign flags explicitly.
+    CRYPT526/CRYPT202.BCS. Generated ward ITM/BAM are included in Kangaxx
+    output. The caller sets the campaign flag explicitly.
     """
-    if type(kangaxx) is not bool or type(flail_heads) is not bool:
+    if type(kangaxx) is not bool:
         raise ProfileError("Original quest option selections must be Booleans")
     if language.casefold() not in {"en_us", "en_gb", "english"}:
         raise ProfileError("Original quest options currently require English game text")
@@ -378,7 +343,4 @@ def prepare_quest_options(resources: dict[str, bytes], tlk: bytes, *,
             output[name] = patch_crypt(name, resource(name), item_refs)
         output["flrward1.itm"] = ward_item(item_refs)
         output["flrward1.bam"] = (ROOT / "copy/flrward1.bam").read_bytes()
-    if flail_heads:
-        refs = append("languages/english/kpglai01.tra", range(9))
-        output["kpglai01.dlg"] = patch_flail(resource("kpglai01.dlg"), refs)
     return output, tlk

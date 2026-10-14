@@ -16,7 +16,7 @@ import struct
 from .profiles import ProfileError
 from .quest_options import _Dialogue, _texts
 from .quest_rewards import _blocks, _global_action, _global_guard, _grant_action, _newline
-from .unshey_reward import _append_texts
+from .game_text import _append_texts
 
 ADAPTER_ID = "mode2-reward-v1"
 

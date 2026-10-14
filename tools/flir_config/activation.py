@@ -3,7 +3,7 @@
 Runtime installation is separate. Keep exported revisions for older saves;
 publish the next-game pointer last, with the game closed.
 """
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import json
 import os
 import re
@@ -11,7 +11,12 @@ import shutil
 import subprocess
 from tempfile import TemporaryDirectory
 
-from .profiles import ProfileError
+from .profiles import ProfileError, read_json
+
+# The files of the latest export in its folder. Apply copies only these, so a
+# file an older export left there never reaches the game.
+EXPORT_FILES = "export-files.json"
+EXPORT_FILES_SCHEMA = "flir-export-files-v1"
 
 
 def _gate_revisions(path: Path) -> set[str]:
@@ -69,17 +74,26 @@ def validate_runtime(game: Path, catalog: dict) -> Path:
 def deploy_export(game: Path, output: Path) -> None:
     """Copy the existing export layout without touching saves or ordinary stock."""
     require_closed(game)
-    if not all((output / name).is_file() for name in ("next.lua", "source-gate.lua")):
-        raise ProfileError("The runtime export is incomplete")
+    try:
+        listing = read_json(output / EXPORT_FILES)
+    except (OSError, ProfileError) as exc:
+        raise ProfileError("The runtime export is incomplete; export the settings again") from exc
+    names = listing.get("files") if listing.get("schema") == EXPORT_FILES_SCHEMA else None
+    if (not isinstance(names, list) or not all(isinstance(name, str) for name in names) or
+            not {"next.lua", "source-gate.lua"} <= set(names) or
+            not all((output / name).is_file() for name in names)):
+        raise ProfileError("The runtime export is incomplete; export the settings again")
     if not _gate_revisions(game / CAMPAIGN_DATA / "source-gate.lua") <= _gate_revisions(output / "source-gate.lua"):
         raise ProfileError("Use this game's previous configuration workspace: this export is missing "
                            "settings needed by older saves")
     changes = {}
-    for source in sorted(output.rglob("*")):
-        if not source.is_file():
-            continue
-        relative = source.relative_to(output)
-        if relative.parts[0] in ("resource-overrides", "script-overrides"):
+    for name in sorted(names):
+        relative = PurePosixPath(name)
+        if relative.is_absolute() or not relative.parts or ".." in relative.parts:
+            raise ProfileError("An export destination is outside the test game")
+        source = output.joinpath(*relative.parts)
+        relative = Path(*relative.parts)
+        if relative.parts[0] == "resource-overrides":
             relative = Path("override", *relative.parts[1:])
         elif relative.parts[0] == "game-overrides":
             relative = Path(*relative.parts[1:])
