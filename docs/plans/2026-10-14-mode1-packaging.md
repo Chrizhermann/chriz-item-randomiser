@@ -107,11 +107,22 @@ writes `randomiser-campaigns/` data, campaign-aware dialogue/script/spell resour
 WeiDU does not track these writes. `activation.validate_runtime` now accepts this
 component's installation as well as the hand-staged lab layout.
 
-Uninstalling 1500 restores `UI.MENU` and `BALDUR.GAM` byte for byte and removes every
-file the component created. WeiDU keeps the seven appended game-text strings, unused, as
-it does for every mod; a re-install finds and reuses them. WeiDU does not track folders,
-so the `randomiser-campaigns` folder it created stays behind empty. Uninstall cannot
-remove what the configurator wrote; see B2. Re-installing over the installed component
+The quest and dialogue changes of the default configuration are made by 1500 itself
+(`lib/campaign_patches.tpa`): the pool, altar and book reward scripts (BLPOOL, TROALT,
+PPBOOK), Unshey's conversation and journal entry, Glaicus's flail-heads conversation and
+the TotSC tome stand-in. Each is found by meaning (the block that creates the item, the
+reply that takes it, the state that hands over the first head) and split under a GLOBAL
+that only the runtime sets, so other adventures and other mods' edits keep working.
+Glaicus's redirected replies keep their original text, action, journal entry and flags.
+A file that cannot be changed unambiguously stays as installed; the installer prints a
+note (setup.tra @101520-@101528) and `override/FLPRPAT.lua` records the reason, which the
+editor shows instead of offering the option.
+
+Uninstalling 1500 restores `UI.MENU`, `BALDUR.GAM` and those quest files byte for byte
+and removes every file the component created. WeiDU keeps the appended game-text
+strings, unused, as it does for every mod; a re-install finds and reuses them. WeiDU does
+not track folders, so the `randomiser-campaigns` folder it created stays behind empty.
+Uninstall cannot remove what the configurator wrote; see B2. Re-installing over the installed component
 and an uninstall and install in one WeiDU run leave the game byte-identical, also with an
 applied `randomiser-campaigns/next.lua`;
 so does WeiDU's temporary uninstall and re-install of 1500 behind a reinstalled earlier
@@ -208,9 +219,16 @@ must not be published until the version is decided.
   need CEBG); (d) an in-game EEex configuration screen (Lua port of the scanner and
   exporter plus UI work).
 - **B2 Uninstall after Apply.** Patched dialogues and scripts left in `override` call the
-  runtime (`FLPR_Transfer` through EEex) and break once it is uninstalled. Needs a
-  configurator "remove applied settings" with pre-apply receipts, run before uninstall,
-  or moving the static campaign-aware patches into the WeiDU component.
+  runtime (`FLPR_Transfer` through EEex) and break once it is uninstalled. Chosen route:
+  move the static campaign-aware patches into the WeiDU component. Done for the default
+  configuration's changes (see "Configuration, uninstall and re-install"); Apply now
+  copies only the files its latest export lists. Still written by Apply and left behind
+  by an uninstall: the Mode 2 reward scripts and dialogues (their selected branches call
+  `FLPR_Transfer`), the Mode 2 container conditions, the Deck of Many Things key spell
+  (`SPIN621.SPL`, which calls the runtime's `FLPRKEY`), the Kangaxx option and the
+  `BGEE.LUA` journal it extends. The default configuration uses none of them, so its
+  Apply writes only `randomiser-campaigns/`. These move into 1500 next, the same way;
+  the Mode 2 patches also drop their exact-hash checks then.
 - **B3 Failure messages.** Resolved; see "Player messages".
 - **B4 Test hooks in the runtime.** Resolved: the Remote Console poll wrapper, the chapter
   screen render listener, the QA driver and its `qa-status.json` moved to the lab-only
@@ -258,7 +276,7 @@ Open:
 
 ## Verification
 
-- `tests/Test-CampaignRuntimeInstaller.ps1` (WeiDU 249, synthetic EET games; 119 checks,
+- `tests/Test-CampaignRuntimeInstaller.ps1` (WeiDU 249, synthetic EET games; 153 checks,
   from the working tree and from the built ZIP with `-PackagePath`): install, uninstall,
   re-install, re-install over the installed component, uninstall and install in one run,
   re-install behind a reinstalled earlier mod (also from the install list alone),
@@ -266,7 +284,13 @@ Open:
   call shapes, redefined UI methods, an applied `next.lua`, exclusions in both
   directions, missing prerequisites, rollback of failed installs and the Polish
   language, with KEY, BIFF, TLK and unrelated override files byte-checked, and the seven
-  messages appended to the game text with matching references in `M_FLPRTXT.lua`.
+  messages appended to the game text with matching references in `M_FLPRTXT.lua`. The
+  quest changes run on hand-written scripts and dialogues that WeiDU compiles with
+  minimal IDS tables (`tests/campaign_patch_fixtures.py`), archived and in override:
+  each split script equals its expected compiled form, the dialogues are checked by
+  structure, and files that give the reward twice or not at all, were already split,
+  ask for another item, erase an unknown journal entry or hand over no flail head stay
+  byte-identical, with the reason recorded and printed. No game resource is used.
 - `tests/Test-Mode2Parity.ps1` (32 checks) and the other 14 PowerShell suites pass, with a
   Lua 5.3 interpreter for `Manifest` and `RuntimeProbes`. `SentinelDependencies` and
   `run-unit.ps1` need the sentinel BAFs of a lab that no longer exists and were not run.
@@ -278,7 +302,7 @@ Open:
   message and its start/cancel choice; `tests/test_lab_qa_module.py`: the lab-only module.
 - `tests/test_runtime_activation.py`: the configurator accepts the installed runtime.
 - The full Python suite, with `keystone-engine` 0.9.2 and `unicorn` 2.1.4 from a local
-  test environment on `PYTHONPATH` and `FL_IR_TEST_TEMP_ROOT=%TEMP%\flir-t`: 1308 tests
-  pass; 3 skip because optional lab caches and evidence are not in the source tree.
+  test environment on `PYTHONPATH` and `FL_IR_TEST_TEMP_ROOT=%TEMP%\flir-t`: 1310 tests
+  pass; 2 skip because optional lab caches and evidence are not in the source tree.
 - Not verified: any in-game behavior of the TP2-installed runtime, the adapter in the
   engine's own Lua, UI mods in a running game and EEex versions other than 1.2.

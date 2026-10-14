@@ -158,16 +158,21 @@ revisions available for saves and changes only which configuration New Game sele
 Keep that output between exports; restart the test game after deploying a new revision.
 
 Current runtime coverage includes static container originals, selected items on
-uniquely bound static actors, finite shop stock, and the reviewed BLPOOL quest
-grant. BLPOOL appears as a quest-reward original for BLUN12 when the saved scan
-matches its supported script. Its exported conditional script uses saved campaign
-GLOBALS: selected campaigns suppress the mace grant, while excluded campaigns
-retain it. The bite and Pool progression remain; the selected branch displays the
-existing empty-pool message. Export includes `script-overrides/BLPOOL.BCS`, which
-must be staged in the test game's override alongside the runtime/configuration.
-The exporter recognises that exact installed patch on later exports and scans;
-changing configurations does not layer another patch or require reinstalling it.
-This is one authored script adapter, not general BCS/DLG grant coverage.
+uniquely bound static actors, finite shop stock, and the quest rewards whose files
+`randomiser.tp2` component 1500 prepares when it is installed: the pool (BLPOOL,
+BLUN12), the altar (TROALT, BLUN23), the book (PPBOOK, ring09), Unshey's girdle and
+Glaicus's flail heads. The installer finds each reward by meaning (the block that
+creates the item, the reply that takes the quest item), so other mods' edits to the
+same files stay, and splits it under saved campaign GLOBALs: an adventure that
+randomises the reward gets the runtime's item, every other adventure keeps the
+original grant. It lists what it prepared in `override/FLPRPAT.lua`. The scan and
+the editor offer such a reward only when that record says `applied`, and export
+records the installed script so the runtime can confirm it is still in place. The
+configurator never writes these files, so uninstalling component 1500 restores
+them. A file the installer cannot change unambiguously (it gives the reward twice,
+no longer gives it, or an earlier configurator already changed it) stays as
+installed; the installer and the editor say which and why. This is a fixed set of
+authored adapters, not general BCS/DLG grant coverage.
 Destinations can be uniquely named ARE actors, static containers (including
 stocked chests), or shops allowing purchases. Container delivery appends rewards
 without changing existing contents, locks or traps. The current item restrictions remain:
