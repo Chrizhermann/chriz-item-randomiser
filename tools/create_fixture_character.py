@@ -101,10 +101,24 @@ assert(type(FLPRUI_NewGame) == "function" and type(FLPRUI_AcceptCharacter) == "f
     "UI_ADAPTER_NOT_INSTALLED")
 assert(not FLPR.Disabled, tostring(FLPR.Disabled))
 """),
+        # Switching the campaign reloads the menus, and the console with them,
+        # so the helper switches only when BG1 is not active already.
         ("02-select-bg1", """
 need_menu("START")
 assert(not has_menu("WORLD_ACTIONBAR"), "REFUSE_ACTIVE_WORLD")
-onCampaignButton(1)
+local campaign_switched = false
+if startCampaignData[currentCampaign].id ~= "BG1" then
+    local bg1
+    for index, campaign in ipairs(startCampaignData) do
+        if campaign.id == "BG1" then
+            assert(bg1 == nil, "AMBIGUOUS_BG1_CAMPAIGN")
+            bg1 = index
+        end
+    end
+    assert(bg1, "BG1_CAMPAIGN_NOT_FOUND")
+    onCampaignButton(bg1)
+    campaign_switched = true
+end
 assert(startCampaignData[currentCampaign].id == "BG1", "BG1_CAMPAIGN_REQUIRED")
 """),
         ("03-start-new-game", """
@@ -232,9 +246,19 @@ for _, menu in ipairs({{{menu_values}}}) do
     if has_menu(menu) then screens[#screens + 1] = menu end
 end
 return {{ step = {lua_string(label)}, screens = screens,
-    screen = Infinity_GetCurrentScreenName(),
+    screen = Infinity_GetCurrentScreenName(), campaign_switched = campaign_switched,
     fixture = FLPR and FLPR.Inspect and FLPR.Inspect() or nil }}
 """
+
+
+# After a campaign switch the main menu, and the console's polling with it,
+# returns only once the engine has reloaded the campaign: one command waits
+# for that, longer than an ordinary step.
+RELOADED = ("02b-await-reloaded-menu", """
+need_menu("START")
+assert(startCampaignData[currentCampaign].id == "BG1", "BG1_CAMPAIGN_REQUIRED")
+""")
+RELOAD_TIMEOUT = 120
 
 
 def write_json(path: Path, value: object) -> None:
@@ -262,7 +286,12 @@ def drive(game: Path, name: str, evidence: Path, powershell: str, *, timeout: in
     report_path = evidence / "status.json"
     write_json(report_path, report)
     try:
-        for label, body in build_steps(name, finish_prologue):
+        steps = build_steps(name, finish_prologue)
+        index = 0
+        while index < len(steps):
+            label, body = steps[index]
+            index += 1
+            step_timeout = RELOAD_TIMEOUT if label == RELOADED[0] else timeout
             require_idle_ipc(game)
             script = evidence / f"{label}.lua"
             script.write_text(render_step(label, body), encoding="ascii")
@@ -271,9 +300,9 @@ def drive(game: Path, name: str, evidence: Path, powershell: str, *, timeout: in
             write_json(report_path, report)
             try:
                 result = run([powershell, "-NoProfile", "-NonInteractive", "-File", str(client),
-                              str(game / "override"), "@" + str(script), str(timeout)],
+                              str(game / "override"), "@" + str(script), str(step_timeout)],
                              capture_output=True, text=True, encoding="utf-8", errors="replace",
-                             timeout=timeout + 5, cwd=str(evidence))
+                             timeout=step_timeout + 5, cwd=str(evidence))
             except subprocess.TimeoutExpired:
                 step["status"] = "client-timeout"
                 write_json(evidence / f"{label}.json", step)
@@ -301,6 +330,8 @@ def drive(game: Path, name: str, evidence: Path, powershell: str, *, timeout: in
                 step["status"] = "invalid-step-result"
                 write_json(evidence / f"{label}.json", step)
                 raise FixtureError(f"{label}: response did not identify this UI step. No further actions were sent.")
+            if label == "02-select-bg1" and value.get("campaign_switched") is True:
+                steps.insert(index, RELOADED)
             write_json(report_path, report)
             print(label, flush=True)
         report["status"] = "awaiting-prologue-world-confirmation"

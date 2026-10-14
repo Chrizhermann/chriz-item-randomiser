@@ -178,6 +178,43 @@ class FixtureCharacterTests(unittest.TestCase):
         self.assertEqual(len(calls), 15)
         self.assertEqual(report["status"], "awaiting-loot-confirmation")
 
+    def test_campaign_switch_waits_once_for_the_reloaded_menu(self):
+        calls = []
+        def run(argv, **kwargs):
+            calls.append((Path(argv[-2][1:]).stem, argv[-1], kwargs["timeout"]))
+            result = self.success(argv, **kwargs)
+            if calls[-1][0] == "02-select-bg1":
+                response = json.loads(result.stdout)
+                response["returnValues"][0]["campaign_switched"] = True
+                result = subprocess.CompletedProcess(argv, 0, json.dumps(response), "")
+            return result
+        _, _, invoke = self.run_fake(run)
+        invoke()
+        self.assertEqual([call[0] for call in calls[1:4]],
+                         ["02-select-bg1", "02b-await-reloaded-menu", "03-start-new-game"])
+        self.assertEqual(calls[2][1:], (str(helper.RELOAD_TIMEOUT), helper.RELOAD_TIMEOUT + 5))
+        self.assertEqual({call[1] for call in calls if call[0] != "02b-await-reloaded-menu"}, {"10"})
+        self.assertEqual(len(calls), 14)
+
+    def test_campaign_is_switched_only_away_from_another_campaign(self):
+        script = helper.render_step("02-select-bg1", dict(helper.build_steps("FLPR Test"))["02-select-bg1"])
+        for engine in (Lua51, Lua53, LuaJIT21):
+            # BG1 is listed third; the game is on it already, or on SoD.
+            for current, clicked in ((3, None), (1, 3)):
+                with self.subTest(engine=engine, current=current):
+                    lua = engine()
+                    lua.execute("""
+                        startCampaignData = { {id = "SOD"}, {id = "BG2"}, {id = "BG1"} }
+                        function Infinity_IsMenuOnStack(name) return name == "START" end
+                        function Infinity_GetCurrentScreenName() return "START" end
+                        function onCampaignButton(index) clicked = index currentCampaign = index end
+                    """)
+                    lua.globals().currentCampaign = current
+                    result = lua.execute(script)
+                    self.assertEqual(result["campaign_switched"], clicked is not None)
+                    self.assertEqual(lua.globals().clicked, clicked)
+                    self.assertEqual(lua.globals().currentCampaign, 3)
+
     def test_remote_client_is_beside_the_main_checkout_from_any_worktree(self):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
