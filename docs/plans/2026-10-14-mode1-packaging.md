@@ -239,24 +239,27 @@ skip a reward quest's selection flag silently.
 
 ## Verification
 
-- `tests/Test-CampaignRuntimeInstaller.ps1` (WeiDU 249, synthetic EET games; 111 checks,
+- `tests/Test-CampaignRuntimeInstaller.ps1` (WeiDU 249, synthetic EET games; 119 checks,
   from the working tree and from the built ZIP with `-PackagePath`): install, uninstall,
   re-install, re-install over the installed component, uninstall and install in one run,
   re-install behind a reinstalled earlier mod (also from the install list alone),
   already-patched inputs, override-resident and archived `UI.MENU`/`BALDUR.GAM`, UI-mod
   call shapes, redefined UI methods, an applied `next.lua`, exclusions in both
   directions, missing prerequisites, rollback of failed installs and the Polish
-  language, with KEY, BIFF, TLK and unrelated override files byte-checked.
+  language, with KEY, BIFF, TLK and unrelated override files byte-checked, and the seven
+  messages appended to the game text with matching references in `M_FLPRTXT.lua`.
 - `tests/Test-Mode2Parity.ps1` (32 checks) and the other PowerShell suites that run
   without a Lua 5.3 interpreter or sentinel BAFs pass as on the snapshot. `Manifest`,
   `RuntimeProbes` and `SentinelDependencies` need those and were not run.
 - WeiDU `--parse-check` of `randomiser.tp2` and every `lib/*.tpa`.
 - `tests/test_release_package.py`: EOL parity with Git, determinism, refused inputs,
   manifest integrity and coverage of every file the TP2 component copies.
-- `tests/test_runtime_ui_adapter.py`: adapter routing in Lua 5.1, Lua 5.3 and LuaJIT.
+- `tests/test_runtime_ui_adapter.py`: adapter routing and the not-running popup in Lua 5.1,
+  Lua 5.3 and LuaJIT; `tests/test_campaign_native_host.py`: atomic capture, every player
+  message and its start/cancel choice; `tests/test_lab_qa_module.py`: the lab-only module.
 - `tests/test_runtime_activation.py`: the configurator accepts the installed runtime.
 - The full Python suite, with `keystone-engine` 0.9.2 and `unicorn` 2.1.4 from a local
-  test environment on `PYTHONPATH` and `FL_IR_TEST_TEMP_ROOT=%TEMP%\flir-t`: 1293 tests
+  test environment on `PYTHONPATH` and `FL_IR_TEST_TEMP_ROOT=%TEMP%\flir-t`: 1308 tests
   pass; 3 skip because optional lab caches and evidence are not in the source tree.
 - Not verified: any in-game behavior of the TP2-installed runtime, the adapter in the
   engine's own Lua, UI mods in a running game and EEex versions other than 1.2.
