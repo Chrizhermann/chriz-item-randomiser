@@ -1,9 +1,11 @@
 """Create a named test character through the observed isolated EET UI flow.
 
-Start the protected fixture game at its main menu first. This helper never
+Start a disposable lab game at its main menu first. This helper never
 launches the game. Each UI action is sent once through
 the sibling EEex Remote Console client, with separate Lua and JSON evidence.
-A timeout or unexpected menu stops the sequence; it is never retried.
+A timeout or unexpected menu stops the sequence; it is never retried. New Game
+and character acceptance go through the UI adapter (FLPRUI_*) that component
+1500 hooks into UI.MENU, as the game's own buttons do.
 
 Example:
     py tools/create_fixture_character.py --name "FLPR Run 2"
@@ -28,8 +30,10 @@ import tempfile
 from uuid import uuid4
 
 
-PROTECTED_GAME = Path.home() / "Games" / "EET-IR-Mode1-20260922" / "game"
-PROFILE_TEXT = 'engine_name = "EET IR Mode1 Test - 20260922"\nengine_mode = 1\n'
+# The only games this helper drives: disposable labs and their private profile names.
+LABS = {
+    Path.home() / "Games" / "IR-Lab-266-20261014" / "game": "IR Lab 266 - 20261014",
+}
 CHARACTER_NAME = "Abdel - Fighter - Chaotic Good"
 MENUS = (
     "START", "START_SP", "START_CAMPAIGN_SELECT", "WORLD_ACTIONBAR",
@@ -59,11 +63,16 @@ def validate_name(name: str) -> None:
         raise FixtureError("Test name must contain 1–20 visible characters.")
 
 
+def profile_text(name: str) -> str:
+    return f'engine_name = "{name}"\nengine_mode = 1\n'
+
+
 def validate_game(game: Path) -> Path:
     resolved = game.resolve(strict=True)
-    if resolved != PROTECTED_GAME.resolve(strict=True):
-        raise FixtureError("This helper is limited to the isolated EET Mode 1 fixture game.")
-    if (resolved / "engine.lua").read_text(encoding="utf-8") != PROFILE_TEXT:
+    labs = {lab.resolve(): name for lab, name in LABS.items() if lab.exists()}
+    if resolved not in labs:
+        raise FixtureError("This helper is limited to the disposable lab games.")
+    if (resolved / "engine.lua").read_text(encoding="utf-8") != profile_text(labs[resolved]):
         raise FixtureError("The game does not use the expected private test profile.")
     for relative in ("override/M_FLPR.lua", "override/M_EEexRC.lua", "randomiser-campaigns/next.lua"):
         if not (resolved / relative).is_file():
@@ -88,6 +97,8 @@ for _, menu in ipairs({"CHARGEN", "CHARGEN_DIFFICULTY", "IMPORTPARTY", "LOAD", "
 end
 assert(FLPR and type(FLPR.NewGame) == "function" and type(FLPR.AcceptCharacter) == "function",
     "FIXTURE_UI_NOT_INSTALLED")
+assert(type(FLPRUI_NewGame) == "function" and type(FLPRUI_AcceptCharacter) == "function",
+    "UI_ADAPTER_NOT_INSTALLED")
 assert(not FLPR.Disabled, tostring(FLPR.Disabled))
 """),
         ("02-select-bg1", """
@@ -100,7 +111,7 @@ assert(startCampaignData[currentCampaign].id == "BG1", "BG1_CAMPAIGN_REQUIRED")
 assert(has_menu("START") or has_menu("START_SP"), "MAIN_MENU_REQUIRED")
 assert(startCampaignData[currentCampaign].id == "BG1", "BG1_CAMPAIGN_REQUIRED")
 if has_menu("START_SP") then Infinity_PopMenu("START_SP") end
-FLPR.NewGame()
+FLPRUI_NewGame()
 need_menu("CHARGEN")
 assert(EEex_GameState_GetGlobalInt("FLPR_FRESH") == 1, "FRESH_TEMPLATE_REQUIRED")
 assert(EEex_GameState_GetGlobalInt("flpr_state") == 0, "UNEXPECTED_CAMPAIGN_STATE")
@@ -178,7 +189,7 @@ assert(is_true(createCharScreen:IsChargenComplete()), "CHARACTER_NOT_COMPLETE")
 assert(FLPR.NewGameIntent, "NEW_GAME_INTENT_REQUIRED")
 assert(EEex_GameState_GetGlobalInt("FLPR_FRESH") == 1, "FRESH_TEMPLATE_REQUIRED")
 assert(EEex_GameState_GetGlobalInt("flpr_state") == 0, "UNEXPECTED_CAMPAIGN_STATE")
-FLPR.AcceptCharacter(-1)
+FLPRUI_AcceptCharacter(-1)
 need_menu("CHARGEN_DIFFICULTY")
 assert(EEex_GameState_GetGlobalInt("FLPR_FRESH") == 0, "FRESH_MARKER_NOT_CONSUMED")
 assert(EEex_GameState_GetGlobalInt("flpr_state") == 2, "CAMPAIGN_NOT_COMMITTED")
@@ -188,7 +199,7 @@ need_menu("CHARGEN_DIFFICULTY")
 assert(EEex_GameState_GetGlobalInt("FLPR_FRESH") == 0, "FRESH_MARKER_NOT_CONSUMED")
 assert(EEex_GameState_GetGlobalInt("flpr_state") == 2, "CAMPAIGN_NOT_COMMITTED")
 Infinity_PopMenu("CHARGEN_DIFFICULTY")
-FLPR.AcceptCharacter(3)
+FLPRUI_AcceptCharacter(3)
 -- The engine may next show the prologue without a polling widget. Do not
 -- issue another console command or claim world/loot readiness here.
 """),
@@ -309,7 +320,7 @@ def drive(game: Path, name: str, evidence: Path, powershell: str, *, timeout: in
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--game", type=Path, default=PROTECTED_GAME)
+    parser.add_argument("--game", type=Path, default=next(iter(LABS)))
     parser.add_argument("--name", default="FLPR QA", help="Test character name (1–20 characters).")
     parser.add_argument("--evidence", type=Path, help="New evidence directory outside the game.")
     parser.add_argument("--finish-prologue", action="store_true",

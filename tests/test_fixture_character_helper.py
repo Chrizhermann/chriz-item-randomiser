@@ -30,6 +30,13 @@ class FixtureCharacterTests(unittest.TestCase):
                 result = compile_lua(helper.render_step(label, body))
                 self.assertTrue(callable(result), (engine, label, result))
 
+    def test_new_game_and_acceptance_use_the_installed_ui_adapter(self):
+        script = "\n".join(body for _label, body in helper.build_steps("FLPR Test", finish_prologue=True))
+        self.assertIn("FLPRUI_NewGame()", script)
+        self.assertEqual(script.count("FLPRUI_AcceptCharacter("), 2)
+        self.assertNotIn("FLPR.NewGame()", script)
+        self.assertNotIn("FLPR.AcceptCharacter(", script)
+
     def test_invalid_names_are_rejected_before_any_actions(self):
         for value in ("", " ", "x" * 21, "test\nname", "test\0", "test\x7f"):
             with self.subTest(value=repr(value)), self.assertRaises(helper.FixtureError):
@@ -46,11 +53,15 @@ class FixtureCharacterTests(unittest.TestCase):
             (game / "randomiser-campaigns").mkdir()
             for name in ("override/M_FLPR.lua", "override/M_EEexRC.lua", "randomiser-campaigns/next.lua"):
                 (game / name).touch()
-            with patch.object(helper, "PROTECTED_GAME", game):
-                (game / "engine.lua").write_text(helper.PROFILE_TEXT, encoding="utf-8")
+            with patch.object(helper, "LABS", {game: "IR Lab Test"}):
+                (game / "engine.lua").write_text(helper.profile_text("IR Lab Test"), encoding="utf-8")
                 self.assertEqual(helper.validate_game(game), game.resolve())
                 with self.assertRaisesRegex(helper.FixtureError, "limited"):
                     helper.validate_game(other)
+                (game / "engine.lua").write_text('engine_name = "Another Lab"\nengine_mode = 1\n',
+                                                 encoding="utf-8")
+                with self.assertRaisesRegex(helper.FixtureError, "private test profile"):
+                    helper.validate_game(game)
                 (game / "engine.lua").write_text('engine_name = "EET"\n', encoding="utf-8")
                 with self.assertRaisesRegex(helper.FixtureError, "private test profile"):
                     helper.validate_game(game)
