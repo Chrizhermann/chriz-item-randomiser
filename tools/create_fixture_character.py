@@ -325,6 +325,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--evidence", type=Path, help="New evidence directory outside the game.")
     parser.add_argument("--finish-prologue", action="store_true",
                         help="Dismiss CHAPTER once; requires its console polling widget.")
+    parser.add_argument("--timeout", type=int, default=10, choices=range(5, 121), metavar="SECONDS",
+                        help="Seconds each UI step may take (5-120). New Game loads for longer on a busy PC.")
     args = parser.parse_args(argv)
     lock = None
     try:
@@ -350,7 +352,7 @@ def main(argv: list[str] | None = None) -> int:
         except FileExistsError:
             raise FixtureError(f"Another helper may be active. Inspect its lock before retrying: {candidate}")
         report = drive(game, args.name, evidence, powershell, client=client,
-                       finish_prologue=args.finish_prologue)
+                       finish_prologue=args.finish_prologue, timeout=args.timeout)
         print(report["note"])
         print(f"Evidence: {evidence}")
         return 0

@@ -115,6 +115,21 @@ class FixtureCharacterTests(unittest.TestCase):
         self.assertEqual(report["steps"][-1]["status"], "timeout")
         self.assertFalse((evidence / "03-start-new-game.lua").exists())
 
+    def test_step_timeout_reaches_the_console_client(self):
+        seen = []
+        def run(argv, **kwargs):
+            seen.append((argv[-1], kwargs["timeout"]))
+            return self.success(argv, **kwargs)
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        game = Path(temporary.name) / "game"
+        (game / "override").mkdir(parents=True)
+        with redirect_stdout(io.StringIO()):
+            helper.drive(game, "FLPR Test", Path(temporary.name) / "evidence", "unused-powershell",
+                         timeout=60, run=run)
+        self.assertTrue(seen)
+        self.assertEqual(set(seen), {("60", 65)})
+
     def test_client_timeout_is_recorded_without_another_call(self):
         calls = []
         def run(argv, **kwargs):
