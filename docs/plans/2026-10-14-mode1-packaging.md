@@ -218,17 +218,14 @@ must not be published until the version is decided.
   positives); (c) port scan/export/apply to Rust inside CEBG (largest; standalone users
   need CEBG); (d) an in-game EEex configuration screen (Lua port of the scanner and
   exporter plus UI work).
-- **B2 Uninstall after Apply.** Patched dialogues and scripts left in `override` call the
-  runtime (`FLPR_Transfer` through EEex) and break once it is uninstalled. Chosen route:
-  move the static campaign-aware patches into the WeiDU component. Done for the default
-  configuration's changes (see "Configuration, uninstall and re-install"); Apply now
-  copies only the files its latest export lists. Still written by Apply and left behind
-  by an uninstall: the Mode 2 reward scripts and dialogues (their selected branches call
-  `FLPR_Transfer`), the Mode 2 container conditions, the Deck of Many Things key spell
-  (`SPIN621.SPL`, which calls the runtime's `FLPRKEY`), the Kangaxx option and the
-  `BGEE.LUA` journal it extends. The default configuration uses none of them, so its
-  Apply writes only `randomiser-campaigns/`. These move into 1500 next, the same way;
-  the Mode 2 patches also drop their exact-hash checks then.
+- **B2 Uninstall after Apply.** Closed by decision (2026-10-15): a game that used the
+  randomiser and then uninstalled it is not ours to keep working. The default
+  configuration's quest and dialogue changes moved into the installer anyway (see
+  "Configuration, uninstall and re-install"), so its Apply writes only
+  `randomiser-campaigns/`, and Apply copies only the files its latest export lists. The
+  Mode 2 reward scripts, dialogues and containers, the Deck of Many Things key spell
+  (`SPIN621.SPL`) and the Kangaxx option are still written by Apply; the Mode 2 patches'
+  exact-hash checks belong to the Mode 2 routes work.
 - **B3 Failure messages.** Resolved; see "Player messages".
 - **B4 Test hooks in the runtime.** Resolved: the Remote Console poll wrapper, the chapter
   screen render listener, the QA driver and its `qa-status.json` moved to the lab-only
@@ -268,10 +265,18 @@ Christopher decided on 2026-10-14:
   `totsc_tome`); every other option off. It is not an EET-only preset (B5).
 - **Mode 2 routes** are built in this mod.
 
+On 2026-10-15:
+
+- **A new mod.** Item Randomiser is Wisp's mod; the new randomiser becomes a new mod
+  built on it, not a v9.0 of it. This fork stays the maintained original. The packaging
+  above (component 1500 in `randomiser.tp2`, the "New/Old randomiser" labels) moves to
+  the new mod.
+- **Uninstall**: breakage after a used randomiser is uninstalled is not ours to prevent
+  (B2 closed).
+
 Open:
 
-- **Version and packaging**: both randomisers in this mod's one installer as v9.0
-  (proposed), or the new one as a separate mod.
+- **The new mod's name and repository.**
 - **B1 route** (options above), now constrained to Python-free for both versions.
 
 ## Verification
