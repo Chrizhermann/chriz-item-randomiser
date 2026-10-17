@@ -302,9 +302,33 @@ pub fn build_original_configuration(
     options: Option<&Value>,
     exclude: &HashMap<String, String>,
 ) -> Result<Value> {
+    build_from(catalog, world, template_id, exclude, || {
+        resolve_template(catalog, world, template_id, "eet", items, targets, options)
+    })
+}
+
+/// `build_original_configuration` over an already resolved draft (the
+/// reference's tests substitute `resolve_template` the same way).
+pub fn build_original_configuration_from(
+    catalog: &Value,
+    world: &Value,
+    template_id: &str,
+    draft: &Value,
+    exclude: &HashMap<String, String>,
+) -> Result<Value> {
+    build_from(catalog, world, template_id, exclude, || Ok(draft.clone()))
+}
+
+fn build_from(
+    catalog: &Value,
+    world: &Value,
+    template_id: &str,
+    exclude: &HashMap<String, String>,
+    resolve: impl FnOnce() -> Result<Value>,
+) -> Result<Value> {
     let catalog_items = validate_catalog(catalog)?;
     let index = validate_world(world, catalog)?;
-    let draft = resolve_template(catalog, world, template_id, "eet", items, targets, options)?;
+    let draft = resolve()?;
     let game_root = world.at("game_root")?.as_str().unwrap_or("").to_string();
     let option = |name: &str| draft.get("options").and_then(|options| options.get(name)).cloned().unwrap_or(Value::Null);
     if option("flail_heads").truthy() && !applied(&game_root, "flail_heads")? {
@@ -718,6 +742,22 @@ pub fn fit_original_configuration(
     targets: Option<&Value>,
     options: Option<&Value>,
 ) -> Result<Value> {
+    fit_from(catalog, world, template_id, &|template_id| {
+        resolve_template(catalog, world, template_id, "eet", items, targets, options)
+    })
+}
+
+/// `fit_original_configuration` over an already resolved draft.
+pub fn fit_original_configuration_from(catalog: &Value, world: &Value, template_id: &Value, draft: &Value) -> Result<Value> {
+    fit_from(catalog, world, template_id, &|_| Ok(draft.clone()))
+}
+
+fn fit_from(
+    catalog: &Value,
+    world: &Value,
+    template_id: &Value,
+    resolve: &dyn Fn(&str) -> Result<Value>,
+) -> Result<Value> {
     let catalog_items = validate_catalog(catalog)?;
     let index = validate_world(world, catalog)?;
     // build_template's lookup of an unknown or non-text identity.
@@ -730,7 +770,7 @@ pub fn fit_original_configuration(
     };
     let mut exclude: HashMap<String, String> = HashMap::new();
     for _ in 0..FIT_ROUNDS {
-        let generated = build_original_configuration(catalog, world, template_id, items, targets, options, &exclude)?;
+        let generated = build_from(catalog, world, template_id, &exclude, || resolve(template_id))?;
         let row_ids = generated.at("row_ids")?;
         let placeless = placeless_sources(generated.at("plan")?)?;
         if !placeless.is_empty() {

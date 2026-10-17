@@ -143,15 +143,10 @@ pub fn table_rows(catalog: &Value, world: &Value, plan: &Value) -> Result<(Rows,
         return Err(Error::profile("Invalid original pool choices or options"));
     }
     let choices = choices.expect("checked");
-    let draft = resolve_template(
-        catalog,
-        world,
-        template_id,
-        "eet",
-        choices.get("items"),
-        choices.get("targets"),
-        options,
-    )?;
+    let draft = match crate::pins::registration_draft() {
+        Some(draft) => draft,
+        None => resolve_template(catalog, world, template_id, "eet", choices.get("items"), choices.get("targets"), options)?,
+    };
     if !draft.at("choices")?.py_eq(choices) || !draft.at("options")?.py_eq(options.expect("checked")) {
         return Err(Error::profile("Original pool choices or options changed"));
     }

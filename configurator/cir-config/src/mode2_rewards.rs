@@ -217,7 +217,18 @@ struct Registry {
 
 fn registry() -> &'static Registry {
     static REGISTRY: OnceLock<Registry> = OnceLock::new();
-    REGISTRY.get_or_init(build_registry)
+    REGISTRY.get_or_init(|| {
+        let mut registry = build_registry();
+        // Test-only replacements of single entries (the reference's tests use
+        // `patch.dict`); the derived indexes keep the reviewed entries' keys.
+        for (key, value) in crate::pins::table_entries("mode2_rewards.REWARDS") {
+            registry.rewards.insert(key, value);
+        }
+        for (key, value) in crate::pins::table_entries("mode2_rewards.TRANSFER_SPECS") {
+            registry.transfers.insert(key, value);
+        }
+        registry
+    })
 }
 
 fn build_registry() -> Registry {

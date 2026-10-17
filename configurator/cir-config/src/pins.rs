@@ -54,3 +54,40 @@ pub fn table(name: &str, pinned: &[(&str, &str)]) -> Vec<(String, String)> {
 pub fn get(name: &str, pinned: &[(&str, &str)], key: &str) -> Option<String> {
     table(name, pinned).into_iter().find(|(existing, _)| existing == key).map(|(_, hash)| hash)
 }
+
+/// The draft the binding check uses instead of resolving the preset's
+/// template: with `parity-overrides`, the JSON file `CIR_PARITY_REGISTRATION_DRAFT`
+/// names (as the reference's tests patch `resolve_template` there); otherwise
+/// none.
+#[cfg(feature = "parity-overrides")]
+pub fn registration_draft() -> Option<crate::json::Value> {
+    let path = std::env::var_os("CIR_PARITY_REGISTRATION_DRAFT")?;
+    let data = std::fs::read(&path).expect("CIR_PARITY_REGISTRATION_DRAFT names a readable file");
+    Some(crate::json::parse_strict(&data, "draft").expect("CIR_PARITY_REGISTRATION_DRAFT is JSON"))
+}
+
+#[cfg(not(feature = "parity-overrides"))]
+pub fn registration_draft() -> Option<crate::json::Value> {
+    None
+}
+
+/// Entries a parity test puts into a reference data table (`patch.dict`):
+/// with `parity-overrides`, from the JSON file `CIR_PARITY_TABLES` names,
+/// mapping a table name such as `"mode2_rewards.REWARDS"` to `{key: entry}`;
+/// otherwise none.
+#[cfg(feature = "parity-overrides")]
+pub fn table_entries(name: &str) -> Vec<(String, crate::json::Value)> {
+    let Some(path) = std::env::var_os("CIR_PARITY_TABLES") else { return Vec::new() };
+    let data = std::fs::read(&path).expect("CIR_PARITY_TABLES names a readable file");
+    let tables = crate::json::parse_strict(&data, "tables").expect("CIR_PARITY_TABLES is a JSON object");
+    tables
+        .get(name)
+        .and_then(crate::json::Value::as_dict)
+        .map(|entries| entries.iter().map(|(key, value)| (key.to_string(), value.clone())).collect())
+        .unwrap_or_default()
+}
+
+#[cfg(not(feature = "parity-overrides"))]
+pub fn table_entries(_name: &str) -> Vec<(String, crate::json::Value)> {
+    Vec::new()
+}
