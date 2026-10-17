@@ -24,6 +24,9 @@ to the next adventure's configuration will not require reinstalling CIR.
 ## Run the tooling
 
 Requires Python 3.10 or later with the standard library. Run from this repository.
+Without Python, use the standalone executable built from `configurator/` (see
+[its README](../configurator/README.md)): `cir-configurator` takes the same commands
+and options as `python tools/randomiser_config.py` and gives the same results.
 Choose an explicit game and a separate output directory. The scanner never discovers
 or opens a game implicitly. Do not run this development tool against the owner's
 live game as part of automated validation.
@@ -66,6 +69,8 @@ Open the local URL printed at startup. Optional `--profile` and `--plan` load an
 existing draft pair; `--port` chooses a fixed port. The workspace is a dedicated
 folder outside the game. The editor needs only Python's standard library and
 does not open a browser automatically, launch the game, rescan, or run WeiDU.
+`cir-configurator ui` serves the same editor and also opens it in the browser;
+`--no-browser` only prints the address.
 
 Search all scanned items by name or resource ID; a sole original is selected
 automatically. Check several original records to relocate several copies of the
@@ -282,3 +287,5 @@ concurrent scan changes, exact physical inventory records, explicit source/targe
 choices, immutable revisions, command workflows, and unchanged game bytes. They do not prove
 live New Game behavior; that belongs to the isolated runtime milestone in the
 [approved design](plans/2026-09-22-mode1-postinstall-profiles-design.md).
+The checks that compare the Rust executable with this reference are described in
+the [configurator README](../configurator/README.md#parity-with-the-python-reference).
