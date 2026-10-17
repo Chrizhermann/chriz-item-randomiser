@@ -277,9 +277,17 @@ On 2026-10-15:
 - **Uninstall**: breakage after a used randomiser is uninstalled is not ours to prevent
   (B2 closed).
 
+On 2026-10-17:
+
+- **Name**: Chriz Item Randomiser (CIR), in its own repository under Chrizhermann.
+- **Glaicus when TorGal is already dead**: keep it simple, no new or dynamic text. His
+  other branches that give the first head keep their line and hand over every head he
+  holds, only in adventures that randomise the heads.
+
 Open:
 
-- **The new mod's name and repository.**
+- **The new repository's name**: `chriz-item-randomiser` is this fork's, and CEBG's
+  8.1.1 artifacts link its releases.
 - **B1 route** (options above), now constrained to Python-free for both versions.
 
 ## Verification
@@ -310,7 +318,7 @@ Open:
   message and its start/cancel choice; `tests/test_lab_qa_module.py`: the lab-only module.
 - `tests/test_runtime_activation.py`: the configurator accepts the installed runtime.
 - The full Python suite, with `keystone-engine` 0.9.2 and `unicorn` 2.1.4 from a local
-  test environment on `PYTHONPATH` and `FL_IR_TEST_TEMP_ROOT=%TEMP%\flir-t`: 1310 tests
+  test environment on `PYTHONPATH` and `FL_IR_TEST_TEMP_ROOT=%TEMP%\flir-t`: 1312 tests
   pass; 2 skip because optional lab caches and evidence are not in the source tree.
 - Not verified: any in-game behavior of the TP2-installed runtime, the adapter in the
   engine's own Lua, UI mods in a running game and EEex versions other than 1.2.
