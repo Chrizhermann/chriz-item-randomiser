@@ -110,8 +110,9 @@ original numbers and labels `cir-cespenar-soa-items`, `cir-undead-scrolls-all`,
 `cir-undead-scrolls-most`, `cir-duergar-merchants` and `cir-watchers-keep-statues`. They
 need neither EEex nor the randomiser. The BG2 ones require `GAME_IS ~bg2ee eet~` (their
 files and string references are Baldur's Gate II's); the scroll one `ENGINE_IS ~bgee
-bg2ee~`. Classic games keep Item Randomiser 8.1.1. Gameplay is unchanged from 8.1.1;
-the implementation changed where 8.1.1 relied on file shapes:
+bg2ee~`. Classic games keep Item Randomiser 8.1.1. Gameplay is unchanged from 8.1.1,
+except that Cespenar no longer offers a second recipe for a dragon scale he already has
+one for; the implementation changed where 8.1.1 relied on file shapes:
 
 - **9000 Cespenar can forge SoA items** (`d/botsmith.d`, `baf/botsmith.baf`). Same
   recipes, texts and `flItemMaker` global. His closing state now has `WEIGHT #-1`
@@ -121,8 +122,13 @@ the implementation changed where 8.1.1 relied on file shapes:
   (gold short) and 11 (the forging cutscene) are the original game's own; the way back
   to his recipes copies state 4 as installed before this component, so recipes another
   mod adds later are offered only when no SoA part is carried. On the Enhanced
-  Editions Cespenar forges Shadow Dragon Scale himself; the port keeps 8.1.1's recipe
-  for it, which he offers first.
+  Editions Cespenar forges Shadow Dragon Scale himself, and 8.1.1 offered its own recipe
+  for it first. Now the installer looks for a recipe that takes a dragon scale
+  (`TakePartyItem…` or `DestroyItem` of `scaler` or `scaleb` among the actions of
+  `BOTSMITH.DLG` as installed before this component); for such a scale it compiles
+  `d/botsmith.d` with that scale's test set to `False()` and prints a note, so only his
+  recipe remains (Christopher, 2026-10-17: drop the duplicate, decided by the installed
+  game). On the Enhanced Editions that is the Shadow Dragon's; the Red Dragon's stays.
 - **10100 / 10200 Protection from Undead scrolls** (`lib/tweaks.tpa`). Removes `SCRL09`
   from every store that sells it, or from each with a chance of nine in ten (8.1.1's
   `RANDOM(1 100) < 90` was 89 in 100), and prints how many stores it changed. It uses
@@ -140,16 +146,18 @@ the implementation changed where 8.1.1 relied on file shapes:
   extended it. State 14 itself stays as it is.
 - **10300 Watcher's Keep statues** (`lib/tweaks.tpa`). 8.1.1 replaced every
   `Global("SetDifficulty","AR3001",0)` with `False()`, which also stops EE Fixpack's
-  spawn activation: EE Fixpack (Alpha 3) switches off every spawn point in `AR3001.ARE`
+  spawn activation: EE Fixpack (Alpha 3 to Beta 2) switches off every spawn point in `AR3001.ARE`
   and switches four of them on in a script block that tests the same variable. By that
   reading of both mods' code (not checked in the game), 8.1.1's 10300 installed after EE
   Fixpack leaves the level without spawns. The port disables only the difficulty adjustments: blocks that use
   `SetDifficulty` and destroy a `gorsta` statue, by adding `False()` as their first
   condition. Other statue-destroying blocks stay and are counted in a note. If every
-  such adjustment already has a top-level `False()` (SCS's "Increase difficulty of
-  level-dependent monster groupings" makes the same change) or none exists, it changes
-  nothing and says so; 8.1.1's predicates on SCS markers and classic SCSII/Tactics
-  components are therefore gone.
+  such adjustment already has a top-level `False()` or none exists, it changes nothing
+  and says so; 8.1.1's predicates on SCS markers and classic SCSII/Tactics components
+  are therefore gone. SCS 35.21's component 8040 ("Tie difficulty of level-dependent
+  monster groupings to the difficulty slider") makes 8.1.1's whole-script replacement
+  itself, so with EE Fixpack the level has no spawns whatever CIR does; that is between
+  those two mods.
 
 CIR refuses 9000 and 10210 when Item Randomiser's own copy is installed (both would add
 their dialogue and, for 9000, hand over items twice). The scroll and statue components
@@ -389,7 +397,7 @@ Open:
   structure, and files that give the reward twice or not at all, were already split,
   ask for another item, erase an unknown journal entry or hand over no flail head stay
   byte-identical, with the reason recorded and printed. No game resource is used.
-- The optional tweaks in the same suite (`tests/tweak_fixtures.py`; 24 of 173 checks):
+- The optional tweaks in the same suite (`tests/tweak_fixtures.py`; 26 of 175 checks):
   9000, 10100, 10210 and 10300 installed together on EET and on BG2:EE, with
   Cespenar's and the merchant's dialogues checked by structure (Cespenar's state 4 with
   another mod's recipe, the closing state first in trigger order, the merchant's state
@@ -397,8 +405,10 @@ Open:
   (an EE Fixpack style block and another mod's statue block untouched, a split
   adjustment whose `False()` sits inside `OR()` still disabled), stores with their
   tables in different orders and a store that cannot be read, the texts added, the
-  notes printed, uninstall restoring every byte and a reinstall identical. Also 10200 on
-  30 stores, 10300 on a script SCS already changed and on one without the adjustment,
+  notes printed, uninstall restoring every byte and a reinstall identical. Also 9000 on a
+  Cespenar who already makes Shadow Dragon armour (only the Red Dragon's scale leads to
+  the component's recipe, with a note), 10200 on 30 stores, 10300 on a script SCS
+  already changed and on one without the adjustment,
   the refusal after Item Randomiser's own 9000 and 10210, and Polish texts converted on
   an Enhanced Edition game. The installer layouts were taken from the reference EET lab's
   `BOTSMITH`, `UDDUER01`, `AR3001` and stores, read without changing them.

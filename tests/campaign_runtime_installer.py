@@ -600,7 +600,8 @@ class Suite:
                    message[110202].replace("%flir_tw_removed%", "2").replace("%flir_tw_selling%", "2") in result.output
                    and message[110203].replace("%flir_tw_unreadable%", " BROKEN.STO").casefold()
                    in result.output.casefold()
-                   and message[110303].replace("%flir_tw_other%", "1") in result.output, result)
+                   and message[110303].replace("%flir_tw_other%", "1") in result.output
+                   and message[109001] not in result.output and message[109002] not in result.output, result)
         result = game.run("--force-uninstall-list", *TWEAKS)
         added_text = {key: value for key, value in changed.items() if key.endswith("dialog.tlk")}
         self.check("Tweaks_UninstallRestoresEveryByteButAddedGameText",
@@ -615,6 +616,20 @@ class Suite:
         self.check("TweaksOnBg2ee_Install", installed(result), result)
         self.check("TweaksOnBg2ee_ChangeTheSame",
                    {key: value for key, value in game.data().items() if before.get(key) != value} == changed)
+
+        # Cespenar already makes armour of the Shadow Dragon's scales, as on the
+        # Enhanced Editions: that scale is left to his recipe.
+        shadow = {**compiled, "botsmith.dlg": compiled["sbotsmith.dlg"]}
+        game = self.tweak_game(shadow)
+        result = game.run("--force-install-list", "9000")
+        self.check("ShadowDragonRecipeExists_InstallsWithNote", installed(result)
+                   and message[109002] in result.output and message[109001] not in result.output, result)
+        after = game.data()
+        tlk = after["lang/en_us/dialog.tlk"]
+        texts = fixtures.tra_strings((self.mod / "languages/english/botsmith.tra").read_text(encoding="utf-8"))
+        self.problems("ShadowDragonRecipeExists_LeavesThatScaleToIt", tweaks.botsmith_problems(
+            shadow["botsmith.dlg"], after["override/botsmith.dlg"], lambda number: text_ref(tlk, texts[number]),
+            taken=("scaleb",)))
 
         # Nine stores in ten, rolled per store.
         sellers = {f"STORE{number:02d}": ["POTN08", "SCRL09"] for number in range(30)}
@@ -749,7 +764,8 @@ def run_suite(args: argparse.Namespace) -> int:
         **NOTHING_TO_PREPARE, "unshey": "journal-unrecognised", "flail_heads": "prepared-elsewhere"},
         archived=True)
 
-    suite.tweak_components(compiled["tweaks"], message)
+    suite.tweak_components({**compiled["tweaks"], "sbotsmith.dlg": compiled["tweaks-shadow"]["botsmith.dlg"]},
+                           message)
 
     override_gam = gam([("SPRITE_IS_DEADX", 1), ("CHAPTER", 2)], b"\xff" * 33)
     applied = b'return "' + b"a" * 64 + b'"\n'

@@ -11,9 +11,9 @@ from __future__ import annotations
 
 import struct
 from pathlib import Path
-from typing import Callable, Mapping, Sequence
+from typing import Callable, Collection, Mapping, Sequence
 
-from campaign_patch_fixtures import block, lines, read_dialogue
+from campaign_patch_fixtures import NL, block, lines, read_dialogue
 
 # Cespenar: state 4 looks through the party's belongings; the last valid of its
 # transitions without text is taken, True() leading to "nothing found". Another
@@ -41,6 +41,14 @@ BOTSMITH = lines(
     'IF ~GlobalGT("ItemMaker","GLOBAL",0) InPartySlot(LastTalkedToBy,0)~ THEN BEGIN 12', "  SAY #17",
     '  IF ~~ THEN DO ~SetGlobal("ItemMaker","GLOBAL",0)~ EXIT', "END", "",
     "IF ~!InPartySlot(LastTalkedToBy,0)~ THEN BEGIN 13", "  SAY #18", "  IF ~~ THEN EXIT", "END")
+
+# As on the Enhanced Editions, Cespenar already makes armour of the Shadow
+# Dragon's scales (state 14), found when he looks through the belongings.
+_LOOKS = '  IF ~PartyHasItem("flother")~ THEN GOTO 7' + NL
+BOTSMITH_SHADOW = BOTSMITH.replace(_LOOKS, _LOOKS + '  IF ~PartyHasItem("scaleb")~ THEN GOTO 14' + NL) + lines(
+    "", "IF ~~ THEN BEGIN 14", "  SAY #19", "  IF ~PartyGoldLT(5000)~ THEN REPLY #11 GOTO 10",
+    '  IF ~PartyGoldGT(4999)~ THEN REPLY #12 DO ~TakePartyItemNum("scaleb",1) DestroyItem("scaleb")'
+    ' SetGlobal("ItemMaker","GLOBAL",2) TakePartyGold(5000)~ GOTO 11', "END")
 
 BOTSMITH_SCRIPT = (
     block(('Global("ItemMaker","GLOBAL",1)', 'Global("ImpForgeStuff","GLOBAL",1)'),
@@ -110,7 +118,9 @@ def sources(mod: Path) -> dict[str, dict[str, str]]:
     return {"tweaks": {"botsmith.d": BOTSMITH, "udduer01.d": UDDUER01, "botsmith.baf": BOTSMITH_SCRIPT,
                        "xbotsmith.baf": added.replace("\r\n", "\n").replace("\n", "\r\n") + "\r\n" + BOTSMITH_SCRIPT,
                        "ar3001.baf": AR3001, "xar3001.baf": AR3001_KEPT, "sar3001.baf": AR3001_STOPPED,
-                       "nar3001.baf": AR3001_NONE}}
+                       "nar3001.baf": AR3001_NONE},
+            # The same dialogue name as the other Cespenar, so a group of its own.
+            "tweaks-shadow": {"botsmith.d": BOTSMITH_SHADOW}}
 
 
 # A STOR V1.0 store: header, then its tables in the order given.
@@ -155,24 +165,37 @@ def _words(text: str) -> str:
     return " ".join(text.split())
 
 
-# The labels of d/botsmith.d in the order it appends them, and the recipes
-# state 4 offers, last first.
+# The labels of d/botsmith.d in the order it appends them.
 BOTSMITH_STATES = ("main", "bug", "menu1", "dragon", "dragonr", "dragonb", "dragon2", "menu3", "crom", "crom2",
                    "crom3", "crom4", "crom5", "menu4", "eq", "eq2", "eq3", "eq4", "eq5", "eq6", "eq7", "eq8",
                    "menu5", "gesen", "gesen2", "gesen3", "gesen4", "menu6", "wave", "wave2", "wave3", "wave4",
                    "menu7", "silver", "silver2", "silver3", "silver4", "menu8", "imod", "imod2", "imod3", "done")
-BOTSMITH_RECIPES = (("imod", 'PartyHasItem("blun12")'),
-                    ("silver", 'OR(2) PartyHasItem("misc8u") PartyHasItem("sw2h15a")'),
-                    ("wave", 'OR(2) PartyHasItem("halb09a") PartyHasItem("halb09b")'),
-                    ("gesen", 'OR(2) PartyHasItem("bow19a") PartyHasItem("bow19b")'),
-                    ("eq", 'OR(3) PartyHasItem("sw1h54a") PartyHasItem("sw1h54b") PartyHasItem("sw1h54c")'),
-                    ("crom", 'OR(2) PartyHasItem("scrlag") PartyHasItem("hamm07")'),
-                    ("dragon", 'OR(2) PartyHasItem("scaler") PartyHasItem("scaleb")'),
-                    ("bug", 'PartyHasItem("misc12")'))
 
 
-def botsmith_problems(original: bytes, patched: bytes, say: Callable[[int], int]) -> list[str]:
-    """What differs from Cespenar's SoA recipes, or nothing; say(n) is the game text of @n."""
+def _scale(item: str, taken: Collection[str]) -> str:
+    """The test for a dragon scale: False() where his dialogue already takes it for a recipe."""
+    return "False()" if item in taken else f'PartyHasItem("{item}")'
+
+
+def botsmith_recipes(taken: Collection[str] = ()) -> tuple[tuple[str, str], ...]:
+    """The recipes state 4 offers, last first, with their tests."""
+    return (("imod", 'PartyHasItem("blun12")'),
+            ("silver", 'OR(2) PartyHasItem("misc8u") PartyHasItem("sw2h15a")'),
+            ("wave", 'OR(2) PartyHasItem("halb09a") PartyHasItem("halb09b")'),
+            ("gesen", 'OR(2) PartyHasItem("bow19a") PartyHasItem("bow19b")'),
+            ("eq", 'OR(3) PartyHasItem("sw1h54a") PartyHasItem("sw1h54b") PartyHasItem("sw1h54c")'),
+            ("crom", 'OR(2) PartyHasItem("scrlag") PartyHasItem("hamm07")'),
+            ("dragon", f'OR(2) {_scale("scaler", taken)} {_scale("scaleb", taken)}'),
+            ("bug", 'PartyHasItem("misc12")'))
+
+
+def botsmith_problems(original: bytes, patched: bytes, say: Callable[[int], int],
+                      taken: Collection[str] = ()) -> list[str]:
+    """What differs from Cespenar's SoA recipes, or nothing; say(n) is the game text of @n.
+
+    taken: the dragon scales his dialogue already takes for a recipe, which
+    are left to it.
+    """
     before, after = read_dialogue(original), read_dialogue(patched)
     count = len(before)
     state = {label: count + index for index, label in enumerate(BOTSMITH_STATES)}
@@ -186,10 +209,22 @@ def botsmith_problems(original: bytes, patched: bytes, say: Callable[[int], int]
     if {**looks, "transitions": looks["transitions"][:kept]} != before[4]:
         problems.append("state 4 lost what it had")
     added = looks["transitions"][kept:]
+    recipes = botsmith_recipes(taken)
     expected = [{"flags": 2, "reply": None, "journal": None, "trigger": _words(trigger), "action": "",
-                 "target": ("BOTSMITH", state[label])} for label, trigger in BOTSMITH_RECIPES]
+                 "target": ("BOTSMITH", state[label])} for label, trigger in recipes]
     if added != expected:
         problems.append(f"state 4 adds {added}")
+    # The way on from the ankheg plate (menu1) tests the scales the same way,
+    # and each scale leads to the recipe for it.
+    onward = [move["trigger"] for move in after[state["menu1"]]["transitions"]
+              if move["target"] == ("BOTSMITH", state["dragon"])]
+    if onward != [dict(recipes)["dragon"]]:
+        problems.append(f"the ankheg plate leads on to the dragon scales by {onward}")
+    red, shadow = _scale("scaler", taken), _scale("scaleb", taken)
+    scales = [(move["trigger"], move["target"]) for move in after[state["dragon"]]["transitions"]]
+    if scales != [(shadow, ("BOTSMITH", state["dragonb"])), (red, ("BOTSMITH", state["dragonr"])),
+                  (f"{red} {shadow}", ("BOTSMITH", state["dragon2"]))]:
+        problems.append(f"the dragon scales lead on by {scales}")
     main = after[state["main"]]
     if main["say"] != say(0) or main["transitions"] != before[4]["transitions"]:
         problems.append(f"the way back to his own recipes is {main}")

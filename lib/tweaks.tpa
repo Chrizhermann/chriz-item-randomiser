@@ -2,6 +2,37 @@
 // Randomiser 8.1.1, under their original component numbers. Each finds what
 // it changes by meaning and tells the player when there is nothing to change.
 
+// Lets Cespenar forge the items of Shadows of Amn whose parts a randomiser can
+// move into Throne of Bhaal (d/botsmith.d, baf/botsmith.baf). A dragon scale
+// his dialogue already takes for a recipe, as the Enhanced Editions' does the
+// Shadow Dragon's, is left to that recipe, so he never offers two for one
+// scale: the dialogue's tests for that scale become False().
+DEFINE_ACTION_FUNCTION flir_tw_cespenar_soa_items BEGIN
+  OUTER_SET flir_tw_red = 0
+  OUTER_SET flir_tw_shadow = 0
+  COPY_EXISTING - ~botsmith.dlg~ ~override~
+    // A dialogue keeps its actions as text.
+    SPRINT flir_tw_takes ~\(TakePartyItem[A-Za-z]*\|DestroyItem\)([ %TAB%]*~
+    SET flir_tw_red = INDEX_BUFFER (CASE_INSENSITIVE ~%flir_tw_takes%"scaler"~) >= 0
+    SET flir_tw_shadow = INDEX_BUFFER (CASE_INSENSITIVE ~%flir_tw_takes%"scaleb"~) >= 0
+  OUTER_SPRINT flir_tw_scaler ~PartyHasItem("scaler")~
+  OUTER_SPRINT flir_tw_scaleb ~PartyHasItem("scaleb")~
+  ACTION_IF flir_tw_red BEGIN
+    OUTER_SPRINT flir_tw_scaler ~False()~
+  END
+  ACTION_IF flir_tw_shadow BEGIN
+    OUTER_SPRINT flir_tw_scaleb ~False()~
+  END
+  COMPILE EVALUATE_BUFFER ~cir/d/botsmith.d~
+  EXTEND_TOP ~botsmith.bcs~ ~cir/baf/botsmith.baf~
+  ACTION_IF flir_tw_red BEGIN
+    PRINT @109001
+  END
+  ACTION_IF flir_tw_shadow BEGIN
+    PRINT @109002
+  END
+END
+
 // Removes the scrolls of Protection from Undead (SCRL09) from the stores that
 // sell them: from every such store with all = 1, otherwise from each one with
 // a chance of nine in ten, rolled per store when installing. A file this

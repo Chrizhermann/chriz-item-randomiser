@@ -28,6 +28,8 @@
 @101528=~the conversation has an unexpected form~
 
 @109000=~Cespenar can forge SoA items~
+@109001=~Note: Cespenar already has a recipe that uses Red Dragon scales in this game, so this component adds none for them.~
+@109002=~Note: Cespenar already has a recipe that uses Shadow Dragon scales in this game, so this component adds none for them.~
 @110000=~Remove Protection from Undead scrolls from stores~
 @110100=~All scrolls from all stores~
 @110200=~All scrolls from 9 out of 10 stores~

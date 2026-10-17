@@ -7,7 +7,10 @@
 // forging is the original game's: state 10 when gold is short, state 11 for
 // the cutscene, then baf/botsmith.baf hands over the item. The closing state
 // is evaluated before every other state (WEIGHT), so his greeting (state 2)
-// stays as it is.
+// stays as it is. A dragon scale his dialogue already has a recipe for (the
+// Shadow Dragon's on the Enhanced Editions) is left to that recipe: the
+// installer compiles this file with its test, flir_tw_scaler or
+// flir_tw_scaleb, set to False() (lib/tweaks.tpa).
 
 APPEND botsmith
 
@@ -32,14 +35,14 @@ APPEND botsmith
     IF ~OR(2) PartyHasItem("bow19a") PartyHasItem("bow19b")~ THEN GOTO gesen
     IF ~OR(3) PartyHasItem("sw1h54a") PartyHasItem("sw1h54b") PartyHasItem("sw1h54c")~ THEN GOTO eq
     IF ~OR(2) PartyHasItem("scrlag") PartyHasItem("hamm07")~ THEN GOTO crom
-    IF ~OR(2) PartyHasItem("scaler") PartyHasItem("scaleb")~ THEN GOTO dragon
+    IF ~OR(2) %flir_tw_scaler% %flir_tw_scaleb%~ THEN GOTO dragon
   END
 
   IF ~~ dragon
     SAY @4
-    IF ~PartyHasItem("scaleb")~ THEN GOTO dragonb
-    IF ~PartyHasItem("scaler")~ THEN GOTO dragonr
-    IF ~PartyHasItem("scaler") PartyHasItem("scaleb")~ THEN GOTO dragon2
+    IF ~%flir_tw_scaleb%~ THEN GOTO dragonb
+    IF ~%flir_tw_scaler%~ THEN GOTO dragonr
+    IF ~%flir_tw_scaler% %flir_tw_scaleb%~ THEN GOTO dragon2
   END
 
   IF ~~ dragonr
@@ -296,6 +299,6 @@ EXTEND_BOTTOM botsmith 4
   IF ~OR(2) PartyHasItem("bow19a") PartyHasItem("bow19b")~ THEN GOTO gesen
   IF ~OR(3) PartyHasItem("sw1h54a") PartyHasItem("sw1h54b") PartyHasItem("sw1h54c")~ THEN GOTO eq
   IF ~OR(2) PartyHasItem("scrlag") PartyHasItem("hamm07")~ THEN GOTO crom
-  IF ~OR(2) PartyHasItem("scaler") PartyHasItem("scaleb")~ THEN GOTO dragon
+  IF ~OR(2) %flir_tw_scaler% %flir_tw_scaleb%~ THEN GOTO dragon
   IF ~PartyHasItem("misc12")~ THEN GOTO bug
 END
