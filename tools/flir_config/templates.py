@@ -93,10 +93,22 @@ def _templates() -> dict[str, dict]:
     return result
 
 
-def list_templates() -> list[dict]:
-    """Return stable, compact descriptors for the bundled presets."""
+def list_templates(campaigns: tuple[str, ...] | None = None) -> list[dict]:
+    """Return stable, compact descriptors for the bundled presets.
+
+    <campaigns> limits them to presets for those campaigns ("bg1", "bg2", "eet").
+    """
     return [{"id": identity, "name": row["name"], "description": row["description"]}
-            for identity, row in _templates().items()]
+            for identity, row in _templates().items()
+            if campaigns is None or row["campaign"] in campaigns]
+
+
+def template_campaign(template_id: str) -> str:
+    """The campaign ("bg1", "bg2" or "eet") a preset is for."""
+    descriptors = _templates()
+    if template_id not in descriptors:
+        raise ValueError(f"Unknown original template: {template_id}")
+    return descriptors[template_id]["campaign"]
 
 
 def _choice(value: str | None, label: str) -> str:

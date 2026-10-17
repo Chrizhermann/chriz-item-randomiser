@@ -49,10 +49,12 @@ class ResourceReaderTests(unittest.TestCase):
         (self.root / "data").mkdir()
         (self.root / "override").mkdir()
         self.records = [("ACTOR", 1009, 17), ("AREA", 1010, 3), ("SHOP", 1014, 9),
-                        ("ACTOR", 1007, 23), ("DIALOG", 1011, 2), ("SWORD", 1005, 11)]
+                        ("ACTOR", 1007, 23), ("DIALOG", 1011, 2), ("SWORD", 1005, 11),
+                        ("BGEE", 1033, 5)]
         self.payloads = {("cre", "actor"): b"CRE V1.0synthetic", ("are", "area"): b"ARE synthetic",
                          ("sto", "shop"): b"STO synthetic", ("bcs", "actor"): b"SC\nCR\nSC",
-                         ("dlg", "dialog"): b"DLG synthetic", ("itm", "sword"): b"ITM synthetic"}
+                         ("dlg", "dialog"): b"DLG synthetic", ("itm", "sword"): b"ITM synthetic",
+                         ("lua", "bgee"): b"-- journal table"}
         extensions = {kind: ext for ext, kind in RESOURCE_TYPES.items()}
         (self.root / "data" / "world.bif").write_bytes(biff([
             (locator, kind, self.payloads[extensions[kind], name.lower()]) for name, kind, locator in self.records
@@ -65,7 +67,7 @@ class ResourceReaderTests(unittest.TestCase):
 
     def test_canonical_type_codes(self) -> None:
         self.assertEqual(RESOURCE_TYPES, {"itm": 0x3ED, "spl": 0x3EE, "bcs": 0x3EF, "cre": 0x3F1,
-                                          "are": 0x3F2, "dlg": 0x3F3, "sto": 0x3F6})
+                                          "are": 0x3F2, "dlg": 0x3F3, "sto": 0x3F6, "lua": 0x409})
 
     def test_all_selected_types_are_separate_case_insensitive_and_read_only(self) -> None:
         before = self.snapshot()
@@ -316,7 +318,7 @@ class ResourceReaderTests(unittest.TestCase):
         original = path.read_bytes()
         table_offset = struct.unpack_from("<I", original, 16)[0]
         # actor is the last entry because the fixture reverses the BIFF table.
-        base = table_offset + 5 * 16
+        base = table_offset + (len(self.records) - 1) * 16
         for offset, value, fmt, message in (
             (base, 101, "<I", "locator is missing"),
             (base + 12, 1014, "<H", "type disagrees"),

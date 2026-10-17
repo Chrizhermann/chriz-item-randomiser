@@ -18,7 +18,7 @@ from flir_config.resources import scan_game
 from flir_config.sources import bind_profile, new_binding_plan, scan_world
 from flir_config.templates import DEFAULT_OPTIONS
 from flir_config.world_formats import parse_sto
-from test_postinstall_resources import make_game, make_itm, snapshot
+from test_postinstall_resources import make_game, make_itm, mark_eet, snapshot
 from test_postinstall_world_formats import item_record, make_are, make_sto
 from test_original_configuration import source_row
 
@@ -29,6 +29,7 @@ class SpellShieldOptionTests(unittest.TestCase):
         self.addCleanup(temp.cleanup)
         game = Path(temp.name) / "game"
         make_game(game, [("SCRL8X", make_itm()), ("SYNTH001", make_itm()), ("SCRLAL", make_itm())])
+        mark_eet(game)
         rows = [(item_record("synth001", expiration=0, flags=1), 1, 0)]
         if anchor_first:
             rows.insert(0, (item_record("scrlal", expiration=0, flags=1), 1, 0))

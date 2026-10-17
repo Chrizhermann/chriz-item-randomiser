@@ -18,6 +18,8 @@ RESOURCE = "bcs:blpool"
 ITEM = "blun12"
 ADAPTER_ID = "blpool-v1"
 SELECTOR = "pool-reward"
+# Item Randomiser's BG2 table lists the pool.
+CAMPAIGN = "bg2"
 PAYLOAD = {"resref": ITEM, "expiration": 0, "charges": [0, 0, 0], "flags": 0}
 
 

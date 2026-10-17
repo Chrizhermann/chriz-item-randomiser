@@ -9,6 +9,7 @@ from pathlib import Path
 from .original_catalog import (is_spin621_source, is_spin621_target,
                                mode2_alias_spec, container_target_spec, resolve_template)
 from .original_options import is_spell_shield_row, validate_spell_shield_spec
+from .platform import preset_game
 from .profiles import HEX256, ProfileError
 from .templates import POOL_CHOICES, list_templates
 
@@ -83,7 +84,7 @@ def table_rows(catalog: dict, world: dict, plan: dict) -> tuple[dict, dict]:
             any(value not in POOL_CHOICES for value in choices.values()) or
             not isinstance(options, dict)):
         raise ProfileError("Invalid original pool choices or options")
-    draft = resolve_template(catalog, world, template_id,
+    draft = resolve_template(catalog, world, template_id, game=preset_game(world, template_id),
                              items=choices["items"], targets=choices["targets"],
                              options=options)
     if draft["choices"] != choices or draft["options"] != options:

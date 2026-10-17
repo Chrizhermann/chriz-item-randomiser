@@ -1,9 +1,10 @@
 // Chriz Item Randomiser (cir.tp2): the post-install campaign runtime.
 //
 // Installs the runtime modules (prototype/, three tools/probes modules), hooks
-// UI.MENU's single-player New Game and character acceptance calls through
-// M_FLPRUI.lua, and marks the BALDUR.GAM new-game template with GLOBAL
-// FLPR_FRESH = 1. Every input is checked before the first write, so a refused
+// UI.MENU's single-player New Game, character import and character acceptance
+// calls through M_FLPRUI.lua, and marks the BALDUR.GAM new-game template with
+// GLOBAL FLPR_FRESH = 1. Every campaign of BG:EE (with Siege of Dragonspear),
+// BG2:EE and EET starts from that template. Every input is checked before the first write, so a refused
 // install leaves the game unchanged; uninstall restores UI.MENU and BALDUR.GAM
 // from backup. Configurator output written after installation (to
 // randomiser-campaigns/) is not tracked.
@@ -42,11 +43,36 @@ DEFINE_ACTION_MACRO flir_campaign_runtime_require_luajit BEGIN
   END
 END
 
-// A New Game or character acceptance call that is not hooked would start an
-// unrandomised campaign without notice, so unrecognised call forms refuse the
-// install. Multiplayer connectionScreen:OnNewGameButtonClick stays untouched.
+// WeiDU reads only the game's own resources and override, never a DLC archive
+// the engine loads on top of them: ZIP files with a mod.key in the game folder
+// (sod-dlc.zip) and in dlc/. Hooking UI.MENU and marking BALDUR.GAM from the
+// game's own copies would hide the DLC's versions, for example Siege of
+// Dragonspear's start menus. DLC Merger leaves an empty sod-dlc.zip behind.
+// WeiDU cannot look inside a ZIP file, so other ZIP files in the game folder,
+// such as downloaded mods, are not checked, nor is the documents folder.
+DEFINE_ACTION_MACRO flir_campaign_runtime_check_dlc BEGIN
+  ACTION_IF FILE_EXISTS ~sod-dlc.zip~ AND !FILE_SIZE ~sod-dlc.zip~ 0 BEGIN
+    FAIL @101506
+  END
+  ACTION_IF DIRECTORY_EXISTS ~dlc~ BEGIN
+    ACTION_CLEAR_ARRAY flir_rt_dlc
+    GET_FILE_ARRAY flir_rt_dlc ~dlc~ ~^.+\.[zZ][iI][pP]$~
+    ACTION_PHP_EACH flir_rt_dlc AS flir_rt_index => flir_rt_archive BEGIN
+      ACTION_IF !FILE_SIZE ~%flir_rt_archive%~ 0 BEGIN
+        FAIL @101506
+      END
+    END
+  END
+END
+
+// A New Game, character import or character acceptance call that is not
+// hooked would start an unrandomised campaign without notice, so unrecognised
+// call forms refuse the install. Multiplayer connectionScreen:OnNewGameButtonClick
+// and character creation's own import (createCharScreen:OnImportCharacterButtonClick,
+// a character for a game already begun) stay untouched; a UI without a
+// character import button needs no import hook.
 // Existing FLPRUI_ calls were written outside this installer; uninstalling it
-// would leave them calling missing functions. A UI mod that defines either
+// would leave them calling missing functions. A UI mod that defines a hooked
 // method would have its definition renamed into a global FLPRUI_ function that
 // replaces the adapter, so definitions refuse the install too.
 DEFINE_ACTION_MACRO flir_campaign_runtime_check_menu BEGIN
@@ -57,11 +83,15 @@ DEFINE_ACTION_MACRO flir_campaign_runtime_check_menu BEGIN
     COUNT_REGEXP_INSTANCES CASE_SENSITIVE EXACT_MATCH ~startEngine:OnNewGameButtonClick(~ flir_rt_new_game
     COUNT_REGEXP_INSTANCES CASE_SENSITIVE EXACT_MATCH ~connectionScreen:OnNewGameButtonClick(~ flir_rt_multiplayer
     COUNT_REGEXP_INSTANCES CASE_SENSITIVE ~[:.]OnNewGameButtonClick~ flir_rt_new_game_any
+    COUNT_REGEXP_INSTANCES CASE_SENSITIVE EXACT_MATCH ~startEngine:OnImportCharacterButtonClick(~ flir_rt_import
+    COUNT_REGEXP_INSTANCES CASE_SENSITIVE EXACT_MATCH ~createCharScreen:OnImportCharacterButtonClick(~
+      flir_rt_chargen_import
+    COUNT_REGEXP_INSTANCES CASE_SENSITIVE ~[:.]OnImportCharacterButtonClick~ flir_rt_import_any
     COUNT_REGEXP_INSTANCES CASE_SENSITIVE EXACT_MATCH ~createCharScreen:AcceptCharacter(~ flir_rt_accept
     COUNT_REGEXP_INSTANCES CASE_SENSITIVE ~[:.]AcceptCharacter~ flir_rt_accept_any
     COUNT_REGEXP_INSTANCES CASE_SENSITIVE EXACT_MATCH ~FLPRUI_~ flir_rt_hooked
     COUNT_REGEXP_INSTANCES CASE_SENSITIVE
-      ~function[ %TAB%%WNL%%MNL%%LNL%]+\(startEngine:OnNewGameButtonClick\|createCharScreen:AcceptCharacter\)~
+      ~function[ %TAB%%WNL%%MNL%%LNL%]+\(startEngine:OnNewGameButtonClick\|startEngine:OnImportCharacterButtonClick\|createCharScreen:AcceptCharacter\)~
       flir_rt_defined
   BUT_ONLY
   ACTION_IF flir_rt_defined != 0 BEGIN
@@ -69,6 +99,7 @@ DEFINE_ACTION_MACRO flir_campaign_runtime_check_menu BEGIN
   END
   ACTION_IF flir_rt_new_game < 1 OR flir_rt_accept < 1 OR flir_rt_hooked != 0
          OR flir_rt_new_game + flir_rt_multiplayer != flir_rt_new_game_any
+         OR flir_rt_import + flir_rt_chargen_import != flir_rt_import_any
          OR flir_rt_accept != flir_rt_accept_any BEGIN
     FAIL @101512
   END
@@ -134,6 +165,7 @@ END
 
 DEFINE_ACTION_MACRO flir_campaign_runtime_install BEGIN
   LAM flir_campaign_runtime_require_luajit
+  LAM flir_campaign_runtime_check_dlc
   LAM flir_campaign_runtime_check_menu
   LAM flir_campaign_runtime_check_gam
 
@@ -169,6 +201,7 @@ DEFINE_ACTION_MACRO flir_campaign_runtime_install BEGIN
 
   COPY_EXISTING ~UI.MENU~ ~override~
     REPLACE_TEXTUALLY CASE_SENSITIVE EXACT_MATCH ~startEngine:OnNewGameButtonClick(~ ~FLPRUI_NewGame(~
+    REPLACE_TEXTUALLY CASE_SENSITIVE EXACT_MATCH ~startEngine:OnImportCharacterButtonClick(~ ~FLPRUI_ImportCharacter(~
     REPLACE_TEXTUALLY CASE_SENSITIVE EXACT_MATCH ~createCharScreen:AcceptCharacter(~ ~FLPRUI_AcceptCharacter(~
   BUT_ONLY
 

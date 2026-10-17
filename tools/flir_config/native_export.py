@@ -44,6 +44,9 @@ from .container_rewards import (RESOURCE_TARGETS as CONTAINER_RESOURCES,
 from .original_catalog import container_target_spec
 from .cursed_disguises import validate_cursed_disguise_spec, prepare_cursed_disguises
 
+# next.lua: the revision of each campaign start (read by M_FLPR.lua).
+NEXT_SCHEMA = "flir-next-v2"
+
 
 def _require(condition: bool, message: str) -> None:
     if not condition:
@@ -570,15 +573,30 @@ def _export_tlk(installed: bytes, prepared: Path) -> bytes:
 
 
 def export_native(store: Path, catalog: dict, world: dict, output: Path,
-                  revision: str | None = None) -> dict:
-    """Export next-run settings while retaining already exported saved revisions."""
+                  revision: str | None = None, *, starts: dict[str, str] | None = None,
+                  main: str | None = None) -> dict:
+    """Export next-run settings while retaining already exported saved revisions.
+
+    <starts> names the revision of each campaign start (starts.write_starts)
+    and <main> the start the engine makes without a campaign row; next.lua
+    then lists them. Without <starts>, next.lua names <revision> (the store's
+    current one by default), which the runtime reads as a BG1 start.
+    """
     items, index = validate_catalog(catalog), validate_world(world, catalog)
     output = ensure_output_outside_game(output, catalog)
-    selected = read_campaign(store, revision)
+    if starts is not None:
+        _require(isinstance(starts, dict) and starts and revision is None and
+                 (main is None or main in starts), "Invalid campaign start revisions")
+        selected_starts = {start: read_campaign(store, key) for start, key in starts.items()}
+    else:
+        _require(main is None, "A main start needs campaign start revisions")
+        selected = read_campaign(store, revision)
+        selected_starts = {None: selected}
     exported = output / "campaign-store"
     manifests = {p.stem: read_campaign(exported, p.stem)
                  for p in (exported / "revisions").glob("*.json") if HEX256.fullmatch(p.stem)}
-    manifests[selected["revision"]] = selected
+    for manifest in selected_starts.values():
+        manifests[manifest["revision"]] = manifest
     pending, required, pristine, compiled = {}, set(), set(), {}
     for key, manifest in sorted(manifests.items()):
         native, resources, areas = _compile(manifest, world, index, items)
@@ -589,7 +607,11 @@ def export_native(store: Path, catalog: dict, world: dict, output: Path,
         pending[base + ".lua"] = _render_lua(manifest)
     # Reuse the scanner's resource reader; only selected resources are demanded.
     resource_bytes = {}
-    with GameResources(Path(catalog["game_root"]), {k: RESOURCE_TYPES[k] for k in ("itm", "are", "cre", "sto", "bcs", "dlg", "spl")}) as reader:
+    with GameResources(Path(catalog["game_root"]), {**{k: RESOURCE_TYPES[k] for k in ("itm", "are", "cre", "sto", "bcs", "dlg", "spl")},
+                                                    "lua": RESOURCE_TYPES["lua"]}) as reader:
+        # The EE journal table: EET installs it in override, BG:EE and BG2:EE
+        # keep it in their archives.
+        journal = reader.read("lua", "bgee") if "bgee" in reader.names("lua") else None
         for resource in sorted(required):
             kind, name = resource.split(":", 1)
             data = reader.read(kind, name)
@@ -636,9 +658,7 @@ def export_native(store: Path, catalog: dict, world: dict, output: Path,
         tlk_relative = (Path("dialog.tlk") if language == "default"
                         else Path("lang") / language / "dialog.tlk")
         tlk = _export_tlk((root / tlk_relative).read_bytes(), output / "game-overrides" / tlk_relative)
-        # The EE journal table is installed by EET as an override; reading this
-        # known filename avoids indexing unrelated long-named Lua helper files.
-        journal = (root / "override/BGEE.LUA").read_bytes()
+        _require(journal is not None, "The game has no BGEE.LUA journal table")
         patches, tlk = prepare_quest_options(
             {resource[4:] + "." + resource[:3]: data for resource, data in resource_bytes.items()},
             tlk, kangaxx=kangaxx, language=language)
@@ -789,8 +809,18 @@ def export_native(store: Path, catalog: dict, world: dict, output: Path,
     revisions = sorted(manifests)
     guarded_revisions = [key for key in revisions if "source_gate" in compiled[key] or "spell_shield" in compiled[key]]
     _store_path(output, Path("source-gate.lua")).write_bytes(_render_lua(guarded_revisions))
-    _store_path(output, Path("next.lua")).write_bytes(_render_lua(selected["revision"]))
+    if starts is None:
+        pointer = selected["revision"]
+    else:
+        pointer = {"schema": NEXT_SCHEMA, "starts": dict(sorted(starts.items()))}
+        if main is not None:
+            pointer["main"] = main
+    _store_path(output, Path("next.lua")).write_bytes(_render_lua(pointer))
     _store_path(output, Path(EXPORT_FILES)).write_bytes(canonical_bytes(
         {"schema": EXPORT_FILES_SCHEMA, "files": sorted({*pending, "source-gate.lua", "next.lua"})}))
-    return {"revision": selected["revision"], "revisions": revisions,
-            "config_path": str(output), "state": "experimental-native-config"}
+    result = {"revisions": revisions, "config_path": str(output), "state": "experimental-native-config"}
+    if starts is None:
+        result["revision"] = selected["revision"]
+    else:
+        result["starts"] = dict(sorted(starts.items()))
+    return result

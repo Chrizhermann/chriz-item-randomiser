@@ -116,7 +116,7 @@ local function setup(Core,Host)
         report=function(status,reason) f.reports[#f.reports+1]={status,reason} end}
     f.host=Host.new(f.deps)
     function f:poll(tick) self.tick=tick or self.tick+1; self.host:poll() end
-    function f:capture() self.values.FLPR_FRESH=1; return self.host:capture_new("confirmed-bg1-character-accept") end
+    function f:capture() self.values.FLPR_FRESH=1; return self.host:capture_new("confirmed-character-accept") end
     function f:finish()
         for i=1,25 do self:poll() end
         assert(self.host.status=="complete",tostring(self.host.error))
@@ -138,14 +138,14 @@ end
 function cases.explicit_capture_requires_handoff_and_marker(Core,Host)
     local f=setup(Core,Host)
     local x,e=f.host:capture_new("anything"); fail(x,e,"NEW_GAME_HANDOFF_REQUIRED")
-    f.host:destroy(); x,e=f.host:capture_new("confirmed-bg1-character-accept"); fail(x,e,"FRESH_TEMPLATE_REQUIRED")
+    f.host:destroy(); x,e=f.host:capture_new("confirmed-character-accept"); fail(x,e,"FRESH_TEMPLATE_REQUIRED")
     assert(f.seeds==0 and #f.events==0)
 end
 function cases.capture_freezes_once_before_world(Core,Host)
     local f=setup(Core,Host); assert(f:capture())
     assert(f.values.flpr_state==2 and f.values.FLPR_FRESH==0 and #f.events==0 and f.seeds==1)
     local saved=copy(f.values)
-    assert(f.host:capture_new("confirmed-bg1-character-accept"))
+    assert(f.host:capture_new("confirmed-character-accept"))
     assert(f.seeds==1 and f.next_calls==1)
     for key,value in pairs(saved) do assert(f.values[key]==value,key) end
 end
@@ -391,18 +391,31 @@ local function bootstrap(Core,Host,Globals,text,options)
                 return true
             end}
     end}
-    EngineGlobals={g_pBaldurChitin={m_pObjectGame={m_worldTime={m_gameTime=0}}}}
-    startCampaignData={{id="BG1"},{id="BG2"}}; currentCampaign=1
-    startEngine={OnNewGameButtonClick=function()
-        f.bootstrap_events[#f.bootstrap_events+1]="newgame"
-        f.new_game_clicked=(f.new_game_clicked or 0)+1
-    end}
-    createCharScreen={AcceptCharacter=function(_,difficulty)
-        f.bootstrap_events[#f.bootstrap_events+1]="engine_accept"
-        f.accept_count=(f.accept_count or 0)+1
-        f.accepted_state=f.values.flpr_state; f.accepted_fresh=f.values.FLPR_FRESH
-        return difficulty
-    end}
+    -- The engine's campaign state: CInfGame's campaign (a CAMPAIGN.2DA row, or
+    -- nil) and its Black Pits, tutorial and Throne of Bhaal flags.
+    f.campaign={name="BG1"}
+    EngineGlobals={g_pBaldurChitin={m_pObjectGame={m_worldTime={m_gameTime=0},
+        m_sCurrentCampaign={m_pchData={get=function() return f.campaign.name or "" end}}}}}
+    game={GetMissionPackInfoTBP=function() return f.campaign.tbp==true end,
+        GetMissionPackInfo=function() return f.campaign.tutorial==true end,
+        GetMissionPackInfo25=function() return f.campaign.tob==true end}
+    startEngine={GetCampaign=function() return f.campaign.name and 3 or (f.campaign.tbp and 2 or 1) end,
+        OnNewGameButtonClick=function()
+            f.bootstrap_events[#f.bootstrap_events+1]="newgame"
+            f.new_game_clicked=(f.new_game_clicked or 0)+1; f.chargen_mode=1
+        end,
+        OnImportCharacterButtonClick=function()
+            f.bootstrap_events[#f.bootstrap_events+1]="import"
+            f.import_clicked=(f.import_clicked or 0)+1; f.chargen_mode=7
+        end}
+    -- Character creation mode (CScreenCreateChar engine state) the last start began.
+    createCharScreen={GetEngineState=function() return f.chargen_mode end,
+        AcceptCharacter=function(_,difficulty)
+            f.bootstrap_events[#f.bootstrap_events+1]="engine_accept"
+            f.accept_count=(f.accept_count or 0)+1
+            f.accepted_state=f.values.flpr_state; f.accepted_fresh=f.values.FLPR_FRESH
+            return difficulty
+        end}
     local host_module=Host
     if options.gate then
         host_module={new=function(deps)
@@ -482,7 +495,9 @@ local function bootstrap(Core,Host,Globals,text,options)
         if native_revision and f.bundles[native_revision] then
             return function() return f.bundles[native_revision].fixture end
         end
-        if path=="randomiser-campaigns/next.lua" then return function() return f.next_revision end end
+        if path=="randomiser-campaigns/next.lua" then
+            return function() return f.next_pointer or {schema="flir-next-v2",starts={BG1=f.next_revision}} end
+        end
         local revision=path:match("revisions/([0-9a-f]+)%.lua$")
         if revision and f.bundles[revision] then return function() return f.bundles[revision].manifest end end
         return nil
@@ -670,13 +685,120 @@ function cases.bootstrap_accept_sets_reward_selection_flags(Core,Host,Globals,te
     -- Without randomization rules no source keeps its original reward.
     assert(f.values.FLPR_QREWARD==1 and f.values.FLPR_QM2_42==0)
 end
+-- A campaign the applied configuration has no revision for: EET's Black Pits,
+-- Black Pits, the tutorial and Throne of Bhaal without a campaign row, and
+-- Siege of Dragonspear here.
 function cases.bootstrap_other_campaign_asks_before_starting_unrandomised(Core,Host,Globals,text)
-    local f=bootstrap(Core,Host,Globals,text); currentCampaign=2; f.root.NewGame()
+    for _,campaign in ipairs({{name="BP1"},{tbp=true},{tutorial=true},{tob=true},{name="SOD"}}) do
+        local f=bootstrap(Core,Host,Globals,text); f.campaign=campaign; f.root.NewGame()
+        local shown=popup(f,"other_campaign")
+        assert(f.new_game_clicked==nil and f.root.NewGameIntent==nil)
+        shown.start(); assert(f.new_game_clicked==1 and f.root.NewGameIntent==nil)
+        f.values.FLPR_FRESH=1; assert(f.root.AcceptCharacter(2)==2)
+        assert(f.values.flpr_state==nil and f.accepted_fresh==1 and f.error_file==nil)
+    end
+end
+-- Each campaign start uses the revision the applied configuration names for
+-- it; the main campaign (no campaign row, no flags) is the pointer's "main".
+function cases.bootstrap_each_campaign_start_captures_its_own_revision(Core,Host,Globals,text)
+    local other=string.rep("d",64)
+    local starts={
+        {campaign={name="SOD"},pointer={SOD="self"},main=nil,id="SOD"},
+        {campaign={name="sod"},pointer={SOD="self"},main=nil,id="SOD"},
+        {campaign={},pointer={SOA="self",TOB=other},main="SOA",id="SOA"},
+        {campaign={tob=true},pointer={SOA=other,TOB="self"},main="SOA",id="TOB"},
+        {campaign={},pointer={BG1="self",SOD=other},main="BG1",id="BG1"},
+    }
+    for _,start in ipairs(starts) do
+        local f=bootstrap(Core,Host,Globals,text)
+        local pointer={}
+        for name,revision in pairs(start.pointer) do
+            pointer[name]=revision=="self" and f.manifest.revision or revision
+        end
+        f.next_pointer={schema="flir-next-v2",starts=pointer,main=start.main}
+        f.campaign=start.campaign; f.root.NewGame()
+        assert(#f.popups==0 and f.new_game_clicked==1)
+        assert(f.root.NewGameIntent.campaign==start.id and f.root.NewGameIntent.revision==f.manifest.revision)
+        f.values.FLPR_FRESH=1
+        assert(f.root.AcceptCharacter(2)==2 and f.accepted_state==2 and f.accepted_fresh==0)
+        assert(f.root.Inspect().intent.campaign==start.id)
+    end
+end
+-- Importing a character starts a new game through the engine's import screen
+-- and captures at character acceptance like New Game.
+function cases.bootstrap_import_character_captures_like_new_game(Core,Host,Globals,text)
+    local f=bootstrap(Core,Host,Globals,text)
+    f.next_pointer={schema="flir-next-v2",starts={SOA=f.manifest.revision},main="SOA"}
+    f.campaign={}; f.root.ImportCharacter()
+    assert(#f.popups==0 and f.import_clicked==1 and f.new_game_clicked==nil)
+    assert(f.root.NewGameIntent.campaign=="SOA")
+    f.values.FLPR_FRESH=1
+    assert(f.root.AcceptCharacter(2)==2 and f.accepted_state==2 and f.accepted_fresh==0)
+    -- Black Pits imports a party: asked, and the start choice imports unrandomised.
+    f=bootstrap(Core,Host,Globals,text); f.campaign={tbp=true}; f.root.ImportCharacter()
     local shown=popup(f,"other_campaign")
-    assert(f.new_game_clicked==nil and f.root.NewGameIntent==nil)
-    shown.start(); assert(f.new_game_clicked==1 and f.root.NewGameIntent==nil)
-    f.values.FLPR_FRESH=1; assert(f.root.AcceptCharacter(2)==2)
-    assert(f.values.flpr_state==nil and f.accepted_fresh==1 and f.error_file==nil)
+    assert(f.import_clicked==nil); shown.start()
+    assert(f.import_clicked==1 and f.root.NewGameIntent==nil)
+end
+-- A cancelled start leaves its intent behind. Character creation that no
+-- hooked start began (the tutorial, pre-generating a character, party
+-- creation) accepts unrandomised and drops it; restarting creation keeps it.
+function cases.bootstrap_only_the_begun_character_creation_captures(Core,Host,Globals,text)
+    local others={
+        {campaign={tutorial=true},mode=1},
+        {mode=4},
+        {mode=5},
+        {campaign={name="SOD"},mode=1},
+    }
+    for _,other in ipairs(others) do
+        local f=bootstrap(Core,Host,Globals,text)
+        f.next_pointer={schema="flir-next-v2",starts={BG1=f.manifest.revision},main="BG1"}
+        f.campaign={}; f.root.NewGame()
+        assert(#f.popups==0 and f.root.NewGameIntent.chargen==1)
+        if other.campaign then f.campaign=other.campaign end
+        f.chargen_mode=other.mode; f.values.FLPR_FRESH=1
+        assert(f.root.AcceptCharacter(2)==2 and f.accept_count==1 and #f.popups==0)
+        assert(f.values.flpr_state==nil and f.accepted_fresh==1 and f.root.NewGameIntent==nil)
+    end
+    -- Without the engine's creation mode the campaign still tells starts apart.
+    local f=bootstrap(Core,Host,Globals,text)
+    createCharScreen.GetEngineState=nil
+    f.root.NewGame(); f.values.FLPR_FRESH=1
+    assert(f.root.NewGameIntent.chargen==nil)
+    assert(f.root.AcceptCharacter(2)==2 and f.accepted_state==2 and f.accepted_fresh==0)
+    f=bootstrap(Core,Host,Globals,text)
+    f.root.ImportCharacter(); f.campaign={tutorial=true}; createCharScreen.GetEngineState=nil
+    f.values.FLPR_FRESH=1; assert(f.root.AcceptCharacter(2)==2 and f.values.flpr_state==nil)
+end
+-- A pointer written before campaign starts were configurable is a BG1 start.
+function cases.bootstrap_single_revision_pointer_is_a_bg1_start(Core,Host,Globals,text)
+    local f=bootstrap(Core,Host,Globals,text); f.next_pointer=f.manifest.revision
+    f.root.NewGame(); assert(#f.popups==0 and f.root.NewGameIntent.revision==f.manifest.revision)
+    f.values.FLPR_FRESH=1; assert(f.root.AcceptCharacter(2)==2 and f.accepted_state==2)
+    f=bootstrap(Core,Host,Globals,text); f.next_pointer=f.manifest.revision; f.campaign={name="SOA"}
+    f.root.NewGame(); popup(f,"other_campaign")
+end
+-- An unreadable pointer or campaign state is a setup failure with details,
+-- never a silent unrandomised start.
+function cases.bootstrap_unreadable_pointer_or_campaign_asks_with_details(Core,Host,Globals,text)
+    local broken={
+        {pointer={schema="flir-next-v1",starts={}},reason="NEXT_POINTER_INVALID"},
+        {pointer={schema="flir-next-v2",starts={BG1="ABC"}},reason="NEXT_POINTER_INVALID"},
+        {pointer={schema="flir-next-v2",starts={},main=7},reason="NEXT_POINTER_INVALID"},
+        {campaign={name=""},reason="CAMPAIGN_NAME_UNAVAILABLE"},
+        {game_missing=true,campaign={},reason="game"},
+    }
+    for _,case in ipairs(broken) do
+        local f=bootstrap(Core,Host,Globals,text)
+        f.next_pointer=case.pointer
+        if case.campaign then f.campaign=case.campaign end
+        if case.game_missing then game=nil end
+        f.root.NewGame()
+        local shown=popup(f,"setup_failed")
+        assert(f.error_file:find("new-game: ",1,true) and f.error_file:find(case.reason,1,true),tostring(f.error_file))
+        assert(f.new_game_clicked==nil and f.root.NewGameIntent==nil)
+        shown.start(); assert(f.new_game_clicked==1 and f.root.NewGameIntent==nil)
+    end
 end
 function cases.bootstrap_destroy_clears_intent(Core,Host,Globals,text)
     local f=bootstrap(Core,Host,Globals,text); f.root.NewGame(); assert(f.root.NewGameIntent)
@@ -707,7 +829,7 @@ function cases.bootstrap_messages_use_the_installed_game_text(Core,Host,Globals,
     Infinity_FetchString=function(ref) return ({[4711]="Gotowe.",[4712]="Tylko BG1.",[4713]="Bez"})[ref] end
     bootstrap_to_complete(f)
     assert(#f.shown==1 and f.shown[1]=="Gotowe.")
-    currentCampaign=2; f.root.NewGame()
+    f.campaign={name="BP1"}; f.root.NewGame()
     local shown=table.remove(f.popups)
     assert(shown.text=="Tylko BG1." and shown.ok=="Bez")
     -- A key without a game-text entry keeps the English text.

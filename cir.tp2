@@ -40,7 +40,7 @@ LANGUAGE Polish polish ~cir/languages/english/setup.tra~
 
 
 BEGIN @101500 DESIGNATED 0 LABEL ~cir-randomiser~                                                       //Marker file: flrandomiser3.mrk
-REQUIRE_PREDICATE GAME_IS ~eet~ @101501
+REQUIRE_PREDICATE GAME_IS ~bgee bg2ee eet~ @101501
 REQUIRE_PREDICATE FILE_EXISTS ~override/M___EEex.lua~ @101502
 REQUIRE_PREDICATE !FILE_EXISTS_IN_GAME flrandomiser1.mrk AND !FILE_EXISTS_IN_GAME flrandomiser2.mrk @101503 //Item Randomiser's Mode 1 or Mode 2
 REQUIRE_PREDICATE !MOD_IS_INSTALLED randomiser.tp2 560 @101504

@@ -125,7 +125,7 @@ end
 -- the caller may start the same game without randomisation instead.
 function Host:capture_new(handoff)
     local ok, failure = pcall(function()
-        assert(handoff == "confirmed-bg1-character-accept", "NEW_GAME_HANDOFF_REQUIRED")
+        assert(handoff == "confirmed-character-accept", "NEW_GAME_HANDOFF_REQUIRED")
         local deps, storage = self.deps, self.deps.storage
         assert(type(storage.begin) == "function" and type(storage.commit) == "function" and
             type(storage.rollback) == "function", "STORAGE_TRANSACTION_UNSUPPORTED")

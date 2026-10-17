@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Synthetic EET installs of Chriz Item Randomiser (cir.tp2, the campaign runtime).
+"""Synthetic BG:EE, BG2:EE and EET installs of Chriz Item Randomiser (cir.tp2, the campaign runtime).
 
 Builds minimal KEY/BIFF/TLK games below a caller-supplied temporary root,
 stages the mod exactly as the release package selects it (from the working tree
@@ -70,8 +70,10 @@ LUAJIT_INI = (b"[General]\r\n; LuaPatchMode=INTERNAL uses the engine's own Lua\r
               b"LuaVersionExternal=5.1\r\n")
 DEBUG = os.environ.get("FLIR_RUNTIME_INSTALLER_DEBUG") == "1"
 
-# Call shapes of the reference EET UI.MENU, LeUI 4.9.1, Infinity UI 1.17 and
-# the EEUITweaks 4.0.7 chargen fragments, in a minimal synthetic menu.
+# Call shapes of the reference BG2:EE, Siege of Dragonspear and EET UI.MENU,
+# LeUI 4.9.1, Infinity UI 1.17 and the EEUITweaks 4.0.7 chargen fragments, in
+# a minimal synthetic menu. Character creation's own import button and its
+# return to the import screen are in the reference menus.
 MENU = b"""menu
 {
 \tname 'START_SP'
@@ -89,6 +91,15 @@ MENU = b"""menu
 \t\t\tend
 \t\t"
 \t}
+\tbutton
+\t{
+\t\ttext "IMPORT_GAME_BUTTON"
+\t\taction
+\t\t"
+\t\t\tInfinity_PopMenu();
+\t\t\tstartEngine:OnImportCharacterButtonClick();
+\t\t"
+\t}
 }
 menu
 {
@@ -98,6 +109,23 @@ menu
 \t\ttext lua "chargenAcceptOrExport()"
 \t\tclickable lua "createCharScreen:IsChargenComplete()"
 \t\taction "createCharScreen:AcceptCharacter(-1)"
+\t}
+\tbutton
+\t{
+\t\ttext "IMPORT_BUTTON"
+\t\taction "createCharScreen:OnImportCharacterButtonClick()"
+\t}
+\tbutton
+\t{
+\t\ttext "CANCEL_BUTTON"
+\t\taction
+\t\t"
+\t\t\tInfinity_PopMenu()
+\t\t\tif(createCharScreen:GetEngineState() == 7) then
+\t\t\t\te:SelectEngine(startEngine)
+\t\t\t\tstartEngine:OnImportCharacterButtonClick()
+\t\t\tend
+\t\t"
 \t}
 }
 menu
@@ -124,7 +152,13 @@ menu
 """.replace(b"\n", b"\r\n")
 UI_MOD_MENU = MENU + (b"menu\n{\n\tname 'LEUI_START'\n\tbutton\n\t{\n\t\taction\n\t\t\"\n"
                       b"\t\t\tstartEngine:OnNewGameButtonClick()\n\t\t\"\n\t}\n\tbutton\n\t{\n"
+                      b"\t\taction\n\t\t\"\n\t\t\tstartEngine:OnImportCharacterButtonClick()\n\t\t\"\n\t}\n"
+                      b"\tbutton\n\t{\n"
                       b"\t\taction\n\t\t\"\n\t\t\tcreateCharScreen:AcceptCharacter(-1)\n\t\t\"\n\t}\n}\n")
+# A UI whose start screen has no character import; character creation keeps its own.
+NO_IMPORT_MENU = (MENU.replace(b"\t\t\tstartEngine:OnImportCharacterButtonClick();\r\n", b"")
+                  .replace(b"\t\t\t\tstartEngine:OnImportCharacterButtonClick()\r\n", b""))
+assert b"startEngine:OnImportCharacterButtonClick" not in NO_IMPORT_MENU
 
 
 # An unrelated mod installed before the randomiser.
@@ -187,6 +221,7 @@ DEFAULT_GAM = gam([("CHAPTER", 0), ("ENDOFBG1", 0), ("KNOWBRANWEN", 3)], b"PARTY
 
 def patch_menu(data: bytes) -> bytes:
     return (data.replace(b"startEngine:OnNewGameButtonClick(", b"FLPRUI_NewGame(")
+            .replace(b"startEngine:OnImportCharacterButtonClick(", b"FLPRUI_ImportCharacter(")
             .replace(b"createCharScreen:AcceptCharacter(", b"FLPRUI_AcceptCharacter("))
 
 
@@ -215,16 +250,22 @@ def build_game(root: Path, mod: Path, weidu: Path, *, menu: bytes | None = MENU,
                baldur: bytes | None = DEFAULT_GAM, menu_in_override: bool = False,
                gam_in_override: bool = False, ini: bytes | None = LUAJIT_INI,
                override: Mapping[str, bytes | None] = {}, files: Mapping[str, bytes] = {},
-               eet: bool = True, biff: Sequence[tuple[str, str, bytes]] = (),
+               platform: str = "eet", biff: Sequence[tuple[str, str, bytes]] = (),
                tlk: bytes | None = None) -> Game:
-    """Synthetic EET game with EEex, LuaJIT and unrelated mod data.
+    """Synthetic game with EEex, LuaJIT and unrelated mod data.
 
-    A menu, template, INI or override file given as None is absent. <biff>
-    adds archived resources, <tlk> replaces the one-entry game text.
+    <platform> gives the files WeiDU identifies the game by: BG:EE ("bgee")
+    and BG2:EE ("bg2ee") by an area only they have, EET by its flag file;
+    "other" has neither. A menu, template, INI or override file given as None
+    is absent. <biff> adds archived resources, <tlk> replaces the one-entry
+    game text.
     """
-    resources = [("OH6000", "ARE", b"synthetic EET marker"), *biff]
+    marker = {"bgee": [("OH1000", "ARE", b"synthetic BG:EE marker")],
+              "bg2ee": [("OH6000", "ARE", b"synthetic BG2:EE marker")],
+              "eet": [("OH6000", "ARE", b"synthetic BG2:EE marker")], "other": []}[platform]
+    resources = [*marker, *biff]
     files = dict(files)
-    contents = {"EET.flag": b"1" if eet else None, "M___EEex.lua": b"EEex_Active = true\n",
+    contents = {"EET.flag": b"1" if platform == "eet" else None, "M___EEex.lua": b"EEex_Active = true\n",
                 "UNRELATED.ITM": b"ITM V1  unrelated mod item", "M_OTHER.lua": b"-- another mod\n"}
     if menu is not None:
         if menu_in_override:
@@ -548,12 +589,12 @@ class Suite:
         self.check(f"{name}_UninstallRestoresEveryByteButAddedGameText",
                    uninstalled(result) and game.data() == {**before, **added_text}, result)
 
-    def tweak_game(self, compiled: Mapping[str, bytes], *, eet: bool = True, script: str = "ar3001.bcs",
+    def tweak_game(self, compiled: Mapping[str, bytes], *, platform: str = "eet", script: str = "ar3001.bcs",
                    extra: Sequence[tuple[str, str, bytes]] = (), **options) -> Game:
         """A game with the files the tweaks change, in the archive and in override."""
         broken = bytearray(tweaks.store(["SCRL09"]))
         struct.pack_into("<I", broken, 0x38, 99)
-        return self.game(eet=eet, tlk=fixtures.text_tlk(), biff=[
+        return self.game(platform=platform, tlk=fixtures.text_tlk(), biff=[
             ("BOTSMITH", "DLG", compiled["botsmith.dlg"]), ("BOTSMITH", "BCS", compiled["botsmith.bcs"]),
             ("AR3001", "BCS", compiled[script]), ("SELL1", "STO", tweaks.store(*SCROLL_STORES["SELL1"])),
             ("KEEP", "STO", tweaks.store(["POTN08"])), *extra], override={
@@ -610,7 +651,7 @@ class Suite:
         self.check("Tweaks_ReinstallIsIdentical", installed(result) and game.data() == after, result)
 
         # Baldur's Gate II: Enhanced Edition without EET.
-        game = self.tweak_game(compiled, eet=False)
+        game = self.tweak_game(compiled, platform="bg2ee")
         before = game.data()
         result = game.run("--force-install-list", *TWEAKS)
         self.check("TweaksOnBg2ee_Install", installed(result), result)
@@ -751,6 +792,12 @@ def run_suite(args: argparse.Namespace) -> int:
     suite = Suite(scratch, mod, weidu, reporter)
 
     suite.lifecycle("ArchivedTemplates", MENU, DEFAULT_GAM)
+    # BG:EE (with Siege of Dragonspear merged: DLC Merger leaves an empty
+    # sod-dlc.zip) and BG2:EE without EET.
+    suite.lifecycle("BgeeWithMergedDlc", MENU, DEFAULT_GAM, platform="bgee",
+                    files={"sod-dlc.zip": b"", "dlc/sod-dlc.zip": b"", "mymod-v1.zip": b"PK\x05\x06" + bytes(18)})
+    suite.lifecycle("Bg2ee", MENU, DEFAULT_GAM, platform="bg2ee")
+    suite.lifecycle("MenuWithoutCharacterImport", NO_IMPORT_MENU, DEFAULT_GAM, platform="bgee")
 
     # The installer's quest and dialogue changes, on synthetic files.
     compiled = compile_fixtures(scratch, weidu, {**fixtures.SOURCES, **tweaks.sources(mod)})
@@ -834,7 +881,12 @@ def run_suite(args: argparse.Namespace) -> int:
     # Only WeiDU's record of this component makes an existing runtime its own.
     suite.refusal("StagedRuntimeWithStrayMarker", message[101505], skipped,
                   override={"M_FLPR.lua": b"-- lab\n", "flrandomiser3.mrk": MARKER})
-    suite.refusal("NotEet", message[101501], skipped, eet=False)
+    suite.refusal("OtherGame", message[101501], skipped, platform="other")
+    # Siege of Dragonspear still packed, where the engine loads it from.
+    for name, files in (("UnmergedDlcInGameFolder", {"sod-dlc.zip": b"PK\x03\x04 packed"}),
+                        ("UnmergedDlcInDlcFolder", {"dlc/sod-dlc.zip": b"PK\x03\x04 packed"}),
+                        ("OtherDlcInDlcFolder", {"dlc/sod-dlc.zip": b"", "dlc/Extra.ZIP": b"PK\x03\x04 packed"})):
+        suite.refusal(name, message[101506], refused, platform="bgee", files=files)
     suite.refusal("NoEEex", message[101502], skipped, override={"M___EEex.lua": None})
 
     for name, ini in (
@@ -852,6 +904,9 @@ def run_suite(args: argparse.Namespace) -> int:
         ("MenuWithoutAccept", MENU.replace(b"createCharScreen:AcceptCharacter(", b"FinishChargen(")),
         ("MenuNewGameByReference", MENU + b"local f = startEngine.OnNewGameButtonClick\r\n"),
         ("MenuAcceptBySpacedCall", MENU + b"createCharScreen:AcceptCharacter (-1)\r\n"),
+        ("MenuImportByReference", MENU + b"local f = startEngine.OnImportCharacterButtonClick\r\n"),
+        ("MenuImportBySpacedCall", MENU + b"startEngine:OnImportCharacterButtonClick ()\r\n"),
+        ("MenuImportThroughOtherName", MENU + b"local s = startEngine\r\ns:OnImportCharacterButtonClick()\r\n"),
         ("MenuAlreadyHooked", patch_menu(MENU)),
         ("MenuPartlyHooked", MENU + b"FLPRUI_NewGame()\r\n"),
     ):
@@ -864,6 +919,7 @@ def run_suite(args: argparse.Namespace) -> int:
          MENU + b"`\r\nfunction\tcreateCharScreen:AcceptCharacter(difficulty)\r\nend\r\n`\r\n"),
         ("MenuDefinesAcceptOnNextLine",
          UI_MOD_MENU + b"`\nfunction\n\tcreateCharScreen:AcceptCharacter(difficulty)\nend\n`\n"),
+        ("MenuDefinesImport", MENU + b"`\r\nfunction startEngine:OnImportCharacterButtonClick()\r\nend\r\n`\r\n"),
     ):
         suite.refusal(name, message[101515], refused, menu=menu)
 

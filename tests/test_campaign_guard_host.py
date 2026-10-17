@@ -186,7 +186,7 @@ local function setup(Core,Host,options)
     f.host=Host.new(f.deps)
     function f:capture()
         self.values.FLPR_FRESH=1
-        return self.host:capture_new("confirmed-bg1-character-accept")
+        return self.host:capture_new("confirmed-character-accept")
     end
     function f:poll()
         self.tick=self.tick+1
@@ -209,7 +209,7 @@ function cases.capture_prepares_guard_after_commit_before_marker_consumption(Cor
     assert(#f.prepares==1 and f.prepares[1].bundle==f.bundle)
     assert(f.prepares[1].state==2 and f.prepares[1].fresh==1)
     assert(f.values.FLPR_FRESH==0 and f.seeds==1 and f.next_calls==1)
-    assert(f.host:capture_new("confirmed-bg1-character-accept"))
+    assert(f.host:capture_new("confirmed-character-accept"))
     assert(#f.prepares==1 and f.seeds==1 and f.next_calls==1)
 end
 
@@ -227,7 +227,7 @@ function cases.failed_prepare_rolls_back_and_a_retry_captures_again(Core,Host)
     assert(not f:capture() and f.host.status=="disabled" and f.host.error=="PREPARE_FAILED")
     assert(f.values.flpr_state==0 and f.values.FLPR_FRESH==1 and f.storage.undo==nil)
     assert(f.prepares[1].state==2 and f.seeds==1 and f.next_calls==1 and #f.events==0)
-    assert(not f.host:capture_new("confirmed-bg1-character-accept"))
+    assert(not f.host:capture_new("confirmed-character-accept"))
     assert(f.values.flpr_state==0 and f.seeds==2 and f.next_calls==2 and #f.prepares==2)
 end
 
