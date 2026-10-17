@@ -48,6 +48,16 @@ local function warn_stopped()
 end
 
 local ok, failure = pcall(function()
+    -- Item Randomiser's Mode 1 and Mode 2 remove items when installed and assign
+    -- them themselves. cir.tp2 refuses to install after them, but Item
+    -- Randomiser does not know this mod and can be installed later.
+    for _, marker in ipairs({ "flrandomiser1.mrk", "flrandomiser2.mrk" }) do
+        local file = io.open("override/" .. marker, "rb")
+        if file then
+            file:close()
+            error("ITEM_RANDOMISER_MODE_INSTALLED:override/" .. marker, 0)
+        end
+    end
     local Core = module("override/FLPRCore.lua")
     local Globals = module("override/FLPRGlob.lua")
     local Native = module("override/FLPRNat.lua")

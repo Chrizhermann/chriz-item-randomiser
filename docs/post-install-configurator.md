@@ -12,12 +12,14 @@ With the game closed, this saves the configuration, exports it and deploys the
 settings. Each new BG1 campaign gets a fresh draw; existing saves keep their
 revision. Keep the same configuration workspace, including its `native` folder,
 so earlier revisions remain available. The editor reopens the last applied choice.
-Without that explicit option, preparation still writes only outside the game.
+Without that explicit option, preparation still writes only outside the game. Apply
+refuses a game where Item Randomiser's Mode 1, Mode 2 or More Spell Shield scrolls is
+installed, which CIR cannot be combined with.
 This is a development playtest workflow, not the normal TP2 installation.
 
 The intended player workflow is: finish installing mods, scan/customize once, and
 start any number of fresh randomized adventures with those settings. Later changes
-to the next adventure's configuration will not require a Randomiser TP2 reinstall.
+to the next adventure's configuration will not require reinstalling CIR.
 
 ## Run the tooling
 

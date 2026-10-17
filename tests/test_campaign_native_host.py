@@ -370,6 +370,13 @@ local function bootstrap(Core,Host,Globals,text,options)
             return {write=function(_,...) for _,part in ipairs({...}) do parts[#parts+1]=part end end,
                 close=function() f.error_file=table.concat(parts); return true end}
         end
+        -- Item Randomiser's Mode 1 and Mode 2 markers; options.item_randomiser names the installed one.
+        local marker=path:match('^override/(flrandomiser[12]%.mrk)$')
+        if marker then
+            assert(mode=='rb','UNEXPECTED_MARKER_FILE_MODE')
+            if options.item_randomiser~=marker then return nil end
+            return {close=function() return true end}
+        end
         assert(options.gate and path=='randomiser-campaigns/FLPRU1.pristine.are' and mode=='rb',
             'UNEXPECTED_FIXTURE_FILE_OPEN')
         f.bootstrap_events[#f.bootstrap_events+1]='pristine_open'
@@ -577,6 +584,23 @@ function cases.bootstrap_opt_in_gate_failure_disables_before_capture_acceptance(
         assert(f.root.AcceptCharacter(2)==2 and f.accept_count==1 and f.accepted_fresh==1)
         assert(f.values.flpr_state==nil and f.seeds==0 and #f.popups==0)
         assert(#f.prepare_calls==0 and #f.factory_calls==0)
+    end
+end
+-- Item Randomiser's Mode 1 or Mode 2, installed after this mod, stops the runtime
+-- before it loads anything: New Game asks, and the start choice is unrandomised.
+function cases.bootstrap_item_randomiser_installed_later_disables(Core,Host,Globals,text)
+    for _,marker in ipairs({"flrandomiser1.mrk","flrandomiser2.mrk"}) do
+        local f=bootstrap(Core,Host,Globals,text,{gate=true,allow_disabled=true,item_randomiser=marker})
+        local reason="ITEM_RANDOMISER_MODE_INSTALLED:override/"..marker
+        assert(f.root.Disabled==reason,tostring(f.root.Disabled))
+        assert(f.error_file:find("start: "..reason,1,true),f.error_file)
+        assert(f.root.Host==nil and f.gate_installed==nil and f.pristine_opens==0)
+        f.root.NewGame()
+        local shown=popup(f,"setup_failed")
+        assert(f.new_game_clicked==nil); shown.start()
+        assert(f.new_game_clicked==1 and f.root.NewGameIntent==nil)
+        f.values.FLPR_FRESH=1
+        assert(f.root.AcceptCharacter(2)==2 and f.accept_count==1 and f.values.flpr_state==nil)
     end
 end
 function cases.bootstrap_no_intent_accept_cannot_capture(Core,Host,Globals,text)

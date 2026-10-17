@@ -5,6 +5,7 @@ existing next-game pointer, while a hand-staged test runtime still needs one.
 """
 from copy import deepcopy
 from pathlib import Path
+import re
 import sys
 import tempfile
 import unittest
@@ -65,6 +66,27 @@ class ValidateRuntimeTests(unittest.TestCase):
                     (self.game / name).unlink(missing_ok=True)
                 with self.assertRaisesRegex(ProfileError, message):
                     self.check(files)
+
+    def test_item_randomiser_installed_later_is_refused(self):
+        log = "// Log of Currently Installed WeiDU Mods\r\n{} // component\r\n"
+        for name, files, message in (
+                ("mode 1", {"override/flrandomiser1.mrk": b"\x01"}, "randomisation (Mode 1 or Mode 2)"),
+                ("mode 2", {"override/flrandomiser2.mrk": b"\x01"}, "randomisation (Mode 1 or Mode 2)"),
+                ("spell shields", {"WeiDU.log": log.format("~RANDOMISER/RANDOMISER.TP2~ #1 #560").encode()},
+                 "More Spell Shield scrolls"),
+                ("spell shields, old name", {"WeiDU.log": log.format(r"~randomiser\setup-randomiser.tp2~ #0 #560")
+                                             .encode()}, "More Spell Shield scrolls")):
+            with self.subTest(name):
+                for stale in ("override/flrandomiser1.mrk", "override/flrandomiser2.mrk", "WeiDU.log"):
+                    (self.game / stale).unlink(missing_ok=True)
+                with self.assertRaisesRegex(ProfileError, "cannot be combined with Item Randomiser's "
+                                            + re.escape(message) + "; uninstall it"):
+                    self.check({**INSTALLED, **files})
+
+    def test_other_components_and_mods_are_accepted(self):
+        log = ("~RANDOMISER/RANDOMISER.TP2~ #0 #9000 // Cespenar\r\n~OTHER/OTHER.TP2~ #0 #560 // unrelated\r\n"
+               "~CIR/CIR.TP2~ #0 #0 // Chriz Item Randomiser\r\n")
+        self.assertEqual(self.check({**INSTALLED, "WeiDU.log": log.encode()}), self.game.resolve())
 
     def test_other_game_is_refused(self):
         other = self.game.parent / "other"

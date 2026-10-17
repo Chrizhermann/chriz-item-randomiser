@@ -144,7 +144,7 @@ English text as a fallback. Failure details go to `randomiser-campaigns/last-err
 | --- | --- |
 | Configuration applied, game started without InfinityLoader/EEex | New Game popup: not running, start with `InfinityLoader.exe` |
 | The runtime could not start (a native hook found other engine code) | New Game popup: this game version is not supported yet |
-| The runtime could not start (missing or damaged configuration files) | New Game popup: could not randomise this adventure |
+| The runtime could not start (missing or damaged configuration files, or Item Randomiser's Mode 1 or Mode 2 installed after CIR) | New Game popup: could not randomise this adventure |
 | A New Game outside BG1 (SoD, SoA, ToB, Black Pits starts) | New Game popup: only BG1 starts so far |
 | Capture fails at character acceptance (for example a later mod replaced `BALDUR.GAM`) | Popup: could not randomise; Cancel keeps character creation open for a retry |
 | Capture succeeded | Message log, once, when the world first appears: items are randomised |
@@ -176,7 +176,12 @@ closed when an API or the executable's code bytes do not match.
 | 9000, 9050, 10100, 10200, 10210, 10300 | Independent; install them before the scan. |
 
 Item Randomiser 8.1.1 does not know CIR, so WeiDU does not refuse its Mode 1, Mode 2 or
-560 when they are installed after CIR.
+560 when they are installed after CIR. CIR refuses them itself: the configurator does not
+apply settings while any of them is installed (the Mode 1 and Mode 2 markers, or
+`randomiser.tp2` component 560 in `WeiDU.log`), and the runtime does not start while a Mode 1
+or Mode 2 marker exists, so New Game shows the "could not randomise" popup and
+`last-error.txt` names the marker. A 560 installed after Apply is not detected in play; it
+only adds Spell Shield scrolls to the Duergar store, and the next Apply refuses.
 
 ## Release ZIP
 
@@ -328,10 +333,12 @@ Open:
   reads, and English texts in UTF-8.
 - `tests/test_runtime_ui_adapter.py`: adapter routing and the not-running popup in Lua 5.1,
   Lua 5.3 and LuaJIT; `tests/test_campaign_native_host.py`: atomic capture, every player
-  message and its start/cancel choice; `tests/test_lab_qa_module.py`: the lab-only module.
-- `tests/test_runtime_activation.py`: the configurator accepts the installed runtime.
+  message and its start/cancel choice, also when Item Randomiser's Mode 1 or Mode 2 was
+  installed after CIR; `tests/test_lab_qa_module.py`: the lab-only module.
+- `tests/test_runtime_activation.py`: the configurator accepts the installed runtime and
+  refuses Item Randomiser's Mode 1, Mode 2 or 560 installed after CIR.
 - The full Python suite, with `keystone-engine` 0.9.2 and `unicorn` 2.1.4 from a local
-  test environment on `PYTHONPATH` and `FL_IR_TEST_TEMP_ROOT=%TEMP%\flir-t`: 1314 tests
+  test environment on `PYTHONPATH` and `FL_IR_TEST_TEMP_ROOT=%TEMP%\flir-t`: 1319 tests
   pass; 2 skip because optional lab caches and evidence are not in the source tree.
 - Not verified: any in-game behavior of the TP2-installed runtime, the adapter in the
   engine's own Lua, UI mods in a running game and EEex versions other than 1.2.

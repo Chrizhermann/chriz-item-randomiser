@@ -58,10 +58,33 @@ INSTALLED_RUNTIME = ("override/flrandomiser3.mrk", "override/M_FLPRUI.lua")
 CAMPAIGN_DATA = "randomiser-campaigns"
 
 
+# Item Randomiser's own randomisation (Mode 1 or Mode 2) removes items when it is
+# installed and assigns them itself; its More Spell Shield scrolls (component 560)
+# change the stock a campaign restores. cir.tp2 refuses to install after them, but
+# Item Randomiser does not know CIR and can be installed later.
+ITEM_RANDOMISER_MARKERS = ("override/flrandomiser1.mrk", "override/flrandomiser2.mrk")
+
+
+def item_randomiser_conflict(game: Path) -> str | None:
+    if any((game / name).is_file() for name in ITEM_RANDOMISER_MARKERS):
+        return "Item Randomiser's randomisation (Mode 1 or Mode 2)"
+    log = game / "WeiDU.log"
+    entries = re.findall(rb"(?im)^\s*~([^~\r\n]+)~\s+#\d+\s+#(\d+)\b", log.read_bytes()) if log.is_file() else []
+    # As MOD_IS_INSTALLED randomiser.tp2 560, independent of path, prefix and language.
+    if any(path.replace(b"\\", b"/").rsplit(b"/", 1)[-1].lower() in (b"randomiser.tp2", b"setup-randomiser.tp2")
+           and int(component) == 560 for path, component in entries):
+        return "Item Randomiser's More Spell Shield scrolls"
+    return None
+
+
 def validate_runtime(game: Path, catalog: dict) -> Path:
     game = game.resolve(strict=True)
     if game != Path(catalog["game_root"]).resolve():
         raise ProfileError("The activation game must be the game used by this scan")
+    conflict = item_randomiser_conflict(game)
+    if conflict:
+        raise ProfileError(f"Chriz Item Randomiser cannot be combined with {conflict}; "
+                           "uninstall it from this game before applying settings")
     required = ["override/M_FLPR.lua", "override/FLPRRun.menu"]
     if not all((game / name).is_file() for name in INSTALLED_RUNTIME):
         required.append(CAMPAIGN_DATA + "/next.lua")

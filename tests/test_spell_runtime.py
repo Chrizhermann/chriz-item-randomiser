@@ -152,7 +152,9 @@ function cases.key_bootstrap_loads_spell_once_reads_spl_and_surfaces_error(Core,
     end
     local record=io.open
     io.open=function(path,mode)
-        if path=='randomiser-campaigns/last-error.txt' then return record(path,mode) end
+        if path=='randomiser-campaigns/last-error.txt' or path:match('^override/flrandomiser[12]%.mrk$') then
+            return record(path,mode)
+        end
         assert(path=='randomiser-campaigns/campaign-store/revisions/'..f.manifest.revision..'.source-1.patched.spl')
         assert(mode=='rb');opened=opened+1
         return {read=function() return 'REVIEWED_SPL' end,close=function() return true end}
