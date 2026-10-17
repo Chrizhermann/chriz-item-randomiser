@@ -15,7 +15,7 @@
 @101506=~A DLC archive (sod-dlc.zip, or a ZIP file in the dlc folder) is not merged into the game. WeiDU cannot read it, so this component would hide the DLC's own menus and new-game template. Merge the DLC first, for example with DLC Merger, then install this component. Installation stopped.~
 @101510=~This component requires the EEex LuaJIT component: InfinityLoader.ini must contain exactly one LuaPatchMode line, LuaPatchMode=REPLACE_INTERNAL_WITH_EXTERNAL. Installation stopped.~
 @101512=~UI.MENU has no single-player New Game call (startEngine:OnNewGameButtonClick) or character acceptance call (createCharScreen:AcceptCharacter), calls them or the character import (startEngine:OnImportCharacterButtonClick) in a form this component cannot hook, or already calls FLPRUI_ functions. Installation stopped.~
-@101513=~BALDUR.GAM is missing or is not a GAMEV2.0 new-game template. Installation stopped.~
+@101513=~BALDUR.GAM is missing or is not a new-game template of an Enhanced Edition game (GAME V2.0 or V1.1). Installation stopped.~
 @101514=~BALDUR.GAM already defines the global FLPR_FRESH more than once or with a value other than 1. Installation stopped.~
 @101515=~UI.MENU defines startEngine:OnNewGameButtonClick, startEngine:OnImportCharacterButtonClick or createCharScreen:AcceptCharacter itself; this component can only hook calls to them. Installation stopped.~
 @101520=~Note: Chriz Item Randomiser cannot prepare %flir_cp_name%, because %flir_cp_reason%. It stays as installed, and the configurator will not offer what depends on it.~

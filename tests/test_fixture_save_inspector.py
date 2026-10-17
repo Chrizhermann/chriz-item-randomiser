@@ -13,9 +13,9 @@ from flir_config.resources import ScanError
 from test_postinstall_world_formats import item_record, make_are, make_cre
 
 
-def gam(variables=(), party=()):
+def gam(variables=(), party=(), version=b"GAMEV2.0"):
     data = bytearray(0xB4)
-    data[:8] = b"GAMEV2.0"
+    data[:8] = version
     data[0x58:0x60] = b"BG2600\0\0"
     struct.pack_into("<II", data, 0x20, len(data), len(party))
     data.extend(b"\0" * (len(party) * 0x160))
@@ -67,6 +67,16 @@ class FixtureSaveInspectorTests(unittest.TestCase):
                          {"stored": 5, "phase": "held"})
         self.assertEqual(result["seed"], 7654)
         self.assertEqual(result["assignments"], {"FLPR_A0001": 2})
+
+    def test_bgee_game_v11_reads_like_v20_and_other_formats_are_rejected(self):
+        # BG:EE saves GAME V1.1: the same header, variables and party records.
+        variables = [("FLPR_SEED", 7654), ("FLPR_STATE", 2)]
+        party = [named_cre("PLAYER1")]
+        bgee, bg2 = parse_gam(gam(variables, party, b"GAMEV1.1")), parse_gam(gam(variables, party))
+        self.assertEqual((bgee["format"], bg2["format"]), ("GAME V1.1", "GAME V2.0"))
+        self.assertEqual({**bgee, "format": None}, {**bg2, "format": None})
+        with self.assertRaises(ScanError):
+            parse_gam(gam(variables, party, b"GAMEV1.0"))
 
     def test_missing_or_invalid_revision_chunk_is_not_assumed_zero(self):
         for missing in ([], [("FLPR_R01", -1)], [("FLPR_R01", 65536)]):

@@ -125,9 +125,9 @@ class Machine:
                 assert self.uc.reg_read(register) == value, (name, register, value, self.uc.reg_read(register))
         return self.uc.reg_read(UC_X86_REG_RAX)
 
-    def load(self, seed, revision="a" * 64, *, fields=None):
+    def load(self, seed, revision="a" * 64, *, fields=None, header=b"GAMEV2.0"):
         fields = expected_fields(revision)[:18] + [("FLPR_SEED", seed)] if fields is None else fields
-        self.uc.mem_write(GAM, b"GAMEV2.0")
+        self.uc.mem_write(GAM, header)
         self.d(GAM + 0x38, 0xB4)
         self.d(GAM + 0x3C, len(fields))
         for index, (name, value) in enumerate(fields):
@@ -206,6 +206,23 @@ class CursedRuntimeTests(unittest.TestCase):
         self.assertEqual(machine.q(cur.state + 16), 1)
         machine.item("brac08", original, kind=0x3EE)
         self.assertEqual(machine.run("demand"), RAW)
+
+    def test_bgee_game_v11_is_read_like_v20_and_other_formats_are_not(self):
+        # BG:EE keeps its games as GAME V1.1, BG2:EE and EET as V2.0.
+        _, f, cur, bundle, spec, entry = fixture()
+        machine = Machine(f, cur)
+        name = "brac08"
+        machine.item(name, entry[name]["original"])
+        machine.load(1234567, header=b"GAMEV1.1")
+        self.assertEqual(machine.q(cur.state + 8), 1234567)
+        face = cursed_disguise_indices(spec, 1234567)[name]
+        selected = machine.run("demand")
+        self.assertEqual(bytes(machine.uc.mem_read(selected, len(entry[name]["original"]))),
+                         entry[name]["variants"][face - 1])
+        for header in (b"GAMEV1.0", b"GAMEV2.1"):
+            with self.subTest(header=header):
+                machine.load(1234567, header=header)
+                self.assertEqual(machine.run("demand"), RAW)
 
     def test_removed_registry_object_is_not_dereferenced_on_load_or_reset(self):
         _, f, cur, bundle, spec, entry = fixture()

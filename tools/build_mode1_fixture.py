@@ -62,8 +62,10 @@ def digest(data: bytes) -> str:
 
 
 def mark_initial_gam(original: bytes) -> bytes:
-    if len(original) < 0xB4 or original[:8] != b"GAMEV2.0":
-        raise ValueError("Fixture requires a complete GAMEV2.0 initial GAM")
+    # BG2:EE and EET keep the template as GAME V2.0, BG:EE as GAME V1.1:
+    # the same header length and variable records.
+    if len(original) < 0xB4 or original[:8] not in (b"GAMEV2.0", b"GAMEV1.1"):
+        raise ValueError("Fixture requires a complete GAME V2.0 or V1.1 initial GAM")
     offset, count = u32(original, 0x38), u32(original, 0x3C)
     if count and (offset < 0xB4 or offset + count * 84 > len(original)):
         raise ValueError("Invalid original GAM globals")

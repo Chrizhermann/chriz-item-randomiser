@@ -199,10 +199,11 @@ class Game:
                    and (line + " ").find(suffix) > 0 for line in active_weidu_log(self.root))
 
 
-def gam(variables: Sequence[tuple[str, int]], trailer: bytes = b"") -> bytes:
-    """A GAMEV2.0 template: header, the variable table, then unrelated data."""
+def gam(variables: Sequence[tuple[str, int]], trailer: bytes = b"", version: bytes = b"GAMEV2.0") -> bytes:
+    """A new-game template (GAME V2.0 as BG2:EE and EET keep it, V1.1 as BG:EE does):
+    header, the variable table, then unrelated data."""
     header = bytearray(0xB4)
-    header[:8] = b"GAMEV2.0"
+    header[:8] = version
     for offset in range(0x10, 0xB4, 4):
         struct.pack_into("<I", header, offset, 0x1000 + offset)
     struct.pack_into("<II", header, 0x38, 0xB4 if variables else 0, len(variables))
@@ -217,6 +218,11 @@ def gam(variables: Sequence[tuple[str, int]], trailer: bytes = b"") -> bytes:
 
 
 DEFAULT_GAM = gam([("CHAPTER", 0), ("ENDOFBG1", 0), ("KNOWBRANWEN", 3)], b"PARTY" * 9)
+# BG:EE's own template is GAME V1.1 without variables; its table offset points at
+# the end of the header, where its other characters begin.
+BGEE_GAM = bytearray(gam([], b"NPCS" * 88, b"GAMEV1.1"))
+struct.pack_into("<I", BGEE_GAM, 0x38, 0xB4)
+BGEE_GAM = bytes(BGEE_GAM)
 
 
 def patch_menu(data: bytes) -> bytes:
@@ -794,10 +800,10 @@ def run_suite(args: argparse.Namespace) -> int:
     suite.lifecycle("ArchivedTemplates", MENU, DEFAULT_GAM)
     # BG:EE (with Siege of Dragonspear merged: DLC Merger leaves an empty
     # sod-dlc.zip) and BG2:EE without EET.
-    suite.lifecycle("BgeeWithMergedDlc", MENU, DEFAULT_GAM, platform="bgee",
+    suite.lifecycle("BgeeWithMergedDlc", MENU, BGEE_GAM, platform="bgee",
                     files={"sod-dlc.zip": b"", "dlc/sod-dlc.zip": b"", "mymod-v1.zip": b"PK\x05\x06" + bytes(18)})
     suite.lifecycle("Bg2ee", MENU, DEFAULT_GAM, platform="bg2ee")
-    suite.lifecycle("MenuWithoutCharacterImport", NO_IMPORT_MENU, DEFAULT_GAM, platform="bgee")
+    suite.lifecycle("MenuWithoutCharacterImport", NO_IMPORT_MENU, BGEE_GAM, platform="bgee")
 
     # The installer's quest and dialogue changes, on synthetic files.
     compiled = compile_fixtures(scratch, weidu, {**fixtures.SOURCES, **tweaks.sources(mod)})
@@ -927,7 +933,7 @@ def run_suite(args: argparse.Namespace) -> int:
     struct.pack_into("<I", out_of_bounds, 0x3C, 2)
     for name, baldur, text in (
         ("TemplateMissing", None, message[101513]),
-        ("TemplateWrongVersion", b"GAMEV1.1" + DEFAULT_GAM[8:], message[101513]),
+        ("TemplateWrongVersion", b"GAMEV1.0" + DEFAULT_GAM[8:], message[101513]),
         ("TemplateTruncated", DEFAULT_GAM[:0xB0], message[101513]),
         ("TemplateTableOutOfBounds", bytes(out_of_bounds), message[101513]),
         ("TemplateMarkedZero", gam([("FLPR_FRESH", 0)]), message[101514]),

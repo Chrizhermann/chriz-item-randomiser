@@ -134,6 +134,8 @@ function Cur.new(api,bundles,pristine,compile)
         'mov qword ptr ds:[r10+8], 0\nmov qword ptr ds:[r10+16], 0\n'..
         'mov qword ptr ds:[r10+48], rdx\nmov eax, r8d\nmov qword ptr ds:[r10+56], rax\n'..
         refresh(self,'gate_curse_enter_',true)..restore()
+    -- The GAM being read: GAME V2.0 (BG2:EE, EET) or GAME V1.1 (BG:EE), the
+    -- same 0xB4-byte header and 84-byte variable records.
     local capture_header=save()..'mov r10, '..number(state)..'\n'..[[
         cmp r14, qword ptr ds:[r10+48]
         jne gate_curse_done
@@ -145,7 +147,11 @@ function Cur.new(api,bundles,pristine,compile)
         je gate_curse_done
         mov rax, 0x302e3256454d4147
         cmp qword ptr ds:[r14], rax
+        je gate_curse_gam_version
+        mov rax, 0x312e3156454d4147
+        cmp qword ptr ds:[r14], rax
         jne gate_curse_done
+        gate_curse_gam_version:
         mov eax, dword ptr ds:[r14+0x38]
         cmp eax, 0xB4
         jb gate_curse_done
@@ -170,6 +176,7 @@ function Cur.new(api,bundles,pristine,compile)
             'cmp qword ptr ds:[r10+72], 0\njne '..prefix..'next\n'..
             selection(self,current,index)..prefix..'next:\n'..'gate_curse_done:\n'..restore()
         capture=capture:gsub('gate_curse_done','gate_curse_done_'..index)
+            :gsub('gate_curse_gam_version','gate_curse_gam_version_'..index)
         self.assemblies[#self.assemblies+1]={capture=capture};combined[#combined+1]=capture
     end
     local final=save()..refresh(self,'gate_curse_refresh_',false)..restore()

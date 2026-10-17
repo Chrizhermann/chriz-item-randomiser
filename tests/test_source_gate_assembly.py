@@ -171,19 +171,22 @@ class GateMachine:
 
 class SourceGateAssemblyTests(unittest.TestCase):
     def test_selected_mode_then_excluded_then_missing_is_recaptured(self):
-        machine = GateMachine()
-        for mode, expected in ((1, 1), (2, 2), (None, 0)):
-            values = [] if mode is None else [("FLPR_U1_MODE", mode)]
-            size = machine.gam(values, declared=0xB4+84*len(values))
-            self.assertEqual(machine.run("enter", length=size), "continue")
-            self.assertEqual(machine.run("capture"), "continue")
-            self.assertEqual(machine.read_q(BUFFER+32), expected)
-            self.assertEqual(machine.read_q(BUFFER+72), 1 if mode is None else 0)
-        self.assertEqual(machine.read_q(BUFFER+40), 3)
+        # BG2:EE and EET keep their games as GAME V2.0, BG:EE as GAME V1.1.
+        for header in (b"GAMEV2.0", b"GAMEV1.1"):
+            with self.subTest(header=header):
+                machine = GateMachine()
+                for mode, expected in ((1, 1), (2, 2), (None, 0)):
+                    values = [] if mode is None else [("FLPR_U1_MODE", mode)]
+                    size = machine.gam(values, declared=0xB4+84*len(values), header=header)
+                    self.assertEqual(machine.run("enter", length=size), "continue")
+                    self.assertEqual(machine.run("capture"), "continue")
+                    self.assertEqual(machine.read_q(BUFFER+32), expected)
+                    self.assertEqual(machine.read_q(BUFFER+72), 1 if mode is None else 0)
+                self.assertEqual(machine.read_q(BUFFER+40), 3)
 
     def test_gam_bad_guards_leave_mode_cleared(self):
         cases = (
-            {"header": b"NOTGAME!"}, {"declared": 0xB3},
+            {"header": b"NOTGAME!"}, {"header": b"GAMEV1.0"}, {"declared": 0xB3},
             {"variables_offset": 0xB3}, {"variables_count": 16385},
             {"variables_offset": 0xB4, "variables_count": 1},
         )
