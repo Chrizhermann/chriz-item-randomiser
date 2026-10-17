@@ -18,7 +18,7 @@ end
 function QA.new(api)
     for _, name in ipairs({"clock", "frame", "menu", "screen", "click", "open_options", "saves",
         "select_save", "save_name", "new_save_selected", "load_popup", "can_save_load", "world_ready",
-        "desktop_ui", "main_menu_popup", "importing"}) do
+        "desktop_ui", "main_menu_popup", "importing", "plain_popup"}) do
         assert(type(api[name]) == "function", "QA_API_MISSING:" .. name)
     end
     return setmetatable({api=api,status="idle",events={}},Runner)
@@ -33,7 +33,7 @@ function Runner:_report()
     return ok
 end
 
-function Runner:_start(kind, target, revision)
+function Runner:_start(kind, target, revision, plain)
     assert(self.status ~= "running", "QA_ALREADY_RUNNING")
     assert(type(revision)=="string" and #revision==64 and not revision:find("[^0-9a-f]"), "QA_REVISION_INVALID")
     assert(type(target)=="string" and #target>0 and #target<=80 and not target:find("[^A-Za-z0-9 _%-]"), "QA_NAME_INVALID")
@@ -54,7 +54,7 @@ function Runner:_start(kind, target, revision)
         "POPUP_THREEBUTTON","POPUP_FOURBUTTON","ESC_MENU"}) do
         assert(not a.menu(name), "QA_EXISTING_FLOW:"..name)
     end
-    self.kind,self.target,self.revision=kind,target,revision
+    self.kind,self.target,self.revision,self.plain=kind,target,revision,plain==true
     self.status,self.step,self.error="running","begin",nil
     self.started,self.last_frame,self.events=a.clock(),nil,{}
     -- A failed start acknowledgement must not leave an active runner behind.
@@ -63,7 +63,9 @@ end
 function Runner:start_save(name,revision) self:_start("save",name,revision) end
 function Runner:start_load(folder,revision) self:_start("load",folder,revision) end
 -- Import Game: the party of save FOLDER starts a new game (character creation follows).
-function Runner:start_import(folder,revision) self:_start("import",folder,revision) end
+-- PLAIN accepts CIR's "Start without randomiser" when its settings have nothing
+-- to randomise in this campaign; any other popup stops the runner.
+function Runner:start_import(folder,revision,plain) self:_start("import",folder,revision,plain) end
 function Runner:start_main_menu(revision) self:_start("main-menu","MAIN_MENU",revision) end
 
 -- LOAD names a save by its folder; in import mode by its path, which can lead to
@@ -131,7 +133,10 @@ function Runner:_step()
     elseif self.step=="load-confirm" and top("POPUP_TWOBUTTON") then
         assert(a.load_popup(), "QA_UNEXPECTED_POPUP")
         self:_issue("POPUP_TWOBUTTON","FLPR_QA_POPUP_CONFIRM","load-list")
-    elseif (self.step=="load-list" or self.step=="import-list") and top("LOAD") then
+    elseif self.step=="import-list" and top("POPUP_TWOBUTTON") then
+        assert(self.plain and a.plain_popup(), "QA_UNEXPECTED_POPUP")
+        self:_issue("POPUP_TWOBUTTON","FLPR_QA_POPUP_CONFIRM","import-plain")
+    elseif (self.step=="load-list" or self.step=="import-list" or self.step=="import-plain") and top("LOAD") then
         local importing=self.kind=="import"
         local found,count,names=nil,0,{}
         for index, save in ipairs(a.saves()) do

@@ -43,6 +43,7 @@ local function setup(QA,screen)
         can_save_load=function() return f.can end,
         world_ready=function(want) return f.ready and f.ready_revision==want end,
         importing=function() return f.importing==true end,
+        plain_popup=function() return f.plain_popup==true end,
     }
     f.api=api; f.runner=QA.new(api)
     function f:poll(frame) self.frame=frame or self.frame+2; self.runner:poll() end
@@ -251,6 +252,23 @@ function cases.import_matches_this_profiles_save_path_but_never_another_profile(
     g.runner:start_import(folder,revision); g:poll(); g:next("LOAD")
     assert(g.selected==nil and #g.events==2 and g.events[2].button=="FLPR_QA_LOAD_BACK")
     g:next("START_SP"); failed(g,"QA_SAVE_MISSING:home:/../Baldur's Gate - Enhanced Edition/save/"..folder)
+end
+
+function cases.import_accepts_cirs_start_plain_popup_only_when_asked(QA)
+    -- A campaign CIR's settings have nothing for (BG:EE's SoD with BG1 lists) asks first.
+    local f=setup(QA,"START_SP"); f.importing=true; f.plain_popup=true
+    f.saves={{fileName="home:/save/"..folder,slotName="IR Proof A"}}
+    f.runner:start_import(folder,revision,true); f:poll()
+    f:next("POPUP_TWOBUTTON",{"START"})
+    assert(#f.events==2 and f.events[2].button=="FLPR_QA_POPUP_CONFIRM")
+    f:next("LOAD"); assert(#f.events==3 and f.events[3].button=="FLPR_QA_LOAD_CONFIRM" and f.selected==1)
+    f:next("CHARGEN"); assert(f.runner:inspect().status=="complete")
+    for _,case in ipairs({{plain=nil,popup=true},{plain=true,popup=false}}) do
+        local g=setup(QA,"START_SP"); g.importing=true; g.plain_popup=case.popup
+        g.runner:start_import(folder,revision,case.plain); g:poll()
+        g:next("POPUP_TWOBUTTON",{"START"}); failed(g,"QA_UNEXPECTED_POPUP")
+        assert(#g.events==1)
+    end
 end
 
 function cases.load_screen_in_the_other_mode_is_left_without_selecting(QA)
