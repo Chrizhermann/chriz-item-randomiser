@@ -26,6 +26,9 @@ pub mod sources;
 pub mod templates;
 pub mod campaigns;
 pub mod native_export;
+pub mod original_configuration;
+pub mod activation;
+pub mod editor;
 
 pub use error::{Error, ErrorKind, Result};
 pub use json::{Dict, Value};

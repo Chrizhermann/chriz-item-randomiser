@@ -207,7 +207,7 @@ fn gate(tier: &str) -> Option<&'static str> {
 
 /// `int(text)` with Python's ValueError message.
 pub fn int_field(text: &str) -> Result<i64> {
-    crate::py::parse_int(text)
+    crate::py::parse_int_saturating(text)
         .ok_or_else(|| Error::value(format!("invalid literal for int() with base 10: {}", crate::error::py_repr_str(text))))
 }
 

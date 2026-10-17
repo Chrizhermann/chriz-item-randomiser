@@ -405,11 +405,11 @@ fn run_with_catalog(names: &[&str], parsed: &Parsed) -> Result<Value> {
                 ("skipped", body.at("skipped")?.clone()),
             ]))
         }
-        ["search"] => profiles::search_items(
+        ["search"] => profiles::search_items_from(
             &catalog,
             parsed.text("query").unwrap_or(""),
             parsed.int("category"),
-            parsed.int("offset").unwrap_or(0),
+            &parsed.int_value("offset").unwrap_or(Value::Int(0)),
             parsed.int("limit").unwrap_or(20),
         ),
         ["prepare"] => profiles::prepare_profile(&read(parsed, "profile")?, &catalog, &path(parsed, "store")),
@@ -484,6 +484,7 @@ fn main() -> ExitCode {
                 ErrorKind::Key => "KeyError",
                 ErrorKind::Type => "TypeError",
                 ErrorKind::GameText => "GameTextError",
+                ErrorKind::Overflow => "OverflowError",
                 _ => "ValueError",
             };
             print_line(&mut std::io::stderr(), &format!("{kind}: {}", error.message));

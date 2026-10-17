@@ -54,8 +54,14 @@ impl Parsed {
     pub fn path(&self, name: &str) -> Option<PathBuf> {
         self.text(name).map(|value| PathBuf::from(cir_config::paths::display(std::path::Path::new(value))))
     }
+    /// An integer option limited to the i64 range (larger values cannot
+    /// change any result except where `int_value` echoes them).
     pub fn int(&self, name: &str) -> Option<i64> {
-        self.text(name).map(|value| parse_int(value).expect("validated while parsing"))
+        self.text(name).map(|value| cir_config::py::parse_int_saturating(value).expect("validated while parsing"))
+    }
+    /// An integer option of any size, as Python's `int` keeps it.
+    pub fn int_value(&self, name: &str) -> Option<cir_config::Value> {
+        self.text(name).map(|value| cir_config::py::parse_int_value(value).expect("validated while parsing"))
     }
     pub fn all(&self, name: &str) -> Vec<String> {
         self.values.get(name).cloned().unwrap_or_default()
@@ -63,11 +69,6 @@ impl Parsed {
     pub fn flag(&self, name: &str) -> bool {
         self.values.contains_key(name)
     }
-}
-
-/// Python's `int(text)` for command-line values.
-pub fn parse_int(text: &str) -> Option<i64> {
-    cir_config::py::parse_int(text)
 }
 
 /// Parse `arguments` against `specs`; `prog` names the command in messages.
@@ -120,7 +121,7 @@ pub fn parse(prog: &str, arguments: &[String], specs: &[Spec]) -> Result<Parsed,
                 arguments[index - 1].clone()
             }
         };
-        if spec.kind == Kind::Int && parse_int(&value).is_none() {
+        if spec.kind == Kind::Int && cir_config::py::int_literal(&value).is_none() {
             return Err(error(format!("argument --{}: invalid int value: '{value}'", spec.name)));
         }
         if !spec.choices.is_empty() && !spec.choices.contains(&value) {

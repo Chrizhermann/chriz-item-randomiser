@@ -321,18 +321,65 @@ pub fn latin1(data: &[u8]) -> String {
     data.iter().map(|&b| b as char).collect()
 }
 
-/// Python's `int(text)` for plain decimal digits (with optional sign).
-pub fn parse_int(text: &str) -> Option<i64> {
+/// The value of a Unicode decimal digit (`unicodedata.decimal`).
+fn decimal_value(c: char) -> Option<u8> {
+    let code = c as u32;
+    let index = crate::unicode_tables::DECIMAL_ZEROS.partition_point(|&zero| zero <= code);
+    let zero = *crate::unicode_tables::DECIMAL_ZEROS.get(index.checked_sub(1)?)?;
+    (code - zero < 10).then(|| (code - zero) as u8)
+}
+
+/// Python's `int(text)` in base 10, of any size: surrounding whitespace, a
+/// sign, Unicode decimal digits and single underscores between digits.
+/// Returns the sign and the digits without leading zeros.
+pub fn int_literal(text: &str) -> Option<(bool, String)> {
     let trimmed = strip(text);
-    let (negative, digits) = match trimmed.as_bytes().first() {
+    let (negative, body) = match trimmed.as_bytes().first() {
         Some(b'-') => (true, &trimmed[1..]),
         Some(b'+') => (false, &trimmed[1..]),
         _ => (false, trimmed),
     };
-    let digits: String = digits.chars().filter(|&c| c != '_').collect();
-    if digits.is_empty() || !digits.bytes().all(|b| b.is_ascii_digit()) {
+    let mut digits = String::with_capacity(body.len());
+    // An underscore may only separate two digits.
+    let mut after_digit = false;
+    for c in body.chars() {
+        if c == '_' {
+            if !after_digit {
+                return None;
+            }
+            after_digit = false;
+            continue;
+        }
+        digits.push((b'0' + decimal_value(c)?) as char);
+        after_digit = true;
+    }
+    if !after_digit {
         return None;
     }
-    let value: i64 = digits.parse().ok()?;
-    Some(if negative { -value } else { value })
+    let significant = digits.trim_start_matches('0');
+    let digits = if significant.is_empty() { "0".to_string() } else { significant.to_string() };
+    Some((negative && digits != "0", digits))
+}
+
+/// `int(text)` when the value fits an i64.
+pub fn parse_int(text: &str) -> Option<i64> {
+    let (negative, digits) = int_literal(text)?;
+    let value: i128 = if digits.len() > 20 { return None } else { digits.parse().ok()? };
+    i64::try_from(if negative { -value } else { value }).ok()
+}
+
+/// `int(text)` limited to the i64 range, for counts and offsets whose exact
+/// size beyond it cannot change a result.
+pub fn parse_int_saturating(text: &str) -> Option<i64> {
+    let (negative, _) = int_literal(text)?;
+    Some(parse_int(text).unwrap_or(if negative { i64::MIN } else { i64::MAX }))
+}
+
+/// `int(text)` as a JSON number of any size.
+pub fn parse_int_value(text: &str) -> Option<crate::json::Value> {
+    let (negative, digits) = int_literal(text)?;
+    Some(match parse_int(text) {
+        Some(value) => crate::json::Value::Int(value),
+        None => crate::json::Value::BigInt(format!("{}{digits}", if negative { "-" } else { "" }).into_boxed_str()),
+    })
 }

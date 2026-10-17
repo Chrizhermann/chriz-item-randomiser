@@ -363,18 +363,22 @@ impl Value {
     pub fn at(&self, key: &str) -> Result<&Value> {
         match self {
             Value::Dict(dict) => dict.get(key).ok_or_else(|| Error::key(key)),
-            _ => Err(Error::type_error(format!(
-                "{} indices must be integers or slices, not str",
-                self.type_name()
-            ))),
+            _ => Err(self.subscript_error()),
         }
     }
     pub fn at_mut(&mut self, key: &str) -> Result<&mut Value> {
-        let name = self.type_name();
         match self {
             Value::Dict(dict) => dict.get_mut(key).ok_or_else(|| Error::key(key)),
-            _ => Err(Error::type_error(format!("{name} indices must be integers or slices, not str"))),
+            _ => Err(self.subscript_error()),
         }
+    }
+    /// Python 3.11's TypeError for `value["key"]` on a non-dict.
+    pub fn subscript_error(&self) -> Error {
+        Error::type_error(match self {
+            Value::List(_) => "list indices must be integers or slices, not str".to_string(),
+            Value::Str(_) => "string indices must be integers, not 'str'".to_string(),
+            other => format!("'{}' object is not subscriptable", other.type_name()),
+        })
     }
     /// Python's string of a value's type, for error messages.
     pub fn type_name(&self) -> &'static str {

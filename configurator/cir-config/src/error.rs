@@ -20,6 +20,8 @@ pub enum ErrorKind {
     Type,
     /// The reference's `GameTextError` (a ValueError).
     GameText,
+    /// Python's OverflowError (an out-of-range port number).
+    Overflow,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

@@ -250,10 +250,15 @@ pub fn validate_profile(profile: &Value, catalog: &Value, allow_rebase: bool) ->
 }
 
 pub fn new_profile(catalog: &Value, profile_id: &str, name: &str) -> Result<Value> {
+    new_profile_named(catalog, profile_id, &Value::from(name))
+}
+
+/// `new_profile` with a name of any JSON type (the editor passes request data).
+pub fn new_profile_named(catalog: &Value, profile_id: &str, name: &Value) -> Result<Value> {
     let mut profile = Dict::new();
     profile.insert("schema", PROFILE_SCHEMA);
     profile.insert("id", profile_id);
-    profile.insert("name", name);
+    profile.insert("name", name.clone());
     profile.insert("catalog_fingerprint", catalog.get("fingerprint").cloned().unwrap_or(Value::Null));
     profile.insert("items", Value::List(Vec::new()));
     profile.insert("shop_pricing", default_shop_pricing());
@@ -378,7 +383,7 @@ pub fn search_items(catalog: &Value, query: &str, category: Option<i64>, offset:
             }
         }
         let text = |key: &str| match row.get(key) {
-            Some(value) if value.truthy() => value.as_str().map(str::to_string).unwrap_or_default(),
+            Some(value) if value.truthy() => crate::json::py_str(value),
             _ => String::new(),
         };
         let haystack = crate::py::casefold(
@@ -388,16 +393,31 @@ pub fn search_items(catalog: &Value, query: &str, category: Option<i64>, offset:
             matches.push(row);
         }
     }
-    let start = (offset as usize).min(matches.len());
-    let end = (offset as usize).saturating_add(limit as usize).min(matches.len());
+    let start = usize::try_from(offset).unwrap_or(usize::MAX).min(matches.len());
+    let end = start.saturating_add(limit as usize).min(matches.len());
     let page: Vec<Value> = matches[start..end].iter().map(|row| (*row).clone()).collect();
-    let next = offset + limit;
+    let next = offset as i128 + limit as i128;
     let mut result = Dict::new();
     result.insert("total", matches.len());
     result.insert("offset", offset);
     result.insert("items", Value::List(page));
-    result.insert("next_offset", if (next as usize) < matches.len() { Value::Int(next) } else { Value::Null });
+    result.insert("next_offset", if next < matches.len() as i128 { Value::from(next) } else { Value::Null });
     Ok(Value::Dict(result))
+}
+
+/// `search_items` with an offset of any size: Python's integers are
+/// unbounded, and an offset beyond i64 lies past every match and is echoed.
+pub fn search_items_from(catalog: &Value, query: &str, category: Option<i64>, offset: &Value, limit: i64) -> Result<Value> {
+    let clamped = match offset {
+        Value::Int(value) => *value,
+        Value::BigInt(text) if text.starts_with('-') => i64::MIN,
+        _ => i64::MAX,
+    };
+    let mut result = search_items(catalog, query, category, clamped, limit)?;
+    if let (Value::BigInt(_), Some(fields)) = (offset, result.as_dict_mut()) {
+        fields.insert("offset", offset.clone());
+    }
+    Ok(result)
 }
 
 /// The resolved output path, refused when it lies inside the scanned game.
@@ -450,6 +470,21 @@ pub fn make_dirs(path: &Path) -> Result<()> {
 }
 
 /// A random file name part like `tempfile`'s (eight characters).
+/// `count` random lowercase hexadecimal digits from the system's random
+/// source (as `uuid4().hex[:count]`).
+pub fn random_hex(count: usize) -> String {
+    use std::collections::hash_map::RandomState;
+    use std::hash::{BuildHasher, Hasher};
+    let mut text = String::with_capacity(count + 16);
+    while text.len() < count {
+        let mut hasher = RandomState::new().build_hasher();
+        hasher.write_usize(text.len());
+        text.push_str(&format!("{:016x}", hasher.finish()));
+    }
+    text.truncate(count);
+    text
+}
+
 pub fn random_name() -> String {
     use std::sync::atomic::{AtomicU64, Ordering};
     use std::time::{SystemTime, UNIX_EPOCH};
