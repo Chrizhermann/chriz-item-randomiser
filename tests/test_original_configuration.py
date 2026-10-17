@@ -264,7 +264,7 @@ class OriginalConfigurationTests(unittest.TestCase):
              "reason": "no-place-in-tier"}])
         self.assertEqual(result["plan"]["registrations"], [])
         # The fitted configuration passes the strict runtime check.
-        _compile(campaign, world, validate_world(world, catalog), validate_catalog(catalog))
+        _compile(campaign, world, validate_world(world, catalog), validate_catalog(catalog), catalog=catalog)
 
     def test_zero_match_source_omitted_while_target_rows_remain(self):
         with patch("flir_config.original_configuration.resolve_template",

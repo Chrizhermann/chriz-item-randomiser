@@ -425,7 +425,7 @@ def fit_original_configuration(catalog: dict, world: dict, template_id: str, *,
             continue
         campaign = compile_campaign(generated["profile"], catalog, world, generated["plan"])
         problems: dict[str, str] = {}
-        _compile(campaign, world, index, catalog_items, problems)
+        _compile(campaign, world, index, catalog_items, problems, catalog=catalog)
         if not problems:
             return generated
         for identity, reason in sorted(problems.items()):

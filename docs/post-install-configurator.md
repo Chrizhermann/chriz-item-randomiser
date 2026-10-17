@@ -182,6 +182,28 @@ them. A file the installer cannot change unambiguously (it gives the reward twic
 no longer gives it, or an earlier configurator already changed it) stays as
 installed; the installer and the editor say which and why. This is a fixed set of
 authored adapters, not general BCS/DLG grant coverage.
+
+The quest rewards and container quests of the extended pools (Item Randomiser's
+`mode2` tables) are prepared by Apply, also from the game's own files. Each route is
+recognised by its meaning, never by the bytes of one game: the replies or script
+blocks that give the reward item, the recipient they name and, for some routes, the
+text that names the item. Compiled spacing, line ends and letter case, other strrefs
+and state numbers, and replies or blocks that another mod added stay as they are;
+every reply or block that gives the item is gated, so BG2:EE's and EET's own files
+both work. The configuration check runs the same recognition as Apply. A route it
+cannot prepare (nothing gives the item any more, one reply gives it twice, an action
+names it without giving it, the text that names it is gone, or its patch was changed
+afterwards) is left out with that reason, and Apply never refuses a route the check
+accepted. Routes that share one reward event, such as the egg deal's two dialogues
+or the three sculptors, are left out together. Routes that show Item Randomiser's
+reward text need the English game text and `BGEE.LUA`. A reward file changed after
+the scan stops the check until the game is scanned again. A container quest's place
+is the one container in the quest's area that holds the quest's whole treasure (the
+golems' weapons in the De'Arnise Keep cellar `AR1303`, Samia's sword and shield in
+`AR1202`), found in the scan wherever the game keeps it; when no container or more
+than one holds it, because another mod moved or copied the treasure, that place is
+left out ("The extended reward container of AX1H13 cannot be used: AR1303 has no
+container that holds AX1H13").
 Destinations can be uniquely named ARE actors, static containers (including
 stocked chests), or shops allowing purchases. Container delivery appends rewards
 without changing existing contents, locks or traps. The current item restrictions remain:
@@ -254,8 +276,9 @@ A preset draft leaves out each row this game cannot use, instead of refusing the
 whole draft, and the preset dialog says how many rewards and places it left out; a
 left-out reward stays as the game has it. These are rows whose item, area, creature
 or shop the game lacks, whose record is not where the tables put it or is there more
-than once, and rows the runtime check rejects, such as a quest reward without a
-reviewed adapter or an item its creature cannot drop. The draft is checked with the
+than once, and rows the runtime check rejects, such as a quest reward whose files no
+longer give it ("The extended reward route for MGKHOL01 cannot be used: MGKHOL01.DLG
+has no reply that gives BELT02") or an item its creature cannot drop. The draft is checked with the
 same runtime check as "Check configuration", which then passes. `/api/template`
 also returns the left-out rows with their table line and reason (`not_used_rows`).
 

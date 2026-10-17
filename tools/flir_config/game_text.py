@@ -1,6 +1,6 @@
 """Read DLG tables and append game text, in memory.
 
-Shared by the Kangaxx, Mode 2, container and cursed-disguise adapters. The
+Shared by the Kangaxx, extended reward, container and cursed-disguise adapters. The
 caller owns writing the returned bytes.
 """
 from __future__ import annotations
