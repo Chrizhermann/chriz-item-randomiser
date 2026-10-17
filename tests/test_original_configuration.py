@@ -123,7 +123,7 @@ class OriginalConfigurationTests(unittest.TestCase):
             disabled = build_original_configuration(self.catalog, self.world, "eet-mode1")["plan"]
         self.assertNotIn("reward_variants", disabled["randomization"]["sources"][self.physical])
 
-    def test_rewards_component_1500_did_not_prepare_stay_as_installed(self):
+    def test_rewards_cir_did_not_prepare_stay_as_installed(self):
         draft = self._draft()
         draft["items"].append(source_row("pool", adapter="scripted", resource="bcs:blpool",
                                          item="blun12", ident="x"))
@@ -132,9 +132,9 @@ class OriginalConfigurationTests(unittest.TestCase):
         draft["targets"].append({**target_row("altar", "x", "24"), "target": "troalt.bcs"})
         before = snapshot(self.root)
         for statuses, expected in (
-                (None, ["TROALT.BCS was not prepared: component 1500 of this version is not installed",
-                        "BLPOOL.BCS was not prepared: component 1500 of this version is not installed",
-                        "UNSHEY.DLG was not prepared: component 1500 of this version is not installed"]),
+                (None, ["TROALT.BCS was not prepared: this version of Chriz Item Randomiser is not installed",
+                        "BLPOOL.BCS was not prepared: this version of Chriz Item Randomiser is not installed",
+                        "UNSHEY.DLG was not prepared: this version of Chriz Item Randomiser is not installed"]),
                 ({"quest_pool": "grant-missing", "quest_altar": "absent", "unshey": "item-missing"},
                  ["TROALT.BCS was left as installed (the game has no such file)",
                   "BLPOOL.BCS was left as installed (it no longer gives the reward)",

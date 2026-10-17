@@ -39,7 +39,7 @@ def _tier(row: dict) -> str:
 
 
 def _source_change(row: dict) -> str | None:
-    """The change component 1500 makes at install that this reward row needs."""
+    """The change the installer makes that this reward row needs."""
     if row["adapter"] == "unshey":
         return "unshey"
     resource = row["source_resource"] or ""
@@ -110,9 +110,9 @@ def build_original_configuration(catalog: dict, world: dict, template_id: str, *
     draft = resolve_template(catalog, world, template_id,
                              items=items, targets=targets, options=options)
     if draft["options"].get("flail_heads") and not applied(world["game_root"], "flail_heads"):
-        raise ProfileError("The flail heads option needs Glaicus's conversation as component 1500 "
+        raise ProfileError("The flail heads option needs Glaicus's conversation as Chriz Item Randomiser "
                            "prepares it: " + left_out(world["game_root"], "flail_heads"))
-    # A reward whose script or conversation component 1500 could not prepare
+    # A reward whose script or conversation the installer could not prepare
     # stays as installed: its rows are left out, and the player is told why.
     prepared = applied_changes(world["game_root"])
     unprepared = defaultdict(list)

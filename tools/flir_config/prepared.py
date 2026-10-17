@@ -1,6 +1,6 @@
-"""Quest and dialogue changes that randomiser.tp2 component 1500 installed.
+"""Quest and dialogue changes that cir.tp2 made when it was installed.
 
-Component 1500 makes these changes when it is installed (lib/campaign_patches.tpa),
+The installer makes these changes (lib/campaign_patches.tpa),
 so WeiDU restores the files when it is uninstalled. It lists each change in
 override/FLPRPAT.lua with status "applied", or the reason it left the change
 out. The configurator offers a change only when it is applied there and the
@@ -16,7 +16,7 @@ from .profiles import ProfileError
 
 REGISTRY = Path("override") / "FLPRPAT.lua"
 # Each change's installed resource and the GLOBALs its installed form reads.
-# A file without them was replaced after component 1500 was installed.
+# A file without them was replaced after the installer ran.
 CHANGES = {
     "quest_pool": ("bcs:blpool", (b"FLPR_QPOOL", b"FLPR_XPOOL", b"FLPR_EPOOL")),
     "quest_altar": ("bcs:troalt", (b"FLPR_QALTAR", b"FLPR_XALTAR", b"FLPR_EALTAR")),
@@ -27,7 +27,7 @@ CHANGES = {
 }
 # The changes that the original mod's quest rewards depend on.
 QUEST_CHANGES = {"blpool": "quest_pool", "troalt": "quest_altar", "ppbook": "quest_book"}
-# Why component 1500 left a change out, as the registry records it; the same
+# Why the installer left a change out, as the registry records it; the same
 # reasons as its installer notes (setup.tra @101521-@101528).
 REASONS = {
     "absent": "the game has no such file",
@@ -74,8 +74,8 @@ def left_out(game_root: str | Path, change: str) -> str:
     entry = read_prepared(game_root).get(change)
     kind, name = CHANGES[change][0].split(":")
     if entry is None:
-        return (f"{name.upper()}.{kind.upper()} was not prepared: component 1500 of this "
-                "version is not installed")
+        return (f"{name.upper()}.{kind.upper()} was not prepared: this version of Chriz Item Randomiser "
+                "is not installed")
     resource = entry.get("resource") or f"{name.upper()}.{kind.upper()}"
     status = entry.get("status", "")
     return f"{resource} was left as installed ({REASONS.get(status, status or 'no reason recorded')})"
@@ -85,7 +85,7 @@ def require_installed(game_root: str | Path, change: str, data: bytes) -> None:
     """Refuse a change that is not applied, or whose file no longer carries it."""
     resource, markers = CHANGES[change]
     if not applied(game_root, change):
-        raise ProfileError(f"Component 1500 did not prepare {resource}; reinstall it to use this option")
+        raise ProfileError(f"Chriz Item Randomiser did not prepare {resource}; reinstall it to use this option")
     if any(marker not in data for marker in markers):
-        raise ProfileError(f"{resource} was replaced after component 1500 prepared it; "
-                           "reinstall component 1500 to use this option")
+        raise ProfileError(f"{resource} was replaced after Chriz Item Randomiser prepared it; "
+                           "reinstall Chriz Item Randomiser to use this option")

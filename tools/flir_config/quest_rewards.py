@@ -1,6 +1,6 @@
 """The original mod's three BG2 quest rewards, and compiled-BCS helpers.
 
-Component 1500 splits each reward block when it is installed
+The installer splits each reward block when it is installed
 (lib/campaign_patches.tpa); the configurator only binds the rewards. The
 helpers below are shared by the Mode 2 and container reward adapters.
 """

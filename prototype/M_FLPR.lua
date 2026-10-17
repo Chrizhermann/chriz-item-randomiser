@@ -1,4 +1,4 @@
--- Installed by randomiser.tp2 component 1500. Lab automation lives in the
+-- Installed by cir.tp2. Lab automation lives in the
 -- separate lab-only tools/lab/M_FLPRQA.lua and is never installed for players.
 if not EEex_Active then return end
 FLPR = FLPR or {}
@@ -25,7 +25,7 @@ end
 -- name this file; only the latest failure is kept.
 local function record(context, reason)
     local line = context .. ": " .. tostring(reason)
-    print("Item Randomiser " .. line)
+    print("Chriz Item Randomiser " .. line)
     local file = io.open(DATA .. "last-error.txt", "w")
     if file then
         file:write(os.date("%Y-%m-%d %H:%M:%S "), line, "\n")

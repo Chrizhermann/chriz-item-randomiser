@@ -1,4 +1,4 @@
-"""Component 1500's record of the quest and dialogue changes it installed."""
+"""CIR's record of the quest and dialogue changes it installed."""
 
 from pathlib import Path
 import re
@@ -51,13 +51,13 @@ class PreparedTests(unittest.TestCase):
         self.assertEqual(prepared.read_prepared(self.game), {})
         self.assertEqual(prepared.applied_changes(self.game), set())
         self.assertEqual(prepared.left_out(self.game, "flail_heads"),
-                         "KPGLAI01.DLG was not prepared: component 1500 of this version is not installed")
+                         "KPGLAI01.DLG was not prepared: this version of Chriz Item Randomiser is not installed")
 
     def test_installed_file_must_still_carry_the_change(self):
         self.write(REGISTRY)
         prepared.require_installed(self.game, "quest_pool",
                                    b"GLOBALFLPR_QPOOL GLOBALFLPR_XPOOL GLOBALFLPR_EPOOL")
-        with self.assertRaisesRegex(ProfileError, "replaced after component 1500"):
+        with self.assertRaisesRegex(ProfileError, "replaced after Chriz Item Randomiser"):
             prepared.require_installed(self.game, "quest_pool", b"GLOBALFLPR_QPOOL only")
         with self.assertRaisesRegex(ProfileError, "did not prepare bcs:troalt"):
             prepared.require_installed(self.game, "quest_altar",

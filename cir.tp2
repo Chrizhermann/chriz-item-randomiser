@@ -1,0 +1,50 @@
+BACKUP ~cir/backup~
+AUTHOR ~Christopher Hermann (https://github.com/Chrizhermann/chriz-item-randomiser); built on Item Randomiser by Fredrik Lindgren (Wisp)~
+VERSION ~1.0.0~
+README ~cir/readme-cir.html~
+
+ALWAYS
+  INCLUDE ~cir/lib/fl#bg1pal.tpa~
+
+<<<<<<<< ...blank
+>>>>>>>>
+
+  // The English texts are UTF-8, as the Enhanced Edition game text is, and are
+  // never converted. Translations are written in their language's code page;
+  // WeiDU converts them in place and marks the folder with fl#utf8.mrk.
+  ACTION_DEFINE_ARRAY fl#noconvert BEGIN setup END
+  ACTION_DEFINE_ARRAY fl#reload BEGIN in-game END
+  ACTION_IF !(~%LANGUAGE%~ STR_EQ ~english~) BEGIN
+    LAF HANDLE_CHARSETS
+      INT_VAR
+        infer_charsets = 1
+      STR_VAR
+        tra_path = EVAL ~%MOD_FOLDER%/languages~
+        noconvert_array = fl#noconvert
+        reload_array = fl#reload
+    END
+  END
+
+  ACTION_IF ENGINE_IS ~bgee bg2ee~ BEGIN // Some strings have differences other than encoding
+    LOAD_TRA ~%MOD_FOLDER%/languages/bgee/english/in-game.tra~
+    LOAD_TRA ~%MOD_FOLDER%/languages/bgee/%LANGUAGE%/in-game.tra~
+  END
+END
+
+AUTO_TRA ~cir/languages/%s~
+LANGUAGE English english ~cir/languages/english/setup.tra~
+                         ~cir/languages/english/in-game.tra~
+LANGUAGE Polish polish ~cir/languages/english/setup.tra~
+                       ~cir/languages/english/in-game.tra~
+                       ~cir/languages/polish/in-game.tra~
+
+
+BEGIN @101500 DESIGNATED 0 LABEL ~cir-randomiser~                                                       //Marker file: flrandomiser3.mrk
+REQUIRE_PREDICATE GAME_IS ~eet~ @101501
+REQUIRE_PREDICATE FILE_EXISTS ~override/M___EEex.lua~ @101502
+REQUIRE_PREDICATE !FILE_EXISTS_IN_GAME flrandomiser1.mrk AND !FILE_EXISTS_IN_GAME flrandomiser2.mrk @101503 //Item Randomiser's Mode 1 or Mode 2
+REQUIRE_PREDICATE !MOD_IS_INSTALLED randomiser.tp2 560 @101504
+REQUIRE_PREDICATE (!FILE_EXISTS ~override/M_FLPR.lua~) OR (MOD_IS_INSTALLED cir.tp2 0) @101505        //Not its own earlier installation
+
+  INCLUDE ~cir/lib/campaign_runtime.tpa~                                                                //Runtime files, UI hooks and the new-game marker
+  LAM flir_campaign_runtime_install

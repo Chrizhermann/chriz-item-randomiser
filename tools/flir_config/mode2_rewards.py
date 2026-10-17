@@ -78,9 +78,10 @@ _alias("sctelwyn", "helm03", 22, 22, "SCULPTOR", {"sctelwyn": ((19, 0),)})
 _alias("scsain", "amul23", 36, None, "SCULPTOR", {"scsain": ((19, 0),)},
        charges=(1, 1, 1), recipient="[PC]")
 _alias("scyarryl", "blun20", 12, None, "SCULPTOR", {"scyarryl": ((19, 0),)})
-# lists/duplicates/bg2.2da:26 attaches this inventory copy to BHOISIG source
-# ident w8. lib/delete.tpa removes it only when that source is selected. The
-# sculptor target independently converts its GiveItem into a created reward.
+# Item Randomiser's lists/duplicates/bg2.2da:26 attaches this inventory copy to
+# BHOISIG source ident w8, and its lib/delete.tpa removes it only when that
+# source is selected. The sculptor target independently converts its GiveItem
+# into a created reward.
 # This is an auxiliary guarded copy, never another randomized source unit.
 TRANSFER_SPECS = {"scyarryl": REWARDS["scyarryl"]}
 TRANSFER_SPECS["scyarryl"].update(
@@ -117,8 +118,9 @@ for _name, _item, _source, _target, _area, _script, _branches, _record, _offset,
         source_record={"byte_offset": _offset, "record_index": _record, "resref": _item,
                        "expiration": 0, "charges": [0, 0, 0], "flags": 0, "slots": [_slot]})
     TRANSFER_SPECS[_name] = _specification
-# lists/duplicates/bg2.2da:20 replaces the selected source's carried sword with
-# BLUN05; keep that ordinary fallback separate from its randomized reward.
+# Item Randomiser's lists/duplicates/bg2.2da:20 replaces the selected source's
+# carried sword with BLUN05; keep that ordinary fallback separate from its
+# randomized reward.
 TRANSFER_SPECS["trgeni01"]["replacement"] = "blun05"
 
 # Unlike the dialogue-source duplicates above, row42 is already a physical CRE

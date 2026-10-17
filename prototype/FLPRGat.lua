@@ -507,7 +507,7 @@ local function prepare_stock_option(api,bundle,build,compile,pristine,base)
          insertion=first==nil and index or nil}
 end
 
--- Original Mode 2 item rows 12/32/39/84 and duplicates/bg2.2da rows 26/20/21.
+-- Item Randomiser's Mode 2 item rows 12/32/39/84 and duplicates/bg2.2da rows 26/20/21.
 -- AMCLER01's inventory route is also removed in weidu_action.tpa's amcler.fl
 -- handler. These physical copies belong to the selected dialogue source;
 -- selecting the matching reward destination alone must not remove them.
@@ -533,7 +533,7 @@ local function auxiliary_binding(bundle,id,ordinal)
         type(auxiliary.record_indices)=='table' and #auxiliary.record_indices==1 and
         auxiliary.record_indices[1]==approved.record,
         'CAMPAIGN_GATE_AUXILIARY_INVALID')
-    -- duplicates/bg2.2da:20 leaves BLUN05 in TRGENI01's original weapon slot.
+    -- Item Randomiser's duplicates/bg2.2da:20 leaves BLUN05 in TRGENI01's original weapon slot.
     -- The other reviewed auxiliary records are removed without substitutes.
     assert(auxiliary.replacement==approved.replacement and (not approved.replacement or
         hash(f.resource_hashes[approved.replacement:upper()..'.ITM'])),

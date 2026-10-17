@@ -112,7 +112,7 @@ def _validate_source(row: dict, *, spell_shield: dict | None = None) -> int:
                       isinstance(row.get("record"), dict) and
                       row["record"].get("kind") in ("scripted", "virtual") else set()), "source record")
     if source["kind"] == "scripted":
-        # The fingerprint is BLPOOL.BCS as component 1500 installed it; the
+        # The fingerprint is BLPOOL.BCS as the installer left it; the
         # export checks it against the game.
         if (row["id"] != SOURCE_ID or row["quantity"] != 1 or
                 source != campaign_record({"id": SOURCE_ID, "item": ITEM,

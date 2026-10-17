@@ -4,8 +4,8 @@ Start a disposable lab game at its main menu first. This helper never
 launches the game. Each UI action is sent once through
 the sibling EEex Remote Console client, with separate Lua and JSON evidence.
 A timeout or unexpected menu stops the sequence; it is never retried. New Game
-and character acceptance go through the UI adapter (FLPRUI_*) that component
-1500 hooks into UI.MENU, as the game's own buttons do.
+and character acceptance go through the UI adapter (FLPRUI_*) that CIR hooks
+into UI.MENU, as the game's own buttons do.
 
 Example:
     py tools/create_fixture_character.py --name "FLPR Run 2"

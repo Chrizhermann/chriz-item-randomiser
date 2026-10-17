@@ -1,4 +1,4 @@
-"""Routing of the UI adapter that component 1500 installs (M_FLPRUI.lua).
+"""Routing of the UI adapter that CIR installs (M_FLPRUI.lua).
 
 The real adapter runs in Lua 5.1, Lua 5.3 and LuaJIT 2.1 against stub engine
 objects, with and without the io library the engine's own Lua lacks. The
@@ -146,7 +146,7 @@ class UiAdapterTests(unittest.TestCase):
                     Infinity_FetchString = function(ref) return ({[12] = "Nie dziala.", [13] = ""})[ref] end''')
                 self.assertEqual(lua.eval('FLPRUI_Text("not_running")'), "Nie dziala.")
                 # Empty or invalid references, and keys without one, keep English.
-                self.assertEqual(lua.eval('FLPRUI_Text("ready")'), "Item Randomiser: this adventure's items are randomised.")
+                self.assertEqual(lua.eval('FLPRUI_Text("ready")'), "Chriz Item Randomiser: this adventure's items are randomised.")
                 self.assertIn("stopped working", lua.eval('FLPRUI_Text("stopped")'))
                 self.assertIn("Baldur's Gate (BG1)", lua.eval('FLPRUI_Text("other_campaign")'))
                 lua.execute("Infinity_FetchString = nil")

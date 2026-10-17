@@ -1,6 +1,0 @@
-IF
-  Contains("MISC9D",Myself)
-THEN
-  RESPONSE #100
-    SetGlobal("FixtureAltar","GLOBAL",1)
-END

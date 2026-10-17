@@ -7,7 +7,8 @@ Set activation_global at campaign creation only for actual assignments. Observe
 each assigned target only after confirmed delivery, and latch 0 -> 1 once; an
 unloaded/unresolved container is not an empty container. Samia's two assignments
 share one latch, so either observed absence suffices. Never clear it on item loss.
-See lib/weidu_action.tpa and baf/flrkeep*.baf, flrsamia.baf, flrsafan.baf.
+See Item Randomiser's lib/weidu_action.tpa and baf/flrkeep*.baf, flrsamia.baf
+and flrsafan.baf.
 """
 from __future__ import annotations
 

@@ -1,9 +1,9 @@
 """Campaign-gated original Kangaxx quest alterations.
 
 Only the reviewed compiled resources are accepted. Old dialogue transitions
-remain under the inverse campaign flag; new routes follow d/hlskull.d
-exactly. All functions operate on bytes supplied by the caller. Component
-1500 makes the Flail of Ages change itself when it is installed
+remain under the inverse campaign flag; new routes follow Item Randomiser's
+d/hlskull.d exactly. All functions operate on bytes supplied by the caller.
+CIR makes the Flail of Ages change itself when it is installed
 (lib/campaign_patches.tpa).
 """
 from __future__ import annotations

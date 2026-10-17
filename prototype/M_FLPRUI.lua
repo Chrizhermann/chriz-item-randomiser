@@ -1,4 +1,4 @@
--- Installed by randomiser.tp2 component 1500, which points UI.MENU's
+-- Installed by cir.tp2, which points UI.MENU's
 -- startEngine:OnNewGameButtonClick() and createCharScreen:AcceptCharacter()
 -- calls here. Loaded by the engine itself, also without EEex.
 -- Without an applied configuration (randomiser-campaigns/next.lua) both calls
@@ -12,16 +12,16 @@ local NEXT = "randomiser-campaigns/next.lua"
 -- M_FLPRTXT.lua maps the same keys to the strings the installer added to the
 -- game text in the language chosen at installation.
 local FALLBACK = {
-    not_running = "Item Randomiser is set up but not running. "
+    not_running = "Chriz Item Randomiser is set up but not running. "
         .. "Start the game with InfinityLoader.exe to randomise this adventure.",
-    unsupported = "Item Randomiser does not support this game version yet. "
+    unsupported = "Chriz Item Randomiser does not support this game version yet. "
         .. "Details: randomiser-campaigns\\last-error.txt",
-    other_campaign = "Item Randomiser can only randomise adventures that start in Baldur's Gate (BG1) so far.",
-    setup_failed = "Item Randomiser could not randomise this adventure. "
+    other_campaign = "Chriz Item Randomiser can only randomise adventures that start in Baldur's Gate (BG1) so far.",
+    setup_failed = "Chriz Item Randomiser could not randomise this adventure. "
         .. "Details: randomiser-campaigns\\last-error.txt",
     start_plain = "Start without randomiser",
-    ready = "Item Randomiser: this adventure's items are randomised.",
-    stopped = "Item Randomiser stopped working in this adventure. Items it has not placed yet may be "
+    ready = "Chriz Item Randomiser: this adventure's items are randomised.",
+    stopped = "Chriz Item Randomiser stopped working in this adventure. Items it has not placed yet may be "
         .. "missing. Details: randomiser-campaigns\\last-error.txt",
 }
 

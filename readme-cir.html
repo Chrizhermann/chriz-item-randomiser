@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Chriz Item Randomiser</title>
+<style>
+  body { max-width: 52em; margin: 2em auto; padding: 0 1em; font: 16px/1.5 Georgia, serif; color: #222; background: #fdfcf8; }
+  h1, h2 { font-family: Verdana, sans-serif; color: #4a3b1f; }
+  h2 { margin-top: 1.8em; border-bottom: 1px solid #d8cfb8; }
+  code { background: #f1ece0; padding: 0 .2em; }
+</style>
+</head>
+<body>
+
+<h1>Chriz Item Randomiser</h1>
+<p><strong>Author:</strong> Christopher Hermann (<a href="https://github.com/Chrizhermann/chriz-item-randomiser">GitHub</a>).<br />
+<strong>Built on:</strong> <a href="https://github.com/FredrikLindgren/randomiser">Item Randomiser</a> by Fredrik Lindgren, also known as Wisp.<br />
+<strong>Version:</strong> 1.0.0 (in development, not yet released).<br />
+<strong>Languages:</strong> English; Polish game texts where Item Randomiser has them.</p>
+
+<h2>Overview</h2>
+<p>Chriz Item Randomiser (CIR) shuffles where items are found in Baldur's Gate, anew for each adventure you start. It works while you play, through <abbr title="Enhanced Edition Extender">EEex</abbr>: each new adventure started in Baldur's Gate gets its own randomisation when its first character is accepted, and saves keep the randomisation they started with. You choose what is randomised in the configurator; changing those settings for the next adventure needs no reinstallation.</p>
+<p>CIR is a new mod built on Wisp's Item Randomiser. It reuses that mod's item and location lists, item files and texts, and it cannot be combined with Item Randomiser's own randomisation (Mode 1 or Mode 2) or its &ldquo;More Spell Shield scrolls&rdquo; component; the configurator offers that option for each adventure instead.</p>
+
+<h2>Requirements</h2>
+<ul>
+  <li>Baldur's Gate: Enhanced Edition Trilogy (EET). Other games are planned.</li>
+  <li>EEex with its LuaJIT component. Start the game with <code>InfinityLoader.exe</code>.</li>
+</ul>
+
+<h2>Installation</h2>
+<p>Extract the archive into the game folder so the <code>cir</code> folder is beside <code>chitin.key</code>. Supply a current WeiDU executable as <code>setup-cir</code> and run it. Install CIR after every mod that changes the user interface or the new-game template (<code>UI.MENU</code>, <code>BALDUR.GAM</code>).</p>
+<p>The quest and conversation changes CIR relies on are made when it is installed and removed when it is uninstalled. They only take effect in adventures whose settings use them. If another mod changed one of those files so that the change cannot be made safely, the installer says so, leaves the file as it is, and the configurator does not offer what depends on it.</p>
+
+<h2>Configuration</h2>
+<p>Installing CIR changes nothing in play until a configuration is applied. After the whole mod stack is installed, close the game and use the configurator in <code>cir/tools</code> to scan the game and apply a configuration. The configurator currently requires Python 3.10 or later.</p>
+<p>When a new adventure cannot be randomised (for example a start outside Baldur's Gate, or a game started without EEex), the game says why and lets you start it without the randomiser or cancel.</p>
+
+<h2>Uninstallation</h2>
+<p>Uninstalling CIR with WeiDU removes its runtime and its quest and conversation changes. Settings applied with the configurator are not recorded by WeiDU and stay in <code>randomiser-campaigns</code>. Adventures that were randomised may miss items after CIR is uninstalled.</p>
+
+<h2>Credits</h2>
+<p>CIR exists because of Wisp's Item Randomiser; its lists of items, sources and locations, its item files and its texts are his work. Polish texts by Cahir and Yarpen, the translators of Item Randomiser.</p>
+<p>Tools: <a href="https://github.com/WeiDUorg/weidu">WeiDU</a> and <a href="https://github.com/Bubb13/EEex">EEex</a>.</p>
+<p>Licence: the code and texts written for CIR are under the MIT licence (see <code>LICENSE</code>); the material from Item Randomiser keeps its author's terms.</p>
+
+<h2>Version history</h2>
+<ul>
+  <li><strong>1.0.0</strong> (in development): first version.</li>
+</ul>
+
+</body>
+</html>

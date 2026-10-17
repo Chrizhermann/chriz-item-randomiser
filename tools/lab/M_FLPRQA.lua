@@ -1,6 +1,6 @@
--- Lab-only automation for disposable test games. Neither randomiser.tp2 nor the
+-- Lab-only automation for disposable test games. Neither cir.tp2 nor the
 -- release package contains this file or FLPRQA.lua; a lab stages both into
--- override next to an installed component 1500 and the EEex Remote Console.
+-- override next to an installed CIR and the EEex Remote Console.
 --
 -- Remote commands are evaluated during drawing. Save/load transitions can
 -- release bitmap userdata still referenced by that drawing pass (live crash

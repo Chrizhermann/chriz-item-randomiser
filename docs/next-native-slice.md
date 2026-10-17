@@ -96,11 +96,11 @@ post-delivery drop, and pickup have passed as recorded above.
 Use newly authored disposable actors and items. Do not pick a real boss, change a
 real encounter, or infer a default capacity for production content.
 
-The legacy `copy/M_FLDLV.lua` supplies useful unique-owner resolution, live/full
+The legacy [`copy/M_FLDLV.lua`](https://github.com/Chrizhermann/chriz-item-randomiser/blob/172872dad6496c1d6eaf1a09b52bc3189da23b96/copy/M_FLDLV.lua) supplies useful unique-owner resolution, live/full
 inventory preflight and instantaneous `GiveItemCreate` transport. Its
-`copy/FLDLVCor.lua` verifies a later resref/charge count increase. That is not the
+[`copy/FLDLVCor.lua`](https://github.com/Chrizhermann/chriz-item-randomiser/blob/172872dad6496c1d6eaf1a09b52bc3189da23b96/copy/FLDLVCor.lua) verifies a later resref/charge count increase. That is not the
 new protocol's proof of a particular created item, full payload and lootability.
-The historical [Azamantes test](plans/2026-08-31-synchronous-eeex-delivery-design.md)
+The historical [Azamantes test](https://github.com/Chrizhermann/chriz-item-randomiser/blob/172872dad6496c1d6eaf1a09b52bc3189da23b96/docs/plans/2026-08-31-synchronous-eeex-delivery-design.md)
 proved recipient queues can discard delivery actions; it did not establish a
 general corpse-replacement problem.
 

@@ -50,7 +50,7 @@ def require_closed(game: Path) -> None:
             raise ProfileError("Close this test game and its installer before applying settings")
 
 
-# randomiser.tp2 component 1500 installs the runtime with this marker and UI
+# cir.tp2 installs the runtime with this marker and UI
 # adapter, before any configuration exists. A hand-staged test runtime has no
 # marker and is recognised by its existing next-game pointer instead.
 INSTALLED_RUNTIME = ("override/flrandomiser3.mrk", "override/M_FLPRUI.lua")
@@ -67,7 +67,7 @@ def validate_runtime(game: Path, catalog: dict) -> Path:
         required.append(CAMPAIGN_DATA + "/next.lua")
     for name in required:
         if not (game / name).is_file():
-            raise ProfileError("Install the new randomiser (Item Randomiser component 1500) in this game first: " + name)
+            raise ProfileError("Install Chriz Item Randomiser in this game first: " + name)
     return game
 
 

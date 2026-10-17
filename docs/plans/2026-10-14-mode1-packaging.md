@@ -1,4 +1,4 @@
-# Mode 1 campaign runtime packaging
+# Chriz Item Randomiser packaging
 
 **Date:** 2026-10-14
 **Status:** Implemented and verified on synthetic games only; nothing here has run in the
@@ -6,9 +6,10 @@ game. A public release stays gated on the blockers below.
 
 ## Scope
 
-Install the post-install Mode 1 campaign runtime (`prototype/`) through the normal
-`randomiser.tp2`, build a reproducible release ZIP, and record what Chriz Easy BG
-(CEBG) needs to offer it. Mode 2 routes, original special-option parity, automatic
+Install the campaign runtime (`prototype/`) through `cir.tp2`, the installer of Chriz
+Item Randomiser (CIR), build a reproducible release ZIP, and record what Chriz Easy BG
+(CEBG) needs to offer it. Until 2026-10-17 the runtime was component 1500 of Item
+Randomiser's `randomiser.tp2`; it became CIR's only component unchanged (see Decisions). Mode 2 routes, original special-option parity, automatic
 equipment placement and the reward-specific clue route remain separate work. The
 default configuration was decided on 2026-10-14 (see Decisions); the configurator's
 preset dialog opens on it, and the installer does not apply it yet.
@@ -19,26 +20,28 @@ worktree.
 
 ## Package contents
 
-The ZIP keeps the 8.1.1 layout under `randomiser/` and adds two groups. The exact list
-is `tools/release-package.json`; nothing outside it is published.
+The ZIP holds one folder, `cir/`. The exact list is `tools/release-package.json`;
+nothing outside it is published.
 
-| Group | Paths | Installed by |
+| Group | Paths | Used by |
 | --- | --- | --- |
-| Existing installer | `randomiser.tp2`, `randomiser.ini`, readmes, `baf`, `copy`, `d`, `languages`, `lib`, `lists`, `ssl`, `style` | components as in 8.1.1 |
-| Campaign runtime | `prototype/M_FLPR.lua`, `M_FLPRUI.lua`, `FLPRCore`, `FLPRGlob`, `FLPRNat`, `FLPRHost`, `FLPRSpell`, `FLPRGat`, `FLPRCur`, `FLPRScript`, `FLPRShop` (`.lua`), `FLPRRun.menu`; `tools/probes/FLPRGateAsm.lua`, `FLPRCampaignPolicy.lua`, `FLPRInventoryAsm.lua` | component 1500 |
+| Installer | `cir.tp2`, `cir.ini`, `readme-cir.html`, `README.md`, `LICENSE`, `lib/campaign_runtime.tpa`, `lib/campaign_patches.tpa`, `lib/fl#bg1pal.tpa`, `languages` | `cir.tp2` |
+| Item Randomiser data | `lists/` (items, locations, sources, endpoints, groups), `copy/` (`flbhcryp.itm`, `flrbelt1.itm`, `ward.itm`, `flrward1.bam`) | the configurator; `campaign_patches.tpa` copies two items |
+| Campaign runtime | `prototype/M_FLPR.lua`, `M_FLPRUI.lua`, `FLPRCore`, `FLPRGlob`, `FLPRNat`, `FLPRHost`, `FLPRSpell`, `FLPRGat`, `FLPRCur`, `FLPRScript`, `FLPRShop` (`.lua`), `FLPRRun.menu`; `tools/probes/FLPRGateAsm.lua`, `FLPRCampaignPolicy.lua`, `FLPRInventoryAsm.lua` | `cir.tp2` copies them to `override` |
 | Configurator | `tools/randomiser_config.py`, `tools/flir_config/` (including `ui/`) | run from the mod folder after installation |
 
-Not shipped: `docs`, `research`, `tests`, fixture/QA helpers in `tools/`, the lab automation in
+Not shipped: `docs`, `tests`, fixture/QA helpers in `tools/`, the lab automation in
 `tools/lab/` (`FLPRQA.lua`, `M_FLPRQA.lua`), the unused `FLPRDrop`/`FLPRHeld`/`FLPRLife` modules
 and the `tools/probes/FLPRDrop.lua` diagnostic.
 
-## Installation: component 1500
+Item Randomiser's own installer (Mode 1, Mode 2 and its other components), its scripts,
+dialogues, readmes and the lists only it reads are not part of CIR. They stay with Item
+Randomiser: in its 8.1.1 release and tag and in this repository's history.
 
-`DESIGNATED 1500`, `LABEL ~flir-campaign-runtime~`, no prompts. It is the first choice of
-the "Randomise items" group (`SUBCOMPONENT @101000`), shown as "New randomiser
-(recommended)"; the four 8.1.1 modes follow as "Old randomiser (stable)". The group offers
-one choice; the predicates below also keep the two apart for install lists and later
-runs. Preconditions, each with its reason:
+## Installation: `cir.tp2`
+
+One component: `DESIGNATED 0`, `LABEL ~cir-randomiser~`, no prompts. Preconditions, each
+with its reason:
 
 - `GAME_IS ~eet~`. The runtime captures a campaign only on a BG1 New Game, and its
   native source gate checks code bytes of the BG2:EE 2.6.6.0 executable. EET is the
@@ -47,14 +50,14 @@ runs. Preconditions, each with its reason:
 - LuaJIT active (exactly one `LuaPatchMode=REPLACE_INTERNAL_WITH_EXTERNAL` line in
   `InfinityLoader.ini`): the runtime uses the `io` and `os` libraries. Checked in the
   component body so a missing prerequisite fails the run visibly.
-- No legacy Mode 1 or Mode 2 install (`flrandomiser1.mrk`, `flrandomiser2.mrk`). Those
-  remove originals at install time and run their own assignment.
-- Not together with component 560. It raises the Duergar Spell Shield stock at install
+- No Item Randomiser Mode 1 or Mode 2 install (`flrandomiser1.mrk`, `flrandomiser2.mrk`).
+  Those remove originals at install time and run their own assignment.
+- Not together with Item Randomiser's component 560. It raises the Duergar Spell Shield stock at install
   time, so a campaign with the configurator's `more_spell_shield` option off could no
   longer have the original stock.
 - No separately staged runtime: an `override/M_FLPR.lua` is refused unless WeiDU.log
-  records component 1500 itself, so a development lab is never overwritten while a
-  re-install over the component still works. A guard that only tested for the file would
+  records `cir.tp2` itself, so a development lab (or Item Randomiser's unreleased
+  component 1500) is never overwritten while a re-install over CIR still works. A guard that only tested for the file would
   turn false after the component's own install; WeiDU 249 then asks its "[R]e-Install"
   question even in a `--force-install-list` run and, without input, repeats it forever.
 
@@ -104,10 +107,10 @@ After the whole mod stack is installed, the player scans the game (`scan`, `worl
 applies a configuration from the editor with the game closed (`ui ... --apply-game`). Apply
 writes `randomiser-campaigns/` data, campaign-aware dialogue/script/spell resources and the
 `BGEE.LUA` journal in `override`, and appends strings to `lang/<language>/dialog.tlk`.
-WeiDU does not track these writes. `activation.validate_runtime` now accepts this
-component's installation as well as the hand-staged lab layout.
+WeiDU does not track these writes. `activation.validate_runtime` accepts CIR's
+installation as well as the hand-staged lab layout.
 
-The quest and dialogue changes of the default configuration are made by 1500 itself
+The quest and dialogue changes of the default configuration are made by `cir.tp2` itself
 (`lib/campaign_patches.tpa`): the pool, altar and book reward scripts (BLPOOL, TROALT,
 PPBOOK), Unshey's conversation and journal entry, Glaicus's flail-heads conversation and
 the TotSC tome stand-in. Each is found by meaning (the block that creates the item, the
@@ -121,14 +124,14 @@ A file that cannot be changed unambiguously stays as installed; the installer pr
 note (setup.tra @101520-@101528) and `override/FLPRPAT.lua` records the reason, which the
 editor shows instead of offering the option.
 
-Uninstalling 1500 restores `UI.MENU`, `BALDUR.GAM` and those quest files byte for byte
-and removes every file the component created. WeiDU keeps the appended game-text
+Uninstalling CIR restores `UI.MENU`, `BALDUR.GAM` and those quest files byte for byte
+and removes every file it created. WeiDU keeps the appended game-text
 strings, unused, as it does for every mod; a re-install finds and reuses them. WeiDU does
 not track folders, so the `randomiser-campaigns` folder it created stays behind empty.
 Uninstall cannot remove what the configurator wrote; see B2. Re-installing over the installed component
 and an uninstall and install in one WeiDU run leave the game byte-identical, also with an
 applied `randomiser-campaigns/next.lua`;
-so does WeiDU's temporary uninstall and re-install of 1500 behind a reinstalled earlier
+so does WeiDU's temporary uninstall and re-install of CIR behind a reinstalled earlier
 mod.
 
 ## Player messages
@@ -162,23 +165,23 @@ not define `EEex_GetImageBase`, which the source gate calls; the installer does 
 refuse v0.11 because no minimum version has been established, and the runtime fails
 closed when an API or the executable's code bytes do not match.
 
-## Relation to the 8.1.1 components
+## Relation to Item Randomiser
 
-| Components | With 1500 |
+| Item Randomiser components | With CIR |
 | --- | --- |
-| 1100, 1200 (Mode 1), 1300, 1400 (Mode 2) | Mutually exclusive, enforced in both directions. |
-| 560 More Spell Shield scrolls | Mutually exclusive, both directions; the configurator offers it per campaign. |
-| 500, 510, 520, 530, 540, 570 | Marker-only inputs to 1100-1400; inert with 1500 and not blocked. Their configurator equivalents are `totsc_tome`, `unrandomized_percent`, `kangaxx`, `scrolls`, `flail_heads`, `cursed_disguise`. |
+| 1100, 1200 (Mode 1), 1300, 1400 (Mode 2) | Exclusive: `cir.tp2` refuses to install after them. |
+| 560 More Spell Shield scrolls | Exclusive: `cir.tp2` refuses to install after it; the configurator offers it per campaign. |
+| 500, 510, 520, 530, 540, 570 | Marker-only inputs to 1100-1400; inert with CIR and not blocked. Their configurator equivalents are `totsc_tome`, `unrandomized_percent`, `kangaxx`, `scrolls`, `flail_heads`, `cursed_disguise`. |
 | 5005-5085 | Require Mode 2, so unavailable. |
 | 9000, 9050, 10100, 10200, 10210, 10300 | Independent; install them before the scan. |
 
-The exclusion adds one `REQUIRE_PREDICATE` line to each of 1300 and 1400. The Mode 2
-parity check allows exactly that line and still compares the rest of each component
-body with the `b600e94` baseline.
+Item Randomiser 8.1.1 does not know CIR, so WeiDU does not refuse its Mode 1, Mode 2 or
+560 when they are installed after CIR.
 
 ## Release ZIP
 
-`tools/build_release.py` builds `randomiser-v<VERSION>.zip` and a JSON manifest from a
+`tools/build_release.py` builds `<archive root>-v<VERSION>.zip` (`cir-v1.0.0.zip`) and a
+JSON manifest from a
 commit's Git objects, never the working tree. Output is byte-reproducible: sorted file
 entries without directory entries, the commit time as every timestamp, Unix regular-file
 attributes (mode 644), Deflate level 9 and the commit ID as the archive comment. Text
@@ -198,18 +201,19 @@ must not be published until the version is decided.
 
 ## What CEBG needs
 
-- Component `1500` of `randomiser/randomiser.tp2`, label `flir-campaign-runtime`,
-  language 0, no prompts; a new release asset with its SHA-256 and length.
+- A new mod: component `0` of `cir/cir.tp2`, label `cir-randomiser`, language 0, no
+  prompts; its own release asset with SHA-256 and length.
 - Requires EET and `feature:eeex:mandatory-components`.
-- Excludes Randomiser 1100, 1200, 1300, 1400 and 560. Presets choosing 1500 should drop
-  500-570, which would only be inert.
+- Excludes Item Randomiser 1100, 1200, 1300, 1400 and 560. Presets with CIR should drop
+  Item Randomiser's 500-570, which would only be inert.
 - Order: after every component that writes `UI.MENU` or `BALDUR.GAM`; the end of the
   BG2 run is simplest. The installer cannot see later overwrites, so after the stack
   completes CEBG should check that `override/UI.MENU` contains `FLPRUI_NewGame(` and
   `FLPRUI_AcceptCharacter(`, `override/BALDUR.GAM` contains `FLPR_FRESH`, and
-  `override/flrandomiser3.mrk` exists.
+  `override/flrandomiser3.mrk` exists, and that no Item Randomiser Mode 1, Mode 2 or 560
+  was installed after CIR.
 - A post-install step: scan, configure and apply with the game closed (needs B1).
-- Uninstall or recovery: remove applied settings first (needs B2). Re-installing 1500
+- Uninstall or recovery: remove applied settings first (needs B2). Re-installing CIR
   itself is safe.
 
 ## Blockers before a public release
@@ -283,23 +287,34 @@ On 2026-10-17:
 - **Glaicus when TorGal is already dead**: keep it simple, no new or dynamic text. His
   other branches that give the first head keep their line and hand over every head he
   holds, only in adventures that randomise the heads.
+- **Repository and licence**: public, with a reuse licence, and named
+  `chriz-item-randomiser`, this fork's name. CIR's own code and texts are under the MIT
+  licence; the material from Item Randomiser is credited and keeps its author's terms
+  (`LICENSE`).
 
 Open:
 
-- **The new repository's name**: `chriz-item-randomiser` is this fork's, and CEBG's
-  8.1.1 artifacts link its releases.
+- **How CIR gets the repository name**: proposed that CIR takes over this repository
+  with its first release, while the Item Randomiser 8.x line moves to a branch and keeps
+  its tags and releases, so CEBG's pinned 8.1.1 links keep working. Not yet confirmed.
+- **Item Randomiser's other components** (Cespenar's forging, Gromnir, the Protection
+  from Undead scrolls, the Duergar merchants, the Watcher's Keep statues, the Mode 2
+  creature-group unequipping): they stay with Item Randomiser unless Chris decides to
+  bring some into CIR.
 - **B1 route** (options above), now constrained to Python-free for both versions.
 
 ## Verification
 
-- `tests/Test-CampaignRuntimeInstaller.ps1` (WeiDU 249, synthetic EET games; 153 checks,
+- `tests/Test-CampaignRuntimeInstaller.ps1` (WeiDU 249, synthetic EET games; 149 checks,
   from the working tree and from the built ZIP with `-PackagePath`): install, uninstall,
   re-install, re-install over the installed component, uninstall and install in one run,
   re-install behind a reinstalled earlier mod (also from the install list alone),
   already-patched inputs, override-resident and archived `UI.MENU`/`BALDUR.GAM`, UI-mod
-  call shapes, redefined UI methods, an applied `next.lua`, exclusions in both
-  directions, missing prerequisites, rollback of failed installs and the Polish
-  language, with KEY, BIFF, TLK and unrelated override files byte-checked, and the seven
+  call shapes, redefined UI methods, an applied `next.lua`, the exclusion of Item
+  Randomiser's Mode 1, Mode 2 and 560, missing prerequisites, rollback of failed installs
+  and the Polish language (on an Enhanced Edition game WeiDU converts its texts to UTF-8
+  and uninstalling restores them; the English texts stay as written), with KEY, BIFF,
+  TLK and unrelated override files byte-checked, and the seven
   messages appended to the game text with matching references in `M_FLPRTXT.lua`. The
   quest changes run on hand-written scripts and dialogues that WeiDU compiles with
   minimal IDS tables (`tests/campaign_patch_fixtures.py`), archived and in override:
@@ -307,18 +322,16 @@ Open:
   structure, and files that give the reward twice or not at all, were already split,
   ask for another item, erase an unknown journal entry or hand over no flail head stay
   byte-identical, with the reason recorded and printed. No game resource is used.
-- `tests/Test-Mode2Parity.ps1` (32 checks) and the other 14 PowerShell suites pass, with a
-  Lua 5.3 interpreter for `Manifest` and `RuntimeProbes`. `SentinelDependencies` and
-  `run-unit.ps1` need the sentinel BAFs of a lab that no longer exists and were not run.
-- WeiDU `--parse-check` of `randomiser.tp2` and every `lib/*.tpa`.
+- WeiDU `--parse-check` of `cir.tp2` and the three `lib/*.tpa`.
 - `tests/test_release_package.py`: EOL parity with Git, determinism, refused inputs,
-  manifest integrity and coverage of every file the TP2 component copies.
+  manifest integrity, coverage of every file `cir.tp2` installs or the configurator
+  reads, and English texts in UTF-8.
 - `tests/test_runtime_ui_adapter.py`: adapter routing and the not-running popup in Lua 5.1,
   Lua 5.3 and LuaJIT; `tests/test_campaign_native_host.py`: atomic capture, every player
   message and its start/cancel choice; `tests/test_lab_qa_module.py`: the lab-only module.
 - `tests/test_runtime_activation.py`: the configurator accepts the installed runtime.
 - The full Python suite, with `keystone-engine` 0.9.2 and `unicorn` 2.1.4 from a local
-  test environment on `PYTHONPATH` and `FL_IR_TEST_TEMP_ROOT=%TEMP%\flir-t`: 1312 tests
+  test environment on `PYTHONPATH` and `FL_IR_TEST_TEMP_ROOT=%TEMP%\flir-t`: 1314 tests
   pass; 2 skip because optional lab caches and evidence are not in the source tree.
 - Not verified: any in-game behavior of the TP2-installed runtime, the adapter in the
   engine's own Lua, UI mods in a running game and EEex versions other than 1.2.

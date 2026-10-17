@@ -1,4 +1,4 @@
-"""Synthetic quest scripts and dialogues for component 1500's game changes.
+"""Synthetic quest scripts and dialogues for CIR's game changes.
 
 Hand-written stand-ins with the shapes lib/campaign_patches.tpa handles, never
 game resources: WeiDU compiles them in a scratch game with the minimal IDS
@@ -165,7 +165,7 @@ SOURCES = {
     "applied": {"blpool.baf": BLPOOL, "troalt.baf": TROALT, "ppbook.baf": PPBOOK,
                 "xblpool.baf": BLPOOL_SPLIT, "xtroalt.baf": TROALT_SPLIT, "xppbook.baf": PPBOOK_SPLIT,
                 "unshey.d": unshey(), "kpglai01.d": glaicus()},
-    # Each quest file as another mod could leave it; component 1500 leaves them
+    # Each quest file as another mod could leave it; CIR leaves them
     # as they are.
     "left-out": {
         # The reward is created in two places.

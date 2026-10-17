@@ -1,6 +1,6 @@
 """The one scripted source: BLPOOL's Mace of Disruption grant.
 
-Component 1500 splits the pool's reward block when it is installed
+The installer splits the pool's reward block when it is installed
 (lib/campaign_patches.tpa): the selected copy, guarded by FLPR_QPOOL, gives
 nothing and sets FLPR_XPOOL; the excluded copy keeps the original grant. The
 pool is offered only when override/FLPRPAT.lua lists that change as applied.
@@ -22,14 +22,14 @@ PAYLOAD = {"resref": ITEM, "expiration": 0, "charges": [0, 0, 0], "flags": 0}
 
 
 def blpool_registration(world: dict) -> dict:
-    """Return the registration for the pool that component 1500 prepared."""
+    """Return the registration for the pool that the installer prepared."""
     resources = world.get("resources") if isinstance(world, dict) else None
     matches = [row for row in resources if isinstance(row, dict) and row.get("id") == RESOURCE] if isinstance(resources, list) else []
     if (len(matches) != 1 or matches[0].get("kind") != "bcs" or matches[0].get("resref") != "blpool" or
             not isinstance(matches[0].get("sha256"), str) or not HEX256.fullmatch(matches[0]["sha256"])):
         raise ProfileError("The scan has no BLPOOL.BCS")
     if not applied(world["game_root"], "quest_pool"):
-        raise ProfileError("Component 1500 did not prepare BLPOOL.BCS; reinstall it to use the pool reward")
+        raise ProfileError("Chriz Item Randomiser did not prepare BLPOOL.BCS; reinstall it to use the pool reward")
     return {"id": SOURCE_ID, "item": ITEM, "resource": RESOURCE,
             "resource_sha256": matches[0]["sha256"], "adapter_id": ADAPTER_ID,
             "selector": SELECTOR, "copies": 1, "optional": False}

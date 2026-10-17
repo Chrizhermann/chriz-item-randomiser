@@ -239,32 +239,57 @@ class RefusalTests(unittest.TestCase):
 
 
 class RepositoryPackageTests(unittest.TestCase):
-    """The repository's own specification covers what component 1500 copies."""
+    """The repository's own specification covers what cir.tp2 installs and the configurator reads."""
 
     def setUp(self):
         self.spec = build_release.load_spec((ROOT / build_release.SPEC_PATH).read_bytes())
         listed = subprocess.run(["git", "-C", str(ROOT), "ls-files", "-z", "-c", "-o", "--exclude-standard"],
                                 capture_output=True, check=True).stdout.decode("utf-8")
         self.tree = {path: ("100644", "") for path in listed.split("\0") if path and (ROOT / path).is_file()}
+        self.selected = set(build_release.select_files(self.spec, self.tree))
 
     def test_specification_selects_existing_files(self):
-        selected = build_release.select_files(self.spec, self.tree)
-        self.assertEqual(self.spec["tp2"], ["randomiser.tp2"])
-        self.assertIn("tools/flir_config/ui/index.html", selected)
-        self.assertFalse([path for path in selected if path.startswith(("tests/", "docs/", "research/"))])
-        self.assertNotIn("tools/probes/FLPRDrop.lua", selected)
+        self.assertEqual((self.spec["archive_root"], self.spec["tp2"]), ("cir", ["cir.tp2"]))
+        self.assertTrue({"LICENSE", "cir.ini", "readme-cir.html", "tools/flir_config/ui/index.html"} <= self.selected)
+        self.assertFalse([path for path in self.selected if path.startswith(("tests/", "docs/"))])
+        self.assertNotIn("tools/probes/FLPRDrop.lua", self.selected)
         # Lab automation is staged by labs only, never installed or published.
-        self.assertEqual(sorted(path for path in selected if path.startswith("tools/lab/")), [])
+        self.assertEqual(sorted(path for path in self.selected if path.startswith("tools/lab/")), [])
 
-    def test_component_1500_sources_are_published(self):
-        source = (ROOT / "lib/campaign_runtime.tpa").read_text(encoding="utf-8")
-        copied = re.findall(r"~%MOD_FOLDER%/([^~]+)~", source)
-        self.assertGreaterEqual(len(copied), 15)
-        selected = set(build_release.select_files(self.spec, self.tree))
-        self.assertEqual(sorted(set(copied) - selected), [])
-        included = re.findall(r'INCLUDE "randomiser/([^"]+)"', (ROOT / "randomiser.tp2").read_text(encoding="utf-8"))
-        self.assertIn("lib/campaign_runtime.tpa", included)
-        self.assertEqual(sorted(set(included) - selected), [])
+    def test_installed_sources_are_published(self):
+        # cir.tp2 names files from the archive root, the libraries from %MOD_FOLDER%;
+        # names built from variables (%LANGUAGE%, %s) are covered by their folders.
+        named = re.findall(r"~cir/([^~%]+)~", (ROOT / "cir.tp2").read_text(encoding="utf-8"))
+        for library in ("lib/campaign_runtime.tpa", "lib/campaign_patches.tpa"):
+            named += re.findall(r"~%MOD_FOLDER%/([^~%]+)~", (ROOT / library).read_text(encoding="utf-8"))
+        self.assertTrue({"lib/campaign_runtime.tpa", "lib/campaign_patches.tpa", "prototype/M_FLPR.lua",
+                         "copy/flbhcryp.itm", "languages/polish/in-game.tra"} <= set(named))
+        # WeiDU creates the backup folder; the languages folder is read whole.
+        self.assertEqual(sorted(set(named) - self.selected - {"backup", "languages"}), [])
+
+    def test_english_texts_are_utf8(self):
+        # cir.tp2 converts only translations; English game text must already be UTF-8.
+        texts = sorted(path for path in self.selected
+                       if re.fullmatch(r"languages/(bgee/)?english/[^/]+\.tra", path))
+        self.assertIn("languages/english/in-game.tra", texts)
+        for path in texts:
+            with self.subTest(path=path):
+                (ROOT / path).read_bytes().decode("utf-8")
+
+    def test_configurator_data_is_published(self):
+        sources = "".join(path.read_text(encoding="utf-8") for path in (ROOT / "tools/flir_config").glob("*.py"))
+        # Literal names (a list row's ":line" removed); names built in code are added below.
+        named = {re.sub(r":\d+$", "", path)
+                 for path in re.findall(r'"((?:copy|languages|lib|lists)/[^"{}]+)"', sources)
+                 if not path.endswith("/")}
+        named |= {f"lists/{kind}/{family}/{campaign}.2da" for kind in ("items", "locations")
+                  for family in ("base", "mode2") for campaign in ("bg1", "bg2")}
+        named |= {f"lists/{kind}/{campaign}.2da" for kind in ("sources/base", "endpoints/base", "groups")
+                  for campaign in ("bg1", "bg2")}
+        named |= {"lib/fl#bg1pal.tpa", "copy/flbhcryp.itm", "languages/english/ppdjinn.tra"}
+        self.assertTrue({"copy/ward.itm", "copy/flrward1.bam", "languages/english/hlskull.tra",
+                         "lists/endpoints/fallbacks.2da"} <= named)
+        self.assertEqual(sorted(named - self.selected), [])
 
 
 if __name__ == "__main__":

@@ -1,4 +1,4 @@
-"""The configurator accepts a runtime that randomiser.tp2 component 1500 installed.
+"""The configurator accepts a runtime that cir.tp2 installed.
 
 Such an install has no configuration yet, so Apply must not require an
 existing next-game pointer, while a hand-staged test runtime still needs one.

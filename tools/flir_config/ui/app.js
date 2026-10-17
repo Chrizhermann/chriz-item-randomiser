@@ -815,7 +815,7 @@ ui.presetButton.addEventListener("click", () => {
     ui.presetLossPercent.value = String(preset.options.loss_percent);
     ui.presetLossPercent.disabled = preset.options.loss_mode !== "some";
     ui.presetUnrandomizedPercent.value = String(preset.options.unrandomized_percent);
-    // Options whose game change component 1500 could not make at install.
+    // Options whose game change the installer could not make at install.
     const unavailable = preset.unavailable || {};
     ui.presetFlailHeads.disabled = "flail_heads" in unavailable;
     ui.presetNote.textContent = Object.values(unavailable).map((reason) => reason + ".").join(" ");

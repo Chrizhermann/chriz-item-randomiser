@@ -1,7 +1,7 @@
 """Original option data and byte patches, without choosing a campaign's rolls.
 
-The definitions below come from randomiser.tp2 component 560 and
-lib/fixes.tpa's component-570 block. Callers supply installed resource bytes
+The definitions below come from Item Randomiser's component 560 and
+the component-570 block of its lib/fixes.tpa. Callers supply installed resource bytes
 and allocated TLK references; this module never opens or changes a game.
 """
 

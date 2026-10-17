@@ -1,4 +1,4 @@
-// Component 1500: the quest and dialogue changes the new randomiser relies on.
+// Chriz Item Randomiser (cir.tp2): the quest and dialogue changes it relies on.
 //
 // Each change keeps the original game under a GLOBAL that only the runtime
 // sets, and only for an adventure whose settings use it, so an adventure
@@ -9,9 +9,9 @@
 // override/FLPRPAT.lua records it as unavailable for the configurator. WeiDU
 // tracks every change, so uninstalling the component restores the files.
 
-<<<<<<<< ...randomiser/fl-inlined/FLPRPAT.lua
--- Written by randomiser.tp2 component 1500: the game changes it prepared for
--- the new randomiser (status "applied"), or why it left one out. The
+<<<<<<<< ...cir/fl-inlined/FLPRPAT.lua
+-- Written by cir.tp2 when installed: the game changes it prepared for the
+-- runtime (status "applied"), or why it left one out. The
 -- configurator offers only what is applied here.
 FLPR_PATCHES = {
     version = 1,
@@ -25,10 +25,10 @@ FLPR_PATCHES = {
 >>>>>>>>
 
 // Glaicus (KPGLAI01) describes and hands over the flail heads he actually
-// holds; the states follow d/kpglai01.d. The entry transitions, the other
-// branches that give the first head and the two states the new ones continue
-// to are found when installing.
-<<<<<<<< ...randomiser/fl-inlined/campaign/kpglai01.d
+// holds; the states follow Item Randomiser's d/kpglai01.d. The entry
+// transitions, the other branches that give the first head and the two states
+// the new ones continue to are found when installing.
+<<<<<<<< ...cir/fl-inlined/campaign/kpglai01.d
 APPEND ~%flir_cp_flail_dialogue%~
   IF ~~ flprflaildesc
     SAY @0
@@ -629,7 +629,7 @@ EXTEND_BOTTOM ~%flir_cp_flail_dialogue%~ %flir_cp_s%
         END
       END
     ACTION_IF ~%flir_cp_flail%~ STRING_EQUAL ~ready~ BEGIN
-      COMPILE EVALUATE_BUFFER ~...randomiser/fl-inlined/campaign/kpglai01.d~
+      COMPILE EVALUATE_BUFFER ~...cir/fl-inlined/campaign/kpglai01.d~
       OUTER_SPRINT flir_cp_flail ~applied~
     END
   END
@@ -679,5 +679,5 @@ DEFINE_ACTION_MACRO flir_campaign_patches_install BEGIN
   LAF flir_cp_report STR_VAR name = ~PPBOOK.BCS~ result = EVAL ~%flir_cp_book%~ END
   LAF flir_cp_report STR_VAR name = EVAL ~%flir_cp_unshey_file%~ result = EVAL ~%flir_cp_unshey%~ END
   LAF flir_cp_report STR_VAR name = ~KPGLAI01.DLG~ result = EVAL ~%flir_cp_flail%~ END
-  COPY ~...randomiser/fl-inlined/FLPRPAT.lua~ ~override/FLPRPAT.lua~ EVALUATE_BUFFER
+  COPY ~...cir/fl-inlined/FLPRPAT.lua~ ~override/FLPRPAT.lua~ EVALUATE_BUFFER
 END

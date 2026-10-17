@@ -1,43 +1,41 @@
-# Item Randomiser
+# Chriz Item Randomiser (CIR)
 
-> Original mod by Fredrik Lindgren (Wisp) <br />
-> Maintained by Christopher Hermann for Chriz's BG Collection
+> By Christopher Hermann, built on [Item Randomiser](https://github.com/FredrikLindgren/randomiser)
+> by Fredrik Lindgren (Wisp)
 
-Item Randomiser is a large-scale random treasure mod for Baldur's Gate and Baldur's
-Gate II. This repository is a public maintained fork of Wisp's original project and
-can be used independently of Chriz's BG Collection.
+Chriz Item Randomiser shuffles where items are found in Baldur's Gate, anew for each
+adventure you start. It works while you play, through EEex: install it once, choose your
+settings in the configurator, and every new game gets its own randomisation. Saves keep
+the randomisation they started with.
 
-## Maintained fork
+CIR is a new mod built on Wisp's Item Randomiser and reuses its item and location lists,
+item files and texts. It cannot be combined with Item Randomiser's own randomisation
+(Mode 1 or Mode 2).
 
-Version 8 and later focus on reliable Mode 1 delivery on EET and compatible Enhanced
-Edition installations, durable EEex transactions that do not depend on recipient AI
-queues, extensible item/source/endpoint registries, and validation before source
-removal. The existing WeiDU-based Mode 2 path remains isolated.
+CIR is in development and has no release yet.
+
+## Requirements
+
+- Baldur's Gate: Enhanced Edition Trilogy (EET). Other games are planned.
+- EEex with its LuaJIT component; start the game with `InfinityLoader.exe`.
 
 ## Installation
 
-Download the latest release and extract it into the game directory so the
-`randomiser` folder is beside `chitin.key`. Supply a current WeiDU executable for
-your platform under the usual `setup-randomiser` name, then run it normally.
+Extract the release into the game directory so the `cir` folder is beside `chitin.key`.
+Supply a current WeiDU executable for your platform as `setup-cir`, then run it. Install
+CIR after every mod that changes the user interface or the new-game template (`UI.MENU`,
+`BALDUR.GAM`).
 
-## Documentation and support
-
-- [Full manual](readme-randomiser.html)
-- [Latest release](https://github.com/Chrizhermann/chriz-item-randomiser/releases/latest)
-- [Report a problem](https://github.com/Chrizhermann/chriz-item-randomiser/issues)
-- [Original source](https://github.com/FredrikLindgren/randomiser)
-- [Original Gibberlings Three page](http://www.gibberlings3.net/item_rand/)
-
-The package directory, TP2 name, component numbers, and `fl*` runtime identifiers
-remain unchanged for WeiDU and saved-game compatibility.
+Installing changes nothing in play until a configuration is applied: after the whole
+mod stack is installed, close the game and use the configurator in `cir/tools` to scan
+the game and apply a configuration. See the [readme](readme-cir.html).
 
 ## Development
 
-The [experimental post-install configurator](docs/post-install-configurator.md)
-indexes installed items and prepares reusable configuration drafts. Component
-1500 installs the campaign runtime it configures on EET with EEex and LuaJIT; see
-the [packaging plan](docs/plans/2026-10-14-mode1-packaging.md) for its contract and
-what still blocks a release. Collection UI integration is still in development.
+The [post-install configurator](docs/post-install-configurator.md) scans the installed
+game and applies configurations; it currently needs Python 3.10 or later. The
+[packaging plan](docs/plans/2026-10-14-mode1-packaging.md) describes the installer's
+contract and what still blocks the first release.
 
 Release packages are built from a commit, never the working tree, and are
 byte-reproducible with the same zlib version. `tools/release-package.json` lists
@@ -48,14 +46,15 @@ python tools/build_release.py --commit HEAD --out <directory>
 python tools/build_release.py --commit <commit> --verify <zip>
 ```
 
-Use the disposable EET installation and its separate profile for game tests;
-rebuild it when needed. Keep supporting tools small and reuse the existing
-console and character helper. Tests should cover mod behavior and reproduced
-bugs. Avoid adding lab integrity frameworks or another report for every run.
-See [tests/README.md](tests/README.md) for the current test commands.
+Use a disposable EET installation with its own profile for game tests. Tests should
+cover mod behaviour and reproduced bugs. See [tests/README.md](tests/README.md) for
+the test commands.
 
-## License and provenance
+## Licence and credits
 
-The upstream repository does not declare a repository-wide license. This fork does
-not claim to relicense the original work. Individual files that carry their own
-license notices retain those terms.
+The code and texts written for CIR are under the [MIT licence](LICENSE). The material
+from Wisp's Item Randomiser (lists, item files, texts) remains his work and is included
+with credit; [LICENSE](LICENSE) lists it.
+
+- [Item Randomiser source](https://github.com/FredrikLindgren/randomiser)
+- [Item Randomiser on Gibberlings Three](http://www.gibberlings3.net/item_rand/)

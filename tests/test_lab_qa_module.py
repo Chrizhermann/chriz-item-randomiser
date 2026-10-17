@@ -1,7 +1,7 @@
 """Lab-only automation (tools/lab/M_FLPRQA.lua) against the real runtime bootstrap.
 
 Neither tools/lab file is installed for players or packaged; a lab stages both
-into override next to component 1500 and the EEex Remote Console.
+into override next to an installed CIR and the EEex Remote Console.
 """
 from pathlib import Path
 import unittest

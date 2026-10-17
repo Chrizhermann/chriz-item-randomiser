@@ -371,7 +371,8 @@ no full-suite rerun. The saved two-original configuration remains in the editor.
 
 The first scripted original is implemented and tested: `bcs:blpool/grant/pool-reward`
 relocates BLUN12 through the same campaign/delivery path as physical originals.
-The adapter follows the original mod's `baf/blpool.baf` and special-delivery code.
+The adapter follows the original mod's [`baf/blpool.baf`](https://github.com/Chrizhermann/chriz-item-randomiser/blob/172872dad6496c1d6eaf1a09b52bc3189da23b96/baf/blpool.baf)
+and special-delivery code.
 A small static BCS patch branches on the campaign's saved `FLPR_QPOOL` flag.
 Selected campaigns replace the grant with an `FLPR_XPOOL` event witness; excluded
 campaigns keep the original grant. Both retain Clicked/Range/Pool conditions, the

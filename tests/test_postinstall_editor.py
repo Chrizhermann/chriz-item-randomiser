@@ -66,7 +66,7 @@ class EditorTests(unittest.TestCase):
         recommended = editor.get("/api/recommended", {})
         self.assertEqual(recommended["id"], "eet-mode1")
         self.assertIn(recommended["id"], [row["id"] for row in descriptors])
-        # Without component 1500's record, Glaicus's conversation is not prepared.
+        # Without CIR's record, Glaicus's conversation is not prepared.
         self.assertFalse(recommended["options"]["flail_heads"])
         self.assertIn("KPGLAI01.DLG", recommended["unavailable"]["flail_heads"])
         self.assertTrue(recommended["options"]["totsc_tome"])

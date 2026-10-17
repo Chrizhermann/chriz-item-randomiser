@@ -84,9 +84,9 @@ def _compile(manifest: dict, world: dict, index: dict, items: dict) -> tuple[dic
     def use(resource: str) -> None:
         required.add(resource)
         kind, name = resource.split(":", 1)
-        # Component 1500 installs the mod's stand-in items with its other changes.
+        # The installer adds the mod's stand-in items with its other changes.
         _require(resource in index["resources"] or resource not in ("itm:flbhcryp", "itm:flrbelt1"),
-                 f"Component 1500 did not install {resource}; reinstall it, then rescan")
+                 f"Chriz Item Randomiser did not install {resource}; reinstall it, then rescan")
         _require(resource in index["resources"], f"Required reward resource is absent: {resource}")
         digest = index["resources"][resource]["sha256"]
         native["resource_hashes"][name.upper() + "." + kind.upper()] = digest
@@ -135,7 +135,7 @@ def _compile(manifest: dict, world: dict, index: dict, items: dict) -> tuple[dic
                      f"Authored source changed since the scan: {identity}")
         elif source["kind"] == "scripted":
             _require(applied(world["game_root"], "quest_pool"),
-                     f"Component 1500 did not prepare BLPOOL.BCS; reinstall it, then rescan: {identity}")
+                     f"Chriz Item Randomiser did not prepare BLPOOL.BCS; reinstall it, then rescan: {identity}")
             _require(identity == SOURCE_ID and selected["quantity"] == 1 and
                      "replacement" not in selected and source == campaign_record({
                          "id": SOURCE_ID, "item": ITEM, "resource": RESOURCE,
@@ -220,7 +220,7 @@ def _compile(manifest: dict, world: dict, index: dict, items: dict) -> tuple[dic
             spec = quest_spec(identity)
             _require(source["resource"] == spec["resource"] and source["item"] == spec["item"] and
                      applied(world["game_root"], QUEST_CHANGES[spec["resource"][4:]]),
-                     f"Component 1500 did not prepare this quest reward; reinstall it, then rescan: {identity}")
+                     f"Chriz Item Randomiser did not prepare this quest reward; reinstall it, then rescan: {identity}")
             native["sources"][identity] = {
                 "kind": "guarded-script", "adapter_id": "original-quest-v1",
                 **{key: spec[key] for key in ("quest", "resource", "selected_global", "consumed_global")},
@@ -451,7 +451,7 @@ def _compile(manifest: dict, world: dict, index: dict, items: dict) -> tuple[dic
                 name = selector["target"].removesuffix(".bcs")
                 _require(name in QUESTS, f"Unreviewed original quest recipient: {identity}")
                 _require(applied(world["game_root"], QUEST_CHANGES[name]),
-                         f"Component 1500 did not prepare this quest reward; reinstall it, then rescan: {identity}")
+                         f"Chriz Item Randomiser did not prepare this quest reward; reinstall it, then rescan: {identity}")
                 use("bcs:" + name)
                 native["targets"][identity] = {"kind": "quest", "area": _area(target["resource"]),
                     "resource": "bcs:" + name, "event_global": QUESTS[name]["event_global"],
@@ -575,7 +575,7 @@ def export_native(store: Path, catalog: dict, world: dict, output: Path,
                     own_patch = hashlib.sha256(original_container_resource(resource, data)).hexdigest() == expected_hash
             _require(actual_hash == expected_hash or own_mode2_patch or own_patch,
                      f"Installed resource changed; rescan before export: {resource}")
-            # Component 1500 changed these files when it was installed; the
+            # The installer changed these files when it was installed; the
             # export only checks that they still carry its changes.
             if kind == "bcs" and name in QUEST_CHANGES:
                 require_installed(catalog["game_root"], QUEST_CHANGES[name], data)
@@ -668,7 +668,7 @@ def export_native(store: Path, catalog: dict, world: dict, output: Path,
                 _require(mode2_resource in mode2_patches, "Mode 2 recipient patch is missing")
             if endpoint["kind"] == "quest":
                 resource = endpoint["resource"]
-                # An original quest's script was prepared by component 1500.
+                # An original quest's script was prepared by the installer.
                 if mode2_resource:
                     pass  # The original grant has just been staged above.
                 elif resource == SPELL["resource"]:
@@ -710,7 +710,7 @@ def export_native(store: Path, catalog: dict, world: dict, output: Path,
                     pending[base + ".patched.spl"] = patched
                     pending["resource-overrides/SPIN621.SPL"] = patched
                     continue
-                # Component 1500's installed script: the runtime checks that the
+                # The installer's script: the runtime checks that the
                 # game still has exactly these bytes.
                 pending[base + ".patched.bcs"] = raw
                 continue

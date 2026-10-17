@@ -80,7 +80,7 @@ container message. The only other `CMessageAddItem` constructor call inside
 1. Resolves the target with `CGameObjectArray::GetDeny` and requires object type
    `0x31`. **There is no death check.** A message that runs after the recipient
    died places the item in the corpse. This is the engine side of legacy failure
-   class 7 in the [handover](handover.md).
+   class 7 in the [handover](https://github.com/Chrizhermann/chriz-item-randomiser/blob/172872dad6496c1d6eaf1a09b52bc3189da23b96/docs/handover.md).
 2. If the target id is in `CInfGame::m_familiars` (`+0x6728`), it additionally
    sends a copy from the familiar to the protagonist, then continues with local
    placement. Familiars are therefore excluded as targets.

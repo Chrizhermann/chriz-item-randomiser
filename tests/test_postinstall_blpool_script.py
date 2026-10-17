@@ -1,4 +1,4 @@
-"""BLPOOL as component 1500 prepares it; no installed game or ignored work files."""
+"""BLPOOL as CIR prepares it; no installed game or ignored work files."""
 
 import hashlib
 import json
@@ -27,7 +27,7 @@ CHANGES = ("quest_pool", "quest_altar", "quest_book", "unshey", "flail_heads", "
 
 
 def write_registry(game, **statuses):
-    """override/FLPRPAT.lua as component 1500 writes it; unnamed changes are applied."""
+    """override/FLPRPAT.lua as CIR writes it; unnamed changes are applied."""
     lines = [f'    {name} = {{ status = "{statuses.get(name, "applied")}" }},' for name in CHANGES]
     text = "FLPR_PATCHES = {\n    version = 1,\n" + "\n".join(lines) + "\n}\n"
     (game / "override" / "FLPRPAT.lua").write_text(text, encoding="utf-8")
@@ -36,7 +36,7 @@ def write_registry(game, **statuses):
 def compiled_blpool(prepared=True):
     # The original script's four small blocks, in the engine's compiled text
     # format. Objects 1/17 are Myself/LastTrigger. Prepared, the reward block
-    # is split as component 1500 splits it: the selected copy reads FLPR_QPOOL,
+    # is split as CIR splits it: the selected copy reads FLPR_QPOOL,
     # gives nothing and sets FLPR_XPOOL; both copies set FLPR_EPOOL.
     def obj(value=0):
         return f'0 0 0 0 0 0 0 {value} 0 0 0 0 ""OB\n'
@@ -93,7 +93,7 @@ class BlpoolScriptTests(unittest.TestCase):
         self.prepared = compiled_blpool()
         self.catalog, self.world = pool_game(self.root / 'game', self.prepared)
 
-    def test_registration_follows_component_1500_record(self):
+    def test_registration_follows_cir_record(self):
         registration = blpool_registration(self.world)
         self.assertEqual(registration["resource_sha256"], hashlib.sha256(self.prepared).hexdigest())
         validate_registration(registration)
@@ -184,12 +184,12 @@ class BlpoolScriptTests(unittest.TestCase):
         write_registry(game, quest_pool="prepared-elsewhere")
         with self.assertRaisesRegex(ProfileError, "did not prepare BLPOOL"):
             export_native(store, self.catalog, self.world, self.root / 'export-b', revision)
-        # Another mod replaced BLPOOL after component 1500, before the scan.
+        # Another mod replaced BLPOOL after CIR, before the scan.
         replaced = self.root / 'replaced'
         catalog, world = pool_game(replaced, compiled_blpool(prepared=False))
         profile, plan = pool_plan(catalog, world)
         revision = write_campaign(profile, catalog, world, plan, self.root / 'store-c')["revision"]
-        with self.assertRaisesRegex(ProfileError, "replaced after component 1500"):
+        with self.assertRaisesRegex(ProfileError, "replaced after Chriz Item Randomiser"):
             export_native(self.root / 'store-c', catalog, world, self.root / 'export-c', revision)
         self.assertEqual((replaced / 'override/blpool.bcs').read_bytes(), compiled_blpool(prepared=False))
 

@@ -26,7 +26,7 @@ DEFAULT_OPTIONS = {
     "loss_percent": 0,
     "unrandomized_percent": 0,   # component 510, source-bearing items only
 }
-# The new randomiser's default: the original Mode 1 pools with no items lost (component
+# The default: Item Randomiser's original Mode 1 pools with no items lost (component
 # 1100), the Flail of Ages heads (540) and the randomised Tales of the Sword Coast tome
 # (500); every other option off.
 RECOMMENDED_OPTIONS = DEFAULT_OPTIONS | {"flail_heads": True, "totsc_tome": True}

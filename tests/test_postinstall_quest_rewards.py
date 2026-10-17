@@ -1,4 +1,4 @@
-"""Runtime guards for the three original quest rewards that component 1500 prepares."""
+"""Runtime guards for the three original quest rewards that CIR prepares."""
 
 from pathlib import Path
 import sys

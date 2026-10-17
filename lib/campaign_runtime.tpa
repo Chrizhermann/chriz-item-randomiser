@@ -1,4 +1,4 @@
-// Component 1500: the post-install campaign runtime.
+// Chriz Item Randomiser (cir.tp2): the post-install campaign runtime.
 //
 // Installs the runtime modules (prototype/, three tools/probes modules), hooks
 // UI.MENU's single-player New Game and character acceptance calls through
@@ -10,9 +10,9 @@
 
 // Game-text references for the player messages in M_FLPRUI.lua and M_FLPR.lua
 // (in-game.tra @1700-@1706), so they appear in the language chosen here.
-<<<<<<<< ...randomiser/fl-inlined/M_FLPRTXT.lua
--- Written by randomiser.tp2 component 1500: game-text references for the
--- Item Randomiser messages in M_FLPRUI.lua.
+<<<<<<<< ...cir/fl-inlined/M_FLPRTXT.lua
+-- Written by cir.tp2 when installed: game-text references for the
+-- Chriz Item Randomiser messages in M_FLPRUI.lua.
 FLPR_TEXT = {
     not_running = %flir_rt_text_not_running%,
     unsupported = %flir_rt_text_unsupported%,
@@ -53,7 +53,7 @@ DEFINE_ACTION_MACRO flir_campaign_runtime_check_menu BEGIN
   ACTION_IF !FILE_EXISTS_IN_GAME ~UI.MENU~ BEGIN
     FAIL @101512
   END
-  COPY_EXISTING - ~UI.MENU~ ~...randomiser/fl-inlined/flir-ui.menu~
+  COPY_EXISTING - ~UI.MENU~ ~...cir/fl-inlined/flir-ui.menu~
     COUNT_REGEXP_INSTANCES CASE_SENSITIVE EXACT_MATCH ~startEngine:OnNewGameButtonClick(~ flir_rt_new_game
     COUNT_REGEXP_INSTANCES CASE_SENSITIVE EXACT_MATCH ~connectionScreen:OnNewGameButtonClick(~ flir_rt_multiplayer
     COUNT_REGEXP_INSTANCES CASE_SENSITIVE ~[:.]OnNewGameButtonClick~ flir_rt_new_game_any
@@ -83,7 +83,7 @@ DEFINE_ACTION_MACRO flir_campaign_runtime_check_gam BEGIN
   OUTER_SET flir_rt_gam_valid = 0
   OUTER_SET flir_rt_fresh = 0
   OUTER_SET flir_rt_fresh_value = 0
-  COPY_EXISTING - ~BALDUR.GAM~ ~...randomiser/fl-inlined/flir-baldur.gam~
+  COPY_EXISTING - ~BALDUR.GAM~ ~...cir/fl-inlined/flir-baldur.gam~
     PATCH_IF BUFFER_LENGTH >= 0xb4 BEGIN
       READ_ASCII 0 flir_rt_signature (8)
       READ_LONG 0x38 flir_rt_var_offset
@@ -164,7 +164,7 @@ DEFINE_ACTION_MACRO flir_campaign_runtime_install BEGIN
   OUTER_SET flir_rt_text_start_plain = RESOLVE_STR_REF (@1704)
   OUTER_SET flir_rt_text_ready = RESOLVE_STR_REF (@1705)
   OUTER_SET flir_rt_text_stopped = RESOLVE_STR_REF (@1706)
-  COPY ~...randomiser/fl-inlined/M_FLPRTXT.lua~ ~override/M_FLPRTXT.lua~ EVALUATE_BUFFER
+  COPY ~...cir/fl-inlined/M_FLPRTXT.lua~ ~override/M_FLPRTXT.lua~ EVALUATE_BUFFER
 
   COPY_EXISTING ~UI.MENU~ ~override~
     REPLACE_TEXTUALLY CASE_SENSITIVE EXACT_MATCH ~startEngine:OnNewGameButtonClick(~ ~FLPRUI_NewGame(~

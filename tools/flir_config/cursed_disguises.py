@@ -91,7 +91,7 @@ def prepare_cursed_disguises(spec: dict, resources: Mapping[str, bytes], tlk: by
     for name, expected in spec["resource_hashes"].items():
         if name not in resources or hashlib.sha256(resources[name]).hexdigest() != expected:
             raise ProfileError(f"Cursed-disguise resource changed; rescan before export: {name}")
-    # randomiser.tp2 ALWAYS loads these EE overrides after the general strings
+    # cir.tp2's ALWAYS block loads these EE overrides after the general strings
     # on both bgee and bg2ee engines (including EET); use their exact CRLF text.
     texts = _texts("languages/english/in-game.tra")
     texts.update(_texts("languages/bgee/english/in-game.tra"))

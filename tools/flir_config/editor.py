@@ -150,9 +150,9 @@ class Editor:
         if route == "/api/templates":
             return list_templates()
         if route == "/api/recommended":
-            # Component 1500 installs only on EET so far; other games follow with B5.
+            # CIR installs only on EET so far; other games follow with B5.
             preset = recommended_preset("eet")
-            # An option whose change component 1500 could not make is not offered.
+            # An option whose change the installer could not make is not offered.
             preset["unavailable"] = {}
             if not applied(self.world["game_root"], "flail_heads"):
                 preset["options"]["flail_heads"] = False
@@ -186,7 +186,7 @@ class Editor:
                     **s, "quantity": 1, "kind_label": "Quest reward",
                     "label": "Blood pool reward (BLPOOL)",
                     "note": "Moves the Mace of Disruption; the pool's other actions remain. "
-                            "Component 1500 prepared the pool's script when it was installed."}
+                            "Chriz Item Randomiser prepared the pool's script when it was installed."}
                 for s in page["records"]]
             return page
         if route == "/api/targets":

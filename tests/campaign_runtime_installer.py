@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Synthetic EET installs of randomiser.tp2 component 1500 (campaign runtime).
+"""Synthetic EET installs of Chriz Item Randomiser (cir.tp2, the campaign runtime).
 
 Builds minimal KEY/BIFF/TLK games below a caller-supplied temporary root,
 stages the mod exactly as the release package selects it (from the working tree
@@ -55,6 +55,10 @@ RUNTIME_MODULES = (
 GATE_MODULES = ("FLPRGateAsm.lua", "FLPRCampaignPolicy.lua", "FLPRInventoryAsm.lua")
 # Where the configurator applies settings; the installer only creates the folder.
 CAMPAIGN_DATA = "randomiser-campaigns"
+# The mod folder, its TP2 and its one component.
+MOD_FOLDER = "cir"
+TP2 = "cir/cir.tp2"
+COMPONENT = 0
 # M_FLPRTXT.lua keys and the in-game.tra strings they name, in installation order.
 MESSAGES = (("not_running", 1700), ("unsupported", 1701), ("other_campaign", 1702),
             ("setup_failed", 1703), ("start_plain", 1704), ("ready", 1705), ("stopped", 1706))
@@ -133,22 +137,22 @@ class Game:
         self.root = root
         self.weidu = weidu
 
-    def run(self, *arguments: str, tp2: str = "randomiser/randomiser.tp2", language: int = 0) -> ProcessResult:
+    def run(self, *arguments: str, tp2: str = TP2, language: int = 0) -> ProcessResult:
         return run_process(
             [str(self.weidu), tp2, "--game", ".", *arguments,
              "--language", str(language), "--use-lang", "en_US", "--no-exit-pause", "--quick-log"],
             self.root, "WeiDU " + tp2)
 
-    def install(self, component: int = 1500) -> ProcessResult:
+    def install(self, component: int = COMPONENT) -> ProcessResult:
         return self.run("--force-install-list", str(component))
 
-    def uninstall(self, component: int = 1500) -> ProcessResult:
+    def uninstall(self, component: int = COMPONENT) -> ProcessResult:
         return self.run("--force-uninstall-list", str(component))
 
     def data(self) -> dict[str, bytes]:
         """The game as the engine and the configurator see it, without WeiDU state."""
         return {key: value for key, value in snapshot_tree(self.root).items()
-                if not key.startswith(("randomiser/", "earlier/", "weidu_external/"))
+                if not key.startswith((MOD_FOLDER + "/", "earlier/", "weidu_external/"))
                 and key not in ("weidu.log", "weidu.conf")}
 
     def active(self, component: int) -> bool:
@@ -156,7 +160,7 @@ class Game:
 
     def entries(self, component: int) -> int:
         suffix = f" #{component} "
-        return sum(line.casefold().startswith("~randomiser/randomiser.tp2~")
+        return sum(line.casefold().startswith(f"~{TP2}~")
                    and (line + " ").find(suffix) > 0 for line in active_weidu_log(self.root))
 
 
@@ -245,7 +249,7 @@ def build_game(root: Path, mod: Path, weidu: Path, *, menu: bytes | None = MENU,
         files["InfinityLoader.ini"] = ini
     for name, data in files.items():
         write_bytes(root / name, data)
-    shutil.copytree(mod, root / "randomiser")
+    shutil.copytree(mod, root / MOD_FOLDER)
     return Game(root, weidu)
 
 
@@ -264,7 +268,7 @@ def stage_package(package: Path, destination: Path) -> None:
     with zipfile.ZipFile(package) as archive:
         for info in archive.infolist():
             name = PurePosixPath(info.filename)
-            if name.is_absolute() or ".." in name.parts or name.parts[0] != "randomiser":
+            if name.is_absolute() or ".." in name.parts or name.parts[0] != MOD_FOLDER:
                 raise MatrixFailure("release package has an unexpected entry")
             if not info.is_dir():
                 write_bytes(destination / Path(*name.parts[1:]), archive.read(info))
@@ -288,6 +292,16 @@ def refused(result: ProcessResult, message: str) -> bool:
     upper = result.output.upper()
     return (result.returncode != 0 and "NOT INSTALLED DUE TO ERRORS" in upper
             and message in result.output)
+
+
+def utf8_translation(original: bytes, converted: bytes) -> bool:
+    """A CP1250 translation as WeiDU converts it: the same text in UTF-8, coding line aside."""
+    coding = re.compile(r"-\*-[\t ]*(?:en)?coding:[\t ]*[A-Za-z0-9-]+[\t ]*-\*-")
+    try:
+        text = converted.decode("utf-8")
+    except UnicodeDecodeError:
+        return False
+    return coding.sub("", text) == coding.sub("", original.decode("cp1250"))
 
 
 def uninstalled(result: ProcessResult) -> bool:
@@ -339,7 +353,7 @@ def installed_messages(before: Mapping[str, bytes], after: Mapping[str, bytes],
 def expected_install(game: Game, before: Mapping[str, bytes], after: Mapping[str, bytes], menu: bytes,
                      baldur: bytes, *, gam_written: bool = True, texts: int = 0) -> dict[str, bytes]:
     """Every installed byte; the game text only where it adds exactly the messages."""
-    mod = game.root / "randomiser"
+    mod = game.root / MOD_FOLDER
     expected = dict(before)
     for name in RUNTIME_MODULES:
         expected["override/" + name.casefold()] = (mod / "prototype" / name).read_bytes()
@@ -357,7 +371,7 @@ def expected_install(game: Game, before: Mapping[str, bytes], after: Mapping[str
     return expected
 
 
-# Component 1500's record of its game changes, and their states in a game
+# The installer's record of its game changes, and their states in a game
 # without any of the files they change.
 RECORD = "override/flprpat.lua"
 NOTHING_TO_PREPARE = {"quest_pool": "absent", "quest_altar": "absent", "quest_book": "absent",
@@ -406,7 +420,7 @@ class Suite:
         game = self.game(menu=menu, baldur=baldur, **options)
         before = game.data()
         result = game.install()
-        self.check(f"{name}_Installs", installed(result) and game.active(1500), result)
+        self.check(f"{name}_Installs", installed(result) and game.active(COMPONENT), result)
         after = game.data()
         if changes is None:
             self.check(f"{name}_RecordsNothingToPrepare", recorded(game, NOTHING_TO_PREPARE))
@@ -421,7 +435,7 @@ class Suite:
         self.check(f"{name}_CreatesCampaignDataFolder", (game.root / CAMPAIGN_DATA).is_dir())
         self.check(f"{name}_ConfiguratorAcceptsInstall", accepts(game.root))
         result = game.uninstall()
-        self.check(f"{name}_Uninstalls", uninstalled(result) and not game.active(1500), result)
+        self.check(f"{name}_Uninstalls", uninstalled(result) and not game.active(COMPONENT), result)
         # WeiDU keeps the strings a component appended to the game text, unused;
         # a re-install finds and reuses them.
         added_text = {key: after[key] for key in after
@@ -438,10 +452,10 @@ class Suite:
         self.check(f"{name}_ReinstallIsIdentical", installed(result) and game.data() == after, result)
         result = game.install()
         self.check(f"{name}_ReinstallOverInstallIsIdentical",
-                   installed(result) and game.data() == after and game.entries(1500) == 1, result)
-        result = game.run("--force-uninstall-list", "1500", "--force-install-list", "1500")
+                   installed(result) and game.data() == after and game.entries(COMPONENT) == 1, result)
+        result = game.run("--force-uninstall-list", str(COMPONENT), "--force-install-list", str(COMPONENT))
         self.check(f"{name}_UninstallAndInstallInOneRunIsIdentical",
-                   installed(result) and game.data() == after and game.entries(1500) == 1, result)
+                   installed(result) and game.data() == after and game.entries(COMPONENT) == 1, result)
         return game
 
     def refusal(self, name: str, message: str, kind: Callable[[ProcessResult, str], bool],
@@ -450,7 +464,7 @@ class Suite:
         before = game.data()
         result = game.install()
         self.check(f"{name}_Refused", kind(result, message), result)
-        self.check(f"{name}_LeavesGameUnchanged", game.data() == before and not game.active(1500))
+        self.check(f"{name}_LeavesGameUnchanged", game.data() == before and not game.active(COMPONENT))
 
     def problems(self, name: str, problems: Sequence[str]) -> None:
         self.report.check(name, not problems, "; ".join(problems) if DEBUG else f"{len(problems)} differences")
@@ -515,7 +529,7 @@ class Suite:
                          override={**fixtures.ids_files(), **({} if archived else quests)})
         before = game.data()
         result = game.install()
-        self.check(f"{name}_Installs", installed(result) and game.active(1500), result)
+        self.check(f"{name}_Installs", installed(result) and game.active(COMPONENT), result)
         after = game.data()
         self.check(f"{name}_RecordsWhatWasLeftOut", recorded(game, statuses))
         self.check(f"{name}_TellsThePlayer", noted(result, statuses), result)
@@ -601,7 +615,7 @@ def run_suite(args: argparse.Namespace) -> int:
 
     suite.lifecycle("ArchivedTemplates", MENU, DEFAULT_GAM)
 
-    # Component 1500's quest and dialogue changes, on synthetic files.
+    # The installer's quest and dialogue changes, on synthetic files.
     compiled = compile_fixtures(scratch, weidu)
     suite.quest_changes(compiled["applied"])
     suite.left_out("QuestFilesLeftOut", compiled["left-out"], {
@@ -627,16 +641,6 @@ def run_suite(args: argparse.Namespace) -> int:
     suite.lifecycle("TemplateAlreadyMarked", MENU, marked, gam_written=False)
     suite.lifecycle("TemplateWithoutVariables", MENU, gam([]))
 
-    # Exclusions in both directions, checked against an installed runtime.
-    game = suite.game()
-    suite.check("Exclusions_RuntimeInstalls", installed(game.install()))
-    before = game.data()
-    for component, text in ((560, message[101506]), (1100, message[101507]), (1200, message[101507]),
-                            (1300, message[101507]), (1400, message[101507])):
-        result = game.install(component)
-        suite.check(f"Exclusions_Component{component}Skipped", skipped(result, text), result)
-    suite.check("Exclusions_LeaveGameUnchanged", game.data() == before and game.active(1500))
-
     # Reinstalling an earlier mod makes WeiDU uninstall every later component
     # temporarily and install it again behind that mod.
     earlier = "earlier/earlier.tp2"
@@ -647,30 +651,47 @@ def run_suite(args: argparse.Namespace) -> int:
     result = game.run("--force-uninstall-list", "10", "--force-install-list", "10", tp2=earlier)
     order = [line.casefold().split("~")[1] for line in active_weidu_log(game.root)]
     suite.check("Repush_RuntimeReinstalledBehindEarlierMod",
-                installed(result) and order == [earlier, "randomiser/randomiser.tp2"]
-                and game.entries(1500) == 1, result)
+                installed(result) and order == [earlier, TP2]
+                and game.entries(COMPONENT) == 1, result)
     suite.check("Repush_GameIdentical", game.data() == after)
     # WeiDU 249 also re-installs an installed earlier component from the install list alone.
     result = game.run("--force-install-list", "10", tp2=earlier)
     order = [line.casefold().split("~")[1] for line in active_weidu_log(game.root)]
     suite.check("Repush_InstallListAloneKeepsRuntimeBehindEarlierMod",
-                installed(result) and order == [earlier, "randomiser/randomiser.tp2"]
-                and game.entries(1500) == 1 and game.data() == after, result)
+                installed(result) and order == [earlier, TP2]
+                and game.entries(COMPONENT) == 1 and game.data() == after, result)
 
     # Polish loads the English setup strings first; the new strings have no Polish text.
     game = suite.game()
-    result = game.run("--force-install-list", "1500", language=1)
-    suite.check("PolishLanguage_Installs", installed(result) and game.active(1500), result)
+    result = game.run("--force-install-list", str(COMPONENT), language=1)
+    suite.check("PolishLanguage_Installs", installed(result) and game.active(COMPONENT), result)
     game = suite.game(override={"M___EEex.lua": None})
-    result = game.run("--force-install-list", "1500", language=1)
+    result = game.run("--force-install-list", str(COMPONENT), language=1)
     suite.check("PolishLanguage_SkipsWithEnglishText", skipped(result, message[101502]), result)
+    # On an Enhanced Edition game (it has BGEE.LUA) WeiDU converts the Polish texts
+    # to UTF-8 in the mod folder and marks the folder with a copy of BOLT01.ITM;
+    # uninstalling restores them. The English texts are UTF-8 already and stay as written.
+    game = suite.game(biff=[("BGEE", "LUA", b"-- synthetic\n"), ("BOLT01", "ITM", b"ITM V1  synthetic bolt")])
+    languages = game.root / MOD_FOLDER / "languages"
+    original = snapshot_tree(languages)
+    result = game.run("--force-install-list", str(COMPONENT), language=1)
+    suite.check("PolishOnEnhancedEdition_Installs", installed(result) and game.active(COMPONENT), result)
+    converted = snapshot_tree(languages)
+    polish = [key for key in original if key.startswith("polish/") and key.endswith(".tra")]
+    suite.check("PolishOnEnhancedEdition_ConvertsOnlyPolish",
+                polish and all(utf8_translation(original[key], converted[key]) for key in polish)
+                and all(converted.get(key) == data for key, data in original.items() if key not in polish)
+                and "polish/fl#utf8.mrk" in converted and "english/fl#utf8.mrk" not in converted)
+    result = game.uninstall()
+    suite.check("PolishOnEnhancedEdition_UninstallRestoresTexts",
+                uninstalled(result) and snapshot_tree(languages) == original, result)
 
     log = b"// Log of Currently Installed WeiDU Mods\r\n~RANDOMISER/RANDOMISER.TP2~ #0 #560 // More Spell Shield scrolls\r\n"
     suite.refusal("SpellShieldInstalled", message[101504], skipped, files={"WeiDU.log": log})
     suite.refusal("LegacyMode1Installed", message[101503], skipped, override={"flrandomiser1.mrk": b"m"})
     suite.refusal("LegacyMode2Installed", message[101503], skipped, override={"flrandomiser2.mrk": b"m"})
     suite.refusal("StagedRuntimePresent", message[101505], skipped, override={"M_FLPR.lua": b"-- lab\n"})
-    # Only WeiDU's record of component 1500 makes an existing runtime its own.
+    # Only WeiDU's record of this component makes an existing runtime its own.
     suite.refusal("StagedRuntimeWithStrayMarker", message[101505], skipped,
                   override={"M_FLPR.lua": b"-- lab\n", "flrandomiser3.mrk": MARKER})
     suite.refusal("NotEet", message[101501], skipped, eet=False)

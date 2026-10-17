@@ -1,4 +1,4 @@
-# Experimental post-install configurator
+# Post-install configurator
 
 This development tool reads installed EE item definitions and creates reusable
 configurations with explicit source and target bindings. It can export the supported
@@ -159,7 +159,7 @@ Keep that output between exports; restart the test game after deploying a new re
 
 Current runtime coverage includes static container originals, selected items on
 uniquely bound static actors, finite shop stock, and the quest rewards whose files
-`randomiser.tp2` component 1500 prepares when it is installed: the pool (BLPOOL,
+`cir.tp2` prepares when it is installed: the pool (BLPOOL,
 BLUN12), the altar (TROALT, BLUN23), the book (PPBOOK, ring09), Unshey's girdle and
 Glaicus's flail heads. The installer finds each reward by meaning (the block that
 creates the item, the reply that takes the quest item), so other mods' edits to the
@@ -168,7 +168,7 @@ randomises the reward gets the runtime's item, every other adventure keeps the
 original grant. It lists what it prepared in `override/FLPRPAT.lua`. The scan and
 the editor offer such a reward only when that record says `applied`, and export
 records the installed script so the runtime can confirm it is still in place. The
-configurator never writes these files, so uninstalling component 1500 restores
+configurator never writes these files, so uninstalling CIR restores
 them. A file the installer cannot change unambiguously (it gives the reward twice,
 no longer gives it, or an earlier configurator already changed it) stays as
 installed; the installer and the editor say which and why. This is a fixed set of

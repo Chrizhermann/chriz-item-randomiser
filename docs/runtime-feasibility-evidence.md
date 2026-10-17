@@ -129,7 +129,8 @@ That does not prove access to the current save-cached shop inventory.
 [EEex_Area.lua:2-11](https://github.com/Bubb13/EEex/blob/a0502166ea7aaeacc39c6349efe2fb40bbbe203e/EEex/copy/EEex_scripts/EEex_Area.lua#L2-L11).
 No public container-loaded or store-loaded listener was identified.
 
-The existing project's `copy/M_FLDLV.lua:338-362` reads visible creature slots and
+The existing project's [`copy/M_FLDLV.lua:338-362`](https://github.com/Chrizhermann/chriz-item-randomiser/blob/172872dad6496c1d6eaf1a09b52bc3189da23b96/copy/M_FLDLV.lua#L338-L362)
+reads visible creature slots and
 container items for delivery verification, collecting resref and charges. Source
 suppression needs more: the exact owner instance, record or slot, full item
 signature including wear/flags, and a mutation primitive with verified ownership
@@ -151,8 +152,9 @@ matching copies coexist. Source removal remains behind a no-mutation adapter
 boundary until the exact API and event ordering are proved.
 
 The current delivery controller is also insufficient as a campaign anchor:
-`copy/FLDLVCor.lua:634-649` clears its transaction fingerprint after completion,
-and `:662-686` writes it only as part of a delivery transaction. The new permanent
+[`copy/FLDLVCor.lua:634-649`](https://github.com/Chrizhermann/chriz-item-randomiser/blob/172872dad6496c1d6eaf1a09b52bc3189da23b96/copy/FLDLVCor.lua#L634-L649) clears its
+transaction fingerprint after completion, and [`:662-686`](https://github.com/Chrizhermann/chriz-item-randomiser/blob/172872dad6496c1d6eaf1a09b52bc3189da23b96/copy/FLDLVCor.lua#L662-L686)
+writes it only as part of a delivery transaction. The new permanent
 campaign revision must be separate. Existing token semantics must not be
 reinterpreted by swapping a shared runtime manifest.
 

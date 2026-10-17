@@ -743,12 +743,12 @@ Medium green triangle marks the spot. - Lum" //failsafe
 
 // Campaign randomiser (component 1500): messages shown by M_FLPRUI.lua and M_FLPR.lua.
 // The first four appear in the engine's two-button popup, which has room for about four lines.
-@1700=~Item Randomiser is set up but not running. Start the game with InfinityLoader.exe to randomise this adventure.~
-@1701=~Item Randomiser does not support this game version yet. Details: randomiser-campaigns\last-error.txt~
-@1702=~Item Randomiser can only randomise adventures that start in Baldur's Gate (BG1) so far.~
-@1703=~Item Randomiser could not randomise this adventure. Details: randomiser-campaigns\last-error.txt~
+@1700=~Chriz Item Randomiser is set up but not running. Start the game with InfinityLoader.exe to randomise this adventure.~
+@1701=~Chriz Item Randomiser does not support this game version yet. Details: randomiser-campaigns\last-error.txt~
+@1702=~Chriz Item Randomiser can only randomise adventures that start in Baldur's Gate (BG1) so far.~
+@1703=~Chriz Item Randomiser could not randomise this adventure. Details: randomiser-campaigns\last-error.txt~
 @1704=~Start without randomiser~
-@1705=~Item Randomiser: this adventure's items are randomised.~
-@1706=~Item Randomiser stopped working in this adventure. Items it has not placed yet may be missing. Details: randomiser-campaigns\last-error.txt~
+@1705=~Chriz Item Randomiser: this adventure's items are randomised.~
+@1706=~Chriz Item Randomiser stopped working in this adventure. Items it has not placed yet may be missing. Details: randomiser-campaigns\last-error.txt~
 
 
