@@ -207,19 +207,24 @@ class CursedRuntimeTests(unittest.TestCase):
         machine.item("brac08", original, kind=0x3EE)
         self.assertEqual(machine.run("demand"), RAW)
 
-    def test_bgee_game_v11_is_read_like_v20_and_other_formats_are_not(self):
-        # BG:EE keeps its games as GAME V1.1, BG2:EE and EET as V2.0.
+    def test_bgee_v11_and_tob_v21_games_are_read_like_v20_and_other_formats_are_not(self):
+        # BG:EE keeps its games as GAME V1.1, BG2:EE and EET as V2.0 and their
+        # Throne of Bhaal saves as V2.1.
         _, f, cur, bundle, spec, entry = fixture()
-        machine = Machine(f, cur)
         name = "brac08"
-        machine.item(name, entry[name]["original"])
-        machine.load(1234567, header=b"GAMEV1.1")
-        self.assertEqual(machine.q(cur.state + 8), 1234567)
         face = cursed_disguise_indices(spec, 1234567)[name]
-        selected = machine.run("demand")
-        self.assertEqual(bytes(machine.uc.mem_read(selected, len(entry[name]["original"]))),
-                         entry[name]["variants"][face - 1])
-        for header in (b"GAMEV1.0", b"GAMEV2.1"):
+        for header in (b"GAMEV1.1", b"GAMEV2.1"):
+            with self.subTest(header=header):
+                machine = Machine(f, cur)
+                machine.item(name, entry[name]["original"])
+                machine.load(1234567, header=header)
+                self.assertEqual(machine.q(cur.state + 8), 1234567)
+                selected = machine.run("demand")
+                self.assertEqual(bytes(machine.uc.mem_read(selected, len(entry[name]["original"]))),
+                                 entry[name]["variants"][face - 1])
+        machine = Machine(f, cur)
+        machine.item(name, entry[name]["original"])
+        for header in (b"GAMEV1.0", b"GAMEV2.2"):
             with self.subTest(header=header):
                 machine.load(1234567, header=header)
                 self.assertEqual(machine.run("demand"), RAW)

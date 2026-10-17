@@ -171,8 +171,9 @@ class GateMachine:
 
 class SourceGateAssemblyTests(unittest.TestCase):
     def test_selected_mode_then_excluded_then_missing_is_recaptured(self):
-        # BG2:EE and EET keep their games as GAME V2.0, BG:EE as GAME V1.1.
-        for header in (b"GAMEV2.0", b"GAMEV1.1"):
+        # BG2:EE and EET keep their games as GAME V2.0 (Throne of Bhaal saves as
+        # V2.1), BG:EE as GAME V1.1.
+        for header in (b"GAMEV2.0", b"GAMEV2.1", b"GAMEV1.1"):
             with self.subTest(header=header):
                 machine = GateMachine()
                 for mode, expected in ((1, 1), (2, 2), (None, 0)):
@@ -186,7 +187,7 @@ class SourceGateAssemblyTests(unittest.TestCase):
 
     def test_gam_bad_guards_leave_mode_cleared(self):
         cases = (
-            {"header": b"NOTGAME!"}, {"header": b"GAMEV1.0"}, {"declared": 0xB3},
+            {"header": b"NOTGAME!"}, {"header": b"GAMEV1.0"}, {"header": b"GAMEV2.2"}, {"declared": 0xB3},
             {"variables_offset": 0xB3}, {"variables_count": 16385},
             {"variables_offset": 0xB4, "variables_count": 1},
         )

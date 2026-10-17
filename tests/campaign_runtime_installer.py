@@ -803,6 +803,8 @@ def run_suite(args: argparse.Namespace) -> int:
     suite.lifecycle("BgeeWithMergedDlc", MENU, BGEE_GAM, platform="bgee",
                     files={"sod-dlc.zip": b"", "dlc/sod-dlc.zip": b"", "mymod-v1.zip": b"PK\x05\x06" + bytes(18)})
     suite.lifecycle("Bg2ee", MENU, DEFAULT_GAM, platform="bg2ee")
+    # GAME V2.1, the version Throne of Bhaal games are saved in, has the V2.0 layout.
+    suite.lifecycle("Bg2eeTemplateV21", MENU, gam([("CHAPTER", 0)], b"PARTY" * 9, b"GAMEV2.1"), platform="bg2ee")
     suite.lifecycle("MenuWithoutCharacterImport", NO_IMPORT_MENU, BGEE_GAM, platform="bgee")
 
     # The installer's quest and dialogue changes, on synthetic files.
@@ -934,6 +936,7 @@ def run_suite(args: argparse.Namespace) -> int:
     for name, baldur, text in (
         ("TemplateMissing", None, message[101513]),
         ("TemplateWrongVersion", b"GAMEV1.0" + DEFAULT_GAM[8:], message[101513]),
+        ("TemplateIwd2Version", b"GAMEV2.2" + DEFAULT_GAM[8:], message[101513]),
         ("TemplateTruncated", DEFAULT_GAM[:0xB0], message[101513]),
         ("TemplateTableOutOfBounds", bytes(out_of_bounds), message[101513]),
         ("TemplateMarkedZero", gam([("FLPR_FRESH", 0)]), message[101514]),

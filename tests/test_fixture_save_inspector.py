@@ -68,15 +68,20 @@ class FixtureSaveInspectorTests(unittest.TestCase):
         self.assertEqual(result["seed"], 7654)
         self.assertEqual(result["assignments"], {"FLPR_A0001": 2})
 
-    def test_bgee_game_v11_reads_like_v20_and_other_formats_are_rejected(self):
-        # BG:EE saves GAME V1.1: the same header, variables and party records.
+    def test_bgee_v11_and_tob_v21_read_like_v20_and_other_formats_are_rejected(self):
+        # BG:EE saves GAME V1.1 and Throne of Bhaal GAME V2.1: the same header,
+        # variables and party records as V2.0.
         variables = [("FLPR_SEED", 7654), ("FLPR_STATE", 2)]
         party = [named_cre("PLAYER1")]
-        bgee, bg2 = parse_gam(gam(variables, party, b"GAMEV1.1")), parse_gam(gam(variables, party))
-        self.assertEqual((bgee["format"], bg2["format"]), ("GAME V1.1", "GAME V2.0"))
-        self.assertEqual({**bgee, "format": None}, {**bg2, "format": None})
-        with self.assertRaises(ScanError):
-            parse_gam(gam(variables, party, b"GAMEV1.0"))
+        bg2 = parse_gam(gam(variables, party))
+        for version, label in ((b"GAMEV1.1", "GAME V1.1"), (b"GAMEV2.1", "GAME V2.1")):
+            with self.subTest(version=version):
+                other = parse_gam(gam(variables, party, version))
+                self.assertEqual((other["format"], bg2["format"]), (label, "GAME V2.0"))
+                self.assertEqual({**other, "format": None}, {**bg2, "format": None})
+        for version in (b"GAMEV1.0", b"GAMEV2.2"):
+            with self.subTest(version=version), self.assertRaises(ScanError):
+                parse_gam(gam(variables, party, version))
 
     def test_missing_or_invalid_revision_chunk_is_not_assumed_zero(self):
         for missing in ([], [("FLPR_R01", -1)], [("FLPR_R01", 65536)]):

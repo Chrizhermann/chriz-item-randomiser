@@ -54,10 +54,10 @@ def fixture_items(items: list[dict], variant: str = "ground-piles") -> list[dict
 
 
 def parse_gam(data: bytes, variant: str = "ground-piles") -> dict:
-    # BG2:EE and EET save GAME V2.0, BG:EE GAME V1.1: the same header,
-    # variable records and 0x160-byte party records.
-    if len(data) < 0xB4 or data[:8] not in (b"GAMEV2.0", b"GAMEV1.1"):
-        raise ScanError("Expected a complete GAME V2.0 or V1.1 header.")
+    # BG2:EE and EET save GAME V2.0 (V2.1 in Throne of Bhaal), BG:EE GAME
+    # V1.1: the same header, variable records and 0x160-byte party records.
+    if len(data) < 0xB4 or data[:8] not in (b"GAMEV2.0", b"GAMEV2.1", b"GAMEV1.1"):
+        raise ScanError("Expected a complete GAME V2.0, V2.1 or V1.1 header.")
     offset, count = number(data, 0x38), number(data, 0x3C)
     if count:
         span(data, offset, count * 84, "GAM global variables", 0xB4)
