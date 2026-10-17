@@ -104,4 +104,10 @@ campaign list) closes START and the engine finishes the reload, reopening START,
 only on the next mouse event. A player's mouse provides one at once. A lab game
 on a private desktop gets none, so the next queued click is used up by the
 reload and its button does nothing. Lab drivers queue one click on an inert
-label before the campaign choice and wait until START is back.
+label before the campaign choice and wait until START is back. EET 2.7.3 also
+opens START after every launch only on the first mouse event, so a lab driver
+starts an EET game with the same click.
+
+Save headers seen on 2.7.3: BG:EE's new-game template is GAME V1.1 but its saves
+are V2.0; BG2:EE writes V2.1 for Throne of Bhaal saves; EET wrote V2.0 for all
+four starts, ToB included. CIR's native GAM checks accept all three.
