@@ -225,6 +225,18 @@ including Mode 2 rows gives 926 and 971. Repeated items, source replacements,
 tiers, tokens, identifiers, chances and row provenance are retained. These counts
 precede component and installation-availability filtering.
 
+Preset list sets in `lists/presets/<name>/` replace the tables of the campaigns they
+cover; an EET preset takes the original tables for the other campaign. The first is
+Boss Loot, aShuN's BG1 lists (`bg1-boss-loot`, `eet-boss-loot`, each also
+`-plus-mode2`; see [its notes](../lists/presets/boss-loot/README.md)). Its row
+identities are `bg1:boss-loot:<family>:<kind>:<line>`. A Mode 1 place takes the authored
+endpoint of the same place in the original tables; ten places that the original
+Mode 1 tables do not use have none and are bound by name like Mode 2 places. Its
+Rogue Rebalancing (`rr#…`) and IWDification (`cdia…`) items are optional: a game
+without such an item leaves its rows out and the preset dialog names the mod, while
+any other absent item still stops the preset. On a reference EET scan, `eet-boss-loot`
+passes the configuration check like `eet-mode1`.
+
 Bound plans now accept optional `randomization` metadata: source tiers and loss
 exemptions, a tier for each recipient slot, loss/keep percentages, and ident-paired
 slots excluded when an original is kept. Each New Game draws within those tiers;

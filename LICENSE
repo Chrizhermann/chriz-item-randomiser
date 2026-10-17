@@ -32,5 +32,7 @@ Randomiser. It does not cover the following material, which keeps its own terms:
   and script changes of its optional components in d/ and baf/. Item Randomiser
   was published without a licence; this material is included with credit to
   its author.
+- The Boss Loot lists in lists/presets/boss-loot/ by aShuN, based on Item
+  Randomiser's BG1 lists, included with credit to their author.
 - GNU libiconv in languages/iconv/, under the GNU Lesser General Public
   License; its source is included as libiconv-1.9.2-1-src.7z.

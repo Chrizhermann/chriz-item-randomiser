@@ -167,6 +167,26 @@ class OriginalConfigurationTests(unittest.TestCase):
         with patch("flir_config.original_configuration.resolve_template", return_value=draft):
             self.assertEqual(build_original_configuration(self.catalog, self.world, "eet-mode1")["left_out"], [])
 
+    def test_preset_items_from_an_absent_mod_are_left_out_and_named(self):
+        draft = self._draft()
+        for identity, item in (("rr-1", "rr#buc03"), ("rr-2", "rr#bow06")):
+            row = source_row(identity, item=item, ident="x")
+            row.update(optional_mod="Rogue Rebalancing", available=False,
+                       availability_reason="optional-item-absent", binding_problem="optional-item-absent")
+            draft["items"].append(row)
+        with patch("flir_config.original_configuration.resolve_template", return_value=draft):
+            result = build_original_configuration(self.catalog, self.world, "eet-mode1")
+        self.assertEqual(result["absent_mods"],
+                         ["Rogue Rebalancing is not installed, so 2 rewards from it are left out"])
+        self.assertEqual(result["profile"]["items"], ["synth001"])
+        self.assertFalse(any(source["item"].startswith("rr#") for source in result["plan"]["sources"]))
+        # Any other absent item still means the tables do not fit this game.
+        draft["items"][-1].update(optional_mod=None, availability_reason="item-definition-absent",
+                                  binding_problem="item-definition-absent")
+        with patch("flir_config.original_configuration.resolve_template", return_value=draft), \
+                self.assertRaisesRegex(ProfileError, "item-definition-absent"):
+            build_original_configuration(self.catalog, self.world, "eet-mode1")
+
     def test_zero_match_source_omitted_while_target_rows_remain(self):
         with patch("flir_config.original_configuration.resolve_template",
                    return_value=self._draft(absent=True)):

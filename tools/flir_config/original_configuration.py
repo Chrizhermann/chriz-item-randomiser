@@ -131,6 +131,7 @@ def build_original_configuration(catalog: dict, world: dict, template_id: str, *
     # has no matching record. Its authored location remains in the pool.
     physical = index["sources"]
     sources = []
+    absent_mods = defaultdict(int)
     for row in enabled_sources:
         if shield and is_spell_shield_row(row):
             if row["item_resref"] not in catalog_items:
@@ -138,6 +139,9 @@ def build_original_configuration(catalog: dict, world: dict, template_id: str, *
             sources.append(row)
             continue
         if row["binding_problem"] == "original-source-has-no-matching-record":
+            continue
+        if row["binding_problem"] == "optional-item-absent":
+            absent_mods[row["optional_mod"]] += 1
             continue
         if row["adapter"] == "unshey" and not any(
                 source["resource"] == row["source_resource"]
@@ -279,4 +283,8 @@ def build_original_configuration(catalog: dict, world: dict, template_id: str, *
     plan["target_registrations"].sort(key=lambda row: row["id"])
     plan["targets"].sort(key=lambda row: row["id"])
     return {"profile": profile, "plan": plan,
-            "left_out": [left_out(world["game_root"], change) for change in sorted(unprepared)]}
+            "left_out": [left_out(world["game_root"], change) for change in sorted(unprepared)],
+            "absent_mods": [f"{mod} is not installed, so {count} "
+                            f"{'reward' if count == 1 else 'rewards'} from it "
+                            f"{'is' if count == 1 else 'are'} left out"
+                            for mod, count in sorted(absent_mods.items())]}

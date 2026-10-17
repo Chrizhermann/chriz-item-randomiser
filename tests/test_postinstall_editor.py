@@ -96,6 +96,7 @@ class EditorTests(unittest.TestCase):
                 "authored": {"target": "container1", "area_resource": "are:bg5500"}}]
             result["plan"]["targets"] = [{"id": target_id, "capacity": 1, "optional": False}]
             result["left_out"] = ["BLPOOL.BCS was left as installed (it gives the reward more than once)"]
+            result["absent_mods"] = ["Rogue Rebalancing is not installed, so 2 rewards from it are left out"]
             return result
 
         module.build_original_configuration = build
@@ -108,7 +109,10 @@ class EditorTests(unittest.TestCase):
             self.assertEqual(state["profile"]["name"], "BG1 original")
             self.assertEqual(state["left_out"],
                              ["BLPOOL.BCS was left as installed (it gives the reward more than once)"])
+            self.assertEqual(state["absent_mods"],
+                             ["Rogue Rebalancing is not installed, so 2 rewards from it are left out"])
             self.assertNotIn("left_out", editor.draft)
+            self.assertNotIn("absent_mods", editor.draft)
             self.assertNotEqual(state["profile"]["id"], original["profile"]["id"])
             self.assertEqual(editor.post("/api/save", editor.draft)["plan"]["randomization"],
                              {"tier_rows": ["original-choice"]})

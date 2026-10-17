@@ -1,9 +1,11 @@
 """Offline drafts of the original Randomiser item and location pools.
 
-``list_templates()`` describes the six bundled choices. ``build_template()``
-loads their checked-in WeiDU tables without changing the game or flattening
-repeated rewards into the user-profile item set. The result needs installation
-specific binding and remaining original-rule adapters before it can be played.
+``list_templates()`` describes the bundled choices: the original tables, and
+preset list sets (``lists/presets/<name>/``) that replace a campaign's tables.
+``build_template()`` loads their checked-in WeiDU tables without changing the
+game or flattening repeated rewards into the user-profile item set. The result
+needs installation specific binding and remaining original-rule adapters before
+it can be played.
 """
 
 from __future__ import annotations
@@ -30,6 +32,24 @@ DEFAULT_OPTIONS = {
 # 1100), the Flail of Ages heads (540) and the randomised Tales of the Sword Coast tome
 # (500); every other option off.
 RECOMMENDED_OPTIONS = DEFAULT_OPTIONS | {"flail_heads": True, "totsc_tome": True}
+CAMPAIGNS = (("bg1", "BG1"), ("bg2", "BG2"), ("eet", "EET"))
+# Preset list sets in lists/presets/<name>/, in the original tables' format. A preset
+# replaces the tables of the campaigns it covers; an EET template takes the original
+# tables for the other campaign. Its rows are the original rows where they keep an
+# original pairing ident, so source selectors, kept originals and the tome option
+# work as for the original tables.
+PRESETS = {
+    "boss-loot": {
+        "name": "Boss Loot", "author": "aShuN", "campaigns": ("bg1",),
+        "description": "Powerful items at difficult boss fights, the ability tomes on the main path "
+                       "and wizard items at mage enemies.",
+        "mode2_description": "Also the Mode 2 rows: shop stock, and Rogue Rebalancing and "
+                             "IWDification items where those mods are installed.",
+        # Items that only another mod adds. A game without the item leaves their rows
+        # out and says so; any other absent item still stops the preset.
+        "optional_items": (("rr#", "Rogue Rebalancing"), ("cdia", "IWDification")),
+    },
+}
 
 
 def recommended_preset(campaign: str) -> dict:
@@ -40,21 +60,44 @@ def recommended_preset(campaign: str) -> dict:
             "options": RECOMMENDED_OPTIONS.copy()}
 
 
-def list_templates() -> list[dict]:
-    """Return stable, compact descriptors for the original Mode 1 drafts."""
-    result = []
-    for campaign, label in (("bg1", "BG1"), ("bg2", "BG2"), ("eet", "EET")):
-        result.append({
-            "id": f"{campaign}-mode1",
+def _parts(campaign: str) -> tuple[str, ...]:
+    return ("bg1", "bg2") if campaign == "eet" else (campaign,)
+
+
+def _templates() -> dict[str, dict]:
+    result = {}
+    for campaign, label in CAMPAIGNS:
+        result[f"{campaign}-mode1"] = {
             "name": f"{label} original Mode 1",
             "description": "Original in-game-script item and location pools, by tier.",
-        })
-        result.append({
-            "id": f"{campaign}-mode1-plus-mode2",
+            "campaign": campaign, "preset": None}
+        result[f"{campaign}-mode1-plus-mode2"] = {
             "name": f"{label} Mode 1 with Mode 2 additions",
             "description": "Mode 1 runtime draft including the original Mode 2-only item and location rows.",
-        })
+            "campaign": campaign, "preset": None}
+    for preset, spec in PRESETS.items():
+        for campaign, label in CAMPAIGNS:
+            covered = [part.upper() for part in _parts(campaign) if part in spec["campaigns"]]
+            others = [part.upper() for part in _parts(campaign) if part not in spec["campaigns"]]
+            if not covered:
+                continue
+            name = f"{label} {spec['name']} Mode 1 (by {spec['author']})"
+            description = spec["description"]
+            if others:
+                description += f" For {', '.join(covered)}; {', '.join(others)} keeps the original tables."
+            result[f"{campaign}-{preset}"] = {
+                "name": name, "description": description, "campaign": campaign, "preset": preset}
+            result[f"{campaign}-{preset}-plus-mode2"] = {
+                "name": name.replace(" Mode 1 ", " Mode 1 with Mode 2 additions "),
+                "description": f"{description} {spec['mode2_description']}",
+                "campaign": campaign, "preset": preset}
     return result
+
+
+def list_templates() -> list[dict]:
+    """Return stable, compact descriptors for the original and preset Mode 1 drafts."""
+    return [{"id": identity, "name": row["name"], "description": row["description"]}
+            for identity, row in _templates().items()]
 
 
 def _choice(value: str | None, default: str, label: str) -> str:
@@ -110,8 +153,37 @@ def _endpoint_index(campaign: str) -> dict[tuple[str, str, str, int], dict]:
     return result
 
 
-def _load_items(campaign: str, family: str, options: dict) -> list[dict]:
-    relative = f"lists/items/{family}/{campaign}.2da"
+def _place_endpoints(campaign: str) -> dict[tuple[str, str], dict]:
+    """The authored endpoints by physical place: target and area of their location rows."""
+    endpoints = _endpoint_index(campaign)
+    occurrences: Counter[tuple[str, str, str]] = Counter()
+    result = {}
+    for _, fields in _table_rows(ROOT / "lists" / "locations" / "base" / f"{campaign}.2da", 6):
+        raw, tier, target, area, ident = fields[:5]
+        occurrences[(tier, raw, ident)] += 1
+        endpoint = endpoints[(tier, raw, ident, occurrences[(tier, raw, ident)])]
+        if result.setdefault((target.lower(), area.lower()), endpoint)["id"] != endpoint["id"]:
+            raise ValueError(f"Two authored endpoints for {target} in {area}")
+    return result
+
+
+def _list_set(kind: str, campaign: str, family: str, preset: str | None) -> tuple[str, str]:
+    """The table a template reads, and the prefix of its row identities."""
+    if preset is not None and campaign in PRESETS[preset]["campaigns"]:
+        return (f"lists/presets/{preset}/{kind}/{family}/{campaign}.2da",
+                f"{campaign}:{preset}:{family}")
+    return f"lists/{kind}/{family}/{campaign}.2da", f"{campaign}:{family}"
+
+
+def _optional_mod(preset: str | None, item: str) -> str | None:
+    if preset is None:
+        return None
+    return next((mod for prefix, mod in PRESETS[preset]["optional_items"]
+                 if item.lower().startswith(prefix)), None)
+
+
+def _load_items(campaign: str, family: str, options: dict, preset: str | None = None) -> list[dict]:
+    relative, prefix = _list_set("items", campaign, family, preset)
     occurrences: Counter[tuple[str, str]] = Counter()
     result = []
     for line, fields in _table_rows(ROOT / relative, 7):
@@ -123,7 +195,7 @@ def _load_items(campaign: str, family: str, options: dict) -> list[dict]:
                            else "needs-scripted-source-adapter" if source_kind in ("bcs", "dlg")
                            else "needs-binding")
         result.append({
-            "id": f"{campaign}:{family}:item:{line}", "campaign": campaign,
+            "id": f"{prefix}:item:{line}", "campaign": campaign,
             "family": family, "source_ref": f"{relative}:{line}",
             "resref": item.lower(), "replacement": replacement.lower(),
             "source": source.lower(), "source_kind": source_kind.lower(),
@@ -131,22 +203,28 @@ def _load_items(campaign: str, family: str, options: dict) -> list[dict]:
             "chance": int(chance), "occurrence": occurrences[(tier, item)],
             "option_gate": gate, "enabled": gate is None or options[gate],
             "requires_game_conversion": campaign == "bg1",
+            "optional_mod": _optional_mod(preset, item),
             "binding": "unbound", "runtime_support": runtime_support,
         })
     return result
 
 
-def _load_targets(campaign: str, family: str, options: dict) -> list[dict]:
-    relative = f"lists/locations/{family}/{campaign}.2da"
-    endpoints = _endpoint_index(campaign) if family == "base" else {}
+def _load_targets(campaign: str, family: str, options: dict, preset: str | None = None) -> list[dict]:
+    relative, prefix = _list_set("locations", campaign, family, preset)
+    original = relative.startswith("lists/locations/")
+    # A preset's place takes the endpoint authored for the same place, if any; the
+    # original tables have one for every Mode 1 row.
+    endpoints = ({} if family != "base" else _endpoint_index(campaign) if original
+                 else _place_endpoints(campaign))
     occurrences: Counter[tuple[str, str, str]] = Counter()
     result = []
     for line, fields in _table_rows(ROOT / relative, 6):
         raw, tier, target, area, ident, chance = fields[:6]
         occurrences[(tier, raw, ident)] += 1
         occurrence = occurrences[(tier, raw, ident)]
-        endpoint = endpoints.get((tier, raw, ident, occurrence))
-        if family == "base" and endpoint is None:
+        endpoint = (endpoints.get((tier, raw, ident, occurrence)) if original
+                    else endpoints.get((target.lower(), area.lower())))
+        if family == "base" and original and endpoint is None:
             raise ValueError(f"Missing authored endpoint for {relative}:{line}")
         gate = _gate(tier)
         runtime_support = ("needs-endpoint-adapter" if endpoint is None
@@ -154,7 +232,7 @@ def _load_targets(campaign: str, family: str, options: dict) -> list[dict]:
                            else "needs-legacy-script-adapter" if endpoint["kind"] == "legacy_adapter"
                            else "needs-binding")
         result.append({
-            "id": f"{campaign}:{family}:target:{line}", "campaign": campaign,
+            "id": f"{prefix}:target:{line}", "campaign": campaign,
             "family": family, "source_ref": f"{relative}:{line}",
             "location": raw.lower(), "tier": tier.lower(),
             "target": target.lower(), "area": area.lower(), "ident": ident.lower(),
@@ -177,21 +255,21 @@ def build_template(template_id: str, *, items: str | None = None,
     Options are installer component choices and percentages; gated rows remain
     present with ``enabled=False`` so the draft never silently loses content.
     """
-    descriptors = {row["id"]: row for row in list_templates()}
+    descriptors = _templates()
     if template_id not in descriptors:
         raise ValueError(f"Unknown original template: {template_id}")
-    campaign = template_id.split("-", 1)[0]
+    campaign, preset = descriptors[template_id]["campaign"], descriptors[template_id]["preset"]
     default = "mode1+mode2" if template_id.endswith("-plus-mode2") else "mode1"
     item_choice = _choice(items, default, "items")
     target_choice = _choice(targets, default, "targets")
     selected_options = _options(options)
-    campaigns = ("bg1", "bg2") if campaign == "eet" else (campaign,)
+    campaigns = _parts(campaign)
     item_rows, target_rows = [], []
     for part in campaigns:
         for family in (("base", "mode2") if item_choice == "mode1+mode2" else ("base",)):
-            item_rows.extend(_load_items(part, family, selected_options))
+            item_rows.extend(_load_items(part, family, selected_options, preset))
         for family in (("base", "mode2") if target_choice == "mode1+mode2" else ("base",)):
-            target_rows.extend(_load_targets(part, family, selected_options))
+            target_rows.extend(_load_targets(part, family, selected_options, preset))
     unsupported_sources = sum(row["source_kind"] in ("blank", "fl", "bcs", "dlg")
                               for row in item_rows)
     unsupported_targets = sum(row["endpoint_kind"] in ("group", "legacy_adapter")

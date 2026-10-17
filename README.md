@@ -59,7 +59,9 @@ the test commands.
 CIR would not be possible without Wisp's groundwork. The code and texts written for CIR
 are under the [MIT licence](LICENSE). The material from Wisp's Item Randomiser (lists,
 item files, texts, the optional components' dialogue and script changes) remains his
-work and is included with credit; [LICENSE](LICENSE) lists it.
+work and is included with credit; [LICENSE](LICENSE) lists it. The Boss Loot preset
+lists in [lists/presets/boss-loot](lists/presets/boss-loot/README.md) are aShuN's work,
+also included with credit.
 
 - [Item Randomiser source](https://github.com/FredrikLindgren/randomiser)
 - [Item Randomiser on Gibberlings Three](http://www.gibberlings3.net/item_rand/)

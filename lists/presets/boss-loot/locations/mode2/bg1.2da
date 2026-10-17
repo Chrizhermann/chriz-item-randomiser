@@ -1,0 +1,398 @@
+Location Tier Target           Area   Ident Chance  Comment
+
+w1       ma   STO0703.sto      AR0703 x     100     Sorcerous Sundries
+w2       ma   STO0703.sto      AR0703 x     100     Sorcerous Sundries
+w3       ma   STO0703.sto      AR0703 x     100     Sorcerous Sundries
+w4       ma   highhedg.sto     ar3202 x     100
+w5       ma   highhedg.sto     ar3202 x     100
+w6       ma   highhedg.sto     ar3202 x     100
+w7       ma   venkt.cre        ar1901 x     100     Tazok tent Mage
+w8       ma   STO0703.sto      AR0703 x     100     Sorcerous Sundries
+w9       ma   SUNIN.CRE        AR1111 x     100     Sunin
+w10      ma   kirian.cre       ar3500 b15   100     Mutamin garden f/m
+w11      ma   tellan.cre       ar1009 x     100     Mage island
+w12      ma   andris.cre       ar1009 x     100     Mage island
+w13      ma   container1       ar0813 v4    100     Nemphre's house
+w10      ma   natash.cre       ar1802 x     100     Natasha, CW mines
+w11      ma   hareis.cre       ar1804 x     100     Hareishan mine lvl 2
+w14      ma   red.flg          ar3000 x     100     red wizards group
+w15      ma   cythan.cre       ar0615 x     100     Cythandria, Iron Throne mage
+
+
+
+w1       24   container1       ar1603 x     100     Baby wyverns cave
+w2       24   GNOLL_C.CRE      AR5100 x     100
+w3       24   PETER.cre        AR3500 x     100     Mutamin garden f/c
+w4       24   container3       ar1802 x     100     Cloakwood lvl 3 hobgoblin room
+w5       24   BARUK.CRE        AR4100 x     100     Archeological site hobgoblin
+w6       24   greywo.cre       AR5400 x     100     None cross Greywolf and live!
+
+w1       25   SIL.cre          AR3600 x     100     Sirine Lighthouse
+w2       25   taerum.sto       ar3301 x     100
+w3       25   taerum.sto       ar3301 x     100
+w4       25   taerum.sto       ar3301 x     100
+w5       25   taerum.sto       ar3301 x     100
+w6       25   taerum.sto       ar3301 x     100
+w7       25   taerum.sto       ar3301 x     100
+w8       25   inn3351.sto      ar3351 x     100
+w9       25   inn3351.sto      ar3351 x     100     Feldepost's
+w10      25   inn3351.sto      ar3351 x     100
+w11      25   stoblack.sto     AR0153 x     100
+w12      25   stoblack.sto     AR0153 x     100
+w13      25   stoblack.sto     AR0153 x     100
+w14      25   stoblack.sto     AR0153 x     100
+w15      25   stoblack.sto     AR0153 x     100
+w16      25   stoblack.sto     AR0153 x     100
+w17      25   aldeth.fl        ar0128 v8    100
+w18      25   safana.fl        ar3601 vf    100
+w19      25   droth.cre        ar3100 vd    100
+
+
+w1       26   MAREK1.CRE       AR0115 x     100     Marek Blushing
+w2       26   HAKT.CRE         AR1901 x     100     Tent hobgoblin
+w3       26   void.flg         ar0134 x     100     Desreta and friend
+w4       26   jardak.cre       ar0011 v5    100
+w5       26   container10      ar1803 b11   100     davaeron's
+w6       26   assassins2.flg   ar4000 v7    100     Molkar et al.
+w7       26   assassins1.flg   ar5000 x     100     Lamalha and gang
+w8       26   spelunkers.flg   AR5506 x     100     candlekeep cave gang
+w9       26   under.flg        AR0123 x     100     undercity gang
+w10      26   natash.cre       ar1802 x     100     Natasha mine lvl 3
+w11      26   throne.flg       ar0615 x     100
+w12      26   taugos.cre       ar1900 x     100     Bandit Camp Fighter
+w13      26   zhents.flg       AR0704 b1b   100     zhents SS
+
+
+
+
+w1       27   under.flg        AR0123 x     100     undercity gang
+w2       27   bassil.cre       ar3700 va    100
+w3       27   nimbul.cre       ar4800 vb    100
+w4       27   varci.fl         ar0617 vc    100     Varci Roaringhorn
+w5       27   gretek.cre       ar0116 ve    100
+w6       27   throne.flg       ar0615 x     100
+w7       27   mine.flg         ar1800 v6    100     Mine gang
+w8       27   assassins2.flg   ar4000 v2    100     Molkar et al.
+w9       27   assassins1.flg   ar5000 v1    100     Lamalha and gang
+w10      27   container3       ar0161 v3    100     Degrodel's house
+
+w1       28   cythan.cre       ar0615 x     100     Cythandria, Iron Throne mage
+
+w1       31   baresh2.cre      ar1004 b3e   100
+
+w1       sa   container4       ar2611 vs2   100
+w2       sa   highhedg.sto     ar3202 x     100
+w3       sa   sto0703.sto      ar0703 x     100
+w4       sa   container2       ar2629 vs4   100
+w5       sa   red.flg          ar3000 vs5   100
+w6       sa   red.flg          ar3000 vs6   100
+w7       sa   highhedg.sto     ar3202 x     100
+w8       sa   red.flg          ar3000 vs7   100
+w9       sa   sto0703.sto      ar0703 x     100
+w10      sa   container1       ar0144 x     100
+w11      sa   container3       ar1201 vs8   100
+w12      sa   container6       ar0138 vs9   100
+w13      sa   highhedg.sto     ar3202 x     100
+w14      sa   sto0703.sto      ar0703 x     100
+w15      sa   venkt.cre        ar1901 vsa   100
+w16      sa   marcel.cre       ar1009 vs3   100
+w17      sa   container1       ar0135 vsb   100
+w18      sa   container19      ar2609 vsc   100
+w19      sa   container1       ar2613 vsd   100
+w20      sa   spelunkers.flg   ar5506 vse   100
+w21      sa   zhents.flg       ar0704 x     100
+w22      sa   halaca.cre       ar4000 bsa   100
+w23      sa   zhents.flg       ar0704 x     100
+w24      sa   red.flg          ar3000 x     100
+w25      sa   highhedg.sto     ar3202 x     100
+w26      sa   highhedg.sto     ar3202 x     100
+w27      sa   sto0703.sto      ar0703 x     100
+w28      sa   highhedg.sto     ar3202 x     100
+w29      sa   void.flg         ar0134 x     100
+w30      sa   container2       ar0144 x     100
+w31      sa   highhedg.sto     ar3202 x     100
+w32      sa   gazib.cre        ar4900 x     100
+w33      sa   gazib.cre        ar4900 x     100
+w34      sa   gazib.cre        ar4900 x     100
+w35      sa   gazib.cre        ar4900 x     100
+w36      sa   gazib.cre        ar4900 x     100
+w37      sa   kirian.cre       ar3500 x     100
+w38      sa   kirian.cre       ar3500 x     100
+w39      sa   tamah.cre        ar3500 x     100
+w40      sa   highhedg.sto     ar3202 x     100
+w41      sa   highhedg.sto     ar3202 x     100
+w42      sa   highhedg.sto     ar3202 x     100
+w43      sa   highhedg.sto     ar3202 x     100
+w44      sa   highhedg.sto     ar3202 x     100
+w45      sa   highhedg.sto     ar3202 x     100
+w46      sa   highhedg.sto     ar3202 x     100
+w47      sa   highhedg.sto     ar3202 x     100
+w48      sa   highhedg.sto     ar3202 x     100
+w49      sa   sto0703.sto      ar0703 x     100
+w50      sa   sto0703.sto      ar0703 x     100
+w51      sa   sto0703.sto      ar0703 x     100
+w52      sa   sto0703.sto      ar0703 x     100
+w53      sa   sto0703.sto      ar0703 x     100
+w54      sa   sto0703.sto      ar0703 x     100
+w55      sa   drelik.cre       ar0010 x     100
+w56      sa   hafiz.cre        ar5500 x     100
+w57      sa   halaca.cre       ar4000 x     100
+w58      sa   venkt.cre        ar1901 x     100
+w59      sa   venkt.cre        ar1901 x     100
+w60      sa   zordra.cre       ar4906 x     100
+w61      sa   container8       ar0110 x     100
+w62      sa   container8       ar0110 x     100
+w63      sa   andris.cre       ar1009 x     100
+w64      sa   andris.cre       ar1009 x     100
+w65      sa   andris.cre       ar1009 x     100
+w66      sa   andris.cre       ar1009 x     100
+w67      sa   arkush.cre       ar3600 x     100
+w68      sa   arkush.cre       ar3600 x     100
+w69      sa   davaeo.cre       ar1803 x     100
+w70      sa   davaeo.cre       ar1803 x     100
+w71      sa   OGREMA03.cre     AR1802 x     100
+w72      sa   red.flg          ar3000 x     100
+w73      sa   red.flg          ar3000 x     100
+w74      sa   red.flg          ar3000 x     100
+w75      sa   container14      ar0511 x     100
+w76      sa   highhedg.sto     ar3202 x     100
+w77      sa   highhedg.sto     ar3202 x     100
+w78      sa   highhedg.sto     ar3202 x     100
+w79      sa   highhedg.sto     ar3202 x     100
+w80      sa   highhedg.sto     ar3202 x     100
+w81      sa   container2       ar2629 x     100
+w82      sa   container1       ar5405 x     100
+w83      sa   container1       ar5405 x     100
+w84      sa   gorion.cre       ar2600 x     100
+w85      sa   ZORDRA.cre       AR4906 x     100
+w86      sa   ZORDRA.cre       AR4906 x     100
+w87      sa   container5       ar4804 x     100
+w88      sa   container5       ar4804 x     100
+w89      sa   container5       ar4804 x     100
+w90      sa   container1       ar5102 x     100
+w91      sa   container1       ar5102 x     100
+w92      sa   container14      ar0614 x     100
+w93      sa   container7       ar2610 x     100
+w94      sa   container10      ar2610 x     100
+w95      sa   container18      ar1802 x     100
+w96      sa   container18      ar1802 x     100
+w97      sa   jemby.cre        ar4200 x     100
+w98      sa   container1       ar5102 x     100
+w99      sa   container1       ar5102 x     100
+w0a      sa   DAITEL.CRE       AR0504 x     100
+w0b      sa   DAITEL.CRE       AR0504 x     100
+w0c      sa   DAITEL.CRE       AR0504 x     100
+
+
+w1       sb   sto0703.sto      ar0703 x     100
+w2       sb   sto0703.sto      ar0703 x     100
+w3       sb   sto0703.sto      ar0703 x     100
+w4       sb   sto0703.sto      ar0703 x     100
+w5       sb   sto0703.sto      ar0703 x     100
+w6       sb   sto0703.sto      ar0703 x     100
+w7       sb   sto0703.sto      ar0703 x     100
+w8       sb   sto0703.sto      ar0703 x     100
+w9       sb   sto0703.sto      ar0703 x     100
+w10      sb   sto0703.sto      ar0703 x     100
+w11      sb   sto0703.sto      ar0703 x     100
+w12      sb   sto0703.sto      ar0703 x     100
+w13      sb   sto0703.sto      ar0703 x     100
+w14      sb   sto0703.sto      ar0703 x     100
+w15      sb   highhedg.sto     ar3202 x     100
+w16      sb   highhedg.sto     ar3202 x     100
+w17      sb   highhedg.sto     ar3202 x     100
+w18      sb   highhedg.sto     ar3202 x     100
+w19      sb   highhedg.sto     ar3202 x     100
+w20      sb   highhedg.sto     ar3202 x     100
+w21      sb   highhedg.sto     ar3202 x     100
+w22      sb   highhedg.sto     ar3202 x     100
+w23      sb   container2       ar2613 vsf   100
+w24      sb   lendar.cre       ar5201 vs10  100
+w25      sb   spelunkers.flg   ar5506 vs11  100
+w26      sb   container20      ar2608 vs12  100
+w27      sb   container1       ar0135 vs13  100
+w28      sb   container6       ar0138 vs14  100
+w29      sb   container6       ar0138 vs15  100
+w30      sb   ogrema02.cre     ar5201 x     100
+w31      sb   container15      ar2608 vs16  100
+w32      sb   container25      ar2609 vs17  100
+w33      sb   spelunkers.flg   ar5506 vs18  100
+w34      sb   zhents.flg       ar0704 vs19  100
+w35      sb   spelunkers.flg   ar5506 vs1a  100
+w36      sb   container1       ar0135 vs1b  100
+w37      sb   container6       ar0138 vs1c  100
+w38      sb   container14      ar2609 vs1d  100
+w39      sb   spelunkers.flg   ar5506 vs1e  100
+w40      sb   container10      ar0614 vs1f  100
+w41      sb   container1       ar1901 vs20  100     main tent, chest
+w42      sb   spelunkers.flg   ar5506 vs21  100
+w43      sb   container5       ar0144 vs22  100
+w44      sb   container2       ar1907 vs23  100
+w45      sb   container13      ar2608 vs24  100
+s46      sb   container13      ar2611 vs25  100
+w47      sb   drelik.cre       ar0010 vs26  100
+w48      sb   venkt.cre        ar1901 x     100
+w49      sb   venkt.cre        ar1901 x     100
+w50      sb   container12      ar1803 x     100     davaeorn's chest
+w51      sb   container12      ar1803 x     100
+w52      sb   zhents.flg       ar0704 x     100
+w53      sb   red.flg          ar3000 x     100
+w54      sb   red.flg          ar3000 x     100
+w55      sb   ragefa.cre       ar0126 x     100
+w56      sb   nimbul.cre       ar4800 x     100
+w57      sb   tem0132.sto      ar0132 x     100
+w59      sb   gazib.cre        ar4900 x     100
+w60      sb   highhedg.sto     ar3202 x     100
+w61      sb   highhedg.sto     ar3202 x     100
+w62      sb   highhedg.sto     ar3202 x     100
+w63      sb   highhedg.sto     ar3202 x     100
+w64      sb   sto0703.sto      ar0703 x     100
+w65      sb   sto0703.sto      ar0703 x     100
+w66      sb   sto0703.sto      ar0703 x     100
+w67      sb   sto0703.sto      ar0703 x     100
+w68      sb   borda.cre        ar4700 x     100
+w69      sb   container8       ar0110 x     100
+w70      sb   container8       ar0110 x     100
+w71      sb   container4       ar2610 x     100
+w72      sb   highhedg.sto     ar3202 x     100
+w73      sb   container1       ar5405 x     100
+w74      sb   container1       ar5405 x     100
+w75      sb   container14      ar0614 x     100
+w76      sb   jemby.cre        ar4200 x     100
+w77      sb   garan.cre        ar1009 x     100
+w78      sb   throne.flg       ar0615 x     100
+w79      sb   deathk.cre       ar0516 x     100
+w80      sb   tranzi.cre       ar3352 x     100
+w81      sb   sto0703.sto      ar0703 x     100
+w82      sb   container1       ar5102 x     100
+w83      sb   OGREMA03.cre     AR1802 x     100
+w84      sb   DAITEL.CRE       AR0504 x     100
+w85      sb   DAITEL.CRE       AR0504 x     100
+
+w1       sc   sto0703.sto      ar0703 x     100
+w2       sc   sto0703.sto      ar0703 x     100
+w3       sc   sto0703.sto      ar0703 x     100
+w4       sc   sto0703.sto      ar0703 x     100
+w5       sc   sto0703.sto      ar0703 x     100
+w6       sc   sto0703.sto      ar0703 x     100
+w7       sc   sto0703.sto      ar0703 x     100
+w8       sc   sto0703.sto      ar0703 x     100
+w9       sc   sto0703.sto      ar0703 x     100
+w10      sc   sto0703.sto      ar0703 x     100
+w11      sc   sto0703.sto      ar0703 x     100
+w12      sc   sto0703.sto      ar0703 x     100
+w13      sc   sto0703.sto      ar0703 x     100
+w14      sc   sto0703.sto      ar0703 x     100
+w15      sc   sto0703.sto      ar0703 x     100
+w16      sc   highhedg.sto     ar3202 x     100
+w17      sc   highhedg.sto     ar3202 x     100
+w18      sc   highhedg.sto     ar3202 x     100
+w19      sc   highhedg.sto     ar3202 x     100
+w20      sc   nemphr.fl        ar0813 vs1   100
+w21      sc   krysti.cre       ar0112 vs27  100
+w22      sc   void.flg         ar0134 vs28  100
+w23      sc   throne.flg       ar0615 vs29  100
+w24      sc   void.flg         ar0134 vs2a  100
+w25      sc   lendar.cre       ar5201 vs2b  100
+w26      sc   throne.flg       ar0615 vs2c  100
+w27      sc   queen.cre        ar0506 vs2d  100
+w28      sc   sunin.cre        ar1111 vs2e  100
+w29      sc   spelunkers.flg   ar5506 vs2f  100
+w30      sc   hareis.cre       ar1804 vs30  100
+w31      sc   lendar.cre       ar5201 vs31  100
+w32      sc   krysti.cre       ar0112 vs32  100
+w33      sc   krysti.cre       ar0112 vs33  100
+w34      sc   natash.cre       ar1802 vs34  100
+w35      sc   spelunkers.flg   ar5506 vs35  100
+w36      sc   degrod.cre       ar0161 vs36  100
+w37      sc   tellan.cre       ar1009 vs37  100
+w38      sc   queen.cre        ar0506 vs38  100
+w39      sc   sunin.cre        ar1111 vs39  100
+w40      sc   wiven.cre        ar1101 vs3a  100
+w41      sc   ogrema02.cre     ar5201 x     100
+w42      sc   throne.flg       ar0615 x     100
+w43      sc   container3       ar0145 vs3b  100
+w44      sc   container1       ar2619 vs3c  100
+w45      sc   container3       ar0615 vs3d  100
+w46      sc   yago.cre         ar0135 vs3e  100
+w47      sc   container3       ar2613 vs3f  100
+w48      sc   nimbul.cre       ar4800 x     100
+w49      sc   ramazi.cre       ar0138 x     100
+w50      sc   container26      ar0512 vs40  100
+w51      sc   container3       ar0615 vs41  100
+w52      sc   spelunkers.flg   ar5506 vs42  100
+w53      sc   davaeo.cre       ar1803 x     100
+w54      sc   andris.cre       ar1009 x     100
+w55      sc   krysti.cre       ar0112 vs43  100
+w56      sc   zhents.flg       ar0704 x     100
+w57      sc   shaldr.cre       ar0123 x     100
+w58      sc   cuchol.cre       ar1009 x     100
+w59      sc   ragefa.cre       ar0126 x     100
+w60      sc   rielta.cre       ar2610 x     100
+w61      sc   venkt.cre        ar1901 x     100
+w62      sc   highhedg.sto     ar3202 x     100
+w63      sc   highhedg.sto     ar3202 x     100
+w64      sc   sto0703.sto      ar0703 x     100
+w65      sc   sto0703.sto      ar0703 x     100
+w66      sc   sto0703.sto      ar0703 x     100
+w67      sc   sto0703.sto      ar0703 x     100
+w68      sc   drelik.cre       ar0010 x     100
+w69      sc   halaca.cre       ar4000 x     100
+w70      sc   tent.flg         ar1901 x     100
+w71      sc   container8       ar0110 x     100
+w72      sc   container8       ar0110 x     100
+w73      sc   container8       ar0110 x     100
+w74      sc   container8       ar0110 x     100
+w75      sc   container8       ar0110 x     100
+w76      sc   container8       ar0110 x     100
+w77      sc   davaeo.cre       ar1803 x     100
+w78      sc   red.flg          ar3000 x     100
+w79      sc   red.flg          ar3000 x     100
+w80      sc   zhents.flg       ar0704 x     100
+w81      sc   container8       ar0511 x     100
+w82      sc   container10      ar0614 x     100
+w83      sc   container10      ar0614 x     100
+w84      sc   spelunkers.flg   ar5506 x     100
+w85      sc   spelunkers.flg   ar5506 x     100
+w86      sc   spelunkers.flg   ar5506 x     100
+w87      sc   garan.cre        ar1009 x     100
+w88      sc   garan.cre        ar1009 x     100
+w89      sc   sto0703.sto      ar0703 x     100
+w90      sc   DAITEL.CRE       AR0504 x     100
+
+w1       sd   sto0703.sto      ar0703 x     100
+w2       sd   sto0703.sto      ar0703 x     100
+w3       sd   sto0703.sto      ar0703 x     100
+w4       sd   sto0703.sto      ar0703 x     100
+w5       sd   sto0703.sto      ar0703 x     100
+w6       sd   mine.flg         ar1800 x     100
+w7       sd   cythan.cre       ar0615 x     100
+w8       sd   throne.flg       ar0615 x     100
+w9       sd   highhedg.sto     ar3202 x     100
+w10      sd   highhedg.sto     ar3202 x     100
+w11      sd   container1       ar3601 x     100
+w12      sd   container27      ar0512 vs44  100
+w13      sd   ramazi.cre       ar0138 x     100
+w14      sd   sto0703.sto      ar0703 x     100
+w15      sd   sto0703.sto      ar0703 x     100
+w16      sd   sto0703.sto      ar0703 x     100
+w17      sd   andris.cre       ar1009 x     100
+w18      sd   davaeo.cre       ar1803 x     100
+w19      sd   red.flg          ar3000 x     100
+w20      sd   zhents.flg       ar0704 x     100
+w21      sd   dezkie.cre       ar1009 x     100
+w22      sd   sto0703.sto      ar0703 x     100
+w23      sd   sto0703.sto      ar0703 x     100
+w24      sd   sto0703.sto      ar0703 x     100
+w25      sd   sto0703.sto      ar0703 x     100
+w26      sd   sto0703.sto      ar0703 x     100
+w27      sd   container8       ar0513 x     100
+w28      sd   sto0703.sto      ar0703 x     100
+w29      sd   cuchol.cre       ar1009 x     100
+
+w1       se   sto0703.sto      ar0138 x     100
+w2       se   container9       ar0511 x     100
+w3       se   container18      ar0511 x     100
+w4       se   container21      ar0511 x     100
+w5       se   container1       ar2613 x     100
+w6       se   sto0703.sto      ar0703 x     100

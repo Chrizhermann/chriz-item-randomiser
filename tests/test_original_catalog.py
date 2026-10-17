@@ -49,6 +49,15 @@ class OriginalCatalogTests(unittest.TestCase):
                 self.assertEqual(next(r for r in bound["targets"] if r["id"] == identity)
                                  ["binding_problem"], "target-resource-absent")
 
+    def test_preset_items_from_other_mods_are_absent_rather_than_unfit(self):
+        world = {"resources": [], "sources": [], "targets": []}
+        problems = {}
+        for row in resolve_template({"items": []}, world, "bg1-boss-loot-plus-mode2")["items"]:
+            problems.setdefault(row["optional_mod"], set()).add(row["binding_problem"])
+        self.assertEqual(problems, {"Rogue Rebalancing": {"optional-item-absent"},
+                                    "IWDification": {"optional-item-absent"},
+                                    None: {"item-definition-absent"}})
+
     def test_exact_mode2_spin621_pair_uses_spell_hash_without_area_or_physical_target(self):
         catalog = {"items": [{"resref": "ring41"}]}
         world = {"resources": [{"id": "spl:spin621"}], "sources": [], "targets": []}

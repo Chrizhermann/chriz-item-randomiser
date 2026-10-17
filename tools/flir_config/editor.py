@@ -224,7 +224,8 @@ class Editor:
             previous = self.draft
             self.draft = checked
             try:
-                return {**self.state(), "left_out": generated["left_out"]}
+                return {**self.state(), "left_out": generated["left_out"],
+                        "absent_mods": generated["absent_mods"]}
             except Exception:
                 self.draft = previous
                 raise

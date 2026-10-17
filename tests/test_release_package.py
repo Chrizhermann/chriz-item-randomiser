@@ -286,6 +286,10 @@ class RepositoryPackageTests(unittest.TestCase):
                   for family in ("base", "mode2") for campaign in ("bg1", "bg2")}
         named |= {f"lists/{kind}/{campaign}.2da" for kind in ("sources/base", "endpoints/base", "groups")
                   for campaign in ("bg1", "bg2")}
+        from flir_config.templates import PRESETS
+        named |= {f"lists/presets/{preset}/{kind}/{family}/{campaign}.2da"
+                  for preset, spec in PRESETS.items() for campaign in spec["campaigns"]
+                  for kind in ("items", "locations") for family in ("base", "mode2")}
         named |= {"lib/fl#bg1pal.tpa", "copy/flbhcryp.itm", "languages/english/ppdjinn.tra"}
         self.assertTrue({"copy/ward.itm", "copy/flrward1.bam", "languages/english/hlskull.tra",
                          "lists/endpoints/fallbacks.2da"} <= named)

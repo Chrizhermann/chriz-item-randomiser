@@ -1,12 +1,13 @@
 """Offline checks for lossless original Randomiser template drafts."""
 
+from collections import defaultdict
 from pathlib import Path
 import sys
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
-from flir_config.templates import (DEFAULT_OPTIONS, build_template, list_templates,  # noqa: E402
-                                   recommended_preset)
+from flir_config.templates import (DEFAULT_OPTIONS, ROOT, _table_rows, build_template,  # noqa: E402
+                                   list_templates, recommended_preset)
 
 
 class OriginalTemplateTests(unittest.TestCase):
@@ -14,7 +15,9 @@ class OriginalTemplateTests(unittest.TestCase):
         self.assertEqual(
             [row["id"] for row in list_templates()],
             ["bg1-mode1", "bg1-mode1-plus-mode2", "bg2-mode1",
-             "bg2-mode1-plus-mode2", "eet-mode1", "eet-mode1-plus-mode2"],
+             "bg2-mode1-plus-mode2", "eet-mode1", "eet-mode1-plus-mode2",
+             "bg1-boss-loot", "bg1-boss-loot-plus-mode2", "eet-boss-loot",
+             "eet-boss-loot-plus-mode2"],
         )
         for identity, items, targets in (
             ("bg1-mode1", 212, 218),
@@ -23,6 +26,10 @@ class OriginalTemplateTests(unittest.TestCase):
             ("bg2-mode1-plus-mode2", 546, 574),
             ("eet-mode1", 505, 527),
             ("eet-mode1-plus-mode2", 926, 971),
+            ("bg1-boss-loot", 214, 216),
+            ("bg1-boss-loot-plus-mode2", 609, 594),
+            ("eet-boss-loot", 507, 525),
+            ("eet-boss-loot-plus-mode2", 1155, 1168),
         ):
             with self.subTest(identity=identity):
                 draft = build_template(identity)
@@ -95,6 +102,66 @@ class OriginalTemplateTests(unittest.TestCase):
         self.assertFalse(recommended_preset("eet")["options"]["kangaxx"])
         with self.assertRaises(ValueError):
             recommended_preset("iwd")
+
+    def test_boss_loot_replaces_only_the_bg1_tables(self):
+        draft = build_template("eet-boss-loot-plus-mode2")
+        self.assertEqual(draft["name"], "EET Boss Loot Mode 1 with Mode 2 additions (by aShuN)")
+        original = build_template("bg2-mode1-plus-mode2")
+        for kind in ("items", "targets"):
+            bg1 = [row for row in draft[kind] if row["campaign"] == "bg1"]
+            self.assertTrue(bg1)
+            self.assertTrue(all(row["id"].startswith("bg1:boss-loot:") and
+                                row["source_ref"].startswith("lists/presets/boss-loot/")
+                                for row in bg1))
+            self.assertEqual([row for row in draft[kind] if row["campaign"] == "bg2"], original[kind])
+
+    def test_boss_loot_places_take_the_endpoint_of_the_same_place(self):
+        endpoints = {(row["target"], row["area"]): row["endpoint_id"]
+                     for row in build_template("bg1-mode1")["targets"]}
+        without = set()
+        for row in build_template("bg1-boss-loot")["targets"]:
+            place = (row["target"], row["area"])
+            self.assertEqual(row["endpoint_id"], endpoints.get(place))
+            if row["endpoint_id"] is None:
+                without.add(place)
+                self.assertEqual(row["runtime_support"], "needs-endpoint-adapter")
+        # Places the original Mode 1 tables do not use; they are bound by name.
+        self.assertEqual(without, {
+            ("nemphr.cre", "ar0813"), ("yago.cre", "ar0135"), ("container1", "ar3802"),
+            ("baerin.cre", "ar3500"), ("raemon.cre", "ar1901"), ("lindin.cre", "ar3500"),
+            ("spelunkers.flg", "ar5506"), ("tent.flg", "ar1901"), ("assassins1.flg", "ar5000"),
+            ("assassins2.flg", "ar4000")})
+
+    def test_boss_loot_keeps_one_item_and_one_place_per_pairing(self):
+        def rows(folder, kind, columns):
+            for family in ("base", "mode2"):
+                for line, fields in _table_rows(ROOT / folder / kind / family / "bg1.2da", columns):
+                    yield f"{family}:{line}", [field.lower() for field in fields]
+
+        original_items = {fields[5]: (fields[0], fields[2])
+                          for _, fields in rows("lists", "items", 7) if fields[5] != "x"}
+        preset = "lists/presets/boss-loot"
+        for kind, columns in (("items", 7), ("locations", 6)):
+            seen = defaultdict(list)
+            for line, fields in rows(preset, kind, columns):
+                if fields[columns - 2] != "x":
+                    seen[fields[columns - 2]].append(line)
+            self.assertEqual({ident: lines for ident, lines in seen.items() if len(lines) > 1}, {})
+        for line, fields in rows(preset, "items", 7):
+            if fields[5] in original_items:
+                self.assertEqual((fields[0], fields[2]), original_items[fields[5]], line)
+        # The Tales of the Sword Coast tome option finds Durlag's tome by its ident.
+        tome = [row for row in build_template("bg1-boss-loot")["items"] if row["ident"] == "b2c"]
+        self.assertEqual([(row["resref"], row["source"]) for row in tome], [("book08", "ar0504.are")])
+
+    def test_boss_loot_marks_items_that_only_other_mods_add(self):
+        optional = {row["resref"]: row["optional_mod"]
+                    for row in build_template("bg1-boss-loot-plus-mode2")["items"] if row["optional_mod"]}
+        self.assertEqual({mod for mod in optional.values()}, {"Rogue Rebalancing", "IWDification"})
+        self.assertTrue(all((mod == "Rogue Rebalancing") == name.startswith("rr#")
+                            for name, mod in optional.items()))
+        for identity in ("bg1-boss-loot", "eet-mode1-plus-mode2"):
+            self.assertFalse(any(row["optional_mod"] for row in build_template(identity)["items"]))
 
     def test_invalid_choices_fail_closed(self):
         with self.assertRaises(ValueError):

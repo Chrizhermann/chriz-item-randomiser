@@ -142,9 +142,12 @@ def _resolve_source(row: dict, catalog_items: set[str], resources: set[str],
                adapter=None, available=True, availability_reason=None,
                binding_problem=None)
     if item not in catalog_items:
+        # A preset's item from another mod is absent when that mod is not installed;
+        # any other absent item means the tables do not fit this game.
+        reason = "optional-item-absent" if row.get("optional_mod") else "item-definition-absent"
         row["available"] = False
-        row["availability_reason"] = "item-definition-absent"
-        row["binding_problem"] = "item-definition-absent"
+        row["availability_reason"] = reason
+        row["binding_problem"] = reason
 
     raw = row["source"]
     if raw == "blank":
