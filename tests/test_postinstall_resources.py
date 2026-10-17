@@ -185,6 +185,22 @@ class ResourceScanTests(unittest.TestCase):
         self.assertEqual(result["items"][1]["price"], 800)
         self.assertEqual(result["items"][1]["resource_origin"], "override")
 
+    def test_long_override_names_are_left_out_and_named(self) -> None:
+        fingerprint = scan_game(self.root)["fingerprint"]
+        override = self.root / "override"
+        for name in ("dw#marker_file.itm", "synth0012.itm", "synth001 - копия.itm"):
+            (override / name).write_bytes(make_itm(price=1))
+        result = scan_game(self.root)
+        self.assertEqual([(item["resref"], item["price"]) for item in result["items"]], [("synth001", 300)])
+        self.assertEqual(result["fingerprint"], fingerprint)
+        self.assertEqual(result["warnings"], [
+            "Override files with names longer than eight characters were left out (resource "
+            "names have at most eight): dw#marker_file.itm, synth001 - копия.itm, synth0012.itm."])
+        # A short name that is not ASCII stays ambiguous: the game's code page decides it.
+        (override / "größe.itm").write_bytes(make_itm())
+        with self.assertRaisesRegex(ScanError, "not ASCII"):
+            scan_game(self.root)
+
     def test_uses_locator_not_entry_index_or_table_order(self) -> None:
         resources = [("SECOND", make_itm(price=200)), ("FIRST", make_itm(price=100))]
         bif = make_biff(resources, reverse_table=True)

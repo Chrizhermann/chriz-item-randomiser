@@ -108,6 +108,10 @@ This editor check did not launch or modify the game.
 
 - Scans the union of root KEY item entries and override-only item files.
 - The effective override item wins over its archive copy.
+- Override files with names longer than eight characters are left out and named in
+  the scan's warnings: game data names resources with at most eight characters, and
+  mods keep WeiDU templates under such names (SCS's `dw#marker_file.itm`). A shorter
+  name that is not ASCII stops the scan, since the game's code page decides it.
 - Reads the selected EE language's names from dialog.tlk; multiple installed language
   directories require an explicit language selection. A root dialog.tlk is also
   supported.

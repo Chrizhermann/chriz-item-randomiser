@@ -313,7 +313,8 @@ def _biff_items(path: Path, requested: dict[int, str]) -> dict[str, bytes]:
         return found
 
 
-def _override_resources(root: Path, resource_types: dict[str, int], snapshot: _ScanSnapshot) -> dict[str, dict[str, Path]]:
+def _override_resources(root: Path, resource_types: dict[str, int], snapshot: _ScanSnapshot,
+                        long_names: list[str] | None = None) -> dict[str, dict[str, Path]]:
     resources: dict[str, dict[str, Path]] = {extension: {} for extension in resource_types}
     override_dir = _child(root, "override", root, required=False)
     if override_dir is None:
@@ -325,12 +326,17 @@ def _override_resources(root: Path, resource_types: dict[str, int], snapshot: _S
         extension = entry.suffix[1:].casefold()
         if extension not in resources:
             continue
+        if len(entry.stem) > 8:
+            # Game data names resources with at most eight characters, so it
+            # cannot name these files. Mods keep templates for WeiDU under such
+            # names (SCS's dw#marker_file.itm); they are left out, not refused.
+            if long_names is not None:
+                long_names.append(entry.name)
+            continue
         try:
             encoded = entry.stem.encode("ascii")
         except UnicodeEncodeError as exc:
             raise ScanError("An override resource reference is not ASCII.") from exc
-        if len(encoded) > 8:
-            raise ScanError("An override resource reference exceeds eight bytes.")
         name = _resref(encoded)
         if name in resources[extension]:
             raise ScanError(f"Duplicate case-insensitive override resource: {name}.{extension}.")
@@ -355,7 +361,9 @@ class GameResources:
     propagate unchanged. Archive indexes are cached, but resource payloads are
     not. No files are written and no archives stay open between calls. Only
     root KEY V1 and uncompressed BIFF V1 ordinary resources are supported; the
-    caller is responsible for validating each resource's own format.
+    caller is responsible for validating each resource's own format. Override
+    files with names longer than eight characters are not resources and are
+    left out.
     """
 
     def __init__(self, game_root: Path, resource_types: dict[str, int]):
@@ -606,7 +614,8 @@ def scan_game(game_root: Path, *, language: str | None = None) -> dict:
         tlk_path, selected_language = _select_tlk(root, language, snapshot)
         snapshot.file(tlk_path)
         tlk = _Tlk(_read_file(tlk_path))
-        overrides = _override_resources(root, {"itm": ITM_TYPE}, snapshot)["itm"]
+        long_names: list[str] = []
+        overrides = _override_resources(root, {"itm": ITM_TYPE}, snapshot, long_names)["itm"]
         effective = {}
         pending: dict[int, dict[int, list[str]]] = {}
         for name, (archive_index, resource_id) in keyed_items.items():
@@ -628,6 +637,10 @@ def scan_game(game_root: Path, *, language: str | None = None) -> dict:
         for name, path in overrides.items():
             effective[name] = (_read_file(path), "override")
         warnings: set[str] = set()
+        if long_names:
+            warnings.add("Override files with names longer than eight characters were left out "
+                         "(resource names have at most eight): "
+                         + ", ".join(sorted(long_names, key=str.casefold)) + ".")
         items = [_item(name, *effective[name], tlk, warnings) for name in sorted(effective)]
         schema = "flir-item-catalog-v1"
         result = {"schema": schema, "game_root": str(root), "language": selected_language, "items": items}

@@ -62,11 +62,12 @@ Corrections from the game data (Baldur's Gate: Enhanced Edition, and EET):
 
 Line ends are CRLF and trailing spaces are removed.
 
-## Open points
+## Known limits
 
-- Mode 2 `scrl75` from AR2613 (Container 3 holds two) and `scrl84` from AR1803
-  (Containers 7 and 9 hold one each): which one is meant? With scrolls randomised, a
-  Mode 2 preset stops at these rows until that is settled.
+- Two Mode 2 rows name an area that holds their scroll twice: `scrl75` in AR2613 (two
+  in Container 3) and `scrl84` in AR1803 (one each in Containers 7 and 9). The
+  configurator cannot tell which copy to move, so with scrolls randomised a Mode 2
+  preset stops at these rows. This is settled together with Mode 2 support.
 - Mode 2 additions are not playable in Chriz Item Randomiser yet, as for the original
   lists.
 - A few items lost their home place because the place row was removed (Mulahey's

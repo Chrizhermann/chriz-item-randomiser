@@ -278,18 +278,25 @@ class ResourceReaderTests(unittest.TestCase):
                 with GameResources(self.root, {"cre": 1009}):
                     pass
 
-    def test_unsafe_archive_paths_and_invalid_override_names_fail(self) -> None:
+    def test_unsafe_archive_paths_fail(self) -> None:
         for filename in (b"../outside.bif\0", b"C:\\outside.bif\0", b"/outside.bif\0"):
             with self.subTest(filename=filename):
                 (self.root / "chitin.key").write_bytes(key(self.records, [filename]))
                 with self.assertRaisesRegex(ScanError, "unsafe archive path"):
                     with GameResources(self.root, {"cre": 1009}):
                         pass
-        (self.root / "chitin.key").write_bytes(key(self.records))
-        (self.root / "override" / "too-long-name.cre").write_bytes(b"creature")
-        with self.assertRaisesRegex(ScanError, "exceeds eight"):
-            with GameResources(self.root, {"cre": 1009}):
-                pass
+
+    def test_long_override_names_are_left_out(self) -> None:
+        # Mods keep WeiDU templates under names game data cannot use (SCS's
+        # dw#marker_file.itm); such a file must not shadow its first eight characters.
+        (self.root / "data" / "world.bif").write_bytes(biff([(17, 1009, b"CRE V1.0base")]))
+        (self.root / "chitin.key").write_bytes(key([("CHARBASE", 1009, 17)]))
+        (self.root / "override" / "charbase1.cre").write_bytes(b"CRE V1.0long")
+        (self.root / "override" / "dw#marker_file.itm").write_bytes(b"ITM template")
+        with GameResources(self.root, {"cre": 1009, "itm": 1005}) as game:
+            self.assertEqual((game.names("cre"), game.names("itm")), (["charbase"], []))
+            self.assertEqual(game.origin("cre", "charbase"), "biff")
+            self.assertEqual(game.read("cre", "charbase"), b"CRE V1.0base")
 
     def test_symlink_escape_is_rejected_without_platform_privileges(self) -> None:
         outside = self.root.parent / "outside.cre"
