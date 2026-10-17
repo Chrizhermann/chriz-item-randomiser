@@ -27,6 +27,7 @@ import inspect
 import json
 import os
 from pathlib import Path
+import shutil
 import sys
 import tempfile
 import threading
@@ -448,32 +449,36 @@ def main() -> int:
     arguments = parser.parse_args()
     common.require_built()
     scratch = Path(tempfile.mkdtemp(prefix="cir-parity-replay-"))
-    RUNNER = RustRunner(scratch)
-    track_patches()
-    register_pin_tables()
-    os.chdir(ROOT)
-    loader = unittest.TestLoader()
-    if arguments.names:
-        loader.testNamePatterns = [f"*{name}*" for name in arguments.names]
-    suite = loader.discover(str(ROOT / "tests"), pattern=arguments.pattern)
-    replaced = install_wrappers()
-    runner = unittest.TextTestRunner(verbosity=1, resultclass=TrackingResult)
-    result = runner.run(suite)
-    compared = sum(COMPARED.values())
-    print(f"\nparity: {compared} calls compared ({replaced} references wrapped), {len(MISMATCHES)} mismatches")
-    for call, count in sorted(COMPARED.items()):
-        print(f"  compared {count:5} {call}")
-    for reason, count in sorted(SKIPPED.items()):
-        print(f"  skipped  {count:5} {reason}")
-    for mismatch in MISMATCHES[:arguments.show]:
-        print(f"\nMISMATCH {mismatch['call']} in {mismatch['test']}")
-        for problem in mismatch["problems"][:6]:
-            print("  " + problem)
-    if arguments.report:
-        arguments.report.write_text(json.dumps(MISMATCHES, indent=2), encoding="utf-8")
-    ok = result.wasSuccessful() and not MISMATCHES and compared > 0
-    print("\nparity OK" if ok else "\nparity FAILED")
-    return 0 if ok else 1
+    try:
+        RUNNER = RustRunner(scratch)
+        track_patches()
+        register_pin_tables()
+        os.chdir(ROOT)
+        loader = unittest.TestLoader()
+        if arguments.names:
+            loader.testNamePatterns = [f"*{name}*" for name in arguments.names]
+        suite = loader.discover(str(ROOT / "tests"), pattern=arguments.pattern)
+        replaced = install_wrappers()
+        runner = unittest.TextTestRunner(verbosity=1, resultclass=TrackingResult)
+        result = runner.run(suite)
+        compared = sum(COMPARED.values())
+        print(f"\nparity: {compared} calls compared ({replaced} references wrapped), {len(MISMATCHES)} mismatches")
+        for call, count in sorted(COMPARED.items()):
+            print(f"  compared {count:5} {call}")
+        for reason, count in sorted(SKIPPED.items()):
+            print(f"  skipped  {count:5} {reason}")
+        for mismatch in MISMATCHES[:arguments.show]:
+            print(f"\nMISMATCH {mismatch['call']} in {mismatch['test']}")
+            for problem in mismatch["problems"][:6]:
+                print("  " + problem)
+        if arguments.report:
+            arguments.report.write_text(json.dumps(MISMATCHES, indent=2), encoding="utf-8")
+        ok = result.wasSuccessful() and not MISMATCHES and compared > 0
+        print("\nparity OK" if ok else "\nparity FAILED")
+        return 0 if ok else 1
+    finally:
+        # The runner removes its files after each batch; the folder goes too.
+        shutil.rmtree(scratch, ignore_errors=True)
 
 
 if __name__ == "__main__":
