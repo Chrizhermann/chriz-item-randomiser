@@ -195,14 +195,14 @@ what the published 8.1.1 asset contains (the configurator also reads `.tra` text
 its authored line endings). `.gitattributes`, symlinks and submodules are refused rather
 than guessed. `--verify` rebuilds and compares an existing ZIP byte for byte.
 
-Built from `f4a9dfb` with the 8.1.1 file list, the 662 files match the published 8.1.1
-asset byte for byte; only the ZIP container differs. The package built from `ce10fda`
-has 711 files, 8,360,947 bytes uncompressed, a largest entry of 1,472,788 bytes
-(`languages/iconv/libiconv-1.9.2-1-src.7z`), a maximum compression ratio of 14.8, a
-path depth of five and one TP2 (`randomiser/randomiser.tp2`). That is within the
-archive limits CEBG uses for the 8.1.1 asset (1,024 entries, 4 MiB per entry, 16 MiB in
-total, ratio 100, depth 8). Its name still says 8.1.1 because `VERSION` is unchanged; it
-must not be published until the version is decided.
+The builder was checked against the published 8.1.1 asset: built from `f4a9dfb` with the
+8.1.1 file list, the 662 files match it byte for byte; only the ZIP container differs.
+The CIR package built from `c80c17e` (`cir-v1.0.0.zip`) has 92 files, 3,924,122 bytes
+uncompressed, a largest entry of 1,472,788 bytes
+(`languages/iconv/libiconv-1.9.2-1-src.7z`), a maximum compression ratio of 11.9, a
+path depth of five and one TP2 (`cir/cir.tp2`). That is within the archive limits CEBG
+uses for the 8.1.1 asset (1,024 entries, 4 MiB per entry, 16 MiB in total, ratio 100,
+depth 8). `VERSION` 1.0.0 stands until the first release; nothing is published.
 
 ## What CEBG needs
 
