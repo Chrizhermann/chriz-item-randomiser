@@ -1,5 +1,6 @@
 """Focused Lua checks for the experimental shop bridge; no game is opened."""
 from pathlib import Path
+import sys
 import unittest
 
 from lupa.lua51 import LuaRuntime as Lua51
@@ -8,11 +9,14 @@ from lupa.luajit21 import LuaRuntime as LuaJIT21
 
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "tests"))
+from engine_sites import ENGINE_LUA, load  # noqa: E402
+
 SHOP = (ROOT / "prototype" / "FLPRShop.lua").read_text(encoding="utf-8")
-CASES = r'''
+CASES = ENGINE_LUA + r'''
 local cases = {}
 local function setup()
-    local f = {base=0x100000, buffer=0x200000, network=0x300000,
+    local f = {base=0x100000, buffer=0x200000,
         bytes={}, globals={}, hooks={}, calls={}, action_mode='success'}
     local function write(address, value, size)
         for i=0,size-1 do
@@ -25,26 +29,19 @@ local function setup()
         for i=size-1,0,-1 do value=value*256+(f.bytes[address+i] or 0) end
         return value
     end
-    for _,site in ipairs({
-        {0x28CA79,'e8e22cfcff'}, {0x28CA7E,'488d8c2470010000'},
-        {0x24FB9A,'488d4f108bf0'}, {0x24F860,'488bd3488d8ea0000000'},
-        {0x24F487,'0f8582000000'}, {0x2E7E00,'6639421c490f44f9'},
-    }) do
-        local offset=0
-        for byte in site[2]:gmatch('%x%x') do
-            write(f.base+site[1]+offset,tonumber(byte,16),1)
-            offset=offset+1
-        end
-    end
     f.read=read
     local api={}
-    api.EEex_GetImageBase=function() return f.base end
+    engine_image(api,f.base,function(address,byte) write(address,byte,1) end)
     api.EEex_Malloc=function() return f.buffer end
     api.EEex_Write8=function(address,value) write(address,value,1) end
     api.EEex_Write16=function(address,value) write(address,value,2) end
     api.EEex_Write32=function(address,value) write(address,value,4) end
     api.EEex_Write64=function(address,value) write(address,value,8) end
     api.EEex_ReadU8=function(address) return read(address,1) end
+    api.EEex_Read32=function(address)
+        local value=read(address,4)
+        return value>=2147483648 and value-4294967296 or value
+    end
     api.EEex_ReadU64=function(address) return read(address,8) end
     api.EEex_FlattenTable=function(parts) return parts end
     api.EEex_GenLuaCall=function() return 'call fixture' end
@@ -71,8 +68,7 @@ local function setup()
         write(f.buffer+48,f.action_mode=='collision' and 4 or 3,8)
     end
     f.sprite={id=7}
-    write(f.base+0x665098,f.network,8)
-    write(f.network+0x2C9,0,1)
+    api.EngineGlobals={g_pBaldurChitin={cNetwork={m_bConnectionEstablished=0}}}
     f.api=api
     f.source_id='are:area/container/0/item/0'
     f.target_id='sto:shop'
@@ -198,6 +194,29 @@ function cases.failed_or_unproven_delivery_does_not_activate(Shop)
         assert(shop.last_delivery==nil and f.globals.FLPR_P0007==nil)
     end
 end
+
+function cases.network_session_or_unknown_state_never_delivers(Shop)
+    for _,state in ipairs({1,true,'unbound'}) do
+        local f=setup()
+        local shop=Shop.install(f.api);shop:bind(f.fixture,f.controller)
+        if state=='unbound' then f.api.EngineGlobals.g_pBaldurChitin.cNetwork=nil
+        else f.api.EngineGlobals.g_pBaldurChitin.cNetwork.m_bConnectionEstablished=state end
+        local ok,reason=shop:deliver(f.fixture.targets[f.target_id],f.payload,7)
+        assert(ok==nil and reason=='SHOP_MULTIPLAYER_UNSUPPORTED' and #f.calls==0)
+        assert(f.read(f.buffer,8)==0 and f.read(shop.by_unit[7].address+24,8)==0)
+    end
+    local f=setup();f.api.EngineGlobals.g_pBaldurChitin.cNetwork.m_bConnectionEstablished=false
+    local shop=Shop.install(f.api);shop:bind(f.fixture,f.controller)
+    assert(shop:deliver(f.fixture.targets[f.target_id],f.payload,7) and #f.calls==1)
+end
+
+function cases.unmatched_location_stops_before_any_change(Shop)
+    local f=setup()
+    f.api.FLPR_ENGINE_SITES.offsets.shop_merge={}
+    local ok,why=pcall(Shop.install,f.api)
+    assert(not ok and why=='SHOP_CODE_MISMATCH:shop_merge:not-found',why)
+    assert(next(f.hooks)==nil and f.read(f.buffer,8)==0)
+end
 return cases
 '''
 
@@ -208,7 +227,7 @@ CASE_NAMES = sorted(Lua51().execute(CASES).keys())
 def make_case(name):
     def run(self):
         lua = self.runtime(unpack_returned_tuples=True)
-        lua.execute(CASES)[name](lua.execute(SHOP))
+        lua.execute(CASES)[name](load(lua, SHOP))
     return run
 
 

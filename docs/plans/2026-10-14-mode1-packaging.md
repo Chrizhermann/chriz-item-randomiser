@@ -45,9 +45,17 @@ stay with Item Randomiser: in its 8.1.1 release and tag and in this repository's
 The randomiser is `DESIGNATED 0`, `LABEL ~cir-randomiser~`, no prompts; the optional
 tweaks follow below. Preconditions of the randomiser, each with its reason:
 
-- `GAME_IS ~eet~`. The runtime captures a campaign only on a BG1 New Game, and its
-  native source gate checks code bytes of the BG2:EE 2.6.6.0 executable. EET is the
-  platform with both; all native evidence is EET on BG2:EE 2.6.6 with EEex 1.2.
+- `GAME_IS ~bgee bg2ee eet~`: BG:EE (with or without Siege of Dragonspear), BG2:EE and
+  EET (see "Campaign starts"); the classic games have no EEex. All in-game evidence so
+  far is EET on BG2:EE 2.6.6 with EEex 1.2. The native hooks themselves are found in
+  the running executable (see "Engine versions").
+- No unmerged DLC (@101506): a non-empty `sod-dlc.zip` in the game folder or a non-empty
+  ZIP file in `dlc/`. The engine loads such an archive on top of the game's own files;
+  WeiDU 249 does not read it, so the patched `UI.MENU` and `BALDUR.GAM` would come from
+  the game's own copies and hide the DLC's (Siege of Dragonspear's start menus and its
+  campaign). DLC Merger leaves an empty `sod-dlc.zip` behind, which passes. WeiDU cannot
+  look inside a ZIP file, so other ZIP files in the game folder (downloaded mods) and
+  DLC in the user folder (`home:/dlc`) are not checked.
 - EEex present (`override/M___EEex.lua`, present in every EEex version).
 - LuaJIT active (exactly one `LuaPatchMode=REPLACE_INTERNAL_WITH_EXTERNAL` line in
   `InfinityLoader.ini`): the runtime uses the `io` and `os` libraries. Checked in the
@@ -73,28 +81,33 @@ Actions:
    reference, so the messages appear in the installation language. Polish falls back to
    English until translated.
 3. Patch `UI.MENU`: every `startEngine:OnNewGameButtonClick(` becomes
-   `FLPRUI_NewGame(` and every `createCharScreen:AcceptCharacter(` becomes
-   `FLPRUI_AcceptCharacter(`. At least one of each must exist; any other call shape of
-   either function fails the install, because an unhooked path would start an
-   unrandomised campaign silently. A `UI.MENU` that already calls `FLPRUI_` functions
-   also fails: an uninstall would restore those calls without the adapter. So does one
-   that defines either method (`function startEngine:OnNewGameButtonClick(`, with any
-   whitespace after `function`): the patch would rename the definition into a global
-   `FLPRUI_` function that replaces the adapter. Multiplayer
-   `connectionScreen:OnNewGameButtonClick` is left alone. Verified call shapes: the
-   reference EET `UI.MENU`, LeUI 4.9.1, Infinity UI 1.17 and the EEUITweaks 4.0.7
-   chargen fragments.
+   `FLPRUI_NewGame(`, every `startEngine:OnImportCharacterButtonClick(` becomes
+   `FLPRUI_ImportCharacter(` and every `createCharScreen:AcceptCharacter(` becomes
+   `FLPRUI_AcceptCharacter(`. New Game and character acceptance must exist at least
+   once; the import is optional (a UI without an import button starts no game that
+   way). Any other call shape of the three fails the install, because an unhooked path
+   would start an unrandomised campaign silently. A `UI.MENU` that already calls
+   `FLPRUI_` functions also fails: an uninstall would restore those calls without the
+   adapter. So does one that defines a hooked method (`function
+   startEngine:OnNewGameButtonClick(`, with any whitespace after `function`): the patch
+   would rename the definition into a global `FLPRUI_` function that replaces the
+   adapter. Multiplayer `connectionScreen:OnNewGameButtonClick` and character creation's
+   own `createCharScreen:OnImportCharacterButtonClick` (a character for a game already
+   begun) are left alone. Verified call shapes: the reference EET `UI.MENU`, LeUI 4.9.1,
+   Infinity UI 1.17 and the EEUITweaks 4.0.7 chargen fragments.
 4. Add the GLOBAL `FLPR_FRESH = 1` to the `BALDUR.GAM` new-game template by moving its
    variable table to the end of the file and appending the marker. This is the exact
    layout the native fixture used in every live test. An existing `FLPR_FRESH = 1` is
-   accepted unchanged; another value or a duplicate fails. EET's SoA, tutorial and
-   Black Pits starts share this template; the runtime only captures BG1 starts, so the
-   marker stays inert there.
+   accepted unchanged; another value or a duplicate fails. Every start of the game
+   (each campaign, the tutorial, the Black Pits) shares this template; the runtime
+   captures only a start that the applied configuration names, so the marker stays inert
+   in the others.
 5. Write `override/flrandomiser3.mrk`.
 
 Until a configuration is applied (`randomiser-campaigns/next.lua` absent), the adapter
-passes New Game and character acceptance straight to the engine: games start
-unrandomised, as before. Once applied, New Game goes through `FLPR.NewGame`. Whenever the
+passes New Game, character import and character acceptance straight to the engine: games
+start unrandomised, as before. Once applied, New Game and character import go through
+`FLPR.NewGame` and `FLPR.ImportCharacter` (see "Campaign starts"). Whenever the
 new adventure cannot be randomised, the engine's two-button popup says why and offers
 "Start without randomiser" or Cancel; an adventure never starts unrandomised silently
 (see "Player messages"). The adapter detects the
@@ -196,6 +209,68 @@ applied `randomiser-campaigns/next.lua`;
 so does WeiDU's temporary uninstall and re-install of CIR behind a reinstalled earlier
 mod.
 
+## Campaign starts
+
+The configurator identifies the game as WeiDU's `GAME_IS` does
+(`tools/flir_config/platform.py`): EET by `override/EET.flag`, BG2:EE by `OH6000.ARE`,
+BG:EE by `OH1000.ARE`. It refuses any other game, as the installer does. It offers the
+presets whose tables the game has (the BG1 presets on BG:EE, the BG2 ones on BG2:EE,
+all on EET) and recommends that game's `-original` preset. BG:EE and BG2:EE keep the
+`BGEE.LUA` journal table in their archives, EET in `override`; the export reads either.
+
+At New Game or character import `M_FLPR.lua` reads the start the engine selected: the
+campaign name when `startEngine:GetCampaign()` is 3 (`CInfGame`'s `m_sCurrentCampaign`),
+else the Black Pits, the tutorial or Throne of Bhaal by their flags, else the game's
+main campaign. It looks that start up in `randomiser-campaigns/next.lua`, which returns
+this table (written with every string escaped byte by byte):
+
+```lua
+{main="BG1", schema="flir-next-v2", starts={BG1="<revision>", SOD="<revision>"}}
+```
+
+| Game | Starts with a revision | `main` (the start without a campaign row) |
+| --- | --- | --- |
+| EET | BG1, SOD, SOA, TOB (all `CAMPAIGN.2DA` rows) | none |
+| BG:EE | BG1, SOD (a row) | BG1 |
+| BG2:EE | SOA, TOB (by its flag) | SOA |
+
+A start without a revision (the Black Pits, the tutorial, a start the configuration
+reaches nothing in) asks before it starts unrandomised (@1702). A pointer written
+before campaign starts were configurable holds one revision, which the runtime reads as
+a BG1 start. New Game records the start and character creation's mode
+(`createCharScreen:GetEngineState()`: 1 New Game, 7 import); character acceptance that
+another start or mode reached (the tutorial, pre-generating a character, party creation)
+after a cancelled New Game does not capture.
+
+Apply writes one revision for each start (`tools/flir_config/starts.py`). The start that
+reaches the whole game keeps the whole configuration; a later start keeps only the
+rewards and places it reaches:
+
+| Game | Start | Reaches |
+| --- | --- | --- |
+| EET | BG1 | everything |
+| EET | SOD | Siege of Dragonspear, Shadows of Amn, Watcher's Keep, Throne of Bhaal |
+| EET | SOA | Shadows of Amn, Watcher's Keep, Throne of Bhaal |
+| EET | TOB | Watcher's Keep, Throne of Bhaal |
+| BG:EE | BG1 | everything |
+| BG:EE | SOD | Siege of Dragonspear |
+| BG2:EE | SOA | everything |
+| BG2:EE | TOB | Watcher's Keep, Throne of Bhaal |
+
+An area tells its part by its name. On EET `BG####` and BG:EE's own `OH` areas belong
+to BG1, `BD####` to SoD, `AR30##` to Watcher's Keep, `AR4000`-`AR6999` to ToB and other
+`AR` and `OH` areas to SoA. On BG:EE `AR` and `OH` areas belong to BG1 and `BD` to SoD;
+on BG2:EE the BG2 rules apply and `BG` and `BD` names are unknown. A creature template
+is where the areas that place it are. Any other record (a shop, a script, a
+conversation, an added item) is where the Item Randomiser table that lists it puts it:
+BG1, or all of BG2, so a ToB start leaves BG2's shops and scripts as they are. A record
+whose part is unknown stays out of later starts. What remains is checked as the whole
+configuration is: a reward whose tier has no place left (without tiers, rewards beyond
+the places' capacity) and a row the runtime check names are left out too. A reward left
+out stays as the game has it; nothing is put where the start cannot go. A start with
+nothing left gets no revision. Apply's message names the randomised starts and why
+any other is not.
+
 ## Player messages
 
 Texts are `in-game.tra` @1700-@1706 (see Installation, step 2); `M_FLPRUI.lua` keeps the
@@ -205,9 +280,9 @@ English text as a fallback. Failure details go to `randomiser-campaigns/last-err
 | Situation | What the player sees |
 | --- | --- |
 | Configuration applied, game started without InfinityLoader/EEex | New Game popup: not running, start with `InfinityLoader.exe` |
-| The runtime could not start (a native hook found other engine code) | New Game popup: this game version is not supported yet |
+| The runtime could not start (a native hook location was not found exactly once, its code differs, or the executable could not be read) | New Game popup: this game version is not supported yet |
 | The runtime could not start (missing or damaged configuration files, or Item Randomiser's Mode 1 or Mode 2 installed after CIR) | New Game popup: could not randomise this adventure |
-| A New Game outside BG1 (SoD, SoA, ToB, Black Pits starts) | New Game popup: only BG1 starts so far |
+| A New Game or character import of a start the applied settings have no revision for (Black Pits, tutorial, a start they reach nothing in) | New Game popup: the settings have nothing to randomise in this campaign |
 | Capture fails at character acceptance (for example a later mod replaced `BALDUR.GAM`) | Popup: could not randomise; Cancel keeps character creation open for a retry |
 | Capture succeeded | Message log, once, when the world first appears: items are randomised |
 | The runtime stops in a randomised adventure, or one is loaded while it cannot run | Message log, once per loaded game: stopped working, unplaced items may be missing |
@@ -222,10 +297,33 @@ similarly short.
 ## EEex dependency
 
 Required: EEex with LuaJIT (CEBG's `feature:eeex:mandatory-components`, EEex v1.2
-components 0-8). Tested: EEex 1.2 on BG2:EE 2.6.6.0 only. EEex v0.11's Lua sources do
-not define `EEex_GetImageBase`, which the source gate calls; the installer does not
-refuse v0.11 because no minimum version has been established, and the runtime fails
-closed when an API or the executable's code bytes do not match.
+components 0-8). Tested in game: EEex 1.2 on BG2:EE 2.6.6.0 only. EEex v0.11's Lua
+sources do not define `EEex_GetImageBase`, which the hook search calls; the installer
+does not refuse v0.11 because no minimum version has been established, and the runtime
+fails closed when an API or the executable's code does not match.
+
+## Engine versions
+
+`prototype/FLPRSite.lua` holds every native hook location as a byte pattern ("??" for
+call targets and addresses that move between builds) plus the bytes the hook expects.
+Once per session it reads the executable InfinityLoader started (`Baldur.exe`, else the
+loader's other `ExeNames`), confirms its PE headers are the ones mapped in memory,
+searches the code section (about 0.1 s) and keeps the result in
+`FLPR_ENGINE_SITES`. A location is used only when its pattern occurs exactly once and
+the bytes at the hook are unchanged in memory (no other mod hooked the same
+instructions); call targets and RIP-relative globals are taken from that code, and
+struct offsets are checked against EEex's bindings (`EEex_OffsetOf`). Anything else
+stops the runtime with `<PREFIX>_CODE_MISMATCH:<location>:<reason>` and the "not
+supported yet" popup; the game and EEex keep running.
+
+EEex's `extra_pattern_dbs` are not used on purpose: InfinityLoader treats a pattern it
+cannot find in any of those files as an initialisation failure and then does not start
+EEex at all, so an unknown executable would break every EEex mod.
+
+`tools/engine_patterns.py <Baldur.exe> ...` checks the same patterns offline. Every
+location matches exactly once with the expected bytes in BG:EE and BG2:EE 2.6.6.0 and
+2.7.3.0 (Steam builds and the CEBG reference game); BG:EE and BG2:EE share the code
+layout within a version. Checking a new game version starts there.
 
 ## Relation to Item Randomiser
 
@@ -271,7 +369,8 @@ depth 8). `VERSION` 1.0.0 stands until the first release; nothing is published.
 
 - A new mod: component `0` of `cir/cir.tp2`, label `cir-randomiser`, language 0, no
   prompts; its own release asset with SHA-256 and length.
-- Requires EET and `feature:eeex:mandatory-components`.
+- Requires `GAME_IS ~bgee bg2ee eet~` (CEBG's EET passes) and
+  `feature:eeex:mandatory-components`.
 - Excludes Item Randomiser 1100, 1200, 1300, 1400 and 560. Presets with CIR should drop
   Item Randomiser's 500-570, which would only be inert.
 - The tweaks of the default recipe from `cir.tp2` instead of 8.1.1: 9000, 10200, 10210
@@ -281,7 +380,8 @@ depth 8). `VERSION` 1.0.0 stands until the first release; nothing is published.
 - Order: after every component that writes `UI.MENU` or `BALDUR.GAM`; the end of the
   BG2 run is simplest. The installer cannot see later overwrites, so after the stack
   completes CEBG should check that `override/UI.MENU` contains `FLPRUI_NewGame(` and
-  `FLPRUI_AcceptCharacter(`, `override/BALDUR.GAM` contains `FLPR_FRESH`, and
+  `FLPRUI_AcceptCharacter(` (and `FLPRUI_ImportCharacter(` where the UI has a character
+  import button), `override/BALDUR.GAM` contains `FLPR_FRESH`, and
   `override/flrandomiser3.mrk` exists, and that no Item Randomiser Mode 1, Mode 2 or 560
   was installed after CIR.
 - A post-install step: scan, configure and apply with the game closed (needs B1).
@@ -291,12 +391,9 @@ depth 8). `VERSION` 1.0.0 stands until the first release; nothing is published.
 ## Blockers before a public release
 
 - **B1 Python.** The scanner, editor and exporter are Python 3.10+ (standard library
-  only). Players must not need Python. Options: (a) CEBG ships the pinned CPython
-  embeddable distribution and hosts the editor; standalone users still need Python;
-  (b) a frozen executable (PyInstaller or Nuitka; new build toolchain, antivirus false
-  positives); (c) port scan/export/apply to Rust inside CEBG (largest; standalone users
-  need CEBG); (d) an in-game EEex configuration screen (Lua port of the scanner and
-  exporter plus UI work).
+  only). Players must not need Python. Decided (2026-10-17): a CEBG version, and a
+  standalone version with its own executable written in Rust for everyone else; the
+  Rust configurator is being built in a separate session.
 - **B2 Uninstall after Apply.** Closed by decision (2026-10-15): a game that used the
   randomiser and then uninstalled it is not ours to keep working. The default
   configuration's quest and dialogue changes moved into the installer anyway (see
@@ -311,15 +408,19 @@ depth 8). `VERSION` 1.0.0 stands until the first release; nothing is published.
   `tools/lab/M_FLPRQA.lua` and `tools/lab/FLPRQA.lua`, which neither the TP2 nor the
   package contains; a lab stages both into `override`. The runtime exposes read-only
   `FLPR.Core` and `FLPR.Storage` for them. The data folder is now `randomiser-campaigns/`.
-- **B5 Coverage.** BG1 starts on EET only; direct SoD, BG2 and ToB starts are
-  unsupported, as is the remaining parity work listed above. BG:EE (with SoD) and BG2:EE
-  without EET must work before a release (decided 2026-10-14); the runtime has to tell
-  the platforms apart rather than assume EET.
-- **B6 Engine 2.7.3.0.** The native hooks are pinned to the BG2:EE 2.6.6.0 executable
-  (relative addresses and code bytes in `FLPRGat.lua` and `FLPRNat.lua`). The current
-  Steam BG:EE and BG2:EE and the CEBG reference game are 2.7.3.0, which EEex 1.2 also
-  supports. There the runtime refuses every New Game with the "not supported yet" popup.
-  Every native site needs a 2.7.3.0 port and an in-game check on that version.
+- **B5 Coverage.** Resolved offline (2026-10-18): CIR installs on BG:EE (with or
+  without Siege of Dragonspear, merged), BG2:EE and EET, and every campaign start gets
+  its own revision, also the direct SoD, SoA and ToB starts on EET (see "Campaign
+  starts"). Open: the in-game check on 2.7.3.0 with the first lab test: the import
+  starts (SoD on BG:EE, SoA on BG2:EE), the engine bindings the start detection uses
+  (`GetCampaign`, `m_sCurrentCampaign`, the mission-pack flags, `GetEngineState`), and
+  that the tutorial stays unrandomised. Not covered: a UI that starts a game through
+  `startEngine:OnPregenSelectButtonClick` (absent from the stock UIs) starts it
+  without asking.
+- **B6 Engine 2.7.3.0.** Ported (2026-10-18): the hooks no longer use fixed 2.6.6.0
+  addresses but find their locations in the running executable (see "Engine
+  versions"), verified offline on BG:EE and BG2:EE 2.6.6.0 and 2.7.3.0. Open: the
+  first in-game check on 2.7.3.0 (EET, BG:EE, BG2:EE).
 
 Resolved here: in the snapshot, 15 native host tests (five in each Lua runtime) failed
 in `M_FLPR.lua`'s campaign preparation, which reads each source's
@@ -341,7 +442,8 @@ Christopher decided on 2026-10-14:
 - **Distribution**: a standalone and a CEBG version; neither needs Python (B1).
 - **Default configuration**: the original Mode 1 "no items are lost" (1100) plus the Flail
   of Ages heads (540, `flail_heads`) and the randomised Tales of the Sword Coast tome (500,
-  `totsc_tome`); every other option off. It is not an EET-only preset (B5).
+  `totsc_tome`); every other option off. It is not an EET-only preset: the configurator
+  recommends each game's own (`bg1-original`, `bg2-original`, `eet-original`).
 - **Mode 2 routes** are built in this mod.
 
 On 2026-10-15:
@@ -380,8 +482,11 @@ Open:
 
 ## Verification
 
-- `tests/Test-CampaignRuntimeInstaller.ps1` (WeiDU 249, synthetic EET games; 149 checks for the randomiser,
-  from the working tree and from the built ZIP with `-PackagePath`): install, uninstall,
+- `tests/Test-CampaignRuntimeInstaller.ps1` (WeiDU 249, synthetic EET, BG:EE and BG2:EE
+  games; 202 checks for the randomiser, from the working tree and from the built ZIP with
+  `-PackagePath`): BG:EE with a merged DLC, BG2:EE, a UI without character import, the
+  refusals of another game, of unmerged DLC (in the game folder and in `dlc/`) and of
+  unhookable import calls, install, uninstall,
   re-install, re-install over the installed component, uninstall and install in one run,
   re-install behind a reinstalled earlier mod (also from the install list alone),
   already-patched inputs, override-resident and archived `UI.MENU`/`BALDUR.GAM`, UI-mod
@@ -397,7 +502,7 @@ Open:
   structure, and files that give the reward twice or not at all, were already split,
   ask for another item, erase an unknown journal entry or hand over no flail head stay
   byte-identical, with the reason recorded and printed. No game resource is used.
-- The optional tweaks in the same suite (`tests/tweak_fixtures.py`; 26 of 175 checks):
+- The optional tweaks in the same suite (`tests/tweak_fixtures.py`; 26 of 228 checks):
   9000, 10100, 10210 and 10300 installed together on EET and on BG2:EE, with
   Cespenar's and the merchant's dialogues checked by structure (Cespenar's state 4 with
   another mod's recipe, the closing state first in trigger order, the merchant's state
@@ -420,11 +525,18 @@ Open:
 - `tests/test_runtime_ui_adapter.py`: adapter routing and the not-running popup in Lua 5.1,
   Lua 5.3 and LuaJIT; `tests/test_campaign_native_host.py`: atomic capture, every player
   message and its start/cancel choice, also when Item Randomiser's Mode 1 or Mode 2 was
-  installed after CIR; `tests/test_lab_qa_module.py`: the lab-only module.
+  installed after CIR, the revision each start picks from `next.lua` (old and new
+  pointers), the import start, and character acceptance reached by another start or
+  creation mode; `tests/test_lab_qa_module.py`: the lab-only module.
+- `tests/test_campaign_starts.py`: the game told apart as WeiDU does, presets per game,
+  area parts, and the revisions Apply writes for each start on EET, BG:EE and BG2:EE
+  (only reached rewards and places, a start short of places, starts with nothing left,
+  the exported `next.lua`).
 - `tests/test_runtime_activation.py`: the configurator accepts the installed runtime and
   refuses Item Randomiser's Mode 1, Mode 2 or 560 installed after CIR.
 - The full Python suite, with `keystone-engine` 0.9.2 and `unicorn` 2.1.4 from a local
-  test environment on `PYTHONPATH` and `FL_IR_TEST_TEMP_ROOT=%TEMP%\flir-t`: 1319 tests
+  test environment on `PYTHONPATH` and `FL_IR_TEST_TEMP_ROOT=%TEMP%\flir-t`: 1372 tests
   pass; 2 skip because optional lab caches and evidence are not in the source tree.
 - Not verified: any in-game behavior of the TP2-installed runtime, the adapter in the
-  engine's own Lua, UI mods in a running game and EEex versions other than 1.2.
+  engine's own Lua, UI mods in a running game, EEex versions other than 1.2, and
+  anything on BG:EE or BG2:EE or in a start other than BG1.

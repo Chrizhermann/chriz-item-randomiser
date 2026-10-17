@@ -22,7 +22,8 @@ calls = {}
 local function method(name)
     return function(self, ...) calls[#calls + 1] = {name, ...}; return name end
 end
-startEngine = {OnNewGameButtonClick = method("engine:new-game")}
+startEngine = {OnNewGameButtonClick = method("engine:new-game"),
+    OnImportCharacterButtonClick = method("engine:import")}
 createCharScreen = {AcceptCharacter = method("engine:accept")}
 -- util.lua's popup and the string table it reads.
 uiStrings = {CANCEL_BUTTON = "Cancel"}
@@ -35,6 +36,7 @@ end
 RUNTIME = r'''
 FLPR = {
     NewGame = function(...) calls[#calls + 1] = {"runtime:new-game", ...}; return "runtime:new-game" end,
+    ImportCharacter = function(...) calls[#calls + 1] = {"runtime:import", ...}; return "runtime:import" end,
     AcceptCharacter = function(...) calls[#calls + 1] = {"runtime:accept", ...}; return "runtime:accept" end,
 }
 '''
@@ -93,6 +95,27 @@ class UiAdapterTests(unittest.TestCase):
                 lua.eval("FLPRUI_AcceptCharacter(currentDifficulty)")
                 self.assertEqual(self.calls(lua)[-1], ("runtime:accept",))
 
+    def test_character_import_takes_the_new_game_route(self):
+        for name, module in RUNTIMES:
+            with self.subTest(name, configured=False):
+                lua = self.lua(module, runtime=True)
+                self.assertEqual(lua.eval("FLPRUI_ImportCharacter()"), "engine:import")
+                self.assertEqual(self.calls(lua), [("engine:import",)])
+        self.configure()
+        for name, module in RUNTIMES:
+            with self.subTest(name, configured=True):
+                lua = self.lua(module, runtime=True)
+                self.assertEqual(lua.eval("FLPRUI_ImportCharacter()"), "runtime:import")
+                self.assertEqual(self.calls(lua), [("runtime:import",)])
+                # Without the runtime it asks first; the start choice imports unrandomised.
+                lua = self.lua(module)
+                self.assertIsNone(lua.execute("return FLPRUI_ImportCharacter(3)"))
+                self.assertEqual(self.calls(lua), [])
+                shown = lua.globals().popups[1]
+                self.assertEqual(shown.text, lua.eval('FLPRUI_Text("not_running")'))
+                shown.start()
+                self.assertEqual(self.calls(lua), [("engine:import", 3)])
+
     def asks_before_starting_unrandomised(self, lua):
         """New Game shows the not-running popup; only its start choice reaches the engine."""
         self.assertIsNone(lua.eval("FLPRUI_NewGame()"))
@@ -148,7 +171,7 @@ class UiAdapterTests(unittest.TestCase):
                 # Empty or invalid references, and keys without one, keep English.
                 self.assertEqual(lua.eval('FLPRUI_Text("ready")'), "Chriz Item Randomiser: this adventure's items are randomised.")
                 self.assertIn("stopped working", lua.eval('FLPRUI_Text("stopped")'))
-                self.assertIn("Baldur's Gate (BG1)", lua.eval('FLPRUI_Text("other_campaign")'))
+                self.assertIn("nothing to randomise in this campaign", lua.eval('FLPRUI_Text("other_campaign")'))
                 lua.execute("Infinity_FetchString = nil")
                 self.assertEqual(lua.eval('FLPRUI_Text("not_running")'), english)
 

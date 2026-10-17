@@ -1,11 +1,13 @@
 -- Installed by cir.tp2, which points UI.MENU's
--- startEngine:OnNewGameButtonClick() and createCharScreen:AcceptCharacter()
--- calls here. Loaded by the engine itself, also without EEex.
--- Without an applied configuration (randomiser-campaigns/next.lua) both calls
--- go straight to the engine. With one, New Game runs through the campaign
--- runtime (M_FLPR.lua, which EEex loads). Whenever a new adventure cannot be
--- randomised, the player is told why and chooses between starting it without
--- randomised items and cancelling; it never starts unrandomised silently.
+-- startEngine:OnNewGameButtonClick(), startEngine:OnImportCharacterButtonClick()
+-- and createCharScreen:AcceptCharacter() calls here. Loaded by the engine
+-- itself, also without EEex.
+-- Without an applied configuration (randomiser-campaigns/next.lua) the calls
+-- go straight to the engine. With one, New Game and character import run
+-- through the campaign runtime (M_FLPR.lua, which EEex loads). Whenever a new
+-- adventure cannot be randomised, the player is told why and chooses between
+-- starting it without randomised items and cancelling; it never starts
+-- unrandomised silently.
 local NEXT = "randomiser-campaigns/next.lua"
 
 -- English fallbacks (languages/english/in-game.tra @1700-@1706). The installed
@@ -16,7 +18,7 @@ local FALLBACK = {
         .. "Start the game with InfinityLoader.exe to randomise this adventure.",
     unsupported = "Chriz Item Randomiser does not support this game version yet. "
         .. "Details: randomiser-campaigns\\last-error.txt",
-    other_campaign = "Chriz Item Randomiser can only randomise adventures that start in Baldur's Gate (BG1) so far.",
+    other_campaign = "Chriz Item Randomiser's settings have nothing to randomise in this campaign.",
     setup_failed = "Chriz Item Randomiser could not randomise this adventure. "
         .. "Details: randomiser-campaigns\\last-error.txt",
     start_plain = "Start without randomiser",
@@ -76,6 +78,18 @@ function FLPRUI_NewGame(...)
         end)
     end
     return new_game(...)
+end
+
+function FLPRUI_ImportCharacter(...)
+    if not configured() then return startEngine:OnImportCharacterButtonClick(...) end
+    local import = runtime("ImportCharacter")
+    if not import then
+        local arguments = { ... }
+        return FLPRUI_Ask("not_running", function()
+            startEngine:OnImportCharacterButtonClick((unpack or table.unpack)(arguments))
+        end)
+    end
+    return import(...)
 end
 
 function FLPRUI_AcceptCharacter(...)

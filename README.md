@@ -20,7 +20,11 @@ CIR is in development and has no release yet.
 
 ## Requirements
 
-- Baldur's Gate: Enhanced Edition Trilogy (EET). Other games are planned.
+- Baldur's Gate: Enhanced Edition, Baldur's Gate II: Enhanced Edition or the Enhanced
+  Edition Trilogy (EET). Siege of Dragonspear, where a store installed it as a DLC
+  archive (`sod-dlc.zip`), must be merged into the game first, for example with DLC
+  Merger.
+- Game version 2.7.3.0 or 2.6.6.0, the versions EEex 1.2 supports.
 - EEex with its LuaJIT component; start the game with `InfinityLoader.exe`.
 
 ## Installation
@@ -50,7 +54,10 @@ python tools/build_release.py --commit HEAD --out <directory>
 python tools/build_release.py --commit <commit> --verify <zip>
 ```
 
-Use a disposable EET installation with its own profile for game tests. Tests should
+`python tools/engine_patterns.py <Baldur.exe>` checks whether the runtime finds all
+its engine hook locations in a game executable, for example a new game version.
+
+Use a disposable game installation (EET, BG:EE or BG2:EE) with its own profile for game tests. Tests should
 cover mod behaviour and reproduced bugs. See [tests/README.md](tests/README.md) for
 the test commands.
 

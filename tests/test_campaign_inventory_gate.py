@@ -8,6 +8,7 @@ from lupa.lua53 import LuaRuntime as Lua53
 from lupa.luajit21 import LuaRuntime as LuaJIT
 
 from tests.test_campaign_gate_bridge import CASES, CORE, GATE, POLICY, BUILD
+from tests.engine_sites import load
 from tests.test_campaign_inventory_assembly import BUFFER, EXPECTED, OUTPUT, run
 from tests.test_postinstall_world_formats import item_record, make_cre, make_sto
 from flir_config.creature_inventory import rewrite_inventory as rewrite_cre
@@ -52,13 +53,6 @@ return function(f, Gate, build, compile, Inventory)
         end
         bundles[#bundles+1]={manifest=manifest,fixture=fixture}
     end
-    for _,site in ipairs({
-        {0x250765,'0f1047080f114308'},{0x405295,'c6435001498bcf'},
-        {0x250967,'4c8b742448'},{0x341220,'48895c24185556574154415541564157'}}) do
-        local bytes={}
-        for hex in site[2]:gmatch('%x%x') do bytes[#bytes+1]=string.char(tonumber(hex,16)) end
-        f:pokestring(0x140000000+site[1],table.concat(bytes))
-    end
     f.gate=Gate.install(f.api,bundles,build,compile,f.pristine,nil,function(group)
         f.inventory_groups[#f.inventory_groups+1]=group
         return Inventory(group)
@@ -95,8 +89,9 @@ end
 class InventoryGateTests(unittest.TestCase):
     def setup_gate(self, runtime):
         lua = runtime(unpack_returned_tuples=True)
-        core, gate, build, compile_policy, inventory = (
-            lua.execute(value) for value in (CORE, GATE, BUILD, POLICY, INVENTORY))
+        core, build, compile_policy, inventory = (
+            lua.execute(value) for value in (CORE, BUILD, POLICY, INVENTORY))
+        gate = load(lua, GATE)
         factory = lua.execute(CASES.replace('return cases', 'return fixture'))
         f = factory(core)
         cre = bytes(make_cre([item_record(f'ITEM000{i}', expiration=0, charges=(0, 0, 0), flags=1)

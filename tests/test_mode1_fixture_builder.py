@@ -105,7 +105,7 @@ return function(Core, Host, Native, manifest, fixture)
         native=function(value) return Native.new(api, value) end,
         world=function() return true end, tick=function() return f.tick end,
         report=function(status, reason) f.reports[#f.reports + 1] = tostring(status) .. ":" .. tostring(reason) end})
-    assert(host:capture_new("confirmed-bg1-character-accept"))
+    assert(host:capture_new("confirmed-character-accept"))
     for _ = 1, 200 do
         f.tick = f.tick + 1; host:poll(); update()
         if host.status == "complete" or host.status == "disabled" then break end

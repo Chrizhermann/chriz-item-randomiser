@@ -7,6 +7,7 @@ from pathlib import Path
 from functools import lru_cache
 import re
 import struct
+import sys
 import unittest
 
 from keystone import Ks, KS_ARCH_X86, KS_MODE_64
@@ -22,9 +23,12 @@ from unicorn.x86_const import (
 
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / 'tests'))
+from engine_sites import GATE_TARGETS_266, gate_targets  # noqa: E402
+
 BUFFER = 0x300000
 IMAGE = 0x10000000
-SKIP = IMAGE + 0x1906FC
+SKIP = IMAGE + GATE_TARGETS_266['container_skip']
 INPUT = 0x500000
 AREA = 0x600000
 OWNER = 0x601000
@@ -45,7 +49,7 @@ def generated():
         lua = runtime(unpack_returned_tuples=True)
         lua.globals().factory_path = path
         factory = lua.execute("return assert(loadfile(factory_path))()")
-        table = factory(BUFFER, IMAGE)
+        table = factory(BUFFER, gate_targets(lua, IMAGE))
         outputs.append({name: table[name] for name in CODES})
     assert outputs[0] == outputs[1] == outputs[2]
     return outputs[0]

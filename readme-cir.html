@@ -20,12 +20,12 @@
 <strong>Languages:</strong> English; Polish game texts where Item Randomiser has them.</p>
 
 <h2>Overview</h2>
-<p>Chriz Item Randomiser (CIR) shuffles where items are found in Baldur's Gate, anew for each adventure you start. It works while you play, through <abbr title="Enhanced Edition Extender">EEex</abbr>: each new adventure started in Baldur's Gate gets its own randomisation when its first character is accepted, and saves keep the randomisation they started with. You choose what is randomised in the configurator; changing those settings for the next adventure needs no reinstallation.</p>
+<p>Chriz Item Randomiser (CIR) shuffles where items are found in Baldur's Gate, anew for each adventure you start. It works while you play, through <abbr title="Enhanced Edition Extender">EEex</abbr>: each new adventure gets its own randomisation when its first character is accepted, and saves keep the randomisation they started with. You choose what is randomised in the configurator; changing those settings for the next adventure needs no reinstallation.</p>
 <p>CIR is a new mod built on Wisp's Item Randomiser. It reuses that mod's item and location lists, item files and texts, and it cannot be combined with Item Randomiser's own randomisation (Mode 1 or Mode 2) or its &ldquo;More Spell Shield scrolls&rdquo; component; the configurator offers that option for each adventure instead. If one of them is installed after CIR, the configurator does not apply settings, and with Mode 1 or Mode 2 new adventures start only without randomisation.</p>
 
 <h2>Requirements</h2>
 <ul>
-  <li>Baldur's Gate: Enhanced Edition Trilogy (EET). Other games are planned.</li>
+  <li>Baldur's Gate: Enhanced Edition, Baldur's Gate II: Enhanced Edition or the Enhanced Edition Trilogy (EET). If your store installed Siege of Dragonspear as a DLC archive (<code>sod-dlc.zip</code>), merge it into the game first, for example with DLC Merger; the installer stops and says so otherwise.</li>
   <li>EEex with its LuaJIT component. Start the game with <code>InfinityLoader.exe</code>.</li>
 </ul>
 <p>The optional components below need neither: they also install on Baldur's Gate II: Enhanced Edition, and the scroll component on Baldur's Gate: Enhanced Edition as well.</p>
@@ -45,8 +45,9 @@
 
 <h2>Configuration</h2>
 <p>Installing CIR changes nothing in play until a configuration is applied. After the whole mod stack is installed, close the game and use the configurator in <code>cir/tools</code> to scan the game and apply a configuration. The configurator currently requires Python 3.10 or later.</p>
-<p>A configuration can start from a preset: Item Randomiser's original lists (the default), or Boss Loot, aShuN's lists for Baldur's Gate 1, which put powerful items at difficult boss fights, the ability tomes on the main path and wizard items at mage enemies. In EET, Boss Loot changes the Baldur's Gate 1 part; Baldur's Gate II keeps the original lists.</p>
-<p>When a new adventure cannot be randomised (for example a start outside Baldur's Gate, or a game started without EEex), the game says why and lets you start it without the randomiser or cancel.</p>
+<p>A configuration can start from a preset: Item Randomiser's original lists (the default), or Boss Loot, aShuN's lists for Baldur's Gate 1, which put powerful items at difficult boss fights, the ability tomes on the main path and wizard items at mage enemies. In EET, Boss Loot changes the Baldur's Gate 1 part; Baldur's Gate II keeps the original lists. The configurator offers the presets your game has: those for Baldur's Gate 1 in BG:EE, those for Baldur's Gate II in BG2:EE, all of them in EET.</p>
+<p>Applied settings cover every campaign you can start: Baldur's Gate and Siege of Dragonspear in BG:EE, Shadows of Amn and Throne of Bhaal in BG2:EE, all four in EET. An adventure that starts later in the saga, such as a Throne of Bhaal start, randomises only the rewards and places it can reach; the others stay where the game puts them, so no item ends up where you cannot go. After applying, the configurator says which starts are randomised.</p>
+<p>When a new adventure cannot be randomised (for example the Black Pits, a start the settings have nothing for, or a game started without EEex), the game says why and lets you start it without the randomiser or cancel.</p>
 
 <h2>Uninstallation</h2>
 <p>Uninstalling CIR with WeiDU removes its runtime and its quest and conversation changes; each optional component is uninstalled on its own. Settings applied with the configurator are not recorded by WeiDU and stay in <code>randomiser-campaigns</code>. Adventures that were randomised may miss items after CIR is uninstalled.</p>

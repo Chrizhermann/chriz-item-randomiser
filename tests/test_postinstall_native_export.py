@@ -16,7 +16,7 @@ from flir_config.profiles import ProfileError, _digest, canonical_bytes, edit_pr
 from flir_config.resources import scan_game
 from flir_config.sources import new_binding_plan, scan_world
 from flir_config.world_formats import parse_cre, parse_sto
-from tests.test_postinstall_resources import make_game, make_itm, snapshot
+from tests.test_postinstall_resources import make_game, make_itm, mark_eet, snapshot
 from tests.test_postinstall_world_formats import item_record, make_are, make_cre, make_sto
 
 
@@ -27,6 +27,7 @@ class NativeExportTests(unittest.TestCase):
         self.root = Path(temp.name)
         self.game, self.store, self.output = (self.root / name for name in ("game", "campaigns", "randomiser-campaigns"))
         make_game(self.game, [("SYNTH001", make_itm()), ("SYNTH002", make_itm())])
+        mark_eet(self.game)
         self.override = self.game / "override"
         for name in ("synth001", "synth002"):
             item = bytearray(make_itm())

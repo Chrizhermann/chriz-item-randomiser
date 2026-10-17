@@ -17,6 +17,7 @@ from .profiles import (PROFILE_ID, ProfileError, ensure_output_outside_game,
 from .sources import new_binding_plan, validate_world
 from .prepared import applied, left_out
 from .scripted_sources import blpool_registration
+from .platform import PRESET_CAMPAIGN, PRESET_CAMPAIGNS, game_platform
 from .templates import list_templates, recommended_preset
 
 
@@ -148,10 +149,9 @@ class Editor:
         if route == "/api/state":
             return self.state()
         if route == "/api/templates":
-            return list_templates()
+            return list_templates(PRESET_CAMPAIGNS[game_platform(self.world)])
         if route == "/api/recommended":
-            # CIR installs only on EET so far; other games follow with B5.
-            preset = recommended_preset("eet")
+            preset = recommended_preset(PRESET_CAMPAIGN[game_platform(self.world)])
             # An option whose change the installer could not make is not offered.
             preset["unavailable"] = {}
             if not applied(self.world["game_root"], "flail_heads"):
@@ -247,13 +247,15 @@ class Editor:
             if not result["runtime_supported"]:
                 raise ProfileError(result["message"])
             store = ensure_output_outside_game(self.workspace / "prepared", self.catalog)
-            prepared = write_campaign(draft["profile"], self.catalog, self.world, draft["plan"], store)
             if route == "/api/apply":
                 from .activation import require_closed, deploy_export
                 from .native_export import export_native
+                from .starts import describe_starts, write_starts
                 require_closed(self.apply_game)
+                written = write_starts(draft["profile"], draft["plan"], self.catalog, self.world, store)
                 output = self.workspace / "native"
-                export_native(store, self.catalog, self.world, output, prepared["revision"])
+                export_native(store, self.catalog, self.world, output,
+                              starts=written["starts"], main=written["main"])
                 write_json(self.path(draft["profile"]["id"]), draft)
                 deploy_export(self.apply_game, output)
                 self.draft = draft
@@ -262,9 +264,11 @@ class Editor:
                 except OSError as exc:
                     raise ProfileError("Game settings were applied and saved, but the editor could not "
                                        "remember the selection for reopening: " + str(exc)) from exc
-                return {"revision": prepared["revision"], "game": str(self.apply_game),
-                        "message": "Saved and applied. Start a new BG1 campaign in the test game. "
-                                   "Each new game randomizes afresh; existing saves keep their settings."}
+                return {"revision": written["starts"][written["full"]], "starts": written["starts"],
+                        "game": str(self.apply_game),
+                        "message": "Saved and applied. " + describe_starts(written) +
+                                   " Each new game randomizes afresh; existing saves keep their settings."}
+            prepared = write_campaign(draft["profile"], self.catalog, self.world, draft["plan"], store)
             return {"revision": prepared["revision"], "store": str(store),
                     "message": "Test settings prepared. They can now be exported for the test game; "
                                "nothing was installed or activated."}

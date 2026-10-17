@@ -15,6 +15,7 @@ from .campaigns import OVERFLOW_TARGET_KINDS
 from .game_names import convert_resource
 from .original_catalog import resolve_template
 from .original_options import is_spell_shield_row, spell_shield_spec, tome_variants
+from .platform import preset_game
 from .original_registrations import (SHIPPED_REPLACEMENT, is_unreferenced_creature_source,
                                      target_record as original_target_record)
 from .mode2_rewards import SOURCE_REWARDS as MODE2_SOURCES, source_spec as mode2_source_spec
@@ -127,7 +128,8 @@ def build_original_configuration(catalog: dict, world: dict, template_id: str, *
     exclude = exclude or {}
     catalog_items = validate_catalog(catalog)
     index = validate_world(world, catalog)
-    draft = resolve_template(catalog, world, template_id,
+    game = preset_game(world, template_id)
+    draft = resolve_template(catalog, world, template_id, game=game,
                              items=items, targets=targets, options=options)
     if draft["options"].get("flail_heads") and not applied(world["game_root"], "flail_heads"):
         raise ProfileError("The flail heads option needs Glaicus's conversation as Chriz Item Randomiser "
@@ -238,7 +240,7 @@ def build_original_configuration(catalog: dict, world: dict, template_id: str, *
         if UNUSABLE_SOURCE.intersection(source["concerns"]):
             raise _NotUsable("source-record-unusable")
         if row["replacement"] != "blank":
-            replacement = convert_resource(row["replacement"], "itm", row["campaign"])
+            replacement = convert_resource(row["replacement"], "itm", row["campaign"], game)
             if (source["kind"] not in ("cre-template", "embedded-cre", "container")
                     or replacement == item):
                 raise _NotUsable("replacement-not-applicable")
@@ -287,7 +289,7 @@ def build_original_configuration(catalog: dict, world: dict, template_id: str, *
     if draft["options"].get("cursed_disguise"):
         log = Path(catalog["game_root"]) / "WeiDU.log"
         plan["cursed_disguises"] = cursed_disguise_spec(
-            {name: item["sha256"] for name, item in catalog_items.items()},
+            {name: item["sha256"] for name, item in catalog_items.items()}, game=game,
             item_revisions=item_revisions_installed(log.read_bytes() if log.exists() else b""))
     plan["target_registrations"] = []
     randomization = {"sources": {}, "targets": {},
@@ -344,7 +346,7 @@ def build_original_configuration(catalog: dict, world: dict, template_id: str, *
             "group": "" if row["ident"] == "x" else f"{row['campaign']}:{row['ident']}"}
         if (draft["options"].get("totsc_tome", False) and
                 row["campaign"] == "bg1" and row["ident"] == "b2c"):
-            randomization["sources"][identity]["reward_variants"] = tome_variants(row["campaign"])
+            randomization["sources"][identity]["reward_variants"] = tome_variants(row["campaign"], game)
     plan["registrations"].sort(key=lambda row: row["id"])
     plan["target_registrations"].sort(key=lambda row: row["id"])
     plan["targets"].sort(key=lambda row: row["id"])

@@ -72,6 +72,11 @@ def make_game(root: Path, resources: list[tuple[str, bytes]] | None = None) -> N
     (root / "dialog.tlk").write_bytes(make_tlk(["Blade", "Épée de test"]))
 
 
+def mark_eet(root: Path) -> None:
+    """Make a synthetic game EET, as WeiDU's GAME_IS tells it (override/EET.flag)."""
+    (root / "override" / "EET.flag").write_bytes(b"")
+
+
 def snapshot(root: Path) -> dict[str, str]:
     return {str(path.relative_to(root)): hashlib.sha256(path.read_bytes()).hexdigest()
             for path in root.rglob("*") if path.is_file()}

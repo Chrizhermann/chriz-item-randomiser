@@ -11,8 +11,9 @@ root.SeedSerial = root.SeedSerial or 0
 local DATA = "randomiser-campaigns/"
 root.DATA = DATA
 
-local function module(path)
-    return assert(loadfile(path))()
+-- Extra arguments reach the module chunk as `...` (the hook location table).
+local function module(path, ...)
+    return assert(loadfile(path))(...)
 end
 
 -- Player-facing text comes from M_FLPRUI.lua, installed with this file.
@@ -33,8 +34,9 @@ local function record(context, reason)
     end
 end
 
--- Every native hook checks the engine's code before patching it, so a code
--- mismatch means an engine build this runtime does not support yet.
+-- Every native hook location is found in the running executable and its code
+-- checked before patching (FLPRSite.lua), so a code mismatch means the runtime
+-- could not find or confirm its hooks in this game's engine.
 local function failure_message(reason)
     return tostring(reason):find("CODE_MISMATCH", 1, true) and "unsupported" or "setup_failed"
 end
@@ -59,6 +61,7 @@ local ok, failure = pcall(function()
         end
     end
     local Core = module("override/FLPRCore.lua")
+    local Site = module("override/FLPRSite.lua")
     local Globals = module("override/FLPRGlob.lua")
     local Native = module("override/FLPRNat.lua")
     local Host = module("override/FLPRHost.lua")
@@ -95,7 +98,7 @@ local ok, failure = pcall(function()
             count=count+1
         end
         assert(count==#revisions,"SOURCE_GATE_REVISIONS_INVALID")
-        local Gate = module("override/FLPRGat.lua")
+        local Gate = module("override/FLPRGat.lua", Site)
         local bundles,seen,pristine={},{},{creatures={},stores={},scripts={},templates={},spell_shield={},cursed={},auxiliary={}}
         local Cursed
         local needs_inventory=false
@@ -104,7 +107,7 @@ local ok, failure = pcall(function()
             local guarded = assert(resolve(revision), "SOURCE_GATE_REVISION_UNAVAILABLE")
             bundles[#bundles+1]=guarded
             if guarded.fixture.cursed_disguises then
-                Cursed=Cursed or module('override/FLPRCur.lua')
+                Cursed=Cursed or module('override/FLPRCur.lua', Site)
                 local assets={};pristine.cursed[revision]=assets
                 for _,item in ipairs(guarded.fixture.cursed_disguises.items) do
                     local entry={variants={}};assets[item.resref]=entry
@@ -274,12 +277,13 @@ local ok, failure = pcall(function()
             end
             return true
         end,
-        next = function() return resolve(module(DATA.."next.lua")) end,
+        -- The revision New Game chose for the campaign being started.
+        next = function() return resolve(root.NewGameIntent and root.NewGameIntent.revision) end,
         native = function(value)
             local has_shop=false
             for _,target in pairs(value.targets) do if target.kind=='store' then has_shop=true end end
             if has_shop then
-                if not root.Shop then root.Shop=module('override/FLPRShop.lua').install(_G) end
+                if not root.Shop then root.Shop=module('override/FLPRShop.lua', Site).install(_G) end
                 root.Shop:bind(value,root.Host.controller)
             elseif root.Shop then root.Shop:reset() end
             return Native.new(_G, value, storage:get(Core.G.seed),
@@ -364,28 +368,102 @@ local function forget_new_game()
     if root.SourceGate then root.SourceGate:reset() end
 end
 
--- Only BG1 starts can be randomised so far. Every other New Game asks before
--- it starts unrandomised.
-function root.NewGame()
-    forget_new_game()
-    local campaign = startCampaignData[currentCampaign]
-    local refusal
-    if root.Disabled then refusal = failure_message(root.Disabled)
-    elseif not (campaign and campaign.id == "BG1") then refusal = "other_campaign" end
-    if refusal then
-        return FLPRUI_Ask(refusal, function() startEngine:OnNewGameButtonClick() end)
+-- The campaign a New Game or character import starts, as the engine selected
+-- it rather than as a UI's tables describe it: the CAMPAIGN.2DA row (EET's
+-- campaigns, Siege of Dragonspear in BG:EE), else Black Pits, the tutorial,
+-- Throne of Bhaal (BG2:EE) or the game's main campaign. GetCampaign() is 3
+-- exactly when CInfGame has a campaign set (m_bCampaignEnabled).
+local function starting_campaign()
+    if startEngine:GetCampaign() == 3 then
+        local name = EngineGlobals.g_pBaldurChitin.m_pObjectGame.m_sCurrentCampaign.m_pchData:get()
+        assert(type(name) == "string" and name ~= "", "CAMPAIGN_NAME_UNAVAILABLE")
+        return name:upper()
     end
-    startEngine:OnNewGameButtonClick()
-    root.NewGameIntent = true
+    if game:GetMissionPackInfoTBP() then return "BP" end
+    if game:GetMissionPackInfo() then return "TUT" end
+    if game:GetMissionPackInfo25() then return "TOB" end
+    return "MAIN"
+end
+
+-- The applied configuration names a revision for each campaign start it
+-- randomises; "main" names the campaign the engine starts without a campaign
+-- row (BG1 in BG:EE, SoA in BG2:EE). A pointer written before campaign starts
+-- were configurable holds one revision, which was always a BG1 start.
+local function applied_revision(campaign)
+    local pointer = module(DATA .. "next.lua")
+    if type(pointer) == "string" then pointer = { schema = "flir-next-v2", starts = { BG1 = pointer } } end
+    assert(type(pointer) == "table" and pointer.schema == "flir-next-v2" and type(pointer.starts) == "table" and
+        (pointer.main == nil or type(pointer.main) == "string"), "NEXT_POINTER_INVALID")
+    if campaign == "MAIN" then campaign = pointer.main end
+    local revision = campaign and pointer.starts[campaign]
+    assert(revision == nil or (type(revision) == "string" and #revision == 64 and not revision:find("[^0-9a-f]")),
+        "NEXT_POINTER_INVALID")
+    return revision, campaign
+end
+
+-- The mode the engine started character creation in (CScreenCreateChar's
+-- engine state: 1 New Game, 7 character import, 4 pre-generating a character,
+-- 5 party creation, 3 multiplayer); nil where it cannot be read.
+local function chargen_mode()
+    local ok, mode = pcall(function() return createCharScreen:GetEngineState() end)
+    if ok then return mode end
+end
+
+-- Every New Game and character import asks before it starts unrandomised: when
+-- the runtime cannot run, or the applied configuration has nothing for the
+-- campaign being started (for example Black Pits).
+local function begin_new_game(engine_call)
+    forget_new_game()
+    local refusal, intent
+    if root.Disabled then refusal = failure_message(root.Disabled)
+    else
+        local ok, result, campaign, started = pcall(function()
+            local started = starting_campaign()
+            local revision, campaign = applied_revision(started)
+            return revision, campaign, started
+        end)
+        if not ok then
+            record("new-game", result)
+            refusal = "setup_failed"
+        elseif not result then refusal = "other_campaign"
+        else intent = { campaign = campaign, revision = result, started = started } end
+    end
+    if refusal then return FLPRUI_Ask(refusal, engine_call) end
+    engine_call()
+    intent.chargen = chargen_mode()
+    root.NewGameIntent = intent
+end
+
+-- Character creation that another start began: the engine reports another
+-- campaign or another creation mode. A cancelled start leaves its intent
+-- behind; the tutorial, pre-generating a character and party creation reach
+-- character acceptance without a hooked start and must not capture it.
+local function begun_elsewhere(intent)
+    local ok, started = pcall(starting_campaign)
+    local mode = chargen_mode()
+    return (ok and started ~= intent.started) or (mode ~= nil and intent.chargen ~= nil and mode ~= intent.chargen)
+end
+
+function root.NewGame(...)
+    local arguments = { ... }
+    begin_new_game(function() startEngine:OnNewGameButtonClick((unpack or table.unpack)(arguments)) end)
+end
+
+-- Importing a character (BG2:EE's SoA start, BG:EE's Siege of Dragonspear)
+-- starts a new game too and ends in character acceptance.
+function root.ImportCharacter(...)
+    local arguments = { ... }
+    begin_new_game(function() startEngine:OnImportCharacterButtonClick((unpack or table.unpack)(arguments)) end)
 end
 
 function root.AcceptCharacter(difficulty)
+    if root.NewGameIntent and begun_elsewhere(root.NewGameIntent) then forget_new_game() end
     if not root.NewGameIntent then return createCharScreen:AcceptCharacter(difficulty) end
     local captured, reason
     if root.Disabled or not root.Host then
         reason = root.Disabled or "HOST_MISSING"
     else
-        captured, reason = root.Host:capture_new("confirmed-bg1-character-accept")
+        captured, reason = root.Host:capture_new("confirmed-character-accept")
     end
     if captured then
         root.Announce = root.Storage:get(root.Core.G.seed)

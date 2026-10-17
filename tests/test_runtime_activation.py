@@ -15,6 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
 from flir_config.activation import validate_runtime
 from flir_config.campaigns import _render_lua
 from flir_config.editor import Editor
+from flir_config.native_export import NEXT_SCHEMA
 from flir_config.profiles import ProfileError
 from tests import test_postinstall_editor as editor_tests
 
@@ -111,7 +112,8 @@ class InstalledRuntimeApplyTests(unittest.TestCase):
         self.assertTrue(editor.state()["apply_enabled"])
         with patch("flir_config.activation.require_closed"):
             result = editor.post("/api/apply", editor.draft)
-        self.assertEqual((fx.game / "randomiser-campaigns/next.lua").read_bytes(), _render_lua(result["revision"]))
+        self.assertEqual((fx.game / "randomiser-campaigns/next.lua").read_bytes(),
+                         _render_lua({"schema": NEXT_SCHEMA, "starts": {"BG1": result["revision"]}}))
         for name, data in INSTALLED.items():
             self.assertEqual((fx.game / name).read_bytes(), data, name)
 

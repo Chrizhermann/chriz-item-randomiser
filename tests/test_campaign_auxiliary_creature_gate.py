@@ -14,6 +14,7 @@ from lupa.lua53 import LuaRuntime as Lua53
 from lupa.luajit21 import LuaRuntime as LuaJIT
 from flir_config.creature_inventory import rewrite_inventory
 from test_campaign_gate_bridge import CASES, CORE, GATE, POLICY, BUILD
+from engine_sites import gate_targets, load
 from test_campaign_gate_policy import expected_fields
 from test_campaign_inventory_assembly import run, BUFFER, EXPECTED, OUTPUT
 from test_postinstall_world_formats import make_cre, item_record
@@ -63,8 +64,6 @@ return function(f,Gate,build,compile,Inventory,original,family,creature,item,rec
         end
         return member
     end
-    f:pokestring(0x140341220,string.char(0x48,0x89,0x5c,0x24,0x18,0x55,0x56,0x57,
-        0x41,0x54,0x41,0x55,0x41,0x56,0x41,0x57))
     f.groups={}
     f.gate=Gate.install(f.api,bundle,build,compile,pristine,Script,function(group)
         f.groups[#f.groups+1]=group;return Inventory(group)
@@ -76,7 +75,8 @@ end
 
 def fixture(runtime=LuaJIT, *, family=12, original=None):
     lua = runtime(unpack_returned_tuples=True)
-    core, gate, build, policy, inventory = [lua.execute(text) for text in (CORE, GATE, BUILD, POLICY, INVENTORY)]
+    core, build, policy, inventory = [lua.execute(text) for text in (CORE, BUILD, POLICY, INVENTORY)]
+    gate = load(lua, GATE)
     f = lua.execute(CASES.replace("return cases", "return fixture"))(core)
     creature, item, record = FAMILIES[family]
     if original is None:
@@ -94,7 +94,7 @@ def loaded_policy(phase=1, selected=1, *, revision=REVISION, permanent=True, sel
     lua = LuaJIT(unpack_returned_tuples=True)
     policy = lua.execute(POLICY)(REVISION, 1, True if permanent else None,
                                  selected_global if permanent else None)
-    assembly = lua.execute(BUILD)(POLICY_BUFFER, IMAGE, policy)
+    assembly = lua.execute(BUILD)(POLICY_BUFFER, gate_targets(lua, IMAGE), policy)
     machine = GateMachine()
     for name in ("enter", "capture"):
         binary, _ = Ks(KS_ARCH_X86, KS_MODE_64).asm(re.sub(r"\b(?:ds|ss):", "", assembly[name]), CODES[name])

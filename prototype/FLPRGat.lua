@@ -1,6 +1,8 @@
--- Opt-in campaign bridge for configured ARE container and creature sources. Never installed
--- by the normal TP2. Caller pins executable/helper/resource hashes before use.
+-- Campaign source gate for configured ARE container, creature, store and
+-- template sources. Hook locations and their expected bytes: FLPRSite.lua.
 -- build = tools/probes/FLPRGateAsm.lua; compile = FLPRCampaignPolicy.lua.
+local Site = ...
+assert(type(Site)=='table' and type(Site.locate)=='function', 'CAMPAIGN_GATE_SITES_MISSING')
 local Gate = {}
 local Runtime = {}; Runtime.__index = Runtime
 local Adapter = {}; Adapter.__index = Adapter
@@ -8,25 +10,31 @@ local Group = {}; Group.__index = Group
 local CAPACITY, HEADER, STRIDE = 2048, 128, 128
 local CONTEXT=HEADER+(CAPACITY+1)*STRIDE
 local MEMORY_SIZE=CONTEXT+32+64*64
+-- Entries without code are only checked: the container call's return address,
+-- the constructor frame and the item loop are what the item hook relies on.
 local sites = {
-    {rva=0x292A84,size=8,code='enter',bytes='48894df8488d4dc8488945a8410fb6f944884c2460'},
-    {rva=0x292F45,size=7,code='capture',bytes='8bd6413974242c0f86c40400000f1f400066660f1f84'},
-    {rva=0x190270,size=7,code='item',bytes='418bc7488d0c80488b45884c8d2c88498bd5488d4df8'},
-    {rva=0x18B8AC,size=8,code='area_enter',bytes='4533e444884c24604489642468450fb6e94c8bfa4c8bf1'},
-    {rva=0x18DF94,size=8,code='area_exit',bytes='488b9c2470020000418bc4488b8d000100004833cce8'},
-    {rva=0x18D9C9,bytes='e8322400004885c00f84e90000004c8b00418bd4488bc8'},
-    {rva=0x18FE05,bytes='5556574154415541564157488d6c24804881ec80010000'},
-    {rva=0x1906FC,bytes='418b464441ffc74103464041bc0000000044897c2450443bf80f8255fbffff4c8b6d98410f'},
+    {key='gate_enter',size=8,code='enter'},
+    {key='gate_capture',size=7,code='capture'},
+    {key='gate_item',size=7,code='item'},
+    {key='gate_area_enter',size=8,code='area_enter'},
+    {key='gate_area_exit',size=8,code='area_exit'},
+    {key='gate_container_call'},
+    {key='gate_container_entry'},
+    {key='gate_container_skip'},
 }
 local actor_sites = {
-    {rva=0x18C448,code='actor',call=true,bytes='e8d34d1b00498db580000000e93d010000'},
-    {rva=0x18C591,code='actor',call=true,bytes='e88a4c1b00488bf84885c00f8444010000'},
+    {key='gate_actor1',code='actor',call=true},
+    {key='gate_actor2',code='actor',call=true},
 }
 local store_sites = {
-    {rva=0x250765,size=8,code='store',bytes='0f1047080f114308'},
-    {rva=0x405295,size=7,code='saved_store',bytes='c6435001498bcf'},
-    {rva=0x250967,size=5,code='store_done',bytes='4c8b742448'},
+    {key='gate_store',size=8,code='store'},
+    {key='gate_saved_store',size=7,code='saved_store'},
+    {key='gate_store_done',size=5,code='store_done'},
 }
+local template_site = {key='gate_template',size=5,code='template'}
+-- The item hook resumes at the instruction after the item address computation
+-- (the verified bytes of gate_item cover it).
+local ITEM_RESUME = 15
 local function hash(value)
     return type(value)=='string' and #value==64 and not value:find('[^0-9a-f]')
 end
@@ -188,7 +196,7 @@ end
 local function hex(value)
     return (value:gsub('.',function(c) return string.format('%02x',c:byte()) end))
 end
-local function prepare_creature(api,bundle,build,compile,pristine,id,base,cache)
+local function prepare_creature(api,bundle,build,compile,pristine,id,targets,cache)
     local revision,index,resource_hash,binding=validate(bundle,id)
     local area=assert(pristine[binding.area:upper()], 'CAMPAIGN_GATE_PRISTINE_MISSING')
     local cre=assert(pristine.creatures and pristine.creatures[revision] and pristine.creatures[revision][id],
@@ -253,13 +261,13 @@ local function prepare_creature(api,bundle,build,compile,pristine,id,base,cache)
     policy.provenance={expected=expected,length=#bytes,container_offset=owner,item_offset=owner}
     policy.creature={expected=copy(original),removed=copy(removed),length=#original,
         item_offset=item,index=binding.record}
-    local self=setmetatable({api=api,base=base,buffer=buffer,revision=revision,index=index,
+    local self=setmetatable({api=api,buffer=buffer,revision=revision,index=index,
         resource_hash=resource_hash,binding=binding,policy=policy,detours={},installed=false,
         expected={name_raw=hex(name),payload_raw=hex(raw),index=binding.record,
             detail1_raw=string.rep('0',16),detail2_raw=string.rep('0',16)}},Runtime)
-    return self,build(buffer,base,policy)
+    return self,build(buffer,targets,policy)
 end
-local function prepare(api,bundle,build,compile,pristine,id,base,cache)
+local function prepare(api,bundle,build,compile,pristine,id,targets,cache)
     if bundle.fixture.sources[id].kind=='guarded-template' then
         local revision,index,resource_hash,binding=validate(bundle,id)
         local original=assert(pristine.templates[revision][id],'CAMPAIGN_GATE_TEMPLATE_MISSING')
@@ -267,8 +275,8 @@ local function prepare(api,bundle,build,compile,pristine,id,base,cache)
         local buffer=api.EEex_Malloc(MEMORY_SIZE)
         for offset=0,MEMORY_SIZE-1,8 do api.EEex_Write64(buffer+offset,0) end
         local policy=compile(revision,index)
-        local assembly=build(buffer,base,policy)
-        local self=setmetatable({api=api,base=base,buffer=buffer,revision=revision,index=index,
+        local assembly=build(buffer,targets,policy)
+        local self=setmetatable({api=api,buffer=buffer,revision=revision,index=index,
             resource_hash=resource_hash,binding=binding,policy=policy,detours={},installed=false,
             permanent=true,inventory_original=original},Runtime)
         return self,{enter=assembly.enter,capture=assembly.capture}
@@ -310,15 +318,15 @@ local function prepare(api,bundle,build,compile,pristine,id,base,cache)
         policy.store={expected=copy(original,buffer+MEMORY_SIZE),removed=copy(removed,buffer+MEMORY_SIZE+#original),
             length=#original,items=items,count=count-1,index=binding.record,ref=binding.store,
             context=CONTEXT,payload=raw}
-        local self=setmetatable({api=api,base=base,buffer=buffer,revision=revision,index=index,
+        local self=setmetatable({api=api,buffer=buffer,revision=revision,index=index,
             resource_hash=resource_hash,binding=binding,policy=policy,detours={},installed=false,
             expected={name_raw=hex(binding.store:upper()..string.rep('\0',32-#binding.store)),
                 payload_raw=hex(raw:sub(1,20)),index=binding.record,
                 detail1_raw=hex(raw:sub(21,28)),detail2_raw=string.rep('0',16)}},Runtime)
-        return self,build(buffer,base,policy)
+        return self,build(buffer,targets,policy)
     end
     if bundle.fixture.sources[id].kind=='guarded-creature' then
-        return prepare_creature(api,bundle,build,compile,pristine,id,base,cache)
+        return prepare_creature(api,bundle,build,compile,pristine,id,targets,cache)
     end
     local revision,index,resource_hash,binding=validate(bundle,id)
     pristine=pristine.bytes and pristine or pristine[binding.area:upper()]
@@ -385,9 +393,9 @@ local function prepare(api,bundle,build,compile,pristine,id,base,cache)
         end
         policy.source.replacement_pointer=address
     end
-    local self=setmetatable({api=api,base=base,buffer=buffer,revision=revision,index=index,
+    local self=setmetatable({api=api,buffer=buffer,revision=revision,index=index,
         resource_hash=resource_hash,binding=binding,expected=expected,policy=policy,detours={},installed=false},Runtime)
-    return self,build(buffer,base,policy)
+    return self,build(buffer,targets,policy)
 end
 
 -- Each block preserves registers and flags. A matched item exits the shared
@@ -439,7 +447,7 @@ function Gate.install_chain(api,site,address,parts)
     api.EEex_JITAt(address,{'jmp short '..string.format('%.0f',entry)..'\n'..
         string.rep('nop\n',(site.call and 5 or site.size)-5)})
 end
-local function prepare_stock_option(api,bundle,build,compile,pristine,base)
+local function prepare_stock_option(api,bundle,build,compile,pristine,targets)
     local spec=bundle.manifest.spell_shield
     local native=bundle.fixture.spell_shield
     assert(spec and native and bundle.manifest.original_options.more_spell_shield==true and
@@ -497,8 +505,8 @@ local function prepare_stock_option(api,bundle,build,compile,pristine,base)
     local policy=compile(revision,'more_spell_shield')
     policy.store={expected=0,removed=0,length=#original,items=offset,count=count,
         index=index,ref='udduer01',context=CONTEXT,payload=raw}
-    local assembly=build(buffer,base,policy)
-    local member=setmetatable({api=api,base=base,buffer=buffer,revision=revision,index='more_spell_shield',
+    local assembly=build(buffer,targets,policy)
+    local member=setmetatable({api=api,buffer=buffer,revision=revision,index='more_spell_shield',
         resource_hash=spec.resource_sha256,binding={id='@spell-shield',kind='store',store='udduer01',
         record=index,quantity=spec.quantity,payload=spec.payload},policy=policy,detours={},installed=false,
         stock_option=true,permanent=true},Runtime)
@@ -550,7 +558,7 @@ local function auxiliary_binding(bundle,id,ordinal)
             f.resource_hashes[approved.replacement:upper()..'.ITM']}
 end
 
-local function prepare_auxiliary(api,bundle,id,ordinal,build,compile,pristine,base)
+local function prepare_auxiliary(api,bundle,id,ordinal,build,compile,pristine,targets)
     local revision,index,resource_hash,binding=auxiliary_binding(bundle,id,ordinal)
     local entries=pristine.auxiliary and pristine.auxiliary[revision] and pristine.auxiliary[revision][id]
     local original=entries and entries[binding.creature_resource]
@@ -571,8 +579,8 @@ local function prepare_auxiliary(api,bundle,id,ordinal,build,compile,pristine,ba
     assert(buffer and buffer~=0,'CAMPAIGN_GATE_ALLOC_FAILED')
     for at=0,MEMORY_SIZE-1,8 do api.EEex_Write64(buffer+at,0) end
     local policy=compile(revision,index,true,binding.selected_global)
-    local assembly=build(buffer,base,policy)
-    local member=setmetatable({api=api,base=base,buffer=buffer,revision=revision,index=index,
+    local assembly=build(buffer,targets,policy)
+    local member=setmetatable({api=api,buffer=buffer,revision=revision,index=index,
         resource_hash=resource_hash,binding=binding,policy=policy,detours={},installed=false,
         auxiliary=true,permanent=true,inventory_original=original},Runtime)
     return member,{enter=assembly.enter,capture=assembly.capture}
@@ -586,7 +594,6 @@ function Gate.install(api,bundle,build,compile,pristine,Script,Inventory,Cur)
     assert(type(api.EEex_GameState_AddDestroyedListener)=='function' and
         type(api.EEex_GameState_GetGlobalInt)=='function' and type(api.EEex_Write8)=='function',
         'CAMPAIGN_GATE_LIFECYCLE_MISSING')
-    local base=api.EEex_GetImageBase()
     local selected_sites={}
     local physical,creatures,stores,templates,cursed=false,false,false,false,false
     for _,selected in ipairs(bundles) do
@@ -609,14 +616,25 @@ function Gate.install(api,bundle,build,compile,pristine,Script,Inventory,Cur)
         for _,site in ipairs(actor_sites) do selected_sites[#selected_sites+1]=site end
     end
     if stores then for _,site in ipairs(store_sites) do selected_sites[#selected_sites+1]=site end end
-    if templates then selected_sites[#selected_sites+1]={rva=0x341220,size=5,code='template',
-        bytes='48895c24185556574154415541564157'} end
-    for _,site in ipairs(selected_sites) do
-        local offset=0
-        for byte in site.bytes:gmatch('%x%x') do
-            assert(api.EEex_ReadU8(base+site.rva+offset)==tonumber(byte,16),'CAMPAIGN_GATE_CODE_MISMATCH')
-            offset=offset+1
+    if templates then selected_sites[#selected_sites+1]=template_site end
+    -- Every location is found and checked before the first write.
+    local found={}
+    for _,site in ipairs(selected_sites) do found[site.key]=Site.locate(api,site.key,'CAMPAIGN_GATE') end
+    Site.check_layout(api,'gate','CAMPAIGN_GATE')
+    local function calls(key,target_key)
+        local target=found[target_key] or Site.locate(api,target_key,'CAMPAIGN_GATE')
+        if Site.call_target(api,found[key])~=target then
+            error('CAMPAIGN_GATE_CODE_MISMATCH:'..key..':call-target',0)
         end
+    end
+    -- Both actor hooks hand the CRE bytes to the creature constructor, and the
+    -- item hook identifies the area loader's container call by its return.
+    if creatures then for _,site in ipairs(actor_sites) do calls(site.key,'gate_template') end end
+    local targets
+    if physical then
+        calls('gate_container_call','gate_container_entry')
+        targets={item_resume=found.gate_item+ITEM_RESUME,container_return=found.gate_container_call+5,
+            container_skip=found.gate_container_skip}
     end
     local members,assemblies,cache,by_revision,inventory_groups,option_members,auxiliary_members={},{},{},{},{},{},{}
     local cursed_runtime
@@ -635,7 +653,7 @@ function Gate.install(api,bundle,build,compile,pristine,Script,Inventory,Cur)
         auxiliary_members[revision]={}
         if selected.manifest.spell_shield then
             assert(Inventory,'CAMPAIGN_GATE_INVENTORY_BUILDER_MISSING')
-            local member,assembly,group=prepare_stock_option(api,selected,build,compile,pristine,base)
+            local member,assembly,group=prepare_stock_option(api,selected,build,compile,pristine,targets)
             option_members[revision]=member
             assemblies[#assemblies+1]=assembly
             inventory_groups[revision..'/sto:udduer01']=group
@@ -646,7 +664,7 @@ function Gate.install(api,bundle,build,compile,pristine,Script,Inventory,Cur)
                 assert(Script,'CAMPAIGN_SCRIPT_ADAPTER_MISSING')
                 member=Script.new(api,selected,id,pristine.scripts[revision][id])
             else
-                member,assembly=prepare(api,selected,build,compile,pristine,id,base,cache)
+                member,assembly=prepare(api,selected,build,compile,pristine,id,targets,cache)
                 local endpoint=selected.fixture.sources[id]
                 if endpoint.kind=='guarded-template' or endpoint.multiple_stock or
                     (selected.manifest.spell_shield and endpoint.kind=='guarded-store' and endpoint.store=='udduer01') then
@@ -670,7 +688,7 @@ function Gate.install(api,bundle,build,compile,pristine,Script,Inventory,Cur)
             current[#current+1]=member
             for ordinal in ipairs(selected.fixture.sources[id].auxiliary_creatures or {}) do
                 assert(Inventory,'CAMPAIGN_GATE_INVENTORY_BUILDER_MISSING')
-                local auxiliary,auxiliary_assembly=prepare_auxiliary(api,selected,id,ordinal,build,compile,pristine,base)
+                local auxiliary,auxiliary_assembly=prepare_auxiliary(api,selected,id,ordinal,build,compile,pristine,targets)
                 auxiliary_members[revision][#auxiliary_members[revision]+1]=auxiliary
                 assemblies[#assemblies+1]=auxiliary_assembly
                 local key=revision..'/'..auxiliary.binding.creature_resource
@@ -739,7 +757,7 @@ function Gate.install(api,bundle,build,compile,pristine,Script,Inventory,Cur)
     local ok,failure=pcall(function()
         for _,site in ipairs(selected_sites) do
             if site.code and assembly[site.code] and assembly[site.code]~='' then
-                local address=base+site.rva
+                local address=found[site.key]
                 local chained=#assembly[site.code]>16384
                 if chained then Gate.install_chain(api,site,address,parts[site.code]) end
                 if site.call then
@@ -759,7 +777,7 @@ function Gate.install(api,bundle,build,compile,pristine,Script,Inventory,Cur)
                 end
                 assert(api.EEex_ReadU8(address)==0xE9,'CAMPAIGN_GATE_DETOUR_NOT_WRITTEN')
                 local target=address+5+api.EEex_Read32(address+1)
-                assert(target>0 and (target<address or target>=address+#site.bytes/2),
+                assert(target>0 and (target<address or target>=address+#Site.SPECS[site.key].bytes/2),
                     'CAMPAIGN_GATE_DETOUR_INVALID')
                 detours[#detours+1]={address=address,target=target}
             end

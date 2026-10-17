@@ -1,16 +1,13 @@
 -- Original component 570 only. Keep CItem resrefs and engine-owned CRes bytes;
 -- hand out a campaign's immutable ITM view before any equipped effects are read.
+-- Hook locations: FLPRSite.lua.
+local Site=...
+assert(type(Site)=='table' and type(Site.locate)=='function','CURSED_SITES_MISSING')
 local Cur={}; local Runtime={}; Runtime.__index=Runtime
 local NAMES={'brac08','brac11','leat06','plat17','ring04','ring23','sper03','sw2h03'}
 local RANGE=2147483646
-local SITES={{rva=0x3F63A4,bytes='488b41404883c420'},
-             {rva=0x3F63D3,bytes='488b43404883c420'}}
--- dimmDumpAllInTempOverride reads the current registry on each iteration.
--- Membership is checked before dereferencing remembered CRes pointers, since
--- a later override/language rebuild may replace the process resource objects.
-local REGISTRY,REGISTRY_COUNT=0x727C80,0x727C88
-local REGISTRY_SITES={{rva=0x402306,bytes='4863357b593200'},
-                      {rva=0x402330,bytes='488b1d49593200'}}
+-- Both returns of CRes::Demand that hand out loaded resource data.
+local SITES={'cur_demand1','cur_demand2'}
 local function integer(n,lo,hi) return type(n)=='number' and n==math.floor(n) and n>=lo and n<=hi end
 local function number(n) return string.format('%.0f',n) end
 local function u32(s,o) local a,b,c,d=s:byte(o+1,o+4);return a+b*256+c*65536+d*16777216 end
@@ -22,8 +19,8 @@ local function rebase()
         'add rdx, rax\nmov qword ptr ds:[rcx+0x58], rdx\n'
 end
 local function registered(self,name,label)
-    return 'mov r11, '..number(self.base+REGISTRY)..'\nmov r11, qword ptr ds:[r11]\n'..
-        'mov rdx, '..number(self.base+REGISTRY_COUNT)..'\nmov edx, dword ptr ds:[rdx]\n'..
+    return 'mov r11, '..number(self.registry)..'\nmov r11, qword ptr ds:[r11]\n'..
+        'mov rdx, '..number(self.registry_count)..'\nmov edx, dword ptr ds:[rdx]\n'..
         'test r11, r11\nje '..label..'_gone\ncmp edx, 2000000\nja '..label..'_gone\n'..
         label..'_registry:\ntest edx, edx\nje '..label..'_gone\ndec edx\n'..
         'cmp qword ptr ds:[r11+rdx*8], rcx\njne '..label..'_registry\n'..
@@ -77,7 +74,7 @@ local function selection(self,revision,index)
 end
 
 function Cur.new(api,bundles,pristine,compile)
-    local self=setmetatable({api=api,base=api.EEex_GetImageBase(),revisions={},ordered={},slots={}},Runtime)
+    local self=setmetatable({api=api,revisions={},ordered={},slots={}},Runtime)
     local state=assert(api.EEex_Malloc(128+#NAMES*32),'CURSED_ALLOC_FAILED');self.state=state
     for at=0,128+#NAMES*32-1,8 do api.EEex_Write64(state+at,0) end
     for index,name in ipairs(NAMES) do self.slots[name]=state+128+(index-1)*32 end
@@ -124,14 +121,15 @@ function Cur.new(api,bundles,pristine,compile)
         else assert(not fixture,'CURSED_CONFIG_INVALID') end
     end
     assert(#self.ordered>0,'CURSED_CONFIG_MISSING')
-    for _,site in ipairs(SITES) do
-        for at=1,#site.bytes,2 do assert(api.EEex_ReadU8(self.base+site.rva+(at-1)/2)==
-            tonumber(site.bytes:sub(at,at+1),16),'CURSED_CODE_MISMATCH') end
-    end
-    for _,site in ipairs(REGISTRY_SITES) do
-        for at=1,#site.bytes,2 do assert(api.EEex_ReadU8(self.base+site.rva+(at-1)/2)==
-            tonumber(site.bytes:sub(at,at+1),16),'CURSED_REGISTRY_CODE_MISMATCH') end
-    end
+    self.sites={}
+    for index,key in ipairs(SITES) do self.sites[index]=Site.locate(api,key,'CURSED') end
+    -- dimmDumpAllInTempOverride reads the current resource registry (array and
+    -- count) on each iteration. Membership is checked before dereferencing
+    -- remembered CRes pointers, since a later override/language rebuild may
+    -- replace the process resource objects.
+    self.registry_count=Site.rip_target(api,Site.locate(api,'cur_registry_count','CURSED'),7)
+    self.registry=Site.rip_target(api,Site.locate(api,'cur_registry_array','CURSED'),7)
+    Site.check_layout(api,'cursed','CURSED')
     local enter=save()..'mov r10, '..number(state)..'\nmov qword ptr ds:[r10], 0\n'..
         'mov qword ptr ds:[r10+8], 0\nmov qword ptr ds:[r10+16], 0\n'..
         'mov qword ptr ds:[r10+48], rdx\nmov eax, r8d\nmov qword ptr ds:[r10+56], rax\n'..
@@ -196,8 +194,7 @@ end
 
 function Runtime:install(detours)
     self.detours={}
-    for _,site in ipairs(SITES) do
-        local address=self.base+site.rva
+    for _,address in ipairs(self.sites) do
         -- Replay only ADD RSP,0x20. Replaying MOV RAX,[CRes+0x40] would undo
         -- the chosen return view; the demand block performs that MOV itself.
         self.api.EEex_HookBeforeRestore(address,4,4,8,{self.demand})
@@ -218,8 +215,8 @@ function Runtime:_refresh(clear)
         if clear then api.EEex_Write64(slot+8,0) end
         local res=api.EEex_ReadU64(slot)
         if res~=0 then
-            local array=api.EEex_ReadU64(self.base+REGISTRY)
-            local count=api.EEex_Read32(self.base+REGISTRY_COUNT)
+            local array=api.EEex_ReadU64(self.registry)
+            local count=api.EEex_Read32(self.registry_count)
             local found=false
             if array~=0 and integer(count,1,2000000) then
                 for index=0,count-1 do if api.EEex_ReadU64(array+index*8)==res then found=true;break end end

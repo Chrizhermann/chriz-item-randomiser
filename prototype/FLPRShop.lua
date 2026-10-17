@@ -1,6 +1,8 @@
--- Experimental single-player shop transport for the pinned BG2:EE 2.6 build.
--- Uses AddStoreItem and the engine's normal save/cache path. Only the newly
--- appended stock row is corrected to preserve the selected source payload.
+-- Single-player shop transport. Uses AddStoreItem and the engine's normal
+-- save/cache path. Only the newly appended stock row is corrected to preserve
+-- the selected source payload. Hook locations: FLPRSite.lua.
+local Site = ...
+assert(type(Site)=='table' and type(Site.locate)=='function', 'SHOP_SITES_MISSING')
 local Shop = {}
 Shop.__index = Shop
 local HEADER, STRIDE, LIMIT = 128, 64, 4096
@@ -80,10 +82,12 @@ end
 
 function Shop:inspect_target(endpoint)
     local api=self.api
-    -- SetItemToStore has a separate multiplayer/server route; this prototype
-    -- instruments only its local route and must never execute the other one.
-    local network=api.EEex_ReadU64(self.base+0x665098)
-    if network==0 or api.EEex_ReadU8(network+0x2C9)~=0 then return nil,'SHOP_MULTIPLAYER_UNSUPPORTED' end
+    -- SetItemToStore has a separate multiplayer/server route, taken while a
+    -- network session is established; only its local route is instrumented.
+    local chitin=api.EngineGlobals and api.EngineGlobals.g_pBaldurChitin
+    local network=chitin and chitin.cNetwork
+    local session=network and network.m_bConnectionEstablished
+    if session==nil or (session~=0 and session~=false) then return nil,'SHOP_MULTIPLAYER_UNSUPPORTED' end
     if not api.EEex_Sprite_GetInPortrait(0) then return nil,'OWNER_MISSING' end
     return true
 end
@@ -116,28 +120,25 @@ function Shop:deliver(endpoint,payload,unit)
 end
 
 function Shop.install(api)
-    local base=api.EEex_GetImageBase()
     local sites={
-        {rva=0x28CA79,bytes='e8e22cfcff',call=true},
-        {rva=0x28CA7E,bytes='488d8c2470010000',size=8},
-        {rva=0x24FB9A,bytes='488d4f108bf0',size=6},
-        {rva=0x24F860,bytes='488bd3488d8ea0000000',size=10},
-        {rva=0x24F487,bytes='0f8582000000',branch=true},
-        -- The following MOV at 0x2E7E08 is also a branch destination. Leave it
-        -- intact; place the hook between CMP and CMOVE, before that boundary.
-        {rva=0x2E7E00,bytes='6639421c490f44f9',between=true},
+        {key='shop_add_item_call',call=true},
+        {key='shop_after_call',size=8},
+        {key='shop_price',size=6},
+        {key='shop_compress',size=10},
+        {key='shop_merge',branch=true},
+        -- The MOV after this CMP/CMOVE pair is also a branch destination. Leave
+        -- it intact; place the hook between CMP and CMOVE, before that boundary.
+        {key='shop_select',between=true},
     }
-    for _,site in ipairs(sites) do
-        local offset=0
-        for byte in site.bytes:gmatch('%x%x') do
-            assert(api.EEex_ReadU8(base+site.rva+offset)==tonumber(byte,16),'SHOP_CODE_MISMATCH')
-            offset=offset+1
-        end
-    end
+    for _,site in ipairs(sites) do site.address=Site.locate(api,site.key,'SHOP') end
+    -- Only this call's price is replaced: the store screen's row prices.
+    local price_return=Site.locate(api,'shop_price_call','SHOP')+5
+    local chitin=Site.global(api,'g_pBaldurChitin','SHOP')
+    Site.check_layout(api,'shop','SHOP')
     local b=api.EEex_Malloc(HEADER+STRIDE*LIMIT)
     assert(b and b~=0,'SHOP_ALLOCATION_FAILED')
     for offset=0,HEADER-1,8 do api.EEex_Write64(b+offset,0) end
-    local self=setmetatable({api=api,base=base,buffer=b,entries={},by_unit={}},Shop)
+    local self=setmetatable({api=api,buffer=b,entries={},by_unit={}},Shop)
     local function code(body) return save..'mov r10, '..b..'\n'..body..restore end
     local before=code([[
         cmp qword ptr ds:[r10],1
@@ -245,7 +246,7 @@ function Shop.install(api)
         dec r9
         jmp shop_price_scan
         shop_price_done:
-    ]],base+0x2E7C45))
+    ]],price_return))
     -- CompressItems deletes exhausted rows after buy/steal rollback is settled.
     -- Persist positions here, when the list really changes, rather than when a
     -- purchase first decrements stock (which may subsequently be restored).
@@ -301,7 +302,7 @@ function Shop.install(api)
         shop_removed_publish:
         test edx,2
         je shop_removed_done
-        mov rax,]]..(base+0x6650A0)..[[
+        mov rax,]]..string.format('%.0f',chitin)..[[
 
         mov rax,qword ptr ds:[rax]
         test rax,rax
@@ -446,7 +447,7 @@ function Shop.install(api)
     api.EEex_DisableCodeProtection()
     local ok,failure=pcall(function()
         for i,site in ipairs(sites) do
-            local address=base+site.rva
+            local address=site.address
             local assembly=type(assemblies[i])=='string' and {assemblies[i]} or assemblies[i]
             if site.between then api.EEex_HookBetweenRestore(address,0,4,4,4,8,assembly)
             elseif site.branch then api.EEex_HookBeforeConditionalJump(address,0,assembly)

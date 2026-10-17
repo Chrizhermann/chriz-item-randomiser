@@ -15,7 +15,7 @@ from flir_config.profiles import ProfileError  # noqa: E402
 from flir_config.resources import scan_game  # noqa: E402
 from flir_config.sources import scan_world  # noqa: E402
 from test_postinstall_blpool_script import write_registry  # noqa: E402
-from test_postinstall_resources import make_game, make_itm, snapshot  # noqa: E402
+from test_postinstall_resources import make_game, make_itm, mark_eet, snapshot  # noqa: E402
 from test_postinstall_world_formats import item_record, make_are, make_cre  # noqa: E402
 
 
@@ -55,6 +55,7 @@ class OriginalConfigurationTests(unittest.TestCase):
         struct.pack_into("<IH", item, 0x64, 0x72, 1)
         struct.pack_into("<H", item, 0x72 + 0x22, 7)
         make_game(self.root, [("SYNTH001", bytes(item))])
+        mark_eet(self.root)
         (self.root / "override" / "area.are").write_bytes(
             make_are([item_record()], [("Source", 0, 1), ("Target A", 1, 0),
                                        ("Target B", 1, 0)]))

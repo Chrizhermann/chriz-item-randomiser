@@ -9,8 +9,11 @@ general source coverage remain unfinished.
 For an already installed disposable test runtime, start the editor with
 `--apply-game <same-game-path-as-the-scan>` to enable **Apply for next game**.
 With the game closed, this saves the configuration, exports it and deploys the
-settings. Each new BG1 campaign gets a fresh draw; existing saves keep their
-revision. Keep the same configuration workspace, including its `native` folder,
+settings. Each new game gets a fresh draw, in every campaign start of the game
+(BG1 and SoD on BG:EE, SoA and ToB on BG2:EE, all four on EET; a later start only
+with the rewards and places it reaches, see the packaging plan's
+[Campaign starts](plans/2026-10-14-mode1-packaging.md#campaign-starts)); existing saves
+keep their revision. Keep the same configuration workspace, including its `native` folder,
 so earlier revisions remain available. The editor reopens the last applied choice.
 Without that explicit option, preparation still writes only outside the game. Apply
 refuses a game where Item Randomiser's Mode 1, Mode 2 or More Spell Shield scrolls is
@@ -207,7 +210,8 @@ See [native source results](campaign-source-guards-20260927.md) for current evid
 
 The `templates` command reads the original checked-in item/location tables and
 authored endpoint catalogs. It offers presets for BG1, BG2 and EET, all drawn for
-each new game; Chriz Item Randomiser has no modes. Each preset has a standard and
+each new game; Chriz Item Randomiser has no modes. The editor offers those whose
+tables the scanned game has: BG1 presets on BG:EE, BG2 presets on BG2:EE, all on EET. Each preset has a standard and
 an extended pool of items and of recipients, chosen separately: the standard pools
 read the `base` tables, the extended pools also the `mode2` tables, the larger lists
 that Item Randomiser used for its install-time Mode 2 (more items from creatures,
@@ -224,7 +228,8 @@ python tools/randomiser_config.py templates --id eet-original --items extended -
 `loss_mode` (`none`/`some`), `loss_percent` and `unrandomized_percent` (0–100).
 These preserve intended component choices; they do not execute installer edits.
 Optional components default off here. The editor's "Start from a preset" dialog
-opens on the recommended default instead: `eet-original` with the standard pools,
+opens on the recommended default instead: the game's own `-original` preset
+(`bg1-original`, `bg2-original` or `eet-original`) with the standard pools,
 `flail_heads` and `totsc_tome` (Item Randomiser's lists without item loss, plus the
 Flail of Ages heads and the randomised Tales of the Sword Coast tome); every choice
 stays editable.

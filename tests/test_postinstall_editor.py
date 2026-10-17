@@ -13,12 +13,13 @@ from urllib.request import Request, urlopen
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
 from flir_config.campaigns import read_campaign, _render_lua
 from flir_config.editor import Editor, create_server
+from flir_config.native_export import NEXT_SCHEMA
 from flir_config.profiles import edit_profile, new_profile
 from flir_config.profiles import ProfileError
 from flir_config.sources import new_binding_plan
 from tests import test_postinstall_native_export as fixtures
 from tests.test_postinstall_blpool_script import write_registry
-from tests.test_postinstall_world_formats import make_cre, make_sto, item_record
+from tests.test_postinstall_world_formats import make_are, make_cre, make_sto, item_record
 
 
 class EditorTests(unittest.TestCase):
@@ -57,6 +58,19 @@ class EditorTests(unittest.TestCase):
         self.assertEqual(loaded["profile"], incomplete["profile"])
         self.assertEqual(loaded["plan"], draft["plan"])
         self.assertFalse(fresh.post("/api/validate", incomplete)["valid"])
+
+    def test_presets_offered_are_those_of_the_game(self):
+        fx = self.fx
+        (fx.override / "EET.flag").unlink()
+        for marker, presets in (("oh6000", ["bg2-original"]), ("oh1000", ["bg1-original", "bg1-boss-loot"])):
+            with self.subTest(marker=marker):
+                for area in fx.override.glob("oh*.are"):
+                    area.unlink()
+                (fx.override / f"{marker}.are").write_bytes(make_are())
+                fx.refresh()
+                self.reset_editor()
+                self.assertEqual([row["id"] for row in self.editor.get("/api/templates", {})], presets)
+                self.assertEqual(self.editor.get("/api/recommended", {})["id"], presets[0])
 
     def test_preset_routes_replace_only_a_checked_successful_draft(self):
         editor = self.editor
@@ -178,7 +192,12 @@ class EditorTests(unittest.TestCase):
             second = e.post("/api/apply", draft)
         self.assertNotEqual(first["revision"], second["revision"])
         self.assertEqual(old.read_bytes(), before)
-        self.assertEqual((fx.game / "randomiser-campaigns/next.lua").read_bytes(), _render_lua(second["revision"]))
+        # This EET test area has no campaign name, so only a Baldur's Gate start reaches it.
+        self.assertEqual(second["starts"], {"BG1": second["revision"]})
+        self.assertIn("New games randomised: Baldur's Gate. Not randomised: Siege of Dragonspear",
+                      second["message"])
+        self.assertEqual((fx.game / "randomiser-campaigns/next.lua").read_bytes(),
+                         _render_lua({"schema": NEXT_SCHEMA, "starts": second["starts"]}))
         self.assertEqual(unrelated.read_bytes(), b"preserve unrelated mod content")
         self.assertEqual((fx.override / "area.are").read_bytes(), fx.area)
         reopened = Editor(fx.catalog, fx.world, e.workspace, apply_game=fx.game)

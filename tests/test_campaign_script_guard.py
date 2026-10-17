@@ -1,6 +1,7 @@
 """Offline BLPOOL script guard protocol on Lua 5.1, 5.3, and LuaJIT."""
 
 from pathlib import Path
+import sys
 import unittest
 
 from lupa.lua51 import LuaRuntime as Lua51
@@ -9,6 +10,9 @@ from lupa.luajit21 import LuaRuntime as LuaJIT
 
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "tests"))
+from engine_sites import load  # noqa: E402
+
 CORE = (ROOT / "prototype/FLPRCore.lua").read_text(encoding="utf-8")
 GATE = (ROOT / "prototype/FLPRGat.lua").read_text(encoding="utf-8")
 SCRIPT = (ROOT / "prototype/FLPRScript.lua").read_text(encoding="utf-8")
@@ -37,7 +41,7 @@ local function fixture(Core,Gate,Script)
     f.storage={}
     function f.storage:get(key) return f.values[key] or 0 end
     function f.storage:set(key,value) f.values[key]=value end
-    f.api={EEex_Active=true,EEex_GetImageBase=function() return 0 end,
+    f.api={EEex_Active=true,
         EEex_Write8=function() end,EEex_DisableCodeProtection=function() end,
         EEex_EnableCodeProtection=function() end,
         EEex_GameState_GetGlobalInt=function(key) return f.globals[key] or 0 end,
@@ -151,7 +155,7 @@ class CampaignScriptGuardTests(unittest.TestCase):
         for runtime in (Lua51, Lua53, LuaJIT):
             lua = runtime(unpack_returned_tuples=True)
             core, gate, script, cases = (
-                lua.execute(CORE), lua.execute(GATE), lua.execute(SCRIPT), lua.execute(CASES))
+                lua.execute(CORE), load(lua, GATE), lua.execute(SCRIPT), lua.execute(CASES))
             for name in sorted(cases.keys()):
                 with self.subTest(runtime=runtime.__module__, case=name):
                     cases[name](core, gate, script)

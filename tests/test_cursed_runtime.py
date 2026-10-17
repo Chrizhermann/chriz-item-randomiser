@@ -22,12 +22,11 @@ from test_postinstall_resources import make_tlk
 from test_campaign_gate_bridge import CASES, CORE, GATE, POLICY, BUILD
 from test_campaign_gate_policy import expected_fields
 from test_campaign_inventory_assembly import REGISTERS
+from engine_sites import load
 
 CUR = (ROOT / "prototype/FLPRCur.lua").read_text()
 BASE, GAM, CRES, RAW, REF, STACK, ARRAY = 0x140000000, 0x500000, 0x600000, 0x610000, 0x620000, 0x700000, 0x630000
 CODES = {"enter": 0x100000, "capture": 0x110000, "demand": 0x120000}
-SIGNATURES = ((0x3F63A4, "488b41404883c420"), (0x3F63D3, "488b43404883c420"),
-              (0x402306, "4863357b593200"), (0x402330, "488b1d49593200"))
 
 
 def fixture(runtime=LuaJIT, *, gate=False, second=False):
@@ -44,10 +43,9 @@ def fixture(runtime=LuaJIT, *, gate=False, second=False):
                                            for index in range(1, len(item["variants"]) + 1)]}
              for item in native["items"]}
     lua = runtime(unpack_returned_tuples=True)
-    core, cur, policy = (lua.execute(source) for source in (CORE, CUR, POLICY))
+    core, policy = (lua.execute(source) for source in (CORE, POLICY))
+    cur = load(lua, CUR)
     f = lua.execute(CASES.replace("return cases", "return fixture"))(core)
-    for rva, signature in SIGNATURES:
-        f.pokestring(f, BASE + rva, bytes.fromhex(signature))
     b = lua.execute(_render_lua(bundle))
     bundles, entries = [b], {revision: entry}
     if second:
@@ -65,7 +63,7 @@ def fixture(runtime=LuaJIT, *, gate=False, second=False):
             for item in other_native["items"]}
     pristine = lua.table_from(entries, recursive=True)
     if gate:
-        g = lua.execute(GATE).install(f.api, lua.table_from(bundles), lua.execute(BUILD), policy,
+        g = load(lua, GATE).install(f.api, lua.table_from(bundles), lua.execute(BUILD), policy,
                                      lua.table_from({"cursed": pristine}), None, None, cur)
         f.gate = g
         result = g.cursed
@@ -220,6 +218,17 @@ class CursedRuntimeTests(unittest.TestCase):
         f.poke(f, cur.slots.brac08, 0xDEAD0000, 8)
         cur.reset(cur)
         self.assertEqual(f.peek(f, cur.slots.brac08, 8), 0)
+
+    def test_registry_comes_from_the_engine_code_and_a_missing_location_stops_first(self):
+        lua, f, cur, bundle, _, entry = fixture()
+        # The emulated memory above places the registry where 2.6.6.0's code points.
+        self.assertEqual((cur.registry, cur.registry_count), (BASE + 0x727C80, BASE + 0x727C88))
+        f.api.FLPR_ENGINE_SITES.offsets.cur_registry_count = lua.table()
+        hooks = len(f.hooks)
+        with self.assertRaisesRegex(Exception, "CURSED_CODE_MISMATCH:cur_registry_count:not-found"):
+            load(lua, CUR).new(f.api, lua.table_from([bundle]),
+                               lua.table_from({"a" * 64: entry}, recursive=True), lua.execute(POLICY))
+        self.assertEqual(len(f.hooks), hooks)
 
     def test_new_capture_uses_saved_seed_and_errors_reach_gate_adapter(self):
         for runtime in (Lua51, Lua53, LuaJIT):

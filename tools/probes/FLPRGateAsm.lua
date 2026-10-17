@@ -1,9 +1,17 @@
 -- Pure assembly builder for configured container suppression.
 -- No installation or engine access. Exposed separately for instruction emulation.
-return function(buffer, image_base, policy)
+-- targets holds engine addresses found by FLPRSite.lua: item_resume (after the
+-- container item address computation), container_return (return address of the
+-- area loader's container call) and container_skip (the next item record).
+return function(buffer, targets, policy)
     if policy ~= nil then
         assert(type(policy) == 'table' and policy.schema == 'flpr-campaign-gate-policy-v1'
             and type(policy.scan) == 'string', 'SOURCE_GATE_POLICY_INVALID')
+    end
+    local function target(name)
+        local value = type(targets) == 'table' and targets[name]
+        assert(type(value) == 'number' and value > 0, 'SOURCE_GATE_TARGET_MISSING:' .. name)
+        return string.format('%.0f', value)
     end
     local save = [[
         pushfq
@@ -326,7 +334,7 @@ return function(buffer, image_base, policy)
                     'CAMPAIGN_GATE_REPLACEMENT_INVALID')
                 item=replace_once(item,'#MANUAL_HOOK_EXIT(1)\n        jmp @SKIP@',
                     'mov r13, '..string.format('%.0f',s.replacement_pointer)..'\n'..
-                    '#MANUAL_HOOK_EXIT(1)\n        jmp '..string.format('%.0f',image_base+0x19027F))
+                    '#MANUAL_HOOK_EXIT(1)\n        jmp '..target('item_resume'))
             end
         end
     end
@@ -444,7 +452,7 @@ return function(buffer, image_base, policy)
         local substitutions={FIRST=first,LAST=last,CONTEXT=context,
             CONTEXT_OVERFLOW=context+8,CONTEXT_ACCEPTED=context+16,
             LENGTH=p.length,QBYTES=math.floor(p.length/8)*8,EXPECTED=p.expected,
-            ITEMS=p.item_offset,CONTAINERS=p.container_offset,CALL_RETURN=image_base+0x18D9CE}
+            ITEMS=p.item_offset,CONTAINERS=p.container_offset,CALL_RETURN=tonumber(target('container_return'))}
         local function substitute(code)
             for key,value in pairs(substitutions) do code=code:gsub('@'..key..'@',string.format('%.0f',value)) end
             return code
@@ -684,7 +692,7 @@ return function(buffer, image_base, policy)
     end
     local function expand(code, prefix)
         return (code:gsub('@BUFFER@', string.format('%.0f', buffer))
-            :gsub('@SKIP@', string.format('%.0f', image_base+0x1906FC))
+            :gsub('@SKIP@', function() return target('container_skip') end)
             :gsub('gate_', prefix .. '_'))
     end
     return {enter=expand(enter,'gate_enter'), capture=expand(capture,'gate_capture'),

@@ -169,8 +169,8 @@ function cases.host_keeps_observing_after_completion_and_restores_saved_latch(N,
             return f.adapter
         end}
     f.host=Host.new(deps);f.globals.FLPR_FRESH=1
-    assert(f.host:capture_new('confirmed-bg1-character-accept') and prepared==1)
-    assert(f.host:capture_new('confirmed-bg1-character-accept') and prepared==1)
+    assert(f.host:capture_new('confirmed-character-accept') and prepared==1)
+    assert(f.host:capture_new('confirmed-character-accept') and prepared==1)
     local function poll() tick=tick+1;f.host:poll();assert(f.host.status~='disabled',f.host.error) end
     for _=1,12 do poll() end
     assert(f.host.status=='complete' and f.host:inspect().container_latch_monitor)
@@ -228,7 +228,7 @@ return function(Core,Host,fail_prepare)
         assert(not ok and reason=='ACTIVATION_FAILED' and #order==1 and f.host.status=='disabled')
     else
         assert(ok and #order==2 and order[2]=='guard')
-        assert(f.host:capture_new('confirmed-bg1-character-accept') and #order==2)
+        assert(f.host:capture_new('confirmed-character-accept') and #order==2)
     end
 end
 '''
