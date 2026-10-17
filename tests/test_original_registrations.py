@@ -27,7 +27,7 @@ class OriginalRegistrationTests(unittest.TestCase):
         spare["ident"] = "free"
         draft["targets"].append(spare)
         with patch("flir_config.original_configuration.resolve_template", return_value=draft):
-            result = build_original_configuration(self.catalog, self.world, "eet-mode1")
+            result = build_original_configuration(self.catalog, self.world, "eet-original")
         return result, draft
 
     def compile(self, result, draft):
@@ -43,7 +43,7 @@ class OriginalRegistrationTests(unittest.TestCase):
         names = ("dlg:hendak", "dlg:lehtin", "dlg:bhoisig", "dlg:bhnalla", "dlg:bharval",
                  "are:ar1100", "dlg:uhogre01")
         world = {"resources": [{"id": name} for name in names], "sources": [], "targets": []}
-        draft = resolve_template({"items": []}, world, "bg2-mode1-plus-mode2")
+        draft = resolve_template({"items": []}, world, "bg2-original", items="extended", targets="extended")
         rows = {row["id"]: row for row in draft["targets"]}
         for line in (18, 48):
             authored = rows[f"bg2:mode2:target:{line}"]
@@ -104,13 +104,13 @@ class OriginalRegistrationTests(unittest.TestCase):
         self.assertEqual(resource["sha256"], hashlib.sha256(spell).hexdigest())
         self.assertFalse(any(row["resource"] == "spl:spin621"
                              for row in self.world["sources"] + self.world["targets"]))
-        draft = resolve_template(self.catalog, self.world, "bg2-mode1-plus-mode2")
+        draft = resolve_template(self.catalog, self.world, "bg2-original", items="extended", targets="extended")
         draft["items"] = [row for row in draft["items"] if row["id"] == "bg2:mode2:item:69"]
         draft["targets"] = [row for row in draft["targets"] if row["id"] == "bg2:mode2:target:70"]
         draft["targets"].append(target_row("free", "x", "10"))
         draft["targets"][-1]["campaign"] = "bg2"
         with patch("flir_config.original_configuration.resolve_template", return_value=draft):
-            result = build_original_configuration(self.catalog, self.world, "bg2-mode1-plus-mode2")
+            result = build_original_configuration(self.catalog, self.world, "bg2-original", items="extended", targets="extended")
         body = self.compile(result, draft)
         source = body["sources"][0]
         target = next(row for row in body["targets"] if row["id"] == "original-target:bg2:mode2:target:70")
@@ -138,8 +138,8 @@ class OriginalRegistrationTests(unittest.TestCase):
     def test_authored_target_and_settings_roundtrip(self):
         result, draft = self.configuration()
         body = self.compile(result, draft)
-        self.assertEqual(body["original_template_id"], "eet-mode1")
-        self.assertEqual(body["original_choices"], {"items": "mode1", "targets": "mode1"})
+        self.assertEqual(body["original_template_id"], "eet-original")
+        self.assertEqual(body["original_choices"], {"items": "standard", "targets": "standard"})
         self.assertEqual(body["original_options"], draft["options"])
         self.assertEqual({row["record"]["kind"] for row in body["targets"]}, {"container"})
         self.assertTrue(all(row["record"]["adapter_id"] == "original-target-v1"

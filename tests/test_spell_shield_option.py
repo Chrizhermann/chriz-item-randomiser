@@ -42,11 +42,11 @@ class SpellShieldOptionTests(unittest.TestCase):
         profile = edit_profile(new_profile(catalog, "spell-shield", "Spell Shield"), catalog,
                                include=["scrl8x"] if randomized else ["synth001"])
         options = DEFAULT_OPTIONS | {"more_spell_shield": True, "scrolls": randomized}
-        draft = resolve_template(catalog, world, "bg2-mode1-plus-mode2", options=options)
+        draft = resolve_template(catalog, world, "bg2-original", items="extended", targets="extended", options=options)
         row = next(row for row in draft["items"] if is_spell_shield_row(row))
         spec = spell_shield_spec(world, randomized=randomized)
         plan = new_binding_plan(profile, catalog, world)
-        plan.update(original_template_id="bg2-mode1-plus-mode2", original_choices=draft["choices"],
+        plan.update(original_template_id="bg2-original", original_choices=draft["choices"],
                     original_options=options, target_registrations=[], spell_shield=spec)
         if randomized:
             registration = _original_source(row, spec["resource_sha256"], spec["payload"],
@@ -93,7 +93,7 @@ class SpellShieldOptionTests(unittest.TestCase):
         draft["items"] = [row for row in draft["items"] if is_spell_shield_row(row)]
         draft["targets"] = [row for row in draft["targets"] if row["id"] == "bg2:base:target:8"]
         with patch("flir_config.original_configuration.resolve_template", return_value=draft):
-            built = build_original_configuration(catalog, world, "bg2-mode1-plus-mode2")
+            built = build_original_configuration(catalog, world, "bg2-original", items="extended", targets="extended")
         self.assertEqual(built["plan"]["registrations"][0]["copies"], 3)
         self.assertEqual(built["plan"]["spell_shield"], plan["spell_shield"])
 
@@ -107,7 +107,7 @@ class SpellShieldOptionTests(unittest.TestCase):
                                       source_ids=["sto:udduer01/item/0"])]
         draft["targets"] = [row for row in draft["targets"] if row["id"] == "bg2:base:target:8"]
         with patch("flir_config.original_configuration.resolve_template", return_value=draft):
-            built = build_original_configuration(catalog, world, "bg2-mode1-plus-mode2")
+            built = build_original_configuration(catalog, world, "bg2-original", items="extended", targets="extended")
         self.assertEqual(built["plan"]["spell_shield"]["source_id"], "")
 
     def test_forged_quantity_original_payload_or_disabled_option_is_rejected(self):

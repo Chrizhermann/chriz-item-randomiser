@@ -64,7 +64,7 @@ def spell_shield_spec(world: dict, *, randomized: bool) -> dict:
     Existing payload, supply flags and quantities above three remain exact.
     An absent row uses ADD_STORE_ITEM's authored identified, zero-charge payload.
     Source selection remains separate: the shop option also works without
-    scroll randomisation or Mode 2 item rows.
+    scroll randomisation or the extended item pool.
     """
     resource = next((row for row in world["resources"] if row["id"] == "sto:udduer01"), None)
     if resource is None:

@@ -1,7 +1,11 @@
 """Offline drafts of the original Randomiser item and location pools.
 
-``list_templates()`` describes the bundled choices: the original tables, and
+``list_templates()`` describes the bundled presets: Item Randomiser's tables, and
 preset list sets (``lists/presets/<name>/``) that replace a campaign's tables.
+Each preset has a standard and an extended pool of items and of places: the
+standard pools read the ``base`` tables, the extended pools also the ``mode2``
+tables (the larger lists of Item Randomiser's install-time Mode 2). Chriz Item
+Randomiser has no modes; every pool is drawn for each new game.
 ``build_template()`` loads their checked-in WeiDU tables without changing the
 game or flattening repeated rewards into the user-profile item set. The result
 needs installation specific binding and remaining original-rule adapters before
@@ -16,7 +20,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 SCHEMA = "flir-original-template-draft-v1"
-POOL_CHOICES = ("mode1", "mode1+mode2")
+# "standard": the base tables; "extended": the base and the mode2 tables.
+POOL_CHOICES = ("standard", "extended")
 DEFAULT_OPTIONS = {
     "scrolls": False,             # component 530, tiers beginning with s
     "kangaxx": False,             # component 520, tier ka
@@ -24,13 +29,13 @@ DEFAULT_OPTIONS = {
     "totsc_tome": False,          # component 500, ident b2c variant
     "more_spell_shield": False,   # component 560, independent store edit
     "cursed_disguise": False,     # component 570, independent item edit
-    "loss_mode": "none",         # Mode 1 components 1100 / 1200
+    "loss_mode": "none",         # Item Randomiser components 1100 / 1200
     "loss_percent": 0,
     "unrandomized_percent": 0,   # component 510, source-bearing items only
 }
-# The default: Item Randomiser's original Mode 1 pools with no items lost (component
-# 1100), the Flail of Ages heads (540) and the randomised Tales of the Sword Coast tome
-# (500); every other option off.
+# The default: Item Randomiser's lists with the standard pools, no items lost
+# (component 1100), the Flail of Ages heads (540) and the randomised Tales of the
+# Sword Coast tome (500); every other option off.
 RECOMMENDED_OPTIONS = DEFAULT_OPTIONS | {"flail_heads": True, "totsc_tome": True}
 CAMPAIGNS = (("bg1", "BG1"), ("bg2", "BG2"), ("eet", "EET"))
 # Preset list sets in lists/presets/<name>/, in the original tables' format. A preset
@@ -43,8 +48,8 @@ PRESETS = {
         "name": "Boss Loot", "author": "aShuN", "campaigns": ("bg1",),
         "description": "Powerful items at difficult boss fights, the ability tomes on the main path "
                        "and wizard items at mage enemies.",
-        "mode2_description": "Also the Mode 2 rows: shop stock, and Rogue Rebalancing and "
-                             "IWDification items where those mods are installed.",
+        "extended_description": "The extended item pool adds shop stock, and Rogue Rebalancing "
+                                "and IWDification items where those mods are installed.",
         # Items that only another mod adds. A game without the item leaves their rows
         # out and names the mod; any other absent item is left out with its reason.
         "optional_items": (("rr#", "Rogue Rebalancing"), ("cdia", "IWDification")),
@@ -56,7 +61,7 @@ def recommended_preset(campaign: str) -> dict:
     """The default preset for a campaign ("bg1", "bg2" or "eet")."""
     if campaign not in ("bg1", "bg2", "eet"):
         raise ValueError("Unknown campaign")
-    return {"id": f"{campaign}-mode1", "items": "mode1", "targets": "mode1",
+    return {"id": f"{campaign}-original", "items": "standard", "targets": "standard",
             "options": RECOMMENDED_OPTIONS.copy()}
 
 
@@ -67,13 +72,9 @@ def _parts(campaign: str) -> tuple[str, ...]:
 def _templates() -> dict[str, dict]:
     result = {}
     for campaign, label in CAMPAIGNS:
-        result[f"{campaign}-mode1"] = {
-            "name": f"{label} original Mode 1",
-            "description": "Original in-game-script item and location pools, by tier.",
-            "campaign": campaign, "preset": None}
-        result[f"{campaign}-mode1-plus-mode2"] = {
-            "name": f"{label} Mode 1 with Mode 2 additions",
-            "description": "Mode 1 runtime draft including the original Mode 2-only item and location rows.",
+        result[f"{campaign}-original"] = {
+            "name": f"{label}: Item Randomiser's lists",
+            "description": "The item and location lists of Item Randomiser by Wisp, by tier.",
             "campaign": campaign, "preset": None}
     for preset, spec in PRESETS.items():
         for campaign, label in CAMPAIGNS:
@@ -81,29 +82,27 @@ def _templates() -> dict[str, dict]:
             others = [part.upper() for part in _parts(campaign) if part not in spec["campaigns"]]
             if not covered:
                 continue
-            name = f"{label} {spec['name']} Mode 1 (by {spec['author']})"
             description = spec["description"]
             if others:
-                description += f" For {', '.join(covered)}; {', '.join(others)} keeps the original tables."
+                description += (f" For {', '.join(covered)}; {', '.join(others)} keeps "
+                                "Item Randomiser's lists.")
             result[f"{campaign}-{preset}"] = {
-                "name": name, "description": description, "campaign": campaign, "preset": preset}
-            result[f"{campaign}-{preset}-plus-mode2"] = {
-                "name": name.replace(" Mode 1 ", " Mode 1 with Mode 2 additions "),
-                "description": f"{description} {spec['mode2_description']}",
+                "name": f"{label}: {spec['name']} by {spec['author']}",
+                "description": f"{description} {spec['extended_description']}",
                 "campaign": campaign, "preset": preset}
     return result
 
 
 def list_templates() -> list[dict]:
-    """Return stable, compact descriptors for the original and preset Mode 1 drafts."""
+    """Return stable, compact descriptors for the bundled presets."""
     return [{"id": identity, "name": row["name"], "description": row["description"]}
             for identity, row in _templates().items()]
 
 
-def _choice(value: str | None, default: str, label: str) -> str:
-    result = default if value is None else value
+def _choice(value: str | None, label: str) -> str:
+    result = "standard" if value is None else value
     if result not in POOL_CHOICES:
-        raise ValueError(f"{label} must be 'mode1' or 'mode1+mode2'")
+        raise ValueError(f"{label} must be 'standard' or 'extended'")
     return result
 
 
@@ -213,7 +212,7 @@ def _load_targets(campaign: str, family: str, options: dict, preset: str | None 
     relative, prefix = _list_set("locations", campaign, family, preset)
     original = relative.startswith("lists/locations/")
     # A preset's place takes the endpoint authored for the same place, if any; the
-    # original tables have one for every Mode 1 row.
+    # original tables have one for every row of the base table.
     endpoints = ({} if family != "base" else _endpoint_index(campaign) if original
                  else _place_endpoints(campaign))
     occurrences: Counter[tuple[str, str, str]] = Counter()
@@ -249,9 +248,10 @@ def _load_targets(campaign: str, family: str, options: dict, preset: str | None 
 
 def build_template(template_id: str, *, items: str | None = None,
                    targets: str | None = None, options: dict | None = None) -> dict:
-    """Build a complete offline draft; separate pool overrides never switch runtime mode.
+    """Build a complete offline draft, drawn for each new game.
 
-    ``items`` and ``targets`` each accept ``mode1`` or ``mode1+mode2``.
+    ``items`` and ``targets`` each accept ``standard`` (the base tables, the
+    default) or ``extended`` (also the mode2 tables).
     Options are installer component choices and percentages; gated rows remain
     present with ``enabled=False`` so the draft never silently loses content.
     """
@@ -259,16 +259,15 @@ def build_template(template_id: str, *, items: str | None = None,
     if template_id not in descriptors:
         raise ValueError(f"Unknown original template: {template_id}")
     campaign, preset = descriptors[template_id]["campaign"], descriptors[template_id]["preset"]
-    default = "mode1+mode2" if template_id.endswith("-plus-mode2") else "mode1"
-    item_choice = _choice(items, default, "items")
-    target_choice = _choice(targets, default, "targets")
+    item_choice = _choice(items, "items")
+    target_choice = _choice(targets, "targets")
     selected_options = _options(options)
     campaigns = _parts(campaign)
     item_rows, target_rows = [], []
     for part in campaigns:
-        for family in (("base", "mode2") if item_choice == "mode1+mode2" else ("base",)):
+        for family in (("base", "mode2") if item_choice == "extended" else ("base",)):
             item_rows.extend(_load_items(part, family, selected_options, preset))
-        for family in (("base", "mode2") if target_choice == "mode1+mode2" else ("base",)):
+        for family in (("base", "mode2") if target_choice == "extended" else ("base",)):
             target_rows.extend(_load_targets(part, family, selected_options, preset))
     unsupported_sources = sum(row["source_kind"] in ("blank", "fl", "bcs", "dlg")
                               for row in item_rows)
@@ -277,7 +276,7 @@ def build_template(template_id: str, *, items: str | None = None,
     return {
         "schema": SCHEMA, "state": "template-draft-awaiting-binding-and-tier-runtime",
         "id": template_id, "name": descriptors[template_id]["name"],
-        "runtime_mode": "mode1", "campaigns": list(campaigns),
+        "runtime_mode": "new-game", "campaigns": list(campaigns),
         "choices": {"items": item_choice, "targets": target_choice},
         "options": selected_options, "items": item_rows, "targets": target_rows,
         "counts": {
@@ -290,7 +289,7 @@ def build_template(template_id: str, *, items: str | None = None,
         "runtime_limitations": [
             "Rows require installation-specific item, source, and target binding.",
             "Tiered draws, loss and kept originals work for bound plans; original overflow and token expansion still need integration.",
-            "Virtual, scripted, group, and unadapted Mode 2 rows need runtime support.",
+            "Virtual, scripted, group, and unadapted extended-pool rows need runtime support.",
             "BG1 resource names require game-specific conversion on EET, BGT, and Tutu.",
             "Installer mod-compatibility and per-row availability filters need evaluation at binding.",
         ],

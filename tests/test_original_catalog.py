@@ -24,9 +24,9 @@ class OriginalCatalogTests(unittest.TestCase):
         names = ("dlg:hendak", "dlg:lehtin", "dlg:bhoisig", "dlg:bhnalla", "dlg:bharval",
                  "are:ar1100", "dlg:uhogre01")
         world = {"resources": [{"id": name} for name in names], "sources": [], "targets": []}
-        draft = build_template("bg2-mode1-plus-mode2")
+        draft = build_template("bg2-original", items="extended", targets="extended")
         authored = {row["id"]: row for row in draft["targets"]}
-        result = resolve_template({"items": []}, world, "bg2-mode1-plus-mode2")
+        result = resolve_template({"items": []}, world, "bg2-original", items="extended", targets="extended")
         rows = {row["id"]: row for row in result["targets"]}
         for line, resource, alias, area in ((18, "dlg:hendak", "copper.fl", "ar0406"),
                                              (48, "dlg:bhoisig", "templemess.fl", "blank")):
@@ -43,7 +43,7 @@ class OriginalCatalogTests(unittest.TestCase):
         self.assertEqual(rows["bg2:mode2:target:17"]["area_resource"], "are:ar1100")
         for missing in ("dlg:hendak", "dlg:lehtin", "dlg:bhnalla"):
             absent = {**world, "resources": [r for r in world["resources"] if r["id"] != missing]}
-            bound = resolve_template({"items": []}, absent, "bg2-mode1-plus-mode2")
+            bound = resolve_template({"items": []}, absent, "bg2-original", items="extended", targets="extended")
             identity = "bg2:mode2:target:48" if missing == "dlg:bhnalla" else "bg2:mode2:target:18"
             with self.subTest(missing=missing):
                 self.assertEqual(next(r for r in bound["targets"] if r["id"] == identity)
@@ -52,7 +52,7 @@ class OriginalCatalogTests(unittest.TestCase):
     def test_preset_items_from_other_mods_are_absent_rather_than_unfit(self):
         world = {"resources": [], "sources": [], "targets": []}
         problems = {}
-        for row in resolve_template({"items": []}, world, "bg1-boss-loot-plus-mode2")["items"]:
+        for row in resolve_template({"items": []}, world, "bg1-boss-loot", items="extended", targets="extended")["items"]:
             problems.setdefault(row["optional_mod"], set()).add(row["binding_problem"])
         self.assertEqual(problems, {"Rogue Rebalancing": {"optional-item-absent"},
                                     "IWDification": {"optional-item-absent"},
@@ -61,7 +61,7 @@ class OriginalCatalogTests(unittest.TestCase):
     def test_exact_mode2_spin621_pair_uses_spell_hash_without_area_or_physical_target(self):
         catalog = {"items": [{"resref": "ring41"}]}
         world = {"resources": [{"id": "spl:spin621"}], "sources": [], "targets": []}
-        result = resolve_template(catalog, world, "bg2-mode1-plus-mode2")
+        result = resolve_template(catalog, world, "bg2-original", items="extended", targets="extended")
         source = next(row for row in result["items"] if row["id"] == "bg2:mode2:item:69")
         target = next(row for row in result["targets"] if row["id"] == "bg2:mode2:target:70")
         self.assertEqual(source["source_resource"], "spl:spin621")
@@ -73,7 +73,7 @@ class OriginalCatalogTests(unittest.TestCase):
         self.assertIsNone(target["container_name"])
         self.assertEqual(target["binding_problem"], "legacy-target-requires-adapter")
         missing = resolve_template(catalog, {"resources": [], "sources": [], "targets": []},
-                                   "bg2-mode1-plus-mode2")
+                                   "bg2-original", items="extended", targets="extended")
         self.assertEqual(next(row for row in missing["items"] if row["id"] == source["id"])
                          ["availability_reason"], "source-resource-absent")
         self.assertEqual(next(row for row in missing["targets"] if row["id"] == target["id"])
@@ -85,7 +85,7 @@ class OriginalCatalogTests(unittest.TestCase):
         targets[0]["selector"].update(x=3431, y=170, type=8)
         targets[1]["selector"].update(x=845, y=518, type=8)
         world = {"resources": [{"id": "are:ar1202"}], "sources": [], "targets": targets}
-        result = resolve_template({"items": []}, world, "bg2-mode1")
+        result = resolve_template({"items": []}, world, "bg2-original")
         row = next(row for row in result["targets"] if row["id"] == "bg2:base:target:77")
         self.assertEqual(row["target_ids"], ["are:ar1202/container/10"])
         self.assertIsNone(row["binding_problem"])
@@ -97,7 +97,7 @@ class OriginalCatalogTests(unittest.TestCase):
         closet["selector"].update(x=1949, y=716, type=3)
         world = {"resources": [{"id": "are:ar1202"}], "sources": [],
                  "targets": [table, closet]}
-        result = resolve_template({"items": []}, world, "bg2-mode1", options={"scrolls": True})
+        result = resolve_template({"items": []}, world, "bg2-original", options={"scrolls": True})
         rows = {row["id"]: row for row in result["targets"]}
         # The scroll's absent Container8 name is the table. The closet's old
         # Container9 name is misleading, so its exact name match cannot win.
@@ -112,7 +112,7 @@ class OriginalCatalogTests(unittest.TestCase):
         wrong = _target("are:ar1202/container/7", "are:ar1202", "container", "Container 8")
         wrong["selector"].update(x=2104, y=812, type=5)
         world = {"resources": [{"id": "are:ar1202"}], "sources": [], "targets": [wrong]}
-        result = resolve_template({"items": []}, world, "bg2-mode1", options={"scrolls": True})
+        result = resolve_template({"items": []}, world, "bg2-original", options={"scrolls": True})
         row = next(row for row in result["targets"] if row["id"] == "bg2:base:target:250")
         self.assertEqual(row["target_ids"], [])
         self.assertEqual(row["binding_problem"], "target-not-in-scan")
@@ -120,7 +120,7 @@ class OriginalCatalogTests(unittest.TestCase):
         duplicate = _target("are:ar1202/container/8", "are:ar1202", "container", "Other table")
         duplicate["selector"].update(x=2103, y=812, type=5)
         world["targets"].append(duplicate)
-        result = resolve_template({"items": []}, world, "bg2-mode1", options={"scrolls": True})
+        result = resolve_template({"items": []}, world, "bg2-original", options={"scrolls": True})
         row = next(row for row in result["targets"] if row["id"] == "bg2:base:target:250")
         self.assertEqual(row["target_ids"], [wrong["id"], duplicate["id"]])
         self.assertEqual(row["binding_problem"], "ambiguous-target-records")
@@ -132,7 +132,7 @@ class OriginalCatalogTests(unittest.TestCase):
         pointed["selector"].update(x=832, y=2057, type=3)
         world = {"resources": [{"id": "are:ar1202"}], "sources": [],
                  "targets": [named, pointed]}
-        result = resolve_template({"items": []}, world, "bg2-mode1")
+        result = resolve_template({"items": []}, world, "bg2-original")
         row = next(row for row in result["targets"] if row["id"] == "bg2:base:target:8")
         self.assertEqual(row["target_ids"], [named["id"]])
         self.assertIsNone(row["binding_problem"])
@@ -152,7 +152,7 @@ class OriginalCatalogTests(unittest.TestCase):
                         _target("are:ar0411/container/6", "are:ar0411",
                                 "container", "Body 1")],
         }
-        result = resolve_template(catalog, world, "bg2-mode1", options={"scrolls": True})
+        result = resolve_template(catalog, world, "bg2-original", options={"scrolls": True})
         rows = {row["source_ref"]: row for row in result["items"]}
         self.assertEqual(rows["lists/items/base/bg2.2da:255"]["source_ids"], [tool])
         self.assertEqual(rows["lists/items/base/bg2.2da:256"]["source_ids"], [body])
@@ -163,7 +163,7 @@ class OriginalCatalogTests(unittest.TestCase):
                                         "are:ar0411/container/8"))
         world["targets"].append(_target("are:ar0411/container/8", "are:ar0411",
                                         "container", "Tool CT 13"))
-        result = resolve_template(catalog, world, "bg2-mode1", options={"scrolls": True})
+        result = resolve_template(catalog, world, "bg2-original", options={"scrolls": True})
         row = next(row for row in result["items"] if row["source_ref"].endswith(":255"))
         self.assertEqual(row["source_ids"], [exact])
 
@@ -192,7 +192,7 @@ class OriginalCatalogTests(unittest.TestCase):
                 _target("are:bg1803/container/9", "are:bg1803", "container", "Container 11"),
             ],
         }
-        result = resolve_template(catalog, world, "bg1-mode1", options={"scrolls": True})
+        result = resolve_template(catalog, world, "bg1-original", options={"scrolls": True})
         rows = {row["source_ref"].rsplit(":", 1)[1]: row for row in result["items"]}
         self.assertEqual(len(rows), 212)
         self.assertEqual(rows["3"]["source_ids"], ["sto:inn3351/item/6"])
@@ -228,8 +228,8 @@ class OriginalCatalogTests(unittest.TestCase):
                         "cre:gardus"),
             ],
         }
-        result = resolve_template(catalog, world, "bg1-mode1-plus-mode2",
-                                  targets="mode1+mode2")
+        result = resolve_template(catalog, world, "bg1-original", items="extended",
+                                  targets="extended")
         rows = {row["source_ref"]: row for row in result["targets"]}
         container = rows["lists/locations/base/bg1.2da:3"]
         self.assertEqual(container["area_resource"], "are:bg5500")
@@ -253,7 +253,7 @@ class OriginalCatalogTests(unittest.TestCase):
     def test_baldurs_gate_two_does_not_convert_area(self):
         catalog = {"items": [{"resref": "ring08"}]}
         world = {"resources": [{"id": "cre:jaga3"}], "sources": [], "targets": []}
-        result = resolve_template(catalog, world, "bg2-mode1")
+        result = resolve_template(catalog, world, "bg2-original")
         row = next(row for row in result["items"] if row["source_ref"].endswith(":94"))
         self.assertEqual(row["item_resref"], "ring08")
         self.assertEqual(row["source_resource"], "cre:jaga3")

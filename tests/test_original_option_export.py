@@ -50,13 +50,13 @@ class OriginalOptionExportTests(unittest.TestCase):
         return hashes, patched_hashes, changed
 
     def mode2_configuration(self, f, source, target):
-        draft = resolve_template(f.catalog, f.world, 'bg2-mode1-plus-mode2')
+        draft = resolve_template(f.catalog, f.world, 'bg2-original', items='extended', targets='extended')
         draft['items'] = [row for row in draft['items'] if row['id'] == source]
         draft['targets'] = [row for row in draft['targets'] if row['id'] == target]
         self.assertEqual(len(draft['items']), 1)
         self.assertEqual(len(draft['targets']), 1)
         with patch('flir_config.original_configuration.resolve_template', return_value=draft):
-            configuration = build_original_configuration(f.catalog, f.world, 'bg2-mode1-plus-mode2')
+            configuration = build_original_configuration(f.catalog, f.world, 'bg2-original', items='extended', targets='extended')
         configuration['plan']['randomization']['overflow'] = False
         return configuration
 
@@ -167,7 +167,7 @@ class OriginalOptionExportTests(unittest.TestCase):
         original = script_fixture('bcs:ppchest')
         (f.override / 'ppchest.bcs').write_bytes(original)
         f.refresh()
-        resolved = resolve_template(f.catalog, f.world, 'bg2-mode1-plus-mode2')
+        resolved = resolve_template(f.catalog, f.world, 'bg2-original', items='extended', targets='extended')
         row = next(row for row in resolved['targets'] if row['id'] == 'bg2:mode2:target:61')
         self.assertIsNone(row['binding_problem'])
         self.assertEqual((row['area_resource'], row['container_name'], row['target_ids']),
@@ -383,11 +383,11 @@ class OriginalOptionExportTests(unittest.TestCase):
         # The ITM has no abilities; the authored grant nevertheless has [1,1,1].
         (f.override / 'ring31.itm').write_bytes((f.override / 'synth001.itm').read_bytes())
         f.refresh()
-        draft = resolve_template(f.catalog, f.world, 'bg2-mode1-plus-mode2')
+        draft = resolve_template(f.catalog, f.world, 'bg2-original', items='extended', targets='extended')
         draft['items'] = [row for row in draft['items'] if row['id'] == 'bg2:mode2:item:28']
         draft['targets'] = [row for row in draft['targets'] if row['id'] == 'bg2:mode2:target:35']
         with patch('flir_config.original_configuration.resolve_template', return_value=draft):
-            configuration = build_original_configuration(f.catalog, f.world, 'bg2-mode1-plus-mode2')
+            configuration = build_original_configuration(f.catalog, f.world, 'bg2-original', items='extended', targets='extended')
         # This focused configuration has equal capacity; the original preset's
         # overflow policy deliberately reserves ordinary physical locations.
         configuration['plan']['randomization']['overflow'] = False
@@ -426,7 +426,7 @@ class OriginalOptionExportTests(unittest.TestCase):
         f.world = scan_world(f.catalog)
         profile = edit_profile(new_profile(f.catalog, 'cursed-test', 'Cursed'), f.catalog, include=['synth001'])
         plan = new_binding_plan(profile, f.catalog, f.world)
-        plan.update(original_template_id='bg2-mode1', original_choices={'items': 'mode1', 'targets': 'mode1'},
+        plan.update(original_template_id='bg2-original', original_choices={'items': 'standard', 'targets': 'standard'},
                     original_options={**DEFAULT_OPTIONS, 'cursed_disguise': True}, target_registrations=[],
                     cursed_disguises=spec_for(data))
         plan['sources'] = [{'item': 'synth001', 'policy': 'relocate', 'source_ids': [f.first], 'registration_ids': []}]

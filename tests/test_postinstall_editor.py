@@ -61,10 +61,10 @@ class EditorTests(unittest.TestCase):
     def test_preset_routes_replace_only_a_checked_successful_draft(self):
         editor = self.editor
         descriptors = editor.get("/api/templates", {})
-        self.assertEqual([row["id"] for row in descriptors[:2]],
-                         ["bg1-mode1", "bg1-mode1-plus-mode2"])
+        self.assertEqual([row["id"] for row in descriptors[:3]],
+                         ["bg1-original", "bg2-original", "eet-original"])
         recommended = editor.get("/api/recommended", {})
-        self.assertEqual(recommended["id"], "eet-mode1")
+        self.assertEqual(recommended["id"], "eet-original")
         self.assertIn(recommended["id"], [row["id"] for row in descriptors])
         # Without CIR's record, Glaicus's conversation is not prepared.
         self.assertFalse(recommended["options"]["flail_heads"])
@@ -90,7 +90,7 @@ class EditorTests(unittest.TestCase):
             result["profile"]["name"] = "BG1 original"
             result["plan"]["randomization"] = {"tier_rows": ["original-choice"]}
             result["plan"]["original_options"] = {"scrolls": True}
-            result["plan"]["original_template_id"] = "bg1-mode1"
+            result["plan"]["original_template_id"] = "bg1-original"
             result["plan"]["target_registrations"] = [{
                 "id": target_id, "capacity": 1,
                 "authored": {"target": "container1", "area_resource": "are:bg5500"}}]
@@ -105,9 +105,9 @@ class EditorTests(unittest.TestCase):
         module.fit_original_configuration = build
         with patch.dict(sys.modules, {module.__name__: module}):
             state = editor.post("/api/template", {
-                "id": "bg1-mode1", "items": "mode1+mode2", "targets": "mode1",
+                "id": "bg1-original", "items": "extended", "targets": "standard",
                 "options": {"scrolls": True}})
-            self.assertEqual(calls[0][2:], ("bg1-mode1", "mode1+mode2", "mode1",
+            self.assertEqual(calls[0][2:], ("bg1-original", "extended", "standard",
                                            {"scrolls": True}))
             self.assertEqual(state["profile"]["name"], "BG1 original")
             self.assertEqual(state["left_out"],
@@ -125,7 +125,7 @@ class EditorTests(unittest.TestCase):
                              {"tier_rows": ["original-choice"]})
             self.assertEqual(state["targets"][0]["label"], "container1 (are:bg5500)")
             self.assertEqual(editor.draft["plan"]["original_options"], {"scrolls": True})
-            self.assertEqual(editor.draft["plan"]["original_template_id"], "bg1-mode1")
+            self.assertEqual(editor.draft["plan"]["original_template_id"], "bg1-original")
             self.assertEqual(editor.draft["plan"]["target_registrations"][0]["id"], target_id)
 
             before_error = deepcopy(editor.draft)
@@ -133,7 +133,7 @@ class EditorTests(unittest.TestCase):
                 raise ProfileError("Preset cannot be bound")
             module.fit_original_configuration = failed
             with self.assertRaisesRegex(ProfileError, "cannot be bound"):
-                editor.post("/api/template", {"id": "bg2-mode1"})
+                editor.post("/api/template", {"id": "bg2-original"})
             self.assertEqual(editor.draft, before_error)
 
             def malformed(*_, **__):
@@ -142,7 +142,7 @@ class EditorTests(unittest.TestCase):
                 return result
             module.fit_original_configuration = malformed
             with self.assertRaisesRegex(ProfileError, "different scan"):
-                editor.post("/api/template", {"id": "bg2-mode1"})
+                editor.post("/api/template", {"id": "bg2-original"})
             self.assertEqual(editor.draft, before_error)
 
     def test_prepare_uses_existing_campaign_format_and_capacity_check(self):
@@ -279,7 +279,7 @@ class EditorTests(unittest.TestCase):
                 with urlopen(req, timeout=5) as response:
                     return json.load(response)["result"]
             try:
-                self.assertEqual(request("/api/templates")[0]["id"], "bg1-mode1")
+                self.assertEqual(request("/api/templates")[0]["id"], "bg1-original")
                 self.assertEqual(request("/api/items")["items"], [])
                 self.assertEqual(request("/api/items?q=synth001")["items"][0]["resref"], "synth001")
                 source = request("/api/sources?item=synth001")["records"][0]

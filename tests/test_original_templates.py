@@ -14,26 +14,28 @@ class OriginalTemplateTests(unittest.TestCase):
     def test_descriptors_and_complete_table_totals(self):
         self.assertEqual(
             [row["id"] for row in list_templates()],
-            ["bg1-mode1", "bg1-mode1-plus-mode2", "bg2-mode1",
-             "bg2-mode1-plus-mode2", "eet-mode1", "eet-mode1-plus-mode2",
-             "bg1-boss-loot", "bg1-boss-loot-plus-mode2", "eet-boss-loot",
-             "eet-boss-loot-plus-mode2"],
+            ["bg1-original", "bg2-original", "eet-original", "bg1-boss-loot", "eet-boss-loot"],
         )
-        for identity, items, targets in (
-            ("bg1-mode1", 212, 218),
-            ("bg1-mode1-plus-mode2", 380, 397),
-            ("bg2-mode1", 293, 309),
-            ("bg2-mode1-plus-mode2", 546, 574),
-            ("eet-mode1", 505, 527),
-            ("eet-mode1-plus-mode2", 926, 971),
-            ("bg1-boss-loot", 214, 216),
-            ("bg1-boss-loot-plus-mode2", 609, 594),
-            ("eet-boss-loot", 507, 525),
-            ("eet-boss-loot-plus-mode2", 1155, 1168),
+        # Chriz Item Randomiser has no modes; its presets are not named after them.
+        for row in list_templates():
+            self.assertNotRegex(row["name"] + " " + row["description"], r"(?i)\bmode\b")
+        self.assertEqual(build_template("bg1-original")["choices"],
+                         {"items": "standard", "targets": "standard"})
+        for identity, pools, items, targets in (
+            ("bg1-original", "standard", 212, 218),
+            ("bg1-original", "extended", 380, 397),
+            ("bg2-original", "standard", 293, 309),
+            ("bg2-original", "extended", 546, 574),
+            ("eet-original", "standard", 505, 527),
+            ("eet-original", "extended", 926, 971),
+            ("bg1-boss-loot", "standard", 214, 216),
+            ("bg1-boss-loot", "extended", 609, 594),
+            ("eet-boss-loot", "standard", 507, 525),
+            ("eet-boss-loot", "extended", 1155, 1168),
         ):
-            with self.subTest(identity=identity):
-                draft = build_template(identity)
-                self.assertEqual(draft["runtime_mode"], "mode1")
+            with self.subTest(identity=identity, pools=pools):
+                draft = build_template(identity, items=pools, targets=pools)
+                self.assertEqual(draft["runtime_mode"], "new-game")
                 self.assertEqual(draft["counts"]["items"], items)
                 self.assertEqual(draft["counts"]["targets"], targets)
                 self.assertEqual(len({row["id"] for row in draft["items"]}), items)
@@ -41,7 +43,7 @@ class OriginalTemplateTests(unittest.TestCase):
                 self.assertIn("draft", draft["state"])
 
     def test_repeated_rewards_and_authored_endpoints_survive(self):
-        draft = build_template("bg1-mode1")
+        draft = build_template("bg1-original")
         bracers = [row for row in draft["items"] if row["resref"] == "brac01"
                    and row["tier"] == "24"]
         self.assertEqual([row["occurrence"] for row in bracers], [1, 2])
@@ -56,8 +58,8 @@ class OriginalTemplateTests(unittest.TestCase):
                             for row in draft["targets"] if row["endpoint_kind"] == "group"))
 
     def test_option_gates_preserve_rows_and_behavior_options(self):
-        off = build_template("bg2-mode1")
-        on = build_template("bg2-mode1", options={
+        off = build_template("bg2-original")
+        on = build_template("bg2-original", options={
             "scrolls": True, "kangaxx": True, "flail_heads": True,
             "loss_mode": "some", "loss_percent": 35,
             "unrandomized_percent": 20, "totsc_tome": True,
@@ -74,12 +76,12 @@ class OriginalTemplateTests(unittest.TestCase):
                                 and not row["enabled"] for row in off["items"]))
 
     def test_item_and_target_pools_are_independent(self):
-        draft = build_template("eet-mode1", items="mode1+mode2")
+        draft = build_template("eet-original", items="extended")
         self.assertEqual(draft["counts"]["items"], 926)
         self.assertEqual(draft["counts"]["targets"], 527)
         self.assertTrue(any(row["family"] == "mode2" for row in draft["items"]))
         self.assertTrue(all(row["family"] == "base" for row in draft["targets"]))
-        reverse = build_template("bg2-mode1-plus-mode2", items="mode1")
+        reverse = build_template("bg2-original", items="standard", targets="extended")
         self.assertEqual(reverse["counts"]["items"], 293)
         self.assertEqual(reverse["counts"]["targets"], 574)
         self.assertTrue(all(row["endpoint_id"] is None for row in reverse["targets"]
@@ -87,9 +89,10 @@ class OriginalTemplateTests(unittest.TestCase):
         self.assertTrue(all(row["runtime_support"] == "needs-endpoint-adapter"
                             for row in reverse["targets"] if row["family"] == "mode2"))
 
-    def test_recommended_preset_is_mode1_without_loss_plus_flail_heads_and_tome(self):
+    def test_recommended_preset_is_standard_without_loss_plus_flail_heads_and_tome(self):
         preset = recommended_preset("eet")
-        self.assertEqual((preset["id"], preset["items"], preset["targets"]), ("eet-mode1", "mode1", "mode1"))
+        self.assertEqual((preset["id"], preset["items"], preset["targets"]),
+                         ("eet-original", "standard", "standard"))
         self.assertEqual(preset["options"], DEFAULT_OPTIONS | {"flail_heads": True, "totsc_tome": True})
         self.assertEqual(preset["options"]["loss_mode"], "none")
         draft = build_template(preset["id"], items=preset["items"], targets=preset["targets"],
@@ -97,16 +100,16 @@ class OriginalTemplateTests(unittest.TestCase):
         self.assertTrue(any(row["option_gate"] == "flail_heads" and row["enabled"] for row in draft["items"]))
         self.assertFalse(any(row["option_gate"] in ("scrolls", "kangaxx") and row["enabled"]
                              for row in draft["items"]))
-        self.assertEqual(recommended_preset("bg1")["id"], "bg1-mode1")
+        self.assertEqual(recommended_preset("bg1")["id"], "bg1-original")
         preset["options"]["kangaxx"] = True
         self.assertFalse(recommended_preset("eet")["options"]["kangaxx"])
         with self.assertRaises(ValueError):
             recommended_preset("iwd")
 
     def test_boss_loot_replaces_only_the_bg1_tables(self):
-        draft = build_template("eet-boss-loot-plus-mode2")
-        self.assertEqual(draft["name"], "EET Boss Loot Mode 1 with Mode 2 additions (by aShuN)")
-        original = build_template("bg2-mode1-plus-mode2")
+        draft = build_template("eet-boss-loot", items="extended", targets="extended")
+        self.assertEqual(draft["name"], "EET: Boss Loot by aShuN")
+        original = build_template("bg2-original", items="extended", targets="extended")
         for kind in ("items", "targets"):
             bg1 = [row for row in draft[kind] if row["campaign"] == "bg1"]
             self.assertTrue(bg1)
@@ -117,7 +120,7 @@ class OriginalTemplateTests(unittest.TestCase):
 
     def test_boss_loot_places_take_the_endpoint_of_the_same_place(self):
         endpoints = {(row["target"], row["area"]): row["endpoint_id"]
-                     for row in build_template("bg1-mode1")["targets"]}
+                     for row in build_template("bg1-original")["targets"]}
         without = set()
         for row in build_template("bg1-boss-loot")["targets"]:
             place = (row["target"], row["area"])
@@ -125,7 +128,7 @@ class OriginalTemplateTests(unittest.TestCase):
             if row["endpoint_id"] is None:
                 without.add(place)
                 self.assertEqual(row["runtime_support"], "needs-endpoint-adapter")
-        # Places the original Mode 1 tables do not use; they are bound by name.
+        # Places the original standard tables do not use; they are bound by name.
         self.assertEqual(without, {
             ("nemphr.cre", "ar0813"), ("yago.cre", "ar0135"), ("container1", "ar3802"),
             ("baerin.cre", "ar3500"), ("raemon.cre", "ar1901"), ("lindin.cre", "ar3500"),
@@ -156,22 +159,26 @@ class OriginalTemplateTests(unittest.TestCase):
 
     def test_boss_loot_marks_items_that_only_other_mods_add(self):
         optional = {row["resref"]: row["optional_mod"]
-                    for row in build_template("bg1-boss-loot-plus-mode2")["items"] if row["optional_mod"]}
+                    for row in build_template("bg1-boss-loot", items="extended")["items"]
+                    if row["optional_mod"]}
         self.assertEqual({mod for mod in optional.values()}, {"Rogue Rebalancing", "IWDification"})
         self.assertTrue(all((mod == "Rogue Rebalancing") == name.startswith("rr#")
                             for name, mod in optional.items()))
-        for identity in ("bg1-boss-loot", "eet-mode1-plus-mode2"):
-            self.assertFalse(any(row["optional_mod"] for row in build_template(identity)["items"]))
+        for identity, pools in (("bg1-boss-loot", "standard"), ("eet-original", "extended")):
+            self.assertFalse(any(row["optional_mod"]
+                                 for row in build_template(identity, items=pools)["items"]))
 
     def test_invalid_choices_fail_closed(self):
         with self.assertRaises(ValueError):
             build_template("unknown")
         with self.assertRaises(ValueError):
-            build_template("bg1-mode1", items="mode2")
+            build_template("eet-mode1")
         with self.assertRaises(ValueError):
-            build_template("bg1-mode1", options={"scrolls": 1})
+            build_template("bg1-original", items="mode1+mode2")
         with self.assertRaises(ValueError):
-            build_template("bg1-mode1", options={"loss_percent": 101})
+            build_template("bg1-original", options={"scrolls": 1})
+        with self.assertRaises(ValueError):
+            build_template("bg1-original", options={"loss_percent": 101})
 
 
 if __name__ == "__main__":

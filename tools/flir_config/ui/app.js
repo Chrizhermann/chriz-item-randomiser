@@ -826,11 +826,6 @@ ui.presetButton.addEventListener("click", () => {
     setStatus("Choose preset settings to create a new draft.");
   }, "Loading presets…");
 });
-ui.presetSelect.addEventListener("change", () => {
-  const choice = ui.presetSelect.value.endsWith("-plus-mode2") ? "mode1+mode2" : "mode1";
-  ui.presetItems.value = choice;
-  ui.presetTargets.value = choice;
-});
 ui.presetLossMode.addEventListener("change", () => {
   ui.presetLossPercent.disabled = ui.presetLossMode.value !== "some";
   if (ui.presetLossPercent.disabled) ui.presetLossPercent.value = "0";

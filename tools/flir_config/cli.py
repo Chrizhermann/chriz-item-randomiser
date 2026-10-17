@@ -27,8 +27,10 @@ def parser() -> argparse.ArgumentParser:
     commands = result.add_subparsers(dest="command", required=True)
     templates = commands.add_parser("templates", help="List or export original pool drafts; not playable settings yet")
     templates.add_argument("--id", choices=[row["id"] for row in list_templates()])
-    templates.add_argument("--items", choices=POOL_CHOICES)
-    templates.add_argument("--targets", choices=POOL_CHOICES)
+    templates.add_argument("--items", choices=POOL_CHOICES,
+                           help="standard (default) or extended: also the larger mode2 tables")
+    templates.add_argument("--targets", choices=POOL_CHOICES,
+                           help="standard (default) or extended: also the larger mode2 tables")
     templates.add_argument("--options", type=Path, help="JSON object of original component options")
     templates.add_argument("--out", type=Path)
     ui = commands.add_parser("ui", help="Open the local configuration editor over existing scans")

@@ -64,7 +64,7 @@ class OriginalConfigurationTests(unittest.TestCase):
                              if row["resource"] == "are:area")
 
     def _draft(self, *, absent=False):
-        return {"name": "Original", "choices": {"items": "mode1", "targets": "mode1"},
+        return {"name": "Original", "choices": {"items": "standard", "targets": "standard"},
                 "options": {"scrolls": False, "loss_mode": "some", "loss_percent": 15,
                             "unrandomized_percent": 30},
                 "items": [source_row("source-1", source_ids=[self.physical], absent=absent),
@@ -76,11 +76,11 @@ class OriginalConfigurationTests(unittest.TestCase):
         before = snapshot(self.root)
         with patch("flir_config.original_configuration.resolve_template",
                    return_value=self._draft()):
-            result = build_original_configuration(self.catalog, self.world, "eet-mode1")
+            result = build_original_configuration(self.catalog, self.world, "eet-original")
         plan = result["plan"]
         self.assertEqual(snapshot(self.root), before)
         self.assertEqual(result["profile"]["items"], ["synth001"])
-        self.assertEqual(plan["original_choices"], {"items": "mode1", "targets": "mode1"})
+        self.assertEqual(plan["original_choices"], {"items": "standard", "targets": "standard"})
         self.assertEqual(plan["original_options"]["unrandomized_percent"], 30)
         self.assertEqual(plan["randomization"]["loss_percent"], 15)
         self.assertEqual(plan["randomization"]["overflow"], True)
@@ -109,7 +109,7 @@ class OriginalConfigurationTests(unittest.TestCase):
         draft["targets"][0].update(chance=60, ident="b2c")
         draft["options"]["totsc_tome"] = True
         with patch("flir_config.original_configuration.resolve_template", return_value=draft):
-            plan = build_original_configuration(self.catalog, self.world, "eet-mode1")["plan"]
+            plan = build_original_configuration(self.catalog, self.world, "eet-original")["plan"]
         self.assertEqual(plan["randomization"]["row_filters"]["sources"][self.physical],
                          {"chance": 45, "group": "bg1:b2c"})
         self.assertEqual(plan["randomization"]["row_filters"]["targets"]["original-target:target-1"],
@@ -120,7 +120,7 @@ class OriginalConfigurationTests(unittest.TestCase):
         self.assertNotIn("reward_variants", plan["randomization"]["sources"][virtual])
         draft["options"]["totsc_tome"] = False
         with patch("flir_config.original_configuration.resolve_template", return_value=draft):
-            disabled = build_original_configuration(self.catalog, self.world, "eet-mode1")["plan"]
+            disabled = build_original_configuration(self.catalog, self.world, "eet-original")["plan"]
         self.assertNotIn("reward_variants", disabled["randomization"]["sources"][self.physical])
 
     def test_rewards_cir_did_not_prepare_stay_as_installed(self):
@@ -144,7 +144,7 @@ class OriginalConfigurationTests(unittest.TestCase):
                 before = snapshot(self.root)
             with self.subTest(statuses=statuses), \
                     patch("flir_config.original_configuration.resolve_template", return_value=draft):
-                result = build_original_configuration(self.catalog, self.world, "eet-mode1")
+                result = build_original_configuration(self.catalog, self.world, "eet-original")
             self.assertEqual(result["left_out"], expected)
             plan = result["plan"]
             self.assertEqual(result["profile"]["items"], ["synth001"])
@@ -162,10 +162,10 @@ class OriginalConfigurationTests(unittest.TestCase):
             with self.subTest(statuses=statuses), \
                     patch("flir_config.original_configuration.resolve_template", return_value=draft), \
                     self.assertRaisesRegex(ProfileError, "flail heads option needs.*KPGLAI01.DLG"):
-                build_original_configuration(self.catalog, self.world, "eet-mode1")
+                build_original_configuration(self.catalog, self.world, "eet-original")
         write_registry(self.root)
         with patch("flir_config.original_configuration.resolve_template", return_value=draft):
-            self.assertEqual(build_original_configuration(self.catalog, self.world, "eet-mode1")["left_out"], [])
+            self.assertEqual(build_original_configuration(self.catalog, self.world, "eet-original")["left_out"], [])
 
     def test_preset_items_from_an_absent_mod_are_left_out_and_named(self):
         draft = self._draft()
@@ -175,7 +175,7 @@ class OriginalConfigurationTests(unittest.TestCase):
                        availability_reason="optional-item-absent", binding_problem="optional-item-absent")
             draft["items"].append(row)
         with patch("flir_config.original_configuration.resolve_template", return_value=draft):
-            result = build_original_configuration(self.catalog, self.world, "eet-mode1")
+            result = build_original_configuration(self.catalog, self.world, "eet-original")
         self.assertEqual(result["absent_mods"],
                          ["Rogue Rebalancing is not installed, so 2 rewards from it are left out"])
         self.assertEqual(result["profile"]["items"], ["synth001"])
@@ -184,7 +184,7 @@ class OriginalConfigurationTests(unittest.TestCase):
         draft["items"][-1].update(optional_mod=None, availability_reason="item-definition-absent",
                                   binding_problem="item-definition-absent")
         with patch("flir_config.original_configuration.resolve_template", return_value=draft):
-            result = build_original_configuration(self.catalog, self.world, "eet-mode1")
+            result = build_original_configuration(self.catalog, self.world, "eet-original")
         self.assertEqual(result["absent_mods"],
                          ["Rogue Rebalancing is not installed, so 1 reward from it is left out"])
         self.assertEqual(result["not_used"], [{"id": "rr-2", "row": "lists/items/base/bg1.2da:1",
@@ -203,7 +203,7 @@ class OriginalConfigurationTests(unittest.TestCase):
         draft["items"] += [ambiguous, twice]
         draft["targets"].append(lost)
         with patch("flir_config.original_configuration.resolve_template", return_value=draft):
-            result = build_original_configuration(self.catalog, self.world, "eet-mode1",
+            result = build_original_configuration(self.catalog, self.world, "eet-original",
                                                   exclude={"virtual-1": "runtime reason"})
         self.assertEqual([(row["id"], row["kind"], row["reason"]) for row in result["not_used"]], [
             ("virtual-1", "reward", "runtime reason"),
@@ -252,7 +252,7 @@ class OriginalConfigurationTests(unittest.TestCase):
             row["target_ids"] = [f"are:area/container/{container}"]
         with patch("flir_config.original_configuration.resolve_template", return_value=draft), \
                 patch("flir_config.original_registrations.resolve_template", return_value=draft):
-            result = fit_original_configuration(catalog, world, "eet-mode1")
+            result = fit_original_configuration(catalog, world, "eet-original")
             campaign = compile_campaign(result["profile"], catalog, world, result["plan"])
         self.assertEqual(result["profile"]["items"], ["synth002"])
         self.assertEqual(result["not_used"], [{
@@ -268,7 +268,7 @@ class OriginalConfigurationTests(unittest.TestCase):
     def test_zero_match_source_omitted_while_target_rows_remain(self):
         with patch("flir_config.original_configuration.resolve_template",
                    return_value=self._draft(absent=True)):
-            plan = build_original_configuration(self.catalog, self.world, "eet-mode1")["plan"]
+            plan = build_original_configuration(self.catalog, self.world, "eet-original")["plan"]
         self.assertEqual(plan["sources"][0]["source_ids"], [])
         self.assertEqual(len(plan["registrations"]), 1)
         self.assertEqual(len(plan["target_registrations"]), 2)
@@ -286,7 +286,7 @@ class OriginalConfigurationTests(unittest.TestCase):
         draft["items"] = [source_row("group-1", source_ids=grouped_ids,
                                      resource="cre:group")]
         with patch("flir_config.original_configuration.resolve_template", return_value=draft):
-            plan = build_original_configuration(catalog, world, "eet-mode1")["plan"]
+            plan = build_original_configuration(catalog, world, "eet-original")["plan"]
         registration = plan["registrations"][0]
         self.assertEqual(registration["adapter_id"], "original-source-v1")
         self.assertEqual(registration["copies"], 1)
@@ -307,7 +307,7 @@ class OriginalConfigurationTests(unittest.TestCase):
         authored["source"] = "slotless.cre"
         draft["items"] = [authored]
         with patch("flir_config.original_configuration.resolve_template", return_value=draft):
-            plan = build_original_configuration(catalog, world, "eet-mode1")["plan"]
+            plan = build_original_configuration(catalog, world, "eet-original")["plan"]
         registration = plan["registrations"][0]
         self.assertEqual(registration["physical_source_ids"], ["cre:slotless/item/1"])
         self.assertEqual(registration["payload"], {"resref": "synth001", "expiration": 0,
@@ -343,7 +343,7 @@ class OriginalConfigurationTests(unittest.TestCase):
             source_row("unshey-1", adapter="unshey", resource="cre:absent"),
             source_row("virtual-1", adapter="virtual", ident="x", tier="25")]
         with patch("flir_config.original_configuration.resolve_template", return_value=draft):
-            plan = build_original_configuration(catalog, world, "eet-mode1")["plan"]
+            plan = build_original_configuration(catalog, world, "eet-original")["plan"]
         self.assertEqual(plan["replacements"], {equipped_id: "blank"})
         self.assertEqual(len(plan["registrations"]), 1)
         self.assertTrue(all("unshey" not in identity

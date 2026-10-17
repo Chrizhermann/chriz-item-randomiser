@@ -48,7 +48,7 @@
       <p id="status" class="status" role="status" aria-live="polite">Loading configuration…</p>
       <p id="validation" class="validation" role="status" aria-live="polite" hidden></p>
       <p id="applySafetyNote" class="small-note" hidden>Close the game before applying a configuration. Existing saves retain their settings.</p>
-      <p id="applyDevelopmentNote" class="small-note" hidden>Start a new BG1 campaign for this playtest. Mode 2 additions and some optional quest rules are still in development.</p>
+      <p id="applyDevelopmentNote" class="small-note" hidden>Start a new BG1 campaign for this playtest. The extended pools and some optional quest rules are still in development.</p>
 
       <div class="columns">
         <section class="library panel" aria-labelledby="libraryTitle">
@@ -121,8 +121,8 @@
   </dialog>
   <dialog id="presetDialog" class="preset-dialog" aria-labelledby="presetTitle">
     <form id="presetForm">
-      <h2 id="presetTitle">Start from an original preset</h2>
-      <p class="small-note">Choose the original item and recipient pools separately. The new draft still needs a configuration check for this installation.</p>
+      <h2 id="presetTitle">Start from a preset</h2>
+      <p class="small-note">Choose the item and recipient pools separately. Extended pools also use Item Randomiser's larger lists: more items from creatures, shops and containers, quest rewards, and more places. The new draft still needs a configuration check for this installation.</p>
       <div class="preset-grid">
         <div>
           <label for="presetSelect">Game preset</label>
@@ -131,15 +131,15 @@
         <div>
           <label for="presetItems">Item pool</label>
           <select id="presetItems">
-            <option value="mode1">Original Mode 1</option>
-            <option value="mode1+mode2">Mode 1 plus Mode 2 additions</option>
+            <option value="standard">Standard</option>
+            <option value="extended">Extended</option>
           </select>
         </div>
         <div>
           <label for="presetTargets">Recipient pool</label>
           <select id="presetTargets">
-            <option value="mode1">Original Mode 1</option>
-            <option value="mode1+mode2">Mode 1 plus Mode 2 additions</option>
+            <option value="standard">Standard</option>
+            <option value="extended">Extended</option>
           </select>
         </div>
       </div>

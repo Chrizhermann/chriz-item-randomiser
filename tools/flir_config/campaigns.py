@@ -376,7 +376,7 @@ def _validate_campaign(body: dict) -> dict:
     if present_original and body["original_options"].get("more_spell_shield"):
         validate_spell_shield_spec(shield)
         randomized = (body["original_options"]["scrolls"] and
-                      body["original_choices"]["items"] == "mode1+mode2" and
+                      body["original_choices"]["items"] == "extended" and
                       not body["original_template_id"].startswith("bg1-"))
         if shield["source_id"] != (SPELL_SHIELD_SOURCE if randomized else ""):
             raise ProfileError("Spell Shield source does not match original item pool choices")

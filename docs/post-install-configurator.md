@@ -201,14 +201,17 @@ See [native source results](campaign-source-guards-20260927.md) for current evid
 ## Original preset drafts
 
 The `templates` command reads the original checked-in item/location tables and
-authored endpoint catalogs. It offers BG1, BG2 and EET Mode 1 drafts, each also
-available with Mode 2's additional rows **for the Mode 1 runtime**. Item and
-recipient pools can be chosen separately:
+authored endpoint catalogs. It offers presets for BG1, BG2 and EET, all drawn for
+each new game; Chriz Item Randomiser has no modes. Each preset has a standard and
+an extended pool of items and of recipients, chosen separately: the standard pools
+read the `base` tables, the extended pools also the `mode2` tables, the larger lists
+that Item Randomiser used for its install-time Mode 2 (more items from creatures,
+shops and containers, quest rewards, and more places).
 
 ```powershell
 python tools/randomiser_config.py templates
-python tools/randomiser_config.py templates --id eet-mode1 --out 'D:/RandomiserDrafts/original-mode1.json'
-python tools/randomiser_config.py templates --id eet-mode1 --items mode1+mode2 --targets mode1 --out 'D:/RandomiserDrafts/expanded-items.json'
+python tools/randomiser_config.py templates --id eet-original --out 'D:/RandomiserDrafts/original.json'
+python tools/randomiser_config.py templates --id eet-original --items extended --targets standard --out 'D:/RandomiserDrafts/extended-items.json'
 ```
 
 `--options path.json` accepts the Boolean choices `scrolls`, `kangaxx`,
@@ -216,29 +219,31 @@ python tools/randomiser_config.py templates --id eet-mode1 --items mode1+mode2 -
 `loss_mode` (`none`/`some`), `loss_percent` and `unrandomized_percent` (0–100).
 These preserve intended component choices; they do not execute installer edits.
 Optional components default off here. The editor's "Start from a preset" dialog
-opens on the recommended default instead: `eet-mode1` with `flail_heads` and
-`totsc_tome` (the original Mode 1 without item loss, plus the Flail of Ages heads and
-the randomised Tales of the Sword Coast tome); every choice stays editable.
+opens on the recommended default instead: `eet-original` with the standard pools,
+`flail_heads` and `totsc_tome` (Item Randomiser's lists without item loss, plus the
+Flail of Ages heads and the randomised Tales of the Sword Coast tome); every choice
+stays editable.
 Disabled rows remain visible with `enabled:false`.
 Loss excludes the original Flail/Kangaxx tiers; unrandomized percentage concerns
 items with original sources. These draft choices still need automatic binding to
 the runtime configuration.
 
-The complete EET Mode 1 tables contain 505 item rows and 527 location rows;
-including Mode 2 rows gives 926 and 971. Repeated items, source replacements,
+The complete EET standard pools contain 505 item rows and 527 location rows; the
+extended pools 926 and 971. Repeated items, source replacements,
 tiers, tokens, identifiers, chances and row provenance are retained. These counts
 precede component and installation-availability filtering.
 
 Preset list sets in `lists/presets/<name>/` replace the tables of the campaigns they
 cover; an EET preset takes the original tables for the other campaign. The first is
-Boss Loot, aShuN's BG1 lists (`bg1-boss-loot`, `eet-boss-loot`, each also
-`-plus-mode2`; see [its notes](../lists/presets/boss-loot/README.md)). Its row
-identities are `bg1:boss-loot:<family>:<kind>:<line>`. A Mode 1 place takes the authored
-endpoint of the same place in the original tables; ten places that the original
-Mode 1 tables do not use have none and are bound by name like Mode 2 places. Its
+Boss Loot, aShuN's BG1 lists (`bg1-boss-loot`, `eet-boss-loot`; see
+[its notes](../lists/presets/boss-loot/README.md)). Its row identities are
+`bg1:boss-loot:<family>:<kind>:<line>`. A place of its standard pool takes the
+authored endpoint of the same place in the original tables; ten places that the
+original standard tables do not use have none and are bound by name like the places
+of the extended pool. Its
 Rogue Rebalancing (`rr#…`) and IWDification (`cdia…`) items are optional: a game
 without such an item leaves its rows out and the preset dialog names the mod. On a
-reference EET scan, `eet-boss-loot` passes the configuration check like `eet-mode1`.
+reference EET scan, `eet-boss-loot` passes the configuration check like `eet-original`.
 
 A preset draft leaves out each row this game cannot use, instead of refusing the
 whole draft, and the preset dialog says how many rewards and places it left out; a
