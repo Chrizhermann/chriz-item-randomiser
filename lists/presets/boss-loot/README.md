@@ -17,8 +17,12 @@ aShuN's aims:
 - in Mode 2, shops that sell a few random items, with Rogue Rebalancing and
   IWDification items where those mods are installed.
 
-aShuN said the lists are not finished. Chriz Item Randomiser looks after them
-from here, and changes are noted below.
+aShuN considers the scroll part complete: in Mode 2, wizard scrolls go into the
+pool, many of them to mage enemies, so a spell such as Sleep may turn up late;
+the Emotion scrolls join the pool (Hopelessness, and with IWDification Courage,
+Hope and Fear), while Stoneskin, Find Familiar and Spell Thrust stay where they
+are. The item tiers and places outside the scrolls were a first pass. Chriz Item Randomiser looks after the lists from here, and
+changes are noted below.
 
 ## Format
 
@@ -66,8 +70,8 @@ Line ends are CRLF and trailing spaces are removed.
 
 - Two Mode 2 rows name an area that holds their scroll twice: `scrl75` in AR2613 (two
   in Container 3) and `scrl84` in AR1803 (one each in Containers 7 and 9). The
-  configurator cannot tell which copy to move, so with scrolls randomised a Mode 2
-  preset stops at these rows. This is settled together with Mode 2 support.
+  configurator cannot tell which copy to move, so with scrolls randomised it leaves
+  these two rows out and says so; the scrolls stay where the game has them.
 - Mode 2 additions are not playable in Chriz Item Randomiser yet, as for the original
   lists.
 - A few items lost their home place because the place row was removed (Mulahey's
