@@ -1,9 +1,12 @@
 //! `cir-configurator`: Chriz Item Randomiser's post-install configurator as a
 //! standalone executable. The commands, JSON results and messages are those
 //! of the reference `tools/randomiser_config.py`; `ui` also opens the editor
-//! in the browser.
+//! in the browser. Started without arguments (a double-click), it opens the
+//! editor for the game it is installed in (see `player`).
 
 mod argparse;
+mod dialog;
+mod player;
 mod server;
 
 use argparse::{Commands, Kind, Parsed, Parser, Spec};
@@ -438,6 +441,9 @@ fn run_with_catalog(names: &[&str], parsed: &Parsed) -> Result<Value> {
 fn main() -> ExitCode {
     let arguments: Vec<String> =
         std::env::args_os().skip(1).map(|argument| argument.to_string_lossy().into_owned()).collect();
+    if arguments.is_empty() {
+        return player::run();
+    }
     let prog = program_name();
     let (path, parsed) = match argparse::parse(&arguments, &|path| parser_for(&prog, path)) {
         Ok(outcome) => (outcome.path, outcome.parsed),

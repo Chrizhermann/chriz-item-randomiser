@@ -130,9 +130,10 @@ WORKFLOW = [
 ]
 
 # argparse's handling of unusual arguments: abbreviations, `--`, explicit
-# values, integers as Python's int() reads them, unknown arguments.
+# values, integers as Python's int() reads them, unknown arguments. Without
+# any argument the executable opens the editor for its own game instead of
+# printing usage (player_check.py).
 ARGUMENTS = [
-    [],
     ["nosuch"],
     ["profile"],
     ["profile", "nosuch"],

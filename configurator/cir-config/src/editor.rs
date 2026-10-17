@@ -91,6 +91,48 @@ fn field<'a>(value: &'a Value, key: &str) -> Result<&'a Value> {
     value.at(key)
 }
 
+/// The saved configurations of a workspace, as the editor lists them: its
+/// JSON files, not those in its folders.
+pub fn saved_files(workspace: &Path) -> Result<Vec<PathBuf>> {
+    let mut files = Vec::new();
+    let entries = match paths::list_dir(workspace) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(files),
+        Err(error) => return Err(Error::win(&error, workspace)),
+    };
+    for name in entries {
+        if crate::py::casefold(&name).ends_with(".json") {
+            files.push(workspace.join(name));
+        }
+    }
+    files.sort_by(|a, b| paths::path_cmp(a, b));
+    Ok(files)
+}
+
+/// A configuration (`profile` and `plan`) checked against these scans, as
+/// the editor checks what it saves and lists. Incomplete drafts may be
+/// saved; full binding checks happen on Check.
+pub fn checked_draft(catalog: &Value, world: &Value, data: &Value) -> Result<Value> {
+    let profile = validate_profile(field(data, "profile")?, catalog, false)?;
+    let plan = field(data, "plan")?.clone();
+    let stale = || Error::profile("These selections belong to a different scan or an unsupported draft");
+    if !plan_fields_match(&plan)? {
+        return Err(stale());
+    }
+    // Only a list of the field names gets here without being a dict.
+    let fields = plan.as_dict().ok_or_else(|| plan.subscript_error())?;
+    let fingerprint = |value: &Value| value.get("fingerprint").cloned().unwrap_or(Value::Null);
+    if fields.get("schema").and_then(Value::as_str) != Some("flir-binding-plan-v1")
+        || !fields.get("catalog_fingerprint").unwrap().py_eq(&fingerprint(catalog))
+        || !fields.get("world_fingerprint").unwrap().py_eq(&fingerprint(world))
+        || ["sources", "targets", "registrations"].iter().any(|key| !fields.get(key).unwrap().is_list())
+        || fields.get("target_registrations").is_some_and(|value| !value.is_list())
+    {
+        return Err(stale());
+    }
+    Ok(Value::Dict(crate::dict! {"profile" => profile, "plan" => plan}))
+}
+
 impl Editor {
     pub fn new(
         catalog: Value,
@@ -139,11 +181,7 @@ impl Editor {
         }
         let (profile, plan) = match (profile, plan) {
             (Some(profile), Some(plan)) => (profile, plan),
-            _ => {
-                let profile = new_profile_named(&editor.catalog, &Editor::new_id(), &Value::from(DEFAULT_NAME))?;
-                let plan = new_binding_plan(&profile, &editor.catalog, &editor.world)?;
-                (profile, plan)
-            }
+            _ => Editor::new_draft(&editor.catalog, &editor.world)?,
         };
         editor.draft = editor.checked(&Value::Dict(crate::dict! {"profile" => profile, "plan" => plan}))?;
         Ok(editor)
@@ -153,26 +191,17 @@ impl Editor {
         format!("adventure-{}", crate::profiles::random_hex(12))
     }
 
+    /// The profile and binding plan of a new configuration for these scans,
+    /// as the editor starts with when it reopens none.
+    pub fn new_draft(catalog: &Value, world: &Value) -> Result<(Value, Value)> {
+        let profile = new_profile_named(catalog, &Editor::new_id(), &Value::from(DEFAULT_NAME))?;
+        let plan = new_binding_plan(&profile, catalog, world)?;
+        Ok((profile, plan))
+    }
+
     /// Incomplete drafts may be saved; full binding checks happen on Check.
     pub fn checked(&self, data: &Value) -> Result<Value> {
-        let profile = validate_profile(field(data, "profile")?, &self.catalog, false)?;
-        let plan = field(data, "plan")?.clone();
-        let stale = || Error::profile("These selections belong to a different scan or an unsupported draft");
-        if !plan_fields_match(&plan)? {
-            return Err(stale());
-        }
-        // Only a list of the field names gets here without being a dict.
-        let fields = plan.as_dict().ok_or_else(|| plan.subscript_error())?;
-        let fingerprint = |value: &Value| value.get("fingerprint").cloned().unwrap_or(Value::Null);
-        if fields.get("schema").and_then(Value::as_str) != Some("flir-binding-plan-v1")
-            || !fields.get("catalog_fingerprint").unwrap().py_eq(&fingerprint(&self.catalog))
-            || !fields.get("world_fingerprint").unwrap().py_eq(&fingerprint(&self.world))
-            || ["sources", "targets", "registrations"].iter().any(|key| !fields.get(key).unwrap().is_list())
-            || fields.get("target_registrations").is_some_and(|value| !value.is_list())
-        {
-            return Err(stale());
-        }
-        Ok(Value::Dict(crate::dict! {"profile" => profile, "plan" => plan}))
+        checked_draft(&self.catalog, &self.world, data)
     }
 
     pub fn check(&self, draft: &Value) -> Result<Value> {
@@ -299,19 +328,7 @@ impl Editor {
     }
 
     fn saved_files(&self) -> Result<Vec<PathBuf>> {
-        let mut files = Vec::new();
-        let entries = match paths::list_dir(&self.workspace) {
-            Ok(entries) => entries,
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(files),
-            Err(error) => return Err(Error::win(&error, &self.workspace)),
-        };
-        for name in entries {
-            if crate::py::casefold(&name).ends_with(".json") {
-                files.push(self.workspace.join(name));
-            }
-        }
-        files.sort_by(|a, b| paths::path_cmp(a, b));
-        Ok(files)
+        saved_files(&self.workspace)
     }
 
     pub fn state(&self) -> Result<Value> {

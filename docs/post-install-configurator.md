@@ -30,6 +30,8 @@ Requires Python 3.10 or later with the standard library. Run from this repositor
 Without Python, use the standalone executable built from `configurator/` (see
 [its README](../configurator/README.md)): `cir-configurator` takes the same commands
 and options as `python tools/randomiser_config.py` and gives the same results.
+Started without arguments in the game's `cir` folder (a double-click), it scans that
+game into the player's own folder and opens the editor with Apply for it.
 Choose an explicit game and a separate output directory. The scanner never discovers
 or opens a game implicitly. Do not run this development tool against the owner's
 live game as part of automated validation.

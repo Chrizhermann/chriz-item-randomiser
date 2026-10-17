@@ -11,7 +11,8 @@ results, the error messages and every file written are the same (see
   apply, for BG:EE, BG2:EE and EET with one revision per campaign start. Chriz
   Easy BG links this crate.
 - `cir-configurator`: the executable with the reference's command line and the
-  local editor.
+  local editor. Started without arguments in the game's `cir` folder, it opens
+  the editor for that game ([Started without arguments](#started-without-arguments)).
 
 The mod data the configurator reads (the tables under `lists/`, the BG1 name
 maps, game texts, the mod's stand-in items and the editor's files) is embedded
@@ -43,6 +44,52 @@ address, like the reference. Ctrl+C closes the editor. Game folders are only
 read; outputs must be outside the scanned game, and `--apply-game` is needed to
 change a test game, as with the reference.
 
+### Started without arguments
+
+After installation the executable is in the game's `cir` folder. Started
+without arguments, as a double-click starts it, it opens the editor for that
+game:
+
+1. The game is the nearest folder at or above the executable's folder that
+   has `chitin.key` (in any case). Nothing else on the PC is searched, so there
+   is never a choice between installations to guess.
+2. Chriz Item Randomiser must be installed there: `override/flrandomiser3.mrk`,
+   or `WeiDU.log` recording `cir.tp2` component 0 (as `MOD_IS_INSTALLED` reads
+   it: any folder, with or without `setup-`).
+3. It scans the game's items, areas, creatures and shops in the language
+   `weidu.conf` names (`lang_dir`, when the game has that `dialog.tlk`;
+   otherwise the scan takes the game's only one) into this player's folder,
+   outside the game:
+   `%LOCALAPPDATA%\Chriz Item Randomiser\<game folder name>-<hash>\` (the
+   name's first 40 characters and 12 hex digits of the SHA-256 of the game's
+   path) with `catalog.json`, `world.json` and the editor's workspace
+   `configurations\`, as `scan`, `world scan` and `ui` write them. Each game
+   keeps its folder, so the next start reopens the configuration applied last
+   and Apply finds the earlier revisions.
+4. It opens the editor in the browser with Apply for that game (as
+   `ui --apply-game`) and serves it until its window is closed or Ctrl+C.
+
+If there is no game above the executable, or CIR is not installed in it, it
+says so and opens Windows' folder window to choose the game folder. The
+chosen folder is checked the same way (the nearest folder at or above it with
+`chitin.key`, then CIR in it), and the window opens again, where the last
+answer was, until a game with CIR is chosen or the window is closed. Errors
+are told in plain words; a console window that would close with the program
+waits for Enter first. Outside Windows the folder is asked for on the
+terminal.
+
+Every start scans again, so the editor sees the game as it is. After the
+game's mods changed, the configurations saved before cannot be opened with the
+new scan, and the editor would refuse to open a workspace that holds them (the
+reference's `ui` answers its state with "Profile belongs to another scan"
+then). They are moved to `configurations\earlier scans\`, where they are kept,
+and the editor starts with a new configuration; Apply keeps the earlier
+revisions for existing saves.
+
+With any argument the executable is the command line above, unchanged.
+`CIR_NO_BROWSER` (any value) makes the start without arguments only print the
+editor's address.
+
 ## Library
 
 The library works on JSON values (`cir_config::json::Value`, with Python's key
@@ -57,7 +104,13 @@ describe_starts}` (one revision for each campaign start the configuration
 reaches), `native_export::export_native` (one revision, or the revisions of
 every start with the main start: `next.lua` schema `flir-next-v2`),
 `activation::{validate_runtime, deploy_export}` and `editor::Editor`, the
-editor's requests (`get`, `post`) without the HTTP server.
+editor's requests (`get`, `post`) without the HTTP server, with
+`editor::{saved_files, checked_draft}` (the configurations the editor lists
+and its check of one against the scans). `game_folder::{find_game,
+cir_installed, game_language, game_workspace}` are the start without
+arguments: the game at or above a folder, whether CIR is installed in it, the
+language WeiDU installed its mods in and its folder for scans and
+configurations.
 
 ## Parity with the Python reference
 
@@ -71,6 +124,7 @@ cargo build --manifest-path configurator/Cargo.toml --features cir-config/parity
 python configurator/parity/replay_tests.py
 python configurator/parity/cli_check.py
 python configurator/parity/editor_check.py
+python configurator/parity/player_check.py
 python configurator/parity/game_check.py --game '<game folder>' --language en_US --scratch '<empty folder>'
 cargo test --manifest-path configurator/Cargo.toml --features cir-config/parity-overrides
 ```
@@ -87,6 +141,16 @@ cargo test --manifest-path configurator/Cargo.toml --features cir-config/parity-
   and every command's help at several terminal widths.
 - `editor_check.py` sends the same session to both editors: static files, every
   request, malformed requests and the files written into the workspace.
+- `player_check.py` (Windows) starts the executable without arguments, copied
+  into synthetic games, on a Windows desktop of its own that is never shown,
+  and answers its folder window there as a player would. In `cir` and in
+  `cir/tools` it finds its game, writes the reference's scans (in
+  `weidu.conf`'s language) outside the game and serves the editor state of
+  `ui --apply-game`; then Apply, reopening the applied configuration, a change
+  of the game's mods, a start outside any game (a folder without a game, a
+  game without CIR, then a folder inside a game whose `WeiDU.log` records CIR),
+  a game without CIR whose folder window is closed, and an incomplete
+  installation.
 - `game_check.py` compares a real installation, used read-only: catalog and
   world, then every preset with each pool and several option sets (the fitted
   preset with its left-out rows, the unfitted build with the rows the runtime
@@ -96,13 +160,19 @@ cargo test --manifest-path configurator/Cargo.toml --features cir-config/parity-
   campaign start as the editor's Apply writes them. The export copies game
   resources, so keep the scratch folder outside the repository.
 - The Rust tests include byte-parity fixtures for the resource patchers,
-  generated from synthetic inputs by `configurator/parity/patchers/generate.py`.
+  generated from synthetic inputs by `configurator/parity/patchers/generate.py`,
+  and the game folder lookup: the executable in `cir` and in `cir/tools`, no
+  game above it, the nearest of nested games, CIR not installed (other
+  components, other mods, commented log lines) and installed by marker or log.
+  The folder window's interface is checked without showing the window.
 
 `CIR_PARITY_TARGET=configurator/target/release` makes the checks use a release
 build.
 
 ### Known differences
 
+- Without arguments the reference prints its usage (exit status 2); the
+  executable opens the editor for its game instead.
 - The editor's `Server` header names `cir-configurator` instead of Python's
   `BaseHTTP`.
 - Errors that the reference lets escape as a Python traceback (`KeyError`,

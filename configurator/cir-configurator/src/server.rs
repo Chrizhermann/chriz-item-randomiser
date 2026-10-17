@@ -53,6 +53,19 @@ pub fn serve(
     let profile = profile.map(profiles::read_json).transpose()?;
     let plan = plan.map(profiles::read_json).transpose()?;
     let editor = Editor::new(catalog, world, workspace, profile, plan, apply_game)?;
+    run(editor, port, open_browser, Announce::Json)
+}
+
+/// How the editor tells its address: the reference's JSON line, or plain
+/// words for a player who started the executable without arguments.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum Announce {
+    Json,
+    Player,
+}
+
+/// Serve this editor until Ctrl+C.
+pub fn run(editor: Editor, port: i64, open_browser: bool, announce: Announce) -> Result<Value> {
     // socket.bind's checks of the port number (a C long on Windows).
     if i32::try_from(port).is_err() {
         return Err(Error::new(ErrorKind::Overflow, "Python int too large to convert to C long"));
@@ -61,12 +74,24 @@ pub fn serve(
     let listener = TcpListener::bind(("127.0.0.1", port)).map_err(|error| Error::os_plain(&error))?;
     let port = listener.local_addr().map_err(|error| Error::os_plain(&error))?.port();
     let url = format!("http://127.0.0.1:{port}");
-    let mut announcement = Dict::new();
-    announcement.insert("url", url.as_str());
-    announcement.insert("workspace", editor.workspace.to_string_lossy().into_owned());
-    crate::print_line(&mut std::io::stdout(), &json::dumps_ascii(&Value::Dict(announcement), false));
-    if open_browser && !open_in_browser(&url) {
-        crate::print_line(&mut std::io::stderr(), &format!("Could not open a browser; open {url} to use the editor."));
+    match announce {
+        Announce::Json => {
+            let mut announcement = Dict::new();
+            announcement.insert("url", url.as_str());
+            announcement.insert("workspace", editor.workspace.to_string_lossy().into_owned());
+            crate::print_line(&mut std::io::stdout(), &json::dumps_ascii(&Value::Dict(announcement), false));
+            if open_browser && !open_in_browser(&url) {
+                crate::print_line(&mut std::io::stderr(), &format!("Could not open a browser; open {url} to use the editor."));
+            }
+        }
+        Announce::Player => {
+            if open_browser && open_in_browser(&url) {
+                println!("The editor is open in your browser: {url}");
+            } else {
+                println!("Open {url} in your browser to use the editor.");
+            }
+            println!("Keep this window open while you use the editor. Close it when you are done.");
+        }
     }
     PORT.store(port, Ordering::SeqCst);
     install_interrupt_handler();

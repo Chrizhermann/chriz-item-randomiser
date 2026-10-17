@@ -310,16 +310,24 @@ pub fn item_randomiser_conflict(game: &Path) -> Result<Option<&'static str>> {
     } else {
         Vec::new()
     };
-    // As MOD_IS_INSTALLED randomiser.tp2 560, independent of path, prefix and language.
-    for (path, component) in weidu_entries(&data) {
-        let normalized = crate::py::replace_bytes(path, b"\\", b"/", None);
-        let name = normalized.rsplit(|&byte| byte == b'/').next().unwrap_or(&[]).to_ascii_lowercase();
-        let number: u128 = std::str::from_utf8(component).ok().and_then(|text| text.parse().ok()).unwrap_or(u128::MAX);
-        if (name == b"randomiser.tp2" || name == b"setup-randomiser.tp2") && number == 560 {
-            return Ok(Some("Item Randomiser's More Spell Shield scrolls"));
-        }
+    if component_installed(&data, "randomiser.tp2", 560) {
+        return Ok(Some("Item Randomiser's More Spell Shield scrolls"));
     }
     Ok(None)
+}
+
+/// Whether a WeiDU.log records this component of a mod, as MOD_IS_INSTALLED
+/// tells it: by the TP2's file name with or without `setup-`, whatever its
+/// folder and the language.
+pub fn component_installed(log: &[u8], tp2: &str, component: u128) -> bool {
+    let tp2 = tp2.to_ascii_lowercase().into_bytes();
+    let setup = [b"setup-".as_slice(), &tp2].concat();
+    weidu_entries(log).into_iter().any(|(path, number)| {
+        let normalized = crate::py::replace_bytes(path, b"\\", b"/", None);
+        let name = normalized.rsplit(|&byte| byte == b'/').next().unwrap_or(&[]).to_ascii_lowercase();
+        let number: u128 = std::str::from_utf8(number).ok().and_then(|text| text.parse().ok()).unwrap_or(u128::MAX);
+        (name == tp2 || name == setup) && number == component
+    })
 }
 
 /// The resolved game folder, when it is the scanned game and has the runtime.

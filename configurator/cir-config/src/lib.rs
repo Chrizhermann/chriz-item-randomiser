@@ -43,6 +43,7 @@ pub mod original_configuration;
 pub mod starts;
 pub mod activation;
 pub mod editor;
+pub mod game_folder;
 
 pub use error::{Error, ErrorKind, Result};
 pub use json::{Dict, Value};
