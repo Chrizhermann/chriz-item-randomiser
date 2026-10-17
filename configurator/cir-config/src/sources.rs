@@ -1203,14 +1203,560 @@ pub fn new_binding_plan(profile: &Value, catalog: &Value, world: &Value) -> Resu
 
 // ---------------------------------------------------------------- binding
 
-pub fn bind_profile(_profile: &Value, _catalog: &Value, _world: &Value, _plan: &Value) -> Result<Value> {
-    Err(Error::profile("PORT-PENDING: bind_profile"))
+/// A Python number accumulated by `+=` (ints stay exact; one float addend
+/// makes the sum a float, as in the reference).
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum PyNumber {
+    Int(i128),
+    Float(f64),
 }
 
-pub fn prepare_bound_profile(_profile: &Value, _catalog: &Value, _world: &Value, _plan: &Value, _store: &Path) -> Result<Value> {
-    Err(Error::profile("PORT-PENDING: prepare_bound_profile"))
+impl PyNumber {
+    pub(crate) fn add(self, value: &Value) -> PyNumber {
+        let addend = match value {
+            Value::Bool(flag) => PyNumber::Int(i128::from(*flag)),
+            Value::Int(number) => PyNumber::Int(i128::from(*number)),
+            Value::Float(number) => PyNumber::Float(*number),
+            Value::BigInt(text) => PyNumber::Float(text.parse().unwrap_or(f64::INFINITY)),
+            _ => PyNumber::Int(0),
+        };
+        match (self, addend) {
+            (PyNumber::Int(a), PyNumber::Int(b)) => PyNumber::Int(a + b),
+            (PyNumber::Int(a), PyNumber::Float(b)) => PyNumber::Float(a as f64 + b),
+            (PyNumber::Float(a), PyNumber::Int(b)) => PyNumber::Float(a + b as f64),
+            (PyNumber::Float(a), PyNumber::Float(b)) => PyNumber::Float(a + b),
+        }
+    }
+    pub(crate) fn value(self) -> Value {
+        match self {
+            PyNumber::Int(number) => Value::from(number),
+            PyNumber::Float(number) => Value::Float(number),
+        }
+    }
+    pub(crate) fn less_than(self, other: PyNumber) -> bool {
+        match (self, other) {
+            (PyNumber::Int(a), PyNumber::Int(b)) => a < b,
+            (a, b) => a.as_f64() < b.as_f64(),
+        }
+    }
+    fn as_f64(self) -> f64 {
+        match self {
+            PyNumber::Int(number) => number as f64,
+            PyNumber::Float(number) => number,
+        }
+    }
+    pub(crate) fn is_zero(self) -> bool {
+        match self {
+            PyNumber::Int(number) => number == 0,
+            PyNumber::Float(number) => number == 0.0,
+        }
+    }
+    pub(crate) fn text(self) -> String {
+        crate::json::py_str(&self.value())
+    }
 }
 
-pub fn read_bound_profile(_store: &Path, _revision: Option<&str>) -> Result<Value> {
-    Err(Error::profile("PORT-PENDING: read_bound_profile"))
+/// `set(values)` for strings; None when a member is not a string.
+fn string_set(values: &[Value]) -> Option<HashSet<&str>> {
+    values.iter().map(Value::as_str).collect()
+}
+
+const BINDING_PLAN_FIELDS: [&str; 6] =
+    ["schema", "catalog_fingerprint", "world_fingerprint", "sources", "registrations", "targets"];
+const BINDING_PLAN_OPTIONAL: [&str; 8] = [
+    "replacements",
+    "randomization",
+    "original_template_id",
+    "original_choices",
+    "original_options",
+    "target_registrations",
+    "spell_shield",
+    "cursed_disguises",
+];
+const ORIGINAL_PLAN_KEYS: [&str; 4] =
+    ["original_template_id", "original_choices", "original_options", "target_registrations"];
+pub const RUNTIME_REQUIREMENTS: [&str; 6] = [
+    "campaign-revision-persistence",
+    "exact-source-suppression",
+    "new-game-assignment",
+    "target-instance-resolution",
+    "nonoverlapping-runtime-selectors",
+    "verified-lootable-delivery",
+];
+
+fn sha_of<'a>(world: &'a Value, index: &WorldIndex, resource: &str) -> Option<&'a Value> {
+    index.resource(world, resource).and_then(|row| row.get("sha256"))
+}
+
+/// Freeze explicit choices with evidence, never infer safe runtime behavior.
+pub fn bind_profile(profile: &Value, catalog: &Value, world: &Value, plan: &Value) -> Result<Value> {
+    use crate::original_registrations as original;
+    let frozen = validate_profile(profile, catalog, false)?;
+    let indexes = validate_world(world, catalog)?;
+    let plan_fields = match plan.as_dict() {
+        Some(fields) => {
+            let mut expected: Vec<&str> = BINDING_PLAN_FIELDS.to_vec();
+            expected.extend(BINDING_PLAN_OPTIONAL.iter().copied().filter(|key| fields.contains_key(key)));
+            if !fields.has_exact_keys(&expected) {
+                return Err(Error::profile("Unsupported binding plan fields"));
+            }
+            fields
+        }
+        None => return Err(Error::profile("Unsupported binding plan fields")),
+    };
+    let empty = Value::Dict(Dict::new());
+    let replacements = plan_fields.get("replacements").unwrap_or(&empty);
+    let Some(replacements) = replacements.as_dict() else {
+        return Err(Error::profile("Creature replacements must map source identities to item resrefs or blank"));
+    };
+    let catalog_rows = catalog.at("items")?.as_list().map(Vec::as_slice).unwrap_or(&[]);
+    let mut catalog_items: HashMap<&str, &Value> = HashMap::new();
+    for row in catalog_rows {
+        catalog_items.insert(row.get("resref").and_then(Value::as_str).unwrap_or(""), row);
+    }
+    let field = |key: &str| plan_fields.get(key).expect("checked");
+    if field("schema").as_str() != Some(PLAN_SCHEMA)
+        || !field("catalog_fingerprint").py_eq(catalog.at("fingerprint")?)
+        || !field("world_fingerprint").py_eq(world.at("fingerprint")?)
+    {
+        return Err(Error::profile("Binding plan is stale or unsupported; review against the current scans"));
+    }
+    let present_original = ORIGINAL_PLAN_KEYS.iter().filter(|key| plan_fields.contains_key(key)).count();
+    if present_original != 0 && present_original != ORIGINAL_PLAN_KEYS.len() {
+        return Err(Error::profile("Original plan metadata is incomplete"));
+    }
+    let present_original = present_original != 0;
+    let (source_rows, target_rows) =
+        if present_original { original::table_rows(catalog, world, plan)? } else { (Dict::new(), Dict::new()) };
+    let shield = plan_fields.get("spell_shield");
+    let original_option = |name: &str| {
+        plan_fields.get("original_options").and_then(|options| options.get(name)).is_some_and(Value::truthy)
+    };
+    if present_original && original_option("more_spell_shield") {
+        let randomized = source_rows.values().any(|row| {
+            row.get("enabled").is_some_and(Value::truthy) && crate::original_options::is_spell_shield_row(row)
+        });
+        let expected = crate::original_options::spell_shield_spec(world, randomized)?;
+        if !shield.unwrap_or(&Value::Null).py_eq(&expected) {
+            return Err(Error::profile("Spell Shield stock metadata disagrees with the scan and original options"));
+        }
+    } else if plan_fields.contains_key("spell_shield") {
+        return Err(Error::profile("Spell Shield stock metadata requires its original option"));
+    }
+    if present_original && original_option("cursed_disguise") {
+        let disguise = plan_fields.get("cursed_disguises").unwrap_or(&Value::Null);
+        crate::cursed_disguises::validate_cursed_disguise_spec(disguise)?;
+        let mut hashes = Dict::new();
+        for row in catalog_rows {
+            hashes.insert(row.get("resref").and_then(Value::as_str).unwrap_or(""), row.at("sha256")?.clone());
+        }
+        let game = disguise.at("game")?.as_str().unwrap_or("");
+        let item_revisions = disguise.at("item_revisions")?.truthy();
+        let expected = crate::cursed_disguises::cursed_disguise_spec(&hashes, game, item_revisions)?;
+        if !disguise.py_eq(&expected) {
+            return Err(Error::profile("Cursed-disguise resources differ from the scanned catalogue"));
+        }
+    } else if plan_fields.contains_key("cursed_disguises") {
+        return Err(Error::profile("Cursed disguises require their original option"));
+    }
+
+    let mut registrations: Vec<(String, &Value)> = Vec::new();
+    let mut registration_index: HashMap<String, usize> = HashMap::new();
+    let mut grant_sites: HashSet<(String, String)> = HashSet::new();
+    let mut reserved_physical_ids: HashSet<String> = HashSet::new();
+    for registration in rows(plan_fields.get("registrations"), "registration")? {
+        let adapter = registration.get("adapter_id").and_then(Value::as_str);
+        if adapter == Some(crate::virtual_sources::ADAPTER_ID) {
+            crate::virtual_sources::validate_registration(registration)?;
+            let item = registration.at("item")?.as_str().and_then(|item| catalog_items.get(item));
+            if !item.is_some_and(|item| item.get("sha256").is_some_and(|sha| sha.py_eq(registration.at("resource_sha256").unwrap_or(&Value::Null))))
+            {
+                return Err(Error::profile("Virtual source must match the selected installed ITM"));
+            }
+        } else if adapter == Some(original::SOURCE_ADAPTER) {
+            if !present_original {
+                return Err(Error::profile("Original source needs original plan metadata"));
+            }
+            let physical_ids = original::validate_source_registration(registration, &source_rows, world, shield)?;
+            let resource = registration.at("resource")?.as_str().and_then(|resource| sha_of(world, &indexes, resource));
+            if !resource.is_some_and(|sha| sha.py_eq(registration.at("resource_sha256").unwrap_or(&Value::Null))) {
+                return Err(Error::profile("Original source resource changed or is absent"));
+            }
+            if physical_ids.iter().any(|identity| reserved_physical_ids.contains(identity)) {
+                return Err(Error::profile("Original source physical records overlap"));
+            }
+            reserved_physical_ids.extend(physical_ids);
+        } else {
+            fields(
+                registration,
+                &["id", "item", "resource", "resource_sha256", "adapter_id", "selector", "copies", "optional"],
+                "registration",
+            )?;
+        }
+        let identity = text(registration.get("id"), "registration identity")?.to_string();
+        if registration_index.contains_key(&identity) {
+            return Err(Error::profile("Duplicate registered source identity"));
+        }
+        for key in ["item", "resource", "adapter_id", "selector"] {
+            text(Some(registration.at(key)?), &format!("registration {key}"))?;
+        }
+        let adapter = registration.at("adapter_id")?.as_str().expect("checked");
+        let allowed: &[&str] = if adapter == crate::virtual_sources::ADAPTER_ID {
+            &["itm:"]
+        } else if adapter == original::SOURCE_ADAPTER {
+            &["cre:", "bcs:", "dlg:", "spl:", "sto:"]
+        } else {
+            &["bcs:", "dlg:"]
+        };
+        let resource = registration.at("resource")?.as_str().expect("checked");
+        if !allowed.iter().any(|prefix| resource.starts_with(prefix)) {
+            return Err(Error::profile("Registered source has an unsupported resource kind"));
+        }
+        let name: String = resource.chars().skip(4).collect();
+        resref_name(Some(&Value::from(name)))?;
+        if !registration.at("resource_sha256")?.as_str().is_some_and(is_hex256) {
+            return Err(Error::profile("Invalid registered resource fingerprint"));
+        }
+        integer(Some(registration.at("copies")?), "registered copies", 1, 0xFFFF_FFFF)?;
+        if !matches!(registration.at("optional")?, Value::Bool(_)) {
+            return Err(Error::profile("Invalid optional registration flag"));
+        }
+        let selector = registration.at("selector")?.as_str().expect("checked");
+        if !grant_sites.insert((resource.to_string(), selector.to_string())) {
+            return Err(Error::profile("A script grant site cannot be registered twice"));
+        }
+        match sha_of(world, &indexes, resource) {
+            None if !registration.at("optional")?.truthy() => {
+                return Err(Error::profile("Required registered source resource is absent"));
+            }
+            Some(sha) if !sha.py_eq(registration.at("resource_sha256")?) => {
+                return Err(Error::profile("Registered source resource changed; its adapter needs review"));
+            }
+            _ => {}
+        }
+        registration_index.insert(identity.clone(), registrations.len());
+        registrations.push((identity, registration));
+    }
+
+    let frozen_items: Vec<&str> =
+        frozen.at("items")?.as_list().into_iter().flatten().filter_map(Value::as_str).collect();
+    let mut selected_sources: Vec<Value> = Vec::new();
+    let mut additions: Vec<Value> = Vec::new();
+    let mut skipped: Vec<Value> = Vec::new();
+    let mut selected_ids: HashSet<String> = HashSet::new();
+    let mut used_registrations: HashSet<String> = HashSet::new();
+    let mut mapped_items: HashSet<String> = HashSet::new();
+    let mut reward_units = PyNumber::Int(0);
+    for choice in rows(plan_fields.get("sources"), "source choice")? {
+        let item = text(choice.get("item"), "chosen item")?.to_string();
+        if !frozen_items.contains(&item.as_str()) || mapped_items.contains(item.as_str()) {
+            return Err(Error::profile("Each selected item needs exactly one source choice"));
+        }
+        mapped_items.insert(item.clone());
+        if choice.get("policy").and_then(Value::as_str) == Some("add") {
+            fields(choice, &["item", "policy", "copies"], "addition")?;
+            integer(choice.get("copies"), "additional copies", 1, 0xFFFF_FFFF)?;
+            reward_units = reward_units.add(choice.at("copies")?);
+            additions.push(choice.clone());
+            continue;
+        }
+        fields(choice, &["item", "policy", "source_ids", "registration_ids"], "relocation")?;
+        if choice.at("policy")?.as_str() != Some("relocate") {
+            return Err(Error::profile("Unknown source policy"));
+        }
+        for key in ["source_ids", "registration_ids"] {
+            let values = match choice.at(key)? {
+                Value::List(values) => values,
+                _ => return Err(Error::profile("Invalid source selection list")),
+            };
+            let Some(unique) = string_set(values) else {
+                return Err(Error::profile("Invalid source selection list"));
+            };
+            if unique.len() != values.len() {
+                return Err(Error::profile("A source cannot be selected twice"));
+            }
+        }
+        let source_ids: Vec<&str> = choice.at("source_ids")?.as_list().into_iter().flatten().filter_map(Value::as_str).collect();
+        let registration_ids: Vec<&str> =
+            choice.at("registration_ids")?.as_list().into_iter().flatten().filter_map(Value::as_str).collect();
+        if source_ids.is_empty() && registration_ids.is_empty() {
+            return Err(Error::profile("Relocation requires an explicit physical or registered source"));
+        }
+        for identity in source_ids {
+            let row = indexes.source(world, identity);
+            let Some(row) = row.filter(|row| row.get("item").and_then(Value::as_str) == Some(item.as_str())) else {
+                return Err(Error::profile("Selected physical source is missing, mismatched or duplicated"));
+            };
+            if selected_ids.contains(identity) {
+                return Err(Error::profile("Selected physical source is missing, mismatched or duplicated"));
+            }
+            if reserved_physical_ids.contains(identity) {
+                return Err(Error::profile("Direct physical source overlaps an original registration"));
+            }
+            if concern_list(row.get("concerns")).iter().any(|concern| UNUSABLE_SOURCE.contains(concern)) {
+                return Err(Error::profile("Selected physical source is not a finite, unambiguous inventory record"));
+            }
+            selected_ids.insert(identity.to_string());
+            let resource = row.at("resource")?.as_str().unwrap_or("");
+            let mut selected = crate::dict! {
+                "kind" => "physical", "source" => row.clone(),
+                "resource_sha256" => sha_of(world, &indexes, resource).cloned().ok_or_else(|| Error::key(resource))?,
+            };
+            if let Some(replacement) = replacements.get(identity) {
+                let kind = row.at("kind")?.as_str().unwrap_or("");
+                if !["cre-template", "embedded-cre", "container"].contains(&kind) {
+                    return Err(Error::profile("Replacement equipment requires a creature or container source"));
+                }
+                let replacement = resref_name(Some(replacement))?.to_string();
+                if replacement == item {
+                    return Err(Error::profile("Replacement must differ from the relocated item"));
+                }
+                if replacement == "blank" {
+                    selected.insert("replacement", crate::dict! {"resref" => "blank"});
+                } else {
+                    let mut replacement_hash = catalog_items.get(replacement.as_str()).map(|row| row.at("sha256")).transpose()?.cloned();
+                    if replacement_hash.is_none() && replacement == original::SHIPPED_REPLACEMENT {
+                        if let Some(authored) = source_rows.get("bg2:base:item:86") {
+                            let lists_identity = authored
+                                .get("source_ids")
+                                .and_then(Value::as_list)
+                                .is_some_and(|ids| ids.iter().any(|id| id.as_str() == Some(identity)));
+                            if authored.get("enabled").is_some_and(Value::truthy)
+                                && authored.get("replacement").and_then(Value::as_str) == Some(replacement.as_str())
+                                && lists_identity
+                            {
+                                replacement_hash = Some(Value::from(original::shipped_replacement_hash()?));
+                            }
+                        }
+                    }
+                    let Some(replacement_hash) = replacement_hash else {
+                        return Err(Error::profile(format!("Replacement item is absent: {replacement}")));
+                    };
+                    selected.insert(
+                        "replacement",
+                        crate::dict! {"resref" => replacement.as_str(), "resource_sha256" => replacement_hash},
+                    );
+                }
+            }
+            selected_sources.push(Value::Dict(selected));
+            if row.at("kind")?.as_str() == Some("store") {
+                reward_units = reward_units.add(row.at("record")?.at("quantity")?);
+            } else {
+                reward_units = reward_units.add(&Value::Int(1));
+            }
+        }
+        for identity in registration_ids {
+            let row = registration_index.get(identity).map(|position| registrations[*position].1);
+            let Some(row) = row.filter(|row| row.get("item").and_then(Value::as_str) == Some(item.as_str())) else {
+                return Err(Error::profile("Registered source is missing, mismatched or duplicated"));
+            };
+            if !used_registrations.insert(identity.to_string()) {
+                return Err(Error::profile("Registered source is missing, mismatched or duplicated"));
+            }
+            let resource = row.at("resource")?.as_str().unwrap_or("");
+            if !indexes.resources.contains(resource) {
+                skipped.push(Value::Dict(crate::dict! {"kind" => "source", "id" => identity, "reason" => "optional-resource-absent"}));
+                continue;
+            }
+            selected_sources.push(Value::Dict(crate::dict! {
+                "kind" => "registered", "source" => row.clone(), "availability" => "unverified",
+            }));
+            reward_units = reward_units.add(row.at("copies")?);
+        }
+    }
+    let all_mapped = frozen_items.iter().all(|item| mapped_items.contains(*item));
+    if !all_mapped || mapped_items.is_empty() {
+        return Err(Error::profile("Choose explicit sources or additions for every selected item"));
+    }
+    if used_registrations.len() != registrations.len() {
+        return Err(Error::profile("Unused source registrations must be removed from this binding plan"));
+    }
+    if replacements.keys().any(|identity| !selected_ids.contains(identity)) {
+        return Err(Error::profile("Replacement equipment refers to an unselected source"));
+    }
+
+    let mut original_targets: Vec<(String, &Value)> = Vec::new();
+    let empty_list = Value::List(Vec::new());
+    for registration in rows(Some(plan_fields.get("target_registrations").unwrap_or(&empty_list)), "original target registration")? {
+        if !present_original {
+            return Err(Error::profile("Original target needs original plan metadata"));
+        }
+        original::validate_target_registration(registration, &target_rows)?;
+        let identity = crate::json::py_str(registration.at("id")?);
+        if original_targets.iter().any(|(known, _)| *known == identity) {
+            return Err(Error::profile("Duplicate original target registration"));
+        }
+        let resource = registration.at("resource")?.as_str().and_then(|resource| sha_of(world, &indexes, resource));
+        if !resource.is_some_and(|sha| sha.py_eq(registration.at("resource_sha256").unwrap_or(&Value::Null))) {
+            return Err(Error::profile("Original target area changed or is absent"));
+        }
+        original_targets.push((identity, registration));
+    }
+    let mut targets: Vec<Value> = Vec::new();
+    let mut target_ids: HashSet<String> = HashSet::new();
+    let mut used_original_targets: HashSet<String> = HashSet::new();
+    let mut capacity = PyNumber::Int(0);
+    for choice in rows(plan_fields.get("targets"), "target choice")? {
+        fields(choice, &["id", "capacity", "optional"], "target choice")?;
+        let identity = text(choice.get("id"), "target identity")?.to_string();
+        if let Some((_, registration)) = original_targets.iter().find(|(known, _)| *known == identity) {
+            if target_ids.contains(&identity)
+                || !choice.at("capacity")?.py_eq(registration.at("capacity")?)
+                || !matches!(choice.get("optional"), Some(Value::Bool(false)))
+            {
+                return Err(Error::profile("Original target choice disagrees with its registration"));
+            }
+            target_ids.insert(identity.clone());
+            used_original_targets.insert(identity.clone());
+            targets.push(Value::Dict(crate::dict! {
+                "target" => original::target_record(registration)?, "capacity" => choice.at("capacity")?.clone(),
+                "resource_sha256" => registration.at("resource_sha256")?.clone(),
+            }));
+            capacity = capacity.add(choice.at("capacity")?);
+            continue;
+        }
+        let parts: Vec<&str> = identity.split('/').collect();
+        let base: Vec<&str> = parts[0].split(':').collect();
+        if base.len() != 2 || !["cre", "are", "sto"].contains(&base[0]) {
+            return Err(Error::profile("Invalid target identity"));
+        }
+        resref_name(Some(&Value::from(base[1])))?;
+        if base[0] == "are" {
+            let ordinal = parts.get(2).copied().unwrap_or("");
+            let canonical = ordinal == "0"
+                || (!ordinal.is_empty() && !ordinal.starts_with('0') && ordinal.bytes().all(|b| b.is_ascii_digit()));
+            if parts.len() != 3 || !["actor", "container"].contains(&parts[1]) || !canonical {
+                return Err(Error::profile("Invalid area target identity"));
+            }
+        } else if parts.len() != 1 {
+            return Err(Error::profile("Invalid template target identity"));
+        }
+        if !target_ids.insert(identity.clone()) {
+            return Err(Error::profile("A target cannot be selected twice"));
+        }
+        integer(choice.get("capacity"), "target capacity", 1, 0xFFFF_FFFF)?;
+        let optional = match choice.get("optional") {
+            Some(Value::Bool(flag)) => *flag,
+            _ => return Err(Error::profile("Invalid optional target flag")),
+        };
+        let Some(target) = indexes.target(world, &identity) else {
+            if !optional {
+                return Err(Error::profile("Required target is absent"));
+            }
+            skipped.push(Value::Dict(crate::dict! {"kind" => "target", "id" => identity.as_str(), "reason" => "optional-resource-absent"}));
+            continue;
+        };
+        let concerns = concern_list(target.get("concerns"));
+        if concerns.contains(&UNRESOLVED_STORAGE) {
+            return Err(Error::profile("Target has unresolved creature storage and cannot receive rewards"));
+        }
+        let selector = target.at("selector")?;
+        if target.at("kind")?.as_str() == Some("actor")
+            && !selector.at("embedded_cre_size")?.truthy()
+            && !selector.at("template_resource")?.as_str().is_some_and(|template| indexes.resources.contains(template))
+        {
+            return Err(Error::profile("Target refers to a missing creature template"));
+        }
+        if concerns.iter().any(|concern| *concern == DANGLING_INVENTORY || *concern == INVALID_INVENTORY) {
+            return Err(Error::profile("Target has invalid inventory references and cannot receive rewards"));
+        }
+        let resource = target.at("resource")?.as_str().unwrap_or("");
+        targets.push(Value::Dict(crate::dict! {
+            "target" => target.clone(), "capacity" => choice.at("capacity")?.clone(),
+            "resource_sha256" => sha_of(world, &indexes, resource).cloned().ok_or_else(|| Error::key(resource))?,
+        }));
+        capacity = capacity.add(choice.at("capacity")?);
+    }
+    if used_original_targets.len() != original_targets.len() {
+        return Err(Error::profile("Unused original target registrations must be removed"));
+    }
+    if reward_units.is_zero() {
+        return Err(Error::profile("No available reward records remain after optional source resolution"));
+    }
+    let overflow = plan_fields
+        .get("randomization")
+        .and_then(Value::as_dict)
+        .is_some_and(|randomization| matches!(randomization.get("overflow"), Some(Value::Bool(true))));
+    if capacity.less_than(reward_units) && !overflow {
+        return Err(Error::profile(format!(
+            "Target capacity {} cannot hold {} selected reward records",
+            capacity.text(),
+            reward_units.text()
+        )));
+    }
+    let mut items = Vec::new();
+    for row in catalog_rows {
+        let resref = row.get("resref").and_then(Value::as_str).unwrap_or("");
+        if mapped_items.contains(resref) {
+            let mut semantic = Dict::new();
+            for key in crate::resources::ITEM_SEMANTIC_FIELDS {
+                semantic.insert(key, row.at(key)?.clone());
+            }
+            items.push(Value::Dict(semantic));
+        }
+    }
+    let mut result = crate::dict! {
+        "schema" => "flir-bound-draft-v1", "state" => "draft-needs-runtime-adapter", "profile" => frozen,
+        "catalog_fingerprint" => catalog.at("fingerprint")?.clone(),
+        "world_fingerprint" => world.at("fingerprint")?.clone(), "plan" => plan.clone(),
+        "items" => Value::List(items), "sources" => Value::List(selected_sources),
+        "additions" => Value::List(additions), "targets" => Value::List(targets),
+        "skipped" => Value::List(skipped), "reward_units" => reward_units.value(),
+        "target_capacity" => capacity.value(), "runtime_requirements" => Value::from(RUNTIME_REQUIREMENTS.to_vec()),
+    };
+    let fingerprint = digest(&Value::Dict(result.clone()))?;
+    result.insert("fingerprint", fingerprint);
+    Ok(Value::Dict(result))
+}
+
+pub fn prepare_bound_profile(profile: &Value, catalog: &Value, world: &Value, plan: &Value, store: &Path) -> Result<Value> {
+    use crate::profiles::{ensure_output_outside_game, write_json};
+    let body = bind_profile(profile, catalog, world, plan)?;
+    let store = ensure_output_outside_game(store, catalog)?;
+    let revision = body.at("fingerprint")?.as_str().unwrap_or("").to_string();
+    let revision_path = ensure_output_outside_game(&store.join("revisions").join(format!("{revision}.json")), catalog)?;
+    let pointer_path = ensure_output_outside_game(&store.join("next-bound-draft.json"), catalog)?;
+    write_json(&revision_path, &body, true)?;
+    write_json(
+        &pointer_path,
+        &Value::Dict(crate::dict! {"schema" => "flir-next-bound-draft-v1", "revision" => revision.as_str()}),
+        false,
+    )?;
+    Ok(Value::Dict(crate::dict! {
+        "revision" => revision.as_str(), "state" => body.at("state")?.clone(),
+        "reward_units" => body.at("reward_units")?.clone(), "target_capacity" => body.at("target_capacity")?.clone(),
+        "skipped" => body.at("skipped")?.clone(), "revision_path" => paths::display(&revision_path),
+        "pointer_path" => paths::display(&pointer_path),
+    }))
+}
+
+pub fn read_bound_profile(store: &Path, revision: Option<&str>) -> Result<Value> {
+    let revision: Value = match revision {
+        Some(revision) => Value::from(revision),
+        None => {
+            let pointer = crate::profiles::read_json(&store.join("next-bound-draft.json"))?;
+            let pointer = fields(&pointer, &["schema", "revision"], "bound draft pointer")?;
+            if pointer.get("schema").and_then(Value::as_str) != Some("flir-next-bound-draft-v1") {
+                return Err(Error::profile("Unsupported bound draft pointer"));
+            }
+            pointer.get("revision").cloned().unwrap_or(Value::Null)
+        }
+    };
+    let Some(revision) = revision.as_str().filter(|revision| is_hex256(revision)) else {
+        return Err(Error::profile("Invalid bound draft identity"));
+    };
+    let mut body = crate::profiles::read_json(&store.join("revisions").join(format!("{revision}.json")))?;
+    let Some(fields) = body.as_dict_mut() else {
+        return Err(Error::type_error(format!("'{}' object has no attribute 'pop'", body.type_name())));
+    };
+    let fingerprint = fields.remove("fingerprint");
+    let unchanged = fields.get("schema").and_then(Value::as_str) == Some("flir-bound-draft-v1")
+        && fields.get("state").and_then(Value::as_str) == Some("draft-needs-runtime-adapter")
+        && fingerprint.as_ref().and_then(Value::as_str) == Some(revision)
+        && digest(&Value::Dict(fields.clone()))? == revision;
+    if !unchanged {
+        return Err(Error::profile("Bound draft is unsupported or was modified"));
+    }
+    fields.insert("fingerprint", fingerprint.expect("checked"));
+    Ok(body)
 }

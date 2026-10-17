@@ -65,6 +65,12 @@ impl Error {
     pub fn win(error: &io::Error, path: &Path) -> Self {
         Error::new(ErrorKind::Os, win_message(error, Some(path)))
     }
+    /// An OSError from a two-path Win32 call (`os.replace`, `os.link`).
+    pub fn win_pair(error: &io::Error, source: &Path, target: &Path) -> Self {
+        let mut failure = Error::win(error, source);
+        failure.message.push_str(&format!(" -> {}", py_repr_str(&target.to_string_lossy())));
+        failure
+    }
     pub fn os_plain(error: &io::Error) -> Self {
         Error::new(ErrorKind::Os, win_message(error, None))
     }

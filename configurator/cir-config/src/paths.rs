@@ -287,6 +287,13 @@ pub fn is_relative_to(path: &Path, root: &Path) -> bool {
     root.len() <= path.len() && path[..root.len()] == root[..]
 }
 
+/// `root in path.parents`: `path` lies strictly inside `root`.
+pub fn is_inside(path: &Path, root: &Path) -> bool {
+    let path = compare_parts(path);
+    let root = compare_parts(root);
+    root.len() < path.len() && path[..root.len()] == root[..]
+}
+
 /// Python's ordering of two Windows paths (`sorted(paths)`).
 pub fn path_cmp(a: &Path, b: &Path) -> Ordering {
     compare_parts(a).cmp(&compare_parts(b))

@@ -67,6 +67,14 @@ pub fn read_json(path: &Path) -> Result<Value> {
 
 /// Validate shop prices for selected rewards; catalogue prices stay unchanged.
 pub fn validate_shop_pricing(pricing: &Value, items: &[Value], catalog: &Value, index: &ItemIndex) -> Result<Value> {
+    let price = |resref: &str| {
+        index.row(catalog, resref).and_then(|row| row.get("price")).and_then(Value::as_int).expect("price")
+    };
+    validate_shop_pricing_prices(pricing, items, &price)
+}
+
+/// `validate_shop_pricing` with the base price of each selected item.
+pub fn validate_shop_pricing_prices(pricing: &Value, items: &[Value], price: &dyn Fn(&str) -> i64) -> Result<Value> {
     let Some(fields) = pricing.as_dict().filter(|fields| fields.has_exact_keys(&["percent", "base_prices"])) else {
         return Err(Error::profile("Shop pricing needs percent and base_prices"));
     };
@@ -88,7 +96,7 @@ pub fn validate_shop_pricing(pricing: &Value, items: &[Value], catalog: &Value, 
         let resref = item.as_str().expect("validated profile items are strings");
         let base = match prices.get(resref) {
             Some(price) => price.as_int().expect("validated"),
-            None => index.row(catalog, resref).and_then(|row| row.get("price")).and_then(Value::as_int).expect("price"),
+            None => price(resref),
         };
         if (base as i128 * percent as i128).div_euclid(100) > MAX_ITEM_PRICE as i128 {
             return Err(Error::profile(format!("Effective shop price exceeds 32-bit gold range: {resref}")));
@@ -508,11 +516,7 @@ pub fn random_name() -> String {
 
 /// `os.replace(source, target)` with Python's two-path message.
 pub fn replace(source: &Path, target: &Path) -> Result<()> {
-    fs::rename(source, target).map_err(|error| {
-        let mut failure = Error::win(&error, source);
-        failure.message.push_str(&format!(" -> {}", crate::error::py_repr_str(&target.to_string_lossy())));
-        failure
-    })
+    fs::rename(source, target).map_err(|error| Error::win_pair(&error, source, target))
 }
 
 /// Write `data` through a temporary sibling and an atomic replace.

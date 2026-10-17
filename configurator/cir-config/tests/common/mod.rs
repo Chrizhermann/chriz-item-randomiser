@@ -78,6 +78,7 @@ fn kind_name(kind: ErrorKind) -> &'static str {
         ErrorKind::Key => "Key",
         ErrorKind::Type => "Type",
         ErrorKind::GameText => "GameText",
+        ErrorKind::Overflow => "Overflow",
     }
 }
 
@@ -428,6 +429,7 @@ pub fn run(scenario: &str) -> (usize, usize) {
                     "Key" => ErrorKind::Key,
                     "Type" => ErrorKind::Type,
                     "GameText" => ErrorKind::GameText,
+                    "Overflow" => ErrorKind::Overflow,
                     other => panic!("unknown error kind {other}"),
                 },
                 error.get("message").and_then(Value::as_str).expect("message"),
