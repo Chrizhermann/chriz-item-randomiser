@@ -22,6 +22,10 @@ pub mod prepared;
 pub mod scripted_sources;
 pub mod virtual_sources;
 pub mod pins;
+pub mod sources;
+pub mod templates;
+pub mod campaigns;
+pub mod native_export;
 
 pub use error::{Error, ErrorKind, Result};
 pub use json::{Dict, Value};

@@ -1008,6 +1008,37 @@ impl Style {
     }
 }
 
+/// Python's `repr()` of a JSON value.
+pub fn py_repr(value: &Value) -> String {
+    match value {
+        Value::Null => "None".into(),
+        Value::Bool(true) => "True".into(),
+        Value::Bool(false) => "False".into(),
+        Value::Int(number) => number.to_string(),
+        Value::BigInt(text) => text.to_string(),
+        Value::Float(number) if number.is_nan() => "nan".into(),
+        Value::Float(number) if number.is_infinite() => if *number > 0.0 { "inf".into() } else { "-inf".into() },
+        Value::Float(number) => float_repr(*number),
+        Value::Str(text) => crate::error::py_repr_str(text),
+        Value::List(items) => format!("[{}]", items.iter().map(py_repr).collect::<Vec<_>>().join(", ")),
+        Value::Dict(dict) => format!(
+            "{{{}}}",
+            dict.iter()
+                .map(|(key, item)| format!("{}: {}", crate::error::py_repr_str(key), py_repr(item)))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+    }
+}
+
+/// Python's `str()` (and f-string formatting) of a JSON value.
+pub fn py_str(value: &Value) -> String {
+    match value {
+        Value::Str(text) => text.clone(),
+        other => py_repr(other),
+    }
+}
+
 /// `ValueError` from json.dumps for NaN/inf with allow_nan=False.
 pub struct NonFinite;
 
