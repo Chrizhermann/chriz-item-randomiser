@@ -237,9 +237,17 @@ identities are `bg1:boss-loot:<family>:<kind>:<line>`. A Mode 1 place takes the 
 endpoint of the same place in the original tables; ten places that the original
 Mode 1 tables do not use have none and are bound by name like Mode 2 places. Its
 Rogue Rebalancing (`rr#…`) and IWDification (`cdia…`) items are optional: a game
-without such an item leaves its rows out and the preset dialog names the mod, while
-any other absent item still stops the preset. On a reference EET scan, `eet-boss-loot`
-passes the configuration check like `eet-mode1`.
+without such an item leaves its rows out and the preset dialog names the mod. On a
+reference EET scan, `eet-boss-loot` passes the configuration check like `eet-mode1`.
+
+A preset draft leaves out each row this game cannot use, instead of refusing the
+whole draft, and the preset dialog says how many rewards and places it left out; a
+left-out reward stays as the game has it. These are rows whose item, area, creature
+or shop the game lacks, whose record is not where the tables put it or is there more
+than once, and rows the runtime check rejects, such as a quest reward without a
+reviewed adapter or an item its creature cannot drop. The draft is checked with the
+same runtime check as "Check configuration", which then passes. `/api/template`
+also returns the left-out rows with their table line and reason (`not_used_rows`).
 
 Bound plans now accept optional `randomization` metadata: source tiers and loss
 exemptions, a tier for each recipient slot, loss/keep percentages, and ident-paired

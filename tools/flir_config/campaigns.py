@@ -39,6 +39,9 @@ POINTER_SCHEMA = "flir-prototype-next-v1"
 STATE = "prototype-not-playable"
 MAX_REWARD_UNITS = 4096
 MAX_TARGET_CAPACITY = 4096
+# Target kinds that can take a reward beyond the authored pairing (overflow).
+OVERFLOW_TARGET_KINDS = frozenset({"actor", "cre-template", "container", "store", "group",
+                                   "creature-target"})
 RUNTIME_REQUIREMENTS = [
     "campaign-revision-persistence", "exact-source-suppression",
     "new-game-assignment", "target-instance-resolution",
@@ -282,7 +285,7 @@ def _validate_randomization(value: object, sources: list[dict], targets: list[di
         for ordinal, raw_name in enumerate(slots, 1):
             name = tier(raw_name)
             target_capacity[name] += 1
-            if row["record"]["kind"] in {"actor", "cre-template", "container", "store", "group", "creature-target"}:
+            if row["record"]["kind"] in OVERFLOW_TARGET_KINDS:
                 eligible_slots.setdefault(name, set()).add((identity, ordinal))
 
     source_units, keep_reserve = Counter(), Counter()

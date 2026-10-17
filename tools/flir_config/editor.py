@@ -214,8 +214,8 @@ class Editor:
         elif route == "/api/template":
             # Import here so the editor's ordinary draft workflow remains usable
             # independently of optional original-table runtime integration.
-            from .original_configuration import build_original_configuration
-            generated = build_original_configuration(
+            from .original_configuration import fit_original_configuration
+            generated = fit_original_configuration(
                 self.catalog, self.world, data["id"], items=data.get("items"),
                 targets=data.get("targets"), options=data.get("options"))
             candidate = deepcopy(generated)
@@ -225,7 +225,9 @@ class Editor:
             self.draft = checked
             try:
                 return {**self.state(), "left_out": generated["left_out"],
-                        "absent_mods": generated["absent_mods"]}
+                        "absent_mods": generated["absent_mods"],
+                        "not_used": generated["not_used_notes"],
+                        "not_used_rows": generated["not_used"]}
             except Exception:
                 self.draft = previous
                 raise

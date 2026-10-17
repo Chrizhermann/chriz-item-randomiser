@@ -180,12 +180,90 @@ class OriginalConfigurationTests(unittest.TestCase):
                          ["Rogue Rebalancing is not installed, so 2 rewards from it are left out"])
         self.assertEqual(result["profile"]["items"], ["synth001"])
         self.assertFalse(any(source["item"].startswith("rr#") for source in result["plan"]["sources"]))
-        # Any other absent item still means the tables do not fit this game.
+        # Any other absent item does not fit this game either; it is left out and named.
         draft["items"][-1].update(optional_mod=None, availability_reason="item-definition-absent",
                                   binding_problem="item-definition-absent")
+        with patch("flir_config.original_configuration.resolve_template", return_value=draft):
+            result = build_original_configuration(self.catalog, self.world, "eet-mode1")
+        self.assertEqual(result["absent_mods"],
+                         ["Rogue Rebalancing is not installed, so 1 reward from it is left out"])
+        self.assertEqual(result["not_used"], [{"id": "rr-2", "row": "lists/items/base/bg1.2da:1",
+                                               "kind": "reward", "reason": "item-definition-absent"}])
+        self.assertEqual(result["not_used_notes"], [
+            "1 reward from the lists cannot be used in this game, so it is left out; "
+            "a left-out reward stays as the game has it"])
+
+    def test_rows_this_game_cannot_use_are_left_out_and_named(self):
+        draft = self._draft()
+        ambiguous = source_row("ambiguous", source_ids=[self.physical], ident="x")
+        ambiguous["binding_problem"] = "ambiguous-source-records"
+        twice = source_row("twice", source_ids=[self.physical], ident="x")
+        lost = target_row("lost-place", "x", "24")
+        lost["area_resource"] = "are:gone"
+        draft["items"] += [ambiguous, twice]
+        draft["targets"].append(lost)
+        with patch("flir_config.original_configuration.resolve_template", return_value=draft):
+            result = build_original_configuration(self.catalog, self.world, "eet-mode1",
+                                                  exclude={"virtual-1": "runtime reason"})
+        self.assertEqual([(row["id"], row["kind"], row["reason"]) for row in result["not_used"]], [
+            ("virtual-1", "reward", "runtime reason"),
+            ("ambiguous", "reward", "ambiguous-source-records"),
+            ("twice", "reward", "source-record-used-twice"),
+            ("lost-place", "place", "area-resource-absent")])
+        self.assertEqual(result["not_used_notes"], [
+            "3 rewards and 1 place from the lists cannot be used in this game, so they are left out; "
+            "a left-out reward stays as the game has it"])
+        plan = result["plan"]
+        self.assertEqual(plan["sources"], [{"item": "synth001", "policy": "relocate",
+                                            "source_ids": [self.physical], "registration_ids": []}])
+        self.assertEqual(plan["registrations"], [])
+        self.assertEqual(result["row_ids"], {self.physical: "source-1",
+                                             "original-target:target-1": "target-1",
+                                             "original-target:target-2": "target-2"})
+
+    def test_fitting_leaves_out_rows_the_runtime_check_rejects(self):
+        from flir_config.campaigns import compile_campaign
+        from flir_config.native_export import _compile
+        from flir_config.original_configuration import fit_original_configuration
+        from flir_config.profiles import validate_catalog
+        from flir_config.sources import validate_world
+        from flir_config.templates import DEFAULT_OPTIONS
+
+        visible = bytearray(make_itm())
+        struct.pack_into("<I", visible, 0x18, 0x4c)
+        (self.root / "override" / "synth002.itm").write_bytes(visible)
+        (self.root / "override" / "area.are").write_bytes(make_are(
+            [item_record(expiration=0, charges=(0, 0, 0), flags=1),
+             item_record("SYNTH002", expiration=0, charges=(0, 0, 0), flags=1)],
+            [("Source", 0, 1), ("Good", 1, 1), ("Target A", 2, 0), ("Target B", 2, 0)]))
+        catalog = scan_game(self.root)
+        world = scan_world(catalog)
+        draft = self._draft()
+        draft["options"] = DEFAULT_OPTIONS | draft["options"]
+        # SYNTH001 cannot be shown in an inventory, so the runtime cannot move it.
+        draft["items"] = [source_row("hidden", source_ids=["are:area/container/0/item/0"], ident="x"),
+                          source_row("good", item="synth002", ident="x",
+                                     source_ids=["are:area/container/1/item/1"]),
+                          # No place of tier 25 is left for this reward.
+                          source_row("no-place", adapter="virtual", item="synth002", ident="x",
+                                     tier="25", resource="itm:synth002")]
+        draft["targets"] = [target_row("place-a", "x", "24"), target_row("place-b", "x", "24")]
+        for row, container in zip(draft["targets"], (2, 3)):
+            row["target_ids"] = [f"are:area/container/{container}"]
         with patch("flir_config.original_configuration.resolve_template", return_value=draft), \
-                self.assertRaisesRegex(ProfileError, "item-definition-absent"):
-            build_original_configuration(self.catalog, self.world, "eet-mode1")
+                patch("flir_config.original_registrations.resolve_template", return_value=draft):
+            result = fit_original_configuration(catalog, world, "eet-mode1")
+            campaign = compile_campaign(result["profile"], catalog, world, result["plan"])
+        self.assertEqual(result["profile"]["items"], ["synth002"])
+        self.assertEqual(result["not_used"], [{
+            "id": "hidden", "row": "lists/items/base/bg1.2da:1", "kind": "reward",
+            "reason": "Native source requires an unexpired, visible droppable item: "
+                      "are:area/container/0/item/0"},
+            {"id": "no-place", "row": "lists/items/base/bg1.2da:1", "kind": "reward",
+             "reason": "no-place-in-tier"}])
+        self.assertEqual(result["plan"]["registrations"], [])
+        # The fitted configuration passes the strict runtime check.
+        _compile(campaign, world, validate_world(world, catalog), validate_catalog(catalog))
 
     def test_zero_match_source_omitted_while_target_rows_remain(self):
         with patch("flir_config.original_configuration.resolve_template",

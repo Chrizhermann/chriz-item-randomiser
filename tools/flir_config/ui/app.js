@@ -870,8 +870,9 @@ ui.presetForm.addEventListener("submit", (event) => {
       });
       const leftOut = (state.left_out || []).map((reason) => " " + reason + ".").join("");
       const absentMods = (state.absent_mods || []).map((reason) => " " + reason + ".").join("");
+      const notUsed = (state.not_used || []).map((reason) => " " + reason + ".").join("");
       acceptState(state, "Preset draft created. Check configuration for current runtime support." +
-        (leftOut ? " Rewards that stay as installed:" + leftOut : "") + absentMods);
+        (leftOut ? " Rewards that stay as installed:" + leftOut : "") + absentMods + notUsed);
       ui.presetDialog.close();
     } catch (error) {
       ui.presetError.textContent = error instanceof Error ? error.message : String(error);

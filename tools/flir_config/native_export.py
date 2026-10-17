@@ -63,7 +63,14 @@ def _area(resource: str) -> str:
     return resource[4:].upper()
 
 
-def _compile(manifest: dict, world: dict, index: dict, items: dict) -> tuple[dict, set[str], set[str]]:
+def _compile(manifest: dict, world: dict, index: dict, items: dict,
+             problems: dict[str, str] | None = None) -> tuple[dict, set[str], set[str]]:
+    """Compile a campaign for the native runtime.
+
+    Without ``problems`` any unsupported row stops the compile. With a dict,
+    each source or target row the runtime cannot use is recorded there by its
+    identity instead, and the other rows are still checked.
+    """
     # A rescan can discover unrelated resources (or a new resource type).
     # Compare the selected records and resource hashes below; existing native
     # revisions must still reproduce byte-for-byte when exported again.
@@ -118,7 +125,26 @@ def _compile(manifest: dict, world: dict, index: dict, items: dict) -> tuple[dic
                               if s["kind"] == "container")
     creature_items = Counter((s["owner"], s["item"]) for s in index["sources"].values()
                              if s["kind"] in ("cre-template", "embedded-cre"))
-    for selected in manifest["sources"]:
+
+    def attempt(identity: str, step, *args) -> None:
+        # With ``problems``, a row the runtime cannot use is recorded and left
+        # out of the result instead of stopping the whole configuration.
+        if problems is None:
+            step(*args)
+            return
+        if identity in problems:
+            return
+        actors = set(selected_actors)
+        try:
+            step(*args)
+        except ProfileError as exc:
+            problems[identity] = str(exc)
+            selected_actors.clear()
+            selected_actors.update(actors)
+            native["sources"].pop(identity, None)
+            native["targets"].pop(identity, None)
+
+    def compile_source(selected: dict) -> None:
         source, identity = selected["record"], selected["id"]
         _require(source["kind"] in ("container", "cre-template", "embedded-cre", "store", "scripted", "virtual", "authored-source"),
                  f"Native export does not yet support this source: {identity}")
@@ -168,7 +194,7 @@ def _compile(manifest: dict, world: dict, index: dict, items: dict) -> tuple[dic
                 use("dlg:unshey")
             native["sources"][identity] = endpoint
             use(source["resource"]); use("itm:" + source["item"])
-            continue
+            return
         if source["kind"] == "authored-source" and source["resource"] == SPELL["resource"]:
             _require(identity == "original-source:bg2:mode2:item:69" and record == KEY_PAYLOAD and
                      selected["resource_sha256"] in (KEY_ORIGINAL_HASH, KEY_PATCHED_HASH),
@@ -179,7 +205,7 @@ def _compile(manifest: dict, world: dict, index: dict, items: dict) -> tuple[dic
                 "payload": deepcopy(record), "identity": _digest({"source": selected})}
             use(source["resource"]); use("itm:" + source["item"])
             native["resource_hashes"]["SPIN621.SPL"] = KEY_PATCHED_HASH
-            continue
+            return
         if source["kind"] == "authored-source" and identity in MODE2_SOURCES:
             spec = mode2_source_spec(identity)
             _require(source["resource"] == spec["resource"] and record == spec["payload"],
@@ -215,7 +241,7 @@ def _compile(manifest: dict, world: dict, index: dict, items: dict) -> tuple[dic
             for resource in spec["resources"]:
                 use(resource)
             use("itm:" + source["item"])
-            continue
+            return
         if source["kind"] == "authored-source":
             spec = quest_spec(identity)
             _require(source["resource"] == spec["resource"] and source["item"] == spec["item"] and
@@ -226,12 +252,12 @@ def _compile(manifest: dict, world: dict, index: dict, items: dict) -> tuple[dic
                 **{key: spec[key] for key in ("quest", "resource", "selected_global", "consumed_global")},
                 "payload": deepcopy(record), "identity": _digest({"source": selected})}
             use(source["resource"]); use("itm:" + source["item"])
-            continue
+            return
         if source["kind"] == "virtual":
             native["sources"][identity] = {"kind": "virtual", "payload": deepcopy(record),
                                              "identity": _digest({"source": selected})}
             use(source["resource"])
-            continue
+            return
         if source["kind"] == "scripted":
             native["sources"][identity] = {
                 "kind": "guarded-script", "adapter_id": ADAPTER_ID,
@@ -239,7 +265,7 @@ def _compile(manifest: dict, world: dict, index: dict, items: dict) -> tuple[dic
                 "payload": deepcopy(PAYLOAD),
                 "identity": _digest({"source": selected})}
             use(RESOURCE); use("itm:" + source["item"])
-            continue
+            return
         if source["kind"] == "store":
             stock_option = shield is not None and identity == shield["source_id"]
             stock_rows = sum(s["owner"] == source["owner"] and s["item"] == source["item"]
@@ -257,7 +283,7 @@ def _compile(manifest: dict, world: dict, index: dict, items: dict) -> tuple[dic
             if selected_owners[source["resource"]] > 1 or (shield and source["resource"] == shield["resource"]):
                 native["sources"][identity]["multiple_stock"] = True
             use(source["resource"]); use("itm:" + source["item"])
-            continue
+            return
         elif source["kind"] == "container":
             owner = index["targets"][source["owner"]]
             selector = owner["selector"]
@@ -301,7 +327,7 @@ def _compile(manifest: dict, world: dict, index: dict, items: dict) -> tuple[dic
                                      f"Replacement item changed: {identity}")
                     native["sources"][identity] = endpoint
                     use(source["resource"]); use("itm:" + source["item"])
-                    continue
+                    return
                 owner = actors[0]
             else:
                 owner = index["targets"][source["owner"]]
@@ -336,11 +362,17 @@ def _compile(manifest: dict, world: dict, index: dict, items: dict) -> tuple[dic
         use(source["resource"]); use("itm:" + source["item"])
         pristine.add(owner["resource"])
 
-    for rule in manifest.get("randomization", {}).get("sources", {}).values():
+    for selected in manifest["sources"]:
+        attempt(selected["id"], compile_source, selected)
+
+    def compile_variants(rule: dict) -> None:
         for name in rule.get("reward_variants", []):
             _require(name in items, f"Original reward variant is absent from the scan: {name}")
             use("itm:" + name)
             selected_items.add(name)
+
+    for identity, rule in manifest.get("randomization", {}).get("sources", {}).items():
+        attempt(identity, compile_variants, rule)
 
     if has_shop_pricing:
         percent = native["shop_pricing"]["percent"]
@@ -354,7 +386,7 @@ def _compile(manifest: dict, world: dict, index: dict, items: dict) -> tuple[dic
 
     # UDLESA's sword is an ordinary physical source. Its conversation must use
     # the same kept/relocated decision without registering a second reward unit.
-    for selected in manifest["sources"]:
+    def compile_inventory_reward(selected: dict) -> None:
         name = PHYSICAL_SOURCE_REWARDS.get(selected["id"])
         if name:
             reward = MODE2_REWARDS[name]
@@ -365,7 +397,10 @@ def _compile(manifest: dict, world: dict, index: dict, items: dict) -> tuple[dic
             for resource in reward["resources"]:
                 use(resource)
 
-    for selected in manifest["targets"]:
+    for selected in manifest["sources"]:
+        attempt(selected["id"], compile_inventory_reward, selected)
+
+    def compile_target(selected: dict) -> None:
         target, identity = selected["record"], selected["id"]
         authored = target.get("adapter_id") == "original-target-v1"
         container_quest = container_target_spec(target["selector"]) if authored else None
@@ -392,7 +427,7 @@ def _compile(manifest: dict, world: dict, index: dict, items: dict) -> tuple[dic
                     "script_name": _name(placement["script_name"], identity),
                     "inventory_reward": True, "reward_resource": reward["resource"],
                     "identity": _digest({"target": selected, "creature": creature})}
-                continue
+                return
             if target["kind"] in ("group", "creature-target"):
                 resources = selector["members"] if target["kind"] == "group" else [selector["creature_resource"]]
                 members = []
@@ -413,7 +448,7 @@ def _compile(manifest: dict, world: dict, index: dict, items: dict) -> tuple[dic
                 else:
                     endpoint["script_name"] = members[0]["script_name"]
                 native["targets"][identity] = endpoint
-                continue
+                return
             if target["kind"] == "scripted-target":
                 if selector["id"] in MODE2_TARGETS:
                     spec = mode2_target_spec(selector["id"])
@@ -437,7 +472,7 @@ def _compile(manifest: dict, world: dict, index: dict, items: dict) -> tuple[dic
                             "kind": "quest", "area": "*", "adapter_id": "mode2-reward-v1",
                             "resource": spec["resource"], "event_global": spec["event_global"],
                             "recipient_local": spec["recipient_local"], "identity": _digest({"target": selected})}
-                    continue
+                    return
                 if target["resource"] == SPELL["resource"]:
                     _require(identity == "original-target:bg2:mode2:target:70" and
                              selected["resource_sha256"] in (KEY_ORIGINAL_HASH, KEY_PATCHED_HASH),
@@ -447,7 +482,7 @@ def _compile(manifest: dict, world: dict, index: dict, items: dict) -> tuple[dic
                         "event_global": SPELL["event_global"], "recipient_local": SPELL["recipient_local"],
                         "identity": _digest({"target": selected})}
                     native["resource_hashes"]["SPIN621.SPL"] = KEY_PATCHED_HASH
-                    continue
+                    return
                 name = selector["target"].removesuffix(".bcs")
                 _require(name in QUESTS, f"Unreviewed original quest recipient: {identity}")
                 _require(applied(world["game_root"], QUEST_CHANGES[name]),
@@ -456,7 +491,7 @@ def _compile(manifest: dict, world: dict, index: dict, items: dict) -> tuple[dic
                 native["targets"][identity] = {"kind": "quest", "area": _area(target["resource"]),
                     "resource": "bcs:" + name, "event_global": QUESTS[name]["event_global"],
                     "identity": _digest({"target": selected})}
-                continue
+                return
             physical = [index["targets"][key] for key in selector["target_ids"] if key in index["targets"]]
             _require(len(physical) == 1, f"Original recipient needs one physical binding: {identity}")
             target = physical[0]
@@ -471,7 +506,7 @@ def _compile(manifest: dict, world: dict, index: dict, items: dict) -> tuple[dic
             use(target["resource"])
             native["targets"][identity] = {"kind": "store", "store": target["resource"][4:],
                                            "identity": _digest({"target": selected})}
-            continue
+            return
         if target["kind"] == "container":
             selector = target["selector"]
             name = _name(selector["name"], identity)
@@ -490,7 +525,7 @@ def _compile(manifest: dict, world: dict, index: dict, items: dict) -> tuple[dic
                 native["targets"][identity]["loot_latch"] = {
                     key: container_quest[key] for key in
                     ("activation_global", "latch_global", "latch_scope")}
-            continue
+            return
         _require(target["kind"] == "actor", f"Native export needs an ARE actor, container or store target: {identity}")
         name = _name(actor_name(target), identity)
         _require(actor_names[target["resource"], name.lower()] == 1,
@@ -502,6 +537,9 @@ def _compile(manifest: dict, world: dict, index: dict, items: dict) -> tuple[dic
         native["targets"][identity] = {"kind": "creature", "area": _area(target["resource"]),
             "script_name": name, "identity": _digest({"target": selected,
                 "template": index["resources"].get(template)})}
+
+    for selected in manifest["targets"]:
+        attempt(selected["id"], compile_target, selected)
 
     guarded_ids = [s["id"] for s in manifest["sources"] if s["record"]["kind"] != "virtual"]
     if guarded_ids or shield or "cursed_disguises" in manifest:

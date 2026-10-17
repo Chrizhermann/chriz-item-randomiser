@@ -46,7 +46,7 @@ PRESETS = {
         "mode2_description": "Also the Mode 2 rows: shop stock, and Rogue Rebalancing and "
                              "IWDification items where those mods are installed.",
         # Items that only another mod adds. A game without the item leaves their rows
-        # out and says so; any other absent item still stops the preset.
+        # out and names the mod; any other absent item is left out with its reason.
         "optional_items": (("rr#", "Rogue Rebalancing"), ("cdia", "IWDification")),
     },
 }

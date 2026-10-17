@@ -11,17 +11,19 @@ import hashlib
 from collections import defaultdict
 from pathlib import Path
 
+from .campaigns import OVERFLOW_TARGET_KINDS
 from .game_names import convert_resource
 from .original_catalog import resolve_template
 from .original_options import is_spell_shield_row, spell_shield_spec, tome_variants
-from .original_registrations import is_unreferenced_creature_source
+from .original_registrations import (SHIPPED_REPLACEMENT, is_unreferenced_creature_source,
+                                     target_record as original_target_record)
 from .mode2_rewards import SOURCE_REWARDS as MODE2_SOURCES, source_spec as mode2_source_spec
 from .cursed_disguises import cursed_disguise_spec, item_revisions_installed
 from .prepared import QUEST_CHANGES, applied, applied_changes, left_out
 from .profiles import ProfileError, edit_profile, new_profile, validate_catalog
 from .resources import GameResources, RESOURCE_TYPES
 from .scripted_sources import blpool_registration
-from .sources import new_binding_plan, validate_world
+from .sources import UNUSABLE_SOURCE, new_binding_plan, validate_world
 from .virtual_sources import virtual_registration
 
 _SOURCE_FIELDS = ("id", "source_ref", "campaign", "family", "source", "ident",
@@ -32,6 +34,15 @@ _TARGET_FIELDS = ("id", "source_ref", "endpoint_id", "endpoint_kind",
                   "area_resource", "creature_resource", "container_name",
                   "members", "target_ids")
 _PAYLOAD_FIELDS = ("resref", "expiration", "charges", "flags")
+_USABLE_PROBLEMS = (None, "scripted-source-requires-adapter", "unshey-requires-legacy-adapter")
+# The original BG2 row that leaves the item shipped with Chriz Item Randomiser.
+_SHIPPED_REPLACEMENT_ROW = "bg2:base:item:86"
+# Rounds of leaving out rows the runtime check names before giving up.
+_FIT_ROUNDS = 8
+
+
+class _NotUsable(Exception):
+    """One authored row this game cannot use; the reason is its message."""
 
 
 def _tier(row: dict) -> str:
@@ -103,8 +114,17 @@ def _original_target(row: dict, resource_hash: str) -> dict:
 
 def build_original_configuration(catalog: dict, world: dict, template_id: str, *,
                                  items: str | None = None, targets: str | None = None,
-                                 options: dict | None = None) -> dict:
-    """Return a data-only ``{profile, plan}`` preserving enabled authored rows."""
+                                 options: dict | None = None,
+                                 exclude: dict[str, str] | None = None) -> dict:
+    """Return a data-only ``{profile, plan}`` preserving enabled authored rows.
+
+    A row this game cannot use is left out and listed in ``not_used`` instead of
+    stopping the configuration: an item, area or creature the game lacks, a
+    record that is not where the tables put it or is there more than once, and
+    each row named in ``exclude`` (row id -> reason). A left-out reward stays as
+    the game has it. ``row_ids`` maps each plan identity to its authored row.
+    """
+    exclude = exclude or {}
     catalog_items = validate_catalog(catalog)
     index = validate_world(world, catalog)
     draft = resolve_template(catalog, world, template_id,
@@ -127,16 +147,24 @@ def build_original_configuration(catalog: dict, world: dict, template_id: str, *
                 enabled.append(row)
     shield = (spell_shield_spec(world, randomized=any(is_spell_shield_row(row) for row in enabled_sources))
               if draft["options"].get("more_spell_shield") else None)
+    not_used = []
+
+    def leave_out(row: dict, kind: str, reason: str) -> None:
+        not_used.append({"id": row["id"], "row": row["source_ref"], "kind": kind, "reason": reason})
+
     # The old installer omits a physical source row only when the exact item
     # has no matching record. Its authored location remains in the pool.
     physical = index["sources"]
-    sources = []
+    candidates = []
     absent_mods = defaultdict(int)
     for row in enabled_sources:
+        if row["id"] in exclude:
+            leave_out(row, "reward", exclude[row["id"]])
+            continue
         if shield and is_spell_shield_row(row):
             if row["item_resref"] not in catalog_items:
                 raise ProfileError("More Spell Shield scrolls requires SCRL8X.ITM")
-            sources.append(row)
+            candidates.append(row)
             continue
         if row["binding_problem"] == "original-source-has-no-matching-record":
             continue
@@ -149,16 +177,107 @@ def build_original_configuration(catalog: dict, world: dict, template_id: str, *
                 for source in physical.values()):
             continue
         if not row["available"] and row["adapter"] != "unshey":
-            raise ProfileError(f"{row['source_ref']}: {row['availability_reason']}")
-        if row["binding_problem"] not in (None, "scripted-source-requires-adapter",
-                                      "unshey-requires-legacy-adapter"):
-            raise ProfileError(f"{row['source_ref']}: {row['binding_problem']}")
-        sources.append(row)
-    if not sources or not enabled_targets:
+            leave_out(row, "reward", row["availability_reason"])
+        elif row["binding_problem"] not in _USABLE_PROBLEMS:
+            leave_out(row, "reward", row["binding_problem"])
+        else:
+            candidates.append(row)
+
+    wanted_defaults = {row["item_resref"] for row in candidates
+                       if row["adapter"] in ("virtual", "scripted", "unshey")}
+    defaults = _item_defaults(catalog,
+                              {name: catalog_items[name]["sha256"] for name in wanted_defaults},
+                              wanted_defaults)
+
+    def choose(row: dict) -> tuple[dict | None, str | None, str | None]:
+        """Return (registration, physical source id, replacement) for one reward row."""
+        item, resource = row["item_resref"], row["source_resource"]
+        if shield and is_spell_shield_row(row):
+            registration = _original_source(row, shield["resource_sha256"], shield["payload"],
+                                            [shield["original_source_id"]] if shield["original_source_id"] else [])
+            registration["copies"] = shield["quantity"]
+            return registration, None, None
+        if row["adapter"] == "virtual":
+            return virtual_registration(item, row["id"], 1, catalog_items[item]["sha256"],
+                                        defaults[item]), None, None
+        if row["adapter"] == "scripted" and resource == "bcs:blpool" and item == "blun12":
+            return blpool_registration(world), None, None
+        if row["adapter"] in ("scripted", "unshey"):
+            if resource not in index["resources"]:
+                raise _NotUsable("source-resource-absent")
+            matched = sorted(source["id"] for source in physical.values()
+                             if source["resource"] == resource and source["item"] == item)
+            if row["adapter"] == "unshey" and len(matched) != 1:
+                raise _NotUsable("ambiguous-unshey-records")
+            payload = {"resref": item, "expiration": 0,
+                       "charges": defaults[item], "flags": 0}
+            if row["adapter"] == "unshey":
+                payload = {key: physical[matched[0]]["record"][key]
+                           for key in _PAYLOAD_FIELDS}
+            elif resource == "spl:spin621":
+                from .spell_rewards import PAYLOAD
+                payload = {**PAYLOAD, "charges": list(PAYLOAD["charges"])}
+            elif "original-source:" + row["id"] in MODE2_SOURCES:
+                payload = mode2_source_spec("original-source:" + row["id"])["payload"]
+            return _original_source(row, index["resources"][resource]["sha256"], payload,
+                                    matched if row["adapter"] == "unshey" else []), None, None
+        ids = row["source_ids"]
+        if not ids:
+            raise _NotUsable("source-record-absent")
+        if len(ids) > 1 or is_unreferenced_creature_source(row, physical):
+            if any(physical[identity]["kind"] != "cre-template" for identity in ids):
+                raise _NotUsable("ambiguous-source-records")
+            payloads = [{key: physical[identity]["record"][key] for key in _PAYLOAD_FIELDS}
+                        for identity in ids]
+            if any(payload != payloads[0] for payload in payloads[1:]):
+                raise _NotUsable("grouped-source-payload-mismatch")
+            return _original_source(row, index["resources"][resource]["sha256"], payloads[0],
+                                    sorted(ids), grouped=len(ids) > 1), None, None
+        source = physical[ids[0]]
+        # Binding accepts only a finite, unambiguous inventory record.
+        if UNUSABLE_SOURCE.intersection(source["concerns"]):
+            raise _NotUsable("source-record-unusable")
+        if row["replacement"] != "blank":
+            replacement = convert_resource(row["replacement"], "itm", row["campaign"])
+            if (source["kind"] not in ("cre-template", "embedded-cre", "container")
+                    or replacement == item):
+                raise _NotUsable("replacement-not-applicable")
+            if replacement not in catalog_items and not (
+                    replacement == SHIPPED_REPLACEMENT and row["id"] == _SHIPPED_REPLACEMENT_ROW):
+                raise _NotUsable("replacement-item-absent")
+            return None, ids[0], replacement
+        if (source["kind"] in ("cre-template", "embedded-cre")
+                and any(slot < 21 or slot > 36 for slot in source["record"]["slots"])):
+            return None, ids[0], "blank"
+        return None, ids[0], None
+
+    chosen, claimed = [], set()
+    for row in candidates:
+        try:
+            registration, physical_id, replacement = choose(row)
+        except _NotUsable as exc:
+            leave_out(row, "reward", str(exc))
+            continue
+        records = [physical_id] if physical_id else registration.get("physical_source_ids", [])
+        # One physical record can be moved by one row only.
+        if claimed.intersection(records):
+            leave_out(row, "reward", "source-record-used-twice")
+            continue
+        claimed.update(records)
+        chosen.append((row, registration, physical_id, replacement))
+    places = []
+    for row in enabled_targets:
+        if row["id"] in exclude:
+            leave_out(row, "place", exclude[row["id"]])
+        elif row["area_resource"] not in index["resources"]:
+            leave_out(row, "place", "area-resource-absent")
+        else:
+            places.append(row)
+    if not chosen or not places:
         raise ProfileError("Original template has no enabled sources or locations")
 
     profile = edit_profile(new_profile(catalog, template_id, draft["name"]), catalog,
-                           include=sorted({row["item_resref"] for row in sources}))
+                           include=sorted({row["item_resref"] for row, *_ in chosen}))
     plan = new_binding_plan(profile, catalog, world)
     plan["original_template_id"] = template_id
     plan["original_choices"] = draft["choices"].copy()
@@ -178,86 +297,33 @@ def build_original_configuration(catalog: dict, world: dict, template_id: str, *
                      "unrandomized_percent": draft["options"]["unrandomized_percent"],
                      "overflow": True}
     plan["randomization"] = randomization
-    wanted_defaults = {row["item_resref"] for row in sources
-                       if row["adapter"] in ("virtual", "scripted", "unshey")}
-    defaults = _item_defaults(catalog,
-                              {name: catalog_items[name]["sha256"] for name in wanted_defaults},
-                              wanted_defaults)
     by_item = defaultdict(lambda: {"source_ids": [], "registration_ids": []})
-    source_rows = []
-    for row in sources:
-        item, resource = row["item_resref"], row["source_resource"]
-        item_choices = by_item[item]
-        registration = None
-        if shield and is_spell_shield_row(row):
-            registration = _original_source(row, shield["resource_sha256"], shield["payload"],
-                                            [shield["original_source_id"]] if shield["original_source_id"] else [])
-            registration["copies"] = shield["quantity"]
-        elif row["adapter"] == "virtual":
-            registration = virtual_registration(item, row["id"], 1,
-                                                catalog_items[item]["sha256"], defaults[item])
-        elif row["adapter"] == "scripted" and resource == "bcs:blpool" and item == "blun12":
-            registration = blpool_registration(world)
-        elif row["adapter"] in ("scripted", "unshey"):
-            if resource not in index["resources"]:
-                raise ProfileError(f"{row['source_ref']}: source-resource-absent")
-            matched = sorted(source["id"] for source in physical.values()
-                             if source["resource"] == resource and source["item"] == item)
-            if row["adapter"] == "unshey" and len(matched) != 1:
-                raise ProfileError(f"{row['source_ref']}: ambiguous-unshey-records")
-            payload = {"resref": item, "expiration": 0,
-                       "charges": defaults[item], "flags": 0}
-            if row["adapter"] == "unshey":
-                payload = {key: physical[matched[0]]["record"][key]
-                           for key in _PAYLOAD_FIELDS}
-            elif resource == "spl:spin621":
-                from .spell_rewards import PAYLOAD
-                payload = {**PAYLOAD, "charges": list(PAYLOAD["charges"])}
-            elif "original-source:" + row["id"] in MODE2_SOURCES:
-                payload = mode2_source_spec("original-source:" + row["id"])["payload"]
-            registration = _original_source(row, index["resources"][resource]["sha256"],
-                                            payload, matched if row["adapter"] == "unshey" else [])
-        else:
-            ids = row["source_ids"]
-            if not ids:
-                raise ProfileError(f"{row['source_ref']}: physical source selector has no record")
-            if len(ids) > 1 or is_unreferenced_creature_source(row, physical):
-                if any(physical[identity]["kind"] != "cre-template" for identity in ids):
-                    raise ProfileError(f"{row['source_ref']}: ambiguous-source-records")
-                payloads = [{key: physical[identity]["record"][key] for key in _PAYLOAD_FIELDS}
-                            for identity in ids]
-                if any(payload != payloads[0] for payload in payloads[1:]):
-                    raise ProfileError(f"{row['source_ref']}: grouped-source-payload-mismatch")
-                registration = _original_source(row, index["resources"][resource]["sha256"],
-                                                payloads[0], sorted(ids), grouped=len(ids) > 1)
-            else:
-                item_choices["source_ids"].append(ids[0])
-                source_rows.append((ids[0], row))
-                if row["replacement"] != "blank":
-                    replacement = convert_resource(row["replacement"], "itm", row["campaign"])
-                    plan.setdefault("replacements", {})[ids[0]] = replacement
-                elif (physical[ids[0]]["kind"] in ("cre-template", "embedded-cre")
-                      and any(slot < 21 or slot > 36
-                              for slot in physical[ids[0]]["record"]["slots"])):
-                    plan.setdefault("replacements", {})[ids[0]] = "blank"
+    source_rows, row_ids = [], {}
+    for row, registration, physical_id, replacement in chosen:
+        item_choices = by_item[row["item_resref"]]
         if registration is not None:
+            identity = registration["id"]
             plan["registrations"].append(registration)
-            item_choices["registration_ids"].append(registration["id"])
-            source_rows.append((registration["id"], row))
+            item_choices["registration_ids"].append(identity)
+        else:
+            identity = physical_id
+            item_choices["source_ids"].append(identity)
+            if replacement is not None:
+                plan.setdefault("replacements", {})[identity] = replacement
+        source_rows.append((identity, row))
+        row_ids[identity] = row["id"]
 
     for item, choices in sorted(by_item.items()):
         plan["sources"].append({"item": item, "policy": "relocate",
                                 "source_ids": sorted(choices["source_ids"]),
                                 "registration_ids": sorted(choices["registration_ids"])})
     target_rows = []
-    for row in enabled_targets:
-        resource = row["area_resource"]
-        if resource not in index["resources"]:
-            raise ProfileError(f"{row['source_ref']}: area-resource-absent")
-        registration = _original_target(row, index["resources"][resource]["sha256"])
+    for row in places:
+        registration = _original_target(row, index["resources"][row["area_resource"]]["sha256"])
         plan["target_registrations"].append(registration)
         plan["targets"].append({"id": registration["id"], "capacity": 1, "optional": False})
         target_rows.append((registration["id"], row))
+        row_ids[registration["id"]] = row["id"]
 
     targets_by_ident = defaultdict(list)
     for identity, row in target_rows:
@@ -287,4 +353,82 @@ def build_original_configuration(catalog: dict, world: dict, template_id: str, *
             "absent_mods": [f"{mod} is not installed, so {count} "
                             f"{'reward' if count == 1 else 'rewards'} from it "
                             f"{'is' if count == 1 else 'are'} left out"
-                            for mod, count in sorted(absent_mods.items())]}
+                            for mod, count in sorted(absent_mods.items())],
+            "not_used": not_used, "not_used_notes": _not_used_notes(not_used),
+            "row_ids": row_ids}
+
+
+def _not_used_notes(rows: list[dict]) -> list[str]:
+    rewards = sum(row["kind"] == "reward" for row in rows)
+    counts = [f"{count} {noun if count == 1 else noun + 's'}"
+              for count, noun in ((rewards, "reward"), (len(rows) - rewards, "place")) if count]
+    if not counts:
+        return []
+    note = (" and ".join(counts) + " from the lists cannot be used in this game, so "
+            + ("it is" if len(rows) == 1 else "they are") + " left out")
+    return [note + ("; a left-out reward stays as the game has it" if rewards else "")]
+
+
+def _placeless_sources(plan: dict) -> list[str]:
+    """Source identities whose tier lacks a place the campaign check accepts.
+
+    With overflow, each tier with rewards needs a place that can take any reward
+    and, when originals may be kept, one that no reward's home claims. Without a
+    reward of such a tier its claims go too, so this repeats until stable.
+    """
+    randomization = plan["randomization"]
+    kinds = {registration["id"]: original_target_record(registration)["kind"]
+             for registration in plan["target_registrations"]}
+    slots = defaultdict(set)
+    for identity, tiers in randomization["targets"].items():
+        if kinds.get(identity) in OVERFLOW_TARGET_KINDS:
+            for ordinal, tier in enumerate(tiers, 1):
+                slots[tier].add((identity, ordinal))
+    keeping = randomization["unrandomized_percent"] > 0
+    rules, placeless = dict(randomization["sources"]), set()
+    while True:
+        claimed = {(entry["id"], entry["ordinal"])
+                   for rule in rules.values() for entry in rule["exclude_targets"]}
+        failing = {identity for identity, rule in rules.items()
+                   if not (slots[rule["tier"]] - claimed if keeping else slots[rule["tier"]])}
+        if not failing:
+            return sorted(placeless)
+        placeless |= failing
+        for identity in failing:
+            del rules[identity]
+
+
+def fit_original_configuration(catalog: dict, world: dict, template_id: str, *,
+                               items: str | None = None, targets: str | None = None,
+                               options: dict | None = None) -> dict:
+    """Build from the original tables, leaving out the rows the runtime cannot use.
+
+    The runtime check of the built configuration names every row it cannot use
+    (a quest reward without a reviewed adapter, an item its creature cannot
+    drop, a recipient it cannot address); those rows are left out and listed in
+    ``not_used`` and the configuration is built again until the check passes.
+    """
+    from .campaigns import compile_campaign
+    from .native_export import _compile
+
+    catalog_items, index = validate_catalog(catalog), validate_world(world, catalog)
+    exclude: dict[str, str] = {}
+    for _ in range(_FIT_ROUNDS):
+        generated = build_original_configuration(catalog, world, template_id, items=items,
+                                                 targets=targets, options=options, exclude=exclude)
+        placeless = _placeless_sources(generated["plan"])
+        if placeless:
+            for identity in placeless:
+                exclude[generated["row_ids"][identity]] = "no-place-in-tier"
+            continue
+        campaign = compile_campaign(generated["profile"], catalog, world, generated["plan"])
+        problems: dict[str, str] = {}
+        _compile(campaign, world, index, catalog_items, problems)
+        if not problems:
+            return generated
+        for identity, reason in sorted(problems.items()):
+            if identity not in generated["row_ids"]:
+                raise ProfileError(reason)
+            exclude[generated["row_ids"][identity]] = reason
+    raise ProfileError("The original tables could not be fitted to this game; "
+                       "the runtime check kept finding rows it cannot use")

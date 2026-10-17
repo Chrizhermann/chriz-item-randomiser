@@ -97,9 +97,12 @@ class EditorTests(unittest.TestCase):
             result["plan"]["targets"] = [{"id": target_id, "capacity": 1, "optional": False}]
             result["left_out"] = ["BLPOOL.BCS was left as installed (it gives the reward more than once)"]
             result["absent_mods"] = ["Rogue Rebalancing is not installed, so 2 rewards from it are left out"]
+            result["not_used_notes"] = ["1 place from the lists cannot be used in this game, so it is left out"]
+            result["not_used"] = [{"id": "bg1:base:target:9", "row": "lists/locations/base/bg1.2da:9",
+                                   "kind": "place", "reason": "area-resource-absent"}]
             return result
 
-        module.build_original_configuration = build
+        module.fit_original_configuration = build
         with patch.dict(sys.modules, {module.__name__: module}):
             state = editor.post("/api/template", {
                 "id": "bg1-mode1", "items": "mode1+mode2", "targets": "mode1",
@@ -113,6 +116,10 @@ class EditorTests(unittest.TestCase):
                              ["Rogue Rebalancing is not installed, so 2 rewards from it are left out"])
             self.assertNotIn("left_out", editor.draft)
             self.assertNotIn("absent_mods", editor.draft)
+            self.assertEqual(state["not_used"],
+                             ["1 place from the lists cannot be used in this game, so it is left out"])
+            self.assertEqual(state["not_used_rows"][0]["reason"], "area-resource-absent")
+            self.assertNotIn("not_used", editor.draft)
             self.assertNotEqual(state["profile"]["id"], original["profile"]["id"])
             self.assertEqual(editor.post("/api/save", editor.draft)["plan"]["randomization"],
                              {"tier_rows": ["original-choice"]})
@@ -124,7 +131,7 @@ class EditorTests(unittest.TestCase):
             before_error = deepcopy(editor.draft)
             def failed(*_, **__):
                 raise ProfileError("Preset cannot be bound")
-            module.build_original_configuration = failed
+            module.fit_original_configuration = failed
             with self.assertRaisesRegex(ProfileError, "cannot be bound"):
                 editor.post("/api/template", {"id": "bg2-mode1"})
             self.assertEqual(editor.draft, before_error)
@@ -133,7 +140,7 @@ class EditorTests(unittest.TestCase):
                 result = deepcopy(original)
                 result["plan"]["world_fingerprint"] = "another-scan"
                 return result
-            module.build_original_configuration = malformed
+            module.fit_original_configuration = malformed
             with self.assertRaisesRegex(ProfileError, "different scan"):
                 editor.post("/api/template", {"id": "bg2-mode1"})
             self.assertEqual(editor.draft, before_error)
