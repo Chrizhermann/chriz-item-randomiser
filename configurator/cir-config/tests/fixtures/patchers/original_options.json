@@ -1,0 +1,3997 @@
+{
+ "scenario": "original_options",
+ "cases": [
+  {
+   "name": "tome_variants bg1 eet",
+   "call": "original_options.tome_variants",
+   "args": {
+    "campaign": "bg1",
+    "game": "eet"
+   },
+   "independent": true,
+   "result": [
+    "book03",
+    "book04",
+    "book05",
+    "book06",
+    "book07",
+    "book08"
+   ]
+  },
+  {
+   "name": "tome_variants bg2 eet",
+   "call": "original_options.tome_variants",
+   "args": {
+    "campaign": "bg2",
+    "game": "eet"
+   },
+   "independent": true,
+   "result": [
+    "book03",
+    "book04",
+    "book05",
+    "book06",
+    "book07",
+    "book08"
+   ]
+  },
+  {
+   "name": "tome_variants bg1 bgee",
+   "call": "original_options.tome_variants",
+   "args": {
+    "campaign": "bg1",
+    "game": "bgee"
+   },
+   "independent": true,
+   "result": [
+    "book03",
+    "book04",
+    "book05",
+    "book06",
+    "book07",
+    "book08"
+   ]
+  },
+  {
+   "name": "tome_variants bg1 bg2ee",
+   "call": "original_options.tome_variants",
+   "args": {
+    "campaign": "bg1",
+    "game": "bg2ee"
+   },
+   "independent": true,
+   "result": [
+    "book03",
+    "book04",
+    "book05",
+    "book06",
+    "book07",
+    "book08"
+   ]
+  },
+  {
+   "name": "tome_variants bg1 iwdee",
+   "call": "original_options.tome_variants",
+   "args": {
+    "campaign": "bg1",
+    "game": "iwdee"
+   },
+   "independent": true,
+   "error": {
+    "kind": "Profile",
+    "message": "Unsupported game for resource conversion: iwdee"
+   }
+  },
+  {
+   "name": "tome_variants bg3 eet",
+   "call": "original_options.tome_variants",
+   "args": {
+    "campaign": "bg3",
+    "game": "eet"
+   },
+   "independent": true,
+   "error": {
+    "kind": "Profile",
+    "message": "Unsupported campaign for resource conversion: bg3"
+   }
+  },
+  {
+   "name": "spell shield stock 0",
+   "call": "original_options.patch_spell_shield_stock",
+   "args": {
+    "data": {
+     "$blob": "77e353119ecb1aa2c5b1d11c0dae43848c4577f0ad743a4310f2d36f24e73f80"
+    }
+   },
+   "independent": true,
+   "result": {
+    "$blob": "476a5c89f028ba1bf1165308b7c8da28ed409f6bcf4eaf2951dbfa11ca25e971"
+   }
+  },
+  {
+   "name": "spell shield stock 1",
+   "call": "original_options.patch_spell_shield_stock",
+   "args": {
+    "data": {
+     "$blob": "48429084fd367fd9930afc1a5f7f1a305d95a83c8fa86e40f7695ec86e60d62f"
+    }
+   },
+   "independent": true,
+   "result": {
+    "$blob": "476a5c89f028ba1bf1165308b7c8da28ed409f6bcf4eaf2951dbfa11ca25e971"
+   }
+  },
+  {
+   "name": "spell shield stock 3",
+   "call": "original_options.patch_spell_shield_stock",
+   "args": {
+    "data": {
+     "$blob": "476a5c89f028ba1bf1165308b7c8da28ed409f6bcf4eaf2951dbfa11ca25e971"
+    }
+   },
+   "independent": true,
+   "result": {
+    "$blob": "476a5c89f028ba1bf1165308b7c8da28ed409f6bcf4eaf2951dbfa11ca25e971"
+   }
+  },
+  {
+   "name": "spell shield stock 9",
+   "call": "original_options.patch_spell_shield_stock",
+   "args": {
+    "data": {
+     "$blob": "121a6c797606216ed46d7a53ce2a80119e30a72adaa1821074fc770912eea2e7"
+    }
+   },
+   "independent": true,
+   "result": {
+    "$blob": "121a6c797606216ed46d7a53ce2a80119e30a72adaa1821074fc770912eea2e7"
+   }
+  },
+  {
+   "name": "spell shield stock insert",
+   "call": "original_options.patch_spell_shield_stock",
+   "args": {
+    "data": {
+     "$blob": "44070a43712df6bcfb488bc721e5f14b656a1e20192fb0bb5edf5c948be7036e"
+    }
+   },
+   "independent": true,
+   "result": {
+    "$blob": "ea1f87d406c8e28f3538f7e75367eca92c396a449ade5fa27fd1142207e4432a"
+   }
+  },
+  {
+   "name": "spell shield stock empty",
+   "call": "original_options.patch_spell_shield_stock",
+   "args": {
+    "data": {
+     "$blob": "b63fe5fabf71faa990fb58cb9a1c99734e5eb1e2619a470d800807d09a8c3a9f"
+    }
+   },
+   "independent": true,
+   "result": {
+    "$blob": "17294bef111d79308e70809b2a1380c5bc22e8351688fca6555332790917e1fc"
+   }
+  },
+  {
+   "name": "spell shield stock no anchor",
+   "call": "original_options.patch_spell_shield_stock",
+   "args": {
+    "data": {
+     "$blob": "4b1eae96802f4c65875667cf2376f1b6b8aa29ecbb6c424be8b02c77ca29d67b"
+    }
+   },
+   "independent": true,
+   "result": {
+    "$blob": "6510819d67f8125ebf4886191f6ce8c778dff0af681a10685465836208b54758"
+   }
+  },
+  {
+   "name": "spell shield stock truncated",
+   "call": "original_options.patch_spell_shield_stock",
+   "args": {
+    "data": {
+     "$blob": "af65b63e7de9924a896cf9b8a3992304964aac7de38f699662e9a47b9a3bd3a6"
+    }
+   },
+   "independent": true,
+   "error": {
+    "kind": "Scan",
+    "message": "Truncated STOR header."
+   }
+  },
+  {
+   "name": "is_spell_shield_row row",
+   "call": "original_options.is_spell_shield_row",
+   "args": {
+    "row": {
+     "id": "bg2:mode2:item:228",
+     "source_ref": "lists/items/mode2/bg2.2da:228",
+     "campaign": "bg2",
+     "family": "mode2",
+     "source": "udduer01.sto",
+     "ident": "sw10",
+     "tier": "s7",
+     "token": "w01",
+     "extra": 1
+    }
+   },
+   "independent": true,
+   "result": true
+  },
+  {
+   "name": "is_spell_shield_row changed",
+   "call": "original_options.is_spell_shield_row",
+   "args": {
+    "row": {
+     "id": "bg2:mode2:item:228",
+     "source_ref": "lists/items/mode2/bg2.2da:228",
+     "campaign": "bg2",
+     "family": "mode2",
+     "source": "udduer01.sto",
+     "ident": "sw10",
+     "tier": "s6",
+     "token": "w01",
+     "extra": 1
+    }
+   },
+   "independent": true,
+   "result": false
+  },
+  {
+   "name": "is_spell_shield_row missing",
+   "call": "original_options.is_spell_shield_row",
+   "args": {
+    "row": {
+     "id": "bg2:mode2:item:228"
+    }
+   },
+   "independent": true,
+   "result": false
+  },
+  {
+   "name": "is_spell_shield_row list",
+   "call": "original_options.is_spell_shield_row",
+   "args": {
+    "row": [
+     {
+      "id": "bg2:mode2:item:228",
+      "source_ref": "lists/items/mode2/bg2.2da:228",
+      "campaign": "bg2",
+      "family": "mode2",
+      "source": "udduer01.sto",
+      "ident": "sw10",
+      "tier": "s7",
+      "token": "w01",
+      "extra": 1
+     }
+    ]
+   },
+   "independent": true,
+   "result": false
+  },
+  {
+   "name": "is_spell_shield_row none",
+   "call": "original_options.is_spell_shield_row",
+   "args": {
+    "row": null
+   },
+   "independent": true,
+   "result": false
+  },
+  {
+   "name": "spell_shield_spec existing False",
+   "call": "original_options.spell_shield_spec",
+   "args": {
+    "world": {
+     "resources": [
+      {
+       "id": "are:other",
+       "sha256": "2222222222222222222222222222222222222222222222222222222222222222"
+      },
+      {
+       "id": "sto:udduer01",
+       "sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+      }
+     ],
+     "sources": [
+      {
+       "id": "sto:udduer01/item/1",
+       "resource": "sto:udduer01",
+       "item": "scrl8x",
+       "record": {
+        "record_index": 1,
+        "byte_offset": 184,
+        "expiration": 13,
+        "charges": [
+         1,
+         2,
+         3
+        ],
+        "flags": 7,
+        "resref": "scrl8x",
+        "quantity": 9,
+        "infinite_supply_flag": 1,
+        "infinite_supply": true
+       }
+      },
+      {
+       "id": "sto:udduer01/item/0",
+       "resource": "sto:udduer01",
+       "item": "other",
+       "record": {
+        "record_index": 0,
+        "byte_offset": 156,
+        "expiration": 13,
+        "charges": [
+         7,
+         3,
+         2
+        ],
+        "flags": 2147483657,
+        "resref": "other",
+        "quantity": 4,
+        "infinite_supply_flag": 0,
+        "infinite_supply": false
+       }
+      }
+     ]
+    },
+    "randomized": false
+   },
+   "independent": true,
+   "result": {
+    "resource": "sto:udduer01",
+    "resource_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+    "original_source_id": "sto:udduer01/item/1",
+    "original_record": {
+     "record_index": 1,
+     "byte_offset": 184,
+     "expiration": 13,
+     "charges": [
+      1,
+      2,
+      3
+     ],
+     "flags": 7,
+     "resref": "scrl8x",
+     "quantity": 9,
+     "infinite_supply_flag": 1,
+     "infinite_supply": true
+    },
+    "record_index": 1,
+    "quantity": 9,
+    "payload": {
+     "resref": "scrl8x",
+     "expiration": 13,
+     "charges": [
+      1,
+      2,
+      3
+     ],
+     "flags": 7
+    },
+    "source_id": ""
+   }
+  },
+  {
+   "name": "spell_shield_spec existing True",
+   "call": "original_options.spell_shield_spec",
+   "args": {
+    "world": {
+     "resources": [
+      {
+       "id": "are:other",
+       "sha256": "2222222222222222222222222222222222222222222222222222222222222222"
+      },
+      {
+       "id": "sto:udduer01",
+       "sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+      }
+     ],
+     "sources": [
+      {
+       "id": "sto:udduer01/item/1",
+       "resource": "sto:udduer01",
+       "item": "scrl8x",
+       "record": {
+        "record_index": 1,
+        "byte_offset": 184,
+        "expiration": 13,
+        "charges": [
+         1,
+         2,
+         3
+        ],
+        "flags": 7,
+        "resref": "scrl8x",
+        "quantity": 9,
+        "infinite_supply_flag": 1,
+        "infinite_supply": true
+       }
+      },
+      {
+       "id": "sto:udduer01/item/0",
+       "resource": "sto:udduer01",
+       "item": "other",
+       "record": {
+        "record_index": 0,
+        "byte_offset": 156,
+        "expiration": 13,
+        "charges": [
+         7,
+         3,
+         2
+        ],
+        "flags": 2147483657,
+        "resref": "other",
+        "quantity": 4,
+        "infinite_supply_flag": 0,
+        "infinite_supply": false
+       }
+      }
+     ]
+    },
+    "randomized": true
+   },
+   "independent": true,
+   "result": {
+    "resource": "sto:udduer01",
+    "resource_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+    "original_source_id": "sto:udduer01/item/1",
+    "original_record": {
+     "record_index": 1,
+     "byte_offset": 184,
+     "expiration": 13,
+     "charges": [
+      1,
+      2,
+      3
+     ],
+     "flags": 7,
+     "resref": "scrl8x",
+     "quantity": 9,
+     "infinite_supply_flag": 1,
+     "infinite_supply": true
+    },
+    "record_index": 1,
+    "quantity": 9,
+    "payload": {
+     "resref": "scrl8x",
+     "expiration": 13,
+     "charges": [
+      1,
+      2,
+      3
+     ],
+     "flags": 7
+    },
+    "source_id": "original-source:bg2:mode2:item:228"
+   }
+  },
+  {
+   "name": "spell_shield_spec zero False",
+   "call": "original_options.spell_shield_spec",
+   "args": {
+    "world": {
+     "resources": [
+      {
+       "id": "are:other",
+       "sha256": "2222222222222222222222222222222222222222222222222222222222222222"
+      },
+      {
+       "id": "sto:udduer01",
+       "sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+      }
+     ],
+     "sources": [
+      {
+       "id": "sto:udduer01/item/0",
+       "resource": "sto:udduer01",
+       "item": "scrl8x",
+       "record": {
+        "record_index": 0,
+        "byte_offset": 156,
+        "expiration": 13,
+        "charges": [
+         7,
+         3,
+         2
+        ],
+        "flags": 2147483657,
+        "resref": "scrl8x",
+        "quantity": 0,
+        "infinite_supply_flag": 0,
+        "infinite_supply": false
+       }
+      }
+     ]
+    },
+    "randomized": false
+   },
+   "independent": true,
+   "result": {
+    "resource": "sto:udduer01",
+    "resource_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+    "original_source_id": "sto:udduer01/item/0",
+    "original_record": {
+     "record_index": 0,
+     "byte_offset": 156,
+     "expiration": 13,
+     "charges": [
+      7,
+      3,
+      2
+     ],
+     "flags": 2147483657,
+     "resref": "scrl8x",
+     "quantity": 0,
+     "infinite_supply_flag": 0,
+     "infinite_supply": false
+    },
+    "record_index": 0,
+    "quantity": 3,
+    "payload": {
+     "resref": "scrl8x",
+     "expiration": 13,
+     "charges": [
+      7,
+      3,
+      2
+     ],
+     "flags": 2147483657
+    },
+    "source_id": ""
+   }
+  },
+  {
+   "name": "spell_shield_spec zero True",
+   "call": "original_options.spell_shield_spec",
+   "args": {
+    "world": {
+     "resources": [
+      {
+       "id": "are:other",
+       "sha256": "2222222222222222222222222222222222222222222222222222222222222222"
+      },
+      {
+       "id": "sto:udduer01",
+       "sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+      }
+     ],
+     "sources": [
+      {
+       "id": "sto:udduer01/item/0",
+       "resource": "sto:udduer01",
+       "item": "scrl8x",
+       "record": {
+        "record_index": 0,
+        "byte_offset": 156,
+        "expiration": 13,
+        "charges": [
+         7,
+         3,
+         2
+        ],
+        "flags": 2147483657,
+        "resref": "scrl8x",
+        "quantity": 0,
+        "infinite_supply_flag": 0,
+        "infinite_supply": false
+       }
+      }
+     ]
+    },
+    "randomized": true
+   },
+   "independent": true,
+   "result": {
+    "resource": "sto:udduer01",
+    "resource_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+    "original_source_id": "sto:udduer01/item/0",
+    "original_record": {
+     "record_index": 0,
+     "byte_offset": 156,
+     "expiration": 13,
+     "charges": [
+      7,
+      3,
+      2
+     ],
+     "flags": 2147483657,
+     "resref": "scrl8x",
+     "quantity": 0,
+     "infinite_supply_flag": 0,
+     "infinite_supply": false
+    },
+    "record_index": 0,
+    "quantity": 3,
+    "payload": {
+     "resref": "scrl8x",
+     "expiration": 13,
+     "charges": [
+      7,
+      3,
+      2
+     ],
+     "flags": 2147483657
+    },
+    "source_id": "original-source:bg2:mode2:item:228"
+   }
+  },
+  {
+   "name": "spell_shield_spec absent False",
+   "call": "original_options.spell_shield_spec",
+   "args": {
+    "world": {
+     "resources": [
+      {
+       "id": "are:other",
+       "sha256": "2222222222222222222222222222222222222222222222222222222222222222"
+      },
+      {
+       "id": "sto:udduer01",
+       "sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+      }
+     ],
+     "sources": [
+      {
+       "id": "sto:udduer01/item/1",
+       "resource": "sto:udduer01",
+       "item": "scrl7p",
+       "record": {
+        "record_index": 1,
+        "byte_offset": 184,
+        "expiration": 13,
+        "charges": [
+         7,
+         3,
+         2
+        ],
+        "flags": 2147483657,
+        "resref": "scrl7p",
+        "quantity": 8,
+        "infinite_supply_flag": 0,
+        "infinite_supply": false
+       }
+      },
+      {
+       "id": "sto:udduer01/item/0",
+       "resource": "sto:udduer01",
+       "item": "other",
+       "record": {
+        "record_index": 0,
+        "byte_offset": 156,
+        "expiration": 13,
+        "charges": [
+         7,
+         3,
+         2
+        ],
+        "flags": 2147483657,
+        "resref": "other",
+        "quantity": 4,
+        "infinite_supply_flag": 0,
+        "infinite_supply": false
+       }
+      }
+     ]
+    },
+    "randomized": false
+   },
+   "independent": true,
+   "result": {
+    "resource": "sto:udduer01",
+    "resource_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+    "original_source_id": "",
+    "original_record": {},
+    "record_index": 1,
+    "quantity": 3,
+    "payload": {
+     "resref": "scrl8x",
+     "expiration": 0,
+     "charges": [
+      0,
+      0,
+      0
+     ],
+     "flags": 1
+    },
+    "source_id": ""
+   }
+  },
+  {
+   "name": "spell_shield_spec absent True",
+   "call": "original_options.spell_shield_spec",
+   "args": {
+    "world": {
+     "resources": [
+      {
+       "id": "are:other",
+       "sha256": "2222222222222222222222222222222222222222222222222222222222222222"
+      },
+      {
+       "id": "sto:udduer01",
+       "sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+      }
+     ],
+     "sources": [
+      {
+       "id": "sto:udduer01/item/1",
+       "resource": "sto:udduer01",
+       "item": "scrl7p",
+       "record": {
+        "record_index": 1,
+        "byte_offset": 184,
+        "expiration": 13,
+        "charges": [
+         7,
+         3,
+         2
+        ],
+        "flags": 2147483657,
+        "resref": "scrl7p",
+        "quantity": 8,
+        "infinite_supply_flag": 0,
+        "infinite_supply": false
+       }
+      },
+      {
+       "id": "sto:udduer01/item/0",
+       "resource": "sto:udduer01",
+       "item": "other",
+       "record": {
+        "record_index": 0,
+        "byte_offset": 156,
+        "expiration": 13,
+        "charges": [
+         7,
+         3,
+         2
+        ],
+        "flags": 2147483657,
+        "resref": "other",
+        "quantity": 4,
+        "infinite_supply_flag": 0,
+        "infinite_supply": false
+       }
+      }
+     ]
+    },
+    "randomized": true
+   },
+   "independent": true,
+   "result": {
+    "resource": "sto:udduer01",
+    "resource_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+    "original_source_id": "",
+    "original_record": {},
+    "record_index": 1,
+    "quantity": 3,
+    "payload": {
+     "resref": "scrl8x",
+     "expiration": 0,
+     "charges": [
+      0,
+      0,
+      0
+     ],
+     "flags": 1
+    },
+    "source_id": "original-source:bg2:mode2:item:228"
+   }
+  },
+  {
+   "name": "spell_shield_spec absent no anchor False",
+   "call": "original_options.spell_shield_spec",
+   "args": {
+    "world": {
+     "resources": [
+      {
+       "id": "are:other",
+       "sha256": "2222222222222222222222222222222222222222222222222222222222222222"
+      },
+      {
+       "id": "sto:udduer01",
+       "sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+      }
+     ],
+     "sources": [
+      {
+       "id": "sto:udduer01/item/0",
+       "resource": "sto:udduer01",
+       "item": "other",
+       "record": {
+        "record_index": 0,
+        "byte_offset": 156,
+        "expiration": 13,
+        "charges": [
+         7,
+         3,
+         2
+        ],
+        "flags": 2147483657,
+        "resref": "other",
+        "quantity": 4,
+        "infinite_supply_flag": 0,
+        "infinite_supply": false
+       }
+      }
+     ]
+    },
+    "randomized": false
+   },
+   "independent": true,
+   "result": {
+    "resource": "sto:udduer01",
+    "resource_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+    "original_source_id": "",
+    "original_record": {},
+    "record_index": 1,
+    "quantity": 3,
+    "payload": {
+     "resref": "scrl8x",
+     "expiration": 0,
+     "charges": [
+      0,
+      0,
+      0
+     ],
+     "flags": 1
+    },
+    "source_id": ""
+   }
+  },
+  {
+   "name": "spell_shield_spec absent no anchor True",
+   "call": "original_options.spell_shield_spec",
+   "args": {
+    "world": {
+     "resources": [
+      {
+       "id": "are:other",
+       "sha256": "2222222222222222222222222222222222222222222222222222222222222222"
+      },
+      {
+       "id": "sto:udduer01",
+       "sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+      }
+     ],
+     "sources": [
+      {
+       "id": "sto:udduer01/item/0",
+       "resource": "sto:udduer01",
+       "item": "other",
+       "record": {
+        "record_index": 0,
+        "byte_offset": 156,
+        "expiration": 13,
+        "charges": [
+         7,
+         3,
+         2
+        ],
+        "flags": 2147483657,
+        "resref": "other",
+        "quantity": 4,
+        "infinite_supply_flag": 0,
+        "infinite_supply": false
+       }
+      }
+     ]
+    },
+    "randomized": true
+   },
+   "independent": true,
+   "result": {
+    "resource": "sto:udduer01",
+    "resource_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+    "original_source_id": "",
+    "original_record": {},
+    "record_index": 1,
+    "quantity": 3,
+    "payload": {
+     "resref": "scrl8x",
+     "expiration": 0,
+     "charges": [
+      0,
+      0,
+      0
+     ],
+     "flags": 1
+    },
+    "source_id": "original-source:bg2:mode2:item:228"
+   }
+  },
+  {
+   "name": "spell_shield_spec empty store False",
+   "call": "original_options.spell_shield_spec",
+   "args": {
+    "world": {
+     "resources": [
+      {
+       "id": "are:other",
+       "sha256": "2222222222222222222222222222222222222222222222222222222222222222"
+      },
+      {
+       "id": "sto:udduer01",
+       "sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+      }
+     ],
+     "sources": []
+    },
+    "randomized": false
+   },
+   "independent": true,
+   "result": {
+    "resource": "sto:udduer01",
+    "resource_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+    "original_source_id": "",
+    "original_record": {},
+    "record_index": 0,
+    "quantity": 3,
+    "payload": {
+     "resref": "scrl8x",
+     "expiration": 0,
+     "charges": [
+      0,
+      0,
+      0
+     ],
+     "flags": 1
+    },
+    "source_id": ""
+   }
+  },
+  {
+   "name": "spell_shield_spec empty store True",
+   "call": "original_options.spell_shield_spec",
+   "args": {
+    "world": {
+     "resources": [
+      {
+       "id": "are:other",
+       "sha256": "2222222222222222222222222222222222222222222222222222222222222222"
+      },
+      {
+       "id": "sto:udduer01",
+       "sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+      }
+     ],
+     "sources": []
+    },
+    "randomized": true
+   },
+   "independent": true,
+   "result": {
+    "resource": "sto:udduer01",
+    "resource_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+    "original_source_id": "",
+    "original_record": {},
+    "record_index": 0,
+    "quantity": 3,
+    "payload": {
+     "resref": "scrl8x",
+     "expiration": 0,
+     "charges": [
+      0,
+      0,
+      0
+     ],
+     "flags": 1
+    },
+    "source_id": "original-source:bg2:mode2:item:228"
+   }
+  },
+  {
+   "name": "spell_shield_spec duplicate False",
+   "call": "original_options.spell_shield_spec",
+   "args": {
+    "world": {
+     "resources": [
+      {
+       "id": "are:other",
+       "sha256": "2222222222222222222222222222222222222222222222222222222222222222"
+      },
+      {
+       "id": "sto:udduer01",
+       "sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+      }
+     ],
+     "sources": [
+      {
+       "id": "sto:udduer01/item/1",
+       "resource": "sto:udduer01",
+       "item": "scrl8x",
+       "record": {
+        "record_index": 1,
+        "byte_offset": 184,
+        "expiration": 13,
+        "charges": [
+         7,
+         3,
+         2
+        ],
+        "flags": 2147483657,
+        "resref": "scrl8x",
+        "quantity": 2,
+        "infinite_supply_flag": 0,
+        "infinite_supply": false
+       }
+      },
+      {
+       "id": "sto:udduer01/item/0",
+       "resource": "sto:udduer01",
+       "item": "scrl8x",
+       "record": {
+        "record_index": 0,
+        "byte_offset": 156,
+        "expiration": 13,
+        "charges": [
+         7,
+         3,
+         2
+        ],
+        "flags": 2147483657,
+        "resref": "scrl8x",
+        "quantity": 1,
+        "infinite_supply_flag": 0,
+        "infinite_supply": false
+       }
+      }
+     ]
+    },
+    "randomized": false
+   },
+   "independent": true,
+   "result": {
+    "resource": "sto:udduer01",
+    "resource_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+    "original_source_id": "sto:udduer01/item/0",
+    "original_record": {
+     "record_index": 0,
+     "byte_offset": 156,
+     "expiration": 13,
+     "charges": [
+      7,
+      3,
+      2
+     ],
+     "flags": 2147483657,
+     "resref": "scrl8x",
+     "quantity": 1,
+     "infinite_supply_flag": 0,
+     "infinite_supply": false
+    },
+    "record_index": 0,
+    "quantity": 3,
+    "payload": {
+     "resref": "scrl8x",
+     "expiration": 13,
+     "charges": [
+      7,
+      3,
+      2
+     ],
+     "flags": 2147483657
+    },
+    "source_id": ""
+   }
+  },
+  {
+   "name": "spell_shield_spec duplicate True",
+   "call": "original_options.spell_shield_spec",
+   "args": {
+    "world": {
+     "resources": [
+      {
+       "id": "are:other",
+       "sha256": "2222222222222222222222222222222222222222222222222222222222222222"
+      },
+      {
+       "id": "sto:udduer01",
+       "sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+      }
+     ],
+     "sources": [
+      {
+       "id": "sto:udduer01/item/1",
+       "resource": "sto:udduer01",
+       "item": "scrl8x",
+       "record": {
+        "record_index": 1,
+        "byte_offset": 184,
+        "expiration": 13,
+        "charges": [
+         7,
+         3,
+         2
+        ],
+        "flags": 2147483657,
+        "resref": "scrl8x",
+        "quantity": 2,
+        "infinite_supply_flag": 0,
+        "infinite_supply": false
+       }
+      },
+      {
+       "id": "sto:udduer01/item/0",
+       "resource": "sto:udduer01",
+       "item": "scrl8x",
+       "record": {
+        "record_index": 0,
+        "byte_offset": 156,
+        "expiration": 13,
+        "charges": [
+         7,
+         3,
+         2
+        ],
+        "flags": 2147483657,
+        "resref": "scrl8x",
+        "quantity": 1,
+        "infinite_supply_flag": 0,
+        "infinite_supply": false
+       }
+      }
+     ]
+    },
+    "randomized": true
+   },
+   "independent": true,
+   "error": {
+    "kind": "Profile",
+    "message": "Spell Shield randomisation has ambiguous duplicate shop-source rows"
+   }
+  },
+  {
+   "name": "spell_shield_spec no store False",
+   "call": "original_options.spell_shield_spec",
+   "args": {
+    "world": {
+     "resources": [
+      {
+       "id": "are:other",
+       "sha256": "2222222222222222222222222222222222222222222222222222222222222222"
+      },
+      {
+       "id": "sto:other",
+       "sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+      }
+     ],
+     "sources": []
+    },
+    "randomized": false
+   },
+   "independent": true,
+   "error": {
+    "kind": "Profile",
+    "message": "More Spell Shield scrolls requires UDDUER01.STO"
+   }
+  },
+  {
+   "name": "spell_shield_spec no store True",
+   "call": "original_options.spell_shield_spec",
+   "args": {
+    "world": {
+     "resources": [
+      {
+       "id": "are:other",
+       "sha256": "2222222222222222222222222222222222222222222222222222222222222222"
+      },
+      {
+       "id": "sto:other",
+       "sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+      }
+     ],
+     "sources": []
+    },
+    "randomized": true
+   },
+   "independent": true,
+   "error": {
+    "kind": "Profile",
+    "message": "More Spell Shield scrolls requires UDDUER01.STO"
+   }
+  },
+  {
+   "name": "spell_shield_spec bad hash False",
+   "call": "original_options.spell_shield_spec",
+   "args": {
+    "world": {
+     "resources": [
+      {
+       "id": "are:other",
+       "sha256": "2222222222222222222222222222222222222222222222222222222222222222"
+      },
+      {
+       "id": "sto:udduer01",
+       "sha256": "ABC"
+      }
+     ],
+     "sources": [
+      {
+       "id": "sto:udduer01/item/0",
+       "resource": "sto:udduer01",
+       "item": "scrl8x",
+       "record": {
+        "record_index": 0,
+        "byte_offset": 156,
+        "expiration": 13,
+        "charges": [
+         7,
+         3,
+         2
+        ],
+        "flags": 2147483657,
+        "resref": "scrl8x",
+        "quantity": 1,
+        "infinite_supply_flag": 0,
+        "infinite_supply": false
+       }
+      }
+     ]
+    },
+    "randomized": false
+   },
+   "independent": true,
+   "error": {
+    "kind": "Profile",
+    "message": "Invalid Spell Shield stock metadata"
+   }
+  },
+  {
+   "name": "spell_shield_spec bad hash True",
+   "call": "original_options.spell_shield_spec",
+   "args": {
+    "world": {
+     "resources": [
+      {
+       "id": "are:other",
+       "sha256": "2222222222222222222222222222222222222222222222222222222222222222"
+      },
+      {
+       "id": "sto:udduer01",
+       "sha256": "ABC"
+      }
+     ],
+     "sources": [
+      {
+       "id": "sto:udduer01/item/0",
+       "resource": "sto:udduer01",
+       "item": "scrl8x",
+       "record": {
+        "record_index": 0,
+        "byte_offset": 156,
+        "expiration": 13,
+        "charges": [
+         7,
+         3,
+         2
+        ],
+        "flags": 2147483657,
+        "resref": "scrl8x",
+        "quantity": 1,
+        "infinite_supply_flag": 0,
+        "infinite_supply": false
+       }
+      }
+     ]
+    },
+    "randomized": true
+   },
+   "independent": true,
+   "error": {
+    "kind": "Profile",
+    "message": "Invalid Spell Shield stock metadata"
+   }
+  },
+  {
+   "name": "spell_shield_spec string index False",
+   "call": "original_options.spell_shield_spec",
+   "args": {
+    "world": {
+     "resources": [
+      {
+       "id": "are:other",
+       "sha256": "2222222222222222222222222222222222222222222222222222222222222222"
+      },
+      {
+       "id": "sto:udduer01",
+       "sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+      }
+     ],
+     "sources": [
+      {
+       "id": "sto:udduer01/item/0",
+       "resource": "sto:udduer01",
+       "item": "scrl8x",
+       "record": {
+        "record_index": 0,
+        "byte_offset": 156,
+        "expiration": 13,
+        "charges": [
+         7,
+         3,
+         2
+        ],
+        "flags": 2147483657,
+        "resref": "scrl8x",
+        "quantity": 1,
+        "infinite_supply_flag": 0,
+        "infinite_supply": false
+       }
+      },
+      {
+       "id": "x",
+       "resource": "sto:udduer01",
+       "item": "other",
+       "record": {
+        "record_index": "a"
+       }
+      }
+     ]
+    },
+    "randomized": false
+   },
+   "independent": true,
+   "error": {
+    "kind": "Type",
+    "message": "'<' not supported between instances of 'str' and 'int'"
+   }
+  },
+  {
+   "name": "spell_shield_spec string index True",
+   "call": "original_options.spell_shield_spec",
+   "args": {
+    "world": {
+     "resources": [
+      {
+       "id": "are:other",
+       "sha256": "2222222222222222222222222222222222222222222222222222222222222222"
+      },
+      {
+       "id": "sto:udduer01",
+       "sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+      }
+     ],
+     "sources": [
+      {
+       "id": "sto:udduer01/item/0",
+       "resource": "sto:udduer01",
+       "item": "scrl8x",
+       "record": {
+        "record_index": 0,
+        "byte_offset": 156,
+        "expiration": 13,
+        "charges": [
+         7,
+         3,
+         2
+        ],
+        "flags": 2147483657,
+        "resref": "scrl8x",
+        "quantity": 1,
+        "infinite_supply_flag": 0,
+        "infinite_supply": false
+       }
+      },
+      {
+       "id": "x",
+       "resource": "sto:udduer01",
+       "item": "other",
+       "record": {
+        "record_index": "a"
+       }
+      }
+     ]
+    },
+    "randomized": true
+   },
+   "independent": true,
+   "error": {
+    "kind": "Type",
+    "message": "'<' not supported between instances of 'str' and 'int'"
+   }
+  },
+  {
+   "name": "spell_shield_spec missing key False",
+   "call": "original_options.spell_shield_spec",
+   "args": {
+    "world": {
+     "resources": [
+      {
+       "id": "sto:udduer01",
+       "sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+      }
+     ],
+     "sources": [
+      {
+       "id": "x",
+       "resource": "sto:udduer01",
+       "record": {
+        "record_index": 0
+       }
+      }
+     ]
+    },
+    "randomized": false
+   },
+   "independent": true,
+   "error": {
+    "kind": "Key",
+    "message": "'item'"
+   }
+  },
+  {
+   "name": "spell_shield_spec missing key True",
+   "call": "original_options.spell_shield_spec",
+   "args": {
+    "world": {
+     "resources": [
+      {
+       "id": "sto:udduer01",
+       "sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+      }
+     ],
+     "sources": [
+      {
+       "id": "x",
+       "resource": "sto:udduer01",
+       "record": {
+        "record_index": 0
+       }
+      }
+     ]
+    },
+    "randomized": true
+   },
+   "independent": true,
+   "error": {
+    "kind": "Key",
+    "message": "'item'"
+   }
+  },
+  {
+   "name": "spell_shield_spec no sources False",
+   "call": "original_options.spell_shield_spec",
+   "args": {
+    "world": {
+     "resources": [
+      {
+       "id": "sto:udduer01",
+       "sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+      }
+     ]
+    },
+    "randomized": false
+   },
+   "independent": true,
+   "error": {
+    "kind": "Key",
+    "message": "'sources'"
+   }
+  },
+  {
+   "name": "spell_shield_spec no sources True",
+   "call": "original_options.spell_shield_spec",
+   "args": {
+    "world": {
+     "resources": [
+      {
+       "id": "sto:udduer01",
+       "sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+      }
+     ]
+    },
+    "randomized": true
+   },
+   "independent": true,
+   "error": {
+    "kind": "Key",
+    "message": "'sources'"
+   }
+  },
+  {
+   "name": "spell_shield_spec quantity float False",
+   "call": "original_options.spell_shield_spec",
+   "args": {
+    "world": {
+     "resources": [
+      {
+       "id": "are:other",
+       "sha256": "2222222222222222222222222222222222222222222222222222222222222222"
+      },
+      {
+       "id": "sto:udduer01",
+       "sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+      }
+     ],
+     "sources": [
+      {
+       "id": "sto:udduer01/item/0",
+       "resource": "sto:udduer01",
+       "item": "scrl8x",
+       "record": {
+        "record_index": 0,
+        "byte_offset": 156,
+        "expiration": 13,
+        "charges": [
+         7,
+         3,
+         2
+        ],
+        "flags": 2147483657,
+        "resref": "scrl8x",
+        "quantity": 7.5,
+        "infinite_supply_flag": 0,
+        "infinite_supply": false
+       }
+      }
+     ]
+    },
+    "randomized": false
+   },
+   "independent": true,
+   "error": {
+    "kind": "Profile",
+    "message": "Invalid Spell Shield stock metadata"
+   }
+  },
+  {
+   "name": "spell_shield_spec quantity float True",
+   "call": "original_options.spell_shield_spec",
+   "args": {
+    "world": {
+     "resources": [
+      {
+       "id": "are:other",
+       "sha256": "2222222222222222222222222222222222222222222222222222222222222222"
+      },
+      {
+       "id": "sto:udduer01",
+       "sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+      }
+     ],
+     "sources": [
+      {
+       "id": "sto:udduer01/item/0",
+       "resource": "sto:udduer01",
+       "item": "scrl8x",
+       "record": {
+        "record_index": 0,
+        "byte_offset": 156,
+        "expiration": 13,
+        "charges": [
+         7,
+         3,
+         2
+        ],
+        "flags": 2147483657,
+        "resref": "scrl8x",
+        "quantity": 7.5,
+        "infinite_supply_flag": 0,
+        "infinite_supply": false
+       }
+      }
+     ]
+    },
+    "randomized": true
+   },
+   "independent": true,
+   "error": {
+    "kind": "Profile",
+    "message": "Invalid Spell Shield stock metadata"
+   }
+  },
+  {
+   "name": "validate_spell_shield_spec valid",
+   "call": "original_options.validate_spell_shield_spec",
+   "args": {
+    "spec": {
+     "resource": "sto:udduer01",
+     "resource_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+     "original_source_id": "sto:udduer01/item/1",
+     "original_record": {
+      "record_index": 1,
+      "byte_offset": 184,
+      "expiration": 13,
+      "charges": [
+       1,
+       2,
+       3
+      ],
+      "flags": 7,
+      "resref": "scrl8x",
+      "quantity": 9,
+      "infinite_supply_flag": 1,
+      "infinite_supply": true
+     },
+     "record_index": 1,
+     "quantity": 9,
+     "payload": {
+      "resref": "scrl8x",
+      "expiration": 13,
+      "charges": [
+       1,
+       2,
+       3
+      ],
+      "flags": 7
+     },
+     "source_id": "original-source:bg2:mode2:item:228"
+    }
+   },
+   "independent": true,
+   "result": null
+  },
+  {
+   "name": "validate_spell_shield_spec inserted",
+   "call": "original_options.validate_spell_shield_spec",
+   "args": {
+    "spec": {
+     "resource": "sto:udduer01",
+     "resource_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+     "original_source_id": "",
+     "original_record": {},
+     "record_index": 1,
+     "quantity": 3,
+     "payload": {
+      "resref": "scrl8x",
+      "expiration": 0,
+      "charges": [
+       0,
+       0,
+       0
+      ],
+      "flags": 1
+     },
+     "source_id": ""
+    }
+   },
+   "independent": true,
+   "result": null
+  },
+  {
+   "name": "validate_spell_shield_spec list",
+   "call": "original_options.validate_spell_shield_spec",
+   "args": {
+    "spec": [
+     {
+      "resource": "sto:udduer01",
+      "resource_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+      "original_source_id": "sto:udduer01/item/1",
+      "original_record": {
+       "record_index": 1,
+       "byte_offset": 184,
+       "expiration": 13,
+       "charges": [
+        1,
+        2,
+        3
+       ],
+       "flags": 7,
+       "resref": "scrl8x",
+       "quantity": 9,
+       "infinite_supply_flag": 1,
+       "infinite_supply": true
+      },
+      "record_index": 1,
+      "quantity": 9,
+      "payload": {
+       "resref": "scrl8x",
+       "expiration": 13,
+       "charges": [
+        1,
+        2,
+        3
+       ],
+       "flags": 7
+      },
+      "source_id": "original-source:bg2:mode2:item:228"
+     }
+    ]
+   },
+   "independent": true,
+   "error": {
+    "kind": "Profile",
+    "message": "Invalid Spell Shield stock metadata"
+   }
+  },
+  {
+   "name": "validate_spell_shield_spec missing field",
+   "call": "original_options.validate_spell_shield_spec",
+   "args": {
+    "spec": {
+     "resource": "sto:udduer01",
+     "resource_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+     "original_source_id": "sto:udduer01/item/1",
+     "original_record": {
+      "record_index": 1,
+      "byte_offset": 184,
+      "expiration": 13,
+      "charges": [
+       1,
+       2,
+       3
+      ],
+      "flags": 7,
+      "resref": "scrl8x",
+      "quantity": 9,
+      "infinite_supply_flag": 1,
+      "infinite_supply": true
+     },
+     "record_index": 1,
+     "quantity": 9,
+     "source_id": "original-source:bg2:mode2:item:228"
+    }
+   },
+   "independent": true,
+   "error": {
+    "kind": "Profile",
+    "message": "Invalid Spell Shield stock metadata"
+   }
+  },
+  {
+   "name": "validate_spell_shield_spec quantity=2",
+   "call": "original_options.validate_spell_shield_spec",
+   "args": {
+    "spec": {
+     "resource": "sto:udduer01",
+     "resource_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+     "original_source_id": "sto:udduer01/item/1",
+     "original_record": {
+      "record_index": 1,
+      "byte_offset": 184,
+      "expiration": 13,
+      "charges": [
+       1,
+       2,
+       3
+      ],
+      "flags": 7,
+      "resref": "scrl8x",
+      "quantity": 9,
+      "infinite_supply_flag": 1,
+      "infinite_supply": true
+     },
+     "record_index": 1,
+     "quantity": 2,
+     "payload": {
+      "resref": "scrl8x",
+      "expiration": 13,
+      "charges": [
+       1,
+       2,
+       3
+      ],
+      "flags": 7
+     },
+     "source_id": "original-source:bg2:mode2:item:228"
+    }
+   },
+   "independent": true,
+   "error": {
+    "kind": "Profile",
+    "message": "Invalid Spell Shield stock metadata"
+   }
+  },
+  {
+   "name": "validate_spell_shield_spec quantity=10",
+   "call": "original_options.validate_spell_shield_spec",
+   "args": {
+    "spec": {
+     "resource": "sto:udduer01",
+     "resource_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+     "original_source_id": "sto:udduer01/item/1",
+     "original_record": {
+      "record_index": 1,
+      "byte_offset": 184,
+      "expiration": 13,
+      "charges": [
+       1,
+       2,
+       3
+      ],
+      "flags": 7,
+      "resref": "scrl8x",
+      "quantity": 9,
+      "infinite_supply_flag": 1,
+      "infinite_supply": true
+     },
+     "record_index": 1,
+     "quantity": 10,
+     "payload": {
+      "resref": "scrl8x",
+      "expiration": 13,
+      "charges": [
+       1,
+       2,
+       3
+      ],
+      "flags": 7
+     },
+     "source_id": "original-source:bg2:mode2:item:228"
+    }
+   },
+   "independent": true,
+   "error": {
+    "kind": "Profile",
+    "message": "Spell Shield metadata differs from its original stock"
+   }
+  },
+  {
+   "name": "validate_spell_shield_spec quantity=3.0",
+   "call": "original_options.validate_spell_shield_spec",
+   "args": {
+    "spec": {
+     "resource": "sto:udduer01",
+     "resource_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+     "original_source_id": "sto:udduer01/item/1",
+     "original_record": {
+      "record_index": 1,
+      "byte_offset": 184,
+      "expiration": 13,
+      "charges": [
+       1,
+       2,
+       3
+      ],
+      "flags": 7,
+      "resref": "scrl8x",
+      "quantity": 9,
+      "infinite_supply_flag": 1,
+      "infinite_supply": true
+     },
+     "record_index": 1,
+     "quantity": 3.0,
+     "payload": {
+      "resref": "scrl8x",
+      "expiration": 13,
+      "charges": [
+       1,
+       2,
+       3
+      ],
+      "flags": 7
+     },
+     "source_id": "original-source:bg2:mode2:item:228"
+    }
+   },
+   "independent": true,
+   "error": {
+    "kind": "Profile",
+    "message": "Invalid Spell Shield stock metadata"
+   }
+  },
+  {
+   "name": "validate_spell_shield_spec quantity=True",
+   "call": "original_options.validate_spell_shield_spec",
+   "args": {
+    "spec": {
+     "resource": "sto:udduer01",
+     "resource_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+     "original_source_id": "sto:udduer01/item/1",
+     "original_record": {
+      "record_index": 1,
+      "byte_offset": 184,
+      "expiration": 13,
+      "charges": [
+       1,
+       2,
+       3
+      ],
+      "flags": 7,
+      "resref": "scrl8x",
+      "quantity": 9,
+      "infinite_supply_flag": 1,
+      "infinite_supply": true
+     },
+     "record_index": 1,
+     "quantity": true,
+     "payload": {
+      "resref": "scrl8x",
+      "expiration": 13,
+      "charges": [
+       1,
+       2,
+       3
+      ],
+      "flags": 7
+     },
+     "source_id": "original-source:bg2:mode2:item:228"
+    }
+   },
+   "independent": true,
+   "error": {
+    "kind": "Profile",
+    "message": "Invalid Spell Shield stock metadata"
+   }
+  },
+  {
+   "name": "validate_spell_shield_spec quantity=4294967296",
+   "call": "original_options.validate_spell_shield_spec",
+   "args": {
+    "spec": {
+     "resource": "sto:udduer01",
+     "resource_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+     "original_source_id": "sto:udduer01/item/1",
+     "original_record": {
+      "record_index": 1,
+      "byte_offset": 184,
+      "expiration": 13,
+      "charges": [
+       1,
+       2,
+       3
+      ],
+      "flags": 7,
+      "resref": "scrl8x",
+      "quantity": 9,
+      "infinite_supply_flag": 1,
+      "infinite_supply": true
+     },
+     "record_index": 1,
+     "quantity": 4294967296,
+     "payload": {
+      "resref": "scrl8x",
+      "expiration": 13,
+      "charges": [
+       1,
+       2,
+       3
+      ],
+      "flags": 7
+     },
+     "source_id": "original-source:bg2:mode2:item:228"
+    }
+   },
+   "independent": true,
+   "error": {
+    "kind": "Profile",
+    "message": "Invalid Spell Shield stock metadata"
+   }
+  },
+  {
+   "name": "validate_spell_shield_spec record_index=-1",
+   "call": "original_options.validate_spell_shield_spec",
+   "args": {
+    "spec": {
+     "resource": "sto:udduer01",
+     "resource_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+     "original_source_id": "sto:udduer01/item/1",
+     "original_record": {
+      "record_index": 1,
+      "byte_offset": 184,
+      "expiration": 13,
+      "charges": [
+       1,
+       2,
+       3
+      ],
+      "flags": 7,
+      "resref": "scrl8x",
+      "quantity": 9,
+      "infinite_supply_flag": 1,
+      "infinite_supply": true
+     },
+     "record_index": -1,
+     "quantity": 9,
+     "payload": {
+      "resref": "scrl8x",
+      "expiration": 13,
+      "charges": [
+       1,
+       2,
+       3
+      ],
+      "flags": 7
+     },
+     "source_id": "original-source:bg2:mode2:item:228"
+    }
+   },
+   "independent": true,
+   "error": {
+    "kind": "Profile",
+    "message": "Invalid Spell Shield stock metadata"
+   }
+  },
+  {
+   "name": "validate_spell_shield_spec record_index=1",
+   "call": "original_options.validate_spell_shield_spec",
+   "args": {
+    "spec": {
+     "resource": "sto:udduer01",
+     "resource_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+     "original_source_id": "sto:udduer01/item/1",
+     "original_record": {
+      "record_index": 1,
+      "byte_offset": 184,
+      "expiration": 13,
+      "charges": [
+       1,
+       2,
+       3
+      ],
+      "flags": 7,
+      "resref": "scrl8x",
+      "quantity": 9,
+      "infinite_supply_flag": 1,
+      "infinite_supply": true
+     },
+     "record_index": 1,
+     "quantity": 9,
+     "payload": {
+      "resref": "scrl8x",
+      "expiration": 13,
+      "charges": [
+       1,
+       2,
+       3
+      ],
+      "flags": 7
+     },
+     "source_id": "original-source:bg2:mode2:item:228"
+    }
+   },
+   "independent": true,
+   "result": null
+  },
+  {
+   "name": "validate_spell_shield_spec record_index='1'",
+   "call": "original_options.validate_spell_shield_spec",
+   "args": {
+    "spec": {
+     "resource": "sto:udduer01",
+     "resource_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+     "original_source_id": "sto:udduer01/item/1",
+     "original_record": {
+      "record_index": 1,
+      "byte_offset": 184,
+      "expiration": 13,
+      "charges": [
+       1,
+       2,
+       3
+      ],
+      "flags": 7,
+      "resref": "scrl8x",
+      "quantity": 9,
+      "infinite_supply_flag": 1,
+      "infinite_supply": true
+     },
+     "record_index": "1",
+     "quantity": 9,
+     "payload": {
+      "resref": "scrl8x",
+      "expiration": 13,
+      "charges": [
+       1,
+       2,
+       3
+      ],
+      "flags": 7
+     },
+     "source_id": "original-source:bg2:mode2:item:228"
+    }
+   },
+   "independent": true,
+   "error": {
+    "kind": "Profile",
+    "message": "Invalid Spell Shield stock metadata"
+   }
+  },
+  {
+   "name": "validate_spell_shield_spec source_id='other'",
+   "call": "original_options.validate_spell_shield_spec",
+   "args": {
+    "spec": {
+     "resource": "sto:udduer01",
+     "resource_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+     "original_source_id": "sto:udduer01/item/1",
+     "original_record": {
+      "record_index": 1,
+      "byte_offset": 184,
+      "expiration": 13,
+      "charges": [
+       1,
+       2,
+       3
+      ],
+      "flags": 7,
+      "resref": "scrl8x",
+      "quantity": 9,
+      "infinite_supply_flag": 1,
+      "infinite_supply": true
+     },
+     "record_index": 1,
+     "quantity": 9,
+     "payload": {
+      "resref": "scrl8x",
+      "expiration": 13,
+      "charges": [
+       1,
+       2,
+       3
+      ],
+      "flags": 7
+     },
+     "source_id": "other"
+    }
+   },
+   "independent": true,
+   "error": {
+    "kind": "Profile",
+    "message": "Invalid Spell Shield stock metadata"
+   }
+  },
+  {
+   "name": "validate_spell_shield_spec source_id=None",
+   "call": "original_options.validate_spell_shield_spec",
+   "args": {
+    "spec": {
+     "resource": "sto:udduer01",
+     "resource_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+     "original_source_id": "sto:udduer01/item/1",
+     "original_record": {
+      "record_index": 1,
+      "byte_offset": 184,
+      "expiration": 13,
+      "charges": [
+       1,
+       2,
+       3
+      ],
+      "flags": 7,
+      "resref": "scrl8x",
+      "quantity": 9,
+      "infinite_supply_flag": 1,
+      "infinite_supply": true
+     },
+     "record_index": 1,
+     "quantity": 9,
+     "payload": {
+      "resref": "scrl8x",
+      "expiration": 13,
+      "charges": [
+       1,
+       2,
+       3
+      ],
+      "flags": 7
+     },
+     "source_id": null
+    }
+   },
+   "independent": true,
+   "error": {
+    "kind": "Profile",
+    "message": "Invalid Spell Shield stock metadata"
+   }
+  },
+  {
+   "name": "validate_spell_shield_spec resource_sha256='AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'",
+   "call": "original_options.validate_spell_shield_spec",
+   "args": {
+    "spec": {
+     "resource": "sto:udduer01",
+     "resource_sha256": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+     "original_source_id": "sto:udduer01/item/1",
+     "original_record": {
+      "record_index": 1,
+      "byte_offset": 184,
+      "expiration": 13,
+      "charges": [
+       1,
+       2,
+       3
+      ],
+      "flags": 7,
+      "resref": "scrl8x",
+      "quantity": 9,
+      "infinite_supply_flag": 1,
+      "infinite_supply": true
+     },
+     "record_index": 1,
+     "quantity": 9,
+     "payload": {
+      "resref": "scrl8x",
+      "expiration": 13,
+      "charges": [
+       1,
+       2,
+       3
+      ],
+      "flags": 7
+     },
+     "source_id": "original-source:bg2:mode2:item:228"
+    }
+   },
+   "independent": true,
+   "error": {
+    "kind": "Profile",
+    "message": "Invalid Spell Shield stock metadata"
+   }
+  },
+  {
+   "name": "validate_spell_shield_spec resource_sha256=5",
+   "call": "original_options.validate_spell_shield_spec",
+   "args": {
+    "spec": {
+     "resource": "sto:udduer01",
+     "resource_sha256": 5,
+     "original_source_id": "sto:udduer01/item/1",
+     "original_record": {
+      "record_index": 1,
+      "byte_offset": 184,
+      "expiration": 13,
+      "charges": [
+       1,
+       2,
+       3
+      ],
+      "flags": 7,
+      "resref": "scrl8x",
+      "quantity": 9,
+      "infinite_supply_flag": 1,
+      "infinite_supply": true
+     },
+     "record_index": 1,
+     "quantity": 9,
+     "payload": {
+      "resref": "scrl8x",
+      "expiration": 13,
+      "charges": [
+       1,
+       2,
+       3
+      ],
+      "flags": 7
+     },
+     "source_id": "original-source:bg2:mode2:item:228"
+    }
+   },
+   "independent": true,
+   "error": {
+    "kind": "Profile",
+    "message": "Invalid Spell Shield stock metadata"
+   }
+  },
+  {
+   "name": "validate_spell_shield_spec original_source_id='sto:udduer01/item/0'",
+   "call": "original_options.validate_spell_shield_spec",
+   "args": {
+    "spec": {
+     "resource": "sto:udduer01",
+     "resource_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+     "original_source_id": "sto:udduer01/item/0",
+     "original_record": {
+      "record_index": 1,
+      "byte_offset": 184,
+      "expiration": 13,
+      "charges": [
+       1,
+       2,
+       3
+      ],
+      "flags": 7,
+      "resref": "scrl8x",
+      "quantity": 9,
+      "infinite_supply_flag": 1,
+      "infinite_supply": true
+     },
+     "record_index": 1,
+     "quantity": 9,
+     "payload": {
+      "resref": "scrl8x",
+      "expiration": 13,
+      "charges": [
+       1,
+       2,
+       3
+      ],
+      "flags": 7
+     },
+     "source_id": "original-source:bg2:mode2:item:228"
+    }
+   },
+   "independent": true,
+   "error": {
+    "kind": "Profile",
+    "message": "Spell Shield metadata differs from its original stock"
+   }
+  },
+  {
+   "name": "validate_spell_shield_spec original_record=[]",
+   "call": "original_options.validate_spell_shield_spec",
+   "args": {
+    "spec": {
+     "resource": "sto:udduer01",
+     "resource_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+     "original_source_id": "sto:udduer01/item/1",
+     "original_record": [],
+     "record_index": 1,
+     "quantity": 9,
+     "payload": {
+      "resref": "scrl8x",
+      "expiration": 13,
+      "charges": [
+       1,
+       2,
+       3
+      ],
+      "flags": 7
+     },
+     "source_id": "original-source:bg2:mode2:item:228"
+    }
+   },
+   "independent": true,
+   "error": {
+    "kind": "Profile",
+    "message": "Invalid Spell Shield original record"
+   }
+  },
+  {
+   "name": "validate_spell_shield_spec original_record=None",
+   "call": "original_options.validate_spell_shield_spec",
+   "args": {
+    "spec": {
+     "resource": "sto:udduer01",
+     "resource_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+     "original_source_id": "sto:udduer01/item/1",
+     "original_record": null,
+     "record_index": 1,
+     "quantity": 9,
+     "payload": {
+      "resref": "scrl8x",
+      "expiration": 13,
+      "charges": [
+       1,
+       2,
+       3
+      ],
+      "flags": 7
+     },
+     "source_id": "original-source:bg2:mode2:item:228"
+    }
+   },
+   "independent": true,
+   "error": {
+    "kind": "Profile",
+    "message": "Invalid Spell Shield original record"
+   }
+  },
+  {
+   "name": "validate_spell_shield_spec payload={'resref': 'scrl8x'}",
+   "call": "original_options.validate_spell_shield_spec",
+   "args": {
+    "spec": {
+     "resource": "sto:udduer01",
+     "resource_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+     "original_source_id": "sto:udduer01/item/1",
+     "original_record": {
+      "record_index": 1,
+      "byte_offset": 184,
+      "expiration": 13,
+      "charges": [
+       1,
+       2,
+       3
+      ],
+      "flags": 7,
+      "resref": "scrl8x",
+      "quantity": 9,
+      "infinite_supply_flag": 1,
+      "infinite_supply": true
+     },
+     "record_index": 1,
+     "quantity": 9,
+     "payload": {
+      "resref": "scrl8x"
+     },
+     "source_id": "original-source:bg2:mode2:item:228"
+    }
+   },
+   "independent": true,
+   "error": {
+    "kind": "Profile",
+    "message": "Invalid Spell Shield stock payload"
+   }
+  },
+  {
+   "name": "validate_spell_shield_spec record resref='scrl8y'",
+   "call": "original_options.validate_spell_shield_spec",
+   "args": {
+    "spec": {
+     "resource": "sto:udduer01",
+     "resource_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+     "original_source_id": "sto:udduer01/item/1",
+     "original_record": {
+      "record_index": 1,
+      "byte_offset": 184,
+      "expiration": 13,
+      "charges": [
+       1,
+       2,
+       3
+      ],
+      "flags": 7,
+      "resref": "scrl8y",
+      "quantity": 9,
+      "infinite_supply_flag": 1,
+      "infinite_supply": true
+     },
+     "record_index": 1,
+     "quantity": 9,
+     "payload": {
+      "resref": "scrl8x",
+      "expiration": 13,
+      "charges": [
+       1,
+       2,
+       3
+      ],
+      "flags": 7
+     },
+     "source_id": "original-source:bg2:mode2:item:228"
+    }
+   },
+   "independent": true,
+   "error": {
+    "kind": "Profile",
+    "message": "Spell Shield metadata differs from its original stock"
+   }
+  },
+  {
+   "name": "validate_spell_shield_spec record infinite_supply=1",
+   "call": "original_options.validate_spell_shield_spec",
+   "args": {
+    "spec": {
+     "resource": "sto:udduer01",
+     "resource_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+     "original_source_id": "sto:udduer01/item/1",
+     "original_record": {
+      "record_index": 1,
+      "byte_offset": 184,
+      "expiration": 13,
+      "charges": [
+       1,
+       2,
+       3
+      ],
+      "flags": 7,
+      "resref": "scrl8x",
+      "quantity": 9,
+      "infinite_supply_flag": 1,
+      "infinite_supply": 1
+     },
+     "record_index": 1,
+     "quantity": 9,
+     "payload": {
+      "resref": "scrl8x",
+      "expiration": 13,
+      "charges": [
+       1,
+       2,
+       3
+      ],
+      "flags": 7
+     },
+     "source_id": "original-source:bg2:mode2:item:228"
+    }
+   },
+   "independent": true,
+   "error": {
+    "kind": "Profile",
+    "message": "Spell Shield metadata differs from its original stock"
+   }
+  },
+  {
+   "name": "validate_spell_shield_spec record infinite_supply_flag=0",
+   "call": "original_options.validate_spell_shield_spec",
+   "args": {
+    "spec": {
+     "resource": "sto:udduer01",
+     "resource_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+     "original_source_id": "sto:udduer01/item/1",
+     "original_record": {
+      "record_index": 1,
+      "byte_offset": 184,
+      "expiration": 13,
+      "charges": [
+       1,
+       2,
+       3
+      ],
+      "flags": 7,
+      "resref": "scrl8x",
+      "quantity": 9,
+      "infinite_supply_flag": 0,
+      "infinite_supply": true
+     },
+     "record_index": 1,
+     "quantity": 9,
+     "payload": {
+      "resref": "scrl8x",
+      "expiration": 13,
+      "charges": [
+       1,
+       2,
+       3
+      ],
+      "flags": 7
+     },
+     "source_id": "original-source:bg2:mode2:item:228"
+    }
+   },
+   "independent": true,
+   "error": {
+    "kind": "Profile",
+    "message": "Spell Shield metadata differs from its original stock"
+   }
+  },
+  {
+   "name": "validate_spell_shield_spec record byte_offset=3",
+   "call": "original_options.validate_spell_shield_spec",
+   "args": {
+    "spec": {
+     "resource": "sto:udduer01",
+     "resource_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+     "original_source_id": "sto:udduer01/item/1",
+     "original_record": {
+      "record_index": 1,
+      "byte_offset": 3,
+      "expiration": 13,
+      "charges": [
+       1,
+       2,
+       3
+      ],
+      "flags": 7,
+      "resref": "scrl8x",
+      "quantity": 9,
+      "infinite_supply_flag": 1,
+      "infinite_supply": true
+     },
+     "record_index": 1,
+     "quantity": 9,
+     "payload": {
+      "resref": "scrl8x",
+      "expiration": 13,
+      "charges": [
+       1,
+       2,
+       3
+      ],
+      "flags": 7
+     },
+     "source_id": "original-source:bg2:mode2:item:228"
+    }
+   },
+   "independent": true,
+   "error": {
+    "kind": "Profile",
+    "message": "Spell Shield metadata differs from its original stock"
+   }
+  },
+  {
+   "name": "validate_spell_shield_spec record quantity=-1",
+   "call": "original_options.validate_spell_shield_spec",
+   "args": {
+    "spec": {
+     "resource": "sto:udduer01",
+     "resource_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+     "original_source_id": "sto:udduer01/item/1",
+     "original_record": {
+      "record_index": 1,
+      "byte_offset": 184,
+      "expiration": 13,
+      "charges": [
+       1,
+       2,
+       3
+      ],
+      "flags": 7,
+      "resref": "scrl8x",
+      "quantity": -1,
+      "infinite_supply_flag": 1,
+      "infinite_supply": true
+     },
+     "record_index": 1,
+     "quantity": 9,
+     "payload": {
+      "resref": "scrl8x",
+      "expiration": 13,
+      "charges": [
+       1,
+       2,
+       3
+      ],
+      "flags": 7
+     },
+     "source_id": "original-source:bg2:mode2:item:228"
+    }
+   },
+   "independent": true,
+   "error": {
+    "kind": "Profile",
+    "message": "Spell Shield metadata differs from its original stock"
+   }
+  },
+  {
+   "name": "validate_spell_shield_spec record record_index=True",
+   "call": "original_options.validate_spell_shield_spec",
+   "args": {
+    "spec": {
+     "resource": "sto:udduer01",
+     "resource_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+     "original_source_id": "sto:udduer01/item/1",
+     "original_record": {
+      "record_index": true,
+      "byte_offset": 184,
+      "expiration": 13,
+      "charges": [
+       1,
+       2,
+       3
+      ],
+      "flags": 7,
+      "resref": "scrl8x",
+      "quantity": 9,
+      "infinite_supply_flag": 1,
+      "infinite_supply": true
+     },
+     "record_index": 1,
+     "quantity": 9,
+     "payload": {
+      "resref": "scrl8x",
+      "expiration": 13,
+      "charges": [
+       1,
+       2,
+       3
+      ],
+      "flags": 7
+     },
+     "source_id": "original-source:bg2:mode2:item:228"
+    }
+   },
+   "independent": true,
+   "error": {
+    "kind": "Profile",
+    "message": "Spell Shield metadata differs from its original stock"
+   }
+  },
+  {
+   "name": "validate_spell_shield_spec record charges=[1, 2]",
+   "call": "original_options.validate_spell_shield_spec",
+   "args": {
+    "spec": {
+     "resource": "sto:udduer01",
+     "resource_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+     "original_source_id": "sto:udduer01/item/1",
+     "original_record": {
+      "record_index": 1,
+      "byte_offset": 184,
+      "expiration": 13,
+      "charges": [
+       1,
+       2
+      ],
+      "flags": 7,
+      "resref": "scrl8x",
+      "quantity": 9,
+      "infinite_supply_flag": 1,
+      "infinite_supply": true
+     },
+     "record_index": 1,
+     "quantity": 9,
+     "payload": {
+      "resref": "scrl8x",
+      "expiration": 13,
+      "charges": [
+       1,
+       2
+      ],
+      "flags": 7
+     },
+     "source_id": "original-source:bg2:mode2:item:228"
+    }
+   },
+   "independent": true,
+   "error": {
+    "kind": "Profile",
+    "message": "Invalid Spell Shield stock payload"
+   }
+  },
+  {
+   "name": "validate_spell_shield_spec record expiration=70000",
+   "call": "original_options.validate_spell_shield_spec",
+   "args": {
+    "spec": {
+     "resource": "sto:udduer01",
+     "resource_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+     "original_source_id": "sto:udduer01/item/1",
+     "original_record": {
+      "record_index": 1,
+      "byte_offset": 184,
+      "expiration": 70000,
+      "charges": [
+       1,
+       2,
+       3
+      ],
+      "flags": 7,
+      "resref": "scrl8x",
+      "quantity": 9,
+      "infinite_supply_flag": 1,
+      "infinite_supply": true
+     },
+     "record_index": 1,
+     "quantity": 9,
+     "payload": {
+      "resref": "scrl8x",
+      "expiration": 70000,
+      "charges": [
+       1,
+       2,
+       3
+      ],
+      "flags": 7
+     },
+     "source_id": "original-source:bg2:mode2:item:228"
+    }
+   },
+   "independent": true,
+   "error": {
+    "kind": "Profile",
+    "message": "Invalid Spell Shield stock payload"
+   }
+  },
+  {
+   "name": "validate_spell_shield_spec inserted quantity",
+   "call": "original_options.validate_spell_shield_spec",
+   "args": {
+    "spec": {
+     "resource": "sto:udduer01",
+     "resource_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+     "original_source_id": "",
+     "original_record": {},
+     "record_index": 1,
+     "quantity": 4,
+     "payload": {
+      "resref": "scrl8x",
+      "expiration": 0,
+      "charges": [
+       0,
+       0,
+       0
+      ],
+      "flags": 1
+     },
+     "source_id": ""
+    }
+   },
+   "independent": true,
+   "error": {
+    "kind": "Profile",
+    "message": "Invalid inserted Spell Shield stock"
+   }
+  },
+  {
+   "name": "validate_spell_shield_spec inserted original_source_id",
+   "call": "original_options.validate_spell_shield_spec",
+   "args": {
+    "spec": {
+     "resource": "sto:udduer01",
+     "resource_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+     "original_source_id": "x",
+     "original_record": {},
+     "record_index": 1,
+     "quantity": 3,
+     "payload": {
+      "resref": "scrl8x",
+      "expiration": 0,
+      "charges": [
+       0,
+       0,
+       0
+      ],
+      "flags": 1
+     },
+     "source_id": ""
+    }
+   },
+   "independent": true,
+   "error": {
+    "kind": "Profile",
+    "message": "Invalid inserted Spell Shield stock"
+   }
+  },
+  {
+   "name": "validate_spell_shield_spec inserted payload",
+   "call": "original_options.validate_spell_shield_spec",
+   "args": {
+    "spec": {
+     "resource": "sto:udduer01",
+     "resource_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+     "original_source_id": "",
+     "original_record": {},
+     "record_index": 1,
+     "quantity": 3,
+     "payload": {
+      "resref": "scrl8x",
+      "expiration": 0,
+      "charges": [
+       0,
+       0,
+       0
+      ],
+      "flags": 0
+     },
+     "source_id": ""
+    }
+   },
+   "independent": true,
+   "error": {
+    "kind": "Profile",
+    "message": "Invalid Spell Shield stock payload"
+   }
+  },
+  {
+   "name": "cursed_disguise_choices all",
+   "call": "original_options.cursed_disguise_choices",
+   "args": {
+    "available": [
+     "brac01",
+     "brac02",
+     "brac03",
+     "brac04",
+     "brac06",
+     "brac07",
+     "brac08",
+     "brac09",
+     "brac10",
+     "brac11",
+     "brac13",
+     "brac14",
+     "brac15",
+     "leat05",
+     "leat06",
+     "leat07",
+     "leat08",
+     "plat02",
+     "plat10",
+     "plat11",
+     "plat17",
+     "ring04",
+     "ring06",
+     "ring07",
+     "ring08",
+     "ring09",
+     "ring22",
+     "ring23",
+     "ring31",
+     "sper02",
+     "sper03",
+     "sper05",
+     "sw2h02",
+     "sw2h03",
+     "sw2h11"
+    ],
+    "game": "eet",
+    "item_revisions": false
+   },
+   "independent": true,
+   "result": [
+    {
+     "source": "brac08",
+     "variants": [
+      {
+       "donor": "brac06",
+       "description_tra": 200,
+       "name_tra": null,
+       "nerf_plate": false
+      },
+      {
+       "donor": "brac07",
+       "description_tra": 201,
+       "name_tra": null,
+       "nerf_plate": false
+      },
+      {
+       "donor": "brac10",
+       "description_tra": 203,
+       "name_tra": null,
+       "nerf_plate": false
+      },
+      {
+       "donor": "brac09",
+       "description_tra": 202,
+       "name_tra": null,
+       "nerf_plate": false
+      }
+     ]
+    },
+    {
+     "source": "brac11",
+     "variants": [
+      {
+       "donor": "brac01",
+       "description_tra": 205,
+       "name_tra": null,
+       "nerf_plate": false
+      },
+      {
+       "donor": "brac02",
+       "description_tra": 205,
+       "name_tra": null,
+       "nerf_plate": false
+      },
+      {
+       "donor": "brac03",
+       "description_tra": 205,
+       "name_tra": null,
+       "nerf_plate": false
+      },
+      {
+       "donor": "brac13",
+       "description_tra": 205,
+       "name_tra": null,
+       "nerf_plate": false
+      },
+      {
+       "donor": "brac14",
+       "description_tra": 205,
+       "name_tra": null,
+       "nerf_plate": false
+      },
+      {
+       "donor": "brac15",
+       "description_tra": 205,
+       "name_tra": null,
+       "nerf_plate": false
+      },
+      {
+       "donor": "brac04",
+       "description_tra": 206,
+       "name_tra": null,
+       "nerf_plate": false
+      }
+     ]
+    },
+    {
+     "source": "leat06",
+     "variants": [
+      {
+       "donor": "leat05",
+       "description_tra": 208,
+       "name_tra": null,
+       "nerf_plate": false
+      },
+      {
+       "donor": "leat07",
+       "description_tra": 208,
+       "name_tra": null,
+       "nerf_plate": false
+      },
+      {
+       "donor": "leat08",
+       "description_tra": 209,
+       "name_tra": null,
+       "nerf_plate": false
+      }
+     ]
+    },
+    {
+     "source": "plat17",
+     "variants": [
+      {
+       "donor": "plat02",
+       "description_tra": 213,
+       "name_tra": 212,
+       "nerf_plate": true
+      },
+      {
+       "donor": "plat11",
+       "description_tra": 214,
+       "name_tra": 212,
+       "nerf_plate": true
+      },
+      {
+       "donor": "plat10",
+       "description_tra": 213,
+       "name_tra": 212,
+       "nerf_plate": true
+      }
+     ]
+    },
+    {
+     "source": "ring04",
+     "variants": [
+      {
+       "donor": "ring06",
+       "description_tra": 216,
+       "name_tra": null,
+       "nerf_plate": false
+      },
+      {
+       "donor": "ring07",
+       "description_tra": 216,
+       "name_tra": null,
+       "nerf_plate": false
+      },
+      {
+       "donor": "ring22",
+       "description_tra": 218,
+       "name_tra": null,
+       "nerf_plate": false
+      },
+      {
+       "donor": "ring09",
+       "description_tra": 217,
+       "name_tra": null,
+       "nerf_plate": false
+      },
+      {
+       "donor": "ring31",
+       "description_tra": 219,
+       "name_tra": null,
+       "nerf_plate": false
+      },
+      {
+       "donor": "ring08",
+       "description_tra": 220,
+       "name_tra": null,
+       "nerf_plate": false
+      }
+     ]
+    },
+    {
+     "source": "ring23",
+     "variants": [
+      {
+       "donor": "ring06",
+       "description_tra": 222,
+       "name_tra": null,
+       "nerf_plate": false
+      },
+      {
+       "donor": "ring07",
+       "description_tra": 222,
+       "name_tra": null,
+       "nerf_plate": false
+      },
+      {
+       "donor": "ring08",
+       "description_tra": 225,
+       "name_tra": null,
+       "nerf_plate": false
+      },
+      {
+       "donor": "ring09",
+       "description_tra": 223,
+       "name_tra": null,
+       "nerf_plate": false
+      },
+      {
+       "donor": "ring31",
+       "description_tra": 224,
+       "name_tra": null,
+       "nerf_plate": false
+      },
+      {
+       "donor": "ring08",
+       "description_tra": 225,
+       "name_tra": null,
+       "nerf_plate": false
+      }
+     ]
+    },
+    {
+     "source": "sper03",
+     "variants": [
+      {
+       "donor": "sper05",
+       "description_tra": null,
+       "name_tra": null,
+       "nerf_plate": false
+      },
+      {
+       "donor": "sper02",
+       "description_tra": null,
+       "name_tra": null,
+       "nerf_plate": false
+      }
+     ]
+    },
+    {
+     "source": "sw2h03",
+     "variants": [
+      {
+       "donor": "sw2h11",
+       "description_tra": null,
+       "name_tra": null,
+       "nerf_plate": false
+      },
+      {
+       "donor": "sw2h02",
+       "description_tra": null,
+       "name_tra": null,
+       "nerf_plate": false
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "cursed_disguise_choices absent",
+   "call": "original_options.cursed_disguise_choices",
+   "args": {
+    "available": [
+     "brac01",
+     "brac02",
+     "brac03",
+     "brac04",
+     "brac06",
+     "brac07",
+     "brac08",
+     "brac09",
+     "brac10",
+     "brac11",
+     "leat05",
+     "leat06",
+     "leat07",
+     "leat08",
+     "plat02",
+     "plat10",
+     "plat11",
+     "plat17",
+     "ring04",
+     "ring06",
+     "ring07",
+     "ring08",
+     "ring09",
+     "ring22",
+     "ring23",
+     "sper02",
+     "sper03",
+     "sw2h02",
+     "sw2h03"
+    ],
+    "game": "bgee",
+    "item_revisions": false
+   },
+   "independent": true,
+   "result": [
+    {
+     "source": "brac08",
+     "variants": [
+      {
+       "donor": "brac06",
+       "description_tra": 200,
+       "name_tra": null,
+       "nerf_plate": false
+      },
+      {
+       "donor": "brac07",
+       "description_tra": 201,
+       "name_tra": null,
+       "nerf_plate": false
+      },
+      {
+       "donor": "brac10",
+       "description_tra": 203,
+       "name_tra": null,
+       "nerf_plate": false
+      },
+      {
+       "donor": "brac09",
+       "description_tra": 202,
+       "name_tra": null,
+       "nerf_plate": false
+      }
+     ]
+    },
+    {
+     "source": "brac11",
+     "variants": [
+      {
+       "donor": "brac01",
+       "description_tra": 205,
+       "name_tra": null,
+       "nerf_plate": false
+      },
+      {
+       "donor": "brac02",
+       "description_tra": 205,
+       "name_tra": null,
+       "nerf_plate": false
+      },
+      {
+       "donor": "brac03",
+       "description_tra": 205,
+       "name_tra": null,
+       "nerf_plate": false
+      },
+      {
+       "donor": "brac04",
+       "description_tra": 206,
+       "name_tra": null,
+       "nerf_plate": false
+      },
+      {
+       "donor": "brac04",
+       "description_tra": 206,
+       "name_tra": null,
+       "nerf_plate": false
+      },
+      {
+       "donor": "brac04",
+       "description_tra": 206,
+       "name_tra": null,
+       "nerf_plate": false
+      },
+      {
+       "donor": "brac04",
+       "description_tra": 206,
+       "name_tra": null,
+       "nerf_plate": false
+      }
+     ]
+    },
+    {
+     "source": "leat06",
+     "variants": [
+      {
+       "donor": "leat05",
+       "description_tra": 208,
+       "name_tra": null,
+       "nerf_plate": false
+      },
+      {
+       "donor": "leat07",
+       "description_tra": 208,
+       "name_tra": null,
+       "nerf_plate": false
+      },
+      {
+       "donor": "leat08",
+       "description_tra": 209,
+       "name_tra": null,
+       "nerf_plate": false
+      }
+     ]
+    },
+    {
+     "source": "plat17",
+     "variants": [
+      {
+       "donor": "plat02",
+       "description_tra": 213,
+       "name_tra": 212,
+       "nerf_plate": true
+      },
+      {
+       "donor": "plat11",
+       "description_tra": 214,
+       "name_tra": 212,
+       "nerf_plate": true
+      },
+      {
+       "donor": "plat10",
+       "description_tra": 213,
+       "name_tra": 212,
+       "nerf_plate": true
+      }
+     ]
+    },
+    {
+     "source": "ring04",
+     "variants": [
+      {
+       "donor": "ring06",
+       "description_tra": 216,
+       "name_tra": null,
+       "nerf_plate": false
+      },
+      {
+       "donor": "ring07",
+       "description_tra": 216,
+       "name_tra": null,
+       "nerf_plate": false
+      },
+      {
+       "donor": "ring22",
+       "description_tra": 218,
+       "name_tra": null,
+       "nerf_plate": false
+      },
+      {
+       "donor": "ring09",
+       "description_tra": 217,
+       "name_tra": null,
+       "nerf_plate": false
+      },
+      {
+       "donor": "ring08",
+       "description_tra": 220,
+       "name_tra": null,
+       "nerf_plate": false
+      },
+      {
+       "donor": "ring08",
+       "description_tra": 220,
+       "name_tra": null,
+       "nerf_plate": false
+      }
+     ]
+    },
+    {
+     "source": "ring23",
+     "variants": [
+      {
+       "donor": "ring06",
+       "description_tra": 222,
+       "name_tra": null,
+       "nerf_plate": false
+      },
+      {
+       "donor": "ring07",
+       "description_tra": 222,
+       "name_tra": null,
+       "nerf_plate": false
+      },
+      {
+       "donor": "ring08",
+       "description_tra": 225,
+       "name_tra": null,
+       "nerf_plate": false
+      },
+      {
+       "donor": "ring09",
+       "description_tra": 223,
+       "name_tra": null,
+       "nerf_plate": false
+      },
+      {
+       "donor": "ring08",
+       "description_tra": 225,
+       "name_tra": null,
+       "nerf_plate": false
+      },
+      {
+       "donor": "ring08",
+       "description_tra": 225,
+       "name_tra": null,
+       "nerf_plate": false
+      }
+     ]
+    },
+    {
+     "source": "sper03",
+     "variants": [
+      {
+       "donor": "sper02",
+       "description_tra": null,
+       "name_tra": null,
+       "nerf_plate": false
+      },
+      {
+       "donor": "sper02",
+       "description_tra": null,
+       "name_tra": null,
+       "nerf_plate": false
+      }
+     ]
+    },
+    {
+     "source": "sw2h03",
+     "variants": [
+      {
+       "donor": "sw2h02",
+       "description_tra": null,
+       "name_tra": null,
+       "nerf_plate": false
+      },
+      {
+       "donor": "sw2h02",
+       "description_tra": null,
+       "name_tra": null,
+       "nerf_plate": false
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "cursed_disguise_choices revisions",
+   "call": "original_options.cursed_disguise_choices",
+   "args": {
+    "available": [
+     "brac01",
+     "brac02",
+     "brac03",
+     "brac04",
+     "brac06",
+     "brac07",
+     "brac08",
+     "brac09",
+     "brac10",
+     "brac11",
+     "brac13",
+     "brac14",
+     "brac15",
+     "leat05",
+     "leat06",
+     "leat07",
+     "leat08",
+     "plat02",
+     "plat10",
+     "plat11",
+     "plat17",
+     "ring04",
+     "ring06",
+     "ring07",
+     "ring08",
+     "ring09",
+     "ring22",
+     "ring23",
+     "ring31",
+     "sper02",
+     "sper03",
+     "sper05",
+     "sw2h02",
+     "sw2h03",
+     "sw2h11"
+    ],
+    "game": "bg2ee",
+    "item_revisions": true
+   },
+   "independent": true,
+   "result": [
+    {
+     "source": "brac08",
+     "variants": [
+      {
+       "donor": "brac06",
+       "description_tra": 200,
+       "name_tra": null,
+       "nerf_plate": false
+      },
+      {
+       "donor": "brac07",
+       "description_tra": 201,
+       "name_tra": null,
+       "nerf_plate": false
+      },
+      {
+       "donor": "brac10",
+       "description_tra": 203,
+       "name_tra": null,
+       "nerf_plate": false
+      },
+      {
+       "donor": "brac09",
+       "description_tra": 202,
+       "name_tra": null,
+       "nerf_plate": false
+      }
+     ]
+    },
+    {
+     "source": "brac11",
+     "variants": [
+      {
+       "donor": "brac01",
+       "description_tra": 205,
+       "name_tra": null,
+       "nerf_plate": false
+      },
+      {
+       "donor": "brac02",
+       "description_tra": 205,
+       "name_tra": null,
+       "nerf_plate": false
+      },
+      {
+       "donor": "brac03",
+       "description_tra": 205,
+       "name_tra": null,
+       "nerf_plate": false
+      },
+      {
+       "donor": "brac13",
+       "description_tra": 205,
+       "name_tra": null,
+       "nerf_plate": false
+      },
+      {
+       "donor": "brac14",
+       "description_tra": 205,
+       "name_tra": null,
+       "nerf_plate": false
+      },
+      {
+       "donor": "brac15",
+       "description_tra": 205,
+       "name_tra": null,
+       "nerf_plate": false
+      },
+      {
+       "donor": "brac04",
+       "description_tra": 206,
+       "name_tra": null,
+       "nerf_plate": false
+      }
+     ]
+    },
+    {
+     "source": "leat06",
+     "variants": [
+      {
+       "donor": "leat05",
+       "description_tra": 210,
+       "name_tra": null,
+       "nerf_plate": false
+      },
+      {
+       "donor": "leat07",
+       "description_tra": 210,
+       "name_tra": null,
+       "nerf_plate": false
+      },
+      {
+       "donor": "leat08",
+       "description_tra": 211,
+       "name_tra": null,
+       "nerf_plate": false
+      }
+     ]
+    },
+    {
+     "source": "ring04",
+     "variants": [
+      {
+       "donor": "ring06",
+       "description_tra": 216,
+       "name_tra": null,
+       "nerf_plate": false
+      },
+      {
+       "donor": "ring07",
+       "description_tra": 216,
+       "name_tra": null,
+       "nerf_plate": false
+      },
+      {
+       "donor": "ring22",
+       "description_tra": 218,
+       "name_tra": null,
+       "nerf_plate": false
+      },
+      {
+       "donor": "ring09",
+       "description_tra": 217,
+       "name_tra": null,
+       "nerf_plate": false
+      },
+      {
+       "donor": "ring31",
+       "description_tra": 219,
+       "name_tra": null,
+       "nerf_plate": false
+      },
+      {
+       "donor": "ring08",
+       "description_tra": 220,
+       "name_tra": null,
+       "nerf_plate": false
+      }
+     ]
+    },
+    {
+     "source": "ring23",
+     "variants": [
+      {
+       "donor": "ring06",
+       "description_tra": 222,
+       "name_tra": null,
+       "nerf_plate": false
+      },
+      {
+       "donor": "ring07",
+       "description_tra": 222,
+       "name_tra": null,
+       "nerf_plate": false
+      },
+      {
+       "donor": "ring08",
+       "description_tra": 225,
+       "name_tra": null,
+       "nerf_plate": false
+      },
+      {
+       "donor": "ring09",
+       "description_tra": 223,
+       "name_tra": null,
+       "nerf_plate": false
+      },
+      {
+       "donor": "ring31",
+       "description_tra": 224,
+       "name_tra": null,
+       "nerf_plate": false
+      },
+      {
+       "donor": "ring08",
+       "description_tra": 225,
+       "name_tra": null,
+       "nerf_plate": false
+      }
+     ]
+    },
+    {
+     "source": "sper03",
+     "variants": [
+      {
+       "donor": "sper05",
+       "description_tra": null,
+       "name_tra": null,
+       "nerf_plate": false
+      },
+      {
+       "donor": "sper02",
+       "description_tra": null,
+       "name_tra": null,
+       "nerf_plate": false
+      }
+     ]
+    },
+    {
+     "source": "sw2h03",
+     "variants": [
+      {
+       "donor": "sw2h11",
+       "description_tra": null,
+       "name_tra": null,
+       "nerf_plate": false
+      },
+      {
+       "donor": "sw2h02",
+       "description_tra": null,
+       "name_tra": null,
+       "nerf_plate": false
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "cursed_disguise_choices needs donor",
+   "call": "original_options.cursed_disguise_choices",
+   "args": {
+    "available": [
+     "brac01",
+     "brac02",
+     "brac03",
+     "brac04",
+     "brac07",
+     "brac08",
+     "brac09",
+     "brac10",
+     "brac11",
+     "brac13",
+     "brac14",
+     "brac15",
+     "leat05",
+     "leat06",
+     "leat07",
+     "leat08",
+     "plat02",
+     "plat10",
+     "plat11",
+     "plat17",
+     "ring04",
+     "ring06",
+     "ring07",
+     "ring08",
+     "ring09",
+     "ring22",
+     "ring23",
+     "ring31",
+     "sper02",
+     "sper03",
+     "sper05",
+     "sw2h02",
+     "sw2h03",
+     "sw2h11"
+    ],
+    "game": "eet",
+    "item_revisions": false
+   },
+   "independent": true,
+   "error": {
+    "kind": "Profile",
+    "message": "Original cursed disguise needs brac06.itm for brac08"
+   }
+  },
+  {
+   "name": "cursed_disguise_choices no sources",
+   "call": "original_options.cursed_disguise_choices",
+   "args": {
+    "available": [
+     "brac06"
+    ],
+    "game": "eet",
+    "item_revisions": false
+   },
+   "independent": true,
+   "result": []
+  },
+  {
+   "name": "cursed_disguise_choices bad game",
+   "call": "original_options.cursed_disguise_choices",
+   "args": {
+    "available": [],
+    "game": "iwdee",
+    "item_revisions": false
+   },
+   "independent": true,
+   "error": {
+    "kind": "Profile",
+    "message": "Unsupported original-disguise game: iwdee"
+   }
+  },
+  {
+   "name": "cursed_disguise_choices partial",
+   "call": "original_options.cursed_disguise_choices",
+   "args": {
+    "available": [
+     "ring23",
+     "ring06",
+     "ring07",
+     "ring08",
+     "ring09"
+    ],
+    "game": "eet",
+    "item_revisions": false
+   },
+   "independent": true,
+   "result": [
+    {
+     "source": "ring23",
+     "variants": [
+      {
+       "donor": "ring06",
+       "description_tra": 222,
+       "name_tra": null,
+       "nerf_plate": false
+      },
+      {
+       "donor": "ring07",
+       "description_tra": 222,
+       "name_tra": null,
+       "nerf_plate": false
+      },
+      {
+       "donor": "ring08",
+       "description_tra": 225,
+       "name_tra": null,
+       "nerf_plate": false
+      },
+      {
+       "donor": "ring09",
+       "description_tra": 223,
+       "name_tra": null,
+       "nerf_plate": false
+      },
+      {
+       "donor": "ring08",
+       "description_tra": 225,
+       "name_tra": null,
+       "nerf_plate": false
+      },
+      {
+       "donor": "ring08",
+       "description_tra": 225,
+       "name_tra": null,
+       "nerf_plate": false
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "patch_cursed_disguise appearance",
+   "call": "original_options.patch_cursed_disguise",
+   "args": {
+    "source": {
+     "$blob": "748afdb513bbe789571df030103f038cf1bd0e36ad84cee4ff2275f2e7a99ae0"
+    },
+    "donor": {
+     "$blob": "399a05762dd599b17720e335d5058c7f0bb348f736b926c68ca07819e969dbb7"
+    },
+    "description_strref": null,
+    "plate_name_strref": null
+   },
+   "independent": true,
+   "result": {
+    "$blob": "99ad8af9bd47abfb2defb1c199d03df20887b77e219547931c165fd04e7ad81a"
+   }
+  },
+  {
+   "name": "patch_cursed_disguise description",
+   "call": "original_options.patch_cursed_disguise",
+   "args": {
+    "source": {
+     "$blob": "748afdb513bbe789571df030103f038cf1bd0e36ad84cee4ff2275f2e7a99ae0"
+    },
+    "donor": {
+     "$blob": "399a05762dd599b17720e335d5058c7f0bb348f736b926c68ca07819e969dbb7"
+    },
+    "description_strref": 456,
+    "plate_name_strref": null
+   },
+   "independent": true,
+   "result": {
+    "$blob": "181fe6f2dd804156b0bd10c04c623331fb9a414fa3ae5407378bcebe122ae56b"
+   }
+  },
+  {
+   "name": "patch_cursed_disguise plate",
+   "call": "original_options.patch_cursed_disguise",
+   "args": {
+    "source": {
+     "$blob": "e66519057257ee0de30d82c48e1a2f1155604991d8e99ee0f283aaffbe6ec01b"
+    },
+    "donor": {
+     "$blob": "ba9e6cfbaa8c51080b31e835c3f9aaca50ef4cc09e268c7abb13293b70952e4e"
+    },
+    "description_strref": 77,
+    "plate_name_strref": 88
+   },
+   "independent": true,
+   "result": {
+    "$blob": "c8e45e0840acbca3cb2603e270388795067b543b8fb6cc3efed6e8bd8471bdb3"
+   }
+  },
+  {
+   "name": "patch_cursed_disguise plate range",
+   "call": "original_options.patch_cursed_disguise",
+   "args": {
+    "source": {
+     "$blob": "ff5dd7580aa5bf9a71d6cb7e66b75496a3adf486a76b316b3b0cbd9b66f7a366"
+    },
+    "donor": {
+     "$blob": "ba9e6cfbaa8c51080b31e835c3f9aaca50ef4cc09e268c7abb13293b70952e4e"
+    },
+    "description_strref": null,
+    "plate_name_strref": 88
+   },
+   "independent": true,
+   "error": {
+    "kind": "Profile",
+    "message": "Invalid cursed plate global effect range"
+   }
+  },
+  {
+   "name": "patch_cursed_disguise bad description",
+   "call": "original_options.patch_cursed_disguise",
+   "args": {
+    "source": {
+     "$blob": "748afdb513bbe789571df030103f038cf1bd0e36ad84cee4ff2275f2e7a99ae0"
+    },
+    "donor": {
+     "$blob": "399a05762dd599b17720e335d5058c7f0bb348f736b926c68ca07819e969dbb7"
+    },
+    "description_strref": -1,
+    "plate_name_strref": null
+   },
+   "independent": true,
+   "error": {
+    "kind": "Profile",
+    "message": "Invalid original option description string reference"
+   }
+  },
+  {
+   "name": "patch_cursed_disguise bad plate",
+   "call": "original_options.patch_cursed_disguise",
+   "args": {
+    "source": {
+     "$blob": "e66519057257ee0de30d82c48e1a2f1155604991d8e99ee0f283aaffbe6ec01b"
+    },
+    "donor": {
+     "$blob": "399a05762dd599b17720e335d5058c7f0bb348f736b926c68ca07819e969dbb7"
+    },
+    "description_strref": null,
+    "plate_name_strref": 4294967296
+   },
+   "independent": true,
+   "error": {
+    "kind": "Profile",
+    "message": "Invalid original option plate name string reference"
+   }
+  },
+  {
+   "name": "patch_cursed_disguise short source",
+   "call": "original_options.patch_cursed_disguise",
+   "args": {
+    "source": {
+     "$blob": "d94ceff00d17d622b75ac65cd7404a4012095f8a7dc5c15a86ba0194324f1853"
+    },
+    "donor": {
+     "$blob": "399a05762dd599b17720e335d5058c7f0bb348f736b926c68ca07819e969dbb7"
+    },
+    "description_strref": null,
+    "plate_name_strref": null
+   },
+   "independent": true,
+   "error": {
+    "kind": "Profile",
+    "message": "Invalid cursed-disguise source ITM"
+   }
+  },
+  {
+   "name": "patch_cursed_disguise bad donor",
+   "call": "original_options.patch_cursed_disguise",
+   "args": {
+    "source": {
+     "$blob": "748afdb513bbe789571df030103f038cf1bd0e36ad84cee4ff2275f2e7a99ae0"
+    },
+    "donor": {
+     "$blob": "cfcfa41200ae3def91322caa155e968a96902fbd493b4b39edb2f88e7e761e50"
+    },
+    "description_strref": null,
+    "plate_name_strref": null
+   },
+   "independent": true,
+   "error": {
+    "kind": "Profile",
+    "message": "Invalid cursed-disguise donor ITM"
+   }
+  },
+  {
+   "name": "patch_cursed_disguise plate no effects",
+   "call": "original_options.patch_cursed_disguise",
+   "args": {
+    "source": {
+     "$blob": "748afdb513bbe789571df030103f038cf1bd0e36ad84cee4ff2275f2e7a99ae0"
+    },
+    "donor": {
+     "$blob": "399a05762dd599b17720e335d5058c7f0bb348f736b926c68ca07819e969dbb7"
+    },
+    "description_strref": null,
+    "plate_name_strref": 5
+   },
+   "independent": true,
+   "result": {
+    "$blob": "64c44c5c0816acb40c11ec7275f906ee019e9d719db0cc1e3e9f2b857b19e30b"
+   }
+  }
+ ],
+ "blobs": {
+  "121a6c797606216ed46d7a53ce2a80119e30a72adaa1821074fc770912eea2e7": "53544f5256312e3005000000c8010000030000000000000000000000000000000000000000000000000000000000000000000000a70000000300000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000007363726c387800000d000200030004000900000009000000010000007363726c387800000d000900080007000400000001000000000000006f746865720000000d00070003000200090000800500000000000000",
+  "17294bef111d79308e70809b2a1380c5bc22e8351688fca6555332790917e1fc": "53544f5256312e3005000000c80100000300000000000000000000000000000000000000000000000000000000000000000000009c000000010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000007363726c387800000000000000000000010000000300000000000000",
+  "181fe6f2dd804156b0bd10c04c623331fb9a414fa3ae5407378bcebe122ae56b": "49544d20563120200f00000010000000000000000000000044000000100000000000000000000000000000000000000000650000f40100000100494e5649434f4e3100000000000000000000000000007b000000c801000043415249434f4e31020000000000000000000000000000000000",
+  "399a05762dd599b17720e335d5058c7f0bb348f736b926c68ca07819e969dbb7": "49544d2056312020190000001a000000000000000000000044000000100000000000000000000000000000000000000000650000840300000100494e5649434f4e3100000000000000000000000000007b0000000000000043415249434f4e31020000000000000000000000000000000000",
+  "44070a43712df6bcfb488bc721e5f14b656a1e20192fb0bb5edf5c948be7036e": "53544f5256312e3005000000c801000003000000000000000000000000000000000000000000000000000000fd00000001000000a900000003000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000006f746865720000000d000700030002000900008004000000000000007363726c377100000d000700030002000900008008000000010000007363726c616c00000d0007000300020009000080090000000000000010000000",
+  "476a5c89f028ba1bf1165308b7c8da28ed409f6bcf4eaf2951dbfa11ca25e971": "53544f5256312e3005000000c8010000030000000000000000000000000000000000000000000000000000000000000000000000a70000000300000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000007363726c387800000d000200030004000900000003000000010000007363726c387800000d000900080007000400000001000000000000006f746865720000000d00070003000200090000800500000000000000",
+  "48429084fd367fd9930afc1a5f7f1a305d95a83c8fa86e40f7695ec86e60d62f": "53544f5256312e3005000000c8010000030000000000000000000000000000000000000000000000000000000000000000000000a70000000300000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000007363726c387800000d000200030004000900000001000000010000007363726c387800000d000900080007000400000001000000000000006f746865720000000d00070003000200090000800500000000000000",
+  "4b1eae96802f4c65875667cf2376f1b6b8aa29ecbb6c424be8b02c77ca29d67b": "53544f5256312e3005000000c80100000300000000000000000000000000000000000000000000000000000000000000000000009c000000010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000006f746865720000000d00070003000200090000800400000000000000",
+  "64c44c5c0816acb40c11ec7275f906ee019e9d719db0cc1e3e9f2b857b19e30b": "49544d20563120200f00000005000000000000000000000044000000100000000000000000000000000000000000000000650000f40100000100494e5649434f4e3100000000000000000000000000007b0000000000000043415249434f4e31000000000000000000000000000000000000",
+  "6510819d67f8125ebf4886191f6ce8c778dff0af681a10685465836208b54758": "53544f5256312e3005000000c8010000030000000000000000000000000000000000000000000000000000000000000000000000b8000000020000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000006f746865720000000d000700030002000900008004000000000000006f746865720000000d000700030002000900008004000000000000007363726c387800000000000000000000010000000300000000000000",
+  "748afdb513bbe789571df030103f038cf1bd0e36ad84cee4ff2275f2e7a99ae0": "49544d20563120200f00000010000000000000000000000044000000100000000000000000000000000000000000000000650000f401000001000000000000000000000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000",
+  "77e353119ecb1aa2c5b1d11c0dae43848c4577f0ad743a4310f2d36f24e73f80": "53544f5256312e3005000000c8010000030000000000000000000000000000000000000000000000000000000000000000000000a70000000300000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000007363726c387800000d000200030004000900000000000000010000007363726c387800000d000900080007000400000001000000000000006f746865720000000d00070003000200090000800500000000000000",
+  "99ad8af9bd47abfb2defb1c199d03df20887b77e219547931c165fd04e7ad81a": "49544d20563120200f00000010000000000000000000000044000000100000000000000000000000000000000000000000650000f40100000100494e5649434f4e3100000000000000000000000000007b0000000000000043415249434f4e31020000000000000000000000000000000000",
+  "af65b63e7de9924a896cf9b8a3992304964aac7de38f699662e9a47b9a3bd3a6": "53544f5256312e3005000000c80100000300000000000000000000000000000000000000000000000000000000000000000000009c000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+  "b63fe5fabf71faa990fb58cb9a1c99734e5eb1e2619a470d800807d09a8c3a9f": "53544f5256312e3005000000c80100000300000000000000000000000000000000000000000000000000000000000000000000009c00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+  "ba9e6cfbaa8c51080b31e835c3f9aaca50ef4cc09e268c7abb13293b70952e4e": "49544d205631202000000000010000000000000000000000440000001000000000000000000000000000000000000000006500002c01000001000000000000000000000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000",
+  "c8e45e0840acbca3cb2603e270388795067b543b8fb6cc3efed6e8bd8471bdb3": "49544d205631202000000000580000000000000000000000440000001000000000000000000000000000000000000000006500002c010000010000000000000000000000000000000000000000000000000000004d0000000000000000000000000000000000000000007200000000000300000000000300000010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000900000001000000000000000000000000000000000000000000000000000000000000000000000000000000110000000900000010000000000000000000000000000000000000000000000000000000000000000000000000000000",
+  "cfcfa41200ae3def91322caa155e968a96902fbd493b4b39edb2f88e7e761e50": "49544d2056322020190000001a000000000000000000000044000000100000000000000000000000000000000000000000650000840300000100494e5649434f4e3100000000000000000000000000007b0000000000000043415249434f4e31020000000000000000000000000000000000",
+  "d94ceff00d17d622b75ac65cd7404a4012095f8a7dc5c15a86ba0194324f1853": "49544d20563120200f00000010000000000000000000000044000000100000000000000000000000000000000000000000650000f4010000010000000000000000000000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000",
+  "e66519057257ee0de30d82c48e1a2f1155604991d8e99ee0f283aaffbe6ec01b": "49544d205631202000000000010000000000000000000000440000001000000000000000000000000000000000000000006500002c01000001000000000000000000000000000000000000000000000000000000000000000000000000000000020000000000000000007200000000000300000000000900000010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000900000001000000000000000000000000000000000000000000000000000000000000000000000000000000110000000900000010000000000000000000000000000000000000000000000000000000000000000000000000000000",
+  "ea1f87d406c8e28f3538f7e75367eca92c396a449ade5fa27fd1142207e4432a": "53544f5256312e3005000000c801000003000000000000000000000000000000000000000000000000000000fd000000010000000101000004000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000006f746865720000000d000700030002000900008004000000000000007363726c377100000d000700030002000900008008000000010000007363726c616c00000d00070003000200090000800900000000000000100000006f746865720000000d000700030002000900008004000000000000007363726c3878000000000000000000000100000003000000000000007363726c377100000d000700030002000900008008000000010000007363726c616c00000d00070003000200090000800900000000000000",
+  "ff5dd7580aa5bf9a71d6cb7e66b75496a3adf486a76b316b3b0cbd9b66f7a366": "49544d205631202000000000010000000000000000000000440000001000000000000000000000000000000000000000006500002c010000010000000000000000000000000000000000000000000000000000000000000000000000000000000200000000000000000072000000000003000000000009000000100000000000000000000000000000000000000000000000000000000000000000000000000000000000000009000000010000000000000000000000000000000000000000000000000000000000000000000000000000001100000009000000100000000000000000000000000000000000000000000000000000000000000000000000000000"
+ }
+}
