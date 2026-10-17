@@ -3,50 +3,36 @@
 //! of the reference `tools/randomiser_config.py`; `ui` also opens the editor
 //! in the browser.
 
-mod args;
+mod argparse;
 mod server;
 
-use args::{Kind, Parsed, Spec};
+use argparse::{Commands, Kind, Parsed, Parser, Spec};
 use cir_config::json::{self, Dict, Value};
 use cir_config::{profiles, resources, sources, templates, Error, ErrorKind, Result};
 use std::io::Write;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-const PROG: &str = "cir-configurator";
+const DESCRIPTION: &str = "Scan installed EE items and author draft Randomiser profiles. \
+                           Game changes require the editor's explicit --apply-game opt-in.";
 
-fn usage() -> String {
-    format!(
-        "usage: {PROG} [-h] {{templates,ui,scan,search,profile,prepare,inspect,world,binding,prototype}} ...\n\n\
-         Scan installed EE items and author draft Randomiser profiles. Game changes\n\
-         require the editor's explicit --apply-game opt-in.\n\n\
-         commands:\n  \
-         templates   List or export original pool drafts; not playable settings yet\n  \
-         ui          Open the local configuration editor over existing scans\n  \
-         scan        Read the effective installed item resources\n  \
-         search      Search names or resource IDs without listing everything\n  \
-         profile     Create, edit or validate a draft\n  \
-         prepare     Freeze a draft revision; does not activate it\n  \
-         inspect     Read a verified prepared draft revision\n  \
-         world       Discover physical sources and candidate targets (contains location information)\n  \
-         binding     Author explicit source and target choices; no game activation\n  \
-         prototype   Compile experimental campaign data; never activates gameplay\n"
-    )
-}
+/// The commands and their help, in the reference's order.
+const COMMANDS: [(&str, &str); 10] = [
+    ("templates", "List or export original pool drafts; not playable settings yet"),
+    ("ui", "Open the local configuration editor over existing scans"),
+    ("scan", "Read the effective installed item resources"),
+    ("search", "Search names or resource IDs without listing everything"),
+    ("profile", "Create, edit or validate a draft"),
+    ("prepare", "Freeze a draft revision; does not activate it"),
+    ("inspect", "Read a verified prepared draft revision"),
+    ("world", "Discover physical sources and candidate targets (contains location information)"),
+    ("binding", "Author explicit source and target choices; no game activation"),
+    ("prototype", "Compile experimental campaign data; never activates gameplay"),
+];
 
 /// Print one line the way Python's `print` does on this platform.
 fn print_line(stream: &mut dyn Write, text: &str) {
-    let newline = if cfg!(windows) { "\r\n" } else { "\n" };
-    let _ = stream.write_all(text.as_bytes());
-    let _ = stream.write_all(newline.as_bytes());
-    let _ = stream.flush();
-}
-
-fn usage_error(prog: &str, message: &str) -> ExitCode {
-    let mut stderr = std::io::stderr();
-    print_line(&mut stderr, &format!("usage: {prog} ..."));
-    print_line(&mut stderr, &format!("{prog}: error: {message}"));
-    ExitCode::from(2)
+    argparse::write_text(stream, &format!("{text}\n"));
 }
 
 fn path(parsed: &Parsed, name: &str) -> PathBuf {
@@ -61,10 +47,6 @@ fn read(parsed: &Parsed, name: &str) -> Result<Value> {
     profiles::read_json(&path(parsed, name))
 }
 
-enum Command {
-    Run(Vec<String>, Parsed),
-    Exit(ExitCode),
-}
 
 fn specs(command: &[&str]) -> Option<Vec<Spec>> {
     use Kind::*;
@@ -72,9 +54,13 @@ fn specs(command: &[&str]) -> Option<Vec<Spec>> {
     Some(match command {
         ["templates"] => vec![
             Spec::new("id", Text).choices(templates::template_ids()),
-            Spec::new("items", Text).choices(pool()),
-            Spec::new("targets", Text).choices(pool()),
-            Spec::new("options", Path),
+            Spec::new("items", Text)
+                .choices(pool())
+                .help("standard (default) or extended: also the larger mode2 tables"),
+            Spec::new("targets", Text)
+                .choices(pool())
+                .help("standard (default) or extended: also the larger mode2 tables"),
+            Spec::new("options", Path).help("JSON object of original component options"),
             Spec::new("out", Path),
         ],
         ["ui"] => vec![
@@ -84,8 +70,9 @@ fn specs(command: &[&str]) -> Option<Vec<Spec>> {
             Spec::new("profile", Path),
             Spec::new("plan", Path),
             Spec::new("port", Int),
-            Spec::new("apply-game", Path),
-            Spec::new("no-browser", Flag),
+            Spec::new("apply-game", Path)
+                .help("Enable applying settings to this explicitly installed test runtime"),
+            Spec::new("no-browser", Flag).help("Only print the editor's address; do not open it in the browser"),
         ],
         ["scan"] => vec![
             Spec::new("game", Path).required(),
@@ -187,55 +174,44 @@ const GROUPS: [(&str, &[&str]); 4] = [
     ("prototype", &["prepare", "inspect", "export"]),
 ];
 
-fn parse_command(arguments: &[String]) -> Command {
-    let commands = ["templates", "ui", "scan", "search", "profile", "prepare", "inspect", "world", "binding", "prototype"];
-    let Some(first) = arguments.first() else {
-        let mut stderr = std::io::stderr();
-        print_line(&mut stderr, &format!("usage: {PROG} [-h] {{{}}} ...", commands.join(",")));
-        print_line(&mut stderr, &format!("{PROG}: error: the following arguments are required: command"));
-        return Command::Exit(ExitCode::from(2));
-    };
-    if first == "-h" || first == "--help" {
-        print_line(&mut std::io::stdout(), &usage());
-        return Command::Exit(ExitCode::SUCCESS);
-    }
-    if !commands.contains(&first.as_str()) {
-        let choices: Vec<String> = commands.iter().map(|command| format!("'{command}'")).collect();
-        return Command::Exit(usage_error(
-            PROG,
-            &format!("argument command: invalid choice: '{first}' (choose from {})", choices.join(", ")),
-        ));
-    }
-    let mut path = vec![first.clone()];
-    let mut rest = &arguments[1..];
-    if let Some((_, operations)) = GROUPS.iter().find(|(group, _)| *group == first) {
-        let Some(operation) = rest.first() else {
-            return Command::Exit(usage_error(
-                &format!("{PROG} {first}"),
-                "the following arguments are required: operation",
-            ));
-        };
-        if !operations.contains(&operation.as_str()) {
-            let choices: Vec<String> = operations.iter().map(|operation| format!("'{operation}'")).collect();
-            return Command::Exit(usage_error(
-                &format!("{PROG} {first}"),
-                &format!("argument operation: invalid choice: '{operation}' (choose from {})", choices.join(", ")),
-            ));
-        }
-        path.push(operation.clone());
-        rest = &rest[1..];
-    }
-    if rest.iter().any(|argument| argument == "-h" || argument == "--help") {
-        print_line(&mut std::io::stdout(), &usage());
-        return Command::Exit(ExitCode::SUCCESS);
-    }
+/// The parser for a command path: the top level, a group of operations or
+/// a command with its options. `prog` is the program name argparse shows.
+fn parser_for(prog: &str, path: &[String]) -> Parser {
     let names: Vec<&str> = path.iter().map(String::as_str).collect();
-    let specs = specs(&names).expect("known command");
-    let prog = format!("{PROG} {}", path.join(" "));
-    match args::parse(&prog, rest, &specs) {
-        Ok(parsed) => Command::Run(path, parsed),
-        Err(error) => Command::Exit(usage_error(&error.prog, &error.message)),
+    let prog = std::iter::once(prog).chain(names.iter().copied()).collect::<Vec<_>>().join(" ");
+    if names.is_empty() {
+        return Parser {
+            prog,
+            description: Some(DESCRIPTION),
+            options: Vec::new(),
+            commands: Some(Commands {
+                dest: "command",
+                choices: COMMANDS.iter().map(|(name, help)| (*name, Some(*help))).collect(),
+            }),
+        };
     }
+    if let [group] = names.as_slice() {
+        if let Some((_, operations)) = GROUPS.iter().find(|(name, _)| name == group) {
+            return Parser {
+                prog,
+                description: None,
+                options: Vec::new(),
+                commands: Some(Commands {
+                    dest: "operation",
+                    choices: operations.iter().map(|operation| (*operation, None)).collect(),
+                }),
+            };
+        }
+    }
+    Parser { prog, description: None, options: specs(&names).expect("a known command"), commands: None }
+}
+
+/// The program name argparse shows: the base name of the invoked file.
+fn program_name() -> String {
+    std::env::args_os()
+        .next()
+        .and_then(|first| std::path::Path::new(&first).file_name().map(|name| name.to_string_lossy().into_owned()))
+        .unwrap_or_else(|| "cir-configurator".to_string())
 }
 
 fn result_dict(entries: Vec<(&str, Value)>) -> Value {
@@ -458,10 +434,12 @@ fn run_with_catalog(names: &[&str], parsed: &Parsed) -> Result<Value> {
 }
 
 fn main() -> ExitCode {
-    let arguments: Vec<String> = std::env::args().skip(1).collect();
-    let (path, parsed) = match parse_command(&arguments) {
-        Command::Run(path, parsed) => (path, parsed),
-        Command::Exit(code) => return code,
+    let arguments: Vec<String> =
+        std::env::args_os().skip(1).map(|argument| argument.to_string_lossy().into_owned()).collect();
+    let prog = program_name();
+    let (path, parsed) = match argparse::parse(&arguments, &|path| parser_for(&prog, path)) {
+        Ok(outcome) => (outcome.path, outcome.parsed),
+        Err(code) => return ExitCode::from(code),
     };
     match run(&path, &parsed) {
         Ok(result) => {

@@ -4,13 +4,16 @@ Builds a small game with the reference tests' builders in a temporary folder,
 runs the same commands with the reference CLI (tools/randomiser_config.py) and
 the Rust executable, and compares exit codes, printed results and every file
 written: scan, world, search, profiles, draft and binding revisions, presets,
-campaign prototypes and the native export.
+campaign prototypes and the native export. It also compares the usage and
+help text of every command at several terminal widths and argparse's
+handling of unusual arguments.
 
     python configurator/parity/cli_check.py
 """
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 import struct
 import subprocess
@@ -23,7 +26,13 @@ from common import ROOT, RUST_CLI
 from test_postinstall_resources import make_game, make_itm  # noqa: E402
 from test_postinstall_world_formats import item_record, make_are, make_cre, make_sto  # noqa: E402
 
-PYTHON = [sys.executable, str(ROOT / "tools" / "randomiser_config.py")]
+# The reference runs under the executable's name, so usage and help text
+# (which wrap around the program name) compare exactly.
+PYTHON = [sys.executable, "-c",
+          "import sys; sys.argv[0] = sys.argv[1]; del sys.argv[1]; "
+          f"sys.path.insert(0, {str(ROOT / 'tools')!r}); "
+          "from flir_config.cli import main; raise SystemExit(main())",
+          RUST_CLI.name]
 RUST = [str(RUST_CLI)]
 SOURCE = "are:area/container/0/item/0"
 TARGET = "are:area/actor/1"
@@ -37,10 +46,13 @@ def build(game: Path) -> None:
     struct.pack_into("<I", item_data, 0x18, 0x4C)
     (override / "synth001.itm").write_bytes(item_data)
     item = item_record("SYNTH001", expiration=0, charges=(0, 0, 0), flags=1)
+    # Native targets need actor script names that are unique in their area.
+    embedded = bytearray(make_cre([item]))
+    embedded[0x280:0x288] = b"EmbedDV\0"
     payloads = {
         "actor.cre": make_cre([item, item_record(charges=(2, 9, 0), flags=4)]),
         "area.are": make_are([item], [("Chest", 0, 1)],
-                             [("External", "ACTOR"), ("Embedded", make_cre([item]))]),
+                             [("External", "ACTOR"), ("Embedded", bytes(embedded))]),
         "shop.sto": make_sto([(item, 3, 0)]),
         "grant.bcs": b"SC\nsynthetic grant\nSC\n",
         "grant.dlg": b"DLG V1.0synthetic grant",
@@ -60,57 +72,109 @@ def bind_plan(out: Path) -> None:
                                       encoding="utf-8")
 
 
-STEPS = [
+CATALOG = ["--catalog", "{out}/catalog.json"]
+WORKFLOW = [
     ["scan", "--game", "{game}", "--out", "{out}/catalog.json"],
-    ["world", "scan", "--catalog", "{out}/catalog.json", "--out", "{out}/world.json"],
-    ["search", "--catalog", "{out}/catalog.json", "--query", "blade"],
-    ["search", "--catalog", "{out}/catalog.json", "--query", ""],
-    ["search", "--catalog", "{out}/catalog.json", "--query", "synth", "--category", "1", "--limit", "1"],
-    ["search", "--catalog", "{out}/catalog.json", "--query", "synth", "--offset", "-1"],
-    ["profile", "create", "--catalog", "{out}/catalog.json", "--id", "test", "--name", "Test adventure",
+    ["world", "scan", *CATALOG, "--out", "{out}/world.json"],
+    ["search", *CATALOG, "--query", "blade"],
+    ["search", *CATALOG, "--query", ""],
+    ["search", *CATALOG, "--query", "synth", "--category", "1", "--limit", "1"],
+    ["search", *CATALOG, "--query", "synth", "--offset", "-1"],
+    ["profile", "create", *CATALOG, "--id", "test", "--name", "Test adventure", "--out", "{out}/profile.json"],
+    ["profile", "create", *CATALOG, "--id", "Not Valid", "--name", "x", "--out", "{out}/invalid.json"],
+    ["profile", "edit", *CATALOG, "--profile", "{out}/profile.json", "--include", "SYNTH001",
      "--out", "{out}/profile.json"],
-    ["profile", "create", "--catalog", "{out}/catalog.json", "--id", "Not Valid", "--name", "x",
-     "--out", "{out}/invalid.json"],
-    ["profile", "edit", "--catalog", "{out}/catalog.json", "--profile", "{out}/profile.json",
-     "--include", "SYNTH001", "--out", "{out}/profile.json"],
-    ["profile", "edit", "--catalog", "{out}/catalog.json", "--profile", "{out}/profile.json",
-     "--include", "nosuch", "--out", "{out}/unknown.json"],
-    ["profile", "validate", "--catalog", "{out}/catalog.json", "--profile", "{out}/profile.json"],
-    ["prepare", "--catalog", "{out}/catalog.json", "--profile", "{out}/profile.json", "--store", "{out}/prepared"],
+    ["profile", "edit", *CATALOG, "--profile", "{out}/profile.json", "--include", "nosuch",
+     "--out", "{out}/unknown.json"],
+    ["profile", "validate", *CATALOG, "--profile", "{out}/profile.json"],
+    ["prepare", *CATALOG, "--profile", "{out}/profile.json", "--store", "{out}/prepared"],
     ["inspect", "--store", "{out}/prepared"],
-    ["world", "sources", "--catalog", "{out}/catalog.json", "--world", "{out}/world.json", "--item", "synth001"],
-    ["world", "targets", "--catalog", "{out}/catalog.json", "--world", "{out}/world.json", "--query", "chest"],
-    ["world", "targets", "--catalog", "{out}/catalog.json", "--world", "{out}/world.json", "--kind", "actor",
-     "--limit", "1", "--offset", "1"],
-    ["binding", "create", "--catalog", "{out}/catalog.json", "--world", "{out}/world.json",
-     "--profile", "{out}/profile.json", "--out", "{out}/plan.json"],
+    ["world", "sources", *CATALOG, "--world", "{out}/world.json", "--item", "synth001"],
+    ["world", "targets", *CATALOG, "--world", "{out}/world.json", "--query", "chest"],
+    ["world", "targets", *CATALOG, "--world", "{out}/world.json", "--kind", "actor", "--limit", "1", "--offset", "1"],
+    ["binding", "create", *CATALOG, "--world", "{out}/world.json", "--profile", "{out}/profile.json",
+     "--out", "{out}/plan.json"],
     "bind",
-    ["binding", "validate", "--catalog", "{out}/catalog.json", "--world", "{out}/world.json",
-     "--profile", "{out}/profile.json", "--plan", "{out}/plan.json"],
-    ["binding", "prepare", "--catalog", "{out}/catalog.json", "--world", "{out}/world.json",
-     "--profile", "{out}/profile.json", "--plan", "{out}/plan.json", "--store", "{out}/bound"],
+    ["binding", "validate", *CATALOG, "--world", "{out}/world.json", "--profile", "{out}/profile.json",
+     "--plan", "{out}/plan.json"],
+    ["binding", "prepare", *CATALOG, "--world", "{out}/world.json", "--profile", "{out}/profile.json",
+     "--plan", "{out}/plan.json", "--store", "{out}/bound"],
     ["binding", "inspect", "--store", "{out}/bound"],
-    ["prototype", "prepare", "--store", "{out}/campaigns", "--catalog", "{out}/catalog.json",
-     "--world", "{out}/world.json", "--profile", "{out}/profile.json", "--plan", "{out}/plan.json"],
+    ["prototype", "prepare", "--store", "{out}/campaigns", *CATALOG, "--world", "{out}/world.json",
+     "--profile", "{out}/profile.json", "--plan", "{out}/plan.json"],
     ["prototype", "inspect", "--store", "{out}/campaigns"],
-    ["prototype", "export", "--store", "{out}/campaigns", "--catalog", "{out}/catalog.json",
-     "--world", "{out}/world.json", "--out", "{out}/native"],
-    ["prototype", "export", "--store", "{out}/campaigns", "--catalog", "{out}/catalog.json",
-     "--world", "{out}/world.json", "--out", "{out}/native"],
-    ["prototype", "export", "--store", "{out}/campaigns", "--catalog", "{out}/catalog.json",
-     "--world", "{out}/world.json", "--out", "{game}/inside"],
+    ["prototype", "export", "--store", "{out}/campaigns", *CATALOG, "--world", "{out}/world.json",
+     "--out", "{out}/native"],
+    ["prototype", "export", "--store", "{out}/campaigns", *CATALOG, "--world", "{out}/world.json",
+     "--out", "{out}/native"],
+    ["prototype", "export", "--store", "{out}/campaigns", *CATALOG, "--world", "{out}/world.json",
+     "--revision", "0" * 64, "--out", "{out}/other"],
+    ["prototype", "export", "--store", "{out}/campaigns", *CATALOG, "--world", "{out}/world.json",
+     "--out", "{game}/inside"],
     ["templates"],
     ["templates", "--id", "eet-boss-loot", "--items", "extended", "--out", "{out}/template.json"],
     ["templates", "--id", "eet-original", "--options", "{out}/options.json", "--out", "{out}/options-template.json"],
-    ["templates", "--id", "nosuch"],
     ["inspect", "--store", "{out}/missing"],
-    ["search", "--catalog", "{out}/catalog.json", "--limit", "many"],
-    ["profile"],
 ]
 
+# argparse's handling of unusual arguments: abbreviations, `--`, explicit
+# values, integers as Python's int() reads them, unknown arguments.
+ARGUMENTS = [
+    [],
+    ["nosuch"],
+    ["profile"],
+    ["profile", "nosuch"],
+    ["templates", "--id", "nosuch"],
+    ["templates", "--id"],
+    ["templates", "--id="],
+    ["templates", "--i", "x"],
+    ["templates", "--i=x"],
+    ["templates", "--o", "x"],
+    ["templates", "--it", "extended", "--ta=standard"],
+    ["-hfoo"],
+    ["-h=foo"],
+    ["-h-x"],
+    ["--he"],
+    ["search", "--he"],
+    ["search", "-hh"],
+    ["search", *CATALOG, "--limit", "many"],
+    ["search", *CATALOG, "--limit=--"],
+    ["search", *CATALOG, "--query", "-x"],
+    ["search", *CATALOG, "--query=-x", "--limit", "3"],
+    ["search", *CATALOG, "--query", "-x y"],
+    ["search", *CATALOG, "extra", "more"],
+    ["--bogus", "search", *CATALOG],
+    ["search", "--", *CATALOG],
+    ["--", "search"],
+    ["search", *CATALOG, "--limit", " 5 "],
+    ["search", *CATALOG, "--limit", "1_0"],
+    ["search", *CATALOG, "--limit", "1__0"],
+    ["search", *CATALOG, "--limit", "١٢"],
+    ["search", *CATALOG, "--limit", "\x1c5"],
+    ["search", *CATALOG, "--offset", "99999999999999999999999"],
+    ["search", *CATALOG, "--limit", "1" * 4301],
+    ["search", *CATALOG, "--limit", "1" * 4301 + "x"],
+    ["search", *CATALOG, "-x"],
+    ["search", *CATALOG, "-5"],
+    ["search", "-c", "x"],
+    ["search", "--catalog"],
+    ["world", "targets", *CATALOG, "--world", "{out}/world.json", "--kind", "bad"],
+]
 
-def run(command: list[str], args: list[str]) -> tuple[int, str]:
-    result = subprocess.run(command + args, capture_output=True)
+COMMAND_PATHS = [[], ["templates"], ["scan"], ["search"], ["profile"], ["profile", "create"], ["profile", "edit"],
+                 ["profile", "validate"], ["profile", "rebase"], ["prepare"], ["inspect"], ["world"],
+                 ["world", "scan"], ["world", "sources"], ["world", "targets"], ["binding"],
+                 ["binding", "create"], ["binding", "validate"], ["binding", "prepare"], ["binding", "inspect"],
+                 ["prototype"], ["prototype", "prepare"], ["prototype", "inspect"], ["prototype", "export"]]
+# `ui` is left out: the executable adds --no-browser, which shows in its usage.
+HELP = ([(path + ["-h"], columns) for path in COMMAND_PATHS for columns in ("80", "40", "200", "12")] +
+        [(path + ["--help"], "80") for path in ([], ["templates"], ["world", "targets"])] +
+        [(["search"], columns) for columns in ("0", "abc", "-3", "٢٠")])
+
+
+def run(command: list[str], args: list[str], columns: str) -> tuple[int, str]:
+    environment = dict(os.environ, COLUMNS=columns)
+    result = subprocess.run(command + args, capture_output=True, env=environment)
     return result.returncode, (result.stdout + result.stderr).decode("utf-8", "replace")
 
 
@@ -123,7 +187,9 @@ def masked(text: str, replacements: dict[str, str]) -> str:
 
 def main() -> int:
     common.require_built()
+    sys.stdout.reconfigure(errors="backslashreplace")
     failures = 0
+    commands = 0
     with tempfile.TemporaryDirectory(prefix="cir-parity-cli-") as temp:
         root = Path(temp)
         game = root / "game"
@@ -131,24 +197,27 @@ def main() -> int:
         outputs = {"python": root / "py", "rust": root / "rs"}
         for out in outputs.values():
             out.mkdir()
-        for step in STEPS:
+        steps = [(step, "80") for step in WORKFLOW] + [(step, "80") for step in ARGUMENTS] + HELP
+        for step, columns in steps:
             if step == "bind":
                 for out in outputs.values():
                     bind_plan(out)
                 continue
+            commands += 1
             results = {}
             for name, command in (("python", PYTHON), ("rust", RUST)):
                 out = outputs[name]
                 args = [part.replace("{out}", str(out)).replace("{game}", str(game)) for part in step]
-                code, text = run(command, args)
+                code, text = run(command, args, columns)
                 results[name] = (code, masked(text, {str(out): "<out>", str(game): "<game>"}))
+            label = " ".join(step)[:200] + ("" if columns == "80" else f" (COLUMNS={columns})")
             if results["python"] != results["rust"]:
                 failures += 1
-                print("DIFFERENT:", " ".join(step))
+                print("DIFFERENT:", label)
                 for name, (code, text) in results.items():
                     print(f"  {name} [{code}]: {text[:1500]}")
             else:
-                print("same:", " ".join(step), f"[{results['python'][0]}]")
+                print("same:", label, f"[{results['python'][0]}]")
         for path in sorted(outputs["python"].rglob("*")):
             if path.is_file():
                 relative = path.relative_to(outputs["python"])
@@ -164,7 +233,7 @@ def main() -> int:
                 failures += 1
                 print("ONLY in rust:", path.relative_to(outputs["rust"]))
         compared = sum(1 for path in outputs["python"].rglob("*") if path.is_file())
-    print(f"cli parity: {len(STEPS) - 1} commands, {compared} files compared, {failures} failures")
+    print(f"cli parity: {commands} commands, {compared} files compared, {failures} failures")
     return 1 if failures else 0
 
 

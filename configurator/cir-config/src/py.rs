@@ -321,6 +321,11 @@ pub fn latin1(data: &[u8]) -> String {
     data.iter().map(|&b| b as char).collect()
 }
 
+/// Whether a character is a Unicode decimal digit (regular expressions' `\d`).
+pub fn is_decimal(c: char) -> bool {
+    decimal_value(c).is_some()
+}
+
 /// The value of a Unicode decimal digit (`unicodedata.decimal`).
 fn decimal_value(c: char) -> Option<u8> {
     let code = c as u32;
@@ -329,11 +334,70 @@ fn decimal_value(c: char) -> Option<u8> {
     (code - zero < 10).then(|| (code - zero) as u8)
 }
 
+/// The whitespace `int(text)` skips: ASCII " \t\n\v\f\r" and non-ASCII
+/// Unicode whitespace, but not the separators U+001C..U+001F that
+/// `str.strip()` removes.
+fn is_int_space(c: char) -> bool {
+    if c.is_ascii() {
+        matches!(c, ' ' | '\t' | '\n' | '\x0b' | '\x0c' | '\r')
+    } else {
+        is_space(c)
+    }
+}
+
+/// The most digits `int(text)` converts (Python's default
+/// `sys.get_int_max_str_digits()`).
+const MAX_STR_DIGITS: usize = 4300;
+
+/// Python's `int(text)` in base 10: the value of any size, or the message of
+/// the ValueError Python raises.
+pub fn int_value(text: &str) -> std::result::Result<crate::json::Value, String> {
+    // Python counts the leading run of digits first and refuses more than
+    // MAX_STR_DIGITS before it looks at the rest of the text.
+    let body = text.trim_start_matches(is_int_space);
+    let body = body.strip_prefix(['+', '-']).unwrap_or(body);
+    if !body.starts_with('_') {
+        let (mut digits, mut underscore, mut valid) = (0usize, false, true);
+        for c in body.chars() {
+            if c == '_' {
+                if underscore {
+                    valid = false;
+                    break;
+                }
+                underscore = true;
+            } else if decimal_value(c).is_some() {
+                digits += 1;
+                underscore = false;
+            } else {
+                break;
+            }
+        }
+        if valid && !underscore && digits > MAX_STR_DIGITS {
+            return Err(format!(
+                "Exceeds the limit ({MAX_STR_DIGITS} digits) for integer string conversion: value has {digits} \
+                 digits; use sys.set_int_max_str_digits() to increase the limit"
+            ));
+        }
+    }
+    // Python shows at most 200 characters of the text's repr.
+    parse_int_value(text).ok_or_else(|| {
+        let shown: String = crate::error::py_repr_str(text).chars().take(200).collect();
+        format!("invalid literal for int() with base 10: {shown}")
+    })
+}
+
+/// `int(text)` limited to the i64 range, or Python's ValueError message.
+pub fn int_saturating(text: &str) -> std::result::Result<i64, String> {
+    int_value(text)?;
+    Ok(parse_int_saturating(text).expect("a valid literal"))
+}
+
 /// Python's `int(text)` in base 10, of any size: surrounding whitespace, a
 /// sign, Unicode decimal digits and single underscores between digits.
-/// Returns the sign and the digits without leading zeros.
+/// Returns the sign and the digits without leading zeros. Callers that
+/// report errors use `int_value`, which also applies Python's digit limit.
 pub fn int_literal(text: &str) -> Option<(bool, String)> {
-    let trimmed = strip(text);
+    let trimmed = text.trim_matches(is_int_space);
     let (negative, body) = match trimmed.as_bytes().first() {
         Some(b'-') => (true, &trimmed[1..]),
         Some(b'+') => (false, &trimmed[1..]),

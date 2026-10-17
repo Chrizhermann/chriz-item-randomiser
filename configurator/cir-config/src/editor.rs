@@ -40,8 +40,7 @@ pub struct Editor {
 
 /// `int(text)` of any size, with Python's ValueError message.
 fn py_int(text: &str) -> Result<Value> {
-    crate::py::parse_int_value(text)
-        .ok_or_else(|| Error::value(format!("invalid literal for int() with base 10: {}", crate::error::py_repr_str(text))))
+    crate::py::int_value(text).map_err(Error::value)
 }
 
 /// Python's `set(plan)` compared with the expected plan fields: Ok(true)

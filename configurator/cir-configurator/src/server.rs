@@ -338,9 +338,7 @@ fn dispatch(
                 return Err(Error::profile("Use the local editor to change a configuration").into());
             }
             let declared = request.header("Content-Length").unwrap_or("0");
-            let length = py::parse_int_value(declared).ok_or_else(|| {
-                Error::value(format!("invalid literal for int() with base 10: {}", py_repr(declared)))
-            })?;
+            let length = py::int_value(declared).map_err(Error::value)?;
             let length = match length {
                 Value::Int(length) if 0 < length && length <= MAX_BODY => length as u64,
                 _ => return Err(Error::profile("Invalid configuration request size").into()),
