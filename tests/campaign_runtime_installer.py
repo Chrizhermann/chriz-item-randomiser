@@ -40,13 +40,14 @@ from ie_fake_game import (  # noqa: E402
 )
 import build_release  # noqa: E402
 import campaign_patch_fixtures as fixtures  # noqa: E402
+import tweak_fixtures as tweaks  # noqa: E402
 from build_mode1_fixture import mark_initial_gam  # noqa: E402
 from flir_config.activation import validate_runtime  # noqa: E402
 from flir_config.prepared import REASONS, read_prepared  # noqa: E402
 from flir_config.profiles import ProfileError  # noqa: E402
 
 RESOURCE_TYPES = {"ITM": 1005, "BCS": 1007, "IDS": 1008, "ARE": 1010, "DLG": 1011, "GAM": 1013,
-                  "MENU": 1032, "LUA": 1033}
+                  "STO": 1014, "MENU": 1032, "LUA": 1033}
 RUNTIME_MODULES = (
     "M_FLPRUI.lua", "M_FLPR.lua", "FLPRCore.lua", "FLPRCur.lua", "FLPRGat.lua",
     "FLPRGlob.lua", "FLPRHost.lua", "FLPRNat.lua", "FLPRScript.lua",
@@ -379,6 +380,12 @@ NOTHING_TO_PREPARE = {"quest_pool": "absent", "quest_altar": "absent", "quest_bo
 CHANGE_FILES = {"quest_pool": "BLPOOL.BCS", "quest_altar": "TROALT.BCS", "quest_book": "PPBOOK.BCS",
                 "unshey": "UNSHEY.DLG", "flail_heads": "KPGLAI01.DLG", "totsc_tome": "FLBHCRYP.ITM"}
 
+# The optional tweaks that install together, and the stores that sell
+# scrolls of Protection from Undead, with the order of their tables.
+TWEAKS = ("9000", "10100", "10210", "10300")
+SCROLL_STORES = {"SELL1": (["SCRL09", "POTN08", "scrl09", "AMUL01"], tweaks.SECTIONS),
+                 "SELL2": (["POTN10", "SCRL09"], ("drinks", "sale", "cures", "purchased"))}
+
 
 def recorded(game: Game, statuses: Mapping[str, str], journal: int = 0) -> bool:
     """FLPRPAT.lua, as the configurator reads it, lists exactly these states."""
@@ -541,6 +548,120 @@ class Suite:
         self.check(f"{name}_UninstallRestoresEveryByteButAddedGameText",
                    uninstalled(result) and game.data() == {**before, **added_text}, result)
 
+    def tweak_game(self, compiled: Mapping[str, bytes], *, eet: bool = True, script: str = "ar3001.bcs",
+                   extra: Sequence[tuple[str, str, bytes]] = (), **options) -> Game:
+        """A game with the files the tweaks change, in the archive and in override."""
+        broken = bytearray(tweaks.store(["SCRL09"]))
+        struct.pack_into("<I", broken, 0x38, 99)
+        return self.game(eet=eet, tlk=fixtures.text_tlk(), biff=[
+            ("BOTSMITH", "DLG", compiled["botsmith.dlg"]), ("BOTSMITH", "BCS", compiled["botsmith.bcs"]),
+            ("AR3001", "BCS", compiled[script]), ("SELL1", "STO", tweaks.store(*SCROLL_STORES["SELL1"])),
+            ("KEEP", "STO", tweaks.store(["POTN08"])), *extra], override={
+            **fixtures.ids_files(), "UDDUER01.DLG": compiled["udduer01.dlg"],
+            "SELL2.STO": tweaks.store(*SCROLL_STORES["SELL2"]), "BROKEN.STO": bytes(broken)}, **options)
+
+    def tweak_changes(self, name: str, compiled: Mapping[str, bytes], before: Mapping[str, bytes],
+                      after: Mapping[str, bytes]) -> dict[str, bytes]:
+        """Checks what components 9000, 10100, 10210 and 10300 changed; returns those files."""
+        changed = {key: value for key, value in after.items() if before.get(key) != value}
+        tlk = after["lang/en_us/dialog.tlk"]
+        texts = {stem: fixtures.tra_strings((self.mod / "languages/english" / f"{stem}.tra").read_text(encoding="utf-8"))
+                 for stem in ("botsmith", "udduer01")}
+        self.problems(f"{name}_CespenarForgesSoaItems", tweaks.botsmith_problems(
+            compiled["botsmith.dlg"], after.get("override/botsmith.dlg", compiled["botsmith.dlg"]),
+            lambda number: text_ref(tlk, texts["botsmith"][number])))
+        self.check(f"{name}_CespenarHandsOverForgedItems", after.get("override/botsmith.bcs") == compiled["xbotsmith.bcs"])
+        self.problems(f"{name}_DuergarOffersBothStoresToGuests", tweaks.udduer01_problems(
+            compiled["udduer01.dlg"], after["override/udduer01.dlg"],
+            lambda number: text_ref(tlk, texts["udduer01"][number])))
+        self.check(f"{name}_KeepsWatchersKeepStatues", after.get("override/ar3001.bcs") == compiled["xar3001.bcs"])
+        stores = {f"override/{store.casefold()}.sto": tweaks.store(tweaks.without_scrolls(items), order)
+                  for store, (items, order) in SCROLL_STORES.items()}
+        self.check(f"{name}_RemovesOnlyTheScrolls", all(after.get(key) == data for key, data in stores.items()))
+        added = [text for key in changed if key.endswith("dialog.tlk")
+                 for text in tlk_strings(after[key])[len(tlk_strings(before[key])):]]
+        self.check(f"{name}_AddsTheirTexts", sorted(added) == sorted(
+            text for strings in texts.values() for text in strings.values()))
+        expected = {"override/botsmith.dlg", "override/botsmith.bcs", "override/udduer01.dlg",
+                    "override/ar3001.bcs", *stores}
+        self.check(f"{name}_WritesOnlyExpectedFiles",
+                   {key for key in changed if not key.endswith("dialog.tlk")} == expected)
+        return changed
+
+    def tweak_components(self, compiled: Mapping[str, bytes], message: Mapping[int, str]) -> None:
+        """Item Randomiser's optional tweaks: installed together, checked, uninstalled exactly."""
+        game = self.tweak_game(compiled)
+        before = game.data()
+        result = game.run("--force-install-list", *TWEAKS)
+        self.check("Tweaks_Install", installed(result) and all(game.active(int(number)) for number in TWEAKS), result)
+        after = game.data()
+        changed = self.tweak_changes("Tweaks", compiled, before, after)
+        self.check("Tweaks_TellWhatTheyChanged",
+                   message[110202].replace("%flir_tw_removed%", "2").replace("%flir_tw_selling%", "2") in result.output
+                   and message[110203].replace("%flir_tw_unreadable%", " BROKEN.STO").casefold()
+                   in result.output.casefold()
+                   and message[110303].replace("%flir_tw_other%", "1") in result.output, result)
+        result = game.run("--force-uninstall-list", *TWEAKS)
+        added_text = {key: value for key, value in changed.items() if key.endswith("dialog.tlk")}
+        self.check("Tweaks_UninstallRestoresEveryByteButAddedGameText",
+                   uninstalled(result) and game.data() == {**before, **added_text}, result)
+        result = game.run("--force-install-list", *TWEAKS)
+        self.check("Tweaks_ReinstallIsIdentical", installed(result) and game.data() == after, result)
+
+        # Baldur's Gate II: Enhanced Edition without EET.
+        game = self.tweak_game(compiled, eet=False)
+        before = game.data()
+        result = game.run("--force-install-list", *TWEAKS)
+        self.check("TweaksOnBg2ee_Install", installed(result), result)
+        self.check("TweaksOnBg2ee_ChangeTheSame",
+                   {key: value for key, value in game.data().items() if before.get(key) != value} == changed)
+
+        # Nine stores in ten, rolled per store.
+        sellers = {f"STORE{number:02d}": ["POTN08", "SCRL09"] for number in range(30)}
+        game = self.game(override={f"{store}.STO": tweaks.store(items) for store, items in sellers.items()})
+        before = game.data()
+        result = game.run("--force-install-list", "10200")
+        after = game.data()
+        keys = {store: f"override/{store.casefold()}.sto" for store in sellers}
+        emptied = [store for store, key in keys.items() if after[key] != before[key]]
+        self.check("UndeadScrollsFromMostStores_Install", installed(result) and game.active(10200), result)
+        self.check("UndeadScrollsFromMostStores_RemovesOnlyTheScrolls", bool(emptied) and all(
+            after[keys[store]] == tweaks.store(["POTN08"]) for store in emptied))
+        self.check("UndeadScrollsFromMostStores_TellsHowMany",
+                   message[110202].replace("%flir_tw_removed%", str(len(emptied)))
+                   .replace("%flir_tw_selling%", str(len(sellers))) in result.output, result)
+
+        # Watcher's Keep's script as SCS leaves it, or without the adjustment.
+        for name, script, note in (("StatuesAlreadyKept", "sar3001.bcs", 110302),
+                                   ("StatuesNotRemoved", "nar3001.bcs", 110301)):
+            game = self.tweak_game(compiled, script=script)
+            before = game.data()
+            result = game.run("--force-install-list", "10300")
+            self.check(f"{name}_InstallsWithNote", installed(result) and message[note] in result.output, result)
+            self.check(f"{name}_LeavesScriptAsItIs", game.data() == before)
+
+        # Item Randomiser's own copies would duplicate the dialogue changes.
+        log = (b"// Log of Currently Installed WeiDU Mods\r\n"
+               b"~SETUP-RANDOMISER.TP2~ #0 #9000 // Cespenar can forge SoA items: 8.1.1\r\n"
+               b"~RANDOMISER/RANDOMISER.TP2~ #0 #10210 // Duergar merchants: 8.1.1\r\n")
+        game = self.tweak_game(compiled, files={"WeiDU.log": log})
+        before = game.data()
+        result = game.run("--force-install-list", "9000", "10210")
+        self.check("ItemRandomiserTweaksInstalled_Refused",
+                   skipped(result, message[100012]) and result.output.count(message[100012]) == 2, result)
+        self.check("ItemRandomiserTweaksInstalled_LeavesGameUnchanged",
+                   game.data() == before and not game.active(9000) and not game.active(10210))
+
+        # Polish dialogue texts on an Enhanced Edition game (it has BGEE.LUA),
+        # converted to UTF-8.
+        game = self.tweak_game(compiled, extra=[("BGEE", "LUA", b"-- synthetic\n"),
+                                                ("BOLT01", "ITM", b"ITM V1  synthetic bolt")])
+        result = game.run("--force-install-list", "9000", "10210", language=1)
+        polish = fixtures.tra_strings((self.mod / "languages/polish/botsmith.tra").read_bytes().decode("cp1250"))
+        self.check("TweaksInPolish_Install", installed(result), result)
+        self.check("TweaksInPolish_UseThePolishTexts",
+                   text_ref((game.root / "lang/en_us/dialog.tlk").read_bytes(), polish[0]) >= 0)
+
 
 def text_ref(tlk: bytes, *texts: str | None) -> int:
     """The one game-text entry that reads one of <texts>; line breaks may differ."""
@@ -554,10 +675,11 @@ FIXTURE_TP2 = (b"BACKUP ~fixc/backup~\r\nAUTHOR ~synthetic~\r\n"
                b"BEGIN ~Synthetic quest files~\r\nCOMPILE ~fixc/src~\r\n")
 
 
-def compile_fixtures(scratch: Path, weidu: Path) -> dict[str, dict[str, bytes]]:
+def compile_fixtures(scratch: Path, weidu: Path,
+                     groups: Mapping[str, Mapping[str, str]]) -> dict[str, dict[str, bytes]]:
     """Each group of fixture sources, compiled by WeiDU in a scratch game of its own."""
     compiled = {}
-    for group, sources in fixtures.SOURCES.items():
+    for group, sources in groups.items():
         root = scratch / f"compile-{group}"
         resources = [("OH6000", "ARE", b"synthetic marker")]
         bif = build_biff(resources)
@@ -594,7 +716,7 @@ def tra_messages(mod: Path) -> dict[int, str]:
     text = (mod / "languages" / "english" / "setup.tra").read_text(encoding="utf-8")
     messages = {}
     for line in text.splitlines():
-        if line.startswith("@1015") and "=~" in line:
+        if line.startswith("@") and "=~" in line:
             key, value = line.split("=~", 1)
             messages[int(key[1:])] = value.rstrip("~")
     return messages
@@ -616,7 +738,7 @@ def run_suite(args: argparse.Namespace) -> int:
     suite.lifecycle("ArchivedTemplates", MENU, DEFAULT_GAM)
 
     # The installer's quest and dialogue changes, on synthetic files.
-    compiled = compile_fixtures(scratch, weidu)
+    compiled = compile_fixtures(scratch, weidu, {**fixtures.SOURCES, **tweaks.sources(mod)})
     suite.quest_changes(compiled["applied"])
     suite.left_out("QuestFilesLeftOut", compiled["left-out"], {
         "quest_pool": "grant-ambiguous", "quest_altar": "grant-missing", "quest_book": "prepared-elsewhere",
@@ -626,6 +748,8 @@ def run_suite(args: argparse.Namespace) -> int:
                    {**compiled["left-out-2"], "bgee.lua": fixtures.quest_table(fixtures.UNSHEY_JOURNAL)}, {
         **NOTHING_TO_PREPARE, "unshey": "journal-unrecognised", "flail_heads": "prepared-elsewhere"},
         archived=True)
+
+    suite.tweak_components(compiled["tweaks"], message)
 
     override_gam = gam([("SPRITE_IS_DEADX", 1), ("CHAPTER", 2)], b"\xff" * 33)
     applied = b'return "' + b"a" * 64 + b'"\n'

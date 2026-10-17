@@ -2,6 +2,10 @@
 
 @-1004="PLEASE report the error message in the file"
 
+@100010=~This component requires Baldur's Gate II: Enhanced Edition or Enhanced Edition Trilogy (EET).~
+@100011=~This component requires an Enhanced Edition of Baldur's Gate: BG:EE, BG2:EE or EET.~
+@100012=~Item Randomiser's own version of this component is installed. Keep that one, or uninstall it before installing this one.~
+
 @101500=~Chriz Item Randomiser: randomises items anew for each new adventure (requires EEex with LuaJIT)~
 @101501=~This component requires Enhanced Edition Trilogy (EET).~
 @101502=~This component requires EEex. Please install EEex first.~
@@ -22,3 +26,16 @@
 @101526=~it no longer takes the quest item~
 @101527=~its journal entries have an unexpected form~
 @101528=~the conversation has an unexpected form~
+
+@109000=~Cespenar can forge SoA items~
+@110000=~Remove Protection from Undead scrolls from stores~
+@110100=~All scrolls from all stores~
+@110200=~All scrolls from 9 out of 10 stores~
+@110201=~No store sells scrolls of Protection from Undead (SCRL09), so nothing was changed.~
+@110202=~Removed the scrolls of Protection from Undead from %flir_tw_removed% of the %flir_tw_selling% stores that sold them.~
+@110203=~Note: these files could not be read as stores and were left as they are:%flir_tw_unreadable%~
+@110210=~Duergar merchants~
+@110300=~Prevent Watcher's Keep statues from disappearing~
+@110301=~Note: AR3001.BCS has no difficulty adjustment that removes the Watcher's Keep statues (another mod may have changed it), so nothing was changed.~
+@110302=~Note: another mod has already stopped AR3001.BCS from removing the Watcher's Keep statues for a small or weak party, so nothing was changed.~
+@110303=~Note: %flir_tw_other% script block(s) of AR3001.BCS destroy a Watcher's Keep statue for reasons of their own; they stay as they are.~

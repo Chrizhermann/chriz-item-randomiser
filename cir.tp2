@@ -48,3 +48,41 @@ REQUIRE_PREDICATE (!FILE_EXISTS ~override/M_FLPR.lua~) OR (MOD_IS_INSTALLED cir.
 
   INCLUDE ~cir/lib/campaign_runtime.tpa~                                                                //Runtime files, UI hooks and the new-game marker
   LAM flir_campaign_runtime_install
+
+
+// Optional tweaks from Item Randomiser 8.1.1, under their original numbers.
+
+BEGIN @109000 DESIGNATED 9000 LABEL ~cir-cespenar-soa-items~                                            //Cespenar can forge SoA items
+REQUIRE_PREDICATE GAME_IS ~bg2ee eet~ @100010
+REQUIRE_PREDICATE !MOD_IS_INSTALLED randomiser.tp2 9000 @100012                                        //Its recipes would be offered and handed over twice
+
+  COMPILE ~cir/d/botsmith.d~
+  EXTEND_TOP ~botsmith.bcs~ ~cir/baf/botsmith.baf~
+
+
+BEGIN @110100 SUBCOMPONENT @110000 DESIGNATED 10100 LABEL ~cir-undead-scrolls-all~                     //From all stores
+REQUIRE_PREDICATE ENGINE_IS ~bgee bg2ee~ @100011
+
+  INCLUDE ~cir/lib/tweaks.tpa~
+  LAF flir_tw_undead_scrolls INT_VAR all = 1 END
+
+
+BEGIN @110200 SUBCOMPONENT @110000 DESIGNATED 10200 LABEL ~cir-undead-scrolls-most~                    //From 9 out of 10 stores
+REQUIRE_PREDICATE ENGINE_IS ~bgee bg2ee~ @100011
+
+  INCLUDE ~cir/lib/tweaks.tpa~
+  LAF flir_tw_undead_scrolls INT_VAR all = 0 END
+
+
+BEGIN @110210 DESIGNATED 10210 LABEL ~cir-duergar-merchants~                                            //Both stores for guests of the drow
+REQUIRE_PREDICATE GAME_IS ~bg2ee eet~ @100010
+REQUIRE_PREDICATE !MOD_IS_INSTALLED randomiser.tp2 10210 @100012                                       //The guest's greeting would be added twice
+
+  COMPILE ~cir/d/udduer01.d~
+
+
+BEGIN @110300 DESIGNATED 10300 LABEL ~cir-watchers-keep-statues~                                        //Prevent Watcher's Keep statues from disappearing
+REQUIRE_PREDICATE GAME_IS ~bg2ee eet~ @100010
+
+  INCLUDE ~cir/lib/tweaks.tpa~
+  LAF flir_tw_watchers_keep_statues END

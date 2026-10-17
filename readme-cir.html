@@ -28,20 +28,30 @@
   <li>Baldur's Gate: Enhanced Edition Trilogy (EET). Other games are planned.</li>
   <li>EEex with its LuaJIT component. Start the game with <code>InfinityLoader.exe</code>.</li>
 </ul>
+<p>The optional components below need neither: they also install on Baldur's Gate II: Enhanced Edition, and the scroll component on Baldur's Gate: Enhanced Edition as well.</p>
 
 <h2>Installation</h2>
 <p>Extract the archive into the game folder so the <code>cir</code> folder is beside <code>chitin.key</code>. Supply a current WeiDU executable as <code>setup-cir</code> and run it. Install CIR after every mod that changes the user interface or the new-game template (<code>UI.MENU</code>, <code>BALDUR.GAM</code>).</p>
 <p>The quest and conversation changes CIR relies on are made when it is installed and removed when it is uninstalled. They only take effect in adventures whose settings use them. If another mod changed one of those files so that the change cannot be made safely, the installer says so, leaves the file as it is, and the configurator does not offer what depends on it.</p>
+
+<h2>Optional components</h2>
+<p>These come from Item Randomiser 8.1.1 and keep its component numbers. Each can be installed on its own; do not install one together with Item Randomiser's own version of it (the installer refuses Cespenar's and the Duergar merchant's).</p>
+<ul>
+  <li><strong>Cespenar can forge SoA items</strong> (9000): in Throne of Bhaal, Cespenar can also forge the nine items Cromwell forges in Shadows of Amn: Ankheg Plate Mail, Red Dragon Scale, Shadow Dragon Scale, Crom Faeyr, the Equalizer, the Short Bow of Gesen, Wave, the Silver Sword and the Mace of Disruption +2. He offers them first when he looks through your belongings; declining one leads to the next, then to his own recipes.</li>
+  <li><strong>Remove Protection from Undead scrolls from stores</strong>: from all stores (10100), or from nine stores in ten (10200). Which stores keep them is chosen at random when the component is installed and only changes when it is reinstalled. The installer says how many stores it changed.</li>
+  <li><strong>Duergar merchants</strong> (10210): one of the Duergar merchants in the Underdark has regular wares and special wares. Normally, once you can buy his special wares you can no longer buy his regular ones; with this component you can buy both.</li>
+  <li><strong>Prevent Watcher's Keep statues from disappearing</strong> (10300): on the first level of Watcher's Keep, the game removes some statues, and moves the level's spawns, for a small or weak party. This component keeps the level as it is for any other party, so the statues and their items stay. Only that adjustment is changed; other scripts of the level, including other mods' blocks, stay as they are. If another mod (such as SCS) has already made this change, or the level has no such adjustment, the installer says so and changes nothing.</li>
+</ul>
 
 <h2>Configuration</h2>
 <p>Installing CIR changes nothing in play until a configuration is applied. After the whole mod stack is installed, close the game and use the configurator in <code>cir/tools</code> to scan the game and apply a configuration. The configurator currently requires Python 3.10 or later.</p>
 <p>When a new adventure cannot be randomised (for example a start outside Baldur's Gate, or a game started without EEex), the game says why and lets you start it without the randomiser or cancel.</p>
 
 <h2>Uninstallation</h2>
-<p>Uninstalling CIR with WeiDU removes its runtime and its quest and conversation changes. Settings applied with the configurator are not recorded by WeiDU and stay in <code>randomiser-campaigns</code>. Adventures that were randomised may miss items after CIR is uninstalled.</p>
+<p>Uninstalling CIR with WeiDU removes its runtime and its quest and conversation changes; each optional component is uninstalled on its own. Settings applied with the configurator are not recorded by WeiDU and stay in <code>randomiser-campaigns</code>. Adventures that were randomised may miss items after CIR is uninstalled.</p>
 
 <h2>Credits</h2>
-<p>CIR exists because of Wisp's Item Randomiser; its lists of items, sources and locations, its item files and its texts are his work. Polish texts by Cahir and Yarpen, the translators of Item Randomiser.</p>
+<p>CIR would not be possible without Wisp's groundwork in Item Randomiser: its lists of items, sources and locations, its item files, its texts and the optional components are his work. Polish texts by Cahir and Yarpen, the translators of Item Randomiser.</p>
 <p>Tools: <a href="https://github.com/WeiDUorg/weidu">WeiDU</a> and <a href="https://github.com/Bubb13/EEex">EEex</a>.</p>
 <p>Licence: the code and texts written for CIR are under the MIT licence (see <code>LICENSE</code>); the material from Item Randomiser keeps its author's terms.</p>
 

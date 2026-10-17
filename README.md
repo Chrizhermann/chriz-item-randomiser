@@ -10,7 +10,11 @@ the randomisation they started with.
 
 CIR is a new mod built on Wisp's Item Randomiser and reuses its item and location lists,
 item files and texts. It cannot be combined with Item Randomiser's own randomisation
-(Mode 1 or Mode 2).
+(Mode 1 or Mode 2). It also carries the optional components of Item Randomiser that
+players use, under their original numbers: Cespenar can forge SoA items (9000), fewer
+Protection from Undead scrolls in stores (10100, 10200), the Duergar merchant's two
+stores (10210) and Watcher's Keep statues that stay (10300). These need neither EET nor
+EEex and also install on BG2:EE.
 
 CIR is in development and has no release yet.
 
@@ -52,9 +56,10 @@ the test commands.
 
 ## Licence and credits
 
-The code and texts written for CIR are under the [MIT licence](LICENSE). The material
-from Wisp's Item Randomiser (lists, item files, texts) remains his work and is included
-with credit; [LICENSE](LICENSE) lists it.
+CIR would not be possible without Wisp's groundwork. The code and texts written for CIR
+are under the [MIT licence](LICENSE). The material from Wisp's Item Randomiser (lists,
+item files, texts, the optional components' dialogue and script changes) remains his
+work and is included with credit; [LICENSE](LICENSE) lists it.
 
 - [Item Randomiser source](https://github.com/FredrikLindgren/randomiser)
 - [Item Randomiser on Gibberlings Three](http://www.gibberlings3.net/item_rand/)

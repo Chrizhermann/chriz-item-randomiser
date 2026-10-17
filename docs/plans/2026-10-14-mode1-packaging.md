@@ -9,7 +9,8 @@ game. A public release stays gated on the blockers below.
 Install the campaign runtime (`prototype/`) through `cir.tp2`, the installer of Chriz
 Item Randomiser (CIR), build a reproducible release ZIP, and record what Chriz Easy BG
 (CEBG) needs to offer it. Until 2026-10-17 the runtime was component 1500 of Item
-Randomiser's `randomiser.tp2`; it became CIR's only component unchanged (see Decisions). Mode 2 routes, original special-option parity, automatic
+Randomiser's `randomiser.tp2`; it became CIR's main component unchanged, and the optional
+tweaks Christopher and CEBG use followed it (see Decisions). Mode 2 routes, original special-option parity, automatic
 equipment placement and the reward-specific clue route remain separate work. The
 default configuration was decided on 2026-10-14 (see Decisions); the configurator's
 preset dialog opens on it, and the installer does not apply it yet.
@@ -26,6 +27,7 @@ nothing outside it is published.
 | Group | Paths | Used by |
 | --- | --- | --- |
 | Installer | `cir.tp2`, `cir.ini`, `readme-cir.html`, `README.md`, `LICENSE`, `lib/campaign_runtime.tpa`, `lib/campaign_patches.tpa`, `lib/fl#bg1pal.tpa`, `languages` | `cir.tp2` |
+| Optional tweaks | `lib/tweaks.tpa`, `d/botsmith.d`, `d/udduer01.d`, `baf/botsmith.baf`, their `languages/*/botsmith.tra` and `udduer01.tra` | `cir.tp2` components 9000-10300 |
 | Item Randomiser data | `lists/` (items, locations, sources, endpoints, groups), `copy/` (`flbhcryp.itm`, `flrbelt1.itm`, `ward.itm`, `flrward1.bam`) | the configurator; `campaign_patches.tpa` copies two items |
 | Campaign runtime | `prototype/M_FLPR.lua`, `M_FLPRUI.lua`, `FLPRCore`, `FLPRGlob`, `FLPRNat`, `FLPRHost`, `FLPRSpell`, `FLPRGat`, `FLPRCur`, `FLPRScript`, `FLPRShop` (`.lua`), `FLPRRun.menu`; `tools/probes/FLPRGateAsm.lua`, `FLPRCampaignPolicy.lua`, `FLPRInventoryAsm.lua` | `cir.tp2` copies them to `override` |
 | Configurator | `tools/randomiser_config.py`, `tools/flir_config/` (including `ui/`) | run from the mod folder after installation |
@@ -34,14 +36,14 @@ Not shipped: `docs`, `tests`, fixture/QA helpers in `tools/`, the lab automation
 `tools/lab/` (`FLPRQA.lua`, `M_FLPRQA.lua`), the unused `FLPRDrop`/`FLPRHeld`/`FLPRLife` modules
 and the `tools/probes/FLPRDrop.lua` diagnostic.
 
-Item Randomiser's own installer (Mode 1, Mode 2 and its other components), its scripts,
-dialogues, readmes and the lists only it reads are not part of CIR. They stay with Item
-Randomiser: in its 8.1.1 release and tag and in this repository's history.
+Item Randomiser's own installer (Mode 1, Mode 2 and the components CIR does not port),
+its scripts, dialogues, readmes and the lists only it reads are not part of CIR. They
+stay with Item Randomiser: in its 8.1.1 release and tag and in this repository's history.
 
 ## Installation: `cir.tp2`
 
-One component: `DESIGNATED 0`, `LABEL ~cir-randomiser~`, no prompts. Preconditions, each
-with its reason:
+The randomiser is `DESIGNATED 0`, `LABEL ~cir-randomiser~`, no prompts; the optional
+tweaks follow below. Preconditions of the randomiser, each with its reason:
 
 - `GAME_IS ~eet~`. The runtime captures a campaign only on a BG1 New Game, and its
   native source gate checks code bytes of the BG2:EE 2.6.6.0 executable. EET is the
@@ -100,6 +102,58 @@ configuration with `io.open`; the engine's internal Lua has no `io`, so it falls
 `loadfile`, and a configuration that exists but does not compile still counts. Without
 both functions it cannot see a configuration and passes through; LuaJIT, which the
 component requires, provides both.
+
+### Optional tweaks (9000-10300)
+
+Item Randomiser 8.1.1's tweaks that Christopher and CEBG's default recipe use, under their
+original numbers and labels `cir-cespenar-soa-items`, `cir-undead-scrolls-all`,
+`cir-undead-scrolls-most`, `cir-duergar-merchants` and `cir-watchers-keep-statues`. They
+need neither EEex nor the randomiser. The BG2 ones require `GAME_IS ~bg2ee eet~` (their
+files and string references are Baldur's Gate II's); the scroll one `ENGINE_IS ~bgee
+bg2ee~`. Classic games keep Item Randomiser 8.1.1. Gameplay is unchanged from 8.1.1;
+the implementation changed where 8.1.1 relied on file shapes:
+
+- **9000 Cespenar can forge SoA items** (`d/botsmith.d`, `baf/botsmith.baf`). Same
+  recipes, texts and `flItemMaker` global. His closing state now has `WEIGHT #-1`
+  instead of 8.1.1's `ADD_STATE_TRIGGER` on his greeting (state 2), so the greeting
+  stays untouched. The item-giving blocks go to the top of `BOTSMITH.BCS`, where a block
+  another mod adds can never run before them. State 4 (looking through belongings), 10
+  (gold short) and 11 (the forging cutscene) are the original game's own; the way back
+  to his recipes copies state 4 as installed before this component, so recipes another
+  mod adds later are offered only when no SoA part is carried. On the Enhanced
+  Editions Cespenar forges Shadow Dragon Scale himself; the port keeps 8.1.1's recipe
+  for it, which he offers first.
+- **10100 / 10200 Protection from Undead scrolls** (`lib/tweaks.tpa`). Removes `SCRL09`
+  from every store that sells it, or from each with a chance of nine in ten (8.1.1's
+  `RANDOM(1 100) < 90` was 89 in 100), and prints how many stores it changed. It uses
+  WeiDU's built-in `REMOVE_STORE_ITEM`: WeiDU 249's `DELETE_STORE_ITEM`, which 8.1.1
+  used, leaves the drinks table's offset unchanged when that table follows the sale
+  table. In the lab's EET stores that sell the scroll, that table is empty there
+  (`25SPELL`, `25SPELL2`, `HIGHHEDG`, `STO0703`) or comes first (`RIBALD`), so 8.1.1
+  did no visible damage; a mod store with drinks after its wares would be corrupted.
+  Files that cannot be read as STOR V1.0 stores are left alone and named.
+- **10210 Duergar merchants** (`d/udduer01.d`). A guest of the drow who is not
+  disguised gets the new greeting with both stores, as in 8.1.1 (state 12 gets
+  `Global("DrowGuest","GLOBAL",0)`). The "nothing new" answer for guests is now a copy
+  of state 14 with both stores, instead of 8.1.1's `ALTER_TRANS` by transition number
+  and `EXTEND_TOP` on state 14, which would have hit other transitions after another mod
+  extended it. State 14 itself stays as it is.
+- **10300 Watcher's Keep statues** (`lib/tweaks.tpa`). 8.1.1 replaced every
+  `Global("SetDifficulty","AR3001",0)` with `False()`, which also stops EE Fixpack's
+  spawn activation: EE Fixpack (Alpha 3) switches off every spawn point in `AR3001.ARE`
+  and switches four of them on in a script block that tests the same variable. By that
+  reading of both mods' code (not checked in the game), 8.1.1's 10300 installed after EE
+  Fixpack leaves the level without spawns. The port disables only the difficulty adjustments: blocks that use
+  `SetDifficulty` and destroy a `gorsta` statue, by adding `False()` as their first
+  condition. Other statue-destroying blocks stay and are counted in a note. If every
+  such adjustment already has a top-level `False()` (SCS's "Increase difficulty of
+  level-dependent monster groupings" makes the same change) or none exists, it changes
+  nothing and says so; 8.1.1's predicates on SCS markers and classic SCSII/Tactics
+  components are therefore gone.
+
+CIR refuses 9000 and 10210 when Item Randomiser's own copy is installed (both would add
+their dialogue and, for 9000, hand over items twice). The scroll and statue components
+need no such guard: a second run finds nothing left to change.
 
 ## Configuration, uninstall and re-install
 
@@ -173,7 +227,8 @@ closed when an API or the executable's code bytes do not match.
 | 560 More Spell Shield scrolls | Exclusive: `cir.tp2` refuses to install after it; the configurator offers it per campaign. |
 | 500, 510, 520, 530, 540, 570 | Marker-only inputs to 1100-1400; inert with CIR and not blocked. Their configurator equivalents are `totsc_tome`, `unrandomized_percent`, `kangaxx`, `scrolls`, `flail_heads`, `cursed_disguise`. |
 | 5005-5085 | Require Mode 2, so unavailable. |
-| 9000, 9050, 10100, 10200, 10210, 10300 | Independent; install them before the scan. |
+| 9000, 10100, 10200, 10210, 10300 | Ported into CIR under the same numbers; CIR refuses its 9000 and 10210 after Item Randomiser's. |
+| 9050 Gromnir | Not ported (unused by CEBG); independent of CIR. |
 
 Item Randomiser 8.1.1 does not know CIR, so WeiDU does not refuse its Mode 1, Mode 2 or
 560 when they are installed after CIR. CIR refuses them itself: the configurator does not
@@ -211,6 +266,10 @@ depth 8). `VERSION` 1.0.0 stands until the first release; nothing is published.
 - Requires EET and `feature:eeex:mandatory-components`.
 - Excludes Item Randomiser 1100, 1200, 1300, 1400 and 560. Presets with CIR should drop
   Item Randomiser's 500-570, which would only be inert.
+- The tweaks of the default recipe from `cir.tp2` instead of 8.1.1: 9000, 10200, 10210
+  and 10300, by the labels above, each without prompts. The recipe's exclusion of 10300
+  with Stratagems can stay; without it, 10300 installs and reports that SCS already
+  keeps the statues.
 - Order: after every component that writes `UI.MENU` or `BALDUR.GAM`; the end of the
   BG2 run is simplest. The installer cannot see later overwrites, so after the stack
   completes CEBG should check that `override/UI.MENU` contains `FLPRUI_NewGame(` and
@@ -299,20 +358,21 @@ On 2026-10-17:
 - **Repository takeover**: CIR takes over this repository. Planned for CIR's first
   release: `main` becomes CIR and the Item Randomiser 8.x code moves to a branch. The
   published 8.x releases and tags stay, because CEBG's current recipes install from 8.1.1.
+- **Item Randomiser's other components**: the ones he and other players use move into
+  CIR: 9000, 10200 (with its alternative 10100), 10210 and 10300, the components of
+  CEBG's default recipe. The others (9050 Gromnir, the Mode 2 creature-group unequipping)
+  are discussed later. Wisp is credited as the author of the groundwork, without making
+  the licence more complicated.
 
 Open:
 
-- **Item Randomiser's other components**: CEBG's default recipe installs 9000 (Cespenar
-  forges SoA items), 10200 (Protection from Undead scrolls removed from stores) and 10210
-  (Duergar merchants) from 8.1.1, and 10300 (Watcher's Keep statues) except with
-  Stratagems; 9050 (Gromnir), 10100 and the Mode 2 creature-group unequipping are not
-  used. They are independent of CIR: they can keep coming from 8.1.1 or move into CIR.
-  Chris looks at them one by one.
 - **B1 route** (options above), now constrained to Python-free for both versions.
+- **Default presets**: a friend of Christopher's has distribution ideas for BG1 and
+  partly BG2, to be analysed and built in, at least as a template.
 
 ## Verification
 
-- `tests/Test-CampaignRuntimeInstaller.ps1` (WeiDU 249, synthetic EET games; 149 checks,
+- `tests/Test-CampaignRuntimeInstaller.ps1` (WeiDU 249, synthetic EET games; 149 checks for the randomiser,
   from the working tree and from the built ZIP with `-PackagePath`): install, uninstall,
   re-install, re-install over the installed component, uninstall and install in one run,
   re-install behind a reinstalled earlier mod (also from the install list alone),
@@ -329,7 +389,21 @@ Open:
   structure, and files that give the reward twice or not at all, were already split,
   ask for another item, erase an unknown journal entry or hand over no flail head stay
   byte-identical, with the reason recorded and printed. No game resource is used.
-- WeiDU `--parse-check` of `cir.tp2` and the three `lib/*.tpa`.
+- The optional tweaks in the same suite (`tests/tweak_fixtures.py`; 24 of 173 checks):
+  9000, 10100, 10210 and 10300 installed together on EET and on BG2:EE, with
+  Cespenar's and the merchant's dialogues checked by structure (Cespenar's state 4 with
+  another mod's recipe, the closing state first in trigger order, the merchant's state
+  14 untouched), Cespenar's script and AR3001 equal to their expected compiled forms
+  (an EE Fixpack style block and another mod's statue block untouched, a split
+  adjustment whose `False()` sits inside `OR()` still disabled), stores with their
+  tables in different orders and a store that cannot be read, the texts added, the
+  notes printed, uninstall restoring every byte and a reinstall identical. Also 10200 on
+  30 stores, 10300 on a script SCS already changed and on one without the adjustment,
+  the refusal after Item Randomiser's own 9000 and 10210, and Polish texts converted on
+  an Enhanced Edition game. The installer layouts were taken from the reference EET lab's
+  `BOTSMITH`, `UDDUER01`, `AR3001` and stores, read without changing them.
+- WeiDU `--parse-check` of `cir.tp2`, the four `lib/*.tpa` and the two `d/*.d` (a BAF
+  needs a game's IDS files; the suite compiles `baf/botsmith.baf`).
 - `tests/test_release_package.py`: EOL parity with Git, determinism, refused inputs,
   manifest integrity, coverage of every file `cir.tp2` installs or the configurator
   reads, and English texts in UTF-8.

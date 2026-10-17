@@ -23,8 +23,9 @@ and [campaign prototype contract](../docs/campaign-runtime-prototype.md) for sco
 
 ## Installer
 
-`cir.tp2` has a WeiDU suite on synthetic EET games that needs only WeiDU 249
-and a short temporary directory (WeiDU has path-length limits):
+`cir.tp2` has a WeiDU suite on synthetic EET and BG2:EE games, for the
+randomiser and the optional tweaks, that needs only WeiDU 249 and a short
+temporary directory (WeiDU has path-length limits):
 
 ```powershell
 pwsh -NoProfile -File .\tests\Test-CampaignRuntimeInstaller.ps1 `

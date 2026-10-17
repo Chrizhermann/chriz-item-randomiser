@@ -28,7 +28,8 @@ Randomiser. It does not cover the following material, which keeps its own terms:
 - Material from Item Randomiser by Fredrik Lindgren (Wisp),
   https://github.com/FredrikLindgren/randomiser: the item, source and location
   lists in lists/, the item files and images in copy/ that come from it, its
-  texts and translations in languages/, and lib/fl#bg1pal.tpa. Item Randomiser
+  texts and translations in languages/, lib/fl#bg1pal.tpa, and the dialogue
+  and script changes of its optional components in d/ and baf/. Item Randomiser
   was published without a licence; this material is included with credit to
   its author.
 - GNU libiconv in languages/iconv/, under the GNU Lesser General Public

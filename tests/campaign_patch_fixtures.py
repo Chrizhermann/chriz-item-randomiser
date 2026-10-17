@@ -14,18 +14,26 @@ from typing import Mapping, Sequence
 
 NL = "\r\n"
 
-# Only the actions, triggers and objects the fixtures and the installer's own
-# dialogue use, with the engine's numbers: WeiDU joins the strings of some
-# opcodes (an area and a variable name), whatever the IDS calls them.
+# Only the actions, triggers and objects the fixtures, the installer's own
+# dialogue and the tweaks use, with the engine's numbers: WeiDU joins the
+# strings of some opcodes (an area and a variable name), whatever the IDS
+# calls them.
 IDS = {
-    "ACTION.IDS": ("15 GiveItem(S:Object*,O:Target*)", "30 SetGlobal(S:Name*,S:Area*,I:Value*)",
+    "ACTION.IDS": ("1 ActionOverride(O:Actor*,A:Action*)", "15 GiveItem(S:Object*,O:Target*)",
+                   "30 SetGlobal(S:Name*,S:Area*,I:Value*)",
                    "82 CreateItem(S:ResRef*,I:Usage1*,I:Usage2*,I:Usage3*)", "108 EscapeArea()",
-                   "116 TakePartyItem(S:Item*)",
+                   "111 DestroySelf()", "116 TakePartyItem(S:Item*)", "117 TakePartyGold(I:Amount*)",
                    "140 GiveItemCreate(S:ResRef*,O:Object*,I:Usage1*,I:Usage2*,I:Usage3*)",
-                   "151 DisplayString(O:Object*,I:StrRef*)", "263 EraseJournalEntry(I:STRREF*)"),
+                   "150 StartStore(S:Store*,O:Target*)", "151 DisplayString(O:Object*,I:StrRef*)",
+                   "169 DestroyItem(S:ResRef*)", "198 StartDialogueNoSet(O:Object*)",
+                   "204 TakePartyItemNum(S:ResRef*,I:Num*)", "209 SpawnPtActivate(O:Object*)",
+                   "260 DestroyGold(I:Gold*)", "263 EraseJournalEntry(I:STRREF*)"),
     "TRIGGER.IDS": ("0x0070 Clicked(O:Object*)", "0x400F Global(S:Name*,S:Area*,I:Value*)",
-                    "0x4023 True()", "0x4039 NumTimesTalkedTo(I:Num*)", "0x4042 PartyHasItem(S:Item*)",
-                    "0x4051 Dead(S:Name*)", "0x4061 HasItem(S:ResRef*,O:Object*)"),
+                    "0x4023 True()", "0x4030 False()", "0x4034 GlobalGT(S:Name*,S:Area*,I:Value*)",
+                    "0x4039 NumTimesTalkedTo(I:Num*)", "0x4042 PartyHasItem(S:Item*)",
+                    "0x404F PartyGoldGT(I:Amount*)", "0x4050 PartyGoldLT(I:Amount*)",
+                    "0x4051 Dead(S:Name*)", "0x4061 HasItem(S:ResRef*,O:Object*)", "0x406C NumInPartyLT(I:Num*)",
+                    "0x4089 OR(I:OrCount*)", "0x4090 InPartySlot(O:Object*,I:Slot*)"),
     "OBJECT.IDS": ("1 Myself", "17 LastTrigger", "19 LastTalkedToBy", "21 Player1"),
     "EA.IDS": ("0 ANYONE",), "GENERAL.IDS": ("0 GENERAL_ANY",), "RACE.IDS": ("0 RACE_ALL",),
     "CLASS.IDS": ("0 CLASS_ALL",), "SPECIFIC.IDS": ("0 SPECIFIC_ALL",), "GENDER.IDS": ("0 GENDER_ALL",),

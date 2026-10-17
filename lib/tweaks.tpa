@@ -1,0 +1,143 @@
+// Chriz Item Randomiser (cir.tp2): the optional tweaks ported from Item
+// Randomiser 8.1.1, under their original component numbers. Each finds what
+// it changes by meaning and tells the player when there is nothing to change.
+
+// Removes the scrolls of Protection from Undead (SCRL09) from the stores that
+// sell them: from every such store with all = 1, otherwise from each one with
+// a chance of nine in ten, rolled per store when installing. A file this
+// cannot read as a store is left as it is and named in a note.
+DEFINE_ACTION_FUNCTION flir_tw_undead_scrolls
+  INT_VAR
+    all = 1
+BEGIN
+  OUTER_SET flir_tw_selling = 0
+  OUTER_SET flir_tw_removed = 0
+  OUTER_SPRINT flir_tw_unreadable ~~
+  COPY_EXISTING_REGEXP GLOB ~^.+\.sto$~ ~override~
+    SET flir_tw_sells = 0
+    SET flir_tw_readable = 0
+    PATCH_IF SOURCE_SIZE >= 0x9c BEGIN
+      READ_ASCII 0 flir_tw_signature (8)
+      READ_SLONG 0x34 flir_tw_offset
+      READ_SLONG 0x38 flir_tw_count
+      SET flir_tw_readable = (~%flir_tw_signature%~ STRING_EQUAL ~STORV1.0~) AND flir_tw_offset >= 0x9c
+        AND flir_tw_count >= 0 AND flir_tw_offset + flir_tw_count * 0x1c <= SOURCE_SIZE
+    END
+    PATCH_IF flir_tw_readable BEGIN
+      FOR (flir_tw_index = 0; flir_tw_index < flir_tw_count; ++flir_tw_index) BEGIN
+        READ_ASCII (flir_tw_offset + flir_tw_index * 0x1c) flir_tw_item (8) NULL
+        PATCH_IF ~%flir_tw_item%~ STR_EQ ~scrl09~ BEGIN
+          SET flir_tw_sells = 1
+        END
+      END
+    END ELSE BEGIN
+      SPRINT flir_tw_unreadable ~%flir_tw_unreadable% %SOURCE_FILE%~
+    END
+    PATCH_IF flir_tw_sells BEGIN
+      SET flir_tw_selling += 1
+      PATCH_IF all OR RANDOM(1 10) < 10 BEGIN
+        // Not WeiDU's DELETE_STORE_ITEM (Item Randomiser's choice): it leaves
+        // the drinks table's offset as it was when that table follows the sale
+        // table.
+        REMOVE_STORE_ITEM ~scrl09~
+        SET flir_tw_removed += 1
+      END
+    END
+  BUT_ONLY
+  ACTION_IF flir_tw_selling = 0 BEGIN
+    PRINT @110201
+  END ELSE BEGIN
+    PRINT @110202
+  END
+  ACTION_IF STRING_LENGTH ~%flir_tw_unreadable%~ > 0 BEGIN
+    PRINT @110203
+  END
+END
+
+// Counts, in a decompiled area script, the difficulty adjustments that destroy
+// a statue of Watcher's Keep's first level: blocks that use the area's
+// SetDifficulty variable and destroy a creature whose script name begins with
+// gorsta. Counts those that still run (flir_tw_active), and other blocks that
+// destroy such a statue (flir_tw_other), which stay as they are. With
+// apply = 1 each adjustment that still runs gets False() as its first
+// condition. Blocks that only test the variable, such as EE Fixpack's spawn
+// activation, stay as they are.
+DEFINE_PATCH_FUNCTION flir_tw_keep_statues
+  INT_VAR
+    apply = 0
+  RET
+    flir_tw_found
+    flir_tw_active
+    flir_tw_other
+BEGIN
+  SPRINT flir_tw_nl ~%LNL%~
+  PATCH_IF INDEX_BUFFER (EXACT_MATCH ~%WNL%~) >= 0 BEGIN
+    SPRINT flir_tw_nl ~%WNL%~
+  END
+  SET flir_tw_found = 0
+  SET flir_tw_active = 0
+  SET flir_tw_other = 0
+  SET flir_tw_start = INDEX_BUFFER (~^IF[ %TAB%%MNL%]*$~)
+  WHILE flir_tw_start >= 0 BEGIN
+    SET flir_tw_then = INDEX_BUFFER (~^THEN[ %TAB%%MNL%]*$~ flir_tw_start)
+    SET flir_tw_end = INDEX_BUFFER (~^END[ %TAB%%MNL%]*$~ flir_tw_start)
+    PATCH_IF flir_tw_then < flir_tw_start OR flir_tw_end < flir_tw_then BEGIN
+      SET flir_tw_start = 0 - 1
+    END ELSE BEGIN
+      READ_ASCII flir_tw_start flir_tw_block (flir_tw_end - flir_tw_start)
+      READ_ASCII flir_tw_start flir_tw_conditions (flir_tw_then - flir_tw_start)
+      SET flir_tw_statue = INDEX (CASE_INSENSITIVE ~ActionOverride("gorsta[^"]*",DestroySelf())~ ~%flir_tw_block%~) >= 0
+      SET flir_tw_difficulty = INDEX (CASE_INSENSITIVE ~"SetDifficulty","AR3001"~ ~%flir_tw_block%~) >= 0
+      PATCH_IF flir_tw_statue AND !flir_tw_difficulty BEGIN
+        SET flir_tw_other += 1
+      END
+      PATCH_IF flir_tw_statue AND flir_tw_difficulty BEGIN
+        SET flir_tw_found += 1
+        // A top-level condition; one inside OR() is indented further.
+        PATCH_IF INDEX (CASE_INSENSITIVE ~^  False()[ %TAB%%MNL%]*$~ ~%flir_tw_conditions%~) < 0 BEGIN
+          SET flir_tw_active += 1
+          PATCH_IF apply BEGIN
+            SET flir_tw_at = INDEX_BUFFER (EXACT_MATCH ~%LNL%~ flir_tw_start) + 1
+            SPRINT flir_tw_line ~  False()%flir_tw_nl%~
+            SET flir_tw_len = STRING_LENGTH ~%flir_tw_line%~
+            INSERT_BYTES flir_tw_at flir_tw_len
+            WRITE_ASCIIE flir_tw_at ~%flir_tw_line%~ (flir_tw_len)
+            SET flir_tw_end += flir_tw_len
+          END
+        END
+      END
+      SET flir_tw_start = INDEX_BUFFER (~^IF[ %TAB%%MNL%]*$~ flir_tw_end)
+    END
+  END
+END
+
+// Keeps the statues on the first level of Watcher's Keep (AR3001): the
+// original game destroys them, and moves the area's spawns, for a small or
+// weak party. The blocks that do so stop running, as SCS's own version of this
+// change does; the area then plays as it does for any other party.
+DEFINE_ACTION_FUNCTION flir_tw_watchers_keep_statues BEGIN
+  OUTER_SET flir_tw_found = 0
+  OUTER_SET flir_tw_active = 0
+  OUTER_SET flir_tw_other = 0
+  ACTION_IF FILE_EXISTS_IN_GAME ~ar3001.bcs~ BEGIN
+    COPY_EXISTING - ~ar3001.bcs~ ~override~
+      DECOMPILE_BCS_TO_BAF
+      LPF flir_tw_keep_statues RET flir_tw_found flir_tw_active flir_tw_other END
+    ACTION_IF flir_tw_active > 0 BEGIN
+      COPY_EXISTING ~ar3001.bcs~ ~override~
+        DECOMPILE_AND_PATCH BEGIN
+          LPF flir_tw_keep_statues INT_VAR apply = 1 RET flir_tw_found flir_tw_active flir_tw_other END
+        END
+    END
+  END
+  ACTION_IF flir_tw_found = 0 BEGIN
+    PRINT @110301
+  END ELSE BEGIN
+    ACTION_IF flir_tw_active = 0 BEGIN
+      PRINT @110302
+    END
+  END
+  ACTION_IF flir_tw_other > 0 BEGIN
+    PRINT @110303
+  END
+END
