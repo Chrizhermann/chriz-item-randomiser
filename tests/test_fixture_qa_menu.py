@@ -154,6 +154,21 @@ class FixtureQAMenuTests(unittest.TestCase):
             with self.subTest(source=source[-150:]), self.assertRaises(helper.MenuError):
                 helper.enhance(source)
 
+    def test_273_menus_spelling_bg2ee_main_menu_and_unrelated_duplicates_are_accepted(self):
+        # 2.7.3 writes popup texts with getUiString(...); BG2:EE has its single-player
+        # button in START_MAIN; BG:EE 2.7.3 defines MESSAGE_SCREEN twice.
+        source = (FIXTURE.replace('"t(Popup', '"getUiString(Popup')
+                  .replace('text "SINGLEPLAYER_BUTTON"', 'text "MULTIPLAYER_BUTTON"')
+                  + "menu { name 'MESSAGE_SCREEN' }\nmenu { name 'MESSAGE_SCREEN' }\n")
+        updated, report = helper.enhance(source)
+        self.assertEqual(report["unavailable"], [{"menu": "START", "name": "FLPR_QA_SINGLE"}])
+        self.assertEqual([entry["name"] for entry in report["bindings"]],
+                         [binding.name for binding in helper.BINDINGS if binding.name != "FLPR_QA_SINGLE"])
+        self.assertEqual(updated.count('name "FLPR_QA_POPUP_CONFIRM"'), 1)
+        self.assertEqual(updated.count('name "FLPR_QA_MAIN_MENU"'), 1)
+        with self.assertRaisesRegex(helper.MenuError, "Duplicate menu: ESC_MENU"):
+            helper.enhance(source + "menu { name 'ESC_MENU' }\n")
+
     def test_comment_mentions_do_not_count_as_poll_widgets(self):
         source = FIXTURE.replace("modal\n", 'modal\n -- EEexRemote.Poll()\n')
         _, report = helper.enhance(source)

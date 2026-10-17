@@ -35,14 +35,22 @@ class Token:
 class Binding:
     menu: str
     name: str
-    text: str
+    # The button's text; a tuple accepts each spelling (2.6.6 wraps popup texts
+    # in t(...), 2.7.3 in getUiString(...)).
+    text: str | tuple[str, ...]
     action: str
     text_lua: bool = False
+    # A main-menu button the game may place elsewhere (BG2:EE's single-player
+    # button is in START_MAIN, after the campaign logos): named where present.
+    required: bool = True
+
+    def accepts(self, texts: list[str]) -> bool:
+        return len(texts) == 1 and texts[0] in ((self.text,) if isinstance(self.text, str) else self.text)
 
 
 BINDINGS = (
     Binding("START", "FLPR_QA_SINGLE", "SINGLEPLAYER_BUTTON",
-            "startEngine:SetEngineState(1) Infinity_TransitionMenu('START_SP')"),
+            "startEngine:SetEngineState(1) Infinity_TransitionMenu('START_SP')", required=False),
     Binding("START_SP", "FLPR_QA_START_LOAD", "LOAD_GAME_BUTTON",
             "Infinity_PopMenu(); startEngine:OnLoadGameButtonClick()"),
     Binding("ESC_MENU", "FLPR_QA_SAVE", "SAVE_GAME_BUTTON", "optionsScreen:SaveGame(0)"),
@@ -54,7 +62,7 @@ BINDINGS = (
             "currentSave = 0 Infinity_PushMenu( 'SAVE_NEWSAVE' );"),
     Binding("SAVE_NEWSAVE", "FLPR_QA_SAVE_CONFIRM", "SAVE_BUTTON", "completeSave()"),
     Binding("POPUP_TWOBUTTON", "FLPR_QA_POPUP_CONFIRM",
-            "t(Popup2Button.okText or 'DONE_BUTTON')",
+            ("t(Popup2Button.okText or 'DONE_BUTTON')", "getUiString(Popup2Button.okText or 'DONE_BUTTON')"),
             "Infinity_PopMenu('POPUP_TWOBUTTON') "
             "if (Popup2Button.okFunc) then Popup2Button.okFunc() end", True),
     Binding("ESC_MENU", "FLPR_QA_QUIT", "QUIT_GAME_BUTTON", """
@@ -71,9 +79,12 @@ BINDINGS = (
                 'SAVE_BUTTON', function() optionsScreen:SaveGame(0) end)
         end
         """),
-    Binding("POPUP_FOURBUTTON", "FLPR_QA_MAIN_MENU", "t(Popup4Button.leftText)",
+    Binding("POPUP_FOURBUTTON", "FLPR_QA_MAIN_MENU",
+            ("t(Popup4Button.leftText)", "getUiString(Popup4Button.leftText)"),
             "Infinity_PopMenu() if (Popup4Button.leftFunc) then Popup4Button.leftFunc() end", True),
 )
+# Menus that get a console polling widget, so remote requests are admitted there.
+POLLED_MENUS = ("ESC_MENU", "POPUP_TWOBUTTON", "POPUP_FOURBUTTON")
 
 
 def tokenize(source: str) -> list[Token]:
@@ -181,6 +192,7 @@ def enhance(source: str) -> tuple[str, dict]:
     tokens = tokenize(source)
     ends = blocks(tokens)
     menus = {}
+    duplicates = set()
     all_names = []
     for opening in ends:
         direct = direct_tokens(tokens, ends, opening)
@@ -190,13 +202,22 @@ def enhance(source: str) -> tuple[str, dict]:
             if len(names) != 1:
                 raise MenuError("Menu must have exactly one quoted name")
             if names[0] in menus:
-                raise MenuError(f"Duplicate menu: {names[0]}")
+                duplicates.add(names[0])
             menus[names[0]] = opening
+    # A game's own UI.MENU may define an unrelated menu twice (BG:EE 2.7.3 has
+    # two MESSAGE_SCREEN menus); only the menus named here must be unambiguous.
+    needed = {binding.menu for binding in BINDINGS} | set(POLLED_MENUS)
+    if duplicates & needed:
+        raise MenuError(f"Duplicate menu: {sorted(duplicates & needed)[0]}")
     newline = "\r\n" if "\r\n" in source else "\n"
     edits = []
     named = []
+    unavailable = []
     for binding in BINDINGS:
         if binding.menu not in menus:
+            if not binding.required:
+                unavailable.append({"menu": binding.menu, "name": binding.name})
+                continue
             raise MenuError(f"Required menu missing: {binding.menu}")
         opening = menus[binding.menu]
         matches = []
@@ -206,7 +227,7 @@ def enhance(source: str) -> tuple[str, dict]:
                 if tokens[index - 1].value.lower() == "button":
                     direct = direct_tokens(tokens, ends, index)
                     texts = property_values(direct, "text", "lua" if binding.text_lua else None)
-                    if texts == [binding.text]:
+                    if binding.accepts(texts):
                         actions = property_values(direct, "action")
                         if len(actions) != 1 or lua_signature(actions[0]) != lua_signature(binding.action):
                             raise MenuError(f"Unexpected action for {binding.menu}/{binding.name}")
@@ -214,6 +235,9 @@ def enhance(source: str) -> tuple[str, dict]:
                 index = ends[index] + 1
             else:
                 index += 1
+        if not matches and not binding.required:
+            unavailable.append({"menu": binding.menu, "name": binding.name})
+            continue
         if len(matches) != 1:
             raise MenuError(f"Expected exactly one button for {binding.menu}/{binding.name}; found {len(matches)}")
         button, direct = matches[0]
@@ -229,7 +253,9 @@ def enhance(source: str) -> tuple[str, dict]:
             edits.append((tokens[button].end, newline + f'\t\tname "{binding.name}"'))
         named.append({"menu": binding.menu, "name": binding.name})
     added_polling = []
-    for menu in ("ESC_MENU", "POPUP_TWOBUTTON", "POPUP_FOURBUTTON"):
+    for menu in POLLED_MENUS:
+        if menu not in menus:
+            raise MenuError(f"Required menu missing: {menu}")
         opening = menus[menu]
         existing_poll = False
         index = opening + 1
@@ -249,7 +275,8 @@ def enhance(source: str) -> tuple[str, dict]:
             added_polling.append(menu)
     for position, insertion in sorted(edits, reverse=True):
         source = source[:position] + insertion + source[position:]
-    return source, {"bindings": named, "added_polling": added_polling, "insertions": len(edits)}
+    return source, {"bindings": named, "unavailable": unavailable, "added_polling": added_polling,
+                    "insertions": len(edits)}
 
 
 def extract_menus(source: str, names: tuple[str, ...]) -> str:
