@@ -14,3 +14,8 @@ name = "cir_config"
 # SHA-256 pins every scanned and exported resource; the scan hashes the whole
 # installation, so a vetted, accelerated implementation is worth the dependency.
 sha2 = "0.10"
+
+[features]
+# Lets the parity tests replace pinned resource hashes (as the reference's
+# tests do); never enabled for the released executable.
+parity-overrides = []

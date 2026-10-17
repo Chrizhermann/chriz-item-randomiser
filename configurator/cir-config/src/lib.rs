@@ -21,6 +21,7 @@ pub mod game_text;
 pub mod prepared;
 pub mod scripted_sources;
 pub mod virtual_sources;
+pub mod pins;
 
 pub use error::{Error, ErrorKind, Result};
 pub use json::{Dict, Value};
