@@ -10,7 +10,7 @@ use cir_config::json::{dumps_ascii, Dict, Value};
 use cir_config::profiles::{read_json, validate_catalog};
 use cir_config::sources::validate_world;
 use cir_config::{
-    campaigns, native_export, original_catalog, original_configuration, sources, Error, ErrorKind, Result,
+    activation, campaigns, native_export, original_catalog, original_configuration, sources, Error, ErrorKind, Result,
 };
 use std::collections::HashMap;
 use std::path::Path;
@@ -183,6 +183,13 @@ fn run(name: &str, args: &Dict) -> Result<Value> {
                 Path::new(&text(args, "output")?),
                 revision.as_ref().and_then(Value::as_str),
             )
+        }
+        "item_randomiser_conflict" => activation::item_randomiser_conflict(Path::new(&text(args, "game")?))
+            .map(|conflict| conflict.map_or(Value::Null, Value::from)),
+        "validate_runtime" => activation::validate_runtime(Path::new(&text(args, "game")?), &required(args, "catalog")?)
+            .map(|game| Value::Str(game.to_string_lossy().into_owned())),
+        "deploy_export" => {
+            activation::deploy_export(Path::new(&text(args, "game")?), Path::new(&text(args, "output")?)).map(|()| Value::Null)
         }
         "read_campaign" => {
             let revision = argument(args, "revision")?;

@@ -6,7 +6,10 @@ and the executable (`cir-configurator ui --no-browser`) on the same scans,
 sends both the same session of requests and compares status, content
 headers and bodies, then the files each wrote into its workspace. Random
 draft ids (`adventure-<12 hex>`) and the workspace folders are masked; drafts
-sent back are each server's own.
+sent back are each server's own. Further phases cover CIR's install record
+(read while the editor runs), the scripted quest-pool reward, and applying
+configurations to a synthetic test runtime, where each editor runs in turn
+on the same game and the game's files are compared afterwards.
 
     python configurator/parity/editor_check.py
 """
@@ -23,8 +26,11 @@ import sys
 import tempfile
 
 import common
-from common import RUST_CLI
+from common import RUST_CLI, restore_tree, snapshot_tree
 from cli_check import PYTHON, SOURCE, TARGET, build
+
+from flir_config.profiles import write_json  # noqa: E402
+from test_postinstall_blpool_script import compiled_blpool, pool_game, pool_plan, write_registry  # noqa: E402
 
 RANDOM_ID = re.compile(r"adventure-[0-9a-f]{12}")
 HEADERS = ("Content-Type", "Content-Length", "Cache-Control")
@@ -179,78 +185,232 @@ def session():
     ]
 
 
+def tree(folder: Path) -> dict:
+    """Files below a folder with random draft ids masked."""
+    result = {}
+    for path in sorted(folder.rglob("*")) if folder.exists() else []:
+        if path.is_file():
+            relative = RANDOM_ID.sub("adventure-<id>", path.relative_to(folder).as_posix())
+            data = path.read_bytes()
+            try:
+                data = RANDOM_ID.sub("adventure-<id>", data.decode("utf-8")).replace(
+                    json.dumps(str(folder))[1:-1], "<folder>")
+            except UnicodeDecodeError:
+                pass
+            result[relative] = data
+    return result
+
+
+def tree_failures(label: str, expected: dict, actual: dict) -> int:
+    failures = 0
+    for relative in sorted(set(expected) | set(actual)):
+        if expected.get(relative) != actual.get(relative):
+            failures += 1
+            print(f"{label} DIFFERS:", relative,
+                  "missing in rust" if relative not in actual else
+                  "only in rust" if relative not in expected else "content")
+    return failures
+
+
+def scan(game: Path, scans: Path) -> tuple[Path, Path]:
+    scans.mkdir()
+    catalog, world = scans / "catalog.json", scans / "world.json"
+    for step in (["scan", "--game", str(game), "--out", str(catalog)],
+                 ["world", "scan", "--catalog", str(catalog), "--out", str(world)]):
+        subprocess.run(PYTHON + step, check=True, capture_output=True)
+    return catalog, world
+
+
+def commands(catalog: Path, world: Path, workspace: Path, *extra: str) -> dict:
+    arguments = ["ui", "--catalog", str(catalog), "--world", str(world), "--port", "0",
+                 "--workspace", str(workspace), *extra]
+    return {"python": PYTHON + arguments, "rust": [str(RUST_CLI)] + arguments + ["--no-browser"]}
+
+
+def compare_step(label: str, outcomes: dict) -> int:
+    if outcomes["python"] != outcomes["rust"]:
+        print("DIFFERENT:", label)
+        for name, (status, reason, headers, text) in outcomes.items():
+            print(f"  {name} [{status} {reason}] {headers}: {text[:1200]}")
+        return 1
+    print(f"same: {label} [{outcomes['python'][0]}]")
+    return 0
+
+
+def outcome(server: Server, result, states: dict) -> tuple:
+    status, reason, headers, body = result
+    text = body.decode("utf-8", "replace")
+    if status == 200 and (headers["Content-Type"] or "").startswith("application/json"):
+        value = json.loads(text)["result"]
+        if isinstance(value, dict) and "profile" in value and "plan" in value:
+            states[server.name] = value
+    return status, reason, headers, masked(text, server)
+
+
+def concurrent_phase(name: str, root: Path, catalog: Path, world: Path, steps) -> tuple[int, int, int]:
+    """Both editors side by side, each with its own workspace."""
+    failures = 0
+    # Equal-length workspace paths keep Content-Length comparable.
+    slug = name.replace(" ", "-")
+    workspaces = {"python": root / f"{slug}-wsp", "rust": root / f"{slug}-wsr"}
+    servers = []
+    try:
+        for side in ("python", "rust"):
+            servers.append(Server(side, commands(catalog, world, workspaces[side])[side], workspaces[side]))
+        announced = [masked(json.dumps(server.announced), server) for server in servers]
+        if announced[0] != announced[1]:
+            failures += 1
+            print("DIFFERENT start:", announced)
+        states = {server.name: json.loads(server.request("GET", "/api/state")[3])["result"] for server in servers}
+        for label, action in steps:
+            outcomes = {server.name: outcome(server, action(server, states[server.name]), states)
+                        for server in servers}
+            failures += compare_step(f"{name}: {label}", outcomes)
+    finally:
+        for server in servers:
+            server.stop()
+    trees = {side: tree(workspace) for side, workspace in workspaces.items()}
+    failures += tree_failures(f"{name} workspace", trees["python"], trees["rust"])
+    return len(steps), len(trees["python"]), failures
+
+
+def registry_steps(game: Path, routes: list[str]):
+    """CIR's install record changes while the editor runs."""
+    def with_registry(statuses, route):
+        def action(server, state):
+            if statuses is None:
+                (game / "override" / "FLPRPAT.lua").unlink(missing_ok=True)
+            else:
+                write_registry(game, **statuses)
+            return server.request("GET", route)
+        return action
+    steps = []
+    for label, statuses in (("no record", None), ("all applied", {}),
+                            ("flail heads left as installed", {"flail_heads": "dialogue-unrecognised"}),
+                            ("pool left as installed", {"quest_pool": "grant-ambiguous"})):
+        for route in routes:
+            steps.append((f"{route} with {label}", with_registry(statuses, route)))
+    return steps
+
+
+def pool_phase(root: Path):
+    """BLPOOL as CIR prepares it: the scripted quest reward source."""
+    game = root / "pool-game"
+    catalog_value, world_value = pool_game(game, compiled_blpool())
+    scans = root / "pool-scans"
+    scans.mkdir()
+    catalog, world = scans / "catalog.json", scans / "world.json"
+    write_json(catalog, catalog_value)
+    write_json(world, world_value)
+    profile, plan = pool_plan(catalog_value, world_value)
+    draft = {"profile": profile, "plan": plan}
+
+    def post(path, value):
+        return lambda server, state: server.post(path, value)
+
+    steps = [
+        ("sources", lambda server, state: server.request("GET", "/api/sources?item=blun12")),
+        ("validate", post("/api/validate", draft)),
+        ("save", post("/api/save", draft)),
+        ("prepare", post("/api/prepare", draft)),
+        ("load", post("/api/load", {"id": profile["id"]})),
+        *registry_steps(game, ["/api/sources?item=blun12", "/api/recommended"]),
+    ]
+    return concurrent_phase("quest pool", root, catalog, world, steps)
+
+
+OPEN_GAME = "Close this test game and its installer before applying settings"
+
+
+def apply_phase(root: Path, attempts: int = 3) -> tuple[int, int, int]:
+    """Apply to a test runtime: each editor in turn on the same game and
+    workspaces, restored in between, then the game and workspaces compared.
+
+    Both check for real that no game, loader, WeiDU or mod installer runs (the
+    reference asks Windows); one started meanwhile by something else refuses
+    only one side's apply, so such a run is repeated."""
+    for attempt in range(1, attempts + 1):
+        results, trees = apply_attempt(root / f"apply-{attempt}")
+        refused = any(OPEN_GAME in text for outcomes in results.values() for _, (_, _, _, text) in outcomes)
+        if refused and attempt < attempts:
+            print(f"apply: a game, loader or installer ran during attempt {attempt}; repeating", flush=True)
+            continue
+        failures = 0
+        for (label, python), (_, rust) in zip(results["python"], results["rust"]):
+            failures += compare_step(f"apply: {label}", {"python": python, "rust": rust})
+        for name in trees["python"]:
+            failures += tree_failures(f"apply {name}", trees["python"][name], trees["rust"][name])
+        files = sum(len(folder) for folder in trees["python"].values())
+        return len(results["python"]), files, failures
+
+
+def apply_attempt(root: Path) -> tuple[dict, dict]:
+    root.mkdir()
+    game = root / "apply-game"
+    build(game)
+    for name in ("override/M_FLPR.lua", "override/FLPRRun.menu", "randomiser-campaigns/next.lua"):
+        path = game / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("test runtime")
+    (game / "override" / "other-mod.txt").write_bytes(b"preserve unrelated mod content")
+    catalog, world = scan(game, root / "apply-scans")
+    workspace, other = root / "apply-workspace", root / "apply-other"
+    before = snapshot_tree(game)
+    results, trees = {}, {}
+
+    def changed(server, state):
+        draft = bound(state, "parity-apply")
+        draft["profile"]["name"] = "Changed next adventure"
+        draft["profile"]["shop_pricing"] = {"percent": 140, "base_prices": {}}
+        return server.post("/api/apply", draft)
+
+    def apply(server, state):
+        return server.post("/api/apply", bound(state, "parity-apply"))
+
+    def state_of(server, state):
+        return server.request("GET", "/api/state")
+
+    for side in ("python", "rust"):
+        restore_tree(game, before)
+        for folder in (workspace, other):
+            restore_tree(folder, None)
+        outcomes = []
+        states = {}
+
+        def session(folder, actions):
+            server = Server(side, commands(catalog, world, folder, "--apply-game", str(game))[side], folder)
+            try:
+                states[side] = json.loads(server.request("GET", "/api/state")[3])["result"]
+                for label, action in actions:
+                    outcomes.append((label, outcome(server, action(server, states[side]), states)))
+            finally:
+                server.stop()
+
+        session(workspace, [("state", state_of), ("apply", apply), ("apply again unchanged", apply),
+                            ("apply changed", changed), ("state after apply", state_of)])
+        session(workspace, [("reopened state", state_of)])
+        session(other, [("other workspace apply", apply)])
+        results[side] = outcomes
+        trees[side] = {"game": tree(game), "workspace": tree(workspace), "other workspace": tree(other)}
+    restore_tree(game, before)
+    return results, trees
+
+
 def main() -> int:
     common.require_built()
     sys.stdout.reconfigure(errors="backslashreplace")
-    failures = 0
+    totals = [0, 0, 0]
     with tempfile.TemporaryDirectory(prefix="cir-parity-editor-") as temp:
         root = Path(temp)
         game = root / "game"
         build(game)
-        scans = root / "scans"
-        scans.mkdir()
-        catalog, world = scans / "catalog.json", scans / "world.json"
-        for step in (["scan", "--game", str(game), "--out", str(catalog)],
-                     ["world", "scan", "--catalog", str(catalog), "--out", str(world)]):
-            subprocess.run(PYTHON + step, check=True, capture_output=True)
-        # Equal-length workspace paths keep Content-Length comparable.
-        workspaces = {"python": root / "wsp", "rust": root / "wsr"}
-        arguments = ["ui", "--catalog", str(catalog), "--world", str(world), "--port", "0", "--workspace"]
-        servers = []
-        try:
-            servers.append(Server("python", PYTHON + arguments + [str(workspaces["python"])], workspaces["python"]))
-            servers.append(Server("rust", [str(RUST_CLI)] + arguments + [str(workspaces["rust"]), "--no-browser"],
-                                  workspaces["rust"]))
-            announced = [masked(json.dumps(server.announced), server) for server in servers]
-            if announced[0] != announced[1]:
-                failures += 1
-                print("DIFFERENT start:", announced)
-            states = {server.name: json.loads(server.request("GET", "/api/state")[3])["result"] for server in servers}
-            steps = session()
-            for label, action in steps:
-                outcomes = {}
-                for server in servers:
-                    status, reason, headers, body = action(server, states[server.name])
-                    text = body.decode("utf-8", "replace")
-                    if status == 200 and headers["Content-Type"].startswith("application/json"):
-                        value = json.loads(text)["result"]
-                        if isinstance(value, dict) and "profile" in value and "plan" in value:
-                            states[server.name] = value
-                    outcomes[server.name] = (status, reason, headers, masked(text, server))
-                if outcomes["python"] != outcomes["rust"]:
-                    failures += 1
-                    print("DIFFERENT:", label)
-                    for name, (status, reason, headers, text) in outcomes.items():
-                        print(f"  {name} [{status} {reason}] {headers}: {text[:1200]}")
-                else:
-                    status = outcomes["python"][0]
-                    print(f"same: {label} [{status}]")
-        finally:
-            for server in servers:
-                server.stop()
-        trees = {}
-        for name, workspace in workspaces.items():
-            tree = {}
-            for path in sorted(workspace.rglob("*")):
-                if path.is_file():
-                    relative = RANDOM_ID.sub("adventure-<id>", path.relative_to(workspace).as_posix())
-                    data = path.read_bytes()
-                    try:
-                        data = RANDOM_ID.sub("adventure-<id>", data.decode("utf-8")).replace(
-                            json.dumps(str(workspace))[1:-1], "<workspace>")
-                    except UnicodeDecodeError:
-                        pass
-                    tree[relative] = data
-            trees[name] = tree
-        for relative in sorted(set(trees["python"]) | set(trees["rust"])):
-            if trees["python"].get(relative) != trees["rust"].get(relative):
-                failures += 1
-                print("WORKSPACE DIFFERS:", relative,
-                      "missing in rust" if relative not in trees["rust"] else
-                      "only in rust" if relative not in trees["python"] else "content")
-        print(f"editor parity: {len(steps)} requests, {len(trees['python'])} workspace files compared, "
-              f"{failures} failures")
-    return 1 if failures else 0
+        catalog, world = scan(game, root / "scans")
+        steps = session() + registry_steps(game, ["/api/recommended"])
+        for result in (concurrent_phase("synthetic", root, catalog, world, steps), pool_phase(root),
+                       apply_phase(root)):
+            totals = [total + value for total, value in zip(totals, result)]
+    print(f"editor parity: {totals[0]} requests, {totals[1]} written files compared, {totals[2]} failures")
+    return 1 if totals[2] else 0
 
 
 if __name__ == "__main__":

@@ -203,12 +203,14 @@ def file(value) -> dict:
 
 class Spec:
     """A recorded call: its Rust name, its Rust arguments, the parameters that
-    are paths, the folders it writes, and the parameters the Rust API takes as
-    text only (another type cannot be passed to it at all)."""
+    are paths, the folders it writes, the parameters the Rust API takes as
+    text only (another type cannot be passed to it at all), and how the
+    reference's result becomes JSON."""
 
-    def __init__(self, call: str, arguments, *, paths=(), writes=(), texts=()):
+    def __init__(self, call: str, arguments, *, paths=(), writes=(), texts=(), result=None):
         self.call, self.arguments, self.paths, self.writes = call, arguments, set(paths), tuple(writes)
         self.texts = set(texts)
+        self.result = result
 
 
 SPECS = {
@@ -262,6 +264,14 @@ SPECS = {
                                               world=file(v["world"]), output=str(v["output"]),
                                               revision=v["revision"]),
         paths=("store", "output"), writes=("output",), texts=("revision",)),
+    ("flir_config.activation", "item_randomiser_conflict"): Spec(
+        "item_randomiser_conflict", lambda v, d: {"game": str(v["game"])}, paths=("game",)),
+    ("flir_config.activation", "validate_runtime"): Spec(
+        "validate_runtime", lambda v, d: {"game": str(v["game"]), "catalog": file(v["catalog"])},
+        paths=("game",), result=str),
+    ("flir_config.activation", "deploy_export"): Spec(
+        "deploy_export", lambda v, d: {"game": str(v["game"]), "output": str(v["output"])},
+        paths=("game", "output"), writes=("game", "output/..")),
 }
 
 
@@ -277,6 +287,13 @@ def record(spec: Spec, original, signature, args, kwargs):
         return original(*args, **kwargs)
     values = dict(bound.arguments)
     reason, pins, resolve, registration = classify(spec.call)
+    if reason is None and spec.call == "deploy_export":
+        # The port asks Windows whether the game runs, as the reference does
+        # unpatched; a test that makes the check refuse cannot be mirrored.
+        from flir_config import activation
+        closed = activation.require_closed
+        if isinstance(closed, mock.NonCallableMock) and closed.side_effect is not None:
+            reason = "require_closed patched to refuse"
     draft = registration_draft = None
     if reason is None and resolve is not None:
         draft, reason = mocked_draft(resolve, values)
@@ -296,7 +313,10 @@ def record(spec: Spec, original, signature, args, kwargs):
                 reason = f"{key} is not text (the Rust API takes text)"
             elif not json_native(value):
                 reason = f"{key} is not plain JSON"
-    roots = [Path(values[key]) for key in spec.writes] if reason is None else []
+    # "name/.." is the folder holding that path (deploy_export keeps its
+    # backup beside the export).
+    roots = ([Path(values[key[:-3]]).parent if key.endswith("/..") else Path(values[key]) for key in spec.writes]
+             if reason is None else [])
     if any(not is_temporary(root) for root in roots):
         reason = "writes outside the temporary folder"
     before = {}
@@ -328,7 +348,8 @@ def record(spec: Spec, original, signature, args, kwargs):
     except Exception as exc:
         result, error = None, exc
     try:
-        python_line = outcome_line(result, error)
+        python_line = outcome_line(result if error is not None or spec.result is None else spec.result(result),
+                                   error)
     except (TypeError, ValueError) as exc:
         python_line = json.dumps({"unserializable": str(exc)})
     python_after = {root: snapshot_tree(root) for root in roots}
