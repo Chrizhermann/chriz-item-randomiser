@@ -1,5 +1,4 @@
-//! Reviewed quest conditions of the containers in Item Randomiser's `mode2`
-//! target tables (the extended place pools), gated per campaign (the
+//! Campaign-gated conditions of the extended pools' container quests (the
 //! reference's `container_rewards.py`).
 //!
 //! The Host observes a delivered reward becoming absent from its loaded
@@ -13,29 +12,41 @@
 //! Randomiser's lib/weidu_action.tpa and baf/flrkeep*.baf, flrsamia.baf and
 //! flrsafan.baf.
 //!
-//! The reviewed hashes are read through [`crate::pins`] as
-//! `container_rewards.ORIGINAL_HASHES`.
+//! The conditions are found by their meaning, never by the bytes of one
+//! reviewed game: every script block and dialogue condition that tests
+//! whether the party has the treasure, and the block that sets the latch
+//! itself when the container no longer holds it. Blocks and conditions
+//! another mod added stay as found.
+//!
+//! The container is found by its meaning too: the one of the quest's area
+//! that holds the whole treasure ([`treasure_container`]). Item Randomiser
+//! names the chests as the original game did, which the EE games renamed in
+//! AR1202, and its tables put the golems' treasures in AR1302 although its
+//! handler and the treasures use AR1303; a container index would name
+//! another chest in a game where a mod added one.
 
-use crate::error::{Error, Result};
+use crate::error::{Error, ErrorKind, Result, SCRIPT_ERROR};
+use crate::game_names::convert_resource;
 use crate::game_text::append_texts;
 use crate::json::{Dict, Value};
-use crate::py::{
-    count_bytes, digits_value, find_bytes, is_line_end, is_line_start, replace_bytes, split3, splitlines_bytes,
-    starts_with_ignore_ascii_case, strip_bytes, u32_le,
-};
+use crate::py::{find_bytes, rfind_bytes, str_value, u32_le, upper};
 use crate::quest_options::{pad, texts, Dialogue};
-use crate::quest_rewards::{blocks, global_guard, newline};
-use crate::resources::sha256_hex;
+use crate::quest_rewards::global_guard;
+use crate::script_text::{
+    block_actions, block_parts, block_triggers, calls, integer_argument, named, naming, script_blocks, string_argument,
+    Action, Call, Script,
+};
 use crate::dict;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::OnceLock;
 
+/// One container quest. `area` is named as in the campaign's own game
+/// (BG:EE for bg1).
 #[allow(clippy::too_many_arguments)]
 fn target(
-    game: &str,
+    campaign: &str,
     row: i64,
     area: &str,
-    container: i64,
     item: &str,
     flag: &str,
     latch: &str,
@@ -43,8 +54,7 @@ fn target(
     resources: &[&str],
 ) -> Dict {
     dict! {
-        "target_id" => format!("{game}:mode2:target:{row}"), "area" => area,
-        "container_index" => container, "physical_target_id" => format!("are:{area}/container/{container}"),
+        "target_id" => format!("{campaign}:mode2:target:{row}"), "campaign" => campaign, "area" => area,
         "original_item" => item, "activation_global" => flag,
         "latch_global" => latch, "latch_scope" => scope, "resources" => resources.to_vec(),
     }
@@ -53,12 +63,11 @@ fn target(
 fn rows() -> &'static [Dict] {
     static ROWS: OnceLock<Vec<Dict>> = OnceLock::new();
     ROWS.get_or_init(|| {
-        let golems = |row, container, item, number: u32, resources: &[&str]| {
+        let golems = |row, item, number: u32, resources: &[&str]| {
             target(
                 "bg2",
                 row,
                 "ar1303",
-                container,
                 item,
                 &format!("FLPR_CKEEP{number}"),
                 &format!("flRobbedGolems{number}"),
@@ -68,14 +77,14 @@ fn rows() -> &'static [Dict] {
         };
         let samia = ["bcs:ar1202", "bcs:samia", "dlg:samia"];
         vec![
-            golems(13, 0, "ax1h13", 1, &["bcs:kpgol01", "bcs:kpgol03"]),
-            golems(43, 1, "bow12", 2, &["bcs:kpgol02", "bcs:kpgol04"]),
-            golems(3, 2, "hamm04", 3, &["bcs:kpgol05", "bcs:kpgol06"]),
+            golems(13, "ax1h13", 1, &["bcs:kpgol01", "bcs:kpgol03"]),
+            golems(43, "bow12", 2, &["bcs:kpgol02", "bcs:kpgol04"]),
+            golems(3, "hamm04", 3, &["bcs:kpgol05", "bcs:kpgol06"]),
             // These are the handler's item names, not the source row's Ident pairing.
-            target("bg2", 53, "ar1202", 8, "shld21", "FLPR_CSAMIA", "flSamiaTreasure", "AR1202", &samia),
-            target("bg2", 28, "ar1202", 8, "sw1h32", "FLPR_CSAMIA", "flSamiaTreasure", "AR1202", &samia),
-            target("bg1", 22, "bg3601", 0, "book03", "FLPR_CSAFANA", "flSafanaTreasure", "GLOBAL", &["bcs:safana", "dlg:safanj"]),
-            target("bg2", 61, "ar1514", 0, "bow19b", "FLPR_CPPCHST", "RobbedGolem", "GLOBAL", &["bcs:ppchest"]),
+            target("bg2", 53, "ar1202", "shld21", "FLPR_CSAMIA", "flSamiaTreasure", "AR1202", &samia),
+            target("bg2", 28, "ar1202", "sw1h32", "FLPR_CSAMIA", "flSamiaTreasure", "AR1202", &samia),
+            target("bg1", 22, "ar3601", "book03", "FLPR_CSAFANA", "flSafanaTreasure", "GLOBAL", &["bcs:safana", "dlg:safanj"]),
+            target("bg2", 61, "ar1514", "bow19b", "FLPR_CPPCHST", "RobbedGolem", "GLOBAL", &["bcs:ppchest"]),
         ]
     })
 }
@@ -111,68 +120,91 @@ pub fn resource_targets() -> &'static Dict {
     })
 }
 
-/// Compiled block indexes / DLG state-trigger table indexes in the reviewed
-/// EET: `(block count, sites)`; dialogues have no block count.
-pub const SITES: &[(&str, Option<usize>, &[usize])] = &[
-    ("bcs:kpgol01", Some(1), &[0]),
-    ("bcs:kpgol02", Some(1), &[0]),
-    ("bcs:kpgol03", Some(1), &[0]),
-    ("bcs:kpgol04", Some(1), &[0]),
-    ("bcs:kpgol05", Some(1), &[0]),
-    ("bcs:kpgol06", Some(1), &[0]),
-    ("bcs:ar1202", Some(24), &[15, 16]),
-    ("bcs:samia", Some(1), &[0]),
-    ("bcs:safana", Some(16), &[7, 8, 9]),
-    ("bcs:ppchest", Some(1), &[0]),
-    ("dlg:samia", None, &[1]),
-    ("dlg:safanj", None, &[0, 2, 8]),
-];
-
-pub const ORIGINAL_HASHES: &[(&str, &str)] = &[
-    ("bcs:kpgol01", "7e569c1e414c4afef74b274515d073c04dd92ba2fa0ab0f96b8bbccf2c80cfa6"),
-    ("bcs:kpgol02", "3dd4220a9bc7ae4b5778f3b6a1dc7438d943b138cb9383aac26d8835489a5431"),
-    ("bcs:kpgol03", "82e7a96eac8a9ad8b913982ca8d03bdc824346de42267d80065db5d3155077f0"),
-    ("bcs:kpgol04", "d33714c44ebc89dd5c2fef834781cfbfe69f1f8cd0a9ff9de21fee823b4efc7d"),
-    ("bcs:kpgol05", "d473eebb61a8a03d8bc0b1c993e0810c67a6e01225687b5cba035c6a5e067dde"),
-    ("bcs:kpgol06", "157cc4c98135416842176cb76968280630160156e4039ba0e42cf744d33d0a66"),
-    ("bcs:ar1202", "d6c3de8366f99088d41e1c01a4a8d8811add81771926d9d7d70ef5193fca2280"),
-    ("bcs:samia", "823d03307573daaa08ad7c853879e1b62796d67212b4e62e6d6ba66f0cac32c9"),
-    ("bcs:safana", "afc23b13dfd4e87978997e55e35c6f4f4d14238647ef1197653184e55539bf83"),
-    ("bcs:ppchest", "446b07d5de81386e5e7f6b49efb323c1d617222cc4714f1eae400e1c08c049d2"),
-    ("dlg:samia", "3572813dfb538c88953709b55e6bcd48139ae24c9a9b84e176f9920652a88254"),
-    ("dlg:safanj", "8a890ecdc434267ed79661db132b140c1371a068de234d8caba541aa962da252"),
-];
 pub const TEXT_RESOURCES: [&str; 3] = ["bcs:kpgol01", "bcs:kpgol02", "bcs:kpgol05"];
+const GOLEM_TEXT: i64 = 38758;
 const TRAILER: &[u8] = b"FLPRCON1";
+const PARTY_HAS_ITEM: i64 = 16450;
+const HAS_ITEM: i64 = 16501;
+const OR: i64 = 16521;
+const SET_GLOBAL: i64 = 30;
 
-/// `ORIGINAL_HASHES` with any test overrides.
-pub fn original_hashes() -> Vec<(String, String)> {
-    crate::pins::table("container_rewards.ORIGINAL_HASHES", ORIGINAL_HASHES)
-}
-
-fn original_hash(resource: &str) -> Result<String> {
-    crate::pins::get("container_rewards.ORIGINAL_HASHES", ORIGINAL_HASHES, resource).ok_or_else(|| Error::key(resource))
-}
-
-fn sites(resource: &str) -> Result<(Option<usize>, &'static [usize])> {
-    SITES.iter().find(|(key, _, _)| *key == resource).map(|(_, count, sites)| (*count, *sites)).ok_or_else(|| Error::key(resource))
-}
-
-fn spec_for(resource: &str) -> Result<&'static Dict> {
-    let ids = resource_targets().get(resource).and_then(Value::as_list).ok_or_else(|| Error::key(resource))?;
-    let id = ids.first().and_then(Value::as_str).ok_or_else(|| Error::value("tuple index out of range"))?;
-    Ok(targets().get(id).and_then(Value::as_dict).expect("target row"))
-}
-
-fn text(spec: &Dict, key: &str) -> String {
+fn row_text(spec: &Dict, key: &str) -> String {
     spec.get(key).and_then(Value::as_str).expect("container field").to_string()
+}
+
+fn profile(message: impl Into<String>) -> Error {
+    Error::profile(message)
 }
 
 pub fn target_spec(target_id: &str) -> Result<Dict> {
     match targets().get(target_id).and_then(Value::as_dict) {
         Some(row) => Ok(row.clone()),
-        None => Err(Error::profile(format!("Unsupported container quest target: {target_id}"))),
+        None => Err(profile(format!("Unsupported extended reward container: {target_id}"))),
     }
+}
+
+/// The quest's treasure: every item of the targets sharing its latch
+/// (Samia's two), sorted.
+pub fn treasure(target_id: &str) -> Result<Vec<String>> {
+    let flag = row_text(&target_spec(target_id)?, "activation_global");
+    let items: BTreeSet<String> =
+        rows().iter().filter(|row| row_text(row, "activation_global") == flag).map(|row| row_text(row, "original_item")).collect();
+    Ok(items.into_iter().collect())
+}
+
+fn shown(items: &[String]) -> String {
+    items.iter().map(|item| upper(item)).collect::<Vec<_>>().join("/")
+}
+
+/// Why the quest's container cannot be used, as the check leaves it out.
+pub fn container_error(target_id: &str, problem: &str) -> Result<Error> {
+    Ok(profile(format!("The extended reward container of {} cannot be used: {problem}", shown(&treasure(target_id)?))))
+}
+
+/// The quest's area as this game names it (EET renames BG1's).
+pub fn treasure_area(target_id: &str, platform: &str) -> Result<String> {
+    let spec = target_spec(target_id)?;
+    convert_resource(&row_text(&spec, "area"), "are", &row_text(&spec, "campaign"), platform)
+}
+
+/// The scanned container of the quest's area that holds its whole treasure.
+///
+/// `sources` are the scan's sources. Raises when no container, or more than
+/// one, holds every item of the treasure: then the quest's container is not
+/// there as the quest expects it (another mod moved or added the treasure).
+pub fn treasure_container<'a>(target_id: &str, sources: impl IntoIterator<Item = &'a Value>, platform: &str) -> Result<String> {
+    let area = treasure_area(target_id, platform)?;
+    let items: BTreeSet<String> = treasure(target_id)?.into_iter().collect();
+    let resource = format!("are:{area}");
+    let mut holding: Vec<(String, BTreeSet<String>)> = Vec::new();
+    for source in sources {
+        let index = source.get("record").filter(|record| record.truthy()).and_then(|record| record.get("container_index"));
+        let kind = source.get("kind").ok_or_else(|| Error::key("kind"))?;
+        if !kind.py_eq(&Value::from("container")) {
+            continue;
+        }
+        if !source.get("resource").ok_or_else(|| Error::key("resource"))?.py_eq(&Value::from(resource.as_str())) {
+            continue;
+        }
+        let item = source.get("item").ok_or_else(|| Error::key("item"))?;
+        let Some(item) = item.as_str().filter(|item| items.contains(*item)) else { continue };
+        let Some(index) = index.filter(|index| !index.is_null()) else { continue };
+        let chest = format!("are:{area}/container/{}", str_value(index));
+        match holding.iter_mut().find(|(known, _)| *known == chest) {
+            Some((_, found)) => {
+                found.insert(item.to_string());
+            }
+            None => holding.push((chest, BTreeSet::from([item.to_string()]))),
+        }
+    }
+    let mut chests: Vec<String> = holding.into_iter().filter(|(_, found)| *found == items).map(|(chest, _)| chest).collect();
+    chests.sort();
+    if chests.len() != 1 {
+        let what = if chests.is_empty() { "no container" } else { "more than one container" };
+        let sorted: Vec<String> = items.into_iter().collect();
+        return Err(profile(format!("{} has {what} that holds {}", upper(&area), shown(&sorted))));
+    }
+    Ok(chests.remove(0))
 }
 
 /// Allocate the golems' original text once for every requested golem script.
@@ -185,25 +217,57 @@ where
     I: IntoIterator<Item = S>,
     S: AsRef<str>,
 {
-    let mut needed: Vec<String> = resources
+    let needed: BTreeSet<String> = resources
         .into_iter()
         .map(|resource| resource.as_ref().to_string())
         .filter(|resource| TEXT_RESOURCES.contains(&resource.as_str()))
         .collect();
-    needed.sort();
-    needed.dedup();
     if needed.is_empty() {
         return Ok((tlk.to_vec(), BTreeMap::new()));
     }
     if crate::py::lower(language) != "en_us" {
-        return Err(Error::profile("Container quest text currently requires the original English translation"));
+        return Err(profile("Item Randomiser's reward texts exist only in English"));
     }
-    let text = texts("languages/english/in-game.tra")
-        .remove(&101)
-        .ok_or_else(|| Error::new(crate::error::ErrorKind::Key, "101"))?;
+    let text = texts("languages/english/in-game.tra").remove(&101).ok_or_else(|| Error::new(ErrorKind::Key, "101"))?;
     let (updated, refs) = append_texts(tlk, &[text])?;
-    let result = needed.into_iter().map(|resource| (resource, BTreeMap::from([(38758, refs[0] as i64)]))).collect();
+    let result = needed.into_iter().map(|resource| (resource, BTreeMap::from([(GOLEM_TEXT, refs[0] as i64)]))).collect();
     Ok((updated, result))
+}
+
+fn label(resource: &str) -> String {
+    let (kind, name) = resource.split_once(':').unwrap_or((resource, ""));
+    format!("{}.{}", upper(name), upper(kind))
+}
+
+/// The first container quest a resource belongs to (`_spec`).
+fn spec_for(resource: &str) -> Result<&'static Dict> {
+    let id = first_target(resource)?;
+    Ok(targets().get(&id).and_then(Value::as_dict).expect("target row"))
+}
+
+fn first_target(resource: &str) -> Result<String> {
+    let ids = resource_targets().get(resource).and_then(Value::as_list).ok_or_else(|| Error::key(resource))?;
+    ids.first().and_then(Value::as_str).map(str::to_string).ok_or_else(|| Error::value("tuple index out of range"))
+}
+
+/// The treasure the resource's conditions test.
+fn items(resource: &str) -> Result<Vec<String>> {
+    treasure(&first_target(resource)?)
+}
+
+/// Whether text names one of the items as a quoted resref, in any letter case.
+fn names(text: &[u8], items: &[String]) -> bool {
+    items.iter().any(|item| {
+        let item = item.as_bytes();
+        text.windows(item.len() + 2).any(|window| {
+            window[0] == b'"' && window[window.len() - 1] == b'"' && window[1..window.len() - 1].eq_ignore_ascii_case(item)
+        })
+    })
+}
+
+fn is_item(value: &[u8], items: &[String]) -> bool {
+    let value = value.to_ascii_lowercase();
+    items.iter().any(|item| item.as_bytes() == value)
 }
 
 /// A compiled trigger (`_trigger`).
@@ -222,150 +286,257 @@ pub fn trigger(opcode: u32, value: i64, negate: i64, text: &str, selector: i64, 
 }
 
 fn latch(spec: &Dict, value: i64, newline: &[u8]) -> Vec<u8> {
-    trigger(16399, value, 0, &(text(spec, "latch_scope") + &text(spec, "latch_global")), 0, newline)
+    trigger(16399, value, 0, &(row_text(spec, "latch_scope") + &row_text(spec, "latch_global")), 0, newline)
 }
 
-/// Return one exact original item predicate and the corresponding latch value.
-fn item_condition(conditions: &[u8], resource: &str, spec: &Dict, newline: &[u8]) -> Result<(Vec<u8>, i64)> {
-    if text(spec, "activation_global") == "FLPR_CSAMIA" {
-        for items in [["sw1h32", "shld21"], ["SW1H32", "SHLD21"]] {
-            let mut old = trigger(16521, 2, 0, "", 0, newline);
-            for item in items {
-                old.extend(trigger(16450, 0, 0, item, 0, newline));
-            }
-            if count_bytes(conditions, &old) == 1 {
-                return Ok((old, 1));
-            }
-        }
-    } else {
-        for negate in [0, 1] {
-            let old = trigger(16450, 0, negate, &crate::py::upper(&text(spec, "original_item")), 0, newline);
-            if count_bytes(conditions, &old) == 1 {
-                return Ok((old, 1 - negate));
-            }
+/// A compiled action with its first integer parameter replaced.
+fn with_integer(action: &[u8], newline: &[u8], value: Option<i64>) -> Vec<u8> {
+    let separator = [b"OB", newline].concat();
+    let start = rfind_bytes(action, &separator, 0, action.len()).expect("a compiled action") + separator.len();
+    let mut end = start + usize::from(action.get(start) == Some(&b'-'));
+    while action.get(end).is_some_and(u8::is_ascii_digit) {
+        end += 1;
+    }
+    let shown = value.map_or_else(|| "None".to_string(), |value| value.to_string());
+    [&action[..start], shown.as_bytes(), &action[end..]].concat()
+}
+
+/// A block that tests the treasure: its parts, its test (span and latch
+/// value) for a consumer, and the golem's display.
+struct Site {
+    head: Vec<u8>,
+    conditions: Vec<u8>,
+    responses: Vec<u8>,
+    test: Option<((usize, usize), i64)>,
+    display: Option<Action>,
+}
+
+/// The positions of the triggers or calls an OR(n) before them governs.
+fn or_members(counts: impl Iterator<Item = Option<i64>>) -> BTreeSet<usize> {
+    let (mut members, mut remaining) = (BTreeSet::new(), 0i64);
+    for (number, count) in counts.enumerate() {
+        if remaining != 0 {
+            members.insert(number);
+            remaining = remaining.saturating_sub(1);
+        } else if let Some(count) = count {
+            remaining = count;
         }
     }
-    Err(Error::profile(format!("{resource} container quest item condition changed")))
+    members
+}
+
+/// Each block that tests the treasure: its parts, what it is and where
+/// (`_script_sites`).
+///
+/// A consumer block tests whether the party has the treasure; its test
+/// becomes the latch. A setter block sets the latch itself when the
+/// container no longer holds the treasure; the Host takes that over.
+fn script_sites(script: &Script, resource: &str) -> Result<BTreeMap<usize, Site>> {
+    let (spec, items, label) = (spec_for(resource)?, items(resource)?, label(resource));
+    let shown = shown(&items);
+    let newline = script.newline;
+    let latch = (row_text(spec, "latch_scope") + &row_text(spec, "latch_global")).to_ascii_lowercase().into_bytes();
+    let mut sites = BTreeMap::new();
+    for (index, block) in script.blocks.iter().enumerate() {
+        if !names(block, &items) {
+            continue;
+        }
+        let (head, conditions, responses) = block_parts(block, newline)?;
+        let triggers = block_triggers(&conditions, newline)?;
+        let members = or_members(triggers.iter().map(|trigger| (trigger.opcode == OR).then_some(trigger.value)));
+        let tests: Vec<usize> =
+            triggers.iter().enumerate().filter(|(_, trigger)| is_item(&trigger.strings[0], &items)).map(|(number, _)| number).collect();
+        if tests.is_empty() {
+            continue;
+        }
+        let place = format!("{label} block {index}");
+        let unknown = || profile(format!("{place} tests {shown} in a way the container route does not recognise"));
+        let actions = block_actions(&responses, newline)?;
+        if tests.iter().all(|&number| triggers[number].opcode == PARTY_HAS_ITEM) {
+            let test = if items.len() > 1 {
+                // Either treasure counts: one OR(n) of exactly these tests.
+                let first = tests[0] as i64 - 1;
+                let consecutive = tests.iter().enumerate().all(|(at, &number)| number as i64 == first + 1 + at as i64);
+                let tested: BTreeSet<Vec<u8>> = tests.iter().map(|&number| triggers[number].strings[0].to_ascii_lowercase()).collect();
+                let wanted: BTreeSet<Vec<u8>> = items.iter().map(|item| item.as_bytes().to_vec()).collect();
+                if tests.len() != items.len()
+                    || !consecutive
+                    || first < 0
+                    || triggers[first as usize].opcode != OR
+                    || triggers[first as usize].value != items.len() as i64
+                    || tested != wanted
+                    || tests.iter().any(|&number| triggers[number].negated)
+                    || triggers[first as usize].negated
+                {
+                    return Err(unknown());
+                }
+                ((triggers[first as usize].start, triggers[*tests.last().expect("tests")].end), 1)
+            } else {
+                if tests.len() != 1 || members.contains(&tests[0]) {
+                    return Err(unknown());
+                }
+                let test = &triggers[tests[0]];
+                ((test.start, test.end), if test.negated { 0 } else { 1 })
+            };
+            let mut displays: Vec<Action> = actions.into_iter().filter(|action| action.integer == GOLEM_TEXT).collect();
+            if displays.len() > 1 {
+                return Err(profile(format!("{place} shows text {GOLEM_TEXT} twice")));
+            }
+            sites.insert(index, Site { head, conditions, responses, test: Some(test), display: displays.pop() });
+        } else if tests.iter().all(|&number| triggers[number].opcode == HAS_ITEM && triggers[number].negated)
+            && actions.iter().any(|action| action.opcode == SET_GLOBAL && action.strings[0].to_ascii_lowercase() == latch)
+        {
+            sites.insert(index, Site { head, conditions, responses, test: None, display: None });
+        } else {
+            return Err(unknown());
+        }
+    }
+    if sites.is_empty() {
+        return Err(profile(format!("{label} has no block that tests {shown}")));
+    }
+    if TEXT_RESOURCES.contains(&resource) && !sites.values().any(|site| site.display.is_some()) {
+        return Err(profile(format!("{label} no longer shows the golem's text that names the treasure ({GOLEM_TEXT})")));
+    }
+    Ok(sites)
 }
 
 fn patch_script(resource: &str, original: &[u8], reference: Option<i64>) -> Result<Vec<u8>> {
-    let (count, sites) = sites(resource)?;
-    let newline = newline(original)?;
-    let (blocks, prefix, suffix) = blocks(original, count.ok_or_else(|| Error::type_error("unsupported operand"))?, newline)?;
+    if TEXT_RESOURCES.contains(&resource) && !reference.is_some_and(|value| (0..0xFFFF_FFFF).contains(&value)) {
+        return Err(profile(format!("{} requires allocated golem text", label(resource))));
+    }
+    let (script, sites) = naming(&label(resource), || {
+        let script = script_blocks(original)?;
+        let sites = script_sites(&script, resource)?;
+        Ok((script, sites))
+    })?;
+    let newline = script.newline;
+    let flag = row_text(spec_for(resource)?, "activation_global");
     let spec = spec_for(resource)?;
-    let flag = text(spec, "activation_global");
-    let boundary = [b"CO", newline].concat();
-    let mut result: Vec<Vec<u8>> = Vec::new();
-    for (index, block) in blocks.iter().enumerate() {
-        if !sites.contains(&index) {
-            result.push(block.clone());
-            continue;
-        }
-        let (head, conditions, response) = split3(block, &boundary)?;
-        let excluded = [head.as_slice(), &boundary, &conditions, &global_guard(&flag, false, newline)?, &boundary, &response].concat();
-        if resource != "bcs:ppchest" {
-            let (old, value) = item_condition(&conditions, resource, spec, newline)?;
-            let changed = replace_bytes(&conditions, &old, &latch(spec, value, newline), Some(1));
-            let mut selected_response = response.clone();
-            if TEXT_RESOURCES.contains(&resource) {
-                let Some(reference) = reference.filter(|value| (0..0xFFFF_FFFF).contains(value)) else {
-                    return Err(Error::profile("Container quest requires allocated golem text"));
-                };
-                let old_text = [b"38758 0 0 0 0\"\" \"\" AC" as &[u8], newline].concat();
-                if count_bytes(&response, &old_text) != 1 {
-                    return Err(Error::profile("Container quest golem display changed"));
-                }
-                selected_response =
-                    replace_bytes(&response, &old_text, &[reference.to_string().as_bytes(), &old_text[5..]].concat(), None);
+    let mut blocks = script.blocks.clone();
+    for (index, site) in sites {
+        let excluded =
+            [site.head.as_slice(), b"CO", newline, &site.conditions, &global_guard(&flag, false, newline)?, b"CO", newline, &site.responses]
+                .concat();
+        let mut variants = Vec::new();
+        if let Some(((start, end), value)) = site.test {
+            let changed = [&site.conditions[..start], &latch(spec, value, newline), &site.conditions[end..]].concat();
+            let mut selected_response = site.responses.clone();
+            if let (true, Some(display)) = (TEXT_RESOURCES.contains(&resource), &site.display) {
+                selected_response = [
+                    &site.responses[..display.start],
+                    &with_integer(&site.responses[display.start..display.end], newline, reference),
+                    &site.responses[display.end..],
+                ]
+                .concat();
             }
-            result.push(
-                [head.as_slice(), &boundary, &changed, &global_guard(&flag, true, newline)?, &boundary, &selected_response].concat(),
+            variants.extend(
+                [site.head.as_slice(), b"CO", newline, &changed, &global_guard(&flag, true, newline)?, b"CO", newline, &selected_response]
+                    .concat(),
             );
         }
-        // PPCHST's original setter is disabled only when the observer owns it.
-        result.push(excluded);
+        // A setter block (PPCHST's) is disabled only when the observer owns it.
+        variants.extend(excluded);
+        blocks[index] = variants;
     }
-    Ok([prefix, result.concat(), suffix].concat())
+    Ok([script.prefix, blocks.concat(), script.suffix].concat())
 }
 
-fn literal_ci(data: &[u8], at: usize, text: &[u8]) -> Option<usize> {
-    starts_with_ignore_ascii_case(data, at, text).then_some(at + text.len())
-}
-
-fn line_break(data: &[u8], at: usize) -> Option<usize> {
-    literal_ci(data, at, b"\r\n").or_else(|| literal_ci(data, at, b"\n"))
-}
-
-/// The old item condition in a state trigger, as `re.finditer` matches:
-/// samia `(?im)^[ \t]*OR\(2\)\r?\nPartyHasItem\("sw1h32"\)\r?\n` +
-/// `PartyHasItem\("shld21"\)\r?\n`, otherwise
-/// `(?im)^!?PartyHasItem\("BOOK03"\)\r?\n`. Returns (start, end) spans.
-fn dialogue_conditions(prior: &[u8], samia: bool) -> Vec<(usize, usize)> {
-    let mut matches = Vec::new();
-    let mut start = 0;
-    while start <= prior.len() {
-        if !is_line_start(prior, start) {
-            start += 1;
-            continue;
+/// The rewrite of the one treasure test in a dialogue condition
+/// (`_condition_edit`), or None without one.
+fn condition_edit(text: &[u8], resource: &str, place: &str) -> Result<Option<(usize, usize, Vec<u8>)>> {
+    let items = items(resource)?;
+    if !names(text, &items) {
+        return Ok(None);
+    }
+    let unknown = || profile(format!("{place} tests {} in a way the container route does not recognise", shown(&items)));
+    let Some(found) = calls(text) else { return Err(unknown()) };
+    let tests: Vec<usize> =
+        found.iter().enumerate().filter(|(_, call)| names(&text[call.start..call.end], &items)).map(|(number, _)| number).collect();
+    let members = or_members(found.iter().map(|call| named(call, &["OR"]).then(|| integer_argument(text, call, 0, None).unwrap_or(0))));
+    let item_argument = |call: &Call| string_argument(text, call, 0).unwrap_or(b"").to_ascii_lowercase();
+    if !tests.iter().all(|&number| {
+        let call = &found[number];
+        named(call, &["PartyHasItem", "!PartyHasItem"]) && call.args.len() == 1 && is_item(&item_argument(call), &items)
+    }) {
+        return Err(unknown());
+    }
+    let (mut start, negative, terms): (usize, bool, Vec<&Call>) = if items.len() > 1 {
+        let first = *tests.first().ok_or_else(|| Error::value("list index out of range"))? as i64 - 1;
+        let consecutive = tests.len() == items.len() && tests.iter().enumerate().all(|(at, &number)| number as i64 == first + 1 + at as i64);
+        let tested: BTreeSet<Vec<u8>> = tests.iter().map(|&number| item_argument(&found[number])).collect();
+        let wanted: BTreeSet<Vec<u8>> = items.iter().map(|item| item.as_bytes().to_vec()).collect();
+        if !consecutive
+            || first < 0
+            || !named(&found[first as usize], &["OR"])
+            || integer_argument(text, &found[first as usize], 0, None) != Some(items.len() as i64)
+            || tested != wanted
+            || tests.iter().any(|&number| named(&found[number], &["!PartyHasItem"]))
+        {
+            return Err(unknown());
         }
-        let matched = if samia {
-            (|| {
-                let mut at = start;
-                while at < prior.len() && (prior[at] == b' ' || prior[at] == b'\t') {
-                    at += 1;
-                }
-                let at = line_break(prior, literal_ci(prior, at, b"OR(2)")?)?;
-                let at = line_break(prior, literal_ci(prior, at, b"PartyHasItem(\"sw1h32\")")?)?;
-                line_break(prior, literal_ci(prior, at, b"PartyHasItem(\"shld21\")")?)
-            })()
-        } else {
-            let at = if prior.get(start) == Some(&b'!') { start + 1 } else { start };
-            literal_ci(prior, at, b"PartyHasItem(\"BOOK03\")").and_then(|at| line_break(prior, at))
-        };
-        match matched {
-            Some(end) => {
-                matches.push((start, end));
-                start = end.max(start + 1);
-            }
-            None => start += 1,
+        (found[first as usize].start, false, tests.iter().map(|&number| &found[number]).collect())
+    } else {
+        if tests.len() != 1 || members.contains(&tests[0]) {
+            return Err(unknown());
+        }
+        let call = &found[tests[0]];
+        (call.start, named(call, &["!PartyHasItem"]), vec![call])
+    };
+    // Take the whole lines: their indentation before and the line end after.
+    let line = [b'\n', b'\r']
+        .iter()
+        .filter_map(|&byte| text[..start].iter().rposition(|&found| found == byte))
+        .max()
+        .map_or(0, |at| at + 1);
+    if text[line..start].iter().all(|&byte| byte == b' ' || byte == b'\t') {
+        start = line;
+    }
+    let mut end = terms.last().expect("terms").end;
+    for newline in [&b"\r\n"[..], b"\n"] {
+        if text[end..].starts_with(newline) {
+            end += newline.len();
+            break;
         }
     }
-    matches
+    let spec = spec_for(resource)?;
+    let flag = row_text(spec, "activation_global");
+    // (selected OR original) AND (!selected OR latch). No nested OR/AND.
+    let mut changed = format!("OR({})\r\nGlobal(\"{flag}\",\"GLOBAL\",1)\r\n", terms.len() + 1).into_bytes();
+    changed.extend(terms.iter().map(|call| &text[call.start..call.end]).collect::<Vec<_>>().join(&b"\r\n"[..]));
+    changed.extend_from_slice(b"\r\n");
+    changed.extend(
+        format!(
+            "OR(2)\r\n!Global(\"{flag}\",\"GLOBAL\",1)\r\nGlobal(\"{}\",\"{}\",{})\r\n",
+            row_text(spec, "latch_global"),
+            row_text(spec, "latch_scope"),
+            if negative { 0 } else { 1 }
+        )
+        .into_bytes(),
+    );
+    Ok(Some((start, end, changed)))
+}
+
+fn read_dialogue(data: &[u8], resource: &str) -> Result<Dialogue> {
+    Dialogue::new(data, resource.get(4..).unwrap_or("")).map_err(|error| match error.kind {
+        ErrorKind::Profile | ErrorKind::GameText => profile(format!("{} cannot be read as a dialogue", label(resource))),
+        _ => error,
+    })
 }
 
 fn patch_dialogue(resource: &str, original: &[u8]) -> Result<Vec<u8>> {
-    let mut dialogue = Dialogue::new(original, &resource[4.min(resource.len())..])?;
-    let spec = spec_for(resource)?;
-    let flag = text(spec, "activation_global");
-    for &index in sites(resource)?.1 {
-        let prior = dialogue.state_triggers.get(index).ok_or_else(|| Error::value("list index out of range"))?.clone();
-        let samia = resource == "dlg:samia";
-        let matches = dialogue_conditions(&prior, samia);
-        if matches.len() != 1 {
-            return Err(Error::profile(format!("{resource} container quest dialogue condition changed")));
+    let mut dialogue = read_dialogue(original, resource)?;
+    let label = label(resource);
+    let mut sites = 0;
+    for (kind, table) in [("condition", &mut dialogue.state_triggers), ("reply condition", &mut dialogue.triggers)] {
+        for index in 0..table.len() {
+            if let Some((start, end, changed)) = condition_edit(&table[index], resource, &format!("{label} {kind} {index}"))? {
+                table[index] = [&table[index][..start], &changed, &table[index][end..]].concat();
+                sites += 1;
+            }
         }
-        let (start, end) = matches[0];
-        let old = &prior[start..end];
-        let negative = old.starts_with(b"!");
-        let mut terms = splitlines_bytes(strip_bytes(old));
-        if samia && !terms.is_empty() {
-            // Flatten the old OR into the first new OR group.
-            terms.remove(0);
-        }
-        // (selected OR original) AND (!selected OR latch). No nested OR/AND.
-        let mut changed = format!("OR({})\r\nGlobal(\"{flag}\",\"GLOBAL\",1)\r\n", terms.len() + 1).into_bytes();
-        changed.extend(terms.join(&b"\r\n"[..]));
-        changed.extend_from_slice(b"\r\n");
-        changed.extend(
-            format!(
-                "OR(2)\r\n!Global(\"{flag}\",\"GLOBAL\",1)\r\nGlobal(\"{}\",\"{}\",{})\r\n",
-                text(spec, "latch_global"),
-                text(spec, "latch_scope"),
-                if negative { 0 } else { 1 }
-            )
-            .into_bytes(),
-        );
-        dialogue.state_triggers[index] = [&prior[..start], &changed, &prior[end..]].concat();
+    }
+    if sites == 0 {
+        return Err(profile(format!("{label} has no condition that tests {}", shown(&items(resource)?))));
     }
     // Dialogue appends tables and leaves the original body recoverable.
     let mut out = dialogue.render();
@@ -375,132 +546,126 @@ fn patch_dialogue(resource: &str, original: &[u8]) -> Result<Vec<u8>> {
     Ok(out)
 }
 
-/// `re.findall(rb'(?m)^151OB\r?\n(?:[^\n]*\n){5}(\d+) 0 0 0 0"" "" AC\r?$', block)`.
-fn golem_text_refs(block: &[u8]) -> Vec<i64> {
-    const TAIL: &[u8] = b" 0 0 0 0\"\" \"\" AC";
-    let mut result = Vec::new();
-    let mut start = 0;
-    while start <= block.len() {
-        if !is_line_start(block, start) {
-            start += 1;
-            continue;
-        }
-        let matched = (|| {
-            let mut at = start + 5;
-            if !block[start..].starts_with(b"151OB") {
-                return None;
-            }
-            if block.get(at) == Some(&b'\r') {
-                at += 1;
-            }
-            if block.get(at) != Some(&b'\n') {
-                return None;
-            }
-            at += 1;
-            for _ in 0..5 {
-                at += find_bytes(block, b"\n", at)? - at + 1;
-            }
-            let digits_start = at;
-            while at < block.len() && block[at].is_ascii_digit() {
-                at += 1;
-            }
-            if at == digits_start || !block[at..].starts_with(TAIL) {
-                return None;
-            }
-            let digits = digits_value(&block[digits_start..at]);
-            let end = at + TAIL.len();
-            if block.get(end) == Some(&b'\r') && is_line_end(block, end + 1) {
-                Some((digits, end + 1))
-            } else {
-                is_line_end(block, end).then_some((digits, end))
-            }
-        })();
-        match matched {
-            Some((digits, end)) => {
-                result.push(digits);
-                start = end.max(start + 1);
-            }
-            None => start += 1,
-        }
-    }
-    result
+fn changed_patch(resource: &str) -> Error {
+    profile(format!("{} carries a changed copy of the container route's own patch", label(resource)))
 }
 
-fn recover(resource: &str, data: &[u8]) -> Result<(Vec<u8>, Option<i64>)> {
-    let expected = original_hash(resource)?;
-    if sha256_hex(data) == expected {
-        return Ok((data.to_vec(), None));
-    }
-    let mut reference = None;
-    let original = if resource.starts_with("dlg:") {
-        if data.len() < 64 || !data.ends_with(TRAILER) {
-            return Err(Error::profile("Container quest dialogue changed"));
+/// The original, the golem text ref and whether the bytes are our own patch
+/// (`_recover`).
+pub fn recover(resource: &str, data: &[u8]) -> Result<(Vec<u8>, Option<i64>, bool)> {
+    let flag = row_text(spec_for(resource)?, "activation_global");
+    let marker = flag.as_bytes();
+    if resource.starts_with("dlg:") {
+        if !data.ends_with(TRAILER) {
+            if find_bytes(data, marker, 0).is_some() {
+                return Err(changed_patch(resource));
+            }
+            return Ok((data.to_vec(), None, false));
+        }
+        if data.len() < 64 {
+            return Err(changed_patch(resource));
         }
         let size = u32_le(data, data.len() - 64) as usize;
         let header = &data[data.len() - 60..data.len() - 8];
         if !(52..=data.len() - 64).contains(&size) {
-            return Err(Error::profile("Container quest dialogue recovery bounds changed"));
+            return Err(changed_patch(resource));
         }
-        [header, &data[52..size]].concat()
-    } else {
-        let newline = newline(data)?;
-        let (count, sites) = sites(resource)?;
-        let count = count.ok_or_else(|| Error::type_error("unsupported operand"))?;
-        let expected_blocks = count + if resource == "bcs:ppchest" { 0 } else { sites.len() };
-        let (blocks, prefix, suffix) = blocks(data, expected_blocks, newline)?;
-        let flag = text(spec_for(resource)?, "activation_global");
-        let selected = global_guard(&flag, true, newline)?;
-        let excluded = global_guard(&flag, false, newline)?;
-        let mut restored = Vec::new();
-        for block in &blocks {
+        let original = [header, &data[52..size]].concat();
+        match patch_dialogue(resource, &original) {
+            Ok(patched) if patched == data => return Ok((original, None, true)),
+            Ok(_) => {}
+            Err(error) if error.kind == ErrorKind::Profile => {}
+            Err(error) => return Err(error),
+        }
+        return Err(changed_patch(resource));
+    }
+    if find_bytes(data, &[b"\"GLOBAL", marker, b"\""].concat(), 0).is_none() {
+        return Ok((data.to_vec(), None, false));
+    }
+    let read = || -> Result<(Script, Vec<Vec<u8>>, BTreeSet<i64>)> {
+        let script = script_blocks(data)?;
+        let newline = script.newline;
+        let (selected, excluded) = (global_guard(&flag, true, newline)?, global_guard(&flag, false, newline)?);
+        let (mut restored, mut numbers) = (Vec::new(), BTreeSet::new());
+        for block in &script.blocks {
             if find_bytes(block, &selected, 0).is_some() {
-                if TEXT_RESOURCES.contains(&resource) {
-                    let matches = golem_text_refs(block);
-                    if matches.len() != 1 {
-                        return Err(Error::profile("Container quest golem text recovery changed"));
-                    }
-                    reference = Some(matches[0]);
-                }
+                let (_, _, responses) = block_parts(block, newline)?;
+                numbers.extend(block_actions(&responses, newline)?.iter().map(|action| action.integer));
             } else {
-                restored.push(replace_bytes(block, &excluded, b"", None));
+                restored.push(crate::py::replace_bytes(block, &excluded, b"", Some(1)));
             }
         }
-        [prefix, restored.concat(), suffix].concat()
+        Ok((script, restored, numbers))
     };
-    if sha256_hex(&original) != expected {
-        return Err(Error::profile("Container quest original resource changed"));
+    let (script, restored, numbers) = match read() {
+        Ok(found) => found,
+        Err(error) if error.is(SCRIPT_ERROR) => return Err(changed_patch(resource)),
+        Err(error) => return Err(error),
+    };
+    let original = [script.prefix, restored.concat(), script.suffix].concat();
+    let candidates: Vec<Option<i64>> = if TEXT_RESOURCES.contains(&resource) {
+        numbers.into_iter().filter(|number| (0..0xFFFF_FFFF).contains(number)).map(Some).collect()
+    } else {
+        vec![None]
+    };
+    for reference in candidates {
+        match patch_script(resource, &original, reference) {
+            Ok(patched) if patched == data => return Ok((original, reference, true)),
+            Ok(_) => {}
+            Err(error) if error.kind == ErrorKind::Profile => break,
+            Err(error) => return Err(error),
+        }
     }
-    let regenerated =
-        if resource.starts_with("dlg:") { patch_dialogue(resource, &original)? } else { patch_script(resource, &original, reference)? };
-    if regenerated != data {
-        return Err(Error::profile("Container quest patch changed"));
-    }
-    Ok((original, reference))
+    Err(changed_patch(resource))
 }
 
+/// The registry resource, lowered (`_resource`).
 fn known(resource: &str) -> Result<String> {
     let resource = crate::py::lower(resource);
-    if !original_hashes().iter().any(|(key, _)| *key == resource) {
-        return Err(Error::profile("Unsupported container quest resource"));
+    if !resource_targets().contains_key(&resource) {
+        return Err(profile(format!("Unsupported extended reward container resource: {resource}")));
     }
     Ok(resource)
 }
 
-/// Recover only pristine reviewed bytes or an exact patch made by this module.
-pub fn original_container_resource(resource: &str, data: &[u8]) -> Result<Vec<u8>> {
+/// Whether the bytes are this module's own patch, verified exactly.
+///
+/// False for an unpatched resource; raises for a changed copy of our patch.
+pub fn own_patch(resource: &str, data: &[u8]) -> Result<bool> {
     let resource = known(resource)?;
-    Ok(recover(&resource, data)?.0)
+    Ok(recover(&resource, data)?.2)
+}
+
+/// Why each container target using this resource cannot be prepared from
+/// these bytes (target id to reason).
+pub fn route_reasons(resource: &str, data: &[u8]) -> Result<Dict> {
+    let resource = known(resource)?;
+    let outcome = recover(&resource, data).and_then(|(original, _, _)| {
+        if resource.starts_with("dlg:") {
+            patch_dialogue(&resource, &original)
+        } else {
+            patch_script(&resource, &original, Some(GOLEM_TEXT))
+        }
+    });
+    match outcome {
+        Ok(_) => Ok(Dict::new()),
+        Err(error) if error.kind == ErrorKind::Profile => {
+            let ids = resource_targets().get(&resource).and_then(Value::as_list).expect("targets");
+            Ok(ids.iter().map(|id| (str_value(id), Value::from(error.message.clone()))).collect())
+        }
+        Err(error) => Err(error),
+    }
 }
 
 /// Canonical campaign-gated patch; `refs` maps original golem strref 38758.
 pub fn patch_container_resource(resource: &str, data: &[u8], refs: Option<&BTreeMap<i64, i64>>) -> Result<Vec<u8>> {
     let resource = known(resource)?;
-    let (original, old_ref) = recover(&resource, data)?;
+    let (original, old_ref, _) = recover(&resource, data)?;
     if resource.starts_with("dlg:") {
         return patch_dialogue(&resource, &original);
     }
     let reference = match refs.filter(|refs| !refs.is_empty()) {
-        Some(refs) => refs.get(&38758).copied().or(old_ref),
+        Some(refs) => refs.get(&GOLEM_TEXT).copied().or(old_ref),
         None => old_ref,
     };
     patch_script(&resource, &original, reference)
@@ -518,5 +683,20 @@ mod tests {
             .is_some_and(|ids| ids.py_eq(&list!["bg2:mode2:target:53", "bg2:mode2:target:28"])));
         assert_eq!(targets().len(), 7);
         assert_eq!(trigger(16450, 0, 1, "BOOK03", 0, b"\n"), b"TR\n16450 0 1 0 0 \"BOOK03\" \"\" OB\n0 0 0 0 0 0 0 0 0 0 0 0 \"\"OB\nTR\n".to_vec());
+        assert_eq!(treasure("bg2:mode2:target:53").unwrap(), ["shld21", "sw1h32"]);
+        assert_eq!(treasure_area("bg1:mode2:target:22", "eet").unwrap(), "bg3601");
+        assert_eq!(treasure_area("bg1:mode2:target:22", "bgee").unwrap(), "ar3601");
+    }
+
+    #[test]
+    fn treasure_container_needs_one_chest_with_the_whole_treasure() {
+        let source = |index: i64, item: &str| {
+            Value::Dict(dict! {"kind" => "container", "resource" => "are:ar1202", "item" => item,
+                               "record" => dict! {"container_index" => index}})
+        };
+        let sources = [source(8, "shld21"), source(8, "sw1h32"), source(3, "sw1h32")];
+        assert_eq!(treasure_container("bg2:mode2:target:28", &sources, "bg2ee").unwrap(), "are:ar1202/container/8");
+        let error = treasure_container("bg2:mode2:target:28", &sources[1..], "bg2ee").unwrap_err();
+        assert_eq!(error.message, "AR1202 has no container that holds SHLD21/SW1H32");
     }
 }

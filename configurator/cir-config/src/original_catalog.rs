@@ -5,7 +5,8 @@
 //! destination is absent from the physical scan. Runtime adapters and option
 //! filters remain separate from structural binding.
 
-use crate::error::{Error, Result};
+use crate::container_rewards::{treasure_area, treasure_container};
+use crate::error::{Error, ErrorKind, Result};
 use crate::game_names::convert_resource;
 use crate::json::{Dict, Value};
 use crate::templates::{build_template, int_field, table_rows};
@@ -233,6 +234,8 @@ struct Scan<'a> {
     sources: HashMap<(&'a str, &'a str), Vec<&'a Value>>,
     targets_by_resource: HashMap<&'a str, Vec<&'a Value>>,
     targets_by_id: HashMap<&'a str, &'a Value>,
+    /// `world["sources"]`, in scan order.
+    world_sources: &'a [Value],
     game: &'a str,
 }
 
@@ -368,17 +371,25 @@ fn resolve_target(row: &mut Dict, scan: &Scan<'_>, endpoints: &HashMap<String, E
     row.insert("binding_problem", Value::Null);
     let snapshot = Value::Dict(row.clone());
     if let Some(container) = container_target_spec(&snapshot)? {
-        let index = container.get("container_index").map(crate::json::py_str).unwrap_or_default();
-        let physical_id = format!("are:{area}/container/{index}");
+        // The container that holds the quest's treasure, in the quest's own
+        // area: the table's area column is not where every handler puts it.
+        let identity = str_field(row, "id")?.to_string();
+        let area_resource = format!("are:{}", treasure_area(&identity, scan.game)?);
+        row.insert("area_resource", area_resource.as_str());
+        let physical_id = match treasure_container(&identity, scan.world_sources, scan.game) {
+            Ok(chest) => Some(chest),
+            Err(error) if error.kind == ErrorKind::Profile => None,
+            Err(error) => return Err(error),
+        };
         let matches: Vec<&Value> = scan
             .targets_by_resource
             .get(area_resource.as_str())
             .into_iter()
             .flatten()
             .copied()
-            .filter(|target| text_of(target.get("id")) == physical_id && is_kind(target, "container"))
+            .filter(|target| physical_id.as_deref() == Some(text_of(target.get("id"))) && is_kind(target, "container"))
             .collect();
-        if matches.len() == 1 {
+        if let (1, Some(physical_id)) = (matches.len(), &physical_id) {
             row.insert("target_ids", Value::from(vec![physical_id.clone()]));
             let name = selector_of(matches[0]).and_then(|selector| selector.get("name")).cloned();
             row.insert("container_name", name.ok_or_else(|| Error::key("name"))?);
@@ -387,8 +398,10 @@ fn resolve_target(row: &mut Dict, scan: &Scan<'_>, endpoints: &HashMap<String, E
             .get("resources")
             .and_then(Value::as_list)
             .is_some_and(|resources| resources.iter().any(|resource| !scan.resources.contains(text_of(Some(resource)))));
-        let problem = if matches.len() != 1 {
-            Value::from("target-not-in-scan")
+        let problem = if !scan.resources.contains(area_resource.as_str()) {
+            Value::from("area-resource-absent")
+        } else if matches.len() != 1 {
+            Value::from("treasure-container-not-found")
         } else if resources_absent {
             Value::from("target-resource-absent")
         } else {
@@ -574,6 +587,7 @@ pub fn resolve_template(
         sources: HashMap::new(),
         targets_by_resource: HashMap::new(),
         targets_by_id: HashMap::new(),
+        world_sources: &world_sources,
         game,
     };
     for source in &world_sources {

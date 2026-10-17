@@ -7,9 +7,11 @@
 
 use crate::activation::{EXPORT_FILES, EXPORT_FILES_SCHEMA};
 use crate::campaigns::{read_campaign, render_lua, store_path, write_immutable};
-use crate::error::{Error, ErrorKind, Result};
+use crate::error::{Error, ErrorKind, Result, CHANGED_SINCE_SCAN};
 use crate::json::{py_str, Dict, Value};
 use crate::original_catalog::container_target_spec;
+use crate::platform::game_platform;
+use crate::reward_routes::reward_routes;
 use crate::prepared::{applied, quest_change, require_installed};
 use crate::profiles::{
     canonical_bytes, default_shop_pricing, digest, ensure_output_outside_game, is_hex256, make_dirs,
@@ -272,7 +274,8 @@ impl<'a> Compiler<'a> {
         }
         let actors = self.selected_actors.clone();
         match step(self) {
-            Err(error) if error.kind == ErrorKind::Profile => {
+            // A reward resource changed since the scan stops the compile.
+            Err(error) if error.kind == ErrorKind::Profile && !error.is(CHANGED_SINCE_SCAN) => {
                 problems.insert(identity, error.message);
                 self.selected_actors = actors;
                 self.sources.remove(identity);
@@ -307,8 +310,8 @@ impl<'a> Compiler<'a> {
             || (self.shield_truthy() && identity == original_options::SPELL_SHIELD_SOURCE)
         {
             // A post-install rescan sees our campaign-aware DLG/BCS patch.
-            // Original-reward bytes are verified against the reviewed original
-            // or an exactly regenerated own patch at export, before any output.
+            // Reward route bytes are recognised below (reward_routes) and
+            // again by the export, before writing any output.
             let ok = self.scanned_hash(resource)?.py_eq(selected.at("resource_sha256")?)
                 || (mode2_rewards::source_rewards().contains_key(identity)
                     && mode2_rewards::resource_rewards().contains_key(resource));
@@ -408,7 +411,9 @@ impl<'a> Compiler<'a> {
         if kind == "authored-source" && mode2_rewards::source_rewards().contains_key(identity) {
             let spec = mode2_rewards::source_spec(identity)?;
             let ok = source.at("resource")?.py_eq(entry(&spec, "resource")?) && record.py_eq(entry(&spec, "payload")?);
-            require(ok, || format!("Original Mode 2 source differs from its reviewed grant: {identity}"))?;
+            require(ok, || format!("The extended reward source differs from its route: {identity}"))?;
+            let route = mode2_rewards::source_rewards().get(identity).map(crate::py::str_value).unwrap_or_default();
+            reward_routes(self.catalog, self.world)?.require_route(&route)?;
             let mut endpoint = crate::dict! {"kind" => "guarded-script", "adapter_id" => "mode2-reward-v1"};
             for key in ["quest", "resource", "selected_global", "consumed_global"] {
                 endpoint.insert(key, entry(&spec, key)?.clone());
@@ -732,6 +737,7 @@ impl<'a> Compiler<'a> {
         let ok = selected.at("record")?.at("record")?.py_eq(reward.at("source_record")?)
             && self.use_value(reward.at("source_resource")?)?.py_eq(reward.at("source_resource_sha256")?);
         require(ok, || format!("Original inventory reward source changed: {identity}"))?;
+        reward_routes(self.catalog, self.world)?.require_route(&name)?;
         let endpoint = self
             .sources
             .get_mut(identity)
@@ -770,6 +776,10 @@ impl<'a> Compiler<'a> {
                 Some(id) if mode2_rewards::target_rewards().contains_key(id) => Some(mode2_rewards::target_spec(id)?),
                 _ => None,
             };
+            if reward.as_ref().is_some_and(|reward| !reward.is_empty()) {
+                let route = mode2_rewards::target_rewards().get(selector_id.as_str().unwrap_or("")).map(py_str).unwrap_or_default();
+                reward_routes(self.catalog, self.world)?.require_route(&route)?;
+            }
             let placement = reward
                 .as_ref()
                 .filter(|reward| !reward.is_empty())
@@ -854,7 +864,7 @@ impl<'a> Compiler<'a> {
                             }
                             None => false,
                         };
-                        require(ok, || format!("Original Mode 2 reward container changed: {identity}"))?;
+                        require(ok, || format!("The extended reward container changed: {identity}"))?;
                         let physical = physical.expect("checked above");
                         let selection = physical.at("selector")?;
                         self.use_resource(text(physical, "resource")?)?;
@@ -919,16 +929,34 @@ impl<'a> Compiler<'a> {
                     physical.push(row);
                 }
             }
-            require(physical.len() == 1, || format!("Original recipient needs one physical binding: {identity}"))?;
-            target = physical[0];
             if let Some(quest) = container_quest.as_ref().filter(|quest| !quest.is_empty()) {
-                require(target.at("id")?.py_eq(entry(quest, "physical_target_id")?), || {
+                // The container that holds the quest's treasure in this scan,
+                // found as the template binds it.
+                let quest_id = py_str(entry(quest, "target_id")?);
+                let chest = game_platform(self.world).and_then(|platform| {
+                    container_rewards::treasure_container(&quest_id, rows(self.world, "sources"), platform)
+                });
+                let chest = match chest {
+                    Ok(chest) => chest,
+                    Err(error) if error.kind == ErrorKind::Profile => {
+                        return Err(container_rewards::container_error(&quest_id, &error.message)?)
+                    }
+                    Err(error) => return Err(error),
+                };
+                let mut bound = Vec::new();
+                for target in &physical {
+                    bound.push(target.at("id")?);
+                }
+                require(bound.len() == 1 && bound[0].py_eq(&Value::from(chest)), || {
                     format!("Original container quest binding changed: {identity}")
                 })?;
+                reward_routes(self.catalog, self.world)?.require_container(&quest_id)?;
                 for resource in list(entry(quest, "resources")?) {
                     self.use_value(resource)?;
                 }
             }
+            require(physical.len() == 1, || format!("Original recipient needs one physical binding: {identity}"))?;
+            target = physical[0];
         }
         let target_kind = text(target, "kind")?;
         if target_kind == "store" {
@@ -1340,10 +1368,6 @@ pub fn export_native(
             let data = reader.read(kind, name)?;
             let actual = sha256_hex(&data);
             let expected = py_str(index.resource(world, resource).ok_or_else(|| Error::key(resource))?.at("sha256")?);
-            let mode2 = mode2_rewards::resource_rewards().contains_key(resource);
-            let own_mode2_patch = mode2
-                && expected == mode2_rewards::original_hash(name)?
-                && Some(&actual) == mode2_rewards::patched_hash(name).as_ref();
             let mut own_patch = false;
             if actual != expected {
                 let recovered = match resource.as_str() {
@@ -1358,16 +1382,16 @@ pub fn export_native(
                 if *resource == spell_resource {
                     own_patch = expected == spell_rewards::original_sha256() && actual == spell_rewards::patched_sha256();
                 }
-                if mode2 {
-                    let original = mode2_rewards::original_reward(resource, &data)?;
-                    own_patch = original.is_some_and(|original| sha256_hex(&original) == expected);
+                // A reward route is recognised again from these bytes below;
+                // the scan holds nothing else that depends on them.
+                if mode2_rewards::resource_rewards().contains_key(resource) {
+                    own_patch = mode2_rewards::own_patch(resource, &data)?;
                 }
                 if container_rewards::resource_targets().contains_key(resource) {
-                    let original = container_rewards::original_container_resource(resource, &data)?;
-                    own_patch = sha256_hex(&original) == expected;
+                    own_patch = container_rewards::own_patch(resource, &data)?;
                 }
             }
-            require(actual == expected || own_mode2_patch || own_patch, || {
+            require(actual == expected || own_patch, || {
                 format!("Installed resource changed; rescan before export: {resource}")
             })?;
             // The installer changed these files when it was installed; the
@@ -1470,7 +1494,7 @@ pub fn export_native(
         }
     }
 
-    // Each common static reward patch reads campaign flags. Prepare it once,
+    // Each reward route patch reads campaign flags. Prepare it once,
     // retaining the same bytes for every revision that shares the resource.
     let mut mode2_patches: HashMap<String, Vec<u8>> = HashMap::new();
     for resource in mode2_rewards::resource_rewards().keys() {
@@ -1525,7 +1549,7 @@ pub fn export_native(
             .filter(|resource| resource.truthy())
             .cloned();
             if let Some(resource) = &mode2_resource {
-                require(mode2_patches.contains_key(&py_str(resource)), || "Mode 2 recipient patch is missing".into())?;
+                require(mode2_patches.contains_key(&py_str(resource)), || "The reward route's recipient patch is missing".into())?;
             }
             let endpoint_kind = endpoint.get("kind").and_then(Value::as_str).unwrap_or("").to_string();
             if endpoint_kind == "quest" && mode2_resource.is_none() {

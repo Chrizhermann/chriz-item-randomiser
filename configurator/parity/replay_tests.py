@@ -89,11 +89,8 @@ def track_patches() -> None:
 
 
 def register_pin_tables() -> None:
-    from flir_config import container_rewards, mode2_rewards, quest_options
-    for name, table in (("mode2_rewards.ORIGINAL_HASHES", mode2_rewards.ORIGINAL_HASHES),
-                        ("mode2_rewards.PATCHED_HASHES", mode2_rewards.PATCHED_HASHES),
-                        ("container_rewards.ORIGINAL_HASHES", container_rewards.ORIGINAL_HASHES),
-                        ("quest_options.ORIGINAL_HASHES", quest_options.ORIGINAL_HASHES)):
+    from flir_config import mode2_rewards, quest_options
+    for name, table in (("quest_options.ORIGINAL_HASHES", quest_options.ORIGINAL_HASHES),):
         PIN_TABLES[id(table)] = name
         PIN_STARTUP[name] = dict(table)
     for name, table in (("mode2_rewards.REWARDS", mode2_rewards.REWARDS),

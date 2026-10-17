@@ -3,7 +3,7 @@
 Run from the repository root:  python configurator/parity/patchers/generate.py
 
 Every input is synthetic and built with the Python tests' own builders
-(tests/test_*.py); no game resource is read. Each scenario becomes
+(tests/test_*.py); no game resource is read (except with --game, below). Each scenario becomes
 configurator/cir-config/tests/fixtures/patchers/<scenario>.json (cases) and
 <scenario>.pins.json (the pinned-hash overrides the reference's tests apply
 with patch.dict / patch.object). Every case is evaluated twice: with those
@@ -13,9 +13,18 @@ agree, so the Rust tests can run it without the parity-overrides feature.
 Bytes are stored once in "blobs" (by SHA-256) and referenced as
 {"$blob": sha}. Python dicts with int keys become JSON objects with decimal
 keys; tuples become lists.
+
+    python configurator/parity/patchers/generate.py --game <game folder> --language en_US --out <folder>
+
+records the reward routes of an installed game instead, which is only read,
+as <folder>/game_routes.json: each route resource patched as the export
+patches it, recognised before and after, and exported again. The fixture holds
+the game's bytes, so the folder must be outside the repository;
+CIR_PARITY_GAME_ROUTES=<folder>/game_routes.json runs it with the Rust tests.
 """
 from __future__ import annotations
 
+import argparse
 from contextlib import ExitStack
 from copy import deepcopy
 import hashlib
@@ -46,12 +55,9 @@ from test_postinstall_resources import make_itm, make_tlk  # noqa: E402
 from test_postinstall_world_formats import item_record, make_cre, make_sto  # noqa: E402
 
 OUT = ROOT / "configurator" / "cir-config" / "tests" / "fixtures" / "patchers"
-TABLES = {
-    "quest_options.ORIGINAL_HASHES": quest_options.ORIGINAL_HASHES,
-    "mode2_rewards.ORIGINAL_HASHES": mode2_rewards.ORIGINAL_HASHES,
-    "mode2_rewards.PATCHED_HASHES": mode2_rewards.PATCHED_HASHES,
-    "container_rewards.ORIGINAL_HASHES": container_rewards.ORIGINAL_HASHES,
-}
+TABLES = {"quest_options.ORIGINAL_HASHES": quest_options.ORIGINAL_HASHES}
+ERROR_KINDS = ((ProfileError, "Profile"), (ScanError, "Scan"), (GameTextError, "GameText"), (KeyError, "Key"),
+               (TypeError, "Type"))
 
 
 def sha(data: bytes) -> str:
@@ -89,9 +95,13 @@ class Scenario:
         try:
             return {"result": self.encode(function())}
         except (ProfileError, ScanError, GameTextError, KeyError, TypeError, ValueError) as error:
-            kind = {ProfileError: "Profile", ScanError: "Scan", GameTextError: "GameText",
-                    KeyError: "Key", TypeError: "Type"}.get(type(error), "Value")
-            return {"error": {"kind": kind, "message": str(error)}}
+            # ProfileError subclasses (ScriptError, ChangedSinceScan) keep
+            # their kind and name the subclass, as the Rust errors do.
+            kind = next((name for cls, name in ERROR_KINDS if isinstance(error, cls)), "Value")
+            outcome = {"kind": kind, "message": str(error)}
+            if isinstance(error, ProfileError) and type(error) is not ProfileError:
+                outcome["subclass"] = type(error).__name__
+            return {"error": outcome}
 
     def case(self, name: str, call: str, args: dict, function) -> None:
         with self.overrides():
@@ -100,11 +110,13 @@ class Scenario:
         self.cases.append({"name": name, "call": call, "args": self.encode(args),
                            "independent": reference == outcome, **outcome})
 
-    def write(self) -> None:
-        OUT.mkdir(parents=True, exist_ok=True)
+    def write(self, out: Path = OUT) -> None:
+        names = [case["name"] for case in self.cases]
+        assert len(set(names)) == len(names), sorted(name for name in set(names) if names.count(name) > 1)
+        out.mkdir(parents=True, exist_ok=True)
         document = {"scenario": self.name, "cases": self.cases, "blobs": dict(sorted(self.blobs.items()))}
-        (OUT / f"{self.name}.json").write_text(json.dumps(document, indent=1) + "\n", encoding="utf-8", newline="\n")
-        (OUT / f"{self.name}.pins.json").write_text(json.dumps(self.pins, indent=1, sort_keys=True) + "\n",
+        (out / f"{self.name}.json").write_text(json.dumps(document, indent=1) + "\n", encoding="utf-8", newline="\n")
+        (out / f"{self.name}.pins.json").write_text(json.dumps(self.pins, indent=1, sort_keys=True) + "\n",
                                                    encoding="utf-8", newline="\n")
         print(f"{self.name}: {len(self.cases)} cases, {len(self.blobs)} blobs")
 
@@ -352,24 +364,66 @@ def trgeni_terminal() -> bytes:
     return dialogue.render()
 
 
-def mode2_inputs() -> tuple[dict, dict]:
-    """Synthetic originals by resource, and the PATCHED overrides they need."""
+def mode2_inputs() -> dict:
+    """The reference tests' synthetic originals by resource."""
     originals = {}
     for resource in mode2_rewards.RESOURCE_REWARDS:
-        if resource.startswith("dlg:") and resource not in mode2_rewards.TEXT_REFS:
-            originals[resource] = mode2_tests.dialogue_fixture(mode2_rewards.resource_specs(resource))
-        elif resource in mode2_rewards.TEXT_REFS and resource.startswith("dlg:"):
-            originals[resource] = text_variant(resource)
+        if resource.startswith("dlg:"):
+            originals[resource] = (text_variant(resource) if resource in mode2_rewards.TEXT_REFS
+                                   else mode2_tests.dialogue_fixture(mode2_rewards.resource_specs(resource)))
     originals["bcs:asysta01"] = mode2_tests.script_fixture("asysta01")
     originals["bcs:ddwell"] = mode2_tests.script_fixture("ddwell")
-    hashes = {resource.split(":")[1]: sha(data) for resource, data in originals.items()}
-    patched = {}
-    with patch.dict(mode2_rewards.ORIGINAL_HASHES, hashes), \
-            patch.dict(mode2_rewards.PATCHED_HASHES, {name: "" for name in mode2_rewards.PATCHED_HASHES}):
-        for resource, data in originals.items():
-            if resource not in mode2_rewards.TEXT_REFS:
-                patched[resource.split(":")[1]] = sha(mode2_rewards.patch_reward(resource, data))
-    return originals, {"mode2_rewards.ORIGINAL_HASHES": hashes, "mode2_rewards.PATCHED_HASHES": patched}
+    return originals
+
+
+def sorted_refs(found):
+    """A recovered (original, refs) with its refs in key order, or None."""
+    return None if found is None else (found[0], sorted_ints(found[1]))
+
+
+def patched(s: Scenario, label: str, resource: str, data: bytes, refs=None, ddwell_ref=None):
+    """Record patch_reward; its result, or None when it raises."""
+    s.case(f"patch_reward {label}", "mode2_rewards.patch_reward",
+           {"resource": resource, "data": data, "refs": refs, "ddwell_ref": ddwell_ref},
+           lambda: mode2_rewards.patch_reward(resource, data, refs=refs, ddwell_ref=ddwell_ref))
+    try:
+        return mode2_rewards.patch_reward(resource, data, refs=refs, ddwell_ref=ddwell_ref)
+    except ProfileError:
+        return None
+
+
+def reward_checks(s: Scenario, label: str, resource: str, data: bytes) -> None:
+    """What the check and Apply read from these bytes: own patch, reasons, re-export."""
+    args = {"resource": resource, "data": data}
+    s.case(f"own_patch {label}", "mode2_rewards.own_patch", args, lambda: mode2_rewards.own_patch(resource, data))
+    s.case(f"route_reasons {label}", "mode2_rewards.route_reasons", args,
+           lambda: mode2_rewards.route_reasons(resource, data))
+    patched(s, f"again {label}", resource, data)
+
+
+def patch_dialogue_case(s: Scenario, label: str, data: bytes, specs, action_refs=None, defer_departure=True,
+                        numeric_target=True) -> None:
+    """_patch_dialogue's result and the reasons of the routes it left out."""
+    def run():
+        reasons = {}
+        result = mode2_rewards._patch_dialogue(data, tuple(specs), action_refs=action_refs,
+                                               defer_departure=defer_departure, numeric_target=numeric_target,
+                                               reasons=reasons)
+        return result, reasons
+    s.case(f"patch_dialogue {label}", "mode2_rewards._patch_dialogue",
+           {"data": data, "specs": list(specs), "action_refs": action_refs, "defer_departure": defer_departure,
+            "numeric_target": numeric_target}, run)
+
+
+def text_original_case(s: Scenario, label: str, resource: str, data: bytes) -> None:
+    s.case(f"text_original {label}", "mode2_rewards._text_original", {"data": data, "resource": resource},
+           lambda: sorted_refs(mode2_rewards._text_original(data, resource)))
+
+
+def script_original_case(s: Scenario, label: str, resource: str, data: bytes) -> None:
+    spec = mode2_rewards.resource_specs(resource)[0]
+    s.case(f"script_original {label}", "mode2_rewards._script_original", {"data": data, "spec": spec},
+           lambda: mode2_rewards._script_original(data, spec))
 
 
 def registry_cases(s: Scenario) -> None:
@@ -390,27 +444,118 @@ def registry_cases(s: Scenario) -> None:
                lambda resource=resource: mode2_rewards.resource_specs(resource))
 
 
-def grant_cases(s: Scenario) -> None:
-    spec = mode2_rewards.resource_specs("dlg:ppstat01")[0]
+def reason_cases(s: Scenario) -> None:
+    """test_routes_the_check_cannot_recognise_name_their_reason, and more replies to judge."""
+    original = mode2_tests.dialogue_fixture(mode2_rewards.resource_specs("dlg:uhogre01"))
+    grant = 'GiveItemCreate("shld26",LastTalkedToBy,0,0,0)'
+    for label, changes in (
+            ("no grant", {(22, 0): b"GiveGoldForce(500)", (22, 1): b"GiveGoldForce(500)"}),
+            ("twice", {(22, 0): f"{grant}\r\n{grant}".encode()}),
+            ("taken", {(22, 1): f'{grant}\r\nTakePartyItem("shld26")'.encode()}),
+            ("unreadable", {(22, 0): b'GiveItemCreate("shld26",LastTalkedToBy,0,0,0'}),
+            ("no recipient", {(22, 0): b'GiveItemCreate("shld26")'}),
+            ("nested", {(22, 0): b'ActionOverride(Player1,GiveItemCreate("shld26",Player1,0,0,0))'}),
+            ("spaced", {(22, 0): b'  giveitemcreate ( "SHLD26" , lasttalkedtoby , 0 , 0 , 0 ) \n'}),
+            ("quoted recipient", {(22, 0): b'GiveItemCreate("shld26","Player1",0,0,0)'}),
+            ("object recipient", {(22, 0): b'GiveItemCreate("shld26",[PC.0.0.MAGE],0,0,0)'}),
+            ("lf", {(22, 0): f"Wait(1)\n{grant}\nEscapeArea()".encode()}),
+            ("string paren", {(22, 0): f'DisplayStringHead(Myself,"(x")\r\n{grant}'.encode()}),
+            ("other item", {(22, 0): b'GiveItemCreate("shld26x",LastTalkedToBy,0,0,0)'}),
+            ("created elsewhere", {(22, 0): b'CreateItem("shld26",0,0,0)'}),
+            ("given", {(22, 0): b'GiveItem("shld26",LastTalkedToBy)'}),
+            ("empty", {(22, 0): b"", (22, 1): b""}),
+            ("byte", {(22, 0): b'GiveItemCreate("shld26",Pl\xe4yer1,0,0,0)'}),
+            ("one gated", {(22, 1): b"GiveGoldForce(500)"})):
+        reward_checks(s, f"uhogre01 {label}", "dlg:uhogre01", mode2_tests.with_actions(original, "uhogre01", changes))
+    reward_checks(s, "uhogre01 broken", "dlg:uhogre01", b"DLG V1.0" + bytes(10))
+    reward_checks(s, "uhogre01 no bytes", "dlg:uhogre01", b"")
     transfer = mode2_rewards.resource_specs("dlg:loutcapt")[0]
-    for label, actions, which in (
-            ("create", b'X()\r\r\nGiveItemCreate("ring31",LastTalkedToBy,1,1,1)\r\r\nY()', spec),
-            ("upper", b'givEITEMcreate("RING31",lasttalkedtoby,1,1,1)\r\n', spec),
-            ("give", b'GiveItem("ring31",LastTalkedToBy)', spec),
-            ("both", b'GiveItem("ring31",LastTalkedToBy)\nGiveItemCreate("ring31",LastTalkedToBy,1,1,1)\n', spec),
-            ("indented", b' GiveItemCreate("ring31",LastTalkedToBy,1,1,1)\n', spec),
-            ("trailing text", b'GiveItemCreate("ring31",LastTalkedToBy,1,1,1) \n', spec),
-            ("three cr", b'GiveItemCreate("ring31",LastTalkedToBy,1,1,1)\r\r\r\n', spec),
-            ("cr end", b'GiveItemCreate("ring31",LastTalkedToBy,1,1,1)\r\r', spec),
-            ("transfer create", b'GiveItemCreate("dagg11",LastTalkedToBy,0,0,0)\n', transfer),
-            ("transfer give", b'A\nGiveItem("dagg11",LastTalkedToBy)\r\nB', transfer),
-            ("none", b'Nothing()', spec)):
-        s.case(f"dialogue_grant {label}", "mode2_rewards._dialogue_grant", {"actions": actions, "spec": which},
-               lambda actions=actions, which=which: mode2_rewards._dialogue_grant(actions, which))
-    odd = dict(spec, payload={"resref": "x", "charges": [1, "a", None, 2.5]}, recipient=None)
-    s.case("dialogue_grant odd values", "mode2_rewards._dialogue_grant",
-           {"actions": b'GiveItemCreate("ring31",None,1,a,None,2.5)', "spec": odd},
-           lambda: mode2_rewards._dialogue_grant(b'GiveItemCreate("ring31",None,1,a,None,2.5)', odd))
+    state, ordinal = transfer["branches"][0]
+    loutcapt = mode2_tests.dialogue_fixture(transfer)
+    for label, text in (("created", b'GiveItemCreate("dagg11",LastTalkedToBy,0,0,0)'),
+                        ("given twice", b'GiveItem("dagg11",LastTalkedToBy)\r\nGiveItem("dagg11",Player1)'),
+                        ("other recipient", b'GiveItem("dagg11",Player3)')):
+        reward_checks(s, f"loutcapt {label}", "dlg:loutcapt",
+                      mode2_tests.with_actions(loutcapt, "loutcapt", {(state, ordinal): text}))
+    # A text route needs the text that names the reward where it gives it.
+    reward_checks(s, "ppdjinn plain", "dlg:ppdjinn",
+                  mode2_tests.dialogue_fixture(mode2_rewards.resource_specs("dlg:ppdjinn")))
+    action, block, well_reward = mode2_tests.action, mode2_tests.block, mode2_tests.well_reward
+    other = block(action(151, 40849, target=1))
+
+    def well(*blocks):
+        return ('SC\n' + "".join(blocks) + 'SC\n').encode()
+    for label, data in (
+            ("no block", well(other, other)),
+            ("twice", well(other, block(well_reward() + action(140, text="HELM21", target=21)))),
+            ("another actor", well(other, block(well_reward().replace(
+                action(140, text="helm21", target=21), action(140, text="helm21", target=21, actor=17))))),
+            ("other action", well(other, block(well_reward() + action(82, text="helm21")))),
+            ("text twice", well(other, block(well_reward() + action(151, 40850, target=1)))),
+            ("other text", well(other, block(well_reward(display=40849)))),
+            ("open", b"SC\nCR\nCO\nSC\n"),
+            ("mixed", mode2_tests.script_fixture("ddwell").replace(b"\n", b"\r\n", 3)),
+            ("no blocks", b"SC\nSC\n"), ("no header", b"XX\nSC\n"), ("empty", b""),
+            ("two grants", well(block(well_reward()), other, block(well_reward()))),
+            ("text elsewhere", well(block(action(151, 40850, target=1)), block(action(140, text="helm21", target=21)))),
+            ("crlf", crlf(mode2_tests.script_fixture("ddwell")))):
+        patched(s, f"ddwell {label} with ref", "bcs:ddwell", data, ddwell_ref=100001)
+        reward_checks(s, f"ddwell {label}", "bcs:ddwell", data)
+    asysta = mode2_tests.script_fixture("asysta01")
+    for label, data in (
+            ("other action", asysta.replace(action(82, text="Helm19").encode(), action(140, text="Helm19").encode())),
+            ("twice", asysta.replace(action(82, text="Helm19").encode(), (action(82, text="Helm19") * 2).encode())),
+            ("absent", asysta.replace(action(82, text="Helm19").encode(), b"")),
+            ("crlf", crlf(asysta))):
+        reward_checks(s, f"asysta01 {label}", "bcs:asysta01", data)
+
+
+def layout_cases(s: Scenario) -> None:
+    """test_grants_are_found_by_meaning_in_another_layout_with_another_mods_replies and
+    test_script_blocks_are_found_by_meaning_in_another_layout."""
+    states = [[("", 'SetGlobal("OgreTalk","LOCALS",1)', 9)] for _ in range(9)]
+    states.append([
+        ('PartyHasItem("misc5x")',
+         'TakePartyItem("misc5x")\nGiveItemCreate("SHLD26",LastTalkedToBy,0,0,0)\nAddexperienceParty(9000)', None),
+        ('!PartyHasItem("misc5x")', 'GIVEITEMCREATE("shld26",Player1,1,0,0)\nEscapeArea()', None),
+        ('Global("OtherMod","GLOBAL",1)', 'SetGlobal("OtherMod","GLOBAL",2)', 12)])
+    states += [[("", "", None)], [("", "", None)],
+               [("", ' GiveItemCreate( "Shld26" , LastTalkedToBy , 0 , 0 , 0 ) \nSetGlobal("OtherMod","GLOBAL",3)',
+                 None)]]
+    for beamdog in (True, False):
+        original = mode2_tests.layout_dialogue("uhogre01", states, beamdog=beamdog)
+        result = patched(s, f"layout {beamdog}", "dlg:uhogre01", original, ddwell_ref=100001)
+        reward_checks(s, f"layout original {beamdog}", "dlg:uhogre01", original)
+        reward_checks(s, f"layout result {beamdog}", "dlg:uhogre01", result)
+        reward_checks(s, f"layout tampered {beamdog}", "dlg:uhogre01", result.replace(b"FLPR_", b"OTHER", 1))
+        patch_dialogue_case(s, f"layout {beamdog}", original, mode2_rewards.resource_specs("dlg:uhogre01"))
+    action, block, well_reward = mode2_tests.action, mode2_tests.block, mode2_tests.well_reward
+    added = block(action(30, 1, "OtherModWell"), "OtherModQuest")
+    second = block(action(140, text="HELM21", target=17) + action(30, 3, "OtherModWell"), "OtherModQuest")
+    for label, original in (
+            ("crlf", ('SC\n' + added + block(well_reward(target=17)) + second + 'SC\n').encode().replace(b"\n", b"\r\n")),
+            ("lf", ('SC\n' + added + block(well_reward(target=17)) + second + 'SC\n').encode())):
+        result = patched(s, f"script layout {label}", "bcs:ddwell", original, ddwell_ref=100001)
+        reward_checks(s, f"script layout original {label}", "bcs:ddwell", original)
+        reward_checks(s, f"script layout result {label}", "bcs:ddwell", result)
+        script_original_case(s, f"layout {label}", "bcs:ddwell", result)
+
+
+def aran_cases(s: Scenario) -> None:
+    """test_aran_route_left_out_alone_keeps_the_other_route."""
+    original = mode2_tests.dialogue_fixture(mode2_rewards.resource_specs("dlg:aran"))
+    dialogue = quest_options._Dialogue(original, "aran")
+    dialogue.actions = [text.replace(b'GiveItemCreate("amul21",LastTalkedToBy,0,0,0)\r\r\n', b"")
+                        for text in dialogue.actions]
+    without = dialogue.render()
+    result = patched(s, "aran without amul21", "dlg:aran", without)
+    reward_checks(s, "aran without amul21", "dlg:aran", without)
+    reward_checks(s, "aran without amul21 result", "dlg:aran", result)
+    patch_dialogue_case(s, "aran without amul21", without, mode2_rewards.resource_specs("dlg:aran"))
+    dialogue.actions = [text.replace(b'GiveItemCreate("ring07",LastTalkedToBy,0,0,0)\r\r\n', b"")
+                        for text in dialogue.actions]
+    reward_checks(s, "aran neither", "dlg:aran", dialogue.render())
+    patch_dialogue_case(s, "aran neither", dialogue.render(), mode2_rewards.resource_specs("dlg:aran"))
 
 
 def patch_dialogue_cases(s: Scenario, allocated: dict) -> None:
@@ -422,62 +567,103 @@ def patch_dialogue_cases(s: Scenario, allocated: dict) -> None:
         action_refs = ({old: allocated[resource][old] for old in mode2_rewards.ACTION_TEXT_REFS[resource]}
                        if resource in mode2_rewards.ACTION_TEXT_REFS else None)
         for defer, numeric in ((True, True), (True, False), (False, False)):
-            args = {"data": original, "specs": specs, "action_refs": action_refs,
-                    "defer_departure": defer, "numeric_target": numeric}
-            s.case(f"patch_dialogue {resource} {defer} {numeric}", "mode2_rewards._patch_dialogue", args,
-                   lambda args=args: mode2_rewards._patch_dialogue(
-                       args["data"], args["specs"], action_refs=args["action_refs"],
-                       defer_departure=args["defer_departure"], numeric_target=args["numeric_target"]))
-    spec = mode2_rewards.resource_specs("dlg:trgeni01")[0]
-    original = mode2_tests.dialogue_fixture(spec)
-    for target_ids in (("bg1:mode2:target:32",), ("bg2:mode1:target:32",), ("bg2:mode2:target:32extra",),
-                       ("bg2:mode2:target:32", "bg2:mode2:target:42"), ("bg2:mode2:target:032",), (),
-                       ("bg2:mode2:target:9",), (32,)):
-        invalid = dict(spec, target_ids=target_ids)
-        s.case(f"patch_dialogue target {target_ids}", "mode2_rewards._patch_dialogue",
-               {"data": original, "specs": [invalid], "action_refs": None, "defer_departure": True, "numeric_target": True},
-               lambda invalid=invalid: mode2_rewards._patch_dialogue(original, (invalid,)))
+            patch_dialogue_case(s, f"{resource} {defer} {numeric}", original, specs, action_refs, defer, numeric)
+    for name in ("trgeni01", "loutcapt", "amcler01", "udlesa"):
+        spec = mode2_rewards.resource_specs("dlg:" + name)[0]
+        original = mode2_tests.dialogue_fixture(spec)
+        for target_ids in (("bg1:mode2:target:32",), ("bg2:mode1:target:32",), ("bg2:mode2:target:32extra",),
+                           ("bg2:mode2:target:32", "bg2:mode2:target:42"), ("bg2:mode2:target:032",), (),
+                           ("bg2:mode2:target:9",), (32,)):
+            patch_dialogue_case(s, f"{name} target {target_ids}", original, [dict(spec, target_ids=target_ids)])
     amcler = mode2_rewards.resource_specs("dlg:amcler01")
     amcler_original = mode2_tests.dialogue_fixture(amcler)
-    for label, refs in (("missing display", {74025: 5, 1: 2}), ("two refs", {74025: 5})):
-        s.case(f"patch_dialogue amcler {label}", "mode2_rewards._patch_dialogue",
-               {"data": amcler_original, "specs": amcler, "action_refs": refs, "defer_departure": True,
-                "numeric_target": True},
-               lambda refs=refs: mode2_rewards._patch_dialogue(amcler_original, amcler, action_refs=refs))
+    for label, refs in (("missing display", {74025: 5, 1: 2}), ("two refs", {74025: 5}), ("empty", {})):
+        patch_dialogue_case(s, f"amcler {label}", amcler_original, amcler, refs)
     other = mode2_tests.dialogue_fixture(mode2_rewards.resource_specs("dlg:uhogre01"))
     ogre = mode2_rewards.resource_specs("dlg:mgkhol01")
-    s.case("patch_dialogue branches changed", "mode2_rewards._patch_dialogue",
-           {"data": other, "specs": ogre, "action_refs": None, "defer_departure": True, "numeric_target": True},
-           lambda: mode2_rewards._patch_dialogue(other, ogre))
+    patch_dialogue_case(s, "other dialogue", other, ogre)
     no_actions = quest_options._Dialogue(mode2_tests.dialogue_fixture(ogre), "mgkhol01")
     first = struct.unpack_from("<I", no_actions.states[4], 4)[0]
     struct.pack_into("<I", no_actions.transitions[first], 0, 3)
-    data = no_actions.render()
-    s.case("patch_dialogue lost actions", "mode2_rewards._patch_dialogue",
-           {"data": data, "specs": ogre, "action_refs": None, "defer_departure": True, "numeric_target": True},
-           lambda: mode2_rewards._patch_dialogue(data, ogre))
+    patch_dialogue_case(s, "lost actions", no_actions.render(), ogre)
     duel = quest_options._Dialogue(mode2_tests.dialogue_fixture(mode2_rewards.resource_specs("dlg:udlesa")), "udlesa")
     for state in range(6, 12):
         action_id = struct.unpack_from("<I", mode2_tests.outgoing(duel, state)[0], 16)[0]
         following = (f'SetGlobal("WaitingToDuel","GLOBAL",2)\r\nSetGlobal("DuelStarts","AR2202",3)\r\n'
                      f'ActionOverride(Player{state - 5},JumpToPoint([608.1123]))\r\n').encode()
         duel.actions[action_id] = duel.actions[action_id].replace(b"Wait(1)", following + b"Wait(1)")
-    data = duel.render()
-    udlesa = mode2_rewards.resource_specs("dlg:udlesa")
-    s.case("patch_dialogue udlesa duel", "mode2_rewards._patch_dialogue",
-           {"data": data, "specs": udlesa, "action_refs": None, "defer_departure": True, "numeric_target": True},
-           lambda: mode2_rewards._patch_dialogue(data, udlesa))
+    patch_dialogue_case(s, "udlesa duel", duel.render(), mode2_rewards.resource_specs("dlg:udlesa"))
+    spec = mode2_rewards.transfer_spec("scyarryl")
+    patch_dialogue_case(s, "sculptor", mode2_tests.dialogue_fixture(spec), mode2_rewards.resource_specs("dlg:scyarryl"))
+
+
+def text_route_cases(s: Scenario, originals: dict, allocated: dict) -> None:
+    """test_text_variants_preserve_original_routes_replies_and_verified_recovery."""
+    for resource, refs in allocated.items():
+        if not resource.startswith("dlg:"):
+            continue
+        original = originals[resource]
+        result = mode2_rewards.patch_reward(resource, original, refs=refs)
+        text_original_case(s, f"result {resource}", resource, result)
+        text_original_case(s, f"original {resource}", resource, original)
+        moved = {old: new + 1000 for old, new in refs.items()}
+        revised = patched(s, f"moved {resource}", resource, result, refs=moved)
+        text_original_case(s, f"moved {resource}", resource, revised)
+        bad_refs = [("extra", {**refs, 1: 2}), ("sentinel", {key: 0xFFFFFFFF for key in refs}),
+                    ("negative", {key: -1 for key in refs}), ("empty", {})]
+        if len(refs) > 1:
+            bad_refs.append(("missing", dict(list(refs.items())[1:])))
+        for label, bad in bad_refs:
+            patched(s, f"refs {label} {resource}", resource, original, refs=bad)
+        if mode2_rewards.resource_specs(resource)[0].get("inventory_target"):
+            legacy = mode2_rewards._patch_text_dialogue(original, resource, refs, numeric_target=False)
+            reward_checks(s, f"legacy {resource}", resource, legacy)
+            text_original_case(s, f"legacy {resource}", resource, legacy)
+        for defer, numeric in ((True, True), (True, False), (False, True), (False, False)):
+            args = {"data": original, "resource": resource, "refs": refs, "defer_departure": defer,
+                    "numeric_target": numeric}
+            s.case(f"patch_text_dialogue {resource} {defer} {numeric}", "mode2_rewards._patch_text_dialogue", args,
+                   lambda args=args: mode2_rewards._patch_text_dialogue(
+                       args["data"], args["resource"], args["refs"], defer_departure=args["defer_departure"],
+                       numeric_target=args["numeric_target"]))
+        s.case(f"patch_text_dialogue unallocated {resource}", "mode2_rewards._patch_text_dialogue",
+               {"data": original, "resource": resource, "refs": None, "defer_departure": True, "numeric_target": True},
+               lambda original=original, resource=resource: mode2_rewards._patch_text_dialogue(original, resource, None))
+
+
+def ddwell_cases(s: Scenario, ddwell: bytes, result: bytes) -> None:
+    """test_well_uses_appended_original_text_only_for_selected_source_and_reexports."""
+    for label, data, refs, ddwell_ref in (
+            ("ref", ddwell, None, 7), ("refs", ddwell, {40850: 8}, None), ("refs override", ddwell, {40850: 8}, 9),
+            ("bad refs", ddwell, {40850: 8, 1: 1}, None), ("other refs", ddwell, {40849: 8}, None),
+            ("empty refs", ddwell, {}, None), ("unallocated", ddwell, None, None),
+            ("sentinel", ddwell, None, 0xFFFFFFFF), ("negative", ddwell, None, -2),
+            ("moved", result, None, 100002), ("moved refs", result, {40850: 100003}, None),
+            ("gone", result.replace(b"AR1202DragonWell", b"AR1202DragonGone", 1), None, None),
+            ("crlf", crlf(ddwell), None, 3)):
+        patched(s, f"ddwell {label}", "BCS:DDWELL", data, refs=refs, ddwell_ref=ddwell_ref)
+    asysta = mode2_tests.script_fixture("asysta01")
+    for label, data in (("result", result), ("original", ddwell), ("short", result[:40]), ("crlf", crlf(result)),
+                        ("gone", result.replace(b"AR1202DragonWell", b"AR1202DragonGone", 1))):
+        script_original_case(s, f"ddwell {label}", "bcs:ddwell", data)
+    asysta_result = mode2_rewards.patch_reward("bcs:asysta01", asysta)
+    for label, data in (("result", asysta_result), ("original", asysta)):
+        script_original_case(s, f"asysta01 {label}", "bcs:asysta01", data)
+    for name, data in (("ddwell", ddwell), ("asysta01", asysta)):
+        spec = mode2_rewards.resource_specs("bcs:" + name)[0]
+        for text_ref in (None, 0, 5, -1, 0xFFFFFFFF, 0xFFFFFFFE):
+            s.case(f"patch_script {name} {text_ref}", "mode2_rewards._patch_script",
+                   {"data": data, "spec": spec, "text_ref": text_ref},
+                   lambda data=data, spec=spec, text_ref=text_ref: mode2_rewards._patch_script(data, spec, text_ref))
 
 
 def mode2_scenario() -> Scenario:
-    originals, pins = mode2_inputs()
-    s = Scenario("mode2_rewards", pins)
+    originals = mode2_inputs()
+    s = Scenario("mode2_rewards")
     registry_cases(s)
-    grant_cases(s)
     text_resources = [resource for resource in mode2_rewards.TEXT_REFS if resource.startswith("dlg:")]
     base_tlk = make_tlk(["Unchanged text"])
     tlk, allocated = mode2_rewards.prepare_reward_texts(base_tlk, text_resources)
-    patch_dialogue_cases(s, allocated)
     for label, resources, language, source in (
             ("dialogues", text_resources, "en_us", base_tlk), ("dialogues again", text_resources, "EN_US", tlk),
             ("all", list(mode2_rewards.RESOURCE_REWARDS) + ["DLG:PPDJINN"], "en_US", make_tlk([])),
@@ -496,118 +682,45 @@ def mode2_scenario() -> Scenario:
         s.case(f"prepare_ddwell_text {label}", "mode2_rewards.prepare_ddwell_text",
                {"tlk": source, "language": language},
                lambda source=source, language=language: mode2_rewards.prepare_ddwell_text(source, language))
-    with s.overrides():
-        results = {}
-        for resource, data in originals.items():
-            name = resource.split(":")[1]
-            if resource in mode2_rewards.TEXT_REFS and resource.startswith("dlg:"):
-                results[resource] = mode2_rewards.patch_reward(resource, data, refs=allocated[resource])
-            else:
-                results[resource] = mode2_rewards.patch_reward(resource, data, ddwell_ref=100001)
+    results = {}
     for resource, data in originals.items():
-        result = results[resource]
-        refs = allocated.get(resource)
-        name = resource.split(":")[1]
-        args = {"resource": resource, "data": data, "refs": refs, "ddwell_ref": 100001 if name == "ddwell" else None}
-        s.case(f"patch_reward {resource}", "mode2_rewards.patch_reward", args,
-               lambda args=args: mode2_rewards.patch_reward(args["resource"], args["data"], refs=args["refs"],
-                                                            ddwell_ref=args["ddwell_ref"]))
-        for label, value in (("result", result), ("tampered", result[:-1] + b"tampered"),
-                             ("damaged", tampered(result, 100))):
-            args = {"resource": resource, "data": value, "refs": None, "ddwell_ref": None}
-            s.case(f"patch_reward {label} {resource}", "mode2_rewards.patch_reward", args,
-                   lambda resource=resource, value=value: mode2_rewards.patch_reward(resource, value))
-            s.case(f"original_reward {label} {resource}", "mode2_rewards.original_reward",
-                   {"resource": resource, "data": value},
-                   lambda resource=resource, value=value: mode2_rewards.original_reward(resource, value))
-        s.case(f"original_reward original {resource}", "mode2_rewards.original_reward",
-               {"resource": resource, "data": data},
-               lambda resource=resource, data=data: mode2_rewards.original_reward(resource, data))
-        if refs:
-            moved = {old: new + 1000 for old, new in refs.items()}
-            with s.overrides():
-                revised = mode2_rewards.patch_reward(resource, result, refs=moved)
-            s.case(f"patch_reward moved {resource}", "mode2_rewards.patch_reward",
-                   {"resource": resource, "data": result, "refs": moved, "ddwell_ref": None},
-                   lambda resource=resource, result=result, moved=moved:
-                   mode2_rewards.patch_reward(resource, result, refs=moved))
-            s.case(f"original_reward moved {resource}", "mode2_rewards.original_reward",
-                   {"resource": resource, "data": revised},
-                   lambda resource=resource, revised=revised: mode2_rewards.original_reward(resource, revised))
-            s.case(f"patch_reward unallocated {resource}", "mode2_rewards.patch_reward",
-                   {"resource": resource, "data": data, "refs": None, "ddwell_ref": None},
-                   lambda resource=resource, data=data: mode2_rewards.patch_reward(resource, data))
-            for label, bad in (("extra", {**refs, 1: 2}), ("sentinel", {key: 0xFFFFFFFF for key in refs}),
-                               ("negative", {key: -1 for key in refs}), ("empty", {})):
-                s.case(f"patch_reward refs {label} {resource}", "mode2_rewards.patch_reward",
-                       {"resource": resource, "data": data, "refs": bad, "ddwell_ref": None},
-                       lambda resource=resource, data=data, bad=bad: mode2_rewards.patch_reward(resource, data, refs=bad))
-            if mode2_rewards.resource_specs(resource)[0].get("inventory_target"):
-                with s.overrides():
-                    legacy = mode2_rewards._patch_text_dialogue(data, resource, refs, numeric_target=False)
-                s.case(f"original_reward legacy {resource}", "mode2_rewards.original_reward",
-                       {"resource": resource, "data": legacy},
-                       lambda resource=resource, legacy=legacy: mode2_rewards.original_reward(resource, legacy))
-                s.case(f"patch_reward legacy {resource}", "mode2_rewards.patch_reward",
-                       {"resource": resource, "data": legacy, "refs": None, "ddwell_ref": None},
-                       lambda resource=resource, legacy=legacy: mode2_rewards.patch_reward(resource, legacy))
-            for defer, numeric in ((True, True), (True, False), (False, True)):
-                args = {"data": data, "resource": resource, "refs": refs, "defer_departure": defer,
-                        "numeric_target": numeric}
-                s.case(f"patch_text_dialogue {resource} {defer} {numeric}", "mode2_rewards._patch_text_dialogue", args,
-                       lambda args=args: mode2_rewards._patch_text_dialogue(
-                           args["data"], args["resource"], args["refs"], defer_departure=args["defer_departure"],
-                           numeric_target=args["numeric_target"]))
-            s.case(f"original_text_dialogue {resource}", "mode2_rewards._original_text_dialogue",
-                   {"data": result, "resource": resource},
-                   lambda resource=resource, result=result: mode2_rewards._original_text_dialogue(result, resource))
-    ddwell, ddwell_result = originals["bcs:ddwell"], results["bcs:ddwell"]
-    for label, args in (
-            ("ref", {"data": ddwell, "refs": None, "ddwell_ref": 7}),
-            ("refs", {"data": ddwell, "refs": {40850: 8}, "ddwell_ref": None}),
-            ("refs override", {"data": ddwell, "refs": {40850: 8}, "ddwell_ref": 9}),
-            ("bad refs", {"data": ddwell, "refs": {40850: 8, 1: 1}, "ddwell_ref": None}),
-            ("empty refs", {"data": ddwell, "refs": {}, "ddwell_ref": None}),
-            ("unallocated", {"data": ddwell, "refs": None, "ddwell_ref": None}),
-            ("sentinel", {"data": ddwell, "refs": None, "ddwell_ref": 0xFFFFFFFF}),
-            ("negative", {"data": ddwell, "refs": None, "ddwell_ref": -2}),
-            ("moved", {"data": ddwell_result, "refs": None, "ddwell_ref": 100002}),
-            ("gone", {"data": ddwell_result.replace(b"AR1202DragonWell", b"AR1202DragonGone", 1), "refs": None,
-                      "ddwell_ref": None}),
-            ("crlf", {"data": crlf(ddwell), "refs": None, "ddwell_ref": 3})):
-        s.case(f"patch_reward ddwell {label}", "mode2_rewards.patch_reward", {"resource": "BCS:DDWELL", **args},
-               lambda args=args: mode2_rewards.patch_reward("BCS:DDWELL", args["data"], refs=args["refs"],
-                                                            ddwell_ref=args["ddwell_ref"]))
-    for label, data in (("result", ddwell_result), ("original", ddwell), ("short", ddwell_result[:40])):
-        s.case(f"original_ddwell {label}", "mode2_rewards._original_ddwell", {"data": data},
-               lambda data=data: mode2_rewards._original_ddwell(data))
-    for resource in ("uhogre01.dlg", "UHOGRE01", "override/uhogre01.dlg", "dlg:aran.dlg", "x:y:ddwell", "nothing"):
-        data = originals["dlg:uhogre01"] if "ogre" in resource or "aran" in resource else ddwell
-        s.case(f"original_reward key {resource}", "mode2_rewards.original_reward",
-               {"resource": resource, "data": data},
-               lambda resource=resource, data=data: mode2_rewards.original_reward(resource, data))
+        text_dialogue = resource.startswith("dlg:") and resource in mode2_rewards.TEXT_REFS
+        result = patched(s, resource, resource, data, refs=allocated[resource] if text_dialogue else None,
+                         ddwell_ref=None if text_dialogue else 100001)
+        results[resource] = result
+        reward_checks(s, f"original {resource}", resource, data)
+        reward_checks(s, f"result {resource}", resource, result)
+        for label, value in (("tampered", result.replace(b"FLPR_", b"OTHER", 1)), ("appended", result + b"tampered"),
+                             ("damaged", tampered(result, 100)),
+                             ("trailer", result[:-20] + bytes([result[-20] ^ 1]) + result[-19:])):
+            reward_checks(s, f"{label} {resource}", resource, value)
+    patch_dialogue_cases(s, allocated)
+    text_route_cases(s, originals, allocated)
+    ddwell_cases(s, originals["bcs:ddwell"], results["bcs:ddwell"])
+    reason_cases(s)
+    layout_cases(s)
+    aran_cases(s)
+    for resource in ("uhogre01.dlg", "UHOGRE01", "override/uhogre01.dlg", "dlg:aran.dlg", "x:y:ddwell", "nothing",
+                     "DLG:UHOGRE01", "bcs:uhogre01", "dlg:", ""):
+        data = originals["dlg:uhogre01"] if "ogre" in resource or "aran" in resource else originals["bcs:ddwell"]
+        reward_checks(s, f"key {resource}", resource, data)
     return s
 
 
 def mode2_trgeni_scenario() -> Scenario:
+    """test_trgeni_terminal_departure_waits_for_transfer_and_upgrades_previous_patch."""
     original = trgeni_terminal()
-    s = Scenario("mode2_rewards_trgeni", {"mode2_rewards.ORIGINAL_HASHES": {"trgeni01": sha(original)}})
+    s = Scenario("mode2_rewards_trgeni")
     resource, refs = "dlg:trgeni01", {43514: 100001}
-    with s.overrides():
-        legacy = mode2_rewards._patch_text_dialogue(original, resource, refs, defer_departure=False,
-                                                    numeric_target=False)
-        previous = mode2_rewards._patch_text_dialogue(original, resource, refs, numeric_target=False)
-        result = mode2_rewards.patch_reward(resource, legacy)
-    for label, data in (("legacy", legacy), ("previous", previous), ("result", result),
+    legacy = mode2_rewards._patch_text_dialogue(original, resource, refs, defer_departure=False,
+                                                numeric_target=False)
+    previous = mode2_rewards._patch_text_dialogue(original, resource, refs, numeric_target=False)
+    result = mode2_rewards.patch_reward(resource, legacy)
+    for label, data in (("legacy", legacy), ("previous", previous), ("result", result), ("original", original),
                         ("tampered legacy", legacy.replace(b"FLPR_Transfer(", b"FLPR_Tampered(", 1))):
-        s.case(f"patch_reward {label}", "mode2_rewards.patch_reward",
-               {"resource": resource, "data": data, "refs": None, "ddwell_ref": None},
-               lambda data=data: mode2_rewards.patch_reward(resource, data))
-        s.case(f"original_reward {label}", "mode2_rewards.original_reward", {"resource": resource, "data": data},
-               lambda data=data: mode2_rewards.original_reward(resource, data))
-    s.case("patch_reward original", "mode2_rewards.patch_reward",
-           {"resource": resource, "data": original, "refs": refs, "ddwell_ref": None},
-           lambda: mode2_rewards.patch_reward(resource, original, refs=refs))
+        reward_checks(s, label, resource, data)
+        text_original_case(s, label, resource, data)
+    patched(s, "original", resource, original, refs=refs)
     for defer, numeric in ((True, True), (False, False), (True, False), (False, True)):
         args = {"data": original, "resource": resource, "refs": refs, "defer_departure": defer,
                 "numeric_target": numeric}
@@ -616,9 +729,7 @@ def mode2_trgeni_scenario() -> Scenario:
                    original, resource, refs, defer_departure=args["defer_departure"],
                    numeric_target=args["numeric_target"]))
     spec = mode2_rewards.resource_specs(resource)[0]
-    s.case("patch_dialogue terminal", "mode2_rewards._patch_dialogue",
-           {"data": original, "specs": [spec], "action_refs": None, "defer_departure": True, "numeric_target": True},
-           lambda: mode2_rewards._patch_dialogue(original, (spec,)))
+    patch_dialogue_case(s, "terminal", original, [spec])
     # A terminal state with two bare departures, and one without any.
     for label, replacement in (("double", b"DestroySelf()\r\r\nDestroySelf()"), ("none", b"Wait(2)")):
         dialogue = quest_options._Dialogue(original, "trgeni01")
@@ -626,27 +737,12 @@ def mode2_trgeni_scenario() -> Scenario:
         actions = dialogue.actions[action_id]
         index = actions.rindex(b"DestroySelf()")
         dialogue.actions[action_id] = actions[:index] + replacement + actions[index + len(b"DestroySelf()"):]
-        data = dialogue.render()
-        s.case(f"patch_dialogue departure {label}", "mode2_rewards._patch_dialogue",
-               {"data": data, "specs": [spec], "action_refs": None, "defer_departure": True, "numeric_target": True},
-               lambda data=data: mode2_rewards._patch_dialogue(data, (spec,)))
-    return s
-
-
-def mode2_reviewed_scenario() -> Scenario:
-    original = mode2_tests.dialogue_fixture(mode2_rewards.resource_specs("dlg:uhogre01"))
-    script = mode2_tests.script_fixture("asysta01")
-    s = Scenario("mode2_rewards_reviewed", {
-        "mode2_rewards.ORIGINAL_HASHES": {"uhogre01": sha(original), "asysta01": sha(script), "newone": "0" * 64},
-        "mode2_rewards.PATCHED_HASHES": {"uhogre01": "0" * 64, "asysta01": "1" * 64, "ddwell": ""}})
-    for resource, data in (("dlg:uhogre01", original), ("bcs:asysta01", script),
-                           ("bcs:asysta01", crlf(script)), ("dlg:mgkhol01", original)):
-        s.case(f"patch_reward {resource} {len(data)}", "mode2_rewards.patch_reward",
-               {"resource": resource, "data": data, "refs": None, "ddwell_ref": None},
-               lambda resource=resource, data=data: mode2_rewards.patch_reward(resource, data))
-        s.case(f"original_reward {resource} {len(data)}", "mode2_rewards.original_reward",
-               {"resource": resource, "data": data},
-               lambda resource=resource, data=data: mode2_rewards.original_reward(resource, data))
+        patch_dialogue_case(s, f"departure {label}", dialogue.render(), [spec])
+    # The departure that waits is the speaker's own, after the replies that
+    # hand the reward over; an unreachable DestroySelf stays instant.
+    unreached = quest_options._Dialogue(original, "trgeni01")
+    struct.pack_into("<I", mode2_tests.outgoing(unreached, 36)[0], 28, 2)
+    patch_dialogue_case(s, "unreached", unreached.render(), [spec])
     return s
 
 
@@ -655,7 +751,7 @@ def mode2_reviewed_scenario() -> Scenario:
 
 def container_inputs(line_endings: str) -> dict:
     originals = {}
-    for resource in container_rewards.SITES:
+    for resource in container_tests.FIXTURE_SITES:
         if resource.startswith("bcs:"):
             originals[resource] = container_tests.script_fixture(resource)
             if line_endings == "crlf":
@@ -665,15 +761,165 @@ def container_inputs(line_endings: str) -> dict:
     return originals
 
 
+def container_patched(s: Scenario, label: str, resource: str, data: bytes, refs=None):
+    s.case(f"patch_container_resource {label}", "container_rewards.patch_container_resource",
+           {"resource": resource, "data": data, "refs": refs},
+           lambda: container_rewards.patch_container_resource(resource, data, refs=refs))
+    try:
+        return container_rewards.patch_container_resource(resource, data, refs=refs)
+    except ProfileError:
+        return None
+
+
+def container_checks(s: Scenario, label: str, resource: str, data: bytes) -> None:
+    """What the check and Apply read from these bytes: own patch, reasons, recovery, re-export."""
+    args = {"resource": resource, "data": data}
+    s.case(f"own_patch {label}", "container_rewards.own_patch", args,
+           lambda: container_rewards.own_patch(resource, data))
+    s.case(f"route_reasons {label}", "container_rewards.route_reasons", args,
+           lambda: container_rewards.route_reasons(resource, data))
+    if resource in container_rewards.RESOURCE_TARGETS:
+        s.case(f"recover {label}", "container_rewards._recover", args,
+               lambda: container_rewards._recover(resource, data))
+    container_patched(s, f"again {label}", resource, data)
+
+
+def chest(area: str, index, item: str) -> dict:
+    return {"kind": "container", "resource": f"are:{area}", "item": item,
+            "id": f"are:{area}/container/{index}/item/0", "record": {"container_index": index}}
+
+
+def treasure_cases(s: Scenario) -> None:
+    """test_exact_target_selectors_shared_samia_latch_and_golem_text and
+    test_the_quest_container_is_the_one_that_holds_the_treasure."""
+    for identity in list(container_rewards.TARGETS) + ["bg2:mode2:target:999", "bg2:mode2:target:1"]:
+        s.case(f"target_spec {identity}", "container_rewards.target_spec", {"target_id": identity},
+               lambda identity=identity: container_rewards.target_spec(identity))
+        s.case(f"treasure {identity}", "container_rewards.treasure", {"target_id": identity},
+               lambda identity=identity: container_rewards.treasure(identity))
+        for platform in ("eet", "bgee", "bg2ee", "iwdee"):
+            s.case(f"treasure_area {identity} {platform}", "container_rewards.treasure_area",
+                   {"target_id": identity, "platform": platform},
+                   lambda identity=identity, platform=platform: container_rewards.treasure_area(identity, platform))
+        for problem in ("the chest moved", ""):
+            s.case(f"container_error {identity} {problem!r}", "container_rewards.container_error",
+                   {"target_id": identity, "problem": problem},
+                   lambda identity=identity, problem=problem: str(container_rewards.container_error(identity, problem)))
+    samia = "bg2:mode2:target:28"
+    sources = [chest("ar1202", 8, "misc01"), chest("ar1202", 9, "sw1h32"), chest("ar1202", 9, "shld21"),
+               chest("ar1201", 0, "sw1h32"),
+               {"kind": "cre-template", "resource": "cre:x", "item": "shld21", "record": {}}]
+    moved = [dict(row, record={"container_index": row["record"].get("container_index", 0) + 1})
+             if row["kind"] == "container" else row for row in sources]
+    golem = [chest("ar1302", 0, "ax1h13"), chest("ar1303", 2, "ax1h13")]
+    safana = "bg1:mode2:target:22"
+    cases = (
+        ("samia", samia, sources, "bg2ee"), ("samia eet", "bg2:mode2:target:53", sources, "eet"),
+        ("samia moved", samia, moved, "bg2ee"), ("samia one item", samia, sources[:2], "bg2ee"),
+        ("samia two chests", samia, sources + [chest("ar1202", 3, "sw1h32"), chest("ar1202", 3, "shld21")], "bg2ee"),
+        ("golem", "bg2:mode2:target:13", golem, "bg2ee"),
+        ("safana eet", safana, [chest("bg3601", 0, "book03")], "eet"),
+        ("safana bgee", safana, [chest("ar3601", 0, "book03")], "bgee"),
+        ("safana eet bg1 name", safana, [chest("ar3601", 0, "book03")], "eet"),
+        ("aliased", "bg2:mode2:target:61",
+         [{"kind": "container", "resource": "are:ar1514", "item": "bow19b", "record": {"container_index": None}}], "bg2ee"),
+        ("no record", "bg2:mode2:target:61",
+         [{"kind": "container", "resource": "are:ar1514", "item": "bow19b", "record": None},
+          {"kind": "container", "resource": "are:ar1514", "item": "bow19b"}], "bg2ee"),
+        ("string index", "bg2:mode2:target:61", [chest("ar1514", "4", "bow19b")], "bg2ee"),
+        ("upper item", "bg2:mode2:target:61", [chest("ar1514", 0, "BOW19B")], "bg2ee"),
+        ("empty", samia, [], "bg2ee"),
+        ("missing kind", samia, [{"resource": "are:ar1202", "item": "sw1h32", "record": {"container_index": 9}}],
+         "bg2ee"),
+        ("unknown target", "bg2:mode2:target:1", sources, "bg2ee"))
+    for label, identity, rows, platform in cases:
+        s.case(f"treasure_container {label}", "container_rewards.treasure_container",
+               {"target_id": identity, "sources": rows, "platform": platform},
+               lambda identity=identity, rows=rows, platform=platform:
+               container_rewards.treasure_container(identity, rows, platform))
+
+
+def container_layout_cases(s: Scenario) -> None:
+    """test_script_sites_are_found_by_meaning_in_another_layout and
+    test_dialogue_conditions_are_found_by_meaning_in_another_layout."""
+    trigger, action, block = container_rewards._trigger, container_tests.action, container_tests.script_block
+    added = block(trigger(16399, 1, text="GLOBALOtherModGolems"), action(30, 2, "GLOBALOtherMod"))
+    golem = block(trigger(16450, text="Ax1h13"), action(151, 38758) + action(10))
+    samia = block(trigger(16521, 2) + trigger(16450, text="SHLD21") + trigger(16450, text="sw1h32"), action(10))
+    for label, resource, original in (
+            ("kpgol01 crlf", "bcs:kpgol01", crlf(b"SC\n" + added + added + golem + b"SC\n")),
+            ("kpgol01 lf", "bcs:kpgol01", b"SC\n" + golem + added + b"SC\n"),
+            ("samia crlf", "bcs:samia", crlf(b"SC\n" + samia + b"SC\n"))):
+        result = container_patched(s, f"layout {label}", resource, original, refs={38758: 100001})
+        container_checks(s, f"layout original {label}", resource, original)
+        container_checks(s, f"layout result {label}", resource, result)
+    conditions = {0: b'!PartyHasItem("book03")\nGlobal("Unrelated","GLOBAL",4)',
+                  2: b'Global("Unrelated","GLOBAL",4)\nPartyHasItem("Book03")',
+                  8: b'Global("Unrelated","GLOBAL",4)\n  !PartyHasItem("BOOK03")'}
+    dialogue = quest_options._Dialogue(container_tests.dialogue_fixture("dlg:safanj", conditions), "safanj")
+    dialogue.triggers.append(b'PartyHasItem("book03")\nGlobal("Unrelated","GLOBAL",4)')
+    reply = dialogue.transition(None, action='SetGlobal("OtherMod","GLOBAL",2)')
+    struct.pack_into("<I", reply, 0, struct.unpack_from("<I", reply)[0] | 2)
+    struct.pack_into("<I", reply, 12, len(dialogue.triggers) - 1)
+    dialogue.state(1235, [reply])
+    original = dialogue.render()
+    result = container_patched(s, "layout safanj", "dlg:safanj", original)
+    container_checks(s, "layout original safanj", "dlg:safanj", original)
+    container_checks(s, "layout result safanj", "dlg:safanj", result)
+
+
+def container_reason_cases(s: Scenario) -> None:
+    """test_routes_the_check_cannot_recognise_name_their_reason, and more conditions to judge."""
+    trigger, action, block = container_rewards._trigger, container_tests.action, container_tests.script_block
+
+    def blocks(*made):
+        return b"SC\n" + b"".join(made) + b"SC\n"
+    golem = action(151, 38758) + action(10)
+    cases = (
+        ("bcs:kpgol01", "no block", blocks(block(b"", golem))),
+        ("bcs:kpgol01", "or", blocks(block(trigger(16521, 2) + trigger(16450, text="ax1h13") +
+                                           trigger(16399, 1, text="GLOBALOther"), golem))),
+        ("bcs:kpgol01", "no text", blocks(block(trigger(16450, text="ax1h13"), action(10)))),
+        ("bcs:kpgol01", "text twice", blocks(block(trigger(16450, text="ax1h13"), action(151, 38758) + golem))),
+        ("bcs:ppchest", "no latch", blocks(block(trigger(16501, negate=1, text="bow19b", selector=1), action(10)))),
+        ("bcs:samia", "or other", blocks(block(trigger(16521, 2) + trigger(16450, text="shld21") +
+                                               trigger(16399, 1, text="GLOBALOther"), action(10)))),
+        ("bcs:kpgol01", "open", b"SC\nCR\nCO\nSC\n"),
+        ("dlg:samia", "no condition", container_tests.dialogue_fixture("dlg:samia", {1: b'Global("Unrelated","GLOBAL",4)\r\n'})),
+        ("dlg:safanj", "has item", container_tests.dialogue_fixture("dlg:safanj", {2: b'HasItem("book03",Myself)\r\n'})),
+        ("dlg:safanj", "or", container_tests.dialogue_fixture(
+            "dlg:safanj", {2: b'OR(2)\r\nPartyHasItem("book03")\r\nGlobal("X","GLOBAL",1)\r\n'})),
+        ("dlg:safanj", "broken", b"DLG V1.0" + bytes(10)),
+        # More layouts another mod could leave.
+        ("bcs:kpgol01", "two blocks", blocks(block(trigger(16450, text="ax1h13"), golem),
+                                             block(trigger(16450, text="ax1h13"), golem))),
+        ("bcs:kpgol01", "negated", blocks(block(trigger(16450, negate=1, text="ax1h13"), golem))),
+        ("bcs:ppchest", "other selector", blocks(block(trigger(16501, negate=1, text="bow19b") +
+                                                       trigger(16399, text="GLOBALRobbedGolem"), action(10)))),
+        ("bcs:samia", "or three", blocks(block(trigger(16521, 3) + trigger(16450, text="shld21") +
+                                               trigger(16450, text="sw1h32"), action(10)))),
+        ("bcs:samia", "one item", blocks(block(trigger(16450, text="shld21"), action(10)))),
+        ("bcs:safana", "crlf", crlf(container_tests.script_fixture("bcs:safana"))),
+        ("bcs:kpgol01", "empty", b""),
+        ("dlg:safanj", "twice", container_tests.dialogue_fixture(
+            "dlg:safanj", {2: b'PartyHasItem("book03")\r\nPartyHasItem("BOOK03")\r\n'})),
+        ("dlg:samia", "or three", container_tests.dialogue_fixture(
+            "dlg:samia", {1: b'OR(3)\r\nPartyHasItem("sw1h32")\r\nPartyHasItem("shld21")\r\nTrue()\r\n'})),
+        ("dlg:safanj", "lf", container_tests.dialogue_fixture("dlg:safanj", {2: b'PartyHasItem("book03")'})),
+        ("dlg:safanj", "spaced", container_tests.dialogue_fixture("dlg:safanj", {2: b'  ! PartyHasItem( "book03" )  \r\n'})))
+    for resource, label, data in cases:
+        container_checks(s, f"reasons {label} {resource}", resource, data)
+        container_patched(s, f"reasons {label} {resource} with refs", resource, data, refs={38758: 100001})
+
+
 def container_scenario(name: str, line_endings: str) -> Scenario:
     originals = container_inputs(line_endings)
-    s = Scenario(name, {"container_rewards.ORIGINAL_HASHES": {key: sha(value) for key, value in originals.items()}})
+    s = Scenario(name)
     if line_endings == "lf":
         s.case("TARGETS", "container_rewards.TARGETS", {}, lambda: container_rewards.TARGETS)
         s.case("RESOURCE_TARGETS", "container_rewards.RESOURCE_TARGETS", {}, lambda: container_rewards.RESOURCE_TARGETS)
-        for identity in list(container_rewards.TARGETS) + ["bg2:mode2:target:999"]:
-            s.case(f"target_spec {identity}", "container_rewards.target_spec", {"target_id": identity},
-                   lambda identity=identity: container_rewards.target_spec(identity))
+        s.case("TEXT_RESOURCES", "container_rewards.TEXT_RESOURCES", {}, lambda: container_rewards.TEXT_RESOURCES)
+        treasure_cases(s)
         base = make_tlk(["Preserve existing text"])
         tlk, _ = container_rewards.prepare_container_texts(base, container_rewards.TEXT_RESOURCES)
         for label, source, resources, language in (
@@ -681,6 +927,7 @@ def container_scenario(name: str, line_endings: str) -> Scenario:
                 ("again", tlk, ["bcs:kpgol05", "bcs:kpgol01"], "EN_US"),
                 ("non-text", base, ["bcs:kpgol03", "dlg:samia"], "de_DE"),
                 ("uppercase", base, ["BCS:KPGOL01"], "de_DE"), ("german", base, ["bcs:kpgol02"], "de_DE"),
+                ("ar1202 german", base, ["bcs:ar1202"], "de_DE"),
                 ("bad tlk", b"no tlk", ["bcs:kpgol02"], "en_us"), ("bad tlk none", b"no tlk", [], "en_us")):
             s.case(f"prepare_container_texts {label}", "container_rewards.prepare_container_texts",
                    {"tlk": source, "resources": resources, "language": language},
@@ -690,24 +937,31 @@ def container_scenario(name: str, line_endings: str) -> Scenario:
                      {"opcode": 16521, "value": 2, "negate": 0, "text": "", "selector": 3, "newline": b"\r\n"}):
             s.case(f"trigger {args['opcode']}", "container_rewards._trigger", args,
                    lambda args=args: container_rewards._trigger(**args))
+        for resource in ("bcs:other", "BCS:KPGOL01", "kpgol01", "dlg:kpgol01"):
+            container_checks(s, f"key {resource}", resource, originals["bcs:kpgol01"])
+        container_layout_cases(s)
+        container_reason_cases(s)
     for resource, original in originals.items():
-        with s.overrides():
-            result = container_rewards.patch_container_resource(resource, original, refs={38758: 100001})
+        result = container_rewards.patch_container_resource(resource, original, refs={38758: 100001})
         cases = [("patch", original, {38758: 100001}), ("reexport", result, None), ("moved", result, {38758: 7}),
                  ("empty refs", result, {}), ("other refs", result, {1: 2}),
                  ("unallocated", original, None), ("sentinel", original, {38758: 0xFFFFFFFF}),
+                 ("negative", original, {38758: -1}),
                  ("flag", result.replace(b"FLPR_C", b"FLPR_Z", 1), None), ("appended", result + b"tamper", None),
                  ("upper", original, {38758: 5})]
         for label, data, refs in cases:
-            name = resource.upper() if label == "upper" else resource
-            s.case(f"patch_container_resource {label} {resource}", "container_rewards.patch_container_resource",
-                   {"resource": name, "data": data, "refs": refs},
-                   lambda name=name, data=data, refs=refs: container_rewards.patch_container_resource(name, data, refs=refs))
+            container_patched(s, f"{label} {resource}", resource.upper() if label == "upper" else resource, data, refs)
+        if resource.startswith("bcs:"):
+            flag = container_rewards.TARGETS[container_rewards.RESOURCE_TARGETS[resource][0]]["activation_global"]
+            newline = quest_rewards._newline(result)
+            changed = result.replace(quest_rewards._global_guard(flag, False, newline),
+                                     quest_rewards._global_guard(flag, True, newline), 1)
+        else:
+            changed = result.replace(b"FLPR_C", b"FLPR_Z", 1)
         for label, data in (("result", result), ("original", original), ("appended", result + b"x"),
-                            ("short", result[:30])):
-            s.case(f"original_container_resource {label} {resource}", "container_rewards.original_container_resource",
-                   {"resource": resource, "data": data},
-                   lambda resource=resource, data=data: container_rewards.original_container_resource(resource, data))
+                            ("short", result[:30]), ("changed", changed), ("tamper", result + b"tamper"),
+                            ("moved", container_rewards.patch_container_resource(resource, result, refs={38758: 7}))):
+            container_checks(s, f"{label} {resource}", resource, data)
     s.case("patch_container_resource unknown", "container_rewards.patch_container_resource",
            {"resource": "bcs:nothing", "data": b"", "refs": None},
            lambda: container_rewards.patch_container_resource("bcs:nothing", b""))
@@ -986,7 +1240,66 @@ def cursed_scenario() -> Scenario:
     return s
 
 
+# ---------------------------------------------------------------- a real game
+
+
+def game_routes_scenario(game: Path, language: str) -> Scenario:
+    """The reward routes' resources of an installed game, only read: each one
+    patched with the texts the export allocates for it, recognised before and
+    after, and exported again."""
+    from flir_config.resources import RESOURCE_TYPES, GameResources
+    routes = sorted({*mode2_rewards.RESOURCE_REWARDS, *container_rewards.RESOURCE_TARGETS})
+    with GameResources(game, {kind: RESOURCE_TYPES[kind] for kind in ("bcs", "dlg")}) as reader:
+        present = {kind: set(reader.names(kind)) for kind in ("bcs", "dlg")}
+        originals = {resource: reader.read(*resource.split(":")) for resource in routes
+                     if resource.split(":")[1] in present[resource.split(":")[0]]}
+    tlk = (game / (Path("dialog.tlk") if language == "default" else Path("lang") / language / "dialog.tlk")).read_bytes()
+    # The texts as native_export allocates them; without English the text
+    # routes have none, and the check leaves them out.
+    try:
+        tlk, reward_texts = mode2_rewards.prepare_reward_texts(
+            tlk, originals.keys() & mode2_rewards.TEXT_REFS.keys(), language)
+        _, container_texts = container_rewards.prepare_container_texts(
+            tlk, originals.keys() & container_rewards.TEXT_RESOURCES, language)
+    except ProfileError:
+        reward_texts, container_texts = {}, {}
+    s = Scenario("game_routes")
+    for resource, data in originals.items():
+        if resource in mode2_rewards.RESOURCE_REWARDS:
+            result = patched(s, resource, resource, data, refs=reward_texts.get(resource))
+        else:
+            result = container_patched(s, resource, resource, data, refs=container_texts.get(resource))
+        for label, value in (("original", data), ("result", result)):
+            if value is None:
+                continue
+            if resource not in mode2_rewards.RESOURCE_REWARDS:
+                container_checks(s, f"{label} {resource}", resource, value)
+                continue
+            reward_checks(s, f"{label} {resource}", resource, value)
+            if resource.startswith("bcs:"):
+                script_original_case(s, f"{label} {resource}", resource, value)
+            elif resource in mode2_rewards.TEXT_REFS:
+                text_original_case(s, f"{label} {resource}", resource, value)
+    print(f"game_routes: {len(originals)} of {len(routes)} reward route resources in the game")
+    return s
+
+
 def main() -> None:
+    parser = argparse.ArgumentParser(description="Record the patcher parity fixtures.")
+    parser.add_argument("--game", type=Path, help="record the reward routes of this installed game instead "
+                                                  "(only read)")
+    parser.add_argument("--language", default="en_US", help="the game's language folder (with --game)")
+    parser.add_argument("--out", type=Path, help="the folder for the game's fixture, outside the repository "
+                                                 "and the game: it holds the game's bytes")
+    options = parser.parse_args()
+    if options.game is not None:
+        if options.out is None:
+            parser.error("--game needs --out")
+        game, out = options.game.resolve(), options.out.resolve()
+        if any(folder == out or folder in out.parents for folder in (ROOT, game)):
+            parser.error("--out must be outside the repository and the game")
+        game_routes_scenario(game, options.language).write(out)
+        return
     scenarios = [
         quest_options_scenario("quest_options", "lf"),
         quest_options_scenario("quest_options_crlf", "crlf"),
@@ -996,7 +1309,6 @@ def main() -> None:
         spell_scenario("spell_rewards_reviewed", spell_tests.spell_fixture(), patched_hash="0" * 64),
         mode2_scenario(),
         mode2_trgeni_scenario(),
-        mode2_reviewed_scenario(),
         container_scenario("container_rewards", "lf"),
         container_scenario("container_rewards_crlf", "crlf"),
         *inventory_scenarios(),

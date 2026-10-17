@@ -30,16 +30,34 @@ pub enum ErrorKind {
 pub struct Error {
     pub kind: ErrorKind,
     pub message: String,
+    /// The reference's subclass of `kind`'s exception, where a caller tells
+    /// it apart: [`CHANGED_SINCE_SCAN`] or [`SCRIPT_ERROR`] (both
+    /// ProfileErrors). Code that handles `kind` handles these too.
+    pub subclass: Option<&'static str>,
 }
+
+/// `reward_routes.ChangedSinceScan`: a reward resource changed since the
+/// scan, so the configuration check stops instead of leaving rows out.
+pub const CHANGED_SINCE_SCAN: &str = "ChangedSinceScan";
+/// `script_text.ScriptError`: a compiled script the readers cannot read.
+pub const SCRIPT_ERROR: &str = "ScriptError";
 
 pub type Result<T> = std::result::Result<T, Error>;
 
 impl Error {
     pub fn new(kind: ErrorKind, message: impl Into<String>) -> Self {
-        Error { kind, message: message.into() }
+        Error { kind, message: message.into(), subclass: None }
     }
     pub fn profile(message: impl Into<String>) -> Self {
         Error::new(ErrorKind::Profile, message)
+    }
+    /// A ProfileError of one of the reference's ProfileError subclasses.
+    pub fn profile_subclass(subclass: &'static str, message: impl Into<String>) -> Self {
+        Error { subclass: Some(subclass), ..Error::profile(message) }
+    }
+    /// `isinstance(error, <subclass>)`.
+    pub fn is(&self, subclass: &str) -> bool {
+        self.subclass == Some(subclass)
     }
     pub fn scan(message: impl Into<String>) -> Self {
         Error::new(ErrorKind::Scan, message)

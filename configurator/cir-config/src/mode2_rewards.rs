@@ -1,92 +1,47 @@
-//! Campaign-gated direct grants and plain dialogue aliases of the rewards in
-//! Item Randomiser's `mode2` source tables (the extended item pools; the
-//! reference's `mode2_rewards.py`).
+//! Campaign-gated quest rewards of the extended pools (the reference's
+//! `mode2_rewards.py`; the module keeps the reference's name).
 //!
-//! The resource hashes pin the reviewed EET scripts. Only the grant is
-//! suppressed; its surrounding actions, conditions, dialogue replies and
-//! journal fields stay intact. The reward event captures the original
-//! recipient at the grant position. See lib/weidu_action.tpa's generic BCS/DLG
-//! handlers and DDWELL special case.
+//! Item Randomiser's extended lists move rewards that quest dialogues and
+//! scripts give. Each reward route here is recognised by its meaning, never
+//! by the bytes of one reviewed game: the replies or script blocks that give
+//! the reward item, the recipient they name and, for some routes, the text
+//! that names the item. Everything else -- Beamdog's or WeiDU's compiled
+//! spacing, line ends and letter case, other strrefs, replies and blocks that
+//! another mod added -- is kept as found, and every reply or block that gives
+//! the item is gated.
 //!
-//! The reviewed hashes are read through [`crate::pins`] as
-//! `mode2_rewards.ORIGINAL_HASHES` and `mode2_rewards.PATCHED_HASHES`.
+//! Only the grant is suppressed; its surrounding actions, conditions,
+//! dialogue replies and journal fields stay intact. The reward event captures
+//! the original recipient at the grant position. A route whose grant cannot
+//! be told apart (no grant, the item given twice by one reply, the item named
+//! by an action that does not give it) is not prepared; the configuration
+//! check leaves it out with that reason ([`crate::reward_routes`]). See
+//! lib/weidu_action.tpa's generic BCS/DLG handlers and DDWELL special case.
+//!
+//! Own patches are recognised too, so an exported revision re-exports byte
+//! for byte: text routes and container dialogues carry a recovery trailer,
+//! scripts are reconstructed exactly, and the other dialogues are checked by
+//! removing the patch and applying it again.
 
 use crate::error::{Error, ErrorKind, Result};
 use crate::game_text::append_texts;
 use crate::json::{Dict, Value};
-use crate::py::{
-    count_bytes, digits_value, find_bytes, is_line_end, is_line_start, put_u32, replace_bytes, split_bytes, split3,
-    starts_with_ignore_ascii_case, str_value, u32_le,
-};
+use crate::py::{count_bytes, find_bytes, put_u32, replace_bytes, rfind_bytes, str_value, u32_le, upper};
 use crate::quest_options::{pad, texts, Dialogue};
-use crate::quest_rewards::{blocks, global_action, global_guard, grant_action, newline};
-use crate::resources::sha256_hex;
+use crate::quest_rewards::{global_action, global_guard};
+use crate::script_text::{
+    argument, block_actions, block_parts, calls, integer_argument, joined, named, naming, script_blocks,
+    string_argument, Action, Call, Script,
+};
 use crate::{dict, list};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::OnceLock;
 
 pub const ADAPTER_ID: &str = "mode2-reward-v1";
 
-pub const ORIGINAL_HASHES: &[(&str, &str)] = &[
-    ("uhogre01", "8706469468f7277542ba0e6d7fcf44b47a15d36c3879f505464e0a119be00b97"),
-    ("asysta01", "f0f1773357f2280b7b6a05695ff278650110dc60898e2c7ddc1241867782fadd"),
-    ("ddwell", "4d2232892ce30f7e55333f696bb2717e5208e3d588e0ef77e990fc0077955544"),
-    ("mgkhol01", "d4762221de29275f29a3516980cf2b6360612a1670ad5733f3e599a1ba72e3ea"),
-    ("ppstat01", "7022962710da01f3d66088d8f7c5aa2a7963d7e994ff0d55f61dc5b64c9673ae"),
-    ("riftg03", "4bb8a0866e3470ae558c108160ebef18c33de9f14ad3181ccf33ebd0d5e4912a"),
-    ("trhmer01", "e5651fc5ef72780fe2ce9bb6ec8c3632665a5279d41cf79244fbef393304752e"),
-    ("udsvir03", "5918919ea366eceb27f4096f025cde79c44310a9e57bcd49d123fdbb48352994"),
-    ("ammayor", "d37409df94285e4bdce88bdfdb38382790dca567dc6304744244d9d5504030d6"),
-    ("bhoisig", "5a55df4f2a0b814027735467fbf69017d9a13b0cd749d8566cf4f57c1f932377"),
-    ("bhnalla", "038818ff7d8e4fc3a62e10530b74764657e26b3f44203ebd1877db7535d17ab3"),
-    ("bharval", "ef4e704dc616f3658410cb798bb48b323b49b3b419986ff0345eb81979fb2730"),
-    ("hendak", "0f5a4956e7ee05cb5d6a02e2d61bcf8be0ab575ecd921af31656578330b4a804"),
-    ("lehtin", "a067828ca2055d4c3fd406c43672d9da3547e92b3da67a5eb84b341fdbebd2d1"),
-    ("udsilver", "48f697db47942b74b4530975a5a4a46cac1a0cc850453b2b9d50ab173b01090c"),
-    ("uddemon", "582fbcfecf3e71363dff1aa9bcef4dbc202d28c3af6e66e6a29840b342f1bdfd"),
-    ("gortan1", "27a8575386e30a36a1f00f63c2004a095f301b511cd310eb03e36606265f3f3c"),
-    ("gorbat1", "c1da7c158296ed5e553942a735ebc84773007b099a4eadb1cc78a50142a0088a"),
-    ("gorlum2", "8228c02ac6dee8ac4652ad550a0fef83a8ddf2d59400fcb7c1e025f6395b5e9c"),
-    ("aran", "da4bebc9ceb58fad2d34cf261b73d458ece55ad70128c656ede9e44a8631cee1"),
-    ("ppdjinn", "06c1671065b549921263594db378d7610223cb16b70b7f718b3885b45b32af38"),
-    ("uhmay01", "4213656595fdde6afeefee881597ddd62814ba886747bc4d60cfca25a2d852be"),
-    ("gorcamb", "76cdb11e99cdbd676d7af08f48713fceb01061ea6180e762e6be1c997f3b1de4"),
-    ("sctelwyn", "d5dd048c43e16ba937ff583eef8f5966e549fb0c4e3f92679883d35fcdda1759"),
-    ("scsain", "c2a43b0d67eca9b531aa591463f74d5333225a95f0be87f8d03ed1cf91f8dafe"),
-    ("scyarryl", "f96880bdabcfe8393d9ad6df502d3d001e2d79913736e480f6cc717f012dd367"),
-    ("trgeni01", "4220763c55e065bfb2f500aa9d615a1a1e112ae3fc60eee061a3d9f3f59f7549"),
-    ("loutcapt", "1bb3dc1337c087cc049f0d4fa431f4a7f909dbfacabf4dd30087d8b4f52f2d98"),
-    ("amcler01", "5bac12a183463f6faa912b15e80c45c321cd2189f318c5056cf38b2150a6d79e"),
-    ("udlesa", "6c518483372ebe4073986dc2d41e4f7ae73a7bce133aab4289a29ef1be7c7e50"),
-];
-
-/// DDWELL includes a caller-allocated TLK reference, verified by
-/// reconstruction, so it has no fixed patched hash.
-pub const PATCHED_HASHES: &[(&str, &str)] = &[
-    ("uhogre01", "722213d1f53966780ab8bba2e2dbe400e64c14ced6da2ff9f48b43749b629e25"),
-    ("asysta01", "26bf2a67793e7b05fe35781f85ec4885aac806520927c35deba9aed5a2f5b841"),
-    ("mgkhol01", "3a47fea6c2cdb1405267342bad65ecc58741481006153dd3a15b43c3807decfd"),
-    ("ppstat01", "69505c964ee036a6d9b974407e34cbd4ff35f4cebd10373819c5ef2f5d50f73a"),
-    ("riftg03", "34e7c5e57d9e69394b40ce09f4c5cd5a5e6249d871b676c82bafbd3d707f3ff5"),
-    ("trhmer01", "21aac581490c963ecf778f2ffc760bb3c56cce5be72fd637f783e70eccdbdd75"),
-    ("udsvir03", "2003095671c146bb3d06b92fcc17df06dc18e5be4ab59a0e5d17bfd6db412e66"),
-    ("ammayor", "d71af3922a33954154f7f2745df7466647465ad3920b6a04548b6a9df73a2e05"),
-    ("bhoisig", "43ca1ecf37968c0737109cb06b8c9fbb522a2becbe51a89662ef1d14df3c52f7"),
-    ("bhnalla", "69fa93487cb7f0f4aa9883733e5d8a784155dbb726e06d88c595f591dfd763d5"),
-    ("bharval", "d1ca99803daf9f609ea13f438eb75fe65ffb87d0f417b483a4873ece6006f31a"),
-    ("hendak", "b19099dbd5a42cbb653b1a7abba30aeda7dbdc5697ba0e95106fe39ba7b1b7c4"),
-    ("lehtin", "980b634e457adec11ba48405c65dbc5f9c6d032eac0d51bfcf8703d1eb6c44bf"),
-    ("udsilver", "593cdf5a0313db7065fb2c1eaafc8efc309485d3b5a654c24b585f397e94917b"),
-    ("uddemon", "b1976c5f2f0b948ec00f972348b5ef208b0ba127bbc5678297b133747836a042"),
-    ("gortan1", "0a70f5274d7eacfd4c0c1941266c7bd9be3e5332026f24116c3cadfa6c441ede"),
-    ("gorbat1", "39d7e944e7d9efb983bb34013e7be3a9ab7cca2825d18010f16a22da60443c27"),
-    ("gorlum2", "28a2a669d4388c155abfcece1857611260628717e38c3bb49b1af245ce1e4ca5"),
-    ("aran", "26551e099ce0936a8e0da8e128ae41546650d058685091849cc6406a882d50a7"),
-    ("loutcapt", "9a7db245aa8f59ff1743421ed4621b96391521f48e8f6eeafb0d44070a1ddd25"),
-];
-
 /// Original generic descriptions from the matching special WeiDU handlers.
-/// Keys are installed EET strrefs, values are source TRA entries.
+/// Keys are the strrefs of the text that names the reward (the same in EET
+/// and BG2:EE), values are source TRA entries.
 pub const TEXT_REFS: &[(&str, &[(i64, i64)])] = &[
     ("bcs:ddwell", &[(40850, 399)]),
     ("dlg:ppdjinn", &[(48995, 99)]),
@@ -104,26 +59,11 @@ pub const TEXT_REFS: &[(&str, &[(i64, i64)])] = &[
 ];
 pub const ACTION_TEXT_REFS: &[(&str, &[i64])] = &[("dlg:amcler01", &[74025])];
 const TEXT_TRAILER: &[u8] = b"FLPRM2T1";
-
-/// `ORIGINAL_HASHES` with any test overrides.
-pub fn original_hashes() -> Vec<(String, String)> {
-    crate::pins::table("mode2_rewards.ORIGINAL_HASHES", ORIGINAL_HASHES)
-}
-
-/// `PATCHED_HASHES` with any test overrides.
-pub fn patched_hashes() -> Vec<(String, String)> {
-    crate::pins::table("mode2_rewards.PATCHED_HASHES", PATCHED_HASHES)
-}
-
-/// `ORIGINAL_HASHES[name]` (KeyError when absent).
-pub fn original_hash(name: &str) -> Result<String> {
-    crate::pins::get("mode2_rewards.ORIGINAL_HASHES", ORIGINAL_HASHES, name).ok_or_else(|| Error::key(name))
-}
-
-/// `PATCHED_HASHES.get(name)`.
-pub fn patched_hash(name: &str) -> Option<String> {
-    crate::pins::get("mode2_rewards.PATCHED_HASHES", PATCHED_HASHES, name)
-}
+/// DestroySelf is instant during dialogue; LuaAction is queued. A speaker
+/// whose carried reward is handed over by a queued transfer leaves after it
+/// instead.
+pub const DEPARTURE: &[u8] =
+    b"EEex_LuaAction(\"EEex_Action_QueueResponseStringOnAIBase([[DestroySelf()]],EEex_LuaAction_Object)\")";
 
 /// `TEXT_REFS.get(resource)`.
 pub fn text_refs(resource: &str) -> Option<&'static [(i64, i64)]> {
@@ -446,7 +386,7 @@ fn build_registry() -> Registry {
     Registry { rewards, direct: direct_names, transfers, physical, resources, sources, targets }
 }
 
-/// `REWARDS`: every direct grant edit by key, in the reference's order.
+/// `REWARDS`: every reward route by key, in the reference's order.
 pub fn rewards() -> &'static Dict {
     &registry().rewards
 }
@@ -488,14 +428,14 @@ fn reward(key: &str) -> Dict {
 pub fn source_spec(source_id: &str) -> Result<Dict> {
     match source_rewards().get(source_id).and_then(Value::as_str) {
         Some(key) => Ok(reward(key)),
-        None => Err(Error::profile(format!("Unsupported Mode 2 scripted source: {source_id}"))),
+        None => Err(Error::profile(format!("Unsupported extended reward source: {source_id}"))),
     }
 }
 
 pub fn target_spec(target_id: &str) -> Result<Dict> {
     match target_rewards().get(target_id).and_then(Value::as_str) {
         Some(key) => Ok(reward(key)),
-        None => Err(Error::profile(format!("Unsupported Mode 2 scripted target: {target_id}"))),
+        None => Err(Error::profile(format!("Unsupported extended reward recipient: {target_id}"))),
     }
 }
 
@@ -503,20 +443,23 @@ pub fn target_spec(target_id: &str) -> Result<Dict> {
 pub fn transfer_spec(name: &str) -> Result<Dict> {
     match transfer_specs().get(name).and_then(Value::as_dict) {
         Some(row) => Ok(row.clone()),
-        None => Err(Error::profile(format!("Unsupported Mode 2 inventory transfer: {name}"))),
+        None => Err(Error::profile(format!("Unsupported carried reward: {name}"))),
     }
 }
 
-/// All grant edits for a resource; includes both independent ARAN rewards.
+/// All routes with a grant in a resource; includes both independent ARAN
+/// rewards. Each copy names its route (the `REWARDS` key) under "route".
 pub fn resource_specs(resource: &str) -> Result<Vec<Dict>> {
     let resource = crate::py::lower(resource);
     let Some(keys) = resource_rewards().get(&resource).and_then(Value::as_list) else {
-        return Err(Error::profile(format!("Unsupported Mode 2 reward resource: {resource}")));
+        return Err(Error::profile(format!("Unsupported extended reward resource: {resource}")));
     };
     let name = resource.split(':').nth(1).expect("kind:name").to_string();
     let mut result = Vec::new();
     for key in keys {
-        let mut spec = reward(key.as_str().expect("reward key"));
+        let key = key.as_str().expect("reward key");
+        let mut spec = reward(key);
+        spec.insert("route", key);
         spec.insert("resource", resource.as_str());
         spec.insert("quest", name.as_str());
         let branches = spec
@@ -532,18 +475,36 @@ pub fn resource_specs(resource: &str) -> Result<Vec<Dict>> {
     Ok(result)
 }
 
-// ---------------------------------------------------------------- dialogue
+// ---------------------------------------------------------------- reading
 
 fn field<'a>(spec: &'a Dict, key: &str) -> Result<&'a Value> {
     spec.get(key).ok_or_else(|| Error::key(key))
 }
 
+/// A field formatted into text (`f"{spec[key]}"`).
 fn text(spec: &Dict, key: &str) -> Result<String> {
     field(spec, key).map(str_value)
 }
 
+/// A field the reference calls a str method on (`.encode()`, `.upper()`).
+fn text_field<'a>(spec: &'a Dict, key: &str, method: &str) -> Result<&'a str> {
+    match field(spec, key)? {
+        Value::Str(text) => Ok(text),
+        other => Err(Error::attribute(other.type_name(), method)),
+    }
+}
+
+/// The route a `resource_specs` copy names (`spec["route"]`).
+fn route(spec: &Dict) -> Result<String> {
+    text(spec, "route")
+}
+
 fn index_error() -> Error {
     Error::value("list index out of range")
+}
+
+fn profile(message: impl Into<String>) -> Error {
+    Error::profile(message)
 }
 
 /// `len(value)` with Python's TypeError for unsized values.
@@ -566,110 +527,83 @@ fn first_item(value: &Value) -> Result<Value> {
     }
 }
 
-/// `$` of a `re.M` pattern after `\r?` or `\r\r?` (the grant lookahead
-/// `(?=\r?$|\r\r?$)`): up to two carriage returns, then a line end.
-fn grant_line_end(data: &[u8], at: usize) -> bool {
-    is_line_end(data, at)
-        || (data.get(at) == Some(&b'\r') && is_line_end(data, at + 1))
-        || (data.get(at) == Some(&b'\r') && data.get(at + 1) == Some(&b'\r') && is_line_end(data, at + 2))
+/// `NAME.KIND` of a `kind:name` resource, as messages show it.
+fn label(resource: &str) -> String {
+    let (kind, name) = resource.split_once(':').unwrap_or((resource, ""));
+    format!("{}.{}", upper(name), upper(kind))
 }
 
-/// Match one reviewed top-level create/transfer action, usable by aliases
-/// too (`_dialogue_grant`). Hand-coded `re.finditer(rb"(?im)^(?:" + alternatives
-/// + rb")(?=\r?$|\r\r?$)", actions)`; the matched bytes keep their own case.
-pub fn dialogue_grant(actions: &[u8], spec: &Dict) -> Result<Vec<u8>> {
-    let payload = field(spec, "payload")?;
-    let charges = match payload {
-        Value::Dict(payload) => payload.get("charges").ok_or_else(|| Error::key("charges"))?,
-        other => return Err(Error::type_error(format!("{} indices must be integers or slices, not str", other.type_name()))),
-    };
-    let charges = crate::py::iter_value(charges)?
-        .iter()
-        .map(str_value)
-        .collect::<Vec<_>>()
-        .join(",");
-    let create = format!("GiveItemCreate(\"{}\",{},{charges})", text(spec, "item")?, text(spec, "recipient")?);
-    let transfer = format!("GiveItem(\"{}\",{})", text(spec, "item")?, text(spec, "recipient")?);
-    let alternatives: Vec<&[u8]> = if spec.get("grant_kind").is_some_and(|kind| kind.py_eq(&Value::from("transfer"))) {
-        vec![transfer.as_bytes()]
-    } else {
-        vec![create.as_bytes(), transfer.as_bytes()]
-    };
-    let mut matches = Vec::new();
-    let mut position = 0;
-    while position <= actions.len() {
-        let matched = is_line_start(actions, position)
-            .then(|| {
-                alternatives.iter().find_map(|alternative| {
-                    (starts_with_ignore_ascii_case(actions, position, alternative)
-                        && grant_line_end(actions, position + alternative.len()))
-                    .then_some(position + alternative.len())
-                })
-            })
-            .flatten();
-        match matched {
-            Some(end) => {
-                matches.push(actions[position..end].to_vec());
-                position = end;
-            }
-            None => position += 1,
-        }
-    }
-    if matches.len() != 1 {
-        return Err(Error::profile("Mode 2 dialogue reward action changed"));
-    }
-    Ok(matches.remove(0))
+/// Whether script text names the item as a quoted resref, in any letter case.
+fn names(text: &[u8], item: &str) -> bool {
+    let item = item.as_bytes();
+    text.windows(item.len() + 2).any(|window| {
+        window[0] == b'"' && window[window.len() - 1] == b'"' && window[1..window.len() - 1].eq_ignore_ascii_case(item)
+    })
 }
 
-/// Python's `set()` of hashable values, compared with `==`.
-#[derive(Clone, Debug, Default)]
-struct ValueSet(Vec<Value>);
-
-impl ValueSet {
-    fn contains(&self, value: &Value) -> bool {
-        self.0.iter().any(|item| item.py_eq(value))
-    }
-    fn add(&mut self, value: Value) {
-        if !self.contains(&value) {
-            self.0.push(value);
-        }
-    }
-    fn same(&self, other: &ValueSet) -> bool {
-        self.0.len() == other.0.len() && self.0.iter().all(|item| other.contains(item))
-    }
+fn read_dialogue(data: &[u8], resource: &str) -> Result<Dialogue> {
+    let name = resource.split(':').nth(1).ok_or_else(index_error)?;
+    Dialogue::new(data, name).map_err(|error| match error.kind {
+        ErrorKind::Profile | ErrorKind::GameText => profile(format!("{} cannot be read as a dialogue", label(resource))),
+        _ => error,
+    })
 }
 
-fn value_set(value: &Value) -> Result<ValueSet> {
-    let mut set = ValueSet::default();
-    for item in crate::py::iter_value(value)? {
-        if item.is_dict() {
-            return Err(Error::type_error("unhashable type: 'dict'"));
-        }
-        set.add(item);
+/// A state's replies: (first, count), inside the reply table.
+fn outgoing(dialogue: &Dialogue, state: &[u8], label: &str) -> Result<(usize, usize)> {
+    let (first, count) = (u32_le(state, 4) as usize, u32_le(state, 8) as usize);
+    if first + count > dialogue.transitions.len() {
+        return Err(profile(format!("{label} has a state whose replies are outside its tables")));
     }
-    Ok(set)
+    Ok((first, count))
 }
 
-/// A dictionary keyed by Python values (`{key: ...}` with `==` lookup).
-struct ValueMap(Vec<(Value, ValueSet)>);
+fn string(table: &[Vec<u8>], index: u32, label: &str) -> Result<Vec<u8>> {
+    table
+        .get(index as usize)
+        .cloned()
+        .ok_or_else(|| profile(format!("{label} has a reply whose text is outside its tables")))
+}
 
-impl ValueMap {
-    fn position(&self, key: &Value) -> Option<usize> {
-        self.0.iter().position(|(existing, _)| existing.py_eq(key))
-    }
-    fn insert(&mut self, key: Value, set: ValueSet) {
-        match self.position(&key) {
-            Some(index) => self.0[index].1 = set,
-            None => self.0.push((key, set)),
+/// A byte span of text and what replaces it.
+type Edit = (usize, usize, Vec<u8>);
+
+/// Replace non-overlapping spans of the original text.
+fn edited(text: &[u8], mut edits: Vec<Edit>) -> Result<Vec<u8>> {
+    edits.sort();
+    let mut result = Vec::with_capacity(text.len());
+    let mut at = 0;
+    for (start, end, replacement) in edits {
+        if start < at {
+            return Err(profile("Two changes of one reward action overlap"));
         }
+        result.extend_from_slice(&text[at..start]);
+        result.extend(replacement);
+        at = end;
     }
-    fn get(&self, key: &Value) -> &ValueSet {
-        &self.0[self.position(key).expect("known key")].1
-    }
-    fn get_mut(&mut self, key: &Value) -> &mut ValueSet {
-        let index = self.position(key).expect("known key");
-        &mut self.0[index].1
-    }
+    result.extend_from_slice(&text[at..]);
+    Ok(result)
+}
+
+fn guard(spec: &Dict, selected: bool) -> Result<Vec<u8>> {
+    Ok(guard_line(selected, &text(spec, "selected_global")?))
+}
+
+fn guard_line(selected: bool, flag: &str) -> Vec<u8> {
+    format!("{}Global(\"{flag}\",\"GLOBAL\",1)\r\n", if selected { "" } else { "!" }).into_bytes()
+}
+
+fn consumed(spec: &Dict) -> Result<Vec<u8>> {
+    Ok(format!("SetGlobal(\"{}\",\"GLOBAL\",1)", text(spec, "consumed_global")?).into_bytes())
+}
+
+fn event(spec: &Dict) -> Result<Vec<u8>> {
+    Ok(format!("SetGlobal(\"{}\",\"GLOBAL\",1)", text(spec, "event_global")?).into_bytes())
+}
+
+fn mark(spec: &Dict, recipient: &[u8]) -> Result<Vec<u8>> {
+    let local = format!(",SetGlobal(\"{}\",\"LOCALS\",1))\r\n", text(spec, "recipient_local")?);
+    Ok([b"ActionOverride(" as &[u8], recipient, local.as_bytes()].concat())
 }
 
 /// `re.fullmatch(r"bg2:mode2:target:([1-9][0-9]*)", target)` group 1.
@@ -679,160 +613,266 @@ fn numeric_target_row(target: &str) -> Option<&str> {
     (!bytes.is_empty() && (b'1'..=b'9').contains(&bytes[0]) && bytes[1..].iter().all(u8::is_ascii_digit)).then_some(row)
 }
 
-fn guard_line(selected: bool, flag: &str) -> Vec<u8> {
-    format!("{}Global(\"{flag}\",\"GLOBAL\",1)\r\n", if selected { "" } else { "!" }).into_bytes()
+/// The blocking Lua callback that hands a carried reward over.
+fn callback(spec: &Dict, numeric: bool) -> Result<Vec<u8>> {
+    let target = field(spec, "target_ids")?;
+    let first = if py_len(target)? == 1 { Some(first_item(target)?) } else { None };
+    let row = match &first {
+        Some(Value::Str(target)) => numeric_target_row(target),
+        Some(other) => {
+            return Err(Error::type_error(format!("expected string or bytes-like object, got '{}'", other.type_name())))
+        }
+        None => None,
+    };
+    let Some(row) = row else {
+        return Err(profile("The carried reward's transfer target changed"));
+    };
+    // The dialogue parser strips spaces and colons even inside Lua strings.
+    // Parenthesize return; pass the row.
+    Ok(if numeric {
+        format!("EEex_LuaAction(\"return(FLPR_Transfer(EEex_LuaAction_Object,{row}))\")")
+    } else {
+        format!(
+            "EEex_LuaAction(\"return FLPR_Transfer(EEex_LuaAction_Object,[[original-target:{}]])\")",
+            str_value(first.as_ref().expect("target"))
+        )
+    }
+    .into_bytes())
 }
 
-/// `re.subn(rb"(?m)^DestroySelf\(\)(?=\r*$)", departure, actions)`.
-fn replace_departures(actions: &[u8], departure: &[u8]) -> (Vec<u8>, usize) {
-    const BARE: &[u8] = b"DestroySelf()";
-    let mut out = Vec::with_capacity(actions.len());
-    let mut replaced = 0;
-    let mut position = 0;
-    let mut copied = 0;
-    while position <= actions.len() {
-        let matched = is_line_start(actions, position) && actions[position..].starts_with(BARE) && {
-            let mut at = position + BARE.len();
-            while actions.get(at) == Some(&b'\r') {
-                at += 1;
+/// The replies that give a route's item, by (state, ordinal), with the call
+/// that gives it.
+type Grants = BTreeMap<(usize, usize), Call>;
+
+/// Every reply that gives the route's item, with the call that gives it.
+///
+/// A created reward is given with GiveItemCreate, a carried one with
+/// GiveItem. Every action that names the item must be such a grant, one per
+/// reply, so that gating the grants gates every way this dialogue gives it.
+fn dialogue_grants(dialogue: &Dialogue, spec: &Dict, label: &str) -> Result<Grants> {
+    let item = text_field(spec, "item", "upper")?;
+    let wanted = if spec.get("grant_kind").is_some_and(|kind| kind.py_eq(&Value::from("transfer"))) {
+        "GiveItem"
+    } else {
+        "GiveItemCreate"
+    };
+    let shown = upper(item);
+    let mut grants = Grants::new();
+    for (state_index, state) in dialogue.states.iter().enumerate() {
+        let (first, count) = outgoing(dialogue, state, label)?;
+        for ordinal in 0..count {
+            let row = &dialogue.transitions[first + ordinal];
+            if u32_le(row, 0) & 4 == 0 {
+                continue;
             }
-            is_line_end(actions, at)
-        };
-        if matched {
-            out.extend_from_slice(&actions[copied..position]);
-            out.extend_from_slice(departure);
-            replaced += 1;
-            position += BARE.len();
-            copied = position;
-        } else {
-            position += 1;
+            let text = string(&dialogue.actions, u32_le(row, 16), label)?;
+            if !names(&text, item) {
+                continue;
+            }
+            let place = format!("{label} state {state_index}");
+            let Some(found) = calls(&text) else {
+                return Err(profile(format!("{place} names {shown} in actions that cannot be read")));
+            };
+            let mut given = Vec::new();
+            for call in found {
+                let argument = string_argument(&text, &call, 0).unwrap_or(b"").to_ascii_lowercase();
+                if named(&call, &[wanted]) && argument == item.as_bytes() {
+                    given.push(call);
+                } else if names(&text[call.start..call.end], item) {
+                    return Err(profile(format!(
+                        "{place} names {shown} in {}(), not in a {wanted}() grant",
+                        String::from_utf8_lossy(&call.name)
+                    )));
+                }
+            }
+            if given.len() > 1 {
+                return Err(profile(format!("{place} gives {shown} twice in one reply")));
+            }
+            if let Some(call) = given.into_iter().next() {
+                if argument(&text, &call, 1).is_none_or(<[u8]>::is_empty) {
+                    return Err(profile(format!("{place} gives {shown} without a recipient")));
+                }
+                grants.insert((state_index, ordinal), call);
+            }
         }
     }
-    out.extend_from_slice(&actions[copied..]);
-    (out, replaced)
+    if grants.is_empty() {
+        return Err(profile(format!("{label} has no reply that gives {shown}")));
+    }
+    Ok(grants)
 }
 
-fn window(rows: &[Vec<u8>], first: usize, count: usize) -> Vec<Vec<u8>> {
-    let end = first.saturating_add(count).min(rows.len());
-    rows[first.min(end)..end].to_vec()
+/// Point each displayed original strref of a grant's actions at its new text.
+fn display_edits(text: &[u8], refs: &[(i64, i64)], place: &str) -> Result<Vec<Edit>> {
+    let found = calls(text).unwrap_or_default();
+    let mut edits = Vec::new();
+    for &(old, new) in refs {
+        let spots: Vec<(usize, usize)> = found
+            .iter()
+            .flat_map(|call| {
+                (0..call.args.len()).filter(move |&index| integer_argument(text, call, index, None) == Some(old)).map(|index| call.args[index])
+            })
+            .collect();
+        if spots.len() != 1 {
+            return Err(profile(format!("{place} does not show text {old} once where it gives the reward")));
+        }
+        edits.push((spots[0].0, spots[0].1, new.to_string().into_bytes()));
+    }
+    Ok(edits)
 }
 
-/// Split each reviewed reward transition by campaign flags (`_patch_dialogue`).
+/// The speaker's own departures (`DestroySelf()`), queued after its transfer.
+fn departure_edits(text: &[u8], place: &str) -> Result<Vec<Edit>> {
+    match calls(text) {
+        None => {
+            if text.windows(b"destroyself".len()).any(|window| window.eq_ignore_ascii_case(b"destroyself")) {
+                return Err(profile(format!("{place} leaves in actions that cannot be read")));
+            }
+            Ok(Vec::new())
+        }
+        Some(found) => Ok(found
+            .iter()
+            .filter(|call| named(call, &["DestroySelf"]) && call.args.is_empty())
+            .map(|call| (call.start, call.end, DEPARTURE.to_vec()))
+            .collect()),
+    }
+}
+
+/// A reply's next dialogue without its padding.
+fn link_name(row: &[u8]) -> &[u8] {
+    let link = &row[20..28];
+    &link[..link.iter().rposition(|&byte| byte != 0).map_or(0, |last| last + 1)]
+}
+
+/// States this dialogue can continue to after the given replies.
+fn following(dialogue: &Dialogue, rows: &[Vec<u8>], label: &str) -> Result<Vec<usize>> {
+    let name = dialogue.name.to_ascii_lowercase();
+    let continuations = |replies: &[Vec<u8>]| -> Vec<usize> {
+        replies
+            .iter()
+            .filter_map(|row| {
+                let next = u32_le(row, 28) as usize;
+                (u32_le(row, 0) & 8 == 0 && link_name(row).to_ascii_lowercase() == name && next < dialogue.states.len())
+                    .then_some(next)
+            })
+            .collect()
+    };
+    let mut seen = BTreeSet::new();
+    let mut todo = continuations(rows);
+    while let Some(state) = todo.pop() {
+        if !seen.insert(state) {
+            continue;
+        }
+        let (first, count) = outgoing(dialogue, &dialogue.states[state], label)?;
+        todo.extend(continuations(&dialogue.transitions[first..first + count]));
+    }
+    Ok(seen.into_iter().collect())
+}
+
+// ---------------------------------------------------------------- dialogues
+
+/// Gate every reply that gives a route's item, for each recognised route
+/// (`_patch_dialogue`).
 ///
-/// `action_refs` maps original DisplayStringHead strrefs to allocated ones
-/// for selected branches (empty for none).
+/// A route whose grant is not recognised keeps its replies as they are; its
+/// reason goes to `reasons` (route to text). With no route recognised,
+/// nothing is prepared. `action_refs` maps displayed original strrefs to the
+/// allocated ones for selected branches.
 pub fn patch_dialogue(
     data: &[u8],
     specs: &[Dict],
     action_refs: &[(i64, i64)],
     defer_departure: bool,
     numeric_target: bool,
+    reasons: Option<&mut Dict>,
 ) -> Result<Vec<u8>> {
     let first_spec = specs.first().ok_or_else(index_error)?;
     let resource = text(first_spec, "resource")?;
-    let name = resource.split(':').nth(1).ok_or_else(index_error)?.to_string();
-    let mut dialogue = Dialogue::new(data, &name)?;
-    let mut expected = ValueMap(Vec::new());
+    let label = label(&resource);
+    let mut dialogue = read_dialogue(data, &resource)?;
+    let mut grants: HashMap<String, Grants> = HashMap::new();
+    let mut failures = Dict::new();
     for spec in specs {
-        expected.insert(field(spec, "selected_global")?.clone(), value_set(field(spec, "branches")?)?);
-    }
-    let mut found = ValueMap(expected.0.iter().map(|(key, _)| (key.clone(), ValueSet::default())).collect());
-    for state_index in 0..dialogue.states.len() {
-        let state = dialogue.states[state_index].clone();
-        let (first, count) = (u32_le(&state, 4) as usize, u32_le(&state, 8) as usize);
-        let mut rows = Vec::new();
-        for (ordinal, original) in window(&dialogue.transitions, first, count).into_iter().enumerate() {
-            let flags = u32_le(&original, 0);
-            let trigger_id = u32_le(&original, 12) as usize;
-            let action_id = u32_le(&original, 16) as usize;
-            let position = list![state_index, ordinal];
-            let mut relevant = Vec::new();
-            for spec in specs {
-                if expected.get(field(spec, "selected_global")?).contains(&position) {
-                    relevant.push(spec);
-                }
+        match dialogue_grants(&dialogue, spec, &label) {
+            Ok(found) => {
+                grants.insert(route(spec)?, found);
             }
+            Err(error) if error.kind == ErrorKind::Profile => failures.insert(route(spec)?, error.message),
+            Err(error) => return Err(error),
+        }
+    }
+    if let Some(reasons) = reasons {
+        for (key, reason) in failures.iter() {
+            reasons.insert(key, reason.clone());
+        }
+    }
+    let mut active: Vec<(&Dict, &Grants)> = Vec::new();
+    for spec in specs {
+        if let Some(found) = grants.get(&route(spec)?) {
+            active.push((spec, found));
+        }
+    }
+    if active.is_empty() {
+        return Err(profile(failures.get(&route(first_spec)?).map(str_value).unwrap_or_default()));
+    }
+    let carried = defer_departure && active.iter().any(|(spec, _)| spec.get("inventory_target").is_some_and(Value::truthy));
+    let mut later = Vec::new();
+    if carried {
+        let mut granting = Vec::new();
+        for (_, found) in &active {
+            for &(state, ordinal) in found.keys() {
+                let (first, _) = outgoing(&dialogue, &dialogue.states[state], &label)?;
+                granting.push(dialogue.transitions[first + ordinal].clone());
+            }
+        }
+        later = following(&dialogue, &granting, &label)?;
+    }
+    for state_index in 0..dialogue.states.len() {
+        let (first, count) = outgoing(&dialogue, &dialogue.states[state_index], &label)?;
+        let originals = dialogue.transitions[first..first + count].to_vec();
+        let mut rows = Vec::new();
+        for (ordinal, original) in originals.into_iter().enumerate() {
+            let relevant: Vec<&(&Dict, &Grants)> =
+                active.iter().filter(|(_, found)| found.contains_key(&(state_index, ordinal))).collect();
             if relevant.is_empty() {
                 rows.push(original);
                 continue;
             }
-            if flags & 4 == 0 {
-                return Err(Error::profile("Mode 2 dialogue reward transition lost its actions"));
-            }
-            let prior = if flags & 2 != 0 { dialogue.triggers.get(trigger_id).ok_or_else(index_error)?.clone() } else { Vec::new() };
-            let actions = dialogue.actions.get(action_id).ok_or_else(index_error)?.clone();
+            let place = format!("{label} state {state_index}");
+            let flags = u32_le(&original, 0);
+            let prior = if flags & 2 != 0 { string(&dialogue.triggers, u32_le(&original, 12), &label)? } else { Vec::new() };
+            let text = dialogue.actions[u32_le(&original, 16) as usize].clone();
+            let departures = if carried { departure_edits(&text, &place)? } else { Vec::new() };
             let n = relevant.len();
             for choice in 0..(1usize << n) {
+                let choices: Vec<bool> = (0..n).map(|index| choice >> (n - 1 - index) & 1 == 1).collect();
                 let mut branch = original.clone();
                 let mut condition = prior.clone();
-                let mut changed = actions.clone();
-                for (index, spec) in relevant.iter().enumerate() {
-                    let selected = choice >> (n - 1 - index) & 1 == 1;
-                    condition.extend(guard_line(selected, &text(spec, "selected_global")?));
-                    let grant = dialogue_grant(&actions, spec)?;
-                    let replacement = if selected {
-                        format!("SetGlobal(\"{}\",\"GLOBAL\",1)", text(spec, "consumed_global")?).into_bytes()
-                    } else {
-                        grant.clone()
-                    };
+                let mut edits = departures.clone();
+                for ((spec, found), &selected) in relevant.iter().copied().zip(&choices) {
+                    condition = joined(&condition, &guard(spec, selected)?);
+                    let call = &found[&(state_index, ordinal)];
+                    let grant = text[call.start..call.end].to_vec();
+                    let replacement = if selected { consumed(spec)? } else { grant };
                     // Keep this beside its grant, before EscapeArea/DestroySelf.
-                    if spec.get("inventory_target").is_some_and(Value::truthy) {
-                        let target = field(spec, "target_ids")?;
-                        let first_target = if py_len(target)? == 1 { Some(first_item(target)?) } else { None };
-                        let row = match &first_target {
-                            Some(Value::Str(target)) => numeric_target_row(target),
-                            Some(other) => {
-                                return Err(Error::type_error(format!(
-                                    "expected string or bytes-like object, got '{}'",
-                                    other.type_name()
-                                )))
-                            }
-                            None => None,
-                        };
-                        let Some(row) = row else {
-                            return Err(Error::profile("Mode 2 inventory transfer target changed"));
-                        };
-                        // The dialogue parser strips spaces and colons even
-                        // inside Lua strings. Parenthesize return; pass the row.
-                        let callback = if numeric_target {
-                            format!("EEex_LuaAction(\"return(FLPR_Transfer(EEex_LuaAction_Object,{row}))\")")
-                        } else {
-                            format!(
-                                "EEex_LuaAction(\"return FLPR_Transfer(EEex_LuaAction_Object,[[original-target:{}]])\")",
-                                str_value(first_target.as_ref().expect("target"))
-                            )
-                        };
-                        let with = [replacement.as_slice(), b"\r\n", callback.as_bytes()].concat();
-                        changed = replace_bytes(&changed, &grant, &with, Some(1));
+                    let changed = if spec.get("inventory_target").is_some_and(Value::truthy) {
+                        [replacement.as_slice(), b"\r\n", &callback(spec, numeric_target)?].concat()
                     } else {
-                        let mark = format!(
-                            "ActionOverride({},SetGlobal(\"{}\",\"LOCALS\",1))\r\n",
-                            text(spec, "recipient")?,
-                            text(spec, "recipient_local")?
-                        );
-                        let event = format!("SetGlobal(\"{}\",\"GLOBAL\",1)", text(spec, "event_global")?);
-                        let with = [mark.as_bytes(), &replacement, b"\r\n", event.as_bytes()].concat();
-                        changed = replace_bytes(&changed, &grant, &with, Some(1));
-                    }
-                    if selected {
-                        for (old, new) in action_refs {
-                            let display = format!("DisplayStringHead(Myself,{old})").into_bytes();
-                            if count_bytes(&changed, &display) != 1 {
-                                return Err(Error::profile("Mode 2 original reward display action changed"));
-                            }
-                            changed = replace_bytes(&changed, &display, format!("DisplayStringHead(Myself,{new})").as_bytes(), Some(1));
-                        }
-                    }
+                        let recipient = argument(&text, call, 1).unwrap_or(b"");
+                        [mark(spec, recipient)?.as_slice(), &replacement, b"\r\n", &event(spec)?].concat()
+                    };
+                    edits.push((call.start, call.end, changed));
+                }
+                if choices.contains(&true) && !action_refs.is_empty() {
+                    edits.extend(display_edits(&text, action_refs, &place)?);
                 }
                 dialogue.triggers.push(condition);
-                dialogue.actions.push(changed);
+                let actions = edited(&text, edits)?;
+                dialogue.actions.push(actions);
                 put_u32(&mut branch, 0, flags | 2);
                 put_u32(&mut branch, 12, dialogue.triggers.len() as u32 - 1);
                 put_u32(&mut branch, 16, dialogue.actions.len() as u32 - 1);
                 rows.push(branch);
-            }
-            for spec in &relevant {
-                found.get_mut(field(spec, "selected_global")?).add(position.clone());
             }
         }
         if rows.len() != count {
@@ -842,44 +882,49 @@ pub fn patch_dialogue(
             dialogue.transitions.extend(rows);
         }
     }
-    if !expected.0.iter().all(|(key, set)| found.get(key).same(set)) {
-        return Err(Error::profile("Mode 2 dialogue reward branches changed"));
-    }
-    if field(first_spec, "resource")?.py_eq(&Value::from("dlg:trgeni01")) && defer_departure {
-        // DestroySelf is instant during dialogue; LuaAction is queued. Keep the
-        // speaker alive until its earlier blocking reward transfer has run.
-        // ActionOverride departures belong to the other genies and stay intact.
-        let departure: &[u8] =
-            b"EEex_LuaAction(\"EEex_Action_QueueResponseStringOnAIBase([[DestroySelf()]],EEex_LuaAction_Object)\")";
-        for index in [37usize, 38] {
-            if index >= dialogue.states.len() {
-                return Err(Error::profile("TRGENI01 departure state changed"));
+    // Keep the speaker until its queued transfer has run. ActionOverride
+    // departures belong to other actors and stay intact.
+    for state_index in later {
+        let (first, count) = outgoing(&dialogue, &dialogue.states[state_index], &label)?;
+        let originals = dialogue.transitions[first..first + count].to_vec();
+        let (mut rows, mut changed) = (Vec::new(), false);
+        for original in originals {
+            let flags = u32_le(&original, 0);
+            let text = if flags & 4 != 0 { string(&dialogue.actions, u32_le(&original, 16), &label)? } else { Vec::new() };
+            let edits =
+                if flags & 4 != 0 { departure_edits(&text, &format!("{label} state {state_index}"))? } else { Vec::new() };
+            if edits.is_empty() {
+                rows.push(original);
+                continue;
             }
-            let (first, count) = (u32_le(&dialogue.states[index], 4) as usize, u32_le(&dialogue.states[index], 8));
-            if count != 1 {
-                return Err(Error::profile("TRGENI01 departure transition changed"));
-            }
-            let mut branch = dialogue.transitions.get(first).ok_or_else(index_error)?.clone();
-            let flags = u32_le(&branch, 0);
-            let action_id = u32_le(&branch, 16) as usize;
-            if flags & 4 == 0 {
-                return Err(Error::profile("TRGENI01 departure actions changed"));
-            }
-            let (actions, replaced) = replace_departures(dialogue.actions.get(action_id).ok_or_else(index_error)?, departure);
-            if replaced != 1 {
-                return Err(Error::profile("TRGENI01 bare departure changed"));
-            }
+            let mut branch = original.clone();
             put_u32(&mut branch, 16, dialogue.actions.len() as u32);
-            dialogue.actions.push(actions);
+            dialogue.actions.push(edited(&text, edits)?);
+            rows.push(branch);
+            changed = true;
+        }
+        if changed {
             let length = dialogue.transitions.len() as u32;
-            put_u32(&mut dialogue.states[index], 4, length);
-            dialogue.transitions.push(branch);
+            put_u32(&mut dialogue.states[state_index], 4, length);
+            put_u32(&mut dialogue.states[state_index], 8, rows.len() as u32);
+            dialogue.transitions.extend(rows);
         }
     }
     Ok(dialogue.render())
 }
 
-/// Text-route variant of a reviewed dialogue (`_patch_text_dialogue`).
+/// `_valid_refs`: allocated text for exactly the route's original strrefs.
+fn valid_refs(refs: Option<&BTreeMap<i64, i64>>, resource: &str) -> Result<bool> {
+    let Some(refs) = refs else { return Ok(false) };
+    let expected = text_refs(resource).ok_or_else(|| Error::key(resource))?;
+    Ok(refs.len() == expected.len()
+        && expected.iter().all(|(old, _)| refs.contains_key(old))
+        && refs.values().all(|value| (0..0xFFFF_FFFF).contains(value)))
+}
+
+/// Text-route variant of a dialogue (`_patch_text_dialogue`): the states and
+/// replies that show the text that names the reward get a selected copy with
+/// the allocated text.
 pub fn patch_text_dialogue(
     data: &[u8],
     resource: &str,
@@ -887,37 +932,30 @@ pub fn patch_text_dialogue(
     defer_departure: bool,
     numeric_target: bool,
 ) -> Result<Vec<u8>> {
-    let allocated = || Error::profile("Mode 2 dialogue requires allocated original reward text");
-    let Some(refs) = refs else { return Err(allocated()) };
-    let expected_refs = text_refs(resource).ok_or_else(|| Error::key(resource))?;
-    let expected_keys: BTreeSet<i64> = expected_refs.iter().map(|(old, _)| *old).collect();
-    if refs.keys().copied().collect::<BTreeSet<i64>>() != expected_keys
-        || refs.values().any(|value| !(0..0xFFFF_FFFF).contains(value))
-    {
-        return Err(allocated());
+    if !valid_refs(refs, resource)? {
+        return Err(profile(format!("{} requires allocated original reward text", label(resource))));
     }
+    let refs = refs.expect("valid refs");
     let specs = resource_specs(resource)?;
     if specs.len() != 1 {
-        return Err(Error::profile("Mode 2 text route needs one reviewed source flag"));
+        return Err(profile("A text route needs exactly one source flag"));
     }
     let flag = text(&specs[0], "selected_global")?;
     let action_refs: Vec<(i64, i64)> = action_text_refs(resource).iter().map(|old| (*old, refs[old])).collect();
-    let name = resource.split(':').nth(1).ok_or_else(index_error)?;
-    let mut dlg = Dialogue::new(&patch_dialogue(data, &specs, &action_refs, defer_departure, numeric_target)?, name)?;
+    let patched = patch_dialogue(data, &specs, &action_refs, defer_departure, numeric_target, None)?;
+    let mut dlg = read_dialogue(&patched, resource)?;
+    let label = label(resource);
     let original_count = dlg.states.len();
-    let mut clones: HashMap<u32, u32> = HashMap::new();
+    let mut clones: BTreeMap<usize, usize> = BTreeMap::new();
     let mut found: BTreeSet<i64> = action_refs.iter().map(|(old, _)| *old).collect();
     let lookup = |value: u32| refs.get(&(value as i64)).map_or(value, |new| *new as u32);
     for index in 0..original_count {
         let state = dlg.states[index].clone();
-        let (text_ref, first, count, entry) =
-            (u32_le(&state, 0), u32_le(&state, 4) as usize, u32_le(&state, 8) as usize, u32_le(&state, 12));
-        let transitions = window(&dlg.transitions, first, count);
-        let mut affected: BTreeSet<i64> = transitions
-            .iter()
-            .filter(|row| u32_le(row, 0) & 1 != 0)
-            .map(|row| u32_le(row, 4) as i64)
-            .collect();
+        let (text_ref, entry) = (u32_le(&state, 0), u32_le(&state, 12));
+        let (first, count) = outgoing(&dlg, &state, &label)?;
+        let transitions = dlg.transitions[first..first + count].to_vec();
+        let mut affected: BTreeSet<i64> =
+            transitions.iter().filter(|row| u32_le(row, 0) & 1 != 0).map(|row| u32_le(row, 4) as i64).collect();
         affected.insert(text_ref as i64);
         affected.retain(|value| refs.contains_key(value));
         if affected.is_empty() {
@@ -937,9 +975,9 @@ pub fn patch_text_dialogue(
         put_u32(&mut clone, 8, rows.len() as u32);
         dlg.transitions.extend(rows);
         if entry != 0xFFFF_FFFF {
-            let prior = dlg.state_triggers.get(entry as usize).ok_or_else(index_error)?.clone();
+            let prior = string(&dlg.state_triggers, entry, &label)?;
             for selected in [false, true] {
-                dlg.state_triggers.push([prior.as_slice(), &guard_line(selected, &flag)].concat());
+                dlg.state_triggers.push(joined(&prior, &guard_line(selected, &flag)));
                 let position = dlg.state_triggers.len() as u32 - 1;
                 if selected {
                     put_u32(&mut clone, 12, position);
@@ -948,38 +986,37 @@ pub fn patch_text_dialogue(
                 }
             }
         }
-        clones.insert(index as u32, dlg.states.len() as u32);
+        clones.insert(index, dlg.states.len());
         dlg.states.push(clone);
     }
-    if found != refs.keys().copied().collect::<BTreeSet<i64>>() {
-        return Err(Error::profile("Mode 2 original reward text locations changed"));
+    let all: BTreeSet<i64> = refs.keys().copied().collect();
+    if found != all {
+        let missing: Vec<String> = all.difference(&found).map(i64::to_string).collect();
+        return Err(profile(format!("{label} no longer shows the text that names the reward ({})", missing.join(", "))));
     }
     // Redirect each incoming internal edge, including paths starting at an
     // unchanged external entry (the temple messengers enter sculptor27/28).
     // Cached cross-dialogue links never enter a changed text state directly.
     let own_name = dlg.name.to_ascii_lowercase();
     for index in 0..dlg.states.len() {
-        let (first, count) = (u32_le(&dlg.states[index], 4) as usize, u32_le(&dlg.states[index], 8) as usize);
+        let (first, count) = outgoing(&dlg, &dlg.states[index], &label)?;
         let mut rows = Vec::new();
-        for transition in window(&dlg.transitions, first, count) {
+        for transition in dlg.transitions[first..first + count].to_vec() {
             let flags = u32_le(&transition, 0);
-            let trigger = u32_le(&transition, 12) as usize;
-            let destination = u32_le(&transition, 28);
-            let link = &transition[20..28];
-            let link_end = link.iter().rposition(|&byte| byte != 0).map_or(0, |last| last + 1);
-            let internal = link[..link_end].to_ascii_lowercase() == own_name;
+            let destination = u32_le(&transition, 28) as usize;
+            let internal = link_name(&transition).to_ascii_lowercase() == own_name;
             if flags & 8 != 0 || !internal || !clones.contains_key(&destination) {
                 rows.push(transition);
                 continue;
             }
-            let prior = if flags & 2 != 0 { dlg.triggers.get(trigger).ok_or_else(index_error)?.clone() } else { Vec::new() };
+            let prior = if flags & 2 != 0 { string(&dlg.triggers, u32_le(&transition, 12), &label)? } else { Vec::new() };
             for selected in [false, true] {
                 let mut row = transition.clone();
-                dlg.triggers.push([prior.as_slice(), &guard_line(selected, &flag)].concat());
+                dlg.triggers.push(joined(&prior, &guard_line(selected, &flag)));
                 put_u32(&mut row, 0, flags | 2);
                 put_u32(&mut row, 12, dlg.triggers.len() as u32 - 1);
                 if selected {
-                    put_u32(&mut row, 28, clones[&destination]);
+                    put_u32(&mut row, 28, clones[&destination] as u32);
                 }
                 rows.push(row);
             }
@@ -1006,118 +1043,534 @@ pub fn patch_text_dialogue(
     Ok(out)
 }
 
-/// Recover a text dialogue's original and allocated references
-/// (`_original_text_dialogue`); None references for pristine bytes.
-pub fn original_text_dialogue(data: &[u8], resource: &str) -> Result<(Vec<u8>, Option<BTreeMap<i64, i64>>)> {
-    let name = resource.split(':').nth(1).ok_or_else(index_error)?;
-    let expected = original_hash(name)?;
-    if sha256_hex(data) == expected {
-        return Ok((data.to_vec(), None));
+/// The quoted names our patch writes, and the queued departure.
+fn markers(specs: &[Dict]) -> Result<Vec<Vec<u8>>> {
+    let mut names = BTreeSet::new();
+    for spec in specs {
+        for key in ["selected_global", "consumed_global", "event_global", "recipient_local"] {
+            let value = field(spec, key)?;
+            if value.truthy() {
+                names.insert(str_value(value));
+            }
+        }
     }
+    let mut markers: Vec<Vec<u8>> = names.into_iter().map(|name| format!("\"{name}\"").into_bytes()).collect();
+    markers.push(DEPARTURE.to_vec());
+    Ok(markers)
+}
+
+fn carries_patch(dialogue: &Dialogue, specs: &[Dict]) -> Result<bool> {
+    let markers = markers(specs)?;
+    Ok(dialogue
+        .triggers
+        .iter()
+        .chain(&dialogue.actions)
+        .any(|text| markers.iter().any(|marker| find_bytes(text, marker, 0).is_some())))
+}
+
+fn changed_patch(resource: &str) -> Error {
+    profile(format!("{} carries a changed copy of the reward route's own patch", label(resource)))
+}
+
+/// The original and text refs of a text route this adapter patched
+/// (`_text_original`); None if unpatched.
+pub fn text_original(data: &[u8], resource: &str) -> Result<Option<(Vec<u8>, BTreeMap<i64, i64>)>> {
     if data.len() < 12 || &data[data.len() - 12..data.len() - 4] != TEXT_TRAILER {
-        return Err(Error::profile("Mode 2 text dialogue changed"));
+        if carries_patch(&read_dialogue(data, resource)?, &resource_specs(resource)?)? {
+            return Err(changed_patch(resource));
+        }
+        return Ok(None);
     }
     let entries = text_refs(resource).ok_or_else(|| Error::key(resource))?.len();
     let length = u32_le(data, data.len() - 4) as usize;
     if length != 60 + entries * 8 || length > data.len() - 12 {
-        return Err(Error::profile("Mode 2 text dialogue recovery bounds changed"));
+        return Err(changed_patch(resource));
     }
     let trailer = &data[data.len() - 12 - length..data.len() - 12];
     let (size, header, count) = (u32_le(trailer, 0) as usize, &trailer[4..56], u32_le(trailer, 56) as usize);
     if size < 52 || size > data.len() - length - 12 || count != entries {
-        return Err(Error::profile("Mode 2 text dialogue original bounds changed"));
+        return Err(changed_patch(resource));
     }
     let original = [header, &data[52..size]].concat();
     let mut refs = BTreeMap::new();
     for index in 0..count {
         refs.insert(u32_le(trailer, 60 + index * 8) as i64, u32_le(trailer, 64 + index * 8) as i64);
     }
-    if sha256_hex(&original) != expected {
-        return Err(Error::profile("Mode 2 text dialogue original changed"));
+    if !valid_refs(Some(&refs), resource)? {
+        return Err(changed_patch(resource));
     }
-    if patch_text_dialogue(&original, resource, Some(&refs), true, true)? != data {
-        // Accept only the exact prior inventory callback patches on a rescan.
-        // TRGENI had exports both before and after its departure-order fix.
+    // Accept only the exact prior inventory callback patches on a rescan.
+    // TRGENI had exports both before and after its departure-order fix.
+    let mut variants = vec![(true, true)];
+    if resource_specs(resource)?[0].get("inventory_target").is_some_and(Value::truthy) {
         let departures: &[bool] = if resource == "dlg:trgeni01" { &[true, false] } else { &[true] };
-        let inventory = resource_specs(resource)?[0].get("inventory_target").is_some_and(Value::truthy);
-        let mut accepted = false;
-        if inventory {
-            for &departure in departures {
-                if patch_text_dialogue(&original, resource, Some(&refs), departure, false)? == data {
-                    accepted = true;
-                    break;
+        variants.extend(departures.iter().map(|&departure| (departure, false)));
+    }
+    for (defer_departure, numeric_target) in variants {
+        match patch_text_dialogue(&original, resource, Some(&refs), defer_departure, numeric_target) {
+            Ok(patched) if patched == data => return Ok(Some((original, refs))),
+            Ok(_) => {}
+            Err(error) if error.kind == ErrorKind::Profile => break,
+            Err(error) => return Err(error),
+        }
+    }
+    Err(changed_patch(resource))
+}
+
+/// A campaign guard of a reply trigger: the call, its route and whether it
+/// is the selected copy.
+type GuardCall<'a> = (Call, &'a Dict, bool);
+
+/// The trailing campaign guards of a reply trigger, in order; None if
+/// unreadable.
+fn guard_calls<'a>(text: &[u8], routes: &[(Vec<u8>, &'a Dict)]) -> Option<Vec<GuardCall<'a>>> {
+    let found = calls(text)?;
+    let mut guards = Vec::new();
+    for call in found.into_iter().rev() {
+        let name = call.name.to_ascii_lowercase();
+        let flag = string_argument(text, &call, 0);
+        let spec = flag.and_then(|flag| routes.iter().rev().find(|(key, _)| key.as_slice() == flag).map(|(_, spec)| *spec));
+        let Some(spec) = spec else { break };
+        if !(name == b"global" || name == b"!global")
+            || call.args.len() != 3
+            || string_argument(text, &call, 1) != Some(b"GLOBAL")
+            || integer_argument(text, &call, 2, None) != Some(1)
+        {
+            break;
+        }
+        let selected = name == b"global";
+        guards.push((call, spec, selected));
+    }
+    guards.reverse();
+    Some(guards)
+}
+
+/// `re.findall(rb'ActionOverride\([^\r\n]*?,SetGlobal\("<local>","LOCALS",1\)\)\r\n', text)`.
+fn local_marks(text: &[u8], local: &[u8]) -> Vec<Vec<u8>> {
+    const HEAD: &[u8] = b"ActionOverride(";
+    let tail = [b",SetGlobal(\"" as &[u8], local, b"\",\"LOCALS\",1))\r\n"].concat();
+    let mut marks = Vec::new();
+    let mut at = 0;
+    while at < text.len() {
+        if text[at..].starts_with(HEAD) {
+            let mut cursor = at + HEAD.len();
+            let end = loop {
+                if text[cursor..].starts_with(&tail) {
+                    break Some(cursor + tail.len());
                 }
+                if cursor >= text.len() || matches!(text[cursor], b'\r' | b'\n') {
+                    break None;
+                }
+                cursor += 1;
+            };
+            if let Some(end) = end {
+                marks.push(text[at..end].to_vec());
+                at = end;
+                continue;
             }
         }
-        if !accepted {
-            return Err(Error::profile("Mode 2 text dialogue patch changed"));
+        at += 1;
+    }
+    marks
+}
+
+/// Undo one route's additions around its grant in an unselected reply.
+fn strip_grant(text: &[u8], spec: &Dict, resource: &str) -> Result<Vec<u8>> {
+    let additions = if spec.get("inventory_target").is_some_and(Value::truthy) {
+        vec![[b"\r\n" as &[u8], &callback(spec, true)?].concat()]
+    } else {
+        let local = text_field(spec, "recipient_local", "encode")?;
+        let marks = local_marks(text, local.as_bytes());
+        if marks.len() != 1 {
+            return Err(changed_patch(resource));
+        }
+        vec![marks.into_iter().next().expect("one mark"), [b"\r\n" as &[u8], &event(spec)?].concat()]
+    };
+    let mut text = text.to_vec();
+    for addition in additions {
+        if count_bytes(&text, &addition) != 1 {
+            return Err(changed_patch(resource));
+        }
+        text = replace_bytes(&text, &addition, b"", Some(1));
+    }
+    Ok(text)
+}
+
+/// A dialogue reply as the engine reads it.
+#[derive(PartialEq, Eq)]
+struct LogicalRow {
+    flags: u32,
+    reply: u32,
+    journal: u32,
+    trigger: Option<Vec<u8>>,
+    action: Option<Vec<u8>>,
+    next_dialogue: Vec<u8>,
+    next_state: u32,
+}
+
+/// A dialogue's content as the engine reads it, without its table layout.
+#[derive(PartialEq, Eq)]
+struct Logical {
+    signature: Vec<u8>,
+    flags: Vec<u8>,
+    states: Vec<(u32, Option<Vec<u8>>, Vec<LogicalRow>)>,
+}
+
+fn logical(data: &[u8], resource: &str) -> Result<Logical> {
+    let dialogue = read_dialogue(data, resource)?;
+    let label = label(resource);
+    let mut states = Vec::new();
+    for state in &dialogue.states {
+        let (first, count) = outgoing(&dialogue, state, &label)?;
+        let mut rows = Vec::new();
+        for row in &dialogue.transitions[first..first + count] {
+            let flags = u32_le(row, 0);
+            rows.push(LogicalRow {
+                flags,
+                reply: u32_le(row, 4),
+                journal: u32_le(row, 8),
+                trigger: if flags & 2 != 0 { Some(string(&dialogue.triggers, u32_le(row, 12), &label)?) } else { None },
+                action: if flags & 4 != 0 { Some(string(&dialogue.actions, u32_le(row, 16), &label)?) } else { None },
+                next_dialogue: row[20..28].to_vec(),
+                next_state: u32_le(row, 28),
+            });
+        }
+        let entry = u32_le(state, 12);
+        let condition = if entry == 0xFFFF_FFFF { None } else { Some(string(&dialogue.state_triggers, entry, &label)?) };
+        states.push((u32_le(state, 0), condition, rows));
+    }
+    Ok(Logical { signature: data[..8].to_vec(), flags: data[48..52].to_vec(), states })
+}
+
+/// Undo this adapter's patch of a dialogue without a trailer
+/// (`_static_original`); None if unpatched.
+///
+/// The result reads as the original did. Patching it again must give the
+/// same dialogue as `data`, or `data` is not exactly this adapter's patch.
+fn static_original(data: &[u8], resource: &str) -> Result<Option<Vec<u8>>> {
+    let specs = resource_specs(resource)?;
+    let dialogue = read_dialogue(data, resource)?;
+    if !carries_patch(&dialogue, &specs)? {
+        return Ok(None);
+    }
+    let attempt = unpatched_dialogue(dialogue, &specs, resource).and_then(|original| {
+        let same = logical(&patch_dialogue(&original, &specs, &[], true, true, None)?, resource)? == logical(data, resource)?;
+        Ok((original, same))
+    });
+    match attempt {
+        Ok((original, true)) => Ok(Some(original)),
+        Ok((_, false)) => Err(changed_patch(resource)),
+        Err(error) if error.kind == ErrorKind::Profile => Err(changed_patch(resource)),
+        Err(error) => Err(error),
+    }
+}
+
+fn unpatched_dialogue(mut dialogue: Dialogue, specs: &[Dict], resource: &str) -> Result<Vec<u8>> {
+    let label = label(resource);
+    let mut routes: Vec<(Vec<u8>, &Dict)> = Vec::new();
+    for spec in specs {
+        routes.push((text_field(spec, "selected_global", "encode")?.as_bytes().to_vec(), spec));
+    }
+    for state_index in 0..dialogue.states.len() {
+        let (first, count) = outgoing(&dialogue, &dialogue.states[state_index], &label)?;
+        let rows = dialogue.transitions[first..first + count].to_vec();
+        let mut restored = Vec::new();
+        let mut at = 0;
+        while at < rows.len() {
+            // A gated reply became 2^n replies, the first one with every
+            // route unselected; it keeps each original grant.
+            let mut row = rows[at].clone();
+            let (flags, action_id) = (u32_le(&row, 0), u32_le(&row, 16));
+            let trigger = if flags & 2 != 0 { string(&dialogue.triggers, u32_le(&row, 12), &label)? } else { Vec::new() };
+            let mut action = if flags & 4 != 0 { string(&dialogue.actions, action_id, &label)? } else { Vec::new() };
+            let guards = if flags & 2 != 0 { guard_calls(&trigger, &routes).unwrap_or_default() } else { Vec::new() };
+            let copies = if guards.len() >= usize::BITS as usize - 1 { usize::MAX } else { 1usize << guards.len() };
+            if guards.iter().any(|(_, _, selected)| *selected) || at.saturating_add(copies) > rows.len() {
+                return Err(changed_patch(resource));
+            }
+            at += copies;
+            if let Some((first_guard, _, _)) = guards.first() {
+                let prior = trigger[..first_guard.start].to_vec();
+                for (_, spec, _) in &guards {
+                    action = strip_grant(&action, spec, resource)?;
+                }
+                if !prior.is_empty() {
+                    dialogue.triggers.push(prior);
+                    put_u32(&mut row, 12, dialogue.triggers.len() as u32 - 1);
+                } else {
+                    put_u32(&mut row, 0, flags & !2);
+                }
+            }
+            action = replace_bytes(&action, DEPARTURE, b"DestroySelf()", None);
+            if flags & 4 != 0 && action != dialogue.actions[action_id as usize] {
+                dialogue.actions.push(action);
+                put_u32(&mut row, 16, dialogue.actions.len() as u32 - 1);
+            }
+            restored.push(row);
+        }
+        if restored != rows {
+            let length = dialogue.transitions.len() as u32;
+            put_u32(&mut dialogue.states[state_index], 4, length);
+            put_u32(&mut dialogue.states[state_index], 8, restored.len() as u32);
+            dialogue.transitions.extend(restored);
         }
     }
-    Ok((original, Some(refs)))
+    Ok(dialogue.render())
 }
 
 // ---------------------------------------------------------------- scripts
 
-fn marker_action(grant: &[u8], spec: &Dict, newline: &[u8]) -> Result<Vec<u8>> {
+fn marker_action(grant: &Action, spec: &Dict, newline: &[u8]) -> Result<Vec<u8>> {
     // In compiled ActionOverride the action's first OB is the actor override.
     // Copy GiveItemCreate's second OB verbatim, retaining every object selector.
-    let separator = [b"OB", newline].concat();
-    let objects = split_bytes(grant, &separator);
-    if objects.len() != 7 {
-        return Err(Error::profile("Mode 2 BCS reward object layout changed"));
-    }
-    let empty: &[u8] = b"0 0 0 0 0 0 0 0 0 0 0 0 \"\"";
-    if objects[1] != empty {
-        return Err(Error::profile("Mode 2 BCS reward already has an actor override"));
-    }
     let local = match field(spec, "recipient_local")? {
         Value::Str(name) => name.clone(),
         other => return Err(Error::type_error(format!("object of type '{}' has no len()", other.type_name()))),
     };
-    let marker = global_action(&local, newline)?;
-    let marker = replace_bytes(&marker, b"\"GLOBAL", b"\"LOCALS", Some(1));
-    Ok(replace_bytes(&marker, &[empty, &separator].concat(), &[objects[3], &separator].concat(), Some(1)))
+    let marker = replace_bytes(&global_action(&local, newline)?, b"\"GLOBAL", b"\"LOCALS", Some(1));
+    let empty: &[u8] = b"0 0 0 0 0 0 0 0 0 0 0 0 \"\"";
+    let object = [grant.objects[1].as_slice(), b"OB", newline].concat();
+    Ok(replace_bytes(&marker, &[empty, b"OB", newline].concat(), &object, Some(1)))
 }
 
-fn patch_script(data: &[u8], spec: &Dict, ddwell_ref: Option<i64>) -> Result<Vec<u8>> {
-    let newline = newline(data)?;
-    let container = field(spec, "quest")?.py_eq(&Value::from("asysta01"));
-    let (mut blocks, prefix, suffix) = blocks(data, if container { 1 } else { 3 }, newline)?;
-    let index = match first_item(field(spec, "branches")?)? {
-        Value::Int(index) if index >= 0 => index as usize,
-        _ => return Err(index_error()),
-    };
-    let block = blocks.get(index).ok_or_else(index_error)?.clone();
-    let grant = grant_action(&block, if container { "Helm19" } else { "helm21" }, if container { 82 } else { 140 }, newline)?;
-    let mark = if container { Vec::new() } else { marker_action(&grant, spec, newline)? };
-    let event = global_action(&text(spec, "event_global")?, newline)?;
-    let boundary = [b"CO", newline].concat();
-    let (head, conditions, response) = split3(&block, &boundary)?;
-    let mut variants = Vec::new();
-    for selected in [false, true] {
-        let replacement = if selected { global_action(&text(spec, "consumed_global")?, newline)? } else { grant.clone() };
-        let mut changed = replace_bytes(&response, &grant, &[mark.as_slice(), &replacement, &event].concat(), Some(1));
-        if selected && !container {
-            let old = [b"40850 0 0 0 0\"\" \"\" AC" as &[u8], newline].concat();
-            let reference = ddwell_ref.filter(|value| (0..0xFFFF_FFFF).contains(value));
-            let Some(reference) = reference.filter(|_| count_bytes(&changed, &old) == 1) else {
-                return Err(Error::profile("DDWELL requires an allocated original @399 TLK reference"));
-            };
-            changed = replace_bytes(&changed, &old, &[reference.to_string().as_bytes(), &old[5..]].concat(), Some(1));
-        }
-        variants.extend([
-            head.as_slice(),
-            &boundary,
-            &conditions,
-            &global_guard(&text(spec, "selected_global")?, selected, newline)?,
-            &boundary,
-            &changed,
-        ]
-        .concat());
+/// A compiled action with its first integer parameter replaced.
+fn with_integer(action: &[u8], newline: &[u8], value: Option<i64>) -> Vec<u8> {
+    let separator = [b"OB", newline].concat();
+    let start = rfind_bytes(action, &separator, 0, action.len()).expect("a compiled action") + separator.len();
+    let mut end = start + usize::from(action.get(start) == Some(&b'-'));
+    while action.get(end).is_some_and(u8::is_ascii_digit) {
+        end += 1;
     }
-    blocks[index] = variants;
-    Ok([prefix, blocks.concat(), suffix].concat())
+    let shown = value.map_or_else(|| "None".to_string(), |value| value.to_string());
+    [&action[..start], shown.as_bytes(), &action[end..]].concat()
 }
+
+/// `(?:0 )+""`: an object that names no actor.
+fn empty_object(object: &[u8]) -> bool {
+    let mut rest = object;
+    let mut zeros = 0;
+    while let Some(next) = rest.strip_prefix(b"0 ") {
+        rest = next;
+        zeros += 1;
+    }
+    zeros > 0 && rest == b"\"\""
+}
+
+/// A block that gives a route's item: its parts, the grant and any display.
+struct ScriptGrant {
+    head: Vec<u8>,
+    conditions: Vec<u8>,
+    responses: Vec<u8>,
+    grant: Action,
+    display: Option<Action>,
+}
+
+/// Each block that gives the route's item (`_script_grants`).
+fn script_grants(script: &Script, spec: &Dict, label: &str) -> Result<BTreeMap<usize, ScriptGrant>> {
+    let item_name = text_field(spec, "item", "encode")?;
+    let item = item_name.to_ascii_lowercase().into_bytes();
+    let container = field(spec, "recipient_local")?.is_null();
+    // A reward container creates the item in itself; others give it.
+    let (opcode, verb) = if container { (82, "CreateItem") } else { (140, "GiveItemCreate") };
+    let shown = upper(item_name);
+    let refs = text_refs(&text(spec, "resource")?).unwrap_or(&[]);
+    let mut found = BTreeMap::new();
+    for (index, block) in script.blocks.iter().enumerate() {
+        if !names(block, item_name) {
+            continue;
+        }
+        let (head, conditions, responses) = block_parts(block, script.newline)?;
+        let (mut grants, mut displays) = (Vec::new(), Vec::new());
+        for action in block_actions(&responses, script.newline)? {
+            if refs.iter().any(|(old, _)| *old == action.integer) {
+                displays.push(action.clone());
+            }
+            if !action.strings.iter().any(|value| value.to_ascii_lowercase() == item) {
+                continue;
+            }
+            if action.opcode != opcode {
+                return Err(profile(format!(
+                    "{label} block {index} names {shown} in action {}, not in a {verb}() grant",
+                    action.opcode_shown
+                )));
+            }
+            if !container && !empty_object(&action.objects[0]) {
+                return Err(profile(format!("{label} block {index} gives {shown} through another actor")));
+            }
+            grants.push(action);
+        }
+        if grants.len() > 1 {
+            return Err(profile(format!("{label} block {index} gives {shown} twice")));
+        }
+        if displays.len() > 1 {
+            return Err(profile(format!("{label} block {index} shows the text that names the reward twice")));
+        }
+        if let Some(grant) = grants.into_iter().next() {
+            found.insert(index, ScriptGrant { head, conditions, responses, grant, display: displays.into_iter().next() });
+        }
+    }
+    if found.is_empty() {
+        return Err(profile(format!("{label} has no block that gives {shown}")));
+    }
+    if !refs.is_empty() && !found.values().any(|row| row.display.is_some()) {
+        let mut olds: Vec<i64> = refs.iter().map(|(old, _)| *old).collect();
+        olds.sort_unstable();
+        let missing: Vec<String> = olds.iter().map(i64::to_string).collect();
+        return Err(profile(format!("{label} no longer shows the text that names the reward ({})", missing.join(", "))));
+    }
+    Ok(found)
+}
+
+/// Gate every block that gives the route's item (`_patch_script`);
+/// `text_ref` is the allocated text of a route that shows the reward text.
+pub fn patch_script(data: &[u8], spec: &Dict, text_ref: Option<i64>) -> Result<Vec<u8>> {
+    let resource = text(spec, "resource")?;
+    let label = label(&resource);
+    if text_refs(&resource).is_some() && !text_ref.is_some_and(|value| (0..0xFFFF_FFFF).contains(&value)) {
+        return Err(profile(format!("{label} requires allocated original reward text")));
+    }
+    let (script, grants) = naming(&label, || {
+        let script = script_blocks(data)?;
+        let grants = script_grants(&script, spec, &label)?;
+        Ok((script, grants))
+    })?;
+    let newline = script.newline;
+    let container = field(spec, "recipient_local")?.is_null();
+    let mut blocks = script.blocks.clone();
+    for (index, row) in grants {
+        let original = row.responses[row.grant.start..row.grant.end].to_vec();
+        let mark = if container { Vec::new() } else { marker_action(&row.grant, spec, newline)? };
+        let event = global_action(text_field(spec, "event_global", "encode")?, newline)?;
+        let mut variants = Vec::new();
+        for selected in [false, true] {
+            let replacement =
+                if selected { global_action(text_field(spec, "consumed_global", "encode")?, newline)? } else { original.clone() };
+            let mut edits = vec![(row.grant.start, row.grant.end, [mark.as_slice(), &replacement, &event].concat())];
+            if let (true, Some(display)) = (selected, &row.display) {
+                let shown = with_integer(&row.responses[display.start..display.end], newline, text_ref);
+                edits.push((display.start, display.end, shown));
+            }
+            let guard = global_guard(text_field(spec, "selected_global", "encode")?, selected, newline)?;
+            variants.extend(
+                [row.head.as_slice(), b"CO", newline, &row.conditions, &guard, b"CO", newline, &edited(&row.responses, edits)?]
+                    .concat(),
+            );
+        }
+        blocks[index] = variants;
+    }
+    Ok([script.prefix, blocks.concat(), script.suffix].concat())
+}
+
+/// The original of a reward script, its text ref and whether we patched it
+/// (`_script_original`).
+pub fn script_original(data: &[u8], spec: &Dict) -> Result<(Vec<u8>, Option<i64>, bool)> {
+    let resource = text(spec, "resource")?;
+    let newline: &[u8] = if find_bytes(data, b"\r\n", 0).is_some() { b"\r\n" } else { b"\n" };
+    let flag = text_field(spec, "selected_global", "encode")?;
+    let unselected = global_guard(flag, false, newline)?;
+    let selected = global_guard(flag, true, newline)?;
+    if find_bytes(data, &[b"\"GLOBAL", flag.as_bytes(), b"\""].concat(), 0).is_none() {
+        return Ok((data.to_vec(), None, false));
+    }
+    let (original, numbers) = match unpatched_script(data, spec, newline, &selected, &unselected) {
+        Ok(found) => found,
+        Err(error) if error.kind == ErrorKind::Profile => return Err(changed_patch(&resource)),
+        Err(error) => return Err(error),
+    };
+    // The allocated text is one of the selected copies' numbers; only a
+    // possible strref can be it.
+    let candidates: Vec<Option<i64>> = if text_refs(&resource).is_some() {
+        numbers.into_iter().filter(|number| (0..0xFFFF_FFFF).contains(number)).map(Some).collect()
+    } else {
+        vec![None]
+    };
+    for reference in candidates {
+        match patch_script(&original, spec, reference) {
+            Ok(patched) if patched == data => return Ok((original, reference, true)),
+            Ok(_) => {}
+            Err(error) if error.kind == ErrorKind::Profile => break,
+            Err(error) => return Err(error),
+        }
+    }
+    Err(changed_patch(&resource))
+}
+
+/// Drop the selected copies of gated blocks and undo the unselected ones
+/// (`_unpatched_script`).
+///
+/// Also returns the integers of the selected copies' actions, among them the
+/// allocated reward text.
+fn unpatched_script(
+    data: &[u8],
+    spec: &Dict,
+    newline: &[u8],
+    selected: &[u8],
+    unselected: &[u8],
+) -> Result<(Vec<u8>, BTreeSet<i64>)> {
+    let resource = text(spec, "resource")?;
+    let script = script_blocks(data)?;
+    let (mut restored, mut numbers) = (Vec::new(), BTreeSet::new());
+    let container = field(spec, "recipient_local")?.is_null();
+    let event = global_action(text_field(spec, "event_global", "encode")?, newline)?;
+    for block in &script.blocks {
+        if find_bytes(block, selected, 0).is_some() {
+            let (_, _, responses) = block_parts(block, newline)?;
+            numbers.extend(block_actions(&responses, newline)?.iter().map(|action| action.integer));
+            continue;
+        }
+        let mut block = block.clone();
+        if find_bytes(&block, unselected, 0).is_some() {
+            block = replace_bytes(&block, unselected, b"", Some(1));
+            let (_, _, responses) = block_parts(&block, newline)?;
+            let item = text_field(spec, "item", "encode")?.to_ascii_lowercase().into_bytes();
+            let grants: Vec<Action> = block_actions(&responses, newline)?
+                .into_iter()
+                .filter(|action| action.strings.iter().any(|value| value.to_ascii_lowercase() == item))
+                .collect();
+            if grants.len() != 1 {
+                return Err(changed_patch(&resource));
+            }
+            let grant = responses[grants[0].start..grants[0].end].to_vec();
+            let mark = if container { Vec::new() } else { marker_action(&grants[0], spec, newline)? };
+            let patched = [mark.as_slice(), &grant, &event].concat();
+            if count_bytes(&block, &patched) != 1 {
+                return Err(changed_patch(&resource));
+            }
+            block = replace_bytes(&block, &patched, &grant, Some(1));
+        }
+        restored.push(block);
+    }
+    Ok(([script.prefix, restored.concat(), script.suffix].concat(), numbers))
+}
+
+/// The unpatched resource (exact, or as the engine reads it), whether the
+/// bytes are our patch, and our patch's text refs (`_examine`).
+struct Examined {
+    original: Vec<u8>,
+    own: bool,
+    script_ref: Option<i64>,
+    text_refs: Option<BTreeMap<i64, i64>>,
+}
+
+fn examine(resource: &str, data: &[u8]) -> Result<Examined> {
+    if resource.starts_with("bcs:") {
+        let (original, script_ref, own) = script_original(data, &resource_specs(resource)?[0])?;
+        return Ok(Examined { original, own, script_ref, text_refs: None });
+    }
+    let unpatched = || Examined { original: data.to_vec(), own: false, script_ref: None, text_refs: None };
+    if text_refs(resource).is_some() {
+        return Ok(match text_original(data, resource)? {
+            None => unpatched(),
+            Some((original, refs)) => Examined { original, own: true, script_ref: None, text_refs: Some(refs) },
+        });
+    }
+    Ok(match static_original(data, resource)? {
+        None => unpatched(),
+        Some(original) => Examined { original, own: true, script_ref: None, text_refs: None },
+    })
+}
+
+// ---------------------------------------------------------------- texts
 
 /// Append the original generic well description; never replace shared text.
 pub fn prepare_ddwell_text(tlk: &[u8], language: &str) -> Result<(Vec<u8>, i64)> {
@@ -1132,7 +1585,7 @@ where
     S: AsRef<str>,
 {
     if crate::py::lower(language) != "en_us" {
-        return Err(Error::profile("Mode 2 reward text currently requires the original English translation"));
+        return Err(profile("Item Randomiser's reward texts exist only in English"));
     }
     let requested: BTreeSet<String> = resources.into_iter().map(|resource| crate::py::lower(resource.as_ref())).collect();
     let needed: Vec<&str> = requested.iter().map(String::as_str).filter(|resource| text_refs(resource).is_some()).collect();
@@ -1156,113 +1609,66 @@ where
     Ok((updated, result))
 }
 
-/// `re.findall(rb'151OB' + nl + rb'.*?' + nl + rb'([0-9]+) 0 0 0 0"" "" AC' +
-/// nl, block, re.DOTALL)`: the lazy gap takes the first complete tail.
-fn ddwell_display_refs(block: &[u8], newline: &[u8]) -> Vec<i64> {
-    let head = [b"151OB", newline].concat();
-    let tail = [b" 0 0 0 0\"\" \"\" AC" as &[u8], newline].concat();
-    let mut result = Vec::new();
-    let mut from = 0;
-    while let Some(start) = find_bytes(block, &head, from) {
-        let mut matched = None;
-        let mut gap = start + head.len();
-        while gap <= block.len() {
-            if block[gap..].starts_with(newline) {
-                let digits_start = gap + newline.len();
-                let mut at = digits_start;
-                while at < block.len() && block[at].is_ascii_digit() {
-                    at += 1;
-                }
-                if at > digits_start && block[at..].starts_with(&tail) {
-                    matched = Some((digits_value(&block[digits_start..at]), at + tail.len()));
-                    break;
-                }
-            }
-            gap += 1;
-        }
-        match matched {
-            Some((value, end)) => {
-                result.push(value);
-                from = end;
-            }
-            None => from = start + 1,
-        }
-    }
-    result
-}
+// ---------------------------------------------------------------- routes
 
-/// Recover DDWELL's original and allocated reference (`_original_ddwell`).
-pub fn original_ddwell(data: &[u8]) -> Result<(Vec<u8>, Option<i64>)> {
-    let expected = original_hash("ddwell")?;
-    if sha256_hex(data) == expected {
-        return Ok((data.to_vec(), None));
-    }
-    let spec = reward("ddwell");
-    let newline = newline(data)?;
-    let (blocks, prefix, suffix) = blocks(data, 4, newline)?;
-    let mut original_block = blocks[1].clone();
-    let grant = grant_action(&original_block, "helm21", 140, newline)?;
-    let additions = [
-        global_guard(&text(&spec, "selected_global")?, false, newline)?,
-        marker_action(&grant, &spec, newline)?,
-        global_action(&text(&spec, "event_global")?, newline)?,
-    ];
-    for addition in additions {
-        if count_bytes(&original_block, &addition) != 1 {
-            return Err(Error::profile("DDWELL patched reward changed"));
-        }
-        original_block = replace_bytes(&original_block, &addition, b"", Some(1));
-    }
-    let original = [prefix.as_slice(), &blocks[0], &original_block, &blocks[3], &suffix].concat();
-    // Read only the selected branch's DisplayString reference, then prove
-    // every byte of both branches by regenerating from the verified original.
-    let text = ddwell_display_refs(&blocks[2], newline);
-    if sha256_hex(&original) != expected || text.len() != 1 {
-        return Err(Error::profile("DDWELL patched reward changed"));
-    }
-    let reference = text[0];
-    if patch_script(&original, &spec, Some(reference))? != data {
-        return Err(Error::profile("DDWELL patched reward changed"));
-    }
-    Ok((original, Some(reference)))
-}
-
+/// The registry resource a resource name or file name stands for.
 fn resource_key(resource: &str) -> Result<String> {
     let lowered = crate::py::lower(resource);
     let last = lowered.rsplit(':').next().unwrap_or("");
     let name = last.split('.').next().unwrap_or("");
-    let candidates: Vec<&str> =
-        resource_rewards().keys().filter(|key| key.split(':').nth(1) == Some(name)).collect();
+    let candidates: Vec<&str> = resource_rewards().keys().filter(|key| key.split(':').nth(1) == Some(name)).collect();
     if candidates.len() != 1 {
-        return Err(Error::profile("Unsupported Mode 2 scripted reward"));
+        return Err(profile(format!("Unsupported extended reward resource: {resource}")));
     }
     Ok(candidates[0].to_string())
 }
 
-/// Validate known bytes, recovering originals for patches with dynamic text.
+/// Whether the bytes are this adapter's own patch, verified exactly.
 ///
-/// Fixed-hash static patches have no recovery metadata and return None after
-/// verification. Unknown/tampered bytes always raise instead of being accepted.
-pub fn original_reward(resource: &str, data: &[u8]) -> Result<Option<Vec<u8>>> {
-    let resource = resource_key(resource)?;
-    let name = resource.split(':').nth(1).expect("kind:name");
-    if name == "ddwell" {
-        return Ok(Some(original_ddwell(data)?.0));
-    }
-    if text_refs(&resource).is_some() {
-        return Ok(Some(original_text_dialogue(data, &resource)?.0));
-    }
-    let digest = sha256_hex(data);
-    if digest == original_hash(name)? {
-        return Ok(Some(data.to_vec()));
-    }
-    if Some(&digest) == patched_hash(name).as_ref() {
-        return Ok(None);
-    }
-    Err(Error::profile(format!("{} changed; review the Mode 2 reward adapter", crate::py::upper(name))))
+/// False for an unpatched resource; raises for a changed copy of our patch.
+pub fn own_patch(resource: &str, data: &[u8]) -> Result<bool> {
+    Ok(examine(&resource_key(resource)?, data)?.own)
 }
 
-/// Patch reviewed/own bytes; text resources need refs on their first export.
+fn prepare_routes(resource: &str, specs: &[Dict], data: &[u8], reasons: &mut Dict) -> Result<()> {
+    let examined = examine(resource, data)?;
+    if resource.starts_with("bcs:") {
+        patch_script(&examined.original, &specs[0], Some(0))?;
+    } else if let Some(refs) = text_refs(resource) {
+        let stand_in: BTreeMap<i64, i64> = refs.iter().map(|(old, _)| (*old, *old)).collect();
+        patch_text_dialogue(&examined.original, resource, Some(&stand_in), true, true)?;
+    } else {
+        patch_dialogue(&examined.original, specs, &[], true, true, Some(reasons))?;
+    }
+    Ok(())
+}
+
+/// Why each route with a grant in this resource cannot be prepared from
+/// these bytes (route to reason).
+///
+/// Routes missing from the result can be prepared; this runs the same patch
+/// that the export runs, with stand-in text references.
+pub fn route_reasons(resource: &str, data: &[u8]) -> Result<Dict> {
+    let resource = resource_key(resource)?;
+    let specs = resource_specs(&resource)?;
+    let mut reasons = Dict::new();
+    match prepare_routes(&resource, &specs, data, &mut reasons) {
+        Ok(()) => Ok(reasons),
+        Err(error) if error.kind == ErrorKind::Profile => {
+            let mut all = Dict::new();
+            for spec in &specs {
+                let key = route(spec)?;
+                let reason = reasons.get(&key).cloned().unwrap_or_else(|| Value::from(error.message.clone()));
+                all.insert(key, reason);
+            }
+            Ok(all)
+        }
+        Err(error) => Err(error),
+    }
+}
+
+/// Patch a resource or re-export our own patch; text routes need refs on
+/// their first export.
 pub fn patch_reward(
     resource: &str,
     data: &[u8],
@@ -1270,40 +1676,27 @@ pub fn patch_reward(
     ddwell_ref: Option<i64>,
 ) -> Result<Vec<u8>> {
     let resource = resource_key(resource)?;
-    let name = resource.split(':').nth(1).expect("kind:name");
-    if name == "ddwell" {
+    let examined = examine(&resource, data)?;
+    let specs = resource_specs(&resource)?;
+    if resource.starts_with("bcs:") {
         let mut ddwell_ref = ddwell_ref;
         if let Some(refs) = refs {
-            if refs.len() != 1 || !refs.contains_key(&40850) {
-                return Err(Error::profile("DDWELL requires its allocated original reward text"));
+            let expected = text_refs(&resource);
+            let same = expected.is_some_and(|expected| {
+                refs.len() == expected.len() && expected.iter().all(|(old, _)| refs.contains_key(old))
+            });
+            if !same {
+                return Err(profile(format!("{} requires its allocated original reward text", label(&resource))));
             }
-            ddwell_ref = Some(refs[&40850]);
+            ddwell_ref = refs.values().next().copied();
         }
-        let (original, prior_ref) = original_ddwell(data)?;
-        return patch_script(&original, &reward(name), ddwell_ref.or(prior_ref));
+        return patch_script(&examined.original, &specs[0], ddwell_ref.or(examined.script_ref));
     }
     if text_refs(&resource).is_some() {
-        let (original, prior_refs) = original_text_dialogue(data, &resource)?;
-        return patch_text_dialogue(&original, &resource, refs.or(prior_refs.as_ref()), true, true);
+        return patch_text_dialogue(&examined.original, &resource, refs.or(examined.text_refs.as_ref()), true, true);
     }
-    let digest = sha256_hex(data);
-    let patched = patched_hash(name);
-    if Some(&digest) == patched.as_ref() {
+    if examined.own {
         return Ok(data.to_vec());
     }
-    if digest != original_hash(name)? {
-        return Err(Error::profile(format!("{} changed; review the Mode 2 reward adapter", crate::py::upper(name))));
-    }
-    let specs = resource_specs(&resource)?;
-    let result = if resource.starts_with("dlg:") {
-        patch_dialogue(data, &specs, &[], true, true)?
-    } else {
-        patch_script(data, &specs[0], None)?
-    };
-    if let Some(expected) = patched.filter(|hash| !hash.is_empty()) {
-        if sha256_hex(&result) != expected {
-            return Err(Error::profile("Mode 2 reward patch differs from reviewed bytes"));
-        }
-    }
-    Ok(result)
+    patch_dialogue(data, &specs, &[], true, true, None)
 }

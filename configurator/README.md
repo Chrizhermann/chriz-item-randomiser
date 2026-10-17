@@ -129,6 +129,10 @@ python configurator/parity/game_check.py --game '<game folder>' --language en_US
 cargo test --manifest-path configurator/Cargo.toml --features cir-config/parity-overrides
 ```
 
+A plain `cargo test` or `cargo build` replaces the runner with one that
+cannot apply the reference tests' overrides; the runner then refuses them, so
+build with the feature again before the checks.
+
 - `replay_tests.py` runs the reference's test suite and repeats every library
   call it makes (scan, world scan, game detection, presets and their fit,
   binding, campaign compile, store and read, the revisions per campaign start,
@@ -160,11 +164,23 @@ cargo test --manifest-path configurator/Cargo.toml --features cir-config/parity-
   campaign start as the editor's Apply writes them. The export copies game
   resources, so keep the scratch folder outside the repository.
 - The Rust tests include byte-parity fixtures for the resource patchers,
-  generated from synthetic inputs by `configurator/parity/patchers/generate.py`,
-  and the game folder lookup: the executable in `cir` and in `cir/tools`, no
+  generated from synthetic inputs by `configurator/parity/patchers/generate.py`
+  (for the extended pools' reward routes: recognition by meaning in dialogues
+  and compiled scripts, what leaves a route out and why, other mods' layouts,
+  and re-export of the configurator's own earlier patches), and the game
+  folder lookup: the executable in `cir` and in `cir/tools`, no
   game above it, the nearest of nested games, CIR not installed (other
   components, other mods, commented log lines) and installed by marker or log.
   The folder window's interface is checked without showing the window.
+  The reference's checks on its reviewed EET resources run, as there, only
+  when its resource cache `work/original-preset-runtime-20260929/mode2-resources`
+  is present; it is not distributed.
+- `generate.py --game '<game folder>' --language en_US --out '<folder>'`
+  records the reward routes of an installed game, used read-only: each route
+  resource patched as the export patches it, recognised before and after, and
+  exported again. `CIR_PARITY_GAME_ROUTES='<folder>/game_routes.json'` runs it
+  with `cargo test --test parity_game_routes`. The fixture holds the game's
+  bytes, so the folder must be outside the repository.
 
 `CIR_PARITY_TARGET=configurator/target/release` makes the checks use a release
 build.

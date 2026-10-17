@@ -3,7 +3,7 @@
 //! Release builds use the reviewed values only. Built with the
 //! `parity-overrides` feature, the parity tests can change entries the way
 //! the reference's tests use `patch.dict`: `CIR_PIN_OVERRIDES` names a JSON
-//! file mapping a table name such as `"mode2_rewards.ORIGINAL_HASHES"` to
+//! file mapping a table name such as `"quest_options.ORIGINAL_HASHES"` to
 //! `{key: hash}`. Overridden keys keep their place, new keys are appended.
 
 #[cfg(feature = "parity-overrides")]

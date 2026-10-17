@@ -231,11 +231,21 @@ fn run(name: &str, args: &Dict) -> Result<Value> {
     }
 }
 
+/// What the reference's tests patch reaches the port through these; a build
+/// without `parity-overrides` would ignore them and report false differences.
+const OVERRIDES: [&str; 3] = ["CIR_PIN_OVERRIDES", "CIR_PARITY_TABLES", "CIR_PARITY_REGISTRATION_DRAFT"];
+
 fn main() {
     let arguments: Vec<String> = std::env::args().collect();
     if arguments.len() != 3 {
         eprintln!("usage: parity_call <calls.json> <outcomes.jsonl>");
         std::process::exit(2);
+    }
+    if !cfg!(feature = "parity-overrides") {
+        if let Some(name) = OVERRIDES.iter().find(|name| std::env::var_os(name).is_some()) {
+            eprintln!("parity_call: {name} needs a build with --features cir-config/parity-overrides");
+            std::process::exit(2);
+        }
     }
     let calls = read_json(Path::new(&arguments[1])).expect("readable calls file");
     let mut lines = String::new();

@@ -7,6 +7,7 @@
 pub mod builders;
 pub mod mode2;
 
+use cir_config::error::{CHANGED_SINCE_SCAN, SCRIPT_ERROR};
 use cir_config::json::{self, Dict, Value};
 use cir_config::py::{from_hex, hex};
 use cir_config::resources::sha256_hex;
@@ -15,7 +16,7 @@ use cir_config::{
     quest_options, quest_rewards, spell_rewards, store_inventory, Error, ErrorKind, Result,
 };
 use std::collections::{BTreeMap, BTreeSet};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Once;
 
 pub fn fixtures() -> PathBuf {
@@ -39,8 +40,11 @@ pub struct Fixture {
 }
 
 pub fn load(scenario: &str) -> Fixture {
-    let path = fixtures().join(format!("{scenario}.json"));
-    let data = std::fs::read(&path).unwrap_or_else(|error| panic!("{}: {error}", path.display()));
+    load_path(&fixtures().join(format!("{scenario}.json")))
+}
+
+pub fn load_path(path: &Path) -> Fixture {
+    let data = std::fs::read(path).unwrap_or_else(|error| panic!("{}: {error}", path.display()));
     let document = json::parse_strict(&data, "fixture").expect("fixture JSON");
     let cases = document.get("cases").and_then(Value::as_list).expect("cases").clone();
     let blobs = document.get("blobs").and_then(Value::as_dict).expect("blobs").clone();
@@ -93,6 +97,11 @@ fn int_keys(map: &BTreeMap<i64, i64>) -> Value {
 
 fn nested_refs(map: &BTreeMap<String, BTreeMap<i64, i64>>) -> Value {
     Value::Dict(map.iter().map(|(key, refs)| (key.clone(), int_keys(refs))).collect())
+}
+
+/// A recovery's (original, text ref or None, own patch), as the reference's tuple.
+fn recovered((original, reference, own): (Vec<u8>, Option<i64>, bool)) -> Value {
+    Value::List(vec![bytes_value(&original), reference.map_or(Value::Null, Value::from), Value::Bool(own)])
 }
 
 fn files(entries: &[(String, Vec<u8>)]) -> Value {
@@ -246,20 +255,31 @@ fn call(name: &str, args: &Args) -> Result<Value> {
         "mode2_rewards.resource_specs" => {
             Value::List(mode2_rewards::resource_specs(&args.str("resource"))?.into_iter().map(Value::Dict).collect())
         }
-        "mode2_rewards._dialogue_grant" => {
-            bytes_value(&mode2_rewards::dialogue_grant(&args.bytes("actions"), &args.dict("spec"))?)
-        }
         "mode2_rewards._patch_dialogue" => {
             let specs: Vec<Dict> =
                 args.value("specs").as_list().expect("specs").iter().map(|spec| spec.as_dict().expect("spec").clone()).collect();
-            bytes_value(&mode2_rewards::patch_dialogue(
+            let mut reasons = Dict::new();
+            let result = mode2_rewards::patch_dialogue(
                 &args.bytes("data"),
                 &specs,
                 &args.ordered_refs("action_refs"),
                 args.bool("defer_departure"),
                 args.bool("numeric_target"),
-            )?)
+                Some(&mut reasons),
+            )?;
+            Value::List(vec![bytes_value(&result), Value::Dict(reasons)])
         }
+        "mode2_rewards._patch_script" => {
+            bytes_value(&mode2_rewards::patch_script(&args.bytes("data"), &args.dict("spec"), args.optional_int("text_ref"))?)
+        }
+        "mode2_rewards._text_original" => {
+            mode2_rewards::text_original(&args.bytes("data"), &args.str("resource"))?.map_or(Value::Null, |(original, refs)| {
+                Value::List(vec![bytes_value(&original), int_keys(&refs)])
+            })
+        }
+        "mode2_rewards._script_original" => recovered(mode2_rewards::script_original(&args.bytes("data"), &args.dict("spec"))?),
+        "mode2_rewards.own_patch" => Value::Bool(mode2_rewards::own_patch(&args.str("resource"), &args.bytes("data"))?),
+        "mode2_rewards.route_reasons" => Value::Dict(mode2_rewards::route_reasons(&args.str("resource"), &args.bytes("data"))?),
         "mode2_rewards._patch_text_dialogue" => bytes_value(&mode2_rewards::patch_text_dialogue(
             &args.bytes("data"),
             &args.str("resource"),
@@ -267,14 +287,6 @@ fn call(name: &str, args: &Args) -> Result<Value> {
             args.bool("defer_departure"),
             args.bool("numeric_target"),
         )?),
-        "mode2_rewards._original_text_dialogue" => {
-            let (original, refs) = mode2_rewards::original_text_dialogue(&args.bytes("data"), &args.str("resource"))?;
-            Value::List(vec![bytes_value(&original), refs.as_ref().map_or(Value::Null, int_keys)])
-        }
-        "mode2_rewards._original_ddwell" => {
-            let (original, reference) = mode2_rewards::original_ddwell(&args.bytes("data"))?;
-            Value::List(vec![bytes_value(&original), Value::from(reference)])
-        }
         "mode2_rewards.prepare_ddwell_text" => {
             let (tlk, reference) = mode2_rewards::prepare_ddwell_text(&args.bytes("tlk"), &args.str("language"))?;
             Value::List(vec![bytes_value(&tlk), Value::from(reference)])
@@ -282,9 +294,6 @@ fn call(name: &str, args: &Args) -> Result<Value> {
         "mode2_rewards.prepare_reward_texts" => {
             let (tlk, refs) = mode2_rewards::prepare_reward_texts(&args.bytes("tlk"), args.strings("resources"), &args.str("language"))?;
             Value::List(vec![bytes_value(&tlk), nested_refs(&refs)])
-        }
-        "mode2_rewards.original_reward" => {
-            mode2_rewards::original_reward(&args.str("resource"), &args.bytes("data"))?.map_or(Value::Null, |data| bytes_value(&data))
         }
         "mode2_rewards.patch_reward" => bytes_value(&mode2_rewards::patch_reward(
             &args.str("resource"),
@@ -294,7 +303,25 @@ fn call(name: &str, args: &Args) -> Result<Value> {
         )?),
         "container_rewards.TARGETS" => dump_dict(container_rewards::targets()),
         "container_rewards.RESOURCE_TARGETS" => dump_dict(container_rewards::resource_targets()),
+        "container_rewards.TEXT_RESOURCES" => Value::from(container_rewards::TEXT_RESOURCES.to_vec()),
         "container_rewards.target_spec" => Value::Dict(container_rewards::target_spec(&args.str("target_id"))?),
+        "container_rewards.treasure" => Value::from(container_rewards::treasure(&args.str("target_id"))?),
+        "container_rewards.treasure_area" => {
+            Value::from(container_rewards::treasure_area(&args.str("target_id"), &args.str("platform"))?)
+        }
+        "container_rewards.treasure_container" => Value::from(container_rewards::treasure_container(
+            &args.str("target_id"),
+            args.value("sources").as_list().expect("sources"),
+            &args.str("platform"),
+        )?),
+        "container_rewards.container_error" => {
+            Value::from(container_rewards::container_error(&args.str("target_id"), &args.str("problem"))?.message)
+        }
+        "container_rewards.own_patch" => Value::Bool(container_rewards::own_patch(&args.str("resource"), &args.bytes("data"))?),
+        "container_rewards.route_reasons" => {
+            Value::Dict(container_rewards::route_reasons(&args.str("resource"), &args.bytes("data"))?)
+        }
+        "container_rewards._recover" => recovered(container_rewards::recover(&args.str("resource"), &args.bytes("data"))?),
         "container_rewards.prepare_container_texts" => {
             let (tlk, refs) =
                 container_rewards::prepare_container_texts(&args.bytes("tlk"), args.strings("resources"), &args.str("language"))?;
@@ -308,9 +335,6 @@ fn call(name: &str, args: &Args) -> Result<Value> {
             args.int("selector"),
             &args.bytes("newline"),
         )),
-        "container_rewards.original_container_resource" => {
-            bytes_value(&container_rewards::original_container_resource(&args.str("resource"), &args.bytes("data"))?)
-        }
         "container_rewards.patch_container_resource" => bytes_value(&container_rewards::patch_container_resource(
             &args.str("resource"),
             &args.bytes("data"),
@@ -406,7 +430,16 @@ fn render(value: &Value) -> String {
 /// Returns (run, skipped) counts.
 pub fn run(scenario: &str) -> (usize, usize) {
     setup(scenario);
-    let fixture = load(scenario);
+    compare(scenario, &load(scenario))
+}
+
+/// A fixture recorded without pins outside the repository
+/// (`generate.py --game`).
+pub fn run_path(path: &Path) -> (usize, usize) {
+    compare(&path.display().to_string(), &load_path(path))
+}
+
+fn compare(scenario: &str, fixture: &Fixture) -> (usize, usize) {
     let overrides = cfg!(feature = "parity-overrides");
     let (mut ran, mut skipped) = (0, 0);
     let mut failures = Vec::new();
@@ -418,24 +451,32 @@ pub fn run(scenario: &str) -> (usize, usize) {
         }
         ran += 1;
         let function = case.get("call").and_then(Value::as_str).expect("call");
-        let args = Args { fixture: &fixture, values: case.get("args").and_then(Value::as_dict).expect("args") };
+        let args = Args { fixture, values: case.get("args").and_then(Value::as_dict).expect("args") };
         let outcome = call(function, &args);
         let expected = match (case.get("result"), case.get("error")) {
             (Some(result), _) => Ok(result.clone()),
-            (None, Some(error)) => Err(Error::new(
-                match error.get("kind").and_then(Value::as_str).expect("kind") {
-                    "Profile" => ErrorKind::Profile,
-                    "Scan" => ErrorKind::Scan,
-                    "Value" => ErrorKind::Value,
-                    "Key" => ErrorKind::Key,
-                    "Type" => ErrorKind::Type,
-                    "GameText" => ErrorKind::GameText,
-                    "Overflow" => ErrorKind::Overflow,
-                    "Attribute" => ErrorKind::Attribute,
-                    other => panic!("unknown error kind {other}"),
-                },
-                error.get("message").and_then(Value::as_str).expect("message"),
-            )),
+            (None, Some(error)) => {
+                let mut expected = Error::new(
+                    match error.get("kind").and_then(Value::as_str).expect("kind") {
+                        "Profile" => ErrorKind::Profile,
+                        "Scan" => ErrorKind::Scan,
+                        "Value" => ErrorKind::Value,
+                        "Key" => ErrorKind::Key,
+                        "Type" => ErrorKind::Type,
+                        "GameText" => ErrorKind::GameText,
+                        "Overflow" => ErrorKind::Overflow,
+                        "Attribute" => ErrorKind::Attribute,
+                        other => panic!("unknown error kind {other}"),
+                    },
+                    error.get("message").and_then(Value::as_str).expect("message"),
+                );
+                expected.subclass = error.get("subclass").and_then(Value::as_str).map(|name| match name {
+                    "ChangedSinceScan" => CHANGED_SINCE_SCAN,
+                    "ScriptError" => SCRIPT_ERROR,
+                    other => panic!("unknown ProfileError subclass {other}"),
+                });
+                Err(expected)
+            }
             _ => panic!("case {name} has no outcome"),
         };
         let matches = match (&outcome, &expected) {
@@ -446,7 +487,8 @@ pub fn run(scenario: &str) -> (usize, usize) {
         if !matches {
             let show = |outcome: &Result<Value>| match outcome {
                 Ok(value) => render(value),
-                Err(error) => format!("{}Error: {}", kind_name(error.kind), error.message),
+                Err(error) => format!("{}Error{}: {}", kind_name(error.kind),
+                    error.subclass.map_or(String::new(), |name| format!(" ({name})")), error.message),
             };
             failures.push(format!("{name} ({function})\n  rust:   {}\n  python: {}", show(&outcome), show(&expected)));
         }

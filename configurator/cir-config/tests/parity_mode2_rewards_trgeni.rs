@@ -1,15 +1,17 @@
 //! Python-recorded parity cases for the `mode2_rewards_trgeni` scenario
 //! (see `configurator/parity/patchers/generate.py`), and the reference's
 //! test_trgeni_terminal_departure_waits_for_transfer_and_upgrades_previous_patch
-//! on the same synthetic dialogue (it pins `ORIGINAL_HASHES["trgeni01"]`, so
-//! it needs the `parity-overrides` feature).
+//! on the same synthetic dialogue.
 
 mod common;
 
+use cir_config::error::ErrorKind;
+use cir_config::mode2_rewards::{own_patch, patch_dialogue, patch_reward, patch_text_dialogue, text_original};
 use cir_config::py::put_u32;
 use cir_config::quest_options::Dialogue;
-use common::builders::{pinned, sha};
-use common::mode2::{dialogue_fixture, specs};
+use common::builders::{outgoing, replace, u32_at};
+use common::mode2::{check_dialogue, check_text_graph, dialogue_fixture, specs, trgeni_terminal_actions, TRGENI_DEPARTURE};
+use std::collections::BTreeMap;
 
 const SCENARIO: &str = "mode2_rewards_trgeni";
 
@@ -27,35 +29,29 @@ fn terminal_fixture() -> Vec<u8> {
 }
 
 #[test]
-fn builder_matches_the_pinned_synthetic_hash() {
-    assert_eq!(sha(&terminal_fixture()), pinned(SCENARIO, "mode2_rewards.ORIGINAL_HASHES", "trgeni01"));
+fn builder_matches_the_reference_builder() {
+    let fixture = common::load(SCENARIO);
+    assert_eq!(fixture.input("patch_reward original", "data"), terminal_fixture());
 }
 
-#[cfg(feature = "parity-overrides")]
 #[test]
 fn trgeni_terminal_departure_waits_for_transfer_and_upgrades_previous_patch() {
-    use cir_config::error::ErrorKind;
-    use cir_config::mode2_rewards::{original_reward, patch_dialogue, patch_reward, patch_text_dialogue};
-    use common::builders::{outgoing, replace, u32_at};
-    use common::mode2::{check_dialogue, check_text_graph, trgeni_terminal_actions, TRGENI_DEPARTURE};
-    use std::collections::BTreeMap;
-
-    common::setup(SCENARIO);
     let resource = "dlg:trgeni01";
     let spec = specs(resource).remove(0);
     let original = terminal_fixture();
     let refs = BTreeMap::from([(43514, 100001)]);
     let legacy = patch_text_dialogue(&original, resource, Some(&refs), false, false).unwrap();
-    assert_eq!(original_reward(resource, &legacy).unwrap(), Some(original.clone()));
+    assert_eq!(text_original(&legacy, resource).unwrap(), Some((original.clone(), refs.clone())));
+    assert!(own_patch(resource, &legacy).unwrap());
     let result = patch_reward(resource, &legacy, None, None).unwrap();
     let previous = patch_text_dialogue(&original, resource, Some(&refs), true, false).unwrap();
     assert_eq!(patch_reward(resource, &previous, None, None).unwrap(), result);
     assert_ne!(result, legacy);
     assert_eq!(result, patch_reward(resource, &original, Some(&refs), None).unwrap());
     assert_eq!(patch_reward(resource, &result, None, None).unwrap(), result);
-    assert_eq!(original_reward(resource, &result).unwrap(), Some(original.clone()));
-    let branches = patch_dialogue(&original, &[spec], &[], true, true).unwrap();
-    check_dialogue("trgeni01", &original, &branches, None);
+    assert_eq!(text_original(&result, resource).unwrap(), Some((original.clone(), refs.clone())));
+    let branches = patch_dialogue(&original, std::slice::from_ref(&spec), &[], true, true, None).unwrap();
+    check_dialogue("trgeni01", &original, &branches, None, None);
     check_text_graph(resource, &original, &result, &refs);
     for state in [37, 38] {
         let before = Dialogue::new(&legacy, "trgeni01").unwrap();
@@ -65,10 +61,21 @@ fn trgeni_terminal_departure_waits_for_transfer_and_upgrades_previous_patch() {
         assert_eq!(old, &[trgeni_terminal_actions().as_bytes(), b"\r\n"].concat());
         assert_eq!(&replace(changed, TRGENI_DEPARTURE, b"DestroySelf()", None), old);
     }
+    // The departure that waits is the speaker's own, after the replies that
+    // hand the reward over; an unreachable DestroySelf stays instant.
+    let mut unreached = Dialogue::new(&original, "trgeni01").unwrap();
+    let first = u32_at(&unreached.states[36], 4) as usize;
+    put_u32(&mut unreached.transitions[first], 28, 2);
+    let unreached = unreached.render();
+    let after = Dialogue::new(&patch_dialogue(&unreached, std::slice::from_ref(&spec), &[], true, true, None).unwrap(), "trgeni01").unwrap();
+    for state in [37, 38] {
+        let changed = &after.actions[u32_at(&outgoing(&after, state)[0], 16) as usize];
+        assert!(!common::builders::contains(changed, TRGENI_DEPARTURE));
+    }
     // An altered prior patch is not accepted merely because its original
     // body and recovery trailer still match.
     let tampered = replace(&legacy, b"FLPR_Transfer(", b"FLPR_Tampered(", Some(1));
     let error = patch_reward(resource, &tampered, None, None).unwrap_err();
     assert_eq!(error.kind, ErrorKind::Profile);
-    assert!(error.message.contains("patch changed"), "{}", error.message);
+    assert!(error.message.contains("changed copy"), "{}", error.message);
 }

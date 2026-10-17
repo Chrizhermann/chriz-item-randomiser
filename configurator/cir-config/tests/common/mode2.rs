@@ -4,7 +4,7 @@
 
 use super::builders::{contains, count, index, outgoing, replace, u32_at};
 use cir_config::json::{Dict, Value};
-use cir_config::mode2_rewards::{dialogue_grant, patch_dialogue, resource_specs, ACTION_TEXT_REFS};
+use cir_config::mode2_rewards::{patch_dialogue, resource_specs, ACTION_TEXT_REFS};
 use cir_config::py::{put_u32, splitlines_bytes, str_value};
 use cir_config::quest_options::Dialogue;
 use std::collections::{BTreeMap, BTreeSet};
@@ -39,6 +39,96 @@ pub fn specs(resource: &str) -> Vec<Dict> {
     resource_specs(resource).unwrap()
 }
 
+/// Python's `bytes.isspace()` for one byte; also what `\s` matches in a
+/// bytes pattern.
+fn is_space(byte: u8) -> bool {
+    matches!(byte, b' ' | b'\t' | b'\n' | b'\r' | 0x0b | 0x0c)
+}
+
+fn is_word(byte: u8) -> bool {
+    byte.is_ascii_alphanumeric() || byte == b'_'
+}
+
+/// One match of `(?i)\bVERB\(\s*"ITEM"\s*,\s*([^,()]+?)\s*(?:,[^()]*)?\)` at
+/// `at`: its end and the group's span.
+fn grant_at(actions: &[u8], at: usize, verb: &[u8], item: &[u8]) -> Option<(usize, (usize, usize))> {
+    let spaces = |mut at: usize| {
+        while actions.get(at).is_some_and(|byte| is_space(*byte)) {
+            at += 1;
+        }
+        at
+    };
+    if at > 0 && is_word(actions[at - 1]) || !actions.get(at..at + verb.len())?.eq_ignore_ascii_case(verb) {
+        return None;
+    }
+    let mut cursor = at + verb.len();
+    if actions.get(cursor) != Some(&b'(') {
+        return None;
+    }
+    cursor = spaces(cursor + 1);
+    if actions.get(cursor) != Some(&b'"') || !actions.get(cursor + 1..cursor + 1 + item.len())?.eq_ignore_ascii_case(item) {
+        return None;
+    }
+    cursor += 1 + item.len();
+    if actions.get(cursor) != Some(&b'"') {
+        return None;
+    }
+    cursor = spaces(cursor + 1);
+    if actions.get(cursor) != Some(&b',') {
+        return None;
+    }
+    let group = spaces(cursor + 1);
+    let limit = group + actions[group..].iter().take_while(|byte| !matches!(byte, b',' | b'(' | b')')).count();
+    // The lazy group ends where only spaces lead to the call's end or to
+    // further arguments without a nested call.
+    for end in group + 1..=limit {
+        let after = spaces(end);
+        match actions.get(after) {
+            Some(b',') => {
+                let close = after + 1 + actions[after + 1..].iter().take_while(|byte| !matches!(byte, b'(' | b')')).count();
+                if actions.get(close) == Some(&b')') {
+                    return Some((close + 1, (group, end)));
+                }
+            }
+            Some(b')') => return Some((after + 1, (group, end))),
+            _ => {}
+        }
+    }
+    None
+}
+
+/// `grant_in(actions, spec)`: the grant of the route's item in one reply's
+/// actions, and its recipient.
+pub fn grant_in(actions: &[u8], spec: &Dict) -> (Vec<u8>, Vec<u8>) {
+    let verb: &[u8] = if spec.get("grant_kind").and_then(Value::as_str) == Some("transfer") { b"GiveItem" } else { b"GiveItemCreate" };
+    let item = text(spec, "item").as_bytes();
+    let mut found = Vec::new();
+    let mut at = 0;
+    while at <= actions.len() {
+        match grant_at(actions, at, verb, item) {
+            Some((end, group)) => {
+                found.push((at, end, group));
+                at = end;
+            }
+            None => at += 1,
+        }
+    }
+    assert_eq!(found.len(), 1, "{}", String::from_utf8_lossy(actions));
+    let (start, end, (group, group_end)) = found[0];
+    (actions[start..end].to_vec(), actions[group..group_end].to_vec())
+}
+
+/// `guarded(prior, guard)`: a reply condition with a guard line added, as
+/// the adapter joins it.
+pub fn guarded(prior: &[u8], guard: &[u8]) -> Vec<u8> {
+    let mut result = prior.to_vec();
+    if prior.last().is_some_and(|byte| !is_space(*byte)) {
+        result.extend_from_slice(b"\r\n");
+    }
+    result.extend_from_slice(guard);
+    result
+}
+
 pub fn trgeni_terminal_actions() -> String {
     let mut actions: Vec<String> = ["SetGlobal(\"zahraajob\",\"GLOBAL\",2)", "SetGlobal(\"geniesgone\",\"GLOBAL\",1)", "AddexperienceParty(10000)"]
         .iter()
@@ -50,6 +140,20 @@ pub fn trgeni_terminal_actions() -> String {
     }
     actions.extend(effects.iter().map(|action| action.to_string()));
     actions.join("\r\r\n") + "\r\r\n"
+}
+
+/// `fixture_target(quest, state)`: where a fixture reply leads; TRGENI's
+/// grants lead on to the genies' departure.
+pub fn fixture_target(quest: &str, state: usize) -> Option<u32> {
+    if quest == "trgeni01" && [35, 36, 37, 38, 40].contains(&state) {
+        return match state {
+            35 | 40 => Some(36),
+            36 => Some(37),
+            37 => Some(38),
+            _ => None,
+        };
+    }
+    Some(2)
 }
 
 pub fn empty_dialogue(name: &str) -> Dialogue {
@@ -103,9 +207,50 @@ pub fn dialogue_fixture(specs: &[Dict]) -> Vec<u8> {
                 action = trgeni_terminal_actions();
             }
             let trigger = format!("Global(\"OriginalCondition\",\"GLOBAL\",{ordinal})");
-            transitions.push(dialogue.transition(Some(2), Some(9876), &trigger, &action, Some(12345)).unwrap());
+            let target = fixture_target(quest, state);
+            transitions.push(dialogue.transition(target, Some(9876), &trigger, &action, Some(12345)).unwrap());
         }
         dialogue.state(555 + state as u32, transitions);
+    }
+    dialogue.render()
+}
+
+/// One reply of [`layout_dialogue`]: (trigger, actions, next state or None).
+pub type LayoutReply<'a> = (&'a str, &'a str, Option<u32>);
+
+/// `layout_dialogue(name, states, beamdog=...)`: a DLG as Beamdog's compiler
+/// writes it (LF between lines, none after the last) or as WeiDU does (CRLF
+/// after every line).
+pub fn layout_dialogue(name: &str, states: &[Vec<LayoutReply>], beamdog: bool) -> Vec<u8> {
+    let mut dialogue = empty_dialogue(name);
+    let line = |text: &str| if beamdog { text.to_string() } else { text.replace('\n', "\r\n") };
+    for (number, replies) in states.iter().enumerate() {
+        let mut transitions = Vec::new();
+        for (trigger, actions, target) in replies {
+            transitions.push(dialogue.transition(*target, Some(70000 + number as u32), &line(trigger), &line(actions), None).unwrap());
+        }
+        dialogue.state(60000 + number as u32, transitions);
+    }
+    if beamdog {
+        let trim = |text: &mut Vec<u8>| {
+            while text.last().is_some_and(|byte| matches!(byte, b'\r' | b'\n')) {
+                text.pop();
+            }
+        };
+        dialogue.triggers.iter_mut().for_each(trim);
+        dialogue.actions.iter_mut().for_each(trim);
+    }
+    dialogue.render()
+}
+
+/// `with_actions(data, name, changes)`: the dialogue with the actions of
+/// some replies, by (state, ordinal), replaced.
+pub fn with_actions(data: &[u8], name: &str, changes: &[((usize, usize), &[u8])]) -> Vec<u8> {
+    let mut dialogue = Dialogue::new(data, name).unwrap();
+    for ((state, ordinal), text) in changes {
+        let row = &outgoing(&dialogue, *state)[*ordinal];
+        let action = u32_at(row, 16) as usize;
+        dialogue.actions[action] = text.to_vec();
     }
     dialogue.render()
 }
@@ -114,25 +259,32 @@ pub fn obj(selector: u32) -> String {
     format!("0 0 0 0 0 0 0 {selector} 0 0 0 0 \"\"OB\n")
 }
 
-/// `action(opcode, value=0, text="", target=0)`.
-pub fn action(opcode: u32, value: i64, text: &str, target: u32) -> String {
-    format!("AC\n{opcode}OB\n{}OB\n{}OB\n{}{value} 0 0 0 0\"{text}\" \"\" AC\n", obj(0), obj(target), obj(0))
+/// `action(opcode, value=0, text="", target=0, actor=0)`.
+pub fn action(opcode: u32, value: i64, text: &str, target: u32, actor: u32) -> String {
+    format!("AC\n{opcode}OB\n{}OB\n{}OB\n{}{value} 0 0 0 0\"{text}\" \"\" AC\n", obj(actor), obj(target), obj(0))
 }
 
-pub fn block(actions: &str) -> String {
-    let condition = format!("TR\n16399 1 0 0 0 \"AR1202Quest\" \"\" OB\n{}TR\n", obj(0));
+/// `block(actions, condition="AR1202Quest")`.
+pub fn block(actions: &str, condition: &str) -> String {
+    let condition = format!("TR\n16399 1 0 0 0 \"{condition}\" \"\" OB\n{}TR\n", obj(0));
     format!("CR\nCO\n{condition}CO\nRS\nRE\n100{actions}RE\nRS\nCR\n")
+}
+
+/// `well_reward(target=21, display=40850)`.
+pub fn well_reward(target: u32, display: i64) -> String {
+    [action(30, 2, "AR1202DragonWell", 0, 0), action(151, display, "", 1, 0), action(140, 0, "helm21", target, 0), action(177, 0, "", 0, 0)]
+        .concat()
 }
 
 /// `script_fixture(name)` for asysta01 or ddwell.
 pub fn script_fixture(name: &str) -> Vec<u8> {
     if name == "asysta01" {
-        let actions = [action(164, 20000, "", 0), action(82, 0, "Helm19", 0), action(82, 0, "Misc8y", 0), action(30, 2, "AR1512PlantedItems", 0)].concat();
-        return format!("SC\n{}SC\n", block(&actions)).into_bytes();
+        let actions = [action(164, 20000, "", 0, 0), action(82, 0, "Helm19", 0, 0), action(82, 0, "Misc8y", 0, 0), action(30, 2, "AR1512PlantedItems", 0, 0)]
+            .concat();
+        return format!("SC\n{}SC\n", block(&actions, "AR1202Quest")).into_bytes();
     }
-    let other = block(&action(151, 40849, "", 1));
-    let well = block(&[action(30, 2, "AR1202DragonWell", 0), action(151, 40850, "", 1), action(140, 0, "helm21", 21), action(177, 0, "", 0)].concat());
-    format!("SC\n{other}{well}{other}SC\n").into_bytes()
+    let other = block(&action(151, 40849, "", 1, 0), "AR1202Quest");
+    format!("SC\n{other}{}{other}SC\n", block(&well_reward(21, 40850), "AR1202Quest")).into_bytes()
 }
 
 /// The text-route fixture of test_text_variants_preserve_original_routes...
@@ -166,10 +318,16 @@ fn guard(flag: &str, selected: bool) -> Vec<u8> {
     format!("{}Global(\"{flag}\",\"GLOBAL\",1)\r\n", if selected { "" } else { "!" }).into_bytes()
 }
 
-/// `check_dialogue(name, original, result, action_refs)`.
-pub fn check_dialogue(name: &str, original: &[u8], result: &[u8], action_refs: Option<&BTreeMap<i64, i64>>) {
+/// `check_dialogue(name, original, result, action_refs, branches)`.
+pub fn check_dialogue(
+    name: &str,
+    original: &[u8],
+    result: &[u8],
+    action_refs: Option<&BTreeMap<i64, i64>>,
+    gated: Option<&[(usize, usize)]>,
+) {
     let spec = &specs(&format!("dlg:{name}"))[0];
-    let reviewed = branches(spec);
+    let reviewed = gated.map_or_else(|| branches(spec), <[_]>::to_vec);
     let before = Dialogue::new(original, name).unwrap();
     let after = Dialogue::new(result, name).unwrap();
     assert_eq!(after.state_triggers, before.state_triggers);
@@ -201,6 +359,7 @@ pub fn check_dialogue(name: &str, original: &[u8], result: &[u8], action_refs: O
             let flags = u32_at(transition, 0);
             let original_action = &before.actions[u32_at(transition, 16) as usize];
             let prior = if flags & 2 != 0 { before.triggers[u32_at(transition, 12) as usize].clone() } else { Vec::new() };
+            let (grant, recipient) = grant_in(original_action, spec);
             for selected in [false, true] {
                 let branch = &new[cursor];
                 cursor += 1;
@@ -208,7 +367,7 @@ pub fn check_dialogue(name: &str, original: &[u8], result: &[u8], action_refs: O
                 assert_eq!(branch[4..12], transition[4..12]); // Reply and journal.
                 assert_eq!(branch[20..], transition[20..]); // Link/exit state.
                 let trigger = &after.triggers[u32_at(branch, 12) as usize];
-                assert_eq!(trigger, &[prior.as_slice(), &guard(text(spec, "selected_global"), selected)].concat());
+                assert_eq!(trigger, &guarded(&prior, &guard(text(spec, "selected_global"), selected)));
                 let changed = &after.actions[u32_at(branch, 16) as usize];
                 let event: Vec<u8>;
                 let mut restored;
@@ -227,18 +386,19 @@ pub fn check_dialogue(name: &str, original: &[u8], result: &[u8], action_refs: O
                         }
                     }
                 } else {
-                    let marker = format!(
-                        "ActionOverride({},SetGlobal(\"{}\",\"LOCALS\",1))\r\n",
-                        str_value(spec.get("recipient").unwrap()),
-                        str_value(spec.get("recipient_local").unwrap())
-                    )
-                    .into_bytes();
+                    // The grant's own recipient, as this reply names it.
+                    let marker = [
+                        b"ActionOverride(".as_slice(),
+                        &recipient,
+                        format!(",SetGlobal(\"{}\",\"LOCALS\",1))\r\n", str_value(spec.get("recipient_local").unwrap())).as_bytes(),
+                    ]
+                    .concat();
                     event = format!("\r\nSetGlobal(\"{}\",\"GLOBAL\",1)", text(spec, "event_global")).into_bytes();
                     assert_eq!(count(changed, &marker), 1);
                     assert_eq!(count(changed, &event), 1);
+                    assert!(index(changed, &marker) < index(changed, &event));
                     restored = replace(&replace(changed, &marker, b"", Some(1)), &event, b"", Some(1));
                 }
-                let grant = dialogue_grant(original_action, spec).unwrap();
                 if selected {
                     assert!(!contains(changed, &grant));
                     let consumed = format!("SetGlobal(\"{}\",\"GLOBAL\",1)", text(spec, "consumed_global")).into_bytes();
@@ -281,7 +441,7 @@ pub fn check_aran(original: &[u8], result: &[u8]) {
                 assert_eq!(branch[4..12], transition[4..12]);
                 assert_eq!(branch[20..], transition[20..]);
                 for (spec, selected) in specs.iter().zip([bits & 2 != 0, bits & 1 != 0]) {
-                    condition.extend(guard(text(spec, "selected_global"), selected));
+                    condition = guarded(&condition, &guard(text(spec, "selected_global"), selected));
                     let marker = format!(
                         "ActionOverride(LastTalkedToBy,SetGlobal(\"{}\",\"LOCALS\",1))\r\n",
                         text(spec, "recipient_local")
@@ -291,7 +451,7 @@ pub fn check_aran(original: &[u8], result: &[u8]) {
                     assert_eq!(count(&restored, &marker), 1);
                     assert_eq!(count(&restored, &event), 1);
                     restored = replace(&replace(&restored, &marker, b"", Some(1)), &event, b"", Some(1));
-                    let grant = dialogue_grant(original_actions, spec).unwrap();
+                    let (grant, _) = grant_in(original_actions, spec);
                     if selected {
                         assert!(!contains(&restored, &grant));
                         let consumed = format!("SetGlobal(\"{}\",\"GLOBAL\",1)", text(spec, "consumed_global")).into_bytes();
@@ -314,7 +474,7 @@ pub fn check_text_graph(resource: &str, original: &[u8], result: &[u8], refs: &B
     // Grant branching is checked independently. Check every text-route edge
     // against that graph, including unchanged external entry states.
     let action_refs: Vec<(i64, i64)> = action_text_refs(resource).into_iter().map(|old| (old, refs[&old])).collect();
-    let before = Dialogue::new(&patch_dialogue(original, &specs, &action_refs, true, true).unwrap(), name).unwrap();
+    let before = Dialogue::new(&patch_dialogue(original, &specs, &action_refs, true, true, None).unwrap(), name).unwrap();
     let after = Dialogue::new(result, name).unwrap();
     let flag = text(&specs[0], "selected_global");
     let mut clones = BTreeMap::new();
@@ -341,7 +501,7 @@ pub fn check_text_graph(resource: &str, original: &[u8], result: &[u8], refs: &B
             let (new_text, entry) = (u32_at(&after.states[destination], 0), u32_at(&after.states[destination], 12));
             assert_eq!(new_text, if selected_text { lookup(old_text) } else { old_text });
             if old_entry != 0xFFFF_FFFF && clones.contains_key(&state_index) {
-                let expected = [before.state_triggers[old_entry as usize].as_slice(), &guard(flag, selected_text)].concat();
+                let expected = guarded(&before.state_triggers[old_entry as usize], &guard(flag, selected_text));
                 assert_eq!(after.state_triggers[entry as usize], expected);
             } else {
                 assert_eq!(entry, old_entry);
@@ -369,8 +529,7 @@ pub fn check_text_graph(resource: &str, original: &[u8], result: &[u8], refs: &B
                     assert_eq!(u32_at(new, 28), expected_state);
                     if reroute {
                         let prior = if flags & 2 != 0 { before.triggers[trigger as usize].clone() } else { Vec::new() };
-                        let expected = [prior.as_slice(), &guard(flag, selected_edge)].concat();
-                        assert_eq!(after.triggers[u32_at(new, 12) as usize], expected);
+                        assert_eq!(after.triggers[u32_at(new, 12) as usize], guarded(&prior, &guard(flag, selected_edge)));
                     } else {
                         assert_eq!(u32_at(new, 12), trigger);
                     }
