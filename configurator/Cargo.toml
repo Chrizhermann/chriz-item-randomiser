@@ -1,0 +1,13 @@
+[workspace]
+resolver = "2"
+members = ["cir-config", "cir-configurator"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/Chrizhermann/chriz-item-randomiser"
+
+[profile.release]
+codegen-units = 4
+lto = "thin"

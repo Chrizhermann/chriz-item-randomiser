@@ -1,0 +1,14 @@
+[package]
+name = "cir-configurator"
+description = "Standalone configurator for Chriz Item Randomiser (no Python needed)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "cir-configurator"
+path = "src/main.rs"
+
+[dependencies]
+cir-config = { path = "../cir-config" }

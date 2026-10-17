@@ -1,0 +1,16 @@
+[package]
+name = "cir-config"
+description = "Chriz Item Randomiser's post-install configurator: scan, presets, checks, export and apply"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+build = "build.rs"
+
+[lib]
+name = "cir_config"
+
+[dependencies]
+# SHA-256 pins every scanned and exported resource; the scan hashes the whole
+# installation, so a vetted, accelerated implementation is worth the dependency.
+sha2 = "0.10"
