@@ -70,9 +70,17 @@ function cases.lab_remote_poll_runs_qa_and_is_blocked_during_save_and_load(Core,
     assert(f.render_listener.name=="text_CHAPTERSCROLL_item")
     f.render_listener.fn(); assert(f.remote_polls==2 and f.qa_polls==5)
 end
+function cases.lab_import_mode_is_the_load_screen_flag(Core,Host,Globals,text)
+    local f=bootstrap(Core,Host,Globals,text)
+    local importing=lab(f).importing
+    gameSaves={isImporting=1,files={}}; assert(importing()==true)
+    gameSaves={isImporting=0,files={}}; assert(importing()==false)
+    gameSaves=nil; assert(importing()==false)
+end
 '''
 CASE_NAMES = ("lab_save_ready_allows_protected_running_campaign_without_completing_it",
-              "lab_remote_poll_runs_qa_and_is_blocked_during_save_and_load")
+              "lab_remote_poll_runs_qa_and_is_blocked_during_save_and_load",
+              "lab_import_mode_is_the_load_screen_flag")
 
 
 class LabQaModuleTests(unittest.TestCase):

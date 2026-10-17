@@ -40,6 +40,8 @@ local function api()
             Infinity_ClickItem(item)
         end,
         saves=function() return assert(gameSaves.files) end,
+        -- LOAD lists the saves to import a party from (Import Game), not to load.
+        importing=function() return type(gameSaves)=="table" and gameSaves.isImporting==1 end,
         select_save=function(index) currentSave=index end,
         save_name=function(name) newSaveName=name end,
         new_save_selected=function() return currentSave==0 end,

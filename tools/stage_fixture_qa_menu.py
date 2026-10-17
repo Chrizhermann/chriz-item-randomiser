@@ -40,8 +40,9 @@ class Binding:
     text: str | tuple[str, ...]
     action: str
     text_lua: bool = False
-    # A main-menu button the game may place elsewhere (BG2:EE's single-player
-    # button is in START_MAIN, after the campaign logos): named where present.
+    # Optional buttons (BG2:EE has its single-player button in START_MAIN, after
+    # the campaign logos) are named where present with the expected action and
+    # otherwise reported as unavailable.
     required: bool = True
 
     def accepts(self, texts: list[str]) -> bool:
@@ -53,11 +54,17 @@ BINDINGS = (
             "startEngine:SetEngineState(1) Infinity_TransitionMenu('START_SP')", required=False),
     Binding("START_SP", "FLPR_QA_START_LOAD", "LOAD_GAME_BUTTON",
             "Infinity_PopMenu(); startEngine:OnLoadGameButtonClick()"),
+    # Importing a party from a save (BG2:EE's SoA, BG:EE's Siege of Dragonspear),
+    # through the hook CIR's installer put on the button.
+    Binding("START_SP", "FLPR_QA_START_IMPORT", "IMPORT_GAME_BUTTON",
+            "Infinity_PopMenu(); FLPRUI_ImportCharacter();", required=False),
     Binding("ESC_MENU", "FLPR_QA_SAVE", "SAVE_GAME_BUTTON", "optionsScreen:SaveGame(0)"),
     Binding("ESC_MENU", "FLPR_QA_LOAD", "LOAD_GAME_BUTTON",
             "popup2Button(19531, 'LOAD_BUTTON', function() optionsScreen:LoadGame() end)"),
     Binding("LOAD", "FLPR_QA_LOAD_CONFIRM", "LOAD_BUTTON",
             "loadScreen:LoadGame(gameSaves.files[currentSave].fileName)"),
+    # Leaves LOAD again when the wanted save is not listed.
+    Binding("LOAD", "FLPR_QA_LOAD_BACK", "BACK_BUTTON", "loadScreen:OnMainCancelButtonClick()", required=False),
     Binding("SAVE", "FLPR_QA_SAVE_NEW", "SAVE_BUTTON",
             "currentSave = 0 Infinity_PushMenu( 'SAVE_NEWSAVE' );"),
     Binding("SAVE_NEWSAVE", "FLPR_QA_SAVE_CONFIRM", "SAVE_BUTTON", "completeSave()"),
@@ -219,11 +226,12 @@ def enhance(source: str) -> tuple[str, dict]:
     for binding in BINDINGS:
         if binding.menu not in menus:
             if not binding.required:
-                unavailable.append({"menu": binding.menu, "name": binding.name})
+                unavailable.append({"menu": binding.menu, "name": binding.name, "reason": "no menu"})
                 continue
             raise MenuError(f"Required menu missing: {binding.menu}")
         opening = menus[binding.menu]
         matches = []
+        unexpected = False
         index = opening + 1
         while index < ends[opening]:
             if tokens[index].kind == "{" and index > 0:
@@ -233,13 +241,19 @@ def enhance(source: str) -> tuple[str, dict]:
                     if binding.accepts(texts):
                         actions = property_values(direct, "action")
                         if len(actions) != 1 or lua_signature(actions[0]) != lua_signature(binding.action):
-                            raise MenuError(f"Unexpected action for {binding.menu}/{binding.name}")
-                        matches.append((index, direct))
+                            unexpected = True
+                        else:
+                            matches.append((index, direct))
                 index = ends[index] + 1
             else:
                 index += 1
-        if not matches and not binding.required:
-            unavailable.append({"menu": binding.menu, "name": binding.name})
+        if binding.required and unexpected:
+            raise MenuError(f"Unexpected action for {binding.menu}/{binding.name}")
+        if not binding.required and (unexpected or len(matches) != 1):
+            # Never names a button that does something else (another mod's UI, a game
+            # without CIR's import hook); the QA runner then refuses that one route.
+            reason = "unexpected action" if unexpected else "no button" if not matches else "several buttons"
+            unavailable.append({"menu": binding.menu, "name": binding.name, "reason": reason})
             continue
         if len(matches) != 1:
             raise MenuError(f"Expected exactly one button for {binding.menu}/{binding.name}; found {len(matches)}")

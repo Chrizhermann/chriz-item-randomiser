@@ -42,6 +42,7 @@ local function setup(QA,screen)
         main_menu_popup=function() return f.main_popup end,
         can_save_load=function() return f.can end,
         world_ready=function(want) return f.ready and f.ready_revision==want end,
+        importing=function() return f.importing==true end,
     }
     f.api=api; f.runner=QA.new(api)
     function f:poll(frame) self.frame=frame or self.frame+2; self.runner:poll() end
@@ -207,15 +208,84 @@ end
 function cases.missing_save_is_not_replaced_by_similar_name(QA)
     local f=setup(QA,"START_SP")
     f.saves={{fileName="000000043-IR Proof A",slotName="IR Proof A"}}
-    f:load_list(); failed(f,"QA_SAVE_MISSING")
-    assert(f.selected==nil and #f.events==1)
+    f:load_list()
+    -- LOAD takes no console requests, so the runner leaves it before it stops.
+    assert(f.selected==nil and #f.events==2 and f.events[2].button=="FLPR_QA_LOAD_BACK")
+    assert(f.runner:inspect().status=="running")
+    f:next("START_SP"); failed(f,"QA_SAVE_MISSING:000000043-IR Proof A")
+    for i=1,3 do f:poll() end
+    assert(#f.events==2)
 end
 
 function cases.ambiguous_save_folder_is_not_selected(QA)
     local f=setup(QA,"START_SP")
     f.saves={{fileName=folder,slotName="A"},{fileName=folder,slotName="B"}}
-    f:load_list(); failed(f,"QA_SAVE_AMBIGUOUS")
-    assert(f.selected==nil and #f.events==1)
+    f:load_list()
+    assert(f.selected==nil and #f.events==2 and f.events[2].button=="FLPR_QA_LOAD_BACK")
+    f:next("START"); failed(f,"QA_SAVE_AMBIGUOUS")
+    assert(#f.events==2)
+end
+
+function cases.import_selects_the_folder_in_import_mode_and_completes_in_character_creation(QA)
+    local f=setup(QA,"START_SP"); f.importing=true
+    f.saves={{fileName="000000043-IR Proof A",slotName="IR Proof A"},{fileName=folder,slotName="IR Proof A"}}
+    f.runner:start_import(folder,revision); f:poll()
+    assert(#f.events==1 and f.events[1].menu=="START_SP" and f.events[1].button=="FLPR_QA_START_IMPORT")
+    f:next("LOAD")
+    assert(#f.events==2 and f.events[2].button=="FLPR_QA_LOAD_CONFIRM" and f.selected==2)
+    f:next("LOAD",{"CHARGEN"}); assert(f.runner:inspect().status=="running")
+    f:next("CHARGEN"); assert(f.runner:inspect().status=="complete")
+    for i=1,3 do f:poll() end
+    assert(#f.events==2)
+end
+
+function cases.import_matches_this_profiles_save_path_but_never_another_profile(QA)
+    -- In import mode LOAD names saves by path; BG2:EE also lists BG:EE's profile.
+    local f=setup(QA,"START_SP"); f.importing=true
+    f.saves={{fileName="home:/../Baldur's Gate - Enhanced Edition/save/"..folder,slotName="IR Proof A"},
+        {fileName="home:/save/"..folder,slotName="IR Proof A"}}
+    f.runner:start_import(folder,revision); f:poll(); f:next("LOAD")
+    assert(#f.events==2 and f.events[2].button=="FLPR_QA_LOAD_CONFIRM" and f.selected==2)
+    local g=setup(QA,"START_SP"); g.importing=true
+    g.saves={{fileName="home:/../Baldur's Gate - Enhanced Edition/save/"..folder,slotName="IR Proof A"}}
+    g.runner:start_import(folder,revision); g:poll(); g:next("LOAD")
+    assert(g.selected==nil and #g.events==2 and g.events[2].button=="FLPR_QA_LOAD_BACK")
+    g:next("START_SP"); failed(g,"QA_SAVE_MISSING:home:/../Baldur's Gate - Enhanced Edition/save/"..folder)
+end
+
+function cases.load_screen_in_the_other_mode_is_left_without_selecting(QA)
+    -- Import Game and Load Game share LOAD; its mode decides what confirming does.
+    local f=setup(QA,"START_SP"); f.importing=false
+    f.saves={{fileName=folder,slotName="IR Proof A"}}
+    f.runner:start_import(folder,revision); f:poll(); f:next("LOAD")
+    assert(f.selected==nil and #f.events==2 and f.events[2].button=="FLPR_QA_LOAD_BACK")
+    f:next("START_SP"); failed(f,"QA_LOAD_MODE_UNEXPECTED")
+    local g=setup(QA,"START_SP"); g.importing=true
+    g.saves={{fileName=folder,slotName="IR Proof A"}}
+    g:load_list()
+    assert(g.selected==nil and #g.events==2 and g.events[2].button=="FLPR_QA_LOAD_BACK")
+    g:next("START_SP"); failed(g,"QA_LOAD_MODE_UNEXPECTED")
+end
+
+function cases.import_starts_only_from_the_singleplayer_menu_with_a_save_folder(QA)
+    for _,screen in ipairs({"WORLD_ACTIONBAR","START"}) do
+        local f=setup(QA,screen)
+        assert(not pcall(function() f.runner:start_import(folder,revision) end))
+        assert(#f.events==0 and f.runner:inspect().status=="idle")
+    end
+    local f=setup(QA,"START_SP")
+    assert(not pcall(function() f.runner:start_import("IR Proof A",revision) end))
+    assert(#f.events==0 and f.runner:inspect().status=="idle")
+end
+
+function cases.console_menu_above_the_singleplayer_menu_is_accepted(QA)
+    -- Back from LOAD, 2.7.3 has the Remote Console's own menu above START_SP.
+    local f=setup(QA,"EEEX_REMOTE"); f.menus.START=true; f.menus.START_SP=true; f.importing=true
+    f.runner:start_import(folder,revision); f:poll()
+    assert(#f.events==1 and f.events[1].menu=="START_SP")
+    local g=setup(QA,"UNRELATED_MODAL"); g.menus.START_SP=true
+    assert(not pcall(function() g.runner:start_import(folder,revision) end))
+    assert(#g.events==0)
 end
 
 function cases.timeout_stops_without_replaying_queued_action(QA)

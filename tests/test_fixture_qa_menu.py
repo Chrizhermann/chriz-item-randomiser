@@ -28,6 +28,13 @@ menu {
   text "LOAD_GAME_BUTTON"
   action "Infinity_PopMenu(); startEngine:OnLoadGameButtonClick()"
  }
+ button {
+  text "IMPORT_GAME_BUTTON"
+  action "
+   Infinity_PopMenu();
+   FLPRUI_ImportCharacter();
+  "
+ }
 }
 menu {
  name 'ESC_MENU'
@@ -55,6 +62,12 @@ menu {
   actionDbl "loadScreen:LoadGame(gameSaves.files[currentSave].fileName)"
  }
  button { text "LOAD_BUTTON" action "loadScreen:LoadGame(gameSaves.files[currentSave].fileName)" }
+ button {
+  on escape
+  text "BACK_BUTTON"
+  on escape
+  action "loadScreen:OnMainCancelButtonClick()"
+ }
 }
 menu {
  name 'SAVE'
@@ -101,7 +114,7 @@ class FixtureQAMenuTests(unittest.TestCase):
         for newline in ("\n", "\r\n"):
             source = FIXTURE.replace("\n", newline)
             updated, report = helper.enhance(source)
-            self.assertEqual(report["insertions"], 16)
+            self.assertEqual(report["insertions"], 18)
             self.assertEqual(report["added_polling"], list(POLLED))
             restored = updated
             for binding in helper.BINDINGS:
@@ -174,13 +187,38 @@ class FixtureQAMenuTests(unittest.TestCase):
                   .replace('text "SINGLEPLAYER_BUTTON"', 'text "MULTIPLAYER_BUTTON"')
                   + "menu { name 'MESSAGE_SCREEN' }\nmenu { name 'MESSAGE_SCREEN' }\n")
         updated, report = helper.enhance(source)
-        self.assertEqual(report["unavailable"], [{"menu": "START", "name": "FLPR_QA_SINGLE"}])
+        self.assertEqual(report["unavailable"], [{"menu": "START", "name": "FLPR_QA_SINGLE", "reason": "no button"}])
         self.assertEqual([entry["name"] for entry in report["bindings"]],
                          [binding.name for binding in helper.BINDINGS if binding.name != "FLPR_QA_SINGLE"])
         self.assertEqual(updated.count('name "FLPR_QA_POPUP_CONFIRM"'), 1)
         self.assertEqual(updated.count('name "FLPR_QA_MAIN_MENU"'), 1)
         with self.assertRaisesRegex(helper.MenuError, "Duplicate menu: ESC_MENU"):
             helper.enhance(source + "menu { name 'ESC_MENU' }\n")
+
+    def test_optional_buttons_that_are_missing_changed_or_doubled_stay_unnamed(self):
+        # Another mod's UI or a game without CIR's import hook loses only that QA
+        # route; the save and load buttons are still named.
+        stock_import = FIXTURE.replace("FLPRUI_ImportCharacter();", "startEngine:OnImportGameButtonClick();")
+        back = 'text "BACK_BUTTON"'
+        cases = (
+            (stock_import, "FLPR_QA_START_IMPORT", "unexpected action"),
+            (FIXTURE.replace('text "IMPORT_GAME_BUTTON"', 'text "OTHER_BUTTON"'), "FLPR_QA_START_IMPORT", "no button"),
+            (FIXTURE.replace("menu {\n name 'LOAD'\n", "menu {\n name 'LOAD'\n button { " + back +
+                             " action \"loadScreen:OnMainCancelButtonClick()\" }\n"), "FLPR_QA_LOAD_BACK",
+             "several buttons"),
+            (FIXTURE.replace("menu\n{\n name 'START'\n", "menu\n{\n name 'START_OLD'\n"), "FLPR_QA_SINGLE", "no menu"),
+        )
+        for source, name, reason in cases:
+            with self.subTest(name=name, reason=reason):
+                updated, report = helper.enhance(source)
+                self.assertIn({"menu": next(b.menu for b in helper.BINDINGS if b.name == name), "name": name,
+                               "reason": reason}, report["unavailable"])
+                self.assertNotIn(f'name "{name}"', updated)
+                self.assertEqual(updated.count('name "FLPR_QA_START_LOAD"'), 1)
+                self.assertEqual(updated.count('name "FLPR_QA_LOAD_CONFIRM"'), 1)
+        # A changed action on a required button still refuses the whole staging.
+        with self.assertRaisesRegex(helper.MenuError, "Unexpected action"):
+            helper.enhance(FIXTURE.replace("startEngine:OnLoadGameButtonClick()", "startEngine:OnQuitButtonClick()"))
 
     def test_comment_mentions_do_not_count_as_poll_widgets(self):
         source = FIXTURE.replace("modal\n", 'modal\n -- EEexRemote.Poll()\n')
@@ -217,7 +255,7 @@ class FixtureQAMenuTests(unittest.TestCase):
             with patch.object(helper, "STAGING_ROOT", work):
                 output = work / "staged" / "UI.MENU"
                 report = helper.stage(source, output)
-                self.assertEqual(report["insertions"], 16)
+                self.assertEqual(report["insertions"], 18)
                 self.assertEqual(source.read_bytes(), original)
                 self.assertTrue(output.read_bytes().startswith(b"\xef\xbb\xbf"))
                 before = output.read_bytes()
