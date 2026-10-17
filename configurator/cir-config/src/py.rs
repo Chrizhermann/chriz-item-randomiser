@@ -336,3 +336,118 @@ pub fn parse_int(text: &str) -> Option<i64> {
     let value: i64 = digits.parse().ok()?;
     Some(if negative { -value } else { value })
 }
+
+/// `data[start:end]` for non-negative indexes (Python clamps, never fails).
+pub fn slice(data: &[u8], start: usize, end: usize) -> &[u8] {
+    let end = end.min(data.len());
+    &data[start.min(end)..end]
+}
+
+/// Whether `^` in a `re.M` pattern matches at `index` (start or after `\n`).
+pub fn is_line_start(data: &[u8], index: usize) -> bool {
+    index == 0 || data.get(index - 1) == Some(&b'\n')
+}
+
+/// Whether `$` in a `re.M` pattern matches at `index` (end or before `\n`).
+pub fn is_line_end(data: &[u8], index: usize) -> bool {
+    index == data.len() || data.get(index) == Some(&b'\n')
+}
+
+/// Whether `data[index:]` starts with `needle`, ignoring ASCII case (a
+/// literal in a bytes pattern compiled with `re.I`).
+pub fn starts_with_ignore_ascii_case(data: &[u8], index: usize, needle: &[u8]) -> bool {
+    data.len() >= index && data.len() - index >= needle.len() && data[index..index + needle.len()].eq_ignore_ascii_case(needle)
+}
+
+/// Python's `int()` of ASCII digits matched by a pattern; values beyond i64
+/// saturate (callers only range-check them against 32-bit limits).
+pub fn digits_value(digits: &[u8]) -> i64 {
+    digits.iter().fold(0i64, |value, &digit| value.saturating_mul(10).saturating_add((digit - b'0') as i64))
+}
+
+/// The `bytes.split(separator)` result unpacked into exactly three names, with
+/// Python's ValueError when the count differs.
+pub fn split3(data: &[u8], separator: &[u8]) -> crate::error::Result<(Vec<u8>, Vec<u8>, Vec<u8>)> {
+    let parts = split_bytes(data, separator);
+    match parts.len() {
+        3 => Ok((parts[0].to_vec(), parts[1].to_vec(), parts[2].to_vec())),
+        count if count > 3 => Err(crate::error::Error::value("too many values to unpack (expected 3)")),
+        count => Err(crate::error::Error::value(format!("not enough values to unpack (expected 3, got {count})"))),
+    }
+}
+
+/// `text.encode("ascii")`, failing with Python's UnicodeEncodeError message
+/// (a ValueError).
+pub fn ascii_bytes(text: &str) -> crate::error::Result<Vec<u8>> {
+    if text.is_ascii() {
+        return Ok(text.as_bytes().to_vec());
+    }
+    let chars: Vec<char> = text.chars().collect();
+    let start = chars.iter().position(|c| !c.is_ascii()).expect("non-ASCII character");
+    let end = chars[start..].iter().position(|c| c.is_ascii()).map_or(chars.len(), |offset| start + offset);
+    let reason = "ordinal not in range(128)";
+    if end - start == 1 {
+        let code = chars[start] as u32;
+        let shown = if code <= 0xff {
+            format!("\\x{code:02x}")
+        } else if code <= 0xffff {
+            format!("\\u{code:04x}")
+        } else {
+            format!("\\U{code:08x}")
+        };
+        Err(crate::error::Error::value(format!(
+            "'ascii' codec can't encode character '{shown}' in position {start}: {reason}"
+        )))
+    } else {
+        Err(crate::error::Error::value(format!(
+            "'ascii' codec can't encode characters in position {start}-{}: {reason}",
+            end - 1
+        )))
+    }
+}
+
+/// Python's `str()` of a JSON value, as f-strings and `{value!r}` of
+/// containers show it.
+pub fn str_value(value: &crate::json::Value) -> String {
+    use crate::json::Value;
+    match value {
+        Value::Str(text) => text.clone(),
+        other => repr_value(other),
+    }
+}
+
+/// Python iteration over a JSON value: list items, dict keys or the
+/// characters of a str; other values raise Python's TypeError.
+pub fn iter_value(value: &crate::json::Value) -> crate::error::Result<Vec<crate::json::Value>> {
+    use crate::json::Value;
+    match value {
+        Value::List(items) => Ok(items.clone()),
+        Value::Dict(dict) => Ok(dict.keys().map(Value::from).collect()),
+        Value::Str(text) => Ok(text.chars().map(|c| Value::Str(c.to_string())).collect()),
+        other => Err(crate::error::Error::type_error(format!("'{}' object is not iterable", other.type_name()))),
+    }
+}
+
+/// Python's `repr()` of a JSON value.
+pub fn repr_value(value: &crate::json::Value) -> String {
+    use crate::json::Value;
+    match value {
+        Value::Null => "None".into(),
+        Value::Bool(true) => "True".into(),
+        Value::Bool(false) => "False".into(),
+        Value::Int(number) => number.to_string(),
+        Value::BigInt(text) => text.to_string(),
+        Value::Float(number) if number.is_nan() => "nan".into(),
+        Value::Float(number) if number.is_infinite() => if *number > 0.0 { "inf" } else { "-inf" }.into(),
+        Value::Float(number) => crate::json::float_repr(*number),
+        Value::Str(text) => crate::error::py_repr_str(text),
+        Value::List(items) => format!("[{}]", items.iter().map(repr_value).collect::<Vec<_>>().join(", ")),
+        Value::Dict(dict) => format!(
+            "{{{}}}",
+            dict.iter()
+                .map(|(key, item)| format!("{}: {}", crate::error::py_repr_str(key), repr_value(item)))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+    }
+}
