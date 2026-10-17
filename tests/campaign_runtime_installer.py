@@ -51,7 +51,7 @@ RESOURCE_TYPES = {"ITM": 1005, "BCS": 1007, "IDS": 1008, "ARE": 1010, "DLG": 101
 RUNTIME_MODULES = (
     "M_FLPRUI.lua", "M_FLPR.lua", "FLPRCore.lua", "FLPRCur.lua", "FLPRGat.lua",
     "FLPRGlob.lua", "FLPRHost.lua", "FLPRNat.lua", "FLPRScript.lua",
-    "FLPRShop.lua", "FLPRSpell.lua", "FLPRRun.menu",
+    "FLPRShop.lua", "FLPRSite.lua", "FLPRSpell.lua", "FLPRRun.menu",
 )
 GATE_MODULES = ("FLPRGateAsm.lua", "FLPRCampaignPolicy.lua", "FLPRInventoryAsm.lua")
 # Where the configurator applies settings; the installer only creates the folder.

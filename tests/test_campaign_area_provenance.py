@@ -23,6 +23,7 @@ from tests.test_campaign_gate_policy import REVISION, expected_fields
 from tests.test_source_gate_assembly import (
     AREA, BUFFER, CODES, IMAGE, INPUT, STACK, GateMachine,
 )
+from tests.engine_sites import GATE_TARGETS_266, gate_targets, load
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -37,7 +38,7 @@ CTX = BUFFER + 128 + 2049*128
 FIRST = CTX + 32
 CTOR_FRAME = STACK + 0x8000
 AREA_FRAME = STACK + 0x5000
-RETURN_SITE = IMAGE + 0x18D9CE
+RETURN_SITE = IMAGE + GATE_TARGETS_266['container_return']
 HOOKS = {**CODES, 'area_enter': 0x130000, 'area_exit': 0x140000}
 VOLATILE = (UC_X86_REG_RAX, UC_X86_REG_RCX, UC_X86_REG_RDX, UC_X86_REG_R8,
             UC_X86_REG_R9, UC_X86_REG_R10, UC_X86_REG_R11, UC_X86_REG_EFLAGS)
@@ -88,7 +89,7 @@ def generated_hooks(configured=False):
                 'area': 'ARTEST', 'name': blob[224:256], 'payload': blob[840:860], 'index': 2,
                 'inventory': blob[224+0x40:224+0x48], 'position': blob[224+0x20:224+0x28],
             })
-        output = assembly_factory(BUFFER, IMAGE, policy)
+        output = assembly_factory(BUFFER, gate_targets(lua, IMAGE), policy)
         outputs.append({name: output[name] for name in HOOKS})
     assert outputs[0] == outputs[1] == outputs[2]
     assert outputs[0]['area_enter'] and outputs[0]['area_exit']
@@ -172,7 +173,7 @@ def composed_source_machine(blob, specs):
     lua = LuaJIT(unpack_returned_tuples=True)
     factory = lua.execute((ROOT / 'tools/probes/FLPRGateAsm.lua').read_text())
     compiler = lua.execute((ROOT / 'tools/probes/FLPRCampaignPolicy.lua').read_text())
-    gate = lua.execute((ROOT / 'prototype/FLPRGat.lua').read_text())
+    gate = load(lua, (ROOT / 'prototype/FLPRGat.lua').read_text())
     assemblies = []
     buffers = [BUFFER] + [0x800000 + i*0x50000 for i in range(len(specs)-1)]
     for buffer in buffers[1:]:
@@ -189,7 +190,7 @@ def composed_source_machine(blob, specs):
             'index': record, 'inventory': bytes(blob[CONTAINER_OFFSET+0x40:CONTAINER_OFFSET+0x48]),
             'position': bytes(blob[CONTAINER_OFFSET+0x20:CONTAINER_OFFSET+0x28]),
         })
-        assemblies.append(factory(buffer, IMAGE, policy))
+        assemblies.append(factory(buffer, gate_targets(lua, IMAGE), policy))
     joined = gate.compose(lua.table_from(assemblies))
     assembler = Ks(KS_ARCH_X86, KS_MODE_64)
     for name in HOOKS:

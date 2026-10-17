@@ -422,7 +422,8 @@ function Adapter:_queue()
         assert(not result.addresses[address], "NATIVE_DUPLICATE_MESSAGE_POINTER")
         assert(integer(message.m_targetId, -2147483648, 2147483647), "NATIVE_MESSAGE_FIELDS_INVALID")
         result.addresses[address] = message.m_targetId
-        -- These type/subtype pairs are verified from this fixture's 2.6.6 binary.
+        -- These type/subtype pairs are the engine's own constants, the same in
+        -- BG:EE and BG2:EE 2.6.6.0 and 2.7.3.0 (each class's GetMsgType/GetMsgSubType).
         -- Never cast an unrelated base message to a larger item-message type.
         local subtype = message:virtual_GetMsgType() == 67 and message:virtual_GetMsgSubType() or nil
         if subtype == 12 then

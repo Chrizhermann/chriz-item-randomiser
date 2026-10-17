@@ -20,14 +20,13 @@ from flir_config.original_options import patch_spell_shield_stock
 from flir_config.store_inventory import rewrite_inventory
 from tests import test_spell_shield_option as option_tests
 from tests.test_campaign_gate_bridge import CASES, CORE, GATE, POLICY, BUILD
+from engine_sites import gate_targets, load
 from tests.test_campaign_gate_policy import expected_fields
 from tests.test_campaign_inventory_assembly import run, EXPECTED, OUTPUT, INPUT, BUFFER
 from tests.test_source_gate_assembly import GateMachine, CODES, IMAGE, BUFFER as GATE_BUFFER
 
 
 INVENTORY = (ROOT / "tools/probes/FLPRInventoryAsm.lua").read_text()
-SIGNATURES = ((0x250765, "0f1047080f114308"), (0x405295, "c6435001498bcf"),
-              (0x250967, "4c8b742448"))
 
 
 class SpellShieldRuntimeTests(unittest.TestCase):
@@ -59,10 +58,9 @@ class SpellShieldRuntimeTests(unittest.TestCase):
             native["sources"] = {}
             pristine["stores"] = {}
         lua = runtime(unpack_returned_tuples=True)
-        core, gate, build, policy, inventory = [lua.execute(code) for code in (CORE, GATE, BUILD, POLICY, INVENTORY)]
+        core, build, policy, inventory = [lua.execute(code) for code in (CORE, BUILD, POLICY, INVENTORY)]
+        gate = load(lua, GATE)
         f = lua.execute(CASES.replace("return cases", "return fixture"))(core)
-        for rva, signature in SIGNATURES:
-            f.pokestring(f, 0x140000000 + rva, bytes.fromhex(signature))
         bundle = lua.execute(_render_lua({"manifest": manifest, "fixture": native}))
         f.inventory_groups = lua.table()
         install = lua.execute("""return function(f,Gate,bundle,build,policy,pristine,inventory)
@@ -82,7 +80,7 @@ class SpellShieldRuntimeTests(unittest.TestCase):
             policy = lua.execute(POLICY)(revision, "more_spell_shield")
             self.assertEqual(len(policy.fields), 18)
             self.assertEqual(policy.mask, (1 << 18) - 1)
-            sources.append(lua.execute(BUILD)(GATE_BUFFER, IMAGE, policy))
+            sources.append(lua.execute(BUILD)(GATE_BUFFER, gate_targets(lua, IMAGE), policy))
         for fields, expected in ((expected_fields(revision)[:18], 1),
                                  (expected_fields("0123" * 16)[:18], 0),
                                  (expected_fields(revision)[:17], 0)):

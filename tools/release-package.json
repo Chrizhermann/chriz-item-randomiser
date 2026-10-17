@@ -23,6 +23,7 @@
     "prototype/FLPRRun.menu",
     "prototype/FLPRScript.lua",
     "prototype/FLPRShop.lua",
+    "prototype/FLPRSite.lua",
     "prototype/FLPRSpell.lua",
     "prototype/M_FLPR.lua",
     "prototype/M_FLPRUI.lua",

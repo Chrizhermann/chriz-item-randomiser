@@ -11,6 +11,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'work/source-gate-20260927/analysis-deps'))
+sys.path.insert(0, str(ROOT / 'tests'))
 
 from keystone import Ks, KS_ARCH_X86, KS_MODE_64
 from lupa.lua51 import LuaRuntime as Lua51
@@ -19,12 +20,14 @@ from lupa.luajit21 import LuaRuntime as LuaJIT
 from unicorn import Uc, UC_ARCH_X86, UC_MODE_64, UC_HOOK_CODE
 from unicorn.x86_const import UC_X86_REG_RAX, UC_X86_REG_RSP, UC_X86_REG_EFLAGS
 
+from engine_sites import ENGINE_LUA, load, site as load_site
+
 
 CORE = (ROOT / "prototype/FLPRCore.lua").read_text(encoding="utf-8")
 GATE = (ROOT / "prototype/FLPRGat.lua").read_text(encoding="utf-8")
 POLICY = (ROOT / "tools/probes/FLPRCampaignPolicy.lua").read_text(encoding="utf-8")
 BUILD = (ROOT / "tools/probes/FLPRGateAsm.lua").read_text(encoding="utf-8")
-CASES = r'''
+CASES = ENGINE_LUA + r'''
 local cases={}
 local ID='are:flpru1/container/0/item/1'
 local BASE, BUFFER, CAPACITY, STRIDE=0x140000000,1000,2048,128
@@ -59,16 +62,9 @@ local function pristine_bytes(options)
         u16(charges[2])..u16(charges[3])..u32(flags))
     return bytes
 end
-local signatures={
-    {0x292A84,'48894df8488d4dc8488945a8410fb6f944884c2460'},
-    {0x292F45,'8bd6413974242c0f86c40400000f1f400066660f1f84'},
-    {0x190270,'418bc7488d0c80488b45884c8d2c88498bd5488d4df8'},
-    {0x18B8AC,'4533e444884c24604489642468450fb6e94c8bfa4c8bf1'},
-    {0x18DF94,'488b9c2470020000418bc4488b8d000100004833cce8'},
-    {0x18D9C9,'e8322400004885c00f84e90000004c8b00418bd4488bc8'},
-    {0x18FE05,'5556574154415541564157488d6c24804881ec80010000'},
-    {0x1906FC,'418b464441ffc74103464041bc0000000044897c2450443bf80f8255fbffff4c8b6d98410f'},
-}
+-- The locations a container source needs (FLPRSite.lua keys).
+local GATE_KEYS={'gate_enter','gate_capture','gate_item','gate_area_enter','gate_area_exit',
+    'gate_container_call','gate_container_entry','gate_container_skip'}
 local function clone(value)
     if type(value)~='table' then return value end
     local result={}; for key,item in pairs(value) do result[key]=clone(item) end
@@ -108,20 +104,18 @@ local function fixture(Core)
     end
     function f:q(offset,value) if value~=nil then self:poke(BUFFER+offset,value,8) end
         return self:peek(BUFFER+offset,8) end
-    for _,site in ipairs(signatures) do
-        local address=BASE+site[1]; local offset=0
-        for pair in site[2]:gmatch('%x%x') do
-            f.bytes[address+offset]=tonumber(pair,16); offset=offset+1
-        end
-    end
     f.api={EEex_Active=true}
+    engine_image(f.api,BASE,function(address,byte) f.bytes[address]=byte end)
     function f.api.EEex_GetImageBase() return BASE end
     function f.api.EEex_ReadU8(address)
         f.reads=(f.reads or 0)+1
         return f.bytes[address] or 0
     end
     function f.api.EEex_ReadU64(address) return f:peek(address,8) end
-    function f.api.EEex_Read32(address) return f:peek(address,4) end
+    function f.api.EEex_Read32(address)
+        local value=f:peek(address,4)
+        return value>=2147483648 and value-4294967296 or value
+    end
     function f.api.EEex_Malloc(size)
         local address=BUFFER+(f.allocated_bytes or 0)
         f.allocated_bytes=(f.allocated_bytes or 0)+size
@@ -287,16 +281,57 @@ function cases.full_authored_bundle_and_install_contract(Core,Gate,build,compile
     end
 end
 
-function cases.every_signature_precedes_all_writes(Core,Gate,build,compile)
-    for _,site in ipairs(signatures) do
-        for _,offset in ipairs({0,#site[2]/2-1}) do
+function cases.every_location_is_checked_before_any_write(Core,Gate,build,compile,Site)
+    local function untouched(f)
+        assert(f.allocations==0 and f.writes==0 and #f.hooks==0 and #f.events==0)
+        assert(f.api.FLPR_CAMPAIGN_GATE==nil)
+    end
+    local function address(f,key)
+        local engine=f.api.FLPR_ENGINE_SITES
+        return engine.base+engine.offsets[key][1]
+    end
+    for _,key in ipairs(GATE_KEYS) do
+        local spec=Site.SPECS[key]
+        local checked={}
+        for at=1,#spec.bytes,2 do
+            if spec.bytes:sub(at,at+1)~='??' then checked[#checked+1]=math.floor((at-1)/2) end
+        end
+        for _,offset in ipairs({checked[1],checked[#checked]}) do
             local f=fixture(Core)
-            f.bytes[BASE+site[1]+offset]=0xFF
-            fails('CAMPAIGN_GATE_CODE_MISMATCH',function() f:install(Gate,build,compile) end)
-            assert(f.allocations==0 and f.writes==0 and #f.hooks==0 and #f.events==0)
-            assert(f.api.FLPR_CAMPAIGN_GATE==nil)
+            local changed=address(f,key)+offset
+            f.bytes[changed]=(f.bytes[changed]+1)%256
+            fails('CAMPAIGN_GATE_CODE_MISMATCH:'..key..':differs-at:'..offset,
+                function() f:install(Gate,build,compile) end)
+            untouched(f)
+        end
+        for _,matches in ipairs({0,2}) do
+            local f=fixture(Core); local offsets=f.api.FLPR_ENGINE_SITES.offsets
+            offsets[key]=matches==2 and {offsets[key][1],offsets[key][1]+64} or {}
+            fails('CAMPAIGN_GATE_CODE_MISMATCH:'..key..(matches==2 and ':ambiguous:2' or ':not-found'),
+                function() f:install(Gate,build,compile) end)
+            untouched(f)
         end
     end
+    -- Bytes a hook relies on outside its own location: the item hook takes the
+    -- area loader's container call as the constructor's caller.
+    local f=fixture(Core)
+    local call=address(f,'gate_container_call')
+    f:poke(call+1,f:peek(call+1,4)+16,4)
+    fails('CAMPAIGN_GATE_CODE_MISMATCH:gate_container_call:call-target',
+        function() f:install(Gate,build,compile) end)
+    untouched(f)
+    -- Another mod's jump at the constructor's entry is not a mismatch.
+    f=fixture(Core)
+    local entry=address(f,'gate_container_entry')
+    f:poke(entry,0xE9,1); f:poke(entry+1,0x12345678,4)
+    assert(f:install(Gate,build,compile).installed)
+    -- No readable executable: the session scan reports it to every caller.
+    local read=Site.read_file
+    Site.read_file=function() return nil end
+    f=fixture(Core); f.api.FLPR_ENGINE_SITES=nil
+    fails('CAMPAIGN_GATE_CODE_MISMATCH:engine:executable-not-found',function() f:install(Gate,build,compile) end)
+    Site.read_file=read
+    untouched(f)
 end
 
 function cases.partial_hook_failure_cannot_arm_or_retry(Core,Gate,build,compile)
@@ -619,7 +654,7 @@ class CampaignGateBridgeTests(unittest.TestCase):
             for call in (False, True):
                 with self.subTest(runtime=runtime.__module__, call=call):
                     lua = runtime(unpack_returned_tuples=True)
-                    gate = lua.execute(GATE)
+                    gate = load(lua, GATE)
                     uc = Uc(UC_ARCH_X86, UC_MODE_64)
                     for address, size in ((site, 0x1000), (allocations, 0x10000),
                                           (data, 0x1000), (stack, 0x10000)):
@@ -709,11 +744,12 @@ class CampaignGateBridgeTests(unittest.TestCase):
         for runtime in (Lua51, Lua53, LuaJIT):
             lua = runtime(unpack_returned_tuples=True)
             core, gate, compile_policy, build = (
-                lua.execute(CORE), lua.execute(GATE), lua.execute(POLICY), lua.execute(BUILD))
+                lua.execute(CORE), load(lua, GATE), lua.execute(POLICY), lua.execute(BUILD))
+            site = load_site(lua)
             cases = lua.execute(CASES)
             for name in sorted(cases.keys()):
                 with self.subTest(runtime=runtime.__module__, case=name):
-                    cases[name](core, gate, build, compile_policy)
+                    cases[name](core, gate, build, compile_policy, site)
 
 
 if __name__ == '__main__':

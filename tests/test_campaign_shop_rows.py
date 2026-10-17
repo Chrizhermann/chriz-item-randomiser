@@ -27,6 +27,7 @@ from unicorn.x86_const import (
 )
 
 from tests.test_campaign_native_shop import CASES, SHOP
+from tests.engine_sites import load
 
 BASE, BUFFER, STORE, NODES, ROWS = 0x100000, 0x200000, 0x400000, 0x410000, 0x411000
 UI_NODES, UI_ROWS, SCREEN, CHITIN, ITEM = 0x420000, 0x421000, 0x430000, 0x440000, 0x450000
@@ -47,7 +48,7 @@ def emitted_hooks():
     for runtime in (Lua51, Lua53, LuaJIT):
         lua = runtime(unpack_returned_tuples=True)
         fixture = lua.execute(CASES.replace('return cases', 'return setup'))()
-        lua.execute(SHOP).install(fixture.api)
+        load(lua, SHOP).install(fixture.api)
 
         def flatten(value):
             if isinstance(value, str):

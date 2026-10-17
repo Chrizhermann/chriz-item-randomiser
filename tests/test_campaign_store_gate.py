@@ -16,6 +16,7 @@ from tests.test_campaign_gate_policy import expected_fields
 from tests import test_postinstall_native_export as export_tests
 from tests.test_postinstall_world_formats import item_record, make_sto
 from tests.test_source_gate_assembly import BUFFER, IMAGE, STACK, GateMachine
+from tests.engine_sites import gate_targets, load
 
 
 STORE_CODE, SAVED_CODE, DONE_CODE = 0x150000, 0x160000, 0x170000
@@ -41,7 +42,8 @@ class StoreGateTests(unittest.TestCase):
         self.removed = Path(str(base) + '.source-1.removed.sto').read_bytes()
 
         lua = LuaRuntime(unpack_returned_tuples=True)
-        core, gate, build, compile_policy = (lua.execute(value) for value in (CORE, GATE, BUILD, POLICY))
+        core, build, compile_policy = (lua.execute(value) for value in (CORE, BUILD, POLICY))
+        gate = load(lua, GATE)
         factory = lua.execute(CASES.replace('0x140000000,1000,', '0x10000000,3145728,')
                               .replace('return cases', 'return fixture'))
         f = factory(core)
@@ -51,17 +53,13 @@ class StoreGateTests(unittest.TestCase):
         f.revision = revision
         f.pristine = lua.table_from({'stores': lua.table_from({revision: lua.table_from({
             source['id']: lua.table_from({'original': self.original, 'removed': self.removed})})})})
-        for rva, code in ((0x250765, '0f1047080f114308'),
-                          (0x405295, 'c6435001498bcf'),
-                          (0x250967, '4c8b742448')):
-            f.pokestring(f, IMAGE + rva, bytes.fromhex(code))
         lua.globals().f = f
         f.install(f, gate, build, compile_policy)
         f.capture(f)
         f.prepare(f)
         f.adapter(f)
         f.bind(f)
-        assembly = build(BUFFER, IMAGE, f.gate.policy)
+        assembly = build(BUFFER, gate_targets(lua, IMAGE), f.gate.policy)
 
         machine = GateMachine()
         machine.uc.mem_map(0x130000, 0x50000)

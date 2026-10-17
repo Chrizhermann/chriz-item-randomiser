@@ -45,9 +45,9 @@ stay with Item Randomiser: in its 8.1.1 release and tag and in this repository's
 The randomiser is `DESIGNATED 0`, `LABEL ~cir-randomiser~`, no prompts; the optional
 tweaks follow below. Preconditions of the randomiser, each with its reason:
 
-- `GAME_IS ~eet~`. The runtime captures a campaign only on a BG1 New Game, and its
-  native source gate checks code bytes of the BG2:EE 2.6.6.0 executable. EET is the
-  platform with both; all native evidence is EET on BG2:EE 2.6.6 with EEex 1.2.
+- `GAME_IS ~eet~`. The runtime captures a campaign only on a BG1 New Game (B5); all
+  in-game evidence so far is EET on BG2:EE 2.6.6 with EEex 1.2. The native hooks
+  themselves are found in the running executable (see "Engine versions").
 - EEex present (`override/M___EEex.lua`, present in every EEex version).
 - LuaJIT active (exactly one `LuaPatchMode=REPLACE_INTERNAL_WITH_EXTERNAL` line in
   `InfinityLoader.ini`): the runtime uses the `io` and `os` libraries. Checked in the
@@ -205,7 +205,7 @@ English text as a fallback. Failure details go to `randomiser-campaigns/last-err
 | Situation | What the player sees |
 | --- | --- |
 | Configuration applied, game started without InfinityLoader/EEex | New Game popup: not running, start with `InfinityLoader.exe` |
-| The runtime could not start (a native hook found other engine code) | New Game popup: this game version is not supported yet |
+| The runtime could not start (a native hook location was not found exactly once, its code differs, or the executable could not be read) | New Game popup: this game version is not supported yet |
 | The runtime could not start (missing or damaged configuration files, or Item Randomiser's Mode 1 or Mode 2 installed after CIR) | New Game popup: could not randomise this adventure |
 | A New Game outside BG1 (SoD, SoA, ToB, Black Pits starts) | New Game popup: only BG1 starts so far |
 | Capture fails at character acceptance (for example a later mod replaced `BALDUR.GAM`) | Popup: could not randomise; Cancel keeps character creation open for a retry |
@@ -222,10 +222,33 @@ similarly short.
 ## EEex dependency
 
 Required: EEex with LuaJIT (CEBG's `feature:eeex:mandatory-components`, EEex v1.2
-components 0-8). Tested: EEex 1.2 on BG2:EE 2.6.6.0 only. EEex v0.11's Lua sources do
-not define `EEex_GetImageBase`, which the source gate calls; the installer does not
-refuse v0.11 because no minimum version has been established, and the runtime fails
-closed when an API or the executable's code bytes do not match.
+components 0-8). Tested in game: EEex 1.2 on BG2:EE 2.6.6.0 only. EEex v0.11's Lua
+sources do not define `EEex_GetImageBase`, which the hook search calls; the installer
+does not refuse v0.11 because no minimum version has been established, and the runtime
+fails closed when an API or the executable's code does not match.
+
+## Engine versions
+
+`prototype/FLPRSite.lua` holds every native hook location as a byte pattern ("??" for
+call targets and addresses that move between builds) plus the bytes the hook expects.
+Once per session it reads the executable InfinityLoader started (`Baldur.exe`, else the
+loader's other `ExeNames`), confirms its PE headers are the ones mapped in memory,
+searches the code section (about 0.1 s) and keeps the result in
+`FLPR_ENGINE_SITES`. A location is used only when its pattern occurs exactly once and
+the bytes at the hook are unchanged in memory (no other mod hooked the same
+instructions); call targets and RIP-relative globals are taken from that code, and
+struct offsets are checked against EEex's bindings (`EEex_OffsetOf`). Anything else
+stops the runtime with `<PREFIX>_CODE_MISMATCH:<location>:<reason>` and the "not
+supported yet" popup; the game and EEex keep running.
+
+EEex's `extra_pattern_dbs` are not used on purpose: InfinityLoader treats a pattern it
+cannot find in any of those files as an initialisation failure and then does not start
+EEex at all, so an unknown executable would break every EEex mod.
+
+`tools/engine_patterns.py <Baldur.exe> ...` checks the same patterns offline. Every
+location matches exactly once with the expected bytes in BG:EE and BG2:EE 2.6.6.0 and
+2.7.3.0 (Steam builds and the CEBG reference game); BG:EE and BG2:EE share the code
+layout within a version. Checking a new game version starts there.
 
 ## Relation to Item Randomiser
 
@@ -291,12 +314,9 @@ depth 8). `VERSION` 1.0.0 stands until the first release; nothing is published.
 ## Blockers before a public release
 
 - **B1 Python.** The scanner, editor and exporter are Python 3.10+ (standard library
-  only). Players must not need Python. Options: (a) CEBG ships the pinned CPython
-  embeddable distribution and hosts the editor; standalone users still need Python;
-  (b) a frozen executable (PyInstaller or Nuitka; new build toolchain, antivirus false
-  positives); (c) port scan/export/apply to Rust inside CEBG (largest; standalone users
-  need CEBG); (d) an in-game EEex configuration screen (Lua port of the scanner and
-  exporter plus UI work).
+  only). Players must not need Python. Decided (2026-10-17): a CEBG version, and a
+  standalone version with its own executable written in Rust for everyone else; the
+  Rust configurator is being built in a separate session.
 - **B2 Uninstall after Apply.** Closed by decision (2026-10-15): a game that used the
   randomiser and then uninstalled it is not ours to keep working. The default
   configuration's quest and dialogue changes moved into the installer anyway (see
@@ -315,11 +335,10 @@ depth 8). `VERSION` 1.0.0 stands until the first release; nothing is published.
   unsupported, as is the remaining parity work listed above. BG:EE (with SoD) and BG2:EE
   without EET must work before a release (decided 2026-10-14); the runtime has to tell
   the platforms apart rather than assume EET.
-- **B6 Engine 2.7.3.0.** The native hooks are pinned to the BG2:EE 2.6.6.0 executable
-  (relative addresses and code bytes in `FLPRGat.lua` and `FLPRNat.lua`). The current
-  Steam BG:EE and BG2:EE and the CEBG reference game are 2.7.3.0, which EEex 1.2 also
-  supports. There the runtime refuses every New Game with the "not supported yet" popup.
-  Every native site needs a 2.7.3.0 port and an in-game check on that version.
+- **B6 Engine 2.7.3.0.** Ported (2026-10-18): the hooks no longer use fixed 2.6.6.0
+  addresses but find their locations in the running executable (see "Engine
+  versions"), verified offline on BG:EE and BG2:EE 2.6.6.0 and 2.7.3.0. Open: the
+  first in-game check on 2.7.3.0 (EET, BG:EE, BG2:EE).
 
 Resolved here: in the snapshot, 15 native host tests (five in each Lua runtime) failed
 in `M_FLPR.lua`'s campaign preparation, which reads each source's

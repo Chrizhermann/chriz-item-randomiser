@@ -21,6 +21,7 @@ CIR is in development and has no release yet.
 ## Requirements
 
 - Baldur's Gate: Enhanced Edition Trilogy (EET). Other games are planned.
+- Game version 2.7.3.0 or 2.6.6.0, the versions EEex 1.2 supports.
 - EEex with its LuaJIT component; start the game with `InfinityLoader.exe`.
 
 ## Installation
@@ -49,6 +50,9 @@ the published files:
 python tools/build_release.py --commit HEAD --out <directory>
 python tools/build_release.py --commit <commit> --verify <zip>
 ```
+
+`python tools/engine_patterns.py <Baldur.exe>` checks whether the runtime finds all
+its engine hook locations in a game executable, for example a new game version.
 
 Use a disposable EET installation with its own profile for game tests. Tests should
 cover mod behaviour and reproduced bugs. See [tests/README.md](tests/README.md) for

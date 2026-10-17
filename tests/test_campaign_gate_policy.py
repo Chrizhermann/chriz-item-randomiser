@@ -16,6 +16,7 @@ from lupa.luajit21 import LuaRuntime as LuaJIT
 from tests.test_source_gate_assembly import (
     BUFFER, CODES, INPUT, IMAGE, ITEMS, GateMachine, generated as legacy_generated,
 )
+from tests.engine_sites import gate_targets
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -46,7 +47,7 @@ def generated_policy(source_index=1):
         policy = compile_policy(REVISION, source_index)
         fields = [(policy['fields'][index]['name'], policy['fields'][index]['value'])
                   for index in range(1, 20)]
-        output = assemble(BUFFER, IMAGE, policy)
+        output = assemble(BUFFER, gate_targets(lua, IMAGE), policy)
         results.append((policy['schema'], policy['mask'], fields,
                         {name: output[name] for name in CODES}))
     assert results[0] == results[1] == results[2]
@@ -94,8 +95,8 @@ class CampaignGatePolicyTests(unittest.TestCase):
         self.assertTrue(all(code[name] for name in CODES))
         for runtime in RUNTIMES:
             with self.subTest(runtime=runtime.__module__):
-                _, assemble = factory(runtime, ROOT / 'tools/probes/FLPRGateAsm.lua')
-                old = assemble(BUFFER, IMAGE)
+                lua, assemble = factory(runtime, ROOT / 'tools/probes/FLPRGateAsm.lua')
+                old = assemble(BUFFER, gate_targets(lua, IMAGE))
                 self.assertEqual({name: old[name] for name in CODES}, legacy_generated())
 
     def test_shuffled_fields_and_unrelated_globals_select_protected_mode(self):

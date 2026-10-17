@@ -412,7 +412,10 @@ local function bootstrap(Core,Host,Globals,text,options)
         end}
     end
     local script_module={new=function() error('UNEXPECTED_SCRIPT_SOURCE') end}
+    -- Hook locations; M_FLPR hands this table to each module that patches code.
+    f.site_module={}; f.module_args={}
     local modules={ ["override/FLPRCore.lua"]=Core,["override/FLPRGlob.lua"]=Globals,
+        ["override/FLPRSite.lua"]=f.site_module,
         ["override/FLPRHost.lua"]=host_module,["override/FLPRNat.lua"]={
             new=function(_,fixture) return f.make_native(fixture) end,
             supported=function(_,item)
@@ -468,7 +471,9 @@ local function bootstrap(Core,Host,Globals,text,options)
         end}
     end
     loadfile=function(path)
-        if modules[path] then return function() return modules[path] end end
+        if modules[path] then
+            return function(...) f.module_args[path]={...}; return modules[path] end
+        end
         if options.gate and path=="randomiser-campaigns/source-gate.lua" then
             return function() return options.missing_pinned and string.rep("e",64) or
                 f.pinned_revisions or f.manifest.revision end
@@ -523,6 +528,8 @@ function cases.bootstrap_opt_in_gate_installs_prepares_once_and_binds_frozen_nat
     local f=bootstrap(Core,Host,Globals,text,{gate=true})
     assert(f.gate_installed and f.pristine_opens==1 and
         table.concat(f.bootstrap_events,",")=="pristine_open,pristine_read,pristine_close,install,host_new")
+    local gate_args=f.module_args["override/FLPRGat.lua"]
+    assert(#gate_args==1 and gate_args[1]==f.site_module)
     assert(f.new_game_clicked==nil and f.values.flpr_state==nil and f.accept_count==nil)
     f.root.NewGame(); f.values.FLPR_FRESH=1
     assert(f.reset_calls==1 and f.bootstrap_events[#f.bootstrap_events-1]=="reset" and

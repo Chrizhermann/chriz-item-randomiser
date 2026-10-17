@@ -150,6 +150,7 @@ DEFINE_ACTION_MACRO flir_campaign_runtime_install BEGIN
        ~%MOD_FOLDER%/prototype/FLPRNat.lua~ ~override~
        ~%MOD_FOLDER%/prototype/FLPRScript.lua~ ~override~
        ~%MOD_FOLDER%/prototype/FLPRShop.lua~ ~override~
+       ~%MOD_FOLDER%/prototype/FLPRSite.lua~ ~override~
        ~%MOD_FOLDER%/prototype/FLPRSpell.lua~ ~override~
        ~%MOD_FOLDER%/prototype/FLPRRun.menu~ ~override~
        ~%MOD_FOLDER%/tools/probes/FLPRGateAsm.lua~ ~override~

@@ -12,6 +12,7 @@ from lupa.luajit21 import LuaRuntime
 from unicorn.x86_const import UC_X86_REG_R13, UC_X86_REG_R14, UC_X86_REG_RDX, UC_X86_REG_RCX, UC_X86_REG_R8
 
 from tests.test_campaign_gate_bridge import CASES, CORE, GATE, POLICY, BUILD
+from tests.engine_sites import gate_targets, load
 from tests.test_campaign_area_provenance import (
     AREA, BUFFER, HOOKS, RAW, ProvenanceMachine,
 )
@@ -55,7 +56,8 @@ class CreatureGateTests(unittest.TestCase):
         self.removed = fixture.creature_artifacts(revision)[1].read_bytes()
         self.area = fixture.area
         lua = LuaRuntime(unpack_returned_tuples=True)
-        core, gate, build, compile_policy = (lua.execute(value) for value in (CORE, GATE, BUILD, POLICY))
+        core, build, compile_policy = (lua.execute(value) for value in (CORE, BUILD, POLICY))
+        gate = load(lua, GATE)
         # Obtain the shared fake EEex API without adding a second hook harness.
         factory = lua.execute(CASES.replace('0x140000000,1000,', '0x10000000,3145728,')
                               .replace('return cases', 'return fixture'))
@@ -69,9 +71,6 @@ class CreatureGateTests(unittest.TestCase):
             'creatures': lua.table_from({revision: lua.table_from({source['id']:
                 lua.table_from({'original': self.original, 'removed': self.removed})})}),
         })
-        for rva, code in ((0x18C448, 'e8d34d1b00498db580000000e93d010000'),
-                          (0x18C591, 'e88a4c1b00488bf84885c00f8444010000')):
-            f.pokestring(f, 0x10000000+rva, bytes.fromhex(code))
         lua.globals().f = f
         lua.execute('f.api.EEex_HookBeforeCall=function(address,code) '
                     'f.api.EEex_HookBeforeRestore(address,0,5,5,code) end')
@@ -81,7 +80,7 @@ class CreatureGateTests(unittest.TestCase):
         f.adapter(f)
         f.bind(f)
         self.assertEqual(len(f.hooks), 6)  # Four shared load hooks + two CRE calls.
-        assembly = build(BUFFER, 0x10000000, f.gate.policy)
+        assembly = build(BUFFER, gate_targets(lua, 0x10000000), f.gate.policy)
         self.assertEqual(assembly.item, '')
         machine = ProvenanceMachine(blob=self.area)
         assembler = Ks(KS_ARCH_X86, KS_MODE_64)

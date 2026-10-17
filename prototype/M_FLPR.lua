@@ -11,8 +11,9 @@ root.SeedSerial = root.SeedSerial or 0
 local DATA = "randomiser-campaigns/"
 root.DATA = DATA
 
-local function module(path)
-    return assert(loadfile(path))()
+-- Extra arguments reach the module chunk as `...` (the hook location table).
+local function module(path, ...)
+    return assert(loadfile(path))(...)
 end
 
 -- Player-facing text comes from M_FLPRUI.lua, installed with this file.
@@ -33,8 +34,9 @@ local function record(context, reason)
     end
 end
 
--- Every native hook checks the engine's code before patching it, so a code
--- mismatch means an engine build this runtime does not support yet.
+-- Every native hook location is found in the running executable and its code
+-- checked before patching (FLPRSite.lua), so a code mismatch means the runtime
+-- could not find or confirm its hooks in this game's engine.
 local function failure_message(reason)
     return tostring(reason):find("CODE_MISMATCH", 1, true) and "unsupported" or "setup_failed"
 end
@@ -59,6 +61,7 @@ local ok, failure = pcall(function()
         end
     end
     local Core = module("override/FLPRCore.lua")
+    local Site = module("override/FLPRSite.lua")
     local Globals = module("override/FLPRGlob.lua")
     local Native = module("override/FLPRNat.lua")
     local Host = module("override/FLPRHost.lua")
@@ -95,7 +98,7 @@ local ok, failure = pcall(function()
             count=count+1
         end
         assert(count==#revisions,"SOURCE_GATE_REVISIONS_INVALID")
-        local Gate = module("override/FLPRGat.lua")
+        local Gate = module("override/FLPRGat.lua", Site)
         local bundles,seen,pristine={},{},{creatures={},stores={},scripts={},templates={},spell_shield={},cursed={},auxiliary={}}
         local Cursed
         local needs_inventory=false
@@ -104,7 +107,7 @@ local ok, failure = pcall(function()
             local guarded = assert(resolve(revision), "SOURCE_GATE_REVISION_UNAVAILABLE")
             bundles[#bundles+1]=guarded
             if guarded.fixture.cursed_disguises then
-                Cursed=Cursed or module('override/FLPRCur.lua')
+                Cursed=Cursed or module('override/FLPRCur.lua', Site)
                 local assets={};pristine.cursed[revision]=assets
                 for _,item in ipairs(guarded.fixture.cursed_disguises.items) do
                     local entry={variants={}};assets[item.resref]=entry
@@ -279,7 +282,7 @@ local ok, failure = pcall(function()
             local has_shop=false
             for _,target in pairs(value.targets) do if target.kind=='store' then has_shop=true end end
             if has_shop then
-                if not root.Shop then root.Shop=module('override/FLPRShop.lua').install(_G) end
+                if not root.Shop then root.Shop=module('override/FLPRShop.lua', Site).install(_G) end
                 root.Shop:bind(value,root.Host.controller)
             elseif root.Shop then root.Shop:reset() end
             return Native.new(_G, value, storage:get(Core.G.seed),
