@@ -32,6 +32,7 @@ from uuid import uuid4
 
 # The only games this helper drives: disposable labs and their private profile names.
 LABS = {
+    Path.home() / "Games" / "IR-Lab-266-20261017" / "game": "IR Lab 266 - 20261017",
     Path.home() / "Games" / "IR-Lab-266-20261014" / "game": "IR Lab 266 - 20261014",
 }
 CHARACTER_NAME = "Abdel - Fighter - Chaotic Good"
