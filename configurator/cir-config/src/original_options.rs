@@ -16,7 +16,8 @@ use crate::{dict, list};
 use std::cmp::Ordering;
 use std::collections::BTreeSet;
 
-/// Mode 1's b2c reward chooses one of all six stat books uniformly.
+/// In Item Randomiser's own randomisation, the b2c reward is one of all six
+/// stat books, chosen uniformly.
 pub fn tome_variants(campaign: &str, game: &str) -> Result<Vec<String>> {
     (3..9).map(|number| convert_resource(&format!("book{number:02}"), "itm", campaign, game)).collect()
 }

@@ -1,4 +1,5 @@
-//! Reviewed Mode 2 container quest conditions, gated per campaign (the
+//! Reviewed quest conditions of the containers in Item Randomiser's `mode2`
+//! target tables (the extended place pools), gated per campaign (the
 //! reference's `container_rewards.py`).
 //!
 //! The Host observes a delivered reward becoming absent from its loaded

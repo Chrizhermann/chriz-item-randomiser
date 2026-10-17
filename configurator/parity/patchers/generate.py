@@ -325,7 +325,7 @@ def spell_scenario(name: str, fixture: bytes, patched_hash: str | None = None) -
     return s
 
 
-# ---------------------------------------------------------------- mode 2
+# ---------------------------------------------------------------- direct grants (mode2_rewards)
 
 
 def text_variant(resource: str) -> bytes:

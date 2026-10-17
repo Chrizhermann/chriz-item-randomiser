@@ -1,5 +1,6 @@
-//! The reference's Mode 2 test builders and graph checks
-//! (`tests/test_mode2_rewards.py`), shared by the Mode 2 parity binaries.
+//! The reference's direct grant test builders and graph checks
+//! (`tests/test_mode2_rewards.py`), shared by the `parity_mode2_rewards*`
+//! binaries.
 
 use super::builders::{contains, count, index, outgoing, replace, u32_at};
 use cir_config::json::{Dict, Value};

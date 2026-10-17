@@ -1,7 +1,8 @@
 //! The reviewed Deck of Many Things Key spell's one Create Item effect (the
 //! reference's `spell_rewards.py`).
 //!
-//! Original Mode 2 replaces opcode 122 through an EFF in lib/weidu_action.tpa.
+//! Item Randomiser's own randomisation replaces opcode 122 through an EFF in
+//! lib/weidu_action.tpa.
 //! The native campaign instead invokes FLPRKEY at that same effect position;
 //! the callback retains or suppresses the original ring and records its
 //! recipient.

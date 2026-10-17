@@ -3,7 +3,8 @@
 //!
 //! The installer splits each reward block when it is installed
 //! (lib/campaign_patches.tpa); the configurator only binds the rewards. The
-//! helpers below are shared by the Mode 2 and container reward adapters.
+//! helpers below are shared by the direct grant (`mode2_rewards`) and
+//! container reward adapters.
 
 use crate::error::{Error, Result};
 use crate::json::{Dict, Value};

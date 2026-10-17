@@ -159,7 +159,6 @@ def main() -> int:
         started = time.monotonic()
         fit_line, fitted = python_outcome(fit_original_configuration, catalog, world, template,
                                           items=items, targets=targets, options=option_value)
-        python_time = time.monotonic() - started
         calls = [{"call": "fit_original_configuration",
                   "args": {**shared, "template_id": template, "items": items, "targets": targets,
                            "options": option_value}}]
@@ -195,6 +194,7 @@ def main() -> int:
                 calls.append({"call": "native_compile",
                               "args": {**shared, "manifest": check.runner.file_argument(campaign)}})
                 python_lines.append(native_line)
+        python_time = time.monotonic() - started
         started = time.monotonic()
         rust_lines = check.runner.run(calls)
         rust_time = time.monotonic() - started
@@ -202,7 +202,9 @@ def main() -> int:
         if fitted is not None:
             summary = (f" ({len(fitted['profile']['items'])} items, {len(fitted['left_out'])} left out, "
                        f"{len(fitted['not_used'])} not used)")
-        print(f"{label}{summary}: python {python_time:.1f}s, rust {rust_time:.1f}s (all calls)", flush=True)
+        # Python works on the scans loaded once; the Rust time also holds the
+        # process start and reading the catalog and world for each call.
+        print(f"{label}{summary}: {len(calls)} calls, python {python_time:.1f}s, rust {rust_time:.1f}s", flush=True)
         for call, python_line, rust_line in zip(calls, python_lines, rust_lines):
             check.compare(f"{label} {call['call']}", python_line, rust_line)
 

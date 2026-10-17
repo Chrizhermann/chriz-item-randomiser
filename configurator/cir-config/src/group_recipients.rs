@@ -1,5 +1,5 @@
-//! Original Mode 1 group recipient preference, without making a random draw
-//! (the reference's `group_recipients.py`).
+//! The group recipient preference of Item Randomiser's own randomisation,
+//! without making a random draw (the reference's `group_recipients.py`).
 //!
 //! The eight masks follow `read_itm_unusabilities` and
 //! `define_cre_unusabilities` in `lib/fl#gear.tpa`. The fallback to all

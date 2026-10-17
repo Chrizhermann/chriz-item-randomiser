@@ -1,7 +1,7 @@
 //! Python-recorded parity cases for the `mode2_rewards` scenario
 //! (see `configurator/parity/patchers/generate.py`), and the reference's
 //! `tests/test_mode2_rewards.py` on the same synthetic resources, plus the
-//! Mode 2 patcher part of `tests/test_original_option_export.py`.
+//! direct grant patcher part of `tests/test_original_option_export.py`.
 //!
 //! The reference tests patch `mode2_rewards.ORIGINAL_HASHES` and
 //! `PATCHED_HASHES` to the synthetic resources' hashes; those tests need the

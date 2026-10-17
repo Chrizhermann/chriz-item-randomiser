@@ -1,5 +1,6 @@
-//! Campaign-gated original Mode 2 direct grants and plain dialogue aliases
-//! (the reference's `mode2_rewards.py`).
+//! Campaign-gated direct grants and plain dialogue aliases of the rewards in
+//! Item Randomiser's `mode2` source tables (the extended item pools; the
+//! reference's `mode2_rewards.py`).
 //!
 //! The resource hashes pin the reviewed EET scripts. Only the grant is
 //! suppressed; its surrounding actions, conditions, dialogue replies and
@@ -445,7 +446,7 @@ fn build_registry() -> Registry {
     Registry { rewards, direct: direct_names, transfers, physical, resources, sources, targets }
 }
 
-/// `REWARDS`: every Mode 2 grant edit by key, in the reference's order.
+/// `REWARDS`: every direct grant edit by key, in the reference's order.
 pub fn rewards() -> &'static Dict {
     &registry().rewards
 }
