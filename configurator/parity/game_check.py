@@ -5,7 +5,8 @@ item catalog and the world, then compares, for every preset and pool and a
 few option sets: the fitted preset (with its left-out rows), the unfitted
 build and the rows the native check refuses, the compiled campaign, the
 native compilation, and for some of them the campaign store and the native
-export written into the scratch folder.
+export written into the scratch folder: one revision, as the command line
+exports it, and one for each campaign start, as the editor's Apply does.
 
     python configurator/parity/game_check.py --game <game folder> --scratch <empty folder>
 
@@ -33,6 +34,7 @@ from flir_config.native_export import _compile, export_native
 from flir_config.original_configuration import build_original_configuration, fit_original_configuration
 from flir_config.profiles import read_json, validate_catalog
 from flir_config.sources import validate_world
+from flir_config.starts import write_starts
 from flir_config.templates import list_templates
 
 POOLS = ("standard", "extended")
@@ -208,7 +210,9 @@ def main() -> int:
         for call, python_line, rust_line in zip(calls, python_lines, rust_lines):
             check.compare(f"{label} {call['call']}", python_line, rust_line)
 
-        # The campaign store and the native export, written into scratch.
+        # The campaign store and the native export, written into scratch: one
+        # revision (the command line's export), and one for each campaign
+        # start (the editor's Apply).
         if fitted is None or exports_left.setdefault(template, options.exports) <= 0:
             continue
         exports_left[template] -= 1
@@ -216,20 +220,36 @@ def main() -> int:
         lines = {}
         for side in ("rs", "py"):
             store, output = case / side / "store", case / side / "export"
+            starts_store, starts_output = case / side / "starts-store", case / side / "starts-export"
             if side == "rs":
+                profile_file = check.runner.file_argument(fitted["profile"])
+                plan_file = check.runner.file_argument(fitted["plan"])
                 lines[side] = check.runner.run([
-                    {"call": "write_campaign", "args": {**shared, "profile": check.runner.file_argument(fitted["profile"]),
-                                                        "plan": check.runner.file_argument(fitted["plan"]),
+                    {"call": "write_campaign", "args": {**shared, "profile": profile_file, "plan": plan_file,
                                                         "store": str(store)}},
-                    {"call": "export_native", "args": {**shared, "store": str(store), "output": str(output)}}])
+                    {"call": "export_native", "args": {**shared, "store": str(store), "output": str(output)}},
+                    {"call": "write_starts", "args": {**shared, "profile": profile_file, "plan": plan_file,
+                                                      "store": str(starts_store)}}])
+                written = json.loads(lines[side][-1]).get("result")
+                starts = ({} if written is None else
+                          {"starts": written["starts"], **({"main": written["main"]} if written["main"] else {})})
+                lines[side] += check.runner.run([
+                    {"call": "export_native", "args": {**shared, "store": str(starts_store),
+                                                       "output": str(starts_output), **starts}}])
             else:
-                written, _ = python_outcome(write_campaign, fitted["profile"], catalog, world, fitted["plan"], store)
+                saved, _ = python_outcome(write_campaign, fitted["profile"], catalog, world, fitted["plan"], store)
                 exported, _ = python_outcome(export_native, store, catalog, world, output)
-                lines[side] = [written, exported]
+                starts_line, written = python_outcome(write_starts, fitted["profile"], fitted["plan"], catalog, world,
+                                                      starts_store)
+                starts = {} if written is None else {"starts": written["starts"], "main": written["main"]}
+                starts_exported, _ = python_outcome(export_native, starts_store, catalog, world, starts_output,
+                                                    **starts)
+                lines[side] = [saved, exported, starts_line, starts_exported]
         masks = [(str(case / "py"), "<case>"), (str(case / "rs"), "<case>")]
-        for name, python_line, rust_line in zip(("write_campaign", "export_native"), lines["py"], lines["rs"]):
+        names = ("write_campaign", "export_native", "write_starts", "export_native with starts")
+        for name, python_line, rust_line in zip(names, lines["py"], lines["rs"]):
             check.compare(f"{label} {name}", python_line, rust_line, masks)
-        for folder in ("store", "export"):
+        for folder in ("store", "export", "starts-store", "starts-export"):
             differences = tree_differences(snapshot_tree(case / "py" / folder), snapshot_tree(case / "rs" / folder))
             check.compared += 1
             if differences:

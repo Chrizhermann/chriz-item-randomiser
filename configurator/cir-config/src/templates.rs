@@ -38,7 +38,8 @@ pub fn recommended_options() -> Dict {
     default_options().merged(&crate::dict! {"flail_heads" => true, "totsc_tome" => true})
 }
 
-const CAMPAIGNS: [(&str, &str); 3] = [("bg1", "BG1"), ("bg2", "BG2"), ("eet", "EET")];
+/// The preset campaigns and their labels.
+pub const CAMPAIGNS: [(&str, &str); 3] = [("bg1", "BG1"), ("bg2", "BG2"), ("eet", "EET")];
 
 /// A preset list set in lists/presets/<name>/.
 pub struct Preset {
@@ -142,14 +143,23 @@ pub fn descriptor(template_id: &str) -> Option<Descriptor> {
     descriptors().into_iter().find(|descriptor| descriptor.id == template_id)
 }
 
-/// Stable, compact descriptors of the bundled presets.
-pub fn list_templates() -> Value {
+/// Stable, compact descriptors of the bundled presets; `campaigns` limits
+/// them to presets for those campaigns ("bg1", "bg2", "eet").
+pub fn list_templates(campaigns: Option<&[&str]>) -> Value {
     Value::List(
         descriptors()
             .into_iter()
+            .filter(|row| campaigns.is_none_or(|campaigns| campaigns.contains(&row.campaign)))
             .map(|row| Value::Dict(crate::dict! {"id" => row.id, "name" => row.name, "description" => row.description}))
             .collect(),
     )
+}
+
+/// The campaign ("bg1", "bg2" or "eet") a preset is for.
+pub fn template_campaign(template_id: &str) -> Result<&'static str> {
+    descriptor(template_id)
+        .map(|row| row.campaign)
+        .ok_or_else(|| Error::value(format!("Unknown original template: {template_id}")))
 }
 
 pub fn template_ids() -> Vec<String> {

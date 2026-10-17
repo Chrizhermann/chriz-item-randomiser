@@ -23,7 +23,7 @@ import tempfile
 import common
 from common import ROOT, RUST_CLI
 
-from test_postinstall_resources import make_game, make_itm  # noqa: E402
+from test_postinstall_resources import make_game, make_itm, mark_eet  # noqa: E402
 from test_postinstall_world_formats import item_record, make_are, make_cre, make_sto  # noqa: E402
 
 # The reference runs under the executable's name, so usage and help text
@@ -34,13 +34,24 @@ PYTHON = [sys.executable, "-c",
           "from flir_config.cli import main; raise SystemExit(main())",
           RUST_CLI.name]
 RUST = [str(RUST_CLI)]
-SOURCE = "are:area/container/0/item/0"
-TARGET = "are:area/actor/1"
 
 
-def build(game: Path) -> None:
+def sources(area: str = "area") -> tuple[str, str]:
+    """The chest's item and the embedded actor of the synthetic area."""
+    return f"are:{area}/container/0/item/0", f"are:{area}/actor/1"
+
+
+def build(game: Path, platform: str = "eet", area: str = "area") -> None:
+    """A synthetic game of this platform (as WeiDU's GAME_IS tells them
+    apart: EET by its flag, BG2:EE by OH6000, BG:EE by OH1000) with one area
+    of this name."""
     make_game(game)
     override = game / "override"
+    if platform == "eet":
+        mark_eet(game)
+    marker = {"bg2ee": "oh6000", "bgee": "oh1000"}.get(platform)
+    if marker:
+        (override / f"{marker}.are").write_bytes(make_are())
     # A visible, droppable item, so the native export has a complete path.
     item_data = bytearray(make_itm())
     struct.pack_into("<I", item_data, 0x18, 0x4C)
@@ -51,8 +62,8 @@ def build(game: Path) -> None:
     embedded[0x280:0x288] = b"EmbedDV\0"
     payloads = {
         "actor.cre": make_cre([item, item_record(charges=(2, 9, 0), flags=4)]),
-        "area.are": make_are([item], [("Chest", 0, 1)],
-                             [("External", "ACTOR"), ("Embedded", bytes(embedded))]),
+        f"{area}.are": make_are([item], [("Chest", 0, 1)],
+                                [("External", "ACTOR"), ("Embedded", bytes(embedded))]),
         "shop.sto": make_sto([(item, 3, 0)]),
         "grant.bcs": b"SC\nsynthetic grant\nSC\n",
         "grant.dlg": b"DLG V1.0synthetic grant",
@@ -65,8 +76,9 @@ def bind_plan(out: Path) -> None:
     """Choose the chest's item for the embedded actor, the same on both sides."""
     path = out / "plan.json"
     plan = json.loads(path.read_text(encoding="utf-8"))
-    plan["sources"] = [{"item": "synth001", "policy": "relocate", "source_ids": [SOURCE], "registration_ids": []}]
-    plan["targets"] = [{"id": TARGET, "capacity": 1, "optional": False}]
+    source, target = sources()
+    plan["sources"] = [{"item": "synth001", "policy": "relocate", "source_ids": [source], "registration_ids": []}]
+    plan["targets"] = [{"id": target, "capacity": 1, "optional": False}]
     path.write_text(json.dumps(plan, indent=2), encoding="utf-8")
     (out / "options.json").write_text(json.dumps({"scrolls": True, "loss_mode": "some", "loss_percent": 20}),
                                       encoding="utf-8")

@@ -203,6 +203,7 @@ pub const RESOURCE_TYPES: &[(&str, u32)] = &[
     ("are", 1010),
     ("dlg", 1011),
     ("sto", 1014),
+    ("lua", 1033),
 ];
 pub const ITM_TYPE: u32 = 1005;
 

@@ -204,12 +204,14 @@ def file(value) -> dict:
 class Spec:
     """A recorded call: its Rust name, its Rust arguments, the parameters that
     are paths, the folders it writes, the parameters the Rust API takes as
-    text only (another type cannot be passed to it at all), and how the
-    reference's result becomes JSON."""
+    text only (another type cannot be passed to it at all), those it takes as
+    a mapping of text to text, those it takes as a sequence (a tuple becomes
+    a JSON list), and how the reference's result becomes JSON."""
 
-    def __init__(self, call: str, arguments, *, paths=(), writes=(), texts=(), result=None):
+    def __init__(self, call: str, arguments, *, paths=(), writes=(), texts=(), text_maps=(), sequences=(),
+                 result=None):
         self.call, self.arguments, self.paths, self.writes = call, arguments, set(paths), tuple(writes)
-        self.texts = set(texts)
+        self.texts, self.text_maps, self.sequences = set(texts), set(text_maps), set(sequences)
         self.result = result
 
 
@@ -262,8 +264,25 @@ SPECS = {
     ("flir_config.native_export", "export_native"): Spec(
         "export_native", lambda v, d: present(store=str(v["store"]), catalog=file(v["catalog"]),
                                               world=file(v["world"]), output=str(v["output"]),
-                                              revision=v["revision"]),
-        paths=("store", "output"), writes=("output",), texts=("revision",)),
+                                              revision=v["revision"], starts=v["starts"], main=v["main"]),
+        paths=("store", "output"), writes=("output",), texts=("revision", "main"), text_maps=("starts",)),
+    ("flir_config.starts", "write_starts"): Spec(
+        "write_starts", lambda v, d: {"profile": file(v["profile"]), "plan": file(v["plan"]),
+                                      "catalog": file(v["catalog"]), "world": file(v["world"]),
+                                      "store": str(v["store"])},
+        paths=("store",), writes=("store",)),
+    ("flir_config.starts", "describe_starts"): Spec(
+        "describe_starts", lambda v, d: {"written": v["written"]}),
+    ("flir_config.platform", "game_platform"): Spec(
+        "game_platform", lambda v, d: {"world": file(v["world"])}),
+    ("flir_config.platform", "preset_game"): Spec(
+        "preset_game", lambda v, d: {"world": file(v["world"]), "template_id": v["template_id"]},
+        texts=("template_id",)),
+    ("flir_config.platform", "area_part"): Spec(
+        "area_part", lambda v, d: {"platform": v["platform"], "area": v["area"]}, texts=("platform", "area")),
+    ("flir_config.templates", "list_templates"): Spec(
+        "list_templates", lambda v, d: present(campaigns=None if v["campaigns"] is None else list(v["campaigns"])),
+        sequences=("campaigns",)),
     ("flir_config.activation", "item_randomiser_conflict"): Spec(
         "item_randomiser_conflict", lambda v, d: {"game": str(v["game"])}, paths=("game",)),
     ("flir_config.activation", "validate_runtime"): Spec(
@@ -311,6 +330,12 @@ def record(spec: Spec, original, signature, args, kwargs):
                     reason = f"{key} is not a path"
             elif key in spec.texts and value is not None and not isinstance(value, str):
                 reason = f"{key} is not text (the Rust API takes text)"
+            elif key in spec.text_maps and value is not None:
+                if not (type(value) is dict and all(isinstance(item, str) for item in value.values())):
+                    reason = f"{key} is not a mapping of text (the Rust API takes one)"
+            elif key in spec.sequences and value is not None:
+                if not (isinstance(value, (list, tuple)) and json_native(list(value))):
+                    reason = f"{key} is not a sequence of plain JSON"
             elif not json_native(value):
                 reason = f"{key} is not plain JSON"
     # "name/.." is the folder holding that path (deploy_export keeps its

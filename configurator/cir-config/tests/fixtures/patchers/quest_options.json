@@ -1320,7 +1320,7 @@
     "1653": "Investigating the Merchants' League Estate",
     "1700": "Chriz Item Randomiser is set up but not running. Start the game with InfinityLoader.exe to randomise this adventure.",
     "1701": "Chriz Item Randomiser does not support this game version yet. Details: randomiser-campaigns\\last-error.txt",
-    "1702": "Chriz Item Randomiser can only randomise adventures that start in Baldur's Gate (BG1) so far.",
+    "1702": "Chriz Item Randomiser's settings have nothing to randomise in this campaign.",
     "1703": "Chriz Item Randomiser could not randomise this adventure. Details: randomiser-campaigns\\last-error.txt",
     "1704": "Start without randomiser",
     "1705": "Chriz Item Randomiser: this adventure's items are randomised.",

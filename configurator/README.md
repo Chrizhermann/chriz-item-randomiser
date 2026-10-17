@@ -8,7 +8,8 @@ results, the error messages and every file written are the same (see
 
 - `cir-config` (library `cir_config`): scan, world scan, presets and their fit
   to a game, binding checks, campaign compile and store, native export and
-  apply. Chriz Easy BG links this crate.
+  apply, for BG:EE, BG2:EE and EET with one revision per campaign start. Chriz
+  Easy BG links this crate.
 - `cir-configurator`: the executable with the reference's command line and the
   local editor.
 
@@ -47,10 +48,14 @@ change a test game, as with the reference.
 The library works on JSON values (`cir_config::json::Value`, with Python's key
 order and number rules) and returns `cir_config::Error`, whose `ErrorKind`
 names the reference's exception class. The entry points are
-`resources::scan_game`, `sources::scan_world`, `templates::{list_templates,
-build_template, recommended_preset}`,
+`resources::scan_game`, `sources::scan_world`, `platform::{game_platform,
+preset_game}` (which game a world is and which presets fit it),
+`templates::{list_templates, build_template, recommended_preset}`,
 `original_configuration::fit_original_configuration`,
-`campaigns::{compile_campaign, write_campaign}`, `native_export::export_native`,
+`campaigns::{compile_campaign, write_campaign}`, `starts::{write_starts,
+describe_starts}` (one revision for each campaign start the configuration
+reaches), `native_export::export_native` (one revision, or the revisions of
+every start with the main start: `next.lua` schema `flir-next-v2`),
 `activation::{validate_runtime, deploy_export}` and `editor::Editor`, the
 editor's requests (`get`, `post`) without the HTTP server.
 
@@ -71,8 +76,9 @@ cargo test --manifest-path configurator/Cargo.toml --features cir-config/parity-
 ```
 
 - `replay_tests.py` runs the reference's test suite and repeats every library
-  call it makes (scan, world scan, presets and their fit, binding, campaign
-  compile, store and read, native export) with the Rust port, comparing
+  call it makes (scan, world scan, game detection, presets and their fit,
+  binding, campaign compile, store and read, the revisions per campaign start,
+  native export) with the Rust port, comparing
   results, errors and the files written. Tests that inject faults into Python
   internals (a patched `open` or directory listing) cannot be repeated and are
   listed as not compared.
@@ -86,8 +92,9 @@ cargo test --manifest-path configurator/Cargo.toml --features cir-config/parity-
   preset with its left-out rows, the unfitted build with the rows the runtime
   check refuses, the compiled campaign and its native compilation) and, for
   some, the campaign store and the native export written into the scratch
-  folder. The export copies game resources, so keep the scratch folder outside
-  the repository.
+  folder: one revision as the command line exports it, and one for each
+  campaign start as the editor's Apply writes them. The export copies game
+  resources, so keep the scratch folder outside the repository.
 - The Rust tests include byte-parity fixtures for the resource patchers,
   generated from synthetic inputs by `configurator/parity/patchers/generate.py`.
 
@@ -101,6 +108,10 @@ build.
 - Errors that the reference lets escape as a Python traceback (`KeyError`,
   `TypeError` and the like from malformed input files) end with one line naming
   the same error class and message, with the same exit status 1.
+- An editor request whose error escapes the reference's handler
+  (`AttributeError` or `OverflowError` from malformed scans or saved files)
+  gets no answer in either editor: the connection closes. The Rust editor
+  prints one line to stderr instead of Python's traceback.
 - The command line writes UTF-8; Python uses the console's or locale's
   encoding, which matters only for non-ASCII text echoed in usage errors.
 - Outside Windows the help text wraps at `$COLUMNS` or 80 columns rather than

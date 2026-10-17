@@ -15,6 +15,8 @@ pub const RESOURCE: &str = "bcs:blpool";
 pub const ITEM: &str = "blun12";
 pub const ADAPTER_ID: &str = "blpool-v1";
 pub const SELECTOR: &str = "pool-reward";
+/// Item Randomiser's BG2 table lists the pool.
+pub const CAMPAIGN: &str = "bg2";
 
 /// `{"resref": ITEM, "expiration": 0, "charges": [0, 0, 0], "flags": 0}`.
 pub fn payload() -> Value {

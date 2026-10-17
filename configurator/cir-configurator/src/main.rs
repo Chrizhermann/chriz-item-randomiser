@@ -226,7 +226,7 @@ fn run(command: &[String], parsed: &Parsed) -> Result<Value> {
     let names: Vec<&str> = command.iter().map(String::as_str).collect();
     match names.as_slice() {
         ["templates"] => {
-            let Some(id) = parsed.text("id") else { return Ok(result_dict(vec![("templates", templates::list_templates())])) };
+            let Some(id) = parsed.text("id") else { return Ok(result_dict(vec![("templates", templates::list_templates(None))])) };
             let build = || -> Result<Value> {
                 let options = match parsed.path("options") {
                     Some(options) => Some(profiles::read_json(&options)?),
@@ -303,6 +303,8 @@ fn run_with_catalog(names: &[&str], parsed: &Parsed) -> Result<Value> {
             &read(parsed, "world")?,
             &path(parsed, "out"),
             parsed.text("revision"),
+            None,
+            None,
         ),
         ["prototype", "prepare"] => cir_config::campaigns::write_campaign(
             &read(parsed, "profile")?,
@@ -463,6 +465,7 @@ fn main() -> ExitCode {
                 ErrorKind::Type => "TypeError",
                 ErrorKind::GameText => "GameTextError",
                 ErrorKind::Overflow => "OverflowError",
+                ErrorKind::Attribute => "AttributeError",
                 _ => "ValueError",
             };
             print_line(&mut std::io::stderr(), &format!("{kind}: {}", error.message));

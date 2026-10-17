@@ -34,11 +34,13 @@ pub mod creature_inventory;
 pub mod group_recipients;
 pub mod sources;
 pub mod templates;
+pub mod platform;
 pub mod original_catalog;
 pub mod original_registrations;
 pub mod campaigns;
 pub mod native_export;
 pub mod original_configuration;
+pub mod starts;
 pub mod activation;
 pub mod editor;
 

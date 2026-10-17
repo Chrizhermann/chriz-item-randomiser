@@ -160,7 +160,7 @@ fn respond(reader: &mut BufReader<TcpStream>, editor: &Mutex<Editor>, port: u16)
             return Ok(Some(error_reply(501, Some(&message), None, &request.version, command)));
         }
     };
-    dispatch(&request, reader, editor, port, post).map(Some)
+    dispatch(&request, reader, editor, port, post)
 }
 
 /// `BaseHTTPRequestHandler.parse_request` up to the headers: Ok(None) for
@@ -318,7 +318,7 @@ fn dispatch(
     editor: &Mutex<Editor>,
     port: u16,
     post: bool,
-) -> std::io::Result<Vec<u8>> {
+) -> std::io::Result<Option<Vec<u8>>> {
     let address = format!("127.0.0.1:{port}");
     let answer = (|| -> std::result::Result<Answer, Failure> {
         if request.header("Host") != Some(address.as_str()) {
@@ -358,20 +358,27 @@ fn dispatch(
         Ok(Answer::Json(value))
     })();
     Ok(match answer {
-        Ok(Answer::Static(data, kind)) => reply(200, data, kind, &request.version),
+        Ok(Answer::Static(data, kind)) => Some(reply(200, data, kind, &request.version)),
         Ok(Answer::Json(value)) => {
             let mut result = Dict::new();
             result.insert("ok", true);
             result.insert("result", value);
-            reply(200, json::dumps_ascii(&Value::Dict(result), false).as_bytes(), "application/json", &request.version)
+            Some(reply(200, json::dumps_ascii(&Value::Dict(result), false).as_bytes(), "application/json", &request.version))
         }
         // The client stopped sending its request; there is nobody to answer.
         Err(Failure::Drop(error)) => return Err(error),
+        // The reference answers ProfileError, OSError, ValueError, KeyError
+        // and TypeError; any other error escapes its handler, and the server
+        // closes the connection without an answer.
+        Err(Failure::Reply(error)) if matches!(error.kind, ErrorKind::Attribute | ErrorKind::Overflow) => {
+            eprintln!("Exception occurred during processing of request: {}", error.message);
+            None
+        }
         Err(Failure::Reply(error)) => {
             let mut result = Dict::new();
             result.insert("ok", false);
             result.insert("error", error.message);
-            reply(400, json::dumps_ascii(&Value::Dict(result), false).as_bytes(), "application/json", &request.version)
+            Some(reply(400, json::dumps_ascii(&Value::Dict(result), false).as_bytes(), "application/json", &request.version))
         }
     })
 }

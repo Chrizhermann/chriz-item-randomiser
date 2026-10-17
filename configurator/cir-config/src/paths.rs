@@ -362,10 +362,14 @@ pub fn is_symlink(path: &Path) -> bool {
     fs::symlink_metadata(path).map(|metadata| metadata.file_type().is_symlink()).unwrap_or(false)
 }
 
-/// pathlib's `_ignore_error`: missing paths and unresolvable links.
+/// pathlib's `_ignore_error`: missing paths and unresolvable links; and a
+/// path with a NUL character, for which `os.stat` raises the ValueError that
+/// these checks also turn into false.
 fn ignored(error: &io::Error) -> bool {
     matches!(error.raw_os_error(), Some(2 | 3 | 21 | 123 | 1921))
         || error.kind() == io::ErrorKind::NotFound
+        // Rust refuses a path with a NUL before asking the system.
+        || (error.raw_os_error().is_none() && error.kind() == io::ErrorKind::InvalidInput)
 }
 
 /// `iterdir()` names in the operating system's order.
@@ -397,6 +401,15 @@ mod tests {
         assert_eq!(suffix("a."), "");
         assert_eq!(stem("dw#marker_file.itm"), "dw#marker_file");
         assert_eq!(stem("a.b.c"), "a.b");
+    }
+
+    #[test]
+    fn checks_of_a_path_with_a_nul_are_false() {
+        // pathlib turns os.stat's ValueError into False.
+        let path = Path::new("game\0root");
+        assert!(!is_dir(path).unwrap());
+        assert!(!is_file(path).unwrap());
+        assert!(!exists(path).unwrap());
     }
 
     #[test]

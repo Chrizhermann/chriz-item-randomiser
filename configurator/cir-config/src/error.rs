@@ -22,6 +22,8 @@ pub enum ErrorKind {
     GameText,
     /// Python's OverflowError (an out-of-range port number).
     Overflow,
+    /// Python's AttributeError (a method of a mapping called on another value).
+    Attribute,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -54,6 +56,11 @@ impl Error {
     }
     pub fn type_error(message: impl Into<String>) -> Self {
         Error::new(ErrorKind::Type, message)
+    }
+    /// `value.name` on a value without that attribute, such as `.get` on a
+    /// list.
+    pub fn attribute(type_name: &str, name: &str) -> Self {
+        Error::new(ErrorKind::Attribute, format!("'{type_name}' object has no attribute '{name}'"))
     }
     /// An OSError from a C-runtime call (`open`, `Path.read_bytes`, `read_text`,
     /// `write_bytes`): Python reports the mapped errno.

@@ -402,10 +402,13 @@ impl Editor {
     pub fn get(&mut self, route: &str, params: &HashMap<String, String>) -> Result<Value> {
         match route {
             "/api/state" => return self.state(),
-            "/api/templates" => return Ok(crate::templates::list_templates()),
+            "/api/templates" => {
+                let platform = crate::platform::game_platform(&self.world)?;
+                return Ok(crate::templates::list_templates(Some(crate::platform::preset_campaigns(platform)?)));
+            }
             "/api/recommended" => {
-                // CIR installs only on EET so far; other games follow with B5.
-                let mut preset = crate::templates::recommended_preset("eet")?;
+                let platform = crate::platform::game_platform(&self.world)?;
+                let mut preset = crate::templates::recommended_preset(crate::platform::preset_campaign(platform)?)?;
                 // An option whose change the installer could not make is not offered.
                 let mut unavailable = Dict::new();
                 let game_root = self.world.at("game_root")?.as_str().unwrap_or("").to_string();
@@ -597,19 +600,21 @@ impl Editor {
                     return Err(Error::profile(result.get("message").and_then(Value::as_str).unwrap_or("").to_string()));
                 }
                 let store = ensure_output_outside_game(&self.workspace.join("prepared"), &self.catalog)?;
-                let prepared = crate::campaigns::write_campaign(
-                    draft.at("profile")?,
-                    &self.catalog,
-                    &self.world,
-                    draft.at("plan")?,
-                    &store,
-                )?;
-                let revision = prepared.at("revision")?.clone();
                 if route == "/api/apply" {
                     let game = self.apply_game.clone().expect("checked");
                     crate::activation::require_closed(&game)?;
+                    let written =
+                        crate::starts::write_starts(draft.at("profile")?, draft.at("plan")?, &self.catalog, &self.world, &store)?;
                     let output = self.workspace.join("native");
-                    crate::native_export::export_native(&store, &self.catalog, &self.world, &output, revision.as_str())?;
+                    let starts: Vec<(String, String)> = written
+                        .at("starts")?
+                        .as_dict()
+                        .into_iter()
+                        .flat_map(|starts| starts.iter())
+                        .map(|(start, revision)| (start.to_string(), crate::json::py_str(revision)))
+                        .collect();
+                    let main = written.at("main")?.as_str();
+                    crate::native_export::export_native(&store, &self.catalog, &self.world, &output, None, Some(&starts), main)?;
                     let identity = draft.at("profile")?.at("id")?.clone();
                     write_json(&self.path(&identity)?, &draft, false)?;
                     crate::activation::deploy_export(&game, &output)?;
@@ -629,14 +634,26 @@ impl Editor {
                         }
                         return Err(error);
                     }
+                    let full = crate::json::py_str(written.at("full")?);
                     return Ok(Value::Dict(crate::dict! {
-                        "revision" => revision, "game" => game.to_string_lossy().into_owned(),
-                        "message" => "Saved and applied. Start a new BG1 campaign in the test game. \
-                                      Each new game randomizes afresh; existing saves keep their settings.",
+                        "revision" => written.at("starts")?.at(&full)?.clone(),
+                        "starts" => written.at("starts")?.clone(),
+                        "game" => game.to_string_lossy().into_owned(),
+                        "message" => format!(
+                            "Saved and applied. {} Each new game randomizes afresh; existing saves keep their settings.",
+                            crate::starts::describe_starts(&written)?
+                        ),
                     }));
                 }
+                let prepared = crate::campaigns::write_campaign(
+                    draft.at("profile")?,
+                    &self.catalog,
+                    &self.world,
+                    draft.at("plan")?,
+                    &store,
+                )?;
                 return Ok(Value::Dict(crate::dict! {
-                    "revision" => revision, "store" => store.to_string_lossy().into_owned(),
+                    "revision" => prepared.at("revision")?.clone(), "store" => store.to_string_lossy().into_owned(),
                     "message" => "Test settings prepared. They can now be exported for the test game; \
                                   nothing was installed or activated.",
                 }));

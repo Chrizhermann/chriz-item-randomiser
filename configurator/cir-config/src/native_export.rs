@@ -31,7 +31,7 @@ const PAYLOAD_FIELDS: [&str; 4] = ["resref", "expiration", "charges", "flags"];
 /// The reviewed Deck of Many Things reward and its recipient.
 const SPELL_SOURCE: &str = "original-source:bg2:mode2:item:69";
 const SPELL_TARGET: &str = "original-target:bg2:mode2:target:70";
-const EXPORT_TYPES: [&str; 7] = ["itm", "are", "cre", "sto", "bcs", "dlg", "spl"];
+const EXPORT_TYPES: [&str; 8] = ["itm", "are", "cre", "sto", "bcs", "dlg", "spl", "lua"];
 
 fn require(condition: bool, message: impl FnOnce() -> String) -> Result<()> {
     if condition {
@@ -1249,13 +1249,47 @@ fn hashes_mut(native: &mut Value) -> &mut Dict {
         .expect("compiled native fixtures have resource hashes")
 }
 
+/// next.lua: the revision of each campaign start (read by M_FLPR.lua).
+pub const NEXT_SCHEMA: &str = "flir-next-v2";
+
 /// Export next-run settings while retaining already exported saved
 /// revisions.
-pub fn export_native(store: &Path, catalog: &Value, world: &Value, output: &Path, revision: Option<&str>) -> Result<Value> {
+///
+/// `starts` names the revision of each campaign start
+/// (starts::write_starts) and `main` the start the engine makes without a
+/// campaign row; next.lua then lists them. Without `starts`, next.lua names
+/// `revision` (the store's current one by default), which the runtime reads
+/// as a BG1 start.
+pub fn export_native(
+    store: &Path,
+    catalog: &Value,
+    world: &Value,
+    output: &Path,
+    revision: Option<&str>,
+    starts: Option<&[(String, String)]>,
+    main: Option<&str>,
+) -> Result<Value> {
     let items = validate_catalog(catalog)?;
     let index = validate_world(world, catalog)?;
     let output = ensure_output_outside_game(output, catalog)?;
-    let selected = read_campaign(store, revision)?;
+    let mut selected_starts: Vec<Value> = Vec::new();
+    match starts {
+        Some(starts) => {
+            require(
+                !starts.is_empty()
+                    && revision.is_none()
+                    && main.is_none_or(|main| starts.iter().any(|(start, _)| start == main)),
+                || "Invalid campaign start revisions".into(),
+            )?;
+            for (_, key) in starts {
+                selected_starts.push(read_campaign(store, Some(key))?);
+            }
+        }
+        None => {
+            require(main.is_none(), || "A main start needs campaign start revisions".into())?;
+            selected_starts.push(read_campaign(store, revision)?);
+        }
+    }
     let exported = output.join("campaign-store");
     let mut manifests: BTreeMap<String, Value> = BTreeMap::new();
     for name in json_names(&exported.join("revisions"))? {
@@ -1265,8 +1299,11 @@ pub fn export_native(store: &Path, catalog: &Value, world: &Value, output: &Path
             manifests.insert(stem.to_string(), manifest);
         }
     }
-    let selected_revision = py_str(selected.at("revision")?);
-    manifests.insert(selected_revision.clone(), selected);
+    // Without starts, the one selected revision.
+    let selected_revision = py_str(selected_starts[0].at("revision")?);
+    for manifest in selected_starts {
+        manifests.insert(py_str(manifest.at("revision")?), manifest);
+    }
 
     let mut pending = Pending::default();
     let mut required = BTreeSet::new();
@@ -1289,7 +1326,13 @@ pub fn export_native(store: &Path, catalog: &Value, world: &Value, output: &Path
     let spell = spell_rewards::spell();
     let spell_resource = entry(&spell, "resource")?.as_str().unwrap_or("").to_string();
     let mut resource_bytes: BTreeMap<String, Vec<u8>> = BTreeMap::new();
+    let mut journal: Option<Vec<u8>> = None;
     GameResources::with(&game_root, &types, |reader| {
+        // The EE journal table: EET installs it in override, BG:EE and BG2:EE
+        // keep it in their archives.
+        if reader.names("lua")?.iter().any(|name| name == "bgee") {
+            journal = Some(reader.read("lua", "bgee")?);
+        }
         for resource in &required {
             let Some((kind, name)) = resource.split_once(':') else {
                 return Err(Error::value("not enough values to unpack (expected 2, got 1)"));
@@ -1366,9 +1409,8 @@ pub fn export_native(store: &Path, catalog: &Value, world: &Value, output: &Path
         let tlk_relative: PathBuf = tlk_parts.iter().collect();
         let installed = read_bytes(&game_root.join(&tlk_relative))?;
         let mut tlk = export_tlk(installed, &output.join("game-overrides").join(&tlk_relative))?;
-        // The EE journal table is installed by EET as an override; reading
-        // this known filename avoids indexing unrelated long-named Lua files.
-        let mut journal = read_bytes(&game_root.join("override").join("BGEE.LUA"))?;
+        require(journal.is_some(), || "The game has no BGEE.LUA journal table".into())?;
+        let mut journal = journal.take().expect("checked");
         let named: BTreeMap<String, Vec<u8>> = resource_bytes
             .iter()
             .map(|(resource, data)| (format!("{}.{}", tail(resource, 4), resource.get(..3).unwrap_or("")), data.clone()))
@@ -1625,16 +1667,41 @@ pub fn export_native(store: &Path, catalog: &Value, world: &Value, output: &Path
         .collect();
     let gate_path = store_path(&output, Path::new("source-gate.lua"))?;
     write_bytes(&gate_path, &render_lua(&Value::List(guarded))?)?;
+    // dict(sorted(starts.items())).
+    let sorted_starts = starts.map(|starts| {
+        let mut sorted = starts.to_vec();
+        sorted.sort();
+        let mut dict = Dict::new();
+        for (start, key) in sorted {
+            dict.insert(start, key);
+        }
+        Value::Dict(dict)
+    });
+    let pointer = match &sorted_starts {
+        None => Value::from(selected_revision.as_str()),
+        Some(sorted) => {
+            let mut pointer = crate::dict! {"schema" => NEXT_SCHEMA, "starts" => sorted.clone()};
+            if let Some(main) = main {
+                pointer.insert("main", main);
+            }
+            Value::Dict(pointer)
+        }
+    };
     let next_path = store_path(&output, Path::new("next.lua"))?;
-    write_bytes(&next_path, &render_lua(&Value::from(selected_revision.as_str()))?)?;
+    write_bytes(&next_path, &render_lua(&pointer)?)?;
     let mut files: BTreeSet<String> = pending.entries.iter().map(|(relative, _)| relative.clone()).collect();
     files.insert("source-gate.lua".into());
     files.insert("next.lua".into());
     let files_path = store_path(&output, Path::new(EXPORT_FILES))?;
     let listing = crate::dict! {"schema" => EXPORT_FILES_SCHEMA, "files" => Value::from(files.into_iter().collect::<Vec<_>>())};
     write_bytes(&files_path, &canonical_bytes(&Value::Dict(listing))?)?;
-    Ok(Value::Dict(crate::dict! {
-        "revision" => selected_revision, "revisions" => Value::from(revisions),
-        "config_path" => paths::display(&output), "state" => "experimental-native-config",
-    }))
+    let mut result = crate::dict! {
+        "revisions" => Value::from(revisions), "config_path" => paths::display(&output),
+        "state" => "experimental-native-config",
+    };
+    match sorted_starts {
+        None => result.insert("revision", selected_revision),
+        Some(sorted) => result.insert("starts", sorted),
+    };
+    Ok(Value::Dict(result))
 }

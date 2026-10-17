@@ -27,10 +27,11 @@ import tempfile
 
 import common
 from common import RUST_CLI, restore_tree, snapshot_tree
-from cli_check import PYTHON, SOURCE, TARGET, build
+from cli_check import PYTHON, build, sources
 
 from flir_config.profiles import write_json  # noqa: E402
 from test_postinstall_blpool_script import compiled_blpool, pool_game, pool_plan, write_registry  # noqa: E402
+from test_postinstall_resources import mark_eet  # noqa: E402
 
 RANDOM_ID = re.compile(r"adventure-[0-9a-f]{12}")
 HEADERS = ("Content-Type", "Content-Length", "Cache-Control")
@@ -85,15 +86,16 @@ def masked(text: str, server: Server) -> str:
     return RANDOM_ID.sub("adventure-<id>", text)
 
 
-def bound(state: dict, identity: str) -> dict:
+def bound(state: dict, identity: str, area: str = "area") -> dict:
     """A server's current draft with the chest's item bound to the actor."""
+    source, target = sources(area)
     draft = {"profile": copy.deepcopy(state["profile"]), "plan": copy.deepcopy(state["plan"])}
     draft["profile"]["id"] = identity
     draft["profile"]["name"] = "Parity " + identity
     draft["profile"]["items"] = ["synth001"]
-    draft["plan"]["sources"] = [{"item": "synth001", "policy": "relocate", "source_ids": [SOURCE],
+    draft["plan"]["sources"] = [{"item": "synth001", "policy": "relocate", "source_ids": [source],
                                  "registration_ids": []}]
-    draft["plan"]["targets"] = [{"id": TARGET, "capacity": 1, "optional": False}]
+    draft["plan"]["targets"] = [{"id": target, "capacity": 1, "optional": False}]
     return draft
 
 
@@ -297,6 +299,8 @@ def pool_phase(root: Path):
     """BLPOOL as CIR prepares it: the scripted quest reward source."""
     game = root / "pool-game"
     catalog_value, world_value = pool_game(game, compiled_blpool())
+    # The pool is in Shadows of Amn; EET offers its presets.
+    mark_eet(game)
     scans = root / "pool-scans"
     scans.mkdir()
     catalog, world = scans / "catalog.json", scans / "world.json"
@@ -322,7 +326,13 @@ def pool_phase(root: Path):
 OPEN_GAME = "Close this test game and its installer before applying settings"
 
 
-def apply_phase(root: Path, attempts: int = 3) -> tuple[int, int, int]:
+# Apply on each game CIR installs on. The area's name decides which later
+# campaign starts reach it: none on EET ("area"), Siege of Dragonspear on
+# BG:EE ("bd0100"), Throne of Bhaal on BG2:EE ("ar4000").
+APPLY_GAMES = (("eet", "area"), ("bgee", "bd0100"), ("bg2ee", "ar4000"))
+
+
+def apply_phase(root: Path, platform: str, area: str, attempts: int = 3) -> tuple[int, int, int]:
     """Apply to a test runtime: each editor in turn on the same game and
     workspaces, restored in between, then the game and workspaces compared.
 
@@ -330,24 +340,25 @@ def apply_phase(root: Path, attempts: int = 3) -> tuple[int, int, int]:
     reference asks Windows); one started meanwhile by something else refuses
     only one side's apply, so such a run is repeated."""
     for attempt in range(1, attempts + 1):
-        results, trees = apply_attempt(root / f"apply-{attempt}")
+        results, trees = apply_attempt(root / f"apply-{platform}-{attempt}", platform, area)
         refused = any(OPEN_GAME in text for outcomes in results.values() for _, (_, _, _, text) in outcomes)
         if refused and attempt < attempts:
-            print(f"apply: a game, loader or installer ran during attempt {attempt}; repeating", flush=True)
+            print(f"apply {platform}: a game, loader or installer ran during attempt {attempt}; repeating",
+                  flush=True)
             continue
         failures = 0
         for (label, python), (_, rust) in zip(results["python"], results["rust"]):
-            failures += compare_step(f"apply: {label}", {"python": python, "rust": rust})
+            failures += compare_step(f"apply {platform}: {label}", {"python": python, "rust": rust})
         for name in trees["python"]:
-            failures += tree_failures(f"apply {name}", trees["python"][name], trees["rust"][name])
+            failures += tree_failures(f"apply {platform} {name}", trees["python"][name], trees["rust"][name])
         files = sum(len(folder) for folder in trees["python"].values())
         return len(results["python"]), files, failures
 
 
-def apply_attempt(root: Path) -> tuple[dict, dict]:
+def apply_attempt(root: Path, platform: str, area: str) -> tuple[dict, dict]:
     root.mkdir()
     game = root / "apply-game"
-    build(game)
+    build(game, platform, area)
     for name in ("override/M_FLPR.lua", "override/FLPRRun.menu", "randomiser-campaigns/next.lua"):
         path = game / name
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -359,16 +370,19 @@ def apply_attempt(root: Path) -> tuple[dict, dict]:
     results, trees = {}, {}
 
     def changed(server, state):
-        draft = bound(state, "parity-apply")
+        draft = bound(state, "parity-apply", area)
         draft["profile"]["name"] = "Changed next adventure"
         draft["profile"]["shop_pricing"] = {"percent": 140, "base_prices": {}}
         return server.post("/api/apply", draft)
 
     def apply(server, state):
-        return server.post("/api/apply", bound(state, "parity-apply"))
+        return server.post("/api/apply", bound(state, "parity-apply", area))
 
     def state_of(server, state):
         return server.request("GET", "/api/state")
+
+    def get(path):
+        return lambda server, state: server.request("GET", path)
 
     for side in ("python", "rust"):
         restore_tree(game, before)
@@ -386,8 +400,10 @@ def apply_attempt(root: Path) -> tuple[dict, dict]:
             finally:
                 server.stop()
 
-        session(workspace, [("state", state_of), ("apply", apply), ("apply again unchanged", apply),
-                            ("apply changed", changed), ("state after apply", state_of)])
+        session(workspace, [("state", state_of), ("presets of the game", get("/api/templates")),
+                            ("recommended preset", get("/api/recommended")), ("apply", apply),
+                            ("apply again unchanged", apply), ("apply changed", changed),
+                            ("state after apply", state_of)])
         session(workspace, [("reopened state", state_of)])
         session(other, [("other workspace apply", apply)])
         results[side] = outcomes
@@ -406,8 +422,9 @@ def main() -> int:
         build(game)
         catalog, world = scan(game, root / "scans")
         steps = session() + registry_steps(game, ["/api/recommended"])
-        for result in (concurrent_phase("synthetic", root, catalog, world, steps), pool_phase(root),
-                       apply_phase(root)):
+        phases = [concurrent_phase("synthetic", root, catalog, world, steps), pool_phase(root)]
+        phases += [apply_phase(root, platform, area) for platform, area in APPLY_GAMES]
+        for result in phases:
             totals = [total + value for total, value in zip(totals, result)]
     print(f"editor parity: {totals[0]} requests, {totals[1]} written files compared, {totals[2]} failures")
     return 1 if totals[2] else 0

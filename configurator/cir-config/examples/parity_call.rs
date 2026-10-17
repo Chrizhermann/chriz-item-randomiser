@@ -10,7 +10,8 @@ use cir_config::json::{dumps_ascii, Dict, Value};
 use cir_config::profiles::{read_json, validate_catalog};
 use cir_config::sources::validate_world;
 use cir_config::{
-    activation, campaigns, native_export, original_catalog, original_configuration, sources, Error, ErrorKind, Result,
+    activation, campaigns, native_export, original_catalog, original_configuration, platform, sources, starts, templates,
+    Error, ErrorKind, Result,
 };
 use std::collections::HashMap;
 use std::path::Path;
@@ -25,6 +26,7 @@ fn kind_name(kind: ErrorKind) -> &'static str {
         ErrorKind::Type => "TypeError",
         ErrorKind::GameText => "GameTextError",
         ErrorKind::Overflow => "OverflowError",
+        ErrorKind::Attribute => "AttributeError",
     }
 }
 
@@ -176,14 +178,44 @@ fn run(name: &str, args: &Dict) -> Result<Value> {
         }
         "export_native" => {
             let revision = argument(args, "revision")?;
+            let main = argument(args, "main")?;
+            // The replay passes only mappings of text here.
+            let starts: Option<Vec<(String, String)>> = argument(args, "starts")?.and_then(|starts| {
+                starts.as_dict().map(|starts| {
+                    starts.iter().map(|(start, key)| (start.to_string(), key.as_str().unwrap_or("").to_string())).collect()
+                })
+            });
             native_export::export_native(
                 Path::new(&text(args, "store")?),
                 &required(args, "catalog")?,
                 &required(args, "world")?,
                 Path::new(&text(args, "output")?),
                 revision.as_ref().and_then(Value::as_str),
+                starts.as_deref(),
+                main.as_ref().and_then(Value::as_str),
             )
         }
+        "write_starts" => starts::write_starts(
+            &required(args, "profile")?,
+            &required(args, "plan")?,
+            &required(args, "catalog")?,
+            &required(args, "world")?,
+            Path::new(&text(args, "store")?),
+        ),
+        "describe_starts" => starts::describe_starts(&required(args, "written")?).map(Value::from),
+        "game_platform" => platform::game_platform(&required(args, "world")?).map(Value::from),
+        "preset_game" => platform::preset_game(&required(args, "world")?, &text(args, "template_id")?).map(Value::from),
+        "area_part" => {
+            Ok(platform::area_part(&text(args, "platform")?, &text(args, "area")?).map_or(Value::Null, Value::from))
+        }
+        "list_templates" => match argument(args, "campaigns")? {
+            Some(Value::List(campaigns)) => {
+                // `row["campaign"] in campaigns`: only text can match.
+                let campaigns: Vec<&str> = campaigns.iter().filter_map(Value::as_str).collect();
+                Ok(templates::list_templates(Some(&campaigns)))
+            }
+            _ => Ok(templates::list_templates(None)),
+        },
         "item_randomiser_conflict" => activation::item_randomiser_conflict(Path::new(&text(args, "game")?))
             .map(|conflict| conflict.map_or(Value::Null, Value::from)),
         "validate_runtime" => activation::validate_runtime(Path::new(&text(args, "game")?), &required(args, "catalog")?)
