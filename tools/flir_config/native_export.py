@@ -31,16 +31,17 @@ from .spell_rewards import (SPELL, PAYLOAD as KEY_PAYLOAD, patch_key_spell,
                             PATCHED_SHA256 as KEY_PATCHED_HASH)
 from .original_options import SPELL_SHIELD_SOURCE, spell_shield_spec, patch_spell_shield_stock
 from .mode2_rewards import (SOURCE_REWARDS as MODE2_SOURCES, TARGET_REWARDS as MODE2_TARGETS,
-                            RESOURCE_REWARDS as MODE2_RESOURCES, ORIGINAL_HASHES as MODE2_ORIGINAL_HASHES,
-                            PATCHED_HASHES as MODE2_PATCHED_HASHES, source_spec as mode2_source_spec,
+                            RESOURCE_REWARDS as MODE2_RESOURCES, source_spec as mode2_source_spec,
                             target_spec as mode2_target_spec, patch_reward as patch_mode2_reward,
-                            prepare_reward_texts, original_reward as original_mode2_reward,
+                            prepare_reward_texts, own_patch as own_mode2_patch,
                             TEXT_REFS as MODE2_TEXT_REFS, transfer_spec as mode2_transfer_spec)
 from .mode2_rewards import PHYSICAL_SOURCE_REWARDS, REWARDS as MODE2_REWARDS
 from .container_rewards import (RESOURCE_TARGETS as CONTAINER_RESOURCES,
-                                TEXT_RESOURCES as CONTAINER_TEXT_RESOURCES,
-                                patch_container_resource, original_container_resource,
-                                prepare_container_texts)
+                                TEXT_RESOURCES as CONTAINER_TEXT_RESOURCES, container_error,
+                                patch_container_resource, own_patch as own_container_patch,
+                                prepare_container_texts, treasure_container)
+from .platform import game_platform
+from .reward_routes import ChangedSinceScan, reward_routes
 from .original_catalog import container_target_spec
 from .cursed_disguises import validate_cursed_disguise_spec, prepare_cursed_disguises
 
@@ -67,12 +68,15 @@ def _area(resource: str) -> str:
 
 
 def _compile(manifest: dict, world: dict, index: dict, items: dict,
-             problems: dict[str, str] | None = None) -> tuple[dict, set[str], set[str]]:
+             problems: dict[str, str] | None = None, *, catalog: dict) -> tuple[dict, set[str], set[str]]:
     """Compile a campaign for the native runtime.
 
     Without ``problems`` any unsupported row stops the compile. With a dict,
     each source or target row the runtime cannot use is recorded there by its
-    identity instead, and the other rows are still checked.
+    identity instead, and the other rows are still checked. Extended reward
+    routes are recognised in the game's bytes as the export recognises them
+    (reward_routes.py); a reward resource changed since the scan stops the
+    compile.
     """
     # A rescan can discover unrelated resources (or a new resource type).
     # Compare the selected records and resource hashes below; existing native
@@ -140,6 +144,8 @@ def _compile(manifest: dict, world: dict, index: dict, items: dict,
         actors = set(selected_actors)
         try:
             step(*args)
+        except ChangedSinceScan:
+            raise
         except ProfileError as exc:
             problems[identity] = str(exc)
             selected_actors.clear()
@@ -157,8 +163,8 @@ def _compile(manifest: dict, world: dict, index: dict, items: dict,
                      f"Virtual item changed since the scan: {identity}")
         elif source["kind"] == "authored-source" or (shield and identity == SPELL_SHIELD_SOURCE):
             # A post-install rescan sees our campaign-aware DLG/BCS patch.
-            # Mode 2 bytes are verified against the reviewed original or an
-            # exactly regenerated own patch below, before writing any output.
+            # Reward route bytes are recognised below (reward_routes.py) and
+            # again by the export, before writing any output.
             _require(index["resources"][source["resource"]]["sha256"] == selected["resource_sha256"] or
                      (identity in MODE2_SOURCES and source["resource"] in MODE2_RESOURCES),
                      f"Authored source changed since the scan: {identity}")
@@ -212,7 +218,8 @@ def _compile(manifest: dict, world: dict, index: dict, items: dict,
         if source["kind"] == "authored-source" and identity in MODE2_SOURCES:
             spec = mode2_source_spec(identity)
             _require(source["resource"] == spec["resource"] and record == spec["payload"],
-                     f"Original Mode 2 source differs from its reviewed grant: {identity}")
+                     f"The extended reward source differs from its route: {identity}")
+            reward_routes(catalog, world).require_route(MODE2_SOURCES[identity])
             native["sources"][identity] = {
                 "kind": "guarded-script", "adapter_id": "mode2-reward-v1",
                 **{key: spec[key] for key in ("quest", "resource", "selected_global", "consumed_global")},
@@ -396,6 +403,7 @@ def _compile(manifest: dict, world: dict, index: dict, items: dict,
             _require(selected["record"]["record"] == reward["source_record"] and
                      use(reward["source_resource"]) == reward["source_resource_sha256"],
                      f"Original inventory reward source changed: {selected['id']}")
+            reward_routes(catalog, world).require_route(name)
             native["sources"][selected["id"]]["reward_selected_global"] = reward["selected_global"]
             for resource in reward["resources"]:
                 use(resource)
@@ -416,6 +424,8 @@ def _compile(manifest: dict, world: dict, index: dict, items: dict,
             selector = target["selector"]
             use(target["resource"])
             reward = mode2_target_spec(selector["id"]) if selector["id"] in MODE2_TARGETS else None
+            if reward:
+                reward_routes(catalog, world).require_route(MODE2_TARGETS[selector["id"]])
             if reward and reward.get("inventory_target"):
                 placement = reward["inventory_target"]
                 creature = index["targets"].get(placement["creature_resource"])
@@ -461,7 +471,7 @@ def _compile(manifest: dict, world: dict, index: dict, items: dict,
                         physical = index["targets"].get(spec["recipient"])
                         _require(physical is not None and physical["kind"] == "container" and
                                  physical["selector"]["trap_script"] == spec["quest"],
-                                 f"Original Mode 2 reward container changed: {identity}")
+                                 f"The extended reward container changed: {identity}")
                         selection = physical["selector"]
                         use(physical["resource"])
                         native["targets"][identity] = {
@@ -496,13 +506,21 @@ def _compile(manifest: dict, world: dict, index: dict, items: dict,
                     "identity": _digest({"target": selected})}
                 return
             physical = [index["targets"][key] for key in selector["target_ids"] if key in index["targets"]]
-            _require(len(physical) == 1, f"Original recipient needs one physical binding: {identity}")
-            target = physical[0]
             if container_quest:
-                _require(target["id"] == container_quest["physical_target_id"],
+                # The container that holds the quest's treasure in this scan,
+                # found as the template binds it.
+                quest = container_quest["target_id"]
+                try:
+                    chest = treasure_container(quest, index["sources"].values(), game_platform(world))
+                except ProfileError as exc:
+                    raise container_error(quest, str(exc)) from None
+                _require([target["id"] for target in physical] == [chest],
                          f"Original container quest binding changed: {identity}")
+                reward_routes(catalog, world).require_container(quest)
                 for resource in container_quest["resources"]:
                     use(resource)
+            _require(len(physical) == 1, f"Original recipient needs one physical binding: {identity}")
+            target = physical[0]
         if target["kind"] == "store":
             _require(target["selector"]["flags"] & 1,
                      f"Experimental native store target does not allow the player to buy: {identity}")
@@ -599,7 +617,7 @@ def export_native(store: Path, catalog: dict, world: dict, output: Path,
         manifests[manifest["revision"]] = manifest
     pending, required, pristine, compiled = {}, set(), set(), {}
     for key, manifest in sorted(manifests.items()):
-        native, resources, areas = _compile(manifest, world, index, items)
+        native, resources, areas = _compile(manifest, world, index, items, catalog=catalog)
         compiled[key] = native
         required.update(resources); pristine.update(areas)
         base = "campaign-store/revisions/" + key
@@ -617,8 +635,6 @@ def export_native(store: Path, catalog: dict, world: dict, output: Path,
             data = reader.read(kind, name)
             actual_hash = hashlib.sha256(data).hexdigest()
             expected_hash = index["resources"][resource]["sha256"]
-            own_mode2_patch = (resource in MODE2_RESOURCES and
-                               expected_hash == MODE2_ORIGINAL_HASHES[name] and actual_hash == MODE2_PATCHED_HASHES.get(name))
             own_patch = False
             if actual_hash != expected_hash:
                 recover = {"dlg:hlskull": lambda value: original_dialogue("hlskull.dlg", value),
@@ -628,12 +644,13 @@ def export_native(store: Path, catalog: dict, world: dict, output: Path,
                     own_patch = hashlib.sha256(recover(data)).hexdigest() == expected_hash
                 if resource == SPELL["resource"]:
                     own_patch = expected_hash == KEY_ORIGINAL_HASH and actual_hash == KEY_PATCHED_HASH
+                # A reward route is recognised again from these bytes below;
+                # the scan holds nothing else that depends on them.
                 if resource in MODE2_RESOURCES:
-                    original = original_mode2_reward(resource, data)
-                    own_patch = original is not None and hashlib.sha256(original).hexdigest() == expected_hash
+                    own_patch = own_mode2_patch(resource, data)
                 if resource in CONTAINER_RESOURCES:
-                    own_patch = hashlib.sha256(original_container_resource(resource, data)).hexdigest() == expected_hash
-            _require(actual_hash == expected_hash or own_mode2_patch or own_patch,
+                    own_patch = own_container_patch(resource, data)
+            _require(actual_hash == expected_hash or own_patch,
                      f"Installed resource changed; rescan before export: {resource}")
             # The installer changed these files when it was installed; the
             # export only checks that they still carry its changes.
@@ -686,7 +703,7 @@ def export_native(store: Path, catalog: dict, world: dict, output: Path,
                 if name.upper() in native["resource_hashes"]:
                     native["resource_hashes"][name.upper()] = hashlib.sha256(data).hexdigest()
 
-    # Each common static Mode 2 patch reads campaign flags. Prepare it once,
+    # Each reward route patch reads campaign flags. Prepare it once,
     # retaining the same bytes for every revision that shares the resource.
     mode2_patches = {}
     for resource in MODE2_RESOURCES:
@@ -723,7 +740,7 @@ def export_native(store: Path, catalog: dict, world: dict, output: Path,
             mode2_resource = (endpoint.get("resource") if endpoint.get("adapter_id") == "mode2-reward-v1"
                               else endpoint.get("reward_resource"))
             if mode2_resource:
-                _require(mode2_resource in mode2_patches, "Mode 2 recipient patch is missing")
+                _require(mode2_resource in mode2_patches, "The reward route's recipient patch is missing")
             if endpoint["kind"] == "quest":
                 resource = endpoint["resource"]
                 # An original quest's script was prepared by the installer.

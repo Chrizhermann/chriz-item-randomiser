@@ -12,7 +12,9 @@ import re
 
 from .game_names import convert_resource
 from .mode2_rewards import TARGET_REWARDS, target_spec
-from .container_rewards import TARGETS as CONTAINER_TARGETS, target_spec as container_spec
+from .container_rewards import (TARGETS as CONTAINER_TARGETS, target_spec as container_spec,
+                                treasure_area, treasure_container)
+from .profiles import ProfileError
 from .templates import ROOT, _table_rows, build_template
 
 
@@ -221,20 +223,27 @@ def _resolve_source(row: dict, catalog_items: set[str], resources: set[str],
 
 def _resolve_target(row: dict, resources: set[str],
                     targets_by_resource: dict[str, list[dict]], game: str,
-                    endpoints: dict[str, dict[str, tuple[str, str, str]]]) -> None:
+                    endpoints: dict[str, dict[str, tuple[str, str, str]]], sources: list[dict]) -> None:
     campaign = row["campaign"]
     area = convert_resource(row["area"], "are", campaign, game)
     row.update(area_resource=f"are:{area}", target_ids=[], creature_resource=None,
                container_name=None, members=[], binding_problem=None)
     container = container_target_spec(row)
     if container is not None:
-        physical_id = f"are:{area}/container/{container['container_index']}"
+        # The container that holds the quest's treasure, in the quest's own
+        # area: the table's area column is not where every handler puts it.
+        row["area_resource"] = f"are:{treasure_area(row['id'], game)}"
+        try:
+            physical_id = treasure_container(row["id"], sources, game)
+        except ProfileError:
+            physical_id = None
         matches = [target for target in targets_by_resource.get(row["area_resource"], [])
                    if target["id"] == physical_id and target["kind"] == "container"]
         if len(matches) == 1:
             row["target_ids"] = [physical_id]
             row["container_name"] = matches[0]["selector"]["name"]
-        row["binding_problem"] = ("target-not-in-scan" if len(matches) != 1 else
+        row["binding_problem"] = ("area-resource-absent" if row["area_resource"] not in resources else
+                                  "treasure-container-not-found" if len(matches) != 1 else
                                   "target-resource-absent" if any(resource not in resources
                                     for resource in container["resources"]) else None)
         return
@@ -346,5 +355,5 @@ def resolve_template(catalog: dict, world: dict, template_id: str, *,
         _resolve_source(row, catalog_items, resources, sources_by_identity,
                         targets_by_id, game, selectors)
     for row in draft["targets"]:
-        _resolve_target(row, resources, targets_by_resource, game, endpoints)
+        _resolve_target(row, resources, targets_by_resource, game, endpoints, world["sources"])
     return draft

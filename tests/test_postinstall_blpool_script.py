@@ -119,7 +119,7 @@ class BlpoolScriptTests(unittest.TestCase):
         self.assertEqual(selected["resource_sha256"], hashlib.sha256(self.prepared).hexdigest())
         native, required, _ = _compile(campaign, self.world,
                                        validate_world(self.world, self.catalog),
-                                       validate_catalog(self.catalog))
+                                       validate_catalog(self.catalog), catalog=self.catalog)
         endpoint = native["sources"][SOURCE_ID]
         self.assertEqual(endpoint["kind"], "guarded-script")
         self.assertEqual(endpoint["adapter_id"], "blpool-v1")

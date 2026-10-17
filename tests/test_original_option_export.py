@@ -34,20 +34,13 @@ class OriginalOptionExportTests(unittest.TestCase):
         return case
 
     def dialogue_routes(self, f, resources):
+        """Write synthetic route dialogues to the game; return their expected patches."""
         originals = {resource: dialogue_fixture(mode2_rewards.resource_specs(resource))
                      for resource in resources}
-        hashes = {resource[4:]: hashlib.sha256(data).hexdigest()
-                  for resource, data in originals.items()}
         for resource, data in originals.items():
             (f.override / (resource[4:] + '.dlg')).write_bytes(data)
-        # Only these exact synthetic bytes substitute for the reviewed game hashes.
-        with patch.dict(mode2_rewards.ORIGINAL_HASHES, hashes), \
-             patch.dict(mode2_rewards.PATCHED_HASHES, {name: '' for name in hashes}):
-            changed = {resource: mode2_rewards.patch_reward(resource, data)
-                       for resource, data in originals.items()}
-        patched_hashes = {resource[4:]: hashlib.sha256(data).hexdigest()
-                          for resource, data in changed.items()}
-        return hashes, patched_hashes, changed
+        return {resource: mode2_rewards.patch_reward(resource, data)
+                for resource, data in originals.items()}
 
     def mode2_configuration(self, f, source, target):
         draft = resolve_template(f.catalog, f.world, 'bg2-original', items='extended', targets='extended')
@@ -63,60 +56,59 @@ class OriginalOptionExportTests(unittest.TestCase):
     def test_copper_routes_remain_immutable_after_staging_and_rescan(self):
         f = self.fixture()
         resources = ('dlg:hendak', 'dlg:lehtin')
-        original_hashes, patched_hashes, changed = self.dialogue_routes(f, resources)
+        changed = self.dialogue_routes(f, resources)
         (f.override / 'sw1h03.itm').write_bytes((f.override / 'synth001.itm').read_bytes())
         f.refresh()
-        with patch.dict(mode2_rewards.ORIGINAL_HASHES, original_hashes), \
-             patch.dict(mode2_rewards.PATCHED_HASHES, patched_hashes):
-            configuration = self.mode2_configuration(f, 'bg2:mode2:item:30', 'bg2:mode2:target:18')
-            # The authored source is tier 3 and Copper recipient is tier 2.
-            # This mechanical route/export fixture uses an unrestricted pairing;
-            # allocation of the full original preset is tested separately.
-            del configuration['plan']['randomization']
-            revision = write_campaign(configuration['profile'], f.catalog, f.world,
-                                      configuration['plan'], f.store)['revision']
-            before = snapshot(f.game)
+        configuration = self.mode2_configuration(f, 'bg2:mode2:item:30', 'bg2:mode2:target:18')
+        # The authored source is tier 3 and Copper recipient is tier 2.
+        # This mechanical route/export fixture uses an unrestricted pairing;
+        # allocation of the full original preset is tested separately.
+        del configuration['plan']['randomization']
+        revision = write_campaign(configuration['profile'], f.catalog, f.world,
+                                  configuration['plan'], f.store)['revision']
+        before = snapshot(f.game)
+        f.export(revision)
+        self.assertEqual(snapshot(f.game), before)
+        base = f.output / 'campaign-store/revisions' / revision
+        native = json.loads(Path(str(base) + '.native.json').read_text())
+        self.assertEqual(native['sources']['original-source:bg2:mode2:item:30']['resources'],
+                         list(resources))
+        target = native['targets']['original-target:bg2:mode2:target:18']
+        self.assertEqual((target['resource'], target['area'], target['recipient_local']),
+                         ('dlg:hendak', '*', 'FLPR_RA_COPPER'))
+        self.assertEqual(Path(str(base) + '.source-1.patched.dlg').read_bytes(),
+                         changed['dlg:hendak'])
+        for number, resource in enumerate(resources, 1):
+            self.assertEqual((f.output / ('resource-overrides/' + resource[4:].upper() + '.DLG')).read_bytes(),
+                             changed[resource])
+            self.assertEqual(Path(str(base) + f'.source-1.route-{number}.patched.dlg').read_bytes(),
+                             changed[resource])
+        first = snapshot(f.output)
+        for resource, data in changed.items():
+            (f.override / (resource[4:] + '.dlg')).write_bytes(data)
+        # Already staged own patches reproduce the same immutable campaign.
+        f.export(revision)
+        self.assertEqual(snapshot(f.output), first)
+        f.refresh()
+        staged = snapshot(f.game)
+        f.export(revision)
+        self.assertEqual(snapshot(f.game), staged)
+        self.assertEqual(snapshot(f.output), first)
+        # A rescan permits our own installed branches, not unknown edits.
+        tampered = changed['dlg:lehtin'].replace(b'FLPR_', b'OTHER', 1)
+        self.assertNotEqual(tampered, changed['dlg:lehtin'])
+        (f.override / 'lehtin.dlg').write_bytes(tampered)
+        f.refresh()
+        with self.assertRaisesRegex(ProfileError, "The extended reward route for HENDAK cannot be used: "
+                                    "LEHTIN.DLG carries a changed copy of the reward route's own patch"):
             f.export(revision)
-            self.assertEqual(snapshot(f.game), before)
-            base = f.output / 'campaign-store/revisions' / revision
-            native = json.loads(Path(str(base) + '.native.json').read_text())
-            self.assertEqual(native['sources']['original-source:bg2:mode2:item:30']['resources'],
-                             list(resources))
-            target = native['targets']['original-target:bg2:mode2:target:18']
-            self.assertEqual((target['resource'], target['area'], target['recipient_local']),
-                             ('dlg:hendak', '*', 'FLPR_RA_COPPER'))
-            self.assertEqual(Path(str(base) + '.source-1.patched.dlg').read_bytes(),
-                             changed['dlg:hendak'])
-            for number, resource in enumerate(resources, 1):
-                self.assertEqual((f.output / ('resource-overrides/' + resource[4:].upper() + '.DLG')).read_bytes(),
-                                 changed[resource])
-                self.assertEqual(Path(str(base) + f'.source-1.route-{number}.patched.dlg').read_bytes(),
-                                 changed[resource])
-            first = snapshot(f.output)
-            for resource, data in changed.items():
-                (f.override / (resource[4:] + '.dlg')).write_bytes(data)
-            # Already staged own patches reproduce the same immutable campaign.
-            f.export(revision)
-            self.assertEqual(snapshot(f.output), first)
-            f.refresh()
-            staged = snapshot(f.game)
-            f.export(revision)
-            self.assertEqual(snapshot(f.game), staged)
-            self.assertEqual(snapshot(f.output), first)
-            # A rescan permits our own installed branches, not unknown edits.
-            tampered = changed['dlg:lehtin'].replace(b'FLPR_', b'OTHER', 1)
-            self.assertNotEqual(tampered, changed['dlg:lehtin'])
-            (f.override / 'lehtin.dlg').write_bytes(tampered)
-            f.refresh()
-            with self.assertRaises(ProfileError):
-                f.export(revision)
-            self.assertEqual(snapshot(f.output), first)
+        self.assertEqual(snapshot(f.output), first)
 
     def test_temple_reward_exports_auxiliary_creature_without_another_unit(self):
         f = self.fixture()
         temple = ('dlg:bhoisig', 'dlg:bhnalla', 'dlg:bharval')
         resources = temple + ('dlg:hendak', 'dlg:lehtin')
-        original_hashes, patched_hashes, changed = self.dialogue_routes(f, resources)
+        changed = self.dialogue_routes(f, resources)
         (f.override / 'blun20.itm').write_bytes((f.override / 'synth001.itm').read_bytes())
         creature = bytes(make_cre([item_record('BLUN20', expiration=0, charges=(0, 0, 0), flags=0)],
                                   slots={9: 0}))
@@ -127,9 +119,7 @@ class OriginalOptionExportTests(unittest.TestCase):
         transfer['source_record'] = deepcopy(physical['record'])
         transfer['source_resource_sha256'] = next(row['sha256'] for row in f.world['resources']
                                                   if row['id'] == 'cre:scyarryl')
-        with patch.dict(mode2_rewards.ORIGINAL_HASHES, original_hashes), \
-             patch.dict(mode2_rewards.PATCHED_HASHES, patched_hashes), \
-             patch.dict(mode2_rewards.TRANSFER_SPECS, {'scyarryl': transfer}):
+        with patch.dict(mode2_rewards.TRANSFER_SPECS, {'scyarryl': transfer}):
             configuration = self.mode2_configuration(f, 'bg2:mode2:item:12', 'bg2:mode2:target:18')
             revision = write_campaign(configuration['profile'], f.catalog, f.world,
                                       configuration['plan'], f.store)['revision']
@@ -159,11 +149,13 @@ class OriginalOptionExportTests(unittest.TestCase):
 
     def test_ppchest_container_latch_survives_export_staging_and_rescan(self):
         f = self.fixture()
-        original_hashes, patched_hashes, dialogues = self.dialogue_routes(
-            f, ('dlg:hendak', 'dlg:lehtin'))
+        dialogues = self.dialogue_routes(f, ('dlg:hendak', 'dlg:lehtin'))
         (f.override / 'sw1h03.itm').write_bytes((f.override / 'synth001.itm').read_bytes())
-        area = bytes(make_are([], [('PPChest', 0, 0)]))
+        # The golem room's chest holds the bow, as in the game.
+        area = bytes(make_are([item_record('BOW19B', expiration=0, charges=(0, 0, 0), flags=0)],
+                              [('PPChest', 0, 1)]))
         (f.override / 'ar1514.are').write_bytes(area)
+        (f.override / 'bow19b.itm').write_bytes((f.override / 'synth001.itm').read_bytes())
         original = script_fixture('bcs:ppchest')
         (f.override / 'ppchest.bcs').write_bytes(original)
         f.refresh()
@@ -172,59 +164,55 @@ class OriginalOptionExportTests(unittest.TestCase):
         self.assertIsNone(row['binding_problem'])
         self.assertEqual((row['area_resource'], row['container_name'], row['target_ids']),
                          ('are:ar1514', 'PPChest', ['are:ar1514/container/0']))
-        with patch.dict(mode2_rewards.ORIGINAL_HASHES, original_hashes), \
-             patch.dict(mode2_rewards.PATCHED_HASHES, patched_hashes), \
-             patch.dict(container_rewards.ORIGINAL_HASHES,
-                        {'bcs:ppchest': hashlib.sha256(original).hexdigest()}):
-            changed = container_rewards.patch_container_resource('bcs:ppchest', original)
-            configuration = self.mode2_configuration(f, 'bg2:mode2:item:30', 'bg2:mode2:target:61')
-            # Copper source tier 3 and PPChest tier 6 form an unrestricted
-            # mechanical export pairing; original preset tier rules stay intact.
-            del configuration['plan']['randomization']
-            revision = write_campaign(configuration['profile'], f.catalog, f.world,
-                                      configuration['plan'], f.store)['revision']
-            manifest = read_campaign(f.store, revision)
-            self.assertEqual([(source['id'], source['quantity']) for source in manifest['sources']],
-                             [('original-source:bg2:mode2:item:30', 1)])
-            self.assertEqual([(target['id'], target['capacity'], target['record']['kind'])
-                              for target in manifest['targets']],
-                             [('original-target:bg2:mode2:target:61', 1, 'container')])
-            before = snapshot(f.game)
-            f.export(revision)
-            self.assertEqual(snapshot(f.game), before)
-            base = f.output / 'campaign-store/revisions' / revision
-            native = json.loads(Path(str(base) + '.native.json').read_text())
-            self.assertEqual(len(native['sources']), 1)
-            self.assertEqual(len(native['targets']), 1)
-            target = native['targets']['original-target:bg2:mode2:target:61']
-            self.assertEqual((target['kind'], target['area'], target['script_name'],
-                              target['x'], target['y'], target['container_type']),
-                             ('container', 'AR1514', 'PPChest', 111, 222, 2))
-            self.assertEqual(target['loot_latch'], {
-                'activation_global': 'FLPR_CPPCHST', 'latch_global': 'RobbedGolem',
-                'latch_scope': 'GLOBAL'})
-            self.assertEqual((f.output / 'resource-overrides/PPCHEST.BCS').read_bytes(), changed)
-            old_block = _blocks(original, 1, _newline(original))[0][0]
-            new_block = _blocks(changed, 1, _newline(changed))[0][0]
-            self.assertEqual(new_block.split(b'CO\n')[2], old_block.split(b'CO\n')[2])
-            for selected in (0, 1, 2):
-                globals_ = {'GLOBALUnrelated': 4, 'GLOBALRobbedGolem': 0,
-                            'GLOBALFLPR_CPPCHST': selected}
-                self.assertTrue(compiled_conditions(old_block.split(b'CO\n')[1], globals_, set()))
-                self.assertEqual(compiled_conditions(new_block.split(b'CO\n')[1], globals_, set()),
-                                 selected != 1)
-            first = snapshot(f.output)
-            for resource, data in dialogues.items():
-                (f.override / (resource[4:] + '.dlg')).write_bytes(data)
-            (f.override / 'ppchest.bcs').write_bytes(changed)
-            staged = snapshot(f.game)
-            f.export(revision)
-            self.assertEqual(snapshot(f.game), staged)
-            self.assertEqual(snapshot(f.output), first)
-            f.refresh()
-            f.export(revision)
-            self.assertEqual(snapshot(f.game), staged)
-            self.assertEqual(snapshot(f.output), first)
+        changed = container_rewards.patch_container_resource('bcs:ppchest', original)
+        configuration = self.mode2_configuration(f, 'bg2:mode2:item:30', 'bg2:mode2:target:61')
+        # Copper source tier 3 and PPChest tier 6 form an unrestricted
+        # mechanical export pairing; original preset tier rules stay intact.
+        del configuration['plan']['randomization']
+        revision = write_campaign(configuration['profile'], f.catalog, f.world,
+                                  configuration['plan'], f.store)['revision']
+        manifest = read_campaign(f.store, revision)
+        self.assertEqual([(source['id'], source['quantity']) for source in manifest['sources']],
+                         [('original-source:bg2:mode2:item:30', 1)])
+        self.assertEqual([(target['id'], target['capacity'], target['record']['kind'])
+                          for target in manifest['targets']],
+                         [('original-target:bg2:mode2:target:61', 1, 'container')])
+        before = snapshot(f.game)
+        f.export(revision)
+        self.assertEqual(snapshot(f.game), before)
+        base = f.output / 'campaign-store/revisions' / revision
+        native = json.loads(Path(str(base) + '.native.json').read_text())
+        self.assertEqual(len(native['sources']), 1)
+        self.assertEqual(len(native['targets']), 1)
+        target = native['targets']['original-target:bg2:mode2:target:61']
+        self.assertEqual((target['kind'], target['area'], target['script_name'],
+                          target['x'], target['y'], target['container_type']),
+                         ('container', 'AR1514', 'PPChest', 111, 222, 2))
+        self.assertEqual(target['loot_latch'], {
+            'activation_global': 'FLPR_CPPCHST', 'latch_global': 'RobbedGolem',
+            'latch_scope': 'GLOBAL'})
+        self.assertEqual((f.output / 'resource-overrides/PPCHEST.BCS').read_bytes(), changed)
+        old_block = _blocks(original, 1, _newline(original))[0][0]
+        new_block = _blocks(changed, 1, _newline(changed))[0][0]
+        self.assertEqual(new_block.split(b'CO\n')[2], old_block.split(b'CO\n')[2])
+        for selected in (0, 1, 2):
+            globals_ = {'GLOBALUnrelated': 4, 'GLOBALRobbedGolem': 0,
+                        'GLOBALFLPR_CPPCHST': selected}
+            self.assertTrue(compiled_conditions(old_block.split(b'CO\n')[1], globals_, set()))
+            self.assertEqual(compiled_conditions(new_block.split(b'CO\n')[1], globals_, set()),
+                             selected != 1)
+        first = snapshot(f.output)
+        for resource, data in dialogues.items():
+            (f.override / (resource[4:] + '.dlg')).write_bytes(data)
+        (f.override / 'ppchest.bcs').write_bytes(changed)
+        staged = snapshot(f.game)
+        f.export(revision)
+        self.assertEqual(snapshot(f.game), staged)
+        self.assertEqual(snapshot(f.output), first)
+        f.refresh()
+        f.export(revision)
+        self.assertEqual(snapshot(f.game), staged)
+        self.assertEqual(snapshot(f.output), first)
 
     def test_trgeni_inventory_reward_exports_transfer_and_frozen_original(self):
         f = self.fixture()
@@ -255,8 +243,7 @@ class OriginalOptionExportTests(unittest.TestCase):
         transfer = deepcopy(mode2_rewards.TRANSFER_SPECS['trgeni01'])
         transfer['source_record'] = deepcopy(physical['record'])
         transfer['source_resource_sha256'] = hashlib.sha256(creature).hexdigest()
-        with patch.dict(mode2_rewards.ORIGINAL_HASHES, {'trgeni01': hashlib.sha256(original).hexdigest()}), \
-             patch.dict(mode2_rewards.TRANSFER_SPECS, {'trgeni01': transfer}):
+        with patch.dict(mode2_rewards.TRANSFER_SPECS, {'trgeni01': transfer}):
             _, refs = mode2_rewards.prepare_reward_texts(tlk, (spec['resource'],), 'en_US')
             changed = mode2_rewards.patch_reward(spec['resource'], original, refs=refs[spec['resource']])
             configuration = self.mode2_configuration(f, 'bg2:mode2:item:32', 'bg2:mode2:target:32')
@@ -325,8 +312,7 @@ class OriginalOptionExportTests(unittest.TestCase):
         physical = next(row for row in f.world['sources'] if row['id'] == 'cre:udlesa/item/2')
         spec['source_record'] = deepcopy(physical['record'])
         spec['source_resource_sha256'] = hashlib.sha256(creature).hexdigest()
-        with patch.dict(mode2_rewards.ORIGINAL_HASHES, {'udlesa': hashlib.sha256(original).hexdigest()}), \
-             patch.dict(mode2_rewards.REWARDS, {'udlesa': spec}):
+        with patch.dict(mode2_rewards.REWARDS, {'udlesa': spec}):
             _, refs = mode2_rewards.prepare_reward_texts(tlk, (spec['resource'],), 'en_US')
             changed = mode2_rewards.patch_reward(spec['resource'], original, refs=refs[spec['resource']])
             configuration = self.mode2_configuration(f, 'bg2:mode2:item:42', 'bg2:mode2:target:45')
@@ -392,17 +378,12 @@ class OriginalOptionExportTests(unittest.TestCase):
         # overflow policy deliberately reserves ordinary physical locations.
         configuration['plan']['randomization']['overflow'] = False
         self.assertEqual(configuration['plan']['registrations'][0]['payload']['charges'], [1, 1, 1])
-        digest = hashlib.sha256(original).hexdigest()
-        with patch.dict(mode2_rewards.ORIGINAL_HASHES, {'ppstat01': digest}), \
-             patch.dict(mode2_rewards.PATCHED_HASHES, {'ppstat01': ''}):
-            changed = mode2_rewards.patch_reward('dlg:ppstat01', original)
-        with patch.dict(mode2_rewards.ORIGINAL_HASHES, {'ppstat01': digest}), \
-             patch.dict(mode2_rewards.PATCHED_HASHES, {'ppstat01': hashlib.sha256(changed).hexdigest()}):
-            revision = write_campaign(configuration['profile'], f.catalog, f.world,
-                                      configuration['plan'], f.store)['revision']
-            before = snapshot(f.game)
-            f.export(revision)
-            self.assertEqual(snapshot(f.game), before)
+        changed = mode2_rewards.patch_reward('dlg:ppstat01', original)
+        revision = write_campaign(configuration['profile'], f.catalog, f.world,
+                                  configuration['plan'], f.store)['revision']
+        before = snapshot(f.game)
+        f.export(revision)
+        self.assertEqual(snapshot(f.game), before)
         base = f.output / 'campaign-store/revisions' / revision
         self.assertEqual(Path(str(base) + '.source-1.patched.dlg').read_bytes(), changed)
         self.assertEqual((f.output / 'resource-overrides/PPSTAT01.DLG').read_bytes(), changed)

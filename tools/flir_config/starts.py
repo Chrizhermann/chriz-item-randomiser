@@ -219,7 +219,7 @@ def restrict(profile: dict, plan: dict, catalog: dict, world: dict, platform: st
             profile, plan = _without(profile, plan, catalog, set(placeless), set())
             continue
         problems: dict[str, str] = {}
-        _compile(compile_campaign(profile, catalog, world, plan), world, index, items, problems)
+        _compile(compile_campaign(profile, catalog, world, plan), world, index, items, problems, catalog=catalog)
         if not problems:
             return profile, plan
         source_ids = set(_units(plan, places))

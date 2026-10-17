@@ -76,7 +76,7 @@ class Editor:
             campaign = compile_campaign(draft["profile"], self.catalog, self.world, draft["plan"])
             result.update(valid=True, reward_units=sum(s["quantity"] for s in campaign["sources"]),
                           target_capacity=sum(t["capacity"] for t in campaign["targets"]))
-            compile_native(campaign, self.world, self.index, self.items)
+            compile_native(campaign, self.world, self.index, self.items, catalog=self.catalog)
         except ProfileError as exc:
             return {**result, "message": str(exc)}
         return {**result, "runtime_supported": True,
