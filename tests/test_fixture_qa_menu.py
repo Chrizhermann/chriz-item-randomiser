@@ -9,6 +9,7 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
 import stage_fixture_qa_menu as helper
 
+POLLED = ("ESC_MENU", "POPUP_TWOBUTTON", "POPUP_FOURBUTTON", "SAVE", "SAVE_NEWSAVE", "LOAD")
 
 FIXTURE = '''\ufeff-- menu { name 'FAKE' }
 `local unused = {text = "menu { name 'FAKE' }"}`
@@ -100,8 +101,8 @@ class FixtureQAMenuTests(unittest.TestCase):
         for newline in ("\n", "\r\n"):
             source = FIXTURE.replace("\n", newline)
             updated, report = helper.enhance(source)
-            self.assertEqual(report["insertions"], 13)
-            self.assertEqual(report["added_polling"], ["ESC_MENU", "POPUP_TWOBUTTON", "POPUP_FOURBUTTON"])
+            self.assertEqual(report["insertions"], 16)
+            self.assertEqual(report["added_polling"], list(POLLED))
             restored = updated
             for binding in helper.BINDINGS:
                 marker = newline + f'\t\tname "{binding.name}"'
@@ -109,18 +110,30 @@ class FixtureQAMenuTests(unittest.TestCase):
                 restored = restored.replace(marker, "", 1)
             widget = (f'\ttext{newline}\t{{{newline}\t\tarea 0 0 1 1{newline}'
                       f'\t\ttext lua "EEexRemote.Poll()"{newline}\t}}{newline}')
-            self.assertEqual(restored.count(widget), 3)
+            self.assertEqual(restored.count(widget), 6)
             self.assertEqual(restored.replace(widget, ""), source)
 
     def test_end_polling_is_after_all_existing_widgets_and_attributes(self):
         updated, _ = helper.enhance(FIXTURE)
         tokens = helper.tokenize(updated)
         ends = helper.blocks(tokens)
+        checked = []
         for opening in ends:
             direct = helper.direct_tokens(tokens, ends, opening)
-            if helper.property_values(direct, "name") in (["ESC_MENU"], ["POPUP_TWOBUTTON"], ["POPUP_FOURBUTTON"]):
+            names = helper.property_values(direct, "name")
+            if tokens[opening - 1].value == "menu" and len(names) == 1 and names[0] in POLLED:
                 tail = updated[tokens[opening].start:tokens[ends[opening]].start]
                 self.assertTrue(tail.rstrip().endswith('text lua "EEexRemote.Poll()"\n\t}'))
+                checked.append(names[0])
+        self.assertEqual(sorted(checked), sorted(POLLED))
+
+    def test_save_and_load_screens_poll_because_273_closes_esc_menu_there(self):
+        # The QA runner advances through SAVE, SAVE_NEWSAVE and LOAD only while
+        # something polls on those screens.
+        self.assertTrue({"SAVE", "SAVE_NEWSAVE", "LOAD"} <= set(helper.POLLED_MENUS))
+        updated, _ = helper.enhance(FIXTURE)
+        extracted = helper.extract_menus(updated, ("SAVE", "SAVE_NEWSAVE", "LOAD"))
+        self.assertEqual(extracted.count('text lua "EEexRemote.Poll()"'), 3)
 
     def test_repeated_enhancement_is_idempotent(self):
         once, _ = helper.enhance(FIXTURE)
@@ -172,7 +185,7 @@ class FixtureQAMenuTests(unittest.TestCase):
     def test_comment_mentions_do_not_count_as_poll_widgets(self):
         source = FIXTURE.replace("modal\n", 'modal\n -- EEexRemote.Poll()\n')
         _, report = helper.enhance(source)
-        self.assertEqual(report["added_polling"], ["ESC_MENU", "POPUP_TWOBUTTON", "POPUP_FOURBUTTON"])
+        self.assertEqual(report["added_polling"], list(POLLED))
 
     def test_extract_inactive_menus_preserves_only_the_requested_complete_blocks(self):
         updated, _ = helper.enhance(FIXTURE)
@@ -204,7 +217,7 @@ class FixtureQAMenuTests(unittest.TestCase):
             with patch.object(helper, "STAGING_ROOT", work):
                 output = work / "staged" / "UI.MENU"
                 report = helper.stage(source, output)
-                self.assertEqual(report["insertions"], 13)
+                self.assertEqual(report["insertions"], 16)
                 self.assertEqual(source.read_bytes(), original)
                 self.assertTrue(output.read_bytes().startswith(b"\xef\xbb\xbf"))
                 before = output.read_bytes()

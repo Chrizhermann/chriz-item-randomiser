@@ -84,7 +84,10 @@ BINDINGS = (
             "Infinity_PopMenu() if (Popup4Button.leftFunc) then Popup4Button.leftFunc() end", True),
 )
 # Menus that get a console polling widget, so remote requests are admitted there.
-POLLED_MENUS = ("ESC_MENU", "POPUP_TWOBUTTON", "POPUP_FOURBUTTON")
+# 2.7.3's save and load screens close ESC_MENU and draw no other polled menu, so
+# they poll too; there tools/lab/M_FLPRQA.lua lets only the QA runner act (it
+# queues button clicks) and keeps arbitrary remote requests pending.
+POLLED_MENUS = ("ESC_MENU", "POPUP_TWOBUTTON", "POPUP_FOURBUTTON", "SAVE", "SAVE_NEWSAVE", "LOAD")
 
 
 def tokenize(source: str) -> list[Token]:
