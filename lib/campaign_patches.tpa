@@ -25,8 +25,9 @@ FLPR_PATCHES = {
 >>>>>>>>
 
 // Glaicus (KPGLAI01) describes and hands over the flail heads he actually
-// holds; the states follow d/kpglai01.d. The entry transitions and the two
-// states the new ones continue to are found when installing.
+// holds; the states follow d/kpglai01.d. The entry transitions, the other
+// branches that give the first head and the two states the new ones continue
+// to are found when installing.
 <<<<<<<< ...randomiser/fl-inlined/campaign/kpglai01.d
 APPEND ~%flir_cp_flail_dialogue%~
   IF ~~ flprflaildesc
@@ -420,13 +421,19 @@ BEGIN
   END
 END
 
-// The D text of a copy of the transition at <offset> that continues to
-// flprflaildesc under Global("FLPR_FLAIL"). It keeps the original's trigger,
-// reply, action, journal entry and other flags, so changes other mods made to
-// the transition stay in both variants. Empty if it cannot be written as D.
+// The D text of a copy of the transition at <offset> of <dialogue>, under
+// Global("FLPR_FLAIL"). It keeps the original's trigger, reply, action,
+// journal entry, other flags and target, so changes other mods made to the
+// transition stay in both variants. With <goto> the copy continues to that
+// state instead; with <heads> it first hands over the other two flail heads.
+// Empty if it cannot be written as D.
 DEFINE_PATCH_FUNCTION flir_cp_copy_transition
   INT_VAR
     offset = 0
+    heads = 0
+  STR_VAR
+    dialogue = ~~
+    goto = ~~
   RET
     flir_cp_copy
 BEGIN
@@ -435,6 +442,8 @@ BEGIN
   READ_LONG (offset + 0x8) flir_cp_journal
   READ_LONG (offset + 0xc) flir_cp_trigger_index
   READ_LONG (offset + 0x10) flir_cp_action_index
+  READ_ASCII (offset + 0x14) flir_cp_next (8) NULL
+  READ_LONG (offset + 0x1c) flir_cp_next_state
   SET flir_cp_ok = 1
   SPRINT flir_cp_trigger ~~
   PATCH_IF (flir_cp_flags BAND 2) != 0 BEGIN
@@ -444,8 +453,14 @@ BEGIN
   PATCH_IF (flir_cp_flags BAND 1) != 0 BEGIN
     SPRINT flir_cp_features ~ REPLY #%flir_cp_reply%~
   END
+  SPRINT flir_cp_action ~~
   PATCH_IF flir_cp_ok AND (flir_cp_flags BAND 4) != 0 BEGIN
     LPF flir_cp_dlg_text INT_VAR table = 0x28 index = flir_cp_action_index RET flir_cp_ok flir_cp_action = flir_cp_text END
+  END
+  PATCH_IF heads BEGIN
+    SPRINT flir_cp_action ~GiveItem("blun14a",LastTalkedToBy) GiveItem("blun14b",LastTalkedToBy) %flir_cp_action%~
+  END
+  PATCH_IF STRING_LENGTH ~%flir_cp_action%~ > 0 BEGIN
     SPRINT flir_cp_features ~~~~~%flir_cp_features% DO ~%flir_cp_action%~ ~~~~~
   END
   // D sets the reply, trigger, action and journal bits itself; FLAGS adds the rest.
@@ -464,9 +479,21 @@ BEGIN
   PATCH_IF flir_cp_extra != 0 BEGIN
     SPRINT flir_cp_features ~%flir_cp_features% FLAGS %flir_cp_extra%~
   END
+  PATCH_IF STRING_LENGTH ~%goto%~ > 0 BEGIN
+    SPRINT flir_cp_target ~GOTO %goto%~
+  END ELSE PATCH_IF (flir_cp_flags BAND 8) != 0 BEGIN
+    SPRINT flir_cp_target ~EXIT~
+  END ELSE PATCH_IF ~%flir_cp_next%~ STRING_EQUAL_CASE ~%dialogue%~ BEGIN
+    SPRINT flir_cp_target ~GOTO %flir_cp_next_state%~
+  END ELSE BEGIN
+    SPRINT flir_cp_target ~~~~~EXTERN ~%flir_cp_next%~ %flir_cp_next_state%~~~~~
+    PATCH_IF STRING_LENGTH ~%flir_cp_next%~ = 0 OR INDEX (EXACT_MATCH "~" "%flir_cp_next%") >= 0 BEGIN
+      SET flir_cp_ok = 0
+    END
+  END
   SPRINT flir_cp_copy ~~
   PATCH_IF flir_cp_ok BEGIN
-    SPRINT flir_cp_copy ~~~~~  IF ~%flir_cp_trigger% Global("FLPR_FLAIL","GLOBAL",1)~ THEN%flir_cp_features% GOTO flprflaildesc
+    SPRINT flir_cp_copy ~~~~~  IF ~%flir_cp_trigger% Global("FLPR_FLAIL","GLOBAL",1)~ THEN%flir_cp_features% %flir_cp_target%
 ~~~~~
   END
 END
@@ -474,7 +501,8 @@ END
 // Glaicus (KPGLAI01, Flail of Ages heads): the transitions into the state that
 // gives the first head (blun14c) lead, under Global("FLPR_FLAIL"), to the new
 // states instead. "After" is the state that giver continues to, "farewell" the
-// one that follows it.
+// one that follows it. Other branches that give the first head, such as the
+// one when the troll leader is dead, keep their text and hand over all three.
 DEFINE_ACTION_MACRO flir_cp_flail BEGIN
   OUTER_SPRINT flir_cp_flail_dialogue ~kpglai01~
   OUTER_SPRINT flir_cp_flail_file ~KPGLAI01.DLG~
@@ -542,9 +570,12 @@ DEFINE_ACTION_MACRO flir_cp_flail BEGIN
             END
           END
         END
-        // Every transition of this dialogue that continues to the giver keeps
-        // its target under !Global("FLPR_FLAIL"); a copy leads to the new states.
+        // Every transition of this dialogue that continues to the giver, or
+        // gives the first head outside it, stays as it is under
+        // !Global("FLPR_FLAIL"). Under Global("FLPR_FLAIL") a copy leads to the
+        // new states instead, or also hands over the other heads.
         SET flir_cp_unwritable = 0
+        SET flir_cp_entered = 0
         PATCH_IF flir_cp_farewell >= 0 BEGIN
           FOR (flir_cp_s = 0; flir_cp_s < flir_cp_states; ++flir_cp_s) BEGIN
             READ_LONG (flir_cp_state_table + flir_cp_s * 16 + 4) flir_cp_first
@@ -554,12 +585,26 @@ DEFINE_ACTION_MACRO flir_cp_flail BEGIN
             FOR (flir_cp_k = 0; flir_cp_k < flir_cp_count AND flir_cp_first + flir_cp_k < flir_cp_transitions; ++flir_cp_k) BEGIN
               SET flir_cp_t = flir_cp_transition_table + (flir_cp_first + flir_cp_k) * 32
               READ_LONG flir_cp_t flir_cp_flags
+              READ_LONG (flir_cp_t + 0x10) flir_cp_action
               READ_ASCII (flir_cp_t + 0x14) flir_cp_next (8) NULL
               READ_LONG (flir_cp_t + 0x1c) flir_cp_next_state
+              SET flir_cp_change = 0
               PATCH_IF (flir_cp_flags BAND 8) = 0 AND (~%flir_cp_next%~ STRING_EQUAL_CASE ~%flir_cp_flail_dialogue%~) AND
                        flir_cp_next_state = flir_cp_giver BEGIN
+                SET flir_cp_change = 1
+                SET flir_cp_entered = 1
+                LPF flir_cp_copy_transition INT_VAR offset = flir_cp_t
+                  STR_VAR dialogue = EVAL ~%flir_cp_flail_dialogue%~ goto = ~flprflaildesc~ RET flir_cp_copy END
+              END ELSE PATCH_IF flir_cp_s != flir_cp_giver AND (flir_cp_flags BAND 4) != 0 BEGIN
+                LPF flir_cp_dlg_text INT_VAR table = 0x28 index = flir_cp_action RET flir_cp_text END
+                PATCH_IF INDEX (CASE_INSENSITIVE ~GiveItem([ %TAB%]*"blun14c"~ ~%flir_cp_text%~) >= 0 BEGIN
+                  SET flir_cp_change = 1
+                  LPF flir_cp_copy_transition INT_VAR offset = flir_cp_t heads = 1
+                    STR_VAR dialogue = EVAL ~%flir_cp_flail_dialogue%~ RET flir_cp_copy END
+                END
+              END
+              PATCH_IF flir_cp_change BEGIN
                 SPRINT flir_cp_list ~%flir_cp_list% %flir_cp_k%~
-                LPF flir_cp_copy_transition INT_VAR offset = flir_cp_t RET flir_cp_copy END
                 PATCH_IF STRING_LENGTH ~%flir_cp_copy%~ = 0 BEGIN
                   SET flir_cp_unwritable = 1
                 END
@@ -574,7 +619,7 @@ EXTEND_BOTTOM ~%flir_cp_flail_dialogue%~ %flir_cp_s%
             END
           END
         END
-        PATCH_IF STRING_LENGTH ~%flir_cp_flail_entries%~ > 0 AND !flir_cp_unwritable AND
+        PATCH_IF flir_cp_entered AND !flir_cp_unwritable AND
                  INDEX_BUFFER (CASE_INSENSITIVE ~FLPR_FLAIL~) < 0 BEGIN
           SPRINT flir_cp_flail ~ready~
           SET flir_cp_flail_after = flir_cp_after

@@ -114,6 +114,9 @@ the TotSC tome stand-in. Each is found by meaning (the block that creates the it
 reply that takes it, the state that hands over the first head) and split under a GLOBAL
 that only the runtime sets, so other adventures and other mods' edits keep working.
 Glaicus's redirected replies keep their original text, action, journal entry and flags.
+His other branches that give the first head (when the troll leader is already dead) keep
+their text and, in an adventure that randomises the heads, hand over every head he holds
+(Chris, 2026-10-17: no new text).
 A file that cannot be changed unambiguously stays as installed; the installer prints a
 note (setup.tra @101520-@101528) and `override/FLPRPAT.lua` records the reason, which the
 editor shows instead of offering the option.

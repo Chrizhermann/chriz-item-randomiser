@@ -131,12 +131,15 @@ def quest_table(*entries: int) -> bytes:
 # Glaicus: state 4 gives the first head and continues to 5, which continues to
 # the farewell, 6. State 3 enters 4 the way the original game does; another
 # mod added the reply in state 1 with an action, a journal entry and an extra
-# flag. State 2's other branch also hands over the head.
+# flag. State 2's other branches also hand over the head: the original game's
+# continues to 7, and other mods continue one in an NPC's dialogue and end one.
 GLAICUS_GIVER, GLAICUS_AFTER, GLAICUS_FAREWELL = 4, 5, 6
 GLAICUS_ENTRIES = ((1, 1), (3, 0))
+GLAICUS_HEADS = ((2, 1), (2, 2), (2, 3))
 
 
 def glaicus(*, give: str = "blun14c", extra: Sequence[str] = ()) -> str:
+    gives = f'GiveItem("{give}",LastTalkedToBy)'
     return lines(
         "BEGIN ~KPGLAI01~", "",
         "IF ~NumTimesTalkedTo(0)~ THEN BEGIN 0", "  SAY #11", "  IF ~~ THEN EXIT", "END", "",
@@ -145,12 +148,15 @@ def glaicus(*, give: str = "blun14c", extra: Sequence[str] = ()) -> str:
         '  IF ~~ THEN REPLY #14 DO ~SetGlobal("FLHeads","GLOBAL",1)~ UNSOLVED_JOURNAL #15 FLAGS 512 GOTO 4',
         *extra, "END", "",
         "IF ~~ THEN BEGIN 2", "  SAY #16", '  IF ~!Dead("FLTroll")~ THEN GOTO 3',
-        f'  IF ~Dead("FLTroll")~ THEN DO ~GiveItem("{give}",LastTalkedToBy)~ GOTO 6', "END", "",
+        f'  IF ~Dead("FLTroll") Global("FLNpc","GLOBAL",0)~ THEN DO ~{gives}~ GOTO 7',
+        f'  IF ~Dead("FLTroll") Global("FLNpc","GLOBAL",1)~ THEN DO ~{gives}~ EXTERN ~FLNPCJ~ 2',
+        f'  IF ~Dead("FLTroll") Global("FLNpc","GLOBAL",2)~ THEN DO ~{gives} EscapeArea()~ EXIT',
+        "END", "",
         "IF ~~ THEN BEGIN 3", "  SAY #17", "  IF ~~ THEN GOTO 4", "END", "",
-        "IF ~~ THEN BEGIN 4", "  SAY #18",
-        f'  IF ~~ THEN DO ~GiveItem("{give}",LastTalkedToBy)~ GOTO 5', "END", "",
+        "IF ~~ THEN BEGIN 4", "  SAY #18", f"  IF ~~ THEN DO ~{gives}~ GOTO 5", "END", "",
         "IF ~~ THEN BEGIN 5", "  SAY #19", "  IF ~~ THEN GOTO 6", "END", "",
-        "IF ~~ THEN BEGIN 6", "  SAY #20", "  IF ~~ THEN DO ~EscapeArea()~ UNSOLVED_JOURNAL #21 EXIT", "END")
+        "IF ~~ THEN BEGIN 6", "  SAY #20", "  IF ~~ THEN DO ~EscapeArea()~ UNSOLVED_JOURNAL #21 EXIT", "END", "",
+        "IF ~~ THEN BEGIN 7", "  SAY #22", "  IF ~~ THEN DO ~EscapeArea()~ EXIT", "END")
 
 
 # Compiled together per group: a dialogue's transitions name the dialogue, so
@@ -257,10 +263,10 @@ def glaicus_problems(original: Sequence[dict], patched: Sequence[dict]) -> list[
     problems = []
     count = len(original)
     guard = 'Global("FLPR_FLAIL","GLOBAL",1)'
-    entries = set(GLAICUS_ENTRIES)
+    changed = set(GLAICUS_ENTRIES) | set(GLAICUS_HEADS)
     for index, state in enumerate(original):
         moves = patched[index]["transitions"]
-        added = [(index, number) for number in range(len(state["transitions"])) if (index, number) in entries]
+        added = [number for number in range(len(state["transitions"])) if (index, number) in changed]
         if len(moves) != len(state["transitions"]) + len(added):
             problems.append(f"state {index} has {len(moves)} transitions")
             continue
@@ -269,15 +275,22 @@ def glaicus_problems(original: Sequence[dict], patched: Sequence[dict]) -> list[
             problems.append(f"state {index} changed")
         for number, move in enumerate(state["transitions"]):
             expected = dict(move)
-            if (index, number) in entries:
-                expected["trigger"] = _guarded(move["trigger"], "!" + guard)
+            if (index, number) in changed:
+                # ADD_TRANS_TRIGGER puts the guard first.
+                expected["trigger"] = _guarded("!" + guard, move["trigger"])
                 expected["flags"] = move["flags"] | 2
             if moves[number] != expected:
                 problems.append(f"transition {index}.{number} is {moves[number]}")
-        for position, (_state, number) in enumerate(added):
+        # A copy of an entry leads to the new states; any other copy keeps its
+        # target and also hands over the other two heads.
+        for position, number in enumerate(added):
             move = state["transitions"][number]
-            copy = {**move, "flags": move["flags"] | 2, "trigger": _guarded(move["trigger"], guard),
-                    "target": ("KPGLAI01", count)}
+            copy = {**move, "flags": move["flags"] | 2, "trigger": _guarded(move["trigger"], guard)}
+            if (index, number) in GLAICUS_ENTRIES:
+                copy["target"] = ("KPGLAI01", count)
+            else:
+                copy["action"] = " ".join(('GiveItem("blun14a",LastTalkedToBy) '
+                                           'GiveItem("blun14b",LastTalkedToBy) ' + move["action"]).split())
             if moves[len(state["transitions"]) + position] != copy:
                 problems.append(f"copy of {index}.{number} is {moves[len(state['transitions']) + position]}")
     new = patched[count:]
