@@ -72,7 +72,7 @@ def python_outcome(function, *args, **kwargs) -> tuple[str, object]:
 def native_compile(manifest, world, catalog, collect: bool) -> dict:
     items, index = validate_catalog(catalog), validate_world(world, catalog)
     problems = {} if collect else None
-    native, required, pristine = _compile(manifest, world, index, items, problems)
+    native, required, pristine = _compile(manifest, world, index, items, problems, catalog=catalog)
     return {"native": native, "required": sorted(required), "pristine": sorted(pristine),
             "problems": dict(sorted(problems.items())) if collect else None}
 
