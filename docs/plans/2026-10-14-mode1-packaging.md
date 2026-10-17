@@ -296,16 +296,18 @@ On 2026-10-17:
   `chriz-item-randomiser`, this fork's name. CIR's own code and texts are under the MIT
   licence; the material from Item Randomiser is credited and keeps its author's terms
   (`LICENSE`).
+- **Repository takeover**: CIR takes over this repository. Planned for CIR's first
+  release: `main` becomes CIR and the Item Randomiser 8.x code moves to a branch. The
+  published 8.x releases and tags stay, because CEBG's current recipes install from 8.1.1.
 
 Open:
 
-- **How CIR gets the repository name**: proposed that CIR takes over this repository
-  with its first release, while the Item Randomiser 8.x line moves to a branch and keeps
-  its tags and releases, so CEBG's pinned 8.1.1 links keep working. Not yet confirmed.
-- **Item Randomiser's other components** (Cespenar's forging, Gromnir, the Protection
-  from Undead scrolls, the Duergar merchants, the Watcher's Keep statues, the Mode 2
-  creature-group unequipping): they stay with Item Randomiser unless Chris decides to
-  bring some into CIR.
+- **Item Randomiser's other components**: CEBG's default recipe installs 9000 (Cespenar
+  forges SoA items), 10200 (Protection from Undead scrolls removed from stores) and 10210
+  (Duergar merchants) from 8.1.1, and 10300 (Watcher's Keep statues) except with
+  Stratagems; 9050 (Gromnir), 10100 and the Mode 2 creature-group unequipping are not
+  used. They are independent of CIR: they can keep coming from 8.1.1 or move into CIR.
+  Chris looks at them one by one.
 - **B1 route** (options above), now constrained to Python-free for both versions.
 
 ## Verification
