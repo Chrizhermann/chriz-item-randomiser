@@ -254,6 +254,28 @@ function cases.import_matches_this_profiles_save_path_but_never_another_profile(
     g:next("START_SP"); failed(g,"QA_SAVE_MISSING:home:/../Baldur's Gate - Enhanced Edition/save/"..folder)
 end
 
+function cases.import_takes_bgees_profile_only_when_named(QA)
+    -- BG2:EE's Import Game from a BG:EE save: the runner names that profile explicitly.
+    local f=setup(QA,"START_SP"); f.importing=true
+    f.saves={{fileName="home:/save/"..folder,slotName="IR Proof A"},
+        {fileName="home:/../Baldur's Gate - Enhanced Edition/save/"..folder,slotName="IR Proof A"}}
+    f.runner:start_import(folder,revision,nil,"bgee"); f:poll(); f:next("LOAD")
+    assert(#f.events==2 and f.events[2].button=="FLPR_QA_LOAD_CONFIRM" and f.selected==2)
+    local g=setup(QA,"START_SP"); g.importing=true
+    g.saves={{fileName="home:/save/"..folder,slotName="IR Proof A"}}
+    g.runner:start_import(folder,revision,nil,"bgee"); g:poll(); g:next("LOAD")
+    assert(g.selected==nil and #g.events==2 and g.events[2].button=="FLPR_QA_LOAD_BACK")
+    g:next("START_SP"); failed(g,"QA_SAVE_MISSING:home:/save/"..folder)
+    for _,profile in ipairs({"bg2ee","home:/..",""}) do
+        local h=setup(QA,"START_SP")
+        assert(not pcall(function() h.runner:start_import(folder,revision,nil,profile) end))
+        assert(#h.events==0 and h.runner:inspect().status=="idle")
+    end
+    local k=setup(QA,"START_SP")
+    assert(not pcall(function() k.runner:_start("load",folder,revision,nil,"bgee") end))
+    assert(#k.events==0 and k.runner:inspect().status=="idle")
+end
+
 function cases.import_accepts_cirs_start_plain_popup_only_when_asked(QA)
     -- A campaign CIR's settings have nothing for (BG:EE's SoD with BG1 lists) asks first.
     local f=setup(QA,"START_SP"); f.importing=true; f.plain_popup=true
