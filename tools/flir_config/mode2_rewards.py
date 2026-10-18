@@ -11,9 +11,10 @@ found, and every reply or block that gives the item is gated.
 Only the grant is suppressed; its surrounding actions, conditions, dialogue
 replies and journal fields stay intact. The reward event captures the original
 recipient at the grant position. A route whose grant cannot be told apart (no
-grant, the item given twice by one reply, the item named by an action that
-does not give it) is not prepared; the configuration check leaves it out with
-that reason (reward_routes.py). See lib/weidu_action.tpa's generic BCS/DLG
+grant, the item given twice by one reply or script response, or given another
+way, such as through ActionOverride) is not prepared; the configuration check
+leaves it out with that reason (reward_routes.py). Actions that only take,
+show or use the item stay as they are. See lib/weidu_action.tpa's generic BCS/DLG
 handlers and DDWELL special case.
 
 Own patches are recognised too, so an exported revision re-exports byte for
