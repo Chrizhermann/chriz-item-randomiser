@@ -95,7 +95,8 @@ to the end of a menu is still not an established safe alternative.
 Import Game (`start_import`) uses the same LOAD screen in import mode. There the
 list names saves by path (`home:/save/<folder>`), and BG2:EE also lists BG:EE's
 default profile (`home:/../Baldur's Gate - Enhanced Edition/save/...`). The runner
-selects only a folder of the game's own profile; when the save is missing,
+selects only a folder of the game's own profile, or of BG:EE's profile when the
+import names it (`start_import(folder, revision, plain, "bgee")`); when the save is missing,
 ambiguous or LOAD is in the other mode, it presses Back first, so the console is
 free again, and then reports the failure.
 

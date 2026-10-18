@@ -33,8 +33,13 @@ function Runner:_report()
     return ok
 end
 
-function Runner:_start(kind, target, revision, plain)
+-- Another game's profile an import can name explicitly, as LOAD lists its saves:
+-- BG2:EE's Import Game also offers BG:EE's default profile.
+local OTHER_PROFILES={bgee="home:/../Baldur's Gate - Enhanced Edition/save/"}
+
+function Runner:_start(kind, target, revision, plain, profile)
     assert(self.status ~= "running", "QA_ALREADY_RUNNING")
+    assert(profile==nil or (kind=="import" and OTHER_PROFILES[profile]~=nil), "QA_PROFILE_INVALID")
     assert(type(revision)=="string" and #revision==64 and not revision:find("[^0-9a-f]"), "QA_REVISION_INVALID")
     assert(type(target)=="string" and #target>0 and #target<=80 and not target:find("[^A-Za-z0-9 _%-]"), "QA_NAME_INVALID")
     if kind=="load" or kind=="import" then
@@ -54,7 +59,7 @@ function Runner:_start(kind, target, revision, plain)
         "POPUP_THREEBUTTON","POPUP_FOURBUTTON","ESC_MENU"}) do
         assert(not a.menu(name), "QA_EXISTING_FLOW:"..name)
     end
-    self.kind,self.target,self.revision,self.plain=kind,target,revision,plain==true
+    self.kind,self.target,self.revision,self.plain,self.profile=kind,target,revision,plain==true,profile
     self.status,self.step,self.error="running","begin",nil
     self.started,self.last_frame,self.events=a.clock(),nil,{}
     -- A failed start acknowledgement must not leave an active runner behind.
@@ -64,14 +69,16 @@ function Runner:start_save(name,revision) self:_start("save",name,revision) end
 function Runner:start_load(folder,revision) self:_start("load",folder,revision) end
 -- Import Game: the party of save FOLDER starts a new game (character creation follows).
 -- PLAIN accepts CIR's "Start without randomiser" when its settings have nothing
--- to randomise in this campaign; any other popup stops the runner.
-function Runner:start_import(folder,revision,plain) self:_start("import",folder,revision,plain) end
+-- to randomise in this campaign; any other popup stops the runner. PROFILE "bgee"
+-- takes the save from BG:EE's default profile instead of this game's own.
+function Runner:start_import(folder,revision,plain,profile) self:_start("import",folder,revision,plain,profile) end
 function Runner:start_main_menu(revision) self:_start("main-menu","MAIN_MENU",revision) end
 
 -- LOAD names a save by its folder; in import mode by its path, which can lead to
 -- another game's profile (BG2:EE lists BG:EE's saves there). Only this game's
--- own save folder matches, so the runner never imports from another profile.
-local function own_save(file_name, folder)
+-- own save folder matches, unless the import names the other profile.
+local function own_save(file_name, folder, profile)
+    if profile then return file_name==OTHER_PROFILES[profile]..folder end
     return file_name==folder or file_name=="home:/save/"..folder
 end
 
@@ -141,7 +148,7 @@ function Runner:_step()
         local found,count,names=nil,0,{}
         for index, save in ipairs(a.saves()) do
             if #names<8 then names[#names+1]=tostring(save.fileName) end
-            if own_save(save.fileName,self.target) then count=count+1; found=index end
+            if own_save(save.fileName,self.target,self.profile) then count=count+1; found=index end
         end
         local problem
         if a.importing()~=importing then problem="QA_LOAD_MODE_UNEXPECTED"
