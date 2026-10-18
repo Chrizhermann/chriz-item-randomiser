@@ -1,0 +1,76 @@
+Item     Replacement Source       Tier Token Ident Chance Comment
+
+amul12   blank       bd0062.are   32   01    d1    100    Laeral's Tear Necklace, BD0062 Corpse
+bdslng01 blank       bd0062.are   32   02    d2    100    Firefly +2, BD0062 Corpse
+bdioun02 blank       bd0064.are   32   03    d3    100    Blood Red Ioun Stone, BD0064 Hidden_cache
+bow02    blank       bd0066.are   32   04    d4    100    Composite Longbow +1, BD0066 Pile03
+sw1h08   blank       bd0066.are   32   05    d5    100    Short Sword +1, BD0066 Pile04
+bdsw1h25 blank       bd0067.are   32   06    d6    100    Spell Breaker +2, BD0067 Elite_elven_warrior
+chan12   blank       bd0067.are   32   07    d7    100    Elven Chain Mail, BD0067 Elite_elven_warrior
+bdleat02 blank       bd0114.are   32   08    d8    100    Goblin Hide Armor +2, BD0114 Goblincorpse
+bdsw1h22 blank       bd0114.are   32   09    d9    100    Severance +2, BD0114 Spidercove
+amul12   blank       bd0116.are   32   10    d10   100    Laeral's Tear Necklace, BD0116 Treasury
+amul11   blank       bd0120.are   32   11    d11   100    Pearl Necklace, BD0120 Sarcophagus2
+blun07   blank       bd0130.are   32   12    d12   100    Morning Star +1, BD0130 Body_cave
+amul12   blank       bd0130.are   32   13    d13   100    Laeral's Tear Necklace, BD0130 Chest_korlasz
+bdsw2h03 blank       bd0130.are   32   14    d14   100    Sword of Ruin +2, BD0130 Chest_secret01
+bdhelm10 blank       bd0130.are   32   15    d15   100    Helm of Unwavering Purpose, BD0130 Chest_secret02
+plat04   blank       bd0130.are   32   16    d16   100    Full Plate Armor, BD0130 Chest_secret02
+shld17   blank       bd0130.are   32   17    d17   100    Buckler +1, BD0130 Corpse_bane_room1
+chan05   blank       bd0130.are   32   18    d18   100    Splint Mail +1, BD0130 Corpse_brazier_room1
+wand05   blank       bd0130.are   32   19    d19   100    Wand of Fire, BD0130 Sarcophagus_brazier_room
+wand11   blank       bd0130.are   32   20    d20   100    Wand of the Heavens, BD0130 Sarcophagus_myrkul_room
+ax1h02   blank       bd0130.are   32   21    d21   100    Battle Axe +1, BD0130 Weapon_rack01
+bdclck04 blank       bd1000.are   33   01    d22   100    Cloak of the Beluir Watch, BD1000 Halfling_Treasures_Chest
+bdbow01  blank       bd1000.are   33   02    d23   100    Blightbringer +1, BD1000 Sdd221_loot
+bdbow04  blank       bd1010.are   33   03    d24   100    Bow of the Banshee +2, BD1010 Chest_mimic
+bdboot03 blank       bd1100.are   33   04    d25   100    Star-Strewn Boots, BD1100 Crommusstash
+bdbrd03  blank       bd1100.are   33   05    d26   100    Tangled Strings, BD1100 Crommusstash
+bdclck03 blank       bd1100.are   33   06    d27   100    Crommus's Capelet, BD1100 Crommusstash
+bdhelm11 blank       bd1100.are   33   07    d28   100    Bard Hat, BD1100 Crommusstash
+hamm02   blank       bd1100.are   33   08    d29   100    War Hammer +1, BD1100 Loose_armor
+bdblun06 blank       bd1200.are   33   09    d30   100    The Uncursed Staff +1, BD1200 Casket01
+bdrobe04 blank       bd1200.are   33   10    d31   100    Cleric's Vestments, BD1200 Cleric Vestments
+clck11   blank       bd1200.are   33   11    d32   100    Mage Robe of Electrical Resistance, BD1200 Remains_mage
+staf02   blank       bd1200.are   33   12    d33   100    Quarterstaff +1, BD1200 Remains_mage
+wand02   blank       bd1200.are   33   13    d34   100    Wand of Fear, BD1200 Sarcophagus02
+bddagg03 blank       bd7000.are   33   14    d35   100    Gemblade +1, BD7000 Gemblade
+sw1h08   blank       bd2000.are   34   01    d36   100    Short Sword +1, BD2000 Sword
+bdhelm16 blank       bd2010.are   34   02    d37   100    Circlet of Lost Souls, BD2010 Alcove
+bdblun08 blank       bd7100.are   34   03    d38   100    Glimmer of Hope +2, BD7100 Glimmer_of_hope
+wand02   blank       bd7110.are   34   04    d39   100    Wand of Fear, BD7110 Darkness_Chest
+bdamul07 blank       bd7110.are   34   05    d40   100    Locket of Embracing, BD7110 Darkness_Corpse
+shld04a  blank       bd7110.are   34   06    d41   100    Medium Shield +1, BD7110 Darkness_Corpse
+bdbrac05 blank       bd7200.are   34   07    d42   100    Stalker Gauntlets, BD7200 Dead_ranger
+bow02    blank       bd7200.are   34   08    d43   100    Composite Longbow +1, BD7200 Dead_ranger
+bdclck02 blank       bd7210.are   34   09    d44   100    Sable Cloak, BD7210 Corpse
+bdsw1h14 blank       bd7230.are   34   10    d45   100    Fractal Blade +3, BD7230 Chest_02
+dagg02   blank       bd7230.are   34   11    d46   100    Dagger +1, BD7230 Table_04
+hamm02   blank       bd3000.are   35   01    d47   100    War Hammer +1, BD3000 Container004
+amul11   blank       bd3000.are   35   02    d48   100    Pearl Necklace, BD3000 Container007
+bdxbow02 blank       bd5000.are   35   03    d49   100    Harold +2, BD5000 Thief Loot
+bdblun05 blank       bd5100.are   35   04    d50   100    The Hydra +2, BD5100 Ogre_cache
+shld17   blank       bd5100.are   35   05    d51   100    Buckler +1, BD5100 Wagon
+bdbone02 blank       bd5110.are   35   06    d52   100    Ettin Club +1, BD5110 Ettin
+bddagg04 blank       bd5110.are   35   07    d53   100    Throwing Dagger +1, BD5110 LitlaRemains
+amul11   blank       bd5200.are   35   08    d54   100    Pearl Necklace, BD5200 Crate_03
+sw1h05   blank       bd5200.are   35   09    d55   100    Long Sword +1, BD5200 Table_01
+sw1h22   blank       bd5200.are   35   10    d56   100    Scimitar +1, BD5200 Weapon_Rack_01
+sper02   blank       bd5200.are   35   11    d57   100    Spear +1, BD5200 Weapon_Rack_02
+bdax1h02 blank       bd5300.are   35   12    d58   100    Axe of Kruntur +2, BD5300 Kruntur
+bdchan02 blank       bd5300.are   35   13    d59   100    Kruntur's Armor +3, BD5300 Kruntur
+bdrobe03 blank       bd5300.are   35   14    d60   100    The Ghostdreamers' Robe, BD5300 Kruntur
+bdstaf02 blank       bd5300.are   35   15    d61   100    The Soulherder's Staff +2, BD5300 Kruntur
+wand04   blank       bd7300.are   35   16    d62   100    Wand of Paralyzation, BD7300 Dead_mage
+bdamul26 blank       bd7300.are   35   17    d63   100    Heart of the Mountain, BD7300 Dead_orog_shaman
+bdbrd01  blank       bd7300.are   35   18    d64   100    The Forest Queen's Benediction, BD7300 Tree_trunk
+bdamul01 blank       bd7310.are   35   19    d65   100    Amulet of Whispers, BD7310 Chest01
+bdamul06 blank       bd7400.are   35   20    d66   100    Clasp of Helm, BD7400 Dead_mage
+wand02   blank       bd7400.are   35   21    d67   100    Wand of Fear, BD7400 Dead_mage
+bdhamm01 blank       bd7410.are   35   22    d68   100    Sundermaul +3, BD7410 Chest_01
+shld28   blank       bd7410.are   35   23    d69   100    Small Shield +2, BD7410 Chest_01
+shld04   blank       bd4000.are   36   01    d70   100    Medium Shield +1, BD4000 Chest5
+blun03   blank       bd4000.are   36   02    d71   100    Flail +1, BD4000 Gnarg_chest
+bdhelm01 blank       bd4300.are   36   03    d72   100    Crown of Lies, BD4300 Heph_chest1
+bdrobe02 blank       bd4300.are   36   04    d73   100    Robe of Netheril, BD4300 Heph_chest1
+bdplat01 blank       bd4300.are   36   05    d74   100    Daeros's Full Plate +1, BD4300 Loose_plate

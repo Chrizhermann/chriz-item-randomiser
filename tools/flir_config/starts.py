@@ -7,7 +7,7 @@ gets a revision of its own with only the rewards and places it reaches:
 - An area tells its part of the game by its name (platform.area_part).
 - A creature template is where the areas that place it are.
 - Any other record (a shop, a script, a conversation, an added item) is where
-  the Item Randomiser table that lists it puts it: BG1, or all of BG2. A
+  the table that lists it puts it: BG1, Siege of Dragonspear, or all of BG2. A
   Throne of Bhaal start therefore leaves BG2 shops and scripts as they are.
 - A record whose place is unknown is left out of later starts.
 
@@ -26,8 +26,8 @@ from pathlib import Path
 
 from .campaigns import OVERFLOW_TARGET_KINDS, compile_campaign, write_campaign
 from .original_registrations import table_rows, target_record as original_target_record
-from .platform import (FULL_START, MAIN_START, START_NAMES, STARTS, area_part, campaign_parts,
-                       game_platform)
+from .platform import (FULL_START, MAIN_START, START_NAMES, STARTS, TABLE_PARTS, area_part,
+                       campaign_parts, game_platform)
 from .profiles import ProfileError, edit_profile, validate_catalog
 from .scripted_sources import ADAPTER_ID as SCRIPTED_ADAPTER, CAMPAIGN as SCRIPTED_CAMPAIGN
 from .sources import validate_world
@@ -37,9 +37,9 @@ _FIT_ROUNDS = 8
 
 
 def _table_campaign(selector: object) -> str | None:
-    """The Item Randomiser table ("bg1" or "bg2") a row identity such as bg2:base:item:7 names."""
+    """The table ("bg1", "sod" or "bg2") a row identity such as bg2:base:item:7 names."""
     prefix = selector.split(":", 1)[0] if isinstance(selector, str) else ""
-    return prefix if prefix in ("bg1", "bg2") else None
+    return prefix if prefix in TABLE_PARTS else None
 
 
 class _Places:
@@ -71,7 +71,7 @@ class _Places:
             parts = self.placed.get(resource)
             if parts and None not in parts:
                 return parts
-        return campaign_parts(campaign) if campaign in ("bg1", "bg2") else None
+        return campaign_parts(campaign) if campaign in TABLE_PARTS else None
 
     def reached(self, resource: str, campaign: str | None, reach: frozenset) -> bool:
         parts = self.parts(resource, campaign)

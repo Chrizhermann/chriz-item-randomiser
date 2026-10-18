@@ -7,14 +7,17 @@ import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
 from flir_config.templates import (DEFAULT_OPTIONS, ROOT, _table_rows, build_template,  # noqa: E402
-                                   list_templates, recommended_preset)
+                                   campaign_tables, list_templates, recommended_preset,
+                                   template_tables)
 
 
 class OriginalTemplateTests(unittest.TestCase):
     def test_descriptors_and_complete_table_totals(self):
         self.assertEqual(
             [row["id"] for row in list_templates()],
-            ["bg1-original", "bg2-original", "eet-original", "bg1-boss-loot", "eet-boss-loot"],
+            ["bg1-original", "bg2-original", "eet-original", "sod-original", "bg1-sod-original",
+             "eet-sod-original", "bg1-boss-loot", "eet-boss-loot", "bg1-sod-boss-loot",
+             "eet-sod-boss-loot"],
         )
         # Chriz Item Randomiser has no modes; its presets are not named after them.
         for row in list_templates():
@@ -32,6 +35,13 @@ class OriginalTemplateTests(unittest.TestCase):
             ("bg1-boss-loot", "extended", 609, 594),
             ("eet-boss-loot", "standard", 507, 525),
             ("eet-boss-loot", "extended", 1155, 1168),
+            ("sod-original", "standard", 74, 74),
+            ("sod-original", "extended", 74, 74),
+            ("bg1-sod-original", "standard", 286, 292),
+            ("eet-sod-original", "standard", 579, 601),
+            ("eet-sod-original", "extended", 1000, 1045),
+            ("bg1-sod-boss-loot", "standard", 288, 290),
+            ("eet-sod-boss-loot", "extended", 1229, 1242),
         ):
             with self.subTest(identity=identity, pools=pools):
                 draft = build_template(identity, items=pools, targets=pools)
@@ -105,6 +115,46 @@ class OriginalTemplateTests(unittest.TestCase):
         self.assertFalse(recommended_preset("eet")["options"]["kangaxx"])
         with self.assertRaises(ValueError):
             recommended_preset("iwd")
+
+    def test_sod_tables_join_the_presets_that_name_them(self):
+        self.assertEqual(campaign_tables("eet-sod"), ("bg1", "sod", "bg2"))
+        self.assertEqual(template_tables("bg1-sod-boss-loot"), ("bg1", "sod"))
+        self.assertEqual(template_tables("eet-original"), ("bg1", "bg2"))
+        sod = build_template("sod-original")
+        self.assertEqual(sod["campaigns"], ["sod"])
+        self.assertEqual(sod["name"], "SoD: Chriz Item Randomiser's lists")
+        for kind in ("items", "targets"):
+            self.assertTrue(all(row["campaign"] == "sod" and row["family"] == "base" and
+                                row["id"].startswith("sod:base:") and
+                                row["source_ref"].startswith(f"lists/{'items' if kind == 'items' else 'locations'}/base/sod.2da:")
+                                and row["requires_game_conversion"] for row in sod[kind]))
+        # Chapter sections, apart from the BG1 and BG2 tiers; no option gates them.
+        self.assertEqual({row["tier"] for row in sod["items"]}, {"32", "33", "34", "35", "36"})
+        self.assertTrue(all(row["enabled"] and row["option_gate"] is None
+                            for row in sod["items"] + sod["targets"]))
+        # The SoD tables have no authored endpoints: a place's target names its kind.
+        self.assertTrue(all(row["endpoint_id"] is None for row in sod["targets"]))
+        # Each item row has its home place, paired by its Ident.
+        items = {row["ident"]: row for row in sod["items"]}
+        places = {row["ident"]: row for row in sod["targets"]}
+        self.assertEqual(set(items), set(places))
+        self.assertEqual(len(items), len(sod["items"]))
+        for ident, row in items.items():
+            self.assertEqual((places[ident]["area"], places[ident]["tier"]),
+                             (row["source"].rsplit(".", 1)[0], row["tier"]))
+        combined = build_template("eet-sod-original")
+        self.assertEqual(combined["name"], "EET + SoD: Item Randomiser's lists and the SoD lists")
+        self.assertEqual(combined["campaigns"], ["bg1", "sod", "bg2"])
+        for kind in ("items", "targets"):
+            self.assertEqual([row for row in combined[kind] if row["campaign"] == "sod"], sod[kind])
+            self.assertEqual([row for row in combined[kind] if row["campaign"] != "sod"],
+                             build_template("eet-original")[kind])
+        boss = {row["id"]: row for row in list_templates()}["eet-sod-boss-loot"]
+        self.assertIn("For BG1; SoD keeps Chriz Item Randomiser's lists and BG2 keeps Item "
+                      "Randomiser's lists.", boss["description"])
+        self.assertEqual([row for row in build_template("bg1-sod-boss-loot")["items"]
+                          if row["campaign"] == "sod"], sod["items"])
+        self.assertEqual(recommended_preset("bg1-sod")["id"], "bg1-sod-original")
 
     def test_boss_loot_replaces_only_the_bg1_tables(self):
         draft = build_template("eet-boss-loot", items="extended", targets="extended")
