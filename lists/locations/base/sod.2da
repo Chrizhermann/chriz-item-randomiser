@@ -1,0 +1,76 @@
+Location Tier Target           Area   Ident Chance Comment
+
+1        32   corpse           bd0062 d1    100    formerly Laeral's Tear Necklace
+2        32   corpse           bd0062 d2    100    formerly Firefly +2
+3        32   hidden_cache     bd0064 d3    100    formerly Blood Red Ioun Stone
+4        32   pile03           bd0066 d4    100    formerly Composite Longbow +1
+5        32   pile04           bd0066 d5    100    formerly Short Sword +1
+6        32   elite_elven_warrior bd0067 d6    100    formerly Spell Breaker +2
+7        32   elite_elven_warrior bd0067 d7    100    formerly Elven Chain Mail
+8        32   goblincorpse     bd0114 d8    100    formerly Goblin Hide Armor +2
+9        32   spidercove       bd0114 d9    100    formerly Severance +2
+10       32   treasury         bd0116 d10   100    formerly Laeral's Tear Necklace
+11       32   sarcophagus2     bd0120 d11   100    formerly Pearl Necklace
+12       32   body_cave        bd0130 d12   100    formerly Morning Star +1
+13       32   chest_korlasz    bd0130 d13   100    formerly Laeral's Tear Necklace
+14       32   chest_secret01   bd0130 d14   100    formerly Sword of Ruin +2
+15       32   chest_secret02   bd0130 d15   100    formerly Helm of Unwavering Purpose
+16       32   chest_secret02   bd0130 d16   100    formerly Full Plate Armor
+17       32   corpse_bane_room1 bd0130 d17   100    formerly Buckler +1
+18       32   corpse_brazier_room1 bd0130 d18   100    formerly Splint Mail +1
+19       32   sarcophagus_brazier_room bd0130 d19   100    formerly Wand of Fire
+20       32   sarcophagus_myrkul_room bd0130 d20   100    formerly Wand of the Heavens
+21       32   weapon_rack01    bd0130 d21   100    formerly Battle Axe +1
+22       33   halfling_treasures_chest bd1000 d22   100    formerly Cloak of the Beluir Watch
+23       33   sdd221_loot      bd1000 d23   100    formerly Blightbringer +1
+24       33   chest_mimic      bd1010 d24   100    formerly Bow of the Banshee +2
+25       33   crommusstash     bd1100 d25   100    formerly Star-Strewn Boots
+26       33   crommusstash     bd1100 d26   100    formerly Tangled Strings
+27       33   crommusstash     bd1100 d27   100    formerly Crommus's Capelet
+28       33   crommusstash     bd1100 d28   100    formerly Bard Hat
+29       33   loose_armor      bd1100 d29   100    formerly War Hammer +1
+30       33   casket01         bd1200 d30   100    formerly The Uncursed Staff +1
+31       33   clericvestments  bd1200 d31   100    formerly Cleric's Vestments
+32       33   remains_mage     bd1200 d32   100    formerly Mage Robe of Electrical Resistance
+33       33   remains_mage     bd1200 d33   100    formerly Quarterstaff +1
+34       33   sarcophagus02    bd1200 d34   100    formerly Wand of Fear
+35       33   gemblade         bd7000 d35   100    formerly Gemblade +1
+36       34   sword            bd2000 d36   100    formerly Short Sword +1
+37       34   alcove           bd2010 d37   100    formerly Circlet of Lost Souls
+38       34   glimmer_of_hope  bd7100 d38   100    formerly Glimmer of Hope +2
+39       34   darkness_chest   bd7110 d39   100    formerly Wand of Fear
+40       34   darkness_corpse  bd7110 d40   100    formerly Locket of Embracing
+41       34   darkness_corpse  bd7110 d41   100    formerly Medium Shield +1
+42       34   dead_ranger      bd7200 d42   100    formerly Stalker Gauntlets
+43       34   dead_ranger      bd7200 d43   100    formerly Composite Longbow +1
+44       34   corpse           bd7210 d44   100    formerly Sable Cloak
+45       34   chest_02         bd7230 d45   100    formerly Fractal Blade +3
+46       34   table_04         bd7230 d46   100    formerly Dagger +1
+47       35   container004     bd3000 d47   100    formerly War Hammer +1
+48       35   container007     bd3000 d48   100    formerly Pearl Necklace
+49       35   thiefloot        bd5000 d49   100    formerly Harold +2
+50       35   ogre_cache       bd5100 d50   100    formerly The Hydra +2
+51       35   wagon            bd5100 d51   100    formerly Buckler +1
+52       35   ettin            bd5110 d52   100    formerly Ettin Club +1
+53       35   litlaremains     bd5110 d53   100    formerly Throwing Dagger +1
+54       35   crate_03         bd5200 d54   100    formerly Pearl Necklace
+55       35   table_01         bd5200 d55   100    formerly Long Sword +1
+56       35   weapon_rack_01   bd5200 d56   100    formerly Scimitar +1
+57       35   weapon_rack_02   bd5200 d57   100    formerly Spear +1
+58       35   kruntur          bd5300 d58   100    formerly Axe of Kruntur +2
+59       35   kruntur          bd5300 d59   100    formerly Kruntur's Armor +3
+60       35   kruntur          bd5300 d60   100    formerly The Ghostdreamers' Robe
+61       35   kruntur          bd5300 d61   100    formerly The Soulherder's Staff +2
+62       35   dead_mage        bd7300 d62   100    formerly Wand of Paralyzation
+63       35   dead_orog_shaman bd7300 d63   100    formerly Heart of the Mountain
+64       35   tree_trunk       bd7300 d64   100    formerly The Forest Queen's Benediction
+65       35   chest01          bd7310 d65   100    formerly Amulet of Whispers
+66       35   dead_mage        bd7400 d66   100    formerly Clasp of Helm
+67       35   dead_mage        bd7400 d67   100    formerly Wand of Fear
+68       35   chest_01         bd7410 d68   100    formerly Sundermaul +3
+69       35   chest_01         bd7410 d69   100    formerly Small Shield +2
+70       36   chest5           bd4000 d70   100    formerly Medium Shield +1
+71       36   gnarg_chest      bd4000 d71   100    formerly Flail +1
+72       36   heph_chest1      bd4300 d72   100    formerly Crown of Lies
+73       36   heph_chest1      bd4300 d73   100    formerly Robe of Netheril
+74       36   loose_plate      bd4300 d74   100    formerly Daeros's Full Plate +1

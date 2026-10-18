@@ -214,8 +214,9 @@ mod.
 The configurator identifies the game as WeiDU's `GAME_IS` does
 (`tools/flir_config/platform.py`): EET by `override/EET.flag`, BG2:EE by `OH6000.ARE`,
 BG:EE by `OH1000.ARE`. It refuses any other game, as the installer does. It offers the
-presets whose tables the game has (the BG1 presets on BG:EE, the BG2 ones on BG2:EE,
-all on EET) and recommends that game's `-original` preset. BG:EE and BG2:EE keep the
+presets whose tables the game has (the BG1 presets on BG:EE, with Siege of Dragonspear's
+areas also the SoD ones; the BG2 ones on BG2:EE; all on EET; see
+[SoD lists](../sod-lists.md)) and recommends that game's `-original` preset. BG:EE and BG2:EE keep the
 `BGEE.LUA` journal table in their archives, EET in `override`; the export reads either.
 
 At New Game or character import `M_FLPR.lua` reads the start the engine selected: the
@@ -262,8 +263,8 @@ to BG1, `BD####` to SoD, `AR30##` to Watcher's Keep, `AR4000`-`AR6999` to ToB an
 `AR` and `OH` areas to SoA. On BG:EE `AR` and `OH` areas belong to BG1 and `BD` to SoD;
 on BG2:EE the BG2 rules apply and `BG` and `BD` names are unknown. A creature template
 is where the areas that place it are. Any other record (a shop, a script, a
-conversation, an added item) is where the Item Randomiser table that lists it puts it:
-BG1, or all of BG2, so a ToB start leaves BG2's shops and scripts as they are. A record
+conversation, an added item) is where the table that lists it puts it: BG1, SoD, or
+all of BG2, so a ToB start leaves BG2's shops and scripts as they are. A record
 whose part is unknown stays out of later starts. What remains is checked as the whole
 configuration is: a reward whose tier has no place left (without tiers, rewards beyond
 the places' capacity) and a row the runtime check names are left out too. A reward left

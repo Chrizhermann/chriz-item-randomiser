@@ -11,14 +11,15 @@ import struct
 from collections.abc import Collection
 from copy import deepcopy
 
-from .game_names import convert_resource
+from .game_names import EetNames, convert_resource
 from .profiles import HEX256, ProfileError
 from .world_formats import parse_sto
 
 
-def tome_variants(campaign: str = "bg1", game: str = "eet") -> list[str]:
+def tome_variants(campaign: str = "bg1", game: str = "eet",
+                  names: EetNames | None = None) -> list[str]:
     """Mode 1's b2c reward chooses one of all six stat books uniformly."""
-    return [convert_resource(f"book{number:02}", "itm", campaign, game)
+    return [convert_resource(f"book{number:02}", "itm", campaign, game, names)
             for number in range(3, 9)]
 
 

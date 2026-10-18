@@ -10,12 +10,12 @@ from __future__ import annotations
 from collections import defaultdict
 import re
 
-from .game_names import convert_resource
+from .game_names import EetNames, convert_resource, eet_names
 from .mode2_rewards import TARGET_REWARDS, target_spec
 from .container_rewards import (TARGETS as CONTAINER_TARGETS, target_spec as container_spec,
                                 treasure_area, treasure_container)
 from .profiles import ProfileError
-from .templates import ROOT, _table_rows, build_template
+from .templates import ENDPOINT_CAMPAIGNS, ROOT, _table_rows, build_template
 
 
 _PHYSICAL_SOURCES = {"are", "cre", "sto"}
@@ -105,8 +105,10 @@ def _source_selectors(campaign: str) -> dict[str, tuple[str, str, int]]:
 
 
 def _endpoint_rows(campaign: str) -> dict[str, tuple[str, str, str]]:
-    path = ROOT / "lists" / "endpoints" / "base" / f"{campaign}.2da"
     result = {}
+    if campaign not in ENDPOINT_CAMPAIGNS:
+        return result
+    path = ROOT / "lists" / "endpoints" / "base" / f"{campaign}.2da"
     for _, fields in _table_rows(path, 17):
         # A stable endpoint can be reused by many original location rows.
         identity = (fields[9], fields[10], fields[11])
@@ -116,13 +118,13 @@ def _endpoint_rows(campaign: str) -> dict[str, tuple[str, str, str]]:
     return result
 
 
-def _group_members(campaign: str, group: str, game: str) -> list[str]:
+def _group_members(campaign: str, group: str, game: str, names: EetNames | None) -> list[str]:
     path = ROOT / "lists" / "groups" / f"{campaign}.2da"
     result = []
     for line in path.read_text(encoding="utf-8").splitlines():
         fields = line.split()
         if len(fields) >= 2 and fields[0].lower() == group.lower():
-            name = convert_resource(fields[1], "cre", campaign, game)
+            name = convert_resource(fields[1], "cre", campaign, game, names)
             identity = f"cre:{name}"
             if identity not in result:
                 result.append(identity)
@@ -137,9 +139,10 @@ def _source_owner_name(source: dict, targets_by_id: dict[str, dict]) -> str:
 def _resolve_source(row: dict, catalog_items: set[str], resources: set[str],
                     sources: dict[tuple[str, str], list[dict]],
                     targets_by_id: dict[str, dict], game: str,
-                    selectors: dict[str, dict[str, tuple[str, str, int]]]) -> None:
+                    selectors: dict[str, dict[str, tuple[str, str, int]]],
+                    names: EetNames | None) -> None:
     campaign = row["campaign"]
-    item = convert_resource(row["resref"], "itm", campaign, game)
+    item = convert_resource(row["resref"], "itm", campaign, game, names)
     row.update(item_resref=item, source_resource=None, source_ids=[],
                adapter=None, available=True, availability_reason=None,
                binding_problem=None)
@@ -157,7 +160,7 @@ def _resolve_source(row: dict, catalog_items: set[str], resources: set[str],
         return
     if raw == "unshey.fl":
         row["adapter"] = "unshey"
-        name = convert_resource("ogreunsh", "cre", campaign, game)
+        name = convert_resource("ogreunsh", "cre", campaign, game, names)
         row["source_resource"] = f"cre:{name}"
         row["binding_problem"] = row["binding_problem"] or "unshey-requires-legacy-adapter"
         return
@@ -169,7 +172,7 @@ def _resolve_source(row: dict, catalog_items: set[str], resources: set[str],
     if extension not in _PHYSICAL_SOURCES | _SCRIPTED_SOURCES and not spell_grant:
         row["binding_problem"] = row["binding_problem"] or "unsupported-source-kind"
         return
-    converted = name if spell_grant else convert_resource(name, extension, campaign, game)
+    converted = name if spell_grant else convert_resource(name, extension, campaign, game, names)
     resource = f"{extension}:{converted}"
     row["source_resource"] = resource
     if extension in _SCRIPTED_SOURCES or spell_grant:
@@ -223,9 +226,10 @@ def _resolve_source(row: dict, catalog_items: set[str], resources: set[str],
 
 def _resolve_target(row: dict, resources: set[str],
                     targets_by_resource: dict[str, list[dict]], game: str,
-                    endpoints: dict[str, dict[str, tuple[str, str, str]]], sources: list[dict]) -> None:
+                    endpoints: dict[str, dict[str, tuple[str, str, str]]], sources: list[dict],
+                    names: EetNames | None) -> None:
     campaign = row["campaign"]
-    area = convert_resource(row["area"], "are", campaign, game)
+    area = convert_resource(row["area"], "are", campaign, game, names)
     row.update(area_resource=f"are:{area}", target_ids=[], creature_resource=None,
                container_name=None, members=[], binding_problem=None)
     container = container_target_spec(row)
@@ -293,7 +297,8 @@ def _resolve_target(row: dict, resources: set[str],
             # stash among two containers both named "Container 11". This
             # selects an existing container; it never creates a fallback pile.
             for _, fields in _table_rows(ROOT / "lists/endpoints/fallbacks.2da", 10):
-                if fields[2] == row["endpoint_id"] and convert_resource(fields[3], "are", campaign, game) == area:
+                if (fields[2] == row["endpoint_id"] and
+                        convert_resource(fields[3], "are", campaign, game, names) == area):
                     # The fallback type describes a newly created ground
                     # pile, not the type of the original chest/shelf.
                     pointed = [target for target in matches if
@@ -304,19 +309,23 @@ def _resolve_target(row: dict, resources: set[str],
                     break
     elif kind == "creature":
         name = raw.rsplit(".", 1)[0]
-        name = convert_resource(name, "cre", campaign, game)
+        name = convert_resource(name, "cre", campaign, game, names)
         row["creature_resource"] = f"cre:{name}"
         matches = [target for target in area_targets if target["kind"] == "actor"
                    and target["selector"].get("template_resource") == row["creature_resource"]]
         if row["creature_resource"] not in resources:
             row["binding_problem"] = row["binding_problem"] or "creature-resource-absent"
+        elif matches and all(target["selector"].get("appearance_schedule") == 0 for target in matches):
+            # Placed for no hour of the day, the creature never appears (how mods
+            # such as SoD Remix take a creature out); a reward there would be lost.
+            row["binding_problem"] = row["binding_problem"] or "creature-never-appears"
     elif kind == "store":
-        name = convert_resource(raw.rsplit(".", 1)[0], "sto", campaign, game)
+        name = convert_resource(raw.rsplit(".", 1)[0], "sto", campaign, game, names)
         identity = f"sto:{name}"
         matches = [target for target in targets_by_resource.get(identity, [])
                    if target["id"] == identity and target["kind"] == "store"]
     elif kind == "group":
-        row["members"] = _group_members(campaign, raw, game)
+        row["members"] = _group_members(campaign, raw, game, names)
         allowed = set(row["members"])
         matches = [target for target in area_targets if target["kind"] == "actor"
                    and target["selector"].get("template_resource") in allowed]
@@ -334,9 +343,16 @@ def _resolve_target(row: dict, resources: set[str],
 
 def resolve_template(catalog: dict, world: dict, template_id: str, *,
                      game: str = "eet", items: str | None = None,
-                     targets: str | None = None, options: dict | None = None) -> dict:
-    """Augment every original table row with exact installed scan candidates."""
+                     targets: str | None = None, options: dict | None = None,
+                     names: EetNames | None = None) -> dict:
+    """Augment every original table row with exact installed scan candidates.
+
+    On EET, BG1 and SoD names follow <names> (game_names.eet_names), by default
+    the lists of the scanned game; a world without a game folder uses CIR's copy.
+    """
     draft = build_template(template_id, items=items, targets=targets, options=options)
+    if names is None and game == "eet" and "game_root" in world:
+        names = eet_names(world["game_root"])
     catalog_items = {row["resref"] for row in catalog["items"]}
     resources = {row["id"] for row in world["resources"]}
     sources_by_identity: dict[tuple[str, str], list[dict]] = defaultdict(list)
@@ -353,7 +369,8 @@ def resolve_template(catalog: dict, world: dict, template_id: str, *,
                  for campaign in draft["campaigns"]}
     for row in draft["items"]:
         _resolve_source(row, catalog_items, resources, sources_by_identity,
-                        targets_by_id, game, selectors)
+                        targets_by_id, game, selectors, names)
     for row in draft["targets"]:
-        _resolve_target(row, resources, targets_by_resource, game, endpoints, world["sources"])
+        _resolve_target(row, resources, targets_by_resource, game, endpoints, world["sources"],
+                        names)
     return draft

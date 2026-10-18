@@ -73,8 +73,28 @@ def make_game(root: Path, resources: list[tuple[str, bytes]] | None = None) -> N
 
 
 def mark_eet(root: Path) -> None:
-    """Make a synthetic game EET, as WeiDU's GAME_IS tells it (override/EET.flag)."""
+    """Make a synthetic game EET, as WeiDU's GAME_IS tells it (override/EET.flag).
+
+    Like a real EET it keeps its rename lists (EET/lib/pcu_dict.tph); they rename
+    what Chriz Item Randomiser's own copy of them renames.
+    """
+    from flir_config.game_names import _eet_tables
+
     (root / "override" / "EET.flag").write_bytes(b"")
+    write_eet_names(root, _eet_tables())
+
+
+def write_eet_names(root: Path, tables: dict[str, dict[str, str]]) -> Path:
+    """Write EET's rename lists in its own format, one array per resource type."""
+    lib = root / "EET" / "lib"
+    lib.mkdir(parents=True, exist_ok=True)
+    blocks = []
+    for extension, entries in sorted(tables.items()):
+        rows = "".join(f'\t"{old.upper()}"\t=>\t"{new.upper()}"\n' for old, new in sorted(entries.items()))
+        blocks.append(f"ACTION_DEFINE_ASSOCIATIVE_ARRAY remapped_{extension} BEGIN\n{rows}END\n")
+    path = lib / "pcu_dict.tph"
+    path.write_text("\n".join(blocks), encoding="utf-8")
+    return path
 
 
 def snapshot(root: Path) -> dict[str, str]:

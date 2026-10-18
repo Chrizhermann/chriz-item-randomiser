@@ -19,13 +19,18 @@ import re
 from pathlib import Path
 
 from .profiles import ProfileError
-from .templates import CAMPAIGNS, template_campaign
+from .templates import CAMPAIGNS, campaign_tables, template_campaign
 
 PLATFORMS = {"bgee": "BG:EE", "bg2ee": "BG2:EE", "eet": "EET"}
-# The preset campaign of each game (templates.CAMPAIGNS).
+# The recommended preset campaign of each game (templates.CAMPAIGNS).
 PRESET_CAMPAIGN = {"bgee": "bg1", "bg2ee": "bg2", "eet": "eet"}
-# Preset campaigns whose tables a game has.
-PRESET_CAMPAIGNS = {"bgee": ("bg1",), "bg2ee": ("bg2",), "eet": ("eet", "bg1", "bg2")}
+# Preset campaigns whose tables a game can have; those with the SoD tables only
+# when it has Siege of Dragonspear (preset_campaigns).
+PRESET_CAMPAIGNS = {"bgee": ("bg1", "bg1-sod", "sod"), "bg2ee": ("bg2",),
+                    "eet": ("eet", "eet-sod", "bg1", "bg1-sod", "sod", "bg2")}
+# The parts of the game each table campaign (bg1, sod, bg2) covers.
+TABLE_PARTS = {"bg1": frozenset({"bg1"}), "sod": frozenset({"sod"}),
+               "bg2": frozenset({"soa", "wk", "tob"})}
 
 # Campaign starts by the runtime's names (CAMPAIGN.2DA rows; BG2:EE's Throne
 # of Bhaal by its flag) and the parts of the game each reaches. "wk" is
@@ -67,6 +72,27 @@ def game_platform(world: dict) -> str:
                        "this game is none of them")
 
 
+def has_sod(world: dict) -> bool:
+    """Whether the scanned game has Siege of Dragonspear's areas."""
+    platform = game_platform(world)
+    return any(row["id"].startswith("are:") and area_part(platform, row["id"][4:]) == "sod"
+               for row in world["resources"])
+
+
+def preset_campaigns(world: dict) -> tuple[str, ...]:
+    """The preset campaigns whose tables the scanned game has."""
+    platform = game_platform(world)
+    campaigns = PRESET_CAMPAIGNS[platform]
+    if has_sod(world):
+        return campaigns
+    return tuple(campaign for campaign in campaigns if "sod" not in campaign_tables(campaign))
+
+
+def recommended_campaign(world: dict) -> str:
+    """The preset campaign the editor recommends for the scanned game."""
+    return PRESET_CAMPAIGN[game_platform(world)]
+
+
 def preset_game(world: dict, template_id: str) -> str:
     """The scanned game, for a preset whose tables it has (an EET preset needs EET)."""
     platform = game_platform(world)
@@ -74,6 +100,9 @@ def preset_game(world: dict, template_id: str) -> str:
     if campaign not in PRESET_CAMPAIGNS[platform]:
         raise ProfileError(f"This preset is for {dict(CAMPAIGNS)[campaign]}; "
                            f"this game is {PLATFORMS[platform]}")
+    if campaign not in preset_campaigns(world):
+        raise ProfileError(f"This preset is for {dict(CAMPAIGNS)[campaign]}; "
+                           "this game does not have Siege of Dragonspear")
     return platform
 
 
@@ -102,5 +131,7 @@ def area_part(platform: str, area: str) -> str | None:
 
 
 def campaign_parts(campaign: str) -> frozenset[str]:
-    """The parts an Item Randomiser table (bg1 or bg2) covers."""
-    return frozenset({"bg1"}) if campaign == "bg1" else frozenset({"soa", "wk", "tob"})
+    """The parts a table campaign (bg1, sod or bg2) covers."""
+    if campaign not in TABLE_PARTS:
+        raise ProfileError(f"Unknown table campaign: {campaign}")
+    return TABLE_PARTS[campaign]

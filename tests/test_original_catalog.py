@@ -261,6 +261,53 @@ class OriginalCatalogTests(unittest.TestCase):
         target = next(row for row in result["targets"] if row["area"] == "ar0202")
         self.assertEqual(target["area_resource"], "are:ar0202")
 
+    def test_sod_rows_bind_by_place_name_and_follow_eets_lists(self):
+        from flir_config.game_names import EetNames
+        from flir_config.templates import build_template
+
+        draft = build_template("sod-original")
+        item = draft["items"][0]
+        place = next(row for row in draft["targets"] if row["ident"] == item["ident"])
+        area = f"are:{place['area']}"
+        for game, names, resref in (("bgee", None, item["resref"]),
+                                    ("eet", EetNames({kind: {} for kind in ("itm", "cre", "sto", "dlg", "bcs")}
+                                                     | {"itm": {item["resref"]: "renamed"}}, True), "renamed")):
+            with self.subTest(game=game):
+                chest = _target(f"{area}/container/0", area, "container", place["target"].upper())
+                spare = _target(f"{area}/container/1", area, "container", "Other")
+                world = {"resources": [{"id": area}], "targets": [chest, spare],
+                         "sources": [_source(f"{area}/container/0/item/0", area, resref, chest["id"])]}
+                result = resolve_template({"items": [{"resref": resref}]}, world, "sod-original",
+                                          game=game, names=names)
+                source = next(row for row in result["items"] if row["id"] == item["id"])
+                self.assertEqual((source["item_resref"], source["source_resource"], source["source_ids"],
+                                  source["binding_problem"]),
+                                 (resref, area, [f"{area}/container/0/item/0"], None))
+                target = next(row for row in result["targets"] if row["id"] == place["id"])
+                self.assertEqual((target["area_resource"], target["target_ids"], target["endpoint_id"],
+                                  target["binding_problem"]), (area, [chest["id"]], None, None))
+
+    def test_creature_target_that_never_appears_is_named(self):
+        from flir_config.templates import build_template
+
+        place = next(row for row in build_template("bg1-original")["targets"] if row["target"] == "neira.cre")
+        area = f"are:{place['area']}"
+        for schedules, problem in (((0,), "creature-never-appears"), ((0, 0), "creature-never-appears"),
+                                   ((0xFFFFFF,), None),
+                                   # One placement appears by day: as before, two placements.
+                                   ((0, 0x000FFFC0), "ambiguous-target-records")):
+            with self.subTest(schedules=schedules):
+                actors = []
+                for index, schedule in enumerate(schedules):
+                    actor = _target(f"{area}/actor/{index}", area, "actor", "Neira", "cre:neira")
+                    actor["selector"]["appearance_schedule"] = schedule
+                    actors.append(actor)
+                world = {"resources": [{"id": area}, {"id": "cre:neira"}], "sources": [], "targets": actors}
+                result = resolve_template({"items": []}, world, "bg1-original", game="bgee")
+                row = next(row for row in result["targets"] if row["id"] == place["id"])
+                self.assertEqual(row["target_ids"], [actor["id"] for actor in actors])
+                self.assertEqual(row["binding_problem"], problem)
+
 
 if __name__ == "__main__":
     unittest.main()

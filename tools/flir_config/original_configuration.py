@@ -12,7 +12,7 @@ from collections import defaultdict
 from pathlib import Path
 
 from .campaigns import OVERFLOW_TARGET_KINDS
-from .game_names import convert_resource
+from .game_names import convert_resource, eet_names
 from .original_catalog import resolve_template
 from .original_options import is_spell_shield_row, spell_shield_spec, tome_variants
 from .platform import preset_game
@@ -129,8 +129,9 @@ def build_original_configuration(catalog: dict, world: dict, template_id: str, *
     catalog_items = validate_catalog(catalog)
     index = validate_world(world, catalog)
     game = preset_game(world, template_id)
+    names = eet_names(world["game_root"]) if game == "eet" else None
     draft = resolve_template(catalog, world, template_id, game=game,
-                             items=items, targets=targets, options=options)
+                             items=items, targets=targets, options=options, names=names)
     if draft["options"].get("flail_heads") and not applied(world["game_root"], "flail_heads"):
         raise ProfileError("The flail heads option needs Glaicus's conversation as Chriz Item Randomiser "
                            "prepares it: " + left_out(world["game_root"], "flail_heads"))
@@ -240,7 +241,7 @@ def build_original_configuration(catalog: dict, world: dict, template_id: str, *
         if UNUSABLE_SOURCE.intersection(source["concerns"]):
             raise _NotUsable("source-record-unusable")
         if row["replacement"] != "blank":
-            replacement = convert_resource(row["replacement"], "itm", row["campaign"], game)
+            replacement = convert_resource(row["replacement"], "itm", row["campaign"], game, names)
             if (source["kind"] not in ("cre-template", "embedded-cre", "container")
                     or replacement == item):
                 raise _NotUsable("replacement-not-applicable")
@@ -273,6 +274,8 @@ def build_original_configuration(catalog: dict, world: dict, template_id: str, *
             leave_out(row, "place", exclude[row["id"]])
         elif row["area_resource"] not in index["resources"]:
             leave_out(row, "place", "area-resource-absent")
+        elif row["binding_problem"] == "creature-never-appears":
+            leave_out(row, "place", row["binding_problem"])
         else:
             places.append(row)
     if not chosen or not places:
@@ -346,7 +349,8 @@ def build_original_configuration(catalog: dict, world: dict, template_id: str, *
             "group": "" if row["ident"] == "x" else f"{row['campaign']}:{row['ident']}"}
         if (draft["options"].get("totsc_tome", False) and
                 row["campaign"] == "bg1" and row["ident"] == "b2c"):
-            randomization["sources"][identity]["reward_variants"] = tome_variants(row["campaign"], game)
+            randomization["sources"][identity]["reward_variants"] = tome_variants(row["campaign"], game,
+                                                                                 names)
     plan["registrations"].sort(key=lambda row: row["id"])
     plan["target_registrations"].sort(key=lambda row: row["id"])
     plan["targets"].sort(key=lambda row: row["id"])
@@ -356,7 +360,8 @@ def build_original_configuration(catalog: dict, world: dict, template_id: str, *
                             f"{'reward' if count == 1 else 'rewards'} from it "
                             f"{'is' if count == 1 else 'are'} left out"
                             for mod, count in sorted(absent_mods.items())],
-            "not_used": not_used, "not_used_notes": _not_used_notes(not_used),
+            "not_used": not_used,
+            "not_used_notes": list(names.notes if names else ()) + _not_used_notes(not_used),
             "row_ids": row_ids}
 
 

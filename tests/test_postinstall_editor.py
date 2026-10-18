@@ -62,11 +62,16 @@ class EditorTests(unittest.TestCase):
     def test_presets_offered_are_those_of_the_game(self):
         fx = self.fx
         (fx.override / "EET.flag").unlink()
-        for marker, presets in (("oh6000", ["bg2-original"]), ("oh1000", ["bg1-original", "bg1-boss-loot"])):
-            with self.subTest(marker=marker):
-                for area in fx.override.glob("oh*.are"):
+        for markers, presets in ((("oh6000",), ["bg2-original"]),
+                                 (("oh1000",), ["bg1-original", "bg1-boss-loot"]),
+                                 # BG:EE with Siege of Dragonspear: also the SoD tables.
+                                 (("oh1000", "bd0010"), ["bg1-original", "sod-original", "bg1-sod-original",
+                                                         "bg1-boss-loot", "bg1-sod-boss-loot"])):
+            with self.subTest(markers=markers):
+                for area in (*fx.override.glob("oh*.are"), *fx.override.glob("bd*.are")):
                     area.unlink()
-                (fx.override / f"{marker}.are").write_bytes(make_are())
+                for marker in markers:
+                    (fx.override / f"{marker}.are").write_bytes(make_are())
                 fx.refresh()
                 self.reset_editor()
                 self.assertEqual([row["id"] for row in self.editor.get("/api/templates", {})], presets)
