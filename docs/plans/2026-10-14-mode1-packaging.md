@@ -390,6 +390,20 @@ path depth of five and one TP2 (`cir/cir.tp2`). That is within the archive limit
 uses for the 8.1.1 asset (1,024 entries, 4 MiB per entry, 16 MiB in total, ratio 100,
 depth 8). `VERSION` 1.0.0 stands until the first release; nothing is published.
 
+`tools/build_standalone.py` writes that ZIP unchanged together with the Windows
+standalone package `cir-v<VERSION>-windows.zip` from the same commit: the `cir/` folder,
+`cir/cir-configurator.exe` and `setup-cir.exe`. The executable is the Rust configurator,
+built by cargo from the commit's export with the static C runtime; the same tools build
+the same bytes, and `--verify` compares. `setup-cir.exe` is WeiDU 249.00 for x86-64, the
+installer tests' build, pinned by size and SHA-256 as CEBG pins it. Players unpack the
+package into the game folder, install with `setup-cir.exe` after their other mods and
+double-click `cir/cir-configurator.exe` (`configurator/README.md`, "Windows package").
+The builder refuses a mod ZIP beyond CEBG's limits; the executable (5,016,576 bytes) is
+over the 4 MiB entry limit, so it is only in the package. Built from `4ecbd03`, the mod
+ZIP has 119 files, 4,230,043 bytes uncompressed (2,663,858 as a ZIP) and a path depth of
+seven (`cir/lists/presets/<preset>/items/<pools>/<campaign>.2da`; CEBG allows eight);
+the package has 121 files (5,812,381 bytes).
+
 ## What CEBG needs
 
 - A new mod: component `0` of `cir/cir.tp2`, label `cir-randomiser`, language 0, no
@@ -418,7 +432,8 @@ depth 8). `VERSION` 1.0.0 stands until the first release; nothing is published.
 - **B1 Python.** The scanner, editor and exporter are Python 3.10+ (standard library
   only). Players must not need Python. Decided (2026-10-17): a CEBG version, and a
   standalone version with its own executable written in Rust for everyone else; the
-  Rust configurator is being built in a separate session.
+  Rust configurator is being built in a separate session. The standalone version is
+  the package of `tools/build_standalone.py` (see "Release ZIP").
 - **B2 Uninstall after Apply.** Closed by decision (2026-10-15): a game that used the
   randomiser and then uninstalled it is not ours to keep working. The default
   configuration's quest and dialogue changes moved into the installer anyway (see
@@ -560,7 +575,14 @@ Open:
   needs a game's IDS files; the suite compiles `baf/botsmith.baf`).
 - `tests/test_release_package.py`: EOL parity with Git, determinism, refused inputs,
   manifest integrity, coverage of every file `cir.tp2` installs or the configurator
-  reads, and English texts in UTF-8.
+  reads, and English texts in UTF-8; for the standalone package its layout, the
+  unchanged mod ZIP, WeiDU's pin, the configurator's source export and cargo call, the
+  executables it refuses (Visual C++ runtime, build folders) and CEBG's limits on the
+  mod ZIP.
+- `configurator/parity/package_check.py` on the package built from `4ecbd03`: unpacked
+  into the installer suite's synthetic BG2:EE, BG:EE and EET games, its `setup-cir.exe`
+  installs component 0, and its `cir/cir-configurator.exe`, started without arguments,
+  scans and edits as the reference does and applies (32 checks).
 - `tests/test_runtime_ui_adapter.py`: adapter routing and the not-running popup in Lua 5.1,
   Lua 5.3 and LuaJIT; `tests/test_campaign_native_host.py`: atomic capture, every player
   message and its start/cancel choice, also when Item Randomiser's Mode 1 or Mode 2 was

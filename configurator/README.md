@@ -45,6 +45,48 @@ cargo build --release --manifest-path configurator/Cargo.toml
 The executable is `configurator/target/release/cir-configurator.exe`. The only
 dependency is `sha2` (SHA-256 of every scanned and exported resource).
 
+## Windows package
+
+Players get the executable in the standalone package, which
+`tools/build_standalone.py` builds with the mod ZIP from one commit:
+
+```powershell
+python tools/build_standalone.py --commit HEAD --weidu 'D:/DisposableTools/weidu.exe' --out 'D:/CirRelease'
+```
+
+- `cir-v<VERSION>.zip` and its manifest: the mod ZIP of
+  `tools/build_release.py`, byte for byte. CEBG installs this one, so the
+  builder refuses it beyond CEBG's archive limits (1,024 entries, 4 MiB per
+  entry, 16 MiB in total, compression ratio 100, depth 8); the executable
+  alone is larger than 4 MiB.
+- `cir-v<VERSION>-windows.zip` and its manifest: the same `cir/` folder with
+  `cir/cir-configurator.exe`, and `setup-cir.exe` beside it. That is WeiDU
+  249.00 for x86-64, the build the installer tests use: `--weidu` must be
+  `WeiDU-Windows/weidu.exe` from
+  [WeiDU-Windows-249-amd64.zip](https://github.com/WeiDUorg/weidu/releases/tag/v249.00)
+  (1,364,992 bytes, SHA-256
+  `ad70f5897a6d0ba4b0d226f845a9b14cf345f56cc9697ca8d05cac9fe4932c1a`), whose
+  README allows distributing an unmodified binary copy. The manifest records
+  the size and SHA-256 of both programs, WeiDU's origin and the Rust toolchain.
+
+The executable is built from an export of the commit with the mod ZIP's line
+endings, so it embeds the bytes the mod installs: `cargo build --release
+--locked --bin cir-configurator --target x86_64-pc-windows-msvc`, with the C
+runtime linked statically (players need not have the Visual C++ runtime), the
+build folders remapped and a linker that writes no build time. The builder
+refuses an executable that needs the Visual C++ runtime or names a folder of
+the build machine. The same Rust and Visual C++ tools build the same
+executable: `--verify <package>` instead of `--out` rebuilds the package and
+compares it byte for byte. The executable runs on Windows 10 and later, as
+Rust's standard library does.
+
+Players unpack the package into the game folder, run `setup-cir.exe` after
+every other mod (it finds `cir/cir.tp2` by its own name) and then double-click
+`cir/cir-configurator.exe`. Neither program is signed, so Windows SmartScreen
+may ask before the first start. `configurator/parity/package_check.py` goes
+through these steps on synthetic games
+([Parity](#parity-with-the-python-reference)).
+
 ## Run
 
 The commands are those of `python tools/randomiser_config.py`, described in
@@ -145,6 +187,7 @@ python configurator/parity/replay_tests.py
 python configurator/parity/cli_check.py
 python configurator/parity/editor_check.py
 python configurator/parity/player_check.py
+python configurator/parity/package_check.py '<package ZIP>' --temp-root '<short folder>'
 python configurator/parity/game_check.py --game '<game folder>' --language en_US --scratch '<empty folder>'
 cargo test --manifest-path configurator/Cargo.toml --features cir-config/parity-overrides
 ```
@@ -179,6 +222,14 @@ build with the feature again before the checks.
   game without CIR, then a folder inside a game whose `WeiDU.log` records CIR),
   a game without CIR whose folder window is closed, and an incomplete
   installation.
+- `package_check.py` (Windows) unpacks a standalone package into the installer
+  suite's synthetic BG2:EE, BG:EE and EET games, installs CIR with the
+  package's `setup-cir.exe` (component 0, as batch installers run it) and
+  starts its `cir/cir-configurator.exe` without arguments, as
+  `player_check.py` does: the scans and the editor state equal the
+  reference's, nothing is written into the game before Apply, and Apply
+  works. It needs no build; WeiDU's path-length limits want a short
+  `--temp-root`.
 - `game_check.py` compares a real installation, used read-only: catalog and
   world, then every preset with each pool and several option sets (the fitted
   preset with its left-out rows, the unfitted build with the rows the runtime
