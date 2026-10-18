@@ -40,6 +40,15 @@ local function api()
             Infinity_ClickItem(item)
         end,
         saves=function() return assert(gameSaves.files) end,
+        -- LOAD lists the saves to import a party from (Import Game), not to load.
+        importing=function() return type(gameSaves)=="table" and gameSaves.isImporting==1 end,
+        -- CIR's popup offering "Start without randomiser" because its settings have
+        -- nothing to randomise in this campaign (prototype/M_FLPRUI.lua), not another reason.
+        plain_popup=function()
+            return type(Popup2Button)=="table" and Popup2Button.info=="FLPR_POPUP" and
+                Popup2Button.okText=="FLPR_START_PLAIN" and type(FLPRUI_Text)=="function" and
+                type(uiStrings)=="table" and uiStrings.FLPR_POPUP==FLPRUI_Text("other_campaign")
+        end,
         select_save=function(index) currentSave=index end,
         save_name=function(name) newSaveName=name end,
         new_save_selected=function() return currentSave==0 end,

@@ -70,9 +70,32 @@ function cases.lab_remote_poll_runs_qa_and_is_blocked_during_save_and_load(Core,
     assert(f.render_listener.name=="text_CHAPTERSCROLL_item")
     f.render_listener.fn(); assert(f.remote_polls==2 and f.qa_polls==5)
 end
+function cases.lab_import_mode_is_the_load_screen_flag(Core,Host,Globals,text)
+    local f=bootstrap(Core,Host,Globals,text)
+    local importing=lab(f).importing
+    gameSaves={isImporting=1,files={}}; assert(importing()==true)
+    gameSaves={isImporting=0,files={}}; assert(importing()==false)
+    gameSaves=nil; assert(importing()==false)
+end
+function cases.lab_plain_popup_is_only_cirs_other_campaign_question(Core,Host,Globals,text)
+    local f=bootstrap(Core,Host,Globals,text)
+    local plain=lab(f).plain_popup
+    local texts={other_campaign='nothing to randomise',setup_failed='could not randomise'}
+    FLPRUI_Text=function(key) return texts[key] end
+    uiStrings={FLPR_POPUP='nothing to randomise'}
+    Popup2Button={info='FLPR_POPUP',okText='FLPR_START_PLAIN'}
+    assert(plain()==true)
+    uiStrings.FLPR_POPUP='could not randomise'; assert(plain()==false)
+    uiStrings.FLPR_POPUP='nothing to randomise'
+    Popup2Button.okText='DONE_BUTTON'; assert(plain()==false)
+    Popup2Button={info=19531,okText='FLPR_START_PLAIN'}; assert(plain()==false)
+    Popup2Button=nil; assert(plain()==false)
+end
 '''
 CASE_NAMES = ("lab_save_ready_allows_protected_running_campaign_without_completing_it",
-              "lab_remote_poll_runs_qa_and_is_blocked_during_save_and_load")
+              "lab_remote_poll_runs_qa_and_is_blocked_during_save_and_load",
+              "lab_import_mode_is_the_load_screen_flag",
+              "lab_plain_popup_is_only_cirs_other_campaign_question")
 
 
 class LabQaModuleTests(unittest.TestCase):

@@ -9,6 +9,7 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
 import stage_fixture_qa_menu as helper
 
+POLLED = ("ESC_MENU", "POPUP_TWOBUTTON", "POPUP_FOURBUTTON", "SAVE", "SAVE_NEWSAVE", "LOAD")
 
 FIXTURE = '''\ufeff-- menu { name 'FAKE' }
 `local unused = {text = "menu { name 'FAKE' }"}`
@@ -26,6 +27,13 @@ menu {
  button {
   text "LOAD_GAME_BUTTON"
   action "Infinity_PopMenu(); startEngine:OnLoadGameButtonClick()"
+ }
+ button {
+  text "IMPORT_GAME_BUTTON"
+  action "
+   Infinity_PopMenu();
+   FLPRUI_ImportCharacter();
+  "
  }
 }
 menu {
@@ -54,6 +62,12 @@ menu {
   actionDbl "loadScreen:LoadGame(gameSaves.files[currentSave].fileName)"
  }
  button { text "LOAD_BUTTON" action "loadScreen:LoadGame(gameSaves.files[currentSave].fileName)" }
+ button {
+  on escape
+  text "BACK_BUTTON"
+  on escape
+  action "loadScreen:OnMainCancelButtonClick()"
+ }
 }
 menu {
  name 'SAVE'
@@ -100,8 +114,8 @@ class FixtureQAMenuTests(unittest.TestCase):
         for newline in ("\n", "\r\n"):
             source = FIXTURE.replace("\n", newline)
             updated, report = helper.enhance(source)
-            self.assertEqual(report["insertions"], 13)
-            self.assertEqual(report["added_polling"], ["ESC_MENU", "POPUP_TWOBUTTON", "POPUP_FOURBUTTON"])
+            self.assertEqual(report["insertions"], 18)
+            self.assertEqual(report["added_polling"], list(POLLED))
             restored = updated
             for binding in helper.BINDINGS:
                 marker = newline + f'\t\tname "{binding.name}"'
@@ -109,18 +123,30 @@ class FixtureQAMenuTests(unittest.TestCase):
                 restored = restored.replace(marker, "", 1)
             widget = (f'\ttext{newline}\t{{{newline}\t\tarea 0 0 1 1{newline}'
                       f'\t\ttext lua "EEexRemote.Poll()"{newline}\t}}{newline}')
-            self.assertEqual(restored.count(widget), 3)
+            self.assertEqual(restored.count(widget), 6)
             self.assertEqual(restored.replace(widget, ""), source)
 
     def test_end_polling_is_after_all_existing_widgets_and_attributes(self):
         updated, _ = helper.enhance(FIXTURE)
         tokens = helper.tokenize(updated)
         ends = helper.blocks(tokens)
+        checked = []
         for opening in ends:
             direct = helper.direct_tokens(tokens, ends, opening)
-            if helper.property_values(direct, "name") in (["ESC_MENU"], ["POPUP_TWOBUTTON"], ["POPUP_FOURBUTTON"]):
+            names = helper.property_values(direct, "name")
+            if tokens[opening - 1].value == "menu" and len(names) == 1 and names[0] in POLLED:
                 tail = updated[tokens[opening].start:tokens[ends[opening]].start]
                 self.assertTrue(tail.rstrip().endswith('text lua "EEexRemote.Poll()"\n\t}'))
+                checked.append(names[0])
+        self.assertEqual(sorted(checked), sorted(POLLED))
+
+    def test_save_and_load_screens_poll_because_273_closes_esc_menu_there(self):
+        # The QA runner advances through SAVE, SAVE_NEWSAVE and LOAD only while
+        # something polls on those screens.
+        self.assertTrue({"SAVE", "SAVE_NEWSAVE", "LOAD"} <= set(helper.POLLED_MENUS))
+        updated, _ = helper.enhance(FIXTURE)
+        extracted = helper.extract_menus(updated, ("SAVE", "SAVE_NEWSAVE", "LOAD"))
+        self.assertEqual(extracted.count('text lua "EEexRemote.Poll()"'), 3)
 
     def test_repeated_enhancement_is_idempotent(self):
         once, _ = helper.enhance(FIXTURE)
@@ -154,10 +180,50 @@ class FixtureQAMenuTests(unittest.TestCase):
             with self.subTest(source=source[-150:]), self.assertRaises(helper.MenuError):
                 helper.enhance(source)
 
+    def test_273_menus_spelling_bg2ee_main_menu_and_unrelated_duplicates_are_accepted(self):
+        # 2.7.3 writes popup texts with getUiString(...); BG2:EE has its single-player
+        # button in START_MAIN; BG:EE 2.7.3 defines MESSAGE_SCREEN twice.
+        source = (FIXTURE.replace('"t(Popup', '"getUiString(Popup')
+                  .replace('text "SINGLEPLAYER_BUTTON"', 'text "MULTIPLAYER_BUTTON"')
+                  + "menu { name 'MESSAGE_SCREEN' }\nmenu { name 'MESSAGE_SCREEN' }\n")
+        updated, report = helper.enhance(source)
+        self.assertEqual(report["unavailable"], [{"menu": "START", "name": "FLPR_QA_SINGLE", "reason": "no button"}])
+        self.assertEqual([entry["name"] for entry in report["bindings"]],
+                         [binding.name for binding in helper.BINDINGS if binding.name != "FLPR_QA_SINGLE"])
+        self.assertEqual(updated.count('name "FLPR_QA_POPUP_CONFIRM"'), 1)
+        self.assertEqual(updated.count('name "FLPR_QA_MAIN_MENU"'), 1)
+        with self.assertRaisesRegex(helper.MenuError, "Duplicate menu: ESC_MENU"):
+            helper.enhance(source + "menu { name 'ESC_MENU' }\n")
+
+    def test_optional_buttons_that_are_missing_changed_or_doubled_stay_unnamed(self):
+        # Another mod's UI or a game without CIR's import hook loses only that QA
+        # route; the save and load buttons are still named.
+        stock_import = FIXTURE.replace("FLPRUI_ImportCharacter();", "startEngine:OnImportGameButtonClick();")
+        back = 'text "BACK_BUTTON"'
+        cases = (
+            (stock_import, "FLPR_QA_START_IMPORT", "unexpected action"),
+            (FIXTURE.replace('text "IMPORT_GAME_BUTTON"', 'text "OTHER_BUTTON"'), "FLPR_QA_START_IMPORT", "no button"),
+            (FIXTURE.replace("menu {\n name 'LOAD'\n", "menu {\n name 'LOAD'\n button { " + back +
+                             " action \"loadScreen:OnMainCancelButtonClick()\" }\n"), "FLPR_QA_LOAD_BACK",
+             "several buttons"),
+            (FIXTURE.replace("menu\n{\n name 'START'\n", "menu\n{\n name 'START_OLD'\n"), "FLPR_QA_SINGLE", "no menu"),
+        )
+        for source, name, reason in cases:
+            with self.subTest(name=name, reason=reason):
+                updated, report = helper.enhance(source)
+                self.assertIn({"menu": next(b.menu for b in helper.BINDINGS if b.name == name), "name": name,
+                               "reason": reason}, report["unavailable"])
+                self.assertNotIn(f'name "{name}"', updated)
+                self.assertEqual(updated.count('name "FLPR_QA_START_LOAD"'), 1)
+                self.assertEqual(updated.count('name "FLPR_QA_LOAD_CONFIRM"'), 1)
+        # A changed action on a required button still refuses the whole staging.
+        with self.assertRaisesRegex(helper.MenuError, "Unexpected action"):
+            helper.enhance(FIXTURE.replace("startEngine:OnLoadGameButtonClick()", "startEngine:OnQuitButtonClick()"))
+
     def test_comment_mentions_do_not_count_as_poll_widgets(self):
         source = FIXTURE.replace("modal\n", 'modal\n -- EEexRemote.Poll()\n')
         _, report = helper.enhance(source)
-        self.assertEqual(report["added_polling"], ["ESC_MENU", "POPUP_TWOBUTTON", "POPUP_FOURBUTTON"])
+        self.assertEqual(report["added_polling"], list(POLLED))
 
     def test_extract_inactive_menus_preserves_only_the_requested_complete_blocks(self):
         updated, _ = helper.enhance(FIXTURE)
@@ -189,7 +255,7 @@ class FixtureQAMenuTests(unittest.TestCase):
             with patch.object(helper, "STAGING_ROOT", work):
                 output = work / "staged" / "UI.MENU"
                 report = helper.stage(source, output)
-                self.assertEqual(report["insertions"], 13)
+                self.assertEqual(report["insertions"], 18)
                 self.assertEqual(source.read_bytes(), original)
                 self.assertTrue(output.read_bytes().startswith(b"\xef\xbb\xbf"))
                 before = output.read_bytes()

@@ -198,9 +198,10 @@ text that names the item. Compiled spacing, line ends and letter case, other str
 and state numbers, and replies or blocks that another mod added stay as they are;
 every reply or block that gives the item is gated, so BG2:EE's and EET's own files
 both work. The configuration check runs the same recognition as Apply. A route it
-cannot prepare (nothing gives the item any more, one reply gives it twice, an action
-names it without giving it, the text that names it is gone, or its patch was changed
-afterwards) is left out with that reason, and Apply never refuses a route the check
+cannot prepare (nothing gives the item any more, one reply gives it twice, a reply
+gives it another way such as through `ActionOverride`, the text that names it is
+gone, or its patch was changed afterwards) is left out with that reason; actions that
+only take, show or use the item stay as they are, and Apply never refuses a route the check
 accepted. Routes that share one reward event, such as the egg deal's two dialogues
 or the three sculptors, are left out together. A party member's interjection
 (WeiDU's `INTERJECT_COPY_TRANS`, which many NPC mods use) can copy a quest's

@@ -88,6 +88,26 @@ agree. See [fixture status](native-fixture-status.md) for subsequent acceptance.
 
 Arbitrary remote-console commands remain blocked while SAVE, SAVE_NEWSAVE, or
 LOAD is present. The finite QA runner alone progresses through those screens,
-reporting to `flpr-fixture/qa-status.json`. A command submitted while blocked
+reporting to `flpr-lab/qa-status.json`. A command submitted while blocked
 remains pending; do not resend it. Moving a render-time native Save/Load call
 to the end of a menu is still not an established safe alternative.
+
+Import Game (`start_import`) uses the same LOAD screen in import mode. There the
+list names saves by path (`home:/save/<folder>`), and BG2:EE also lists BG:EE's
+default profile (`home:/../Baldur's Gate - Enhanced Edition/save/...`). The runner
+selects only a folder of the game's own profile; when the save is missing,
+ambiguous or LOAD is in the other mode, it presses Back first, so the console is
+free again, and then reports the failure.
+
+On 2.7.3 a campaign choice (BG2:EE's logos, BG:EE's campaign buttons, EET's
+campaign list) closes START and the engine finishes the reload, reopening START,
+only on the next mouse event. A player's mouse provides one at once. A lab game
+on a private desktop gets none, so the next queued click is used up by the
+reload and its button does nothing. Lab drivers queue one click on an inert
+label before the campaign choice and wait until START is back. EET 2.7.3 also
+opens START after every launch only on the first mouse event, so a lab driver
+starts an EET game with the same click.
+
+Save headers seen on 2.7.3: BG:EE's new-game template is GAME V1.1 but its saves
+are V2.0; BG2:EE writes V2.1 for Throne of Bhaal saves; EET wrote V2.0 for all
+four starts, ToB included. CIR's native GAM checks accept all three.

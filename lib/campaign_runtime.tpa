@@ -105,8 +105,10 @@ DEFINE_ACTION_MACRO flir_campaign_runtime_check_menu BEGIN
   END
 END
 
-// GAMEV2.0 variables are 84-byte records: name (32), type word at 0x20,
-// integer value at 0x28. An existing FLPR_FRESH = 1 is accepted unchanged.
+// BG2:EE and EET keep the template as GAME V2.0 (their Throne of Bhaal saves
+// are GAME V2.1), BG:EE as GAME V1.1; all have a 0xb4-byte header and 84-byte
+// variable records: name (32), type word at 0x20, integer value at 0x28. An
+// existing FLPR_FRESH = 1 is accepted unchanged.
 DEFINE_ACTION_MACRO flir_campaign_runtime_check_gam BEGIN
   ACTION_IF !FILE_EXISTS_IN_GAME ~BALDUR.GAM~ BEGIN
     FAIL @101513
@@ -119,7 +121,9 @@ DEFINE_ACTION_MACRO flir_campaign_runtime_check_gam BEGIN
       READ_ASCII 0 flir_rt_signature (8)
       READ_LONG 0x38 flir_rt_var_offset
       READ_LONG 0x3c flir_rt_var_count
-      PATCH_IF (~%flir_rt_signature%~ STRING_EQUAL ~GAMEV2.0~) AND flir_rt_var_count >= 0 AND
+      PATCH_IF ((~%flir_rt_signature%~ STRING_EQUAL ~GAMEV2.0~) OR (~%flir_rt_signature%~ STRING_EQUAL ~GAMEV2.1~) OR
+                (~%flir_rt_signature%~ STRING_EQUAL ~GAMEV1.1~)) AND
+               flir_rt_var_count >= 0 AND
                (flir_rt_var_count = 0 OR (flir_rt_var_offset >= 0xb4 AND
                 flir_rt_var_offset + flir_rt_var_count * 84 <= BUFFER_LENGTH)) BEGIN
         SET flir_rt_gam_valid = 1

@@ -778,7 +778,7 @@ def export_native(store: Path, catalog: dict, world: dict, output: Path,
                 kind, name = resource.split(":", 1)
                 live[resource] = (reader.read(kind, name) if name in reader.names(kind) and
                                   reader.origin(kind, name) == "override" else None)
-    kangaxx =any(m.get("original_options", {}).get("kangaxx") for m in manifests.values())
+    kangaxx = any(m.get("original_options", {}).get("kangaxx") for m in manifests.values())
     cursed = any("cursed_disguises" in m for m in manifests.values())
     reward_texts = {}
     container_texts = {}

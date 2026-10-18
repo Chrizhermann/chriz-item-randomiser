@@ -54,8 +54,10 @@ def fixture_items(items: list[dict], variant: str = "ground-piles") -> list[dict
 
 
 def parse_gam(data: bytes, variant: str = "ground-piles") -> dict:
-    if len(data) < 0xB4 or data[:8] != b"GAMEV2.0":
-        raise ScanError("Expected a complete GAME V2.0 header.")
+    # BG2:EE and EET save GAME V2.0 (V2.1 in Throne of Bhaal), BG:EE GAME
+    # V1.1: the same header, variable records and 0x160-byte party records.
+    if len(data) < 0xB4 or data[:8] not in (b"GAMEV2.0", b"GAMEV2.1", b"GAMEV1.1"):
+        raise ScanError("Expected a complete GAME V2.0, V2.1 or V1.1 header.")
     offset, count = number(data, 0x38), number(data, 0x3C)
     if count:
         span(data, offset, count * 84, "GAM global variables", 0xB4)
@@ -105,7 +107,7 @@ def parse_gam(data: bytes, variant: str = "ground-piles") -> dict:
                   else {**phase_labels, 5: "held", 7: "kept", 8: "lost"})
         phases[label] = {name: {"stored": value, "phase": labels.get(value, "invalid")}
                          for name, value in sorted(variables.items()) if re.fullmatch(f"FLPR_{prefix}[0-9]{{4}}", name)}
-    return {"format": "GAME V2.0", "game_time": number(data, 8),
+    return {"format": "GAME " + data[4:8].decode("ascii"), "game_time": number(data, 8),
             "current_area_header": text(data, 0x58, 8).lower(),
             "active_party_area_index": number(data, 0x1C, "h"),
             "globals": dict(sorted(variables.items())), "revision": revision,

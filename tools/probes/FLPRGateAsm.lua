@@ -132,6 +132,9 @@ return function(buffer, targets, policy)
         gate_capture_valid:
         mov qword ptr ds:[r10+72], 0
 ]]
+    -- The GAM being read: GAME V2.0 (BG2:EE, EET), GAME V2.1 (their saves in
+    -- Throne of Bhaal) or GAME V1.1 (BG:EE), the same 0xB4-byte header and
+    -- 84-byte variable records.
     local capture = save .. [[
         mov qword ptr ds:[r10+32], 0
         mov qword ptr ds:[r10+72], 5
@@ -148,7 +151,14 @@ return function(buffer, targets, policy)
         je gate_capture_log
         mov rax, 0x302e3256454d4147
         cmp qword ptr ds:[r14], rax
+        je gate_capture_version
+        mov rax, 0x312e3256454d4147
+        cmp qword ptr ds:[r14], rax
+        je gate_capture_version
+        mov rax, 0x312e3156454d4147
+        cmp qword ptr ds:[r14], rax
         jne gate_capture_log
+        gate_capture_version:
         mov eax, dword ptr ds:[r14+0x38]
         cmp eax, 0xB4
         jb gate_capture_log
