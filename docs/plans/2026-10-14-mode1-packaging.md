@@ -181,7 +181,8 @@ need no such guard: a second run finds nothing left to change.
 After the whole mod stack is installed, the player scans the game (`scan`, `world`) and
 applies a configuration from the editor with the game closed (`ui ... --apply-game`). Apply
 writes `randomiser-campaigns/` data, campaign-aware dialogue/script/spell resources and the
-`BGEE.LUA` journal in `override`, and appends strings to `lang/<language>/dialog.tlk`.
+`BGEE.LUA` journal in `override`, and appends strings to `lang/<language>/dialog.tlk`
+(and to its `dialogF.tlk` under the same numbers, where the language has one).
 WeiDU does not track these writes. `activation.validate_runtime` accepts CIR's
 installation as well as the hand-staged lab layout.
 
@@ -294,6 +295,29 @@ capturing is restored and the source gate is disarmed when any step fails, so st
 without randomiser leaves no partial campaign. Messages appear in the engine's
 `POPUP_TWOBUTTON`, whose text area holds about four lines; translations should stay
 similarly short.
+
+## Translations
+
+The installer offers English and Polish (Item Randomiser's own translation; CIR's new
+lines, the player messages @1700-@1706 and the journal texts @1650-@1653, fall back to
+English there). The configurator writes text into the game's language (`lang/<code>`),
+whatever language CIR was installed in:
+
+- **Reward texts of the extended pools** (2026-10-18): the 20 lines Item Randomiser
+  rewords where a BG2 quest's text names its reward, read by the game's language from
+  `languages/<folder>/` (`tools/flir_config/translations.py`), with a translation's
+  female wording in `dialogF.tlk`. English, Polish and German (written for this; Chris
+  reviews it). In other languages those routes are left out with the reason. Open: the
+  other BG2:EE languages (Czech, Spanish, French, Italian, Korean, Brazilian Portuguese,
+  Russian, Ukrainian, Chinese). Call for translators, with the exact lines:
+  [translating-reward-texts.md](../translating-reward-texts.md).
+- **Still English only:** the Kangaxx option (`hlskull.tra`, `in-game.tra`
+  @1500-@1504; Polish has them) and the cursed disguise option's names and
+  descriptions. In another language Apply refuses them ("Original quest options
+  currently require English game text", "Original cursed-disguise text currently
+  requires English"); the configuration check does not leave them out first. Next: read
+  them through `translations.py` as well and leave them out in the check where a
+  language has no translation.
 
 ## EEex dependency
 

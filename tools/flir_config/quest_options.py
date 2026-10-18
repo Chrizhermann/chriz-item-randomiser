@@ -33,12 +33,31 @@ def _check(data: bytes, expected: str, label: str) -> None:
 
 
 def _texts(path: str) -> dict[int, str]:
-    # Match original delimiters, including multiline text and duplicate @1502
-    # (WeiDU uses the last definition). Retain authored CRLFs.
     with (ROOT / path).open(encoding="utf-8", newline="") as stream:
-        source = stream.read()
-    return {int(match[1]): match[3] for match in re.finditer(
-        r'(?m)^@(\d+)\s*=\s*([~"])(.*?)\2', source, re.DOTALL)}
+        return tra_texts(stream.read())
+
+
+# A TRA entry: @number = ~text~ [sound], optionally followed by its female
+# wording ~text~ [sound], which WeiDU writes to dialogf.tlk.
+_TRA_ENTRY = re.compile(r'(?m)^@(\d+)\s*=\s*([~"])(.*?)\2(?:\s*\[[^\]]*\])?(?:\s*([~"])(.*?)\4)?', re.DOTALL)
+
+
+def tra_texts(source: str) -> dict[int, str]:
+    """The texts of a TRA file's source, by number.
+
+    Match original delimiters, including multiline text and duplicate @1502
+    (WeiDU uses the last definition). Retain authored CRLFs.
+    """
+    return {number: male for number, (male, _) in tra_variants(source).items()}
+
+
+def tra_variants(source: str) -> dict[int, tuple[str, str]]:
+    """(text, female wording) of a TRA file's source, by number, as tra_texts reads them.
+
+    An entry without a female wording has its text as both.
+    """
+    return {int(match[1]): (match[3], match[3] if match[4] is None else match[5])
+            for match in _TRA_ENTRY.finditer(source)}
 
 
 def _refs(refs: dict[int, int], required: range | tuple[int, ...]) -> None:
@@ -320,7 +339,9 @@ def prepare_quest_options(resources: dict[str, bytes], tlk: bytes, *,
     """
     if type(kangaxx) is not bool:
         raise ProfileError("Original quest option selections must be Booleans")
-    if language.casefold() not in {"en_us", "en_gb", "english"}:
+    # Only Kangaxx's texts are English-only; other game text may be prepared
+    # in the same pass.
+    if kangaxx and language.casefold() not in {"en_us", "en_gb", "english"}:
         raise ProfileError("Original quest options currently require English game text")
     output = {}
 

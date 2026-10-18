@@ -43,6 +43,7 @@ from .container_rewards import (RESOURCE_TARGETS as CONTAINER_RESOURCES,
                                 prepare_container_texts, treasure_area, treasure_container)
 from .platform import game_platform
 from .reward_copies import RewardCopies
+from .game_text import GameTextError, paired, text_files, unpaired
 from .reward_routes import ChangedSinceScan, reward_routes
 from .original_catalog import container_target_spec
 from .cursed_disguises import validate_cursed_disguise_spec, prepare_cursed_disguises
@@ -787,30 +788,48 @@ def export_native(store: Path, catalog: dict, world: dict, output: Path,
     if kangaxx or cursed or text_rewards or container_text_resources:
         root = Path(catalog["game_root"])
         language = catalog["language"]
-        tlk_relative = (Path("dialog.tlk") if language == "default"
-                        else Path("lang") / language / "dialog.tlk")
-        tlk = _export_tlk((root / tlk_relative).read_bytes(), output / "game-overrides" / tlk_relative)
+        male, female = text_files(root, language)
+        tlk_relative = male.relative_to(root)
+        tlk = _export_tlk(male.read_bytes(), output / "game-overrides" / tlk_relative)
+        # The language's dialogf.tlk gets every appended text under the same
+        # number. Where it holds another number of strings than dialog.tlk, the
+        # configuration check left the reward text routes out, and other
+        # appended texts leave it as it is.
+        reason = unpaired(male, female)
+        _require(not (reason and (text_rewards or container_text_resources)),
+                 f"Item Randomiser's reward texts cannot be prepared: {reason}")
+        female_relative = None if female is None or reason else female.relative_to(root)
+        female_tlk = (None if female_relative is None else
+                      _export_tlk(female.read_bytes(), output / "game-overrides" / female_relative))
+        try:
+            text = paired(tlk, female_tlk)
+        except GameTextError:
+            raise ProfileError("Game text changed since export; rescan into a fresh export directory") from None
         _require(journal is not None, "The game has no BGEE.LUA journal table")
         patches, tlk = prepare_quest_options(
             {resource[4:] + "." + resource[:3]: data for resource, data in resource_bytes.items()},
-            tlk, kangaxx=kangaxx, language=language)
+            text.male, kangaxx=kangaxx, language=language)
+        text = paired(tlk, text.female)
         if kangaxx:
             journal = patch_kangaxx_journal(journal, patches["hlskull.dlg"])
         if text_rewards:
-            tlk, reward_texts = prepare_reward_texts(tlk, text_rewards, language)
+            text, reward_texts = prepare_reward_texts(text, text_rewards, language)
         if container_text_resources:
-            tlk, container_texts = prepare_container_texts(tlk, container_text_resources, language)
+            text, container_texts = prepare_container_texts(text, container_text_resources, language)
         for revision, manifest in sorted(manifests.items()):
             if "cursed_disguises" not in manifest:
                 continue
             fixture, assets, tlk = prepare_cursed_disguises(manifest["cursed_disguises"],
                 {name[4:]: data for name, data in resource_bytes.items() if name.startswith("itm:")},
-                tlk, language=language)
+                text.male, language=language)
+            text = paired(tlk, text.female)
             compiled[revision]["cursed_disguises"] = fixture
             for name, data in assets.items():
                 pending[f"campaign-store/revisions/{revision}.cursed/{name}"] = data
         pending["resource-overrides/BGEE.LUA"] = journal
-        pending["game-overrides/" + tlk_relative.as_posix()] = tlk
+        pending["game-overrides/" + tlk_relative.as_posix()] = text.male
+        if female_relative is not None:
+            pending["game-overrides/" + female_relative.as_posix()] = text.female
         for name, data in patches.items():
             pending["resource-overrides/" + name.upper()] = data
         for native in compiled.values():
