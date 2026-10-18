@@ -14,6 +14,7 @@ from test_mode2_rewards import dialogue_fixture
 from test_postinstall_world_formats import item_record, make_are, make_cre
 from test_postinstall_resources import snapshot
 from flir_config import container_rewards, mode2_rewards
+from flir_config.game_text import GameText
 from flir_config.campaigns import read_campaign, write_campaign
 from flir_config.original_catalog import resolve_template
 from flir_config.original_configuration import build_original_configuration
@@ -244,7 +245,7 @@ class OriginalOptionExportTests(unittest.TestCase):
         transfer['source_record'] = deepcopy(physical['record'])
         transfer['source_resource_sha256'] = hashlib.sha256(creature).hexdigest()
         with patch.dict(mode2_rewards.TRANSFER_SPECS, {'trgeni01': transfer}):
-            _, refs = mode2_rewards.prepare_reward_texts(tlk, (spec['resource'],), 'en_US')
+            _, refs = mode2_rewards.prepare_reward_texts(GameText(tlk), (spec['resource'],), 'en_US')
             changed = mode2_rewards.patch_reward(spec['resource'], original, refs=refs[spec['resource']])
             configuration = self.mode2_configuration(f, 'bg2:mode2:item:32', 'bg2:mode2:target:32')
             revision = write_campaign(configuration['profile'], f.catalog, f.world,
@@ -313,7 +314,7 @@ class OriginalOptionExportTests(unittest.TestCase):
         spec['source_record'] = deepcopy(physical['record'])
         spec['source_resource_sha256'] = hashlib.sha256(creature).hexdigest()
         with patch.dict(mode2_rewards.REWARDS, {'udlesa': spec}):
-            _, refs = mode2_rewards.prepare_reward_texts(tlk, (spec['resource'],), 'en_US')
+            _, refs = mode2_rewards.prepare_reward_texts(GameText(tlk), (spec['resource'],), 'en_US')
             changed = mode2_rewards.patch_reward(spec['resource'], original, refs=refs[spec['resource']])
             configuration = self.mode2_configuration(f, 'bg2:mode2:item:42', 'bg2:mode2:target:45')
             self.assertEqual(configuration['plan']['registrations'], [])

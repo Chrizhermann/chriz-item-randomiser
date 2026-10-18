@@ -206,8 +206,17 @@ gated: the item would come from another speaker than the one that carries it, CI
 changes that dialogue for something else, or another reply there gives the item in
 another way ("XNPCJ.DLG state 0 also gives SHLD26, but not with a copy of a reward
 reply of UHOGRE01.DLG, so the route cannot tell whether it is the same reward").
-Routes that show Item Randomiser's reward text need the English game text and
-`BGEE.LUA`. Each check run reads these files again when the game folder changed
+Routes that show Item Randomiser's reward text (the BG2 quests that name their reward,
+the golems' chests) need `BGEE.LUA` and that text in the game's language: English,
+Polish and German so far (`tools/flir_config/translations.py`). In another language they
+are left out with the reason ("Item Randomiser's reward texts have no Spanish
+translation yet"), never shown in English; translators can add a language with
+[translating-reward-texts.md](translating-reward-texts.md). Apply appends the texts to
+`lang/<language>/dialog.tlk` and, where the language has one, to `dialogF.tlk` under
+the same numbers, with the translation's female wording, which the game shows to a
+female protagonist. A game whose `dialogF.tlk` holds another number of strings than its
+`dialog.tlk` leaves those routes out, since a new text could not get the same number
+in both. Each check run reads these files again when the game folder changed
 since the last one, so a reward file, or a dialogue the route's copies were looked
 for in, that changed after the scan stops that check until the game is scanned
 again. Saved games keep the revision they started with, and its files never
