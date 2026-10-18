@@ -398,11 +398,11 @@ the same bytes, and `--verify` compares. `setup-cir.exe` is WeiDU 249.00 for x86
 installer tests' build, pinned by size and SHA-256 as CEBG pins it. Players unpack the
 package into the game folder, install with `setup-cir.exe` after their other mods and
 double-click `cir/cir-configurator.exe` (`configurator/README.md`, "Windows package").
-The builder refuses a mod ZIP beyond CEBG's limits; the executable (5,016,576 bytes) is
-over the 4 MiB entry limit, so it is only in the package. Built from `4ecbd03`, the mod
-ZIP has 119 files, 4,230,043 bytes uncompressed (2,663,858 as a ZIP) and a path depth of
+The builder refuses a mod ZIP beyond CEBG's limits; the executable (5,002,240 bytes) is
+over the 4 MiB entry limit, so it is only in the package. Built from `c2d24ca`, the mod
+ZIP has 114 files, 4,215,876 bytes uncompressed (2,659,121 as a ZIP) and a path depth of
 seven (`cir/lists/presets/<preset>/items/<pools>/<campaign>.2da`; CEBG allows eight);
-the package has 121 files (5,812,381 bytes).
+the package has 116 files (5,798,896 bytes).
 
 ## What CEBG needs
 
