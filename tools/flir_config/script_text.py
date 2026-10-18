@@ -197,6 +197,17 @@ def block_actions(responses: bytes, newline: bytes) -> list[Action]:
     return result
 
 
+def response_spans(responses: bytes, newline: bytes) -> list[tuple[int, int]]:
+    """The span of each alternative response (RE ... RE) of a block's responses.
+
+    The engine runs one of them, chosen by weight.
+    """
+    marks = [match.start() for match in re.finditer(rb"(?m)^RE" + re.escape(newline), responses)]
+    if len(marks) % 2:
+        raise ScriptError("a block has a response that is not closed")
+    return [(marks[index], marks[index + 1] + len(b"RE" + newline)) for index in range(0, len(marks), 2)]
+
+
 def block_triggers(conditions: bytes, newline: bytes) -> list[Trigger]:
     """Every trigger of a block's conditions, in order."""
     nl = re.escape(newline)

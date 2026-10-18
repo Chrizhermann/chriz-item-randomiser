@@ -34,7 +34,7 @@ from .quest_options import _Dialogue, _texts
 from .quest_rewards import _global_action, _global_guard
 from .game_text import GameTextError, _append_texts
 from .script_text import (argument, block_actions, block_parts, calls, integer_argument, joined,
-                          named, naming, script_blocks, string_argument)
+                          named, naming, response_spans, script_blocks, string_argument)
 
 ADAPTER_ID = "mode2-reward-v1"
 
@@ -191,6 +191,16 @@ _TEXT_TRAILER = b"FLPRM2T1"
 _DEPARTURE = (b'EEex_LuaAction("EEex_Action_QueueResponseStringOnAIBase('
               b'[[DestroySelf()]],EEex_LuaAction_Object)")')
 _EMPTY_OBJECT = re.compile(rb'(?:0 )+""')
+# The engine's actions that put an item somewhere (ACTION.IDS of the 2.7
+# games): opcode -> name, the dialogue argument and the compiled string that
+# name the item they give. Other actions that name the reward take, use, show
+# or test it; after a moved reward they find it gone, as triggers do when the
+# player sold it, so they never stop a route.
+_GIVING = {140: ("GiveItemCreate", 0, 0), 82: ("CreateItem", 0, 0), 15: ("GiveItem", 0, 0),
+           14: ("GetItem", 0, 0), 256: ("CreateItemGlobal", 2, 1), 278: ("TakeItemReplace", 0, 0),
+           356: ("TransformItem", 1, 1), 9: ("DropItem", 0, 0), 257: ("PickUpItem", 0, 0),
+           363: ("AddStoreItem", 1, 1)}
+_GIVING_CALLS = {name.lower(): text for name, text, _ in _GIVING.values()}
 
 
 def source_spec(source_id: str) -> dict:
@@ -302,20 +312,33 @@ def _callback(spec: dict, numeric: bool) -> bytes:
             f'[[original-target:{target[0]}]])")').encode()
 
 
-def _dialogue_grants(dialogue: _Dialogue, spec: dict, label: str) -> dict[tuple[int, int], object]:
+def _gives_item(text: bytes, call, item: str) -> bool:
+    """Whether a dialogue action puts the item somewhere (see _GIVING)."""
+    index = _GIVING_CALLS.get(call.name.decode("ascii").lower())
+    return index is not None and (string_argument(text, call, index) or b"").lower() == item.encode()
+
+
+def _dialogue_grants(dialogue: _Dialogue, spec: dict, label: str,
+                     only: dict[int, set[int]] | None = None) -> dict[tuple[int, int], object]:
     """Every reply that gives the route's item, with the call that gives it.
 
     A created reward is given with GiveItemCreate, a carried one with
-    GiveItem. Every action that names the item must be such a grant, one per
-    reply, so that gating the grants gates every way this dialogue gives it.
+    GiveItem: that call is the grant, one per reply, and gating the grants
+    gates every way this dialogue gives the item. A reply that gives it
+    another way, with another action or through another actor, cannot be
+    gated. <only> limits the search to these replies (state -> ordinals).
     """
     item = spec["item"]
     wanted = "GiveItem" if spec.get("grant_kind") == "transfer" else "GiveItemCreate"
     shown = item.upper()
     grants = {}
     for state_index, state in enumerate(dialogue.states):
+        if only is not None and state_index not in only:
+            continue
         first, count = _outgoing(dialogue, state, label)
         for ordinal in range(count):
+            if only is not None and ordinal not in only[state_index]:
+                continue
             flags, _, _, _, action_id = struct.unpack_from("<5I", dialogue.transitions[first + ordinal])
             if not flags & 4:
                 continue
@@ -328,11 +351,22 @@ def _dialogue_grants(dialogue: _Dialogue, spec: dict, label: str) -> dict[tuple[
                 raise ProfileError(f"{where} names {shown} in actions that cannot be read")
             given = []
             for call in found:
+                if not _names(text[call.start:call.end], item):
+                    continue
                 if named(call, wanted) and (string_argument(text, call, 0) or b"").lower() == item.encode():
                     given.append(call)
-                elif _names(text[call.start:call.end], item):
-                    raise ProfileError(f"{where} names {shown} in {call.name.decode('ascii')}(), "
-                                       f"not in a {wanted}() grant")
+                elif named(call, "ActionOverride"):
+                    # Another actor runs the action, and its recipient means
+                    # what it means to that actor.
+                    inner = calls(text, *call.args[1]) if len(call.args) == 2 else None
+                    if inner is None:
+                        raise ProfileError(f"{where} names {shown} in actions that cannot be read")
+                    if any(_gives_item(text, nested, item) for nested in inner):
+                        raise ProfileError(f"{where} gives {shown} through ActionOverride(), "
+                                           "whose recipient the route cannot mark")
+                elif _gives_item(text, call, item):
+                    raise ProfileError(f"{where} also gives {shown} with {call.name.decode('ascii')}(), "
+                                       "which the route cannot gate")
             if len(given) > 1:
                 raise ProfileError(f"{where} gives {shown} twice in one reply")
             if given:
@@ -344,17 +378,15 @@ def _dialogue_grants(dialogue: _Dialogue, spec: dict, label: str) -> dict[tuple[
     return grants
 
 
-def _display_edits(text: bytes, refs: dict[int, int], where: str) -> list[tuple[int, int, bytes]]:
-    """Point each displayed original strref of a grant's actions at its new text."""
-    found = calls(text) or []
+def _display_edits(text: bytes, refs: dict[int, int], shown: set[int]) -> list[tuple[int, int, bytes]]:
+    """Point every original strref a grant's actions show at its new text; <shown> collects them."""
     edits = []
-    for old, new in refs.items():
-        spots = [(call, index) for call in found for index in range(len(call.args))
-                 if integer_argument(text, call, index) == old]
-        if len(spots) != 1:
-            raise ProfileError(f"{where} does not show text {old} once where it gives the reward")
-        call, index = spots[0]
-        edits.append((*call.args[index], str(new).encode()))
+    for call in calls(text) or []:
+        for index, span in enumerate(call.args):
+            old = integer_argument(text, call, index)
+            if old in refs:
+                edits.append((*span, str(refs[old]).encode()))
+                shown.add(old)
     return edits
 
 
@@ -392,19 +424,26 @@ def _following(dialogue: _Dialogue, rows: list[bytes], label: str) -> list[int]:
 
 
 def _patch_dialogue(data: bytes, specs: tuple[dict, ...], *, action_refs=None,
-                    defer_departure=True, numeric_target=True, reasons: dict | None = None) -> bytes:
+                    defer_departure=True, numeric_target=True, reasons: dict | None = None,
+                    only: dict[str, dict[int, set[int]]] | None = None, resource: str | None = None,
+                    shown: set[int] | None = None) -> bytes:
     """Gate every reply that gives a route's item, for each recognised route.
 
     A route whose grant is not recognised keeps its replies as they are; its
     reason goes to <reasons>. With no route recognised, nothing is prepared.
+    <only> limits a route to the given replies, as in a dialogue that holds
+    copies of its reward replies (<resource> names that dialogue); <shown>
+    collects the strrefs of <action_refs> that a grant shows.
     """
-    resource = specs[0]["resource"]
+    resource = resource or specs[0]["resource"]
     label = _label(resource)
     dialogue = _read_dialogue(data, resource)
+    shown = set() if shown is None else shown
     grants, failures = {}, {}
     for spec in specs:
         try:
-            grants[spec["route"]] = _dialogue_grants(dialogue, spec, label)
+            grants[spec["route"]] = _dialogue_grants(dialogue, spec, label,
+                                                     None if only is None else only[spec["route"]])
         except ProfileError as exc:
             failures[spec["route"]] = str(exc)
     if reasons is not None:
@@ -449,7 +488,7 @@ def _patch_dialogue(data: bytes, specs: tuple[dict, ...], *, action_refs=None,
                         changed = _mark(spec, argument(text, call, 1)) + replacement + b"\r\n" + _event(spec)
                     edits.append((call.start, call.end, changed))
                 if any(choices) and action_refs:
-                    edits += _display_edits(text, action_refs, where)
+                    edits += _display_edits(text, action_refs, shown)
                 dialogue.triggers.append(condition)
                 dialogue.actions.append(_edited(text, edits))
                 struct.pack_into("<I", branch, 0, flags | 2)
@@ -487,6 +526,51 @@ def _valid_refs(refs, resource: str) -> bool:
             all(type(value) is int and 0 <= value < 0xFFFFFFFF for value in refs.values()))
 
 
+def _gate_start_states(dlg: _Dialogue, states: list, starts: list[tuple[int, int]],
+                       clones: dict[int, int], flag: str) -> None:
+    """Gate each cloned start state and its clone on the route's flag.
+
+    The engine tries start states in the order of their conditions in the
+    state trigger table, so the gated pair takes the original condition's
+    place. When every other start condition comes before the cloned ones,
+    appending the pairs keeps that order (the layout earlier exports used).
+    """
+    if not starts:
+        return
+    cloned = {index for index, _ in starts}
+    entries = [entry for _, entry in starts]
+    others = {struct.unpack_from("<I", state, 12)[0] for index, state in enumerate(states)
+              if index not in cloned} - {0xFFFFFFFF}
+    old = list(dlg.state_triggers)
+
+    def gate(entry: int, selected: bool) -> bytes:
+        return joined(old[entry], f'{"" if selected else "!"}Global("{flag}","GLOBAL",1)\r\n'.encode())
+
+    if entries == sorted(set(entries)) and all(entry > other for entry in entries for other in others):
+        for index, entry in starts:
+            for selected, target in ((False, states[index]), (True, dlg.states[clones[index]])):
+                dlg.state_triggers.append(gate(entry, selected))
+                struct.pack_into("<I", target, 12, len(dlg.state_triggers) - 1)
+        return
+    table, moved, pairs = [], {}, {}
+    for position, text in enumerate(old):
+        if position in others or position not in entries:
+            moved[position] = len(table)
+            table.append(text)
+        for index, entry in starts:
+            if entry == position:
+                pairs[index] = (len(table), len(table) + 1)
+                table += [gate(entry, False), gate(entry, True)]
+    for index, state in enumerate(states):
+        entry = struct.unpack_from("<I", state, 12)[0]
+        if index in pairs:
+            struct.pack_into("<I", state, 12, pairs[index][0])
+            struct.pack_into("<I", dlg.states[clones[index]], 12, pairs[index][1])
+        elif entry != 0xFFFFFFFF:
+            struct.pack_into("<I", state, 12, moved[entry])
+    dlg.state_triggers[:] = table
+
+
 def _patch_text_dialogue(data: bytes, resource: str, refs: dict[int, int], *,
                          defer_departure=True, numeric_target=True) -> bytes:
     if not _valid_refs(refs, resource):
@@ -496,12 +580,13 @@ def _patch_text_dialogue(data: bytes, resource: str, refs: dict[int, int], *,
         raise ProfileError("A text route needs exactly one source flag")
     flag = specs[0]["selected_global"]
     action_refs = {old: refs[old] for old in ACTION_TEXT_REFS.get(resource, ())}
+    shown: set[int] = set()
     dlg = _read_dialogue(_patch_dialogue(data, specs, action_refs=action_refs,
                                          defer_departure=defer_departure,
-                                         numeric_target=numeric_target), resource)
+                                         numeric_target=numeric_target, shown=shown), resource)
     label = _label(resource)
     original_states = list(dlg.states)
-    clones, found = {}, set(action_refs)
+    clones, found, starts = {}, set(shown), []
     for index, state in enumerate(original_states):
         text, first, count, entry = struct.unpack("<4I", state)
         _outgoing(dlg, state, label)
@@ -522,13 +607,11 @@ def _patch_text_dialogue(data: bytes, resource: str, refs: dict[int, int], *,
         struct.pack_into("<II", clone, 4, len(dlg.transitions), len(rows))
         dlg.transitions.extend(rows)
         if entry != 0xFFFFFFFF:
-            prior = _string(dlg.state_triggers, entry, label)
-            for selected, target in ((False, state), (True, clone)):
-                dlg.state_triggers.append(joined(prior,
-                    f'{"" if selected else "!"}Global("{flag}","GLOBAL",1)\r\n'.encode()))
-                struct.pack_into("<I", target, 12, len(dlg.state_triggers) - 1)
+            _string(dlg.state_triggers, entry, label)
+            starts.append((index, entry))
         clones[index] = len(dlg.states)
         dlg.states.append(clone)
+    _gate_start_states(dlg, original_states, starts, clones, flag)
     if found != set(refs):
         missing = ", ".join(map(str, sorted(set(refs) - found)))
         raise ProfileError(f"{label} no longer shows the text that names the reward ({missing})")
@@ -736,37 +819,49 @@ def _with_integer(action: bytes, newline: bytes, value: int) -> bytes:
     return action[:start] + str(value).encode() + action[start + number.end():]
 
 
+def _script_grant_opcode(spec: dict) -> int:
+    # A reward container creates the item in itself; others give it.
+    return 82 if spec["recipient_local"] is None else 140
+
+
 def _script_grants(script, spec: dict, label: str) -> dict[int, tuple]:
-    """Each block that gives the route's item: its parts, the grant and any display."""
+    """Each block that gives the route's item: its parts, its grants and displays.
+
+    A block runs one of its alternative responses, so each response may give
+    the item once, with the route's grant. The displays are the actions that
+    show the text naming the reward.
+    """
     item = spec["item"].encode("ascii").lower()
     container = spec["recipient_local"] is None
-    # A reward container creates the item in itself; others give it.
-    opcode, verb = (82, "CreateItem") if container else (140, "GiveItemCreate")
+    opcode = _script_grant_opcode(spec)
     shown = spec["item"].upper()
     refs = TEXT_REFS.get(spec["resource"], {})
     found = {}
     for index, block in enumerate(script.blocks):
         if not _names(block, spec["item"]):
             continue
+        where = f"{label} block {index}"
         head, conditions, responses = block_parts(block, script.newline)
-        grants, displays = [], []
-        for action in block_actions(responses, script.newline):
-            if action.integer in refs:
-                displays.append(action)
-            if item not in (value.lower() for value in action.strings):
-                continue
-            if action.opcode != opcode:
-                raise ProfileError(f"{label} block {index} names {shown} in action {action.opcode}, "
-                                   f"not in a {verb}() grant")
-            if not container and not _EMPTY_OBJECT.fullmatch(action.objects[0]):
-                raise ProfileError(f"{label} block {index} gives {shown} through another actor")
-            grants.append(action)
-        if len(grants) > 1:
-            raise ProfileError(f"{label} block {index} gives {shown} twice")
-        if len(displays) > 1:
-            raise ProfileError(f"{label} block {index} shows the text that names the reward twice")
+        actions = block_actions(responses, script.newline)
+        grants, displays = [], [action for action in actions if action.integer in refs]
+        for first, last in response_spans(responses, script.newline):
+            given = []
+            for action in actions:
+                name, _, string = _GIVING.get(action.opcode, (None, 0, 0))
+                if not first <= action.start < last or name is None or action.strings[string].lower() != item:
+                    continue
+                if action.opcode != opcode:
+                    raise ProfileError(f"{where} also gives {shown} with {name}(), which the route cannot gate")
+                if not container and not _EMPTY_OBJECT.fullmatch(action.objects[0]):
+                    # Its recipient means what it means to the other actor.
+                    raise ProfileError(f"{where} gives {shown} through ActionOverride(), "
+                                       "whose recipient the route cannot mark")
+                given.append(action)
+            if len(given) > 1:
+                raise ProfileError(f"{where} gives {shown} twice in one response")
+            grants += given
         if grants:
-            found[index] = (head, conditions, responses, grants[0], displays[0] if displays else None)
+            found[index] = (head, conditions, responses, grants, displays)
     if not found:
         raise ProfileError(f"{label} has no block that gives {shown}")
     if refs and not any(row[4] for row in found.values()):
@@ -781,21 +876,24 @@ def _patch_script(data: bytes, spec: dict, text_ref: int | None = None) -> bytes
         raise ProfileError(f"{label} requires allocated original reward text")
     with naming(label):
         script = script_blocks(data)
-        grants = _script_grants(script, spec, label)
+        found = _script_grants(script, spec, label)
     newline = script.newline
     container = spec["recipient_local"] is None
+    event = _global_action(spec["event_global"], newline)
     blocks = list(script.blocks)
-    for index, (head, conditions, responses, grant, display) in grants.items():
-        original = responses[grant.start:grant.end]
-        mark = b"" if container else _marker_action(grant, spec, newline)
-        event = _global_action(spec["event_global"], newline)
+    for index, (head, conditions, responses, grants, displays) in found.items():
         variants = []
         for selected in (False, True):
-            replacement = _global_action(spec["consumed_global"], newline) if selected else original
-            edits = [(grant.start, grant.end, mark + replacement + event)]
-            if selected and display:
-                edits.append((display.start, display.end,
-                              _with_integer(responses[display.start:display.end], newline, text_ref)))
+            edits = []
+            for grant in grants:
+                mark = b"" if container else _marker_action(grant, spec, newline)
+                replacement = (_global_action(spec["consumed_global"], newline) if selected
+                               else responses[grant.start:grant.end])
+                edits.append((grant.start, grant.end, mark + replacement + event))
+            if selected:
+                edits += [(display.start, display.end,
+                           _with_integer(responses[display.start:display.end], newline, text_ref))
+                          for display in displays]
             variants.append(head + b"CO" + newline + conditions +
                             _global_guard(spec["selected_global"], selected, newline) + b"CO" + newline +
                             _edited(responses, edits))
@@ -845,18 +943,23 @@ def _unpatched_script(data: bytes, spec: dict, newline: bytes, selected: bytes,
             numbers.update(action.integer for action in block_actions(block_parts(block, newline)[2], newline))
             continue
         if unselected in block:
-            block = block.replace(unselected, b"", 1)
-            responses = block_parts(block, newline)[2]
+            head, conditions, responses = block_parts(block.replace(unselected, b"", 1), newline)
             item = spec["item"].encode("ascii").lower()
+            opcode = _script_grant_opcode(spec)
             grants = [action for action in block_actions(responses, newline)
-                      if item in (value.lower() for value in action.strings)]
-            if len(grants) != 1:
+                      if action.opcode == opcode and action.strings[0].lower() == item]
+            if not grants:
                 raise _changed_patch(resource)
-            grant = responses[grants[0].start:grants[0].end]
-            mark = b"" if container else _marker_action(grants[0], spec, newline)
-            if block.count(mark + grant + event) != 1:
-                raise _changed_patch(resource)
-            block = block.replace(mark + grant + event, grant, 1)
+            # Each grant kept its marker before it and the event after it.
+            parts, at = [], 0
+            for grant in grants:
+                mark = b"" if container else _marker_action(grant, spec, newline)
+                start, end = grant.start - len(mark), grant.end + len(event)
+                if start < at or responses[start:grant.start] != mark or responses[grant.end:end] != event:
+                    raise _changed_patch(resource)
+                parts += [responses[at:start], responses[grant.start:grant.end]]
+                at = end
+            block = head + b"CO" + newline + conditions + b"CO" + newline + b"".join(parts) + responses[at:]
         restored.append(block)
     return script.prefix + b"".join(restored) + script.suffix, numbers
 
