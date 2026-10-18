@@ -27,8 +27,10 @@ on EET 2.7.3.0, where the same rows bind under EET's names (see below).
 
 ## Tiers
 
-One tier per chapter section. Vanilla SoD has no way back to earlier areas, so an item
-stays in its section: a later item in an earlier chest would be out of reach.
+One tier per chapter section, so each item stays in the part of SoD where the game puts
+it. This is for balance only: mixed sections would hand a later item out early, or an
+earlier one late, but lose nothing. Every source is guarded from the new game on, and a
+container gets its item when its area loads, wherever the item came from.
 
 | Tier | Section | Areas |
 | --- | --- | --- |
