@@ -184,9 +184,10 @@ build with the feature again before the checks.
   them, and re-export of the configurator's own earlier patches; the game text
   in `dialog.tlk` and `dialogF.tlk`; the translations of every shipped
   language, translation folders as WeiDU leaves them, the TRA reader and every
-  one- and two-byte sequence of each code page), and the game folder lookup: the executable in `cir` and in `cir/tools`, no
-  game above it, the nearest of nested games, CIR not installed (other
-  components, other mods, commented log lines) and installed by marker or log.
+  one- and two-byte sequence of each code page), and the game folder lookup:
+  the executable in `cir` and in `cir/tools`, no game above it, the nearest of
+  nested games, CIR not installed (other components, other mods, commented log
+  lines) and installed by marker or log.
   The folder window's interface is checked without showing the window.
   The reference's checks on its reviewed EET resources run, as there, only
   when its resource cache `work/original-preset-runtime-20260929/mode2-resources`
