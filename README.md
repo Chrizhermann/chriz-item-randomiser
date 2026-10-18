@@ -29,30 +29,38 @@ CIR is in development and has no release yet.
 
 ## Installation
 
-Extract the release into the game directory so the `cir` folder is beside `chitin.key`.
-Supply a current WeiDU executable for your platform as `setup-cir`, then run it. Install
-CIR after every mod that changes the user interface or the new-game template (`UI.MENU`,
-`BALDUR.GAM`).
+Extract the release into the game directory so the `cir` folder is beside `chitin.key`,
+then run `setup-cir`. The Windows package (`cir-v<version>-windows.zip`) contains
+`setup-cir.exe`, a copy of WeiDU, and the configurator; with the mod archive alone
+(`cir-v<version>.zip`), supply a current WeiDU executable for your platform as
+`setup-cir`. Install CIR after every mod that changes the user interface or the new-game
+template (`UI.MENU`, `BALDUR.GAM`).
 
 Installing changes nothing in play until a configuration is applied: after the whole
-mod stack is installed, close the game and double-click `cir/cir-configurator.exe`. It
-scans the game and opens the configurator in the browser to apply a configuration; it
-needs no Python. See the [readme](readme-cir.html).
+mod stack is installed, close the game and double-click `cir/cir-configurator.exe` (from
+the Windows package). It scans the game and opens the configurator in the browser to
+apply a configuration; it needs no Python. See the [readme](readme-cir.html).
 
 ## Development
 
 The [post-install configurator](docs/post-install-configurator.md) scans the installed
-game and applies configurations; it currently needs Python 3.10 or later. The
+game and applies configurations. Players use `cir-configurator.exe`, its Rust build in
+[configurator](configurator/README.md); the Python reference in `tools/flir_config`
+needs Python 3.10 or later. The
 [packaging plan](docs/plans/2026-10-14-mode1-packaging.md) describes the installer's
-contract and what still blocks the first release.
+contract.
 
 Release packages are built from a commit, never the working tree, and are
 byte-reproducible with the same zlib version. `tools/release-package.json` lists
-the published files:
+the published files. `build_release.py` writes the mod archive; `build_standalone.py`
+writes it together with the Windows package (WeiDU as `setup-cir.exe` and the
+configurator):
 
 ```powershell
 python tools/build_release.py --commit HEAD --out <directory>
 python tools/build_release.py --commit <commit> --verify <zip>
+python tools/build_standalone.py --commit HEAD --weidu <weidu.exe> --out <directory>
+python tools/build_standalone.py --commit <commit> --weidu <weidu.exe> --verify <windows zip>
 ```
 
 `python tools/engine_patterns.py <Baldur.exe>` checks whether the runtime finds all
