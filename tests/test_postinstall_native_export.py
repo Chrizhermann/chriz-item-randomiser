@@ -287,6 +287,42 @@ class NativeExportTests(unittest.TestCase):
         self.assertEqual((self.output / "next.lua").read_bytes(), _render_lua(b))
         self.assertEqual(snapshot(self.game), game_before)
 
+    def test_an_area_an_earlier_revision_guards_must_stay_as_it_was(self):
+        # At every start the runtime compares the area each revision's guarded
+        # sources recorded with the one pristine copy of it. A new revision would
+        # replace that copy with the changed area, and the earlier revision would
+        # then stop the runtime for every game: Apply says so and writes nothing.
+        earlier = self.write()
+        self.export(earlier)
+        changed = bytearray(self.area)
+        changed[0x30] ^= 1
+        (self.override / "area.are").write_bytes(changed)
+        self.refresh()
+        later = self.write(("synth001", "synth002"))
+        before = snapshot(self.output)
+        with self.assertRaisesRegex(ProfileError, f"Saved games of revision {earlier[:12]} need AREA.ARE as it was "
+                                    "when they were exported, but it changed in the game since then"):
+            self.export(later)
+        self.assertEqual(snapshot(self.output), before)
+
+    def test_an_earlier_revision_keeps_its_files_when_a_file_it_only_reads_changed(self):
+        earlier = self.write()
+        self.export(earlier)
+        revisions = self.output / "campaign-store" / "revisions"
+        files = {path.name: path.read_bytes() for path in revisions.iterdir() if path.name.startswith(earlier)}
+        # The target creature changes; the runtime does not compare it at start.
+        creature = bytearray((self.override / "actor.cre").read_bytes())
+        creature[0x24] ^= 1
+        (self.override / "actor.cre").write_bytes(creature)
+        self.refresh()
+        later = self.write(("synth001", "synth002"))
+        result = self.export(later)
+        self.assertEqual(result["revisions"], sorted([earlier, later]))
+        self.assertEqual({path.name: path.read_bytes() for path in revisions.iterdir()
+                          if path.name.startswith(earlier)}, files)
+        self.assertEqual(result["notes"], [f"Saved games of revision {earlier[:12]} keep the settings exported "
+                                           "earlier, although ACTOR.CRE changed since then"])
+
     def test_rescan_can_add_unrelated_resources_without_rewriting_saved_configuration(self):
         revision = self.write()
         self.export(revision)

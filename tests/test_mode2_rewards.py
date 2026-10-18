@@ -1,4 +1,5 @@
-"""Portable preservation checks and optional pinned-resource Mode 2 evidence."""
+"""The extended pools' quest reward routes, recognised by meaning in synthetic
+resources, and the reviewed EET resources as regression evidence when present."""
 import hashlib
 import json
 from pathlib import Path
@@ -6,7 +7,6 @@ import re
 import struct
 import sys
 import unittest
-from unittest.mock import patch
 
 from lupa.lua51 import LuaRuntime as Lua51
 from lupa.lua53 import LuaRuntime as Lua53
@@ -19,12 +19,94 @@ from flir_config.profiles import ProfileError
 from flir_config.quest_options import _Dialogue
 from flir_config.quest_rewards import _blocks
 from flir_config.resources import _Tlk
+from flir_config.script_text import script_blocks
 from test_postinstall_resources import make_tlk
+
+# The reviewed EET resources and their exact patches (text routes with the
+# reward texts appended to an empty dialog.tlk). The adapter no longer pins
+# these; they show that recognising by meaning patches them exactly as the
+# reviewed patches did.
+REVIEWED_EET = {
+    "bcs:asysta01": ("f0f1773357f2280b7b6a05695ff278650110dc60898e2c7ddc1241867782fadd",
+                     "26bf2a67793e7b05fe35781f85ec4885aac806520927c35deba9aed5a2f5b841"),
+    "bcs:ddwell": ("4d2232892ce30f7e55333f696bb2717e5208e3d588e0ef77e990fc0077955544",
+                   "d0422206eb8c983e6fc14dea29ec78a8607674dd74548c0ff29be93fbd0accdb"),
+    "dlg:amcler01": ("5bac12a183463f6faa912b15e80c45c321cd2189f318c5056cf38b2150a6d79e",
+                     "4f891f7909f6d3f0f22e747b5f2cb2bdb5b96d6875e95c7ab299719cd7cedf28"),
+    "dlg:ammayor": ("d37409df94285e4bdce88bdfdb38382790dca567dc6304744244d9d5504030d6",
+                    "d71af3922a33954154f7f2745df7466647465ad3920b6a04548b6a9df73a2e05"),
+    "dlg:aran": ("da4bebc9ceb58fad2d34cf261b73d458ece55ad70128c656ede9e44a8631cee1",
+                 "26551e099ce0936a8e0da8e128ae41546650d058685091849cc6406a882d50a7"),
+    "dlg:bharval": ("ef4e704dc616f3658410cb798bb48b323b49b3b419986ff0345eb81979fb2730",
+                    "d1ca99803daf9f609ea13f438eb75fe65ffb87d0f417b483a4873ece6006f31a"),
+    "dlg:bhnalla": ("038818ff7d8e4fc3a62e10530b74764657e26b3f44203ebd1877db7535d17ab3",
+                    "69fa93487cb7f0f4aa9883733e5d8a784155dbb726e06d88c595f591dfd763d5"),
+    "dlg:bhoisig": ("5a55df4f2a0b814027735467fbf69017d9a13b0cd749d8566cf4f57c1f932377",
+                    "43ca1ecf37968c0737109cb06b8c9fbb522a2becbe51a89662ef1d14df3c52f7"),
+    "dlg:gorbat1": ("c1da7c158296ed5e553942a735ebc84773007b099a4eadb1cc78a50142a0088a",
+                    "39d7e944e7d9efb983bb34013e7be3a9ab7cca2825d18010f16a22da60443c27"),
+    "dlg:gorcamb": ("76cdb11e99cdbd676d7af08f48713fceb01061ea6180e762e6be1c997f3b1de4",
+                    "cae698747ba37b187f0ab294ec01401630b868e1572c3f7717d5ed258bcd8665"),
+    "dlg:gorlum2": ("8228c02ac6dee8ac4652ad550a0fef83a8ddf2d59400fcb7c1e025f6395b5e9c",
+                    "28a2a669d4388c155abfcece1857611260628717e38c3bb49b1af245ce1e4ca5"),
+    "dlg:gortan1": ("27a8575386e30a36a1f00f63c2004a095f301b511cd310eb03e36606265f3f3c",
+                    "0a70f5274d7eacfd4c0c1941266c7bd9be3e5332026f24116c3cadfa6c441ede"),
+    "dlg:hendak": ("0f5a4956e7ee05cb5d6a02e2d61bcf8be0ab575ecd921af31656578330b4a804",
+                   "b19099dbd5a42cbb653b1a7abba30aeda7dbdc5697ba0e95106fe39ba7b1b7c4"),
+    "dlg:lehtin": ("a067828ca2055d4c3fd406c43672d9da3547e92b3da67a5eb84b341fdbebd2d1",
+                   "980b634e457adec11ba48405c65dbc5f9c6d032eac0d51bfcf8703d1eb6c44bf"),
+    "dlg:loutcapt": ("1bb3dc1337c087cc049f0d4fa431f4a7f909dbfacabf4dd30087d8b4f52f2d98",
+                     "9a7db245aa8f59ff1743421ed4621b96391521f48e8f6eeafb0d44070a1ddd25"),
+    "dlg:mgkhol01": ("d4762221de29275f29a3516980cf2b6360612a1670ad5733f3e599a1ba72e3ea",
+                     "3a47fea6c2cdb1405267342bad65ecc58741481006153dd3a15b43c3807decfd"),
+    "dlg:ppdjinn": ("06c1671065b549921263594db378d7610223cb16b70b7f718b3885b45b32af38",
+                    "cf0269858c28d24c6e837074c8b6d7dfae267fee0b3d5bce647cd0f60734b332"),
+    "dlg:ppstat01": ("7022962710da01f3d66088d8f7c5aa2a7963d7e994ff0d55f61dc5b64c9673ae",
+                     "69505c964ee036a6d9b974407e34cbd4ff35f4cebd10373819c5ef2f5d50f73a"),
+    "dlg:riftg03": ("4bb8a0866e3470ae558c108160ebef18c33de9f14ad3181ccf33ebd0d5e4912a",
+                    "34e7c5e57d9e69394b40ce09f4c5cd5a5e6249d871b676c82bafbd3d707f3ff5"),
+    "dlg:scsain": ("c2a43b0d67eca9b531aa591463f74d5333225a95f0be87f8d03ed1cf91f8dafe",
+                   "cd1db0265daa8dc239bbe1a325cdf2ad3fc0033f3bf8eaba981a46e65c91b148"),
+    "dlg:sctelwyn": ("d5dd048c43e16ba937ff583eef8f5966e549fb0c4e3f92679883d35fcdda1759",
+                     "6be82dfdf03c7b5f8bbeee67681344e1cb753a803fe461181c52e23ab5434067"),
+    "dlg:scyarryl": ("f96880bdabcfe8393d9ad6df502d3d001e2d79913736e480f6cc717f012dd367",
+                     "247dd86c080239e80b4cd07516127a1ce55d90e12c6087b983ff935a3ffaea51"),
+    "dlg:trgeni01": ("4220763c55e065bfb2f500aa9d615a1a1e112ae3fc60eee061a3d9f3f59f7549",
+                     "0e7674a115890c50bc5cf23ae66bc428e1e39e601368130cae732b95b5502715"),
+    "dlg:trhmer01": ("e5651fc5ef72780fe2ce9bb6ec8c3632665a5279d41cf79244fbef393304752e",
+                     "21aac581490c963ecf778f2ffc760bb3c56cce5be72fd637f783e70eccdbdd75"),
+    "dlg:uddemon": ("582fbcfecf3e71363dff1aa9bcef4dbc202d28c3af6e66e6a29840b342f1bdfd",
+                    "b1976c5f2f0b948ec00f972348b5ef208b0ba127bbc5678297b133747836a042"),
+    "dlg:udlesa": ("6c518483372ebe4073986dc2d41e4f7ae73a7bce133aab4289a29ef1be7c7e50",
+                   "4af88ce4eede1adcf79556223c0535768d94c8a8af5409380f21fe7c43984ee4"),
+    "dlg:udsilver": ("48f697db47942b74b4530975a5a4a46cac1a0cc850453b2b9d50ab173b01090c",
+                     "593cdf5a0313db7065fb2c1eaafc8efc309485d3b5a654c24b585f397e94917b"),
+    "dlg:udsvir03": ("5918919ea366eceb27f4096f025cde79c44310a9e57bcd49d123fdbb48352994",
+                     "2003095671c146bb3d06b92fcc17df06dc18e5be4ab59a0e5d17bfd6db412e66"),
+    "dlg:uhmay01": ("4213656595fdde6afeefee881597ddd62814ba886747bc4d60cfca25a2d852be",
+                    "45f6042dd98804a72901084fdfd503a61dd7738c45b85724f2e2a008a45e395d"),
+    "dlg:uhogre01": ("8706469468f7277542ba0e6d7fcf44b47a15d36c3879f505464e0a119be00b97",
+                     "722213d1f53966780ab8bba2e2dbe400e64c14ced6da2ff9f48b43749b629e25"),
+}
 
 
 def outgoing(dialogue, state):
     first, count = struct.unpack_from("<II", dialogue.states[state], 4)
     return dialogue.transitions[first:first + count]
+
+
+def grant_in(actions, spec):
+    """The grant of the route's item in one reply's actions, and its recipient."""
+    verb = b"GiveItem" if spec.get("grant_kind") == "transfer" else b"GiveItemCreate"
+    found = list(re.finditer(rb'(?i)\b' + verb + rb'\(\s*"' + re.escape(spec["item"].encode()) +
+                             rb'"\s*,\s*([^,()]+?)\s*(?:,[^()]*)?\)', actions))
+    assert len(found) == 1, actions
+    return found[0][0], found[0][1]
+
+
+def guarded(prior, guard):
+    """A reply condition with a guard line added, as the adapter joins it."""
+    return prior + (b"\r\n" if prior and not prior[-1:].isspace() else b"") + guard
 
 
 TRGENI_DEPARTURE = (b'EEex_LuaAction("EEex_Action_QueueResponseStringOnAIBase('
@@ -39,6 +121,13 @@ def trgeni_terminal_actions():
     for other in ("trgeni02", "trgeni03"):
         actions.extend(f'ActionOverride("{other}",{action})' for action in effects)
     return "\r\r\n".join(actions + effects) + "\r\r\n"
+
+
+def fixture_target(quest, state):
+    """Where a fixture reply leads: TRGENI's grants lead on to the genies' departure."""
+    if quest == "trgeni01" and state in (35, 36, 37, 38, 40):
+        return {35: 36, 40: 36, 36: 37, 37: 38}.get(state)
+    return 2
 
 
 def dialogue_fixture(specs):
@@ -67,9 +156,39 @@ def dialogue_fixture(specs):
             action += 'EraseJournalEntry(12345)\r\r\nWait(1)\r\r\nEscapeArea()'
             if spec["quest"] == "trgeni01" and state in (37, 38):
                 action = trgeni_terminal_actions()
-            transitions.append(dialogue.transition(2, reply=9876, journal=12345,
-                               trigger=f'Global("OriginalCondition","GLOBAL",{ordinal})', action=action))
+            transitions.append(dialogue.transition(fixture_target(spec["quest"], state), reply=9876,
+                               journal=12345, trigger=f'Global("OriginalCondition","GLOBAL",{ordinal})',
+                               action=action))
         dialogue.state(555 + state, transitions)
+    return dialogue.render()
+
+
+def layout_dialogue(name, states, *, beamdog=True):
+    """A DLG as Beamdog's compiler writes it (LF between lines, none after the
+    last) or as WeiDU does (CRLF after every line).
+
+    <states> lists each state's replies as (trigger, actions, next state or None).
+    """
+    header = bytearray(b"DLG V1.0" + bytes(44))
+    struct.pack_into("<10I", header, 8, 0, 52, 0, 52, 52, 0, 52, 0, 52, 0)
+    dialogue = _Dialogue(bytes(header), name)
+    line = (lambda text: text) if beamdog else (lambda text: text.replace("\n", "\r\n"))
+    for number, replies in enumerate(states):
+        dialogue.state(60000 + number, [dialogue.transition(target, reply=70000 + number, trigger=line(trigger),
+                                                            action=line(actions))
+                                        for trigger, actions, target in replies])
+    if beamdog:
+        dialogue.triggers = [text.rstrip(b"\r\n") for text in dialogue.triggers]
+        dialogue.actions = [text.rstrip(b"\r\n") for text in dialogue.actions]
+    return dialogue.render()
+
+
+def with_actions(data, name, changes):
+    """The dialogue with the actions of some replies replaced: {(state, ordinal): text}."""
+    dialogue = _Dialogue(data, name)
+    for (state, ordinal), text in changes.items():
+        row = outgoing(dialogue, state)[ordinal]
+        dialogue.actions[struct.unpack_from("<I", row, 16)[0]] = text
     return dialogue.render()
 
 
@@ -77,14 +196,25 @@ def obj(selector=0):
     return f'0 0 0 0 0 0 0 {selector} 0 0 0 0 ""OB\n'
 
 
-def action(opcode, value=0, text="", target=0):
-    return (f'AC\n{opcode}OB\n{obj()}OB\n{obj(target)}OB\n{obj()}'
-            f'{value} 0 0 0 0"{text}" "" AC\n')
+def action(opcode, value=0, text="", target=0, actor=0, second=""):
+    return (f'AC\n{opcode}OB\n{obj(actor)}OB\n{obj(target)}OB\n{obj()}'
+            f'{value} 0 0 0 0"{text}" "{second}" AC\n')
 
 
-def block(actions):
-    condition = f'TR\n16399 1 0 0 0 "AR1202Quest" "" OB\n{obj()}TR\n'
-    return 'CR\nCO\n' + condition + 'CO\nRS\nRE\n100' + actions + 'RE\nRS\nCR\n'
+def block(actions, condition="AR1202Quest"):
+    return alternatives(actions, condition=condition, weight=100)
+
+
+def alternatives(*responses, condition="AR1202Quest", weight=50):
+    """A block whose responses the engine chooses between by weight."""
+    condition = f'TR\n16399 1 0 0 0 "{condition}" "" OB\n{obj()}TR\n'
+    return ('CR\nCO\n' + condition + 'CO\nRS\n' +
+            "".join(f'RE\n{weight}' + actions + 'RE\n' for actions in responses) + 'RS\nCR\n')
+
+
+def well_reward(target=21, display=40850):
+    return (action(30, 2, "AR1202DragonWell") + action(151, display, target=1) +
+            action(140, text="helm21", target=target) + action(177))
 
 
 def script_fixture(name):
@@ -92,24 +222,26 @@ def script_fixture(name):
         return ('SC\n' + block(action(164, 20000) + action(82, text="Helm19") +
                                 action(82, text="Misc8y") + action(30, 2, "AR1512PlantedItems")) + 'SC\n').encode()
     other = block(action(151, 40849, target=1))
-    return ('SC\n' + other + block(action(30, 2, "AR1202DragonWell") +
-            action(151, 40850, target=1) + action(140, text="helm21", target=21) +
-            action(177)) + other + 'SC\n').encode()
+    return ('SC\n' + other + block(well_reward()) + other + 'SC\n').encode()
 
 
 class Mode2RewardTests(unittest.TestCase):
     def synthetic_patch(self, name, original):
-        with patch.dict(rewards.ORIGINAL_HASHES, {name: hashlib.sha256(original).hexdigest()}), \
-                patch.dict(rewards.PATCHED_HASHES, {name: ""}):
-            result = rewards.patch_reward(name, original, ddwell_ref=100001)
-            with patch.dict(rewards.PATCHED_HASHES, {name: hashlib.sha256(result).hexdigest()}):
-                self.assertEqual(rewards.patch_reward(name, result), result)
-                with self.assertRaisesRegex(ProfileError, "changed"):
-                    rewards.patch_reward(name, result[:-1] + b"tampered")
+        result = rewards.patch_reward(name, original, ddwell_ref=100001)
+        self.assertEqual(rewards.patch_reward(name, result), result)
+        self.assertFalse(rewards.own_patch(name, original))
+        self.assertTrue(rewards.own_patch(name, result))
+        self.assertEqual(rewards.route_reasons(name, original), {})
+        self.assertEqual(rewards.route_reasons(name, result), {})
+        tampered = result.replace(b"FLPR_", b"OTHER", 1)
+        with self.assertRaisesRegex(ProfileError, "carries a changed copy of the reward route's own patch"):
+            rewards.patch_reward(name, tampered)
+        self.assertIn("changed copy", next(iter(rewards.route_reasons(name, tampered).values())))
         return result
 
-    def check_dialogue(self, name, original, result, action_refs=None):
+    def check_dialogue(self, name, original, result, action_refs=None, branches=None):
         spec = rewards.resource_specs("dlg:" + name)[0]
+        branches = spec["branches"] if branches is None else branches
         before, after = _Dialogue(original, name), _Dialogue(result, name)
         self.assertEqual(after.state_triggers, before.state_triggers)
         self.assertEqual(after.actions[:len(before.actions)], before.actions)
@@ -119,7 +251,7 @@ class Mode2RewardTests(unittest.TestCase):
             old, new = outgoing(before, index), outgoing(after, index)
             cursor = 0
             for ordinal, transition in enumerate(old):
-                if (index, ordinal) not in spec["branches"]:
+                if (index, ordinal) not in branches:
                     if name == "trgeni01" and index in (37, 38):
                         self.assertEqual(new[cursor][:16], transition[:16])
                         self.assertEqual(new[cursor][20:], transition[20:])
@@ -137,14 +269,15 @@ class Mode2RewardTests(unittest.TestCase):
                 flags, _, _, trigger, action_id = struct.unpack_from("<5I", transition)
                 original_action = before.actions[action_id]
                 prior = before.triggers[trigger] if flags & 2 else b""
+                grant, recipient = grant_in(original_action, spec)
                 for selected in (False, True):
                     branch = new[cursor]; cursor += 1
                     self.assertEqual(struct.unpack_from("<I", branch)[0], flags | 2)
                     self.assertEqual(branch[4:12], transition[4:12])  # Reply and journal.
                     self.assertEqual(branch[20:], transition[20:])  # Link/exit state.
                     trigger_id, action_id = struct.unpack_from("<II", branch, 12)
-                    self.assertEqual(after.triggers[trigger_id], prior +
-                        f'{"" if selected else "!"}Global("{spec["selected_global"]}","GLOBAL",1)\r\n'.encode())
+                    self.assertEqual(after.triggers[trigger_id], guarded(prior,
+                        f'{"" if selected else "!"}Global("{spec["selected_global"]}","GLOBAL",1)\r\n'.encode()))
                     changed = after.actions[action_id]
                     if spec.get("inventory_target"):
                         target = spec["target_ids"][0].rsplit(":", 1)[1]
@@ -154,17 +287,19 @@ class Mode2RewardTests(unittest.TestCase):
                         self.assertNotIn(spec["event_global"].encode(), changed)
                         restored = changed.replace(event, b"", 1)
                         if selected and action_refs:
-                            for old, new in action_refs.items():
-                                self.assertEqual(restored.count(f'DisplayStringHead(Myself,{new})'.encode()), 1)
-                                restored = restored.replace(f'DisplayStringHead(Myself,{new})'.encode(),
-                                                            f'DisplayStringHead(Myself,{old})'.encode(), 1)
+                            for old_ref, new_ref in action_refs.items():
+                                self.assertEqual(restored.count(f'DisplayStringHead(Myself,{new_ref})'.encode()), 1)
+                                restored = restored.replace(f'DisplayStringHead(Myself,{new_ref})'.encode(),
+                                                            f'DisplayStringHead(Myself,{old_ref})'.encode(), 1)
                     else:
-                        marker = f'ActionOverride({spec["recipient"]},SetGlobal("{spec["recipient_local"]}","LOCALS",1))\r\n'.encode()
+                        # The grant's own recipient, as this reply names it.
+                        marker = (b"ActionOverride(" + recipient +
+                                  f',SetGlobal("{spec["recipient_local"]}","LOCALS",1))\r\n'.encode())
                         event = f'\r\nSetGlobal("{spec["event_global"]}","GLOBAL",1)'.encode()
                         self.assertEqual(changed.count(marker), 1)
                         self.assertEqual(changed.count(event), 1)
+                        self.assertLess(changed.index(marker), changed.index(event))
                         restored = changed.replace(marker, b"", 1).replace(event, b"", 1)
-                    grant = rewards._dialogue_grant(original_action, spec)
                     if selected:
                         self.assertNotIn(grant, changed)
                         consumed = f'SetGlobal("{spec["consumed_global"]}","GLOBAL",1)'.encode()
@@ -174,6 +309,7 @@ class Mode2RewardTests(unittest.TestCase):
                         self.assertLess(changed.index(event), changed.index(b"EscapeArea()"))
                     if b"DestroySelf()" in changed:
                         self.assertLess(changed.index(event), changed.index(b"DestroySelf()"))
+            self.assertEqual(cursor, len(new))
 
     def test_dialogue_both_campaign_routes_keep_exact_recipient_and_surrounding_actions(self):
         for resource in rewards.RESOURCE_REWARDS:
@@ -182,6 +318,126 @@ class Mode2RewardTests(unittest.TestCase):
                 with self.subTest(resource=name):
                     original = dialogue_fixture(rewards.resource_specs(resource))
                     self.check_dialogue(name, original, self.synthetic_patch(name, original))
+
+    def test_grants_are_found_by_meaning_in_another_layout_with_another_mods_replies(self):
+        # Beamdog-compiled texts without trailing line breaks, other strrefs and
+        # state numbers, letter case and spacing, another recipient and charges.
+        # Another mod added a reply that gives nothing and a path that gives the
+        # reward too: every reply that gives it is gated, nothing else changes.
+        states = [[("", 'SetGlobal("OgreTalk","LOCALS",1)', 9)] for _ in range(9)]
+        states.append([
+            ('PartyHasItem("misc5x")',
+             'TakePartyItem("misc5x")\nGiveItemCreate("SHLD26",LastTalkedToBy,0,0,0)\nAddexperienceParty(9000)', None),
+            ('!PartyHasItem("misc5x")', 'GIVEITEMCREATE("shld26",Player1,1,0,0)\nEscapeArea()', None),
+            ('Global("OtherMod","GLOBAL",1)', 'SetGlobal("OtherMod","GLOBAL",2)', 12)])
+        states += [[("", "", None)], [("", "", None)],
+                   [("", ' GiveItemCreate( "Shld26" , LastTalkedToBy , 0 , 0 , 0 ) \nSetGlobal("OtherMod","GLOBAL",3)',
+                     None)]]
+        gated = ((9, 0), (9, 1), (12, 0))
+        for beamdog in (True, False):
+            with self.subTest(beamdog=beamdog):
+                original = layout_dialogue("uhogre01", states, beamdog=beamdog)
+                result = self.synthetic_patch("uhogre01", original)
+                self.check_dialogue("uhogre01", original, result, branches=gated)
+                after = _Dialogue(result, "uhogre01")
+                # Both gated replies became two each; the added reply follows.
+                actions = after.actions[struct.unpack_from("<I", outgoing(after, 9)[4], 16)[0]]
+                self.assertEqual(actions.rstrip(b"\r\n"), b'SetGlobal("OtherMod","GLOBAL",2)')
+                self.assertIn(b'ActionOverride(Player1,SetGlobal("FLPR_RM2_14","LOCALS",1))',
+                              b"".join(after.actions))
+
+    def test_routes_the_check_cannot_recognise_name_their_reason(self):
+        original = dialogue_fixture(rewards.resource_specs("dlg:uhogre01"))
+        grant = 'GiveItemCreate("shld26",LastTalkedToBy,0,0,0)'
+        cases = (
+            ({(22, 0): b"GiveGoldForce(500)", (22, 1): b"GiveGoldForce(500)"},
+             "UHOGRE01.DLG has no reply that gives SHLD26"),
+            ({(22, 0): f"{grant}\r\n{grant}".encode()}, "UHOGRE01.DLG state 22 gives SHLD26 twice in one reply"),
+            ({(22, 1): f'{grant}\r\nGiveItem("shld26",Player2)'.encode()},
+             r"UHOGRE01.DLG state 22 also gives SHLD26 with GiveItem\(\), which the route cannot gate"),
+            ({(23, 0): b'TakeItemReplace("Shld26","misc5x",LastTalkedToBy)'},
+             r"UHOGRE01.DLG state 23 also gives SHLD26 with TakeItemReplace\(\), which the route cannot gate"),
+            ({(22, 0): b'ActionOverride(Player2,GiveItemCreate("shld26",Myself,0,0,0))'},
+             r"UHOGRE01.DLG state 22 gives SHLD26 through ActionOverride\(\), whose recipient the route "
+             "cannot mark"),
+            ({(22, 0): b'GiveItemCreate("shld26",LastTalkedToBy,0,0,0'},
+             "UHOGRE01.DLG state 22 names SHLD26 in actions that cannot be read"),
+            ({(22, 0): b'GiveItemCreate("shld26")'}, "UHOGRE01.DLG state 22 gives SHLD26 without a recipient"))
+        for changes, reason in cases:
+            with self.subTest(reason=reason):
+                data = with_actions(original, "uhogre01", changes)
+                self.assertRegex(rewards.route_reasons("dlg:uhogre01", data)["uhogre01"], "^" + reason + "$")
+                self.assertEqual(set(rewards.route_reasons("dlg:uhogre01", data)), {"uhogre01"})
+                self.assertFalse(rewards.own_patch("dlg:uhogre01", data))
+                with self.assertRaisesRegex(ProfileError, reason):
+                    rewards.patch_reward("dlg:uhogre01", data)
+        broken = b"DLG V1.0" + bytes(10)
+        self.assertEqual(rewards.route_reasons("dlg:uhogre01", broken),
+                         {"uhogre01": "UHOGRE01.DLG cannot be read as a dialogue"})
+        # A text route needs the text that names the reward where it gives it.
+        plain = dialogue_fixture(rewards.resource_specs("dlg:ppdjinn"))
+        self.assertEqual(rewards.route_reasons("dlg:ppdjinn", plain),
+                         {"ppdjinn": "PPDJINN.DLG no longer shows the text that names the reward (48995)"})
+        # Compiled scripts.
+        other = block(action(151, 40849, target=1))
+        well = lambda *blocks: ('SC\n' + "".join(blocks) + 'SC\n').encode()
+        script_cases = (
+            (well(other, other), "DDWELL.BCS has no block that gives HELM21"),
+            (well(other, block(well_reward() + action(140, text="HELM21", target=21))),
+             "DDWELL.BCS block 1 gives HELM21 twice in one response"),
+            (well(other, block(well_reward().replace(action(140, text="helm21", target=21),
+                                                     action(140, text="helm21", target=21, actor=17)))),
+             r"DDWELL.BCS block 1 gives HELM21 through ActionOverride\(\), whose recipient the route "
+             "cannot mark"),
+            (well(other, block(well_reward() + action(82, text="helm21"))),
+             r"DDWELL.BCS block 1 also gives HELM21 with CreateItem\(\), which the route cannot gate"),
+            (well(other, alternatives(well_reward(), action(363, text="shop01", second="helm21"))),
+             r"DDWELL.BCS block 1 also gives HELM21 with AddStoreItem\(\), which the route cannot gate"),
+            (well(other, block(well_reward(display=40849))),
+             r"DDWELL.BCS no longer shows the text that names the reward \(40850\)"),
+            (b"SC\nCR\nCO\nSC\n", "DDWELL.BCS cannot be read as a compiled script: its last block is not closed"),
+            (script_fixture("ddwell").replace(b"\n", b"\r\n", 3),
+             "DDWELL.BCS cannot be read as a compiled script: its line endings are mixed"))
+        for data, reason in script_cases:
+            with self.subTest(reason=reason):
+                self.assertRegex(rewards.route_reasons("bcs:ddwell", data)["ddwell"], "^" + reason + "$")
+                with self.assertRaisesRegex(ProfileError, reason):
+                    rewards.patch_reward("bcs:ddwell", data, ddwell_ref=100001)
+        self.assertEqual(rewards.route_reasons("bcs:asysta01", script_fixture("asysta01").replace(
+                         action(82, text="Helm19").encode(), action(140, text="Helm19").encode())),
+                         {"asysta01": "ASYSTA01.BCS block 0 also gives HELM19 with GiveItemCreate(), "
+                                      "which the route cannot gate"})
+
+    def test_actions_that_only_take_show_or_test_the_reward_never_stop_a_route(self):
+        # After a moved reward these find it gone, as when the player sold it.
+        original = dialogue_fixture(rewards.resource_specs("dlg:uhogre01"))
+        grant = 'GiveItemCreate("shld26",LastTalkedToBy,0,0,0)'
+        data = with_actions(original, "uhogre01", {
+            (22, 1): f'TakePartyItem("misc5x")\r\n{grant}\r\nDestroyItem("SHLD26")'.encode(),
+            (23, 0): b'TakeItemReplace("misc5x","shld26",LastTalkedToBy)\r\nActionOverride(Player2,'
+                     b'DestroyItem("shld26"))\r\nSetGlobal("SHLD26","GLOBAL",1)'})
+        self.assertEqual(rewards.route_reasons("dlg:uhogre01", data), {})
+        result = self.synthetic_patch("uhogre01", data)
+        self.check_dialogue("uhogre01", data, result, branches=((22, 0), (22, 1)))
+        # A script block chooses one of its responses: each may give the
+        # reward once, and every display of the reward's text changes.
+        other = block(action(151, 40849, target=1))
+        twice_shown = well_reward() + action(151, 40850, target=2) + action(116, text="HELM21")
+        script = ('SC\n' + other + alternatives(well_reward(), twice_shown) + other + 'SC\n').encode()
+        self.assertEqual(rewards.route_reasons("bcs:ddwell", script), {})
+        patched = self.synthetic_patch("ddwell", script)
+        blocks = script_blocks(patched).blocks
+        self.assertEqual(len(blocks), 4)
+        unselected, selected = blocks[1], blocks[2]
+        consumed = action(30, 1, "GLOBALFLPR_XM2_27").encode()
+        event = action(30, 1, "GLOBALFLPR_EM2_27").encode()
+        self.assertEqual(unselected.count(action(140, text="helm21", target=21).encode()), 2)
+        self.assertEqual(unselected.count(event), 2)
+        self.assertEqual(selected.count(consumed), 2)
+        self.assertNotIn(b'"helm21"', selected)
+        self.assertEqual(selected.count(b"151OB"), 3)
+        self.assertEqual(selected.count(b"100001 0 0 0 0"), 3)
+        self.assertIn(action(116, text="HELM21").encode(), selected)
 
     def test_compiled_grants_keep_owner_or_original_object_and_do_not_move_other_rewards(self):
         for name in ("asysta01", "ddwell"):
@@ -211,6 +467,37 @@ class Mode2RewardTests(unittest.TestCase):
                         self.assertIn(action(151, 100001 if selected else 40850, target=1).encode(), branch)
                         self.assertIn(action(177).encode(), branch)
 
+    def test_script_blocks_are_found_by_meaning_in_another_layout(self):
+        # CRLF line ends, another mod's block before the reward, the reward
+        # given to another object, and another mod's second block that gives
+        # it without the text: both blocks are gated, the text changes where
+        # it is shown, every other block stays as it is.
+        added = block(action(30, 1, "OtherModWell"), "OtherModQuest")
+        second = block(action(140, text="HELM21", target=17) + action(30, 3, "OtherModWell"), "OtherModQuest")
+        original = ('SC\n' + added + block(well_reward(target=17)) + second + 'SC\n').encode().replace(b"\n", b"\r\n")
+        result = rewards.patch_reward("bcs:ddwell", original, ddwell_ref=100001)
+        self.assertEqual(rewards.patch_reward("bcs:ddwell", result), result)
+        self.assertTrue(rewards.own_patch("bcs:ddwell", result))
+        self.assertEqual(rewards._script_original(result, rewards.resource_specs("bcs:ddwell")[0]),
+                         (original, 100001, True))
+        old, _, _ = _blocks(original, 3, b"\r\n")
+        new, _, _ = _blocks(result, 5, b"\r\n")
+        self.assertEqual(new[0], old[0])
+        spec = rewards.REWARDS["ddwell"]
+        crlf = lambda text: text.encode().replace(b"\n", b"\r\n")
+        marker = crlf(f'AC\n30OB\n{obj(17)}OB\n{obj()}OB\n{obj()}1 0 0 0 0"LOCALS{spec["recipient_local"]}" "" AC\n')
+        for first, grant in ((1, crlf(action(140, text="helm21", target=17))),
+                             (3, crlf(action(140, text="HELM21", target=17)))):
+            unselected, selected = new[first], new[first + 1]
+            self.assertIn(b'"GLOBALFLPR_QM2_27"', unselected)
+            self.assertEqual(unselected.count(marker), 1)
+            self.assertEqual(selected.count(marker), 1)
+            self.assertIn(grant, unselected)
+            self.assertNotIn(grant, selected)
+            self.assertIn(b"GLOBALFLPR_XM2_27", selected)
+        self.assertIn(crlf(action(151, 100001, target=1)), new[2])
+        self.assertIn(crlf(action(151, 40850, target=1)), new[1])
+
     def test_registry_exposes_authored_charges_and_separate_container_recipient(self):
         self.assertEqual(len(rewards.DIRECT_REWARDS), 9)
         spec = rewards.source_spec("original-source:bg2:mode2:item:28")
@@ -230,6 +517,12 @@ class Mode2RewardTests(unittest.TestCase):
         self.assertEqual(demon["event_global"], silver["event_global"])
         self.assertEqual(demon["recipient_local"], silver["recipient_local"])
         self.assertNotEqual(demon["selected_global"], silver["selected_global"])
+        for message, call in (("Unsupported extended reward source", lambda: rewards.source_spec("x")),
+                              ("Unsupported extended reward recipient", lambda: rewards.target_spec("x")),
+                              ("Unsupported carried reward", lambda: rewards.transfer_spec("x")),
+                              ("Unsupported extended reward resource", lambda: rewards.resource_specs("dlg:x"))):
+            with self.assertRaisesRegex(ProfileError, message):
+                call()
 
     def check_aran(self, original, result):
         before, after = _Dialogue(original, "aran"), _Dialogue(result, "aran")
@@ -251,13 +544,14 @@ class Mode2RewardTests(unittest.TestCase):
                     self.assertEqual(branch[4:12], transition[4:12])
                     self.assertEqual(branch[20:], transition[20:])
                     for spec, selected in zip(specs, (bool(bits & 2), bool(bits & 1))):
-                        condition += f'{"" if selected else "!"}Global("{spec["selected_global"]}","GLOBAL",1)\r\n'.encode()
+                        condition = guarded(condition,
+                            f'{"" if selected else "!"}Global("{spec["selected_global"]}","GLOBAL",1)\r\n'.encode())
                         marker = f'ActionOverride(LastTalkedToBy,SetGlobal("{spec["recipient_local"]}","LOCALS",1))\r\n'.encode()
                         event = f'\r\nSetGlobal("{spec["event_global"]}","GLOBAL",1)'.encode()
                         self.assertEqual(restored.count(marker), 1)
                         self.assertEqual(restored.count(event), 1)
                         restored = restored.replace(marker, b"", 1).replace(event, b"", 1)
-                        grant = rewards._dialogue_grant(original_actions, spec)
+                        grant, _ = grant_in(original_actions, spec)
                         if selected:
                             self.assertNotIn(grant, restored)
                             consumed = f'SetGlobal("{spec["consumed_global"]}","GLOBAL",1)'.encode()
@@ -270,6 +564,30 @@ class Mode2RewardTests(unittest.TestCase):
     def test_aran_two_grants_have_all_four_independent_campaign_combinations(self):
         original = dialogue_fixture(rewards.resource_specs("dlg:aran"))
         self.check_aran(original, self.synthetic_patch("aran", original))
+
+    def test_aran_route_left_out_alone_keeps_the_other_route(self):
+        specs = rewards.resource_specs("dlg:aran")
+        original = dialogue_fixture(specs)
+        dialogue = _Dialogue(original, "aran")
+        dialogue.actions = [text.replace(b'GiveItemCreate("amul21",LastTalkedToBy,0,0,0)\r\r\n', b"")
+                            for text in dialogue.actions]
+        without = dialogue.render()
+        self.assertEqual(rewards.route_reasons("dlg:aran", without),
+                         {"aran2": "ARAN.DLG has no reply that gives AMUL21"})
+        result = rewards.patch_reward("dlg:aran", without)
+        self.assertTrue(rewards.own_patch("dlg:aran", result))
+        self.assertEqual(rewards.patch_reward("dlg:aran", result), result)
+        self.assertEqual(rewards.route_reasons("dlg:aran", result),
+                         {"aran2": "ARAN.DLG has no reply that gives AMUL21"})
+        patched = b"".join(_Dialogue(result, "aran").triggers)
+        self.assertIn(b"FLPR_QM2_47", patched)
+        self.assertNotIn(b"FLPR_QM2_56", patched)
+        # Neither recognised: each route names its own reason.
+        dialogue.actions = [text.replace(b'GiveItemCreate("ring07",LastTalkedToBy,0,0,0)\r\r\n', b"")
+                            for text in dialogue.actions]
+        self.assertEqual(rewards.route_reasons("dlg:aran", dialogue.render()),
+                         {"aran": "ARAN.DLG has no reply that gives RING07",
+                          "aran2": "ARAN.DLG has no reply that gives AMUL21"})
 
     def check_text_graph(self, resource, original, result, refs):
         name = resource.split(":")[1]
@@ -297,7 +615,7 @@ class Mode2RewardTests(unittest.TestCase):
                 self.assertEqual(new_text, refs.get(old_text, old_text) if selected_text else old_text)
                 if old_entry != 0xFFFFFFFF and index in clones:
                     guard = f'{"" if selected_text else "!"}Global("{flag}","GLOBAL",1)\r\n'.encode()
-                    self.assertEqual(after.state_triggers[entry], before.state_triggers[old_entry] + guard)
+                    self.assertEqual(after.state_triggers[entry], guarded(before.state_triggers[old_entry], guard))
                 else:
                     self.assertEqual(entry, old_entry)
                 new_rows, cursor = outgoing(after, destination), 0
@@ -315,7 +633,7 @@ class Mode2RewardTests(unittest.TestCase):
                         if reroute:
                             prior = before.triggers[trigger] if flags & 2 else b""
                             guard = f'{"" if selected_edge else "!"}Global("{flag}","GLOBAL",1)\r\n'.encode()
-                            self.assertEqual(after.triggers[nt], prior + guard)
+                            self.assertEqual(after.triggers[nt], guarded(prior, guard))
                         else:
                             self.assertEqual(nt, trigger)
                 self.assertEqual(cursor, len(new_rows))
@@ -328,6 +646,8 @@ class Mode2RewardTests(unittest.TestCase):
         self.assertEqual(_Tlk(tlk).text(0, set()), "Unchanged text")
         self.assertIn("<GABBER>", _Tlk(tlk).text(allocated["dlg:ppdjinn"][48995], set()))
         self.assertEqual(allocated["dlg:gorcamb"][63681], allocated["dlg:gorcamb"][64609])
+        with self.assertRaisesRegex(ProfileError, "reward texts exist only in English"):
+            rewards.prepare_reward_texts(tlk, resources, "de_DE")
         for resource in resources:
             name = resource.split(":")[1]
             with self.subTest(resource=resource):
@@ -345,23 +665,58 @@ class Mode2RewardTests(unittest.TestCase):
                 d.state_triggers.append(b'NumTimesTalkedTo(0)\r\n')
                 struct.pack_into("<I", d.states[0], 12, len(d.state_triggers) - 1)
                 original = d.render()
-                with patch.dict(rewards.ORIGINAL_HASHES, {name: hashlib.sha256(original).hexdigest()}):
-                    result = rewards.patch_reward(resource, original, refs=allocated[resource])
-                    self.check_text_graph(resource, original, result, allocated[resource])
-                    self.assertEqual(rewards.original_reward(resource, result), original)
-                    self.assertEqual(rewards.patch_reward(resource, result), result)
-                    moved = {old: new + 1000 for old, new in allocated[resource].items()}
-                    revised = rewards.patch_reward(resource, result, refs=moved)
-                    self.assertEqual(rewards.original_reward(resource, revised), original)
-                    self.check_text_graph(resource, original, revised, moved)
-                    damaged = bytearray(result); damaged[100] ^= 1
-                    with self.assertRaisesRegex(ProfileError, "changed"):
-                        rewards.original_reward(resource, bytes(damaged))
-                    with self.assertRaisesRegex(ProfileError, "allocated"):
-                        rewards.patch_reward(resource, original)
+                result = rewards.patch_reward(resource, original, refs=allocated[resource])
+                self.check_text_graph(resource, original, result, allocated[resource])
+                self.assertEqual(rewards._text_original(result, resource), (original, allocated[resource]))
+                self.assertFalse(rewards.own_patch(resource, original))
+                self.assertTrue(rewards.own_patch(resource, result))
+                self.assertEqual(rewards.route_reasons(resource, result), {})
+                self.assertEqual(rewards.patch_reward(resource, result), result)
+                moved = {old: new + 1000 for old, new in allocated[resource].items()}
+                revised = rewards.patch_reward(resource, result, refs=moved)
+                self.assertEqual(rewards._text_original(revised, resource), (original, moved))
+                self.check_text_graph(resource, original, revised, moved)
+                # A changed reply or recovery record is not our patch any more.
+                for damaged in (result.replace(b"FLPR_", b"OTHER", 1),
+                                result[:-20] + bytes([result[-20] ^ 1]) + result[-19:]):
+                    with self.assertRaisesRegex(ProfileError, "carries a changed copy"):
+                        rewards.own_patch(resource, damaged)
+                    self.assertIn("changed copy", rewards.route_reasons(resource, damaged)[name])
+                with self.assertRaisesRegex(ProfileError, "allocated"):
+                    rewards.patch_reward(resource, original)
         self.assertEqual(rewards.target_spec("bg2:mode2:target:22")["required_transfers"], ("scyarryl",))
         self.assertEqual(rewards.REWARDS["sctelwyn"]["event_global"], "FLPR_EA_SCULPTOR")
         self.assertEqual(rewards.REWARDS["scsain"]["event_global"], "FLPR_EA_SCULPTOR")
+
+    def test_a_cloned_start_state_keeps_its_place_among_the_start_conditions(self):
+        # The engine tries start states in the order of their conditions. The
+        # djinn's reward state starts the dialogue; another mod's start state
+        # comes after it and must stay after both of its variants.
+        d = _Dialogue(dialogue_fixture(rewards.resource_specs("dlg:ppdjinn")), "ppdjinn")
+        struct.pack_into("<I", d.states[0], 0, 48995)
+        d.state_triggers += [b'NumTimesTalkedTo(0)\r\n', b'Global("OtherModDjinn","GLOBAL",1)\r\n']
+        struct.pack_into("<I", d.states[0], 12, 0)
+        struct.pack_into("<I", d.states[1], 12, 1)
+        original = d.render()
+        result = rewards.patch_reward("dlg:ppdjinn", original, refs={48995: 100001})
+        after = _Dialogue(result, "ppdjinn")
+        entries = {index: struct.unpack_from("<I", state, 12)[0] for index, state in enumerate(after.states)}
+        clone = len(d.states)
+        self.assertEqual(struct.unpack_from("<I", after.states[clone], 0)[0], 100001)
+        self.assertEqual((entries[0], entries[clone], entries[1]), (0, 1, 2))
+        self.assertEqual(after.state_triggers, [
+            b'NumTimesTalkedTo(0)\r\n!Global("FLPR_QM2_24","GLOBAL",1)\r\n',
+            b'NumTimesTalkedTo(0)\r\nGlobal("FLPR_QM2_24","GLOBAL",1)\r\n',
+            b'Global("OtherModDjinn","GLOBAL",1)\r\n'])
+        self.assertEqual(rewards._text_original(result, "dlg:ppdjinn"), (original, {48995: 100001}))
+        self.assertEqual(rewards.patch_reward("dlg:ppdjinn", result), result)
+        # Where every other start condition comes first, the gated pair is
+        # appended, as earlier exports did.
+        struct.pack_into("<I", d.states[0], 12, 1)
+        struct.pack_into("<I", d.states[1], 12, 0)
+        after = _Dialogue(rewards.patch_reward("dlg:ppdjinn", d.render(), refs={48995: 100001}), "ppdjinn")
+        self.assertEqual(after.state_triggers[:2], d.state_triggers)
+        self.assertEqual([struct.unpack_from("<I", after.states[index], 12)[0] for index in (1, 0, clone)], [0, 2, 3])
 
     def test_sculptor_transfer_is_source12_auxiliary_copy_and_preserves_ordinary_giveitem(self):
         spec = rewards.transfer_spec("scyarryl")
@@ -440,31 +795,40 @@ class Mode2RewardTests(unittest.TestCase):
         struct.pack_into("<I", dialogue.states[35], 0, 43514)
         original = dialogue.render()
         refs = {43514: 100001}
-        with patch.dict(rewards.ORIGINAL_HASHES, {"trgeni01": hashlib.sha256(original).hexdigest()}):
-            legacy = rewards._patch_text_dialogue(original, resource, refs,
-                                                  defer_departure=False, numeric_target=False)
-            self.assertEqual(rewards.original_reward(resource, legacy), original)
-            result = rewards.patch_reward(resource, legacy)
-            previous = rewards._patch_text_dialogue(original, resource, refs, numeric_target=False)
-            self.assertEqual(rewards.patch_reward(resource, previous), result)
-            self.assertNotEqual(result, legacy)
-            self.assertEqual(result, rewards.patch_reward(resource, original, refs=refs))
-            self.assertEqual(rewards.patch_reward(resource, result), result)
-            self.assertEqual(rewards.original_reward(resource, result), original)
-            branches = rewards._patch_dialogue(original, (spec,))
-            self.check_dialogue("trgeni01", original, branches)
-            self.check_text_graph(resource, original, result, refs)
-            for state in (37, 38):
-                before = _Dialogue(legacy, "trgeni01")
-                old = before.actions[struct.unpack_from("<I", outgoing(before, state)[0], 16)[0]]
-                after = _Dialogue(result, "trgeni01")
-                changed = after.actions[struct.unpack_from("<I", outgoing(after, state)[0], 16)[0]]
-                self.assertEqual(old, trgeni_terminal_actions().encode() + b"\r\n")
-                self.assertEqual(changed.replace(TRGENI_DEPARTURE, b"DestroySelf()"), old)
-            # An altered prior patch is not accepted merely because its original
-            # body and recovery trailer still match.
-            with self.assertRaisesRegex(ProfileError, "patch changed"):
-                rewards.patch_reward(resource, legacy.replace(b"FLPR_Transfer(", b"FLPR_Tampered(", 1))
+        legacy = rewards._patch_text_dialogue(original, resource, refs,
+                                              defer_departure=False, numeric_target=False)
+        self.assertEqual(rewards._text_original(legacy, resource), (original, refs))
+        self.assertTrue(rewards.own_patch(resource, legacy))
+        result = rewards.patch_reward(resource, legacy)
+        previous = rewards._patch_text_dialogue(original, resource, refs, numeric_target=False)
+        self.assertEqual(rewards.patch_reward(resource, previous), result)
+        self.assertNotEqual(result, legacy)
+        self.assertEqual(result, rewards.patch_reward(resource, original, refs=refs))
+        self.assertEqual(rewards.patch_reward(resource, result), result)
+        self.assertEqual(rewards._text_original(result, resource), (original, refs))
+        branches = rewards._patch_dialogue(original, (spec,))
+        self.check_dialogue("trgeni01", original, branches)
+        self.check_text_graph(resource, original, result, refs)
+        for state in (37, 38):
+            before = _Dialogue(legacy, "trgeni01")
+            old = before.actions[struct.unpack_from("<I", outgoing(before, state)[0], 16)[0]]
+            after = _Dialogue(result, "trgeni01")
+            changed = after.actions[struct.unpack_from("<I", outgoing(after, state)[0], 16)[0]]
+            self.assertEqual(old, trgeni_terminal_actions().encode() + b"\r\n")
+            self.assertEqual(changed.replace(TRGENI_DEPARTURE, b"DestroySelf()"), old)
+        # The departure that waits is the speaker's own, after the replies that
+        # hand the reward over; an unreachable DestroySelf stays instant.
+        unreached = _Dialogue(original, "trgeni01")
+        struct.pack_into("<I", outgoing(unreached, 36)[0], 28, 2)
+        unreached = unreached.render()
+        after = _Dialogue(rewards._patch_dialogue(unreached, (spec,)), "trgeni01")
+        for state in (37, 38):
+            changed = after.actions[struct.unpack_from("<I", outgoing(after, state)[0], 16)[0]]
+            self.assertNotIn(TRGENI_DEPARTURE, changed)
+        # An altered prior patch is not accepted merely because its original
+        # body and recovery trailer still match.
+        with self.assertRaisesRegex(ProfileError, "changed copy"):
+            rewards.patch_reward(resource, legacy.replace(b"FLPR_Transfer(", b"FLPR_Tampered(", 1))
 
     def test_inventory_callback_survives_dialogue_parser_and_returns_lua_result(self):
         for name in ("trgeni01", "loutcapt", "amcler01", "udlesa"):
@@ -556,36 +920,44 @@ class Mode2RewardTests(unittest.TestCase):
         self.assertEqual(text.text(1, set()), "Existing helmet narrative")
         self.assertIn("You pull an item from the murky water", text.text(ref, set()))
         original = script_fixture("ddwell")
-        with patch.dict(rewards.ORIGINAL_HASHES, {"ddwell": hashlib.sha256(original).hexdigest()}):
-            result = rewards.patch_reward("ddwell", original, ddwell_ref=ref)
-            self.assertEqual(rewards.patch_reward("ddwell", result), result)
-            self.assertEqual(rewards._original_ddwell(result), (original, ref))
-            changed_ref = rewards.patch_reward("ddwell", result, ddwell_ref=ref + 1)
-            self.assertEqual(rewards._original_ddwell(changed_ref), (original, ref + 1))
-            self.assertIn(action(151, 40850, target=1).encode(), result)
-            self.assertIn(action(151, ref, target=1).encode(), result)
-            with self.assertRaisesRegex(ProfileError, "changed"):
-                rewards.patch_reward("ddwell", result.replace(b"AR1202DragonWell", b"AR1202DragonGone", 1))
-            with self.assertRaisesRegex(ProfileError, "allocated"):
-                rewards.patch_reward("ddwell", original)
+        spec = rewards.resource_specs("bcs:ddwell")[0]
+        result = rewards.patch_reward("ddwell", original, ddwell_ref=ref)
+        self.assertEqual(rewards.patch_reward("ddwell", result), result)
+        self.assertEqual(rewards._script_original(result, spec), (original, ref, True))
+        self.assertEqual(rewards._script_original(original, spec), (original, None, False))
+        changed_ref = rewards.patch_reward("ddwell", result, ddwell_ref=ref + 1)
+        self.assertEqual(rewards._script_original(changed_ref, spec), (original, ref + 1, True))
+        self.assertEqual(rewards.patch_reward("bcs:ddwell", result, refs={40850: ref + 1}), changed_ref)
+        self.assertIn(action(151, 40850, target=1).encode(), result)
+        self.assertIn(action(151, ref, target=1).encode(), result)
+        with self.assertRaisesRegex(ProfileError, "changed copy"):
+            rewards.patch_reward("ddwell", result.replace(b"AR1202DragonWell", b"AR1202DragonGone", 1))
+        with self.assertRaisesRegex(ProfileError, "allocated"):
+            rewards.patch_reward("ddwell", original)
+        with self.assertRaisesRegex(ProfileError, "allocated"):
+            rewards.patch_reward("bcs:ddwell", original, refs={40849: ref})
 
-    def test_pinned_cache_when_available_and_exact_reexport(self):
+    def test_reviewed_eet_resources_when_available_patch_exactly_and_reexport(self):
         cache = ROOT / "work/original-preset-runtime-20260929/mode2-resources"
         if not cache.exists():
             self.skipTest("Read-only installed-resource cache is not distributed")
+        self.assertEqual(set(REVIEWED_EET), set(rewards.RESOURCE_REWARDS))
         _tlk, allocated = rewards.prepare_reward_texts(make_tlk([]), rewards.RESOURCE_REWARDS)
         for resource in rewards.RESOURCE_REWARDS:
             kind, name = resource.split(":")
             with self.subTest(resource=name):
                 original = (cache / (name + "." + kind)).read_bytes()
-                self.assertEqual(hashlib.sha256(original).hexdigest(), rewards.ORIGINAL_HASHES[name])
+                reviewed, patched = REVIEWED_EET[resource]
+                self.assertEqual(hashlib.sha256(original).hexdigest(), reviewed)
                 result = rewards.patch_reward(resource, original, refs=allocated.get(resource))
-                if resource not in rewards.TEXT_REFS:
-                    self.assertEqual(hashlib.sha256(result).hexdigest(), rewards.PATCHED_HASHES[name])
+                self.assertEqual(hashlib.sha256(result).hexdigest(), patched)
                 self.assertEqual(rewards.patch_reward(resource, result), result)
-                recovered = rewards.original_reward(resource, result)
-                self.assertEqual(recovered, original if resource in rewards.TEXT_REFS else None)
+                self.assertEqual(rewards.route_reasons(resource, original), {})
+                self.assertEqual(rewards.route_reasons(resource, result), {})
+                self.assertFalse(rewards.own_patch(resource, original))
+                self.assertTrue(rewards.own_patch(resource, result))
                 if kind == "dlg" and resource in rewards.TEXT_REFS:
+                    self.assertEqual(rewards._text_original(result, resource), (original, allocated[resource]))
                     clones = self.check_text_graph(resource, original, result, allocated[resource])
                     if name in ("trgeni01", "amcler01", "udlesa"):
                         action_refs = allocated[resource] if name == "amcler01" else None
@@ -610,9 +982,11 @@ class Mode2RewardTests(unittest.TestCase):
                             entry = struct.unpack_from("<I", state, 12)[0]
                             self.assertIn(b"NumTimesTalkedTo(0)", dlg.state_triggers[entry])
                         self.assertIn(b'ReallyForceSpell(Myself,DRYAD_TELEPORT)', b"".join(dlg.actions))
+                elif kind == "bcs":
+                    self.assertEqual(rewards._script_original(result, rewards.resource_specs(resource)[0])[0], original)
                 elif name == "aran":
                     self.check_aran(original, result)
-                elif kind == "dlg":
+                else:
                     self.check_dialogue(name, original, result)
 
 

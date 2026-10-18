@@ -10,7 +10,7 @@ Install the campaign runtime (`prototype/`) through `cir.tp2`, the installer of 
 Item Randomiser (CIR), build a reproducible release ZIP, and record what Chriz Easy BG
 (CEBG) needs to offer it. Until 2026-10-17 the runtime was component 1500 of Item
 Randomiser's `randomiser.tp2`; it became CIR's main component unchanged, and the optional
-tweaks Christopher and CEBG use followed it (see Decisions). Mode 2 routes, original special-option parity, automatic
+tweaks Christopher and CEBG use followed it (see Decisions). The extended pools' reward routes, original special-option parity, automatic
 equipment placement and the reward-specific clue route remain separate work. The
 default configuration was decided on 2026-10-14 (see Decisions); the configurator's
 preset dialog opens on it, and the installer does not apply it yet.
@@ -399,9 +399,22 @@ depth 8). `VERSION` 1.0.0 stands until the first release; nothing is published.
   configuration's quest and dialogue changes moved into the installer anyway (see
   "Configuration, uninstall and re-install"), so its Apply writes only
   `randomiser-campaigns/`, and Apply copies only the files its latest export lists. The
-  Mode 2 reward scripts, dialogues and containers, the Deck of Many Things key spell
-  (`SPIN621.SPL`) and the Kangaxx option are still written by Apply; the Mode 2 patches'
-  exact-hash checks belong to the Mode 2 routes work.
+  extended pools' reward scripts, dialogues and containers, the Deck of Many Things key
+  spell (`SPIN621.SPL`) and the Kangaxx option are still written by Apply. Since
+  2026-10-18 Apply recognises each reward route by its meaning in the game's own files
+  (BG2:EE's and EET's layouts, other mods' added replies and blocks) instead of by the
+  hash of the reviewed EET file, and the configuration check runs the same recognition:
+  a route it cannot prepare is left out with its reason, so Apply never refuses a route
+  the check accepted. Copies of a route's reward replies in other dialogues (party
+  members' interjections) are gated like the route's own. A container quest binds the
+  container of its area that holds its whole treasure; revisions exported before keep
+  what they recorded, and Apply refuses only where the runtime's start check of such a
+  revision would fail because the game changed a file it needs. The old pins bound Samia's places to the container before her chest
+  in `AR1202`, named Safana's area as EET does (so it did not bind on BG:EE) and took the
+  table's `AR1302` for the golems, whose treasure is in `AR1303` (so they never bound).
+  Still pinned to the reviewed EET bytes: the Kangaxx dialogue and
+  the creature files and records of the rewards an NPC carries (`SCYARRYL`, `TRGENI01`,
+  `LOUTCAPT`, `AMCLER01` and `UDLESA`).
 - **B3 Failure messages.** Resolved; see "Player messages".
 - **B4 Test hooks in the runtime.** Resolved: the Remote Console poll wrapper, the chapter
   screen render listener, the QA driver and its `qa-status.json` moved to the lab-only
@@ -444,7 +457,8 @@ Christopher decided on 2026-10-14:
   of Ages heads (540, `flail_heads`) and the randomised Tales of the Sword Coast tome (500,
   `totsc_tome`); every other option off. It is not an EET-only preset: the configurator
   recommends each game's own (`bg1-original`, `bg2-original`, `eet-original`).
-- **Mode 2 routes** are built in this mod.
+- **The extended pools' reward routes** (the quest rewards of Item Randomiser's
+  install-time Mode 2) are built in this mod.
 
 On 2026-10-15:
 

@@ -2,7 +2,8 @@
 
 The installer splits each reward block when it is installed
 (lib/campaign_patches.tpa); the configurator only binds the rewards. The
-helpers below are shared by the Mode 2 and container reward adapters.
+helpers below are shared by the extended pools' quest and container reward
+adapters.
 """
 
 from __future__ import annotations
