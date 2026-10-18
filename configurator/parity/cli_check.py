@@ -52,15 +52,22 @@ def build(game: Path, platform: str = "eet", area: str = "area") -> None:
     marker = {"bg2ee": "oh6000", "bgee": "oh1000"}.get(platform)
     if marker:
         (override / f"{marker}.are").write_bytes(make_are())
+    for name, data in contents(area).items():
+        (override / name).write_bytes(data)
+
+
+def contents(area: str = "area") -> dict[str, bytes]:
+    """The override files of a synthetic game: an item, a creature, an area,
+    a store, a script and a dialogue."""
     # A visible, droppable item, so the native export has a complete path.
     item_data = bytearray(make_itm())
     struct.pack_into("<I", item_data, 0x18, 0x4C)
-    (override / "synth001.itm").write_bytes(item_data)
     item = item_record("SYNTH001", expiration=0, charges=(0, 0, 0), flags=1)
     # Native targets need actor script names that are unique in their area.
     embedded = bytearray(make_cre([item]))
     embedded[0x280:0x288] = b"EmbedDV\0"
-    payloads = {
+    return {
+        "synth001.itm": bytes(item_data),
         "actor.cre": make_cre([item, item_record(charges=(2, 9, 0), flags=4)]),
         f"{area}.are": make_are([item], [("Chest", 0, 1)],
                                 [("External", "ACTOR"), ("Embedded", bytes(embedded))]),
@@ -68,8 +75,6 @@ def build(game: Path, platform: str = "eet", area: str = "area") -> None:
         "grant.bcs": b"SC\nsynthetic grant\nSC\n",
         "grant.dlg": b"DLG V1.0synthetic grant",
     }
-    for name, data in payloads.items():
-        (override / name).write_bytes(data)
 
 
 def bind_plan(out: Path) -> None:
