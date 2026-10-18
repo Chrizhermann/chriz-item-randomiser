@@ -254,8 +254,8 @@ class Editor:
                 require_closed(self.apply_game)
                 written = write_starts(draft["profile"], draft["plan"], self.catalog, self.world, store)
                 output = self.workspace / "native"
-                export_native(store, self.catalog, self.world, output,
-                              starts=written["starts"], main=written["main"])
+                exported = export_native(store, self.catalog, self.world, output,
+                                         starts=written["starts"], main=written["main"])
                 write_json(self.path(draft["profile"]["id"]), draft)
                 deploy_export(self.apply_game, output)
                 self.draft = draft
@@ -267,7 +267,8 @@ class Editor:
                 return {"revision": written["starts"][written["full"]], "starts": written["starts"],
                         "game": str(self.apply_game),
                         "message": "Saved and applied. " + describe_starts(written) +
-                                   " Each new game randomizes afresh; existing saves keep their settings."}
+                                   " Each new game randomizes afresh; existing saves keep their settings." +
+                                   "".join(" " + note + "." for note in exported.get("notes", ()))}
             prepared = write_campaign(draft["profile"], self.catalog, self.world, draft["plan"], store)
             return {"revision": prepared["revision"], "store": str(store),
                     "message": "Test settings prepared. They can now be exported for the test game; "

@@ -202,6 +202,17 @@ def _resref(raw: bytes) -> str:
     return name.lower()
 
 
+def file_identity(path: Path) -> tuple:
+    """A file's stat identity, or a directory's with its entry names (see _ScanSnapshot).
+
+    Equal identities mean the installation did not change there, as far as
+    ordinary installs show; it is no protection against deliberate spoofing.
+    """
+    if path.is_dir():
+        return _ScanSnapshot._directory(path)
+    return _ScanSnapshot._identity(path)
+
+
 def _read_file(path: Path) -> bytes:
     if not path.is_file():
         raise ScanError("A required resource path is not a file.")
@@ -454,6 +465,21 @@ class GameResources:
         extension = self._extension(extension)
         name = self._name(extension, resref)
         return "override" if name in self._overrides[extension] else "biff"
+
+    def location(self, extension: str, resref: str) -> Path:
+        """The file that holds a resource: its override file or its archive."""
+        extension = self._extension(extension)
+        name = self._name(extension, resref)
+        if name in self._overrides[extension]:
+            return self._overrides[extension][name]
+        return self._archives[self._keyed[extension][name][0]]
+
+    def lookup_paths(self) -> list[Path]:
+        """The files and directory that decide where each resource comes from."""
+        if not self._active:
+            raise ScanError("Resources can only be accessed inside their scan context.")
+        override = _child(self.root, "override", self.root, required=False)
+        return [_child(self.root, "chitin.key", self.root)] + ([override] if override is not None else [])
 
     def read(self, extension: str, resref: str) -> bytes:
         extension = self._extension(extension)

@@ -688,6 +688,36 @@ class Mode2RewardTests(unittest.TestCase):
         self.assertEqual(rewards.REWARDS["sctelwyn"]["event_global"], "FLPR_EA_SCULPTOR")
         self.assertEqual(rewards.REWARDS["scsain"]["event_global"], "FLPR_EA_SCULPTOR")
 
+    def test_a_cloned_start_state_keeps_its_place_among_the_start_conditions(self):
+        # The engine tries start states in the order of their conditions. The
+        # djinn's reward state starts the dialogue; another mod's start state
+        # comes after it and must stay after both of its variants.
+        d = _Dialogue(dialogue_fixture(rewards.resource_specs("dlg:ppdjinn")), "ppdjinn")
+        struct.pack_into("<I", d.states[0], 0, 48995)
+        d.state_triggers += [b'NumTimesTalkedTo(0)\r\n', b'Global("OtherModDjinn","GLOBAL",1)\r\n']
+        struct.pack_into("<I", d.states[0], 12, 0)
+        struct.pack_into("<I", d.states[1], 12, 1)
+        original = d.render()
+        result = rewards.patch_reward("dlg:ppdjinn", original, refs={48995: 100001})
+        after = _Dialogue(result, "ppdjinn")
+        entries = {index: struct.unpack_from("<I", state, 12)[0] for index, state in enumerate(after.states)}
+        clone = len(d.states)
+        self.assertEqual(struct.unpack_from("<I", after.states[clone], 0)[0], 100001)
+        self.assertEqual((entries[0], entries[clone], entries[1]), (0, 1, 2))
+        self.assertEqual(after.state_triggers, [
+            b'NumTimesTalkedTo(0)\r\n!Global("FLPR_QM2_24","GLOBAL",1)\r\n',
+            b'NumTimesTalkedTo(0)\r\nGlobal("FLPR_QM2_24","GLOBAL",1)\r\n',
+            b'Global("OtherModDjinn","GLOBAL",1)\r\n'])
+        self.assertEqual(rewards._text_original(result, "dlg:ppdjinn"), (original, {48995: 100001}))
+        self.assertEqual(rewards.patch_reward("dlg:ppdjinn", result), result)
+        # Where every other start condition comes first, the gated pair is
+        # appended, as earlier exports did.
+        struct.pack_into("<I", d.states[0], 12, 1)
+        struct.pack_into("<I", d.states[1], 12, 0)
+        after = _Dialogue(rewards.patch_reward("dlg:ppdjinn", d.render(), refs={48995: 100001}), "ppdjinn")
+        self.assertEqual(after.state_triggers[:2], d.state_triggers)
+        self.assertEqual([struct.unpack_from("<I", after.states[index], 12)[0] for index in (1, 0, clone)], [0, 2, 3])
+
     def test_sculptor_transfer_is_source12_auxiliary_copy_and_preserves_ordinary_giveitem(self):
         spec = rewards.transfer_spec("scyarryl")
         self.assertEqual(spec["authored_source_ids"], ("original-source:bg2:mode2:item:12",))
