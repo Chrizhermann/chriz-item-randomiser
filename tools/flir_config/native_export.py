@@ -6,6 +6,7 @@ change resources, choose gameplay content, or establish live target eligibility.
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 from collections import Counter
 from copy import deepcopy
@@ -39,8 +40,9 @@ from .mode2_rewards import PHYSICAL_SOURCE_REWARDS, REWARDS as MODE2_REWARDS
 from .container_rewards import (RESOURCE_TARGETS as CONTAINER_RESOURCES,
                                 TEXT_RESOURCES as CONTAINER_TEXT_RESOURCES, container_error,
                                 patch_container_resource, own_patch as own_container_patch,
-                                prepare_container_texts, treasure_container)
+                                prepare_container_texts, treasure_area, treasure_container)
 from .platform import game_platform
+from .reward_copies import RewardCopies
 from .reward_routes import ChangedSinceScan, reward_routes
 from .original_catalog import container_target_spec
 from .cursed_disguises import validate_cursed_disguise_spec, prepare_cursed_disguises
@@ -68,7 +70,8 @@ def _area(resource: str) -> str:
 
 
 def _compile(manifest: dict, world: dict, index: dict, items: dict,
-             problems: dict[str, str] | None = None, *, catalog: dict) -> tuple[dict, set[str], set[str]]:
+             problems: dict[str, str] | None = None, *, catalog: dict, stored: bool = False,
+             notes: list[str] | None = None) -> tuple[dict, set[str], set[str]]:
     """Compile a campaign for the native runtime.
 
     Without ``problems`` any unsupported row stops the compile. With a dict,
@@ -77,6 +80,12 @@ def _compile(manifest: dict, world: dict, index: dict, items: dict,
     routes are recognised in the game's bytes as the export recognises them
     (reward_routes.py); a reward resource changed since the scan stops the
     compile.
+
+    A ``stored`` revision was exported before and belongs to running saves.
+    While the game's files are unchanged it keeps what it recorded: its
+    container quests' bindings, and its reward routes when CIR's newer check
+    finds a copy of their reward replies that cannot be gated (said in
+    ``notes``).
     """
     # A rescan can discover unrelated resources (or a new resource type).
     # Compare the selected records and resource hashes below; existing native
@@ -105,6 +114,24 @@ def _compile(manifest: dict, world: dict, index: dict, items: dict,
         digest = index["resources"][resource]["sha256"]
         native["resource_hashes"][name.upper() + "." + kind.upper()] = digest
         return digest
+
+    routes = []
+
+    def require_route(name: str) -> None:
+        # One look at the reward routes per compile: each check run sees the
+        # game's files as they are now.
+        if not routes:
+            routes.append(reward_routes(catalog, world))
+        routes[0].require_route(name, copies=not stored)
+        reason = routes[0].copy_reason(name) if stored else None
+        if reason and notes is not None:
+            notes.append(f"Saved games of revision {manifest['revision'][:12]} keep the extended reward route "
+                         f"for {name.upper()}, although {reason}")
+
+    def require_container(target_id: str) -> None:
+        if not routes:
+            routes.append(reward_routes(catalog, world))
+        routes[0].require_container(target_id)
 
     def actor_name(target: dict) -> str | None:
         selector = target["selector"]
@@ -219,7 +246,7 @@ def _compile(manifest: dict, world: dict, index: dict, items: dict,
             spec = mode2_source_spec(identity)
             _require(source["resource"] == spec["resource"] and record == spec["payload"],
                      f"The extended reward source differs from its route: {identity}")
-            reward_routes(catalog, world).require_route(MODE2_SOURCES[identity])
+            require_route(MODE2_SOURCES[identity])
             native["sources"][identity] = {
                 "kind": "guarded-script", "adapter_id": "mode2-reward-v1",
                 **{key: spec[key] for key in ("quest", "resource", "selected_global", "consumed_global")},
@@ -403,7 +430,7 @@ def _compile(manifest: dict, world: dict, index: dict, items: dict,
             _require(selected["record"]["record"] == reward["source_record"] and
                      use(reward["source_resource"]) == reward["source_resource_sha256"],
                      f"Original inventory reward source changed: {selected['id']}")
-            reward_routes(catalog, world).require_route(name)
+            require_route(name)
             native["sources"][selected["id"]]["reward_selected_global"] = reward["selected_global"]
             for resource in reward["resources"]:
                 use(resource)
@@ -425,7 +452,7 @@ def _compile(manifest: dict, world: dict, index: dict, items: dict,
             use(target["resource"])
             reward = mode2_target_spec(selector["id"]) if selector["id"] in MODE2_TARGETS else None
             if reward:
-                reward_routes(catalog, world).require_route(MODE2_TARGETS[selector["id"]])
+                require_route(MODE2_TARGETS[selector["id"]])
             if reward and reward.get("inventory_target"):
                 placement = reward["inventory_target"]
                 creature = index["targets"].get(placement["creature_resource"])
@@ -507,16 +534,25 @@ def _compile(manifest: dict, world: dict, index: dict, items: dict,
                 return
             physical = [index["targets"][key] for key in selector["target_ids"] if key in index["targets"]]
             if container_quest:
-                # The container that holds the quest's treasure in this scan,
-                # found as the template binds it.
                 quest = container_quest["target_id"]
-                try:
-                    chest = treasure_container(quest, index["sources"].values(), game_platform(world))
-                except ProfileError as exc:
-                    raise container_error(quest, str(exc)) from None
-                _require([target["id"] for target in physical] == [chest],
-                         f"Original container quest binding changed: {identity}")
-                reward_routes(catalog, world).require_container(quest)
+                if stored:
+                    # Its area is unchanged (checked above): keep the container
+                    # it was exported with, even where a better rule now finds
+                    # another one (Samia's chest before the EE renaming).
+                    area = "are:" + treasure_area(quest, game_platform(world))
+                    _require(len(physical) == 1 and physical[0]["kind"] == "container" and
+                             physical[0]["resource"] == area,
+                             f"Original container quest binding changed: {identity}")
+                else:
+                    # The container that holds the quest's treasure in this
+                    # scan, found as the template binds it.
+                    try:
+                        chest = treasure_container(quest, index["sources"].values(), game_platform(world))
+                    except ProfileError as exc:
+                        raise container_error(quest, str(exc)) from None
+                    _require([target["id"] for target in physical] == [chest],
+                             f"Original container quest binding changed: {identity}")
+                require_container(quest)
                 for resource in container_quest["resources"]:
                     use(resource)
             _require(len(physical) == 1, f"Original recipient needs one physical binding: {identity}")
@@ -590,6 +626,48 @@ def _export_tlk(installed: bytes, prepared: Path) -> bytes:
     return previous
 
 
+_CHECKED = "the runtime checks it at every start and would stop for every game"
+
+
+def _stored_native(exported: Path, key: str) -> dict:
+    return json.loads((exported / "revisions" / f"{key}.native.json").read_text(encoding="utf-8"))
+
+
+def _staged_scripts(key: str, manifest: dict, native: dict) -> list[tuple[str, str]]:
+    """(resource, staged file) for each file a revision's guarded scripts need in override.
+
+    At every start the runtime compares these staged bytes with the game's
+    override file (FLPRScript.lua).
+    """
+    result = []
+    for number, source in enumerate(manifest["sources"], 1):
+        endpoint = native["sources"].get(source["id"], {})
+        if endpoint.get("kind") != "guarded-script":
+            continue
+        base = f"campaign-store/revisions/{key}.source-{number}"
+        if endpoint.get("resources"):
+            result += [(resource, f"{base}.route-{route}.patched.{resource.split(':')[0]}")
+                       for route, resource in enumerate(endpoint["resources"], 1)]
+        else:
+            resource = source["record"]["resource"]
+            result.append((resource, f"{base}.patched.{resource.split(':')[0]}"))
+    return result
+
+
+def _gate_areas(native: dict) -> set[str]:
+    """The areas whose shared pristine copy the runtime compares with a revision's record (M_FLPR.lua)."""
+    gate = native.get("source_gate") or {}
+    ids = gate.get("source_ids") or ([gate["source_id"]] if gate.get("source_id") else [])
+    return {native["sources"][identity]["area"].upper() for identity in ids
+            if native["sources"][identity]["kind"] not in ("guarded-template", "guarded-script", "guarded-store") and
+            native["sources"][identity].get("area")}
+
+
+def _filename(resource: str) -> str:
+    kind, name = resource.split(":", 1)
+    return name.upper() + "." + kind.upper()
+
+
 def export_native(store: Path, catalog: dict, world: dict, output: Path,
                   revision: str | None = None, *, starts: dict[str, str] | None = None,
                   main: str | None = None) -> dict:
@@ -599,6 +677,15 @@ def export_native(store: Path, catalog: dict, world: dict, output: Path,
     and <main> the start the engine makes without a campaign row; next.lua
     then lists them. Without <starts>, next.lua names <revision> (the store's
     current one by default), which the runtime reads as a BG1 start.
+
+    A revision exported before that this export does not select belongs to
+    running saves; its files never change. When the game changed so that one
+    of its rows can no longer be prepared, or its files would now differ, it
+    keeps the files it was exported with and the result's "notes" say so; the
+    other revisions are exported as usual. The runtime checks every listed
+    revision at each start, so a kept revision whose guarded script or
+    guarded area changed in the game stops the export instead. A selected
+    revision must be prepared completely.
     """
     items, index = validate_catalog(catalog), validate_world(world, catalog)
     output = ensure_output_outside_game(output, catalog)
@@ -615,11 +702,23 @@ def export_native(store: Path, catalog: dict, world: dict, output: Path,
                  for p in (exported / "revisions").glob("*.json") if HEX256.fullmatch(p.stem)}
     for manifest in selected_starts.values():
         manifests[manifest["revision"]] = manifest
+    selected_keys = {manifest["revision"] for manifest in selected_starts.values()}
+    stored = {key for key in manifests if key not in selected_keys and
+              (exported / "revisions" / f"{key}.native.json").is_file()}
     pending, required, pristine, compiled = {}, set(), set(), {}
+    notes, kept = [], set()
     for key, manifest in sorted(manifests.items()):
-        native, resources, areas = _compile(manifest, world, index, items, catalog=catalog)
+        problems = {} if key in stored else None
+        native, resources, areas = _compile(manifest, world, index, items, problems, catalog=catalog,
+                                            stored=key in stored, notes=notes)
         compiled[key] = native
         required.update(resources); pristine.update(areas)
+        if problems:
+            # The other rows of its saves still need their prepared resources.
+            kept.add(key)
+            notes += [f"Saved games of revision {key[:12]} keep their settings, but {identity} may no longer "
+                      f"work in them: {reason}" for identity, reason in sorted(problems.items())]
+            continue
         base = "campaign-store/revisions/" + key
         pending[base + ".json"] = canonical_bytes(manifest)
         pending[base + ".lua"] = _render_lua(manifest)
@@ -663,7 +762,23 @@ def export_native(store: Path, catalog: dict, world: dict, output: Path,
             resource_bytes[resource] = data
             if resource in pristine:
                 pending[name.upper() + ".pristine.are"] = data
-    kangaxx = any(m.get("original_options", {}).get("kangaxx") for m in manifests.values())
+        # The quest routes' reward replies that other dialogues copy are gated
+        # there too; the dialogues they read must be as scanned.
+        dialogues = set(reader.names("dlg"))
+        copies = RewardCopies(lambda name: reader.read("dlg", name) if name in dialogues else None,
+                              {resource: row["sha256"] for resource, row in index["resources"].items()})
+        routes = sorted({key for resource in required & MODE2_RESOURCES.keys() for key in MODE2_RESOURCES[resource]})
+        changed = sorted(set().union(*(copies.checked(key) for key in routes)) & copies.changed)
+        _require(not changed, f"Installed resource changed; rescan before export: {changed[0] if changed else ''}")
+        # What the runtime finds in override for the guarded scripts of the
+        # revisions exported before; checked below for those that are kept.
+        live = {}
+        for key in sorted(stored):
+            for resource, _ in _staged_scripts(key, manifests[key], _stored_native(exported, key)):
+                kind, name = resource.split(":", 1)
+                live[resource] = (reader.read(kind, name) if name in reader.names(kind) and
+                                  reader.origin(kind, name) == "override" else None)
+    kangaxx =any(m.get("original_options", {}).get("kangaxx") for m in manifests.values())
     cursed = any("cursed_disguises" in m for m in manifests.values())
     reward_texts = {}
     container_texts = {}
@@ -718,6 +833,12 @@ def export_native(store: Path, catalog: dict, world: dict, output: Path,
             if filename in native["resource_hashes"]:
                 native["resource_hashes"][filename] = hashlib.sha256(patched).hexdigest()
 
+    for resource, patched in copies.patches(routes).items():
+        filename = resource[4:].upper() + ".DLG"
+        _require("resource-overrides/" + filename not in pending,
+                 f"Two reward changes would replace the same dialogue: {filename}")
+        pending["resource-overrides/" + filename] = patched
+
     for resource in sorted(required & CONTAINER_RESOURCES.keys()):
         patched = patch_container_resource(resource, resource_bytes[resource], refs=container_texts.get(resource))
         kind, name = resource.split(":")
@@ -728,6 +849,8 @@ def export_native(store: Path, catalog: dict, world: dict, output: Path,
                 native["resource_hashes"][filename] = hashlib.sha256(patched).hexdigest()
 
     for key, manifest in sorted(manifests.items()):
+        if key in kept:
+            continue
         native = compiled[key]
         shield = manifest.get("spell_shield")
         if shield:
@@ -813,6 +936,47 @@ def export_native(store: Path, catalog: dict, world: dict, output: Path,
             pending[base + ".removed.cre"] = rewrite_inventory(
                 original, {source["record"]["record_index"]:
                            None if replacement == "blank" else replacement})
+    # Where the game changed so that a revision exported earlier would now get
+    # other files, its saves keep the files they were exported with.
+    for key in sorted(stored - kept):
+        prefix = f"campaign-store/revisions/{key}."
+        own = [relative for relative in pending if relative.startswith(prefix)]
+        if not any(_store_path(output, Path(relative)).is_file() and
+                   _store_path(output, Path(relative)).read_bytes() != pending[relative] for relative in own):
+            continue
+        kept.add(key)
+        for relative in own:
+            del pending[relative]
+        before = _stored_native(exported, key)
+        hashes = before.get("resource_hashes", {}), compiled[key]["resource_hashes"]
+        changed = sorted(name for name in {*hashes[0], *hashes[1]} if hashes[0].get(name) != hashes[1].get(name))
+        notes.append(f"Saved games of revision {key[:12]} keep the settings exported earlier, although "
+                     f"{', '.join(changed) or 'game files they use'} changed since then")
+    # At every start the runtime checks each listed revision: the staged bytes
+    # of its guarded scripts against the game's override files, and the area
+    # each guarded area source recorded against the shared pristine copy. A
+    # kept revision that would fail there stops the runtime for every game.
+    for key in sorted(kept):
+        before = _stored_native(exported, key)
+        needed = []  # (file, as the game has it, as Apply would leave it, as the revision needs it)
+        for resource, staged in _staged_scripts(key, manifests[key], before):
+            filename = _filename(resource)
+            needed.append((filename, live.get(resource), pending.get("resource-overrides/" + filename, live.get(resource)),
+                           _store_path(output, Path(staged)).read_bytes()))
+        for area in sorted(_gate_areas(before)):
+            # The pristine copy is the game's area as Apply prepares it now.
+            copy = pending.get(area + ".pristine.are")
+            if copy is None and _store_path(output, Path(area + ".pristine.are")).is_file():
+                copy = _store_path(output, Path(area + ".pristine.are")).read_bytes()
+            digest = copy and hashlib.sha256(copy).hexdigest()
+            needed.append((area + ".ARE", digest, digest, before["resource_hashes"].get(area + ".ARE")))
+        for filename, current, installed, expected in needed:
+            if current != expected:
+                change = f"it changed in the game since then; {_CHECKED}. Restore {filename} before applying"
+            else:
+                change = f"Apply would now replace it with another version; {_CHECKED}"
+            _require(installed == expected, f"Saved games of revision {key[:12]} need {filename} as it was when "
+                                            f"they were exported, but {change}")
     for relative, data in pending.items():
         path = _store_path(output, Path(relative))
         if relative.startswith("campaign-store/"):
@@ -824,6 +988,14 @@ def export_native(store: Path, catalog: dict, world: dict, output: Path,
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_bytes(data)
     revisions = sorted(manifests)
+    listed = set(pending)
+    for key in kept:
+        # Its files stay as they were exported: list them, and read its gate.
+        compiled[key] = _stored_native(exported, key)
+        for path in (exported / "revisions").iterdir():
+            if path.name.startswith(key + "."):
+                files = [path] if path.is_file() else [inner for inner in path.rglob("*") if inner.is_file()]
+                listed.update(inner.relative_to(output).as_posix() for inner in files)
     guarded_revisions = [key for key in revisions if "source_gate" in compiled[key] or "spell_shield" in compiled[key]]
     _store_path(output, Path("source-gate.lua")).write_bytes(_render_lua(guarded_revisions))
     if starts is None:
@@ -834,8 +1006,10 @@ def export_native(store: Path, catalog: dict, world: dict, output: Path,
             pointer["main"] = main
     _store_path(output, Path("next.lua")).write_bytes(_render_lua(pointer))
     _store_path(output, Path(EXPORT_FILES)).write_bytes(canonical_bytes(
-        {"schema": EXPORT_FILES_SCHEMA, "files": sorted({*pending, "source-gate.lua", "next.lua"})}))
+        {"schema": EXPORT_FILES_SCHEMA, "files": sorted({*listed, "source-gate.lua", "next.lua"})}))
     result = {"revisions": revisions, "config_path": str(output), "state": "experimental-native-config"}
+    if notes:
+        result["notes"] = sorted(set(notes))
     if starts is None:
         result["revision"] = selected["revision"]
     else:

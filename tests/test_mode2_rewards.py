@@ -19,6 +19,7 @@ from flir_config.profiles import ProfileError
 from flir_config.quest_options import _Dialogue
 from flir_config.quest_rewards import _blocks
 from flir_config.resources import _Tlk
+from flir_config.script_text import script_blocks
 from test_postinstall_resources import make_tlk
 
 # The reviewed EET resources and their exact patches (text routes with the
@@ -195,14 +196,20 @@ def obj(selector=0):
     return f'0 0 0 0 0 0 0 {selector} 0 0 0 0 ""OB\n'
 
 
-def action(opcode, value=0, text="", target=0, actor=0):
+def action(opcode, value=0, text="", target=0, actor=0, second=""):
     return (f'AC\n{opcode}OB\n{obj(actor)}OB\n{obj(target)}OB\n{obj()}'
-            f'{value} 0 0 0 0"{text}" "" AC\n')
+            f'{value} 0 0 0 0"{text}" "{second}" AC\n')
 
 
 def block(actions, condition="AR1202Quest"):
+    return alternatives(actions, condition=condition, weight=100)
+
+
+def alternatives(*responses, condition="AR1202Quest", weight=50):
+    """A block whose responses the engine chooses between by weight."""
     condition = f'TR\n16399 1 0 0 0 "{condition}" "" OB\n{obj()}TR\n'
-    return 'CR\nCO\n' + condition + 'CO\nRS\nRE\n100' + actions + 'RE\nRS\nCR\n'
+    return ('CR\nCO\n' + condition + 'CO\nRS\n' +
+            "".join(f'RE\n{weight}' + actions + 'RE\n' for actions in responses) + 'RS\nCR\n')
 
 
 def well_reward(target=21, display=40850):
@@ -346,8 +353,13 @@ class Mode2RewardTests(unittest.TestCase):
             ({(22, 0): b"GiveGoldForce(500)", (22, 1): b"GiveGoldForce(500)"},
              "UHOGRE01.DLG has no reply that gives SHLD26"),
             ({(22, 0): f"{grant}\r\n{grant}".encode()}, "UHOGRE01.DLG state 22 gives SHLD26 twice in one reply"),
-            ({(22, 1): f'{grant}\r\nTakePartyItem("shld26")'.encode()},
-             r"UHOGRE01.DLG state 22 names SHLD26 in TakePartyItem\(\), not in a GiveItemCreate\(\) grant"),
+            ({(22, 1): f'{grant}\r\nGiveItem("shld26",Player2)'.encode()},
+             r"UHOGRE01.DLG state 22 also gives SHLD26 with GiveItem\(\), which the route cannot gate"),
+            ({(23, 0): b'TakeItemReplace("Shld26","misc5x",LastTalkedToBy)'},
+             r"UHOGRE01.DLG state 23 also gives SHLD26 with TakeItemReplace\(\), which the route cannot gate"),
+            ({(22, 0): b'ActionOverride(Player2,GiveItemCreate("shld26",Myself,0,0,0))'},
+             r"UHOGRE01.DLG state 22 gives SHLD26 through ActionOverride\(\), whose recipient the route "
+             "cannot mark"),
             ({(22, 0): b'GiveItemCreate("shld26",LastTalkedToBy,0,0,0'},
              "UHOGRE01.DLG state 22 names SHLD26 in actions that cannot be read"),
             ({(22, 0): b'GiveItemCreate("shld26")'}, "UHOGRE01.DLG state 22 gives SHLD26 without a recipient"))
@@ -372,14 +384,15 @@ class Mode2RewardTests(unittest.TestCase):
         script_cases = (
             (well(other, other), "DDWELL.BCS has no block that gives HELM21"),
             (well(other, block(well_reward() + action(140, text="HELM21", target=21))),
-             "DDWELL.BCS block 1 gives HELM21 twice"),
+             "DDWELL.BCS block 1 gives HELM21 twice in one response"),
             (well(other, block(well_reward().replace(action(140, text="helm21", target=21),
                                                      action(140, text="helm21", target=21, actor=17)))),
-             "DDWELL.BCS block 1 gives HELM21 through another actor"),
+             r"DDWELL.BCS block 1 gives HELM21 through ActionOverride\(\), whose recipient the route "
+             "cannot mark"),
             (well(other, block(well_reward() + action(82, text="helm21"))),
-             r"DDWELL.BCS block 1 names HELM21 in action 82, not in a GiveItemCreate\(\) grant"),
-            (well(other, block(well_reward() + action(151, 40850, target=1))),
-             "DDWELL.BCS block 1 shows the text that names the reward twice"),
+             r"DDWELL.BCS block 1 also gives HELM21 with CreateItem\(\), which the route cannot gate"),
+            (well(other, alternatives(well_reward(), action(363, text="shop01", second="helm21"))),
+             r"DDWELL.BCS block 1 also gives HELM21 with AddStoreItem\(\), which the route cannot gate"),
             (well(other, block(well_reward(display=40849))),
              r"DDWELL.BCS no longer shows the text that names the reward \(40850\)"),
             (b"SC\nCR\nCO\nSC\n", "DDWELL.BCS cannot be read as a compiled script: its last block is not closed"),
@@ -392,7 +405,39 @@ class Mode2RewardTests(unittest.TestCase):
                     rewards.patch_reward("bcs:ddwell", data, ddwell_ref=100001)
         self.assertEqual(rewards.route_reasons("bcs:asysta01", script_fixture("asysta01").replace(
                          action(82, text="Helm19").encode(), action(140, text="Helm19").encode())),
-                         {"asysta01": "ASYSTA01.BCS block 0 names HELM19 in action 140, not in a CreateItem() grant"})
+                         {"asysta01": "ASYSTA01.BCS block 0 also gives HELM19 with GiveItemCreate(), "
+                                      "which the route cannot gate"})
+
+    def test_actions_that_only_take_show_or_test_the_reward_never_stop_a_route(self):
+        # After a moved reward these find it gone, as when the player sold it.
+        original = dialogue_fixture(rewards.resource_specs("dlg:uhogre01"))
+        grant = 'GiveItemCreate("shld26",LastTalkedToBy,0,0,0)'
+        data = with_actions(original, "uhogre01", {
+            (22, 1): f'TakePartyItem("misc5x")\r\n{grant}\r\nDestroyItem("SHLD26")'.encode(),
+            (23, 0): b'TakeItemReplace("misc5x","shld26",LastTalkedToBy)\r\nActionOverride(Player2,'
+                     b'DestroyItem("shld26"))\r\nSetGlobal("SHLD26","GLOBAL",1)'})
+        self.assertEqual(rewards.route_reasons("dlg:uhogre01", data), {})
+        result = self.synthetic_patch("uhogre01", data)
+        self.check_dialogue("uhogre01", data, result, branches=((22, 0), (22, 1)))
+        # A script block chooses one of its responses: each may give the
+        # reward once, and every display of the reward's text changes.
+        other = block(action(151, 40849, target=1))
+        twice_shown = well_reward() + action(151, 40850, target=2) + action(116, text="HELM21")
+        script = ('SC\n' + other + alternatives(well_reward(), twice_shown) + other + 'SC\n').encode()
+        self.assertEqual(rewards.route_reasons("bcs:ddwell", script), {})
+        patched = self.synthetic_patch("ddwell", script)
+        blocks = script_blocks(patched).blocks
+        self.assertEqual(len(blocks), 4)
+        unselected, selected = blocks[1], blocks[2]
+        consumed = action(30, 1, "GLOBALFLPR_XM2_27").encode()
+        event = action(30, 1, "GLOBALFLPR_EM2_27").encode()
+        self.assertEqual(unselected.count(action(140, text="helm21", target=21).encode()), 2)
+        self.assertEqual(unselected.count(event), 2)
+        self.assertEqual(selected.count(consumed), 2)
+        self.assertNotIn(b'"helm21"', selected)
+        self.assertEqual(selected.count(b"151OB"), 3)
+        self.assertEqual(selected.count(b"100001 0 0 0 0"), 3)
+        self.assertIn(action(116, text="HELM21").encode(), selected)
 
     def test_compiled_grants_keep_owner_or_original_object_and_do_not_move_other_rewards(self):
         for name in ("asysta01", "ddwell"):
@@ -642,6 +687,36 @@ class Mode2RewardTests(unittest.TestCase):
         self.assertEqual(rewards.target_spec("bg2:mode2:target:22")["required_transfers"], ("scyarryl",))
         self.assertEqual(rewards.REWARDS["sctelwyn"]["event_global"], "FLPR_EA_SCULPTOR")
         self.assertEqual(rewards.REWARDS["scsain"]["event_global"], "FLPR_EA_SCULPTOR")
+
+    def test_a_cloned_start_state_keeps_its_place_among_the_start_conditions(self):
+        # The engine tries start states in the order of their conditions. The
+        # djinn's reward state starts the dialogue; another mod's start state
+        # comes after it and must stay after both of its variants.
+        d = _Dialogue(dialogue_fixture(rewards.resource_specs("dlg:ppdjinn")), "ppdjinn")
+        struct.pack_into("<I", d.states[0], 0, 48995)
+        d.state_triggers += [b'NumTimesTalkedTo(0)\r\n', b'Global("OtherModDjinn","GLOBAL",1)\r\n']
+        struct.pack_into("<I", d.states[0], 12, 0)
+        struct.pack_into("<I", d.states[1], 12, 1)
+        original = d.render()
+        result = rewards.patch_reward("dlg:ppdjinn", original, refs={48995: 100001})
+        after = _Dialogue(result, "ppdjinn")
+        entries = {index: struct.unpack_from("<I", state, 12)[0] for index, state in enumerate(after.states)}
+        clone = len(d.states)
+        self.assertEqual(struct.unpack_from("<I", after.states[clone], 0)[0], 100001)
+        self.assertEqual((entries[0], entries[clone], entries[1]), (0, 1, 2))
+        self.assertEqual(after.state_triggers, [
+            b'NumTimesTalkedTo(0)\r\n!Global("FLPR_QM2_24","GLOBAL",1)\r\n',
+            b'NumTimesTalkedTo(0)\r\nGlobal("FLPR_QM2_24","GLOBAL",1)\r\n',
+            b'Global("OtherModDjinn","GLOBAL",1)\r\n'])
+        self.assertEqual(rewards._text_original(result, "dlg:ppdjinn"), (original, {48995: 100001}))
+        self.assertEqual(rewards.patch_reward("dlg:ppdjinn", result), result)
+        # Where every other start condition comes first, the gated pair is
+        # appended, as earlier exports did.
+        struct.pack_into("<I", d.states[0], 12, 1)
+        struct.pack_into("<I", d.states[1], 12, 0)
+        after = _Dialogue(rewards.patch_reward("dlg:ppdjinn", d.render(), refs={48995: 100001}), "ppdjinn")
+        self.assertEqual(after.state_triggers[:2], d.state_triggers)
+        self.assertEqual([struct.unpack_from("<I", after.states[index], 12)[0] for index in (1, 0, clone)], [0, 2, 3])
 
     def test_sculptor_transfer_is_source12_auxiliary_copy_and_preserves_ordinary_giveitem(self):
         spec = rewards.transfer_spec("scyarryl")

@@ -14,6 +14,7 @@ from flir_config.profiles import ProfileError
 from flir_config.quest_options import _Dialogue
 from flir_config.quest_rewards import _blocks, _global_guard, _newline
 from flir_config.resources import _Tlk
+from flir_config.script_text import script_blocks
 from test_postinstall_resources import make_tlk
 
 # Where the reviewed EET resources test the treasure: (blocks, sites) of each
@@ -293,37 +294,109 @@ class ContainerRewardTests(unittest.TestCase):
         self.assertTrue(after.state_triggers[0].endswith(b'\nGlobal("Unrelated","GLOBAL",4)'))
         self.assertTrue(after.triggers[-1].endswith(b'\nGlobal("Unrelated","GLOBAL",4)'))
 
+    def test_treasure_tests_inside_or_groups_and_repeated_golem_texts(self):
+        # Another mod's OR() groups around the treasure tests, and a golem
+        # block whose two alternative responses both show the golem's text.
+        other = rewards._trigger(16399, 1, text="GLOBALOther")
+        shown = action(151, 38758)
+        for resource, condition, responses in (
+                ("bcs:kpgol01", rewards._trigger(16521, 2) + rewards._trigger(16450, text="ax1h13") + other,
+                 b"RE\n50" + shown + action(10) + b"RE\nRE\n50" + shown + b"RE\n"),
+                ("bcs:kpgol01", rewards._trigger(16450, negate=1, text="ax1h13") + rewards._trigger(16521, 2) +
+                 other + rewards._trigger(16450, text="AX1H13"), b"RE\n100" + shown + b"RE\n"),
+                ("bcs:samia", rewards._trigger(16521, 3) + rewards._trigger(16450, text="shld21") + other +
+                 rewards._trigger(16450, text="sw1h32"), b"RE\n100" + action(10) + b"RE\n")):
+            with self.subTest(resource=resource, condition=condition):
+                original = b"SC\nCR\nCO\n" + condition + b"CO\nRS\n" + responses + b"RS\nCR\nSC\n"
+                result = self.patched(resource, original)
+                spec = rewards.TARGETS[rewards.RESOURCE_TARGETS[resource][0]]
+                treasure = set(rewards.treasure(spec["target_id"]))
+                (block,), (selected, excluded) = script_blocks(original).blocks, script_blocks(result).blocks
+                self.assertEqual(excluded.split(b"CO\n")[2], block.split(b"CO\n")[2])
+                after = selected.split(b"CO\n")[2]
+                self.assertEqual(after.count(b'100001 0 0 0 0""'), responses.count(b'38758 0 0 0 0""'))
+                self.assertEqual(after.replace(b'100001 0 0 0 0""', b'38758 0 0 0 0""'), block.split(b"CO\n")[2])
+                for active, taken, owns, set_other in product((False, True), repeat=4):
+                    state = {"GLOBAL" + spec["activation_global"]: int(active), "GLOBALOther": int(set_other),
+                             spec["latch_scope"] + spec["latch_global"]: int(taken)}
+                    has, took = (treasure if owns else set()), (treasure if taken else set())
+                    # The latch stands for the party having the treasure.
+                    self.assertEqual(compiled_conditions(selected.split(b"CO\n")[1], state, has),
+                                     active and compiled_conditions(condition, state, took))
+                    self.assertEqual(compiled_conditions(excluded.split(b"CO\n")[1], state, has),
+                                     not active and compiled_conditions(condition, state, has))
+        for resource, condition in (
+                ("dlg:safanj", b'OR(2)\r\nPartyHasItem("book03")\r\nGlobal("Other","GLOBAL",1)\r\n'),
+                ("dlg:safanj", b'!PartyHasItem("book03")\nOR(2)\nGlobal("Other","GLOBAL",1)\nPartyHasItem("BOOK03")'),
+                ("dlg:samia", b'OR(3)\r\nPartyHasItem("sw1h32")\r\nGlobal("Other","GLOBAL",1)\r\nPartyHasItem("shld21")\r\n')):
+            with self.subTest(resource=resource, condition=condition):
+                sites = FIXTURE_SITES[resource][1]
+                original = dialogue_fixture(resource, {index: condition for index in sites})
+                result = self.patched(resource, original)
+                after = _Dialogue(result, resource[4:])
+                spec = rewards.TARGETS[rewards.RESOURCE_TARGETS[resource][0]]
+                treasure = set(rewards.treasure(spec["target_id"]))
+                for index, active, taken, owns, set_other in product(sites, *[(False, True)] * 4):
+                    state = {"GLOBAL" + spec["activation_global"]: int(active), "GLOBALOther": int(set_other),
+                             spec["latch_scope"] + spec["latch_global"]: int(taken)}
+                    has, took = (treasure if owns else set()), (treasure if taken else set())
+                    self.assertEqual(text_conditions(after.state_triggers[index], state, has),
+                                     text_conditions(condition, state, took if active else has))
+
     def test_routes_the_check_cannot_recognise_name_their_reason(self):
         def blocks(resource, *made):
             return b"SC\n" + b"".join(made) + b"SC\n"
         golem = action(151, 38758) + action(10)
         unrecognised = "tests {} in a way the container route does not recognise"
+        shared = "their shared latch records only that one of them was taken"
         cases = (
             ("bcs:kpgol01", blocks("bcs:kpgol01", script_block(b"", golem)), "KPGOL01.BCS has no block that tests AX1H13"),
-            ("bcs:kpgol01", blocks("bcs:kpgol01", script_block(
-                rewards._trigger(16521, 2) + rewards._trigger(16450, text="ax1h13") +
-                rewards._trigger(16399, 1, text="GLOBALOther"), golem)),
-             "KPGOL01.BCS block 0 " + unrecognised.format("AX1H13")),
             ("bcs:kpgol01", blocks("bcs:kpgol01", script_block(rewards._trigger(16450, text="ax1h13"), action(10))),
              r"KPGOL01.BCS no longer shows the golem's text that names the treasure \(38758\)"),
-            ("bcs:kpgol01", blocks("bcs:kpgol01", script_block(rewards._trigger(16450, text="ax1h13"),
-                                                                action(151, 38758) + golem)),
-             "KPGOL01.BCS block 0 shows text 38758 twice"),
+            ("bcs:kpgol01", blocks("bcs:kpgol01", script_block(
+                rewards._trigger(16481, text="ax1h13", selector=2), golem)),
+             r"KPGOL01.BCS block 0 tests AX1H13 with HasItem\(\), which the route cannot replace by the "
+             "container's latch"),
+            ("bcs:kpgol01", blocks("bcs:kpgol01", script_block(
+                rewards._trigger(16521, 3) + rewards._trigger(16450, text="ax1h13") +
+                rewards._trigger(16399, 1, text="GLOBALOther"), golem)),
+             r"KPGOL01.BCS block 0 ends in an OR\(\) group that counts more conditions than follow it, "
+             "so a condition added after it would join it"),
+            ("bcs:kpgol01", blocks("bcs:kpgol01", script_block(
+                rewards._trigger(16521, 2) + rewards._trigger(16521, 1) + rewards._trigger(16450, text="ax1h13") +
+                rewards._trigger(16399, 1, text="GLOBALOther"), golem)),
+             r"KPGOL01.BCS block 0 tests AX1H13 in an OR\(\) group that is negated or holds another OR\(\), "
+             "which the route cannot read"),
             ("bcs:ppchest", blocks("bcs:ppchest", script_block(
                 rewards._trigger(16501, negate=1, text="bow19b", selector=1), action(10))),
-             "PPCHEST.BCS block 0 " + unrecognised.format("BOW19B")),
+             r"PPCHEST.BCS block 0 tests BOW19B with Contains\(\), which the route cannot replace by the "
+             "container's latch"),
             ("bcs:samia", blocks("bcs:samia", script_block(
                 rewards._trigger(16521, 2) + rewards._trigger(16450, text="shld21") +
                 rewards._trigger(16399, 1, text="GLOBALOther"), action(10))),
-             "SAMIA.BCS block 0 " + unrecognised.format("SHLD21/SW1H32")),
+             r"SAMIA.BCS block 0 does not test SHLD21/SW1H32 together in one OR\(\) group; " + shared),
+            ("bcs:samia", blocks("bcs:samia", script_block(
+                rewards._trigger(16450, text="shld21") + rewards._trigger(16450, text="sw1h32"), action(10))),
+             r"SAMIA.BCS block 0 does not test SHLD21/SW1H32 together in one OR\(\) group; " + shared),
+            ("bcs:samia", blocks("bcs:samia", script_block(
+                rewards._trigger(16521, 2) + rewards._trigger(16450, negate=1, text="shld21") +
+                rewards._trigger(16450, text="sw1h32"), action(10))),
+             "SAMIA.BCS block 0 tests whether the party lacks one of SHLD21/SW1H32; " + shared),
             ("bcs:kpgol01", b"SC\nCR\nCO\nSC\n",
              "KPGOL01.BCS cannot be read as a compiled script: its last block is not closed"),
             ("dlg:samia", dialogue_fixture("dlg:samia", {1: b'Global("Unrelated","GLOBAL",4)\r\n'}),
              "SAMIA.DLG has no condition that tests SHLD21/SW1H32"),
+            ("dlg:samia", dialogue_fixture("dlg:samia", {1: b'PartyHasItem("shld21")\r\nPartyHasItem("sw1h32")\r\n'}),
+             r"SAMIA.DLG condition 1 does not test SHLD21/SW1H32 together in one OR\(\) group; " + shared),
             ("dlg:safanj", dialogue_fixture("dlg:safanj", {2: b'HasItem("book03",Myself)\r\n'}),
+             r"SAFANJ.DLG condition 2 tests BOOK03 with HasItem\(\), which the route cannot replace by the "
+             "container's latch"),
+            ("dlg:safanj", dialogue_fixture("dlg:safanj", {2: b'PartyHasItem("book03",Myself)\r\n'}),
              "SAFANJ.DLG condition 2 " + unrecognised.format("BOOK03")),
-            ("dlg:safanj", dialogue_fixture("dlg:safanj", {2: b'OR(2)\r\nPartyHasItem("book03")\r\nGlobal("X","GLOBAL",1)\r\n'}),
-             "SAFANJ.DLG condition 2 " + unrecognised.format("BOOK03")),
+            ("dlg:safanj", dialogue_fixture("dlg:safanj", {2: b'OR(3)\r\nPartyHasItem("book03")\r\nGlobal("X","GLOBAL",1)\r\n'}),
+             r"SAFANJ.DLG condition 2 tests BOOK03 in an OR\(\) group that counts more conditions than follow it"),
+            ("dlg:safanj", dialogue_fixture("dlg:safanj", {2: b'OR(X)\r\nPartyHasItem("book03")\r\nGlobal("X","GLOBAL",1)\r\n'}),
+             r"SAFANJ.DLG condition 2 has an OR\(\) whose count the route cannot read"),
             ("dlg:safanj", b"DLG V1.0" + bytes(10), "SAFANJ.DLG cannot be read as a dialogue"),
         )
         for resource, data, reason in cases:

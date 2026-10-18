@@ -68,7 +68,13 @@ RESOURCE_TARGETS = {resource: tuple(row["target_id"] for row in _ROWS if resourc
 TEXT_RESOURCES = frozenset(("bcs:kpgol01", "bcs:kpgol02", "bcs:kpgol05"))
 _GOLEM_TEXT = 38758
 _TRAILER = b"FLPRCON1"
-_PARTY_HAS_ITEM, _HAS_ITEM, _OR, _SET_GLOBAL = 16450, 16501, 16521, 30
+_PARTY_HAS_ITEM, _CONTAINS, _OR, _SET_GLOBAL = 16450, 16501, 16521, 30
+# TRIGGER.IDS names of the triggers that test an item, for the reasons.
+_TRIGGERS = {1: "Acquired", 9: "Unusable", 16450: "PartyHasItem", 16481: "HasItem", 16501: "Contains",
+             16503: "NumItems", 16504: "NumItemsGT", 16505: "NumItemsLT", 16506: "NumItemsParty",
+             16507: "NumItemsPartyGT", 16508: "NumItemsPartyLT", 16511: "HasItemEquiped",
+             16553: "PartyHasItemIdentified", 16578: "HasItemEquipedReal", 16643: "CheckItemSlot",
+             16644: "CurrentAmmo"}
 
 
 def target_spec(target_id: str) -> dict:
@@ -162,12 +168,63 @@ def _with_integer(action: bytes, newline: bytes, value: int) -> bytes:
     return action[:start] + str(value).encode() + action[start + number.end():]
 
 
-def _script_sites(script, resource: str) -> dict[int, tuple]:
-    """Each block that tests the treasure: its parts, what it is and where.
+def _with_count(trigger: bytes, newline: bytes, count: int) -> bytes:
+    """A compiled OR() trigger that joins <count> conditions."""
+    start = len(b"TR" + newline)
+    number = re.match(rb"[0-9]+ (-?[0-9]+)", trigger[start:])
+    return trigger[:start + number.start(1)] + str(count).encode() + trigger[start + number.end(1):]
 
-    A consumer block tests whether the party has the treasure; its test
-    becomes the latch. A setter block sets the latch itself when the container
-    no longer holds the treasure; the Host takes that over.
+
+def _groups(counts: list) -> list[tuple[int | None, list[int], bool]]:
+    """The groups of a condition list: (OR position or None, members, complete).
+
+    <counts> has an OR()'s count at its position and None elsewhere. OR(n)
+    joins the n conditions after it; any other condition stands alone. Only
+    the last group can be incomplete, when fewer conditions follow its OR().
+    """
+    groups, at = [], 0
+    while at < len(counts):
+        if counts[at] is None:
+            groups.append((None, [at], True))
+            at += 1
+            continue
+        wanted = max(counts[at], 0)
+        members = list(range(at + 1, min(at + 1 + wanted, len(counts))))
+        groups.append((at, members, len(members) == wanted))
+        at += 1 + len(members)
+    return groups
+
+
+def _checked_group(where, shown, items, first, members, complete, tested, negated, nested) -> None:
+    """Raise unless the route can rewrite a group that holds treasure tests.
+
+    <tested> is the set of items the group's tests name, <negated> whether one
+    of them tests that the party lacks it, <nested> whether the group negates
+    its OR() or holds another one.
+    """
+    if not complete:
+        raise ProfileError(f"{where} tests {shown} in an OR() group that counts more conditions than follow it")
+    if nested:
+        raise ProfileError(f"{where} tests {shown} in an OR() group that is negated or holds another OR(), "
+                           "which the route cannot read")
+    if len(items) > 1:
+        # The shared latch records that one of the treasures was taken: it can
+        # stand only for "the party has one of them".
+        if first is None or tested != set(items):
+            raise ProfileError(f"{where} does not test {shown} together in one OR() group; "
+                               "their shared latch records only that one of them was taken")
+        if negated:
+            raise ProfileError(f"{where} tests whether the party lacks one of {shown}; "
+                               "their shared latch records only that one of them was taken")
+
+
+def _script_sites(script, resource: str) -> dict[int, tuple]:
+    """Each block that tests the treasure: its parts, its edits and its displays.
+
+    A consumer block tests whether the party has the treasure; each test
+    becomes the latch (edits of its conditions), wherever it stands in its
+    block. A setter block (edits None) sets the latch itself when the
+    container no longer holds the treasure; the Host takes that over.
     """
     spec, items, label = _spec(resource), _items(resource), _label(resource)
     shown = "/".join(item.decode().upper() for item in items)
@@ -179,47 +236,60 @@ def _script_sites(script, resource: str) -> dict[int, tuple]:
             continue
         head, conditions, responses = block_parts(block, newline)
         triggers = block_triggers(conditions, newline)
-        members, remaining = set(), 0
-        for number, trigger in enumerate(triggers):
-            if remaining:
-                members.add(number)
-                remaining -= 1
-            elif trigger.opcode == _OR:
-                remaining = trigger.value
         tests = [number for number, trigger in enumerate(triggers) if trigger.strings[0].lower() in items]
         if not tests:
             continue
         where = f"{label} block {index}"
         actions = block_actions(responses, newline)
-        if all(triggers[number].opcode == _PARTY_HAS_ITEM for number in tests):
-            if len(items) > 1:
-                # Either treasure counts: one OR(n) of exactly these tests.
-                first = tests[0] - 1
-                if (len(tests) != len(items) or tests != list(range(first + 1, first + 1 + len(items))) or
-                        first < 0 or triggers[first].opcode != _OR or triggers[first].value != len(items) or
-                        {triggers[number].strings[0].lower() for number in tests} != set(items) or
-                        any(triggers[number].negated for number in tests) or triggers[first].negated):
-                    raise ProfileError(f"{where} tests {shown} in a way the container route does not recognise")
-                span, value = (triggers[first].start, triggers[tests[-1]].end), 1
+        groups = _groups([trigger.value if trigger.opcode == _OR else None for trigger in triggers])
+        if groups and not groups[-1][2]:
+            # The route adds its own condition at the end of the block.
+            raise ProfileError(f"{where} ends in an OR() group that counts more conditions than follow it, "
+                               "so a condition added after it would join it")
+        if (all(triggers[number].opcode == _CONTAINS and triggers[number].negated for number in tests) and
+                any(action.opcode == _SET_GLOBAL and action.strings[0].lower() == latch for action in actions)):
+            sites[index] = (head, conditions, responses, None, [])
+            continue
+        other = next((triggers[number] for number in tests if triggers[number].opcode != _PARTY_HAS_ITEM), None)
+        if other is not None:
+            name = _TRIGGERS.get(other.opcode, f"trigger {other.opcode}")
+            raise ProfileError(f"{where} tests {other.strings[0].decode('latin-1').upper()} with {name}(), "
+                               "which the route cannot replace by the container's latch")
+        edits = []
+        for first, members, complete in groups:
+            hit = [number for number in members if number in tests]
+            if not hit:
+                continue
+            nested = first is not None and (triggers[first].negated or
+                                            any(triggers[number].opcode == _OR for number in members))
+            _checked_group(where, shown, items, first, members, complete,
+                           {triggers[number].strings[0].lower() for number in hit},
+                           any(triggers[number].negated for number in hit), nested)
+            if len(items) == 1:
+                edits += [(triggers[number].start, triggers[number].end,
+                           _latch(spec, 0 if triggers[number].negated else 1, newline)) for number in hit]
+            elif len(hit) == len(members):
+                # OR(n) of the treasure tests only: the latch replaces the group.
+                edits.append((triggers[first].start, triggers[members[-1]].end, _latch(spec, 1, newline)))
             else:
-                if len(tests) != 1 or tests[0] in members:
-                    raise ProfileError(f"{where} tests {shown} in a way the container route does not recognise")
-                test = triggers[tests[0]]
-                span, value = (test.start, test.end), 0 if test.negated else 1
-            displays = [action for action in actions if action.integer == _GOLEM_TEXT]
-            if len(displays) > 1:
-                raise ProfileError(f"{where} shows text {_GOLEM_TEXT} twice")
-            sites[index] = (head, conditions, responses, (span, value), displays[0] if displays else None)
-        elif (all(triggers[number].opcode == _HAS_ITEM and triggers[number].negated for number in tests) and
-              any(action.opcode == _SET_GLOBAL and action.strings[0].lower() == latch for action in actions)):
-            sites[index] = (head, conditions, responses, None, None)
-        else:
-            raise ProfileError(f"{where} tests {shown} in a way the container route does not recognise")
+                group = triggers[first]
+                edits.append((group.start, group.end, _with_count(conditions[group.start:group.end], newline,
+                                                                  len(members) - len(hit) + 1)))
+                edits.append((triggers[hit[0]].start, triggers[hit[0]].end, _latch(spec, 1, newline)))
+                edits += [(triggers[number].start, triggers[number].end, b"") for number in hit[1:]]
+        displays = [action for action in actions if action.integer == _GOLEM_TEXT]
+        sites[index] = (head, conditions, responses, edits, displays)
     if not sites:
         raise ProfileError(f"{label} has no block that tests {shown}")
     if resource in TEXT_RESOURCES and not any(site[4] for site in sites.values()):
         raise ProfileError(f"{label} no longer shows the golem's text that names the treasure ({_GOLEM_TEXT})")
     return sites
+
+
+def _replaced(data: bytes, edits) -> bytes:
+    for start, end, replacement in sorted(edits, reverse=True):
+        data = data[:start] + replacement + data[end:]
+    return data
 
 
 def _patch_script(resource, original, ref):
@@ -231,19 +301,18 @@ def _patch_script(resource, original, ref):
     newline = script.newline
     spec = _spec(resource)
     blocks = list(script.blocks)
-    for index, (head, conditions, responses, test, display) in sites.items():
+    for index, (head, conditions, responses, edits, displays) in sites.items():
         excluded = (head + b"CO" + newline + conditions +
                     _global_guard(spec["activation_global"], False, newline) + b"CO" + newline + responses)
         variants = []
-        if test is not None:
-            (start, end), value = test
-            changed = conditions[:start] + _latch(spec, value, newline) + conditions[end:]
+        if edits is not None:
             selected_response = responses
-            if resource in TEXT_RESOURCES and display is not None:
-                selected_response = (responses[:display.start] +
-                                     _with_integer(responses[display.start:display.end], newline, ref) +
-                                     responses[display.end:])
-            variants.append(head + b"CO" + newline + changed +
+            if resource in TEXT_RESOURCES:
+                # Every response that shows the golem's text shows the new one.
+                selected_response = _replaced(responses, [
+                    (display.start, display.end,
+                     _with_integer(responses[display.start:display.end], newline, ref)) for display in displays])
+            variants.append(head + b"CO" + newline + _replaced(conditions, edits) +
                             _global_guard(spec["activation_global"], True, newline) + b"CO" + newline +
                             selected_response)
         # A setter block (PPCHST's) is disabled only when the observer owns it.
@@ -252,57 +321,78 @@ def _patch_script(resource, original, ref):
     return script.prefix + b"".join(blocks) + script.suffix
 
 
-def _condition_edit(text: bytes, resource: str, where: str) -> tuple[int, int, bytes] | None:
-    """The rewrite of the one treasure test in a dialogue condition, or None without one."""
+def _condition_edits(text: bytes, resource: str, where: str) -> list[tuple[int, int, bytes]]:
+    """The rewrites of the treasure tests in a dialogue condition; none without one.
+
+    Each group of conditions that tests the treasure (an OR() group, or a
+    test standing alone) becomes two: (selected OR the group) AND (!selected
+    OR the group with the latch in place of its tests). Every other group
+    stays as written.
+    """
     items = _items(resource)
     if not _names(text, items):
-        return None
+        return []
     shown = "/".join(item.decode().upper() for item in items)
-    unknown = ProfileError(f"{where} tests {shown} in a way the container route does not recognise")
     found = calls(text)
     if found is None:
-        raise unknown
+        raise ProfileError(f"{where} tests {shown} in a way the container route does not recognise")
+    is_or = [call.name.lstrip(b"!").lower() == b"or" for call in found]
+    counts = [integer_argument(text, call, 0) if group else None for call, group in zip(found, is_or)]
+    if any(group and count is None for group, count in zip(is_or, counts)):
+        raise ProfileError(f"{where} has an OR() whose count the route cannot read")
     tests = [number for number, call in enumerate(found) if _names(text[call.start:call.end], items)]
-    members, remaining = set(), 0
-    for number, call in enumerate(found):
-        if remaining:
-            members.add(number)
-            remaining -= 1
-        elif named(call, "OR"):
-            remaining = integer_argument(text, call, 0) or 0
-    if not all(named(found[number], "PartyHasItem", "!PartyHasItem") and len(found[number].args) == 1 and
-               (string_argument(text, found[number], 0) or b"").lower() in items for number in tests):
-        raise unknown
-    if len(items) > 1:
-        first = tests[0] - 1
-        if (tests != list(range(first + 1, first + 1 + len(items))) or first < 0 or
-                not named(found[first], "OR") or integer_argument(text, found[first], 0) != len(items) or
-                {(string_argument(text, found[number], 0) or b"").lower() for number in tests} != set(items) or
-                any(named(found[number], "!PartyHasItem") for number in tests)):
-            raise unknown
-        start, negative, terms = found[first].start, False, [found[number] for number in tests]
-    else:
-        if len(tests) != 1 or tests[0] in members:
-            raise unknown
-        call = found[tests[0]]
-        start, negative, terms = call.start, named(call, "!PartyHasItem"), [call]
-    # Take the whole lines: their indentation before and the line end after.
-    line = max(text.rfind(b"\n", 0, start), text.rfind(b"\r", 0, start)) + 1
-    if not text[line:start].strip(b" \t"):
-        start = line
-    end = terms[-1].end
-    for newline in (b"\r\n", b"\n"):
-        if text.startswith(newline, end):
-            end += len(newline)
-            break
+    for number in tests:
+        call = found[number]
+        name = call.name.decode("latin-1").lstrip("!")
+        if not named(call, "PartyHasItem", "!PartyHasItem"):
+            item = next(item for item in items if _names(text[call.start:call.end], (item,)))
+            raise ProfileError(f"{where} tests {item.decode().upper()} with {name}(), "
+                               "which the route cannot replace by the container's latch")
+        if len(call.args) != 1 or (string_argument(text, call, 0) or b"").lower() not in items:
+            raise ProfileError(f"{where} tests {shown} in a way the container route does not recognise")
     spec = _spec(resource)
     flag = spec["activation_global"]
-    # (selected OR original) AND (!selected OR latch). No nested OR/AND.
-    changed = f'OR({len(terms) + 1})\r\nGlobal("{flag}","GLOBAL",1)\r\n'.encode()
-    changed += b"\r\n".join(text[call.start:call.end] for call in terms) + b"\r\n"
-    changed += (f'OR(2)\r\n!Global("{flag}","GLOBAL",1)\r\n'
-                f'Global("{spec["latch_global"]}","{spec["latch_scope"]}",{0 if negative else 1})\r\n').encode()
-    return start, end, changed
+
+    def latch(negative):
+        return f'Global("{spec["latch_global"]}","{spec["latch_scope"]}",{0 if negative else 1})'.encode()
+
+    def written(number):
+        return text[found[number].start:found[number].end]
+
+    edits = []
+    for first, members, complete in _groups(counts):
+        hit = [number for number in members if number in tests]
+        if not hit:
+            continue
+        nested = first is not None and (found[first].name.startswith(b"!") or
+                                        any(is_or[number] for number in members))
+        _checked_group(where, shown, items, first, members, complete,
+                       {(string_argument(text, found[number], 0) or b"").lower() for number in hit},
+                       any(named(found[number], "!PartyHasItem") for number in hit), nested)
+        if len(items) == 1:
+            latched = [latch(named(found[number], "!PartyHasItem")) if number in hit else written(number)
+                       for number in members]
+        else:
+            # The shared latch stands for all of the group's treasure tests.
+            latched = [latch(False) if number == hit[0] else written(number)
+                       for number in members if number == hit[0] or number not in hit]
+        # Take the whole lines: their indentation before and the line end after.
+        start = found[members[0] if first is None else first].start
+        line = max(text.rfind(b"\n", 0, start), text.rfind(b"\r", 0, start)) + 1
+        if not text[line:start].strip(b" \t"):
+            start = line
+        end = found[members[-1]].end
+        for newline in (b"\r\n", b"\n"):
+            if text.startswith(newline, end):
+                end += len(newline)
+                break
+        # (selected OR original) AND (!selected OR latched). No nested OR/AND.
+        changed = f'OR({len(members) + 1})\r\nGlobal("{flag}","GLOBAL",1)\r\n'.encode()
+        changed += b"\r\n".join(written(number) for number in members) + b"\r\n"
+        changed += f'OR({len(latched) + 1})\r\n!Global("{flag}","GLOBAL",1)\r\n'.encode()
+        changed += b"\r\n".join(latched) + b"\r\n"
+        edits.append((start, end, changed))
+    return edits
 
 
 def _read_dialogue(data: bytes, resource: str) -> _Dialogue:
@@ -317,10 +407,9 @@ def _patch_dialogue(resource, original):
     label, sites = _label(resource), 0
     for kind, table in (("condition", dialogue.state_triggers), ("reply condition", dialogue.triggers)):
         for index, text in enumerate(table):
-            edit = _condition_edit(text, resource, f"{label} {kind} {index}")
-            if edit is not None:
-                start, end, changed = edit
-                table[index] = text[:start] + changed + text[end:]
+            edits = _condition_edits(text, resource, f"{label} {kind} {index}")
+            if edits:
+                table[index] = _replaced(text, edits)
                 sites += 1
     if not sites:
         shown = "/".join(item.decode().upper() for item in _items(resource))

@@ -202,10 +202,32 @@ cannot prepare (nothing gives the item any more, one reply gives it twice, an ac
 names it without giving it, the text that names it is gone, or its patch was changed
 afterwards) is left out with that reason, and Apply never refuses a route the check
 accepted. Routes that share one reward event, such as the egg deal's two dialogues
-or the three sculptors, are left out together. Routes that show Item Randomiser's
-reward text need the English game text and `BGEE.LUA`. A reward file changed after
-the scan stops the check until the game is scanned again. A container quest's place
-is the one container in the quest's area that holds the quest's whole treasure (the
+or the three sculptors, are left out together. A party member's interjection
+(WeiDU's `INTERJECT_COPY_TRANS`, which many NPC mods use) can copy a quest's
+reward replies into the party member's dialogue, where the player can take the
+reward too. The check follows each route dialogue's links into other
+dialogues, through chained interjections, and Apply gates those copies like the
+route's own replies, in the same file. A route is left out when a copy cannot be
+gated: the item would come from another speaker than the one that carries it, CIR
+changes that dialogue for something else, or another reply there gives the item in
+another way ("XNPCJ.DLG state 0 also gives SHLD26, but not with a copy of a reward
+reply of UHOGRE01.DLG, so the route cannot tell whether it is the same reward").
+Routes that show Item Randomiser's reward text need the English game text and
+`BGEE.LUA`. Each check run reads these files again when the game folder changed
+since the last one, so a reward file, or a dialogue the route's copies were looked
+for in, that changed after the scan stops that check until the game is scanned
+again. Saved games keep the revision they started with, and its files never
+change. When the check now leaves out a route or container quest that an earlier
+revision prepared, or a file that revision uses changed since, Apply keeps that
+revision's files as they were exported and says so in a note, instead of refusing
+the new revision. At every start the runtime checks each revision's patched
+dialogues and scripts against the game's override files, and the areas of its
+guarded sources against their pristine copies; it would stop for every game when
+one of them changed. Apply then refuses and names the file ("Saved games of
+revision … need UHOGRE01.DLG as it was when they were exported, but it changed in
+the game since then; …"); install mods that change such files before the first
+Apply. A container quest's place is the one container in the quest's area that
+holds the quest's whole treasure (the
 golems' weapons in the De'Arnise Keep cellar `AR1303`, Samia's sword and shield in
 `AR1202`), found in the scan wherever the game keeps it; when no container or more
 than one holds it, because another mod moved or copied the treasure, that place is

@@ -18,13 +18,15 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
 
-from flir_config import mode2_rewards
+from flir_config import container_rewards, mode2_rewards, reward_copies
+from flir_config.activation import EXPORT_FILES
 from flir_config.campaigns import compile_campaign, read_campaign
 from flir_config.native_export import _compile, export_native
 from flir_config.original_catalog import resolve_template
 from flir_config.original_configuration import fit_original_configuration
 from flir_config.profiles import ProfileError, validate_catalog
 from flir_config.resources import _Tlk, scan_game
+from flir_config.quest_options import _Dialogue
 from flir_config.reward_routes import ChangedSinceScan, reward_routes
 from flir_config.sources import scan_world, validate_world
 from flir_config.starts import write_starts
@@ -33,6 +35,7 @@ from test_mode2_rewards import action, block, dialogue_fixture, layout_dialogue,
 from test_original_configuration import target_row
 from test_postinstall_resources import make_game, make_itm, mark_eet, snapshot
 from test_postinstall_world_formats import item_record, make_are
+from test_reward_copies import interject
 
 # Three routes of Item Randomiser's extended lists: the ogre's shield (a
 # dialogue), the well's helmet (a script with the reward text) and Khollos's
@@ -145,8 +148,8 @@ class RouteGame(unittest.TestCase):
         with patch("flir_config.original_configuration.resolve_template", return_value=draft), \
                 patch("flir_config.original_registrations.resolve_template", return_value=draft):
             written = write_starts(fitted["profile"], fitted["plan"], self.catalog, self.world, self.store)
-            export_native(self.store, self.catalog, self.world, self.output,
-                          starts=written["starts"], main=written["main"])
+            self.exported = export_native(self.store, self.catalog, self.world, self.output,
+                                          starts=written["starts"], main=written["main"])
         return written
 
 
@@ -274,6 +277,56 @@ class ContainerQuestTests(RouteGame):
                     "original-target:bg2:mode2:target:28": ("AR1202", "Container 11", "FLPR_CSAMIA"),
                     "original-target:bg2:mode2:target:53": ("AR1202", "Container 11", "FLPR_CSAMIA")})
 
+    def test_earlier_revisions_keep_the_chest_they_recorded(self):
+        # A revision exported with the earlier rule bound Samia's treasure to
+        # the closet. It belongs to running saves: while AR1202 is unchanged,
+        # Apply keeps that binding for it and binds new revisions by the treasure.
+        self.build_quests("bg2ee")
+        real = container_rewards.treasure_container
+
+        def closet(target_id, sources, platform):
+            if target_id in ("bg2:mode2:target:28", "bg2:mode2:target:53"):
+                return "are:ar1202/container/1"
+            return real(target_id, sources, platform)
+
+        with patch("flir_config.original_catalog.treasure_container", closet), \
+                patch("flir_config.native_export.treasure_container", closet):
+            written = self.apply(self.fit())
+        earlier = written["starts"][written["full"]]
+        revisions = self.output / "campaign-store" / "revisions"
+
+        def files(revision):
+            return {path.name: path.read_bytes() for path in revisions.iterdir() if path.name.startswith(revision)}
+
+        def chest(revision, identity="original-target:bg2:mode2:target:53"):
+            native = json.loads((revisions / f"{revision}.native.json").read_bytes())
+            return native["targets"][identity]["script_name"]
+
+        before = files(earlier)
+        self.assertEqual(chest(earlier), "Closet")
+        written = self.apply(self.fit())
+        later = written["starts"][written["full"]]
+        self.assertNotEqual(later, earlier)
+        self.assertEqual((chest(earlier), chest(later)), ("Closet", "Container 11"))
+        self.assertEqual(files(earlier), before)
+        self.assertNotIn("notes", self.exported)
+        # A real change of AR1202 leaves its places (the well, Samia's quest)
+        # out of those saves with a note; Apply still succeeds for the new one.
+        area = make_are([chest_item("SYNTH001"), chest_item("SW1H32"), chest_item("SHLD21")],
+                        [("Container 1", 0, 1), ("Closet", 1, 0), ("Container 11", 1, 2), ("Shelf", 3, 0)])
+        (self.game / "override" / "ar1202.are").write_bytes(area)
+        self.rescan()
+        kept = {revision: files(revision) for revision in (earlier, later)}
+        written = self.apply(self.fit())
+        self.assertNotIn(written["starts"][written["full"]], (earlier, later))
+        self.assertEqual({revision: files(revision) for revision in (earlier, later)}, kept)
+        self.assertEqual(self.exported["notes"], sorted(
+            f"Saved games of revision {revision[:12]} keep their settings, but original-target:bg2:mode2:target:{row} "
+            f"may no longer work in them: Selected target differs from the scan: original-target:bg2:mode2:target:{row}"
+            for revision in (earlier, later) for row in (27, 28, 53)))
+        listed = json.loads((self.output / EXPORT_FILES).read_text())["files"]
+        self.assertTrue(all(f"campaign-store/revisions/{name}" in listed for rows in kept.values() for name in rows))
+
     def test_a_quest_whose_treasure_another_mod_moved_is_left_out(self):
         self.places = super().places  # Other chests take the golems' tier.
         self.build_quests("bg2ee", golem=False)
@@ -285,6 +338,135 @@ class ContainerQuestTests(RouteGame):
              "AR1303 has no container that holds AX1H13")])
         self.apply(fitted)
 
+
+class NoCopies:
+    """The copy analysis as CIR had it before it looked for copies of reward replies."""
+
+    def __init__(self, read, scanned):
+        self.copies, self.reasons, self.visited, self.changed, self.originals = {}, {}, {}, set(), {}
+
+    def checked(self, key):
+        return set()
+
+    def patches(self, routes):
+        return {}
+
+
+class CopyTests(RouteGame):
+    """A party member's interjection copies the ogre's reward reply into its own dialogue."""
+
+    sources, targets = SOURCES[:2], TARGETS[:2]
+
+    def interjected(self, change=None) -> tuple[bytes, bytes, int]:
+        route, npc, state = interject(ogre_dialogue(), "uhogre01", 9, "xnpcj")
+        if change:
+            dialogue = _Dialogue(npc, "xnpcj")
+            first = struct.unpack_from("<I", dialogue.states[state], 4)[0]
+            index = struct.unpack_from("<I", dialogue.transitions[first], 16)[0]
+            dialogue.actions[index] = change(dialogue.actions[index])
+            npc = dialogue.render()
+        return route, npc, state
+
+    def test_copies_are_gated_and_checked_like_the_route(self):
+        route, npc, state = self.interjected()
+        self.build("bg2ee", resources={"uhogre01.dlg": route, "ddwell.bcs": well_script(), "xnpcj.dlg": npc})
+        fitted = self.fit()
+        self.assertEqual(fitted["not_used"], [])
+        self.apply(fitted)
+        overrides = self.output / "resource-overrides"
+        copies = reward_copies.RewardCopies({"uhogre01": route, "xnpcj": npc}.get, {})
+        self.assertEqual(copies.copies, {"uhogre01": {"dlg:xnpcj": {state: {0}}}})
+        expected = copies.patches(["uhogre01"])["dlg:xnpcj"]
+        self.assertEqual((overrides / "XNPCJ.DLG").read_bytes(), expected)
+        self.assertEqual((overrides / "UHOGRE01.DLG").read_bytes(), mode2_rewards.patch_reward("dlg:uhogre01", route))
+        # The copy's grant has both of the route's variants; the other reply stays as it was.
+        dialogue = _Dialogue(expected, "xnpcj")
+        first, count = struct.unpack_from("<II", dialogue.states[state], 4)
+        actions = [dialogue.actions[struct.unpack_from("<I", row, 16)[0]]
+                   for row in dialogue.transitions[first:first + count]]
+        self.assertEqual(count, 3)
+        self.assertIn(b'GiveItemCreate("SHLD26",LastTalkedToBy,0,0,0)', actions[0])
+        self.assertIn(b'SetGlobal("FLPR_XM2_14","GLOBAL",1)', actions[1])
+        self.assertTrue(all(b'SetGlobal("FLPR_EM2_14","GLOBAL",1)' in text for text in actions[:2]))
+        first_export = snapshot(self.output)
+        # Installed as Apply deploys them, both patches are our own: before a
+        # rescan and after one, Apply writes the same files.
+        for name in ("UHOGRE01.DLG", "XNPCJ.DLG"):
+            (self.game / "override" / name.lower()).write_bytes((overrides / name).read_bytes())
+        self.apply(fitted)
+        self.assertEqual(snapshot(self.output), first_export)
+        self.rescan()
+        refitted = self.fit()
+        self.assertEqual(refitted["not_used"], [])
+        self.apply(refitted)
+        self.assertEqual((overrides / "XNPCJ.DLG").read_bytes(), expected)
+        # A change of the copy's dialogue after this check run stops the next one.
+        (self.game / "override" / "xnpcj.dlg").write_bytes(npc)
+        with self.assertRaisesRegex(ChangedSinceScan, "rescan before export: dlg:xnpcj"):
+            self.fit()
+
+    def test_a_copy_the_route_cannot_gate_leaves_it_out_with_its_reason(self):
+        route, npc, state = self.interjected(lambda text: text + b'\nSetGlobal("XNPCJ","GLOBAL",1)')
+        self.build("bg2ee", resources={"uhogre01.dlg": route, "ddwell.bcs": well_script(), "xnpcj.dlg": npc})
+        reason = ("The extended reward route for UHOGRE01 cannot be used: XNPCJ.DLG state 0 also gives SHLD26, "
+                  "but not with a copy of a reward reply of UHOGRE01.DLG, so the route cannot tell whether it is "
+                  "the same reward")
+        fitted = self.fit()
+        self.assertEqual(sorted((row["id"], row["reason"]) for row in fitted["not_used"]),
+                         [("bg2:mode2:item:14", reason), ("bg2:mode2:target:17", reason)])
+        self.apply(fitted)
+        self.assertFalse((self.output / "resource-overrides" / "XNPCJ.DLG").exists())
+
+    def test_an_earlier_revision_keeps_its_route_when_a_newer_check_finds_a_copy(self):
+        # A revision exported before CIR looked for copies of reward replies
+        # keeps its route for its saves; new configurations leave it out.
+        route, npc, state = self.interjected(lambda text: text + b'\nSetGlobal("XNPCJ","GLOBAL",1)')
+        self.build("bg2ee", resources={"uhogre01.dlg": route, "ddwell.bcs": well_script(), "xnpcj.dlg": npc})
+        with patch.dict("flir_config.reward_routes._CACHE", clear=True), \
+                patch("flir_config.reward_routes.RewardCopies", NoCopies), \
+                patch("flir_config.native_export.RewardCopies", NoCopies):
+            fitted = self.fit()
+            self.assertEqual(fitted["not_used"], [])
+            written = self.apply(fitted)
+        earlier = written["starts"][written["full"]]
+        revisions = self.output / "campaign-store" / "revisions"
+        files = {path.name: path.read_bytes() for path in revisions.iterdir() if path.name.startswith(earlier)}
+        fitted = self.fit()
+        self.assertEqual(sorted(row["id"] for row in fitted["not_used"]), ["bg2:mode2:item:14", "bg2:mode2:target:17"])
+        later = self.apply(fitted)
+        self.assertNotEqual(later["starts"][later["full"]], earlier)
+        self.assertEqual({path.name: path.read_bytes() for path in revisions.iterdir()
+                          if path.name.startswith(earlier)}, files)
+        self.assertEqual(self.exported["notes"], [
+            f"Saved games of revision {earlier[:12]} keep the extended reward route for UHOGRE01, although "
+            "XNPCJ.DLG state 0 also gives SHLD26, but not with a copy of a reward reply of UHOGRE01.DLG, so the "
+            "route cannot tell whether it is the same reward"])
+        # Its route stays prepared for those saves; the copy stays as it is.
+        overrides = self.output / "resource-overrides"
+        self.assertEqual((overrides / "UHOGRE01.DLG").read_bytes(), mode2_rewards.patch_reward("dlg:uhogre01", route))
+        self.assertFalse((overrides / "XNPCJ.DLG").exists())
+
+    def test_a_mod_that_changes_an_earlier_revisions_route_stops_apply(self):
+        self.build("bg2ee", resources={"uhogre01.dlg": ogre_dialogue(), "ddwell.bcs": well_script()})
+        written = self.apply(self.fit())
+        earlier = written["starts"][written["full"]]
+        # Another mod's interjection then replaces the ogre's dialogue. The new
+        # configuration leaves the route out, but the earlier revision's saves
+        # need the dialogue as Apply prepared it for them: the runtime would stop
+        # at the next start, so Apply says so and writes nothing.
+        route, npc, state = self.interjected(lambda text: text + b'\nSetGlobal("XNPCJ","GLOBAL",1)')
+        (self.game / "override" / "uhogre01.dlg").write_bytes(route)
+        (self.game / "override" / "xnpcj.dlg").write_bytes(npc)
+        self.rescan()
+        fitted = self.fit()
+        self.assertEqual(sorted(row["id"] for row in fitted["not_used"]), ["bg2:mode2:item:14", "bg2:mode2:target:17"])
+        before = snapshot(self.output)
+        with self.assertRaisesRegex(ProfileError, f"Saved games of revision {earlier[:12]} need UHOGRE01.DLG as it "
+                                    "was when they were exported, but it changed in the game since then; the "
+                                    "runtime checks it at every start and would stop for every game. Restore "
+                                    "UHOGRE01.DLG before applying"):
+            self.apply(fitted)
+        self.assertEqual(snapshot(self.output), before)
 
 class RouteCheckTests(RouteGame):
     def test_text_routes_need_english_and_the_journal_table(self):
@@ -314,6 +496,14 @@ class RouteCheckTests(RouteGame):
         self.rescan()
         self.assertEqual(sorted(row["id"] for row in self.fit()["not_used"]),
                          ["bg2:mode2:item:33", "bg2:mode2:target:33"])
+
+    def test_a_change_after_an_earlier_check_run_stops_the_next_one(self):
+        self.build("bg2ee")
+        self.fit()
+        (self.game / "override" / "uhogre01.dlg").write_bytes(dialogue_fixture(
+            mode2_rewards.resource_specs("dlg:uhogre01")))
+        with self.assertRaisesRegex(ChangedSinceScan, "rescan before export: dlg:uhogre01"):
+            self.fit()
 
     def test_routes_sharing_a_reward_event_are_left_out_together(self):
         # The egg deal: Silver's crossbow and the demon's halberd share one

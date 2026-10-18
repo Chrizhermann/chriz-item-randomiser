@@ -405,8 +405,11 @@ depth 8). `VERSION` 1.0.0 stands until the first release; nothing is published.
   (BG2:EE's and EET's layouts, other mods' added replies and blocks) instead of by the
   hash of the reviewed EET file, and the configuration check runs the same recognition:
   a route it cannot prepare is left out with its reason, so Apply never refuses a route
-  the check accepted. A container quest binds the container of its area that holds its
-  whole treasure. The old pins bound Samia's places to the container before her chest
+  the check accepted. Copies of a route's reward replies in other dialogues (party
+  members' interjections) are gated like the route's own. A container quest binds the
+  container of its area that holds its whole treasure; revisions exported before keep
+  what they recorded, and Apply refuses only where the runtime's start check of such a
+  revision would fail because the game changed a file it needs. The old pins bound Samia's places to the container before her chest
   in `AR1202`, named Safana's area as EET does (so it did not bind on BG:EE) and took the
   table's `AR1302` for the golems, whose treasure is in `AR1303` (so they never bound).
   Still pinned to the reviewed EET bytes: the Kangaxx dialogue and
