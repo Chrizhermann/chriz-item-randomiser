@@ -978,8 +978,19 @@ function Adapter:observe(command)
                 end
                 if queue.addresses[pending.queued.pointer] then return nil, "DELIVERY_MESSAGE_REUSED" end
                 local placed = placed_item(pending.before, items, {#pending.before + 1})
-                if not placed or not same(placed.payload, receipt.payload) then
-                    return nil, "DELIVERY_MESSAGE_LOST"
+                if not placed then return nil, "DELIVERY_MESSAGE_LOST" end
+                if not same(placed.payload, receipt.payload) then
+                    -- CMessageContainerAddItem::Run copies the message's item with
+                    -- the same CItem copy constructor as CMessageAddItem::Run, which
+                    -- can identify a zero-lore item again (AMUL12 on EET 2.7.3).
+                    -- Preserve the source's flags on the one proven new container
+                    -- instance, just as on its message; nothing else may differ.
+                    local found = placed.payload
+                    local expected = { resref = found.resref, charges = found.charges,
+                        expiration = found.expiration, flags = receipt.payload.flags }
+                    if receipt.payload.flags % 2 ~= 0 or found.flags ~= receipt.payload.flags + 1 or
+                        not same(expected, receipt.payload) then return nil, "DELIVERY_PAYLOAD_CHANGED" end
+                    self:_preserve_container_flags(owner, placed, receipt.payload)
                 end
                 -- The exact message has been consumed. Its append operation
                 -- produced one new full-payload item and preserved existing

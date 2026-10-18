@@ -69,9 +69,10 @@ The configurator reads them there (`game_names.eet_names`), so BG1 and SoD rows 
 under the names this EET version gave them. Without that file, or when it cannot be read,
 it uses its own older copy in `lib/fl#bg1pal.tpa` (from before SoD and EET 14) and the
 preset dialog says so; rows whose names that copy gets wrong are then left out. On
-EET 2.7.3.0 the game's lists bind 9 more of `eet-original`'s BG1 rewards than the old
-copy did, among them Arla's Dragonbane +3, Aule's Staff +3, Pellan's Shield +2 and
-Ankheg Plate Mail; the copy named them wrongly, so they were left out without a word.
+EET 2.7.3.0 the game's lists bind 8 more of `eet-original`'s BG1 rewards than the old
+copy did (9 with the extended pools), among them Arla's Dragonbane +3, Aule's Staff +3,
+Pellan's Shield +2 and Ankheg Plate Mail; the copy named them wrongly, so they were left
+out without a word.
 
 ## Places that never appear
 
