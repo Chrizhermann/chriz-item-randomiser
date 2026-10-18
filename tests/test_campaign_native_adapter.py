@@ -809,6 +809,19 @@ function cases.queued_container_copy_identifying_zero_lore_item_keeps_source_fla
         assert(f.target.m_lstItems[1].m_flags==selected and #f.calls==1)
     end
 end
+function cases.queued_container_copy_of_identified_source_stays_identified(N)
+    for _,selected in ipairs({1,3}) do
+        local f=setup(N); f.fixture.sources[f.source_id].payload.flags=selected
+        f.adapter=N.new(f.api,f.fixture)
+        local a,command=queued(f)
+        local placed=f.item("FLPRI1",701,selected)
+        f.queue[1]=nil; f.target.m_lstItems[1]=placed
+        a:on_observation_boundary(2); local x,e=a:observe(command); fail(x,e,"DELIVERY_SETTLING")
+        assert(placed.m_flags==selected)
+        a:on_observation_boundary(3); local receipt=assert(a:observe(command))
+        assert(receipt.payload.flags==selected and placed.m_flags==selected and #f.calls==1)
+    end
+end
 function cases.queued_container_copy_with_other_flag_changes_is_rejected(N)
     -- Only the identified bit of an unidentified source may be added; never removed or another bit.
     for _,flags in ipairs({{1,0},{0,2},{0,8},{2,1}}) do
