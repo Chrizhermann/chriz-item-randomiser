@@ -31,8 +31,9 @@ pub struct Error {
     pub kind: ErrorKind,
     pub message: String,
     /// The reference's subclass of `kind`'s exception, where a caller tells
-    /// it apart: [`CHANGED_SINCE_SCAN`] or [`SCRIPT_ERROR`] (both
-    /// ProfileErrors). Code that handles `kind` handles these too.
+    /// it apart: [`CHANGED_SINCE_SCAN`], [`SCRIPT_ERROR`] or
+    /// [`MISSING_TRANSLATION`] (all ProfileErrors). Code that handles `kind`
+    /// handles these too.
     pub subclass: Option<&'static str>,
 }
 
@@ -41,6 +42,9 @@ pub struct Error {
 pub const CHANGED_SINCE_SCAN: &str = "ChangedSinceScan";
 /// `script_text.ScriptError`: a compiled script the readers cannot read.
 pub const SCRIPT_ERROR: &str = "ScriptError";
+/// `translations.MissingTranslation`: the game's language has no translation
+/// of a text CIR needs.
+pub const MISSING_TRANSLATION: &str = "MissingTranslation";
 
 pub type Result<T> = std::result::Result<T, Error>;
 

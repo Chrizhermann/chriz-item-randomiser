@@ -25,3 +25,10 @@ pub fn list(prefix: &str) -> Vec<&'static str> {
 pub fn text(relative: &str) -> Option<&'static str> {
     file(relative).map(|bytes| std::str::from_utf8(bytes).expect("mod data files are UTF-8"))
 }
+
+/// Whether `relative` is an embedded folder (only the `languages/` tree's
+/// folders are recorded, without trailing slash).
+pub fn folder(relative: &str) -> bool {
+    let relative = relative.replace('\\', "/");
+    embedded::FOLDERS.binary_search(&relative.as_str()).is_ok()
+}

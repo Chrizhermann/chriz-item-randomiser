@@ -32,6 +32,7 @@ import json
 from pathlib import Path
 import struct
 import sys
+import tempfile
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -39,8 +40,8 @@ sys.path[:0] = [str(ROOT / "tools"), str(ROOT / "tests"), str(ROOT)]
 
 from flir_config import container_rewards, cursed_disguises, mode2_rewards, original_options  # noqa: E402
 from flir_config import quest_options, quest_rewards, reward_copies, spell_rewards  # noqa: E402
-from flir_config import creature_inventory, group_recipients, store_inventory  # noqa: E402
-from flir_config.game_text import GameTextError  # noqa: E402
+from flir_config import creature_inventory, game_text, group_recipients, store_inventory, translations  # noqa: E402
+from flir_config.game_text import GameText, GameTextError  # noqa: E402
 from flir_config.profiles import ProfileError  # noqa: E402
 from flir_config.resources import ScanError  # noqa: E402
 from flir_config.world_formats import parse_sto  # noqa: E402
@@ -54,6 +55,7 @@ import test_spell_rewards as spell_tests  # noqa: E402
 from test_original_options import ALL_DISGUISE_ITEMS  # noqa: E402
 from test_postinstall_resources import make_itm, make_tlk  # noqa: E402
 from test_postinstall_world_formats import item_record, make_cre, make_sto  # noqa: E402
+from configurator.parity import codepages  # noqa: E402
 
 OUT = ROOT / "configurator" / "cir-config" / "tests" / "fixtures" / "patchers"
 TABLES = {"quest_options.ORIGINAL_HASHES": quest_options.ORIGINAL_HASHES}
@@ -715,24 +717,41 @@ def mode2_scenario() -> Scenario:
     registry_cases(s)
     text_resources = [resource for resource in mode2_rewards.TEXT_REFS if resource.startswith("dlg:")]
     base_tlk = make_tlk(["Unchanged text"])
-    tlk, allocated = mode2_rewards.prepare_reward_texts(base_tlk, text_resources)
+    text, allocated = mode2_rewards.prepare_reward_texts(GameText(base_tlk), text_resources)
+    both = GameText(make_tlk(["a"]), make_tlk(["a (f)"]))
+    polish, _ = mode2_rewards.prepare_reward_texts(both, text_resources + ["bcs:ddwell"], "pl_PL")
+    every = list(mode2_rewards.RESOURCE_REWARDS) + ["DLG:PPDJINN"]
     for label, resources, language, source in (
-            ("dialogues", text_resources, "en_us", base_tlk), ("dialogues again", text_resources, "EN_US", tlk),
-            ("all", list(mode2_rewards.RESOURCE_REWARDS) + ["DLG:PPDJINN"], "en_US", make_tlk([])),
-            ("none", ["dlg:uhogre01"], "en_us", base_tlk), ("empty", [], "en_us", base_tlk),
-            ("german", text_resources, "de_DE", base_tlk), ("english word", text_resources, "english", base_tlk),
-            ("bad tlk", text_resources, "en_us", b"TLK V1  "), ("bad tlk none", [], "en_us", b"bad")):
+            ("dialogues", text_resources, "en_us", GameText(base_tlk)), ("dialogues again", text_resources, "EN_US", text),
+            ("all", every, "en_US", GameText(make_tlk([]))),
+            ("none", ["dlg:uhogre01"], "en_us", GameText(base_tlk)), ("empty", [], "en_us", GameText(base_tlk)),
+            ("german", text_resources, "de_DE", GameText(base_tlk)),
+            ("german both", every, "de_DE", both), ("polish both", text_resources + ["bcs:ddwell"], "pl_PL", both),
+            ("polish both again", text_resources + ["bcs:ddwell"], "PL_pl", polish),
+            ("polish male only", every, "pl_PL", GameText(base_tlk)),
+            ("ppdjinn polish", ["dlg:ppdjinn"], "pl_PL", GameText(make_tlk([]), make_tlk([]))),
+            ("spanish", text_resources, "es_ES", GameText(base_tlk)), ("spanish none", [], "es_ES", both),
+            ("default", text_resources, "default", both), ("unknown", text_resources, "nb_no", both),
+            ("english word", text_resources, "english", GameText(base_tlk)),
+            ("female count", text_resources, "pl_PL", GameText(make_tlk(["a"]), make_tlk(["a (f)", "b (f)"]))),
+            ("bad female", text_resources, "pl_PL", GameText(make_tlk(["a"]), b"bad")),
+            ("bad tlk", text_resources, "en_us", GameText(b"TLK V1  ")), ("bad tlk none", [], "en_us", GameText(b"bad"))):
         s.case(f"prepare_reward_texts {label}", "mode2_rewards.prepare_reward_texts",
-               {"tlk": source, "resources": resources, "language": language},
+               {"text": source, "resources": resources, "language": language},
                lambda resources=resources, language=language, source=source: (
                    lambda result: (result[0], {key: sorted_ints(value) for key, value in result[1].items()}))(
                    mode2_rewards.prepare_reward_texts(source, resources, language)))
+    for resource in sorted(mode2_rewards.TEXT_REFS) + ["dlg:uhogre01"]:
+        s.case(f"text_lines {resource}", "mode2_rewards.text_lines", {"resource": resource},
+               lambda resource=resource: mode2_rewards.text_lines(resource))
     ddwell_tlk = make_tlk(["Existing unrelated text", "Existing helmet narrative"])
-    updated, ref = mode2_rewards.prepare_ddwell_text(ddwell_tlk)
-    for label, source, language in (("fresh", ddwell_tlk, "en_us"), ("again", updated, "en_us"),
-                                    ("german", ddwell_tlk, "de_de")):
+    updated, ref = mode2_rewards.prepare_ddwell_text(GameText(ddwell_tlk))
+    for label, source, language in (("fresh", GameText(ddwell_tlk), "en_us"), ("again", updated, "en_us"),
+                                    ("german", GameText(ddwell_tlk), "de_de"),
+                                    ("polish both", GameText(ddwell_tlk, make_tlk(["x (f)", "y (f)"])), "pl_pl"),
+                                    ("spanish", GameText(ddwell_tlk), "es_es")):
         s.case(f"prepare_ddwell_text {label}", "mode2_rewards.prepare_ddwell_text",
-               {"tlk": source, "language": language},
+               {"text": source, "language": language},
                lambda source=source, language=language: mode2_rewards.prepare_ddwell_text(source, language))
     results = {}
     for resource, data in originals.items():
@@ -1008,17 +1027,26 @@ def container_scenario(name: str, line_endings: str) -> Scenario:
         s.case("RESOURCE_TARGETS", "container_rewards.RESOURCE_TARGETS", {}, lambda: container_rewards.RESOURCE_TARGETS)
         s.case("TEXT_RESOURCES", "container_rewards.TEXT_RESOURCES", {}, lambda: container_rewards.TEXT_RESOURCES)
         treasure_cases(s)
-        base = make_tlk(["Preserve existing text"])
-        tlk, _ = container_rewards.prepare_container_texts(base, container_rewards.TEXT_RESOURCES)
+        base = GameText(make_tlk(["Preserve existing text"]))
+        text, _ = container_rewards.prepare_container_texts(base, container_rewards.TEXT_RESOURCES)
+        both = GameText(base.male, make_tlk(["Preserve existing text (f)"]))
+        polish, _ = container_rewards.prepare_container_texts(both, container_rewards.TEXT_RESOURCES, "pl_PL")
         for label, source, resources, language in (
                 ("all", base, sorted(container_rewards.TEXT_RESOURCES), "en_us"),
-                ("again", tlk, ["bcs:kpgol05", "bcs:kpgol01"], "EN_US"),
+                ("again", text, ["bcs:kpgol05", "bcs:kpgol01"], "EN_US"),
                 ("non-text", base, ["bcs:kpgol03", "dlg:samia"], "de_DE"),
                 ("uppercase", base, ["BCS:KPGOL01"], "de_DE"), ("german", base, ["bcs:kpgol02"], "de_DE"),
+                ("german both", both, ["bcs:kpgol02"], "de_DE"),
+                ("polish both", both, sorted(container_rewards.TEXT_RESOURCES), "pl_PL"),
+                ("polish both again", polish, ["bcs:kpgol01"], "pl_pl"),
+                ("spanish", base, ["bcs:kpgol02"], "es_ES"), ("ar1202 spanish", base, ["bcs:ar1202"], "es_ES"),
+                ("default", both, ["bcs:kpgol02"], "default"), ("unknown", both, ["bcs:kpgol02"], "xx"),
                 ("ar1202 german", base, ["bcs:ar1202"], "de_DE"),
-                ("bad tlk", b"no tlk", ["bcs:kpgol02"], "en_us"), ("bad tlk none", b"no tlk", [], "en_us")):
+                ("female count", GameText(base.male, make_tlk([])), ["bcs:kpgol02"], "pl_PL"),
+                ("bad tlk", GameText(b"no tlk"), ["bcs:kpgol02"], "en_us"),
+                ("bad tlk none", GameText(b"no tlk"), [], "en_us")):
             s.case(f"prepare_container_texts {label}", "container_rewards.prepare_container_texts",
-                   {"tlk": source, "resources": resources, "language": language},
+                   {"text": source, "resources": resources, "language": language},
                    lambda source=source, resources=resources, language=language:
                    container_rewards.prepare_container_texts(source, resources, language))
         for args in ({"opcode": 16450, "value": 0, "negate": 1, "text": "BOOK03", "selector": 0, "newline": b"\n"},
@@ -1454,6 +1482,243 @@ def cursed_scenario() -> Scenario:
     return s
 
 
+# ---------------------------------------------------------------- game text and translations
+
+
+def written(files: dict) -> tuple[tempfile.TemporaryDirectory, Path]:
+    """A temporary folder holding <files>: relative path -> bytes, or None for a folder ("name/")."""
+    temporary = tempfile.TemporaryDirectory(prefix="flir-parity-")
+    root = Path(temporary.name)
+    for relative, data in files.items():
+        path = root / relative
+        if data is None:
+            path.mkdir(parents=True, exist_ok=True)
+            continue
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(data)
+    return temporary, root
+
+
+def relative(path: Path | None, root: Path) -> str | None:
+    return None if path is None else path.relative_to(root).as_posix()
+
+
+def sounded(data: bytes, index: int, flags: int = 3, sound: bytes = b"VOX", volume: int = 0, pitch: int = 0) -> bytes:
+    changed = bytearray(data)
+    struct.pack_into("<H8sII", changed, 0x12 + index * 0x1A, flags, sound, volume, pitch)
+    return bytes(changed)
+
+
+def game_text_scenario() -> Scenario:
+    s = Scenario("game_text")
+    male = make_tlk(["Shared", "Same", "Gendered", "Voiced"])
+    female = make_tlk(["Shared (f)", "Same", "Gendered (f)", "Voiced"])
+    gendered = (("Same", "Same"), ("Gendered", "Gendered (f)"), ("Shared", "Shared"), ("New", "New (f)"),
+                ("New", "New (f)"))
+    first, _ = GameText(male, female).append(gendered)
+    same = (("Same", "Same"),)
+    for label, value, texts in (
+            ("both", GameText(male, female), gendered), ("both again", first, (("New", "New (f)"),)),
+            ("male only", GameText(male), (("Gendered", "Other"), ("New", "New (f)"))),
+            ("empty", GameText(male, female), ()),
+            ("unicode", GameText(male, female), (("Zvedáš", "Zvedáš (ž)"), ("Zvedáš", "Zvedáš"))),
+            ("male sound", GameText(sounded(male, 1), female), same),
+            ("female sound", GameText(male, sounded(female, 1)), same),
+            ("female flags", GameText(male, sounded(female, 1, flags=5, sound=b"")), same),
+            ("female volume", GameText(male, sounded(female, 1, flags=1, sound=b"", volume=1)), same),
+            ("female pitch", GameText(male, sounded(female, 1, flags=1, sound=b"", pitch=2)), same),
+            ("counts differ", GameText(male, make_tlk(["Shared (f)"])), (("New", "New"),)),
+            ("bad male", GameText(b"invalid", female), (("New", "New"),)),
+            ("bad female", GameText(male, b"TLK V1  "), (("New", "New"),)),
+            ("bad male empty", GameText(b"bad"), ())):
+        s.case(f"append {label}", "game_text.GameText.append", {"text": value, "texts": texts},
+               lambda value=value, texts=texts: value.append(texts))
+    one, two = make_tlk(["One", "Two"]), make_tlk(["One (f)", "Two (f)"])
+    grown = bytearray(game_text._append_texts(one, ("Three", "Four"))[0])
+    # Entries are copied as they are, sound and all.
+    struct.pack_into("<H8sII", grown, 0x12 + 3 * 0x1A, 3, b"FOURVOX", 5, 6)
+    grown = bytes(grown)
+    copied = game_text.paired(grown, two).female
+    for label, male_data, female_data in (
+            ("grown", grown, two), ("again", grown, copied), ("equal", one, two), ("no female", one, None),
+            ("female longer", one, copied), ("bad male", b"bad", two), ("bad female", one, b"bad"),
+            ("no female bad male", b"bad", None)):
+        s.case(f"paired {label}", "game_text.paired", {"male": male_data, "female": female_data},
+               lambda male_data=male_data, female_data=female_data: game_text.paired(male_data, female_data))
+    for label, data, texts in (("new", one, ("Three", "One", "Three")), ("none", one, ()),
+                               ("bad", b"invalid", ("x",))):
+        s.case(f"_append_texts {label}", "game_text._append_texts", {"data": data, "texts": texts},
+               lambda data=data, texts=texts: game_text._append_texts(data, texts))
+    tlk = make_tlk(["a", "b"])
+    for label, files, language in (
+            ("male only", {"lang/de_DE/dialog.tlk": tlk}, "de_DE"),
+            ("upper female", {"lang/de_DE/dialog.tlk": tlk, "lang/de_DE/DIALOGF.TLK": tlk}, "de_DE"),
+            ("folder case", {"lang/de_DE/dialog.tlk": tlk, "lang/de_DE/DIALOGF.TLK": tlk}, "DE_de"),
+            ("mixed female", {"lang/pl_pl/dialog.tlk": tlk, "lang/pl_pl/dialogF.tlk": tlk}, "pl_pl"),
+            ("default", {"dialog.tlk": tlk, "lang/de_DE/dialogF.tlk": tlk}, "default"),
+            ("default female", {"dialog.tlk": tlk, "DialogF.tlk": tlk}, "default"),
+            ("other files", {"lang/de_DE/dialog.tlk": tlk, "lang/de_DE/dialogf.tlk.bak": tlk,
+                             "lang/de_DE/xdialogf.tlk": tlk}, "de_DE"),
+            ("female folder", {"lang/de_DE/dialog.tlk": tlk, "lang/de_DE/dialogf.tlk/": None}, "de_DE"),
+            ("no male", {"lang/de_DE/dialogF.tlk": tlk}, "de_DE")):
+        def listed(files=files, language=language):
+            temporary, root = written(files)
+            with temporary:
+                found = game_text.text_files(root, language)
+                return relative(found[0], root), relative(found[1], root)
+        s.case(f"text_files {label}", "game_text.text_files", {"files": files, "language": language}, listed)
+    header = struct.pack("<8sHII", b"TLK V1  ", 0, 7, 0x12)
+    for label, files, female_name in (
+            ("no female", {"dialog.tlk": tlk}, None), ("nothing", {}, None),
+            ("equal", {"dialog.tlk": tlk, "DIALOGF.TLK": make_tlk(["a (f)", "b (f)"])}, "DIALOGF.TLK"),
+            ("shorter", {"dialog.tlk": tlk, "DIALOGF.TLK": make_tlk(["a (f)"])}, "DIALOGF.TLK"),
+            ("longer", {"dialog.tlk": tlk, "dialogF.tlk": make_tlk(["a", "b", "c"])}, "dialogF.tlk"),
+            ("female not tlk", {"dialog.tlk": tlk, "DIALOGF.TLK": b"TLK V1"}, "DIALOGF.TLK"),
+            ("male not tlk", {"dialog.tlk": b"TLK V2  " + bytes(10), "dialogF.tlk": tlk}, "dialogF.tlk"),
+            ("both empty", {"dialog.tlk": b"", "dialogF.tlk": b""}, "dialogF.tlk"),
+            ("header only", {"dialog.tlk": header, "dialogF.tlk": tlk}, "dialogF.tlk")):
+        def reason(files=files, female_name=female_name):
+            temporary, root = written(files)
+            with temporary:
+                return game_text.unpaired(root / "dialog.tlk", None if female_name is None else root / female_name)
+        s.case(f"unpaired {label}", "game_text.unpaired", {"files": files, "male": "dialog.tlk",
+                                                            "female": female_name}, reason)
+    return s
+
+
+# Every line a text route or a golem chest shows.
+LINES = (*(line for resource in sorted(mode2_rewards.TEXT_REFS) for line in mode2_rewards.text_lines(resource)),
+         *container_rewards.TEXT_LINES)
+CODES = ("cs_CZ", "de_DE", "en_US", "es_ES", "fr_FR", "hu_HU", "it_IT", "ja_JP", "ko_KR", "pl_PL", "pt_BR", "ru_RU",
+         "tr_TR", "uk_UA", "zh_CN", "default", "DEFAULT", "nb_NO", "nb_no", "pl", "PL_pl", "", "en", "de-DE", "_de",
+         "en_us_extra")
+TRA_SOURCES = {
+    "plain": '@1 = ~One~\r\n@2 = "Two"\r\n',
+    "female": "@1 = ~He~ ~She~\r\n",
+    "sound": "@1 = ~Text~ [SOUND1]\r\n",
+    "sound female": "@1 = ~He~ [VOX1] ~She~ [VOX2]\r\n",
+    "female next line": "@1 = ~He~\r\n~She~\r\n@2 = ~Two~\r\n",
+    "unclosed female": "@1 = ~He~ ~She\r\n@2 = ~Two~\r\n",
+    "unclosed sound": "@1 = ~He~ [VOX\r\n@2 = ~Two~\r\n",
+    "sound then unclosed female": "@1 = ~He~ [VOX] ~She\r\n@2 = ~Two~\r\n",
+    "stray tilde": "@1 = ~a~ ~ \r\n@2 = ~c~\r\n",
+    "duplicate": "@1 = ~Old~\r\n@1 = ~New~ ~New (f)~\r\n",
+    "unicode digits": "@１２ = ~Wide~\r\n",
+    "arabic digits": "@١٠ = ~Ten~\r\n",
+    "leading zeros": "@007 = ~Bond~\r\n",
+    "no digits": "@ = ~x~\r\n@3 = ~y~\r\n",
+    "not at line start": "x @1 = ~x~\r\n@2 = ~y~\r\n",
+    "unicode space": "@1　= ~x~ ~y~\r\n",
+    "separator space": "@1\x1c=\x1d~x~\x1e[s]\x1f~y~\r\n",
+    "multiline": "@1 = ~line one\r\nline two~\r\n",
+    "mixed delimiters": '@1 = ~a"b~ "c~d"\r\n',
+    "empty": "",
+    "comment between": "@1 = ~a~ // c\r\n~b~\r\n",
+    "cr only": "@1 = ~a~\r@2 = ~b~\r",
+    "byte order mark": "﻿@1 = ~a~\r\n@2 = ~b~",
+    "no equals": "@1 ~a~\r\n@2 = ~b~\r\n",
+    "huge number": "@" + "9" * 4301 + " = ~x~\r\n",
+    "limit number": "@" + "0" * 4290 + "12 = ~x~\r\n",
+}
+
+
+def listed_lines(found: dict) -> list:
+    return [[file, number, *pair] for (file, number), pair in sorted(found.items())]
+
+
+def listed_texts(found: dict) -> list:
+    return [[number, *pair] for number, pair in sorted(found.items())]
+
+
+CZECH = "@101 = ~Zvedáš předmět.~\r\n@399 = ~Studna.~ ~Studna (ž).~\r\n"
+FOLDERS = {
+    "czech": {"czech/in-game.tra": CZECH.encode("cp1250")},
+    "czech converted": {"czech/in-game.tra": CZECH.encode("utf-8"), "czech/" + translations.CONVERTED: b"marker"},
+    "czech converted ee": {"czech/in-game.tra": CZECH.encode("utf-8"), "czech/" + translations.CONVERTED: b"marker",
+                           "bgee/czech/in-game.tra": "@101 = ~Zvedáš věc.~\r\n".encode("utf-8")},
+    "czech marker folder": {"czech/in-game.tra": CZECH.encode("cp1250"), "czech/" + translations.CONVERTED + "/": None},
+    "czech converted not utf-8": {"czech/in-game.tra": CZECH.encode("cp1250"),
+                                  "czech/" + translations.CONVERTED: b""},
+    "czech partial": {"czech/in-game.tra": "@101 = ~Zvedáš předmět.~\r\n".encode("cp1250")},
+    "czech ee only": {"bgee/czech/in-game.tra": "@101 = ~x~\r\n@399 = ~y~\r\n".encode("utf-8")},
+    "czech is a file": {"czech": b"x"},
+    "czech tra folder": {"czech/in-game.tra/": None},
+    "polish not cp1250": {"polish/in-game.tra": b"@101 = ~\x81~\r\n"},
+    "polish ee not utf-8": {"polish/in-game.tra": b"@101 = ~ok~\r\n", "bgee/polish/in-game.tra": b"@101 = ~\xff~\r\n"},
+    "japanese not cp932": {"japanese/in-game.tra": b"@101 = ~\x81\x20~\r\n"},
+    "japanese": {"japanese/in-game.tra": "@101 = ~アイテム~ ~アイテム（女）~\r\n@399 = ~井戸~\r\n".encode("cp932")},
+    "chinese": {"schinese/in-game.tra": "@101 = ~物品~\r\n@399 = ~井~\r\n".encode("cp936")},
+    "korean": {"korean/in-game.tra": "@101 = ~아이템~\r\n@399 = ~우물~\r\n".encode("cp949")},
+    "russian": {"russian/in-game.tra": "@101 = ~Предмет~\r\n@399 = ~Колодец~\r\n".encode("cp1251")},
+    "turkish": {"turkish/in-game.tra": "@101 = ~Eşya~\r\n@399 = ~Kuyu~\r\n".encode("cp1254")},
+    "spanish empty": {"spanish/": None},
+    "spanish huge number": {"spanish/in-game.tra": ("@" + "1" * 4301 + " = ~x~\r\n").encode("cp1252")},
+    "sorted files": {"czech/b.tra": b"", "czech/A.tra": b"", "czech/c.TRA": b"", "czech/sub/x.tra": b"",
+                     "bgee/czech/Z.tra": b"", "bgee/polish/in-game.tra": b"@101 = ~z~\r\n"},
+    "nothing": {},
+}
+FOLDER_CALLS = (
+    ("czech", "cs_CZ"), ("czech converted", "cs_CZ"), ("czech converted ee", "cs_CZ"),
+    ("czech marker folder", "cs_CZ"), ("czech converted not utf-8", "cs_CZ"), ("czech partial", "cs_CZ"),
+    ("czech ee only", "cs_CZ"), ("czech is a file", "cs_CZ"), ("czech tra folder", "cs_CZ"),
+    ("polish not cp1250", "pl_PL"), ("polish ee not utf-8", "pl_PL"), ("japanese not cp932", "ja_JP"),
+    ("japanese", "ja_JP"), ("chinese", "zh_CN"), ("korean", "ko_KR"), ("russian", "ru_RU"), ("turkish", "tr_TR"),
+    ("spanish empty", "es_ES"), ("spanish huge number", "es_ES"), ("sorted files", "cs_CZ"),
+    ("sorted files", "default"), ("sorted files", "nb_NO"), ("nothing", "cs_CZ"), ("nothing", "default"))
+
+
+def folder_call(call: str, files: dict, code: str, wanted=None, name=None):
+    """A translations function with LANGUAGES_DIR in a temporary folder holding <files>."""
+    temporary, root = written({"languages/" + key: value for key, value in files.items()})
+    with temporary, patch.object(translations, "LANGUAGES_DIR", root / "languages"):
+        if call == "missing":
+            return translations.missing(code, wanted)
+        if call == "lines":
+            return listed_lines(translations.lines(code, wanted))
+        if call == "texts":
+            return listed_texts(translations.texts(code, name))
+        return [relative(path, root) for path in translations.sources(code)]
+
+
+def translations_scenario() -> Scenario:
+    s = Scenario("translations")
+    s.case("codepage digests", "codepages.digests", {}, codepages.digests)
+    for code in CODES:
+        s.case(f"language {code!r}", "translations.language", {"code": code},
+               lambda code=code: translations.language(code))
+        s.case(f"missing {code!r}", "translations.missing", {"code": code, "wanted": LINES},
+               lambda code=code: translations.missing(code, LINES))
+    for encoding in ("utf-8", "cp1250", "cp1251", "cp1252", "cp1254", "cp932", "cp936", "cp949"):
+        s.case(f"charset {encoding}", "translations.charset", {"encoding": encoding},
+               lambda encoding=encoding: translations.charset(encoding))
+    for code in ("en_US", "pl_PL", "de_DE", "es_ES", "default"):
+        s.case(f"lines {code}", "translations.lines", {"code": code, "wanted": LINES},
+               lambda code=code: listed_lines(translations.lines(code, LINES)))
+        s.case(f"lines {code} none", "translations.lines", {"code": code, "wanted": []},
+               lambda code=code: listed_lines(translations.lines(code, [])))
+    for code in ("en_US", "pl_PL", "de_DE", "es_ES", "default", "nb_NO"):
+        for name in ("in-game.tra", "ppdjinn.tra", "hlskull.tra", "botsmith.tra", "kpglai01.tra", "udduer01.tra",
+                     "setup.tra", "absent.tra"):
+            s.case(f"texts {code} {name}", "translations.texts", {"code": code, "name": name},
+                   lambda code=code, name=name: listed_texts(translations.texts(code, name)))
+    wanted = [("in-game.tra", 101), ("in-game.tra", 399)]
+    for label, code in FOLDER_CALLS:
+        files = FOLDERS[label]
+        for call, arguments in (("missing", {"wanted": wanted}), ("missing", {"wanted": [("ppdjinn.tra", 99)]}),
+                                ("lines", {"wanted": wanted}), ("texts", {"name": "in-game.tra"}),
+                                ("sources", {})):
+            case = f"folder {call} {label} {code}" + (" ppdjinn" if arguments.get("wanted", wanted) != wanted else "")
+            s.case(case, f"translations.{call}", {"files": files, "code": code, **arguments},
+                   lambda call=call, files=files, code=code, arguments=arguments:
+                   folder_call(call, files, code, **arguments))
+    for label, source in TRA_SOURCES.items():
+        s.case(f"tra_variants {label}", "quest_options.tra_variants", {"source": source},
+               lambda source=source: listed_texts(quest_options.tra_variants(source)))
+        s.case(f"tra_texts {label}", "quest_options.tra_texts", {"source": source},
+               lambda source=source: sorted_ints(quest_options.tra_texts(source)))
+    return s
+
+
 # ---------------------------------------------------------------- a real game
 
 
@@ -1477,14 +1742,16 @@ def game_routes_scenario(game: Path, language: str) -> Scenario:
             return dialogues[name]
         reward_copies.RewardCopies(capture, {})
     files = {name: data for name, data in dialogues.items() if data is not None}
-    tlk = (game / (Path("dialog.tlk") if language == "default" else Path("lang") / language / "dialog.tlk")).read_bytes()
-    # The texts as native_export allocates them; without English the text
-    # routes have none, and the check leaves them out.
+    male, female = game_text.text_files(game, language)
+    text = GameText(male.read_bytes(),
+                    None if female is None or game_text.unpaired(male, female) else female.read_bytes())
+    # The texts as native_export allocates them; without a translation the
+    # text routes have none, and the check leaves them out.
     try:
-        tlk, reward_texts = mode2_rewards.prepare_reward_texts(
-            tlk, originals.keys() & mode2_rewards.TEXT_REFS.keys(), language)
+        text, reward_texts = mode2_rewards.prepare_reward_texts(
+            text, originals.keys() & mode2_rewards.TEXT_REFS.keys(), language)
         _, container_texts = container_rewards.prepare_container_texts(
-            tlk, originals.keys() & container_rewards.TEXT_RESOURCES, language)
+            text, originals.keys() & container_rewards.TEXT_RESOURCES, language)
     except ProfileError:
         reward_texts, container_texts = {}, {}
     s = Scenario("game_routes")
@@ -1555,6 +1822,8 @@ def main() -> None:
         *inventory_scenarios(),
         original_options_scenario(),
         cursed_scenario(),
+        game_text_scenario(),
+        translations_scenario(),
     ]
     for scenario in scenarios:
         scenario.write()

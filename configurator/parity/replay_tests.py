@@ -15,7 +15,9 @@ counted as skipped, with the reason) when the test has patched the reference
 in a way the Rust port cannot mirror, when an input is not plain JSON, or when
 it writes outside the temporary folder or into a folder holding links or
 read-only files. Patched hash tables are passed on as the Rust port's
-test-only pin overrides; a patched `resolve_template` as the drafts it returns.
+test-only pin overrides; a patched `resolve_template` as the drafts it returns;
+a patched `translations.LANGUAGES_DIR` as the folder the port reads its
+translations from.
 """
 from __future__ import annotations
 
@@ -124,7 +126,7 @@ def reference_tables() -> set[int]:
 def classify(call: str):
     """(reason to skip or None, overrides for the Rust run, mocked
     resolve_template or None, mocked registration resolve_template or None)."""
-    resolve = registration = None
+    resolve = registration = languages = None
     for patcher in list(ACTIVE_PATCHES):
         target, attribute = getattr(patcher, "target", None), getattr(patcher, "attribute", "")
         if isinstance(target, types.ModuleType):
@@ -137,6 +139,12 @@ def classify(call: str):
                 continue
             if module == "flir_config.original_registrations" and attribute == "resolve_template":
                 registration = getattr(target, attribute)
+                continue
+            if module == "flir_config.translations" and attribute == "LANGUAGES_DIR":
+                folder = getattr(target, attribute)
+                if not isinstance(folder, os.PathLike):
+                    return "translations.LANGUAGES_DIR is not a path", None, None, None
+                languages = str(folder)
                 continue
             if module.startswith("flir_config") or module in STANDARD_MODULES:
                 return f"patched {module}.{attribute}", None, None, None
@@ -171,7 +179,7 @@ def classify(call: str):
             tables = reference_tables()
         if id(current) in tables:
             return "patched a reference table", None, None, None
-    overrides = {"pins": pins or None, "tables": data or None}
+    overrides = {"pins": pins or None, "tables": data or None, "languages": languages}
     return None, overrides, resolve, registration
 
 
@@ -354,7 +362,7 @@ def record(spec: Spec, original, signature, args, kwargs):
 
     try:
         rust_line = RUNNER.run([{"call": spec.call, "args": spec.arguments(values, draft)}], pins["pins"],
-                               registration_draft, pins["tables"])[0]
+                               registration_draft, pins["tables"], pins["languages"])[0]
     except Exception as exc:  # the comparison reports it; the test goes on
         rust_line = json.dumps({"rust-failure": str(exc)})
     rust_after = {}

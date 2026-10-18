@@ -114,6 +114,12 @@ fn no_selected_options_changes_nothing() {
     let (output, tlk) = prepare_quest_options(&BTreeMap::new(), &original, false, "en_us").unwrap();
     assert!(output.is_empty());
     assert_eq!(tlk, original);
+    // The export passes every language's game text through; only Kangaxx's
+    // texts need English.
+    assert_eq!(prepare_quest_options(&BTreeMap::new(), &original, false, "de_de").unwrap(), (Vec::new(), original.clone()));
+    let error = prepare_quest_options(&resources(), &original, true, "de_de").unwrap_err();
+    assert_eq!(error.kind, cir_config::error::ErrorKind::Profile);
+    assert_eq!(error.message, "Original quest options currently require English game text");
 }
 
 /// The data the reference's Lua guard test (test_postinstall_quest_rewards)

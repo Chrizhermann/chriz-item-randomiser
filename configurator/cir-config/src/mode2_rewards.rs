@@ -27,10 +27,11 @@
 //! removing the patch and applying it again.
 
 use crate::error::{Error, ErrorKind, Result};
-use crate::game_text::append_texts;
+use crate::game_text::GameText;
 use crate::json::{Dict, Value};
 use crate::py::{count_bytes, find_bytes, put_u32, replace_bytes, rfind_bytes, str_value, u32_le, upper};
-use crate::quest_options::{pad, texts, Dialogue};
+use crate::quest_options::{pad, Dialogue};
+use crate::translations::Line;
 use crate::quest_rewards::{global_action, global_guard};
 use crate::script_text::{
     argument, block_actions, block_parts, calls, calls_in, integer_argument, joined, named, naming, response_spans,
@@ -1767,36 +1768,56 @@ pub(crate) fn examine(resource: &str, data: &[u8]) -> Result<Examined> {
 
 // ---------------------------------------------------------------- texts
 
+/// The appended texts' numbers: resource to (original strref to new strref).
+pub type TextRefs = BTreeMap<String, BTreeMap<i64, i64>>;
+
 /// Append the original generic well description; never replace shared text.
-pub fn prepare_ddwell_text(tlk: &[u8], language: &str) -> Result<(Vec<u8>, i64)> {
-    let (updated, refs) = prepare_reward_texts(tlk, ["bcs:ddwell"], language)?;
+pub fn prepare_ddwell_text(text: &GameText, language: &str) -> Result<(GameText, i64)> {
+    let (updated, refs) = prepare_reward_texts(text, ["bcs:ddwell"], language)?;
     Ok((updated, refs["bcs:ddwell"][&40850]))
 }
 
-/// Allocate all requested original TRA descriptions in one append/dedup pass.
-pub fn prepare_reward_texts<I, S>(tlk: &[u8], resources: I, language: &str) -> Result<(Vec<u8>, BTreeMap<String, BTreeMap<i64, i64>>)>
+/// The (TRA file, number) lines of Item Randomiser's reward text that a text
+/// route shows.
+pub fn text_lines(resource: &str) -> Result<Vec<Line>> {
+    let refs = text_refs(resource).ok_or_else(|| Error::key(resource))?;
+    let file = if resource == "dlg:ppdjinn" { "ppdjinn.tra" } else { "in-game.tra" };
+    let numbers: BTreeSet<i64> = refs.iter().map(|&(_, tra)| tra).collect();
+    Ok(numbers.into_iter().map(|number| (file.to_string(), number)).collect())
+}
+
+/// Allocate the requested reward texts, in the game's language, in one
+/// append/dedup pass.
+///
+/// A text's female wording goes to the game's dialogf.tlk. Fails with
+/// MissingTranslation ([`crate::translations`]) when the language has no
+/// translation of one of them.
+pub fn prepare_reward_texts<I, S>(text: &GameText, resources: I, language: &str) -> Result<(GameText, TextRefs)>
 where
     I: IntoIterator<Item = S>,
     S: AsRef<str>,
 {
-    if crate::py::lower(language) != "en_us" {
-        return Err(profile("Item Randomiser's reward texts exist only in English"));
-    }
     let requested: BTreeSet<String> = resources.into_iter().map(|resource| crate::py::lower(resource.as_ref())).collect();
     let needed: Vec<&str> = requested.iter().map(String::as_str).filter(|resource| text_refs(resource).is_some()).collect();
-    let mut source_texts: HashMap<&str, HashMap<i64, String>> = HashMap::new();
+    if needed.is_empty() {
+        return Ok((text.clone(), BTreeMap::new()));
+    }
+    let mut wanted = Vec::new();
+    for resource in &needed {
+        wanted.extend(text_lines(resource)?);
+    }
+    let found = crate::translations::lines(language, &wanted)?;
     let mut entries = Vec::new();
     let mut values = Vec::new();
     for &resource in &needed {
-        let path = if resource == "dlg:ppdjinn" { "languages/english/ppdjinn.tra" } else { "languages/english/in-game.tra" };
-        let file = source_texts.entry(path).or_insert_with(|| texts(path));
+        let file = text_lines(resource)?.remove(0).0;
         for &(old, tra) in text_refs(resource).expect("text resource") {
             entries.push((resource, old));
-            values.push(file.get(&tra).cloned().ok_or_else(|| Error::new(ErrorKind::Key, tra.to_string()))?);
+            values.push(found[&(file.clone(), tra)].clone());
         }
     }
-    let (updated, refs) = append_texts(tlk, &values)?;
-    let mut result: BTreeMap<String, BTreeMap<i64, i64>> =
+    let (updated, refs) = text.append(&values)?;
+    let mut result: TextRefs =
         needed.iter().map(|resource| (resource.to_string(), BTreeMap::new())).collect();
     for ((resource, old), reference) in entries.into_iter().zip(refs) {
         result.get_mut(resource).expect("needed").insert(old, reference as i64);

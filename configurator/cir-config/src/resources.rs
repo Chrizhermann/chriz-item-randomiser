@@ -865,12 +865,19 @@ pub const MISSING_TLK_WARNING: &str =
 
 impl Tlk {
     pub fn new(data: Vec<u8>) -> Result<Tlk> {
+        let (count, offset) = Tlk::layout(&data)?;
+        Ok(Tlk { data, count, offset })
+    }
+
+    /// The entry count and string data offset of a TLK, checked as
+    /// [`Tlk::new`] checks them (every entry's text inside the file).
+    pub fn layout(data: &[u8]) -> Result<(u32, u32)> {
         span(data.len(), 0, 0x12, "TLK header")?;
         if &data[..8] != b"TLK V1  " {
             return Err(Error::scan("Unsupported TLK format; expected TLK V1."));
         }
-        let count = u32_le(&data, 0xA);
-        let offset = u32_le(&data, 0xE);
+        let count = u32_le(data, 0xA);
+        let offset = u32_le(data, 0xE);
         span(data.len(), 0x12, count as u64 * 0x1A, "TLK entry table")?;
         if (offset as u64) < 0x12 + count as u64 * 0x1A {
             return Err(Error::scan("TLK string data overlaps its entry table."));
@@ -878,11 +885,11 @@ impl Tlk {
         span(data.len(), offset as u64, 0, "TLK string data")?;
         for index in 0..count as usize {
             let base = 0x12 + index * 0x1A;
-            let string_offset = u32_le(&data, base + 0x12) as u64;
-            let length = u32_le(&data, base + 0x16) as u64;
+            let string_offset = u32_le(data, base + 0x12) as u64;
+            let length = u32_le(data, base + 0x16) as u64;
             span(data.len(), offset as u64 + string_offset, length, "TLK string")?;
         }
-        Ok(Tlk { data, count, offset })
+        Ok((count, offset))
     }
 
     /// The text of `strref`, None for no text; a missing entry adds a warning.

@@ -15,8 +15,18 @@ results, the error messages and every file written are the same (see
   the editor for that game ([Started without arguments](#started-without-arguments)).
 
 The mod data the configurator reads (the tables under `lists/`, the BG1 name
-maps, game texts, the mod's stand-in items and the editor's files) is embedded
-when it is built, so the executable runs on its own, without a checkout.
+maps, Item Randomiser's texts in every language under `languages/`, the mod's
+stand-in items and the editor's files) is embedded when it is built, so the
+executable runs on its own, without a checkout.
+
+Item Randomiser's reward texts appear in the game's language (`lang/<code>`),
+as with the reference: the translation is read in its language's code page
+(decoded strictly, with tables taken from Python's own codecs: `codepages/`,
+written by `configurator/parity/codepages.py`), and each text goes to
+`dialog.tlk` and, where the language has one, to `dialogF.tlk` under the same
+number, with its female wording. A language without a translation, or a
+`dialogF.tlk` with another number of strings, leaves the text routes and the
+golem chests out of the configuration with the reason.
 
 ## Build
 
@@ -140,7 +150,9 @@ build with the feature again before the checks.
   Rust port, comparing
   results, errors and the files written. Tests that inject faults into Python
   internals (a patched `open` or directory listing) cannot be repeated and are
-  listed as not compared.
+  listed as not compared. Where a test points `translations.LANGUAGES_DIR` at a
+  copy of the translations, the Rust port reads that folder
+  (`CIR_PARITY_LANGUAGES`, parity builds only).
 - `cli_check.py` runs the command line on a synthetic installation: the whole
   workflow up to the native export, argparse's handling of unusual arguments,
   and every command's help at several terminal widths.
@@ -169,8 +181,10 @@ build with the feature again before the checks.
   (for the extended pools' reward routes: recognition by meaning in dialogues
   and compiled scripts, what leaves a route out and why, other mods' layouts,
   copies of reward replies in other dialogues as WeiDU's interjections leave
-  them, and re-export of the configurator's own earlier patches), and the game
-  folder lookup: the executable in `cir` and in `cir/tools`, no
+  them, and re-export of the configurator's own earlier patches; the game text
+  in `dialog.tlk` and `dialogF.tlk`; the translations of every shipped
+  language, translation folders as WeiDU leaves them, the TRA reader and every
+  one- and two-byte sequence of each code page), and the game folder lookup: the executable in `cir` and in `cir/tools`, no
   game above it, the nearest of nested games, CIR not installed (other
   components, other mods, commented log lines) and installed by marker or log.
   The folder window's interface is checked without showing the window.
@@ -178,6 +192,7 @@ build with the feature again before the checks.
   when its resource cache `work/original-preset-runtime-20260929/mode2-resources`
   is present; it is not distributed.
 - `generate.py --game '<game folder>' --language en_US --out '<folder>'`
+  (or another of the game's languages, such as `de_DE`)
   records the reward routes of an installed game, used read-only: each route
   resource patched as the export patches it, recognised before and after, and
   exported again, and the copies of reward replies in the game's other
@@ -212,3 +227,9 @@ build.
   accepts other JSON values there and fails later with Python's errors.
 - Python's NFKC check of the host in absolute-form request targets is not
   ported; the editor only ever receives ordinary paths from the browser.
+- The translations are the ones the configurator was built with. The reference
+  reads the mod's `languages/` folder, so a translation edited in an installed
+  game reaches only the reference (and its check rereads that folder when it
+  changes); WeiDU's in-place conversion of that folder changes no text.
+- A TRA line whose number exceeds the 64-bit range is not read; the reference
+  reads it. No text CIR reads has one.

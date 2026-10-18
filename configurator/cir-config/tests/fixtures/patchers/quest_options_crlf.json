@@ -1374,10 +1374,12 @@
     "language": "de_DE"
    },
    "independent": true,
-   "error": {
-    "kind": "Profile",
-    "message": "Original quest options currently require English game text"
-   }
+   "result": [
+    {},
+    {
+     "$blob": "972ad97ae236783fd74121ad94c22c9a9683635248e49823128cf35912695044"
+    }
+   ]
   },
   {
    "name": "prepare_quest_options missing crypt",

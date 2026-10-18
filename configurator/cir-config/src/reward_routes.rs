@@ -11,28 +11,37 @@
 //! A quest route needs its grant recognised in each of its resources, and so
 //! does every route that shares its reward event (the egg deal's two
 //! dialogues, the three sculptors); copies of their reward replies elsewhere
-//! must be gateable too. Routes with Item Randomiser's reward text need the
-//! English game text and the BGEE.LUA journal table, as the export does.
+//! must be gateable too. Routes with Item Randomiser's reward text need its
+//! translation into the game's language ([`crate::translations`]), a
+//! dialogf.tlk as long as dialog.tlk where the language has one
+//! ([`crate::game_text`]) and the BGEE.LUA journal table, as the export does.
 //!
 //! The resources are read once per scan, which keeps the repeated checks of a
-//! fit cheap. Each check run first compares the files they came from with
-//! what was read (their stat identities, see [`file_identity`]) and reads
-//! them again when one changed; a resource whose bytes then differ from the
-//! scan stops the check. Apply still reads and verifies the bytes it patches.
+//! fit cheap. Each check run first compares the files they came from, the
+//! game text files and CIR's translations with what was read (their stat
+//! identities, see [`file_identity`]) and reads them again when one changed;
+//! a resource whose bytes then differ from the scan stops the check. Apply
+//! still reads and verifies the bytes it patches.
 
 use crate::container_rewards;
 use crate::error::{Error, ErrorKind, Result, CHANGED_SINCE_SCAN};
+use crate::game_text;
 use crate::json::Value;
 use crate::mode2_rewards;
 use crate::py::str_value;
 use crate::resources::{file_identity, resource_type, sha256_hex, FileIdentity, GameResources};
 use crate::reward_copies::RewardCopies;
+use crate::translations::{self, Line};
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 pub struct RewardRoutes {
-    english: bool,
+    language: String,
+    /// Why an appended text could not have the same number in dialogf.tlk.
+    unpaired: Option<String>,
+    /// Why the game's language cannot show the lines, by lines asked for.
+    translated: Mutex<HashMap<Vec<Line>, Option<String>>>,
     journal: bool,
     changed: BTreeSet<String>,
     /// (resource, route or container target id) to why it cannot be prepared.
@@ -87,17 +96,26 @@ impl RewardRoutes {
             .filter(|resource| scanned.contains_key(*resource))
             .map(str::to_string)
             .collect();
-        let english = crate::py::lower(language) == "en_us";
         let mut changed = BTreeSet::new();
         let mut reasons = HashMap::new();
         let mut files: Vec<(PathBuf, FileIdentity)> = Vec::new();
+        let mut known: HashSet<PathBuf> = HashSet::new();
+        let (male, female) = game_text::text_files(game_root, language)?;
+        let parent = male.parent().map(Path::to_path_buf).unwrap_or_default();
+        let watched = [parent, male.clone()].into_iter().chain(female.clone()).chain(translations::sources(language)?);
+        for path in watched {
+            let identity = file_identity(&path)?;
+            if known.insert(path.clone()) {
+                files.push((path, identity));
+            }
+        }
+        let unpaired = game_text::unpaired(&male, female.as_deref())?;
         let types = [("bcs", resource_type("bcs")), ("dlg", resource_type("dlg")), ("lua", resource_type("lua"))];
         let (journal, copies) = GameResources::with(game_root, &types, |reader| {
             let mut present: HashMap<&str, HashSet<String>> = HashMap::new();
             for kind in ["bcs", "dlg", "lua"] {
                 present.insert(kind, reader.names(kind)?.into_iter().collect());
             }
-            let mut known: HashSet<PathBuf> = HashSet::new();
             for path in reader.lookup_paths()? {
                 let identity = file_identity(&path)?;
                 if known.insert(path.clone()) {
@@ -148,7 +166,16 @@ impl RewardRoutes {
             Ok((journal, copies))
         })?;
         changed.extend(copies.changed.iter().cloned());
-        Ok(RewardRoutes { english, journal, changed, reasons, files, copies })
+        Ok(RewardRoutes {
+            language: language.to_string(),
+            unpaired,
+            translated: Mutex::new(HashMap::new()),
+            journal,
+            changed,
+            reasons,
+            files,
+            copies,
+        })
     }
 
     /// Whether every file these routes were read from is as it was.
@@ -176,11 +203,25 @@ impl RewardRoutes {
         Ok(())
     }
 
-    fn texts(&self, needed: bool, prefix: &str) -> Result<()> {
-        if needed && !self.english {
-            return Err(Error::profile(format!("{prefix}Item Randomiser's reward texts exist only in English")));
+    /// Fail unless the export can show Item Randomiser's (file, number)
+    /// `lines` in the game.
+    fn texts(&self, lines: Vec<Line>, prefix: &str) -> Result<()> {
+        if lines.is_empty() {
+            return Ok(());
         }
-        if needed && !self.journal {
+        let known = self.translated.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).get(&lines).cloned();
+        let translated = match known {
+            Some(reason) => reason,
+            None => {
+                let reason = translations::missing(&self.language, &lines)?;
+                self.translated.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).insert(lines, reason.clone());
+                reason
+            }
+        };
+        if let Some(reason) = translated.or_else(|| self.unpaired.clone()) {
+            return Err(Error::profile(format!("{prefix}{reason}")));
+        }
+        if !self.journal {
             return Err(Error::profile(format!("{prefix}the game has no BGEE.LUA journal table")));
         }
         Ok(())
@@ -237,7 +278,13 @@ impl RewardRoutes {
                 return Err(Error::profile(format!("{prefix}{reason}")));
             }
         }
-        self.texts(resources.iter().any(|resource| mode2_rewards::text_refs(resource).is_some()), &prefix)
+        let mut lines = Vec::new();
+        for resource in &resources {
+            if mode2_rewards::text_refs(resource).is_some() {
+                lines.extend(mode2_rewards::text_lines(resource)?);
+            }
+        }
+        self.texts(lines, &prefix)
     }
 
     /// Fail unless the container quest target can be prepared.
@@ -251,6 +298,7 @@ impl RewardRoutes {
             }
         }
         let prefix = container_rewards::container_error(target_id, "")?.message;
-        self.texts(resources.iter().any(|resource| container_rewards::TEXT_RESOURCES.contains(&resource.as_str())), &prefix)
+        let shows = resources.iter().any(|resource| container_rewards::TEXT_RESOURCES.contains(&resource.as_str()));
+        self.texts(if shows { container_rewards::text_lines() } else { Vec::new() }, &prefix)
     }
 }

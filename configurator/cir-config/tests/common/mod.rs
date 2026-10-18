@@ -7,17 +7,86 @@
 pub mod builders;
 pub mod mode2;
 
-use cir_config::error::{CHANGED_SINCE_SCAN, SCRIPT_ERROR};
+use cir_config::error::{CHANGED_SINCE_SCAN, MISSING_TRANSLATION, SCRIPT_ERROR};
+use cir_config::game_text::{self, GameText};
 use cir_config::json::{self, Dict, Value};
 use cir_config::py::{from_hex, hex};
 use cir_config::resources::sha256_hex;
+use cir_config::translations::{self, Line, Translations};
 use cir_config::{
-    container_rewards, creature_inventory, cursed_disguises, group_recipients, mode2_rewards, original_options,
-    quest_options, quest_rewards, reward_copies, spell_rewards, store_inventory, Error, ErrorKind, Result,
+    codepages, container_rewards, creature_inventory, cursed_disguises, group_recipients, mode2_rewards,
+    original_options, quest_options, quest_rewards, reward_copies, spell_rewards, store_inventory, Error, ErrorKind,
+    Result,
 };
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Once;
+
+/// A folder in the system temporary folder, removed when dropped.
+pub struct TempDir(pub PathBuf);
+
+impl TempDir {
+    pub fn new(prefix: &str) -> TempDir {
+        static COUNT: AtomicUsize = AtomicUsize::new(0);
+        let nanos = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |time| time.as_nanos());
+        let path = std::env::temp_dir()
+            .join(format!("{prefix}{}-{}-{nanos}", std::process::id(), COUNT.fetch_add(1, Ordering::SeqCst)));
+        std::fs::create_dir_all(&path).expect("temporary folder");
+        TempDir(path)
+    }
+
+    /// Write `data` to `relative` (a "/" path), or make the folder `relative`
+    /// ("name/") for `None`.
+    pub fn write(&self, relative: &str, data: Option<&[u8]>) -> PathBuf {
+        let path = relative.trim_end_matches('/').split('/').fold(self.0.clone(), |path, part| path.join(part));
+        match data {
+            None => std::fs::create_dir_all(&path).expect("folder"),
+            Some(data) => {
+                std::fs::create_dir_all(path.parent().expect("parent")).expect("parent folder");
+                std::fs::write(&path, data).expect("file");
+            }
+        }
+        path
+    }
+
+    /// `path.relative_to(root).as_posix()`.
+    pub fn relative(&self, path: &Path) -> String {
+        let relative = path.strip_prefix(&self.0).expect("inside the folder");
+        relative.components().map(|part| part.as_os_str().to_string_lossy().into_owned()).collect::<Vec<_>>().join("/")
+    }
+}
+
+impl Drop for TempDir {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
+/// What `configurator/parity/codepages.py`'s digests() hashes: strict
+/// decoding of every one- and two-byte sequence, per code page.
+fn codepage_digests() -> Value {
+    let mut result = Dict::new();
+    for encoding in codepages::CODE_PAGES.iter().copied().chain(["utf-8"]) {
+        let mut stream = Vec::with_capacity(1 << 20);
+        let mut outcome = |data: &[u8]| match codepages::decode(data, encoding) {
+            Some(text) => {
+                stream.push(b'=');
+                stream.extend_from_slice(text.as_bytes());
+                stream.push(0);
+            }
+            None => stream.extend_from_slice(b"!\0"),
+        };
+        for first in 0..=255u8 {
+            outcome(&[first]);
+            for second in 0..=255u8 {
+                outcome(&[first, second]);
+            }
+        }
+        result.insert(encoding, Value::from(sha256_hex(&stream)));
+    }
+    Value::Dict(result)
+}
 
 pub fn fixtures() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests").join("fixtures").join("patchers")
@@ -99,6 +168,41 @@ fn nested_refs(map: &BTreeMap<String, BTreeMap<i64, i64>>) -> Value {
     Value::Dict(map.iter().map(|(key, refs)| (key.clone(), int_keys(refs))).collect())
 }
 
+/// A GameText as the reference's NamedTuple encodes: [dialog.tlk, dialogf.tlk or None].
+pub fn game_text_value(text: &GameText) -> Value {
+    Value::List(vec![bytes_value(&text.male), text.female.as_deref().map_or(Value::Null, bytes_value)])
+}
+
+fn strrefs(refs: &[u32]) -> Value {
+    Value::List(refs.iter().map(|&reference| Value::from(reference as i64)).collect())
+}
+
+fn lines_value(lines: &[Line]) -> Value {
+    Value::List(lines.iter().map(|(file, number)| Value::List(vec![Value::from(file.as_str()), Value::from(*number)])).collect())
+}
+
+/// `listed_lines`: [file, number, text, female wording] in line order.
+fn listed_lines(found: &BTreeMap<Line, (String, String)>) -> Value {
+    Value::List(
+        found
+            .iter()
+            .map(|((file, number), (text, female))| {
+                Value::List(vec![Value::from(file.as_str()), Value::from(*number), Value::from(text.as_str()), Value::from(female.as_str())])
+            })
+            .collect(),
+    )
+}
+
+/// `listed_texts`: [number, text, female wording] in number order.
+fn listed_texts(found: &translations::Texts) -> Value {
+    Value::List(
+        found
+            .iter()
+            .map(|(number, (text, female))| Value::List(vec![Value::from(*number), Value::from(text.as_str()), Value::from(female.as_str())]))
+            .collect(),
+    )
+}
+
 /// A recovery's (original, text ref or None, own patch), as the reference's tuple.
 fn recovered((original, reference, own): (Vec<u8>, Option<i64>, bool)) -> Value {
     Value::List(vec![bytes_value(&original), reference.map_or(Value::Null, Value::from), Value::Bool(own)])
@@ -147,6 +251,56 @@ impl Args<'_> {
     }
     fn strings(&self, key: &str) -> Vec<String> {
         self.value(key).as_list().expect("list argument").iter().map(|item| item.as_str().expect("str").to_string()).collect()
+    }
+    fn optional_bytes(&self, key: &str) -> Option<Vec<u8>> {
+        match self.value(key) {
+            Value::Null => None,
+            value => Some(self.fixture.blob(value)),
+        }
+    }
+    /// A GameText argument, recorded as [dialog.tlk, dialogf.tlk or None].
+    fn game_text(&self, key: &str) -> GameText {
+        let parts = self.value(key).as_list().unwrap_or_else(|| panic!("GameText argument {key}"));
+        let female = match &parts[1] {
+            Value::Null => None,
+            value => Some(self.fixture.blob(value)),
+        };
+        GameText { male: self.fixture.blob(&parts[0]), female }
+    }
+    /// (male, female) text pairs.
+    fn pairs(&self, key: &str) -> Vec<(String, String)> {
+        self.value(key)
+            .as_list()
+            .expect("pairs")
+            .iter()
+            .map(|pair| {
+                let pair = pair.as_list().expect("pair");
+                (pair[0].as_str().expect("male").to_string(), pair[1].as_str().expect("female").to_string())
+            })
+            .collect()
+    }
+    fn lines(&self, key: &str) -> Vec<Line> {
+        self.value(key)
+            .as_list()
+            .expect("lines")
+            .iter()
+            .map(|line| {
+                let line = line.as_list().expect("line");
+                (line[0].as_str().expect("file").to_string(), line[1].as_int().expect("number"))
+            })
+            .collect()
+    }
+    /// Recorded files, written to a new temporary folder (below `prefix`).
+    fn written(&self, key: &str, prefix: &str) -> TempDir {
+        let folder = TempDir::new("cir-parity-");
+        for (relative, data) in self.value(key).as_dict().expect("files").iter() {
+            let data = match data {
+                Value::Null => None,
+                value => Some(self.fixture.blob(value)),
+            };
+            folder.write(&format!("{prefix}{relative}"), data.as_deref());
+        }
+        folder
     }
     fn blob_map(&self, key: &str) -> BTreeMap<String, Vec<u8>> {
         self.value(key)
@@ -232,6 +386,54 @@ fn call(name: &str, args: &Args) -> Result<Value> {
             args.int("opcode") as u32,
             &args.bytes("newline"),
         )?),
+        "quest_options.tra_variants" => {
+            listed_texts(&quest_options::tra_variants(&args.str("source"))?)
+        }
+        "quest_options.tra_texts" => Value::Dict(
+            quest_options::tra_texts(&args.str("source"))?
+                .into_iter()
+                .map(|(number, text)| (number.to_string(), Value::from(text)))
+                .collect(),
+        ),
+        "codepages.digests" => codepage_digests(),
+        "translations.language" => match translations::language(&args.str("code")) {
+            Some((name, folder, encoding)) => Value::from(vec![name, folder, encoding]),
+            None => Value::Null,
+        },
+        "translations.charset" => Value::from(translations::charset(&args.str("encoding"))),
+        "translations.missing" | "translations.lines" | "translations.texts" | "translations.sources" => {
+            let folder = args.values.get("files").map(|_| args.written("files", "languages/"));
+            let source = folder.as_ref().map_or(Translations::Embedded, |folder| Translations::Folder(folder.0.join("languages")));
+            let code = args.str("code");
+            match name {
+                "translations.missing" => source.missing(&code, &args.lines("wanted"))?.map_or(Value::Null, Value::from),
+                "translations.lines" => listed_lines(&source.lines(&code, &args.lines("wanted"))?),
+                "translations.texts" => listed_texts(&source.texts(&code, &args.str("name"))?),
+                _ => {
+                    let folder = folder.as_ref().expect("sources of a folder");
+                    Value::List(source.sources(&code)?.iter().map(|path| Value::from(folder.relative(path))).collect())
+                }
+            }
+        }
+        "game_text.GameText.append" => {
+            let (text, refs) = args.game_text("text").append(&args.pairs("texts"))?;
+            Value::List(vec![game_text_value(&text), strrefs(&refs)])
+        }
+        "game_text.paired" => game_text_value(&game_text::paired(args.bytes("male"), args.optional_bytes("female"))?),
+        "game_text._append_texts" => {
+            let (data, refs) = game_text::append_texts(&args.bytes("data"), &args.strings("texts"))?;
+            Value::List(vec![bytes_value(&data), strrefs(&refs)])
+        }
+        "game_text.text_files" => {
+            let folder = args.written("files", "");
+            let (male, female) = game_text::text_files(&folder.0, &args.str("language"))?;
+            Value::List(vec![Value::from(folder.relative(&male)), female.map_or(Value::Null, |path| Value::from(folder.relative(&path)))])
+        }
+        "game_text.unpaired" => {
+            let folder = args.written("files", "");
+            let female = args.value("female").as_str().map(|name| folder.0.join(name));
+            game_text::unpaired(&folder.0.join(args.str("male")), female.as_deref())?.map_or(Value::Null, Value::from)
+        }
         "quest_options._texts" => {
             let texts = quest_options::texts(&args.str("path"));
             let mut keys: Vec<&i64> = texts.keys().collect();
@@ -325,13 +527,15 @@ fn call(name: &str, args: &Args) -> Result<Value> {
             args.bool("numeric_target"),
         )?),
         "mode2_rewards.prepare_ddwell_text" => {
-            let (tlk, reference) = mode2_rewards::prepare_ddwell_text(&args.bytes("tlk"), &args.str("language"))?;
-            Value::List(vec![bytes_value(&tlk), Value::from(reference)])
+            let (text, reference) = mode2_rewards::prepare_ddwell_text(&args.game_text("text"), &args.str("language"))?;
+            Value::List(vec![game_text_value(&text), Value::from(reference)])
         }
         "mode2_rewards.prepare_reward_texts" => {
-            let (tlk, refs) = mode2_rewards::prepare_reward_texts(&args.bytes("tlk"), args.strings("resources"), &args.str("language"))?;
-            Value::List(vec![bytes_value(&tlk), nested_refs(&refs)])
+            let (text, refs) =
+                mode2_rewards::prepare_reward_texts(&args.game_text("text"), args.strings("resources"), &args.str("language"))?;
+            Value::List(vec![game_text_value(&text), nested_refs(&refs)])
         }
+        "mode2_rewards.text_lines" => lines_value(&mode2_rewards::text_lines(&args.str("resource"))?),
         "mode2_rewards.patch_reward" => bytes_value(&mode2_rewards::patch_reward(
             &args.str("resource"),
             &args.bytes("data"),
@@ -360,9 +564,12 @@ fn call(name: &str, args: &Args) -> Result<Value> {
         }
         "container_rewards._recover" => recovered(container_rewards::recover(&args.str("resource"), &args.bytes("data"))?),
         "container_rewards.prepare_container_texts" => {
-            let (tlk, refs) =
-                container_rewards::prepare_container_texts(&args.bytes("tlk"), args.strings("resources"), &args.str("language"))?;
-            Value::List(vec![bytes_value(&tlk), nested_refs(&refs)])
+            let (text, refs) = container_rewards::prepare_container_texts(
+                &args.game_text("text"),
+                args.strings("resources"),
+                &args.str("language"),
+            )?;
+            Value::List(vec![game_text_value(&text), nested_refs(&refs)])
         }
         "container_rewards._trigger" => bytes_value(&container_rewards::trigger(
             args.int("opcode") as u32,
@@ -512,6 +719,7 @@ fn compare(scenario: &str, fixture: &Fixture) -> (usize, usize) {
                 expected.subclass = error.get("subclass").and_then(Value::as_str).map(|name| match name {
                     "ChangedSinceScan" => CHANGED_SINCE_SCAN,
                     "ScriptError" => SCRIPT_ERROR,
+                    "MissingTranslation" => MISSING_TRANSLATION,
                     other => panic!("unknown ProfileError subclass {other}"),
                 });
                 Err(expected)

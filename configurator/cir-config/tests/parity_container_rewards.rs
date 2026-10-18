@@ -13,6 +13,7 @@ use cir_config::container_rewards::{
     treasure, treasure_area, treasure_container, trigger, TEXT_RESOURCES,
 };
 use cir_config::error::{Error, ErrorKind};
+use cir_config::game_text::GameText;
 use cir_config::json::{Dict, Value};
 use cir_config::py::{put_u32, splitlines, str_value};
 use cir_config::quest_options::Dialogue;
@@ -785,16 +786,19 @@ fn exact_target_selectors_shared_samia_latch_and_golem_text() {
     assert_eq!(treasure_area("bg2:mode2:target:13", "eet").unwrap(), "ar1303");
     assert_profile(target_spec("bg2:mode2:target:1").unwrap_err(), "Unsupported extended reward container");
     assert_profile(own_patch("bcs:other", b"SC\nSC\n").unwrap_err(), "Unsupported extended reward container resource");
-    let original = make_tlk(&["Preserve existing text"]);
-    let (tlk, refs) = prepare_container_texts(&original, TEXT_RESOURCES, "en_us").unwrap();
+    let original = GameText::new(make_tlk(&["Preserve existing text"]));
+    let (text, refs) = prepare_container_texts(&original, TEXT_RESOURCES, "en_us").unwrap();
     assert_eq!(refs.values().map(|row| row[&38758]).collect::<BTreeSet<_>>().len(), 1);
     assert_eq!(
-        tlk_text(&tlk, refs["bcs:kpgol01"][&38758] as u32).as_deref(),
+        tlk_text(&text.male, refs["bcs:kpgol01"][&38758] as u32).as_deref(),
         Some("As you pick up the item, two of the golems come to life and attack.")
     );
-    assert_eq!(prepare_container_texts(&tlk, TEXT_RESOURCES, "en_us").unwrap(), (tlk.clone(), refs));
-    assert_profile(prepare_container_texts(&original, TEXT_RESOURCES, "de_DE").unwrap_err(), "reward texts exist only in English");
-    assert_eq!(prepare_container_texts(&original, ["bcs:ar1202"], "de_DE").unwrap(), (original, BTreeMap::new()));
+    assert_eq!(prepare_container_texts(&text, TEXT_RESOURCES, "en_us").unwrap(), (text.clone(), refs));
+    assert_profile(
+        prepare_container_texts(&original, TEXT_RESOURCES, "es_ES").unwrap_err(),
+        "reward texts have no Spanish translation yet",
+    );
+    assert_eq!(prepare_container_texts(&original, ["bcs:ar1202"], "es_ES").unwrap(), (original, BTreeMap::new()));
 }
 
 fn chest(area: &str, index: Value, item: &str) -> Value {
@@ -909,7 +913,7 @@ fn reviewed_eet_scripts_and_dialogues_when_available() {
     reviewed.sort_unstable();
     known.sort_unstable();
     assert_eq!(reviewed, known);
-    let (_tlk, golem) = prepare_container_texts(&make_tlk(&[]), TEXT_RESOURCES, "en_us").unwrap();
+    let (_text, golem) = prepare_container_texts(&GameText::new(make_tlk(&[])), TEXT_RESOURCES, "en_us").unwrap();
     for (resource, original_hash, patched_hash) in REVIEWED_EET {
         let (kind, name) = resource.split_once(':').unwrap();
         let original = std::fs::read(cache.join(format!("{name}.{kind}"))).unwrap();

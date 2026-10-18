@@ -27,10 +27,12 @@
 
 use crate::error::{Error, ErrorKind, Result, SCRIPT_ERROR};
 use crate::game_names::convert_resource;
-use crate::game_text::append_texts;
+use crate::game_text::GameText;
+use crate::mode2_rewards::TextRefs;
 use crate::json::{Dict, Value};
 use crate::py::{find_bytes, rfind_bytes, str_value, u32_le, upper};
-use crate::quest_options::{pad, texts, Dialogue};
+use crate::quest_options::{pad, Dialogue};
+use crate::translations::Line;
 use crate::quest_rewards::global_guard;
 use crate::script_text::{
     block_actions, block_parts, block_triggers, calls, integer_argument, named, naming, script_blocks, string_argument,
@@ -121,6 +123,8 @@ pub fn resource_targets() -> &'static Dict {
 }
 
 pub const TEXT_RESOURCES: [&str; 3] = ["bcs:kpgol01", "bcs:kpgol02", "bcs:kpgol05"];
+/// The (TRA file, number) of Item Randomiser's golem text, which they show.
+pub const TEXT_LINES: &[(&str, i64)] = &[("in-game.tra", 101)];
 const GOLEM_TEXT: i64 = 38758;
 const TRAILER: &[u8] = b"FLPRCON1";
 const PARTY_HAS_ITEM: i64 = 16450;
@@ -226,12 +230,19 @@ pub fn treasure_container<'a>(target_id: &str, sources: impl IntoIterator<Item =
     Ok(chests.remove(0))
 }
 
-/// Allocate the golems' original text once for every requested golem script.
+/// The (TRA file, number) lines of Item Randomiser's golem text, which the
+/// golems' scripts show.
+pub fn text_lines() -> Vec<Line> {
+    TEXT_LINES.iter().map(|&(file, number)| (file.to_string(), number)).collect()
+}
+
+/// Allocate the golem text, in the game's language, for the requested
+/// container resources.
 pub fn prepare_container_texts<I, S>(
-    tlk: &[u8],
+    text: &GameText,
     resources: I,
     language: &str,
-) -> Result<(Vec<u8>, BTreeMap<String, BTreeMap<i64, i64>>)>
+) -> Result<(GameText, TextRefs)>
 where
     I: IntoIterator<Item = S>,
     S: AsRef<str>,
@@ -242,13 +253,11 @@ where
         .filter(|resource| TEXT_RESOURCES.contains(&resource.as_str()))
         .collect();
     if needed.is_empty() {
-        return Ok((tlk.to_vec(), BTreeMap::new()));
+        return Ok((text.clone(), BTreeMap::new()));
     }
-    if crate::py::lower(language) != "en_us" {
-        return Err(profile("Item Randomiser's reward texts exist only in English"));
-    }
-    let text = texts("languages/english/in-game.tra").remove(&101).ok_or_else(|| Error::new(ErrorKind::Key, "101"))?;
-    let (updated, refs) = append_texts(tlk, &[text])?;
+    let lines = text_lines();
+    let golems = crate::translations::lines(language, &lines)?.remove(&lines[0]).expect("the line asked for");
+    let (updated, refs) = text.append(&[golems])?;
     let result = needed.into_iter().map(|resource| (resource, BTreeMap::from([(GOLEM_TEXT, refs[0] as i64)]))).collect();
     Ok((updated, result))
 }

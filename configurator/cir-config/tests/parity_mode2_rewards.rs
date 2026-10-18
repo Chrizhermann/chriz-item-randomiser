@@ -11,6 +11,7 @@
 mod common;
 
 use cir_config::error::{Error, ErrorKind};
+use cir_config::game_text::GameText;
 use cir_config::json::{Dict, Value};
 use cir_config::mode2_rewards::{
     direct_rewards, own_patch, patch_dialogue, patch_reward, physical_source_rewards, prepare_ddwell_text, prepare_reward_texts,
@@ -549,12 +550,18 @@ fn aran_route_left_out_alone_keeps_the_other_route() {
 #[test]
 fn text_variants_preserve_original_routes_replies_and_verified_recovery() {
     let resources = text_dialogues();
-    let (tlk, allocated) = prepare_reward_texts(&make_tlk(&["Unchanged text"]), resources.clone(), "en_us").unwrap();
-    assert_eq!(prepare_reward_texts(&tlk, resources.clone(), "en_us").unwrap(), (tlk.clone(), allocated.clone()));
+    let (game_text, allocated) =
+        prepare_reward_texts(&GameText::new(make_tlk(&["Unchanged text"])), resources.clone(), "en_us").unwrap();
+    assert_eq!(prepare_reward_texts(&game_text, resources.clone(), "en_us").unwrap(), (game_text.clone(), allocated.clone()));
+    assert_eq!(game_text.female, None);
+    let tlk = game_text.male.clone();
     assert_eq!(tlk_text(&tlk, 0).as_deref(), Some("Unchanged text"));
     assert!(tlk_text(&tlk, allocated["dlg:ppdjinn"][&48995] as u32).unwrap().contains("<GABBER>"));
     assert_eq!(allocated["dlg:gorcamb"][&63681], allocated["dlg:gorcamb"][&64609]);
-    assert_profile(prepare_reward_texts(&tlk, resources.clone(), "de_DE").unwrap_err(), "reward texts exist only in English");
+    assert_profile(
+        prepare_reward_texts(&game_text, resources.clone(), "es_ES").unwrap_err(),
+        "reward texts have no Spanish translation yet",
+    );
     for resource in resources {
         let name = &resource[4..];
         let original = text_variant(resource);
@@ -628,8 +635,9 @@ fn carried_rewards_keep_sources_and_transfer_callbacks_before_later_actions() {
         ("loutcapt", 39, 42, "ar0514", "Dennis", 6, 1116, 11),
         ("amcler01", 84, 85, "ar5500", "amcler01", 0, 1272, 4),
     ];
-    let (tlk, allocated) = prepare_reward_texts(&make_tlk(&["Unchanged"]), ["dlg:trgeni01", "dlg:amcler01"], "en_us").unwrap();
-    assert_eq!(tlk_text(&tlk, allocated["dlg:amcler01"][&74025] as u32).as_deref(), Some("Please, accept this gift."));
+    let (game_text, allocated) =
+        prepare_reward_texts(&GameText::new(make_tlk(&["Unchanged"])), ["dlg:trgeni01", "dlg:amcler01"], "en_us").unwrap();
+    assert_eq!(tlk_text(&game_text.male, allocated["dlg:amcler01"][&74025] as u32).as_deref(), Some("Please, accept this gift."));
     for (name, source, target, area, script, index, offset, slot) in cases {
         let identity = format!("original-source:bg2:mode2:item:{source}");
         let spec = transfer_spec(name).unwrap();
@@ -762,11 +770,11 @@ fn udlesa_physical_source_and_six_distinct_duel_continuations() {
 #[test]
 fn well_uses_appended_original_text_only_for_selected_source_and_reexports() {
     let tlk = make_tlk(&["Existing unrelated text", "Existing helmet narrative"]);
-    let (updated, reference) = prepare_ddwell_text(&tlk, "en_us").unwrap();
+    let (updated, reference) = prepare_ddwell_text(&GameText::new(tlk), "en_us").unwrap();
     assert_eq!(reference, 2);
     assert_eq!(prepare_ddwell_text(&updated, "en_us").unwrap(), (updated.clone(), reference));
-    assert_eq!(tlk_text(&updated, 1).as_deref(), Some("Existing helmet narrative"));
-    assert!(tlk_text(&updated, reference as u32).unwrap().contains("You pull an item from the murky water"));
+    assert_eq!(tlk_text(&updated.male, 1).as_deref(), Some("Existing helmet narrative"));
+    assert!(tlk_text(&updated.male, reference as u32).unwrap().contains("You pull an item from the murky water"));
     let original = script_fixture("ddwell");
     let spec = &specs("bcs:ddwell")[0];
     let result = patch_reward("ddwell", &original, None, Some(reference)).unwrap();
@@ -856,7 +864,7 @@ fn reviewed_eet_resources_when_available_patch_exactly_and_reexport() {
     reviewed.sort_unstable();
     known.sort_unstable();
     assert_eq!(reviewed, known);
-    let (_tlk, allocated) = prepare_reward_texts(&make_tlk(&[]), known.clone(), "en_us").unwrap();
+    let (_text, allocated) = prepare_reward_texts(&GameText::new(make_tlk(&[])), known.clone(), "en_us").unwrap();
     for (resource, original_hash, patched_hash) in REVIEWED_EET {
         let (kind, name) = resource.split_once(':').unwrap();
         let original = std::fs::read(cache.join(format!("{name}.{kind}"))).unwrap();

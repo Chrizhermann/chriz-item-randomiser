@@ -13,8 +13,8 @@
 use crate::error::{Error, Result};
 use crate::game_text::{append_texts, string, table};
 use crate::py::{
-    ascii_bytes, count_bytes, digits_value, find_bytes, is_line_end, is_line_start, put_u32, replace_bytes, slice,
-    splitn_bytes, u32_le,
+    ascii_bytes, count_bytes, digits_value, find_bytes, is_line_end, is_line_start, put_u32, replace_bytes, slice, splitn_bytes,
+    u32_le,
 };
 use crate::quest_rewards::{blocks, global_guard, newline};
 use crate::resources::sha256_hex;
@@ -40,18 +40,46 @@ fn check(data: &[u8], expected: &str, label: &str) -> Result<()> {
     Ok(())
 }
 
-/// The numbered texts of a mod TRA file (`_texts`).
-///
-/// Matches original delimiters, including multiline text and duplicate @1502
-/// (WeiDU uses the last definition), and retains authored CRLFs. Hand-coded
-/// `re.finditer(r'(?m)^@(\d+)\s*=\s*([~"])(.*?)\2', source, re.DOTALL)`.
-/// `\s` is Python's Unicode whitespace; `\d` is read as ASCII digits, which
-/// is exact for the four embedded TRA files this reads (a parity test
-/// compares every entry with the reference).
+/// The numbered texts of a mod TRA file (`_texts`), read as UTF-8 like the
+/// reference reads them (see [`tra_texts`]).
 pub fn texts(path: &str) -> HashMap<i64, String> {
     let source = crate::data::text(path).unwrap_or_else(|| panic!("embedded mod text {path}"));
+    tra_texts(source).unwrap_or_else(|error| panic!("embedded mod text {path}: {error}")).into_iter().collect()
+}
+
+/// A TRA entry's number, text and female wording, as the reference's
+/// `_TRA_ENTRY` matches it: `@number = ~text~ [sound]`, optionally followed
+/// by its female wording `~text~ [sound]`, which WeiDU writes to dialogf.tlk.
+struct TraEntry<'a> {
+    /// `int()` of the digits; `None` beyond the i64 range.
+    number: Option<i64>,
+    text: &'a str,
+    female: Option<&'a str>,
+}
+
+/// Every TRA entry of `source`: hand-coded
+/// `re.finditer(r'(?m)^@(\d+)\s*=\s*([~"])(.*?)\2(?:\s*\[[^\]]*\])?(?:\s*([~"])(.*?)\4)?', source, re.DOTALL)`.
+///
+/// `\d` is a Unicode decimal digit and `\s` Python's Unicode whitespace.
+/// Neither optional group can make the engine backtrack into the text: each
+/// is taken where it matches, so a sound without its `]` or a female wording
+/// without its closing delimiter is left out of the match. A number with more
+/// digits than `int()` converts raises its ValueError, as in the reference.
+fn tra_entries(source: &str) -> Result<Vec<TraEntry<'_>>> {
     let bytes = source.as_bytes();
-    let mut result = HashMap::new();
+    let skip_space = |mut at: usize| {
+        while let Some(c) = source[at..].chars().next().filter(|&c| crate::py::is_space(c)) {
+            at += c.len_utf8();
+        }
+        at
+    };
+    // The delimited text from `at` (a delimiter): its span and the end of the match.
+    let delimited = |at: usize| -> Option<(usize, usize)> {
+        let delimiter = *bytes.get(at).filter(|&&byte| byte == b'~' || byte == b'"')?;
+        let end = at + 1 + bytes[at + 1..].iter().position(|&byte| byte == delimiter)?;
+        Some((at + 1, end))
+    };
+    let mut entries = Vec::new();
     let mut position = 0;
     while position < bytes.len() {
         if !(is_line_start(bytes, position) && bytes[position] == b'@') {
@@ -59,17 +87,8 @@ pub fn texts(path: &str) -> HashMap<i64, String> {
             continue;
         }
         let digits_start = position + 1;
-        let mut cursor = digits_start;
-        while cursor < bytes.len() && bytes[cursor].is_ascii_digit() {
-            cursor += 1;
-        }
-        let digits_end = cursor;
-        let skip_space = |mut at: usize| {
-            while let Some(c) = source[at..].chars().next().filter(|&c| crate::py::is_space(c)) {
-                at += c.len_utf8();
-            }
-            at
-        };
+        let digits_end = digits_start
+            + source[digits_start..].chars().take_while(|&c| crate::py::is_decimal(c)).map(char::len_utf8).sum::<usize>();
         let matched = (|| {
             if digits_end == digits_start {
                 return None;
@@ -78,21 +97,58 @@ pub fn texts(path: &str) -> HashMap<i64, String> {
             if bytes.get(at) != Some(&b'=') {
                 return None;
             }
-            let at = skip_space(at + 1);
-            let delimiter = *bytes.get(at).filter(|&&byte| byte == b'~' || byte == b'"')?;
-            let text_start = at + 1;
-            let text_end = text_start + bytes[text_start..].iter().position(|&byte| byte == delimiter)?;
-            Some((text_start, text_end))
-        })();
-        match matched {
-            Some((text_start, text_end)) => {
-                result.insert(digits_value(&bytes[digits_start..digits_end]), source[text_start..text_end].to_string());
-                position = text_end + 1;
+            let (text_start, text_end) = delimited(skip_space(at + 1))?;
+            let mut end = text_end + 1;
+            let sound = skip_space(end);
+            if bytes.get(sound) == Some(&b'[') {
+                if let Some(close) = bytes[sound + 1..].iter().position(|&byte| byte == b']') {
+                    end = sound + 1 + close + 1;
+                }
             }
-            None => position += 1,
+            let female = delimited(skip_space(end));
+            if let Some((_, female_end)) = female {
+                end = female_end + 1;
+            }
+            Some((text_start, text_end, female, end))
+        })();
+        let Some((text_start, text_end, female, end)) = matched else {
+            position += 1;
+            continue;
+        };
+        let number = match crate::py::int_value(&source[digits_start..digits_end]).map_err(Error::value)? {
+            crate::json::Value::Int(value) => Some(value),
+            _ => None,
+        };
+        entries.push(TraEntry {
+            number,
+            text: &source[text_start..text_end],
+            female: female.map(|(start, end)| &source[start..end]),
+        });
+        position = end;
+    }
+    Ok(entries)
+}
+
+/// The texts of a TRA file's source, by number (`tra_texts`).
+///
+/// Matches original delimiters, including multiline text and duplicate @1502
+/// (WeiDU uses the last definition), and retains authored CRLFs. A number
+/// beyond the i64 range is left out: no text CIR reads has one.
+pub fn tra_texts(source: &str) -> Result<BTreeMap<i64, String>> {
+    Ok(tra_variants(source)?.into_iter().map(|(number, (text, _))| (number, text)).collect())
+}
+
+/// (text, female wording) of a TRA file's source, by number, as
+/// [`tra_texts`] reads them (`tra_variants`). An entry without a female
+/// wording has its text as both.
+pub fn tra_variants(source: &str) -> Result<BTreeMap<i64, (String, String)>> {
+    let mut result = BTreeMap::new();
+    for entry in tra_entries(source)? {
+        if let Some(number) = entry.number {
+            result.insert(number, (entry.text.to_string(), entry.female.unwrap_or(entry.text).to_string()));
         }
     }
-    result
+    Ok(result)
 }
 
 fn refs_valid(refs: &BTreeMap<i64, i64>, required: impl IntoIterator<Item = i64>) -> Result<()> {
@@ -708,7 +764,9 @@ pub fn prepare_quest_options(
     kangaxx: bool,
     language: &str,
 ) -> Result<(Vec<(String, Vec<u8>)>, Vec<u8>)> {
-    if !["en_us", "en_gb", "english"].contains(&crate::py::casefold(language).as_str()) {
+    // Only Kangaxx's texts are English-only; other game text may be prepared
+    // in the same pass.
+    if kangaxx && !["en_us", "en_gb", "english"].contains(&crate::py::casefold(language).as_str()) {
         return Err(Error::profile("Original quest options currently require English game text"));
     }
     let mut output = Vec::new();

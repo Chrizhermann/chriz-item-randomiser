@@ -8,6 +8,7 @@
 use crate::activation::{EXPORT_FILES, EXPORT_FILES_SCHEMA};
 use crate::campaigns::{read_campaign, render_lua, store_path, write_immutable};
 use crate::error::{Error, ErrorKind, Result, CHANGED_SINCE_SCAN};
+use crate::game_text::{paired, text_files, unpaired};
 use crate::json::{parse_lenient, py_str, utf8_error_message, Dict, Value};
 use crate::original_catalog::container_target_spec;
 use crate::platform::game_platform;
@@ -1716,22 +1717,47 @@ pub fn export_native(
         .iter()
         .filter(|resource| container_rewards::TEXT_RESOURCES.contains(&resource.as_str()))
         .collect();
-    let mut reward_texts: BTreeMap<String, BTreeMap<i64, i64>> = BTreeMap::new();
-    let mut container_texts: BTreeMap<String, BTreeMap<i64, i64>> = BTreeMap::new();
+    let mut reward_texts = mode2_rewards::TextRefs::new();
+    let mut container_texts = mode2_rewards::TextRefs::new();
     if kangaxx || cursed || !text_rewards.is_empty() || !container_text_resources.is_empty() {
         let language = text(catalog, "language")?;
-        let tlk_parts: Vec<&str> = if language == "default" { vec!["dialog.tlk"] } else { vec!["lang", language, "dialog.tlk"] };
-        let tlk_relative: PathBuf = tlk_parts.iter().collect();
-        let installed = read_bytes(&game_root.join(&tlk_relative))?;
-        let mut tlk = export_tlk(installed, &output.join("game-overrides").join(&tlk_relative))?;
+        let (male, female) = text_files(&game_root, language)?;
+        let folder: Vec<String> =
+            if language == "default" { Vec::new() } else { vec!["lang".to_string(), language.to_string()] };
+        let within = |name: String| -> Vec<String> { folder.iter().cloned().chain([name]).collect() };
+        let tlk_parts = within("dialog.tlk".to_string());
+        let tlk = export_tlk(read_bytes(&male)?, &tlk_parts.iter().fold(output.join("game-overrides"), |path, part| path.join(part)))?;
+        // The language's dialogf.tlk gets every appended text under the same
+        // number. Where it holds another number of strings than dialog.tlk, the
+        // configuration check left the reward text routes out, and other
+        // appended texts leave it as it is.
+        let reason = unpaired(&male, female.as_deref())?;
+        require(!(reason.is_some() && (!text_rewards.is_empty() || !container_text_resources.is_empty())), || {
+            format!("Item Randomiser's reward texts cannot be prepared: {}", reason.as_deref().unwrap_or_default())
+        })?;
+        let female = female.filter(|_| reason.is_none());
+        let female_parts = female.as_ref().map(|path| {
+            within(path.file_name().map_or_else(String::new, |name| name.to_string_lossy().into_owned()))
+        });
+        let female_tlk = match (&female, &female_parts) {
+            (Some(path), Some(parts)) => Some(export_tlk(
+                read_bytes(path)?,
+                &parts.iter().fold(output.join("game-overrides"), |path, part| path.join(part)),
+            )?),
+            _ => None,
+        };
+        let mut game_text = paired(tlk, female_tlk).map_err(|error| match error.kind {
+            ErrorKind::GameText => Error::profile("Game text changed since export; rescan into a fresh export directory"),
+            _ => error,
+        })?;
         require(journal.is_some(), || "The game has no BGEE.LUA journal table".into())?;
         let mut journal = journal.take().expect("checked");
         let named: BTreeMap<String, Vec<u8>> = resource_bytes
             .iter()
             .map(|(resource, data)| (format!("{}.{}", tail(resource, 4), resource.get(..3).unwrap_or("")), data.clone()))
             .collect();
-        let (patches, updated) = quest_options::prepare_quest_options(&named, &tlk, kangaxx, language)?;
-        tlk = updated;
+        let (patches, updated) = quest_options::prepare_quest_options(&named, &game_text.male, kangaxx, language)?;
+        game_text = paired(updated, game_text.female)?;
         if kangaxx {
             let dialogue = patches
                 .iter()
@@ -1741,14 +1767,14 @@ pub fn export_native(
             journal = quest_options::patch_kangaxx_journal(&journal, dialogue)?;
         }
         if !text_rewards.is_empty() {
-            let (updated, refs) = mode2_rewards::prepare_reward_texts(&tlk, text_rewards.iter(), language)?;
-            tlk = updated;
+            let (updated, refs) = mode2_rewards::prepare_reward_texts(&game_text, text_rewards.iter(), language)?;
+            game_text = updated;
             reward_texts = refs;
         }
         if !container_text_resources.is_empty() {
             let (updated, refs) =
-                container_rewards::prepare_container_texts(&tlk, container_text_resources.iter(), language)?;
-            tlk = updated;
+                container_rewards::prepare_container_texts(&game_text, container_text_resources.iter(), language)?;
+            game_text = updated;
             container_texts = refs;
         }
         for (revision, manifest) in &manifests {
@@ -1760,8 +1786,9 @@ pub fn export_native(
                 .filter(|(name, _)| name.starts_with("itm:"))
                 .map(|(name, data)| (tail(name, 4).to_string(), data.clone()))
                 .collect();
-            let (fixture, assets, updated) = cursed_disguises::prepare_cursed_disguises(spec, &itms, &tlk, language)?;
-            tlk = updated;
+            let (fixture, assets, updated) =
+                cursed_disguises::prepare_cursed_disguises(spec, &itms, &game_text.male, language)?;
+            game_text = paired(updated, game_text.female)?;
             if let Some(native) = compiled.get_mut(revision).and_then(Value::as_dict_mut) {
                 native.insert("cursed_disguises", fixture);
             }
@@ -1770,7 +1797,10 @@ pub fn export_native(
             }
         }
         pending.insert("resource-overrides/BGEE.LUA", journal);
-        pending.insert(format!("game-overrides/{}", tlk_parts.join("/")), tlk);
+        pending.insert(format!("game-overrides/{}", tlk_parts.join("/")), game_text.male);
+        if let (Some(parts), Some(female)) = (female_parts, game_text.female) {
+            pending.insert(format!("game-overrides/{}", parts.join("/")), female);
+        }
         for (name, data) in &patches {
             pending.insert(format!("resource-overrides/{}", upper(name)), data.clone());
         }
