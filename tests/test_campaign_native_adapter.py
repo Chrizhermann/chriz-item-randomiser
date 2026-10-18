@@ -793,6 +793,40 @@ function cases.consumed_message_without_item_is_not_a_success(N)
     local f=setup(N); local a,command=queued(f); f.queue[1]=nil
     a:on_observation_boundary(2); local x,e=a:observe(command); fail(x,e,"DELIVERY_MESSAGE_LOST")
 end
+function cases.queued_container_copy_identifying_zero_lore_item_keeps_source_flags(N)
+    -- Reproduced with AMUL12 (lore 0) on EET 2.7.3: CMessageContainerAddItem::Run's
+    -- heap copy identified the unidentified source's item. Its stolen bit stays.
+    for _,selected in ipairs({0,2}) do
+        local f=setup(N); f.fixture.sources[f.source_id].payload.flags=selected
+        f.adapter=N.new(f.api,f.fixture)
+        local a,command=queued(f)
+        assert(f.queue[1].m_item.m_flags==selected)
+        f.queue[1]=nil; f.target.m_lstItems[1]=f.item("FLPRI1",701,selected+1)
+        a:on_observation_boundary(2); local x,e=a:observe(command); fail(x,e,"DELIVERY_SETTLING")
+        assert(f.target.m_lstItems[1].m_flags==selected and a:diagnostics().pending.created_pointer=="701")
+        a:on_observation_boundary(3); local receipt=assert(a:observe(command))
+        assert(receipt.payload.flags==selected and receipt.created==1 and receipt.lootable==1)
+        assert(f.target.m_lstItems[1].m_flags==selected and #f.calls==1)
+    end
+end
+function cases.queued_container_copy_with_other_flag_changes_is_rejected(N)
+    -- Only the identified bit of an unidentified source may be added; never removed or another bit.
+    for _,flags in ipairs({{1,0},{0,2},{0,8},{2,1}}) do
+        local f=setup(N); f.fixture.sources[f.source_id].payload.flags=flags[1]
+        f.adapter=N.new(f.api,f.fixture)
+        local a,command=queued(f)
+        f.queue[1]=nil; f.target.m_lstItems[1]=f.item("FLPRI1",701,flags[2])
+        a:on_observation_boundary(2); local x,e=a:observe(command); fail(x,e,"DELIVERY_PAYLOAD_CHANGED")
+        assert(f.target.m_lstItems[1].m_flags==flags[2] and #f.calls==1)
+    end
+end
+function cases.queued_container_copy_with_other_payload_changes_is_rejected(N)
+    local f=setup(N); local a,command=queued(f)
+    local placed=f.item("FLPRI1",701,1); placed.m_useCount1=3
+    f.queue[1]=nil; f.target.m_lstItems[1]=placed
+    a:on_observation_boundary(2); local x,e=a:observe(command); fail(x,e,"DELIVERY_PAYLOAD_CHANGED")
+    assert(placed.m_flags==1)
+end
 function cases.item_present_while_own_message_is_pending_is_ambiguous(N)
     local f=setup(N); local a,command=queued(f); f.target.m_lstItems[1]=f.item("FLPRI1",701)
     a:on_observation_boundary(2); local x,e=a:observe(command); fail(x,e,"DELIVERY_EARLY_ITEM")
