@@ -1,0 +1,6 @@
+// Chriz Item Randomiser: the German reward texts CIR's configurator shows on
+// routes in the extended pools (see docs/translating-reward-texts.md).
+// Translated from languages/english; the installer has no German yet.
+// Windows-1252. A second ~text~ is the female wording, for dialogf.tlk.
+
+@99 = ~Der Stein befiehlt, und ich muss gehorchen. Dieser Gegenstand ist das Geschenk für jene, die klaren Verstandes sind. Ein Rätsel. Eine Belohnung. So wurde meine Heimstatt erbaut, und ich habe meine Pflicht erfüllt. Ihr macht Eure Sache gut, <GABBER>.~

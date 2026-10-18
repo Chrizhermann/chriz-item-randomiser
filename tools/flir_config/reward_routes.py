@@ -10,21 +10,24 @@ at Apply.
 A quest route needs its grant recognised in each of its resources, and so does
 every route that shares its reward event (the egg deal's two dialogues, the
 three sculptors); copies of their reward replies elsewhere must be gateable
-too. Routes with Item Randomiser's reward text need the English game text and
-the BGEE.LUA journal table, as the export does.
+too. Routes with Item Randomiser's reward text need its translation into the
+game's language (translations.py), a dialogf.tlk as long as dialog.tlk where
+the language has one (game_text.py) and the BGEE.LUA journal table, as the
+export does.
 
 The resources are read once per scan, which keeps the repeated checks of a fit
-cheap. Each check run first compares the files they came from with what was
-read (their stat identities, see resources.file_identity) and reads them again
-when one changed; a resource whose bytes then differ from the scan stops the
-check. Apply still reads and verifies the bytes it patches.
+cheap. Each check run first compares the files they came from, the game text
+files and CIR's translations with what was read (their stat identities, see
+resources.file_identity) and reads them again when one changed; a resource
+whose bytes then differ from the scan stops the check. Apply still reads and
+verifies the bytes it patches.
 """
 from __future__ import annotations
 
 import hashlib
 from pathlib import Path
 
-from . import container_rewards, mode2_rewards
+from . import container_rewards, game_text, mode2_rewards, translations
 from .profiles import ProfileError
 from .resources import GameResources, RESOURCE_TYPES, file_identity
 from .reward_copies import RewardCopies
@@ -55,10 +58,16 @@ class RewardRoutes:
         resources = sorted(resource for resource in
                            {*mode2_rewards.RESOURCE_REWARDS, *container_rewards.RESOURCE_TARGETS}
                            if resource in scanned)
-        self.english = language.lower() == "en_us"
+        self.language = language
         self.changed: set[str] = set()
         self.reasons: dict[tuple[str, str], str] = {}
         self._files: dict[Path, tuple] = {}
+        male, female = game_text.text_files(game_root, language)
+        for path in [male.parent, male, *([female] if female else []), *translations.sources(language)]:
+            self._files[path] = file_identity(path)
+        # Why an appended text could not have the same number in dialogf.tlk.
+        self.unpaired = game_text.unpaired(male, female)
+        self._translated: dict[tuple, str | None] = {}
         with GameResources(game_root, {kind: RESOURCE_TYPES[kind] for kind in ("bcs", "dlg", "lua")}) as reader:
             present = {kind: set(reader.names(kind)) for kind in ("bcs", "dlg", "lua")}
 
@@ -104,10 +113,16 @@ class RewardRoutes:
             if resource in self.changed:
                 raise ChangedSinceScan(f"Installed resource changed; rescan before export: {resource}")
 
-    def _texts(self, needed: bool, prefix: str) -> None:
-        if needed and not self.english:
-            raise ProfileError(prefix + "Item Randomiser's reward texts exist only in English")
-        if needed and not self.journal:
+    def _texts(self, lines: tuple, prefix: str) -> None:
+        """Raise unless the export can show Item Randomiser's (file, number) <lines> in the game."""
+        if not lines:
+            return
+        if lines not in self._translated:
+            self._translated[lines] = translations.missing(self.language, lines)
+        reason = self._translated[lines] or self.unpaired
+        if reason:
+            raise ProfileError(prefix + reason)
+        if not self.journal:
             raise ProfileError(prefix + "the game has no BGEE.LUA journal table")
 
     def _sharing(self, key: str) -> list[str]:
@@ -141,7 +156,8 @@ class RewardRoutes:
         reason = self.copy_reason(key)
         if copies and reason:
             raise ProfileError(prefix + reason)
-        self._texts(any(resource in mode2_rewards.TEXT_REFS for resource in spec["resources"]), prefix)
+        self._texts(tuple(line for resource in spec["resources"] if resource in mode2_rewards.TEXT_REFS
+                          for line in mode2_rewards.text_lines(resource)), prefix)
 
     def require_container(self, target_id: str) -> None:
         """Raise unless the container quest target can be prepared."""
@@ -151,4 +167,5 @@ class RewardRoutes:
             if (resource, target_id) in self.reasons:
                 raise container_rewards.container_error(target_id, self.reasons[resource, target_id])
         prefix = str(container_rewards.container_error(target_id, ""))
-        self._texts(any(resource in container_rewards.TEXT_RESOURCES for resource in spec["resources"]), prefix)
+        self._texts(container_rewards.TEXT_LINES if any(resource in container_rewards.TEXT_RESOURCES
+                                                        for resource in spec["resources"]) else (), prefix)

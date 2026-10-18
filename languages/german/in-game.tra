@@ -1,0 +1,24 @@
+// Chriz Item Randomiser: the German reward texts CIR's configurator shows on
+// routes in the extended pools (see docs/translating-reward-texts.md).
+// Translated from languages/english; the installer has no German yet.
+// Windows-1252. A second ~text~ is the female wording, for dialogf.tlk.
+
+@100 = ~Bitte nehmt dieses Geschenk an.~
+@101 = ~Als Ihr den Gegenstand aufhebt, erwachen zwei der Golems zum Leben und greifen an.~
+@104 = ~Ich ergebe mich. Ihr habt Euch heute als der bessere Kämpfer erwiesen. Ich ... ich überlasse Euch den Sieg.~ ~Ich ergebe mich. Ihr habt Euch heute als die bessere Kämpferin erwiesen. Ich ... ich überlasse Euch den Sieg.~
+@110 = ~Hier ist ein Gegenstand, der Euch nützlich sein könnte. Er hat mir eine ganze Weile gehört, aber ich werde auch ohne ihn zurechtkommen. Setzt ihn gut ein, Wanderer!~ ~Hier ist ein Gegenstand, der Euch nützlich sein könnte. Er hat mir eine ganze Weile gehört, aber ich werde auch ohne ihn zurechtkommen. Setzt ihn gut ein, Wanderin!~
+@111 = ~Ihr habt Euch mehr verdient als nur Gold. Helm ist ein praktischer Gott und wünscht, dass auch sein Lohn praktisch ist. Nehmt diesen Gegenstand, er soll Euch voranbringen.~
+@116 = ~Ich gebe Euch diesen gesegneten Gegenstand, auf dass Ihr über alle Feinde siegt, die Euch begegnen mögen. Ihr habt Lathander gut gedient. Geht in Frieden.~
+@117 = ~Außerdem habt Ihr Euch einen Segen in Gestalt dieses Gegenstands verdient. Mit ihm werdet Ihr dem Sturmfürsten umso besser dienen.~
+@399 = ~Ihr beginnt, die Winde zu drehen, und hebt den Eimer langsam vom Grund des Brunnens empor. Nach einigen Augenblicken ist der Eimer in Reichweite. Aus dem trüben Wasser darin zieht Ihr einen Gegenstand.~
+@497 = ~Ausgezeichnet. Ich habe einen magischen Gegenstand und eine Wunschrolle, beides recht beeindruckende Dinge. Und dann ist da noch der Edelstein. Worum möchtet Ihr spielen?~
+@498 = ~Ich spiele um den magischen Gegenstand.~
+@499 = ~Ihr wünscht Euch den magischen Gegenstand, und hier ist er. Wenn Ihr noch einmal spielen wollt, wäre ich für eine Gelegenheit dankbar, meine Freiheit zu gewinnen, mein Freund.~ ~Ihr wünscht Euch den magischen Gegenstand, und hier ist er. Wenn Ihr noch einmal spielen wollt, wäre ich für eine Gelegenheit dankbar, meine Freiheit zu gewinnen, meine Freundin.~
+@1393 = ~Nein, nein. Der Gegenstand selbst ist mehr als genug.~
+@1394 = ~Hmmm ... nun, mein Dorf ist in großer Not. Ich sage Euch was ... wenn Ihr den Morden ein Ende setzt, gebe ich Euch einen magischen Gegenstand, der unserem ersten Waldläufer-Protektor gehört hat.~
+@1395 = ~Wie vereinbart, hier ist der Gegenstand meines Vorfahren, des Waldläufers ... ich versichere Euch, er ist von sehr starker Magie durchdrungen!~
+@1396 = ~Tatsächlich ... ich besitze einen Gegenstand von einem meiner Vorfahren ... einst der Waldläufer-Protektor von Imnestal. In ihm wirkt Magie, so stark wie nur irgendeine.~
+@1397 = ~Ich weiß nicht, ob Euch der Gegenstand von Nutzen sein wird. Ähm ... ist ... ist das Belohnung genug? Ich könnte Euch wohl auch noch etwas Gold anbieten ...~
+@1398 = ~Ich biete Euch dasselbe wie der Rittersfrau ... einen feinen magischen Gegenstand, der meinem Vorfahren, dem Waldläufer, gehört hat! Und Gold dazu, wenn Ihr es verlangt. Werdet Ihr uns helfen?~
+@1399 = ~Nicht so schnell. Das Geld, das Ihr mir vorhin gegeben habt, war nur ein Vorschuss. Ich erwarte mehr als irgendeinen alten Gegenstand. Bezahlt mich jetzt, bevor ich wütend werde.~
+@1449 = ~Das war mein Vorfahr, und ich habe ihn behalten. Man sagt mir, er sei von starker Magie umhüllt. Ich würde ihn Euch gern anbieten -- und etwas Gold dazu --, um mein Dorf zu retten.~

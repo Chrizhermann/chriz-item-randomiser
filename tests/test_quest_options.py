@@ -138,6 +138,11 @@ class OriginalQuestOptionTests(unittest.TestCase):
     def test_no_selected_options_changes_nothing(self):
         original = make_tlk(["old"])
         self.assertEqual(options.prepare_quest_options({}, original), ({}, original))
+        # The export passes every language's game text through; only Kangaxx's
+        # texts need English.
+        self.assertEqual(options.prepare_quest_options({}, original, language="de_de"), ({}, original))
+        with self.assertRaisesRegex(ProfileError, "^Original quest options currently require English game text$"):
+            options.prepare_quest_options(self.resources, original, kangaxx=True, language="de_de")
 
     def test_new_kangaxx_journal_joins_existing_quest_and_rejects_conflicting_registration(self):
         dialogue = options.patch_hlskull(self.resources["hlskull.dlg"], self.refs)

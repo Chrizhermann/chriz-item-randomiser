@@ -15,6 +15,7 @@ from lupa.luajit21 import LuaRuntime as LuaJIT
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
 from flir_config import mode2_rewards as rewards
+from flir_config.game_text import GameText
 from flir_config.profiles import ProfileError
 from flir_config.quest_options import _Dialogue
 from flir_config.quest_rewards import _blocks
@@ -641,13 +642,15 @@ class Mode2RewardTests(unittest.TestCase):
 
     def test_text_variants_preserve_original_routes_replies_and_verified_recovery(self):
         resources = [resource for resource in rewards.TEXT_REFS if resource.startswith("dlg:")]
-        tlk, allocated = rewards.prepare_reward_texts(make_tlk(["Unchanged text"]), resources)
-        self.assertEqual(rewards.prepare_reward_texts(tlk, resources), (tlk, allocated))
+        text, allocated = rewards.prepare_reward_texts(GameText(make_tlk(["Unchanged text"])), resources)
+        self.assertEqual(rewards.prepare_reward_texts(text, resources), (text, allocated))
+        self.assertIsNone(text.female)
+        tlk = text.male
         self.assertEqual(_Tlk(tlk).text(0, set()), "Unchanged text")
         self.assertIn("<GABBER>", _Tlk(tlk).text(allocated["dlg:ppdjinn"][48995], set()))
         self.assertEqual(allocated["dlg:gorcamb"][63681], allocated["dlg:gorcamb"][64609])
-        with self.assertRaisesRegex(ProfileError, "reward texts exist only in English"):
-            rewards.prepare_reward_texts(tlk, resources, "de_DE")
+        with self.assertRaisesRegex(ProfileError, "reward texts have no Spanish translation yet"):
+            rewards.prepare_reward_texts(text, resources, "es_ES")
         for resource in resources:
             name = resource.split(":")[1]
             with self.subTest(resource=resource):
@@ -755,9 +758,9 @@ class Mode2RewardTests(unittest.TestCase):
         cases = (("trgeni01", 32, 32, "ar2014", "trgeni01", 0, 1152, 9),
                  ("loutcapt", 39, 42, "ar0514", "Dennis", 6, 1116, 11),
                  ("amcler01", 84, 85, "ar5500", "amcler01", 0, 1272, 4))
-        tlk, allocated = rewards.prepare_reward_texts(make_tlk(["Unchanged"]),
-                            ("dlg:trgeni01", "dlg:amcler01"))
-        self.assertEqual(_Tlk(tlk).text(allocated["dlg:amcler01"][74025], set()), "Please, accept this gift.")
+        text, allocated = rewards.prepare_reward_texts(GameText(make_tlk(["Unchanged"])),
+                             ("dlg:trgeni01", "dlg:amcler01"))
+        self.assertEqual(_Tlk(text.male).text(allocated["dlg:amcler01"][74025], set()), "Please, accept this gift.")
         scan = ROOT / "work/original-preset-runtime-20260929/scan-with-spells/world.json"
         world = json.loads(scan.read_text(encoding="utf-8")) if scan.exists() else None
         for name, source, target, area, script, index, offset, slot in cases:
@@ -913,10 +916,10 @@ class Mode2RewardTests(unittest.TestCase):
 
     def test_well_uses_appended_original_text_only_for_selected_source_and_reexports(self):
         tlk = make_tlk(["Existing unrelated text", "Existing helmet narrative"])
-        updated, ref = rewards.prepare_ddwell_text(tlk)
+        updated, ref = rewards.prepare_ddwell_text(GameText(tlk))
         self.assertEqual(ref, 2)
         self.assertEqual(rewards.prepare_ddwell_text(updated), (updated, ref))
-        text = _Tlk(updated)
+        text = _Tlk(updated.male)
         self.assertEqual(text.text(1, set()), "Existing helmet narrative")
         self.assertIn("You pull an item from the murky water", text.text(ref, set()))
         original = script_fixture("ddwell")
@@ -942,7 +945,7 @@ class Mode2RewardTests(unittest.TestCase):
         if not cache.exists():
             self.skipTest("Read-only installed-resource cache is not distributed")
         self.assertEqual(set(REVIEWED_EET), set(rewards.RESOURCE_REWARDS))
-        _tlk, allocated = rewards.prepare_reward_texts(make_tlk([]), rewards.RESOURCE_REWARDS)
+        _text, allocated = rewards.prepare_reward_texts(GameText(make_tlk([])), rewards.RESOURCE_REWARDS)
         for resource in rewards.RESOURCE_REWARDS:
             kind, name = resource.split(":")
             with self.subTest(resource=name):

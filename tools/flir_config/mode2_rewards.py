@@ -30,10 +30,11 @@ from itertools import product
 import re
 import struct
 
+from . import translations
 from .profiles import ProfileError
-from .quest_options import _Dialogue, _texts
+from .quest_options import _Dialogue
 from .quest_rewards import _global_action, _global_guard
-from .game_text import GameTextError, _append_texts
+from .game_text import GameText, GameTextError
 from .script_text import (argument, block_actions, block_parts, calls, integer_argument, joined,
                           named, naming, response_spans, script_blocks, string_argument)
 
@@ -982,26 +983,36 @@ def _examine(resource: str, data: bytes) -> _Examined:
     return _Examined(data, False, None) if original is None else _Examined(original, True, None)
 
 
-def prepare_ddwell_text(tlk: bytes, language: str = "en_us") -> tuple[bytes, int]:
+def prepare_ddwell_text(text: GameText, language: str = "en_us") -> tuple[GameText, int]:
     """Append the original generic well description; never replace shared text."""
-    updated, refs = prepare_reward_texts(tlk, ("bcs:ddwell",), language)
+    updated, refs = prepare_reward_texts(text, ("bcs:ddwell",), language)
     return updated, refs["bcs:ddwell"][40850]
 
 
-def prepare_reward_texts(tlk: bytes, resources, language: str = "en_us") -> tuple[bytes, dict]:
-    """Allocate all requested original TRA descriptions in one append/dedup pass."""
-    if language.lower() != "en_us":
-        raise ProfileError("Item Randomiser's reward texts exist only in English")
+def text_lines(resource: str) -> tuple[tuple[str, int], ...]:
+    """The (TRA file, number) lines of Item Randomiser's reward text that a text route shows."""
+    file = "ppdjinn.tra" if resource == "dlg:ppdjinn" else "in-game.tra"
+    return tuple((file, number) for number in sorted(set(TEXT_REFS[resource].values())))
+
+
+def prepare_reward_texts(text: GameText, resources, language: str = "en_us") -> tuple[GameText, dict]:
+    """Allocate the requested reward texts, in the game's language, in one append/dedup pass.
+
+    A text's female wording goes to the game's dialogf.tlk. Raises
+    translations.MissingTranslation when the language has no translation of
+    one of them.
+    """
     needed = sorted(set(resource.lower() for resource in resources) & TEXT_REFS.keys())
-    source_texts, entries, texts = {}, [], []
+    if not needed:
+        return text, {}
+    found = translations.lines(language, [line for resource in needed for line in text_lines(resource)])
+    entries, texts = [], []
     for resource in needed:
-        path = "languages/english/" + ("ppdjinn.tra" if resource == "dlg:ppdjinn" else "in-game.tra")
-        if path not in source_texts:
-            source_texts[path] = _texts(path)
+        file = text_lines(resource)[0][0]
         for old, tra in TEXT_REFS[resource].items():
             entries.append((resource, old))
-            texts.append(source_texts[path][tra])
-    updated, refs = _append_texts(tlk, tuple(texts))
+            texts.append(found[file, tra])
+    updated, refs = text.append(texts)
     result = {resource: {} for resource in needed}
     for (resource, old), ref in zip(entries, refs):
         result[resource][old] = ref
