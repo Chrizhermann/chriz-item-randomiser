@@ -3,6 +3,7 @@
 from pathlib import Path
 import struct
 import sys
+import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -49,6 +50,65 @@ class GameTextTests(unittest.TestCase):
         for ref, text in ((3, "New text"), (4, "An ordinary magical belt"), (2, "Reused text")):
             self.assertEqual(after.text(ref, set()), text)
         self.assertEqual(game_text._append_texts(tlk, ("New text",)), (tlk, [3]))
+
+    def test_a_text_gets_one_number_in_both_files_with_its_female_wording(self):
+        male = make_tlk(["Shared", "Same", "Gendered", "Voiced"])
+        female = make_tlk(["Shared (f)", "Same", "Gendered (f)", "Voiced"])
+        text, refs = game_text.GameText(male, female).append((
+            ("Same", "Same"), ("Gendered", "Gendered (f)"),
+            # dialogf.tlk words entry 0 otherwise: a new entry.
+            ("Shared", "Shared"),
+            ("New", "New (f)"), ("New", "New (f)")))
+        self.assertEqual(refs, [1, 2, 4, 5, 5])
+        new_male, new_female = _Tlk(text.male), _Tlk(text.female)
+        self.assertEqual([new_male.text(n, set()) for n in range(new_male.count)],
+                         ["Shared", "Same", "Gendered", "Voiced", "Shared", "New"])
+        self.assertEqual([new_female.text(n, set()) for n in range(new_female.count)],
+                         ["Shared (f)", "Same", "Gendered (f)", "Voiced", "Shared", "New (f)"])
+        self.assertEqual(text.append((("New", "New (f)"),)), (text, [5]))
+        # Without dialogf.tlk the game has one text: the female wording is not used.
+        alone, refs = game_text.GameText(male).append((("Gendered", "Other"), ("New", "New (f)")))
+        self.assertEqual((alone.female, refs), (None, [2, 4]))
+        self.assertEqual(alone.male, game_text._append_texts(male, ("Gendered", "New"))[0])
+        with self.assertRaisesRegex(game_text.GameTextError, "different numbers of strings"):
+            game_text.GameText(male, make_tlk(["Shared (f)"])).append((("New", "New"),))
+
+    def test_paired_copies_what_dialog_tlk_alone_gained(self):
+        male, female = make_tlk(["One", "Two"]), make_tlk(["One (f)", "Two (f)"])
+        grown = bytearray(game_text._append_texts(male, ("Three", "Four"))[0])
+        # Entries are copied as they are, sound and all.
+        struct.pack_into("<H8sII", grown, 0x12 + 3 * 0x1A, 3, b"FOURVOX", 5, 6)
+        grown = bytes(grown)
+        text = game_text.paired(grown, female)
+        self.assertEqual(text.male, grown)
+        copied = _Tlk(text.female)
+        self.assertEqual([copied.text(n, set()) for n in range(copied.count)], ["One (f)", "Two (f)", "Three", "Four"])
+        self.assertEqual(text.female[0x12 + 3 * 0x1A:0x12 + 3 * 0x1A + 0x12], grown[0x12 + 3 * 0x1A:0x12 + 3 * 0x1A + 0x12])
+        self.assertEqual(game_text.paired(grown, text.female), text)
+        self.assertEqual(game_text.paired(male, None), game_text.GameText(male))
+        with self.assertRaisesRegex(game_text.GameTextError, "beyond dialog.tlk's end"):
+            game_text.paired(male, text.female)
+
+    def test_the_game_text_files_of_a_language(self):
+        with tempfile.TemporaryDirectory(prefix="flir-game-text-") as temporary:
+            root = Path(temporary)
+            folder = root / "lang" / "de_DE"
+            folder.mkdir(parents=True)
+            male = folder / "dialog.tlk"
+            male.write_bytes(make_tlk(["a", "b"]))
+            self.assertEqual(game_text.text_files(root, "de_DE"), (male, None))
+            self.assertIsNone(game_text.unpaired(male, None))
+            (folder / "DIALOGF.TLK").write_bytes(make_tlk(["a (f)", "b (f)"]))
+            self.assertEqual(game_text.text_files(root, "de_DE"), (male, folder / "DIALOGF.TLK"))
+            female = folder / "DIALOGF.TLK"
+            self.assertIsNone(game_text.unpaired(male, female))
+            female.write_bytes(make_tlk(["a (f)"]))
+            self.assertEqual(game_text.unpaired(male, female), "the game's DIALOGF.TLK and dialog.tlk hold different "
+                             "numbers of strings (1 and 2), so a new text cannot get the same number in both")
+            female.write_bytes(b"TLK V1")
+            self.assertEqual(game_text.unpaired(male, female), "the game's DIALOGF.TLK is not a TLK V1 file")
+            (root / "dialog.tlk").write_bytes(make_tlk([]))
+            self.assertEqual(game_text.text_files(root, "default"), (root / "dialog.tlk", None))
 
     def test_invalid_game_text_and_dialogue_layouts_are_rejected(self):
         with self.assertRaisesRegex(game_text.GameTextError, "TLK"):

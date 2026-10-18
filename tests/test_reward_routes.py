@@ -18,7 +18,7 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
 
-from flir_config import container_rewards, mode2_rewards, reward_copies
+from flir_config import container_rewards, mode2_rewards, reward_copies, translations
 from flir_config.activation import EXPORT_FILES
 from flir_config.campaigns import compile_campaign, read_campaign
 from flir_config.native_export import _compile, export_native
@@ -33,7 +33,7 @@ from flir_config.starts import write_starts
 from test_container_rewards import dialogue_fixture as container_dialogue, script_fixture
 from test_mode2_rewards import action, block, dialogue_fixture, layout_dialogue, well_reward, with_actions
 from test_original_configuration import target_row
-from test_postinstall_resources import make_game, make_itm, mark_eet, snapshot
+from test_postinstall_resources import make_game, make_itm, make_tlk, mark_eet, snapshot
 from test_postinstall_world_formats import item_record, make_are
 from test_reward_copies import interject
 
@@ -84,9 +84,14 @@ def place(identity: str, tier: str, container: int) -> dict:
 class RouteGame(unittest.TestCase):
     sources, targets = SOURCES, TARGETS
 
-    def build(self, platform: str, *, english: bool = True, journal: bool = True,
-              resources: dict[str, bytes] | None = None, extra: dict[str, bytes] | None = None) -> None:
-        """A synthetic game with the three routes; <extra> adds or replaces override files."""
+    def build(self, platform: str, *, language: str | None = "en_US", female: bytes | None = None,
+              journal: bool = True, resources: dict[str, bytes] | None = None,
+              extra: dict[str, bytes] | None = None) -> None:
+        """A synthetic game with the three routes; <extra> adds or replaces override files.
+
+        Its text is in lang/<language> (with dialogF.tlk <female>), or only in
+        the game folder without a language.
+        """
         temporary = tempfile.TemporaryDirectory(prefix="flir-reward-routes-")
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name)
@@ -111,16 +116,19 @@ class RouteGame(unittest.TestCase):
             (override / name).write_bytes(data)
         if journal:
             (override / "BGEE.LUA").write_bytes(b"quests = {}\n")
-        if english:
-            language = self.game / "lang" / "en_US"
-            language.mkdir(parents=True)
-            shutil.copyfile(self.game / "dialog.tlk", language / "dialog.tlk")
+        self.language = language
+        if language:
+            folder = self.game / "lang" / language
+            folder.mkdir(parents=True)
+            shutil.copyfile(self.game / "dialog.tlk", folder / "dialog.tlk")
+            if female is not None:
+                (folder / "dialogF.tlk").write_bytes(female)
         self.platform = platform
         self.template = {"bg2ee": "bg2-original", "eet": "eet-original"}[platform]
         self.rescan()
 
     def rescan(self) -> None:
-        self.catalog = scan_game(self.game, **({"language": "en_US"} if (self.game / "lang").exists() else {}))
+        self.catalog = scan_game(self.game, **({"language": self.language} if self.language else {}))
         self.world = scan_world(self.catalog)
 
     def places(self) -> list[dict]:
@@ -244,9 +252,9 @@ class ContainerQuestTests(RouteGame):
             "ar1303.are": make_are([chest_item("AX1H13" if golem else "SYNTH001")],
                                    [("Container 1", 0, 1), ("Container 2", 1, 0)])}
 
-    def build_quests(self, platform: str, **changes) -> None:
+    def build_quests(self, platform: str, *, golem: bool = True, **game) -> None:
         self.build(platform, resources={"uhogre01.dlg": ogre_dialogue(), "ddwell.bcs": well_script()},
-                   extra=self.containers(**changes))
+                   extra=self.containers(golem=golem), **game)
         visible = (self.game / "override" / "synth001.itm").read_bytes()
         for name in ("ax1h13", "sw1h32", "shld21"):
             (self.game / "override" / f"{name}.itm").write_bytes(visible)
@@ -469,12 +477,15 @@ class CopyTests(RouteGame):
         self.assertEqual(snapshot(self.output), before)
 
 class RouteCheckTests(RouteGame):
-    def test_text_routes_need_english_and_the_journal_table(self):
-        for english, journal, reason in (
-                (False, True, "Item Randomiser's reward texts exist only in English"),
-                (True, False, "the game has no BGEE.LUA journal table")):
+    def test_text_routes_need_a_translation_and_the_journal_table(self):
+        for language, journal, reason in (
+                (None, True, "the game keeps its text outside a language directory, so CIR cannot tell which "
+                             "translation of Item Randomiser's reward texts it needs"),
+                ("es_ES", True, "Item Randomiser's reward texts have no Spanish translation yet"),
+                ("nb_NO", True, "Item Randomiser's reward texts have no translation for the game language nb_no"),
+                ("en_US", False, "the game has no BGEE.LUA journal table")):
             with self.subTest(reason=reason):
-                self.build("bg2ee", english=english, journal=journal)
+                self.build("bg2ee", language=language, journal=journal)
                 routes = reward_routes(self.catalog, self.world)
                 routes.require_route("uhogre01")
                 with self.assertRaisesRegex(ProfileError, "^The extended reward route for DDWELL cannot be used: "
@@ -536,3 +547,88 @@ class RouteCheckTests(RouteGame):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class LanguageTests(ContainerQuestTests):
+    """Reward texts in the game's language, the female wording in its dialogF.tlk."""
+
+    # The game's own strings, in both files: Apply keeps them as they are.
+    MALE, FEMALE = ["Blade", "Épée de test"], ["Blade (f)", "Épée de test (f)"]
+
+    def places(self) -> list[dict]:
+        return RouteGame.places(self)  # Other chests take the tiers of routes left out.
+
+    def texts(self, language: str) -> dict[str, tuple[str, str]]:
+        """The well's and the golems' texts of the translation, (text, female wording)."""
+        lines = translations.lines(language, mode2_rewards.text_lines("bcs:ddwell") + container_rewards.TEXT_LINES)
+        return {"well": lines["in-game.tra", 399], "golems": lines["in-game.tra", 101]}
+
+    def test_polish_and_german_texts_get_the_same_numbers_in_both_files(self):
+        for language in ("pl_PL", "de_DE"):
+            with self.subTest(language=language):
+                self.build_quests("bg2ee", language=language, female=make_tlk(self.FEMALE))
+                before = snapshot(self.game)
+                fitted = self.fit()
+                self.assertEqual(fitted["not_used"], [])
+                self.apply(fitted)
+                self.assertEqual(snapshot(self.game), before)
+                folder = self.output / "game-overrides" / "lang" / language.casefold()
+                male = _Tlk((folder / "dialog.tlk").read_bytes())
+                female = _Tlk((folder / "dialogF.tlk").read_bytes())
+                self.assertEqual(male.count, female.count)
+                self.assertEqual([male.text(n, set()) for n in range(2)], self.MALE)
+                self.assertEqual([female.text(n, set()) for n in range(2)], self.FEMALE)
+                found = {male.text(n, set()): n for n in range(2, male.count)}
+                texts = self.texts(language)
+                for name, (text, wording) in texts.items():
+                    self.assertEqual(female.text(found[text], set()), wording, name)
+                # The scripts show those numbers.
+                overrides = self.output / "resource-overrides"
+                self.assertEqual((overrides / "DDWELL.BCS").read_bytes(), mode2_rewards.patch_reward(
+                    "bcs:ddwell", self.resources["ddwell.bcs"], refs={40850: found[texts["well"][0]]}))
+                self.assertEqual((overrides / "KPGOL01.BCS").read_bytes(), container_rewards.patch_container_resource(
+                    "bcs:kpgol01", self.containers()["kpgol01.bcs"], refs={38758: found[texts["golems"][0]]}))
+                # Polish and German word the golems' text the same for both;
+                # Polish has its own female wording of it.
+                self.assertEqual(texts["golems"][0] != texts["golems"][1], language == "pl_PL")
+                # A second Apply uses the same numbers.
+                first = snapshot(self.output)
+                self.apply(fitted)
+                self.assertEqual(snapshot(self.output), first)
+
+    def test_a_language_without_a_translation_leaves_only_the_text_routes_out(self):
+        self.build_quests("bg2ee", language="es_ES", female=make_tlk(self.FEMALE))
+        fitted = self.fit()
+        reason = "Item Randomiser's reward texts have no Spanish translation yet"
+        self.assertEqual(sorted((row["id"], row["reason"]) for row in fitted["not_used"]), [
+            ("bg2:mode2:item:27", "The extended reward route for DDWELL cannot be used: " + reason),
+            ("bg2:mode2:target:13", "The extended reward container of AX1H13 cannot be used: " + reason),
+            ("bg2:mode2:target:27", "The extended reward route for DDWELL cannot be used: " + reason)])
+        self.apply(fitted)
+        self.assertFalse((self.output / "game-overrides").exists())
+
+    def test_a_dialogf_of_another_length_leaves_the_text_routes_out(self):
+        self.build_quests("bg2ee", language="pl_PL", female=make_tlk(self.FEMALE + ["Another mod (f)"]))
+        reason = ("the game's dialogF.tlk and dialog.tlk hold different numbers of strings (3 and 2), so a new "
+                  "text cannot get the same number in both")
+        fitted = self.fit()
+        self.assertEqual(sorted((row["id"], row["reason"]) for row in fitted["not_used"]), [
+            ("bg2:mode2:item:27", "The extended reward route for DDWELL cannot be used: " + reason),
+            ("bg2:mode2:target:13", "The extended reward container of AX1H13 cannot be used: " + reason),
+            ("bg2:mode2:target:27", "The extended reward route for DDWELL cannot be used: " + reason)])
+        self.apply(fitted)
+        self.assertFalse((self.output / "game-overrides").exists())
+
+    def test_a_new_translation_reaches_the_next_check(self):
+        # The check keeps what it read per scan, but not past a change of CIR's
+        # translations: a Spanish translation added later is used at once.
+        self.build_quests("bg2ee", language="es_ES", female=make_tlk(self.FEMALE))
+        copy = self.root / "cir" / "languages"
+        shutil.copytree(ROOT / "languages", copy, ignore=shutil.ignore_patterns("iconv"))
+        with patch.object(translations, "LANGUAGES_DIR", copy):
+            self.assertEqual(len(self.fit()["not_used"]), 3)
+            english = translations.texts("en_US", "in-game.tra")
+            (copy / "spanish").mkdir()
+            (copy / "spanish" / "in-game.tra").write_bytes("\r\n".join(
+                f"@{number} = ~{english[number][0]} (es)~" for number in (101, 399)).encode("cp1252"))
+            self.assertEqual(self.fit()["not_used"], [])

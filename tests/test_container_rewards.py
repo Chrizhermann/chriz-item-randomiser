@@ -10,6 +10,7 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
 from flir_config import container_rewards as rewards
+from flir_config.game_text import GameText
 from flir_config.profiles import ProfileError
 from flir_config.quest_options import _Dialogue
 from flir_config.quest_rewards import _blocks, _global_guard, _newline
@@ -423,14 +424,14 @@ class ContainerRewardTests(unittest.TestCase):
             rewards.target_spec("bg2:mode2:target:1")
         with self.assertRaisesRegex(ProfileError, "Unsupported extended reward container resource"):
             rewards.own_patch("bcs:other", b"SC\nSC\n")
-        original = make_tlk(["Preserve existing text"])
-        tlk, refs = rewards.prepare_container_texts(original, rewards.TEXT_RESOURCES)
+        original = GameText(make_tlk(["Preserve existing text"]))
+        text, refs = rewards.prepare_container_texts(original, rewards.TEXT_RESOURCES)
         self.assertEqual(len(set(row[38758] for row in refs.values())), 1)
-        self.assertEqual(_Tlk(tlk).text(refs["bcs:kpgol01"][38758], []), "As you pick up the item, two of the golems come to life and attack.")
-        self.assertEqual(rewards.prepare_container_texts(tlk, rewards.TEXT_RESOURCES), (tlk, refs))
-        with self.assertRaisesRegex(ProfileError, "reward texts exist only in English"):
-            rewards.prepare_container_texts(original, rewards.TEXT_RESOURCES, "de_DE")
-        self.assertEqual(rewards.prepare_container_texts(original, ("bcs:ar1202",), "de_DE"), (original, {}))
+        self.assertEqual(_Tlk(text.male).text(refs["bcs:kpgol01"][38758], []), "As you pick up the item, two of the golems come to life and attack.")
+        self.assertEqual(rewards.prepare_container_texts(text, rewards.TEXT_RESOURCES), (text, refs))
+        with self.assertRaisesRegex(ProfileError, "reward texts have no Spanish translation yet"):
+            rewards.prepare_container_texts(original, rewards.TEXT_RESOURCES, "es_ES")
+        self.assertEqual(rewards.prepare_container_texts(original, ("bcs:ar1202",), "es_ES"), (original, {}))
 
     def test_the_quest_container_is_the_one_that_holds_the_treasure(self):
         def chest(area, index, item):
@@ -483,7 +484,7 @@ class ContainerRewardTests(unittest.TestCase):
         if not cache.exists():
             self.skipTest("Optional isolated-lab resource cache is not present")
         self.assertEqual(set(REVIEWED_EET), set(rewards.RESOURCE_TARGETS))
-        _tlk, golem = rewards.prepare_container_texts(make_tlk([]), rewards.TEXT_RESOURCES)
+        _text, golem = rewards.prepare_container_texts(GameText(make_tlk([])), rewards.TEXT_RESOURCES)
         for resource, (reviewed, patched) in REVIEWED_EET.items():
             kind, name = resource.split(":")
             original = (cache / f"{name}.{kind}").read_bytes()

@@ -30,10 +30,11 @@ import re
 import struct
 
 from .game_names import convert_resource
+from . import translations
 from .profiles import ProfileError
-from .quest_options import _Dialogue, _texts
+from .quest_options import _Dialogue
 from .quest_rewards import _global_guard
-from .game_text import GameTextError, _append_texts
+from .game_text import GameText, GameTextError
 from .script_text import (ScriptError, block_actions, block_parts, block_triggers, calls,
                           integer_argument, named, naming, script_blocks, string_argument)
 
@@ -66,6 +67,8 @@ TARGETS = {row["target_id"]: row for row in _ROWS}
 RESOURCE_TARGETS = {resource: tuple(row["target_id"] for row in _ROWS if resource in row["resources"])
                     for row in _ROWS for resource in row["resources"]}
 TEXT_RESOURCES = frozenset(("bcs:kpgol01", "bcs:kpgol02", "bcs:kpgol05"))
+# The (TRA file, number) of Item Randomiser's golem text, which they show.
+TEXT_LINES = (("in-game.tra", 101),)
 _GOLEM_TEXT = 38758
 _TRAILER = b"FLPRCON1"
 _PARTY_HAS_ITEM, _CONTAINS, _OR, _SET_GLOBAL = 16450, 16501, 16521, 30
@@ -124,13 +127,12 @@ def treasure_container(target_id: str, sources, platform: str) -> str:
     return chests[0]
 
 
-def prepare_container_texts(tlk: bytes, resources, language="en_us") -> tuple[bytes, dict]:
+def prepare_container_texts(text: GameText, resources, language="en_us") -> tuple[GameText, dict]:
+    """Allocate the golem text, in the game's language, for the requested container resources."""
     needed = sorted(set(resources) & TEXT_RESOURCES)
     if not needed:
-        return tlk, {}
-    if language.lower() != "en_us":
-        raise ProfileError("Item Randomiser's reward texts exist only in English")
-    updated, refs = _append_texts(tlk, (_texts("languages/english/in-game.tra")[101],))
+        return text, {}
+    updated, refs = text.append((translations.lines(language, TEXT_LINES)[TEXT_LINES[0]],))
     return updated, {resource: {_GOLEM_TEXT: refs[0]} for resource in needed}
 
 
