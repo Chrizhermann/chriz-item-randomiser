@@ -2,8 +2,7 @@
 //! reference's `templates.py`).
 //!
 //! `list_templates()` describes the bundled presets: Item Randomiser's tables
-//! (BG1 and BG2), Chriz Item Randomiser's tables for Siege of Dragonspear
-//! (SoD), and preset list sets (`lists/presets/<name>/`) that replace a
+//! (BG1 and BG2), and preset list sets (`lists/presets/<name>/`) that replace a
 //! campaign's tables. Each preset has a standard and an extended pool of items and of
 //! places: the standard pools read the `base` tables, the extended pools also
 //! the `mode2` tables. Chriz Item Randomiser has no modes; every pool is drawn
@@ -40,23 +39,15 @@ pub fn recommended_options() -> Dict {
 }
 
 /// The preset campaigns and their labels. Item Randomiser has tables for BG1
-/// and BG2; the SoD tables are Chriz Item Randomiser's. The tables of each
-/// part of the game stay apart (tiers are per part), so a later option can mix
-/// them.
-pub const CAMPAIGNS: [(&str, &str); 6] =
-    [("bg1", "BG1"), ("bg2", "BG2"), ("eet", "EET"), ("sod", "SoD"), ("bg1-sod", "BG1 + SoD"), ("eet-sod", "EET + SoD")];
+/// and BG2. The tables of each part of the game stay apart (tiers are per
+/// part), so a later option can mix them. Siege of Dragonspear's tables (table
+/// campaign "sod") come with Chris's design; the configurator reads them as
+/// soon as a preset campaign names them (docs/sod-lists.md).
+pub const CAMPAIGNS: [(&str, &str); 3] = [("bg1", "BG1"), ("bg2", "BG2"), ("eet", "EET")];
 /// The tables of each part of the game a preset campaign reads, in order.
-const PARTS: [(&str, &[&str]); 6] = [
-    ("bg1", &["bg1"]),
-    ("bg2", &["bg2"]),
-    ("eet", &["bg1", "bg2"]),
-    ("sod", &["sod"]),
-    ("bg1-sod", &["bg1", "sod"]),
-    ("eet-sod", &["bg1", "sod", "bg2"]),
-];
-const PART_LABELS: [(&str, &str); 3] = [("bg1", "BG1"), ("sod", "SoD"), ("bg2", "BG2")];
+const PARTS: [(&str, &[&str]); 3] = [("bg1", &["bg1"]), ("bg2", &["bg2"]), ("eet", &["bg1", "bg2"])];
 /// Item Randomiser's tables have an authored endpoint for every row of their
-/// base location tables; the SoD tables have none, so a row's target names
+/// base location tables; other tables (SoD's) need none: a row's target names
 /// its kind.
 pub const ENDPOINT_CAMPAIGNS: [&str; 2] = ["bg1", "bg2"];
 
@@ -117,34 +108,6 @@ pub fn template_tables(template_id: &str) -> Result<Vec<&'static str>> {
     Ok(parts(template_campaign(template_id)?))
 }
 
-fn part_label(part: &str) -> &'static str {
-    PART_LABELS.iter().find(|(known, _)| *known == part).map_or("", |(_, label)| label)
-}
-
-/// The descriptor of a campaign's own tables.
-fn original(campaign: &'static str, label: &str) -> Descriptor {
-    let parts = parts(campaign);
-    let (name, description) = if !parts.contains(&"sod") {
-        (
-            format!("{label}: Item Randomiser's lists"),
-            "The item and location lists of Item Randomiser by Wisp, by tier.".to_string(),
-        )
-    } else if parts == ["sod"] {
-        (
-            format!("{label}: Chriz Item Randomiser's lists"),
-            "Item and location lists for Siege of Dragonspear by Chriz Item Randomiser, by tier.".to_string(),
-        )
-    } else {
-        (
-            format!("{label}: Item Randomiser's lists and the SoD lists"),
-            "The item and location lists of Item Randomiser by Wisp, by tier, and Chriz Item Randomiser's lists \
-             for Siege of Dragonspear."
-                .to_string(),
-        )
-    };
-    Descriptor { id: format!("{campaign}-original"), name, description, campaign, preset: None }
-}
-
 /// A preset's descriptor: name, description, campaign and preset id.
 #[derive(Clone, Debug)]
 pub struct Descriptor {
@@ -156,25 +119,31 @@ pub struct Descriptor {
 }
 
 pub fn descriptors() -> Vec<Descriptor> {
-    let mut result: Vec<Descriptor> = CAMPAIGNS.iter().map(|&(campaign, label)| original(campaign, label)).collect();
+    let mut result: Vec<Descriptor> = CAMPAIGNS
+        .iter()
+        .map(|&(campaign, label)| Descriptor {
+            id: format!("{campaign}-original"),
+            name: format!("{label}: Item Randomiser's lists"),
+            description: "The item and location lists of Item Randomiser by Wisp, by tier.".to_string(),
+            campaign,
+            preset: None,
+        })
+        .collect();
     for preset in PRESETS {
         for (campaign, label) in CAMPAIGNS {
-            let covered: Vec<&str> =
-                parts(campaign).into_iter().filter(|part| preset.campaigns.contains(part)).map(part_label).collect();
-            let others: Vec<&str> = parts(campaign).into_iter().filter(|part| !preset.campaigns.contains(part)).collect();
+            let (covered, others): (Vec<&str>, Vec<&str>) =
+                parts(campaign).into_iter().partition(|part| preset.campaigns.contains(part));
             if covered.is_empty() {
                 continue;
             }
+            let upper = |parts: Vec<&str>| parts.iter().map(|part| part.to_ascii_uppercase()).collect::<Vec<_>>();
             let mut description = preset.description.to_string();
             if !others.is_empty() {
-                let kept: Vec<String> = others
-                    .iter()
-                    .map(|part| {
-                        let lists = if *part == "sod" { "Chriz Item Randomiser's lists" } else { "Item Randomiser's lists" };
-                        format!("{} keeps {lists}", part_label(part))
-                    })
-                    .collect();
-                description.push_str(&format!(" For {}; {}.", covered.join(", "), kept.join(" and ")));
+                description.push_str(&format!(
+                    " For {}; {} keeps Item Randomiser's lists.",
+                    upper(covered).join(", "),
+                    upper(others).join(", ")
+                ));
             }
             result.push(Descriptor {
                 id: format!("{campaign}-{}", preset.id),
@@ -533,7 +502,7 @@ pub fn build_template(template_id: &str, items: Option<&Value>, targets: Option<
             "Rows require installation-specific item, source, and target binding.",
             "Tiered draws, loss and kept originals work for bound plans; original overflow and token expansion still need integration.",
             "Virtual, scripted, group, and unadapted extended-pool rows need runtime support.",
-            "BG1 and SoD resource names require game-specific conversion on EET, BGT, and Tutu.",
+            "BG1 resource names require game-specific conversion on EET, BGT, and Tutu.",
             "Installer mod-compatibility and per-row availability filters need evaluation at binding.",
         ],
     }))

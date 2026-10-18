@@ -39,12 +39,12 @@ pub fn preset_campaign(platform: &str) -> Result<&'static str> {
     lookup(&[("bgee", "bg1"), ("bg2ee", "bg2"), ("eet", "eet")], platform)
 }
 
-/// Preset campaigns whose tables a game can have; those with the SoD tables
-/// only when it has Siege of Dragonspear ([`preset_campaigns`]).
+/// Preset campaigns whose tables a game can have; one that reads Siege of
+/// Dragonspear's tables only when the game has SoD ([`preset_campaigns`]).
 pub fn platform_campaigns(platform: &str) -> Result<&'static [&'static str]> {
-    const BGEE: &[&str] = &["bg1", "bg1-sod", "sod"];
+    const BGEE: &[&str] = &["bg1"];
     const BG2EE: &[&str] = &["bg2"];
-    const EET: &[&str] = &["eet", "eet-sod", "bg1", "bg1-sod", "sod", "bg2"];
+    const EET: &[&str] = &["eet", "bg1", "bg2"];
     lookup(&[("bgee", BGEE), ("bg2ee", BG2EE), ("eet", EET)], platform)
 }
 
