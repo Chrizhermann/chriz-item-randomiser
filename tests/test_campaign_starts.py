@@ -8,6 +8,7 @@ that can be randomised still is.
 
 from collections import defaultdict
 from pathlib import Path
+import re
 import struct
 import sys
 import tempfile
@@ -20,8 +21,8 @@ sys.path.insert(0, str(ROOT / "tools"))
 from flir_config.campaigns import _render_lua, read_campaign
 from flir_config.native_export import NEXT_SCHEMA, export_native
 from flir_config.original_configuration import build_original_configuration
-from flir_config.platform import (PRESET_CAMPAIGNS, STARTS, area_part, game_platform,
-                                  preset_game)
+from flir_config.platform import (PRESET_CAMPAIGNS, STARTS, area_part, game_platform, has_sod,
+                                  preset_campaigns, preset_game, recommended_campaign)
 from flir_config.profiles import ProfileError, edit_profile, new_profile
 from flir_config.resources import scan_game
 from flir_config.sources import new_binding_plan, scan_world
@@ -127,19 +128,49 @@ class PlatformTests(StartsFixture):
             game_platform(self.world)
 
     def test_presets_follow_the_tables_the_game_has(self):
+        sod_presets = {"sod-original", "bg1-sod-original", "bg1-sod-boss-loot",
+                       "eet-sod-original", "eet-sod-boss-loot"}
+        # BG:EE without Siege of Dragonspear: BG1's presets only.
         self.build("bgee", ())
+        self.assertFalse(has_sod(self.world))
         self.assertEqual(preset_game(self.world, "bg1-original"), "bgee")
-        for template, name in (("bg2-original", "BG2"), ("eet-original", "EET")):
-            with self.assertRaisesRegex(ProfileError, f"This preset is for {name}; this game is BG:EE"):
+        for template, name in (("bg2-original", "BG2"), ("eet-original", "EET"),
+                               ("eet-sod-original", "EET + SoD")):
+            with self.assertRaisesRegex(ProfileError, re.escape(f"This preset is for {name}; this game is BG:EE")):
                 preset_game(self.world, template)
-        self.assertEqual({row["id"] for row in list_templates(PRESET_CAMPAIGNS["bgee"])},
+        for template, name in (("sod-original", "SoD"), ("bg1-sod-boss-loot", "BG1 + SoD")):
+            with self.assertRaisesRegex(ProfileError, re.escape(f"This preset is for {name}; this game "
+                                                                "does not have Siege of Dragonspear")):
+                preset_game(self.world, template)
+        self.assertEqual(preset_campaigns(self.world), ("bg1",))
+        self.assertEqual({row["id"] for row in list_templates(preset_campaigns(self.world))},
                          {"bg1-original", "bg1-boss-loot"})
-        self.assertEqual({row["id"] for row in list_templates(PRESET_CAMPAIGNS["bg2ee"])},
+        self.assertEqual(recommended_campaign(self.world), "bg1")
+        # With Siege of Dragonspear merged: also the SoD tables, alone or with BG1's.
+        self.build("bgee", ("bd0010",))
+        self.assertTrue(has_sod(self.world))
+        self.assertEqual({row["id"] for row in list_templates(preset_campaigns(self.world))},
+                         {"bg1-original", "bg1-boss-loot", "sod-original", "bg1-sod-original",
+                          "bg1-sod-boss-loot"})
+        for template in ("sod-original", "bg1-sod-original", "bg1-sod-boss-loot"):
+            self.assertEqual(preset_game(self.world, template), "bgee")
+        self.assertEqual(recommended_campaign(self.world), "bg1")
+        self.build("bg2ee", ())
+        self.assertEqual({row["id"] for row in list_templates(preset_campaigns(self.world))},
                          {"bg2-original"})
-        self.assertEqual(len(list_templates(PRESET_CAMPAIGNS["eet"])), len(list_templates()))
+        with self.assertRaisesRegex(ProfileError, "This preset is for SoD; this game is BG2:EE"):
+            preset_game(self.world, "sod-original")
+        self.assertEqual(recommended_campaign(self.world), "bg2")
+        self.build("eet", ("bd0010",))
+        self.assertEqual(preset_campaigns(self.world), PRESET_CAMPAIGNS["eet"])
+        self.assertEqual(len(list_templates(preset_campaigns(self.world))), len(list_templates()))
+        for row in list_templates():
+            self.assertEqual(preset_game(self.world, row["id"]), "eet")
+        self.assertEqual(recommended_campaign(self.world), "eet")
+        # An EET without SoD's areas is not one EET makes; its SoD presets are not offered.
         self.build("eet", ())
-        for template in ("bg1-original", "bg2-original", "eet-original"):
-            self.assertEqual(preset_game(self.world, template), "eet")
+        self.assertEqual({row["id"] for row in list_templates(preset_campaigns(self.world))},
+                         {row["id"] for row in list_templates()} - sod_presets)
 
     def test_area_names_tell_their_part_of_the_game(self):
         cases = {
@@ -315,6 +346,65 @@ class PresetStartTests(StartsFixture):
         tob = read_campaign(self.store, written["starts"]["TOB"])
         self.assertEqual(set(tob["randomization"]["sources"]), {chest("ar4000")})
         self.assertEqual(set(tob["randomization"]["targets"]), {"original-target:bg2:base:target:2"})
+
+    def sod_draft(self, campaigns: tuple[str, ...]) -> dict:
+        """The draft above with a SoD table row in BD0100 and, on BG:EE, without BG2's rows."""
+        draft = self.draft()
+        for kind in ("items", "targets"):
+            draft[kind] = [row for row in draft[kind] if row["campaign"] in campaigns]
+        sod_item = next(row for row in self.draft()["items"] if row["id"] == "bg1:base:item:1")
+        sod_item.update(id="sod:base:item:1", campaign="sod", source_ref="lists/items/base/sod.2da:3",
+                        source_ids=[chest("bd0100")], source_resource="are:bd0100", tier="32")
+        sod_place = next(row for row in self.draft()["targets"] if row["id"] == "bg1:base:target:1")
+        sod_place.update(id="sod:base:target:1", campaign="sod", area="bd0100", location="1",
+                         area_resource="are:bd0100", target_ids=[place("bd0100")], tier="32",
+                         endpoint_id=None, endpoint_kind=None, endpoint_source_ref=None,
+                         source_ref="lists/locations/base/sod.2da:3")
+        draft["items"].append(sod_item)
+        draft["targets"].append(sod_place)
+        return draft
+
+    def test_sod_rows_reach_the_starts_that_reach_siege_of_dragonspear(self):
+        sod = ({chest("bd0100")}, {"original-target:sod:base:target:1"})
+        for platform, template, areas, campaigns in (
+                ("eet", "eet-sod-original", ("bg0100", "ar0100", "ar4000", "bd0100"), ("bg1", "bg2")),
+                ("bgee", "bg1-sod-original", ("ar0100", "bd0100"), ("bg1",))):
+            with self.subTest(platform=platform):
+                self.build(platform, areas)
+                draft = self.sod_draft(campaigns)
+                if platform == "bgee":
+                    # BG:EE keeps BG1's own names: the BG1 rows' area is AR0100 there.
+                    for row in draft["items"]:
+                        if row["campaign"] == "bg1" and row["source_ids"]:
+                            row.update(source_ids=[chest("ar0100")], source_resource="are:ar0100")
+                    for row in draft["targets"]:
+                        if row["campaign"] == "bg1":
+                            row.update(area_resource="are:ar0100", target_ids=[place("ar0100")])
+                with patch("flir_config.original_configuration.resolve_template", return_value=draft), \
+                        patch("flir_config.original_registrations.resolve_template", return_value=draft):
+                    built = build_original_configuration(self.catalog, self.world, template)
+                    written = write_starts(built["profile"], built["plan"], self.catalog, self.world,
+                                           self.store)
+                contents = self.contents(written)
+                self.assertTrue(sod[0] <= contents["BG1"][0] and sod[1] <= contents["BG1"][1])
+                if platform == "bgee":
+                    # Siege of Dragonspear's start reaches only SoD: its rows alone.
+                    self.assertEqual(contents["SOD"], sod)
+                    self.assertEqual(written["skipped"], {})
+                else:
+                    # On EET it reaches SoD and all of BG2, but no BG1 row.
+                    self.assertEqual(contents["SOD"],
+                                     ({chest("bd0100"), chest("ar0100"), chest("ar4000"),
+                                       "virtual:bg2:base:item:3"},
+                                      {"original-target:sod:base:target:1",
+                                       "original-target:bg2:base:target:1",
+                                       "original-target:bg2:base:target:2"}))
+                    self.assertFalse(sod[0] & contents["SOA"][0] or sod[1] & contents["SOA"][1])
+                    self.assertFalse(sod[0] & contents["TOB"][0] or sod[1] & contents["TOB"][1])
+                revision = read_campaign(self.store, written["starts"]["SOD"])
+                self.assertEqual(revision["randomization"]["sources"][chest("bd0100")]["tier"], "sod:32")
+                self.assertEqual(revision["randomization"]["targets"]["original-target:sod:base:target:1"],
+                                 ["sod:32"])
 
 
 if __name__ == "__main__":

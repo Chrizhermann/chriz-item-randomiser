@@ -265,9 +265,11 @@ See [native source results](campaign-source-guards-20260927.md) for current evid
 ## Original preset drafts
 
 The `templates` command reads the original checked-in item/location tables and
-authored endpoint catalogs. It offers presets for BG1, BG2 and EET, all drawn for
-each new game; Chriz Item Randomiser has no modes. The editor offers those whose
-tables the scanned game has: BG1 presets on BG:EE, BG2 presets on BG2:EE, all on EET. Each preset has a standard and
+authored endpoint catalogs. It offers presets for BG1, BG2 and EET, and with Chriz Item
+Randomiser's Siege of Dragonspear tables for SoD, BG1 + SoD and EET + SoD
+([SoD lists](sod-lists.md)), all drawn for each new game; Chriz Item Randomiser has no
+modes. The editor offers those whose tables the scanned game has: BG1 presets on BG:EE,
+with Siege of Dragonspear also the SoD ones; BG2 presets on BG2:EE; all on EET. Each preset has a standard and
 an extended pool of items and of recipients, chosen separately: the standard pools
 read the `base` tables, the extended pools also the `mode2` tables, the larger lists
 that Item Randomiser used for its install-time Mode 2 (more items from creatures,
@@ -295,7 +297,8 @@ items with original sources. These draft choices still need automatic binding to
 the runtime configuration.
 
 The complete EET standard pools contain 505 item rows and 527 location rows; the
-extended pools 926 and 971. Repeated items, source replacements,
+extended pools 926 and 971 (with the SoD tables, `eet-sod-original`: 579 and 601, 1000
+and 1045). Repeated items, source replacements,
 tiers, tokens, identifiers, chances and row provenance are retained. These counts
 precede component and installation-availability filtering.
 
@@ -311,11 +314,17 @@ Rogue Rebalancing (`rr#…`) and IWDification (`cdia…`) items are optional: a 
 without such an item leaves its rows out and the preset dialog names the mod. On a
 reference EET scan, `eet-boss-loot` passes the configuration check like `eet-original`.
 
+On EET, BG1 and SoD resource names follow EET's own rename lists
+(`EET/lib/pcu_dict.tph`, `game_names.eet_names`). Without them, or when they cannot be
+read, the older copy in `lib/fl#bg1pal.tpa` is used and the preset dialog says so
+([SoD lists](sod-lists.md#names-on-eet)).
+
 A preset draft leaves out each row this game cannot use, instead of refusing the
 whole draft, and the preset dialog says how many rewards and places it left out; a
 left-out reward stays as the game has it. These are rows whose item, area, creature
 or shop the game lacks, whose record is not where the tables put it or is there more
-than once, and rows the runtime check rejects, such as a quest reward whose files no
+than once, places on a creature that never appears (each of its placements in the area
+has appearance schedule 0), and rows the runtime check rejects, such as a quest reward whose files no
 longer give it ("The extended reward route for MGKHOL01 cannot be used: MGKHOL01.DLG
 has no reply that gives BELT02") or an item its creature cannot drop. The draft is checked with the
 same runtime check as "Check configuration", which then passes. `/api/template`
@@ -331,7 +340,7 @@ the compiler uses a conservative bound until original overflow allocation is wir
 The editor does not yet expose these advanced settings.
 
 **The full original drafts are not playable configurations yet.** Remaining work
-includes original overflow/token expansion, EET name conversion and bindings for
+includes original overflow/token expansion and bindings for
 virtual/scripted sources and grouped recipients, plus installation-specific filters. Drafts
 are kept separate from prepared campaign settings so they cannot silently become
 one flat loot pool. New packs remain review material in

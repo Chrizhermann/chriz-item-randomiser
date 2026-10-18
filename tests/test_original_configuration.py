@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import shutil
 import struct
 import sys
 import tempfile
@@ -43,7 +44,7 @@ def target_row(identity, ident, tier):
             "tier": tier, "occurrence": 1, "chance": 100,
             "area_resource": "are:area", "creature_resource": None,
             "container_name": "container", "members": [], "target_ids": [],
-            "enabled": True}
+            "binding_problem": None, "enabled": True}
 
 
 class OriginalConfigurationTests(unittest.TestCase):
@@ -221,6 +222,38 @@ class OriginalConfigurationTests(unittest.TestCase):
         self.assertEqual(result["row_ids"], {self.physical: "source-1",
                                              "original-target:target-1": "target-1",
                                              "original-target:target-2": "target-2"})
+
+    def test_a_place_on_a_creature_that_never_appears_is_left_out_and_named(self):
+        draft = self._draft()
+        hidden = target_row("hidden-guard", "x", "24")
+        hidden.update(target="guard.cre", creature_resource="cre:guard", container_name=None,
+                      endpoint_kind=None, binding_problem="creature-never-appears")
+        draft["targets"].append(hidden)
+        with patch("flir_config.original_configuration.resolve_template", return_value=draft):
+            result = build_original_configuration(self.catalog, self.world, "eet-original")
+        self.assertEqual(result["not_used"], [{"id": "hidden-guard", "row": "lists/locations/base/bg1.2da:1",
+                                               "kind": "place", "reason": "creature-never-appears"}])
+        self.assertNotIn("original-target:hidden-guard",
+                         {row["id"] for row in result["plan"]["target_registrations"]})
+
+    def test_eet_without_its_rename_lists_is_named_and_uses_cirs_copy(self):
+        shutil.rmtree(self.root / "EET")
+        with patch("flir_config.original_configuration.resolve_template",
+                   return_value=self._draft()) as resolve:
+            result = build_original_configuration(self.catalog, self.world, "eet-original")
+        names = resolve.call_args.kwargs["names"]
+        self.assertFalse(names.installed)
+        self.assertEqual(result["not_used_notes"], [
+            "EET's rename lists (EET/lib/pcu_dict.tph) are not in this game, so Chriz Item Randomiser "
+            "uses its own older copy; some BG1 and Siege of Dragonspear rows may not be found and are "
+            "left out"])
+        # With them, the game's own lists are used and nothing is said.
+        mark_eet(self.root)
+        with patch("flir_config.original_configuration.resolve_template",
+                   return_value=self._draft()) as resolve:
+            result = build_original_configuration(self.catalog, self.world, "eet-original")
+        self.assertTrue(resolve.call_args.kwargs["names"].installed)
+        self.assertEqual(result["not_used_notes"], [])
 
     def test_fitting_leaves_out_rows_the_runtime_check_rejects(self):
         from flir_config.campaigns import compile_campaign

@@ -17,7 +17,7 @@ from .profiles import (PROFILE_ID, ProfileError, ensure_output_outside_game,
 from .sources import new_binding_plan, validate_world
 from .prepared import applied, left_out
 from .scripted_sources import blpool_registration
-from .platform import PRESET_CAMPAIGN, PRESET_CAMPAIGNS, game_platform
+from .platform import preset_campaigns, recommended_campaign
 from .templates import list_templates, recommended_preset
 
 
@@ -149,9 +149,9 @@ class Editor:
         if route == "/api/state":
             return self.state()
         if route == "/api/templates":
-            return list_templates(PRESET_CAMPAIGNS[game_platform(self.world)])
+            return list_templates(preset_campaigns(self.world))
         if route == "/api/recommended":
-            preset = recommended_preset(PRESET_CAMPAIGN[game_platform(self.world)])
+            preset = recommended_preset(recommended_campaign(self.world))
             # An option whose change the installer could not make is not offered.
             preset["unavailable"] = {}
             if not applied(self.world["game_root"], "flail_heads"):

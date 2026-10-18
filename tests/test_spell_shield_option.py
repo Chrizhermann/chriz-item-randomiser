@@ -128,6 +128,25 @@ class SpellShieldOptionTests(unittest.TestCase):
         with self.assertRaisesRegex(ProfileError, "Spell Shield"):
             _validate_campaign(manifest)
 
+    def test_randomised_stock_follows_whether_the_preset_reads_bg2s_tables(self):
+        _, catalog, world, profile, plan, _, _ = self.fixture(randomized=False)
+        manifest = compile_campaign(profile, catalog, world, plan)
+        manifest["original_options"]["scrolls"] = True
+        # The scroll's row is in BG2's extended table: only a preset reading it randomises it.
+        for template, randomised in (("sod-original", False), ("bg1-sod-original", False),
+                                     ("bg1-boss-loot", False), ("bg2-original", True),
+                                     ("eet-sod-original", True), ("eet-sod-boss-loot", True)):
+            with self.subTest(template=template):
+                altered = deepcopy(manifest)
+                altered["original_template_id"] = template
+                altered["revision"] = _digest({key: value for key, value in altered.items()
+                                               if key != "revision"})
+                if randomised:
+                    with self.assertRaisesRegex(ProfileError, "Spell Shield source does not match"):
+                        _validate_campaign(altered)
+                else:
+                    _validate_campaign(altered)
+
     def test_duplicate_stock_keeps_first_row_option_but_cannot_silently_drop_rewards(self):
         _, _, world, _, plan, _, _ = self.fixture()
         duplicate = deepcopy(next(row for row in world["sources"] if row["item"] == "scrl8x"))

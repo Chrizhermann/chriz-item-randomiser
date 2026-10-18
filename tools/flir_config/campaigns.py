@@ -30,7 +30,7 @@ from .original_registrations import (SOURCE_ADAPTER as ORIGINAL_SOURCE_ADAPTER,
                                      source_record as original_source_record,
                                      validate_campaign_source as validate_original_campaign_source,
                                      validate_campaign_target as validate_original_campaign_target)
-from .templates import POOL_CHOICES, _options as original_options, list_templates
+from .templates import POOL_CHOICES, _options as original_options, list_templates, template_tables
 from .original_options import SPELL_SHIELD_SOURCE, validate_spell_shield_spec
 from .cursed_disguises import validate_cursed_disguise_spec
 
@@ -377,7 +377,7 @@ def _validate_campaign(body: dict) -> dict:
         validate_spell_shield_spec(shield)
         randomized = (body["original_options"]["scrolls"] and
                       body["original_choices"]["items"] == "extended" and
-                      not body["original_template_id"].startswith("bg1-"))
+                      "bg2" in template_tables(body["original_template_id"]))
         if shield["source_id"] != (SPELL_SHIELD_SOURCE if randomized else ""):
             raise ProfileError("Spell Shield source does not match original item pool choices")
     elif "spell_shield" in body:

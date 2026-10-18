@@ -1,7 +1,8 @@
 """Offline drafts of the original Randomiser item and location pools.
 
-``list_templates()`` describes the bundled presets: Item Randomiser's tables, and
-preset list sets (``lists/presets/<name>/``) that replace a campaign's tables.
+``list_templates()`` describes the bundled presets: Item Randomiser's tables (BG1
+and BG2), Chriz Item Randomiser's tables for Siege of Dragonspear (SoD), and preset
+list sets (``lists/presets/<name>/``) that replace a campaign's tables.
 Each preset has a standard and an extended pool of items and of places: the
 standard pools read the ``base`` tables, the extended pools also the ``mode2``
 tables (the larger lists of Item Randomiser's install-time Mode 2). Chriz Item
@@ -37,10 +38,21 @@ DEFAULT_OPTIONS = {
 # (component 1100), the Flail of Ages heads (540) and the randomised Tales of the
 # Sword Coast tome (500); every other option off.
 RECOMMENDED_OPTIONS = DEFAULT_OPTIONS | {"flail_heads": True, "totsc_tome": True}
-CAMPAIGNS = (("bg1", "BG1"), ("bg2", "BG2"), ("eet", "EET"))
+# Preset campaigns: the tables of each part of the game a preset reads, in order.
+# Item Randomiser has tables for BG1 and BG2; the SoD tables are Chriz Item
+# Randomiser's. The tables of each part stay apart (tiers are per part), so a
+# later option can mix them.
+CAMPAIGNS = (("bg1", "BG1"), ("bg2", "BG2"), ("eet", "EET"), ("sod", "SoD"),
+             ("bg1-sod", "BG1 + SoD"), ("eet-sod", "EET + SoD"))
+_PARTS = {"bg1": ("bg1",), "bg2": ("bg2",), "eet": ("bg1", "bg2"), "sod": ("sod",),
+          "bg1-sod": ("bg1", "sod"), "eet-sod": ("bg1", "sod", "bg2")}
+_PART_LABELS = {"bg1": "BG1", "sod": "SoD", "bg2": "BG2"}
+# Item Randomiser's tables have an authored endpoint for every row of their base
+# location tables; the SoD tables have none, so a row's target names its kind.
+ENDPOINT_CAMPAIGNS = frozenset({"bg1", "bg2"})
 # Preset list sets in lists/presets/<name>/, in the original tables' format. A preset
-# replaces the tables of the campaigns it covers; an EET template takes the original
-# tables for the other campaign. Its rows are the original rows where they keep an
+# replaces the tables of the campaigns it covers; a template for more campaigns takes
+# the other campaigns' own tables. Its rows are the original rows where they keep an
 # original pairing ident, so source selectors, kept originals and the tome option
 # work as for the original tables.
 PRESETS = {
@@ -58,34 +70,60 @@ PRESETS = {
 
 
 def recommended_preset(campaign: str) -> dict:
-    """The default preset for a campaign ("bg1", "bg2" or "eet")."""
-    if campaign not in ("bg1", "bg2", "eet"):
+    """The default preset for a preset campaign (CAMPAIGNS)."""
+    if campaign not in _PARTS:
         raise ValueError("Unknown campaign")
     return {"id": f"{campaign}-original", "items": "standard", "targets": "standard",
             "options": RECOMMENDED_OPTIONS.copy()}
 
 
 def _parts(campaign: str) -> tuple[str, ...]:
-    return ("bg1", "bg2") if campaign == "eet" else (campaign,)
+    return _PARTS[campaign]
+
+
+def campaign_tables(campaign: str) -> tuple[str, ...]:
+    """The table campaigns ("bg1", "sod", "bg2") a preset campaign reads."""
+    if campaign not in _PARTS:
+        raise ValueError("Unknown campaign")
+    return _parts(campaign)
+
+
+def template_tables(template_id: str) -> tuple[str, ...]:
+    """The table campaigns ("bg1", "sod", "bg2") a preset reads."""
+    return _parts(template_campaign(template_id))
+
+
+def _original(campaign: str, label: str) -> dict:
+    parts = _parts(campaign)
+    if "sod" not in parts:
+        name = f"{label}: Item Randomiser's lists"
+        description = "The item and location lists of Item Randomiser by Wisp, by tier."
+    elif parts == ("sod",):
+        name = f"{label}: Chriz Item Randomiser's lists"
+        description = ("Item and location lists for Siege of Dragonspear by Chriz Item "
+                       "Randomiser, by tier.")
+    else:
+        name = f"{label}: Item Randomiser's lists and the SoD lists"
+        description = ("The item and location lists of Item Randomiser by Wisp, by tier, and "
+                       "Chriz Item Randomiser's lists for Siege of Dragonspear.")
+    return {"name": name, "description": description, "campaign": campaign, "preset": None}
 
 
 def _templates() -> dict[str, dict]:
-    result = {}
-    for campaign, label in CAMPAIGNS:
-        result[f"{campaign}-original"] = {
-            "name": f"{label}: Item Randomiser's lists",
-            "description": "The item and location lists of Item Randomiser by Wisp, by tier.",
-            "campaign": campaign, "preset": None}
+    result = {f"{campaign}-original": _original(campaign, label) for campaign, label in CAMPAIGNS}
     for preset, spec in PRESETS.items():
         for campaign, label in CAMPAIGNS:
-            covered = [part.upper() for part in _parts(campaign) if part in spec["campaigns"]]
-            others = [part.upper() for part in _parts(campaign) if part not in spec["campaigns"]]
+            covered = [_PART_LABELS[part] for part in _parts(campaign) if part in spec["campaigns"]]
+            others = [part for part in _parts(campaign) if part not in spec["campaigns"]]
             if not covered:
                 continue
             description = spec["description"]
             if others:
-                description += (f" For {', '.join(covered)}; {', '.join(others)} keeps "
-                                "Item Randomiser's lists.")
+                kept = [f"{_PART_LABELS[part]} keeps " + ("Chriz Item Randomiser's lists"
+                                                          if part == "sod" else
+                                                          "Item Randomiser's lists")
+                        for part in others]
+                description += f" For {', '.join(covered)}; {' and '.join(kept)}."
             result[f"{campaign}-{preset}"] = {
                 "name": f"{label}: {spec['name']} by {spec['author']}",
                 "description": f"{description} {spec['extended_description']}",
@@ -96,7 +134,7 @@ def _templates() -> dict[str, dict]:
 def list_templates(campaigns: tuple[str, ...] | None = None) -> list[dict]:
     """Return stable, compact descriptors for the bundled presets.
 
-    <campaigns> limits them to presets for those campaigns ("bg1", "bg2", "eet").
+    <campaigns> limits them to presets for those preset campaigns (CAMPAIGNS).
     """
     return [{"id": identity, "name": row["name"], "description": row["description"]}
             for identity, row in _templates().items()
@@ -104,7 +142,7 @@ def list_templates(campaigns: tuple[str, ...] | None = None) -> list[dict]:
 
 
 def template_campaign(template_id: str) -> str:
-    """The campaign ("bg1", "bg2" or "eet") a preset is for."""
+    """The preset campaign (CAMPAIGNS) a preset is for."""
     descriptors = _templates()
     if template_id not in descriptors:
         raise ValueError(f"Unknown original template: {template_id}")
@@ -213,7 +251,7 @@ def _load_items(campaign: str, family: str, options: dict, preset: str | None = 
             "tier": tier.lower(), "token": token.lower(), "ident": ident.lower(),
             "chance": int(chance), "occurrence": occurrences[(tier, item)],
             "option_gate": gate, "enabled": gate is None or options[gate],
-            "requires_game_conversion": campaign == "bg1",
+            "requires_game_conversion": campaign in ("bg1", "sod"),
             "optional_mod": _optional_mod(preset, item),
             "binding": "unbound", "runtime_support": runtime_support,
         })
@@ -225,8 +263,8 @@ def _load_targets(campaign: str, family: str, options: dict, preset: str | None 
     original = relative.startswith("lists/locations/")
     # A preset's place takes the endpoint authored for the same place, if any; the
     # original tables have one for every row of the base table.
-    endpoints = ({} if family != "base" else _endpoint_index(campaign) if original
-                 else _place_endpoints(campaign))
+    endpoints = ({} if family != "base" or campaign not in ENDPOINT_CAMPAIGNS
+                 else _endpoint_index(campaign) if original else _place_endpoints(campaign))
     occurrences: Counter[tuple[str, str, str]] = Counter()
     result = []
     for line, fields in _table_rows(ROOT / relative, 6):
@@ -235,7 +273,7 @@ def _load_targets(campaign: str, family: str, options: dict, preset: str | None 
         occurrence = occurrences[(tier, raw, ident)]
         endpoint = (endpoints.get((tier, raw, ident, occurrence)) if original
                     else endpoints.get((target.lower(), area.lower())))
-        if family == "base" and original and endpoint is None:
+        if family == "base" and original and campaign in ENDPOINT_CAMPAIGNS and endpoint is None:
             raise ValueError(f"Missing authored endpoint for {relative}:{line}")
         gate = _gate(tier)
         runtime_support = ("needs-endpoint-adapter" if endpoint is None
@@ -252,7 +290,7 @@ def _load_targets(campaign: str, family: str, options: dict, preset: str | None 
             "endpoint_id": endpoint["id"] if endpoint else None,
             "endpoint_kind": endpoint["kind"] if endpoint else None,
             "endpoint_source_ref": endpoint["source_ref"] if endpoint else None,
-            "requires_game_conversion": campaign == "bg1",
+            "requires_game_conversion": campaign in ("bg1", "sod"),
             "binding": "unbound", "runtime_support": runtime_support,
         })
     return result
@@ -302,7 +340,7 @@ def build_template(template_id: str, *, items: str | None = None,
             "Rows require installation-specific item, source, and target binding.",
             "Tiered draws, loss and kept originals work for bound plans; original overflow and token expansion still need integration.",
             "Virtual, scripted, group, and unadapted extended-pool rows need runtime support.",
-            "BG1 resource names require game-specific conversion on EET, BGT, and Tutu.",
+            "BG1 and SoD resource names require game-specific conversion on EET, BGT, and Tutu.",
             "Installer mod-compatibility and per-row availability filters need evaluation at binding.",
         ],
     }
