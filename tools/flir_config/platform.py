@@ -24,10 +24,9 @@ from .templates import CAMPAIGNS, campaign_tables, template_campaign
 PLATFORMS = {"bgee": "BG:EE", "bg2ee": "BG2:EE", "eet": "EET"}
 # The recommended preset campaign of each game (templates.CAMPAIGNS).
 PRESET_CAMPAIGN = {"bgee": "bg1", "bg2ee": "bg2", "eet": "eet"}
-# Preset campaigns whose tables a game can have; those with the SoD tables only
-# when it has Siege of Dragonspear (preset_campaigns).
-PRESET_CAMPAIGNS = {"bgee": ("bg1", "bg1-sod", "sod"), "bg2ee": ("bg2",),
-                    "eet": ("eet", "eet-sod", "bg1", "bg1-sod", "sod", "bg2")}
+# Preset campaigns whose tables a game can have; one that reads Siege of
+# Dragonspear's tables only when the game has SoD (preset_campaigns).
+PRESET_CAMPAIGNS = {"bgee": ("bg1",), "bg2ee": ("bg2",), "eet": ("eet", "bg1", "bg2")}
 # The parts of the game each table campaign (bg1, sod, bg2) covers.
 TABLE_PARTS = {"bg1": frozenset({"bg1"}), "sod": frozenset({"sod"}),
                "bg2": frozenset({"soa", "wk", "tob"})}

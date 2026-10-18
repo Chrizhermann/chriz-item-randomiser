@@ -1,4 +1,5 @@
 """Editor workflows reuse the configurator's synthetic installation fixture."""
+from contextlib import nullcontext
 from copy import deepcopy
 import json
 from pathlib import Path
@@ -20,6 +21,7 @@ from flir_config.sources import new_binding_plan
 from tests import test_postinstall_native_export as fixtures
 from tests.test_postinstall_blpool_script import write_registry
 from tests.test_postinstall_world_formats import make_are, make_cre, make_sto, item_record
+from sod_table_fixtures import sod_tables
 
 
 class EditorTests(unittest.TestCase):
@@ -62,12 +64,16 @@ class EditorTests(unittest.TestCase):
     def test_presets_offered_are_those_of_the_game(self):
         fx = self.fx
         (fx.override / "EET.flag").unlink()
-        for markers, presets in ((("oh6000",), ["bg2-original"]),
-                                 (("oh1000",), ["bg1-original", "bg1-boss-loot"]),
-                                 # BG:EE with Siege of Dragonspear: also the SoD tables.
-                                 (("oh1000", "bd0010"), ["bg1-original", "sod-original", "bg1-sod-original",
-                                                         "bg1-boss-loot", "bg1-sod-boss-loot"])):
-            with self.subTest(markers=markers):
+        for markers, presets, sod in ((("oh6000",), ["bg2-original"], False),
+                                      (("oh1000",), ["bg1-original", "bg1-boss-loot"], False),
+                                      # CIR bundles no SoD tables yet: Siege of Dragonspear adds nothing.
+                                      (("oh1000", "bd0010"), ["bg1-original", "bg1-boss-loot"], False),
+                                      # Presets that read SoD tables (synthetic here) need SoD's areas.
+                                      (("oh1000",), ["bg1-original", "bg1-boss-loot"], True),
+                                      (("oh1000", "bd0010"), ["bg1-original", "sod-original",
+                                                              "bg1-sod-original", "bg1-boss-loot",
+                                                              "bg1-sod-boss-loot"], True)):
+            with self.subTest(markers=markers, sod=sod), (sod_tables() if sod else nullcontext()):
                 for area in (*fx.override.glob("oh*.are"), *fx.override.glob("bd*.are")):
                     area.unlink()
                 for marker in markers:

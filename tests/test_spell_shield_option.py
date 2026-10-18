@@ -21,6 +21,7 @@ from flir_config.world_formats import parse_sto
 from test_postinstall_resources import make_game, make_itm, mark_eet, snapshot
 from test_postinstall_world_formats import item_record, make_are, make_sto
 from test_original_configuration import source_row
+from sod_table_fixtures import sod_tables
 
 
 class SpellShieldOptionTests(unittest.TestCase):
@@ -132,20 +133,23 @@ class SpellShieldOptionTests(unittest.TestCase):
         _, catalog, world, profile, plan, _, _ = self.fixture(randomized=False)
         manifest = compile_campaign(profile, catalog, world, plan)
         manifest["original_options"]["scrolls"] = True
-        # The scroll's row is in BG2's extended table: only a preset reading it randomises it.
-        for template, randomised in (("sod-original", False), ("bg1-sod-original", False),
-                                     ("bg1-boss-loot", False), ("bg2-original", True),
-                                     ("eet-sod-original", True), ("eet-sod-boss-loot", True)):
-            with self.subTest(template=template):
-                altered = deepcopy(manifest)
-                altered["original_template_id"] = template
-                altered["revision"] = _digest({key: value for key, value in altered.items()
-                                               if key != "revision"})
-                if randomised:
-                    with self.assertRaisesRegex(ProfileError, "Spell Shield source does not match"):
+        # The scroll's row is in BG2's extended table: only a preset reading it randomises it,
+        # also one that reads Siege of Dragonspear's tables (synthetic ones here).
+        with sod_tables():
+            for template, randomised in (("bg1-original", False), ("bg1-boss-loot", False),
+                                         ("bg2-original", True), ("eet-original", True),
+                                         ("sod-original", False), ("bg1-sod-original", False),
+                                         ("eet-sod-original", True), ("eet-sod-boss-loot", True)):
+                with self.subTest(template=template):
+                    altered = deepcopy(manifest)
+                    altered["original_template_id"] = template
+                    altered["revision"] = _digest({key: value for key, value in altered.items()
+                                                   if key != "revision"})
+                    if randomised:
+                        with self.assertRaisesRegex(ProfileError, "Spell Shield source does not match"):
+                            _validate_campaign(altered)
+                    else:
                         _validate_campaign(altered)
-                else:
-                    _validate_campaign(altered)
 
     def test_duplicate_stock_keeps_first_row_option_but_cannot_silently_drop_rewards(self):
         _, _, world, _, plan, _, _ = self.fixture()

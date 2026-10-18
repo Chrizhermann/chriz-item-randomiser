@@ -1,8 +1,8 @@
 """Offline drafts of the original Randomiser item and location pools.
 
 ``list_templates()`` describes the bundled presets: Item Randomiser's tables (BG1
-and BG2), Chriz Item Randomiser's tables for Siege of Dragonspear (SoD), and preset
-list sets (``lists/presets/<name>/``) that replace a campaign's tables.
+and BG2), and preset list sets (``lists/presets/<name>/``) that replace a campaign's
+tables.
 Each preset has a standard and an extended pool of items and of places: the
 standard pools read the ``base`` tables, the extended pools also the ``mode2``
 tables (the larger lists of Item Randomiser's install-time Mode 2). Chriz Item
@@ -39,16 +39,14 @@ DEFAULT_OPTIONS = {
 # Sword Coast tome (500); every other option off.
 RECOMMENDED_OPTIONS = DEFAULT_OPTIONS | {"flail_heads": True, "totsc_tome": True}
 # Preset campaigns: the tables of each part of the game a preset reads, in order.
-# Item Randomiser has tables for BG1 and BG2; the SoD tables are Chriz Item
-# Randomiser's. The tables of each part stay apart (tiers are per part), so a
-# later option can mix them.
-CAMPAIGNS = (("bg1", "BG1"), ("bg2", "BG2"), ("eet", "EET"), ("sod", "SoD"),
-             ("bg1-sod", "BG1 + SoD"), ("eet-sod", "EET + SoD"))
-_PARTS = {"bg1": ("bg1",), "bg2": ("bg2",), "eet": ("bg1", "bg2"), "sod": ("sod",),
-          "bg1-sod": ("bg1", "sod"), "eet-sod": ("bg1", "sod", "bg2")}
-_PART_LABELS = {"bg1": "BG1", "sod": "SoD", "bg2": "BG2"}
+# Item Randomiser has tables for BG1 and BG2. The tables of each part stay apart
+# (tiers are per part), so a later option can mix them. Siege of Dragonspear's
+# tables (table campaign "sod") come with Chris's design; the configurator reads
+# them as soon as a preset campaign names them (docs/sod-lists.md).
+CAMPAIGNS = (("bg1", "BG1"), ("bg2", "BG2"), ("eet", "EET"))
+_PARTS = {"bg1": ("bg1",), "bg2": ("bg2",), "eet": ("bg1", "bg2")}
 # Item Randomiser's tables have an authored endpoint for every row of their base
-# location tables; the SoD tables have none, so a row's target names its kind.
+# location tables; other tables (SoD's) need none: a row's target names its kind.
 ENDPOINT_CAMPAIGNS = frozenset({"bg1", "bg2"})
 # Preset list sets in lists/presets/<name>/, in the original tables' format. A preset
 # replaces the tables of the campaigns it covers; a template for more campaigns takes
@@ -93,37 +91,23 @@ def template_tables(template_id: str) -> tuple[str, ...]:
     return _parts(template_campaign(template_id))
 
 
-def _original(campaign: str, label: str) -> dict:
-    parts = _parts(campaign)
-    if "sod" not in parts:
-        name = f"{label}: Item Randomiser's lists"
-        description = "The item and location lists of Item Randomiser by Wisp, by tier."
-    elif parts == ("sod",):
-        name = f"{label}: Chriz Item Randomiser's lists"
-        description = ("Item and location lists for Siege of Dragonspear by Chriz Item "
-                       "Randomiser, by tier.")
-    else:
-        name = f"{label}: Item Randomiser's lists and the SoD lists"
-        description = ("The item and location lists of Item Randomiser by Wisp, by tier, and "
-                       "Chriz Item Randomiser's lists for Siege of Dragonspear.")
-    return {"name": name, "description": description, "campaign": campaign, "preset": None}
-
-
 def _templates() -> dict[str, dict]:
-    result = {f"{campaign}-original": _original(campaign, label) for campaign, label in CAMPAIGNS}
+    result = {}
+    for campaign, label in CAMPAIGNS:
+        result[f"{campaign}-original"] = {
+            "name": f"{label}: Item Randomiser's lists",
+            "description": "The item and location lists of Item Randomiser by Wisp, by tier.",
+            "campaign": campaign, "preset": None}
     for preset, spec in PRESETS.items():
         for campaign, label in CAMPAIGNS:
-            covered = [_PART_LABELS[part] for part in _parts(campaign) if part in spec["campaigns"]]
-            others = [part for part in _parts(campaign) if part not in spec["campaigns"]]
+            covered = [part.upper() for part in _parts(campaign) if part in spec["campaigns"]]
+            others = [part.upper() for part in _parts(campaign) if part not in spec["campaigns"]]
             if not covered:
                 continue
             description = spec["description"]
             if others:
-                kept = [f"{_PART_LABELS[part]} keeps " + ("Chriz Item Randomiser's lists"
-                                                          if part == "sod" else
-                                                          "Item Randomiser's lists")
-                        for part in others]
-                description += f" For {', '.join(covered)}; {' and '.join(kept)}."
+                description += (f" For {', '.join(covered)}; {', '.join(others)} keeps "
+                                "Item Randomiser's lists.")
             result[f"{campaign}-{preset}"] = {
                 "name": f"{label}: {spec['name']} by {spec['author']}",
                 "description": f"{description} {spec['extended_description']}",
@@ -340,7 +324,7 @@ def build_template(template_id: str, *, items: str | None = None,
             "Rows require installation-specific item, source, and target binding.",
             "Tiered draws, loss and kept originals work for bound plans; original overflow and token expansion still need integration.",
             "Virtual, scripted, group, and unadapted extended-pool rows need runtime support.",
-            "BG1 and SoD resource names require game-specific conversion on EET, BGT, and Tutu.",
+            "BG1 resource names require game-specific conversion on EET, BGT, and Tutu.",
             "Installer mod-compatibility and per-row availability filters need evaluation at binding.",
         ],
     }
