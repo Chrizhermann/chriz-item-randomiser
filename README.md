@@ -35,8 +35,9 @@ CIR after every mod that changes the user interface or the new-game template (`U
 `BALDUR.GAM`).
 
 Installing changes nothing in play until a configuration is applied: after the whole
-mod stack is installed, close the game and use the configurator in `cir/tools` to scan
-the game and apply a configuration. See the [readme](readme-cir.html).
+mod stack is installed, close the game and double-click `cir/cir-configurator.exe`. It
+scans the game and opens the configurator in the browser to apply a configuration; it
+needs no Python. See the [readme](readme-cir.html).
 
 ## Development
 

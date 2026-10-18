@@ -1,8 +1,12 @@
-"""Reproducible release packages built from Git objects (tools/build_release.py).
+"""Reproducible release packages built from Git objects: the mod ZIP
+(tools/build_release.py) and the Windows standalone package around it
+(tools/build_standalone.py).
 
 Synthetic repositories are built with Git plumbing, so blob bytes, modes and
 commit times are exact and no working tree or local configuration is involved.
-Git itself is the oracle for the checkout line-ending conversion.
+Git itself is the oracle for the checkout line-ending conversion. The
+standalone tests stand a synthetic executable in for the cargo build and a
+synthetic WeiDU in for the pinned one.
 """
 from contextlib import redirect_stderr, redirect_stdout
 from datetime import datetime, timezone
@@ -11,7 +15,9 @@ import io
 import json
 import os
 from pathlib import Path
+import random
 import re
+import struct
 import subprocess
 import sys
 import tarfile
@@ -22,6 +28,7 @@ import zipfile
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
 import build_release
+import build_standalone
 from build_release import ReleaseError
 
 COMMIT_TIME = 1760000000  # 2025-10-09 08:53:20 UTC
@@ -238,6 +245,270 @@ class RefusalTests(unittest.TestCase):
         self.refuses("has no tools/release-package.json", spec=None)
 
 
+WEIDU_BYTES = b"MZ synthetic WeiDU\0" * 16
+WEIDU_PIN = dict(build_standalone.WEIDU, size=len(WEIDU_BYTES), sha256=hashlib.sha256(WEIDU_BYTES).hexdigest())
+
+
+def make_pe(dlls: list[str], extra: bytes = b"", machine: int = 0x8664) -> bytes:
+    """A minimal 64-bit Windows image whose one section holds the import directory."""
+    table = 20 * (len(dlls) + 1)
+    names, descriptors = b"", b""
+    for dll in dlls:
+        descriptors += struct.pack("<5I", 0, 0, 0, 0x1000 + table + len(names), 0)
+        names += dll.encode("ascii") + b"\0"
+    section = descriptors + bytes(20) + names
+    optional = bytearray(240)
+    struct.pack_into("<H", optional, 0, 0x20B)  # PE32+
+    struct.pack_into("<I", optional, 108, 16)  # number of data directories
+    struct.pack_into("<II", optional, 120, 0x1000, len(section))  # import directory
+    head = (b"MZ" + bytes(0x3A) + struct.pack("<I", 0x40) + b"PE\0\0"
+            + struct.pack("<HHIIIHH", machine, 1, 0, 0, 0, len(optional), 0x22) + bytes(optional)
+            + struct.pack("<8sIIIIIIHHI", b".idata", len(section), 0x1000, len(section), 0x200, 0, 0, 0, 0, 0))
+    return head + bytes(0x200 - len(head)) + section + extra
+
+
+class StandaloneTests(unittest.TestCase):
+    """The Windows package around the unchanged mod ZIP (tools/build_standalone.py)."""
+
+    def setUp(self):
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        self.folder = Path(folder.name)
+        self.files = {**base_files(), "configurator/Cargo.toml": b"[workspace]\n"}
+        self.repository, self.commit = make_repository(self.folder / "repo", self.files)
+        self.weidu = self.folder / "weidu.exe"
+        self.weidu.write_bytes(WEIDU_BYTES)
+        self.executable = make_pe(["KERNEL32.dll", "WS2_32.dll"])
+        self.exports = []
+
+    def configurator(self, source: Path) -> tuple[bytes, dict]:
+        """Stand in for the cargo build: record the exported source, return the executable."""
+        self.exports.append({path.relative_to(source).as_posix(): path.read_bytes()
+                             for path in source.rglob("*") if path.is_file()})
+        return self.executable, {"rustc": "synthetic"}
+
+    def build(self, repository: Path | None = None):
+        return build_standalone.build(repository or self.repository, "HEAD", self.weidu,
+                                      configurator=self.configurator, pin=WEIDU_PIN)
+
+    def refuses(self, message: str, repository: Path | None = None, executable: bytes | None = None):
+        if executable is not None:
+            self.executable = executable
+        with self.assertRaisesRegex(ReleaseError, message):
+            self.build(repository)
+
+    def cli(self, *args: str) -> tuple[int, str]:
+        output = io.StringIO()
+        with redirect_stdout(output), redirect_stderr(output):
+            code = build_standalone.main(["--repository", str(self.repository), "--weidu", str(self.weidu), *args],
+                                         configurator=self.configurator, pin=WEIDU_PIN)
+        return code, output.getvalue()
+
+    def test_package_holds_the_mod_zip_weidu_and_the_configurator(self):
+        mod, (name, data, manifest) = self.build()
+        self.assertEqual(mod, build_release.build(self.repository, "HEAD"))
+        self.assertEqual(name, "mod-v1.2.3-test-windows.zip")
+        with zipfile.ZipFile(io.BytesIO(mod[1])) as archive:
+            expected = {info.filename: archive.read(info) for info in archive.infolist()}
+        expected.update({"setup-mod.exe": WEIDU_BYTES, "mod/cir-configurator.exe": self.executable})
+        stamp = datetime.fromtimestamp(COMMIT_TIME, timezone.utc).timetuple()[:6]
+        with zipfile.ZipFile(io.BytesIO(data)) as archive:
+            infos = archive.infolist()
+            names = [info.filename for info in infos]
+            self.assertEqual(names, sorted(expected, key=lambda value: value.encode("utf-8")))
+            self.assertEqual({info.filename: archive.read(info) for info in infos}, expected)
+            self.assertEqual(archive.comment, self.commit.encode("ascii"))
+            for info in infos:
+                self.assertEqual(info.date_time[:5], stamp[:5])
+                self.assertEqual((info.create_system, info.create_version, info.extract_version, info.external_attr,
+                                  info.compress_type, info.flag_bits, info.extra),
+                                 (3, 20, 20, 0o100644 << 16, zipfile.ZIP_DEFLATED, 0, b""))
+        self.assertEqual(manifest["schema"], "flir-standalone-manifest-v1")
+        self.assertEqual((manifest["version"], manifest["commit"]), ("1.2.3-test", self.commit))
+        self.assertEqual(manifest["archive"], {
+            "name": name, "sha256": hashlib.sha256(data).hexdigest(), "size": len(data), "root": "mod",
+            "tp2": ["mod/mod.tp2"], "setup": "setup-mod.exe", "configurator": "mod/cir-configurator.exe"})
+        self.assertEqual(manifest["mod_archive"], {key: mod[2]["archive"][key] for key in ("name", "sha256", "size")})
+        self.assertEqual(manifest["build"], dict(mod[2]["build"], configurator={"rustc": "synthetic"}))
+        binaries = {row["path"]: row for row in manifest["binaries"]}
+        self.assertEqual(sorted(binaries), ["mod/cir-configurator.exe", "setup-mod.exe"])
+        for path, row in binaries.items():
+            self.assertEqual((row["size"], row["sha256"]),
+                             (len(expected[path]), hashlib.sha256(expected[path]).hexdigest()))
+        self.assertEqual((binaries["mod/cir-configurator.exe"]["kind"], binaries["mod/cir-configurator.exe"]["commit"],
+                          binaries["mod/cir-configurator.exe"]["imports"]),
+                         ("configurator", self.commit, ["KERNEL32.dll", "WS2_32.dll"]))
+        weidu = binaries["setup-mod.exe"]
+        self.assertEqual((weidu["kind"], weidu["version"], weidu["weidu_version"], weidu["origin"]),
+                         ("weidu", "249.00", "24900", build_standalone.WEIDU["origin"]))
+        self.assertEqual(manifest["files"], [{"path": path, "size": len(expected[path]),
+                                              "sha256": hashlib.sha256(expected[path]).hexdigest()} for path in names])
+        self.assertEqual(manifest["totals"], {"files": len(names), "uncompressed_bytes": sum(map(len, expected.values())),
+                                              "largest_file_bytes": max(map(len, expected.values()))})
+
+    def test_configurator_is_built_from_the_converted_commit(self):
+        self.build()
+        # The repository has no working tree: every file comes from the commit's objects.
+        files = {**self.files, "tools/release-package.json": json.dumps(SPEC).encode()}
+        self.assertEqual(self.exports, [{path: build_release.autocrlf_checkout(data) for path, data in files.items()}])
+
+    def test_export_matches_git_autocrlf_checkout(self):
+        destination = self.folder / "export"
+        count = build_standalone.export_commit(self.repository, self.commit, destination)
+        archive = git(self.repository, "-c", "core.autocrlf=true", "archive", "--format=tar", self.commit)
+        with tarfile.open(fileobj=io.BytesIO(archive)) as tar:
+            expected = {member.name: tar.extractfile(member).read() for member in tar.getmembers() if member.isfile()}
+        actual = {path.relative_to(destination).as_posix(): path.read_bytes()
+                  for path in destination.rglob("*") if path.is_file()}
+        self.assertEqual(actual, expected)
+        self.assertEqual(count, len(expected))
+
+    def test_builds_are_byte_identical_and_verifiable_and_keep_the_mod_zip(self):
+        first, second, mod_only = (self.folder / name for name in ("first", "second", "mod"))
+        for out in (first, second):
+            code, output = self.cli("--out", str(out))
+            self.assertEqual(code, 0, output)
+        names = sorted(path.name for path in first.iterdir())
+        self.assertEqual(names, ["mod-v1.2.3-test-windows.manifest.json", "mod-v1.2.3-test-windows.zip",
+                                 "mod-v1.2.3-test.manifest.json", "mod-v1.2.3-test.zip"])
+        for name in names:
+            self.assertEqual((first / name).read_bytes(), (second / name).read_bytes())
+        # tools/build_release.py writes the same mod ZIP and manifest.
+        with redirect_stdout(io.StringIO()):
+            self.assertEqual(build_release.main(["--repository", str(self.repository), "--out", str(mod_only)]), 0)
+        self.assertEqual(sorted(path.name for path in mod_only.iterdir()), names[2:])
+        for path in mod_only.iterdir():
+            self.assertEqual(path.read_bytes(), (first / path.name).read_bytes())
+        package = first / "mod-v1.2.3-test-windows.zip"
+        self.assertEqual(self.cli("--verify", str(package)),
+                         (0, f"IDENTICAL {package.name} sha256={hashlib.sha256(package.read_bytes()).hexdigest()}\n"))
+        self.executable += b"\0"
+        code, output = self.cli("--verify", str(package))
+        self.assertEqual(code, 1)
+        self.assertTrue(output.startswith(f"DIFFERENT {package.name}: different content in mod/cir-configurator.exe"),
+                        output)
+        builds = len(self.exports)
+        code, output = self.cli("--out", str(first))
+        self.assertEqual(code, 1)
+        self.assertIn("Refusing to replace", output)
+        self.assertEqual(len(self.exports), builds)  # refused before the configurator is built
+
+    def test_pins_and_cargo_command(self):
+        self.assertEqual({key: build_standalone.WEIDU[key] for key in ("version", "weidu_version", "size", "sha256")},
+                         {"version": "249.00", "weidu_version": "24900", "size": 1364992,
+                          "sha256": "ad70f5897a6d0ba4b0d226f845a9b14cf345f56cc9697ca8d05cac9fe4932c1a"})
+        source, home = Path("C:/build/source"), Path("C:/home/.cargo")
+        command, environment = build_standalone.cargo_command(source, home, {
+            "PATH": "tools", "CARGO_HOME": "C:/home/.cargo", "RUSTFLAGS": "-Cdebuginfo=2",
+            "CARGO_ENCODED_RUSTFLAGS": "-Copt-level=0", "CARGO_PROFILE_RELEASE_DEBUG": "true",
+            "CARGO_TARGET_DIR": "elsewhere", "CARGO_BUILD_TARGET": "i686-pc-windows-msvc", "CARGO_INCREMENTAL": "1",
+            "CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER": "lld-link"})
+        workspace = source / "configurator"
+        self.assertEqual(command, ["cargo", "build", "--release", "--locked", "--bin", "cir-configurator",
+                                   "--target", "x86_64-pc-windows-msvc", "--manifest-path",
+                                   str(workspace / "Cargo.toml"), "--target-dir", str(workspace / "target")])
+        self.assertEqual(environment, {
+            "PATH": "tools", "CARGO_HOME": "C:/home/.cargo", "CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER": "lld-link",
+            "CARGO_ENCODED_RUSTFLAGS": "\x1f".join(["-Ctarget-feature=+crt-static", "-Clink-arg=/Brepro",
+                                                    f"--remap-path-prefix={source}=cir",
+                                                    f"--remap-path-prefix={home}=cargo"])})
+
+    def test_weidu_must_be_the_pinned_build(self):
+        for data in (WEIDU_BYTES[:-1] + b"!", WEIDU_BYTES + b"\0"):
+            self.weidu.write_bytes(data)
+            self.refuses("weidu.exe is not WeiDU 249.00 for x86-64")
+        self.assertEqual(self.exports, [])
+
+    def test_configurator_must_run_on_any_windows(self):
+        self.assertEqual(build_standalone.pe_info(make_pe(["KERNEL32.dll", "ole32.dll"])),
+                         {"machine": 0x8664, "pe32+": True, "dlls": ["KERNEL32.dll", "ole32.dll"]})
+        self.refuses("VCRUNTIME140.dll, which players may not have",
+                     executable=make_pe(["KERNEL32.dll", "VCRUNTIME140.dll"]))
+        self.refuses("needs api-ms-win-crt-runtime-l1-1-0.dll", executable=make_pe(["api-ms-win-crt-runtime-l1-1-0.dll"]))
+        self.refuses("not a 64-bit x86 Windows program", executable=make_pe(["KERNEL32.dll"], machine=0xAA64))
+        self.refuses("Not a readable Windows executable", executable=b"MZ and nothing else")
+
+    def test_configurator_must_not_name_build_folders(self):
+        spellings = {"utf-8": lambda path: path.encode("utf-8"), "utf-16": lambda path: path.encode("utf-16-le"),
+                     "upper": lambda path: path.upper().encode("utf-8"),
+                     "slashes": lambda path: path.replace("\\", "/").encode("utf-16-le")}
+        for label, spell in spellings.items():
+            def configurator(source: Path, spell=spell):
+                return make_pe(["KERNEL32.dll"], extra=b"panic in " + spell(str(source / "cir-config" / "lib.rs"))), {}
+            with self.subTest(label), self.assertRaisesRegex(ReleaseError, "names a folder of the build machine"):
+                build_standalone.build(self.repository, "HEAD", self.weidu, configurator=configurator, pin=WEIDU_PIN)
+        for folder in (Path.home(), self.repository):
+            with self.subTest(folder=folder.name):
+                self.refuses("names a folder of the build machine",
+                             executable=make_pe(["KERNEL32.dll"], extra=str(folder).encode("utf-16-le")))
+        self.assertEqual(build_standalone.named_folders("C:\\Build\\Tree".encode("utf-16-le"), ["C:\\Build", "D:\\x"]),
+                         ["C:\\Build"])
+
+    def test_package_names_are_free_and_found_by_weidu(self):
+        repository, _ = make_repository(self.folder / "taken", {**self.files, "CIR-Configurator.exe": b"MZ"},
+                                        spec=dict(SPEC, include=[*SPEC["include"], "CIR-Configurator.exe"]))
+        self.refuses("mod-v1.2.3-test.zip already has mod/cir-configurator.exe", repository)
+        repository, _ = make_repository(self.folder / "renamed", self.files, spec=dict(SPEC, archive_root="pkg"))
+        self.refuses("setup-mod.exe would not find pkg/mod.tp2", repository)
+        repository, _ = make_repository(self.folder / "two", {**self.files, "lib/extra.tp2": b"BEGIN ~x~\n"},
+                                        spec=dict(SPEC, tp2=["mod.tp2", "lib/extra.tp2"]))
+        self.refuses("installs one TP2; the mod has 2", repository)
+        self.assertEqual(self.exports, [])
+
+    def test_mod_zip_must_stay_within_cebg_limits(self):
+        repository, _ = make_repository(self.folder / "large", {
+            **self.files, "lib/large.bin": random.Random(1).randbytes(4 * 1024 * 1024 + 1)})
+        self.refuses("mod-v1.2.3-test.zip exceeds CEBG's archive limits: mod/lib/large.bin has 4194305 bytes, "
+                     "CEBG allows 4194304", repository)
+        self.assertEqual(self.exports, [])
+
+    def test_export_writes_regular_files_only(self):
+        repository, _ = make_repository(self.folder / "link", {**self.files, "docs/link": ("120000", b"notes.md")})
+        self.refuses("docs/link is not a regular file", repository)
+        self.assertEqual(self.exports, [])
+        repository, commit = make_repository(self.folder / "attributes",
+                                             {**self.files, "docs/.gitattributes": b"* -text\n"})
+        with self.assertRaisesRegex(ReleaseError, "gitattributes"):
+            build_standalone.export_commit(repository, commit, self.folder / "export")
+
+
+class CebgLimitTests(unittest.TestCase):
+    """CEBG's limits for the mod ZIP, checked on its central directory as CEBG does."""
+
+    @staticmethod
+    def archive(entries: list[tuple[str, bytes]], compression: int = zipfile.ZIP_STORED) -> bytes:
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, "w", compression) as archive:
+            for name, data in entries:
+                archive.writestr(name, data)
+        return buffer.getvalue()
+
+    def test_limits_are_cebgs(self):
+        self.assertEqual(build_standalone.CEBG_LIMITS, {"entries": 1024, "depth": 8, "entry_bytes": 4194304,
+                                                        "total_bytes": 16777216, "ratio": 100})
+
+    def test_entries_and_depth(self):
+        problems = build_standalone.cebg_limit_problems
+        self.assertEqual(problems(self.archive([(f"mod/{index}.txt", b"x") for index in range(1024)])), [])
+        self.assertEqual(problems(self.archive([(f"mod/{index}.txt", b"x") for index in range(1025)])),
+                         ["1025 entries, CEBG allows 1024"])
+        self.assertEqual(problems(self.archive([("a/b/c/d/e/f/g/h.txt", b"x"), ("a/b/c/d/e/f/g/h/", b"")])), [])
+        self.assertEqual(problems(self.archive([("a/b/c/d/e/f/g/h/i.txt", b"x")])),
+                         ["a/b/c/d/e/f/g/h/i.txt has depth 9, CEBG allows 8"])
+
+    def test_sizes_and_ratio(self):
+        problems = build_standalone.cebg_limit_problems
+        mib = 1024 * 1024
+        self.assertEqual(problems(self.archive([("mod/four.bin", bytes(4 * mib)), ("mod/empty.txt", b"")])), [])
+        self.assertEqual(problems(self.archive([("mod/big.bin", bytes(4 * mib + 1))])),
+                         ["mod/big.bin has 4194305 bytes, CEBG allows 4194304"])
+        self.assertEqual(problems(self.archive([(f"mod/{index}.bin", bytes(4 * mib)) for index in range(4)]
+                                               + [("mod/more.bin", b"x")])),
+                         ["16777217 uncompressed bytes, CEBG allows 16777216"])
+        self.assertEqual(problems(self.archive([("mod/zeros.bin", bytes(mib))], zipfile.ZIP_DEFLATED)),
+                         ["mod/zeros.bin is compressed more than 100 to 1"])
+
+
 class RepositoryPackageTests(unittest.TestCase):
     """The repository's own specification covers what cir.tp2 installs and the configurator reads."""
 
@@ -294,6 +565,14 @@ class RepositoryPackageTests(unittest.TestCase):
         self.assertTrue({"copy/ward.itm", "copy/flrward1.bam", "languages/english/hlskull.tra",
                          "lists/endpoints/fallbacks.2da"} <= named)
         self.assertEqual(sorted(named - self.selected), [])
+
+    def test_mod_zip_fits_cebg_and_setup_cir_finds_the_tp2(self):
+        # The release bytes: a CRLF checkout keeps its line endings, an LF one is converted.
+        files = [(f"cir/{path}", build_release.autocrlf_checkout((ROOT / path).read_bytes()))
+                 for path in sorted(self.selected)]
+        archive = build_release.write_archive(files, (2026, 1, 1, 0, 0, 0), b"")
+        self.assertEqual(build_standalone.cebg_limit_problems(archive), [])
+        self.assertEqual(build_standalone.setup_name([f"cir/{path}" for path in self.spec["tp2"]]), "setup-cir.exe")
 
 
 if __name__ == "__main__":
