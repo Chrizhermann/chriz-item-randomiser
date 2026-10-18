@@ -114,7 +114,9 @@ The library works on JSON values (`cir_config::json::Value`, with Python's key
 order and number rules) and returns `cir_config::Error`, whose `ErrorKind`
 names the reference's exception class. The entry points are
 `resources::scan_game`, `sources::scan_world`, `platform::{game_platform,
-preset_game}` (which game a world is and which presets fit it),
+preset_campaigns, preset_game}` (which game a world is, which presets it is
+offered and which fit it), `game_names::eet_names` (an EET game's own rename
+lists, or CIR's copy with a note),
 `templates::{list_templates, build_template, recommended_preset}`,
 `original_configuration::fit_original_configuration`,
 `campaigns::{compile_campaign, write_campaign}`, `starts::{write_starts,
@@ -152,7 +154,8 @@ cannot apply the reference tests' overrides; the runner then refuses them, so
 build with the feature again before the checks.
 
 - `replay_tests.py` runs the reference's test suite and repeats every library
-  call it makes (scan, world scan, game detection, presets and their fit,
+  call it makes (scan, world scan, game detection, EET's rename lists,
+  presets and their fit,
   binding, campaign compile, store and read, the revisions per campaign start,
   native export, also over earlier revisions that saved games keep) with the
   Rust port, comparing
