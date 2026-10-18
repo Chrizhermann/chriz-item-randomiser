@@ -93,7 +93,8 @@ class RustRunner:
         return {"$file": str(path)}
 
     def run(self, calls: list[dict], pins: dict | None = None, registration_draft=None,
-            tables: dict | None = None, languages: str | None = None) -> list[str]:
+            tables: dict | None = None, languages: str | None = None, lists: str | None = None,
+            campaigns: dict | None = None) -> list[str]:
         self.count += 1
         request = self.scratch / f"calls-{self.count}.json"
         outcomes = self.scratch / f"outcomes-{self.count}.jsonl"
@@ -108,9 +109,19 @@ class RustRunner:
         environment.pop("CIR_PARITY_REGISTRATION_DRAFT", None)
         environment.pop("CIR_PARITY_TABLES", None)
         environment.pop("CIR_PARITY_LANGUAGES", None)
+        environment.pop("CIR_PARITY_LISTS", None)
+        environment.pop("CIR_PARITY_CAMPAIGNS", None)
         if languages is not None:
             # The translations folder a test points translations.LANGUAGES_DIR at.
             environment["CIR_PARITY_LANGUAGES"] = languages
+        if lists is not None:
+            # The folder whose lists/ a test points templates.ROOT and original_catalog.ROOT at.
+            environment["CIR_PARITY_LISTS"] = lists
+        if campaigns is not None:
+            campaign_file = self.scratch / f"campaigns-{self.count}.json"
+            campaign_file.write_text(json.dumps(campaigns, ensure_ascii=True), encoding="utf-8")
+            self.files.append(campaign_file)
+            environment["CIR_PARITY_CAMPAIGNS"] = str(campaign_file)
         if tables:
             table_file = self.scratch / f"tables-{self.count}.json"
             table_file.write_text(json.dumps(tables, ensure_ascii=True), encoding="utf-8")

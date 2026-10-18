@@ -268,8 +268,14 @@ fn run(name: &str, args: &Dict) -> Result<Value> {
 
 /// What the reference's tests patch reaches the port through these; a build
 /// without `parity-overrides` would ignore them and report false differences.
-const OVERRIDES: [&str; 4] =
-    ["CIR_PIN_OVERRIDES", "CIR_PARITY_TABLES", "CIR_PARITY_REGISTRATION_DRAFT", "CIR_PARITY_LANGUAGES"];
+const OVERRIDES: [&str; 6] = [
+    "CIR_PIN_OVERRIDES",
+    "CIR_PARITY_TABLES",
+    "CIR_PARITY_REGISTRATION_DRAFT",
+    "CIR_PARITY_LANGUAGES",
+    "CIR_PARITY_LISTS",
+    "CIR_PARITY_CAMPAIGNS",
+];
 
 fn main() {
     let arguments: Vec<String> = std::env::args().collect();

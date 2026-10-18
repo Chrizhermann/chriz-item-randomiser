@@ -17,7 +17,10 @@ it writes outside the temporary folder or into a folder holding links or
 read-only files. Patched hash tables are passed on as the Rust port's
 test-only pin overrides; a patched `resolve_template` as the drafts it returns;
 a patched `translations.LANGUAGES_DIR` as the folder the port reads its
-translations from.
+translations from; a patched lists root (`templates.ROOT` and
+`original_catalog.ROOT`) as the folder the port reads its tables from, and
+patched preset campaigns (`CAMPAIGNS`, `templates._PARTS`,
+`platform.PRESET_CAMPAIGNS`) as the port's.
 """
 from __future__ import annotations
 
@@ -56,6 +59,9 @@ DATA_TABLES: dict[int, str] = {}
 DATA_STARTUP: dict[str, dict] = {}
 # Patched names that cannot change a recorded call's result.
 IRRELEVANT_PATCHES = {("flir_config.activation", "require_closed")}
+# The lists root and the preset campaigns: passed on to the Rust port.
+LIST_ROOTS = {("flir_config.templates", "ROOT"), ("flir_config.original_catalog", "ROOT")}
+CAMPAIGN_NAMES = {("flir_config.templates", "CAMPAIGNS"), ("flir_config.platform", "CAMPAIGNS")}
 STANDARD_MODULES = {"os", "os.path", "ntpath", "posixpath", "shutil", "builtins", "io", "pathlib",
                     "tempfile", "hashlib", "json", "struct", "stat"}
 
@@ -126,12 +132,21 @@ def reference_tables() -> set[int]:
 def classify(call: str):
     """(reason to skip or None, overrides for the Rust run, mocked
     resolve_template or None, mocked registration resolve_template or None)."""
+    from flir_config import platform, templates
     resolve = registration = languages = None
+    roots: dict[str, object] = {}
+    campaigns_patched = False
     for patcher in list(ACTIVE_PATCHES):
         target, attribute = getattr(patcher, "target", None), getattr(patcher, "attribute", "")
         if isinstance(target, types.ModuleType):
             module = target.__name__
             if (module, attribute) in IRRELEVANT_PATCHES:
+                continue
+            if (module, attribute) in LIST_ROOTS:
+                roots[module] = getattr(target, attribute)
+                continue
+            if (module, attribute) in CAMPAIGN_NAMES:
+                campaigns_patched = True
                 continue
             if module == "flir_config.original_configuration" and attribute == "resolve_template":
                 if call in ("build_original_configuration", "fit_original_configuration"):
@@ -156,6 +171,9 @@ def classify(call: str):
     tables = None
     for patcher in list(ACTIVE_DICTS):
         current = patcher.in_dict
+        if current is templates._PARTS or current is platform.PRESET_CAMPAIGNS:
+            campaigns_patched = True
+            continue
         table = PIN_TABLES.get(id(current))
         if table is not None:
             if any(key not in current for key in PIN_STARTUP[table]):
@@ -179,7 +197,27 @@ def classify(call: str):
             tables = reference_tables()
         if id(current) in tables:
             return "patched a reference table", None, None, None
-    overrides = {"pins": pins or None, "tables": data or None, "languages": languages}
+    lists = None
+    if roots:
+        # The port reads every table from one folder; both modules must name it.
+        if len(roots) != len(LIST_ROOTS) or len({str(root) for root in roots.values()}) != 1:
+            return "patched one module's lists root", None, None, None
+        root = next(iter(roots.values()))
+        if not isinstance(root, os.PathLike):
+            return "the lists root is not a path", None, None, None
+        lists = str(root)
+    campaigns = None
+    if campaigns_patched:
+        # platform only looks labels up (dict(CAMPAIGNS)).
+        if dict(platform.CAMPAIGNS) != dict(templates.CAMPAIGNS):
+            return "templates and platform name other campaigns", None, None, None
+        campaigns = {"campaigns": [list(row) for row in templates.CAMPAIGNS],
+                     "parts": {key: list(value) for key, value in templates._PARTS.items()},
+                     "preset_campaigns": {key: list(value) for key, value in platform.PRESET_CAMPAIGNS.items()}}
+        if not json_native(campaigns):
+            return "patched campaigns are not plain JSON", None, None, None
+    overrides = {"pins": pins or None, "tables": data or None, "languages": languages, "lists": lists,
+                 "campaigns": campaigns}
     return None, overrides, resolve, registration
 
 
@@ -400,7 +438,8 @@ def record(spec: Spec, original, signature, args, kwargs):
 
     try:
         rust_line = RUNNER.run([{"call": spec.call, "args": spec.arguments(values, draft)}], pins["pins"],
-                               registration_draft, pins["tables"], pins["languages"])[0]
+                               registration_draft, pins["tables"], pins["languages"], pins["lists"],
+                               pins["campaigns"])[0]
     except Exception as exc:  # the comparison reports it; the test goes on
         rust_line = json.dumps({"rust-failure": str(exc)})
     rust_after = {}

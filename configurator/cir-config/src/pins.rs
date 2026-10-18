@@ -91,3 +91,59 @@ pub fn table_entries(name: &str) -> Vec<(String, crate::json::Value)> {
 pub fn table_entries(_name: &str) -> Vec<(String, crate::json::Value)> {
     Vec::new()
 }
+
+/// Preset campaigns a parity test sets, as the reference's tests patch
+/// `templates.CAMPAIGNS`, `templates._PARTS` and `platform.PRESET_CAMPAIGNS`
+/// to add campaigns that read other tables.
+pub struct Campaigns {
+    /// The preset campaigns and their labels, in order.
+    pub campaigns: Vec<(&'static str, &'static str)>,
+    /// The table campaigns each preset campaign reads.
+    pub parts: Vec<(&'static str, Vec<&'static str>)>,
+    /// The preset campaigns each game can have.
+    pub games: Vec<(&'static str, &'static [&'static str])>,
+}
+
+/// With `parity-overrides`, the campaigns of the JSON file
+/// `CIR_PARITY_CAMPAIGNS` names: `{"campaigns": [[id, label], ...], "parts":
+/// {id: [table, ...]}, "preset_campaigns": {game: [id, ...]}}`; otherwise none.
+#[cfg(feature = "parity-overrides")]
+pub fn campaigns() -> Option<&'static Campaigns> {
+    use crate::json::Value;
+    use std::sync::OnceLock;
+    fn name(text: &str) -> &'static str {
+        Box::leak(text.to_string().into_boxed_str())
+    }
+    fn names(value: &Value) -> Vec<&'static str> {
+        value.as_list().expect("a list of names").iter().map(|item| name(item.as_str().expect("a name"))).collect()
+    }
+    static CAMPAIGNS: OnceLock<Option<Campaigns>> = OnceLock::new();
+    CAMPAIGNS
+        .get_or_init(|| {
+            let path = std::env::var_os("CIR_PARITY_CAMPAIGNS")?;
+            let data = std::fs::read(&path).expect("CIR_PARITY_CAMPAIGNS names a readable file");
+            let value = crate::json::parse_strict(&data, "campaigns").expect("CIR_PARITY_CAMPAIGNS is JSON");
+            let table = |key: &str| value.get(key).and_then(Value::as_dict).expect("a campaign table");
+            let campaigns = value.get("campaigns").and_then(Value::as_list).expect("a campaign list");
+            Some(Campaigns {
+                campaigns: campaigns
+                    .iter()
+                    .map(|row| match names(row).as_slice() {
+                        [campaign, label] => (*campaign, *label),
+                        _ => panic!("a campaign is [id, label]"),
+                    })
+                    .collect(),
+                parts: table("parts").iter().map(|(campaign, parts)| (name(campaign), names(parts))).collect(),
+                games: table("preset_campaigns")
+                    .iter()
+                    .map(|(game, campaigns)| (name(game), &*Box::leak(names(campaigns).into_boxed_slice())))
+                    .collect(),
+            })
+        })
+        .as_ref()
+}
+
+#[cfg(not(feature = "parity-overrides"))]
+pub fn campaigns() -> Option<&'static Campaigns> {
+    None
+}

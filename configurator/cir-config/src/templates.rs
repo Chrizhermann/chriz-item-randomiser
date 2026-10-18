@@ -79,9 +79,24 @@ pub fn preset(id: &str) -> Option<&'static Preset> {
     PRESETS.iter().find(|preset| preset.id == id)
 }
 
+/// The preset campaigns and their labels: [`CAMPAIGNS`], or those a parity
+/// test sets ([`crate::pins::campaigns`]).
+pub fn campaigns() -> &'static [(&'static str, &'static str)] {
+    crate::pins::campaigns().map_or(&CAMPAIGNS, |set| set.campaigns.as_slice())
+}
+
+/// The table campaigns a preset campaign reads ([`PARTS`], or those a parity
+/// test sets); None for an unknown one.
+fn known_parts(campaign: &str) -> Option<Vec<&'static str>> {
+    match crate::pins::campaigns() {
+        Some(set) => set.parts.iter().find(|(known, _)| *known == campaign).map(|(_, parts)| parts.clone()),
+        None => PARTS.iter().find(|(known, _)| *known == campaign).map(|(_, parts)| parts.to_vec()),
+    }
+}
+
 /// The default preset for a preset campaign ([`CAMPAIGNS`]).
 pub fn recommended_preset(campaign: &str) -> Result<Dict> {
-    if !PARTS.iter().any(|(known, _)| *known == campaign) {
+    if known_parts(campaign).is_none() {
         return Err(Error::value("Unknown campaign"));
     }
     Ok(crate::dict! {
@@ -92,15 +107,12 @@ pub fn recommended_preset(campaign: &str) -> Result<Dict> {
 
 /// The table campaigns a preset campaign reads; none for an unknown one.
 pub fn parts(campaign: &str) -> Vec<&'static str> {
-    PARTS.iter().find(|(known, _)| *known == campaign).map_or_else(Vec::new, |(_, parts)| parts.to_vec())
+    known_parts(campaign).unwrap_or_default()
 }
 
 /// The table campaigns ("bg1", "sod", "bg2") a preset campaign reads.
 pub fn campaign_tables(campaign: &str) -> Result<Vec<&'static str>> {
-    if !PARTS.iter().any(|(known, _)| *known == campaign) {
-        return Err(Error::value("Unknown campaign"));
-    }
-    Ok(parts(campaign))
+    known_parts(campaign).ok_or_else(|| Error::value("Unknown campaign"))
 }
 
 /// The table campaigns ("bg1", "sod", "bg2") a preset reads.
@@ -119,7 +131,7 @@ pub struct Descriptor {
 }
 
 pub fn descriptors() -> Vec<Descriptor> {
-    let mut result: Vec<Descriptor> = CAMPAIGNS
+    let mut result: Vec<Descriptor> = campaigns()
         .iter()
         .map(|&(campaign, label)| Descriptor {
             id: format!("{campaign}-original"),
@@ -130,7 +142,7 @@ pub fn descriptors() -> Vec<Descriptor> {
         })
         .collect();
     for preset in PRESETS {
-        for (campaign, label) in CAMPAIGNS {
+        for &(campaign, label) in campaigns() {
             let (covered, others): (Vec<&str>, Vec<&str>) =
                 parts(campaign).into_iter().partition(|part| preset.campaigns.contains(part));
             if covered.is_empty() {

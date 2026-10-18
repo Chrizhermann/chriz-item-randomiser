@@ -207,7 +207,12 @@ build with the feature again before the checks.
   internals (a patched `open` or directory listing) cannot be repeated and are
   listed as not compared. Where a test points `translations.LANGUAGES_DIR` at a
   copy of the translations, the Rust port reads that folder
-  (`CIR_PARITY_LANGUAGES`, parity builds only).
+  (`CIR_PARITY_LANGUAGES`, parity builds only). Where it points
+  `templates.ROOT` and `original_catalog.ROOT` at a copy of the lists with
+  other tables and adds preset campaigns that read them (`CAMPAIGNS`,
+  `_PARTS`, `PRESET_CAMPAIGNS`), as `tests/sod_table_fixtures.py` does with
+  Siege of Dragonspear tables, the port reads those tables and campaigns
+  (`CIR_PARITY_LISTS`, `CIR_PARITY_CAMPAIGNS`).
 - `cli_check.py` runs the command line on a synthetic installation: the whole
   workflow up to the native export, argparse's handling of unusual arguments,
   and every command's help at several terminal widths.

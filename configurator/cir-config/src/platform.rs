@@ -16,7 +16,7 @@
 use crate::error::{Error, Result};
 use crate::json::Value;
 use crate::paths;
-use crate::templates::{campaign_tables, template_campaign, CAMPAIGNS};
+use crate::templates::{campaign_tables, campaigns, template_campaign};
 use std::path::PathBuf;
 
 /// The games and their names.
@@ -42,6 +42,9 @@ pub fn preset_campaign(platform: &str) -> Result<&'static str> {
 /// Preset campaigns whose tables a game can have; one that reads Siege of
 /// Dragonspear's tables only when the game has SoD ([`preset_campaigns`]).
 pub fn platform_campaigns(platform: &str) -> Result<&'static [&'static str]> {
+    if let Some(set) = crate::pins::campaigns() {
+        return lookup(&set.games, platform);
+    }
     const BGEE: &[&str] = &["bg1"];
     const BG2EE: &[&str] = &["bg2"];
     const EET: &[&str] = &["eet", "bg1", "bg2"];
@@ -183,14 +186,14 @@ pub fn preset_game(world: &Value, template_id: &str) -> Result<&'static str> {
     if !platform_campaigns(platform)?.contains(&campaign) {
         return Err(Error::profile(format!(
             "This preset is for {}; this game is {}",
-            lookup(&CAMPAIGNS, campaign)?,
+            lookup(campaigns(), campaign)?,
             platform_name(platform)?
         )));
     }
     if !preset_campaigns(world)?.contains(&campaign) {
         return Err(Error::profile(format!(
             "This preset is for {}; this game does not have Siege of Dragonspear",
-            lookup(&CAMPAIGNS, campaign)?
+            lookup(campaigns(), campaign)?
         )));
     }
     Ok(platform)
