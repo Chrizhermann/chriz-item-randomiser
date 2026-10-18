@@ -6,6 +6,7 @@ import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
 from flir_config.original_catalog import resolve_template  # noqa: E402
+from sod_table_fixtures import sod_tables  # noqa: E402
 
 
 def _source(identity, resource, item, owner):
@@ -265,27 +266,28 @@ class OriginalCatalogTests(unittest.TestCase):
         from flir_config.game_names import EetNames
         from flir_config.templates import build_template
 
-        draft = build_template("sod-original")
-        item = draft["items"][0]
-        place = next(row for row in draft["targets"] if row["ident"] == item["ident"])
-        area = f"are:{place['area']}"
-        for game, names, resref in (("bgee", None, item["resref"]),
-                                    ("eet", EetNames({kind: {} for kind in ("itm", "cre", "sto", "dlg", "bcs")}
-                                                     | {"itm": {item["resref"]: "renamed"}}, True), "renamed")):
-            with self.subTest(game=game):
-                chest = _target(f"{area}/container/0", area, "container", place["target"].upper())
-                spare = _target(f"{area}/container/1", area, "container", "Other")
-                world = {"resources": [{"id": area}], "targets": [chest, spare],
-                         "sources": [_source(f"{area}/container/0/item/0", area, resref, chest["id"])]}
-                result = resolve_template({"items": [{"resref": resref}]}, world, "sod-original",
-                                          game=game, names=names)
-                source = next(row for row in result["items"] if row["id"] == item["id"])
-                self.assertEqual((source["item_resref"], source["source_resource"], source["source_ids"],
-                                  source["binding_problem"]),
-                                 (resref, area, [f"{area}/container/0/item/0"], None))
-                target = next(row for row in result["targets"] if row["id"] == place["id"])
-                self.assertEqual((target["area_resource"], target["target_ids"], target["endpoint_id"],
-                                  target["binding_problem"]), (area, [chest["id"]], None, None))
+        with sod_tables():
+            draft = build_template("sod-original")
+            item = draft["items"][0]
+            place = next(row for row in draft["targets"] if row["ident"] == item["ident"])
+            area = f"are:{place['area']}"
+            for game, names, resref in (("bgee", None, item["resref"]),
+                                        ("eet", EetNames({kind: {} for kind in ("itm", "cre", "sto", "dlg", "bcs")}
+                                                         | {"itm": {item["resref"]: "renamed"}}, True), "renamed")):
+                with self.subTest(game=game):
+                    chest = _target(f"{area}/container/0", area, "container", place["target"].upper())
+                    spare = _target(f"{area}/container/1", area, "container", "Other")
+                    world = {"resources": [{"id": area}], "targets": [chest, spare],
+                             "sources": [_source(f"{area}/container/0/item/0", area, resref, chest["id"])]}
+                    result = resolve_template({"items": [{"resref": resref}]}, world, "sod-original",
+                                              game=game, names=names)
+                    source = next(row for row in result["items"] if row["id"] == item["id"])
+                    self.assertEqual((source["item_resref"], source["source_resource"], source["source_ids"],
+                                      source["binding_problem"]),
+                                     (resref, area, [f"{area}/container/0/item/0"], None))
+                    target = next(row for row in result["targets"] if row["id"] == place["id"])
+                    self.assertEqual((target["area_resource"], target["target_ids"], target["endpoint_id"],
+                                      target["binding_problem"]), (area, [chest["id"]], None, None))
 
     def test_creature_target_that_never_appears_is_named(self):
         from flir_config.templates import build_template

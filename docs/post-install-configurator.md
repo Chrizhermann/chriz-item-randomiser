@@ -265,11 +265,10 @@ See [native source results](campaign-source-guards-20260927.md) for current evid
 ## Original preset drafts
 
 The `templates` command reads the original checked-in item/location tables and
-authored endpoint catalogs. It offers presets for BG1, BG2 and EET, and with Chriz Item
-Randomiser's Siege of Dragonspear tables for SoD, BG1 + SoD and EET + SoD
-([SoD lists](sod-lists.md)), all drawn for each new game; Chriz Item Randomiser has no
-modes. The editor offers those whose tables the scanned game has: BG1 presets on BG:EE,
-with Siege of Dragonspear also the SoD ones; BG2 presets on BG2:EE; all on EET. Each preset has a standard and
+authored endpoint catalogs. It offers presets for BG1, BG2 and EET, all drawn for
+each new game; Chriz Item Randomiser has no modes. Siege of Dragonspear lists come with
+Chris's design ([SoD lists](sod-lists.md)). The editor offers those whose
+tables the scanned game has: BG1 presets on BG:EE, BG2 presets on BG2:EE, all on EET. Each preset has a standard and
 an extended pool of items and of recipients, chosen separately: the standard pools
 read the `base` tables, the extended pools also the `mode2` tables, the larger lists
 that Item Randomiser used for its install-time Mode 2 (more items from creatures,
@@ -297,8 +296,7 @@ items with original sources. These draft choices still need automatic binding to
 the runtime configuration.
 
 The complete EET standard pools contain 505 item rows and 527 location rows; the
-extended pools 926 and 971 (with the SoD tables, `eet-sod-original`: 579 and 601, 1000
-and 1045). Repeated items, source replacements,
+extended pools 926 and 971. Repeated items, source replacements,
 tiers, tokens, identifiers, chances and row provenance are retained. These counts
 precede component and installation-availability filtering.
 

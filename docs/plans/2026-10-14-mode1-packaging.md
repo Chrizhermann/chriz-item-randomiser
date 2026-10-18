@@ -215,9 +215,9 @@ mod.
 The configurator identifies the game as WeiDU's `GAME_IS` does
 (`tools/flir_config/platform.py`): EET by `override/EET.flag`, BG2:EE by `OH6000.ARE`,
 BG:EE by `OH1000.ARE`. It refuses any other game, as the installer does. It offers the
-presets whose tables the game has (the BG1 presets on BG:EE, with Siege of Dragonspear's
-areas also the SoD ones; the BG2 ones on BG2:EE; all on EET; see
-[SoD lists](../sod-lists.md)) and recommends that game's `-original` preset. BG:EE and BG2:EE keep the
+presets whose tables the game has (the BG1 presets on BG:EE, the BG2 ones on BG2:EE,
+all on EET; Siege of Dragonspear lists come later, see [SoD lists](../sod-lists.md)) and
+recommends that game's `-original` preset. BG:EE and BG2:EE keep the
 `BGEE.LUA` journal table in their archives, EET in `override`; the export reads either.
 
 At New Game or character import `M_FLPR.lua` reads the start the engine selected: the
