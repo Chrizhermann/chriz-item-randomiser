@@ -136,7 +136,8 @@ build with the feature again before the checks.
 - `replay_tests.py` runs the reference's test suite and repeats every library
   call it makes (scan, world scan, game detection, presets and their fit,
   binding, campaign compile, store and read, the revisions per campaign start,
-  native export) with the Rust port, comparing
+  native export, also over earlier revisions that saved games keep) with the
+  Rust port, comparing
   results, errors and the files written. Tests that inject faults into Python
   internals (a patched `open` or directory listing) cannot be repeated and are
   listed as not compared.
@@ -167,7 +168,8 @@ build with the feature again before the checks.
   generated from synthetic inputs by `configurator/parity/patchers/generate.py`
   (for the extended pools' reward routes: recognition by meaning in dialogues
   and compiled scripts, what leaves a route out and why, other mods' layouts,
-  and re-export of the configurator's own earlier patches), and the game
+  copies of reward replies in other dialogues as WeiDU's interjections leave
+  them, and re-export of the configurator's own earlier patches), and the game
   folder lookup: the executable in `cir` and in `cir/tools`, no
   game above it, the nearest of nested games, CIR not installed (other
   components, other mods, commented log lines) and installed by marker or log.
@@ -178,7 +180,9 @@ build with the feature again before the checks.
 - `generate.py --game '<game folder>' --language en_US --out '<folder>'`
   records the reward routes of an installed game, used read-only: each route
   resource patched as the export patches it, recognised before and after, and
-  exported again. `CIR_PARITY_GAME_ROUTES='<folder>/game_routes.json'` runs it
+  exported again, and the copies of reward replies in the game's other
+  dialogues, as the scan finds them and in the game as Apply leaves it.
+  `CIR_PARITY_GAME_ROUTES='<folder>/game_routes.json'` runs it
   with `cargo test --test parity_game_routes`. The fixture holds the game's
   bytes, so the folder must be outside the repository.
 

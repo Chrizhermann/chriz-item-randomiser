@@ -17,13 +17,14 @@ use cir_config::mode2_rewards::{
     resource_rewards, resource_specs, rewards, route_reasons, script_original, source_rewards, source_spec, target_spec, text_original,
     text_refs, transfer_spec, transfer_specs, TEXT_REFS,
 };
-use cir_config::py::str_value;
+use cir_config::py::{put_u32, str_value};
 use cir_config::quest_options::Dialogue;
 use cir_config::quest_rewards::blocks;
+use cir_config::script_text::script_blocks;
 use common::builders::{contains, count, index, make_tlk, outgoing, replace, sha, tlk_text, u32_at};
 use common::mode2::{
-    action, block, branches, check_aran, check_dialogue, check_text_graph, dialogue_fixture, layout_dialogue, obj, script_fixture,
-    specs, target_number, text, text_variant, well_reward, with_actions, LayoutReply,
+    action, action_with, alternatives, block, branches, check_aran, check_dialogue, check_text_graph, dialogue_fixture,
+    layout_dialogue, obj, script_fixture, specs, target_number, text, text_variant, well_reward, with_actions, LayoutReply,
 };
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -115,9 +116,12 @@ fn well_layout() -> Vec<u8> {
 
 const GRANT: &str = "GiveItemCreate(\"shld26\",LastTalkedToBy,0,0,0)";
 
+/// New actions of replies, by (state, reply).
+type Changes = Vec<((usize, usize), Vec<u8>)>;
+
 /// The replies of test_routes_the_check_cannot_recognise_name_their_reason,
 /// by the generator's labels, and the reason each gives.
-fn ogre_reasons() -> Vec<(&'static str, Vec<((usize, usize), Vec<u8>)>, &'static str)> {
+fn ogre_reasons() -> Vec<(&'static str, Changes, &'static str)> {
     vec![
         (
             "no grant",
@@ -126,9 +130,19 @@ fn ogre_reasons() -> Vec<(&'static str, Vec<((usize, usize), Vec<u8>)>, &'static
         ),
         ("twice", vec![((22, 0), format!("{GRANT}\r\n{GRANT}").into_bytes())], "UHOGRE01.DLG state 22 gives SHLD26 twice in one reply"),
         (
-            "taken",
-            vec![((22, 1), format!("{GRANT}\r\nTakePartyItem(\"shld26\")").into_bytes())],
-            "UHOGRE01.DLG state 22 names SHLD26 in TakePartyItem(), not in a GiveItemCreate() grant",
+            "given other",
+            vec![((22, 1), format!("{GRANT}\r\nGiveItem(\"shld26\",Player2)").into_bytes())],
+            "UHOGRE01.DLG state 22 also gives SHLD26 with GiveItem(), which the route cannot gate",
+        ),
+        (
+            "take replace",
+            vec![((23, 0), b"TakeItemReplace(\"Shld26\",\"misc5x\",LastTalkedToBy)".to_vec())],
+            "UHOGRE01.DLG state 23 also gives SHLD26 with TakeItemReplace(), which the route cannot gate",
+        ),
+        (
+            "override",
+            vec![((22, 0), b"ActionOverride(Player2,GiveItemCreate(\"shld26\",Myself,0,0,0))".to_vec())],
+            "UHOGRE01.DLG state 22 gives SHLD26 through ActionOverride(), whose recipient the route cannot mark",
         ),
         (
             "unreadable",
@@ -155,22 +169,25 @@ fn well_reasons() -> Vec<(&'static str, Vec<u8>, &'static str)> {
         (
             "twice",
             well(&[other.clone(), reward_block(well_reward(21, 40850) + &action(140, 0, "HELM21", 21, 0))]),
-            "DDWELL.BCS block 1 gives HELM21 twice",
+            "DDWELL.BCS block 1 gives HELM21 twice in one response",
         ),
         (
             "another actor",
             well(&[other.clone(), reward_block(well_reward(21, 40850).replace(&grant, &action(140, 0, "helm21", 21, 17)))]),
-            "DDWELL.BCS block 1 gives HELM21 through another actor",
+            "DDWELL.BCS block 1 gives HELM21 through ActionOverride(), whose recipient the route cannot mark",
         ),
         (
             "other action",
             well(&[other.clone(), reward_block(well_reward(21, 40850) + &action(82, 0, "helm21", 0, 0))]),
-            "DDWELL.BCS block 1 names HELM21 in action 82, not in a GiveItemCreate() grant",
+            "DDWELL.BCS block 1 also gives HELM21 with CreateItem(), which the route cannot gate",
         ),
         (
-            "text twice",
-            well(&[other.clone(), reward_block(well_reward(21, 40850) + &action(151, 40850, "", 1, 0))]),
-            "DDWELL.BCS block 1 shows the text that names the reward twice",
+            "add store",
+            well(&[
+                other.clone(),
+                alternatives(&[&well_reward(21, 40850), &action_with(363, 0, "shop01", 0, 0, "helm21")], "AR1202Quest", 50),
+            ]),
+            "DDWELL.BCS block 1 also gives HELM21 with AddStoreItem(), which the route cannot gate",
         ),
         (
             "other text",
@@ -305,8 +322,96 @@ fn routes_the_check_cannot_recognise_name_their_reason() {
     }
     assert_eq!(
         reasons("bcs:asysta01", &asysta_other_action()),
-        named(&[("asysta01", "ASYSTA01.BCS block 0 names HELM19 in action 140, not in a CreateItem() grant")])
+        named(&[("asysta01", "ASYSTA01.BCS block 0 also gives HELM19 with GiveItemCreate(), which the route cannot gate")])
     );
+}
+
+/// The replies and script of
+/// test_actions_that_only_take_show_or_test_the_reward_never_stop_a_route.
+fn only_taken() -> (Vec<u8>, Vec<u8>) {
+    let dialogue = ogre_with(&[
+        ((22, 1), format!("TakePartyItem(\"misc5x\")\r\n{GRANT}\r\nDestroyItem(\"SHLD26\")").into_bytes()),
+        (
+            (23, 0),
+            b"TakeItemReplace(\"misc5x\",\"shld26\",LastTalkedToBy)\r\nActionOverride(Player2,DestroyItem(\"shld26\"))\r\n\
+              SetGlobal(\"SHLD26\",\"GLOBAL\",1)"
+                .to_vec(),
+        ),
+    ]);
+    let other = block(&action(151, 40849, "", 1, 0), "AR1202Quest");
+    let twice_shown = well_reward(21, 40850) + &action(151, 40850, "", 2, 0) + &action(116, 0, "HELM21", 0, 0);
+    let script =
+        format!("SC\n{other}{}{other}SC\n", alternatives(&[&well_reward(21, 40850), &twice_shown], "AR1202Quest", 50)).into_bytes();
+    (dialogue, script)
+}
+
+#[test]
+fn actions_that_only_take_show_or_test_the_reward_never_stop_a_route() {
+    // After a moved reward these find it gone, as when the player sold it.
+    let (data, script) = only_taken();
+    let fixture = common::load(SCENARIO);
+    assert_eq!(fixture.input("own_patch uhogre01 only taken", "data"), data);
+    assert_eq!(fixture.input("own_patch ddwell alternatives", "data"), script);
+    assert!(reasons("dlg:uhogre01", &data).is_empty());
+    let result = synthetic_patch("uhogre01", &data);
+    check_dialogue("uhogre01", &data, &result, None, Some(&[(22, 0), (22, 1)]));
+    // A script block chooses one of its responses: each may give the reward
+    // once, and every display of the reward's text changes.
+    assert!(reasons("bcs:ddwell", &script).is_empty());
+    let patched = synthetic_patch("ddwell", &script);
+    let blocks = script_blocks(&patched).unwrap().blocks;
+    assert_eq!(blocks.len(), 4);
+    let (unselected, selected) = (&blocks[1], &blocks[2]);
+    let consumed = action(30, 1, "GLOBALFLPR_XM2_27", 0, 0);
+    let event = action(30, 1, "GLOBALFLPR_EM2_27", 0, 0);
+    assert_eq!(count(unselected, action(140, 0, "helm21", 21, 0).as_bytes()), 2);
+    assert_eq!(count(unselected, event.as_bytes()), 2);
+    assert_eq!(count(selected, consumed.as_bytes()), 2);
+    assert!(!contains(selected, b"\"helm21\""));
+    assert_eq!(count(selected, b"151OB"), 3);
+    assert_eq!(count(selected, b"100001 0 0 0 0"), 3);
+    assert!(contains(selected, action(116, 0, "HELM21", 0, 0).as_bytes()));
+}
+
+#[test]
+fn a_cloned_start_state_keeps_its_place_among_the_start_conditions() {
+    // The engine tries start states in the order of their conditions. The
+    // djinn's reward state starts the dialogue; another mod's start state
+    // comes after it and must stay after both of its variants.
+    let mut d = Dialogue::new(&dialogue_fixture(&specs("dlg:ppdjinn")), "ppdjinn").unwrap();
+    put_u32(&mut d.states[0], 0, 48995);
+    d.state_triggers.push(b"NumTimesTalkedTo(0)\r\n".to_vec());
+    d.state_triggers.push(b"Global(\"OtherModDjinn\",\"GLOBAL\",1)\r\n".to_vec());
+    put_u32(&mut d.states[0], 12, 0);
+    put_u32(&mut d.states[1], 12, 1);
+    let original = d.render();
+    let fixture = common::load(SCENARIO);
+    assert_eq!(fixture.input("patch_reward start order first", "data"), original);
+    let refs = BTreeMap::from([(48995, 100001)]);
+    let result = patch_reward("dlg:ppdjinn", &original, Some(&refs), None).unwrap();
+    let after = Dialogue::new(&result, "ppdjinn").unwrap();
+    let clone = d.states.len();
+    assert_eq!(u32_at(&after.states[clone], 0), 100001);
+    let entry = |index: usize| u32_at(&after.states[index], 12);
+    assert_eq!((entry(0), entry(clone), entry(1)), (0, 1, 2));
+    assert_eq!(
+        after.state_triggers,
+        vec![
+            b"NumTimesTalkedTo(0)\r\n!Global(\"FLPR_QM2_24\",\"GLOBAL\",1)\r\n".to_vec(),
+            b"NumTimesTalkedTo(0)\r\nGlobal(\"FLPR_QM2_24\",\"GLOBAL\",1)\r\n".to_vec(),
+            b"Global(\"OtherModDjinn\",\"GLOBAL\",1)\r\n".to_vec(),
+        ]
+    );
+    assert_eq!(text_original(&result, "dlg:ppdjinn").unwrap(), Some((original, refs.clone())));
+    assert_eq!(patch_reward("dlg:ppdjinn", &result, None, None).unwrap(), result);
+    // Where every other start condition comes first, the gated pair is
+    // appended, as earlier exports did.
+    put_u32(&mut d.states[0], 12, 1);
+    put_u32(&mut d.states[1], 12, 0);
+    assert_eq!(fixture.input("patch_reward start order last", "data"), d.render());
+    let after = Dialogue::new(&patch_reward("dlg:ppdjinn", &d.render(), Some(&refs), None).unwrap(), "ppdjinn").unwrap();
+    assert_eq!(after.state_triggers[..2], d.state_triggers[..]);
+    assert_eq!([1, 0, clone].map(|index| u32_at(&after.states[index], 12)), [0, 2, 3]);
 }
 
 #[test]

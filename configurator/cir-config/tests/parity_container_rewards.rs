@@ -17,6 +17,7 @@ use cir_config::json::{Dict, Value};
 use cir_config::py::{put_u32, splitlines, str_value};
 use cir_config::quest_options::Dialogue;
 use cir_config::quest_rewards::{blocks, global_guard, newline};
+use cir_config::script_text::script_blocks;
 use common::builders::{contains, make_tlk, replace, sha, split, tlk_text, u32_at};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::PathBuf;
@@ -211,17 +212,10 @@ fn unrecognised() -> Vec<(&'static str, &'static str, Vec<u8>, String)> {
     let scripts = |made: &[Vec<u8>]| [&b"SC\n"[..], &made.concat(), b"SC\n"].concat();
     let golem = [action(151, 38758, ""), action(10, 0, "")].concat();
     let unrecognised = |items: &str| format!("tests {items} in a way the container route does not recognise");
+    let shared = "their shared latch records only that one of them was taken";
+    let other = tr(16399, 1, 0, "GLOBALOther", 0);
     vec![
         ("bcs:kpgol01", "no block", scripts(&[script_block(b"", &golem)]), "KPGOL01.BCS has no block that tests AX1H13".into()),
-        (
-            "bcs:kpgol01",
-            "or",
-            scripts(&[script_block(
-                &[tr(16521, 2, 0, "", 0), tr(16450, 0, 0, "ax1h13", 0), tr(16399, 1, 0, "GLOBALOther", 0)].concat(),
-                &golem,
-            )]),
-            format!("KPGOL01.BCS block 0 {}", unrecognised("AX1H13")),
-        ),
         (
             "bcs:kpgol01",
             "no text",
@@ -230,24 +224,58 @@ fn unrecognised() -> Vec<(&'static str, &'static str, Vec<u8>, String)> {
         ),
         (
             "bcs:kpgol01",
-            "text twice",
-            scripts(&[script_block(&tr(16450, 0, 0, "ax1h13", 0), &[action(151, 38758, ""), golem.clone()].concat())]),
-            "KPGOL01.BCS block 0 shows text 38758 twice".into(),
+            "has item",
+            scripts(&[script_block(&tr(16481, 0, 0, "ax1h13", 2), &golem)]),
+            "KPGOL01.BCS block 0 tests AX1H13 with HasItem(), which the route cannot replace by the container's latch".into(),
+        ),
+        (
+            "bcs:kpgol01",
+            "or count",
+            scripts(&[script_block(&[tr(16521, 3, 0, "", 0), tr(16450, 0, 0, "ax1h13", 0), other.clone()].concat(), &golem)]),
+            "KPGOL01.BCS block 0 ends in an OR() group that counts more conditions than follow it, \
+             so a condition added after it would join it"
+                .into(),
+        ),
+        (
+            "bcs:kpgol01",
+            "nested or",
+            scripts(&[script_block(
+                &[tr(16521, 2, 0, "", 0), tr(16521, 1, 0, "", 0), tr(16450, 0, 0, "ax1h13", 0), other.clone()].concat(),
+                &golem,
+            )]),
+            "KPGOL01.BCS block 0 tests AX1H13 in an OR() group that is negated or holds another OR(), \
+             which the route cannot read"
+                .into(),
         ),
         (
             "bcs:ppchest",
             "no latch",
             scripts(&[script_block(&tr(16501, 0, 1, "bow19b", 1), &action(10, 0, ""))]),
-            format!("PPCHEST.BCS block 0 {}", unrecognised("BOW19B")),
+            "PPCHEST.BCS block 0 tests BOW19B with Contains(), which the route cannot replace by the container's latch".into(),
         ),
         (
             "bcs:samia",
             "or other",
             scripts(&[script_block(
-                &[tr(16521, 2, 0, "", 0), tr(16450, 0, 0, "shld21", 0), tr(16399, 1, 0, "GLOBALOther", 0)].concat(),
+                &[tr(16521, 2, 0, "", 0), tr(16450, 0, 0, "shld21", 0), other.clone()].concat(),
                 &action(10, 0, ""),
             )]),
-            format!("SAMIA.BCS block 0 {}", unrecognised("SHLD21/SW1H32")),
+            format!("SAMIA.BCS block 0 does not test SHLD21/SW1H32 together in one OR() group; {shared}"),
+        ),
+        (
+            "bcs:samia",
+            "separate",
+            scripts(&[script_block(&[tr(16450, 0, 0, "shld21", 0), tr(16450, 0, 0, "sw1h32", 0)].concat(), &action(10, 0, ""))]),
+            format!("SAMIA.BCS block 0 does not test SHLD21/SW1H32 together in one OR() group; {shared}"),
+        ),
+        (
+            "bcs:samia",
+            "lacks one",
+            scripts(&[script_block(
+                &[tr(16521, 2, 0, "", 0), tr(16450, 0, 1, "shld21", 0), tr(16450, 0, 0, "sw1h32", 0)].concat(),
+                &action(10, 0, ""),
+            )]),
+            format!("SAMIA.BCS block 0 tests whether the party lacks one of SHLD21/SW1H32; {shared}"),
         ),
         (
             "bcs:kpgol01",
@@ -262,16 +290,34 @@ fn unrecognised() -> Vec<(&'static str, &'static str, Vec<u8>, String)> {
             "SAMIA.DLG has no condition that tests SHLD21/SW1H32".into(),
         ),
         (
+            "dlg:samia",
+            "separate",
+            dialogue_fixture("dlg:samia", &[(1, b"PartyHasItem(\"shld21\")\r\nPartyHasItem(\"sw1h32\")\r\n")]),
+            format!("SAMIA.DLG condition 1 does not test SHLD21/SW1H32 together in one OR() group; {shared}"),
+        ),
+        (
             "dlg:safanj",
             "has item",
             dialogue_fixture("dlg:safanj", &[(2, b"HasItem(\"book03\",Myself)\r\n")]),
+            "SAFANJ.DLG condition 2 tests BOOK03 with HasItem(), which the route cannot replace by the container's latch".into(),
+        ),
+        (
+            "dlg:safanj",
+            "object",
+            dialogue_fixture("dlg:safanj", &[(2, b"PartyHasItem(\"book03\",Myself)\r\n")]),
             format!("SAFANJ.DLG condition 2 {}", unrecognised("BOOK03")),
         ),
         (
             "dlg:safanj",
-            "or",
-            dialogue_fixture("dlg:safanj", &[(2, b"OR(2)\r\nPartyHasItem(\"book03\")\r\nGlobal(\"X\",\"GLOBAL\",1)\r\n")]),
-            format!("SAFANJ.DLG condition 2 {}", unrecognised("BOOK03")),
+            "or three",
+            dialogue_fixture("dlg:safanj", &[(2, b"OR(3)\r\nPartyHasItem(\"book03\")\r\nGlobal(\"X\",\"GLOBAL\",1)\r\n")]),
+            "SAFANJ.DLG condition 2 tests BOOK03 in an OR() group that counts more conditions than follow it".into(),
+        ),
+        (
+            "dlg:safanj",
+            "or unreadable",
+            dialogue_fixture("dlg:safanj", &[(2, b"OR(X)\r\nPartyHasItem(\"book03\")\r\nGlobal(\"X\",\"GLOBAL\",1)\r\n")]),
+            "SAFANJ.DLG condition 2 has an OR() whose count the route cannot read".into(),
         ),
         ("dlg:safanj", "broken", [b"DLG V1.0".as_slice(), &[0; 10]].concat(), "SAFANJ.DLG cannot be read as a dialogue".into()),
     ]
@@ -598,6 +644,118 @@ fn dialogue_conditions_are_found_by_meaning_in_another_layout() {
     let after = Dialogue::new(&result, "safanj").unwrap();
     assert!(after.state_triggers[0].ends_with(b"\nGlobal(\"Unrelated\",\"GLOBAL\",4)"));
     assert!(after.triggers.last().unwrap().ends_with(b"\nGlobal(\"Unrelated\",\"GLOBAL\",4)"));
+}
+
+/// `product((False, True), repeat=4)`.
+fn combinations4() -> Vec<(bool, bool, bool, bool)> {
+    (0..16).map(|bits| (bits & 8 != 0, bits & 4 != 0, bits & 2 != 0, bits & 1 != 0)).collect()
+}
+
+/// The globals of test_treasure_tests_inside_or_groups_and_repeated_golem_texts.
+fn or_state(spec: &Dict, active: bool, taken: bool, other: bool) -> HashMap<String, i64> {
+    HashMap::from([
+        (format!("GLOBAL{}", field(spec, "activation_global")), active as i64),
+        ("GLOBALOther".to_string(), other as i64),
+        (format!("{}{}", field(spec, "latch_scope"), field(spec, "latch_global")), taken as i64),
+    ])
+}
+
+fn treasure_set(spec: &Dict) -> BTreeSet<String> {
+    treasure(field(spec, "target_id")).unwrap().into_iter().collect()
+}
+
+#[test]
+fn treasure_tests_inside_or_groups_and_repeated_golem_texts() {
+    // Another mod's OR() groups around the treasure tests, and a golem
+    // block whose two alternative responses both show the golem's text.
+    let fixture = common::load(SCENARIO);
+    let other = tr(16399, 1, 0, "GLOBALOther", 0);
+    let shown = action(151, 38758, "");
+    let scripts = [
+        (
+            "bcs:kpgol01",
+            "or golem responses",
+            [tr(16521, 2, 0, "", 0), tr(16450, 0, 0, "ax1h13", 0), other.clone()].concat(),
+            [&b"RE\n50"[..], &shown, &action(10, 0, ""), b"RE\nRE\n50", &shown, b"RE\n"].concat(),
+        ),
+        (
+            "bcs:kpgol01",
+            "or after negated",
+            [tr(16450, 0, 1, "ax1h13", 0), tr(16521, 2, 0, "", 0), other.clone(), tr(16450, 0, 0, "AX1H13", 0)].concat(),
+            [&b"RE\n100"[..], &shown, b"RE\n"].concat(),
+        ),
+        (
+            "bcs:samia",
+            "or three other",
+            [tr(16521, 3, 0, "", 0), tr(16450, 0, 0, "shld21", 0), other.clone(), tr(16450, 0, 0, "sw1h32", 0)].concat(),
+            [&b"RE\n100"[..], &action(10, 0, ""), b"RE\n"].concat(),
+        ),
+    ];
+    let part = |data: &[u8], at: usize| split(data, b"CO\n")[at].to_vec();
+    for (resource, label, condition, responses) in scripts {
+        let original = [&b"SC\nCR\nCO\n"[..], &condition, b"CO\nRS\n", &responses, b"RS\nCR\nSC\n"].concat();
+        assert_eq!(fixture.input(&format!("own_patch reasons {label} {resource}"), "data"), original, "{label}");
+        let result = patched(resource, &original);
+        let spec = spec(resource);
+        let items = treasure_set(spec);
+        let old = script_blocks(&original).unwrap().blocks;
+        let new = script_blocks(&result).unwrap().blocks;
+        assert_eq!((old.len(), new.len()), (1, 2), "{label}");
+        let (block, selected, excluded) = (&old[0], &new[0], &new[1]);
+        assert_eq!(part(excluded, 2), part(block, 2), "{label}");
+        let after = part(selected, 2);
+        let golem_text: &[u8] = b"38758 0 0 0 0\"\"";
+        let moved: &[u8] = b"100001 0 0 0 0\"\"";
+        assert_eq!(common::builders::count(&after, moved), common::builders::count(&responses, golem_text), "{label}");
+        assert_eq!(replace(&after, moved, golem_text, None), part(block, 2), "{label}");
+        for (active, taken, owns, set_other) in combinations4() {
+            let globals = or_state(spec, active, taken, set_other);
+            let has = if owns { items.clone() } else { BTreeSet::new() };
+            let took = if taken { items.clone() } else { BTreeSet::new() };
+            // The latch stands for the party having the treasure.
+            assert_eq!(
+                compiled_conditions(&part(selected, 1), &globals, &has),
+                active && compiled_conditions(&condition, &globals, &took),
+                "{label} selected {active} {taken} {owns} {set_other}"
+            );
+            assert_eq!(
+                compiled_conditions(&part(excluded, 1), &globals, &has),
+                !active && compiled_conditions(&condition, &globals, &has),
+                "{label} excluded {active} {taken} {owns} {set_other}"
+            );
+        }
+    }
+    let dialogues: [(&str, &str, &[u8]); 3] = [
+        ("dlg:safanj", "or other", b"OR(2)\r\nPartyHasItem(\"book03\")\r\nGlobal(\"Other\",\"GLOBAL\",1)\r\n"),
+        ("dlg:safanj", "or after negated", b"!PartyHasItem(\"book03\")\nOR(2)\nGlobal(\"Other\",\"GLOBAL\",1)\nPartyHasItem(\"BOOK03\")"),
+        (
+            "dlg:samia",
+            "or three other",
+            b"OR(3)\r\nPartyHasItem(\"sw1h32\")\r\nGlobal(\"Other\",\"GLOBAL\",1)\r\nPartyHasItem(\"shld21\")\r\n",
+        ),
+    ];
+    for (resource, label, condition) in dialogues {
+        let places = sites(resource).1;
+        let conditions: Vec<(usize, &[u8])> = places.iter().map(|index| (*index, condition)).collect();
+        let original = dialogue_fixture(resource, &conditions);
+        assert_eq!(fixture.input(&format!("own_patch reasons {label} {resource}"), "data"), original, "{label}");
+        let result = patched(resource, &original);
+        let after = Dialogue::new(&result, &resource[4..]).unwrap();
+        let spec = spec(resource);
+        let items = treasure_set(spec);
+        for index in places {
+            for (active, taken, owns, set_other) in combinations4() {
+                let globals = or_state(spec, active, taken, set_other);
+                let has = if owns { items.clone() } else { BTreeSet::new() };
+                let took = if taken { items.clone() } else { BTreeSet::new() };
+                assert_eq!(
+                    text_conditions(&after.state_triggers[*index], &globals, &has),
+                    text_conditions(condition, &globals, if active { &took } else { &has }),
+                    "{label} {index} {active} {taken} {owns} {set_other}"
+                );
+            }
+        }
+    }
 }
 
 #[test]

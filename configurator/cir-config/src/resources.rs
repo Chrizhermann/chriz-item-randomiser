@@ -192,6 +192,27 @@ impl ScanSnapshot {
     }
 }
 
+/// A file's stat identity, or a directory's with its entry names
+/// ([`file_identity`]).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum FileIdentity {
+    File(Identity),
+    Directory(Identity, Vec<String>),
+}
+
+/// A file's stat identity, or a directory's with its entry names (see
+/// [`ScanSnapshot`]).
+///
+/// Equal identities mean the installation did not change there, as far as
+/// ordinary installs show; it is no protection against deliberate spoofing.
+pub fn file_identity(path: &Path) -> Result<FileIdentity> {
+    if is_dir(path)? {
+        let (identity, names) = ScanSnapshot::directory_state(path)?;
+        return Ok(FileIdentity::Directory(identity, names));
+    }
+    Ok(FileIdentity::File(stat(path)?))
+}
+
 // ---------------------------------------------------------------- formats
 
 /// Ordinary (non-tileset) resource types the configurator reads.
@@ -731,6 +752,24 @@ impl GameResources {
         let slot = self.slot(extension)?;
         let name = self.name(slot, resref_text)?;
         Ok(if self.overrides[slot].1.contains_key(&name) { "override" } else { "biff" })
+    }
+
+    /// The file that holds a resource: its override file or its archive.
+    pub fn location(&self, extension: &str, resref_text: &str) -> Result<PathBuf> {
+        let slot = self.slot(extension)?;
+        let name = self.name(slot, resref_text)?;
+        if let Some(path) = self.overrides[slot].1.get(&name) {
+            return Ok(path.clone());
+        }
+        let (archive_index, _) = self.keyed[slot].1[&name];
+        Ok(self.archives[&archive_index].clone())
+    }
+
+    /// The files and directory that decide where each resource comes from.
+    pub fn lookup_paths(&self) -> Result<Vec<PathBuf>> {
+        let override_dir = child(&self.root, "override", &self.root, false)?;
+        let key = child(&self.root, "chitin.key", &self.root, true)?.expect("required");
+        Ok(std::iter::once(key).chain(override_dir).collect())
     }
 
     pub fn read(&self, extension: &str, resref_text: &str) -> Result<Vec<u8>> {

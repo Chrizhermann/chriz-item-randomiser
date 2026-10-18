@@ -12,10 +12,13 @@
 //!
 //! Only the grant is suppressed; its surrounding actions, conditions,
 //! dialogue replies and journal fields stay intact. The reward event captures
-//! the original recipient at the grant position. A route whose grant cannot
-//! be told apart (no grant, the item given twice by one reply, the item named
-//! by an action that does not give it) is not prepared; the configuration
-//! check leaves it out with that reason ([`crate::reward_routes`]). See
+//! the original recipient at the grant position. Actions that only take, show
+//! or test the reward stay as they are. A route is not prepared only where
+//! its grant cannot be told apart or gated (no grant, a grant without a
+//! recipient or in actions that cannot be read, the item given twice by one
+//! reply or response, also given by another action, or given through
+//! ActionOverride()); the configuration check leaves it out with that reason
+//! ([`crate::reward_routes`]). See
 //! lib/weidu_action.tpa's generic BCS/DLG handlers and DDWELL special case.
 //!
 //! Own patches are recognised too, so an exported revision re-exports byte
@@ -30,8 +33,8 @@ use crate::py::{count_bytes, find_bytes, put_u32, replace_bytes, rfind_bytes, st
 use crate::quest_options::{pad, texts, Dialogue};
 use crate::quest_rewards::{global_action, global_guard};
 use crate::script_text::{
-    argument, block_actions, block_parts, calls, integer_argument, joined, named, naming, script_blocks,
-    string_argument, Action, Call, Script,
+    argument, block_actions, block_parts, calls, calls_in, integer_argument, joined, named, naming, response_spans,
+    script_blocks, string_argument, Action, Call, Script,
 };
 use crate::{dict, list};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
@@ -64,6 +67,34 @@ const TEXT_TRAILER: &[u8] = b"FLPRM2T1";
 /// instead.
 pub const DEPARTURE: &[u8] =
     b"EEex_LuaAction(\"EEex_Action_QueueResponseStringOnAIBase([[DestroySelf()]],EEex_LuaAction_Object)\")";
+/// The engine's actions that put an item somewhere (ACTION.IDS of the 2.7
+/// games): opcode, name, the dialogue argument and the compiled string that
+/// name the item they give. Other actions that name the reward take, use, show
+/// or test it; after a moved reward they find it gone, as triggers do when the
+/// player sold it, so they never stop a route.
+const GIVING: &[(i64, &str, usize, usize)] = &[
+    (140, "GiveItemCreate", 0, 0),
+    (82, "CreateItem", 0, 0),
+    (15, "GiveItem", 0, 0),
+    (14, "GetItem", 0, 0),
+    (256, "CreateItemGlobal", 2, 1),
+    (278, "TakeItemReplace", 0, 0),
+    (356, "TransformItem", 1, 1),
+    (9, "DropItem", 0, 0),
+    (257, "PickUpItem", 0, 0),
+    (363, "AddStoreItem", 1, 1),
+];
+
+/// A giving action of a compiled script: its name and the string that names
+/// the item.
+fn giving_opcode(opcode: i64) -> Option<(&'static str, usize)> {
+    GIVING.iter().find(|row| row.0 == opcode).map(|row| (row.1, row.3))
+}
+
+/// A giving call of dialogue text: the argument that names the item.
+fn giving_call(name: &[u8]) -> Option<usize> {
+    GIVING.iter().find(|row| name.eq_ignore_ascii_case(row.1.as_bytes())).map(|row| row.2)
+}
 
 /// `TEXT_REFS.get(resource)`.
 pub fn text_refs(resource: &str) -> Option<&'static [(i64, i64)]> {
@@ -528,20 +559,20 @@ fn first_item(value: &Value) -> Result<Value> {
 }
 
 /// `NAME.KIND` of a `kind:name` resource, as messages show it.
-fn label(resource: &str) -> String {
+pub(crate) fn label(resource: &str) -> String {
     let (kind, name) = resource.split_once(':').unwrap_or((resource, ""));
     format!("{}.{}", upper(name), upper(kind))
 }
 
 /// Whether script text names the item as a quoted resref, in any letter case.
-fn names(text: &[u8], item: &str) -> bool {
+pub(crate) fn names(text: &[u8], item: &str) -> bool {
     let item = item.as_bytes();
     text.windows(item.len() + 2).any(|window| {
         window[0] == b'"' && window[window.len() - 1] == b'"' && window[1..window.len() - 1].eq_ignore_ascii_case(item)
     })
 }
 
-fn read_dialogue(data: &[u8], resource: &str) -> Result<Dialogue> {
+pub(crate) fn read_dialogue(data: &[u8], resource: &str) -> Result<Dialogue> {
     let name = resource.split(':').nth(1).ok_or_else(index_error)?;
     Dialogue::new(data, name).map_err(|error| match error.kind {
         ErrorKind::Profile | ErrorKind::GameText => profile(format!("{} cannot be read as a dialogue", label(resource))),
@@ -597,7 +628,7 @@ fn consumed(spec: &Dict) -> Result<Vec<u8>> {
     Ok(format!("SetGlobal(\"{}\",\"GLOBAL\",1)", text(spec, "consumed_global")?).into_bytes())
 }
 
-fn event(spec: &Dict) -> Result<Vec<u8>> {
+pub(crate) fn event(spec: &Dict) -> Result<Vec<u8>> {
     Ok(format!("SetGlobal(\"{}\",\"GLOBAL\",1)", text(spec, "event_global")?).into_bytes())
 }
 
@@ -642,14 +673,26 @@ fn callback(spec: &Dict, numeric: bool) -> Result<Vec<u8>> {
 
 /// The replies that give a route's item, by (state, ordinal), with the call
 /// that gives it.
-type Grants = BTreeMap<(usize, usize), Call>;
+pub type Grants = BTreeMap<(usize, usize), Call>;
+
+/// Replies of a dialogue: state to the ordinals of its replies.
+pub type Replies = BTreeMap<usize, BTreeSet<usize>>;
+
+/// Whether a dialogue action puts the item somewhere (see [`GIVING`]).
+pub fn gives_item(text: &[u8], call: &Call, item: &str) -> bool {
+    giving_call(&call.name).is_some_and(|index| {
+        string_argument(text, call, index).unwrap_or(b"").to_ascii_lowercase() == item.as_bytes()
+    })
+}
 
 /// Every reply that gives the route's item, with the call that gives it.
 ///
 /// A created reward is given with GiveItemCreate, a carried one with
-/// GiveItem. Every action that names the item must be such a grant, one per
-/// reply, so that gating the grants gates every way this dialogue gives it.
-fn dialogue_grants(dialogue: &Dialogue, spec: &Dict, label: &str) -> Result<Grants> {
+/// GiveItem: that call is the grant, one per reply, and gating the grants
+/// gates every way this dialogue gives the item. A reply that gives it another
+/// way, with another action or through another actor, cannot be gated.
+/// `only` limits the search to these replies.
+pub fn dialogue_grants(dialogue: &Dialogue, spec: &Dict, label: &str, only: Option<&Replies>) -> Result<Grants> {
     let item = text_field(spec, "item", "upper")?;
     let wanted = if spec.get("grant_kind").is_some_and(|kind| kind.py_eq(&Value::from("transfer"))) {
         "GiveItem"
@@ -659,8 +702,18 @@ fn dialogue_grants(dialogue: &Dialogue, spec: &Dict, label: &str) -> Result<Gran
     let shown = upper(item);
     let mut grants = Grants::new();
     for (state_index, state) in dialogue.states.iter().enumerate() {
+        let wanted_ordinals = match only {
+            Some(only) => match only.get(&state_index) {
+                Some(ordinals) => Some(ordinals),
+                None => continue,
+            },
+            None => None,
+        };
         let (first, count) = outgoing(dialogue, state, label)?;
         for ordinal in 0..count {
+            if wanted_ordinals.is_some_and(|ordinals| !ordinals.contains(&ordinal)) {
+                continue;
+            }
             let row = &dialogue.transitions[first + ordinal];
             if u32_le(row, 0) & 4 == 0 {
                 continue;
@@ -675,12 +728,27 @@ fn dialogue_grants(dialogue: &Dialogue, spec: &Dict, label: &str) -> Result<Gran
             };
             let mut given = Vec::new();
             for call in found {
+                if !names(&text[call.start..call.end], item) {
+                    continue;
+                }
                 let argument = string_argument(&text, &call, 0).unwrap_or(b"").to_ascii_lowercase();
                 if named(&call, &[wanted]) && argument == item.as_bytes() {
                     given.push(call);
-                } else if names(&text[call.start..call.end], item) {
+                } else if named(&call, &["ActionOverride"]) {
+                    // Another actor runs the action, and its recipient means
+                    // what it means to that actor.
+                    let inner = if call.args.len() == 2 { calls_in(&text, call.args[1]) } else { None };
+                    let Some(inner) = inner else {
+                        return Err(profile(format!("{place} names {shown} in actions that cannot be read")));
+                    };
+                    if inner.iter().any(|nested| gives_item(&text, nested, item)) {
+                        return Err(profile(format!(
+                            "{place} gives {shown} through ActionOverride(), whose recipient the route cannot mark"
+                        )));
+                    }
+                } else if gives_item(&text, &call, item) {
                     return Err(profile(format!(
-                        "{place} names {shown} in {}(), not in a {wanted}() grant",
+                        "{place} also gives {shown} with {}(), which the route cannot gate",
                         String::from_utf8_lossy(&call.name)
                     )));
                 }
@@ -702,23 +770,20 @@ fn dialogue_grants(dialogue: &Dialogue, spec: &Dict, label: &str) -> Result<Gran
     Ok(grants)
 }
 
-/// Point each displayed original strref of a grant's actions at its new text.
-fn display_edits(text: &[u8], refs: &[(i64, i64)], place: &str) -> Result<Vec<Edit>> {
-    let found = calls(text).unwrap_or_default();
+/// Point every original strref a grant's actions show at its new text;
+/// `shown` collects them.
+fn display_edits(text: &[u8], refs: &[(i64, i64)], shown: &mut BTreeSet<i64>) -> Vec<Edit> {
     let mut edits = Vec::new();
-    for &(old, new) in refs {
-        let spots: Vec<(usize, usize)> = found
-            .iter()
-            .flat_map(|call| {
-                (0..call.args.len()).filter(move |&index| integer_argument(text, call, index, None) == Some(old)).map(|index| call.args[index])
-            })
-            .collect();
-        if spots.len() != 1 {
-            return Err(profile(format!("{place} does not show text {old} once where it gives the reward")));
+    for call in calls(text).unwrap_or_default() {
+        for (index, &(start, end)) in call.args.iter().enumerate() {
+            let Some(old) = integer_argument(text, &call, index, None) else { continue };
+            if let Some(&(_, new)) = refs.iter().find(|(known, _)| *known == old) {
+                edits.push((start, end, new.to_string().into_bytes()));
+                shown.insert(old);
+            }
         }
-        edits.push((spots[0].0, spots[0].1, new.to_string().into_bytes()));
     }
-    Ok(edits)
+    edits
 }
 
 /// The speaker's own departures (`DestroySelf()`), queued after its transfer.
@@ -786,14 +851,42 @@ pub fn patch_dialogue(
     numeric_target: bool,
     reasons: Option<&mut Dict>,
 ) -> Result<Vec<u8>> {
+    patch_dialogue_in(data, specs, action_refs, defer_departure, numeric_target, reasons, None, None, None)
+}
+
+/// [`patch_dialogue`] with the reference's further keywords: `only` limits
+/// each route to the given replies, as in a dialogue that holds copies of its
+/// reward replies (`resource` names that dialogue); `shown` collects the
+/// strrefs of `action_refs` that a grant shows.
+#[allow(clippy::too_many_arguments)]
+pub fn patch_dialogue_in(
+    data: &[u8],
+    specs: &[Dict],
+    action_refs: &[(i64, i64)],
+    defer_departure: bool,
+    numeric_target: bool,
+    reasons: Option<&mut Dict>,
+    only: Option<&BTreeMap<String, Replies>>,
+    resource: Option<&str>,
+    shown: Option<&mut BTreeSet<i64>>,
+) -> Result<Vec<u8>> {
     let first_spec = specs.first().ok_or_else(index_error)?;
-    let resource = text(first_spec, "resource")?;
+    let resource = match resource {
+        Some(resource) if !resource.is_empty() => resource.to_string(),
+        _ => text(first_spec, "resource")?,
+    };
     let label = label(&resource);
     let mut dialogue = read_dialogue(data, &resource)?;
+    let mut own_shown = BTreeSet::new();
+    let shown = shown.unwrap_or(&mut own_shown);
     let mut grants: HashMap<String, Grants> = HashMap::new();
     let mut failures = Dict::new();
     for spec in specs {
-        match dialogue_grants(&dialogue, spec, &label) {
+        let replies = match only {
+            Some(only) => Some(only.get(&route(spec)?).ok_or_else(|| Error::key(&route(spec).unwrap_or_default()))?),
+            None => None,
+        };
+        match dialogue_grants(&dialogue, spec, &label, replies) {
             Ok(found) => {
                 grants.insert(route(spec)?, found);
             }
@@ -864,7 +957,7 @@ pub fn patch_dialogue(
                     edits.push((call.start, call.end, changed));
                 }
                 if choices.contains(&true) && !action_refs.is_empty() {
-                    edits.extend(display_edits(&text, action_refs, &place)?);
+                    edits.extend(display_edits(&text, action_refs, shown));
                 }
                 dialogue.triggers.push(condition);
                 let actions = edited(&text, edits)?;
@@ -922,6 +1015,74 @@ fn valid_refs(refs: Option<&BTreeMap<i64, i64>>, resource: &str) -> Result<bool>
         && refs.values().all(|value| (0..0xFFFF_FFFF).contains(value)))
 }
 
+/// Gate each cloned start state and its clone on the route's flag
+/// (`_gate_start_states`).
+///
+/// The engine tries start states in the order of their conditions in the
+/// state trigger table, so the gated pair takes the original condition's
+/// place. When every other start condition comes before the cloned ones,
+/// appending the pairs keeps that order (the layout earlier exports used).
+/// `starts` are the cloned states (among the first `original_count`) with a
+/// start condition, in state order.
+fn gate_start_states(
+    dlg: &mut Dialogue,
+    original_count: usize,
+    starts: &[(usize, u32)],
+    clones: &BTreeMap<usize, usize>,
+    flag: &str,
+) -> Result<()> {
+    if starts.is_empty() {
+        return Ok(());
+    }
+    let cloned: BTreeSet<usize> = starts.iter().map(|&(index, _)| index).collect();
+    let entries: Vec<u32> = starts.iter().map(|&(_, entry)| entry).collect();
+    let others: BTreeSet<u32> = (0..original_count)
+        .filter(|index| !cloned.contains(index))
+        .map(|index| u32_le(&dlg.states[index], 12))
+        .filter(|&entry| entry != 0xFFFF_FFFF)
+        .collect();
+    let old = dlg.state_triggers.clone();
+    let gate = |entry: u32, selected: bool| joined(&old[entry as usize], &guard_line(selected, flag));
+    let increasing = entries.windows(2).all(|pair| pair[0] < pair[1]);
+    if increasing && entries.iter().all(|entry| others.iter().all(|other| entry > other)) {
+        for &(index, entry) in starts {
+            for (selected, target) in [(false, index), (true, clones[&index])] {
+                dlg.state_triggers.push(gate(entry, selected));
+                let position = dlg.state_triggers.len() as u32 - 1;
+                put_u32(&mut dlg.states[target], 12, position);
+            }
+        }
+        return Ok(());
+    }
+    let (mut table, mut moved, mut pairs) = (Vec::new(), HashMap::new(), HashMap::new());
+    for (position, text) in old.iter().enumerate() {
+        let position = position as u32;
+        if others.contains(&position) || !entries.contains(&position) {
+            moved.insert(position, table.len() as u32);
+            table.push(text.clone());
+        }
+        for &(index, entry) in starts {
+            if entry == position {
+                pairs.insert(index, (table.len() as u32, table.len() as u32 + 1));
+                table.push(gate(entry, false));
+                table.push(gate(entry, true));
+            }
+        }
+    }
+    for index in 0..original_count {
+        let entry = u32_le(&dlg.states[index], 12);
+        if let Some(&(unselected, selected)) = pairs.get(&index) {
+            put_u32(&mut dlg.states[index], 12, unselected);
+            put_u32(&mut dlg.states[clones[&index]], 12, selected);
+        } else if entry != 0xFFFF_FFFF {
+            let position = *moved.get(&entry).ok_or_else(|| Error::new(ErrorKind::Key, entry.to_string()))?;
+            put_u32(&mut dlg.states[index], 12, position);
+        }
+    }
+    dlg.state_triggers = table;
+    Ok(())
+}
+
 /// Text-route variant of a dialogue (`_patch_text_dialogue`): the states and
 /// replies that show the text that names the reward get a selected copy with
 /// the allocated text.
@@ -942,12 +1103,24 @@ pub fn patch_text_dialogue(
     }
     let flag = text(&specs[0], "selected_global")?;
     let action_refs: Vec<(i64, i64)> = action_text_refs(resource).iter().map(|old| (*old, refs[old])).collect();
-    let patched = patch_dialogue(data, &specs, &action_refs, defer_departure, numeric_target, None)?;
+    let mut shown = BTreeSet::new();
+    let patched = patch_dialogue_in(
+        data,
+        &specs,
+        &action_refs,
+        defer_departure,
+        numeric_target,
+        None,
+        None,
+        None,
+        Some(&mut shown),
+    )?;
     let mut dlg = read_dialogue(&patched, resource)?;
     let label = label(resource);
     let original_count = dlg.states.len();
     let mut clones: BTreeMap<usize, usize> = BTreeMap::new();
-    let mut found: BTreeSet<i64> = action_refs.iter().map(|(old, _)| *old).collect();
+    let mut found: BTreeSet<i64> = shown;
+    let mut starts: Vec<(usize, u32)> = Vec::new();
     let lookup = |value: u32| refs.get(&(value as i64)).map_or(value, |new| *new as u32);
     for index in 0..original_count {
         let state = dlg.states[index].clone();
@@ -975,20 +1148,13 @@ pub fn patch_text_dialogue(
         put_u32(&mut clone, 8, rows.len() as u32);
         dlg.transitions.extend(rows);
         if entry != 0xFFFF_FFFF {
-            let prior = string(&dlg.state_triggers, entry, &label)?;
-            for selected in [false, true] {
-                dlg.state_triggers.push(joined(&prior, &guard_line(selected, &flag)));
-                let position = dlg.state_triggers.len() as u32 - 1;
-                if selected {
-                    put_u32(&mut clone, 12, position);
-                } else {
-                    put_u32(&mut dlg.states[index], 12, position);
-                }
-            }
+            string(&dlg.state_triggers, entry, &label)?;
+            starts.push((index, entry));
         }
         clones.insert(index, dlg.states.len());
         dlg.states.push(clone);
     }
+    gate_start_states(&mut dlg, original_count, &starts, &clones, &flag)?;
     let all: BTreeSet<i64> = refs.keys().copied().collect();
     if found != all {
         let missing: Vec<String> = all.difference(&found).map(i64::to_string).collect();
@@ -1001,7 +1167,7 @@ pub fn patch_text_dialogue(
     for index in 0..dlg.states.len() {
         let (first, count) = outgoing(&dlg, &dlg.states[index], &label)?;
         let mut rows = Vec::new();
-        for transition in dlg.transitions[first..first + count].to_vec() {
+        for transition in dlg.transitions[first..first + count].iter().cloned() {
             let flags = u32_le(&transition, 0);
             let destination = u32_le(&transition, 28) as usize;
             let internal = link_name(&transition).to_ascii_lowercase() == own_name;
@@ -1059,7 +1225,7 @@ fn markers(specs: &[Dict]) -> Result<Vec<Vec<u8>>> {
     Ok(markers)
 }
 
-fn carries_patch(dialogue: &Dialogue, specs: &[Dict]) -> Result<bool> {
+pub(crate) fn carries_patch(dialogue: &Dialogue, specs: &[Dict]) -> Result<bool> {
     let markers = markers(specs)?;
     Ok(dialogue
         .triggers
@@ -1068,13 +1234,16 @@ fn carries_patch(dialogue: &Dialogue, specs: &[Dict]) -> Result<bool> {
         .any(|text| markers.iter().any(|marker| find_bytes(text, marker, 0).is_some())))
 }
 
-fn changed_patch(resource: &str) -> Error {
+pub(crate) fn changed_patch(resource: &str) -> Error {
     profile(format!("{} carries a changed copy of the reward route's own patch", label(resource)))
 }
 
+/// A text route's original bytes and the text refs its patch used.
+pub type TextOriginal = (Vec<u8>, BTreeMap<i64, i64>);
+
 /// The original and text refs of a text route this adapter patched
 /// (`_text_original`); None if unpatched.
-pub fn text_original(data: &[u8], resource: &str) -> Result<Option<(Vec<u8>, BTreeMap<i64, i64>)>> {
+pub fn text_original(data: &[u8], resource: &str) -> Result<Option<TextOriginal>> {
     if data.len() < 12 || &data[data.len() - 12..data.len() - 4] != TEXT_TRAILER {
         if carries_patch(&read_dialogue(data, resource)?, &resource_specs(resource)?)? {
             return Err(changed_patch(resource));
@@ -1210,13 +1379,13 @@ struct LogicalRow {
 
 /// A dialogue's content as the engine reads it, without its table layout.
 #[derive(PartialEq, Eq)]
-struct Logical {
+pub(crate) struct Logical {
     signature: Vec<u8>,
     flags: Vec<u8>,
     states: Vec<(u32, Option<Vec<u8>>, Vec<LogicalRow>)>,
 }
 
-fn logical(data: &[u8], resource: &str) -> Result<Logical> {
+pub(crate) fn logical(data: &[u8], resource: &str) -> Result<Logical> {
     let dialogue = read_dialogue(data, resource)?;
     let label = label(resource);
     let mut states = Vec::new();
@@ -1265,7 +1434,7 @@ fn static_original(data: &[u8], resource: &str) -> Result<Option<Vec<u8>>> {
     }
 }
 
-fn unpatched_dialogue(mut dialogue: Dialogue, specs: &[Dict], resource: &str) -> Result<Vec<u8>> {
+pub(crate) fn unpatched_dialogue(mut dialogue: Dialogue, specs: &[Dict], resource: &str) -> Result<Vec<u8>> {
     let label = label(resource);
     let mut routes: Vec<(Vec<u8>, &Dict)> = Vec::new();
     for spec in specs {
@@ -1356,22 +1525,30 @@ fn empty_object(object: &[u8]) -> bool {
     zeros > 0 && rest == b"\"\""
 }
 
-/// A block that gives a route's item: its parts, the grant and any display.
+/// A block that gives a route's item: its parts, its grants and the actions
+/// that show the text naming the reward.
 struct ScriptGrant {
     head: Vec<u8>,
     conditions: Vec<u8>,
     responses: Vec<u8>,
-    grant: Action,
-    display: Option<Action>,
+    grants: Vec<Action>,
+    displays: Vec<Action>,
+}
+
+/// A reward container creates the item in itself; others give it.
+fn script_grant_opcode(spec: &Dict) -> Result<i64> {
+    Ok(if field(spec, "recipient_local")?.is_null() { 82 } else { 140 })
 }
 
 /// Each block that gives the route's item (`_script_grants`).
+///
+/// A block runs one of its alternative responses, so each response may give
+/// the item once, with the route's grant.
 fn script_grants(script: &Script, spec: &Dict, label: &str) -> Result<BTreeMap<usize, ScriptGrant>> {
     let item_name = text_field(spec, "item", "encode")?;
     let item = item_name.to_ascii_lowercase().into_bytes();
     let container = field(spec, "recipient_local")?.is_null();
-    // A reward container creates the item in itself; others give it.
-    let (opcode, verb) = if container { (82, "CreateItem") } else { (140, "GiveItemCreate") };
+    let opcode = script_grant_opcode(spec)?;
     let shown = upper(item_name);
     let refs = text_refs(&text(spec, "resource")?).unwrap_or(&[]);
     let mut found = BTreeMap::new();
@@ -1379,40 +1556,43 @@ fn script_grants(script: &Script, spec: &Dict, label: &str) -> Result<BTreeMap<u
         if !names(block, item_name) {
             continue;
         }
+        let place = format!("{label} block {index}");
         let (head, conditions, responses) = block_parts(block, script.newline)?;
-        let (mut grants, mut displays) = (Vec::new(), Vec::new());
-        for action in block_actions(&responses, script.newline)? {
-            if refs.iter().any(|(old, _)| *old == action.integer) {
-                displays.push(action.clone());
+        let actions = block_actions(&responses, script.newline)?;
+        let displays: Vec<Action> =
+            actions.iter().filter(|action| refs.iter().any(|(old, _)| *old == action.integer)).cloned().collect();
+        let mut grants = Vec::new();
+        for (first, last) in response_spans(&responses, script.newline)? {
+            let mut given = Vec::new();
+            for action in &actions {
+                let Some((name, string)) = giving_opcode(action.opcode) else { continue };
+                if !(first <= action.start && action.start < last) || action.strings[string].to_ascii_lowercase() != item {
+                    continue;
+                }
+                if action.opcode != opcode {
+                    return Err(profile(format!("{place} also gives {shown} with {name}(), which the route cannot gate")));
+                }
+                if !container && !empty_object(&action.objects[0]) {
+                    // Its recipient means what it means to the other actor.
+                    return Err(profile(format!(
+                        "{place} gives {shown} through ActionOverride(), whose recipient the route cannot mark"
+                    )));
+                }
+                given.push(action.clone());
             }
-            if !action.strings.iter().any(|value| value.to_ascii_lowercase() == item) {
-                continue;
+            if given.len() > 1 {
+                return Err(profile(format!("{place} gives {shown} twice in one response")));
             }
-            if action.opcode != opcode {
-                return Err(profile(format!(
-                    "{label} block {index} names {shown} in action {}, not in a {verb}() grant",
-                    action.opcode_shown
-                )));
-            }
-            if !container && !empty_object(&action.objects[0]) {
-                return Err(profile(format!("{label} block {index} gives {shown} through another actor")));
-            }
-            grants.push(action);
+            grants.extend(given);
         }
-        if grants.len() > 1 {
-            return Err(profile(format!("{label} block {index} gives {shown} twice")));
-        }
-        if displays.len() > 1 {
-            return Err(profile(format!("{label} block {index} shows the text that names the reward twice")));
-        }
-        if let Some(grant) = grants.into_iter().next() {
-            found.insert(index, ScriptGrant { head, conditions, responses, grant, display: displays.into_iter().next() });
+        if !grants.is_empty() {
+            found.insert(index, ScriptGrant { head, conditions, responses, grants, displays });
         }
     }
     if found.is_empty() {
         return Err(profile(format!("{label} has no block that gives {shown}")));
     }
-    if !refs.is_empty() && !found.values().any(|row| row.display.is_some()) {
+    if !refs.is_empty() && !found.values().any(|row| !row.displays.is_empty()) {
         let mut olds: Vec<i64> = refs.iter().map(|(old, _)| *old).collect();
         olds.sort_unstable();
         let missing: Vec<String> = olds.iter().map(i64::to_string).collect();
@@ -1436,19 +1616,26 @@ pub fn patch_script(data: &[u8], spec: &Dict, text_ref: Option<i64>) -> Result<V
     })?;
     let newline = script.newline;
     let container = field(spec, "recipient_local")?.is_null();
+    let event = global_action(text_field(spec, "event_global", "encode")?, newline)?;
     let mut blocks = script.blocks.clone();
     for (index, row) in grants {
-        let original = row.responses[row.grant.start..row.grant.end].to_vec();
-        let mark = if container { Vec::new() } else { marker_action(&row.grant, spec, newline)? };
-        let event = global_action(text_field(spec, "event_global", "encode")?, newline)?;
         let mut variants = Vec::new();
         for selected in [false, true] {
-            let replacement =
-                if selected { global_action(text_field(spec, "consumed_global", "encode")?, newline)? } else { original.clone() };
-            let mut edits = vec![(row.grant.start, row.grant.end, [mark.as_slice(), &replacement, &event].concat())];
-            if let (true, Some(display)) = (selected, &row.display) {
-                let shown = with_integer(&row.responses[display.start..display.end], newline, text_ref);
-                edits.push((display.start, display.end, shown));
+            let mut edits = Vec::new();
+            for grant in &row.grants {
+                let mark = if container { Vec::new() } else { marker_action(grant, spec, newline)? };
+                let replacement = if selected {
+                    global_action(text_field(spec, "consumed_global", "encode")?, newline)?
+                } else {
+                    row.responses[grant.start..grant.end].to_vec()
+                };
+                edits.push((grant.start, grant.end, [mark.as_slice(), &replacement, &event].concat()));
+            }
+            if selected {
+                for display in &row.displays {
+                    let shown = with_integer(&row.responses[display.start..display.end], newline, text_ref);
+                    edits.push((display.start, display.end, shown));
+                }
             }
             let guard = global_guard(text_field(spec, "selected_global", "encode")?, selected, newline)?;
             variants.extend(
@@ -1520,23 +1707,31 @@ fn unpatched_script(
         }
         let mut block = block.clone();
         if find_bytes(&block, unselected, 0).is_some() {
-            block = replace_bytes(&block, unselected, b"", Some(1));
-            let (_, _, responses) = block_parts(&block, newline)?;
+            let (head, conditions, responses) = block_parts(&replace_bytes(&block, unselected, b"", Some(1)), newline)?;
             let item = text_field(spec, "item", "encode")?.to_ascii_lowercase().into_bytes();
+            let opcode = script_grant_opcode(spec)?;
             let grants: Vec<Action> = block_actions(&responses, newline)?
                 .into_iter()
-                .filter(|action| action.strings.iter().any(|value| value.to_ascii_lowercase() == item))
+                .filter(|action| action.opcode == opcode && action.strings[0].to_ascii_lowercase() == item)
                 .collect();
-            if grants.len() != 1 {
+            if grants.is_empty() {
                 return Err(changed_patch(&resource));
             }
-            let grant = responses[grants[0].start..grants[0].end].to_vec();
-            let mark = if container { Vec::new() } else { marker_action(&grants[0], spec, newline)? };
-            let patched = [mark.as_slice(), &grant, &event].concat();
-            if count_bytes(&block, &patched) != 1 {
-                return Err(changed_patch(&resource));
+            // Each grant kept its marker before it and the event after it.
+            let (mut parts, mut at) = (Vec::new(), 0);
+            for grant in &grants {
+                let mark = if container { Vec::new() } else { marker_action(grant, spec, newline)? };
+                let (Some(start), end) = (grant.start.checked_sub(mark.len()), grant.end + event.len()) else {
+                    return Err(changed_patch(&resource));
+                };
+                if start < at || responses[start..grant.start] != mark[..] || responses.get(grant.end..end) != Some(&event[..]) {
+                    return Err(changed_patch(&resource));
+                }
+                parts.extend_from_slice(&responses[at..start]);
+                parts.extend_from_slice(&responses[grant.start..grant.end]);
+                at = end;
             }
-            block = replace_bytes(&block, &patched, &grant, Some(1));
+            block = [head.as_slice(), b"CO", newline, &conditions, b"CO", newline, &parts, &responses[at..]].concat();
         }
         restored.push(block);
     }
@@ -1545,14 +1740,14 @@ fn unpatched_script(
 
 /// The unpatched resource (exact, or as the engine reads it), whether the
 /// bytes are our patch, and our patch's text refs (`_examine`).
-struct Examined {
-    original: Vec<u8>,
+pub(crate) struct Examined {
+    pub(crate) original: Vec<u8>,
     own: bool,
     script_ref: Option<i64>,
     text_refs: Option<BTreeMap<i64, i64>>,
 }
 
-fn examine(resource: &str, data: &[u8]) -> Result<Examined> {
+pub(crate) fn examine(resource: &str, data: &[u8]) -> Result<Examined> {
     if resource.starts_with("bcs:") {
         let (original, script_ref, own) = script_original(data, &resource_specs(resource)?[0])?;
         return Ok(Examined { original, own, script_ref, text_refs: None });

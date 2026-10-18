@@ -55,9 +55,14 @@ fn name_end(text: &[u8], at: usize, end: usize) -> Option<usize> {
 
 /// The top-level calls of the text, or None if it is not a call sequence.
 pub fn calls(text: &[u8]) -> Option<Vec<Call>> {
-    let end = text.len();
+    calls_in(text, (0, text.len()))
+}
+
+/// The top-level calls of `text[start..end]`, at their places in `text`, or
+/// None if that span is not a call sequence (`calls(text, start, end)`).
+pub fn calls_in(text: &[u8], (start, end): (usize, usize)) -> Option<Vec<Call>> {
     let mut result = Vec::new();
-    let mut at = 0;
+    let mut at = start;
     loop {
         while at < end && is_space(text[at]) {
             at += 1;
@@ -216,6 +221,8 @@ pub struct Trigger {
     pub start: usize,
     pub end: usize,
     pub opcode: i64,
+    /// The opcode as the reference prints it (its decimal value).
+    pub opcode_shown: String,
     pub value: i64,
     pub negated: bool,
     pub strings: [Vec<u8>; 2],
@@ -416,6 +423,27 @@ pub fn block_actions(responses: &[u8], newline: &[u8]) -> Result<Vec<Action>> {
     Ok(result)
 }
 
+/// The span of each alternative response (`RE` ... `RE`) of a block's
+/// responses. The engine runs one of them, chosen by weight.
+pub fn response_spans(responses: &[u8], newline: &[u8]) -> Result<Vec<(usize, usize)>> {
+    let mark = [b"RE" as &[u8], newline].concat();
+    let mut marks = Vec::new();
+    let mut at = 0;
+    // `(?m)^RE<newline>`: at the start or after a line feed, never overlapping.
+    while at + mark.len() <= responses.len() {
+        if (at == 0 || responses[at - 1] == b'\n') && responses[at..].starts_with(&mark) {
+            marks.push(at);
+            at += mark.len();
+        } else {
+            at += 1;
+        }
+    }
+    if marks.len() % 2 == 1 {
+        return Err(script_error("a block has a response that is not closed"));
+    }
+    Ok(marks.chunks(2).map(|pair| (pair[0], pair[1] + mark.len())).collect())
+}
+
 fn trigger_at(conditions: &[u8], start: usize, newline: &[u8]) -> Option<Trigger> {
     let mut cursor = Cursor { text: conditions, at: start };
     cursor.literal(b"TR")?;
@@ -442,6 +470,7 @@ fn trigger_at(conditions: &[u8], start: usize, newline: &[u8]) -> Option<Trigger
         start,
         end: cursor.at,
         opcode: integer(&conditions[opcode_start..opcode_end]).unwrap_or(i64::MAX),
+        opcode_shown: shown_number(&conditions[opcode_start..opcode_end]),
         value: integer(&conditions[value_start..value_end]).unwrap_or(0),
         // int(flags) & 1: the parity of its last digit.
         negated: (conditions[flags_end - 1] - b'0') & 1 == 1,

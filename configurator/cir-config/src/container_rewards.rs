@@ -34,7 +34,7 @@ use crate::quest_options::{pad, texts, Dialogue};
 use crate::quest_rewards::global_guard;
 use crate::script_text::{
     block_actions, block_parts, block_triggers, calls, integer_argument, named, naming, script_blocks, string_argument,
-    Action, Call, Script,
+    Action, Script,
 };
 use crate::dict;
 use std::collections::{BTreeMap, BTreeSet};
@@ -124,9 +124,28 @@ pub const TEXT_RESOURCES: [&str; 3] = ["bcs:kpgol01", "bcs:kpgol02", "bcs:kpgol0
 const GOLEM_TEXT: i64 = 38758;
 const TRAILER: &[u8] = b"FLPRCON1";
 const PARTY_HAS_ITEM: i64 = 16450;
-const HAS_ITEM: i64 = 16501;
+const CONTAINS: i64 = 16501;
 const OR: i64 = 16521;
 const SET_GLOBAL: i64 = 30;
+/// TRIGGER.IDS names of the triggers that test an item, for the reasons.
+const TRIGGERS: &[(i64, &str)] = &[
+    (1, "Acquired"),
+    (9, "Unusable"),
+    (16450, "PartyHasItem"),
+    (16481, "HasItem"),
+    (16501, "Contains"),
+    (16503, "NumItems"),
+    (16504, "NumItemsGT"),
+    (16505, "NumItemsLT"),
+    (16506, "NumItemsParty"),
+    (16507, "NumItemsPartyGT"),
+    (16508, "NumItemsPartyLT"),
+    (16511, "HasItemEquiped"),
+    (16553, "PartyHasItemIdentified"),
+    (16578, "HasItemEquipedReal"),
+    (16643, "CheckItemSlot"),
+    (16644, "CurrentAmmo"),
+];
 
 fn row_text(spec: &Dict, key: &str) -> String {
     spec.get(key).and_then(Value::as_str).expect("container field").to_string()
@@ -301,41 +320,122 @@ fn with_integer(action: &[u8], newline: &[u8], value: Option<i64>) -> Vec<u8> {
     [&action[..start], shown.as_bytes(), &action[end..]].concat()
 }
 
-/// A block that tests the treasure: its parts, its test (span and latch
-/// value) for a consumer, and the golem's display.
+/// A byte span of text and what replaces it.
+type Edit = (usize, usize, Vec<u8>);
+
+/// A block that tests the treasure: its parts, the edits of its conditions
+/// (none for a setter block) and the actions that show the golem's text.
 struct Site {
     head: Vec<u8>,
     conditions: Vec<u8>,
     responses: Vec<u8>,
-    test: Option<((usize, usize), i64)>,
-    display: Option<Action>,
+    edits: Option<Vec<Edit>>,
+    displays: Vec<Action>,
 }
 
-/// The positions of the triggers or calls an OR(n) before them governs.
-fn or_members(counts: impl Iterator<Item = Option<i64>>) -> BTreeSet<usize> {
-    let (mut members, mut remaining) = (BTreeSet::new(), 0i64);
-    for (number, count) in counts.enumerate() {
-        if remaining != 0 {
-            members.insert(number);
-            remaining = remaining.saturating_sub(1);
-        } else if let Some(count) = count {
-            remaining = count;
+/// A compiled OR() trigger that joins `count` conditions (`_with_count`).
+fn with_count(trigger: &[u8], newline: &[u8], count: usize) -> Vec<u8> {
+    // `TR<newline>[0-9]+ (-?[0-9]+)`: the opcode, then the count.
+    let mut start = 2 + newline.len();
+    while trigger.get(start).is_some_and(u8::is_ascii_digit) {
+        start += 1;
+    }
+    start += 1;
+    let mut end = start + usize::from(trigger.get(start) == Some(&b'-'));
+    while trigger.get(end).is_some_and(u8::is_ascii_digit) {
+        end += 1;
+    }
+    [&trigger[..start], count.to_string().as_bytes(), &trigger[end..]].concat()
+}
+
+/// One group of a condition list: its OR() position (None for a condition
+/// standing alone), its members and whether as many follow as it counts.
+type Group = (Option<usize>, Vec<usize>, bool);
+
+/// The groups of a condition list (`_groups`).
+///
+/// `counts` has an OR()'s count at its position and None elsewhere. OR(n)
+/// joins the n conditions after it; any other condition stands alone. Only
+/// the last group can be incomplete, when fewer conditions follow its OR().
+fn groups(counts: &[Option<i64>]) -> Vec<Group> {
+    let (mut result, mut at) = (Vec::new(), 0);
+    while at < counts.len() {
+        let Some(count) = counts[at] else {
+            result.push((None, vec![at], true));
+            at += 1;
+            continue;
+        };
+        let wanted = count.max(0);
+        let last = (at as i64 + 1).saturating_add(wanted).min(counts.len() as i64) as usize;
+        let members: Vec<usize> = (at + 1..last).collect();
+        let complete = members.len() as i64 == wanted;
+        let taken = members.len();
+        result.push((Some(at), members, complete));
+        at += 1 + taken;
+    }
+    result
+}
+
+/// Fail unless the route can rewrite a group that holds treasure tests
+/// (`_checked_group`).
+///
+/// `tested` holds the items the group's tests name, `negated` whether one of
+/// them tests that the party lacks it, `nested` whether the group negates its
+/// OR() or holds another one.
+#[allow(clippy::too_many_arguments)]
+fn checked_group(
+    place: &str,
+    shown: &str,
+    items: &[String],
+    first: Option<usize>,
+    complete: bool,
+    tested: &BTreeSet<Vec<u8>>,
+    negated: bool,
+    nested: bool,
+) -> Result<()> {
+    if !complete {
+        return Err(profile(format!("{place} tests {shown} in an OR() group that counts more conditions than follow it")));
+    }
+    if nested {
+        return Err(profile(format!(
+            "{place} tests {shown} in an OR() group that is negated or holds another OR(), which the route cannot read"
+        )));
+    }
+    if items.len() > 1 {
+        // The shared latch records that one of the treasures was taken: it can
+        // stand only for "the party has one of them".
+        let all: BTreeSet<Vec<u8>> = items.iter().map(|item| item.as_bytes().to_vec()).collect();
+        if first.is_none() || *tested != all {
+            return Err(profile(format!(
+                "{place} does not test {shown} together in one OR() group; their shared latch records only that one of them was taken"
+            )));
+        }
+        if negated {
+            return Err(profile(format!(
+                "{place} tests whether the party lacks one of {shown}; their shared latch records only that one of them was taken"
+            )));
         }
     }
-    members
+    Ok(())
 }
 
-/// Each block that tests the treasure: its parts, what it is and where
+/// Text as Python's `bytes.decode("latin-1")` reads it.
+fn latin1(data: &[u8]) -> String {
+    data.iter().map(|&byte| byte as char).collect()
+}
+
+/// Each block that tests the treasure: its parts, its edits and its displays
 /// (`_script_sites`).
 ///
-/// A consumer block tests whether the party has the treasure; its test
-/// becomes the latch. A setter block sets the latch itself when the
-/// container no longer holds the treasure; the Host takes that over.
+/// A consumer block tests whether the party has the treasure; each test
+/// becomes the latch (edits of its conditions), wherever it stands in its
+/// block. A setter block (no edits) sets the latch itself when the container
+/// no longer holds the treasure; the Host takes that over.
 fn script_sites(script: &Script, resource: &str) -> Result<BTreeMap<usize, Site>> {
     let (spec, items, label) = (spec_for(resource)?, items(resource)?, label(resource));
     let shown = shown(&items);
     let newline = script.newline;
-    let latch = (row_text(spec, "latch_scope") + &row_text(spec, "latch_global")).to_ascii_lowercase().into_bytes();
+    let latch_name = (row_text(spec, "latch_scope") + &row_text(spec, "latch_global")).to_ascii_lowercase().into_bytes();
     let mut sites = BTreeMap::new();
     for (index, block) in script.blocks.iter().enumerate() {
         if !names(block, &items) {
@@ -343,61 +443,90 @@ fn script_sites(script: &Script, resource: &str) -> Result<BTreeMap<usize, Site>
         }
         let (head, conditions, responses) = block_parts(block, newline)?;
         let triggers = block_triggers(&conditions, newline)?;
-        let members = or_members(triggers.iter().map(|trigger| (trigger.opcode == OR).then_some(trigger.value)));
         let tests: Vec<usize> =
             triggers.iter().enumerate().filter(|(_, trigger)| is_item(&trigger.strings[0], &items)).map(|(number, _)| number).collect();
         if tests.is_empty() {
             continue;
         }
         let place = format!("{label} block {index}");
-        let unknown = || profile(format!("{place} tests {shown} in a way the container route does not recognise"));
         let actions = block_actions(&responses, newline)?;
-        if tests.iter().all(|&number| triggers[number].opcode == PARTY_HAS_ITEM) {
-            let test = if items.len() > 1 {
-                // Either treasure counts: one OR(n) of exactly these tests.
-                let first = tests[0] as i64 - 1;
-                let consecutive = tests.iter().enumerate().all(|(at, &number)| number as i64 == first + 1 + at as i64);
-                let tested: BTreeSet<Vec<u8>> = tests.iter().map(|&number| triggers[number].strings[0].to_ascii_lowercase()).collect();
-                let wanted: BTreeSet<Vec<u8>> = items.iter().map(|item| item.as_bytes().to_vec()).collect();
-                if tests.len() != items.len()
-                    || !consecutive
-                    || first < 0
-                    || triggers[first as usize].opcode != OR
-                    || triggers[first as usize].value != items.len() as i64
-                    || tested != wanted
-                    || tests.iter().any(|&number| triggers[number].negated)
-                    || triggers[first as usize].negated
-                {
-                    return Err(unknown());
-                }
-                ((triggers[first as usize].start, triggers[*tests.last().expect("tests")].end), 1)
-            } else {
-                if tests.len() != 1 || members.contains(&tests[0]) {
-                    return Err(unknown());
-                }
-                let test = &triggers[tests[0]];
-                ((test.start, test.end), if test.negated { 0 } else { 1 })
-            };
-            let mut displays: Vec<Action> = actions.into_iter().filter(|action| action.integer == GOLEM_TEXT).collect();
-            if displays.len() > 1 {
-                return Err(profile(format!("{place} shows text {GOLEM_TEXT} twice")));
-            }
-            sites.insert(index, Site { head, conditions, responses, test: Some(test), display: displays.pop() });
-        } else if tests.iter().all(|&number| triggers[number].opcode == HAS_ITEM && triggers[number].negated)
-            && actions.iter().any(|action| action.opcode == SET_GLOBAL && action.strings[0].to_ascii_lowercase() == latch)
-        {
-            sites.insert(index, Site { head, conditions, responses, test: None, display: None });
-        } else {
-            return Err(unknown());
+        let counts: Vec<Option<i64>> = triggers.iter().map(|trigger| (trigger.opcode == OR).then_some(trigger.value)).collect();
+        let groups = groups(&counts);
+        if groups.last().is_some_and(|group| !group.2) {
+            // The route adds its own condition at the end of the block.
+            return Err(profile(format!(
+                "{place} ends in an OR() group that counts more conditions than follow it, so a condition added after it would join it"
+            )));
         }
+        if tests.iter().all(|&number| triggers[number].opcode == CONTAINS && triggers[number].negated)
+            && actions.iter().any(|action| action.opcode == SET_GLOBAL && action.strings[0].to_ascii_lowercase() == latch_name)
+        {
+            sites.insert(index, Site { head, conditions, responses, edits: None, displays: Vec::new() });
+            continue;
+        }
+        if let Some(other) = tests.iter().map(|&number| &triggers[number]).find(|trigger| trigger.opcode != PARTY_HAS_ITEM) {
+            let name = TRIGGERS
+                .iter()
+                .find(|(opcode, _)| *opcode == other.opcode)
+                .map_or_else(|| format!("trigger {}", other.opcode_shown), |(_, name)| name.to_string());
+            return Err(profile(format!(
+                "{place} tests {} with {name}(), which the route cannot replace by the container's latch",
+                upper(&latin1(&other.strings[0]))
+            )));
+        }
+        let mut edits = Vec::new();
+        for (first, members, complete) in &groups {
+            let hit: Vec<usize> = members.iter().copied().filter(|number| tests.contains(number)).collect();
+            if hit.is_empty() {
+                continue;
+            }
+            let nested = first.is_some_and(|first| {
+                triggers[first].negated || members.iter().any(|&number| triggers[number].opcode == OR)
+            });
+            let tested = hit.iter().map(|&number| triggers[number].strings[0].to_ascii_lowercase()).collect();
+            let negated = hit.iter().any(|&number| triggers[number].negated);
+            checked_group(&place, &shown, &items, *first, *complete, &tested, negated, nested)?;
+            if items.len() == 1 {
+                for &number in &hit {
+                    let value = if triggers[number].negated { 0 } else { 1 };
+                    edits.push((triggers[number].start, triggers[number].end, latch(spec, value, newline)));
+                }
+            } else if hit.len() == members.len() {
+                // OR(n) of the treasure tests only: the latch replaces the group.
+                let first = first.expect("checked group");
+                edits.push((triggers[first].start, triggers[members[members.len() - 1]].end, latch(spec, 1, newline)));
+            } else {
+                let group = &triggers[first.expect("checked group")];
+                let count = members.len() - hit.len() + 1;
+                edits.push((group.start, group.end, with_count(&conditions[group.start..group.end], newline, count)));
+                edits.push((triggers[hit[0]].start, triggers[hit[0]].end, latch(spec, 1, newline)));
+                for &number in &hit[1..] {
+                    edits.push((triggers[number].start, triggers[number].end, Vec::new()));
+                }
+            }
+        }
+        let displays = actions.into_iter().filter(|action| action.integer == GOLEM_TEXT).collect();
+        sites.insert(index, Site { head, conditions, responses, edits: Some(edits), displays });
     }
     if sites.is_empty() {
         return Err(profile(format!("{label} has no block that tests {shown}")));
     }
-    if TEXT_RESOURCES.contains(&resource) && !sites.values().any(|site| site.display.is_some()) {
+    if TEXT_RESOURCES.contains(&resource) && !sites.values().any(|site| !site.displays.is_empty()) {
         return Err(profile(format!("{label} no longer shows the golem's text that names the treasure ({GOLEM_TEXT})")));
     }
     Ok(sites)
+}
+
+/// Apply edits from the last one back (`_replaced`), slicing as Python does.
+fn replaced(data: &[u8], edits: &[Edit]) -> Vec<u8> {
+    let mut ordered = edits.to_vec();
+    ordered.sort();
+    let mut data = data.to_vec();
+    for (start, end, replacement) in ordered.into_iter().rev() {
+        let (start, end) = (start.min(data.len()), end.min(data.len()));
+        data = [&data[..start], &replacement, &data[end..]].concat();
+    }
+    data
 }
 
 fn patch_script(resource: &str, original: &[u8], reference: Option<i64>) -> Result<Vec<u8>> {
@@ -411,27 +540,37 @@ fn patch_script(resource: &str, original: &[u8], reference: Option<i64>) -> Resu
     })?;
     let newline = script.newline;
     let flag = row_text(spec_for(resource)?, "activation_global");
-    let spec = spec_for(resource)?;
     let mut blocks = script.blocks.clone();
     for (index, site) in sites {
         let excluded =
             [site.head.as_slice(), b"CO", newline, &site.conditions, &global_guard(&flag, false, newline)?, b"CO", newline, &site.responses]
                 .concat();
         let mut variants = Vec::new();
-        if let Some(((start, end), value)) = site.test {
-            let changed = [&site.conditions[..start], &latch(spec, value, newline), &site.conditions[end..]].concat();
+        if let Some(edits) = &site.edits {
             let mut selected_response = site.responses.clone();
-            if let (true, Some(display)) = (TEXT_RESOURCES.contains(&resource), &site.display) {
-                selected_response = [
-                    &site.responses[..display.start],
-                    &with_integer(&site.responses[display.start..display.end], newline, reference),
-                    &site.responses[display.end..],
-                ]
-                .concat();
+            if TEXT_RESOURCES.contains(&resource) {
+                // Every response that shows the golem's text shows the new one.
+                let shown: Vec<Edit> = site
+                    .displays
+                    .iter()
+                    .map(|display| {
+                        (display.start, display.end, with_integer(&site.responses[display.start..display.end], newline, reference))
+                    })
+                    .collect();
+                selected_response = replaced(&site.responses, &shown);
             }
             variants.extend(
-                [site.head.as_slice(), b"CO", newline, &changed, &global_guard(&flag, true, newline)?, b"CO", newline, &selected_response]
-                    .concat(),
+                [
+                    site.head.as_slice(),
+                    b"CO",
+                    newline,
+                    &replaced(&site.conditions, edits),
+                    &global_guard(&flag, true, newline)?,
+                    b"CO",
+                    newline,
+                    &selected_response,
+                ]
+                .concat(),
             );
         }
         // A setter block (PPCHST's) is disabled only when the observer owns it.
@@ -441,79 +580,112 @@ fn patch_script(resource: &str, original: &[u8], reference: Option<i64>) -> Resu
     Ok([script.prefix, blocks.concat(), script.suffix].concat())
 }
 
-/// The rewrite of the one treasure test in a dialogue condition
-/// (`_condition_edit`), or None without one.
-fn condition_edit(text: &[u8], resource: &str, place: &str) -> Result<Option<(usize, usize, Vec<u8>)>> {
+/// The rewrites of the treasure tests in a dialogue condition
+/// (`_condition_edits`); none without one.
+///
+/// Each group of conditions that tests the treasure (an OR() group, or a test
+/// standing alone) becomes two: (selected OR the group) AND (!selected OR the
+/// group with the latch in place of its tests). Every other group stays as
+/// written.
+fn condition_edits(text: &[u8], resource: &str, place: &str) -> Result<Vec<Edit>> {
     let items = items(resource)?;
     if !names(text, &items) {
-        return Ok(None);
+        return Ok(Vec::new());
     }
-    let unknown = || profile(format!("{place} tests {} in a way the container route does not recognise", shown(&items)));
-    let Some(found) = calls(text) else { return Err(unknown()) };
+    let shown = shown(&items);
+    let Some(found) = calls(text) else {
+        return Err(profile(format!("{place} tests {shown} in a way the container route does not recognise")));
+    };
+    let is_or: Vec<bool> = found
+        .iter()
+        .map(|call| {
+            let bare = call.name.iter().position(|&byte| byte != b'!').map_or(&[][..], |first| &call.name[first..]);
+            bare.eq_ignore_ascii_case(b"or")
+        })
+        .collect();
+    let counts: Vec<Option<i64>> =
+        found.iter().zip(&is_or).map(|(call, &group)| if group { integer_argument(text, call, 0, None) } else { None }).collect();
+    if is_or.iter().zip(&counts).any(|(&group, count)| group && count.is_none()) {
+        return Err(profile(format!("{place} has an OR() whose count the route cannot read")));
+    }
     let tests: Vec<usize> =
         found.iter().enumerate().filter(|(_, call)| names(&text[call.start..call.end], &items)).map(|(number, _)| number).collect();
-    let members = or_members(found.iter().map(|call| named(call, &["OR"]).then(|| integer_argument(text, call, 0, None).unwrap_or(0))));
-    let item_argument = |call: &Call| string_argument(text, call, 0).unwrap_or(b"").to_ascii_lowercase();
-    if !tests.iter().all(|&number| {
+    for &number in &tests {
         let call = &found[number];
-        named(call, &["PartyHasItem", "!PartyHasItem"]) && call.args.len() == 1 && is_item(&item_argument(call), &items)
-    }) {
-        return Err(unknown());
-    }
-    let (mut start, negative, terms): (usize, bool, Vec<&Call>) = if items.len() > 1 {
-        let first = *tests.first().ok_or_else(|| Error::value("list index out of range"))? as i64 - 1;
-        let consecutive = tests.len() == items.len() && tests.iter().enumerate().all(|(at, &number)| number as i64 == first + 1 + at as i64);
-        let tested: BTreeSet<Vec<u8>> = tests.iter().map(|&number| item_argument(&found[number])).collect();
-        let wanted: BTreeSet<Vec<u8>> = items.iter().map(|item| item.as_bytes().to_vec()).collect();
-        if !consecutive
-            || first < 0
-            || !named(&found[first as usize], &["OR"])
-            || integer_argument(text, &found[first as usize], 0, None) != Some(items.len() as i64)
-            || tested != wanted
-            || tests.iter().any(|&number| named(&found[number], &["!PartyHasItem"]))
-        {
-            return Err(unknown());
+        let name = latin1(&call.name).trim_start_matches('!').to_string();
+        if !named(call, &["PartyHasItem", "!PartyHasItem"]) {
+            let item = items
+                .iter()
+                .find(|item| names(&text[call.start..call.end], std::slice::from_ref(*item)))
+                .expect("a test names an item");
+            return Err(profile(format!(
+                "{place} tests {} with {name}(), which the route cannot replace by the container's latch",
+                upper(item)
+            )));
         }
-        (found[first as usize].start, false, tests.iter().map(|&number| &found[number]).collect())
-    } else {
-        if tests.len() != 1 || members.contains(&tests[0]) {
-            return Err(unknown());
-        }
-        let call = &found[tests[0]];
-        (call.start, named(call, &["!PartyHasItem"]), vec![call])
-    };
-    // Take the whole lines: their indentation before and the line end after.
-    let line = [b'\n', b'\r']
-        .iter()
-        .filter_map(|&byte| text[..start].iter().rposition(|&found| found == byte))
-        .max()
-        .map_or(0, |at| at + 1);
-    if text[line..start].iter().all(|&byte| byte == b' ' || byte == b'\t') {
-        start = line;
-    }
-    let mut end = terms.last().expect("terms").end;
-    for newline in [&b"\r\n"[..], b"\n"] {
-        if text[end..].starts_with(newline) {
-            end += newline.len();
-            break;
+        if call.args.len() != 1 || !is_item(string_argument(text, call, 0).unwrap_or(b""), &items) {
+            return Err(profile(format!("{place} tests {shown} in a way the container route does not recognise")));
         }
     }
     let spec = spec_for(resource)?;
     let flag = row_text(spec, "activation_global");
-    // (selected OR original) AND (!selected OR latch). No nested OR/AND.
-    let mut changed = format!("OR({})\r\nGlobal(\"{flag}\",\"GLOBAL\",1)\r\n", terms.len() + 1).into_bytes();
-    changed.extend(terms.iter().map(|call| &text[call.start..call.end]).collect::<Vec<_>>().join(&b"\r\n"[..]));
-    changed.extend_from_slice(b"\r\n");
-    changed.extend(
+    let latch = |negative: bool| {
         format!(
-            "OR(2)\r\n!Global(\"{flag}\",\"GLOBAL\",1)\r\nGlobal(\"{}\",\"{}\",{})\r\n",
+            "Global(\"{}\",\"{}\",{})",
             row_text(spec, "latch_global"),
             row_text(spec, "latch_scope"),
             if negative { 0 } else { 1 }
         )
-        .into_bytes(),
-    );
-    Ok(Some((start, end, changed)))
+        .into_bytes()
+    };
+    let written = |number: usize| text[found[number].start..found[number].end].to_vec();
+    let lacks = |number: usize| named(&found[number], &["!PartyHasItem"]);
+    let mut edits = Vec::new();
+    for (first, members, complete) in groups(&counts) {
+        let hit: Vec<usize> = members.iter().copied().filter(|number| tests.contains(number)).collect();
+        if hit.is_empty() {
+            continue;
+        }
+        let nested = first.is_some_and(|first| found[first].name.starts_with(b"!") || members.iter().any(|&number| is_or[number]));
+        let tested = hit.iter().map(|&number| string_argument(text, &found[number], 0).unwrap_or(b"").to_ascii_lowercase()).collect();
+        checked_group(place, &shown, &items, first, complete, &tested, hit.iter().any(|&number| lacks(number)), nested)?;
+        let latched: Vec<Vec<u8>> = if items.len() == 1 {
+            members.iter().map(|&number| if hit.contains(&number) { latch(lacks(number)) } else { written(number) }).collect()
+        } else {
+            // The shared latch stands for all of the group's treasure tests.
+            members
+                .iter()
+                .filter(|&&number| number == hit[0] || !hit.contains(&number))
+                .map(|&number| if number == hit[0] { latch(false) } else { written(number) })
+                .collect()
+        };
+        // Take the whole lines: their indentation before and the line end after.
+        let mut start = found[first.unwrap_or(members[0])].start;
+        let line = b"\n\r"
+            .iter()
+            .filter_map(|&byte| text[..start].iter().rposition(|&found| found == byte))
+            .max()
+            .map_or(0, |at| at + 1);
+        if text[line..start].iter().all(|&byte| byte == b' ' || byte == b'\t') {
+            start = line;
+        }
+        let mut end = found[members[members.len() - 1]].end;
+        for newline in [&b"\r\n"[..], b"\n"] {
+            if text[end..].starts_with(newline) {
+                end += newline.len();
+                break;
+            }
+        }
+        // (selected OR original) AND (!selected OR latched). No nested OR/AND.
+        let mut changed = format!("OR({})\r\nGlobal(\"{flag}\",\"GLOBAL\",1)\r\n", members.len() + 1).into_bytes();
+        changed.extend(members.iter().map(|&number| written(number)).collect::<Vec<_>>().join(&b"\r\n"[..]));
+        changed.extend_from_slice(b"\r\n");
+        changed.extend(format!("OR({})\r\n!Global(\"{flag}\",\"GLOBAL\",1)\r\n", latched.len() + 1).into_bytes());
+        changed.extend(latched.join(&b"\r\n"[..]));
+        changed.extend_from_slice(b"\r\n");
+        edits.push((start, end, changed));
+    }
+    Ok(edits)
 }
 
 fn read_dialogue(data: &[u8], resource: &str) -> Result<Dialogue> {
@@ -528,9 +700,10 @@ fn patch_dialogue(resource: &str, original: &[u8]) -> Result<Vec<u8>> {
     let label = label(resource);
     let mut sites = 0;
     for (kind, table) in [("condition", &mut dialogue.state_triggers), ("reply condition", &mut dialogue.triggers)] {
-        for index in 0..table.len() {
-            if let Some((start, end, changed)) = condition_edit(&table[index], resource, &format!("{label} {kind} {index}"))? {
-                table[index] = [&table[index][..start], &changed, &table[index][end..]].concat();
+        for (index, condition) in table.iter_mut().enumerate() {
+            let edits = condition_edits(condition, resource, &format!("{label} {kind} {index}"))?;
+            if !edits.is_empty() {
+                *condition = replaced(condition, &edits);
                 sites += 1;
             }
         }

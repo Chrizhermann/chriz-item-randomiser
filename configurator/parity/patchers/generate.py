@@ -38,7 +38,7 @@ ROOT = Path(__file__).resolve().parents[3]
 sys.path[:0] = [str(ROOT / "tools"), str(ROOT / "tests"), str(ROOT)]
 
 from flir_config import container_rewards, cursed_disguises, mode2_rewards, original_options  # noqa: E402
-from flir_config import quest_options, quest_rewards, spell_rewards  # noqa: E402
+from flir_config import quest_options, quest_rewards, reward_copies, spell_rewards  # noqa: E402
 from flir_config import creature_inventory, group_recipients, store_inventory  # noqa: E402
 from flir_config.game_text import GameTextError  # noqa: E402
 from flir_config.profiles import ProfileError  # noqa: E402
@@ -49,6 +49,7 @@ import test_container_rewards as container_tests  # noqa: E402
 import test_cursed_disguises as cursed_tests  # noqa: E402
 import test_mode2_rewards as mode2_tests  # noqa: E402
 import test_quest_options as quest_tests  # noqa: E402
+import test_reward_copies as copy_tests  # noqa: E402
 import test_spell_rewards as spell_tests  # noqa: E402
 from test_original_options import ALL_DISGUISE_ITEMS  # noqa: E402
 from test_postinstall_resources import make_itm, make_tlk  # noqa: E402
@@ -465,7 +466,25 @@ def reason_cases(s: Scenario) -> None:
             ("given", {(22, 0): b'GiveItem("shld26",LastTalkedToBy)'}),
             ("empty", {(22, 0): b"", (22, 1): b""}),
             ("byte", {(22, 0): b'GiveItemCreate("shld26",Pl\xe4yer1,0,0,0)'}),
-            ("one gated", {(22, 1): b"GiveGoldForce(500)"})):
+            ("one gated", {(22, 1): b"GiveGoldForce(500)"}),
+            # test_routes_the_check_cannot_recognise_name_their_reason (0eb5619).
+            ("given other", {(22, 1): f'{grant}\r\nGiveItem("shld26",Player2)'.encode()}),
+            ("take replace", {(23, 0): b'TakeItemReplace("Shld26","misc5x",LastTalkedToBy)'}),
+            ("override", {(22, 0): b'ActionOverride(Player2,GiveItemCreate("shld26",Myself,0,0,0))'}),
+            # test_actions_that_only_take_show_or_test_the_reward_never_stop_a_route.
+            ("only taken", {(22, 1): f'TakePartyItem("misc5x")\r\n{grant}\r\nDestroyItem("SHLD26")'.encode(),
+                            (23, 0): b'TakeItemReplace("misc5x","shld26",LastTalkedToBy)\r\nActionOverride(Player2,'
+                                     b'DestroyItem("shld26"))\r\nSetGlobal("SHLD26","GLOBAL",1)'}),
+            # Every other action that puts the item somewhere.
+            ("created global", {(22, 0): f'{grant}\r\nCreateItemGlobal("Var","GLOBAL","shld26")'.encode()}),
+            ("transformed", {(22, 0): f'{grant}\r\nTransformItem("misc5x","SHLD26")'.encode()}),
+            ("dropped", {(22, 0): f'{grant}\r\nDropItem("shld26",[100.200])'.encode()}),
+            ("picked up", {(22, 0): f'{grant}\r\nPickUpItem("shld26")'.encode()}),
+            ("stocked", {(22, 0): f'{grant}\r\nAddStoreItem("shop01","shld26",1,0)'.encode()}),
+            ("got", {(23, 0): b'GetItem("shld26",Player3)'}),
+            ("other store item", {(22, 0): f'{grant}\r\nAddStoreItem("shld26","misc5x",1,0)'.encode()}),
+            ("override unreadable", {(22, 0): f'{grant}\r\nActionOverride(Player2)'.encode()}),
+            ("override others", {(22, 0): f'{grant}\r\nActionOverride(Player2,TakePartyItem("shld26"))'.encode()})):
         reward_checks(s, f"uhogre01 {label}", "dlg:uhogre01", mode2_tests.with_actions(original, "uhogre01", changes))
     reward_checks(s, "uhogre01 broken", "dlg:uhogre01", b"DLG V1.0" + bytes(10))
     reward_checks(s, "uhogre01 no bytes", "dlg:uhogre01", b"")
@@ -481,7 +500,9 @@ def reason_cases(s: Scenario) -> None:
     reward_checks(s, "ppdjinn plain", "dlg:ppdjinn",
                   mode2_tests.dialogue_fixture(mode2_rewards.resource_specs("dlg:ppdjinn")))
     action, block, well_reward = mode2_tests.action, mode2_tests.block, mode2_tests.well_reward
+    alternatives = mode2_tests.alternatives
     other = block(action(151, 40849, target=1))
+    twice_shown = well_reward() + action(151, 40850, target=2) + action(116, text="HELM21")
 
     def well(*blocks):
         return ('SC\n' + "".join(blocks) + 'SC\n').encode()
@@ -498,7 +519,15 @@ def reason_cases(s: Scenario) -> None:
             ("no blocks", b"SC\nSC\n"), ("no header", b"XX\nSC\n"), ("empty", b""),
             ("two grants", well(block(well_reward()), other, block(well_reward()))),
             ("text elsewhere", well(block(action(151, 40850, target=1)), block(action(140, text="helm21", target=21)))),
-            ("crlf", crlf(mode2_tests.script_fixture("ddwell")))):
+            ("crlf", crlf(mode2_tests.script_fixture("ddwell"))),
+            ("add store", well(other, alternatives(well_reward(), action(363, text="shop01", second="helm21")))),
+            ("alternatives", well(other, alternatives(well_reward(), twice_shown), other)),
+            ("alternatives twice", well(other, alternatives(well_reward() + action(140, text="HELM21", target=21),
+                                                            well_reward()))),
+            ("alternatives one", well(other, alternatives(action(30, 1, "OtherModWell"), well_reward()))),
+            ("created global", well(other, block(well_reward() + action(256, text="var", second="helm21")))),
+            ("transformed", well(other, block(well_reward() + action(356, text="misc5x", second="HELM21")))),
+            ("got", well(other, block(well_reward() + action(14, text="helm21", target=2))))):
         patched(s, f"ddwell {label} with ref", "bcs:ddwell", data, ddwell_ref=100001)
         reward_checks(s, f"ddwell {label}", "bcs:ddwell", data)
     asysta = mode2_tests.script_fixture("asysta01")
@@ -657,6 +686,29 @@ def ddwell_cases(s: Scenario, ddwell: bytes, result: bytes) -> None:
                    lambda data=data, spec=spec, text_ref=text_ref: mode2_rewards._patch_script(data, spec, text_ref))
 
 
+def start_order_cases(s: Scenario) -> None:
+    """test_a_cloned_start_state_keeps_its_place_among_the_start_conditions."""
+    d = quest_options._Dialogue(mode2_tests.dialogue_fixture(mode2_rewards.resource_specs("dlg:ppdjinn")), "ppdjinn")
+    struct.pack_into("<I", d.states[0], 0, 48995)
+    d.state_triggers += [b'NumTimesTalkedTo(0)\r\n', b'Global("OtherModDjinn","GLOBAL",1)\r\n']
+    for label, entries in (("first", (0, 1)), ("last", (1, 0))):
+        struct.pack_into("<I", d.states[0], 12, entries[0])
+        struct.pack_into("<I", d.states[1], 12, entries[1])
+        original = d.render()
+        result = patched(s, f"start order {label}", "dlg:ppdjinn", original, refs={48995: 100001})
+        text_original_case(s, f"start order {label}", "dlg:ppdjinn", result)
+        reward_checks(s, f"start order {label}", "dlg:ppdjinn", result)
+        reward_checks(s, f"start order original {label}", "dlg:ppdjinn", original)
+    # A start condition shared by the reward state and another state, and a
+    # state without a condition before the reward state.
+    struct.pack_into("<I", d.states[0], 12, 1)
+    struct.pack_into("<I", d.states[1], 12, 1)
+    patched(s, "start order shared", "dlg:ppdjinn", d.render(), refs={48995: 100001})
+    struct.pack_into("<I", d.states[0], 12, 0)
+    struct.pack_into("<I", d.states[1], 12, 0xFFFFFFFF)
+    patched(s, "start order unconditioned", "dlg:ppdjinn", d.render(), refs={48995: 100001})
+
+
 def mode2_scenario() -> Scenario:
     originals = mode2_inputs()
     s = Scenario("mode2_rewards")
@@ -700,6 +752,7 @@ def mode2_scenario() -> Scenario:
     reason_cases(s)
     layout_cases(s)
     aran_cases(s)
+    start_order_cases(s)
     for resource in ("uhogre01.dlg", "UHOGRE01", "override/uhogre01.dlg", "dlg:aran.dlg", "x:y:ddwell", "nothing",
                      "DLG:UHOGRE01", "bcs:uhogre01", "dlg:", ""):
         data = originals["dlg:uhogre01"] if "ogre" in resource or "aran" in resource else originals["bcs:ddwell"]
@@ -906,7 +959,42 @@ def container_reason_cases(s: Scenario) -> None:
         ("dlg:samia", "or three", container_tests.dialogue_fixture(
             "dlg:samia", {1: b'OR(3)\r\nPartyHasItem("sw1h32")\r\nPartyHasItem("shld21")\r\nTrue()\r\n'})),
         ("dlg:safanj", "lf", container_tests.dialogue_fixture("dlg:safanj", {2: b'PartyHasItem("book03")'})),
-        ("dlg:safanj", "spaced", container_tests.dialogue_fixture("dlg:safanj", {2: b'  ! PartyHasItem( "book03" )  \r\n'})))
+        ("dlg:safanj", "spaced", container_tests.dialogue_fixture("dlg:safanj", {2: b'  ! PartyHasItem( "book03" )  \r\n'})),
+        # test_routes_the_check_cannot_recognise_name_their_reason (0eb5619).
+        ("bcs:kpgol01", "has item", blocks(block(trigger(16481, text="ax1h13", selector=2), golem))),
+        ("bcs:kpgol01", "or count", blocks(block(trigger(16521, 3) + trigger(16450, text="ax1h13") +
+                                                 trigger(16399, 1, text="GLOBALOther"), golem))),
+        ("bcs:kpgol01", "nested or", blocks(block(trigger(16521, 2) + trigger(16521, 1) + trigger(16450, text="ax1h13") +
+                                                  trigger(16399, 1, text="GLOBALOther"), golem))),
+        ("bcs:samia", "separate", blocks(block(trigger(16450, text="shld21") + trigger(16450, text="sw1h32"), action(10)))),
+        ("bcs:samia", "lacks one", blocks(block(trigger(16521, 2) + trigger(16450, negate=1, text="shld21") +
+                                                trigger(16450, text="sw1h32"), action(10)))),
+        ("dlg:samia", "separate", container_tests.dialogue_fixture(
+            "dlg:samia", {1: b'PartyHasItem("shld21")\r\nPartyHasItem("sw1h32")\r\n'})),
+        ("dlg:safanj", "object", container_tests.dialogue_fixture("dlg:safanj", {2: b'PartyHasItem("book03",Myself)\r\n'})),
+        ("dlg:safanj", "or three", container_tests.dialogue_fixture(
+            "dlg:safanj", {2: b'OR(3)\r\nPartyHasItem("book03")\r\nGlobal("X","GLOBAL",1)\r\n'})),
+        ("dlg:safanj", "or unreadable", container_tests.dialogue_fixture(
+            "dlg:safanj", {2: b'OR(X)\r\nPartyHasItem("book03")\r\nGlobal("X","GLOBAL",1)\r\n'})),
+        ("dlg:safanj", "contains", container_tests.dialogue_fixture("dlg:safanj", {2: b'Contains("book03",Myself)\r\n'})),
+        ("dlg:safanj", "num items", container_tests.dialogue_fixture("dlg:safanj", {2: b'NumItemsParty("BOOK03",1)\r\n'})),
+        ("bcs:kpgol01", "num items", blocks(block(trigger(16506, 1, text="ax1h13"), golem))),
+        # test_treasure_tests_inside_or_groups_and_repeated_golem_texts.
+        ("bcs:kpgol01", "or golem responses", b"SC\nCR\nCO\n" + trigger(16521, 2) + trigger(16450, text="ax1h13") +
+         trigger(16399, 1, text="GLOBALOther") + b"CO\nRS\nRE\n50" + action(151, 38758) + action(10) +
+         b"RE\nRE\n50" + action(151, 38758) + b"RE\nRS\nCR\nSC\n"),
+        ("bcs:kpgol01", "or after negated", b"SC\nCR\nCO\n" + trigger(16450, negate=1, text="ax1h13") +
+         trigger(16521, 2) + trigger(16399, 1, text="GLOBALOther") + trigger(16450, text="AX1H13") +
+         b"CO\nRS\nRE\n100" + action(151, 38758) + b"RE\nRS\nCR\nSC\n"),
+        ("bcs:samia", "or three other", b"SC\nCR\nCO\n" + trigger(16521, 3) + trigger(16450, text="shld21") +
+         trigger(16399, 1, text="GLOBALOther") + trigger(16450, text="sw1h32") + b"CO\nRS\nRE\n100" + action(10) +
+         b"RE\nRS\nCR\nSC\n"),
+        ("dlg:safanj", "or other", container_tests.dialogue_fixture("dlg:safanj", {index: (
+            b'OR(2)\r\nPartyHasItem("book03")\r\nGlobal("Other","GLOBAL",1)\r\n') for index in (0, 2, 8)})),
+        ("dlg:safanj", "or after negated", container_tests.dialogue_fixture("dlg:safanj", {index: (
+            b'!PartyHasItem("book03")\nOR(2)\nGlobal("Other","GLOBAL",1)\nPartyHasItem("BOOK03")') for index in (0, 2, 8)})),
+        ("dlg:samia", "or three other", container_tests.dialogue_fixture("dlg:samia", {1: (
+            b'OR(3)\r\nPartyHasItem("sw1h32")\r\nGlobal("Other","GLOBAL",1)\r\nPartyHasItem("shld21")\r\n')})))
     for resource, label, data in cases:
         container_checks(s, f"reasons {label} {resource}", resource, data)
         container_patched(s, f"reasons {label} {resource} with refs", resource, data, refs={38758: 100001})
@@ -965,6 +1053,132 @@ def container_scenario(name: str, line_endings: str) -> Scenario:
     s.case("patch_container_resource unknown", "container_rewards.patch_container_resource",
            {"resource": "bcs:nothing", "data": b"", "refs": None},
            lambda: container_rewards.patch_container_resource("bcs:nothing", b""))
+    return s
+
+
+# ---------------------------------------------------------------- copies of reward replies
+
+
+def ordered(value):
+    """Dicts with their keys sorted at every level, as the Rust maps keep them."""
+    if isinstance(value, dict):
+        return {key: ordered(value[key]) for key in sorted(value)}
+    return value
+
+
+def copies_case(s: Scenario, label: str, files: dict, scanned: dict | None = None, *, limit: int | None = None,
+                routes=(("uhogre01",),)) -> None:
+    """RewardCopies over these dialogues: what it found and the patches of some routes."""
+    scanned = ({"dlg:" + name: sha(data) for name, data in files.items()} if scanned is None else scanned)
+
+    def run():
+        with ExitStack() as stack:
+            if limit is not None:
+                stack.enter_context(patch.object(reward_copies, "LIMIT", limit))
+            found = reward_copies.RewardCopies(lambda name: files.get(name), scanned)
+        return {"copies": ordered(found.copies), "reasons": ordered(found.reasons),
+                "checked": {key: sorted(found.checked(key)) for key in sorted(found.visited)},
+                "changed": sorted(found.changed), "originals": ordered(found.originals),
+                "patches": [ordered(found.patches(list(keys))) for keys in routes]}
+    s.case(f"copies {label}", "reward_copies.RewardCopies",
+           {"files": files, "scanned": scanned, "limit": limit, "routes": [list(keys) for keys in routes]}, run)
+
+
+def copies_scenario() -> Scenario:
+    """tests/test_reward_copies.py, and more dialogues an interjection can leave."""
+    s = Scenario("reward_copies")
+    interject, link, empty = copy_tests.interject, copy_tests.link, copy_tests.empty_dialogue
+    ogre = mode2_tests.dialogue_fixture(mode2_rewards.resource_specs("dlg:uhogre01")[0])
+    route, npc, state = interject(ogre, "uhogre01", 22, "xnpcj")
+    copies_case(s, "interjection", {"uhogre01": route, "xnpcj": npc}, routes=(("uhogre01",), ("mgkhol01",), ()))
+    s.case("copy_spec", "reward_copies.copy_spec", {"key": "uhogre01", "resource": "dlg:xnpcj"},
+           lambda: reward_copies.copy_spec("uhogre01", "dlg:xnpcj"))
+    trans2, trans2_npc, _ = interject(ogre, "uhogre01", 22, "xnpcj", copy_actions=False)
+    copies_case(s, "trans2", {"uhogre01": trans2, "xnpcj": trans2_npc})
+    chained, first, _ = interject(ogre, "uhogre01", 22, "xnpca")
+    first, second, other = interject(first, "xnpca", state, "xnpcb")
+    second = link(second, "xnpcb", other, "xnpca", state)
+    copies_case(s, "chained", {"uhogre01": chained, "xnpca": first, "xnpcb": second})
+    aran = mode2_tests.dialogue_fixture(mode2_rewards.resource_specs("dlg:aran"))
+    aran_route, sarah, _ = interject(aran, "aran", 4, "k#sarahj")
+    copies_case(s, "two routes", {"aran": aran_route, "k#sarahj": sarah},
+                routes=(("aran", "aran2"), ("aran",), ("aran2",)))
+
+    def changed_reply(data, name, at, change):
+        dialogue = quest_options._Dialogue(data, name)
+        index = struct.unpack_from("<I", mode2_tests.outgoing(dialogue, at)[0], 16)[0]
+        dialogue.actions[index] = change(dialogue.actions[index])
+        return dialogue.render()
+    copies_case(s, "also gives", {"uhogre01": route, "xnpcj": changed_reply(
+        npc, "xnpcj", state, lambda text: text.replace(b"Wait(1)", b"Wait(2)"))})
+    copies_case(s, "takes and shows", {"uhogre01": route, "xnpcj": changed_reply(
+        npc, "xnpcj", state, lambda text: b'TakePartyItem("shld26")\r\nDisplayStringHead(Myself,1)\r\n')})
+    copies_case(s, "unreadable", {"uhogre01": route, "xnpcj": changed_reply(
+        npc, "xnpcj", state, lambda text: b'GiveItemCreate("shld26",Player1,0,0,0')})
+    copies_case(s, "through another actor", {"uhogre01": route, "xnpcj": changed_reply(
+        npc, "xnpcj", state, lambda text: b'ActionOverride(Player2,GiveItemCreate("shld26",Myself,0,0,0))')})
+    copies_case(s, "override unreadable", {"uhogre01": route, "xnpcj": changed_reply(
+        npc, "xnpcj", state, lambda text: b'ActionOverride(Player2)\r\nTakePartyItem("SHLD26")')})
+    for name in ("hlskull", "mgkhol01", "samia"):
+        changed, other_npc, _ = interject(ogre, "uhogre01", 22, name)
+        copies_case(s, f"cir changes {name}", {"uhogre01": changed, name: other_npc})
+    genie = mode2_rewards.resource_specs("dlg:trgeni01")[0]
+    genie_route, genie_npc, _ = interject(mode2_tests.dialogue_fixture(genie), "trgeni01", 35, "xnpcj")
+    copies_case(s, "carried", {"trgeni01": genie_route, "xnpcj": genie_npc}, routes=(("trgeni01",),))
+    linked = link(ogre, "uhogre01", 3, "broken", 0)
+    copies_case(s, "broken", {"uhogre01": linked, "broken": b"DLG V1.0" + bytes(10)})
+    copies_case(s, "missing", {"uhogre01": linked})
+    copies_case(s, "missing state", {"uhogre01": link(ogre, "uhogre01", 3, "xnpcj", 7), "xnpcj": npc})
+    chain = quest_options._Dialogue(empty("xnpcj"), "xnpcj")
+    for number in range(5):
+        chain.state(1, [chain.transition(number + 1, reply=1)])
+    chain_route = link(ogre, "uhogre01", 3, "xnpcj", 0)
+    for limit in (3, 4, 5, 6):
+        copies_case(s, f"limit {limit}", {"uhogre01": chain_route, "xnpcj": chain.render()}, limit=limit)
+    # A copy dialogue whose tables point outside themselves.
+    outside = quest_options._Dialogue(npc, "xnpcj")
+    struct.pack_into("<I", outside.states[state], 8, 99)
+    copies_case(s, "replies outside", {"uhogre01": route, "xnpcj": outside.render()})
+    outside = quest_options._Dialogue(npc, "xnpcj")
+    first_row = struct.unpack_from("<I", outside.states[state], 4)[0]
+    struct.pack_into("<I", outside.transitions[first_row], 16, 99)
+    copies_case(s, "actions outside", {"uhogre01": route, "xnpcj": outside.render()})
+    # The link's name in another letter case, padded or with a Latin-1 byte.
+    upper = quest_options._Dialogue(route, "uhogre01")
+    for row in upper.transitions:
+        if bytes(row[20:28]).rstrip(b"\0") == b"XNPCJ":
+            row[20:28] = b"xNpCj\0\0\0"
+    copies_case(s, "link case", {"uhogre01": upper.render(), "xnpcj": npc})
+    latin = link(ogre, "uhogre01", 3, "x\xc9npc", 0)
+    copies_case(s, "latin-1 missing", {"uhogre01": latin})
+    copies_case(s, "latin-1", {"uhogre01": latin, "x\xe9npc": npc})
+    # The link names the dialogue in UTF-8 bytes; read as Latin-1 they are
+    # not ASCII, which the dialogue reader refuses.
+    copies_case(s, "latin-1 present", {"uhogre01": latin, "x\xc3\x89npc".lower(): npc})
+    temple = mode2_tests.dialogue_fixture(mode2_rewards.resource_specs("dlg:bhoisig"))
+    temple_files = {"bhoisig": link(temple, "bhoisig", 0, "scyarryl", 19),
+                    "scyarryl": mode2_tests.dialogue_fixture(mode2_rewards.resource_specs("dlg:scyarryl")),
+                    "bhnalla": mode2_tests.dialogue_fixture(mode2_rewards.resource_specs("dlg:bhnalla")),
+                    "bharval": mode2_tests.dialogue_fixture(mode2_rewards.resource_specs("dlg:bharval"))}
+    copies_case(s, "temple", temple_files, routes=(("bhoisig",), ("bhoisig", "scyarryl")))
+    # Our own patch, before and after a rescan; a changed one; other changes.
+    before = {"uhogre01": route, "xnpcj": npc}
+    found = reward_copies.RewardCopies(before.get, {})
+    applied = {"uhogre01": mode2_rewards.patch_reward("dlg:uhogre01", route),
+               "xnpcj": found.patches(["uhogre01"])["dlg:xnpcj"]}
+    before_hashes = {"dlg:" + name: sha(data) for name, data in before.items()}
+    copies_case(s, "applied", applied)
+    copies_case(s, "applied before rescan", applied, before_hashes)
+    copies_case(s, "tampered", dict(applied, xnpcj=applied["xnpcj"].replace(b"FLPR_", b"OTHER", 1)))
+    copies_case(s, "tampered event", dict(applied, xnpcj=applied["xnpcj"].replace(b"FLPR_EM2_14", b"FLPR_EM2_99")))
+    copies_case(s, "changed since scan", dict(before, xnpcj=npc + b"\0"), before_hashes)
+    copies_case(s, "gone", {"uhogre01": route}, {"dlg:uhogre01": sha(route), "dlg:xnpcj": sha(npc)})
+    copies_case(s, "unscanned", before, {})
+    aran_found = reward_copies.RewardCopies({"aran": aran_route, "k#sarahj": sarah}.get, {})
+    aran_applied = {"aran": aran_route, "k#sarahj": aran_found.patches(["aran", "aran2"])["dlg:k#sarahj"]}
+    copies_case(s, "two routes applied", aran_applied, routes=(("aran", "aran2"), ("aran",)))
+    one_applied = {"aran": aran_route, "k#sarahj": aran_found.patches(["aran"])["dlg:k#sarahj"]}
+    copies_case(s, "one of two routes applied", one_applied, routes=(("aran", "aran2"), ("aran",)))
     return s
 
 
@@ -1246,13 +1460,23 @@ def cursed_scenario() -> Scenario:
 def game_routes_scenario(game: Path, language: str) -> Scenario:
     """The reward routes' resources of an installed game, only read: each one
     patched with the texts the export allocates for it, recognised before and
-    after, and exported again."""
+    after, and exported again; and the copies of reward replies in the game's
+    other dialogues, before and after Apply."""
     from flir_config.resources import RESOURCE_TYPES, GameResources
     routes = sorted({*mode2_rewards.RESOURCE_REWARDS, *container_rewards.RESOURCE_TARGETS})
     with GameResources(game, {kind: RESOURCE_TYPES[kind] for kind in ("bcs", "dlg")}) as reader:
         present = {kind: set(reader.names(kind)) for kind in ("bcs", "dlg")}
         originals = {resource: reader.read(*resource.split(":")) for resource in routes
                      if resource.split(":")[1] in present[resource.split(":")[0]]}
+        # The dialogues the copies of reward replies are looked for in.
+        dialogues: dict[str, bytes | None] = {}
+
+        def capture(name: str) -> bytes | None:
+            if name not in dialogues:
+                dialogues[name] = reader.read("dlg", name) if name in present["dlg"] else None
+            return dialogues[name]
+        reward_copies.RewardCopies(capture, {})
+    files = {name: data for name, data in dialogues.items() if data is not None}
     tlk = (game / (Path("dialog.tlk") if language == "default" else Path("lang") / language / "dialog.tlk")).read_bytes()
     # The texts as native_export allocates them; without English the text
     # routes have none, and the check leaves them out.
@@ -1280,7 +1504,24 @@ def game_routes_scenario(game: Path, language: str) -> Scenario:
                 script_original_case(s, f"{label} {resource}", resource, value)
             elif resource in mode2_rewards.TEXT_REFS:
                 text_original_case(s, f"{label} {resource}", resource, value)
-    print(f"game_routes: {len(originals)} of {len(routes)} reward route resources in the game")
+    # The copies as the scan before Apply finds them, and again in the game as
+    # Apply leaves it: the route dialogues and the copies patched.
+    keys = tuple(sorted(reward_copies._ROUTES))
+    copies_case(s, "game", files, routes=(keys,))
+    found = reward_copies.RewardCopies(files.get, {})
+    applied = dict(files)
+    for resource, data in found.patches(list(keys)).items():
+        applied[resource[4:]] = data
+    for resource, data in originals.items():
+        if resource.startswith("dlg:") and resource in mode2_rewards.RESOURCE_REWARDS and resource[4:] in applied:
+            try:
+                applied[resource[4:]] = mode2_rewards.patch_reward(resource, data, refs=reward_texts.get(resource))
+            except ProfileError:
+                pass
+    copies_case(s, "game applied", applied, {"dlg:" + name: sha(data) for name, data in files.items()}, routes=(keys,))
+    print(f"game_routes: {len(originals)} of {len(routes)} reward route resources in the game; "
+          f"{len(files)} dialogues read for copies, {len(found.copies)} routes with copies, "
+          f"{len(found.reasons)} left out because of copies")
     return s
 
 
@@ -1308,7 +1549,7 @@ def main() -> None:
         spell_scenario("spell_rewards_effect", spell_tests.spell_fixture().replace(b"ring41", b"ring42")),
         spell_scenario("spell_rewards_reviewed", spell_tests.spell_fixture(), patched_hash="0" * 64),
         mode2_scenario(),
-        mode2_trgeni_scenario(),
+        mode2_trgeni_scenario(), copies_scenario(),
         container_scenario("container_rewards", "lf"),
         container_scenario("container_rewards_crlf", "crlf"),
         *inventory_scenarios(),

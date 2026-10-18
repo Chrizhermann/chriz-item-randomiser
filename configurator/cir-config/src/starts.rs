@@ -646,7 +646,7 @@ pub fn restrict(
         }
         let mut problems = Dict::new();
         let campaign = compile_campaign(&profile, catalog, world, &plan)?;
-        crate::native_export::compile(&campaign, world, &index, &items, catalog, Some(&mut problems))?;
+        crate::native_export::compile(&campaign, world, &index, &items, catalog, Some(&mut problems), false, None)?;
         if problems.is_empty() {
             return Ok(Some((profile, plan)));
         }

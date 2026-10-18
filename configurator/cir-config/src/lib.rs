@@ -27,6 +27,7 @@ pub mod quest_options;
 pub mod script_text;
 pub mod mode2_rewards;
 pub mod container_rewards;
+pub mod reward_copies;
 pub mod reward_routes;
 pub mod original_options;
 pub mod cursed_disguises;

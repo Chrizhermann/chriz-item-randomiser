@@ -13,9 +13,9 @@ use cir_config::py::{from_hex, hex};
 use cir_config::resources::sha256_hex;
 use cir_config::{
     container_rewards, creature_inventory, cursed_disguises, group_recipients, mode2_rewards, original_options,
-    quest_options, quest_rewards, spell_rewards, store_inventory, Error, ErrorKind, Result,
+    quest_options, quest_rewards, reward_copies, spell_rewards, store_inventory, Error, ErrorKind, Result,
 };
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 use std::sync::Once;
 
@@ -171,6 +171,43 @@ fn text_refs_value() -> Value {
             })
             .collect(),
     )
+}
+
+/// `RewardCopies` over the recorded dialogues, as the generator records it:
+/// what it found (maps in key order) and the patches of each list of routes.
+fn reward_copies_value(args: &Args) -> Result<Value> {
+    let files = args.blob_map("files");
+    let scanned: HashMap<String, Value> =
+        args.dict("scanned").iter().map(|(resource, hash)| (resource.to_string(), hash.clone())).collect();
+    let limit = args.optional_int("limit").map_or(reward_copies::LIMIT, |limit| limit as usize);
+    let found = reward_copies::RewardCopies::with_limit(&mut |name| Ok(files.get(name).cloned()), &scanned, limit)?;
+    let replies = |rows: &mode2_rewards::Replies| -> Value {
+        Value::Dict(
+            rows.iter()
+                .map(|(state, ordinals)| (state.to_string(), Value::from(ordinals.iter().map(|&ordinal| ordinal as i64).collect::<Vec<_>>())))
+                .collect(),
+        )
+    };
+    let copies: Dict = found
+        .copies
+        .iter()
+        .map(|(key, dialogues)| (key.clone(), Value::Dict(dialogues.iter().map(|(resource, rows)| (resource.clone(), replies(rows))).collect())))
+        .collect();
+    let reasons: Dict = found.reasons.iter().map(|(key, reason)| (key.clone(), Value::from(reason.as_str()))).collect();
+    let checked: Dict =
+        found.visited.keys().map(|key| (key.clone(), Value::from(found.checked(key).into_iter().collect::<Vec<_>>()))).collect();
+    let originals: Dict = found.originals.iter().map(|(resource, data)| (resource.clone(), bytes_value(data))).collect();
+    let mut patches = Vec::new();
+    for keys in args.value("routes").as_list().expect("routes") {
+        let keys: Vec<String> = keys.as_list().expect("route list").iter().map(|key| key.as_str().expect("route").to_string()).collect();
+        let patched: Dict = found.patches(&keys)?.iter().map(|(resource, data)| (resource.clone(), bytes_value(data))).collect();
+        patches.push(Value::Dict(patched));
+    }
+    Ok(Value::Dict(cir_config::dict! {
+        "copies" => copies, "reasons" => reasons, "checked" => checked,
+        "changed" => Value::from(found.changed.iter().cloned().collect::<Vec<_>>()), "originals" => originals,
+        "patches" => Value::List(patches),
+    }))
 }
 
 /// Call the Rust port of one reference function with the recorded arguments.
@@ -340,6 +377,8 @@ fn call(name: &str, args: &Args) -> Result<Value> {
             &args.bytes("data"),
             args.refs("refs").as_ref(),
         )?),
+        "reward_copies.copy_spec" => Value::Dict(reward_copies::copy_spec(&args.str("key"), &args.str("resource"))?),
+        "reward_copies.RewardCopies" => reward_copies_value(args)?,
         "store_inventory.rewrite_inventory" => {
             let removals: BTreeSet<i64> =
                 args.value("removals").as_list().expect("removals").iter().map(|index| index.as_int().expect("index")).collect();

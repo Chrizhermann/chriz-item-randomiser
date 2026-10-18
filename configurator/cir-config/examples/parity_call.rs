@@ -153,6 +153,7 @@ fn run(name: &str, args: &Dict) -> Result<Value> {
             let items = validate_catalog(&catalog)?;
             let index = validate_world(&world, &catalog)?;
             let collect = argument(args, "problems")?.is_some_and(|value| value.truthy());
+            let stored = argument(args, "stored")?.is_some_and(|value| value.truthy());
             let mut problems = Dict::new();
             let (native, required_resources, pristine) = native_export::compile(
                 &manifest,
@@ -161,6 +162,8 @@ fn run(name: &str, args: &Dict) -> Result<Value> {
                 &items,
                 &catalog,
                 if collect { Some(&mut problems) } else { None },
+                stored,
+                None,
             )?;
             let mut problems: Vec<(String, Value)> =
                 problems.iter().map(|(identity, reason)| (identity.to_string(), reason.clone())).collect();

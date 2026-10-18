@@ -261,13 +261,25 @@ pub fn obj(selector: u32) -> String {
 
 /// `action(opcode, value=0, text="", target=0, actor=0)`.
 pub fn action(opcode: u32, value: i64, text: &str, target: u32, actor: u32) -> String {
-    format!("AC\n{opcode}OB\n{}OB\n{}OB\n{}{value} 0 0 0 0\"{text}\" \"\" AC\n", obj(actor), obj(target), obj(0))
+    action_with(opcode, value, text, target, actor, "")
+}
+
+/// `action(opcode, value, text, target, actor, second)`: with a second string.
+pub fn action_with(opcode: u32, value: i64, text: &str, target: u32, actor: u32, second: &str) -> String {
+    format!("AC\n{opcode}OB\n{}OB\n{}OB\n{}{value} 0 0 0 0\"{text}\" \"{second}\" AC\n", obj(actor), obj(target), obj(0))
 }
 
 /// `block(actions, condition="AR1202Quest")`.
 pub fn block(actions: &str, condition: &str) -> String {
+    alternatives(&[actions], condition, 100)
+}
+
+/// `alternatives(*responses, condition="AR1202Quest", weight=50)`: a block
+/// whose responses the engine chooses between by weight.
+pub fn alternatives(responses: &[&str], condition: &str, weight: u32) -> String {
     let condition = format!("TR\n16399 1 0 0 0 \"{condition}\" \"\" OB\n{}TR\n", obj(0));
-    format!("CR\nCO\n{condition}CO\nRS\nRE\n100{actions}RE\nRS\nCR\n")
+    let responses: String = responses.iter().map(|actions| format!("RE\n{weight}{actions}RE\n")).collect();
+    format!("CR\nCO\n{condition}CO\nRS\n{responses}RS\nCR\n")
 }
 
 /// `well_reward(target=21, display=40850)`.

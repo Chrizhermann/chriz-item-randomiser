@@ -790,7 +790,7 @@ fn fit_from(
         }
         let campaign = compile_campaign(generated.at("profile")?, catalog, world, generated.at("plan")?)?;
         let mut problems = Dict::new();
-        crate::native_export::compile(&campaign, world, &index, &catalog_items, catalog, Some(&mut problems))?;
+        crate::native_export::compile(&campaign, world, &index, &catalog_items, catalog, Some(&mut problems), false, None)?;
         if problems.is_empty() {
             return Ok(generated);
         }

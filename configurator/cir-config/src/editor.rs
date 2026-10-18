@@ -226,7 +226,7 @@ impl Editor {
             result.insert("valid", true);
             result.insert("reward_units", Value::from(units));
             result.insert("target_capacity", Value::from(capacity));
-            crate::native_export::compile(&campaign, &self.world, &self.index, &self.items, &self.catalog, None)?;
+            crate::native_export::compile(&campaign, &self.world, &self.index, &self.items, &self.catalog, None, false, None)?;
             Ok(())
         })();
         match attempt {
@@ -631,7 +631,8 @@ impl Editor {
                         .map(|(start, revision)| (start.to_string(), crate::json::py_str(revision)))
                         .collect();
                     let main = written.at("main")?.as_str();
-                    crate::native_export::export_native(&store, &self.catalog, &self.world, &output, None, Some(&starts), main)?;
+                    let exported =
+                        crate::native_export::export_native(&store, &self.catalog, &self.world, &output, None, Some(&starts), main)?;
                     let identity = draft.at("profile")?.at("id")?.clone();
                     write_json(&self.path(&identity)?, &draft, false)?;
                     crate::activation::deploy_export(&game, &output)?;
@@ -652,12 +653,20 @@ impl Editor {
                         return Err(error);
                     }
                     let full = crate::json::py_str(written.at("full")?);
+                    let notes: String = exported
+                        .get("notes")
+                        .map(crate::py::iter_value)
+                        .transpose()?
+                        .unwrap_or_default()
+                        .iter()
+                        .map(|note| format!(" {}.", crate::json::py_str(note)))
+                        .collect();
                     return Ok(Value::Dict(crate::dict! {
                         "revision" => written.at("starts")?.at(&full)?.clone(),
                         "starts" => written.at("starts")?.clone(),
                         "game" => game.to_string_lossy().into_owned(),
                         "message" => format!(
-                            "Saved and applied. {} Each new game randomizes afresh; existing saves keep their settings.",
+                            "Saved and applied. {} Each new game randomizes afresh; existing saves keep their settings.{notes}",
                             crate::starts::describe_starts(&written)?
                         ),
                     }));
