@@ -576,9 +576,15 @@ fn validate_campaign(body: &Value) -> Result<()> {
     if present_original && option("more_spell_shield").is_some_and(Value::truthy) {
         let shield_value = shield.unwrap_or(&Value::Null);
         crate::original_options::validate_spell_shield_spec(shield_value)?;
+        // The scroll's row is in BG2's extended table: only a preset reading
+        // it randomises the stock.
         let randomized = option("scrolls").is_some_and(Value::truthy)
             && field("original_choices").get("items").and_then(Value::as_str) == Some("extended")
-            && !field("original_template_id").as_str().is_some_and(|identity| identity.starts_with("bg1-"));
+            && field("original_template_id")
+                .as_str()
+                .map(crate::templates::template_tables)
+                .transpose()?
+                .is_some_and(|tables| tables.contains(&"bg2"));
         let expected = if randomized { crate::original_options::SPELL_SHIELD_SOURCE } else { "" };
         if shield_value.at("source_id")?.as_str() != Some(expected) {
             return Err(Error::profile("Spell Shield source does not match original item pool choices"));

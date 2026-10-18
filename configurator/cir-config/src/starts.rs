@@ -9,8 +9,8 @@
 //! - An area tells its part of the game by its name (platform::area_part).
 //! - A creature template is where the areas that place it are.
 //! - Any other record (a shop, a script, a conversation, an added item) is
-//!   where the Item Randomiser table that lists it puts it: BG1, or all of
-//!   BG2. A Throne of Bhaal start therefore leaves BG2 shops and scripts as
+//!   where the table that lists it puts it: BG1, Siege of Dragonspear, or all
+//!   of BG2. A Throne of Bhaal start therefore leaves BG2 shops and scripts as
 //!   they are.
 //! - A record whose place is unknown is left out of later starts.
 //!
@@ -33,11 +33,11 @@ use std::path::Path;
 /// Rounds of leaving out what the check names before giving up on a start.
 const FIT_ROUNDS: usize = 8;
 
-/// A record's Item Randomiser table, as the parts of the game it covers are
-/// read from it.
+/// A record's table, as the parts of the game it covers are read from it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Table {
     Bg1,
+    Sod,
     Bg2,
     /// No table, or a value that names none.
     Unknown,
@@ -46,28 +46,38 @@ enum Table {
 impl Table {
     fn of(value: Option<&Value>) -> Table {
         match value.and_then(Value::as_str) {
-            Some("bg1") => Table::Bg1,
-            Some("bg2") => Table::Bg2,
+            Some(name) => Table::named(name),
+            None => Table::Unknown,
+        }
+    }
+
+    /// The table campaign ("bg1", "sod" or "bg2") of this name.
+    fn named(name: &str) -> Table {
+        match name {
+            "bg1" => Table::Bg1,
+            "sod" => Table::Sod,
+            "bg2" => Table::Bg2,
             _ => Table::Unknown,
         }
     }
 
     fn parts(self) -> Option<&'static [Part]> {
-        match self {
-            Table::Bg1 => Some(campaign_parts("bg1")),
-            Table::Bg2 => Some(campaign_parts("bg2")),
-            Table::Unknown => None,
-        }
+        let name = match self {
+            Table::Bg1 => "bg1",
+            Table::Sod => "sod",
+            Table::Bg2 => "bg2",
+            Table::Unknown => return None,
+        };
+        Some(campaign_parts(name).expect("a table campaign"))
     }
 }
 
-/// The Item Randomiser table ("bg1" or "bg2") a row identity such as
-/// bg2:base:item:7 names.
+/// The table ("bg1", "sod" or "bg2") a row identity such as bg2:base:item:7
+/// names.
 fn table_campaign(selector: &Value) -> Table {
-    match selector.as_str().map(|selector| selector.split(':').next().unwrap_or("")) {
-        Some("bg1") => Table::Bg1,
-        Some("bg2") => Table::Bg2,
-        _ => Table::Unknown,
+    match selector.as_str() {
+        Some(selector) => Table::named(selector.split(':').next().unwrap_or("")),
+        None => Table::Unknown,
     }
 }
 

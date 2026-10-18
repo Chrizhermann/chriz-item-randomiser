@@ -52,7 +52,7 @@ fn sale_rows(data: &[u8]) -> Vec<Value> {
 #[test]
 fn totsc_tome_has_all_six_original_choices_on_each_supported_game() {
     for game in ["bgee", "bg2ee", "eet"] {
-        assert_eq!(tome_variants("bg1", game).unwrap(), ["book03", "book04", "book05", "book06", "book07", "book08"]);
+        assert_eq!(tome_variants("bg1", game, None).unwrap(), ["book03", "book04", "book05", "book06", "book07", "book08"]);
     }
 }
 

@@ -7,7 +7,7 @@
 //! game.
 
 use crate::error::{Error, Result};
-use crate::game_names::convert_resource;
+use crate::game_names::{convert_resource, EetNames};
 use crate::json::{Dict, Value};
 use crate::profiles::is_hex256;
 use crate::py::{put_u32, str_value, u16_le, u32_le};
@@ -18,8 +18,8 @@ use std::collections::BTreeSet;
 
 /// In Item Randomiser's own randomisation, the b2c reward is one of all six
 /// stat books, chosen uniformly.
-pub fn tome_variants(campaign: &str, game: &str) -> Result<Vec<String>> {
-    (3..9).map(|number| convert_resource(&format!("book{number:02}"), "itm", campaign, game)).collect()
+pub fn tome_variants(campaign: &str, game: &str, names: Option<&EetNames>) -> Result<Vec<String>> {
+    (3..9).map(|number| convert_resource(&format!("book{number:02}"), "itm", campaign, game, names)).collect()
 }
 
 fn row_int(row: &Dict, key: &str) -> i64 {

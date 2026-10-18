@@ -420,12 +420,10 @@ impl Editor {
         match route {
             "/api/state" => return self.state(),
             "/api/templates" => {
-                let platform = crate::platform::game_platform(&self.world)?;
-                return Ok(crate::templates::list_templates(Some(crate::platform::preset_campaigns(platform)?)));
+                return Ok(crate::templates::list_templates(Some(&crate::platform::preset_campaigns(&self.world)?)));
             }
             "/api/recommended" => {
-                let platform = crate::platform::game_platform(&self.world)?;
-                let mut preset = crate::templates::recommended_preset(crate::platform::preset_campaign(platform)?)?;
+                let mut preset = crate::templates::recommended_preset(crate::platform::recommended_campaign(&self.world)?)?;
                 // An option whose change the installer could not make is not offered.
                 let mut unavailable = Dict::new();
                 let game_root = self.world.at("game_root")?.as_str().unwrap_or("").to_string();

@@ -212,13 +212,23 @@ class Spec:
     are paths, the folders it writes, the parameters the Rust API takes as
     text only (another type cannot be passed to it at all), those it takes as
     a mapping of text to text, those it takes as a sequence (a tuple becomes
-    a JSON list), and how the reference's result becomes JSON."""
+    a JSON list), those that become JSON through a function (an object of the
+    reference's), and how the reference's result becomes JSON."""
 
     def __init__(self, call: str, arguments, *, paths=(), writes=(), texts=(), text_maps=(), sequences=(),
-                 result=None):
+                 converters=None, result=None):
         self.call, self.arguments, self.paths, self.writes = call, arguments, set(paths), tuple(writes)
         self.texts, self.text_maps, self.sequences = set(texts), set(text_maps), set(sequences)
+        self.converters = converters or {}
         self.result = result
+
+
+def names_value(names) -> dict:
+    """game_names.EetNames as the Rust port takes and gives it."""
+    from flir_config.game_names import EetNames
+    if not isinstance(names, EetNames):
+        raise TypeError("not EetNames")
+    return {"tables": names.tables, "installed": names.installed, "notes": list(names.notes)}
 
 
 SPECS = {
@@ -229,8 +239,24 @@ SPECS = {
     ("flir_config.original_catalog", "resolve_template"): Spec(
         "resolve_template", lambda v, d: present(
             catalog=file(v["catalog"]), world=file(v["world"]), template_id=v["template_id"], game=v["game"],
-            items=v["items"], targets=v["targets"], options=v["options"]),
-        texts=("template_id", "game")),
+            items=v["items"], targets=v["targets"], options=v["options"], names=v["names"]),
+        texts=("template_id", "game"), converters={"names": names_value}),
+    ("flir_config.templates", "build_template"): Spec(
+        "build_template", lambda v, d: present(template_id=v["template_id"], items=v["items"], targets=v["targets"],
+                                               options=v["options"]),
+        texts=("template_id",)),
+    ("flir_config.templates", "campaign_tables"): Spec(
+        "campaign_tables", lambda v, d: {"campaign": v["campaign"]}, texts=("campaign",), result=list),
+    ("flir_config.templates", "template_tables"): Spec(
+        "template_tables", lambda v, d: {"template_id": v["template_id"]}, texts=("template_id",), result=list),
+    ("flir_config.templates", "recommended_preset"): Spec(
+        "recommended_preset", lambda v, d: {"campaign": v["campaign"]}, texts=("campaign",)),
+    ("flir_config.game_names", "eet_names"): Spec(
+        "eet_names", lambda v, d: {"game_root": str(v["game_root"])}, paths=("game_root",), result=names_value),
+    ("flir_config.game_names", "convert_resource"): Spec(
+        "convert_resource", lambda v, d: present(resref=v["resref"], extension=v["extension"], campaign=v["campaign"],
+                                                 game=v["game"], names=v["names"]),
+        texts=("resref", "extension", "campaign", "game"), converters={"names": names_value}),
     ("flir_config.original_configuration", "build_original_configuration"): Spec(
         "build_original_configuration", lambda v, d: present(
             catalog=file(v["catalog"]), world=file(v["world"]), template_id=v["template_id"],
@@ -286,6 +312,11 @@ SPECS = {
         texts=("template_id",)),
     ("flir_config.platform", "area_part"): Spec(
         "area_part", lambda v, d: {"platform": v["platform"], "area": v["area"]}, texts=("platform", "area")),
+    ("flir_config.platform", "has_sod"): Spec("has_sod", lambda v, d: {"world": file(v["world"])}),
+    ("flir_config.platform", "preset_campaigns"): Spec(
+        "preset_campaigns", lambda v, d: {"world": file(v["world"])}, result=list),
+    ("flir_config.platform", "recommended_campaign"): Spec(
+        "recommended_campaign", lambda v, d: {"world": file(v["world"])}),
     ("flir_config.templates", "list_templates"): Spec(
         "list_templates", lambda v, d: present(campaigns=None if v["campaigns"] is None else list(v["campaigns"])),
         sequences=("campaigns",)),
@@ -329,6 +360,13 @@ def record(spec: Spec, original, signature, args, kwargs):
             reason = "registration draft is not plain JSON"
         else:
             registration_draft = registration.return_value
+    if reason is None:
+        for key, convert in spec.converters.items():
+            if values.get(key) is not None:
+                try:
+                    values[key] = convert(values[key])
+                except (AttributeError, TypeError):
+                    reason = f"{key} cannot be passed to the Rust API"
     if reason is None:
         for key, value in values.items():
             if key in spec.paths:

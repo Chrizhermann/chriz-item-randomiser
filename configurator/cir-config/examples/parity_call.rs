@@ -9,6 +9,7 @@
 use cir_config::json::{dumps_ascii, Dict, Value};
 use cir_config::profiles::{read_json, validate_catalog};
 use cir_config::sources::validate_world;
+use cir_config::game_names::{self, EetNames};
 use cir_config::{
     activation, campaigns, native_export, original_catalog, original_configuration, platform, sources, starts, templates,
     Error, ErrorKind, Result,
@@ -50,6 +51,15 @@ fn text(args: &Dict, name: &str) -> Result<String> {
     Ok(required(args, name)?.as_str().unwrap_or("").to_string())
 }
 
+/// An optional `game_names.EetNames` argument.
+fn names(args: &Dict) -> Result<Option<EetNames>> {
+    argument(args, "names")?.filter(|value| !value.is_null()).map(|value| EetNames::from_value(&value)).transpose()
+}
+
+fn texts(values: Vec<&str>) -> Value {
+    Value::List(values.into_iter().map(Value::from).collect())
+}
+
 fn sorted(set: std::collections::BTreeSet<String>) -> Value {
     Value::from(set.into_iter().collect::<Vec<_>>())
 }
@@ -69,7 +79,29 @@ fn run(name: &str, args: &Dict) -> Result<Value> {
             argument(args, "items")?.as_ref(),
             argument(args, "targets")?.as_ref(),
             argument(args, "options")?.as_ref(),
+            names(args)?.as_ref(),
         ),
+        "build_template" => templates::build_template(
+            &text(args, "template_id")?,
+            argument(args, "items")?.as_ref(),
+            argument(args, "targets")?.as_ref(),
+            argument(args, "options")?.as_ref(),
+        ),
+        "eet_names" => game_names::eet_names(Path::new(&text(args, "game_root")?)).map(|names| names.to_value()),
+        "convert_resource" => game_names::convert_resource(
+            &text(args, "resref")?,
+            &text(args, "extension")?,
+            &text(args, "campaign")?,
+            argument(args, "game")?.as_ref().and_then(Value::as_str).unwrap_or("eet"),
+            names(args)?.as_ref(),
+        )
+        .map(Value::from),
+        "has_sod" => platform::has_sod(&required(args, "world")?).map(Value::from),
+        "preset_campaigns" => platform::preset_campaigns(&required(args, "world")?).map(texts),
+        "recommended_campaign" => platform::recommended_campaign(&required(args, "world")?).map(Value::from),
+        "campaign_tables" => templates::campaign_tables(&text(args, "campaign")?).map(texts),
+        "template_tables" => templates::template_tables(&text(args, "template_id")?).map(texts),
+        "recommended_preset" => templates::recommended_preset(&text(args, "campaign")?).map(Value::Dict),
         "build_original_configuration" => {
             let catalog = required(args, "catalog")?;
             let world = required(args, "world")?;

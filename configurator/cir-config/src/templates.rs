@@ -2,8 +2,9 @@
 //! reference's `templates.py`).
 //!
 //! `list_templates()` describes the bundled presets: Item Randomiser's tables
-//! and preset list sets (`lists/presets/<name>/`) that replace a campaign's
-//! tables. Each preset has a standard and an extended pool of items and of
+//! (BG1 and BG2), Chriz Item Randomiser's tables for Siege of Dragonspear
+//! (SoD), and preset list sets (`lists/presets/<name>/`) that replace a
+//! campaign's tables. Each preset has a standard and an extended pool of items and of
 //! places: the standard pools read the `base` tables, the extended pools also
 //! the `mode2` tables. Chriz Item Randomiser has no modes; every pool is drawn
 //! for each new game. `build_template()` loads the checked-in WeiDU tables
@@ -38,8 +39,26 @@ pub fn recommended_options() -> Dict {
     default_options().merged(&crate::dict! {"flail_heads" => true, "totsc_tome" => true})
 }
 
-/// The preset campaigns and their labels.
-pub const CAMPAIGNS: [(&str, &str); 3] = [("bg1", "BG1"), ("bg2", "BG2"), ("eet", "EET")];
+/// The preset campaigns and their labels. Item Randomiser has tables for BG1
+/// and BG2; the SoD tables are Chriz Item Randomiser's. The tables of each
+/// part of the game stay apart (tiers are per part), so a later option can mix
+/// them.
+pub const CAMPAIGNS: [(&str, &str); 6] =
+    [("bg1", "BG1"), ("bg2", "BG2"), ("eet", "EET"), ("sod", "SoD"), ("bg1-sod", "BG1 + SoD"), ("eet-sod", "EET + SoD")];
+/// The tables of each part of the game a preset campaign reads, in order.
+const PARTS: [(&str, &[&str]); 6] = [
+    ("bg1", &["bg1"]),
+    ("bg2", &["bg2"]),
+    ("eet", &["bg1", "bg2"]),
+    ("sod", &["sod"]),
+    ("bg1-sod", &["bg1", "sod"]),
+    ("eet-sod", &["bg1", "sod", "bg2"]),
+];
+const PART_LABELS: [(&str, &str); 3] = [("bg1", "BG1"), ("sod", "SoD"), ("bg2", "BG2")];
+/// Item Randomiser's tables have an authored endpoint for every row of their
+/// base location tables; the SoD tables have none, so a row's target names
+/// its kind.
+pub const ENDPOINT_CAMPAIGNS: [&str; 2] = ["bg1", "bg2"];
 
 /// A preset list set in lists/presets/<name>/.
 pub struct Preset {
@@ -69,9 +88,9 @@ pub fn preset(id: &str) -> Option<&'static Preset> {
     PRESETS.iter().find(|preset| preset.id == id)
 }
 
-/// The default preset for a campaign ("bg1", "bg2" or "eet").
+/// The default preset for a preset campaign ([`CAMPAIGNS`]).
 pub fn recommended_preset(campaign: &str) -> Result<Dict> {
-    if !["bg1", "bg2", "eet"].contains(&campaign) {
+    if !PARTS.iter().any(|(known, _)| *known == campaign) {
         return Err(Error::value("Unknown campaign"));
     }
     Ok(crate::dict! {
@@ -80,13 +99,50 @@ pub fn recommended_preset(campaign: &str) -> Result<Dict> {
     })
 }
 
+/// The table campaigns a preset campaign reads; none for an unknown one.
 pub fn parts(campaign: &str) -> Vec<&'static str> {
-    match campaign {
-        "eet" => vec!["bg1", "bg2"],
-        "bg1" => vec!["bg1"],
-        "bg2" => vec!["bg2"],
-        _ => Vec::new(),
+    PARTS.iter().find(|(known, _)| *known == campaign).map_or_else(Vec::new, |(_, parts)| parts.to_vec())
+}
+
+/// The table campaigns ("bg1", "sod", "bg2") a preset campaign reads.
+pub fn campaign_tables(campaign: &str) -> Result<Vec<&'static str>> {
+    if !PARTS.iter().any(|(known, _)| *known == campaign) {
+        return Err(Error::value("Unknown campaign"));
     }
+    Ok(parts(campaign))
+}
+
+/// The table campaigns ("bg1", "sod", "bg2") a preset reads.
+pub fn template_tables(template_id: &str) -> Result<Vec<&'static str>> {
+    Ok(parts(template_campaign(template_id)?))
+}
+
+fn part_label(part: &str) -> &'static str {
+    PART_LABELS.iter().find(|(known, _)| *known == part).map_or("", |(_, label)| label)
+}
+
+/// The descriptor of a campaign's own tables.
+fn original(campaign: &'static str, label: &str) -> Descriptor {
+    let parts = parts(campaign);
+    let (name, description) = if !parts.contains(&"sod") {
+        (
+            format!("{label}: Item Randomiser's lists"),
+            "The item and location lists of Item Randomiser by Wisp, by tier.".to_string(),
+        )
+    } else if parts == ["sod"] {
+        (
+            format!("{label}: Chriz Item Randomiser's lists"),
+            "Item and location lists for Siege of Dragonspear by Chriz Item Randomiser, by tier.".to_string(),
+        )
+    } else {
+        (
+            format!("{label}: Item Randomiser's lists and the SoD lists"),
+            "The item and location lists of Item Randomiser by Wisp, by tier, and Chriz Item Randomiser's lists \
+             for Siege of Dragonspear."
+                .to_string(),
+        )
+    };
+    Descriptor { id: format!("{campaign}-original"), name, description, campaign, preset: None }
 }
 
 /// A preset's descriptor: name, description, campaign and preset id.
@@ -100,32 +156,25 @@ pub struct Descriptor {
 }
 
 pub fn descriptors() -> Vec<Descriptor> {
-    let mut result = Vec::new();
-    for (campaign, label) in CAMPAIGNS {
-        result.push(Descriptor {
-            id: format!("{campaign}-original"),
-            name: format!("{label}: Item Randomiser's lists"),
-            description: "The item and location lists of Item Randomiser by Wisp, by tier.".into(),
-            campaign,
-            preset: None,
-        });
-    }
+    let mut result: Vec<Descriptor> = CAMPAIGNS.iter().map(|&(campaign, label)| original(campaign, label)).collect();
     for preset in PRESETS {
         for (campaign, label) in CAMPAIGNS {
-            let covered: Vec<String> =
-                parts(campaign).into_iter().filter(|part| preset.campaigns.contains(part)).map(str::to_uppercase).collect();
-            let others: Vec<String> =
-                parts(campaign).into_iter().filter(|part| !preset.campaigns.contains(part)).map(str::to_uppercase).collect();
+            let covered: Vec<&str> =
+                parts(campaign).into_iter().filter(|part| preset.campaigns.contains(part)).map(part_label).collect();
+            let others: Vec<&str> = parts(campaign).into_iter().filter(|part| !preset.campaigns.contains(part)).collect();
             if covered.is_empty() {
                 continue;
             }
             let mut description = preset.description.to_string();
             if !others.is_empty() {
-                description.push_str(&format!(
-                    " For {}; {} keeps Item Randomiser's lists.",
-                    covered.join(", "),
-                    others.join(", ")
-                ));
+                let kept: Vec<String> = others
+                    .iter()
+                    .map(|part| {
+                        let lists = if *part == "sod" { "Chriz Item Randomiser's lists" } else { "Item Randomiser's lists" };
+                        format!("{} keeps {lists}", part_label(part))
+                    })
+                    .collect();
+                description.push_str(&format!(" For {}; {}.", covered.join(", "), kept.join(" and ")));
             }
             result.push(Descriptor {
                 id: format!("{campaign}-{}", preset.id),
@@ -144,7 +193,7 @@ pub fn descriptor(template_id: &str) -> Option<Descriptor> {
 }
 
 /// Stable, compact descriptors of the bundled presets; `campaigns` limits
-/// them to presets for those campaigns ("bg1", "bg2", "eet").
+/// them to presets for those preset campaigns ([`CAMPAIGNS`]).
 pub fn list_templates(campaigns: Option<&[&str]>) -> Value {
     Value::List(
         descriptors()
@@ -155,7 +204,7 @@ pub fn list_templates(campaigns: Option<&[&str]>) -> Value {
     )
 }
 
-/// The campaign ("bg1", "bg2" or "eet") a preset is for.
+/// The preset campaign ([`CAMPAIGNS`]) a preset is for.
 pub fn template_campaign(template_id: &str) -> Result<&'static str> {
     descriptor(template_id)
         .map(|row| row.campaign)
@@ -349,7 +398,7 @@ fn load_items(campaign: &str, family: &str, options: &Dict, preset_id: Option<&s
         row.push_unique("occurrence".into(), Value::Int(*count));
         row.push_unique("option_gate".into(), Value::from(gate));
         row.push_unique("enabled".into(), Value::Bool(enabled(gate, options)));
-        row.push_unique("requires_game_conversion".into(), Value::Bool(campaign == "bg1"));
+        row.push_unique("requires_game_conversion".into(), Value::Bool(["bg1", "sod"].contains(&campaign)));
         row.push_unique("optional_mod".into(), Value::from(optional_mod(preset_id, item)));
         row.push_unique("binding".into(), Value::from("unbound"));
         row.push_unique("runtime_support".into(), Value::from(runtime_support));
@@ -369,7 +418,8 @@ fn load_targets(campaign: &str, family: &str, options: &Dict, preset_id: Option<
     let original = relative.starts_with("lists/locations/");
     // A preset's place takes the endpoint authored for the same place, if
     // any; the original tables have one for every row of the base table.
-    let endpoints = if family != "base" {
+    let authored = ENDPOINT_CAMPAIGNS.contains(&campaign);
+    let endpoints = if family != "base" || !authored {
         Endpoints::None
     } else if original {
         Endpoints::Original(endpoint_index(campaign)?)
@@ -392,7 +442,7 @@ fn load_targets(campaign: &str, family: &str, options: &Dict, preset_id: Option<
             Endpoints::Places(index) if !original => index.get(&(crate::py::lower(target), crate::py::lower(area))),
             _ => None,
         };
-        if family == "base" && original && endpoint.is_none() {
+        if family == "base" && original && authored && endpoint.is_none() {
             return Err(Error::value(format!("Missing authored endpoint for {relative}:{line}")));
         }
         let gate = gate(tier);
@@ -419,7 +469,7 @@ fn load_targets(campaign: &str, family: &str, options: &Dict, preset_id: Option<
         row.push_unique("endpoint_id".into(), Value::from(endpoint.map(|endpoint| endpoint.id.clone())));
         row.push_unique("endpoint_kind".into(), Value::from(endpoint.map(|endpoint| endpoint.kind.clone())));
         row.push_unique("endpoint_source_ref".into(), Value::from(endpoint.map(|endpoint| endpoint.source_ref.clone())));
-        row.push_unique("requires_game_conversion".into(), Value::Bool(campaign == "bg1"));
+        row.push_unique("requires_game_conversion".into(), Value::Bool(["bg1", "sod"].contains(&campaign)));
         row.push_unique("binding".into(), Value::from("unbound"));
         row.push_unique("runtime_support".into(), Value::from(runtime_support));
         result.push(Value::Dict(row));
@@ -483,7 +533,7 @@ pub fn build_template(template_id: &str, items: Option<&Value>, targets: Option<
             "Rows require installation-specific item, source, and target binding.",
             "Tiered draws, loss and kept originals work for bound plans; original overflow and token expansion still need integration.",
             "Virtual, scripted, group, and unadapted extended-pool rows need runtime support.",
-            "BG1 resource names require game-specific conversion on EET, BGT, and Tutu.",
+            "BG1 and SoD resource names require game-specific conversion on EET, BGT, and Tutu.",
             "Installer mod-compatibility and per-row availability filters need evaluation at binding.",
         ],
     }))

@@ -187,7 +187,7 @@ pub fn container_error(target_id: &str, problem: &str) -> Result<Error> {
 /// The quest's area as this game names it (EET renames BG1's).
 pub fn treasure_area(target_id: &str, platform: &str) -> Result<String> {
     let spec = target_spec(target_id)?;
-    convert_resource(&row_text(&spec, "area"), "are", &row_text(&spec, "campaign"), platform)
+    convert_resource(&row_text(&spec, "area"), "are", &row_text(&spec, "campaign"), platform, None)
 }
 
 /// The scanned container of the quest's area that holds its whole treasure.

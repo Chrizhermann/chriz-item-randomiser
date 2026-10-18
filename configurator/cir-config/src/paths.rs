@@ -320,6 +320,20 @@ pub fn stem(name: &str) -> &str {
     }
 }
 
+/// `Path(value)` of a JSON value: text is a path (`""` is the current
+/// folder, as `Path("")` is `.`); another value fails with Python's
+/// TypeError.
+pub fn path_argument(value: &crate::json::Value) -> crate::error::Result<PathBuf> {
+    match value.as_str() {
+        Some("") => Ok(PathBuf::from(".")),
+        Some(text) => Ok(PathBuf::from(text)),
+        None => Err(crate::error::Error::type_error(format!(
+            "expected str, bytes or os.PathLike object, not {}",
+            value.type_name()
+        ))),
+    }
+}
+
 /// `str(PureWindowsPath(path))`.
 pub fn display(path: &Path) -> String {
     let (drive, root, named) = parse(path);

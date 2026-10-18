@@ -148,7 +148,7 @@ pub fn table_rows(catalog: &Value, world: &Value, plan: &Value) -> Result<(Rows,
     let game = crate::platform::preset_game(world, template_id)?;
     let draft = match crate::pins::registration_draft() {
         Some(draft) => draft,
-        None => resolve_template(catalog, world, template_id, game, choices.get("items"), choices.get("targets"), options)?,
+        None => resolve_template(catalog, world, template_id, game, choices.get("items"), choices.get("targets"), options, None)?,
     };
     if !draft.at("choices")?.py_eq(choices) || !draft.at("options")?.py_eq(options.expect("checked")) {
         return Err(Error::profile("Original pool choices or options changed"));

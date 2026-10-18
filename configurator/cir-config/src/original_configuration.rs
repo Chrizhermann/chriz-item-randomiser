@@ -8,7 +8,7 @@
 
 use crate::campaigns::{compile_campaign, OVERFLOW_TARGET_KINDS};
 use crate::error::{Error, Result};
-use crate::game_names::convert_resource;
+use crate::game_names::{convert_resource, eet_names, EetNames};
 use crate::json::{Dict, Value};
 use crate::original_catalog::resolve_template;
 use crate::original_registrations::{
@@ -140,6 +140,8 @@ struct Context<'a> {
     world: &'a Value,
     /// "eet", "bgee" or "bg2ee" (platform::preset_game).
     game: &'a str,
+    /// EET's renames of BG1 and SoD names (game_names::eet_names).
+    names: Option<&'a EetNames>,
     items: &'a ItemIndex,
     index: &'a WorldIndex,
     physical: SourceLookup<'a>,
@@ -249,7 +251,7 @@ fn choose(row: &Value, context: &Context<'_>) -> Result<std::result::Result<Choi
     }
     let kind = s(source, "kind");
     if s(row, "replacement") != "blank" {
-        let replacement = convert_resource(s(row, "replacement"), "itm", s(row, "campaign"), context.game)?;
+        let replacement = convert_resource(s(row, "replacement"), "itm", s(row, "campaign"), context.game, context.names)?;
         if !["cre-template", "embedded-cre", "container"].contains(&kind) || replacement == item {
             return Ok(Err("replacement-not-applicable".into()));
         }
@@ -304,8 +306,8 @@ pub fn build_original_configuration(
     options: Option<&Value>,
     exclude: &HashMap<String, String>,
 ) -> Result<Value> {
-    build_from(catalog, world, template_id, exclude, |game| {
-        resolve_template(catalog, world, template_id, game, items, targets, options)
+    build_from(catalog, world, template_id, exclude, |game, names| {
+        resolve_template(catalog, world, template_id, game, items, targets, options, names)
     })
 }
 
@@ -318,7 +320,7 @@ pub fn build_original_configuration_from(
     draft: &Value,
     exclude: &HashMap<String, String>,
 ) -> Result<Value> {
-    build_from(catalog, world, template_id, exclude, |_| Ok(draft.clone()))
+    build_from(catalog, world, template_id, exclude, |_, _| Ok(draft.clone()))
 }
 
 fn build_from(
@@ -326,12 +328,16 @@ fn build_from(
     world: &Value,
     template_id: &str,
     exclude: &HashMap<String, String>,
-    resolve: impl FnOnce(&str) -> Result<Value>,
+    resolve: impl FnOnce(&str, Option<&EetNames>) -> Result<Value>,
 ) -> Result<Value> {
     let catalog_items = validate_catalog(catalog)?;
     let index = validate_world(world, catalog)?;
     let game = crate::platform::preset_game(world, template_id)?;
-    let draft = resolve(game)?;
+    let names = match game {
+        "eet" => Some(eet_names(&crate::paths::path_argument(world.at("game_root")?)?)?),
+        _ => None,
+    };
+    let draft = resolve(game, names.as_ref())?;
     let game_root = world.at("game_root")?.as_str().unwrap_or("").to_string();
     let option = |name: &str| draft.get("options").and_then(|options| options.get(name)).cloned().unwrap_or(Value::Null);
     if option("flail_heads").truthy() && !applied(&game_root, "flail_heads")? {
@@ -437,6 +443,7 @@ fn build_from(
         catalog,
         world,
         game,
+        names: names.as_ref(),
         items: &catalog_items,
         index: &index,
         physical: source_lookup(world),
@@ -478,6 +485,8 @@ fn build_from(
             leave_out(&mut not_used, row, "place", &Value::from(reason.as_str()))?;
         } else if !index.resources.contains(s(row, "area_resource")) {
             leave_out(&mut not_used, row, "place", &Value::from("area-resource-absent"))?;
+        } else if row.at("binding_problem")?.as_str() == Some("creature-never-appears") {
+            leave_out(&mut not_used, row, "place", row.at("binding_problem")?)?;
         } else {
             places.push(row);
         }
@@ -623,7 +632,7 @@ fn build_from(
             "exclude_targets" => Value::List(excluded),
         };
         if option("totsc_tome").truthy() && s(row, "campaign") == "bg1" && s(row, "ident") == "b2c" {
-            let variants = crate::original_options::tome_variants(s(row, "campaign"), game)?;
+            let variants = crate::original_options::tome_variants(s(row, "campaign"), game, names.as_ref())?;
             rule.insert("reward_variants", Value::from(variants));
         }
         randomization.get_mut("sources").and_then(Value::as_dict_mut).expect("built above").insert(identity.as_str(), rule);
@@ -664,7 +673,12 @@ fn build_from(
             ))
         })
         .collect();
-    let notes: Vec<Value> = not_used_notes(&not_used).into_iter().map(Value::from).collect();
+    let notes: Vec<Value> = names
+        .iter()
+        .flat_map(|names| names.notes.iter().cloned())
+        .chain(not_used_notes(&not_used))
+        .map(Value::from)
+        .collect();
     Ok(Value::Dict(crate::dict! {
         "profile" => profile, "plan" => plan, "left_out" => Value::List(left), "absent_mods" => Value::List(absent),
         "not_used" => Value::List(not_used), "not_used_notes" => Value::List(notes), "row_ids" => row_ids,
@@ -746,22 +760,21 @@ pub fn fit_original_configuration(
     targets: Option<&Value>,
     options: Option<&Value>,
 ) -> Result<Value> {
-    fit_from(catalog, world, template_id, &|template_id, game| {
-        resolve_template(catalog, world, template_id, game, items, targets, options)
+    fit_from(catalog, world, template_id, &|template_id, game, names| {
+        resolve_template(catalog, world, template_id, game, items, targets, options, names)
     })
 }
 
 /// `fit_original_configuration` over an already resolved draft.
 pub fn fit_original_configuration_from(catalog: &Value, world: &Value, template_id: &Value, draft: &Value) -> Result<Value> {
-    fit_from(catalog, world, template_id, &|_, _| Ok(draft.clone()))
+    fit_from(catalog, world, template_id, &|_, _, _| Ok(draft.clone()))
 }
 
-fn fit_from(
-    catalog: &Value,
-    world: &Value,
-    template_id: &Value,
-    resolve: &dyn Fn(&str, &str) -> Result<Value>,
-) -> Result<Value> {
+/// How `fit_from` gets a draft: `resolve_template` for (template id, game,
+/// names), or the draft a test patched in.
+type Resolve<'a> = dyn Fn(&str, &str, Option<&EetNames>) -> Result<Value> + 'a;
+
+fn fit_from(catalog: &Value, world: &Value, template_id: &Value, resolve: &Resolve<'_>) -> Result<Value> {
     let catalog_items = validate_catalog(catalog)?;
     let index = validate_world(world, catalog)?;
     // preset_game's lookup of an unknown or non-text identity, after it has
@@ -778,7 +791,7 @@ fn fit_from(
     };
     let mut exclude: HashMap<String, String> = HashMap::new();
     for _ in 0..FIT_ROUNDS {
-        let generated = build_from(catalog, world, template_id, &exclude, |game| resolve(template_id, game))?;
+        let generated = build_from(catalog, world, template_id, &exclude, |game, names| resolve(template_id, game, names))?;
         let row_ids = generated.at("row_ids")?;
         let placeless = placeless_sources(generated.at("plan")?)?;
         if !placeless.is_empty() {

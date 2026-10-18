@@ -16,7 +16,7 @@
 use crate::error::{Error, Result};
 use crate::json::Value;
 use crate::paths;
-use crate::templates::{template_campaign, CAMPAIGNS};
+use crate::templates::{campaign_tables, template_campaign, CAMPAIGNS};
 use std::path::PathBuf;
 
 /// The games and their names.
@@ -34,17 +34,26 @@ pub fn platform_name(platform: &str) -> Result<&'static str> {
     lookup(&PLATFORMS, platform)
 }
 
-/// The preset campaign of each game (templates::CAMPAIGNS).
+/// The recommended preset campaign of each game (templates::CAMPAIGNS).
 pub fn preset_campaign(platform: &str) -> Result<&'static str> {
     lookup(&[("bgee", "bg1"), ("bg2ee", "bg2"), ("eet", "eet")], platform)
 }
 
-/// Preset campaigns whose tables a game has.
-pub fn preset_campaigns(platform: &str) -> Result<&'static [&'static str]> {
-    const BGEE: &[&str] = &["bg1"];
+/// Preset campaigns whose tables a game can have; those with the SoD tables
+/// only when it has Siege of Dragonspear ([`preset_campaigns`]).
+pub fn platform_campaigns(platform: &str) -> Result<&'static [&'static str]> {
+    const BGEE: &[&str] = &["bg1", "bg1-sod", "sod"];
     const BG2EE: &[&str] = &["bg2"];
-    const EET: &[&str] = &["eet", "bg1", "bg2"];
+    const EET: &[&str] = &["eet", "eet-sod", "bg1", "bg1-sod", "sod", "bg2"];
     lookup(&[("bgee", BGEE), ("bg2ee", BG2EE), ("eet", EET)], platform)
+}
+
+/// The table campaigns and the parts of the game each covers.
+pub const TABLE_PARTS: [(&str, &[Part]); 3] = [("bg1", &["bg1"]), ("sod", &["sod"]), ("bg2", &["soa", "wk", "tob"])];
+
+/// Whether a table campaign is one of [`TABLE_PARTS`].
+pub fn is_table_campaign(campaign: &str) -> bool {
+    TABLE_PARTS.iter().any(|(known, _)| *known == campaign)
 }
 
 /// Campaign starts by the runtime's names (CAMPAIGN.2DA rows; BG2:EE's Throne
@@ -131,16 +140,57 @@ pub fn game_platform(world: &Value) -> Result<&'static str> {
     ))
 }
 
+/// Whether the scanned game has Siege of Dragonspear's areas.
+pub fn has_sod(world: &Value) -> Result<bool> {
+    let platform = game_platform(world)?;
+    for row in crate::py::iter_value(world.at("resources")?)? {
+        let identity = match row.at("id")? {
+            Value::Str(identity) => identity,
+            other => return Err(Error::attribute(other.type_name(), "startswith")),
+        };
+        if identity.starts_with("are:") && area_part(platform, &identity[4..]) == Some("sod") {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+/// The preset campaigns whose tables the scanned game has.
+pub fn preset_campaigns(world: &Value) -> Result<Vec<&'static str>> {
+    let campaigns = platform_campaigns(game_platform(world)?)?;
+    if has_sod(world)? {
+        return Ok(campaigns.to_vec());
+    }
+    let mut result = Vec::new();
+    for campaign in campaigns {
+        if !campaign_tables(campaign)?.contains(&"sod") {
+            result.push(*campaign);
+        }
+    }
+    Ok(result)
+}
+
+/// The preset campaign the editor recommends for the scanned game.
+pub fn recommended_campaign(world: &Value) -> Result<&'static str> {
+    preset_campaign(game_platform(world)?)
+}
+
 /// The scanned game, for a preset whose tables it has (an EET preset needs
-/// EET).
+/// EET, a SoD preset Siege of Dragonspear).
 pub fn preset_game(world: &Value, template_id: &str) -> Result<&'static str> {
     let platform = game_platform(world)?;
     let campaign = template_campaign(template_id)?;
-    if !preset_campaigns(platform)?.contains(&campaign) {
+    if !platform_campaigns(platform)?.contains(&campaign) {
         return Err(Error::profile(format!(
             "This preset is for {}; this game is {}",
             lookup(&CAMPAIGNS, campaign)?,
             platform_name(platform)?
+        )));
+    }
+    if !preset_campaigns(world)?.contains(&campaign) {
+        return Err(Error::profile(format!(
+            "This preset is for {}; this game does not have Siege of Dragonspear",
+            lookup(&CAMPAIGNS, campaign)?
         )));
     }
     Ok(platform)
@@ -187,13 +237,13 @@ pub fn area_part(platform: &str, area: &str) -> Option<Part> {
     Some("soa")
 }
 
-/// The parts an Item Randomiser table (bg1 or bg2) covers.
-pub fn campaign_parts(campaign: &str) -> &'static [Part] {
-    if campaign == "bg1" {
-        &["bg1"]
-    } else {
-        &["soa", "wk", "tob"]
-    }
+/// The parts a table campaign (bg1, sod or bg2) covers.
+pub fn campaign_parts(campaign: &str) -> Result<&'static [Part]> {
+    TABLE_PARTS
+        .iter()
+        .find(|(known, _)| *known == campaign)
+        .map(|(_, parts)| *parts)
+        .ok_or_else(|| Error::profile(format!("Unknown table campaign: {campaign}")))
 }
 
 #[cfg(test)]

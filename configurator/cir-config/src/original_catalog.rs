@@ -7,9 +7,9 @@
 
 use crate::container_rewards::{treasure_area, treasure_container};
 use crate::error::{Error, ErrorKind, Result};
-use crate::game_names::convert_resource;
+use crate::game_names::{convert_resource, eet_names, EetNames};
 use crate::json::{Dict, Value};
-use crate::templates::{build_template, int_field, table_rows};
+use crate::templates::{build_template, int_field, table_rows, ENDPOINT_CAMPAIGNS};
 use std::collections::{HashMap, HashSet};
 use std::sync::OnceLock;
 
@@ -162,6 +162,9 @@ type Endpoints = HashMap<String, (String, String, String)>;
 
 fn endpoint_rows(campaign: &str) -> Result<Endpoints> {
     let mut result: Endpoints = HashMap::new();
+    if !ENDPOINT_CAMPAIGNS.contains(&campaign) {
+        return Ok(result);
+    }
     for (_, fields) in table_rows(&format!("lists/endpoints/base/{campaign}.2da"), 17)? {
         // A stable endpoint can be reused by many original location rows.
         let identity = (fields[9].clone(), fields[10].clone(), fields[11].clone());
@@ -173,7 +176,7 @@ fn endpoint_rows(campaign: &str) -> Result<Endpoints> {
     Ok(result)
 }
 
-fn group_members(campaign: &str, group: &str, game: &str) -> Result<Vec<String>> {
+fn group_members(campaign: &str, group: &str, game: &str, names: Option<&EetNames>) -> Result<Vec<String>> {
     let relative = format!("lists/groups/{campaign}.2da");
     let text = crate::data::text(&relative).ok_or_else(|| {
         Error::os(&std::io::Error::from(std::io::ErrorKind::NotFound), std::path::Path::new(&relative))
@@ -184,7 +187,7 @@ fn group_members(campaign: &str, group: &str, game: &str) -> Result<Vec<String>>
     for line in crate::py::splitlines(&text) {
         let fields = crate::py::split_whitespace(line);
         if fields.len() >= 2 && crate::py::lower(fields[0]) == wanted {
-            let identity = format!("cre:{}", convert_resource(fields[1], "cre", campaign, game)?);
+            let identity = format!("cre:{}", convert_resource(fields[1], "cre", campaign, game, names)?);
             if !result.contains(&identity) {
                 result.push(identity);
             }
@@ -237,11 +240,13 @@ struct Scan<'a> {
     /// `world["sources"]`, in scan order.
     world_sources: &'a [Value],
     game: &'a str,
+    /// EET's renames of BG1 and SoD names (game_names::eet_names).
+    names: Option<&'a EetNames>,
 }
 
 fn resolve_source(row: &mut Dict, scan: &Scan<'_>, selectors: &HashMap<String, Selectors>) -> Result<()> {
     let campaign = str_field(row, "campaign")?.to_string();
-    let item = convert_resource(str_field(row, "resref")?, "itm", &campaign, scan.game)?;
+    let item = convert_resource(str_field(row, "resref")?, "itm", &campaign, scan.game, scan.names)?;
     row.insert("item_resref", item.as_str());
     row.insert("source_resource", Value::Null);
     row.insert("source_ids", Value::List(Vec::new()));
@@ -266,7 +271,7 @@ fn resolve_source(row: &mut Dict, scan: &Scan<'_>, selectors: &HashMap<String, S
     }
     if raw == "unshey.fl" {
         row.insert("adapter", "unshey");
-        let name = convert_resource("ogreunsh", "cre", &campaign, scan.game)?;
+        let name = convert_resource("ogreunsh", "cre", &campaign, scan.game, scan.names)?;
         row.insert("source_resource", format!("cre:{name}"));
         note_problem(row, "unshey-requires-legacy-adapter");
         return Ok(());
@@ -280,7 +285,7 @@ fn resolve_source(row: &mut Dict, scan: &Scan<'_>, selectors: &HashMap<String, S
         note_problem(row, "unsupported-source-kind");
         return Ok(());
     }
-    let converted = if spell_grant { name.to_string() } else { convert_resource(name, extension, &campaign, scan.game)? };
+    let converted = if spell_grant { name.to_string() } else { convert_resource(name, extension, &campaign, scan.game, scan.names)? };
     let resource = format!("{extension}:{converted}");
     row.insert("source_resource", resource.as_str());
     if SCRIPTED_SOURCES.contains(&extension) || spell_grant {
@@ -361,7 +366,7 @@ fn is_kind(target: &Value, kind: &str) -> bool {
 
 fn resolve_target(row: &mut Dict, scan: &Scan<'_>, endpoints: &HashMap<String, Endpoints>) -> Result<()> {
     let campaign = str_field(row, "campaign")?.to_string();
-    let area = convert_resource(str_field(row, "area")?, "are", &campaign, scan.game)?;
+    let area = convert_resource(str_field(row, "area")?, "are", &campaign, scan.game, scan.names)?;
     let area_resource = format!("are:{area}");
     row.insert("area_resource", area_resource.as_str());
     row.insert("target_ids", Value::List(Vec::new()));
@@ -482,7 +487,7 @@ fn resolve_target(row: &mut Dict, scan: &Scan<'_>, endpoints: &HashMap<String, E
                 // selects an existing container; it never creates a pile.
                 for (_, fields) in table_rows("lists/endpoints/fallbacks.2da", 10)? {
                     if Some(fields[2].as_str()) == endpoint_id.as_str()
-                        && convert_resource(&fields[3], "are", &campaign, scan.game)? == area
+                        && convert_resource(&fields[3], "are", &campaign, scan.game, scan.names)? == area
                     {
                         let (x, y) = (int_field(&fields[4])?, int_field(&fields[5])?);
                         let pointed: Vec<&Value> = matches.iter().copied().filter(|target| at_point(target, x, y)).collect();
@@ -497,9 +502,9 @@ fn resolve_target(row: &mut Dict, scan: &Scan<'_>, endpoints: &HashMap<String, E
         }
         "creature" => {
             let name = raw.rsplit_once('.').map_or(raw.as_str(), |(name, _)| name);
-            let creature = format!("cre:{}", convert_resource(name, "cre", &campaign, scan.game)?);
+            let creature = format!("cre:{}", convert_resource(name, "cre", &campaign, scan.game, scan.names)?);
             row.insert("creature_resource", creature.as_str());
-            let matches = area_targets
+            let matches: Vec<&Value> = area_targets
                 .iter()
                 .copied()
                 .filter(|target| {
@@ -510,12 +515,23 @@ fn resolve_target(row: &mut Dict, scan: &Scan<'_>, endpoints: &HashMap<String, E
                 .collect();
             if !scan.resources.contains(creature.as_str()) {
                 note_problem(row, "creature-resource-absent");
+            } else if !matches.is_empty()
+                && matches.iter().all(|target| {
+                    selector_of(target)
+                        .and_then(|selector| selector.get("appearance_schedule"))
+                        .is_some_and(|schedule| schedule.py_eq(&Value::Int(0)))
+                })
+            {
+                // Placed for no hour of the day, the creature never appears
+                // (how mods such as SoD Remix take a creature out); a reward
+                // there would be lost.
+                note_problem(row, "creature-never-appears");
             }
             matches
         }
         "store" => {
             let name = raw.rsplit_once('.').map_or(raw.as_str(), |(name, _)| name);
-            identity = format!("sto:{}", convert_resource(name, "sto", &campaign, scan.game)?);
+            identity = format!("sto:{}", convert_resource(name, "sto", &campaign, scan.game, scan.names)?);
             scan.targets_by_resource
                 .get(identity.as_str())
                 .into_iter()
@@ -525,7 +541,7 @@ fn resolve_target(row: &mut Dict, scan: &Scan<'_>, endpoints: &HashMap<String, E
                 .collect()
         }
         "group" => {
-            let members = group_members(&campaign, &raw, scan.game)?;
+            let members = group_members(&campaign, &raw, scan.game, scan.names)?;
             row.insert("members", Value::from(members.clone()));
             let matches = area_targets
                 .iter()
@@ -564,6 +580,7 @@ fn at_point(target: &Value, x: i64, y: i64) -> bool {
 }
 
 /// Augment every original table row with exact installed scan candidates.
+#[allow(clippy::too_many_arguments)]
 pub fn resolve_template(
     catalog: &Value,
     world: &Value,
@@ -572,8 +589,19 @@ pub fn resolve_template(
     items: Option<&Value>,
     targets: Option<&Value>,
     options: Option<&Value>,
+    names: Option<&EetNames>,
 ) -> Result<Value> {
     let mut draft = build_template(template_id, items, targets, options)?;
+    // On EET, BG1 and SoD names follow the lists of the scanned game by
+    // default; a world without a game folder uses CIR's copy.
+    let read;
+    let names = match (names, world.get("game_root")) {
+        (None, Some(root)) if game == "eet" => {
+            read = eet_names(&crate::paths::path_argument(root)?)?;
+            Some(&read)
+        }
+        (names, _) => names,
+    };
     let list = |value: &Value, key: &str| -> Result<Vec<Value>> {
         Ok(value.at(key)?.as_list().cloned().unwrap_or_default())
     };
@@ -589,6 +617,7 @@ pub fn resolve_template(
         targets_by_id: HashMap::new(),
         world_sources: &world_sources,
         game,
+        names,
     };
     for source in &world_sources {
         scan.sources.entry((text_of(source.get("resource")), text_of(source.get("item")))).or_default().push(source);

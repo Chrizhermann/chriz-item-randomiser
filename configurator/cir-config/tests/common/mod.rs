@@ -619,7 +619,7 @@ fn call(name: &str, args: &Args) -> Result<Value> {
         "group_recipients.preferred_members" => {
             Value::from(group_recipients::preferred_members(&args.bytes("item"), &args.blob_map("members")))
         }
-        "original_options.tome_variants" => Value::from(original_options::tome_variants(&args.str("campaign"), &args.str("game"))?),
+        "original_options.tome_variants" => Value::from(original_options::tome_variants(&args.str("campaign"), &args.str("game"), None)?),
         "original_options.patch_spell_shield_stock" => {
             bytes_value(&original_options::patch_spell_shield_stock(&args.bytes("data"))?)
         }

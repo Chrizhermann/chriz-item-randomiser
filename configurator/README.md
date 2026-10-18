@@ -19,6 +19,14 @@ maps, Item Randomiser's texts in every language under `languages/`, the mod's
 stand-in items and the editor's files) is embedded when it is built, so the
 executable runs on its own, without a checkout.
 
+Besides Item Randomiser's BG1 and BG2 tables, the presets read Chriz Item
+Randomiser's Siege of Dragonspear tables (`sod-original`, and with BG1's or
+all of EET's tables `bg1-sod-*` and `eet-sod-*`); they are offered on BG:EE
+and EET when the game has Siege of Dragonspear's areas. On EET, BG1 and SoD
+names follow the game's own rename lists (`EET/lib/pcu_dict.tph`), as the
+reference reads them; where they are missing or cannot be read, the built-in
+copy of `lib/fl#bg1pal.tpa` is used and the fit says so in its notes.
+
 Item Randomiser's reward texts appear in the game's language (`lang/<code>`),
 as with the reference: the translation is read in its language's code page
 (decoded strictly, with tables taken from Python's own codecs: `codepages/`,
