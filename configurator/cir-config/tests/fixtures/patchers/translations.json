@@ -6426,8 +6426,8 @@
     ],
     [
      101512,
-     "UI.MENU has no single-player New Game call (startEngine:OnNewGameButtonClick) or character acceptance call (createCharScreen:AcceptCharacter), calls them or the character import (startEngine:OnImportCharacterButtonClick) in a form this component cannot hook, or already calls FLPRUI_ functions. Installation stopped.",
-     "UI.MENU has no single-player New Game call (startEngine:OnNewGameButtonClick) or character acceptance call (createCharScreen:AcceptCharacter), calls them or the character import (startEngine:OnImportCharacterButtonClick) in a form this component cannot hook, or already calls FLPRUI_ functions. Installation stopped."
+     "The user interface (UI.MENU and the other menu and Lua files) has no single-player New Game call (startEngine:OnNewGameButtonClick) or no character acceptance call (createCharScreen:AcceptCharacter). Installation stopped.",
+     "The user interface (UI.MENU and the other menu and Lua files) has no single-player New Game call (startEngine:OnNewGameButtonClick) or no character acceptance call (createCharScreen:AcceptCharacter). Installation stopped."
     ],
     [
      101513,
@@ -6441,8 +6441,13 @@
     ],
     [
      101515,
-     "UI.MENU defines startEngine:OnNewGameButtonClick, startEngine:OnImportCharacterButtonClick or createCharScreen:AcceptCharacter itself; this component can only hook calls to them. Installation stopped.",
-     "UI.MENU defines startEngine:OnNewGameButtonClick, startEngine:OnImportCharacterButtonClick or createCharScreen:AcceptCharacter itself; this component can only hook calls to them. Installation stopped."
+     "%flir_rt_file%, line %flir_rt_line%: \"%flir_rt_form%\" uses New Game, character import or character acceptance in a way this component cannot redirect; it can redirect calls such as startEngine:OnNewGameButtonClick(). Please report this message with your list of mods. Installation stopped.",
+     "%flir_rt_file%, line %flir_rt_line%: \"%flir_rt_form%\" uses New Game, character import or character acceptance in a way this component cannot redirect; it can redirect calls such as startEngine:OnNewGameButtonClick(). Please report this message with your list of mods. Installation stopped."
+    ],
+    [
+     101516,
+     "%flir_rt_file%, line %flir_rt_line% already calls the FLPRUI_ functions this component adds, although it is not installed; uninstalling it would leave those calls without their functions. Installation stopped.",
+     "%flir_rt_file%, line %flir_rt_line% already calls the FLPRUI_ functions this component adds, although it is not installed; uninstalling it would leave those calls without their functions. Installation stopped."
     ],
     [
      101520,
