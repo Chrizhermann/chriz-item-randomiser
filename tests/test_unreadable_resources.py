@@ -23,11 +23,12 @@ from flir_config.native_export import export_native  # noqa: E402
 from flir_config.original_catalog import resolve_template  # noqa: E402
 from flir_config.original_configuration import (build_original_configuration,  # noqa: E402
                                                 fit_original_configuration)
+from flir_config.original_options import spell_shield_spec  # noqa: E402
 from flir_config.platform import game_platform, has_sod  # noqa: E402
 from flir_config.profiles import ProfileError, edit_profile, new_profile, write_json  # noqa: E402
 from flir_config.resources import scan_game  # noqa: E402
-from flir_config.sources import (new_binding_plan, scan_world, unreadable_notes,  # noqa: E402
-                                 world_fingerprint)
+from flir_config.sources import (bind_profile, new_binding_plan, scan_world,  # noqa: E402
+                                 unreadable_notes, world_fingerprint)
 from flir_config.templates import DEFAULT_OPTIONS  # noqa: E402
 from test_original_configuration import source_row, target_row  # noqa: E402
 from test_postinstall_resources import make_game, make_itm, snapshot  # noqa: E402
@@ -156,7 +157,6 @@ class UnreadableWorldTests(unittest.TestCase):
             with self.subTest(target=target):
                 plan["targets"] = [{"id": target, "capacity": 1, "optional": False}]
                 with self.assertRaisesRegex(ProfileError, message):
-                    from flir_config.sources import bind_profile
                     bind_profile(self.profile, self.catalog, world, plan)
 
     def test_world_checks_what_the_scan_left_out(self):
@@ -249,8 +249,6 @@ class UnreadableTableRowTests(unittest.TestCase):
                          ("are:ar1303", "area-resource-unreadable"))
 
     def test_spell_shield_option_names_its_unreadable_store(self):
-        from flir_config.original_options import spell_shield_spec
-
         world = self.world(("sto:udduer01",), ("sto:udduer01",))
         with self.assertRaisesRegex(ProfileError, "UDDUER01.STO, which cannot be read"):
             spell_shield_spec(world, randomized=False)
