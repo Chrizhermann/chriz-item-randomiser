@@ -10,7 +10,7 @@ use crate::campaigns::{compile_campaign, OVERFLOW_TARGET_KINDS};
 use crate::error::{Error, Result};
 use crate::game_names::{convert_resource, eet_names, EetNames};
 use crate::json::{Dict, Value};
-use crate::original_catalog::resolve_template;
+use crate::original_catalog::{resolve_template, UNREADABLE_PLACE_PROBLEMS};
 use crate::original_registrations::{
     is_unreferenced_creature_source, source_lookup, target_record, SourceLookup, PAYLOAD_FIELDS, SHIPPED_REPLACEMENT,
     SOURCE_FIELDS, TARGET_FIELDS,
@@ -18,7 +18,7 @@ use crate::original_registrations::{
 use crate::prepared::{applied, applied_changes, left_out, quest_change};
 use crate::profiles::{edit_profile, new_profile, validate_catalog, ItemIndex, ProfileEdit};
 use crate::resources::{sha256_hex, GameResources, ITM_TYPE};
-use crate::sources::{new_binding_plan, validate_world, WorldIndex, UNUSABLE_SOURCE};
+use crate::sources::{new_binding_plan, unreadable_notes, validate_world, WorldIndex, UNUSABLE_SOURCE};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::path::Path;
 
@@ -410,6 +410,11 @@ fn build_from(
             *absent_mods.entry(crate::json::py_str(row.at("optional_mod")?)).or_insert(0) += 1;
             continue;
         }
+        if row.at("availability_reason")?.as_str() == Some("source-resource-unreadable") {
+            // The scan could not read its file (the notes name it); it stays as the game has it.
+            leave_out(&mut not_used, row, "reward", row.at("availability_reason")?)?;
+            continue;
+        }
         let adapter = row.get("adapter").and_then(Value::as_str);
         if adapter == Some("unshey")
             && !world_sources.iter().any(|source| {
@@ -485,7 +490,9 @@ fn build_from(
             leave_out(&mut not_used, row, "place", &Value::from(reason.as_str()))?;
         } else if !index.resources.contains(s(row, "area_resource")) {
             leave_out(&mut not_used, row, "place", &Value::from("area-resource-absent"))?;
-        } else if row.at("binding_problem")?.as_str() == Some("creature-never-appears") {
+        } else if row.at("binding_problem")?.as_str().is_some_and(|problem| {
+            UNREADABLE_PLACE_PROBLEMS.contains(&problem) || problem == "creature-never-appears"
+        }) {
             leave_out(&mut not_used, row, "place", row.at("binding_problem")?)?;
         } else {
             places.push(row);
@@ -673,9 +680,9 @@ fn build_from(
             ))
         })
         .collect();
-    let notes: Vec<Value> = names
-        .iter()
-        .flat_map(|names| names.notes.iter().cloned())
+    let notes: Vec<Value> = unreadable_notes(world)
+        .into_iter()
+        .chain(names.iter().flat_map(|names| names.notes.iter().cloned()))
         .chain(not_used_notes(&not_used))
         .map(Value::from)
         .collect();

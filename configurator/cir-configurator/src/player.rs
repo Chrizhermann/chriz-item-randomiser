@@ -154,6 +154,10 @@ fn open_editor(game: &Path) -> Result<(), String> {
     let (catalog, world) = scans(game, language.as_deref(), &workspace)
         .map_err(|error| format!("Could not read the game: {}", error.message))?;
     println!("Scans and configurations: {}", paths::display(&workspace));
+    // Game files the world scan could not read and left out, as `world scan` names them.
+    for note in sources::unreadable_notes(&world) {
+        println!("{note}.");
+    }
     let editor = editor(catalog, world, &workspace.join("configurations"), game)
         .map_err(|error| format!("Could not open the editor: {}", error.message))?;
     let open_browser = std::env::var_os(NO_BROWSER).is_none();

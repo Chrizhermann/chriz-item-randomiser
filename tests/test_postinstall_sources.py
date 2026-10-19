@@ -47,8 +47,8 @@ class SourceBindingTests(unittest.TestCase):
         self.world = scan_world(self.catalog)
         self.profile = edit_profile(new_profile(self.catalog, "test", "Test adventure"), self.catalog, include=["synth001"])
 
-    def plan(self, source_ids=None, capacity=1):
-        plan = new_binding_plan(self.profile, self.catalog, self.world)
+    def plan(self, source_ids=None, capacity=1, world=None):
+        plan = new_binding_plan(self.profile, self.catalog, world or self.world)
         plan["sources"] = [{"item": "synth001", "policy": "relocate",
                             "source_ids": source_ids or ["are:area/container/0/item/0"], "registration_ids": []}]
         plan["targets"] = [{"id": "are:area/actor/1", "capacity": capacity, "optional": False}]
@@ -103,41 +103,60 @@ class SourceBindingTests(unittest.TestCase):
         with self.assertRaisesRegex(ScanError, "Installed items changed"):
             scan_world(self.catalog)
 
-    def test_truncated_cre_slot_table_names_resource(self):
-        (self.override / "actor.cre").write_bytes(make_cre([])[:-1])
-        with self.assertRaisesRegex(ScanError,
-                r"cre:actor: Invalid or truncated CRE item slots") as raised:
-            scan_world(self.catalog)
-        self.assertIsInstance(raised.exception.__cause__, ScanError)
+    def left_out(self, world, resource):
+        """The file is in the game, but nothing was read from it."""
+        self.assertIn(resource, {row["id"] for row in world["resources"]})
+        self.assertFalse(any(row["resource"] == resource for row in world["sources"] + world["targets"]))
+        return next(row["reason"] for row in world["unreadable"] if row["id"] == resource)
 
-    def test_embedded_cre_failure_names_area_and_actor_record(self):
+    def test_truncated_cre_slot_table_is_left_out_with_its_reason(self):
+        (self.override / "actor.cre").write_bytes(make_cre([])[:-1])
+        world = scan_world(self.catalog)
+        self.assertEqual(self.left_out(world, "cre:actor"), "Invalid or truncated CRE item slots.")
+        self.assertEqual([row["id"] for row in world["unreadable"]], ["cre:actor"])
+        # The area actor that names it stays a target that cannot receive rewards.
+        actor = next(row for row in world["targets"] if row["id"] == "are:area/actor/0")
+        self.assertIn("unreadable-creature-template", actor["concerns"])
+        self.assertNotIn("missing-creature-template", actor["concerns"])
+        plan = self.plan(world=world)
+        plan["targets"][0]["id"] = "are:area/actor/0"
+        with self.assertRaisesRegex(ProfileError, "creature template that cannot be read"):
+            bind_profile(self.profile, self.catalog, world, plan)
+
+    def test_embedded_cre_failure_leaves_out_its_area_and_names_the_actor_record(self):
         embedded = make_cre([])[:-1]
         (self.override / "area.are").write_bytes(make_are([], [],
             [("External", "ACTOR"), ("Embedded", embedded)]))
-        with self.assertRaisesRegex(ScanError,
-                r"are:area: ARE actor 1 embedded CRE: Invalid or truncated CRE item slots") as raised:
-            scan_world(self.catalog)
-        self.assertIsInstance(raised.exception.__cause__, ScanError)
-        self.assertIsInstance(raised.exception.__cause__.__cause__, ScanError)
+        world = scan_world(self.catalog)
+        self.assertEqual(self.left_out(world, "are:area"),
+                         "ARE actor 1 embedded CRE: Invalid or truncated CRE item slots.")
+        self.assertEqual(self.source(world, "cre:actor/item/0")["record"]["charges"], [7, 3, 2])
 
-    def test_malformed_store_names_resource(self):
+    def test_malformed_store_is_left_out_with_its_reason(self):
         (self.override / "shop.sto").write_bytes(b"BAD")
-        with self.assertRaisesRegex(ScanError, r"sto:shop: Truncated STOR header") as raised:
-            scan_world(self.catalog)
-        self.assertIsInstance(raised.exception.__cause__, ScanError)
+        world = scan_world(self.catalog)
+        self.assertEqual(self.left_out(world, "sto:shop"), "Truncated STOR header.")
+        plan = self.plan(world=world)
+        plan["targets"].append({"id": "sto:shop", "capacity": 1, "optional": True})
+        bound = bind_profile(self.profile, self.catalog, world, plan)
+        self.assertEqual(bound["skipped"], [{"kind": "target", "id": "sto:shop",
+                                             "reason": "optional-resource-unreadable"}])
+        plan["targets"][1]["optional"] = False
+        with self.assertRaisesRegex(ProfileError, "Required target's resource cannot be read: sto:shop"):
+            bind_profile(self.profile, self.catalog, world, plan)
 
     def test_failed_world_cli_scan_never_writes_partial_or_replaces_output(self):
         catalog_path, world_path = self.root / "catalog.json", self.root / "world.json"
         write_json(catalog_path, self.catalog)
-        (self.override / "actor.cre").write_bytes(make_cre([])[:-1])
+        (self.override / "extra.itm").write_bytes(make_itm())
         args = ("world", "scan", "--catalog", catalog_path, "--out", world_path)
         first = self.cli(*args, success=False)
-        self.assertIn("cre:actor: Invalid or truncated CRE item slots", first["error"])
+        self.assertIn("Installed items changed", first["error"])
         self.assertFalse(world_path.exists())
         original = b'{"existing":"leave this exact content intact"}\n'
         world_path.write_bytes(original)
         second = self.cli(*args, success=False)
-        self.assertIn("cre:actor: Invalid or truncated CRE item slots", second["error"])
+        self.assertIn("Installed items changed", second["error"])
         self.assertEqual(world_path.read_bytes(), original)
 
     def test_script_change_changes_world_fingerprint(self):

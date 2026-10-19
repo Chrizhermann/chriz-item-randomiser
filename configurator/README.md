@@ -149,6 +149,9 @@ then). They are moved to `configurations\earlier scans\`, where they are kept,
 and the editor starts with a new configuration; Apply keeps the earlier
 revisions for existing saves.
 
+A creature, area or store file the world scan cannot read is left out, and
+the console names it with the reason, as `world scan`'s warnings do.
+
 With any argument the executable is the command line above, unchanged.
 `CIR_NO_BROWSER` (any value) makes the start without arguments only print the
 editor's address.
@@ -158,7 +161,8 @@ editor's address.
 The library works on JSON values (`cir_config::json::Value`, with Python's key
 order and number rules) and returns `cir_config::Error`, whose `ErrorKind`
 names the reference's exception class. The entry points are
-`resources::scan_game`, `sources::scan_world`, `platform::{game_platform,
+`resources::scan_game`, `sources::scan_world` (with `sources::unreadable_notes`,
+the note naming the game files it left out), `platform::{game_platform,
 preset_campaigns, preset_game}` (which game a world is, which presets it is
 offered and which fit it), `game_names::eet_names` (an EET game's own rename
 lists, or CIR's copy with a note),
@@ -219,8 +223,9 @@ build with the feature again before the checks.
   Siege of Dragonspear tables, the port reads those tables and campaigns
   (`CIR_PARITY_LISTS`, `CIR_PARITY_CAMPAIGNS`).
 - `cli_check.py` runs the command line on a synthetic installation: the whole
-  workflow up to the native export, argparse's handling of unusual arguments,
-  and every command's help at several terminal widths.
+  workflow up to the native export, a world scan that leaves out damaged
+  files, argparse's handling of unusual arguments, and every command's help at
+  several terminal widths.
 - `editor_check.py` sends the same session to both editors: static files, every
   request, malformed requests and the files written into the workspace.
 - `player_check.py` (Windows) starts the executable without arguments, copied

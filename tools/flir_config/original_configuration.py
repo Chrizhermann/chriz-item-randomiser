@@ -13,7 +13,7 @@ from pathlib import Path
 
 from .campaigns import OVERFLOW_TARGET_KINDS
 from .game_names import convert_resource, eet_names
-from .original_catalog import resolve_template
+from .original_catalog import UNREADABLE_PLACE_PROBLEMS, resolve_template
 from .original_options import is_spell_shield_row, spell_shield_spec, tome_variants
 from .platform import preset_game
 from .original_registrations import (SHIPPED_REPLACEMENT, is_unreferenced_creature_source,
@@ -24,7 +24,7 @@ from .prepared import QUEST_CHANGES, applied, applied_changes, left_out
 from .profiles import ProfileError, edit_profile, new_profile, validate_catalog
 from .resources import GameResources, RESOURCE_TYPES
 from .scripted_sources import blpool_registration
-from .sources import UNUSABLE_SOURCE, new_binding_plan, validate_world
+from .sources import UNUSABLE_SOURCE, new_binding_plan, unreadable_notes, validate_world
 from .virtual_sources import virtual_registration
 
 _SOURCE_FIELDS = ("id", "source_ref", "campaign", "family", "source", "ident",
@@ -174,6 +174,10 @@ def build_original_configuration(catalog: dict, world: dict, template_id: str, *
         if row["binding_problem"] == "optional-item-absent":
             absent_mods[row["optional_mod"]] += 1
             continue
+        if row["availability_reason"] == "source-resource-unreadable":
+            # The scan could not read its file (the notes name it); it stays as the game has it.
+            leave_out(row, "reward", row["availability_reason"])
+            continue
         if row["adapter"] == "unshey" and not any(
                 source["resource"] == row["source_resource"]
                 and source["item"] == row["item_resref"]
@@ -274,6 +278,8 @@ def build_original_configuration(catalog: dict, world: dict, template_id: str, *
             leave_out(row, "place", exclude[row["id"]])
         elif row["area_resource"] not in index["resources"]:
             leave_out(row, "place", "area-resource-absent")
+        elif row["binding_problem"] in UNREADABLE_PLACE_PROBLEMS:
+            leave_out(row, "place", row["binding_problem"])
         elif row["binding_problem"] == "creature-never-appears":
             leave_out(row, "place", row["binding_problem"])
         else:
@@ -361,7 +367,8 @@ def build_original_configuration(catalog: dict, world: dict, template_id: str, *
                             f"{'is' if count == 1 else 'are'} left out"
                             for mod, count in sorted(absent_mods.items())],
             "not_used": not_used,
-            "not_used_notes": list(names.notes if names else ()) + _not_used_notes(not_used),
+            "not_used_notes": (unreadable_notes(world) + list(names.notes if names else ())
+                               + _not_used_notes(not_used)),
             "row_ids": row_ids}
 
 

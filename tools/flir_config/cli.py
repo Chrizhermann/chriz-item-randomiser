@@ -17,7 +17,7 @@ from .native_export import export_native
 from .templates import list_templates, build_template, POOL_CHOICES
 from .sources import (bind_profile, inventory_diagnostic_counts, inspect_sources, new_binding_plan,
                       prepare_bound_profile, read_bound_profile, scan_world,
-                      search_targets)
+                      search_targets, unreadable_notes)
 
 
 def parser() -> argparse.ArgumentParser:
@@ -169,11 +169,15 @@ def run(args: argparse.Namespace) -> dict:
             destination = ensure_output_outside_game(args.out, catalog)
             world = scan_world(catalog)
             write_json(destination, world)
-            return {"world_path": str(destination), "fingerprint": world["fingerprint"],
-                    "source_records": len(world["sources"]), "target_candidates": len(world["targets"]),
-                    "empty_item_records": sum("empty-item-reference" in row["concerns"]
-                                              for row in world["sources"]),
-                    **inventory_diagnostic_counts(world)}
+            result = {"world_path": str(destination), "fingerprint": world["fingerprint"],
+                      "source_records": len(world["sources"]), "target_candidates": len(world["targets"]),
+                      "empty_item_records": sum("empty-item-reference" in row["concerns"]
+                                                for row in world["sources"]),
+                      **inventory_diagnostic_counts(world)}
+            # Game files the scan could not read and left out, as the editor's notes name them.
+            if "unreadable" in world:
+                result["warnings"] = unreadable_notes(world)
+            return result
         world = read_json(args.world)
         if args.operation == "sources":
             return inspect_sources(world, catalog, args.item, offset=args.offset, limit=args.limit)

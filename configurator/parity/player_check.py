@@ -50,6 +50,7 @@ from editor_check import Server, bound, commands, masked
 
 from flir_config.activation import _gate_revisions  # noqa: E402
 from test_postinstall_resources import make_tlk  # noqa: E402
+from test_postinstall_world_formats import make_are  # noqa: E402
 
 EXE = "cir-configurator.exe"
 EDITOR = re.compile(r"Open (http://127\.0\.0\.1:(\d+)) in your browser to use the editor\.")
@@ -453,8 +454,10 @@ def cases(check: Checks, desktop: Desktop, root: Path, starts: list) -> None:
           state["profile"]["id"])
     second.stop()
 
-    # The game's mods change: the earlier configurations are kept aside.
+    # The game's mods change: the earlier configurations are kept aside. One
+    # mod's area cannot be read: the scan leaves it out and says so.
     (game_a / "override" / "synth002.itm").write_bytes((game_a / "override" / "synth001.itm").read_bytes())
+    (game_a / "override" / "broken.are").write_bytes(bytes(make_are())[:0x100])
     third, _ = start(game_a / "cir" / EXE, "mods-changed")
     editor, state = found_game(check, "mods changed", third, game_a, workspace_a, None)
     output = third.text()
@@ -465,6 +468,10 @@ def cases(check: Checks, desktop: Desktop, root: Path, starts: list) -> None:
     check("mods changed: a new configuration",
           "The configuration applied last cannot be reopened; the editor starts with a new one." in output
           and state["profile"]["id"] != "player-apply" and state["saved"] == [], output)
+    check("mods changed: names the area the scan leaves out",
+          "BROKEN.ARE (Truncated AREA header) cannot be read, so Chriz Item Randomiser leaves it out: "
+          "its items stay as the game has them and no reward goes there.\n" in output.replace("\r\n", "\n"),
+          output)
     status, text = apply(editor, state, "player-apply-again")
     check("mods changed: Apply", status == 200 and APPLIED in text, text[:600])
     third.stop()

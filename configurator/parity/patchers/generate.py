@@ -1356,6 +1356,12 @@ def original_options_scenario() -> Scenario:
                         "sources": [{"id": "x", "resource": "sto:udduer01", "record": {"record_index": 0}}]},
         "no sources": {"resources": [{"id": "sto:udduer01", "sha256": "1" * 64}]},
         "quantity float": shop_world([(item_record("scrl8x"), 1, 0)]),
+        # The world scan left out a file it could not read (sources.scan_world).
+        "unreadable store": dict(shop_world([]), unreadable=[{"id": "sto:udduer01", "reason": "Truncated STOR header."}]),
+        "unreadable other": dict(shop_world([(item_record("scrl8x"), 1, 0)]),
+                                 unreadable=[{"id": "are:other", "reason": "Truncated AREA header."}]),
+        "unreadable no id": dict(shop_world([]), unreadable=[{"reason": "Truncated STOR header."}]),
+        "unreadable none": dict(shop_world([]), unreadable=None),
     }
     worlds["quantity float"]["sources"][0]["record"]["quantity"] = 7.5
     for label, world in worlds.items():

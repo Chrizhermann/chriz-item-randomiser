@@ -338,6 +338,10 @@ fn run_with_catalog(names: &[&str], parsed: &Parsed) -> Result<Value> {
             for (key, value) in sources::inventory_diagnostic_counts(&world)?.iter() {
                 result.insert(key, value.clone());
             }
+            // Game files the scan could not read and left out, as the editor's notes name them.
+            if world.get("unreadable").is_some() {
+                result.insert("warnings", Value::from(sources::unreadable_notes(&world)));
+            }
             Ok(Value::Dict(result))
         }
         ["world", "sources"] => {

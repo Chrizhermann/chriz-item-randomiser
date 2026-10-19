@@ -161,6 +161,13 @@ pub fn spell_shield_spec(world: &Value, randomized: bool) -> Result<Value> {
     let Some(resource) = resource else {
         return Err(Error::profile("More Spell Shield scrolls requires UDDUER01.STO"));
     };
+    if let Some(unreadable) = world.get("unreadable") {
+        for row in crate::py::iter_value(unreadable)? {
+            if item(&row, "id")?.py_eq(&store) {
+                return Err(Error::profile("More Spell Shield scrolls requires UDDUER01.STO, which cannot be read"));
+            }
+        }
+    }
     let mut rows = Vec::new();
     for row in crate::py::iter_value(item(world, "sources")?)? {
         if item(&row, "resource")?.py_eq(&store) {

@@ -274,6 +274,8 @@ SPECS = {
         "scan_game", lambda v, d: present(game_root=str(v["game_root"]), language=v["language"]),
         paths=("game_root",)),
     ("flir_config.sources", "scan_world"): Spec("scan_world", lambda v, d: {"catalog": file(v["catalog"])}),
+    ("flir_config.sources", "unreadable_notes"): Spec(
+        "unreadable_notes", lambda v, d: {"world": file(v["world"])}),
     ("flir_config.original_catalog", "resolve_template"): Spec(
         "resolve_template", lambda v, d: present(
             catalog=file(v["catalog"]), world=file(v["world"]), template_id=v["template_id"], game=v["game"],

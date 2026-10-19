@@ -71,6 +71,7 @@ fn run(name: &str, args: &Dict) -> Result<Value> {
             cir_config::resources::scan_game(Path::new(&text(args, "game_root")?), language.as_ref().and_then(Value::as_str))
         }
         "scan_world" => sources::scan_world(&required(args, "catalog")?),
+        "unreadable_notes" => Ok(Value::from(sources::unreadable_notes(&required(args, "world")?))),
         "resolve_template" => original_catalog::resolve_template(
             &required(args, "catalog")?,
             &required(args, "world")?,

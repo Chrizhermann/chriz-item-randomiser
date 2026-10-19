@@ -54,7 +54,8 @@ records cannot be selected for relocation or compiled into campaign rewards;
 they do not appear in item search. The `world scan` response includes their
 aggregate `empty_item_records` count within `source_records`, without exposing
 locations. A nonempty reference with a missing definition retains the separate
-`missing-item-definition` concern. Malformed nonempty references fail by default;
+`missing-item-definition` concern. Malformed nonempty references fail parsing by
+default, and an area or store with one is left out ([Unreadable files](#unreadable-files));
 CRE discovery alone can preserve them for the quarantine described below.
 
 This is structural preservation, not a claim about how the engine handles an
@@ -86,8 +87,8 @@ reject them. Worlds without them retain their existing v1 representation and
 fingerprint behavior. The CLI reports `dangling_inventory_owners` and
 `dangling_inventory_slots`, counting physical owners once rather than counting
 their external actor references as additional inventories. Binding unrelated,
-valid sources and targets in the same catalogue remains possible. Truncated or
-overlapping resource structures still fail the entire scan. Fixture builders and
+valid sources and targets in the same catalogue remains possible. A creature, area
+or store with truncated or overlapping structures is left out. Fixture builders and
 save inspectors retain strict default parsing; only discovery opts into this
 diagnostic representation.
 
@@ -103,8 +104,8 @@ The compiler also rejects raw-name evidence even if its concern was removed.
 
 The CLI reports `invalid_item_records` and `invalid_inventory_owners` separately
 from empty rows and dangling slot counts. This behavior covers standalone and
-embedded CRE inventories; malformed ARE container or STO item names still fail.
-There is no generic catch-and-skip fallback for unreadable resources.
+embedded CRE inventories; an area with malformed container item names and a store
+with malformed stock names cannot be read and are left out whole.
 
 Area actors with only one of the embedded CRE offset/size fields populated are
 also retained in v2 discovery as `storage_diagnostics` with reason
@@ -115,7 +116,8 @@ fallback or invented inventory is assigned to them. The CLI reports their
 the validator rejects physical sources attributed to them. Imported campaigns
 also reject unequal zero/nonzero offset/size even if the diagnostic was stripped.
 Strict parsing remains the default. Conflicting storage flags, overlapping
-nonempty CRE blobs, and truncated actor tables still fail the scan.
+nonempty CRE blobs, and truncated actor tables make their area unreadable; it is
+left out.
 
 Item identities and effective ITM hashes must match the earlier item catalogue.
 The world fingerprint additionally covers all scanned resources, source records,
@@ -131,11 +133,51 @@ catalogues are development inputs, not a substitute for scanning a trusted insta
 
 The reader supports root KEY/uncompressed BIFF resources and a merged DLC resource
 set. Conflicting or shared embedded creature storage is explicitly unsupported.
-Unsupported/truncated structures fail instead of producing partial discoveries.
+Unsupported/truncated structures produce no partial discoveries: such a creature,
+area or store is left out whole.
 Nothing reads recursive mod backups or saves to reconstruct missing originals.
 In particular, sources already removed by the legacy Randomiser installer remain
 absent; this tool cannot retroactively recover them. The new runtime path must
 preserve originals at install time, as required by the migration design.
+
+### Unreadable files
+
+Another mod's damaged or unusual creature, area or store does not stop the scan
+for the whole game. A CRE, ARE or STO that cannot be parsed (a truncated or
+overlapping structure, another format's header, another version) is left out, and
+the scan finishes:
+
+- Its resource row and hash stay in `resources`: the file is in the game. Game
+  detection (`OH1000.ARE`, `OH6000.ARE`) and Siege of Dragonspear's areas count it,
+  and a table row naming it is not reported as absent.
+- It yields no sources and no targets. The world's `unreadable` rows, sorted by
+  identity, name it with the parser's reason, for example
+  `{"id": "are:ar0602", "reason": "Truncated AREA header."}`. The list exists only
+  when the scan left something out, so other worlds keep their content and
+  fingerprint; when it exists, the fingerprint covers it. Earlier readers reject
+  such a world (an unknown field) rather than reading it as complete.
+- An area actor whose external CRE was left out has the concern
+  `unreadable-creature-template` and cannot receive rewards.
+- The validator accepts only scanned CRE, ARE and STO resources in the list, and
+  no source or target in a listed file.
+- `world scan` names the left-out files in its `warnings`, and a preset names them
+  first among its notes: "AR0602.ARE (Truncated AREA header) cannot be read, so
+  Chriz Item Randomiser leaves it out: its items stay as the game has them and no
+  reward goes there". A preset's rows that need such a file are left out with
+  reason `source-resource-unreadable` (a reward) or `area-resource-unreadable`,
+  `creature-resource-unreadable` or `store-resource-unreadable` (a place).
+- Binding a required target in a left-out file fails and names the file; an
+  optional one is skipped with `optional-resource-unreadable`. Original sources
+  and targets in such a file are refused. The native export neither addresses nor
+  hashes such a file; a group recipient's members in one are dropped like absent
+  members. More Spell Shield scrolls needs a readable `UDDUER01.STO`.
+
+Only these three formats' parse errors are left out. A damaged KEY or BIFF, a file
+that cannot be opened, installed items that differ from the item catalogue and
+changes during the scan still stop it. The item catalogue scan still stops at a
+malformed ITM: item identities and hashes are what profiles, worlds and saved
+configurations are checked against. A rescan after the file is repaired reads it
+again.
 
 ## Explicit choices
 
@@ -172,7 +214,7 @@ A target choice is `{"id":"are:area/actor/1","capacity":2,"optional":false}`.
 Capacity is a chosen maximum reward-record count, not an inferred creature inventory
 limit. Several rewards may share a target. Missing optional targets are reported and
 excluded before checking capacity; missing required targets fail. A present actor
-whose external creature template is missing also fails. Compatibility at this stage
+whose external creature template is missing or unreadable also fails. Compatibility at this stage
 means structurally matching the scan, not proven encounter eligibility or lootability.
 
 One creature/container record counts as one reward unit, preserving its charge or
