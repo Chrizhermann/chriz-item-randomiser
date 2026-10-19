@@ -100,6 +100,8 @@ import names it (`start_import(folder, revision, plain, "bgee")`); when the save
 ambiguous or LOAD is in the other mode, it presses Back first, so the console is
 free again, and then reports the failure.
 
+## Lab games on 2.7.3
+
 On 2.7.3 a campaign choice (BG2:EE's logos, BG:EE's campaign buttons, EET's
 campaign list) closes START and the engine finishes the reload, reopening START,
 only on the next mouse event. A player's mouse provides one at once. A lab game
@@ -108,6 +110,21 @@ reload and its button does nothing. Lab drivers queue one click on an inert
 label before the campaign choice and wait until START is back. EET 2.7.3 also
 opens START after every launch only on the first mouse event, so a lab driver
 starts an EET game with the same click.
+
+A Remote Console request can run while the console's own menu, `EEEX_REMOTE`, is
+on top. A bare `Infinity_PopMenu()` then closes that menu and
+`Infinity_TransitionMenu` replaces it, so lab drivers name the menu they close
+(`Infinity_PopMenu('START_SP')`). Character creation's Import button opens a
+popup with two buttons on BG:EE (the character file is `Popup2Button.okText`)
+and with three on BG2:EE and EET (`Popup3Button.midText`). A BG2:EE Throne of
+Bhaal start levels an imported character up, a pregenerated character file in
+New Game as well as a party from Import Game: for lab test 8's fighters,
+character creation stopped at the proficiency step (CHARGEN step 9) before the
+appearance. EET's direct Throne of Bhaal new game with a pregenerated fighter
+had no such step. That BG2:EE lab's Throne of Bhaal list of character files had
+no "Abdel - Fighter - Chaotic Good", which its Shadows of Amn list showed; both
+had "Abdel - Fighter - Neutral Good". `tools/create_fixture_character.py`
+drives these starts on every platform.
 
 Save headers seen on 2.7.3: BG:EE's new-game template is GAME V1.1 but its saves
 are V2.0; BG2:EE writes V2.1 for Throne of Bhaal saves; EET wrote V2.0 for all
