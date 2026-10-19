@@ -1,11 +1,12 @@
 // Chriz Item Randomiser (cir.tp2): the post-install campaign runtime.
 //
 // Installs the runtime modules (prototype/, three tools/probes modules), hooks
-// UI.MENU's single-player New Game, character import and character acceptance
-// calls through M_FLPRUI.lua, and marks the BALDUR.GAM new-game template with
+// the user interface's single-player New Game, character import and character
+// acceptance calls through M_FLPRUI.lua, wherever they are (UI.MENU, other
+// menu and Lua files), and marks the BALDUR.GAM new-game template with
 // GLOBAL FLPR_FRESH = 1. Every campaign of BG:EE (with Siege of Dragonspear),
 // BG2:EE and EET starts from that template. Every input is checked before the first write, so a refused
-// install leaves the game unchanged; uninstall restores UI.MENU and BALDUR.GAM
+// install leaves the game unchanged; uninstall restores every file it changed
 // from backup. Configurator output written after installation (to
 // randomiser-campaigns/) is not tracked.
 
@@ -65,42 +66,211 @@ DEFINE_ACTION_MACRO flir_campaign_runtime_check_dlc BEGIN
   END
 END
 
-// A New Game, character import or character acceptance call that is not
-// hooked would start an unrandomised campaign without notice, so unrecognised
-// call forms refuse the install. Multiplayer connectionScreen:OnNewGameButtonClick
-// and character creation's own import (createCharScreen:OnImportCharacterButtonClick,
-// a character for a game already begun) stay untouched; a UI without a
-// character import button needs no import hook.
-// Existing FLPRUI_ calls were written outside this installer; uninstalling it
-// would leave them calling missing functions. A UI mod that defines a hooked
-// method would have its definition renamed into a global FLPRUI_ function that
-// replaces the adapter, so definitions refuse the install too.
+// The hooked engine methods are startEngine:OnNewGameButtonClick,
+// startEngine:OnImportCharacterButtonClick and createCharScreen:AcceptCharacter.
+// Each call of one, such as startEngine:OnNewGameButtonClick(), is pointed at
+// its adapter function in M_FLPRUI.lua (FLPRUI_NewGame()), in every menu and
+// Lua file of the user interface but the runtime's own (FLPR*): UI.MENU, a UI
+// mod's files, and the default functions of the dispatcher through which mods
+// built on DavidW's SFO library (SCS, IWDification) send their calls
+// (m_dw_osd.lua). A call that is not hooked would start an unrandomised
+// campaign without notice, so any other reference to a hooked method refuses
+// the install, naming its file and line: an alias such as
+// local f = startEngine.OnNewGameButtonClick, a call through another name, or
+// a call split across lines. These need no hook:
+//   - a definition (function startEngine:OnNewGameButtonClick(...), or an
+//     assignment to startEngine.OnNewGameButtonClick), which the adapter calls;
+//   - a string naming exactly the method, a dispatcher's key such as SFO's
+//     dwSystemCall('createCharScreen:AcceptCharacter', ...), whose default
+//     function makes a hooked call;
+//   - multiplayer's connectionScreen:OnNewGameButtonClick and character
+//     creation's own import (createCharScreen:OnImportCharacterButtonClick, a
+//     character for a game already begun), which stay as they are.
+// A UI without a character import button needs no import hook. Existing
+// FLPRUI_ calls were written outside this installer; uninstalling it would
+// leave them calling missing functions, so they refuse the install too.
+
+// Replaces every character of MATCH0 but line breaks with #: a form already
+// classified is not found again, and offsets and line numbers stay.
+DEFINE_PATCH_MACRO flir_campaign_runtime_mask BEGIN
+  INNER_PATCH_SAVE flir_rt_mask ~%MATCH0%~ BEGIN
+    REPLACE_TEXTUALLY CASE_SENSITIVE ~[^%LNL%%MNL%]~ ~#~
+  END
+END
+
+// Masks Lua comments, which neither call nor refer to anything: long ones
+// (--[[ ... ]], also with = between the brackets), then -- to the end of the
+// line.
+DEFINE_PATCH_MACRO flir_campaign_runtime_mask_comments BEGIN
+  SET flir_rt_open = INDEX_BUFFER (~--\[=*\[~)
+  WHILE flir_rt_open >= 0 BEGIN
+    SET flir_rt_level = 0
+    WHILE (BYTE_AT (flir_rt_open + 3 + flir_rt_level)) = 0x3d BEGIN
+      SET flir_rt_level += 1
+    END
+    SPRINT flir_rt_close ~]~
+    FOR (flir_rt_i = 0; flir_rt_i < flir_rt_level; ++flir_rt_i) BEGIN
+      SPRINT flir_rt_close ~%flir_rt_close%=~
+    END
+    SPRINT flir_rt_close ~%flir_rt_close%]~
+    SET flir_rt_end = INDEX_BUFFER (EXACT_MATCH ~%flir_rt_close%~ (flir_rt_open + 4 + flir_rt_level))
+    SET flir_rt_stop = (flir_rt_end < 0) ? BUFFER_LENGTH : (flir_rt_end + 2 + flir_rt_level)
+    FOR (flir_rt_i = flir_rt_open; flir_rt_i < flir_rt_stop; ++flir_rt_i) BEGIN
+      PATCH_IF (BYTE_AT flir_rt_i) != 10 AND (BYTE_AT flir_rt_i) != 13 BEGIN
+        WRITE_BYTE flir_rt_i 0x23
+      END
+    END
+    SET flir_rt_open = (flir_rt_stop >= BUFFER_LENGTH) ? (0 - 1) : INDEX_BUFFER (~--\[=*\[~ flir_rt_stop)
+  END
+  REPLACE_EVALUATE ~--[^%LNL%%MNL%]*~ BEGIN
+    LPM flir_campaign_runtime_mask
+  END ~%flir_rt_mask%~
+END
+
+// Calls of receiver:method in the buffer (flir_rt_calls). A definition
+// (function receiver:method(...)) is no call and stays as it is. With
+// hook = 1 the calls are pointed at the adapter, otherwise calls and
+// definitions are masked.
+DEFINE_PATCH_FUNCTION flir_campaign_runtime_calls
+  INT_VAR
+    hook = 0
+  STR_VAR
+    receiver = ~~
+    method = ~~
+    adapter = ~~
+  RET
+    flir_rt_calls
+BEGIN
+  SET flir_rt_calls = 0
+  REPLACE_EVALUATE CASE_SENSITIVE
+    ~\(function[ %TAB%%LNL%%MNL%]+\|\)\b%receiver%[ %TAB%]*:[ %TAB%]*%method%[ %TAB%]*(~ BEGIN
+    SPRINT flir_rt_with ~%MATCH0%~
+    PATCH_IF ~%MATCH1%~ STRING_EQUAL ~~ BEGIN
+      SET flir_rt_calls += 1
+      PATCH_IF hook BEGIN
+        SPRINT flir_rt_with ~%adapter%(~
+      END
+    END
+    PATCH_IF !hook BEGIN
+      LPM flir_campaign_runtime_mask
+      SPRINT flir_rt_with ~%flir_rt_mask%~
+    END
+  END ~%flir_rt_with%~
+END
+
+// Masks the forms of receiver:method that need no hook besides calls and
+// definitions (see above) and returns the number of calls.
+DEFINE_PATCH_FUNCTION flir_campaign_runtime_mask_method
+  STR_VAR
+    object = ~~
+    name = ~~
+  RET
+    flir_rt_calls
+BEGIN
+  // Without EVAL, WeiDU passes the text %object% itself.
+  LPF flir_campaign_runtime_calls STR_VAR receiver = EVAL ~%object%~ method = EVAL ~%name%~ RET flir_rt_calls END
+  REPLACE_EVALUATE CASE_SENSITIVE
+    ~function[ %TAB%%LNL%%MNL%]+%object%[ %TAB%]*\.[ %TAB%]*%name%\b\|\b%object%[ %TAB%]*\.[ %TAB%]*%name%[ %TAB%]*=[^=]~
+  BEGIN
+    LPM flir_campaign_runtime_mask
+  END ~%flir_rt_mask%~
+  REPLACE_EVALUATE CASE_SENSITIVE ~'%object%:%name%'\|"%object%:%name%"~ BEGIN
+    LPM flir_campaign_runtime_mask
+  END ~%flir_rt_mask%~
+END
+
+// Classifies one user-interface file, the buffer, which is changed and must
+// not be written. Returns its calls of each hooked method and its first
+// problem (flir_rt_problem 1: an FLPRUI_ name, 2: a reference to a hooked
+// method that cannot be hooked) with its line and form.
+DEFINE_PATCH_FUNCTION flir_campaign_runtime_scan_ui
+  RET
+    flir_rt_new_games
+    flir_rt_imports
+    flir_rt_accepts
+    flir_rt_problem
+    flir_rt_line
+    flir_rt_form
+BEGIN
+  SET flir_rt_new_games = 0
+  SET flir_rt_imports = 0
+  SET flir_rt_accepts = 0
+  SET flir_rt_problem = 0
+  SET flir_rt_line = 0
+  SPRINT flir_rt_form ~FLPRUI_~
+  LPM flir_campaign_runtime_mask_comments
+  SET flir_rt_at = INDEX_BUFFER (CASE_SENSITIVE EXACT_MATCH ~FLPRUI_~)
+  PATCH_IF flir_rt_at >= 0 BEGIN
+    SET flir_rt_problem = 1
+  END ELSE BEGIN
+    LPF flir_campaign_runtime_mask_method STR_VAR object = ~startEngine~ name = ~OnNewGameButtonClick~
+      RET flir_rt_new_games = flir_rt_calls END
+    LPF flir_campaign_runtime_mask_method STR_VAR object = ~startEngine~ name = ~OnImportCharacterButtonClick~
+      RET flir_rt_imports = flir_rt_calls END
+    LPF flir_campaign_runtime_mask_method STR_VAR object = ~createCharScreen~ name = ~AcceptCharacter~
+      RET flir_rt_accepts = flir_rt_calls END
+    REPLACE_EVALUATE CASE_SENSITIVE
+      ~\bconnectionScreen[ %TAB%]*[:.][ %TAB%]*OnNewGameButtonClick\b\|\bcreateCharScreen[ %TAB%]*[:.][ %TAB%]*OnImportCharacterButtonClick\b~
+    BEGIN
+      LPM flir_campaign_runtime_mask
+    END ~%flir_rt_mask%~
+    SPRINT flir_rt_reference
+      ~[A-Za-z0-9_]*[ %TAB%]*[:.][ %TAB%]*\(OnNewGameButtonClick\|OnImportCharacterButtonClick\|AcceptCharacter\)\b~
+    SET flir_rt_at = INDEX_BUFFER (CASE_SENSITIVE ~%flir_rt_reference%~)
+    PATCH_IF flir_rt_at >= 0 BEGIN
+      SET flir_rt_problem = 2
+      SPRINT flir_rt_form ~~
+      REPLACE_EVALUATE CASE_SENSITIVE ~%flir_rt_reference%~ BEGIN
+        PATCH_IF ~%flir_rt_form%~ STRING_EQUAL ~~ BEGIN
+          SPRINT flir_rt_form ~%MATCH0%~
+        END
+      END ~%MATCH0%~
+    END
+  END
+  PATCH_IF flir_rt_problem BEGIN
+    SET flir_rt_breaks = 0
+    PATCH_IF flir_rt_at > 0 BEGIN
+      READ_ASCII 0 flir_rt_before (flir_rt_at)
+      INNER_PATCH ~%flir_rt_before%~ BEGIN
+        COUNT_REGEXP_INSTANCES CASE_SENSITIVE EXACT_MATCH ~%LNL%~ flir_rt_breaks
+      END
+    END
+    SET flir_rt_line = flir_rt_breaks + 1
+  END
+END
+
+// Checks every menu and Lua file of the user interface and lists the files
+// with calls to hook (flir_rt_hook).
 DEFINE_ACTION_MACRO flir_campaign_runtime_check_menu BEGIN
   ACTION_IF !FILE_EXISTS_IN_GAME ~UI.MENU~ BEGIN
     FAIL @101512
   END
-  COPY_EXISTING - ~UI.MENU~ ~...cir/fl-inlined/flir-ui.menu~
-    COUNT_REGEXP_INSTANCES CASE_SENSITIVE EXACT_MATCH ~startEngine:OnNewGameButtonClick(~ flir_rt_new_game
-    COUNT_REGEXP_INSTANCES CASE_SENSITIVE EXACT_MATCH ~connectionScreen:OnNewGameButtonClick(~ flir_rt_multiplayer
-    COUNT_REGEXP_INSTANCES CASE_SENSITIVE ~[:.]OnNewGameButtonClick~ flir_rt_new_game_any
-    COUNT_REGEXP_INSTANCES CASE_SENSITIVE EXACT_MATCH ~startEngine:OnImportCharacterButtonClick(~ flir_rt_import
-    COUNT_REGEXP_INSTANCES CASE_SENSITIVE EXACT_MATCH ~createCharScreen:OnImportCharacterButtonClick(~
-      flir_rt_chargen_import
-    COUNT_REGEXP_INSTANCES CASE_SENSITIVE ~[:.]OnImportCharacterButtonClick~ flir_rt_import_any
-    COUNT_REGEXP_INSTANCES CASE_SENSITIVE EXACT_MATCH ~createCharScreen:AcceptCharacter(~ flir_rt_accept
-    COUNT_REGEXP_INSTANCES CASE_SENSITIVE ~[:.]AcceptCharacter~ flir_rt_accept_any
-    COUNT_REGEXP_INSTANCES CASE_SENSITIVE EXACT_MATCH ~FLPRUI_~ flir_rt_hooked
-    COUNT_REGEXP_INSTANCES CASE_SENSITIVE
-      ~function[ %TAB%%WNL%%MNL%%LNL%]+\(startEngine:OnNewGameButtonClick\|startEngine:OnImportCharacterButtonClick\|createCharScreen:AcceptCharacter\)~
-      flir_rt_defined
+  OUTER_SET flir_rt_new_game = 0
+  OUTER_SET flir_rt_accept = 0
+  OUTER_SET flir_rt_failure = 0
+  ACTION_CLEAR_ARRAY flir_rt_hook
+  COPY_EXISTING_REGEXP - GLOB ~^.+\.\(lua\|menu\)$~ ~override~
+    PATCH_IF flir_rt_failure = 0 AND (~%SOURCE_RES%~ STRING_MATCHES_REGEXP ~\([mM]_\)?[fF][lL][pP][rR].*~) BEGIN
+      LPF flir_campaign_runtime_scan_ui RET flir_rt_new_games flir_rt_imports flir_rt_accepts flir_rt_problem
+        flir_rt_line flir_rt_form END
+      PATCH_IF flir_rt_problem BEGIN
+        SET flir_rt_failure = flir_rt_problem
+        SPRINT flir_rt_file ~%SOURCE_FILE%~
+      END
+      SET flir_rt_new_game += flir_rt_new_games
+      SET flir_rt_accept += flir_rt_accepts
+      PATCH_IF flir_rt_new_games + flir_rt_imports + flir_rt_accepts > 0 BEGIN
+        SET $flir_rt_hook(~%SOURCE_FILE%~) = 1
+      END
+    END
   BUT_ONLY
-  ACTION_IF flir_rt_defined != 0 BEGIN
+  ACTION_IF flir_rt_failure = 1 BEGIN
+    FAIL @101516
+  END
+  ACTION_IF flir_rt_failure = 2 BEGIN
     FAIL @101515
   END
-  ACTION_IF flir_rt_new_game < 1 OR flir_rt_accept < 1 OR flir_rt_hooked != 0
-         OR flir_rt_new_game + flir_rt_multiplayer != flir_rt_new_game_any
-         OR flir_rt_import + flir_rt_chargen_import != flir_rt_import_any
-         OR flir_rt_accept != flir_rt_accept_any BEGIN
+  ACTION_IF flir_rt_new_game < 1 OR flir_rt_accept < 1 BEGIN
     FAIL @101512
   END
 END
@@ -203,11 +373,16 @@ DEFINE_ACTION_MACRO flir_campaign_runtime_install BEGIN
   OUTER_SET flir_rt_text_stopped = RESOLVE_STR_REF (@1706)
   COPY ~...cir/fl-inlined/M_FLPRTXT.lua~ ~override/M_FLPRTXT.lua~ EVALUATE_BUFFER
 
-  COPY_EXISTING ~UI.MENU~ ~override~
-    REPLACE_TEXTUALLY CASE_SENSITIVE EXACT_MATCH ~startEngine:OnNewGameButtonClick(~ ~FLPRUI_NewGame(~
-    REPLACE_TEXTUALLY CASE_SENSITIVE EXACT_MATCH ~startEngine:OnImportCharacterButtonClick(~ ~FLPRUI_ImportCharacter(~
-    REPLACE_TEXTUALLY CASE_SENSITIVE EXACT_MATCH ~createCharScreen:AcceptCharacter(~ ~FLPRUI_AcceptCharacter(~
-  BUT_ONLY
+  ACTION_PHP_EACH flir_rt_hook AS flir_rt_file => flir_rt_listed BEGIN
+    COPY_EXISTING ~%flir_rt_file%~ ~override~
+      LPF flir_campaign_runtime_calls INT_VAR hook = 1
+        STR_VAR receiver = ~startEngine~ method = ~OnNewGameButtonClick~ adapter = ~FLPRUI_NewGame~ END
+      LPF flir_campaign_runtime_calls INT_VAR hook = 1
+        STR_VAR receiver = ~startEngine~ method = ~OnImportCharacterButtonClick~ adapter = ~FLPRUI_ImportCharacter~ END
+      LPF flir_campaign_runtime_calls INT_VAR hook = 1
+        STR_VAR receiver = ~createCharScreen~ method = ~AcceptCharacter~ adapter = ~FLPRUI_AcceptCharacter~ END
+    BUT_ONLY
+  END
 
   LAM flir_campaign_runtime_mark_gam
 

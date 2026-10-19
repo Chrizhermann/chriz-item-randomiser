@@ -40,6 +40,19 @@ FLPR = {
     AcceptCharacter = function(...) calls[#calls + 1] = {"runtime:accept", ...}; return "runtime:accept" end,
 }
 '''
+# The shape of the dispatcher that mods built on DavidW's SFO library install
+# (dwSystemCall), with a default function for character acceptance that calls
+# the engine, as written anew by such a mod installed after CIR.
+SFO = r'''
+dwSystemCallDefault = {}
+dwSystemCallDefault['createCharScreen:AcceptCharacter'] = function(arg1, arg2, arg3)
+    createCharScreen:AcceptCharacter(arg1)
+end
+sfo_default = dwSystemCallDefault['createCharScreen:AcceptCharacter']
+function dwSystemCall(fn, menu, arg1, arg2, arg3)
+    dwSystemCallDefault[fn](arg1, arg2, arg3)
+end
+'''
 
 
 class UiAdapterTests(unittest.TestCase):
@@ -185,6 +198,48 @@ class UiAdapterTests(unittest.TestCase):
             for name, module in RUNTIMES:
                 with self.subTest(name, configured=text[:6]):
                     self.asks_before_starting_unrandomised(self.lua(module, io=False))
+
+    def test_a_new_adventure_points_the_sfo_dispatcher_at_the_adapter(self):
+        self.configure()
+        for name, module in RUNTIMES:
+            for start, first in (("FLPRUI_NewGame()", "runtime:new-game"),
+                                 ("FLPRUI_ImportCharacter()", "runtime:import")):
+                with self.subTest(name, start=start):
+                    lua = self.lua(module, runtime=True)
+                    lua.execute(SFO)
+                    lua.execute(start)
+                    # Exactly one argument reaches the runtime, as from SFO's own default.
+                    lua.execute("dwSystemCall('createCharScreen:AcceptCharacter', nil, -1, 'extra', 'more')")
+                    self.assertEqual(self.calls(lua), [(first,), ("runtime:accept", -1)])
+            with self.subTest(name, runtime=False):
+                # Starting unrandomised after the not-running popup reaches the engine.
+                lua = self.lua(module)
+                lua.execute(SFO)
+                lua.execute("FLPRUI_NewGame()")
+                lua.globals().popups[1].start()
+                lua.execute("dwSystemCall('createCharScreen:AcceptCharacter', nil, 3)")
+                self.assertEqual(self.calls(lua), [("engine:new-game",), ("engine:accept", 3)])
+
+    def test_the_sfo_dispatcher_stays_as_installed_without_a_configuration(self):
+        for name, module in RUNTIMES:
+            with self.subTest(name):
+                lua = self.lua(module, runtime=True)
+                lua.execute(SFO)
+                lua.execute("FLPRUI_NewGame()")
+                self.assertTrue(lua.eval("dwSystemCallDefault['createCharScreen:AcceptCharacter'] == sfo_default"))
+                lua.execute("dwSystemCall('createCharScreen:AcceptCharacter', nil, -1)")
+                self.assertEqual(self.calls(lua), [("engine:new-game",), ("engine:accept", -1)])
+
+    def test_a_dispatcher_without_character_acceptance_is_left_alone(self):
+        self.configure()
+        for name, module in RUNTIMES:
+            with self.subTest(name):
+                lua = self.lua(module, runtime=True)
+                lua.execute("dwSystemCallDefault = {['startEngine:OnSoAButtonClick'] = function() end}")
+                lua.execute("FLPRUI_NewGame()")
+                self.assertTrue(lua.eval("dwSystemCallDefault['createCharScreen:AcceptCharacter'] == nil"))
+                lua.execute("dwSystemCallDefault = 'not a table'")
+                self.assertEqual(lua.eval("FLPRUI_NewGame()"), "runtime:new-game")
 
     def test_without_io_or_loadfile_a_configuration_cannot_be_seen(self):
         # Documented limit: such an engine Lua starts New Game unrandomised.

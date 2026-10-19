@@ -160,6 +160,80 @@ NO_IMPORT_MENU = (MENU.replace(b"\t\t\tstartEngine:OnImportCharacterButtonClick(
                   .replace(b"\t\t\t\tstartEngine:OnImportCharacterButtonClick()\r\n", b""))
 assert b"startEngine:OnImportCharacterButtonClick" not in NO_IMPORT_MENU
 
+# Mods built on DavidW's SFO library (SCS, IWDification) send character
+# acceptance through their dispatcher: UI.MENU names the method as a key, and
+# the dispatcher's generated default function (m_dw_osd.lua) calls it. SFO's
+# subrace component calls it directly from Lua (m_dw_sbf.lua). Synthetic files
+# in the shapes SCS 35 and IWDification 11 write.
+SFO_MENU = (MENU.replace(b'action "createCharScreen:AcceptCharacter(-1)"',
+                         b"action \"dwSystemCall('createCharScreen:AcceptCharacter',nil,-1)\"")
+            .replace(b"\t\t\tcreateCharScreen:AcceptCharacter(currentDifficulty)",
+                     b"\t\t\tdwSystemCall('createCharScreen:AcceptCharacter',nil,currentDifficulty)"))
+assert b"createCharScreen:AcceptCharacter(" not in SFO_MENU
+SFO_DATA = b"""dwSystemCallMain={}
+dwSystemCallMainByMenu={}
+dwSystemCallBypass={}
+dwSystemCallBypassByMenu={}
+dwSystemCallDefault={}
+
+dwSystemCallMain['createCharScreen:AcceptCharacter']=
+{
+\t[1]='dwNotInChargen',
+\t[2]='DEFAULT',
+}
+
+dwSystemCallBypass['createCharScreen:AcceptCharacter']=
+{
+\t[1]={test='dwSubraceChargenBioBypassCheck',payload='dwSubraceChargenBioBypass'},
+}
+
+dwSystemCallDefault['createCharScreen:AcceptCharacter']=function (arg1,arg2,arg3)
+\tcreateCharScreen:AcceptCharacter(arg1)
+end
+
+dwSystemCallMain['startEngine:OnSoAButtonClick']=
+{
+\t[1]='dwLevellerSoA',
+\t[2]='DEFAULT',
+}
+
+dwSystemCallDefault['startEngine:OnSoAButtonClick']=function (arg1,arg2,arg3)
+\tstartEngine:OnSoAButtonClick(arg1)
+end
+""".replace(b"\n", b"\r\n")
+SFO_DISPATCHER = b"""function dwSystemCall(fn,menu,arg1,arg2,arg3)
+\tfor k,v in ipairs (dwSystemCallMain[fn] or dwSystemCallMainByMenu[fn][menu]) do
+\t\tif v=='DEFAULT' then
+\t\t\tdwSystemCallDefault[fn](arg1,arg2,arg3)
+\t\telseif type(_G[v])=='function' then
+\t\t\t_G[v](arg1,arg2,arg3)
+\t\tend
+\tend
+end
+""".replace(b"\n", b"\r\n")
+SFO_SUBRACES = b"""function dwSubraceChargenBio()
+\tif dwAutoBioSet then
+\t\tdwNotInChargen()
+\t\tcreateCharScreen:OnDoneButtonClick()
+\t\tcreateCharScreen:AcceptCharacter(-1)
+\tend
+end
+""".replace(b"\n", b"\r\n")
+SFO_FILES = {"m_dw_osd.lua": SFO_DATA, "m_dw_osf.lua": SFO_DISPATCHER, "m_dw_sbf.lua": SFO_SUBRACES}
+
+# Calls written with spaces, as Lua allows them.
+SPACED_MENU = (MENU.replace(b"startEngine:OnNewGameButtonClick();", b"startEngine:OnNewGameButtonClick ();")
+               .replace(b"startEngine:OnImportCharacterButtonClick();",
+                        b"startEngine : OnImportCharacterButtonClick();")
+               .replace(b"createCharScreen:AcceptCharacter(currentDifficulty)",
+                        b"createCharScreen:AcceptCharacter\t(currentDifficulty)"))
+# A UI mod that defines hooked methods itself; the adapter calls its definitions.
+DEFINING_MENU = UI_MOD_MENU + (b"`\nfunction startEngine:OnNewGameButtonClick()\nend\n"
+                               b"function\tcreateCharScreen:AcceptCharacter(difficulty)\nend\n"
+                               b"function\n\tcreateCharScreen:AcceptCharacter(difficulty)\nend\n"
+                               b"function startEngine.OnImportCharacterButtonClick(self)\nend\n"
+                               b"startEngine.OnImportCharacterButtonClick = function(self) end\n`\n")
+
 
 # An unrelated mod installed before the randomiser.
 EARLIER_TP2 = (b"BACKUP ~earlier/backup~\r\nAUTHOR ~synthetic~\r\n"
@@ -225,10 +299,37 @@ struct.pack_into("<I", BGEE_GAM, 0x38, 0xB4)
 BGEE_GAM = bytes(BGEE_GAM)
 
 
+# The hooked calls and their adapter functions; a definition
+# (function startEngine:OnNewGameButtonClick(...)) is no call.
+HOOKS = tuple((re.compile(rb"(function[ \t\r\n]+)?\b" + receiver + rb"[ \t]*:[ \t]*" + method + rb"[ \t]*\("),
+               adapter + b"(")
+              for receiver, method, adapter in (
+                  (b"startEngine", b"OnNewGameButtonClick", b"FLPRUI_NewGame"),
+                  (b"startEngine", b"OnImportCharacterButtonClick", b"FLPRUI_ImportCharacter"),
+                  (b"createCharScreen", b"AcceptCharacter", b"FLPRUI_AcceptCharacter")))
+# The runtime's own files, which are never hooked.
+OWN_FILE = re.compile(r"(?:m_)?flpr", re.I)
+
+
 def patch_menu(data: bytes) -> bytes:
-    return (data.replace(b"startEngine:OnNewGameButtonClick(", b"FLPRUI_NewGame(")
-            .replace(b"startEngine:OnImportCharacterButtonClick(", b"FLPRUI_ImportCharacter(")
-            .replace(b"createCharScreen:AcceptCharacter(", b"FLPRUI_AcceptCharacter("))
+    """A user-interface file as the installer hooks it."""
+    for call, adapter in HOOKS:
+        data = call.sub(lambda match: match.group(0) if match.group(1) else adapter, data)
+    return data
+
+
+def hooked_files(before: Mapping[str, bytes], menu: bytes | None) -> dict[str, bytes]:
+    """Every menu and Lua file the installer changes: the archived UI.MENU and override's own."""
+    files = dict(before)
+    if menu is not None and "override/ui.menu" not in files:
+        files["override/ui.menu"] = menu
+    hooked = {}
+    for key, data in files.items():
+        name = key.removeprefix("override/")
+        if name != key and "/" not in name and name.endswith((".lua", ".menu")) and not OWN_FILE.match(name):
+            if patch_menu(data) != data:
+                hooked[key] = patch_menu(data)
+    return hooked
 
 
 def build_biff(resources: Sequence[tuple[str, str, bytes]]) -> bytes:
@@ -408,7 +509,7 @@ def expected_install(game: Game, before: Mapping[str, bytes], after: Mapping[str
     for name in GATE_MODULES:
         expected["override/" + name.casefold()] = (mod / "tools" / "probes" / name).read_bytes()
     expected.update(installed_messages(before, after, in_game_messages(mod), texts) or {})
-    expected["override/ui.menu"] = patch_menu(menu)
+    expected.update(hooked_files(before, menu))
     if gam_written:
         expected["override/baldur.gam"] = mark_initial_gam(baldur)
     expected["override/flrandomiser3.mrk"] = MARKER
@@ -807,6 +908,50 @@ def run_suite(args: argparse.Namespace) -> int:
     suite.lifecycle("Bg2eeTemplateV21", MENU, gam([("CHAPTER", 0)], b"PARTY" * 9, b"GAMEV2.1"), platform="bg2ee")
     suite.lifecycle("MenuWithoutCharacterImport", NO_IMPORT_MENU, BGEE_GAM, platform="bgee")
 
+    # SCS and IWDification send character acceptance through SFO's dispatcher:
+    # its default function and the subrace component's call are hooked, the
+    # dispatcher's keys stay.
+    game = suite.lifecycle("SfoDispatcher", SFO_MENU, BGEE_GAM, platform="bgee", override=SFO_FILES)
+    installed_ui = {name: (game.root / "override" / name).read_bytes()
+                    for name in ("UI.MENU", *SFO_FILES)}
+    suite.check("SfoDispatcher_HooksTheDefaultFunction",
+                installed_ui["m_dw_osd.lua"] == SFO_DATA.replace(b"\tcreateCharScreen:AcceptCharacter(arg1)",
+                                                                  b"\tFLPRUI_AcceptCharacter(arg1)"))
+    suite.check("SfoDispatcher_HooksTheSubraceCall",
+                installed_ui["m_dw_sbf.lua"] == SFO_SUBRACES.replace(b"createCharScreen:AcceptCharacter(-1)",
+                                                                      b"FLPRUI_AcceptCharacter(-1)"))
+    suite.check("SfoDispatcher_KeepsTheKeysInUiMenu",
+                installed_ui["UI.MENU"].count(b"dwSystemCall('createCharScreen:AcceptCharacter',nil,") == 2
+                and installed_ui["UI.MENU"].count(b"FLPRUI_NewGame();") == 1
+                and installed_ui["m_dw_osf.lua"] == SFO_DISPATCHER)
+    # Calls written with spaces, a UI mod's own definitions of hooked methods,
+    # calls in a UI mod's Lua file, and the runtime's own files.
+    game = suite.lifecycle("SpacedCalls", SPACED_MENU, DEFAULT_GAM)
+    hooked = (game.root / "override/UI.MENU").read_bytes()
+    suite.check("SpacedCalls_AreHooked", b"FLPRUI_NewGame();" in hooked and b"FLPRUI_ImportCharacter();" in hooked
+                and b"FLPRUI_AcceptCharacter(currentDifficulty)" in hooked)
+    game = suite.lifecycle("UiModDefinesHookedMethods", DEFINING_MENU, DEFAULT_GAM)
+    hooked = (game.root / "override/UI.MENU").read_bytes()
+    suite.check("UiModDefinesHookedMethods_KeepsDefinitions",
+                b"function startEngine:OnNewGameButtonClick()" in hooked
+                and b"function\tcreateCharScreen:AcceptCharacter(difficulty)" in hooked
+                and b"function\n\tcreateCharScreen:AcceptCharacter(difficulty)" in hooked
+                and hooked.count(b"FLPRUI_NewGame()") == 2 and hooked.count(b"FLPRUI_AcceptCharacter(") == 3)
+    game = suite.lifecycle("CallsInUiModLua", MENU.replace(b"startEngine:OnNewGameButtonClick();", b""), DEFAULT_GAM,
+                           override={"M_LEUI.lua": b"function leuiStart()\r\n\tstartEngine:OnNewGameButtonClick()\r\nend\r\n"})
+    suite.check("CallsInUiModLua_AreHooked", (game.root / "override/M_LEUI.lua").read_bytes()
+                == b"function leuiStart()\r\n\tFLPRUI_NewGame()\r\nend\r\n")
+    # Comments that name hooked methods or adapter functions neither call nor refer to them.
+    notes = (b"-- Starts through startEngine:OnNewGameButtonClick; see FLPRUI_NewGame.\r\n"
+             b"--[[ Before 2.0:\r\nlocal accept = createCharScreen.AcceptCharacter\r\n]]\r\n"
+             b"--[==[ local f = startEngine.OnImportCharacterButtonClick ]] still a comment ]==]\r\n"
+             b"local note = 'done'\r\n")
+    game = suite.lifecycle("CommentsNameHookedMethods", MENU, DEFAULT_GAM, override={"M_NOTES.lua": notes})
+    suite.check("CommentsNameHookedMethods_Unchanged", (game.root / "override/M_NOTES.lua").read_bytes() == notes)
+    staged = b"FLPRUI_ImportCharacter()\r\nstartEngine:OnNewGameButtonClick()\r\n"
+    game = suite.lifecycle("RuntimeFilesStayAsTheyAre", MENU, DEFAULT_GAM, override={"M_FLPRQA.lua": staged})
+    suite.check("RuntimeFilesStayAsTheyAre_Unchanged", (game.root / "override/M_FLPRQA.lua").read_bytes() == staged)
+
     # The installer's quest and dialogue changes, on synthetic files.
     compiled = compile_fixtures(scratch, weidu, {**fixtures.SOURCES, **tweaks.sources(mod)})
     suite.quest_changes(compiled["applied"])
@@ -906,30 +1051,50 @@ def run_suite(args: argparse.Namespace) -> int:
     ):
         suite.refusal(name, message[101510], refused, ini=ini)
 
-    for name, menu in (
-        ("MenuMissing", None),
-        ("MenuWithoutNewGame", MENU.replace(b"startEngine:OnNewGameButtonClick();", b"")),
-        ("MenuWithoutAccept", MENU.replace(b"createCharScreen:AcceptCharacter(", b"FinishChargen(")),
-        ("MenuNewGameByReference", MENU + b"local f = startEngine.OnNewGameButtonClick\r\n"),
-        ("MenuAcceptBySpacedCall", MENU + b"createCharScreen:AcceptCharacter (-1)\r\n"),
-        ("MenuImportByReference", MENU + b"local f = startEngine.OnImportCharacterButtonClick\r\n"),
-        ("MenuImportBySpacedCall", MENU + b"startEngine:OnImportCharacterButtonClick ()\r\n"),
-        ("MenuImportThroughOtherName", MENU + b"local s = startEngine\r\ns:OnImportCharacterButtonClick()\r\n"),
-        ("MenuAlreadyHooked", patch_menu(MENU)),
-        ("MenuPartlyHooked", MENU + b"FLPRUI_NewGame()\r\n"),
+    for name, menu, override in (
+        ("MenuMissing", None, {}),
+        ("MenuWithoutNewGame", MENU.replace(b"startEngine:OnNewGameButtonClick();", b""), {}),
+        ("MenuWithoutAccept", MENU.replace(b"createCharScreen:AcceptCharacter(", b"FinishChargen("), {}),
+        # A dispatcher's key alone, without a default function that calls the method.
+        ("DispatcherWithoutDefault", SFO_MENU, {"m_dw_osf.lua": SFO_DISPATCHER}),
+        # The runtime's own files are not the user interface's.
+        ("CallsOnlyInRuntimeFiles", MENU.replace(b"startEngine:OnNewGameButtonClick();", b""),
+         {"M_FLPRQA.lua": b"startEngine:OnNewGameButtonClick()\r\n"}),
     ):
-        suite.refusal(name, message[101512], refused, menu=menu)
+        suite.refusal(name, message[101512], refused, menu=menu, override=override)
 
-    # Renaming a UI mod's own definition would replace the adapter's global function.
-    for name, menu in (
-        ("MenuDefinesNewGame", MENU + b"`\r\nfunction startEngine:OnNewGameButtonClick()\r\nend\r\n`\r\n"),
-        ("MenuDefinesAcceptAfterTab",
-         MENU + b"`\r\nfunction\tcreateCharScreen:AcceptCharacter(difficulty)\r\nend\r\n`\r\n"),
-        ("MenuDefinesAcceptOnNextLine",
-         UI_MOD_MENU + b"`\nfunction\n\tcreateCharScreen:AcceptCharacter(difficulty)\nend\n`\n"),
-        ("MenuDefinesImport", MENU + b"`\r\nfunction startEngine:OnImportCharacterButtonClick()\r\nend\r\n`\r\n"),
+    # Forms that cannot be hooked are named with their file and line.
+    lines = MENU.count(b"\n")
+    for name, menu, override, file, line, form in (
+        ("MenuNewGameByReference", MENU + b"local f = startEngine.OnNewGameButtonClick\r\n", {},
+         "UI.MENU", lines + 1, "startEngine.OnNewGameButtonClick"),
+        ("MenuImportByReference", MENU + b"local f = startEngine.OnImportCharacterButtonClick\r\n", {},
+         "UI.MENU", lines + 1, "startEngine.OnImportCharacterButtonClick"),
+        ("MenuImportThroughOtherName", MENU + b"local s = startEngine\r\ns:OnImportCharacterButtonClick()\r\n", {},
+         "UI.MENU", lines + 2, "s:OnImportCharacterButtonClick"),
+        ("MenuCallAcrossLines", MENU + b"startEngine\r\n:OnNewGameButtonClick()\r\n", {},
+         "UI.MENU", lines + 2, ":OnNewGameButtonClick"),
+        ("LuaAliasesAccept", MENU, {"M_ALIAS.lua": b"-- a UI mod\r\nlocal accept = createCharScreen.AcceptCharacter\r\n"},
+         "M_ALIAS.LUA", 2, "createCharScreen.AcceptCharacter"),
+        ("AliasAfterComment", MENU, {"M_ALIAS2.lua": b"--[[ a\r\nnote ]] local f = startEngine.OnNewGameButtonClick\r\n"},
+         "M_ALIAS2.LUA", 2, "startEngine.OnNewGameButtonClick"),
     ):
-        suite.refusal(name, message[101515], refused, menu=menu)
+        text = (message[101515].replace("%flir_rt_file%", file).replace("%flir_rt_line%", str(line))
+                .replace("%flir_rt_form%", form))
+        suite.refusal(name, text, refused, menu=menu, override=override)
+
+    # Existing FLPRUI_ calls were written outside this installer.
+    def line_of(data: bytes, text: bytes) -> int:
+        return data[:data.index(text)].count(b"\n") + 1
+
+    for name, menu, override, file, line in (
+        ("MenuAlreadyHooked", patch_menu(MENU), {}, "UI.MENU", line_of(MENU, b"startEngine:OnNewGameButtonClick(")),
+        ("MenuPartlyHooked", MENU + b"FLPRUI_NewGame()\r\n", {}, "UI.MENU", lines + 1),
+        ("LuaAlreadyHooked", SFO_MENU, {**SFO_FILES, "m_dw_osd.lua": patch_menu(SFO_DATA)}, "M_DW_OSD.LUA",
+         line_of(SFO_DATA, b"\tcreateCharScreen:AcceptCharacter(arg1)")),
+    ):
+        text = message[101516].replace("%flir_rt_file%", file).replace("%flir_rt_line%", str(line))
+        suite.refusal(name, text, refused, menu=menu, override=override)
 
     out_of_bounds = bytearray(gam([("CHAPTER", 0)]))
     struct.pack_into("<I", out_of_bounds, 0x3C, 2)

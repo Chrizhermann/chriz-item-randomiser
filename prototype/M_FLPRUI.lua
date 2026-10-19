@@ -1,7 +1,7 @@
--- Installed by cir.tp2, which points UI.MENU's
+-- Installed by cir.tp2, which points the user interface's
 -- startEngine:OnNewGameButtonClick(), startEngine:OnImportCharacterButtonClick()
--- and createCharScreen:AcceptCharacter() calls here. Loaded by the engine
--- itself, also without EEex.
+-- and createCharScreen:AcceptCharacter() calls here, in UI.MENU and in other
+-- menu and Lua files. Loaded by the engine itself, also without EEex.
 -- Without an applied configuration (randomiser-campaigns/next.lua) the calls
 -- go straight to the engine. With one, New Game and character import run
 -- through the campaign runtime (M_FLPR.lua, which EEex loads). Whenever a new
@@ -68,8 +68,27 @@ local function runtime(name)
     if type(FLPR) == "table" and type(FLPR[name]) == "function" then return FLPR[name] end
 end
 
+-- Mods built on DavidW's SFO library (SCS, IWDification) can send character
+-- acceptance through their dispatcher, dwSystemCall, whose default function
+-- (m_dw_osd.lua) calls the engine with one argument. The installer points
+-- that call here; such a mod installed later writes the file anew, so a new
+-- adventure points the default here again.
+local SFO_ACCEPT = "createCharScreen:AcceptCharacter"
+
+local function sfo_accept(difficulty)
+    return FLPRUI_AcceptCharacter(difficulty)
+end
+
+local function hook_sfo_dispatcher()
+    local defaults = rawget(_G, "dwSystemCallDefault")
+    if type(defaults) == "table" and type(defaults[SFO_ACCEPT]) == "function" then
+        defaults[SFO_ACCEPT] = sfo_accept
+    end
+end
+
 function FLPRUI_NewGame(...)
     if not configured() then return startEngine:OnNewGameButtonClick(...) end
+    hook_sfo_dispatcher()
     local new_game = runtime("NewGame")
     if not new_game then
         local arguments = { ... }
@@ -82,6 +101,7 @@ end
 
 function FLPRUI_ImportCharacter(...)
     if not configured() then return startEngine:OnImportCharacterButtonClick(...) end
+    hook_sfo_dispatcher()
     local import = runtime("ImportCharacter")
     if not import then
         local arguments = { ... }

@@ -80,21 +80,34 @@ Actions:
    game text and write `override/M_FLPRTXT.lua`, which maps each message to its string
    reference, so the messages appear in the installation language. Polish falls back to
    English until translated.
-3. Patch `UI.MENU`: every `startEngine:OnNewGameButtonClick(` becomes
+3. Hook the user interface's calls in every menu and Lua resource (`UI.MENU`, wherever
+   it is, and the other `.menu` and `.lua` files) except the runtime's own (`FLPR*`,
+   `M_FLPR*`): every call `startEngine:OnNewGameButtonClick(` becomes
    `FLPRUI_NewGame(`, every `startEngine:OnImportCharacterButtonClick(` becomes
    `FLPRUI_ImportCharacter(` and every `createCharScreen:AcceptCharacter(` becomes
-   `FLPRUI_AcceptCharacter(`. New Game and character acceptance must exist at least
-   once; the import is optional (a UI without an import button starts no game that
-   way). Any other call shape of the three fails the install, because an unhooked path
-   would start an unrandomised campaign silently. A `UI.MENU` that already calls
-   `FLPRUI_` functions also fails: an uninstall would restore those calls without the
-   adapter. So does one that defines a hooked method (`function
-   startEngine:OnNewGameButtonClick(`, with any whitespace after `function`): the patch
-   would rename the definition into a global `FLPRUI_` function that replaces the
-   adapter. Multiplayer `connectionScreen:OnNewGameButtonClick` and character creation's
-   own `createCharScreen:OnImportCharacterButtonClick` (a character for a game already
-   begun) are left alone. Verified call shapes: the reference EET `UI.MENU`, LeUI 4.9.1,
-   Infinity UI 1.17 and the EEUITweaks 4.0.7 chargen fragments.
+   `FLPRUI_AcceptCharacter(`, also with spaces or tabs around `:` and before `(`. This
+   includes the default functions of the dispatcher that mods built on DavidW's SFO
+   library (SCS, IWDification) route calls through (`m_dw_osd.lua`) and SFO's subrace
+   code (`m_dw_sbf.lua`). New Game and character acceptance must be called at least once
+   in all these files together; the import is optional (a UI without an import button
+   starts no game that way). These need no hook and stay as they are: a definition of a
+   hooked method (`function startEngine:OnNewGameButtonClick(`, with any whitespace after
+   `function`, or an assignment to `startEngine.OnNewGameButtonClick`), which the adapter
+   calls; a string that names exactly a hooked method, a dispatcher's key such as SFO's
+   `dwSystemCall('createCharScreen:AcceptCharacter',nil,-1)`; multiplayer
+   `connectionScreen:OnNewGameButtonClick` and character creation's own
+   `createCharScreen:OnImportCharacterButtonClick` (a character for a game already
+   begun). Any other reference to a hooked method (an alias such as
+   `local f = startEngine.OnNewGameButtonClick`, a call through another name, a call
+   split across lines) fails the install with its file, line and form, because an
+   unhooked path would start an unrandomised campaign silently. A file that already
+   calls `FLPRUI_` functions also fails: an uninstall would restore those calls without
+   the adapter. Verified call shapes: the reference EET `UI.MENU`, LeUI 4.9.1, Infinity UI
+   1.17, the EEUITweaks 4.0.7 chargen fragments, and BG:EE 2.7.3 with SCS 35.21,
+   IWDification 11, Tweaks Anthology 18, Rogue Rebalancing 4.92, Bubb's Spell Menu
+   Extended 5.2 and BuffBot 1.8.4 (a player's install). An SFO mod installed after CIR
+   writes `m_dw_osd.lua` anew; the adapter points the dispatcher's acceptance default
+   back at itself when a configured adventure begins.
 4. Add the GLOBAL `FLPR_FRESH = 1` to the `BALDUR.GAM` new-game template by moving its
    variable table to the end of the file and appending the marker. This is the exact
    layout the native fixture used in every live test. An existing `FLPR_FRESH = 1` is
@@ -200,7 +213,7 @@ A file that cannot be changed unambiguously stays as installed; the installer pr
 note (setup.tra @101520-@101528) and `override/FLPRPAT.lua` records the reason, which the
 editor shows instead of offering the option.
 
-Uninstalling CIR restores `UI.MENU`, `BALDUR.GAM` and those quest files byte for byte
+Uninstalling CIR restores `UI.MENU`, the other hooked menu and Lua files, `BALDUR.GAM` and those quest files byte for byte
 and removes every file it created. WeiDU keeps the appended game-text
 strings, unused, as it does for every mod; a re-install finds and reuses them. WeiDU does
 not track folders, so the `randomiser-campaigns` folder it created stays behind empty.
@@ -419,6 +432,7 @@ the package has 116 files (5,798,896 bytes).
 - Order: after every component that writes `UI.MENU` or `BALDUR.GAM`; the end of the
   BG2 run is simplest. The installer cannot see later overwrites, so after the stack
   completes CEBG should check that `override/UI.MENU` contains `FLPRUI_NewGame(` and
+  that it or `override/m_dw_osd.lua` (with SCS or IWDification) contains
   `FLPRUI_AcceptCharacter(` (and `FLPRUI_ImportCharacter(` where the UI has a character
   import button), `override/BALDUR.GAM` contains `FLPR_FRESH`, and
   `override/flrandomiser3.mrk` exists, and that no Item Randomiser Mode 1, Mode 2 or 560
@@ -537,14 +551,16 @@ Open:
 ## Verification
 
 - `tests/Test-CampaignRuntimeInstaller.ps1` (WeiDU 249, synthetic EET, BG:EE and BG2:EE
-  games; 202 checks for the randomiser, from the working tree and from the built ZIP with
+  games; 287 checks for the randomiser, from the working tree and from the built ZIP with
   `-PackagePath`): BG:EE with a merged DLC, BG2:EE, a UI without character import, the
   refusals of another game, of unmerged DLC (in the game folder and in `dlc/`) and of
-  unhookable import calls, install, uninstall,
+  unhookable references (named with file, line and form), install, uninstall,
   re-install, re-install over the installed component, uninstall and install in one run,
   re-install behind a reinstalled earlier mod (also from the install list alone),
   already-patched inputs, override-resident and archived `UI.MENU`/`BALDUR.GAM`, UI-mod
-  call shapes, redefined UI methods, an applied `next.lua`, the exclusion of Item
+  call shapes, calls with spaces, calls in a UI mod's Lua file, SFO's dispatcher and
+  subrace call (SCS, IWDification), UI mods that define hooked methods, the runtime's
+  own files left alone, an applied `next.lua`, the exclusion of Item
   Randomiser's Mode 1, Mode 2 and 560, missing prerequisites, rollback of failed installs
   and the Polish language (on an Enhanced Edition game WeiDU converts its texts to UTF-8
   and uninstalling restores them; the English texts stay as written), with KEY, BIFF,
@@ -556,7 +572,7 @@ Open:
   structure, and files that give the reward twice or not at all, were already split,
   ask for another item, erase an unknown journal entry or hand over no flail head stay
   byte-identical, with the reason recorded and printed. No game resource is used.
-- The optional tweaks in the same suite (`tests/tweak_fixtures.py`; 26 of 228 checks):
+- The optional tweaks in the same suite (`tests/tweak_fixtures.py`; 26 of 313 checks):
   9000, 10100, 10210 and 10300 installed together on EET and on BG2:EE, with
   Cespenar's and the merchant's dialogues checked by structure (Cespenar's state 4 with
   another mod's recipe, the closing state first in trigger order, the merchant's state
