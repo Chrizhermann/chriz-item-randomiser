@@ -74,7 +74,7 @@ fn specs(command: &[&str]) -> Option<Vec<Spec>> {
             Spec::new("plan", Path),
             Spec::new("port", Int),
             Spec::new("apply-game", Path)
-                .help("Enable applying settings to this explicitly installed test runtime"),
+                .help("Enable applying settings to this game folder, where CIR is installed"),
             Spec::new("no-browser", Flag).help("Only print the editor's address; do not open it in the browser"),
         ],
         ["scan"] => vec![

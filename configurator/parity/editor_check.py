@@ -323,7 +323,7 @@ def pool_phase(root: Path):
     return concurrent_phase("quest pool", root, catalog, world, steps)
 
 
-OPEN_GAME = "Close this test game and its installer before applying settings"
+OPEN_GAME = "Close this game and its installer before applying settings"
 
 
 # Apply on each game CIR installs on. The area's name decides which later

@@ -1,4 +1,4 @@
-"""Apply exported settings to an explicitly selected, preinstalled test runtime.
+"""Apply exported settings to a game where CIR's runtime is installed.
 
 Runtime installation is separate. Keep exported revisions for older saves;
 publish the next-game pointer last, with the game closed.
@@ -96,14 +96,14 @@ def require_closed(game: Path) -> None:
     """Refuse while the game, its loader, WeiDU or a mod installer runs from
     <game>, or from a place Windows does not tell."""
     if os.name != "nt":
-        raise ProfileError("Test-game activation currently supports Windows only")
+        raise ProfileError("Applying settings currently works on Windows only")
     try:
         executables = _game_or_installer_executables()
     except OSError as exc:
-        raise ProfileError("Could not check whether the test game is closed; settings were not applied") from exc
+        raise ProfileError("Could not check whether the game is closed; settings were not applied") from exc
     for executable in executables:
         if not executable or Path(executable).resolve().is_relative_to(game.resolve()):
-            raise ProfileError("Close this test game and its installer before applying settings")
+            raise ProfileError("Close this game and its installer before applying settings")
 
 
 # cir.tp2 installs the runtime with this marker and UI
@@ -238,7 +238,7 @@ def deploy_export(game: Path, output: Path) -> None:
     for name in sorted(names):
         relative = PurePosixPath(name)
         if relative.is_absolute() or not relative.parts or ".." in relative.parts:
-            raise ProfileError("An export destination is outside the test game")
+            raise ProfileError("An export destination is outside the game folder")
         source = output.joinpath(*relative.parts)
         relative = Path(*relative.parts)
         if relative.parts[0] == "resource-overrides":
@@ -249,7 +249,7 @@ def deploy_export(game: Path, output: Path) -> None:
             relative = Path(CAMPAIGN_DATA) / relative
         target = (game / relative).resolve()
         if not target.is_relative_to(game.resolve()):
-            raise ProfileError("An export destination is outside the test game")
+            raise ProfileError("An export destination is outside the game folder")
         content = source.read_bytes()
         if target in changes and changes[target] != content:
             raise ProfileError("Conflicting export files: " + str(relative))

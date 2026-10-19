@@ -103,7 +103,7 @@ cir-configurator ui --catalog 'D:/RandomiserDrafts/catalog.json' --world 'D:/Ran
 `ui` opens the editor in the default browser; `--no-browser` only prints its
 address, like the reference. Ctrl+C closes the editor. Game folders are only
 read; outputs must be outside the scanned game, and `--apply-game` is needed to
-change a test game, as with the reference.
+change a game, as with the reference.
 
 ### Started without arguments
 

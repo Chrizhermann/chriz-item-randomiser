@@ -40,7 +40,7 @@ def parser() -> argparse.ArgumentParser:
     ui.add_argument("--plan", type=Path)
     ui.add_argument("--port", type=int, default=0)
     ui.add_argument("--apply-game", type=Path,
-                    help="Enable applying settings to this explicitly installed test runtime")
+                    help="Enable applying settings to this game folder, where CIR is installed")
     scan = commands.add_parser("scan", help="Read the effective installed item resources")
     scan.add_argument("--game", type=Path, required=True)
     scan.add_argument("--language")

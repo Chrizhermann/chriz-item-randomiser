@@ -403,7 +403,8 @@ uncompressed, a largest entry of 1,472,788 bytes
 (`languages/iconv/libiconv-1.9.2-1-src.7z`), a maximum compression ratio of 11.9, a
 path depth of five and one TP2 (`cir/cir.tp2`). That is within the archive limits CEBG
 uses for the 8.1.1 asset (1,024 entries, 4 MiB per entry, 16 MiB in total, ratio 100,
-depth 8). `VERSION` 1.0.0 stands until the first release; nothing is published.
+depth 8). `VERSION` names the release being prepared; a release is published only with
+Christopher's OK.
 
 `tools/build_standalone.py` writes that ZIP unchanged together with the Windows
 standalone package `cir-v<VERSION>-windows.zip` from the same commit: the `cir/` folder,

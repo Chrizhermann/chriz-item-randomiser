@@ -1,4 +1,4 @@
-"""Local configuration editor; test-game activation requires explicit CLI opt-in."""
+"""Local configuration editor; applying settings to a game requires explicit CLI opt-in."""
 from __future__ import annotations
 
 from collections import defaultdict
@@ -80,8 +80,7 @@ class Editor:
         except ProfileError as exc:
             return {**result, "message": str(exc)}
         return {**result, "runtime_supported": True,
-                "message": "Configuration checks passed for the current test runtime. "
-                           "Game testing and deployment are separate; nothing was activated."}
+                "message": "Configuration checks passed."}
 
     def path(self, identity: str) -> Path:
         if not isinstance(identity, str) or not PROFILE_ID.fullmatch(identity):

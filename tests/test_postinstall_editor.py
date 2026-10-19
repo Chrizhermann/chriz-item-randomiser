@@ -215,8 +215,8 @@ class EditorTests(unittest.TestCase):
         self.assertEqual(reopened.draft, draft)
         self.assertTrue(reopened.state()["apply_enabled"])
         pointer = (fx.game / "randomiser-campaigns/next.lua").read_bytes()
-        with patch("flir_config.activation.require_closed", side_effect=ProfileError("Close this test game")):
-            with self.assertRaisesRegex(ProfileError, "Close this test game"):
+        with patch("flir_config.activation.require_closed", side_effect=ProfileError("Close this game")):
+            with self.assertRaisesRegex(ProfileError, "Close this game"):
                 e.post("/api/apply", original.draft)
         self.assertEqual((fx.game / "randomiser-campaigns/next.lua").read_bytes(), pointer)
         # Another workspace (the first one lost) takes both revisions from the
@@ -271,7 +271,7 @@ class EditorTests(unittest.TestCase):
         result = e.post("/api/validate", e.draft)
         self.assertTrue(result["valid"], result)
         self.assertTrue(result["runtime_supported"], result)
-        self.assertIn("Game testing and deployment are separate", result["message"])
+        self.assertEqual(result["message"], "Configuration checks passed.")
 
     def test_recipient_names_aliases_and_type_filters(self):
         fx = self.fx

@@ -201,7 +201,7 @@ mod tests {
         let scratch = Scratch(paths::resolve(&root, true).unwrap());
         let game = scratch.0.join("game");
         std::fs::create_dir_all(&game).unwrap();
-        let open = "Close this test game and its installer before applying settings";
+        let open = "Close this game and its installer before applying settings";
 
         let elsewhere = scratch.0.join("other game").join("Baldur.exe");
         let _other = start(&elsewhere);

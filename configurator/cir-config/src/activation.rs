@@ -1,5 +1,5 @@
-//! Apply exported settings to an explicitly selected, preinstalled test
-//! runtime (the reference's `activation.py`).
+//! Apply exported settings to a game where CIR's runtime is installed (the
+//! reference's `activation.py`).
 //!
 //! Runtime installation is separate. Exported revisions stay for older saves;
 //! the next-game pointer is published last, with the game closed.
@@ -152,10 +152,10 @@ fn gate_revisions(path: &Path) -> Result<BTreeSet<String>> {
 /// `game`, or from a place Windows does not tell.
 pub fn require_closed(game: &Path) -> Result<()> {
     if !cfg!(windows) {
-        return Err(Error::profile("Test-game activation currently supports Windows only"));
+        return Err(Error::profile("Applying settings currently works on Windows only"));
     }
     let executables = crate::processes::game_or_installer_executables().map_err(|_| {
-        Error::profile("Could not check whether the test game is closed; settings were not applied")
+        Error::profile("Could not check whether the game is closed; settings were not applied")
     })?;
     let game = paths::resolve(game, false).map_err(|(error, at)| Error::win(&error, &at))?;
     for executable in executables {
@@ -167,7 +167,7 @@ pub fn require_closed(game: &Path) -> Result<()> {
             }
         };
         if inside {
-            return Err(Error::profile("Close this test game and its installer before applying settings"));
+            return Err(Error::profile("Close this game and its installer before applying settings"));
         }
     }
     Ok(())
@@ -488,7 +488,7 @@ pub fn deploy_export(game: &Path, output: &Path) -> Result<()> {
     for name in sorted_names {
         let parts = posix_parts(&name);
         if parts.first() == Some(&"/") || parts.is_empty() || parts.contains(&"..") {
-            return Err(Error::profile("An export destination is outside the test game"));
+            return Err(Error::profile("An export destination is outside the game folder"));
         }
         let source: PathBuf = parts.iter().fold(output.to_path_buf(), |path, part| path.join(part));
         let mut relative: Vec<&str> = parts.clone();
@@ -502,7 +502,7 @@ pub fn deploy_export(game: &Path, output: &Path) -> Result<()> {
         let relative_text = relative.join("\\");
         let target = paths::resolve(&game.join(&relative_text), false).map_err(|(error, at)| Error::win(&error, &at))?;
         if !paths::is_relative_to(&target, &game_root) {
-            return Err(Error::profile("An export destination is outside the test game"));
+            return Err(Error::profile("An export destination is outside the game folder"));
         }
         let content = fs::read(&source).map_err(|error| Error::os(&error, &source))?;
         let key = crate::py::lower(&target.to_string_lossy());

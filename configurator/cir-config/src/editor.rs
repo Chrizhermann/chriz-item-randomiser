@@ -1,6 +1,6 @@
 //! The local configuration editor's state and API (the reference's
-//! `editor.py` without its HTTP transport). Test-game activation requires
-//! the explicit `apply_game` opt-in.
+//! `editor.py` without its HTTP transport). Applying settings to a game
+//! requires the explicit `apply_game` opt-in.
 
 use crate::error::{Error, Result};
 use crate::json::{Dict, Value};
@@ -232,11 +232,7 @@ impl Editor {
         match attempt {
             Ok(()) => {
                 result.insert("runtime_supported", true);
-                result.insert(
-                    "message",
-                    "Configuration checks passed for the current test runtime. \
-                     Game testing and deployment are separate; nothing was activated.",
-                );
+                result.insert("message", "Configuration checks passed.");
                 Ok(Value::Dict(result))
             }
             Err(error) if error.kind == crate::error::ErrorKind::Profile => {

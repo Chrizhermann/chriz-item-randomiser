@@ -17,8 +17,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
 from flir_config.activation import _GAME_OR_INSTALLER, _game_or_installer_executables, require_closed
 from flir_config.profiles import ProfileError
 
-OPEN = "Close this test game and its installer before applying settings"
-UNCHECKED = "Could not check whether the test game is closed; settings were not applied"
+OPEN = "Close this game and its installer before applying settings"
+UNCHECKED = "Could not check whether the game is closed; settings were not applied"
 
 
 class ProgramNameTests(unittest.TestCase):
