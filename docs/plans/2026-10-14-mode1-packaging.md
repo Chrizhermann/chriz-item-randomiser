@@ -105,9 +105,11 @@ Actions:
    the adapter. Verified call shapes: the reference EET `UI.MENU`, LeUI 4.9.1, Infinity UI
    1.17, the EEUITweaks 4.0.7 chargen fragments, and BG:EE 2.7.3 with SCS 35.21,
    IWDification 11, Tweaks Anthology 18, Rogue Rebalancing 4.92, Bubb's Spell Menu
-   Extended 5.2 and BuffBot 1.8.4 (a player's install). An SFO mod installed after CIR
-   writes `m_dw_osd.lua` anew; the adapter points the dispatcher's acceptance default
-   back at itself when a configured adventure begins.
+   Extended 5.2 and BuffBot 1.8.4 (a player's install, rebuilt in a lab: New Game and
+   character acceptance through SFO's dispatcher began a randomised BG1 adventure and
+   delivered its items). An SFO mod installed after CIR writes `m_dw_osd.lua` anew; the
+   adapter points the dispatcher's acceptance default back at itself when a configured
+   adventure begins.
 4. Add the GLOBAL `FLPR_FRESH = 1` to the `BALDUR.GAM` new-game template by moving its
    variable table to the end of the file and appending the marker. This is the exact
    layout the native fixture used in every live test. An existing `FLPR_FRESH = 1` is
@@ -551,7 +553,7 @@ Open:
 ## Verification
 
 - `tests/Test-CampaignRuntimeInstaller.ps1` (WeiDU 249, synthetic EET, BG:EE and BG2:EE
-  games; 287 checks for the randomiser, from the working tree and from the built ZIP with
+  games; 303 checks for the randomiser, from the working tree and from the built ZIP with
   `-PackagePath`): BG:EE with a merged DLC, BG2:EE, a UI without character import, the
   refusals of another game, of unmerged DLC (in the game folder and in `dlc/`) and of
   unhookable references (named with file, line and form), install, uninstall,
@@ -572,7 +574,7 @@ Open:
   structure, and files that give the reward twice or not at all, were already split,
   ask for another item, erase an unknown journal entry or hand over no flail head stay
   byte-identical, with the reason recorded and printed. No game resource is used.
-- The optional tweaks in the same suite (`tests/tweak_fixtures.py`; 26 of 313 checks):
+- The optional tweaks in the same suite (`tests/tweak_fixtures.py`; 26 of 329 checks):
   9000, 10100, 10210 and 10300 installed together on EET and on BG2:EE, with
   Cespenar's and the merchant's dialogues checked by structure (Cespenar's state 4 with
   another mod's recipe, the closing state first in trigger order, the merchant's state
