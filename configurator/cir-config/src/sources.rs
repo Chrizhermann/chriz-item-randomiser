@@ -5,7 +5,7 @@
 //! CRE templates, conditional area actors, dynamic containers and scripted
 //! grants stay distinguishable. This module never removes or delivers items.
 
-use crate::error::{Error, Result};
+use crate::error::{Error, ErrorKind, Result};
 use crate::json::{Dict, Value};
 use crate::paths;
 use crate::profiles::{digest, int_in, is_hex256, validate_catalog, validate_profile, ItemIndex};
@@ -23,6 +23,9 @@ pub const UNRESOLVED_STORAGE: &str = "unresolved-creature-storage";
 pub const PLAN_SCHEMA: &str = "flir-binding-plan-v1";
 pub const COVERAGE: &str = "physical-records-and-bcs-dlg-hashes";
 pub const KINDS: [&str; 7] = ["itm", "cre", "are", "sto", "bcs", "dlg", "spl"];
+/// The kinds whose records the scan reads. One it cannot read is left out.
+pub const READ_KINDS: [&str; 3] = ["cre", "are", "sto"];
+pub const UNREADABLE_TEMPLATE: &str = "unreadable-creature-template";
 
 /// Concerns that make a physical record unusable as a relocation source.
 pub const UNUSABLE_SOURCE: [&str; 12] = [
@@ -45,7 +48,39 @@ pub fn world_fingerprint(world: &Value) -> Result<String> {
     for key in ["schema", "catalog_fingerprint", "coverage", "resources", "sources", "targets"] {
         content.insert(key, world.at(key)?.clone());
     }
+    // Only a scan that left files out lists them; other worlds keep their fingerprint.
+    if let Some(unreadable) = world.get("unreadable") {
+        content.insert("unreadable", unreadable.clone());
+    }
     digest(&Value::Dict(content))
+}
+
+/// Tell the player which game files the scan could not read and left out.
+pub fn unreadable_notes(world: &Value) -> Vec<String> {
+    let rows = list(world, "unreadable");
+    if rows.is_empty() {
+        return Vec::new();
+    }
+    let names: Vec<String> = rows
+        .iter()
+        .map(|row| {
+            let id = row.get("id").and_then(Value::as_str).unwrap_or("");
+            let (kind, name) = id.split_once(':').unwrap_or((id, ""));
+            let reason = row.get("reason").and_then(Value::as_str).unwrap_or("");
+            format!("{}.{} ({})", crate::py::upper(name), crate::py::upper(kind), reason.trim_end_matches('.'))
+        })
+        .collect();
+    let one = names.len() == 1;
+    let listed = if one {
+        names[0].clone()
+    } else {
+        format!("{} and {}", names[..names.len() - 1].join(", "), names[names.len() - 1])
+    };
+    vec![format!(
+        "{listed} cannot be read, so Chriz Item Randomiser leaves {} out: {} items stay as the game has them and no reward goes there",
+        if one { "it" } else { "them" },
+        if one { "its" } else { "their" },
+    )]
 }
 
 fn sorted_unique(values: Vec<String>) -> Vec<String> {
@@ -115,6 +150,11 @@ fn resort_concerns(row: &mut Value) {
 /// BCS/DLG bytes are fingerprinted, not decompiled or interpreted. Other
 /// grant mechanisms (Lua, effects, dynamic tables) are outside this coverage.
 /// Names keep the selected item catalogue's localization snapshot.
+///
+/// A CRE, ARE or STO whose structure cannot be read (another mod's damaged or
+/// unusual file) is left out instead of stopping the scan: it keeps its
+/// resource row, gives no sources or targets, and is listed in "unreadable"
+/// with the reason. Nothing is placed in it or taken from it.
 pub fn scan_world(catalog: &Value) -> Result<Value> {
     let item_index = validate_catalog(catalog)?;
     let game_root = catalog.at("game_root")?.as_str().expect("validated").to_string();
@@ -122,6 +162,7 @@ pub fn scan_world(catalog: &Value) -> Result<Value> {
     let mut resources: Vec<Value> = Vec::new();
     let mut sources: Vec<Value> = Vec::new();
     let mut targets: Vec<Value> = Vec::new();
+    let mut unreadable: Vec<(String, String)> = Vec::new();
     let types: Vec<(&str, u32)> = KINDS.iter().map(|kind| (*kind, resource_type(kind))).collect();
     let root = PathBuf::from(paths::display(Path::new(&game_root)));
     let fingerprint = GameResources::with(&root, &types, |reader| {
@@ -145,10 +186,23 @@ pub fn scan_world(catalog: &Value) -> Result<Value> {
                     "id" => resource.clone(), "kind" => kind, "resref" => resref.clone(),
                     "sha256" => hash, "byte_length" => data.len(),
                 }));
-                let wrap = |error: Error| Error::scan(format!("{resource}: {}", error.message));
+                // A file whose structure cannot be read (the parsers' ScanError) is left
+                // out with the reason; other errors stop the scan as before.
+                macro_rules! readable {
+                    ($parsed:expr) => {
+                        match $parsed {
+                            Ok(parsed) => parsed,
+                            Err(error) if error.kind == ErrorKind::Scan => {
+                                unreadable.push((resource.clone(), error.message));
+                                continue;
+                            }
+                            Err(error) => return Err(error),
+                        }
+                    };
+                }
                 match kind {
                     "cre" => {
-                        let cre = parse_cre(&data, true, true).map_err(wrap)?;
+                        let cre = readable!(parse_cre(&data, true, true));
                         sources.extend(cre_sources(&resource, &resource, &cre, "cre-template")?);
                         let mut selector = crate::dict! {"script_name" => cre.get("script_name").cloned().unwrap_or(Value::Null)};
                         if let Some(diagnostics) = cre.get("inventory_diagnostics") {
@@ -161,7 +215,7 @@ pub fn scan_world(catalog: &Value) -> Result<Value> {
                         }));
                     }
                     "are" => {
-                        let area = parse_are(&data, true, true, true).map_err(wrap)?;
+                        let area = readable!(parse_are(&data, true, true, true));
                         let containers = area.get("containers").and_then(Value::as_list).cloned().unwrap_or_default();
                         let dynamic_by_index: HashMap<i64, bool> = containers
                             .iter()
@@ -255,7 +309,7 @@ pub fn scan_world(catalog: &Value) -> Result<Value> {
                         }
                     }
                     "sto" => {
-                        let store = parse_sto(&data).map_err(wrap)?;
+                        let store = readable!(parse_sto(&data));
                         let mut selector = Dict::new();
                         for (key, value) in store.iter() {
                             if key != "items" {
@@ -330,11 +384,15 @@ pub fn scan_world(catalog: &Value) -> Result<Value> {
                 }
                 schema = DIAGNOSTIC_WORLD_SCHEMA;
             }
-            let missing_template = row.get("kind").and_then(Value::as_str) == Some("actor")
+            if row.get("kind").and_then(Value::as_str) == Some("actor")
                 && concerns_mut(row).iter().any(|concern| concern.as_str() == Some("external-cre-template"))
-                && !reference.as_ref().and_then(Value::as_str).is_some_and(|id| resource_ids.contains(id));
-            if missing_template {
-                concerns_mut(row).push(Value::from("missing-creature-template"));
+            {
+                let template = reference.as_ref().and_then(Value::as_str);
+                if !template.is_some_and(|id| resource_ids.contains(id)) {
+                    concerns_mut(row).push(Value::from("missing-creature-template"));
+                } else if template.is_some_and(|id| unreadable.iter().any(|(left_out, _)| left_out == id)) {
+                    concerns_mut(row).push(Value::from(UNREADABLE_TEMPLATE));
+                }
             }
             resort_concerns(row);
         }
@@ -346,14 +404,17 @@ pub fn scan_world(catalog: &Value) -> Result<Value> {
         resources.sort_by(by_id);
         sources.sort_by(by_id);
         targets.sort_by(by_id);
-        let partial = world_value(&game_root, catalog, schema, &resources, &sources, &targets, None);
+        unreadable.sort_by(|a, b| a.0.as_bytes().cmp(b.0.as_bytes()));
+        let partial = world_value(&game_root, catalog, schema, &resources, &sources, &targets, &unreadable, None);
         world_fingerprint(&partial)
     })?;
-    let world = world_value(&game_root, catalog, schema, &resources, &sources, &targets, Some(fingerprint));
+    let world =
+        world_value(&game_root, catalog, schema, &resources, &sources, &targets, &unreadable, Some(fingerprint));
     validate_world(&world, catalog)?;
     Ok(world)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn world_value(
     game_root: &str,
     catalog: &Value,
@@ -361,9 +422,10 @@ fn world_value(
     resources: &[Value],
     sources: &[Value],
     targets: &[Value],
+    unreadable: &[(String, String)],
     fingerprint: Option<String>,
 ) -> Value {
-    let mut world = Dict::with_capacity(8);
+    let mut world = Dict::with_capacity(9);
     world.push_unique("schema".into(), Value::from(schema));
     world.push_unique("game_root".into(), Value::from(game_root));
     world.push_unique("catalog_fingerprint".into(), catalog.get("fingerprint").cloned().unwrap_or(Value::Null));
@@ -371,6 +433,10 @@ fn world_value(
     world.push_unique("resources".into(), Value::List(resources.to_vec()));
     world.push_unique("sources".into(), Value::List(sources.to_vec()));
     world.push_unique("targets".into(), Value::List(targets.to_vec()));
+    if !unreadable.is_empty() {
+        let rows = unreadable.iter().map(|(id, reason)| Value::Dict(crate::dict! {"id" => id.as_str(), "reason" => reason.as_str()}));
+        world.push_unique("unreadable".into(), Value::List(rows.collect()));
+    }
     if let Some(fingerprint) = fingerprint {
         world.push_unique("fingerprint".into(), Value::Str(fingerprint));
     }
@@ -563,6 +629,8 @@ pub struct WorldIndex {
     pub resources: RowIndex,
     pub sources: RowIndex,
     pub targets: RowIndex,
+    /// The files the scan left out, with the reason.
+    pub unreadable: HashMap<String, String>,
 }
 
 fn list<'a>(world: &'a Value, field: &str) -> &'a [Value] {
@@ -578,6 +646,10 @@ impl WorldIndex {
     }
     pub fn target<'a>(&self, world: &'a Value, id: &str) -> Option<&'a Value> {
         self.targets.position(id).map(|position| &list(world, "targets")[position])
+    }
+    /// Whether the scan could not read this file and left it out.
+    pub fn is_unreadable(&self, id: &str) -> bool {
+        self.unreadable.contains_key(id)
     }
 }
 
@@ -774,11 +846,11 @@ pub fn inventory_diagnostic_counts(world: &Value) -> Result<Dict> {
 
 pub fn validate_world(world: &Value, catalog: &Value) -> Result<WorldIndex> {
     let item_index = validate_catalog(catalog)?;
-    let world_fields = fields(
-        world,
-        &["schema", "game_root", "catalog_fingerprint", "coverage", "resources", "sources", "targets", "fingerprint"],
-        "world catalogue",
-    )?;
+    let mut expected = vec!["schema", "game_root", "catalog_fingerprint", "coverage", "resources", "sources", "targets", "fingerprint"];
+    if world.as_dict().is_some_and(|world| world.contains_key("unreadable")) {
+        expected.push("unreadable");
+    }
+    let world_fields = fields(world, &expected, "world catalogue")?;
     let field = |key: &str| world_fields.get(key).expect("exact fields");
     let schema = field("schema").as_str();
     if !matches!(schema, Some(WORLD_SCHEMA) | Some(DIAGNOSTIC_WORLD_SCHEMA)) || field("coverage").as_str() != Some(COVERAGE) {
@@ -796,7 +868,7 @@ pub fn validate_world(world: &Value, catalog: &Value) -> Result<WorldIndex> {
     let sources = indexed(source_rows, "source")?;
     let target_rows = rows(Some(field("targets")), "target")?;
     let targets = indexed(target_rows, "target")?;
-    let index = WorldIndex { resources, sources, targets };
+    let mut index = WorldIndex { resources, sources, targets, unreadable: HashMap::new() };
     for row in resource_rows {
         let row_fields = fields(row, &["id", "kind", "resref", "sha256", "byte_length"], "resource")?;
         resref_name(row_fields.get("resref"))?;
@@ -827,10 +899,31 @@ pub fn validate_world(world: &Value, catalog: &Value) -> Result<WorldIndex> {
     {
         return Err(Error::profile("World catalogue item resources disagree with the item catalogue"));
     }
+    if let Some(value) = world_fields.get("unreadable") {
+        // A scan lists the files it left out only when there are some.
+        let unreadable_rows = rows(Some(value), "unreadable resource")?;
+        if unreadable_rows.is_empty() {
+            return Err(Error::profile("Invalid unreadable resource list"));
+        }
+        indexed(unreadable_rows, "unreadable resource")?;
+        for row in unreadable_rows {
+            let row_fields = fields(row, &["id", "reason"], "unreadable resource")?;
+            let identity = row_fields.get("id").and_then(Value::as_str).expect("indexed");
+            let kind = index.resource(world, identity).and_then(|resource| resource.get("kind")).and_then(Value::as_str);
+            if !kind.is_some_and(|kind| READ_KINDS.contains(&kind)) {
+                return Err(Error::profile("An unreadable resource must be a scanned creature, area or store"));
+            }
+            let reason = text(row_fields.get("reason"), "unreadable resource reason")?;
+            index.unreadable.insert(identity.to_string(), reason.to_string());
+        }
+    }
     for row in source_rows.iter().chain(target_rows) {
         match row.get("resource") {
             Some(Value::Str(resource)) if index.resources.contains(resource) => {}
             _ => return Err(Error::profile("A world record refers to an unknown resource")),
+        }
+        if row.get("resource").and_then(Value::as_str).is_some_and(|resource| index.is_unreadable(resource)) {
+            return Err(Error::profile("A world record refers to a resource the scan left out"));
         }
         let valid = match row.get("concerns") {
             Some(Value::List(concerns)) => {
@@ -1382,6 +1475,10 @@ pub fn bind_profile(profile: &Value, catalog: &Value, world: &Value, plan: &Valu
             if !resource.is_some_and(|sha| sha.py_eq(registration.at("resource_sha256").unwrap_or(&Value::Null))) {
                 return Err(Error::profile("Original source resource changed or is absent"));
             }
+            let resource = registration.at("resource")?.as_str().unwrap_or("");
+            if indexes.is_unreadable(resource) {
+                return Err(Error::profile(format!("Original source resource cannot be read: {resource}")));
+            }
             if physical_ids.iter().any(|identity| reserved_physical_ids.contains(identity)) {
                 return Err(Error::profile("Original source physical records overlap"));
             }
@@ -1590,6 +1687,10 @@ pub fn bind_profile(profile: &Value, catalog: &Value, world: &Value, plan: &Valu
         if !resource.is_some_and(|sha| sha.py_eq(registration.at("resource_sha256").unwrap_or(&Value::Null))) {
             return Err(Error::profile("Original target area changed or is absent"));
         }
+        let resource = registration.at("resource")?.as_str().unwrap_or("");
+        if indexes.is_unreadable(resource) {
+            return Err(Error::profile(format!("Original target area cannot be read: {resource}")));
+        }
         original_targets.push((identity, registration));
     }
     let mut targets: Vec<Value> = Vec::new();
@@ -1640,10 +1741,17 @@ pub fn bind_profile(profile: &Value, catalog: &Value, world: &Value, plan: &Valu
             _ => return Err(Error::profile("Invalid optional target flag")),
         };
         let Some(target) = indexes.target(world, &identity) else {
+            // A file the scan left out has no targets; it is not absent from the game.
+            let unread = indexes.is_unreadable(parts[0]);
             if !optional {
-                return Err(Error::profile("Required target is absent"));
+                return Err(Error::profile(if unread {
+                    format!("Required target's resource cannot be read: {}", parts[0])
+                } else {
+                    "Required target is absent".to_string()
+                }));
             }
-            skipped.push(Value::Dict(crate::dict! {"kind" => "target", "id" => identity.as_str(), "reason" => "optional-resource-absent"}));
+            let reason = if unread { "optional-resource-unreadable" } else { "optional-resource-absent" };
+            skipped.push(Value::Dict(crate::dict! {"kind" => "target", "id" => identity.as_str(), "reason" => reason}));
             continue;
         };
         let concerns = concern_list(target.get("concerns"));
@@ -1651,11 +1759,14 @@ pub fn bind_profile(profile: &Value, catalog: &Value, world: &Value, plan: &Valu
             return Err(Error::profile("Target has unresolved creature storage and cannot receive rewards"));
         }
         let selector = target.at("selector")?;
-        if target.at("kind")?.as_str() == Some("actor")
-            && !selector.at("embedded_cre_size")?.truthy()
-            && !selector.at("template_resource")?.as_str().is_some_and(|template| indexes.resources.contains(template))
-        {
-            return Err(Error::profile("Target refers to a missing creature template"));
+        if target.at("kind")?.as_str() == Some("actor") && !selector.at("embedded_cre_size")?.truthy() {
+            let template = selector.at("template_resource")?.as_str();
+            if !template.is_some_and(|template| indexes.resources.contains(template)) {
+                return Err(Error::profile("Target refers to a missing creature template"));
+            }
+            if template.is_some_and(|template| indexes.is_unreadable(template)) {
+                return Err(Error::profile("Target refers to a creature template that cannot be read"));
+            }
         }
         if concerns.iter().any(|concern| *concern == DANGLING_INVENTORY || *concern == INVALID_INVENTORY) {
             return Err(Error::profile("Target has invalid inventory references and cannot receive rewards"));

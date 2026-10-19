@@ -259,8 +259,14 @@ impl<'a> Compiler<'a> {
         self.index.resource(self.world, resource).ok_or_else(|| Error::key(resource))?.at("sha256")
     }
 
+    /// A file the scan left out is in the game, but nothing in it is known.
+    fn readable(&self, resource: &str) -> Result<()> {
+        require(!self.index.is_unreadable(resource), || format!("Required reward resource cannot be read: {resource}"))
+    }
+
     /// `use`: require a scanned resource and record its hash.
     fn use_resource(&mut self, resource: &str) -> Result<Value> {
+        self.readable(resource)?;
         self.required.insert(resource.to_string());
         let Some((kind, name)) = resource.split_once(':') else {
             return Err(Error::value("not enough values to unpack (expected 2, got 1)"));
@@ -823,6 +829,9 @@ impl<'a> Compiler<'a> {
                 .filter(|placement| placement.truthy());
             if let (Some(reward), Some(placement)) = (&reward, placement) {
                 let creature_resource = text(placement, "creature_resource")?;
+                self.readable(creature_resource)?;
+                let placement_area = text(placement, "area")?;
+                self.readable(&format!("are:{}", lower(placement_area)))?;
                 let creature = self.index.target(self.world, creature_resource);
                 let ok = match creature {
                     Some(creature) => {
@@ -832,7 +841,6 @@ impl<'a> Compiler<'a> {
                     None => false,
                 };
                 require(ok, || format!("Original reward recipient changed: {identity}"))?;
-                let placement_area = text(placement, "area")?;
                 let mut resources: Vec<String> = list(entry(reward, "resources")?).iter().map(py_str).collect();
                 resources.push(creature_resource.to_string());
                 resources.push(format!("are:{}", lower(placement_area)));
@@ -860,8 +868,10 @@ impl<'a> Compiler<'a> {
                 let mut members = Vec::new();
                 for resource in resources {
                     let resource = resource.as_str().unwrap_or("");
-                    if !self.index.resources.contains(resource) {
-                        continue; // Original group tables also filter absent CREs.
+                    if !self.index.resources.contains(resource) || self.index.is_unreadable(resource) {
+                        // Original group tables also filter absent CREs; one the
+                        // scan could not read cannot be addressed either.
+                        continue;
                     }
                     let creature = self.index.target(self.world, resource).ok_or_else(|| Error::key(resource))?;
                     require(!has_inventory_problem(creature)?, || {
@@ -891,6 +901,8 @@ impl<'a> Compiler<'a> {
                         self.use_value(resource)?;
                     }
                     if entry(&spec, "recipient_local")?.is_null() {
+                        let recipient = entry(&spec, "recipient")?.as_str().unwrap_or("");
+                        self.readable(recipient.split('/').next().unwrap_or(""))?;
                         let physical =
                             entry(&spec, "recipient")?.as_str().and_then(|recipient| self.index.target(self.world, recipient));
                         let ok = match physical {

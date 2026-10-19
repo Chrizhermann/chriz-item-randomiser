@@ -1585,6 +1585,342 @@
    }
   },
   {
+   "name": "spell_shield_spec unreadable store False",
+   "call": "original_options.spell_shield_spec",
+   "args": {
+    "world": {
+     "resources": [
+      {
+       "id": "are:other",
+       "sha256": "2222222222222222222222222222222222222222222222222222222222222222"
+      },
+      {
+       "id": "sto:udduer01",
+       "sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+      }
+     ],
+     "sources": [],
+     "unreadable": [
+      {
+       "id": "sto:udduer01",
+       "reason": "Truncated STOR header."
+      }
+     ]
+    },
+    "randomized": false
+   },
+   "independent": true,
+   "error": {
+    "kind": "Profile",
+    "message": "More Spell Shield scrolls requires UDDUER01.STO, which cannot be read"
+   }
+  },
+  {
+   "name": "spell_shield_spec unreadable store True",
+   "call": "original_options.spell_shield_spec",
+   "args": {
+    "world": {
+     "resources": [
+      {
+       "id": "are:other",
+       "sha256": "2222222222222222222222222222222222222222222222222222222222222222"
+      },
+      {
+       "id": "sto:udduer01",
+       "sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+      }
+     ],
+     "sources": [],
+     "unreadable": [
+      {
+       "id": "sto:udduer01",
+       "reason": "Truncated STOR header."
+      }
+     ]
+    },
+    "randomized": true
+   },
+   "independent": true,
+   "error": {
+    "kind": "Profile",
+    "message": "More Spell Shield scrolls requires UDDUER01.STO, which cannot be read"
+   }
+  },
+  {
+   "name": "spell_shield_spec unreadable other False",
+   "call": "original_options.spell_shield_spec",
+   "args": {
+    "world": {
+     "resources": [
+      {
+       "id": "are:other",
+       "sha256": "2222222222222222222222222222222222222222222222222222222222222222"
+      },
+      {
+       "id": "sto:udduer01",
+       "sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+      }
+     ],
+     "sources": [
+      {
+       "id": "sto:udduer01/item/0",
+       "resource": "sto:udduer01",
+       "item": "scrl8x",
+       "record": {
+        "record_index": 0,
+        "byte_offset": 156,
+        "expiration": 13,
+        "charges": [
+         7,
+         3,
+         2
+        ],
+        "flags": 2147483657,
+        "resref": "scrl8x",
+        "quantity": 1,
+        "infinite_supply_flag": 0,
+        "infinite_supply": false
+       }
+      }
+     ],
+     "unreadable": [
+      {
+       "id": "are:other",
+       "reason": "Truncated AREA header."
+      }
+     ]
+    },
+    "randomized": false
+   },
+   "independent": true,
+   "result": {
+    "resource": "sto:udduer01",
+    "resource_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+    "original_source_id": "sto:udduer01/item/0",
+    "original_record": {
+     "record_index": 0,
+     "byte_offset": 156,
+     "expiration": 13,
+     "charges": [
+      7,
+      3,
+      2
+     ],
+     "flags": 2147483657,
+     "resref": "scrl8x",
+     "quantity": 1,
+     "infinite_supply_flag": 0,
+     "infinite_supply": false
+    },
+    "record_index": 0,
+    "quantity": 3,
+    "payload": {
+     "resref": "scrl8x",
+     "expiration": 13,
+     "charges": [
+      7,
+      3,
+      2
+     ],
+     "flags": 2147483657
+    },
+    "source_id": ""
+   }
+  },
+  {
+   "name": "spell_shield_spec unreadable other True",
+   "call": "original_options.spell_shield_spec",
+   "args": {
+    "world": {
+     "resources": [
+      {
+       "id": "are:other",
+       "sha256": "2222222222222222222222222222222222222222222222222222222222222222"
+      },
+      {
+       "id": "sto:udduer01",
+       "sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+      }
+     ],
+     "sources": [
+      {
+       "id": "sto:udduer01/item/0",
+       "resource": "sto:udduer01",
+       "item": "scrl8x",
+       "record": {
+        "record_index": 0,
+        "byte_offset": 156,
+        "expiration": 13,
+        "charges": [
+         7,
+         3,
+         2
+        ],
+        "flags": 2147483657,
+        "resref": "scrl8x",
+        "quantity": 1,
+        "infinite_supply_flag": 0,
+        "infinite_supply": false
+       }
+      }
+     ],
+     "unreadable": [
+      {
+       "id": "are:other",
+       "reason": "Truncated AREA header."
+      }
+     ]
+    },
+    "randomized": true
+   },
+   "independent": true,
+   "result": {
+    "resource": "sto:udduer01",
+    "resource_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+    "original_source_id": "sto:udduer01/item/0",
+    "original_record": {
+     "record_index": 0,
+     "byte_offset": 156,
+     "expiration": 13,
+     "charges": [
+      7,
+      3,
+      2
+     ],
+     "flags": 2147483657,
+     "resref": "scrl8x",
+     "quantity": 1,
+     "infinite_supply_flag": 0,
+     "infinite_supply": false
+    },
+    "record_index": 0,
+    "quantity": 3,
+    "payload": {
+     "resref": "scrl8x",
+     "expiration": 13,
+     "charges": [
+      7,
+      3,
+      2
+     ],
+     "flags": 2147483657
+    },
+    "source_id": "original-source:bg2:mode2:item:228"
+   }
+  },
+  {
+   "name": "spell_shield_spec unreadable no id False",
+   "call": "original_options.spell_shield_spec",
+   "args": {
+    "world": {
+     "resources": [
+      {
+       "id": "are:other",
+       "sha256": "2222222222222222222222222222222222222222222222222222222222222222"
+      },
+      {
+       "id": "sto:udduer01",
+       "sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+      }
+     ],
+     "sources": [],
+     "unreadable": [
+      {
+       "reason": "Truncated STOR header."
+      }
+     ]
+    },
+    "randomized": false
+   },
+   "independent": true,
+   "error": {
+    "kind": "Key",
+    "message": "'id'"
+   }
+  },
+  {
+   "name": "spell_shield_spec unreadable no id True",
+   "call": "original_options.spell_shield_spec",
+   "args": {
+    "world": {
+     "resources": [
+      {
+       "id": "are:other",
+       "sha256": "2222222222222222222222222222222222222222222222222222222222222222"
+      },
+      {
+       "id": "sto:udduer01",
+       "sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+      }
+     ],
+     "sources": [],
+     "unreadable": [
+      {
+       "reason": "Truncated STOR header."
+      }
+     ]
+    },
+    "randomized": true
+   },
+   "independent": true,
+   "error": {
+    "kind": "Key",
+    "message": "'id'"
+   }
+  },
+  {
+   "name": "spell_shield_spec unreadable none False",
+   "call": "original_options.spell_shield_spec",
+   "args": {
+    "world": {
+     "resources": [
+      {
+       "id": "are:other",
+       "sha256": "2222222222222222222222222222222222222222222222222222222222222222"
+      },
+      {
+       "id": "sto:udduer01",
+       "sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+      }
+     ],
+     "sources": [],
+     "unreadable": null
+    },
+    "randomized": false
+   },
+   "independent": true,
+   "error": {
+    "kind": "Type",
+    "message": "'NoneType' object is not iterable"
+   }
+  },
+  {
+   "name": "spell_shield_spec unreadable none True",
+   "call": "original_options.spell_shield_spec",
+   "args": {
+    "world": {
+     "resources": [
+      {
+       "id": "are:other",
+       "sha256": "2222222222222222222222222222222222222222222222222222222222222222"
+      },
+      {
+       "id": "sto:udduer01",
+       "sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+      }
+     ],
+     "sources": [],
+     "unreadable": null
+    },
+    "randomized": true
+   },
+   "independent": true,
+   "error": {
+    "kind": "Type",
+    "message": "'NoneType' object is not iterable"
+   }
+  },
+  {
    "name": "validate_spell_shield_spec valid",
    "call": "original_options.validate_spell_shield_spec",
    "args": {

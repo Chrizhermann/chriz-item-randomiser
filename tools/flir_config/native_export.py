@@ -105,7 +105,12 @@ def _compile(manifest: dict, world: dict, index: dict, items: dict,
     selected_owners = Counter(s["record"]["resource"] for s in manifest["sources"]
                               if s["record"]["kind"] in ("cre-template", "store"))
 
+    def readable(resource: str) -> None:
+        # A file the scan left out is in the game, but nothing in it is known.
+        _require(resource not in index["unreadable"], f"Required reward resource cannot be read: {resource}")
+
     def use(resource: str) -> None:
+        readable(resource)
         required.add(resource)
         kind, name = resource.split(":", 1)
         # The installer adds the mod's stand-in items with its other changes.
@@ -456,6 +461,8 @@ def _compile(manifest: dict, world: dict, index: dict, items: dict,
                 require_route(MODE2_TARGETS[selector["id"]])
             if reward and reward.get("inventory_target"):
                 placement = reward["inventory_target"]
+                readable(placement["creature_resource"])
+                readable("are:" + placement["area"].lower())
                 creature = index["targets"].get(placement["creature_resource"])
                 _require(creature is not None and
                          creature["selector"]["script_name"].lower() == placement["script_name"].lower() and
@@ -473,8 +480,10 @@ def _compile(manifest: dict, world: dict, index: dict, items: dict,
                 resources = selector["members"] if target["kind"] == "group" else [selector["creature_resource"]]
                 members = []
                 for resource in resources:
-                    if resource not in index["resources"]:
-                        continue  # Original group tables also filter absent CREs.
+                    if resource not in index["resources"] or resource in index["unreadable"]:
+                        # Original group tables also filter absent CREs; one the
+                        # scan could not read cannot be addressed either.
+                        continue
                     creature = index["targets"][resource]
                     _require(not {DANGLING_INVENTORY, INVALID_INVENTORY, UNRESOLVED_STORAGE}.intersection(creature["concerns"]),
                              f"Original recipient has inventory diagnostics: {resource}")
@@ -496,6 +505,7 @@ def _compile(manifest: dict, world: dict, index: dict, items: dict,
                     for resource in spec["resources"]:
                         use(resource)
                     if spec["recipient_local"] is None:
+                        readable(spec["recipient"].split("/", 1)[0])
                         physical = index["targets"].get(spec["recipient"])
                         _require(physical is not None and physical["kind"] == "container" and
                                  physical["selector"]["trap_script"] == spec["quest"],

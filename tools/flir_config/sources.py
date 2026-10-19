@@ -38,11 +38,32 @@ UNRESOLVED_STORAGE = "unresolved-creature-storage"
 PLAN_SCHEMA = "flir-binding-plan-v1"
 COVERAGE = "physical-records-and-bcs-dlg-hashes"
 KINDS = ("itm", "cre", "are", "sto", "bcs", "dlg", "spl")
+# The kinds whose records the scan reads. One it cannot read is left out.
+READ_KINDS = ("cre", "are", "sto")
+UNREADABLE_TEMPLATE = "unreadable-creature-template"
 
 
 def world_fingerprint(world: dict) -> str:
-    return _digest({key: world[key] for key in
-                    ("schema", "catalog_fingerprint", "coverage", "resources", "sources", "targets")})
+    keys = ["schema", "catalog_fingerprint", "coverage", "resources", "sources", "targets"]
+    # Only a scan that left files out lists them; other worlds keep their fingerprint.
+    if "unreadable" in world:
+        keys.append("unreadable")
+    return _digest({key: world[key] for key in keys})
+
+
+def unreadable_notes(world: dict) -> list[str]:
+    """Tell the player which game files the scan could not read and left out."""
+    rows = world.get("unreadable", [])
+    if not rows:
+        return []
+    names = []
+    for row in rows:
+        kind, name = row["id"].split(":", 1)
+        names.append(f"{name.upper()}.{kind.upper()} ({row['reason'].rstrip('.')})")
+    listed = names[0] if len(names) == 1 else ", ".join(names[:-1]) + " and " + names[-1]
+    one = len(names) == 1
+    return [f"{listed} cannot be read, so Chriz Item Randomiser leaves {'it' if one else 'them'} out: "
+            f"{'its' if one else 'their'} items stay as the game has them and no reward goes there"]
 
 
 def _source(resource: str, owner: str, kind: str, row: dict,
@@ -76,11 +97,17 @@ def scan_world(catalog: dict) -> dict:
     BCS/DLG bytes are fingerprinted, not decompiled or interpreted. Other grant
     mechanisms (Lua, effects, dynamic tables) are outside this coverage contract.
     Names retain the selected item catalogue's localization snapshot.
+
+    A CRE, ARE or STO whose structure cannot be read (another mod's damaged or
+    unusual file) is left out instead of stopping the scan: it keeps its
+    resource row, gives no sources or targets, and is listed in "unreadable"
+    with the reason. Nothing is placed in it or taken from it.
     """
     item_index = validate_catalog(catalog)
     world = {"schema": WORLD_SCHEMA, "game_root": catalog["game_root"],
              "catalog_fingerprint": catalog["fingerprint"], "coverage": COVERAGE,
              "resources": [], "sources": [], "targets": []}
+    unreadable = {}
     with GameResources(Path(catalog["game_root"]), {key: RESOURCE_TYPES[key] for key in KINDS}) as reader:
         if reader.names("itm") != sorted(item_index):
             raise ScanError("Installed items changed; scan the item catalogue again before binding sources.")
@@ -97,7 +124,8 @@ def scan_world(catalog: dict) -> dict:
                     try:
                         cre = parse_cre(data, allow_dangling_slots=True, allow_invalid_items=True)
                     except ScanError as exc:
-                        raise ScanError(f"{resource}: {exc}") from exc
+                        unreadable[resource] = str(exc)
+                        continue
                     world["sources"].extend(_cre_sources(resource, resource, cre, "cre-template"))
                     selector = {"script_name": cre["script_name"]}
                     if "inventory_diagnostics" in cre:
@@ -110,7 +138,8 @@ def scan_world(catalog: dict) -> dict:
                         area = parse_are(data, allow_dangling_slots=True, allow_invalid_items=True,
                                          allow_incomplete_actors=True)
                     except ScanError as exc:
-                        raise ScanError(f"{resource}: {exc}") from exc
+                        unreadable[resource] = str(exc)
+                        continue
                     containers = {row["record_index"]: row for row in area["containers"]}
                     for container in area["containers"]:
                         target_id = f"{resource}/container/{container['record_index']}"
@@ -155,7 +184,8 @@ def scan_world(catalog: dict) -> dict:
                     try:
                         store = parse_sto(data)
                     except ScanError as exc:
-                        raise ScanError(f"{resource}: {exc}") from exc
+                        unreadable[resource] = str(exc)
+                        continue
                     world["targets"].append({"id": resource, "resource": resource,
                         "kind": "store", "selector": {key: value for key, value in store.items() if key != "items"},
                         "concerns": ["store-access-unverified"]})
@@ -187,11 +217,17 @@ def scan_world(catalog: dict) -> dict:
                 diag = row["selector"].get("inventory_diagnostics", row["selector"].get("template_inventory_diagnostics"))
                 row["concerns"].extend(_inventory_concerns(diag))
                 world["schema"] = DIAGNOSTIC_WORLD_SCHEMA
-            if row["kind"] == "actor" and "external-cre-template" in row["concerns"] and reference not in resource_ids:
-                row["concerns"].append("missing-creature-template")
+            if row["kind"] == "actor" and "external-cre-template" in row["concerns"]:
+                if reference not in resource_ids:
+                    row["concerns"].append("missing-creature-template")
+                elif reference in unreadable:
+                    row["concerns"].append(UNREADABLE_TEMPLATE)
             row["concerns"] = sorted(set(row["concerns"]))
         for field in ("resources", "sources", "targets"):
             world[field].sort(key=lambda row: row["id"])
+        if unreadable:
+            world["unreadable"] = [{"id": resource, "reason": reason}
+                                   for resource, reason in sorted(unreadable.items())]
         world["fingerprint"] = world_fingerprint(world)
     validate_world(world, catalog)
     return world
@@ -400,7 +436,9 @@ def inventory_diagnostic_counts(world: dict) -> dict:
 def validate_world(world: dict, catalog: dict) -> dict:
     item_index = validate_catalog(catalog)
     _fields(world, {"schema", "game_root", "catalog_fingerprint", "coverage", "resources",
-                    "sources", "targets", "fingerprint"}, "world catalogue")
+                    "sources", "targets", "fingerprint"}
+            | ({"unreadable"} if isinstance(world, dict) and "unreadable" in world else set()),
+            "world catalogue")
     if world["schema"] not in (WORLD_SCHEMA, DIAGNOSTIC_WORLD_SCHEMA) or world["coverage"] != COVERAGE:
         raise ProfileError("Unsupported world catalogue coverage")
     if world["catalog_fingerprint"] != catalog["fingerprint"]:
@@ -421,9 +459,23 @@ def validate_world(world: dict, catalog: dict) -> dict:
     installed_items = {row["resref"]: row["sha256"] for row in resources.values() if row["kind"] == "itm"}
     if installed_items != {key: row["sha256"] for key, row in item_index.items()}:
         raise ProfileError("World catalogue item resources disagree with the item catalogue")
+    unreadable = {}
+    if "unreadable" in world:
+        # A scan lists the files it left out only when there are some.
+        rows = _rows(world["unreadable"], "unreadable resource")
+        if not rows:
+            raise ProfileError("Invalid unreadable resource list")
+        unreadable = _indexed(rows, "unreadable resource")
+        for identity, row in unreadable.items():
+            _fields(row, {"id", "reason"}, "unreadable resource")
+            if identity not in resources or resources[identity]["kind"] not in READ_KINDS:
+                raise ProfileError("An unreadable resource must be a scanned creature, area or store")
+            _text(row["reason"], "unreadable resource reason")
     for row in list(sources.values()) + list(targets.values()):
         if not isinstance(row.get("resource"), str) or row["resource"] not in resources:
             raise ProfileError("A world record refers to an unknown resource")
+        if row["resource"] in unreadable:
+            raise ProfileError("A world record refers to a resource the scan left out")
         concerns = row.get("concerns")
         if not isinstance(concerns, list) or any(not isinstance(x, str) for x in concerns) or concerns != sorted(set(concerns)):
             raise ProfileError("Invalid world record concerns")
@@ -585,7 +637,8 @@ def validate_world(world: dict, catalog: dict) -> dict:
     _validate_world_inventory_diagnostics(world, resources, sources, targets)
     if not isinstance(world["fingerprint"], str) or world["fingerprint"] != world_fingerprint(world):
         raise ProfileError("World catalogue content changed; scan again")
-    return {"resources": resources, "sources": sources, "targets": targets}
+    return {"resources": resources, "sources": sources, "targets": targets,
+            "unreadable": {identity: row["reason"] for identity, row in unreadable.items()}}
 
 
 def _page(rows: list[dict], offset: int, limit: int) -> dict:
@@ -694,6 +747,8 @@ def bind_profile(profile: dict, catalog: dict, world: dict, plan: dict) -> dict:
             resource = indexes["resources"].get(registration["resource"])
             if resource is None or resource["sha256"] != registration["resource_sha256"]:
                 raise ProfileError("Original source resource changed or is absent")
+            if registration["resource"] in indexes["unreadable"]:
+                raise ProfileError(f"Original source resource cannot be read: {registration['resource']}")
             if reserved_physical_ids.intersection(physical_ids):
                 raise ProfileError("Original source physical records overlap")
             reserved_physical_ids.update(physical_ids)
@@ -810,6 +865,8 @@ def bind_profile(profile: dict, catalog: dict, world: dict, plan: dict) -> dict:
         resource = indexes["resources"].get(registration["resource"])
         if resource is None or resource["sha256"] != registration["resource_sha256"]:
             raise ProfileError("Original target area changed or is absent")
+        if registration["resource"] in indexes["unreadable"]:
+            raise ProfileError(f"Original target area cannot be read: {registration['resource']}")
         original_targets[identity] = registration
     targets, target_ids = [], set()
     used_original_targets = set()
@@ -847,15 +904,22 @@ def bind_profile(profile: dict, catalog: dict, world: dict, plan: dict) -> dict:
             raise ProfileError("Invalid optional target flag")
         target = indexes["targets"].get(identity)
         if target is None:
+            # A file the scan left out has no targets; it is not absent from the game.
+            unread = parts[0] in indexes["unreadable"]
             if not choice["optional"]:
-                raise ProfileError("Required target is absent")
-            skipped.append({"kind": "target", "id": identity, "reason": "optional-resource-absent"})
+                raise ProfileError(f"Required target's resource cannot be read: {parts[0]}" if unread
+                                   else "Required target is absent")
+            skipped.append({"kind": "target", "id": identity,
+                            "reason": "optional-resource-unreadable" if unread else "optional-resource-absent"})
             continue
         if UNRESOLVED_STORAGE in target["concerns"]:
             raise ProfileError("Target has unresolved creature storage and cannot receive rewards")
-        if (target["kind"] == "actor" and not target["selector"]["embedded_cre_size"] and
-                target["selector"]["template_resource"] not in indexes["resources"]):
-            raise ProfileError("Target refers to a missing creature template")
+        if target["kind"] == "actor" and not target["selector"]["embedded_cre_size"]:
+            template = target["selector"]["template_resource"]
+            if template not in indexes["resources"]:
+                raise ProfileError("Target refers to a missing creature template")
+            if template in indexes["unreadable"]:
+                raise ProfileError("Target refers to a creature template that cannot be read")
         if {DANGLING_INVENTORY, INVALID_INVENTORY}.intersection(target["concerns"]):
             raise ProfileError("Target has invalid inventory references and cannot receive rewards")
         targets.append({"target": deepcopy(target), "capacity": choice["capacity"],

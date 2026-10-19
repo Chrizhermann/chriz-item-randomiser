@@ -70,6 +70,8 @@ def spell_shield_spec(world: dict, *, randomized: bool) -> dict:
     resource = next((row for row in world["resources"] if row["id"] == "sto:udduer01"), None)
     if resource is None:
         raise ProfileError("More Spell Shield scrolls requires UDDUER01.STO")
+    if any(row["id"] == "sto:udduer01" for row in world.get("unreadable", [])):
+        raise ProfileError("More Spell Shield scrolls requires UDDUER01.STO, which cannot be read")
     rows = sorted((row for row in world["sources"] if row["resource"] == "sto:udduer01"),
                   key=lambda row: row["record"]["record_index"])
     if randomized and sum(row["item"] == "scrl8x" for row in rows) > 1:

@@ -77,6 +77,15 @@ def contents(area: str = "area") -> dict[str, bytes]:
     }
 
 
+def damage(game: Path) -> None:
+    """Files another mod left damaged or of another version, which the world
+    scan leaves out with a note: an area, a creature and a store."""
+    override = game / "override"
+    (override / "broken.are").write_bytes(bytes(make_are())[:0x100])
+    (override / "badhead.cre").write_bytes(b"CRE V9.9" + bytes(make_cre())[8:])
+    (override / "oldshop.sto").write_bytes(b"STORV1.1" + bytes(make_sto())[8:])
+
+
 def bind_plan(out: Path) -> None:
     """Choose the chest's item for the embedded actor, the same on both sides."""
     path = out / "plan.json"
@@ -128,6 +137,11 @@ WORKFLOW = [
      "--revision", "0" * 64, "--out", "{out}/other"],
     ["prototype", "export", "--store", "{out}/campaigns", *CATALOG, "--world", "{out}/world.json",
      "--out", "{game}/inside"],
+    "damage",
+    ["world", "scan", *CATALOG, "--out", "{out}/damaged-world.json"],
+    ["world", "targets", *CATALOG, "--world", "{out}/damaged-world.json", "--query", "chest"],
+    ["prototype", "export", "--store", "{out}/campaigns", *CATALOG, "--world", "{out}/damaged-world.json",
+     "--out", "{out}/damaged-native"],
     ["templates"],
     ["templates", "--id", "eet-boss-loot", "--items", "extended", "--out", "{out}/template.json"],
     ["templates", "--id", "eet-original", "--options", "{out}/options.json", "--out", "{out}/options-template.json"],
@@ -220,6 +234,9 @@ def main() -> int:
             if step == "bind":
                 for out in outputs.values():
                     bind_plan(out)
+                continue
+            if step == "damage":
+                damage(game)
                 continue
             commands += 1
             results = {}

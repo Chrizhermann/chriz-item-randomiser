@@ -31,7 +31,8 @@ Without Python, use the standalone executable built from `configurator/` (see
 [its README](../configurator/README.md)): `cir-configurator` takes the same commands
 and options as `python tools/randomiser_config.py` and gives the same results.
 Started without arguments in the game's `cir` folder (a double-click), it scans that
-game into the player's own folder and opens the editor with Apply for it.
+game into the player's own folder and opens the editor with Apply for it; its console
+names any game file the world scan could not read and left out.
 Choose an explicit game and a separate output directory. The scanner never discovers
 or opens a game implicitly. Do not run this development tool against the owner's
 live game as part of automated validation.
@@ -320,13 +321,19 @@ read, the older copy in `lib/fl#bg1pal.tpa` is used and the preset dialog says s
 A preset draft leaves out each row this game cannot use, instead of refusing the
 whole draft, and the preset dialog says how many rewards and places it left out; a
 left-out reward stays as the game has it. These are rows whose item, area, creature
-or shop the game lacks, whose record is not where the tables put it or is there more
+or shop the game lacks or the world scan cannot read, whose record is not where the tables put it or is there more
 than once, places on a creature that never appears (each of its placements in the area
 has appearance schedule 0), and rows the runtime check rejects, such as a quest reward whose files no
 longer give it ("The extended reward route for MGKHOL01 cannot be used: MGKHOL01.DLG
 has no reply that gives BELT02") or an item its creature cannot drop. The draft is checked with the
 same runtime check as "Check configuration", which then passes. `/api/template`
 also returns the left-out rows with their table line and reason (`not_used_rows`).
+
+The world scan leaves out a creature, area or store file it cannot read (another
+mod's damaged or unusual file) instead of refusing the game. `world scan` names such
+files with their reason in its `warnings`, and the preset dialog names them first
+among its notes; their items stay as the game has them
+([Unreadable files](source-binding-drafts.md#unreadable-files)).
 
 Bound plans now accept optional `randomization` metadata: source tiers and loss
 exemptions, a tier for each recipient slot, loss/keep percentages, and ident-paired

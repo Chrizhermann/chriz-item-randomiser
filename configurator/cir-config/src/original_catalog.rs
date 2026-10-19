@@ -15,6 +15,9 @@ use std::sync::OnceLock;
 
 const PHYSICAL_SOURCES: [&str; 3] = ["are", "cre", "sto"];
 const SCRIPTED_SOURCES: [&str; 2] = ["bcs", "dlg"];
+/// A place whose file the scan could not read (sources::scan_world) is left out.
+pub const UNREADABLE_PLACE_PROBLEMS: [&str; 3] =
+    ["area-resource-unreadable", "creature-resource-unreadable", "store-resource-unreadable"];
 
 /// `all(row.get(key) == value ...)` for a dict row.
 fn has_values(row: &Value, expected: &[(&str, &str)]) -> bool {
@@ -217,6 +220,12 @@ fn note_problem(row: &mut Dict, reason: &str) {
     }
 }
 
+fn unreadable_source(row: &mut Dict) {
+    row.insert("available", false);
+    row.insert("availability_reason", "source-resource-unreadable");
+    note_problem(row, "source-resource-unreadable");
+}
+
 fn str_field<'a>(row: &'a Dict, key: &str) -> Result<&'a str> {
     match row.get(key) {
         Some(Value::Str(text)) => Ok(text),
@@ -234,6 +243,8 @@ fn sorted_ids<'a>(rows: impl Iterator<Item = &'a Value>) -> Vec<String> {
 struct Scan<'a> {
     catalog_items: HashSet<&'a str>,
     resources: HashSet<&'a str>,
+    /// Files the scan left out: in the game, but their records are not known.
+    unreadable: HashSet<&'a str>,
     sources: HashMap<(&'a str, &'a str), Vec<&'a Value>>,
     targets_by_resource: HashMap<&'a str, Vec<&'a Value>>,
     targets_by_id: HashMap<&'a str, &'a Value>,
@@ -272,7 +283,12 @@ fn resolve_source(row: &mut Dict, scan: &Scan<'_>, selectors: &HashMap<String, S
     if raw == "unshey.fl" {
         row.insert("adapter", "unshey");
         let name = convert_resource("ogreunsh", "cre", &campaign, scan.game, scan.names)?;
-        row.insert("source_resource", format!("cre:{name}"));
+        let resource = format!("cre:{name}");
+        row.insert("source_resource", resource.as_str());
+        if scan.unreadable.contains(resource.as_str()) {
+            unreadable_source(row);
+            return Ok(());
+        }
         note_problem(row, "unshey-requires-legacy-adapter");
         return Ok(());
     }
@@ -301,6 +317,10 @@ fn resolve_source(row: &mut Dict, scan: &Scan<'_>, selectors: &HashMap<String, S
         row.insert("available", false);
         row.insert("availability_reason", "source-resource-absent");
         note_problem(row, "source-resource-absent");
+        return Ok(());
+    }
+    if scan.unreadable.contains(resource.as_str()) {
+        unreadable_source(row);
         return Ok(());
     }
 
@@ -405,6 +425,8 @@ fn resolve_target(row: &mut Dict, scan: &Scan<'_>, endpoints: &HashMap<String, E
             .is_some_and(|resources| resources.iter().any(|resource| !scan.resources.contains(text_of(Some(resource)))));
         let problem = if !scan.resources.contains(area_resource.as_str()) {
             Value::from("area-resource-absent")
+        } else if scan.unreadable.contains(area_resource.as_str()) {
+            Value::from("area-resource-unreadable")
         } else if matches.len() != 1 {
             Value::from("treasure-container-not-found")
         } else if resources_absent {
@@ -463,6 +485,8 @@ fn resolve_target(row: &mut Dict, scan: &Scan<'_>, endpoints: &HashMap<String, E
     let kind = kind.expect("set above");
     if !scan.resources.contains(area_resource.as_str()) {
         row.insert("binding_problem", "area-resource-absent");
+    } else if scan.unreadable.contains(area_resource.as_str()) {
+        row.insert("binding_problem", "area-resource-unreadable");
     }
     let area_targets: Vec<&Value> =
         scan.targets_by_resource.get(area_resource.as_str()).cloned().unwrap_or_default();
@@ -515,6 +539,8 @@ fn resolve_target(row: &mut Dict, scan: &Scan<'_>, endpoints: &HashMap<String, E
                 .collect();
             if !scan.resources.contains(creature.as_str()) {
                 note_problem(row, "creature-resource-absent");
+            } else if scan.unreadable.contains(creature.as_str()) {
+                note_problem(row, "creature-resource-unreadable");
             } else if !matches.is_empty()
                 && matches.iter().all(|target| {
                     selector_of(target)
@@ -532,13 +558,18 @@ fn resolve_target(row: &mut Dict, scan: &Scan<'_>, endpoints: &HashMap<String, E
         "store" => {
             let name = raw.rsplit_once('.').map_or(raw.as_str(), |(name, _)| name);
             identity = format!("sto:{}", convert_resource(name, "sto", &campaign, scan.game, scan.names)?);
-            scan.targets_by_resource
+            let matches = scan
+                .targets_by_resource
                 .get(identity.as_str())
                 .into_iter()
                 .flatten()
                 .copied()
                 .filter(|target| text_of(target.get("id")) == identity && is_kind(target, "store"))
-                .collect()
+                .collect();
+            if scan.unreadable.contains(identity.as_str()) {
+                note_problem(row, "store-resource-unreadable");
+            }
+            matches
         }
         "group" => {
             let members = group_members(&campaign, &raw, scan.game, scan.names)?;
@@ -609,9 +640,11 @@ pub fn resolve_template(
     let world_resources = list(world, "resources")?;
     let world_sources = list(world, "sources")?;
     let world_targets = list(world, "targets")?;
+    let world_unreadable = world.get("unreadable").and_then(Value::as_list).cloned().unwrap_or_default();
     let mut scan = Scan {
         catalog_items: catalog_rows.iter().map(|row| text_of(row.get("resref"))).collect(),
         resources: world_resources.iter().map(|row| text_of(row.get("id"))).collect(),
+        unreadable: world_unreadable.iter().map(|row| text_of(row.get("id"))).collect(),
         sources: HashMap::new(),
         targets_by_resource: HashMap::new(),
         targets_by_id: HashMap::new(),

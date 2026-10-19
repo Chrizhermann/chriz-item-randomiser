@@ -20,6 +20,9 @@ from .templates import ENDPOINT_CAMPAIGNS, ROOT, _table_rows, build_template
 
 _PHYSICAL_SOURCES = {"are", "cre", "sto"}
 _SCRIPTED_SOURCES = {"bcs", "dlg"}
+# A place whose file the scan could not read (sources.scan_world) is left out.
+UNREADABLE_PLACE_PROBLEMS = ("area-resource-unreadable", "creature-resource-unreadable",
+                             "store-resource-unreadable")
 
 
 def is_spin621_source(row: dict) -> bool:
@@ -136,8 +139,14 @@ def _source_owner_name(source: dict, targets_by_id: dict[str, dict]) -> str:
     return owner.get("selector", {}).get("name", "")
 
 
+def _unreadable_source(row: dict) -> None:
+    row["available"] = False
+    row["availability_reason"] = "source-resource-unreadable"
+    row["binding_problem"] = row["binding_problem"] or "source-resource-unreadable"
+
+
 def _resolve_source(row: dict, catalog_items: set[str], resources: set[str],
-                    sources: dict[tuple[str, str], list[dict]],
+                    unreadable: set[str], sources: dict[tuple[str, str], list[dict]],
                     targets_by_id: dict[str, dict], game: str,
                     selectors: dict[str, dict[str, tuple[str, str, int]]],
                     names: EetNames | None) -> None:
@@ -162,6 +171,9 @@ def _resolve_source(row: dict, catalog_items: set[str], resources: set[str],
         row["adapter"] = "unshey"
         name = convert_resource("ogreunsh", "cre", campaign, game, names)
         row["source_resource"] = f"cre:{name}"
+        if row["source_resource"] in unreadable:
+            _unreadable_source(row)
+            return
         row["binding_problem"] = row["binding_problem"] or "unshey-requires-legacy-adapter"
         return
     if "." not in raw:
@@ -186,6 +198,9 @@ def _resolve_source(row: dict, catalog_items: set[str], resources: set[str],
         row["available"] = False
         row["availability_reason"] = "source-resource-absent"
         row["binding_problem"] = row["binding_problem"] or "source-resource-absent"
+        return
+    if resource in unreadable:
+        _unreadable_source(row)
         return
 
     candidates = sources.get((resource, item), [])
@@ -224,7 +239,7 @@ def _resolve_source(row: dict, catalog_items: set[str], resources: set[str],
         row["binding_problem"] = row["binding_problem"] or "ambiguous-source-records"
 
 
-def _resolve_target(row: dict, resources: set[str],
+def _resolve_target(row: dict, resources: set[str], unreadable: set[str],
                     targets_by_resource: dict[str, list[dict]], game: str,
                     endpoints: dict[str, dict[str, tuple[str, str, str]]], sources: list[dict],
                     names: EetNames | None) -> None:
@@ -247,6 +262,7 @@ def _resolve_target(row: dict, resources: set[str],
             row["target_ids"] = [physical_id]
             row["container_name"] = matches[0]["selector"]["name"]
         row["binding_problem"] = ("area-resource-absent" if row["area_resource"] not in resources else
+                                  "area-resource-unreadable" if row["area_resource"] in unreadable else
                                   "treasure-container-not-found" if len(matches) != 1 else
                                   "target-resource-absent" if any(resource not in resources
                                     for resource in container["resources"]) else None)
@@ -280,6 +296,8 @@ def _resolve_target(row: dict, resources: set[str],
             kind = "container"
     if row["area_resource"] not in resources:
         row["binding_problem"] = "area-resource-absent"
+    elif row["area_resource"] in unreadable:
+        row["binding_problem"] = "area-resource-unreadable"
     area_targets = targets_by_resource.get(row["area_resource"], [])
     if kind == "container":
         row["container_name"] = identity
@@ -315,6 +333,8 @@ def _resolve_target(row: dict, resources: set[str],
                    and target["selector"].get("template_resource") == row["creature_resource"]]
         if row["creature_resource"] not in resources:
             row["binding_problem"] = row["binding_problem"] or "creature-resource-absent"
+        elif row["creature_resource"] in unreadable:
+            row["binding_problem"] = row["binding_problem"] or "creature-resource-unreadable"
         elif matches and all(target["selector"].get("appearance_schedule") == 0 for target in matches):
             # Placed for no hour of the day, the creature never appears (how mods
             # such as SoD Remix take a creature out); a reward there would be lost.
@@ -324,6 +344,8 @@ def _resolve_target(row: dict, resources: set[str],
         identity = f"sto:{name}"
         matches = [target for target in targets_by_resource.get(identity, [])
                    if target["id"] == identity and target["kind"] == "store"]
+        if identity in unreadable:
+            row["binding_problem"] = row["binding_problem"] or "store-resource-unreadable"
     elif kind == "group":
         row["members"] = _group_members(campaign, raw, game, names)
         allowed = set(row["members"])
@@ -355,6 +377,8 @@ def resolve_template(catalog: dict, world: dict, template_id: str, *,
         names = eet_names(world["game_root"])
     catalog_items = {row["resref"] for row in catalog["items"]}
     resources = {row["id"] for row in world["resources"]}
+    # Files the scan left out are in the game, but their records are not known.
+    unreadable = {row["id"] for row in world.get("unreadable", [])}
     sources_by_identity: dict[tuple[str, str], list[dict]] = defaultdict(list)
     for source in world["sources"]:
         sources_by_identity[(source["resource"], source["item"])].append(source)
@@ -368,9 +392,9 @@ def resolve_template(catalog: dict, world: dict, template_id: str, *,
     endpoints = {campaign: _endpoint_rows(campaign)
                  for campaign in draft["campaigns"]}
     for row in draft["items"]:
-        _resolve_source(row, catalog_items, resources, sources_by_identity,
+        _resolve_source(row, catalog_items, resources, unreadable, sources_by_identity,
                         targets_by_id, game, selectors, names)
     for row in draft["targets"]:
-        _resolve_target(row, resources, targets_by_resource, game, endpoints, world["sources"],
-                        names)
+        _resolve_target(row, resources, unreadable, targets_by_resource, game, endpoints,
+                        world["sources"], names)
     return draft
