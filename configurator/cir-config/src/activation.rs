@@ -147,76 +147,21 @@ fn gate_revisions(path: &Path) -> Result<BTreeSet<String>> {
     Ok(hashes)
 }
 
-/// Refuse while the game, its loader, WeiDU or a mod installer runs.
+/// Refuse while the game, its loader, WeiDU or a mod installer runs from
+/// `game`, or from a place Windows does not tell.
 pub fn require_closed(game: &Path) -> Result<()> {
     if !cfg!(windows) {
         return Err(Error::profile("Test-game activation currently supports Windows only"));
     }
-    let failure = || Error::profile("Could not check whether the test game is closed; settings were not applied");
-    let script = "$ErrorActionPreference='Stop'; @(Get-CimInstance Win32_Process | Where-Object { \
-                  $_.Name -match '^(Baldur|InfinityLoader|weidu)(\\.exe|$)' -or \
-                  $_.Name -like 'setup-*.exe' } | Select-Object Name,ExecutablePath) | ConvertTo-Json -Compress";
-    let mut command = std::process::Command::new("powershell");
-    command
-        .args(["-NoProfile", "-NonInteractive", "-Command", script])
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped());
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-        command.creation_flags(CREATE_NO_WINDOW);
-    }
-    let mut child = command.spawn().map_err(|error| Error::win(&error, Path::new("powershell")))?;
-    let stdout = child.stdout.take();
-    let reader = std::thread::spawn(move || {
-        let mut text = String::new();
-        if let Some(mut stdout) = stdout {
-            use std::io::Read;
-            let _ = stdout.read_to_string(&mut text);
-        }
-        text
-    });
-    let stderr = child.stderr.take();
-    let error_reader = std::thread::spawn(move || {
-        if let Some(mut stderr) = stderr {
-            use std::io::Read;
-            let mut sink = Vec::new();
-            let _ = stderr.read_to_end(&mut sink);
-        }
-    });
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
-    let status = loop {
-        match child.try_wait() {
-            Ok(Some(status)) => break status,
-            Ok(None) if std::time::Instant::now() < deadline => std::thread::sleep(std::time::Duration::from_millis(50)),
-            _ => {
-                let _ = child.kill();
-                let _ = child.wait();
-                return Err(failure());
-            }
-        }
-    };
-    let output = reader.join().unwrap_or_default();
-    let _ = error_reader.join();
-    if !status.success() {
-        return Err(failure());
-    }
-    let text = crate::py::strip(&output);
-    let processes = crate::json::parse_lenient(if text.is_empty() { "[]" } else { text })?;
-    let processes = match processes {
-        Value::Dict(_) => vec![processes],
-        Value::List(list) => list,
-        _ => Vec::new(),
-    };
+    let executables = crate::processes::game_or_installer_executables().map_err(|_| {
+        Error::profile("Could not check whether the test game is closed; settings were not applied")
+    })?;
     let game = paths::resolve(game, false).map_err(|(error, at)| Error::win(&error, &at))?;
-    for process in processes {
-        let executable = process.get("ExecutablePath").filter(|value| value.truthy());
-        let inside = match executable.and_then(Value::as_str) {
+    for executable in executables {
+        let inside = match executable {
             None => true,
             Some(executable) => {
-                let resolved = paths::resolve(Path::new(executable), false).map_err(|(error, at)| Error::win(&error, &at))?;
+                let resolved = paths::resolve(&executable, false).map_err(|(error, at)| Error::win(&error, &at))?;
                 paths::is_relative_to(&resolved, &game)
             }
         };
