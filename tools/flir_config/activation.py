@@ -4,11 +4,9 @@ Runtime installation is separate. Keep exported revisions for older saves;
 publish the next-game pointer last, with the game closed.
 """
 from pathlib import Path, PurePosixPath
-import json
 import os
 import re
 import shutil
-import subprocess
 from tempfile import TemporaryDirectory
 
 from .profiles import ProfileError, read_json
@@ -28,24 +26,81 @@ def _gate_revisions(path: Path) -> set[str]:
     return set(re.findall(r'"([a-f0-9]{64})"', text))
 
 
+# The game, its loader, WeiDU and mod installers (setup-<mod>.exe), by the
+# file name of the process in any case.
+_GAME_OR_INSTALLER = re.compile(r"(?:baldur|infinityloader|weidu)(?:\.exe|\Z)|setup-.*\.exe\Z",
+                                re.IGNORECASE | re.ASCII | re.DOTALL)
+
+
+def _game_or_installer_executables() -> list[str | None]:
+    """The executable of each running game, loader, WeiDU or mod installer;
+    None where Windows does not tell it, such as for another user's process.
+
+    Windows' process snapshot, not WMI: other programs can keep WMI busy
+    enough that it cancels the query.
+    """
+    import ctypes
+    from ctypes import wintypes
+
+    class ProcessEntry(ctypes.Structure):  # PROCESSENTRY32W
+        _fields_ = [("size", wintypes.DWORD), ("usage", wintypes.DWORD), ("process", wintypes.DWORD),
+                    ("heap", ctypes.c_size_t), ("module", wintypes.DWORD), ("threads", wintypes.DWORD),
+                    ("parent", wintypes.DWORD), ("priority", wintypes.LONG), ("flags", wintypes.DWORD),
+                    ("name", wintypes.WCHAR * 260)]
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.CreateToolhelp32Snapshot.argtypes = (wintypes.DWORD, wintypes.DWORD)
+    kernel32.CreateToolhelp32Snapshot.restype = wintypes.HANDLE
+    for step in (kernel32.Process32FirstW, kernel32.Process32NextW):
+        step.argtypes = (wintypes.HANDLE, ctypes.POINTER(ProcessEntry))
+        step.restype = wintypes.BOOL
+    kernel32.OpenProcess.argtypes = (wintypes.DWORD, wintypes.BOOL, wintypes.DWORD)
+    kernel32.OpenProcess.restype = wintypes.HANDLE
+    kernel32.QueryFullProcessImageNameW.argtypes = (wintypes.HANDLE, wintypes.DWORD, wintypes.LPWSTR,
+                                                    ctypes.POINTER(wintypes.DWORD))
+    kernel32.QueryFullProcessImageNameW.restype = wintypes.BOOL
+    kernel32.CloseHandle.argtypes = (wintypes.HANDLE,)
+    snapshot_processes, query_limited_information = 0x2, 0x1000
+    no_more_files, invalid_parameter = 18, 87
+
+    snapshot = kernel32.CreateToolhelp32Snapshot(snapshot_processes, 0)
+    if snapshot == wintypes.HANDLE(-1).value:
+        raise ctypes.WinError(ctypes.get_last_error())
+    executables = []
+    try:
+        entry = ProcessEntry(size=ctypes.sizeof(ProcessEntry))
+        listed = kernel32.Process32FirstW(snapshot, ctypes.byref(entry))
+        while listed:
+            if _GAME_OR_INSTALLER.match(entry.name):
+                process = kernel32.OpenProcess(query_limited_information, False, entry.process)
+                if process:
+                    try:
+                        size = wintypes.DWORD(32768)
+                        path = ctypes.create_unicode_buffer(size.value)
+                        executables.append(path.value if kernel32.QueryFullProcessImageNameW(
+                            process, 0, path, ctypes.byref(size)) else None)
+                    finally:
+                        kernel32.CloseHandle(process)
+                elif ctypes.get_last_error() != invalid_parameter:  # one that ended since is not listed
+                    executables.append(None)
+            listed = kernel32.Process32NextW(snapshot, ctypes.byref(entry))
+        if ctypes.get_last_error() != no_more_files:
+            raise ctypes.WinError(ctypes.get_last_error())
+    finally:
+        kernel32.CloseHandle(snapshot)
+    return executables
+
+
 def require_closed(game: Path) -> None:
+    """Refuse while the game, its loader, WeiDU or a mod installer runs from
+    <game>, or from a place Windows does not tell."""
     if os.name != "nt":
         raise ProfileError("Test-game activation currently supports Windows only")
     try:
-        result = subprocess.run(
-            ["powershell", "-NoProfile", "-NonInteractive", "-Command",
-             "$ErrorActionPreference='Stop'; @(Get-CimInstance Win32_Process | Where-Object { "
-             "$_.Name -match '^(Baldur|InfinityLoader|weidu)(\\.exe|$)' -or "
-             "$_.Name -like 'setup-*.exe' } | Select-Object Name,ExecutablePath) | ConvertTo-Json -Compress"],
-            capture_output=True, text=True, check=True, timeout=20,
-            creationflags=subprocess.CREATE_NO_WINDOW)
-    except subprocess.SubprocessError as exc:
+        executables = _game_or_installer_executables()
+    except OSError as exc:
         raise ProfileError("Could not check whether the test game is closed; settings were not applied") from exc
-    processes = json.loads(result.stdout.strip() or "[]")
-    if isinstance(processes, dict):
-        processes = [processes]
-    for process in processes:
-        executable = process.get("ExecutablePath")
+    for executable in executables:
         if not executable or Path(executable).resolve().is_relative_to(game.resolve()):
             raise ProfileError("Close this test game and its installer before applying settings")
 

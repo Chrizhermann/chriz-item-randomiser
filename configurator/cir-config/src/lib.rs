@@ -47,6 +47,7 @@ pub mod native_export;
 pub mod original_configuration;
 pub mod starts;
 pub mod activation;
+mod processes;
 pub mod editor;
 pub mod game_folder;
 
