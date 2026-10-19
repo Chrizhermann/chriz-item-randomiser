@@ -248,12 +248,14 @@ class Editor:
                 raise ProfileError(result["message"])
             store = ensure_output_outside_game(self.workspace / "prepared", self.catalog)
             if route == "/api/apply":
-                from .activation import require_closed, deploy_export
+                from .activation import adopt_revisions, require_closed, deploy_export
                 from .native_export import export_native
                 from .starts import describe_starts, write_starts
                 require_closed(self.apply_game)
                 written = write_starts(draft["profile"], draft["plan"], self.catalog, self.world, store)
                 output = self.workspace / "native"
+                # Older saves may use revisions another workspace applied.
+                adopt_revisions(self.apply_game, output)
                 exported = export_native(store, self.catalog, self.world, output,
                                          starts=written["starts"], main=written["main"])
                 write_json(self.path(draft["profile"]["id"]), draft)

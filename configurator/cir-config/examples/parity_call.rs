@@ -255,6 +255,10 @@ fn run(name: &str, args: &Dict) -> Result<Value> {
             .map(|conflict| conflict.map_or(Value::Null, Value::from)),
         "validate_runtime" => activation::validate_runtime(Path::new(&text(args, "game")?), &required(args, "catalog")?)
             .map(|game| Value::Str(game.to_string_lossy().into_owned())),
+        "adopt_revisions" => {
+            activation::adopt_revisions(Path::new(&text(args, "game")?), Path::new(&text(args, "output")?))
+                .map(|keys| Value::List(keys.into_iter().map(Value::from).collect()))
+        }
         "deploy_export" => {
             activation::deploy_export(Path::new(&text(args, "game")?), Path::new(&text(args, "output")?)).map(|()| Value::Null)
         }

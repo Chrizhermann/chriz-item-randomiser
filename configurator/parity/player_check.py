@@ -15,6 +15,9 @@ appears on the screen; this script answers the folder window there.
 - After the game's mods changed, the configurations of the earlier scan
   are kept aside and the editor opens with a new configuration; Apply
   works again.
+- After the player's folder was lost, a new workspace applies; the
+  revisions the earlier saves use stay as they were and the source gate
+  lists them with the new ones.
 - Outside a game, the folder window asks until a game with CIR is chosen:
   a folder without a game, a game without CIR, then a folder inside a
   game whose WeiDU.log records CIR.
@@ -45,6 +48,7 @@ from common import RUST_CLI, snapshot_tree
 from cli_check import PYTHON, build
 from editor_check import Server, bound, commands, masked
 
+from flir_config.activation import _gate_revisions  # noqa: E402
 from test_postinstall_resources import make_tlk  # noqa: E402
 
 EXE = "cir-configurator.exe"
@@ -464,6 +468,26 @@ def cases(check: Checks, desktop: Desktop, root: Path, starts: list) -> None:
     status, text = apply(editor, state, "player-apply-again")
     check("mods changed: Apply", status == 200 and APPLIED in text, text[:600])
     third.stop()
+
+    # The player's folder is lost (Windows reinstalled, another PC, AppData
+    # cleared): a new workspace applies, and the earlier saves keep their revisions.
+    campaigns = game_a / "randomiser-campaigns"
+    stored = {name: data for name, data in snapshot_tree(campaigns / "campaign-store").items() if data is not None}
+    gate = _gate_revisions(campaigns / "source-gate.lua")
+    shutil.rmtree(workspace_a)
+    lost, _ = start(game_a / "cir" / EXE, "workspace-lost")
+    editor, state = found_game(check, "workspace lost", lost, game_a, workspace_a, None)
+    check("workspace lost: a new configuration", state["saved"] == [], state["saved"])
+    status, text = apply(editor, state, "player-apply-new")
+    check("workspace lost: Apply", status == 200 and APPLIED in text, text[:600])
+    after = snapshot_tree(campaigns / "campaign-store")
+    check("workspace lost: the earlier revisions are unchanged",
+          {name: after.get(name) for name in stored} == stored)
+    applied = json.loads(text)["result"]["starts"] if status == 200 else {}
+    check("workspace lost: the gate lists the earlier and the new revisions",
+          bool(gate) and _gate_revisions(campaigns / "source-gate.lua") == gate | set(applied.values()),
+          sorted(gate))
+    lost.stop()
 
     # Outside a game: the folder window asks until a game with CIR is chosen.
     game_b, game_c = games / "Test Game B", games / "Test Game C"

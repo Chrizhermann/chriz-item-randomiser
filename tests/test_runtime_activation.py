@@ -12,12 +12,15 @@ import unittest
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
-from flir_config.activation import validate_runtime
+from flir_config.activation import adopt_revisions, deploy_export, validate_runtime
 from flir_config.campaigns import _render_lua
 from flir_config.editor import Editor
 from flir_config.native_export import NEXT_SCHEMA
-from flir_config.profiles import ProfileError
+from flir_config.profiles import ProfileError, edit_profile, new_profile
+from flir_config.sources import new_binding_plan
 from tests import test_postinstall_editor as editor_tests
+from tests.test_postinstall_resources import snapshot
+from tests.test_postinstall_world_formats import item_record, make_are, make_cre, make_sto
 
 INSTALLED = {
     "override/M_FLPR.lua": b"-- runtime\n",
@@ -137,8 +140,177 @@ class InstalledRuntimeApplyTests(unittest.TestCase):
         listing.write_bytes(b'{"schema": "flir-export-files-v1", "files": ["next.lua"]}')
         with patch("flir_config.activation.require_closed"), \
                 self.assertRaisesRegex(ProfileError, "export is incomplete"):
-            from flir_config.activation import deploy_export
             deploy_export(fx.game, output)
+
+
+class OtherWorkspaceApplyTests(unittest.TestCase):
+    """Apply from a workspace that did not apply the game's earlier settings.
+
+    A player who reinstalls Windows, moves to another PC or clears AppData
+    loses the configuration workspace; the game keeps the revisions its saves
+    use, and a new workspace applies with them.
+    """
+
+    def setUp(self):
+        base = editor_tests.EditorTests("test_draft_editor_cannot_activate_game")
+        base.setUp()
+        self.addCleanup(base.doCleanups)
+        self.fx = base.fx
+        write(self.fx.game, INSTALLED)
+        self.data = self.fx.game / "randomiser-campaigns"
+
+    def apply(self, workspace: str, item: str = "synth001", source: str | None = None,
+              target: str = "are:area/actor/1") -> dict:
+        """Apply one original of <item> from the editor of <workspace>, as its own configuration."""
+        fx = self.fx
+        profile = edit_profile(new_profile(fx.catalog, workspace, f"Adventure of {workspace}"),
+                               fx.catalog, include=[item])
+        plan = new_binding_plan(profile, fx.catalog, fx.world)
+        plan["sources"] = [{"item": item, "policy": "relocate", "registration_ids": [],
+                            "source_ids": [source or fx.first]}]
+        plan["targets"] = [{"id": target, "capacity": 1, "optional": False}]
+        editor = Editor(fx.catalog, fx.world, fx.root / workspace, profile, plan, apply_game=fx.game)
+        with patch("flir_config.activation.require_closed"):
+            return editor.post("/api/apply", editor.draft)
+
+    def revision_files(self, revision: str) -> dict[str, bytes]:
+        folder = self.data / "campaign-store" / "revisions"
+        return {path.relative_to(folder).as_posix(): path.read_bytes()
+                for path in folder.rglob("*") if path.is_file() and path.name.startswith(revision + ".")}
+
+    def test_a_new_workspace_applies_and_keeps_the_revisions_older_saves_use(self):
+        fx = self.fx
+        first = self.apply("workspace-a")
+        kept = self.revision_files(first["revision"])
+        self.assertIn(first["revision"] + ".native.lua", kept)
+        # Workspace A is lost. A new one scans the game as A left it and applies other settings.
+        fx.refresh()
+        second = self.apply("workspace-b", "synth002", fx.second)
+        self.assertNotEqual(second["revision"], first["revision"])
+        self.assertEqual(self.revision_files(first["revision"]), kept)
+        self.assertTrue(self.revision_files(second["revision"]))
+        self.assertEqual((self.data / "source-gate.lua").read_bytes(),
+                         _render_lua(sorted([first["revision"], second["revision"]])))
+        self.assertEqual((self.data / "next.lua").read_bytes(),
+                         _render_lua({"schema": NEXT_SCHEMA, "starts": second["starts"]}))
+        self.assertEqual((self.data / "AREA.pristine.are").read_bytes(), fx.area)
+        self.assertNotIn("Saved games", second["message"])
+        # The new workspace now holds A's revision as the game has it.
+        adopted = fx.root / "workspace-b" / "native" / "campaign-store" / "revisions"
+        self.assertEqual({name: (adopted / name).read_bytes() for name in kept}, kept)
+        # Workspace A comes back (a backup) and applies again: B's saves keep theirs too.
+        later = self.revision_files(second["revision"])
+        third = self.apply("workspace-a", "synth002", fx.second, target="are:area/actor/0")
+        self.assertEqual((self.revision_files(first["revision"]), self.revision_files(second["revision"])),
+                         (kept, later))
+        self.assertEqual((self.data / "source-gate.lua").read_bytes(),
+                         _render_lua(sorted([first["revision"], second["revision"], third["revision"]])))
+
+    def test_adopting_copies_each_revision_once_as_the_game_has_it(self):
+        first = self.apply("workspace-a")
+        output = self.fx.root / "workspace-b" / "native"
+        self.assertEqual(adopt_revisions(self.fx.game, output), [first["revision"]])
+        self.assertEqual(snapshot(output / "campaign-store"), snapshot(self.data / "campaign-store"))
+        self.assertEqual((output / "AREA.pristine.are").read_bytes(), self.fx.area)
+        self.assertEqual(adopt_revisions(self.fx.game, output), [])
+        # A game without applied settings has nothing to adopt.
+        empty = self.fx.root / "empty-game"
+        empty.mkdir()
+        self.assertEqual(adopt_revisions(empty, self.fx.root / "workspace-c" / "native"), [])
+        self.assertFalse((self.fx.root / "workspace-c").exists())
+        with self.assertRaisesRegex(ProfileError, "outside the scanned game"):
+            adopt_revisions(self.fx.game, self.data / "export")
+
+    def test_another_version_of_a_revision_in_the_workspace_refuses(self):
+        first = self.apply("workspace-a")
+        revision = first["revision"]
+        output = self.fx.root / "workspace-b" / "native"
+        # Workspace B holds another export of the same revision, such as one restored from a backup.
+        adopt_revisions(self.fx.game, output)
+        native = output / "campaign-store" / "revisions" / f"{revision}.native.lua"
+        native.write_bytes(native.read_bytes() + b"-- another export\n")
+        game, workspace = snapshot(self.fx.game), snapshot(output)
+        with self.assertRaisesRegex(ProfileError, re.escape(
+                f"Campaign revision {revision[:12]} in this configuration workspace differs from the game's "
+                f"({revision}.native.lua); saved games need the game's, so nothing was applied. "
+                f"Move {output.resolve()} aside, then apply again")):
+            self.apply("workspace-b", "synth002", self.fx.second)
+        self.assertEqual((snapshot(self.fx.game), snapshot(output)), (game, workspace))
+
+    def test_deploy_still_refuses_another_version_and_a_missing_revision(self):
+        first = self.apply("workspace-a")
+        revision = first["revision"]
+        output = self.fx.root / "workspace-a" / "native"
+        game = snapshot(self.fx.game)
+        lua = output / "campaign-store" / "revisions" / f"{revision}.lua"
+        original = lua.read_bytes()
+        lua.write_bytes(original + b"-- another export\n")
+        with patch("flir_config.activation.require_closed"), self.assertRaisesRegex(
+                ProfileError, re.escape("An older campaign revision differs: randomiser-campaigns")):
+            deploy_export(self.fx.game, output)
+        lua.write_bytes(original)
+        (output / "source-gate.lua").write_bytes(_render_lua([]))
+        with patch("flir_config.activation.require_closed"), self.assertRaisesRegex(
+                ProfileError, re.escape(f"This export is missing campaign revision {revision[:12]}, which older "
+                                        "saves of this game need; apply the settings again")):
+            deploy_export(self.fx.game, output)
+        self.assertEqual(snapshot(self.fx.game), game)
+
+    def test_a_listed_revision_the_game_lost_or_cannot_read_refuses(self):
+        first = self.apply("workspace-a")
+        revision = first["revision"]
+        folder = self.data / "campaign-store" / "revisions"
+        lua = (folder / f"{revision}.lua").read_bytes()
+        (folder / f"{revision}.lua").write_bytes(lua.replace(b"return {", b"return  {", 1))
+        game = snapshot(self.fx.game)
+        with self.assertRaisesRegex(ProfileError, re.escape(
+                f"This game's campaign revision {revision[:12]} cannot be read: "
+                "Campaign JSON and Lua artifacts disagree")):
+            self.apply("workspace-b", "synth002", self.fx.second)
+        self.assertEqual(snapshot(self.fx.game), game)
+        (folder / f"{revision}.json").unlink()
+        game = snapshot(self.fx.game)
+        with self.assertRaisesRegex(ProfileError, re.escape(
+                f"This game's settings list campaign revision {revision[:12]} for older saves, but its files are "
+                "missing from randomiser-campaigns/campaign-store/revisions; restore them before applying")):
+            self.apply("workspace-b", "synth002", self.fx.second)
+        self.assertEqual(snapshot(self.fx.game), game)
+        self.assertFalse((self.fx.root / "workspace-b" / "native").exists())
+
+    def test_saves_of_a_revision_another_workspace_applied_are_protected_as_its_own_would(self):
+        fx = self.fx
+        (fx.override / "shop.sto").write_bytes(make_sto([
+            (item_record("SYNTH002", expiration=0, charges=(0, 0, 0), flags=1), 1, 0)]))
+        fx.refresh()
+        first = self.apply("workspace-a")
+        revision = first["revision"]
+        kept = self.revision_files(revision)
+        # A mod then changes the chest's item. A new workspace's settings that
+        # leave the area alone apply; A's saves keep their settings, with the
+        # pristine area copy the game kept for them.
+        embedded = bytearray(make_cre([]))
+        embedded[0x280:0x288] = b"EmbedDV\0"
+        (fx.override / "area.are").write_bytes(make_are(
+            [item_record("SYNTH001", expiration=0, charges=(0, 0, 0), flags=3),
+             item_record("SYNTH002", expiration=0, charges=(0, 0, 0), flags=1)],
+            [("ChestOne", 0, 1), ("ChestTwo", 1, 1)], [("External", "ACTOR"), ("Embedded", bytes(embedded))]))
+        fx.refresh()
+        shop = next(row["id"] for row in fx.world["sources"] if row["kind"] == "store")
+        second = self.apply("workspace-b", "synth002", shop, target="are:area/actor/0")
+        self.assertIn(f"Saved games of revision {revision[:12]} keep their settings, but "
+                      f"{fx.first} may no longer work in them: Selected source differs from the scan",
+                      second["message"])
+        self.assertEqual(self.revision_files(revision), kept)
+        self.assertEqual((self.data / "AREA.pristine.are").read_bytes(), fx.area)
+        self.assertEqual((self.data / "source-gate.lua").read_bytes(),
+                         _render_lua(sorted([revision, second["revision"]])))
+        # Settings that would replace that area copy stop, as in A's own workspace.
+        game = snapshot(fx.game)
+        with self.assertRaisesRegex(ProfileError, re.escape(
+                f"Saved games of revision {revision[:12]} need AREA.ARE as it was when they were exported, "
+                "but it changed in the game since then")):
+            self.apply("workspace-c", "synth002", fx.second, target="are:area/actor/0")
+        self.assertEqual(snapshot(fx.game), game)
 
 
 if __name__ == "__main__":

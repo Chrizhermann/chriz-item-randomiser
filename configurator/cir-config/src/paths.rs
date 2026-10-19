@@ -386,6 +386,27 @@ fn ignored(error: &io::Error) -> bool {
         || (error.raw_os_error().is_none() && error.kind() == io::ErrorKind::InvalidInput)
 }
 
+/// `directory.glob("*" + suffix)` on Windows: the names of entries ending in
+/// `suffix` in any case; nothing when the directory is absent or unreadable.
+pub fn glob_suffix(directory: &Path, suffix: &str) -> crate::error::Result<Vec<String>> {
+    if !is_dir(directory).unwrap_or(false) {
+        return Ok(Vec::new());
+    }
+    let names = match list_dir(directory) {
+        Ok(names) => names,
+        Err(error) if error.kind() == io::ErrorKind::PermissionDenied => return Ok(Vec::new()),
+        Err(error) => return Err(crate::error::Error::win(&error, directory)),
+    };
+    Ok(names
+        .into_iter()
+        .filter(|name| {
+            name.len()
+                .checked_sub(suffix.len())
+                .is_some_and(|start| name.is_char_boundary(start) && name[start..].eq_ignore_ascii_case(suffix))
+        })
+        .collect())
+}
+
 /// `iterdir()` names in the operating system's order.
 pub fn list_dir(path: &Path) -> io::Result<Vec<String>> {
     let mut names = Vec::new();

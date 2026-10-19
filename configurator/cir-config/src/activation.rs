@@ -4,10 +4,11 @@
 //! Runtime installation is separate. Exported revisions stay for older saves;
 //! the next-game pointer is published last, with the game closed.
 
-use crate::error::{Error, Result};
+use crate::campaigns::{read_campaign, store_path, write_immutable};
+use crate::error::{Error, ErrorKind, Result};
 use crate::json::Value;
 use crate::paths;
-use crate::profiles::read_json;
+use crate::profiles::{ensure_output_outside_game, is_hex256, make_dirs, read_json};
 use std::collections::{BTreeSet, HashMap};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -375,6 +376,126 @@ fn posix_parts(name: &str) -> Vec<&str> {
     parts
 }
 
+fn read_bytes(path: &Path) -> Result<Vec<u8>> {
+    fs::read(path).map_err(|error| Error::os(&error, path))
+}
+
+/// Take the campaign revisions applied in `game` into the export folder
+/// `output`.
+///
+/// Saved games use the revisions the game holds, whichever configuration
+/// workspace exported them. An export keeps every revision of its folder for
+/// them and refuses where Apply would change what they need
+/// (native_export::export_native), so a workspace that did not export them,
+/// such as a new one after Windows was reinstalled, takes them from the game
+/// before it exports: each file as the game has it, never replacing another
+/// version of it, with the pristine area copies the runtime compares them
+/// with. Returns the revisions the folder did not have.
+pub fn adopt_revisions(game: &Path, output: &Path) -> Result<Vec<String>> {
+    let game = paths::resolve(game, false).map_err(|(error, at)| Error::win(&error, &at))?;
+    let output =
+        ensure_output_outside_game(output, &Value::Dict(crate::dict! {"game_root" => paths::display(&game)}))?;
+    let data = game.join(CAMPAIGN_DATA);
+    let store = data.join("campaign-store");
+    let revisions = store.join("revisions");
+    let keys: BTreeSet<String> = paths::glob_suffix(&revisions, ".json")?
+        .iter()
+        .map(|name| paths::stem(name))
+        .filter(|stem| is_hex256(stem))
+        .map(str::to_string)
+        .collect();
+    if let Some(missing) = gate_revisions(&data.join("source-gate.lua"))?.difference(&keys).next() {
+        return Err(Error::profile(format!(
+            "This game's settings list campaign revision {} for older saves, but its files are missing from \
+             {CAMPAIGN_DATA}/campaign-store/revisions; restore them before applying",
+            &missing[..12]
+        )));
+    }
+    for key in &keys {
+        match read_campaign(&store, Some(key)) {
+            Err(error) if matches!(error.kind, ErrorKind::Os | ErrorKind::Profile) => {
+                return Err(Error::profile(format!(
+                    "This game's campaign revision {} cannot be read: {}",
+                    &key[..12],
+                    error.message
+                )))
+            }
+            result => {
+                result?;
+            }
+        }
+    }
+    let exported = output.join("campaign-store");
+    // (manifest, path in the store, target, content)
+    let mut planned: Vec<(bool, String, PathBuf, Vec<u8>)> = Vec::new();
+    let mut adopted = BTreeSet::new();
+    let mut names = if keys.is_empty() {
+        Vec::new()
+    } else {
+        paths::list_dir(&revisions).map_err(|error| Error::win(&error, &revisions))?
+    };
+    names.sort();
+    for name in names {
+        let Some((key, _)) = name.split_once('.') else { continue };
+        if !keys.contains(key) {
+            continue;
+        }
+        let entry = revisions.join(&name);
+        // Each file by its path below the revisions folder.
+        let files: Vec<String> = if paths::is_dir(&entry).map_err(|error| Error::win(&error, &entry))? {
+            let mut found = BTreeSet::new();
+            crate::native_export::files_below(&entry, &name, &mut found)?;
+            found.into_iter().collect()
+        } else {
+            vec![name.clone()]
+        };
+        for inner in files {
+            let relative: PathBuf = inner.split('/').fold(PathBuf::from("revisions"), |path, part| path.join(part));
+            let content = read_bytes(&store_path(&store, &relative)?)?;
+            let target = store_path(&exported, &relative)?;
+            if paths::exists(&target).map_err(|error| Error::win(&error, &target))? {
+                if read_bytes(&target)? != content {
+                    return Err(Error::profile(format!(
+                        "Campaign revision {} in this configuration workspace differs from the game's ({inner}); \
+                         saved games need the game's, so nothing was applied. Move {} aside, then apply again",
+                        &key[..12],
+                        paths::display(&output)
+                    )));
+                }
+                continue;
+            }
+            // A revision's manifest last: the export reads a revision only once it is complete.
+            let manifest = inner.rsplit('/').next() == Some(format!("{key}.json").as_str());
+            if manifest {
+                adopted.insert(key.to_string());
+            }
+            planned.push((manifest, format!("revisions/{inner}"), target, content));
+        }
+    }
+    planned.sort_by(|a, b| (a.0, &a.1).cmp(&(b.0, &b.1)));
+    for (_, _, target, content) in &planned {
+        write_immutable(target, content)?;
+    }
+    // The runtime compares each revision's guarded areas with the one pristine
+    // copy the game keeps of them; the export checks the revisions it keeps
+    // against these copies.
+    let mut copies = paths::glob_suffix(&data, ".pristine.are")?;
+    copies.sort();
+    for name in copies {
+        let path = data.join(&name);
+        if !paths::is_file(&path).map_err(|error| Error::win(&error, &path))? {
+            continue;
+        }
+        let content = read_bytes(&store_path(&data, Path::new(&name))?)?;
+        let target = store_path(&output, Path::new(&name))?;
+        if !paths::is_file(&target).map_err(|error| Error::win(&error, &target))? || read_bytes(&target)? != content {
+            make_dirs(&paths::parent(&target))?;
+            fs::write(&target, &content).map_err(|error| Error::os(&error, &target))?;
+        }
+    }
+    Ok(adopted.into_iter().collect())
+}
+
 /// Copy the existing export layout without touching saves or ordinary stock.
 pub fn deploy_export(game: &Path, output: &Path) -> Result<()> {
     require_closed(game)?;
@@ -408,10 +529,11 @@ pub fn deploy_export(game: &Path, output: &Path) -> Result<()> {
     }
     let previous = gate_revisions(&game.join(CAMPAIGN_DATA).join("source-gate.lua"))?;
     let exported = gate_revisions(&output.join("source-gate.lua"))?;
-    if !previous.is_subset(&exported) {
-        return Err(Error::profile(
-            "Use this game's previous configuration workspace: this export is missing settings needed by older saves",
-        ));
+    if let Some(missing) = previous.difference(&exported).next() {
+        return Err(Error::profile(format!(
+            "This export is missing campaign revision {}, which older saves of this game need; apply the settings again",
+            &missing[..12]
+        )));
     }
     let game_root = paths::resolve(game, false).map_err(|(error, at)| Error::win(&error, &at))?;
     let mut changes: Vec<(PathBuf, Vec<u8>)> = Vec::new();
@@ -503,4 +625,80 @@ pub fn deploy_export(game: &Path, output: &Path) -> Result<()> {
     }
     let _ = fs::remove_dir_all(&backup_root);
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A folder for one test, removed afterwards.
+    struct Scratch(PathBuf);
+
+    impl Scratch {
+        fn new(label: &str) -> Scratch {
+            let path = std::env::temp_dir()
+                .join(format!("cir-activation-{label}-{}-{}", std::process::id(), crate::profiles::random_hex(8)));
+            fs::create_dir_all(&path).unwrap();
+            Scratch(paths::resolve(&path, true).unwrap())
+        }
+
+        fn file(&self, relative: &str, data: &[u8]) -> PathBuf {
+            let path = self.0.join(relative);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(&path, data).unwrap();
+            path
+        }
+    }
+
+    impl Drop for Scratch {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    const KEY: &str = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+
+    fn refusal(game: &Path, output: &Path) -> String {
+        let error = adopt_revisions(game, output).expect_err("refused");
+        assert_eq!(error.kind, ErrorKind::Profile);
+        error.message
+    }
+
+    #[test]
+    fn a_game_without_applied_settings_has_nothing_to_adopt() {
+        let scratch = Scratch::new("empty");
+        let game = scratch.0.join("game");
+        fs::create_dir_all(&game).unwrap();
+        let output = scratch.0.join("workspace").join("native");
+        assert_eq!(adopt_revisions(&game, &output).unwrap(), Vec::<String>::new());
+        assert!(!paths::exists(&scratch.0.join("workspace")).unwrap());
+        assert_eq!(
+            refusal(&game, &game.join("export")),
+            "Configuration output must be outside the scanned game directory"
+        );
+    }
+
+    #[test]
+    fn a_listed_revision_the_game_lost_or_cannot_read_is_refused() {
+        let scratch = Scratch::new("refused");
+        let game = scratch.0.join("game");
+        let output = scratch.0.join("workspace").join("native");
+        scratch.file(&format!("game/{CAMPAIGN_DATA}/source-gate.lua"), format!("return \"{KEY}\"\n").as_bytes());
+        assert_eq!(
+            refusal(&game, &output),
+            "This game's settings list campaign revision 0123456789ab for older saves, but its files are missing \
+             from randomiser-campaigns/campaign-store/revisions; restore them before applying"
+        );
+        scratch.file(&format!("game/{CAMPAIGN_DATA}/campaign-store/revisions/{KEY}.json"), b"{}");
+        assert_eq!(
+            refusal(&game, &output),
+            "This game's campaign revision 0123456789ab cannot be read: Unsupported campaign artifact fields"
+        );
+        scratch.file(&format!("game/{CAMPAIGN_DATA}/source-gate.lua"), b"return {}\n");
+        assert_eq!(
+            refusal(&game, &output),
+            "This game's campaign revision 0123456789ab cannot be read: Unsupported campaign artifact fields"
+        );
+        assert!(!paths::exists(&scratch.0.join("workspace")).unwrap());
+    }
 }

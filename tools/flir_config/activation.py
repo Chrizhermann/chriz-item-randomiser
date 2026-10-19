@@ -11,7 +11,8 @@ import shutil
 import subprocess
 from tempfile import TemporaryDirectory
 
-from .profiles import ProfileError, read_json
+from .campaigns import read_campaign, _store_path, _write_immutable
+from .profiles import HEX256, ProfileError, ensure_output_outside_game, read_json
 
 # The files of the latest export in its folder. Apply copies only these, so a
 # file an older export left there never reaches the game.
@@ -94,6 +95,73 @@ def validate_runtime(game: Path, catalog: dict) -> Path:
     return game
 
 
+def adopt_revisions(game: Path, output: Path) -> list[str]:
+    """Take the campaign revisions applied in <game> into the export folder <output>.
+
+    Saved games use the revisions the game holds, whichever configuration
+    workspace exported them. An export keeps every revision of its folder for
+    them and refuses where Apply would change what they need
+    (native_export.export_native), so a workspace that did not export them,
+    such as a new one after Windows was reinstalled, takes them from the game
+    before it exports: each file as the game has it, never replacing another
+    version of it, with the pristine area copies the runtime compares them
+    with. Returns the revisions the folder did not have.
+    """
+    game = game.resolve()
+    output = ensure_output_outside_game(output, {"game_root": str(game)})
+    data = game / CAMPAIGN_DATA
+    store = data / "campaign-store"
+    keys = sorted(path.stem for path in (store / "revisions").glob("*.json") if HEX256.fullmatch(path.stem))
+    missing = sorted(_gate_revisions(data / "source-gate.lua") - set(keys))
+    if missing:
+        raise ProfileError(f"This game's settings list campaign revision {missing[0][:12]} for older saves, but "
+                           f"its files are missing from {CAMPAIGN_DATA}/campaign-store/revisions; "
+                           "restore them before applying")
+    for key in keys:
+        try:
+            read_campaign(store, key)
+        except (OSError, ProfileError) as exc:
+            raise ProfileError(f"This game's campaign revision {key[:12]} cannot be read: {exc}") from exc
+    exported = output / "campaign-store"
+    planned, adopted = [], set()
+    for entry in sorted((store / "revisions").iterdir(), key=lambda path: path.name) if keys else ():
+        key, dot, _ = entry.name.partition(".")
+        if not dot or key not in keys:
+            continue
+        files = (sorted((path for path in entry.rglob("*") if path.is_file()), key=lambda path: path.as_posix())
+                 if entry.is_dir() else [entry])
+        for path in files:
+            relative = path.relative_to(store)
+            content = _store_path(store, relative).read_bytes()
+            target = _store_path(exported, relative)
+            if target.exists():
+                if target.read_bytes() != content:
+                    raise ProfileError(
+                        f"Campaign revision {key[:12]} in this configuration workspace differs from the game's "
+                        f"({path.relative_to(entry.parent).as_posix()}); saved games need the game's, so nothing "
+                        f"was applied. Move {output} aside, then apply again")
+                continue
+            # A revision's manifest last: the export reads a revision only once it is complete.
+            manifest = relative.name == key + ".json"
+            planned.append((manifest, relative.as_posix(), target, content))
+            if manifest:
+                adopted.add(key)
+    for _, _, target, content in sorted(planned, key=lambda row: row[:2]):
+        _write_immutable(target, content)
+    # The runtime compares each revision's guarded areas with the one pristine
+    # copy the game keeps of them; the export checks the revisions it keeps
+    # against these copies.
+    for path in sorted(data.glob("*.pristine.are"), key=lambda path: path.name):
+        if not path.is_file():
+            continue
+        content = _store_path(data, Path(path.name)).read_bytes()
+        target = _store_path(output, Path(path.name))
+        if not target.is_file() or target.read_bytes() != content:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(content)
+    return sorted(adopted)
+
+
 def deploy_export(game: Path, output: Path) -> None:
     """Copy the existing export layout without touching saves or ordinary stock."""
     require_closed(game)
@@ -106,9 +174,11 @@ def deploy_export(game: Path, output: Path) -> None:
             not {"next.lua", "source-gate.lua"} <= set(names) or
             not all((output / name).is_file() for name in names)):
         raise ProfileError("The runtime export is incomplete; export the settings again")
-    if not _gate_revisions(game / CAMPAIGN_DATA / "source-gate.lua") <= _gate_revisions(output / "source-gate.lua"):
-        raise ProfileError("Use this game's previous configuration workspace: this export is missing "
-                           "settings needed by older saves")
+    missing = sorted(_gate_revisions(game / CAMPAIGN_DATA / "source-gate.lua") -
+                     _gate_revisions(output / "source-gate.lua"))
+    if missing:
+        raise ProfileError(f"This export is missing campaign revision {missing[0][:12]}, which older saves of "
+                           "this game need; apply the settings again")
     changes = {}
     for name in sorted(names):
         relative = PurePosixPath(name)

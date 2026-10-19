@@ -19,8 +19,8 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
 
 from flir_config import container_rewards, mode2_rewards, reward_copies, translations
-from flir_config.activation import EXPORT_FILES
-from flir_config.campaigns import compile_campaign, read_campaign
+from flir_config.activation import EXPORT_FILES, adopt_revisions, deploy_export
+from flir_config.campaigns import _render_lua, compile_campaign, read_campaign
 from flir_config.native_export import _compile, export_native
 from flir_config.original_catalog import resolve_template
 from flir_config.original_configuration import fit_original_configuration
@@ -475,6 +475,65 @@ class CopyTests(RouteGame):
                                     "UHOGRE01.DLG before applying"):
             self.apply(fitted)
         self.assertEqual(snapshot(self.output), before)
+
+
+class OtherWorkspaceTests(RouteGame):
+    """A new configuration workspace applies over the routes another one applied.
+
+    The game then holds the first workspace's patched dialogue and script, the
+    reward texts it appended and its revisions, which the saves of those
+    settings use. The player lost that workspace (Windows reinstalled, another
+    PC, AppData cleared).
+    """
+
+    sources, targets = SOURCES[:2], TARGETS[:2]
+
+    def apply_from(self, workspace: Path) -> set[str]:
+        """Apply as the editor does from <workspace>: the game's revisions, export, deploy."""
+        fitted = self.fit()
+        draft = self.draft()
+        with patch("flir_config.original_configuration.resolve_template", return_value=draft), \
+                patch("flir_config.original_registrations.resolve_template", return_value=draft):
+            written = write_starts(fitted["profile"], fitted["plan"], self.catalog, self.world,
+                                   workspace / "prepared")
+            adopt_revisions(self.game, workspace / "native")
+            self.exported = export_native(workspace / "prepared", self.catalog, self.world, workspace / "native",
+                                          starts=written["starts"], main=written["main"])
+        with patch("flir_config.activation.require_closed"):
+            deploy_export(self.game, workspace / "native")
+        return set(written["starts"].values())
+
+    def test_a_new_workspace_applies_over_the_routes_another_applied(self):
+        self.build("bg2ee")
+        earlier = self.apply_from(self.root / "workspace-a")
+        applied = snapshot(self.game)
+        overrides = {name: applied[str(Path("override", name))] for name in ("uhogre01.dlg", "ddwell.bcs")}
+        self.assertIn(str(Path("lang/en_US/dialog.tlk")), applied)
+        # Workspace A is lost; a new one scans the game as A left it and applies other settings.
+        self.rescan()
+        self.sources = SOURCES[:1]
+        later = self.apply_from(self.root / "workspace-b")
+        self.assertFalse(earlier & later)
+        # A's revisions recompile as they were: nothing is kept apart, nothing noted.
+        self.assertNotIn("notes", self.exported)
+        after = snapshot(self.game)
+        pointers = {str(Path("randomiser-campaigns", name)) for name in ("next.lua", "source-gate.lua")}
+        self.assertEqual({name for name, digest in applied.items() if after.get(name) != digest}, pointers)
+        revisions = Path("randomiser-campaigns/campaign-store/revisions")
+        self.assertTrue(all(Path(name).parent == revisions and Path(name).name.split(".")[0] in later
+                            for name in set(after) - set(applied)))
+        self.assertEqual({name: after[str(Path("override", name))] for name in overrides}, overrides)
+        gate = self.game / "randomiser-campaigns" / "source-gate.lua"
+        self.assertEqual(gate.read_bytes(), _render_lua(sorted(earlier | later)))
+        # Workspace A comes back (a backup) and applies again, keeping B's revisions too.
+        self.rescan()
+        self.sources = SOURCES[:2]
+        last = self.apply_from(self.root / "workspace-a")
+        self.assertNotIn("notes", self.exported)
+        self.assertEqual(gate.read_bytes(), _render_lua(sorted(earlier | later | last)))
+        self.assertTrue(all(snapshot(self.game)[name] == digest for name, digest in after.items()
+                            if name not in pointers))
+
 
 class RouteCheckTests(RouteGame):
     def test_text_routes_need_a_translation_and_the_journal_table(self):
