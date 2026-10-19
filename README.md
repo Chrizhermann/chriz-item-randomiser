@@ -16,7 +16,9 @@ Protection from Undead scrolls in stores (10100, 10200), the Duergar merchant's 
 stores (10210) and Watcher's Keep statues that stay (10300). These need neither EET nor
 EEex and also install on BG2:EE.
 
-CIR is in development and has no release yet.
+Download the [latest release](https://github.com/Chrizhermann/chriz-item-randomiser/releases/latest):
+players take `cir-v<version>-windows.zip`. Item Randomiser 8.x, which this repository
+maintained before, stays on the `item-randomiser-8.x` branch and its releases.
 
 ## Requirements
 
