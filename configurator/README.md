@@ -126,9 +126,7 @@ game:
    path) with `catalog.json`, `world.json` and the editor's workspace
    `configurations\`, as `scan`, `world scan` and `ui` write them. Each game
    keeps its folder, so the next start reopens the configuration applied last
-   and Apply finds the earlier revisions. A creature, area or store file the
-   world scan cannot read is left out, and the console names it with the
-   reason, as `world scan`'s warnings do.
+   and Apply finds the earlier revisions.
 4. It opens the editor in the browser with Apply for that game (as
    `ui --apply-game`) and serves it until its window is closed or Ctrl+C.
 
@@ -148,6 +146,9 @@ reference's `ui` answers its state with "Profile belongs to another scan"
 then). They are moved to `configurations\earlier scans\`, where they are kept,
 and the editor starts with a new configuration; Apply keeps the earlier
 revisions for existing saves.
+
+A creature, area or store file the world scan cannot read is left out, and
+the console names it with the reason, as `world scan`'s warnings do.
 
 With any argument the executable is the command line above, unchanged.
 `CIR_NO_BROWSER` (any value) makes the start without arguments only print the
