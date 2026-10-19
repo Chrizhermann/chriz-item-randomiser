@@ -363,6 +363,9 @@ SPECS = {
     ("flir_config.activation", "validate_runtime"): Spec(
         "validate_runtime", lambda v, d: {"game": str(v["game"]), "catalog": file(v["catalog"])},
         paths=("game",), result=str),
+    ("flir_config.activation", "adopt_revisions"): Spec(
+        "adopt_revisions", lambda v, d: {"game": str(v["game"]), "output": str(v["output"])},
+        paths=("game", "output"), writes=("output",)),
     ("flir_config.activation", "deploy_export"): Spec(
         "deploy_export", lambda v, d: {"game": str(v["game"]), "output": str(v["output"])},
         paths=("game", "output"), writes=("game", "output/..")),

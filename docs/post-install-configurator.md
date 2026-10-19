@@ -13,8 +13,10 @@ settings. Each new game gets a fresh draw, in every campaign start of the game
 (BG1 and SoD on BG:EE, SoA and ToB on BG2:EE, all four on EET; a later start only
 with the rewards and places it reaches, see the packaging plan's
 [Campaign starts](plans/2026-10-14-mode1-packaging.md#campaign-starts)); existing saves
-keep their revision. Keep the same configuration workspace, including its `native` folder,
-so earlier revisions remain available. The editor reopens the last applied choice.
+keep their revision. Apply first takes the revisions the game already holds into the
+workspace's `native` folder, byte for byte, so a new or another workspace keeps them for
+older saves and checks them as their own workspace would; it refuses when the workspace holds
+another version of one of them. The editor reopens the last applied choice.
 Without that explicit option, preparation still writes only outside the game. Apply
 refuses a game where Item Randomiser's Mode 1, Mode 2 or More Spell Shield scrolls is
 installed, which CIR cannot be combined with.

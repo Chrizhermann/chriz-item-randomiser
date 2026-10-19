@@ -621,6 +621,8 @@ impl Editor {
                     let written =
                         crate::starts::write_starts(draft.at("profile")?, draft.at("plan")?, &self.catalog, &self.world, &store)?;
                     let output = self.workspace.join("native");
+                    // Older saves may use revisions another workspace applied.
+                    crate::activation::adopt_revisions(&game, &output)?;
                     let starts: Vec<(String, String)> = written
                         .at("starts")?
                         .as_dict()

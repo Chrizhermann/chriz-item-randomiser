@@ -1413,7 +1413,7 @@ impl Held {
 
 /// Every file below a directory, by its path relative to `relative`
 /// (`path.rglob("*")` with `is_file()`).
-fn files_below(directory: &Path, relative: &str, found: &mut BTreeSet<String>) -> Result<()> {
+pub(crate) fn files_below(directory: &Path, relative: &str, found: &mut BTreeSet<String>) -> Result<()> {
     let names = paths::list_dir(directory).map_err(|error| Error::win(&error, directory))?;
     for name in names {
         let path = directory.join(&name);
@@ -1457,20 +1457,7 @@ fn extends(new: &[u8], old: &[u8]) -> Result<bool> {
 /// `directory.glob("*.json")` on Windows: entry names ending in `.json` in
 /// any case; nothing when the directory is absent or unreadable.
 fn json_names(directory: &Path) -> Result<Vec<String>> {
-    if !paths::is_dir(directory).unwrap_or(false) {
-        return Ok(Vec::new());
-    }
-    let names = match paths::list_dir(directory) {
-        Ok(names) => names,
-        Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => return Ok(Vec::new()),
-        Err(error) => return Err(Error::win(&error, directory)),
-    };
-    Ok(names
-        .into_iter()
-        .filter(|name| {
-            name.len() >= 5 && name.is_char_boundary(name.len() - 5) && name[name.len() - 5..].eq_ignore_ascii_case(".json")
-        })
-        .collect())
+    paths::glob_suffix(directory, ".json")
 }
 
 fn relative_path(relative: &str) -> PathBuf {

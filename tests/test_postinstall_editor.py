@@ -219,12 +219,20 @@ class EditorTests(unittest.TestCase):
             with self.assertRaisesRegex(ProfileError, "Close this test game"):
                 e.post("/api/apply", original.draft)
         self.assertEqual((fx.game / "randomiser-campaigns/next.lua").read_bytes(), pointer)
+        # Another workspace (the first one lost) takes both revisions from the
+        # game for their saves and applies the first configuration again.
+        revisions = fx.game / "randomiser-campaigns/campaign-store/revisions"
+        kept = {path.name: path.read_bytes() for path in revisions.iterdir()}
         other = Editor(fx.catalog, fx.world, fx.root / "another-editor",
                        **original.draft, apply_game=fx.game)
         with patch("flir_config.activation.require_closed"):
-            with self.assertRaisesRegex(ProfileError, "older saves"):
-                other.post("/api/apply", other.draft)
-        self.assertEqual((fx.game / "randomiser-campaigns/next.lua").read_bytes(), pointer)
+            third = other.post("/api/apply", other.draft)
+        self.assertEqual(third["revision"], first["revision"])
+        self.assertEqual({path.name: path.read_bytes() for path in revisions.iterdir()}, kept)
+        self.assertEqual((fx.game / "randomiser-campaigns/source-gate.lua").read_bytes(),
+                         _render_lua(sorted([first["revision"], second["revision"]])))
+        self.assertEqual((fx.game / "randomiser-campaigns/next.lua").read_bytes(),
+                         _render_lua({"schema": NEXT_SCHEMA, "starts": first["starts"]}))
 
     def test_draft_editor_cannot_activate_game(self):
         self.assertFalse(self.editor.state()["apply_enabled"])

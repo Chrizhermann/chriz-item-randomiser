@@ -125,8 +125,10 @@ game:
    name's first 40 characters and 12 hex digits of the SHA-256 of the game's
    path) with `catalog.json`, `world.json` and the editor's workspace
    `configurations\`, as `scan`, `world scan` and `ui` write them. Each game
-   keeps its folder, so the next start reopens the configuration applied last
-   and Apply finds the earlier revisions.
+   keeps its folder, so the next start reopens the configuration applied last.
+   Apply takes the revisions that saved games use from the game itself, so a
+   lost folder (Windows reinstalled, another PC) loses only the saved
+   configurations.
 4. It opens the editor in the browser with Apply for that game (as
    `ui --apply-game`) and serves it until its window is closed or Ctrl+C.
 
@@ -166,8 +168,11 @@ lists, or CIR's copy with a note),
 describe_starts}` (one revision for each campaign start the configuration
 reaches), `native_export::export_native` (one revision, or the revisions of
 every start with the main start: `next.lua` schema `flir-next-v2`),
-`activation::{validate_runtime, deploy_export}` and `editor::Editor`, the
-editor's requests (`get`, `post`) without the HTTP server, with
+`activation::{validate_runtime, adopt_revisions, deploy_export}` (the
+game's applied revisions into the export folder before the export, as the
+editor's Apply takes them, then the export into the game) and
+`editor::Editor`, the editor's requests (`get`, `post`) without the HTTP
+server, with
 `editor::{saved_files, checked_draft}` (the configurations the editor lists
 and its check of one against the scans). `game_folder::{find_game,
 cir_installed, game_language, game_workspace}` are the start without
@@ -224,10 +229,11 @@ build with the feature again before the checks.
   `cir/tools` it finds its game, writes the reference's scans (in
   `weidu.conf`'s language) outside the game and serves the editor state of
   `ui --apply-game`; then Apply, reopening the applied configuration, a change
-  of the game's mods, a start outside any game (a folder without a game, a
-  game without CIR, then a folder inside a game whose `WeiDU.log` records CIR),
-  a game without CIR whose folder window is closed, and an incomplete
-  installation.
+  of the game's mods, Apply from a new workspace after the player's folder was
+  lost (the earlier revisions stay and the source gate keeps them), a start
+  outside any game (a folder without a game, a game without CIR, then a folder
+  inside a game whose `WeiDU.log` records CIR), a game without CIR whose
+  folder window is closed, and an incomplete installation.
 - `package_check.py` (Windows) unpacks a standalone package into the installer
   suite's synthetic BG2:EE, BG:EE and EET games, installs CIR with the
   package's `setup-cir.exe` (component 0, as batch installers run it) and
