@@ -3,7 +3,8 @@
 const $ = (id) => document.getElementById(id);
 const ui = Object.fromEntries([
   "appShell", "gameContext", "savedSelect", "newButton", "presetButton", "profileName",
-  "saveButton", "copyButton", "validateButton", "prepareButton", "status", "validation",
+  "saveButton", "copyButton", "validateButton", "prepareButton", "status", "statusSpinner",
+  "statusText", "statusElapsed", "validation",
   "applySafetyNote", "applyDevelopmentNote", "itemsTab",
   "enemiesTab", "searchLabel", "librarySearch", "searchSummary", "libraryResults",
   "recipientFilterRow", "moreResults", "dirtyMark", "itemCount", "targetCount", "selectedItems",
@@ -11,7 +12,8 @@ const ui = Object.fromEntries([
   "presetDialog", "presetForm", "presetSelect", "presetItems", "presetTargets", "presetScrolls",
   "presetKangaxx", "presetFlailHeads", "presetTotscTome", "presetMoreSpellShield",
   "presetCursedDisguise", "presetLossMode", "presetLossPercent", "presetUnrandomizedPercent",
-  "presetNote", "presetError", "cancelPreset", "tierDialog", "tierForm", "tierTitle", "tierPrompt",
+  "presetNote", "presetError", "presetFields", "presetProgress", "presetElapsed", "createPreset",
+  "cancelPreset", "tierDialog", "tierForm", "tierTitle", "tierPrompt",
   "tierSelect", "cancelTier"
 ].map((id) => [id, $(id)]));
 
@@ -48,14 +50,51 @@ function node(tag, className, content) {
 }
 
 function setStatus(message, error = false) {
-  ui.status.textContent = message;
+  ui.statusText.textContent = message;
   ui.status.classList.toggle("error", error);
 }
 
+// Seconds since `started`, for a running action and its result.
+function seconds(started) {
+  return Math.floor((Date.now() - started) / 1000);
+}
+
+// While an action runs, the status line shows a spinner and the seconds so far.
+let statusTimer = null;
+let actionStarted = 0;
 function setBusy(value) {
   busy = value;
   ui.appShell.inert = value;
   ui.appShell.setAttribute("aria-busy", String(value));
+  ui.status.classList.toggle("working", value);
+  ui.statusSpinner.hidden = !value;
+  clearInterval(statusTimer);
+  statusTimer = null;
+  ui.statusElapsed.textContent = "";
+  if (!value) return;
+  actionStarted = Date.now();
+  statusTimer = setInterval(() => { ui.statusElapsed.textContent = `${seconds(actionStarted)} s`; }, 1000);
+}
+
+// " (12 s)" after an action that took a noticeable time.
+function took() {
+  const elapsed = seconds(actionStarted);
+  return elapsed >= 2 ? ` (${elapsed} s)` : "";
+}
+
+// A message as a sentence, so that more sentences can follow it.
+function sentence(text) {
+  return /[.!?]$/.test(text) ? text : text + ".";
+}
+
+// A check's item copies and recipient slots, and what their balance means;
+// a check that could not build the campaign has none.
+function counts(result) {
+  const units = result.reward_units, slots = result.target_capacity;
+  if (result.valid !== true || !Number.isInteger(units) || !Number.isInteger(slots)) return "";
+  const balance = units > slots ? " Some recipients receive more than one item."
+    : units < slots ? " Some recipient slots stay empty." : "";
+  return ` ${units.toLocaleString()} item copies for ${slots.toLocaleString()} recipient slots.${balance}`;
 }
 
 function changed() {
@@ -734,6 +773,23 @@ async function perform(action, busyMessage) {
   finally { setBusy(false); }
 }
 
+// The preset dialog covers the page's status line, so it shows its own progress
+// and stays open until the draft is built.
+let presetTimer = null;
+function setPresetBusy(value) {
+  ui.presetFields.disabled = value;
+  ui.presetForm.setAttribute("aria-busy", String(value));
+  ui.createPreset.textContent = value ? "Creating…" : "Create preset draft";
+  ui.presetProgress.hidden = !value;
+  clearInterval(presetTimer);
+  presetTimer = null;
+  if (!value) return;
+  const started = Date.now();
+  const showElapsed = () => { ui.presetElapsed.textContent = `${seconds(started)} s`; };
+  showElapsed();
+  presetTimer = setInterval(showElapsed, 1000);
+}
+
 ui.librarySearch.addEventListener("input", () => {
   const search = searches[activeTab];
   search.query = ui.librarySearch.value;
@@ -831,6 +887,9 @@ ui.presetLossMode.addEventListener("change", () => {
   if (ui.presetLossPercent.disabled) ui.presetLossPercent.value = "0";
 });
 ui.cancelPreset.addEventListener("click", () => ui.presetDialog.close());
+ui.presetDialog.addEventListener("cancel", (event) => {
+  if (ui.presetFields.disabled) event.preventDefault();
+});
 ui.cancelTier.addEventListener("click", () => ui.tierDialog.close(""));
 ui.tierForm.addEventListener("submit", (event) => {
   event.preventDefault();
@@ -857,6 +916,9 @@ ui.presetForm.addEventListener("submit", (event) => {
     loss_percent: ui.presetLossMode.value === "some" ? Number(ui.presetLossPercent.value) : 0,
     unrandomized_percent: Number(ui.presetUnrandomizedPercent.value)
   };
+  if (busy) return;
+  ui.presetError.hidden = true;
+  setPresetBusy(true);
   perform(async () => {
     try {
       const state = await post("/api/template", {
@@ -866,7 +928,7 @@ ui.presetForm.addEventListener("submit", (event) => {
       const leftOut = (state.left_out || []).map((reason) => " " + reason + ".").join("");
       const absentMods = (state.absent_mods || []).map((reason) => " " + reason + ".").join("");
       const notUsed = (state.not_used || []).map((reason) => " " + reason + ".").join("");
-      acceptState(state, "Preset draft created. Check configuration for current runtime support." +
+      acceptState(state, `Preset draft created${took()}. Check configuration for current runtime support.` +
         (leftOut ? " Rewards that stay as installed:" + leftOut : "") + absentMods + notUsed);
       ui.presetDialog.close();
     } catch (error) {
@@ -874,7 +936,7 @@ ui.presetForm.addEventListener("submit", (event) => {
       ui.presetError.hidden = false;
       throw error;
     }
-  }, "Creating preset draft…");
+  }, "Creating preset draft…").finally(() => setPresetBusy(false));
 });
 ui.saveButton.addEventListener("click", () => {
   if (!localInputValid()) return;
@@ -891,28 +953,27 @@ ui.validateButton.addEventListener("click", () => {
   profile.name = ui.profileName.value.trim();
   verified = false;
   ui.prepareButton.disabled = true;
+  ui.validation.hidden = true;
   perform(async () => {
     const result = await post("/api/validate", { profile, plan });
     verified = result.valid === true && result.runtime_supported === true;
     ui.prepareButton.disabled = !verified;
     ui.validation.hidden = false;
     ui.validation.className = `validation ${result.valid && result.runtime_supported ? "supported" : result.valid ? "warning" : "error"}`;
-    const counts = Number.isInteger(result.reward_units) && Number.isInteger(result.target_capacity)
-      ? ` ${result.reward_units} reward units, ${result.target_capacity} target slots.` : "";
-    ui.validation.textContent = `${result.message || "Configuration checked."}${counts}`;
-    setStatus("Configuration check complete. This check does not change the game.");
-  }, "Checking configuration…");
+    ui.validation.textContent = sentence(result.message || "Configuration checked.") + counts(result);
+    setStatus(`Configuration check complete${took()}. This check does not change the game.`);
+  }, "Checking the configuration against your game…");
 });
 ui.prepareButton.addEventListener("click", () => {
   if (!verified || !localInputValid()) return;
   perform(async () => {
     if (applyEnabled) {
       const result = await post("/api/apply", { profile, plan });
-      const message = result.message || "Configuration applied for the next game.";
-      acceptState(await request("/api/state"), message);
+      // The result box holds the details; the status line only says it is done.
+      acceptState(await request("/api/state"), `Applied to the game${took()}.`);
       ui.validation.hidden = false;
       ui.validation.className = "validation supported";
-      ui.validation.textContent = message;
+      ui.validation.textContent = result.message || "Configuration applied for the next game.";
       return;
     }
     const result = await post("/api/prepare", { profile, plan });
@@ -920,8 +981,9 @@ ui.prepareButton.addEventListener("click", () => {
     ui.validation.hidden = false;
     ui.validation.className = "validation supported";
     ui.validation.textContent = `${result.message || "Test settings prepared."}${location}`;
-    setStatus("Test settings prepared outside the game.");
-  }, "Preparing test settings…");
+    setStatus(`Test settings prepared outside the game${took()}.`);
+  }, applyEnabled ? "Applying: building the randomised settings for each start and writing them into the game…"
+    : "Preparing test settings…");
 });
 window.addEventListener("beforeunload", (event) => { if (dirty) { event.preventDefault(); event.returnValue = ""; } });
 

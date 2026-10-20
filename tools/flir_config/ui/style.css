@@ -202,6 +202,24 @@ input::placeholder {
   color: var(--ink);
 }
 
+.status {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.status.working {
+  background: #fbf7eb;
+}
+
+.status .elapsed {
+  flex: none;
+  margin-left: auto;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
 .status.error, .validation.error {
   border-color: var(--error);
   color: #772b26;
@@ -685,6 +703,61 @@ dialog h2 {
   justify-content: flex-end;
   gap: 8px;
   margin-top: 24px;
+}
+
+.preset-fields {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+
+.preset-progress {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 16px 0 0;
+  padding: 11px 13px;
+  border-left: 3px solid var(--brass);
+  background: #fbf7eb;
+}
+
+.preset-progress[hidden] {
+  display: none;
+}
+
+.preset-progress .elapsed {
+  flex: none;
+  margin-left: auto;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.spinner[hidden] {
+  display: none;
+}
+
+.spinner {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  border: 2px solid var(--line);
+  border-top-color: var(--brass);
+  border-radius: 50%;
+  animation: spin .9s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    animation-duration: 2.4s;
+  }
 }
 
 .chosen-row .result-row {
