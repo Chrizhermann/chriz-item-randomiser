@@ -182,7 +182,10 @@ and its check of one against the scans). `game_folder::{find_game,
 cir_installed, game_language, game_workspace}` are the start without
 arguments: the game at or above a folder, whether CIR is installed in it, the
 language WeiDU installed its mods in and its folder for scans and
-configurations.
+configurations. `sources::Scans` holds an item catalogue and its world
+catalogue validated once; the editor gives it to the calls of one request (a
+preset fit, a check, Apply), which then neither validate the catalogues again
+nor read the same original tables twice.
 
 ## Parity with the Python reference
 
@@ -224,7 +227,10 @@ build with the feature again before the checks.
   (`CIR_PARITY_LISTS`, `CIR_PARITY_CAMPAIGNS`). Where a test lowers the Lua
   constant limits (`campaigns._LUAJIT_CONSTANTS`, `_LUA_PART`) to exercise
   split Lua renderings on small data, the port uses the same limits
-  (`CIR_PARITY_LUA_LIMITS`).
+  (`CIR_PARITY_LUA_LIMITS`). A call made with validated scans
+  (`sources.Scans`, as the editor makes them) runs in the port with scans of
+  the same catalogues, or of copies of them where the reference's scans
+  belong to other catalogues.
 - `cli_check.py` runs the command line on a synthetic installation: the whole
   workflow up to the native export, a world scan that leaves out damaged
   files, argparse's handling of unusual arguments, and every command's help at

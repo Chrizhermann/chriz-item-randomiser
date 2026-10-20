@@ -9,7 +9,7 @@ use crate::profiles::{
     ensure_output_outside_game, is_profile_id, new_profile_named, read_json, search_items_from, validate_catalog,
     validate_profile, write_json, ItemIndex,
 };
-use crate::sources::{new_binding_plan, validate_world, WorldIndex};
+use crate::sources::{new_binding_plan, validate_world, Scans, WorldIndex};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
@@ -173,7 +173,7 @@ impl Editor {
         }
         let (profile, plan) = match (profile, plan) {
             (Some(profile), Some(plan)) => (profile, plan),
-            _ => Editor::new_draft(&editor.catalog, &editor.world)?,
+            _ => Editor::new_draft(&editor.catalog, &editor.world, Some(&editor.scans()))?,
         };
         editor.draft = editor.checked(&Value::Dict(crate::dict! {"profile" => profile, "plan" => plan}))?;
         Ok(editor)
@@ -185,10 +185,15 @@ impl Editor {
 
     /// The profile and binding plan of a new configuration for these scans,
     /// as the editor starts with when it reopens none.
-    pub fn new_draft(catalog: &Value, world: &Value) -> Result<(Value, Value)> {
+    pub fn new_draft(catalog: &Value, world: &Value, scans: Option<&Scans>) -> Result<(Value, Value)> {
         let profile = new_profile_named(catalog, &Editor::new_id(), &Value::from(DEFAULT_NAME))?;
-        let plan = new_binding_plan(&profile, catalog, world)?;
+        let plan = new_binding_plan(&profile, catalog, world, scans)?;
         Ok((profile, plan))
+    }
+
+    /// The scans, validated when the editor started, for one request.
+    pub fn scans(&self) -> Scans<'_> {
+        Scans::new(&self.catalog, &self.world, &self.items, &self.index)
     }
 
     /// Incomplete drafts may be saved; full binding checks happen on Check.
@@ -196,7 +201,15 @@ impl Editor {
         checked_draft(&self.catalog, &self.world, data)
     }
 
-    pub fn check(&self, draft: &Value) -> Result<Value> {
+    pub fn check(&self, draft: &Value, scans: Option<&Scans>) -> Result<Value> {
+        let own;
+        let scans = match scans {
+            Some(scans) => scans,
+            None => {
+                own = self.scans();
+                &own
+            }
+        };
         let mut result = crate::dict! {
             "valid" => false, "runtime_supported" => false, "reward_units" => 0, "target_capacity" => 0,
         };
@@ -206,6 +219,7 @@ impl Editor {
                 &self.catalog,
                 &self.world,
                 field(draft, "plan")?,
+                Some(scans),
             )?;
             let mut units: i128 = 0;
             for source in campaign.at("sources")?.as_list().into_iter().flatten() {
@@ -547,7 +561,7 @@ impl Editor {
                     _ => Value::from(DEFAULT_NAME),
                 };
                 let profile = new_profile_named(&self.catalog, &Editor::new_id(), &name)?;
-                let plan = new_binding_plan(&profile, &self.catalog, &self.world)?;
+                let plan = new_binding_plan(&profile, &self.catalog, &self.world, Some(&self.scans()))?;
                 self.draft = Value::Dict(crate::dict! {"profile" => profile, "plan" => plan});
             }
             "/api/template" => {
@@ -558,6 +572,7 @@ impl Editor {
                     data.get("items"),
                     data.get("targets"),
                     data.get("options"),
+                    Some(&self.scans()),
                 )?;
                 let mut candidate = generated.clone();
                 candidate
@@ -591,14 +606,15 @@ impl Editor {
             }
             "/api/validate" => {
                 let draft = self.checked(data)?;
-                return self.check(&draft);
+                return self.check(&draft, None);
             }
             "/api/prepare" | "/api/apply" => {
                 if route == "/api/apply" && self.apply_game.is_none() {
                     return Err(Error::profile("Game activation is not enabled for this editor"));
                 }
                 let draft = self.checked(data)?;
-                let result = self.check(&draft)?;
+                let scans = self.scans();
+                let result = self.check(&draft, Some(&scans))?;
                 if !result.get("runtime_supported").is_some_and(Value::truthy) {
                     return Err(Error::profile(result.get("message").and_then(Value::as_str).unwrap_or("").to_string()));
                 }
@@ -606,8 +622,14 @@ impl Editor {
                 if route == "/api/apply" {
                     let game = self.apply_game.clone().expect("checked");
                     crate::activation::require_closed(&game)?;
-                    let written =
-                        crate::starts::write_starts(draft.at("profile")?, draft.at("plan")?, &self.catalog, &self.world, &store)?;
+                    let written = crate::starts::write_starts(
+                        draft.at("profile")?,
+                        draft.at("plan")?,
+                        &self.catalog,
+                        &self.world,
+                        &store,
+                        Some(&scans),
+                    )?;
                     let output = self.workspace.join("native");
                     // Older saves may use revisions another workspace applied.
                     crate::activation::adopt_revisions(&game, &output)?;
@@ -619,8 +641,16 @@ impl Editor {
                         .map(|(start, revision)| (start.to_string(), crate::json::py_str(revision)))
                         .collect();
                     let main = written.at("main")?.as_str();
-                    let exported =
-                        crate::native_export::export_native(&store, &self.catalog, &self.world, &output, None, Some(&starts), main)?;
+                    let exported = crate::native_export::export_native(
+                        &store,
+                        &self.catalog,
+                        &self.world,
+                        &output,
+                        None,
+                        Some(&starts),
+                        main,
+                        Some(&scans),
+                    )?;
                     let identity = draft.at("profile")?.at("id")?.clone();
                     write_json(&self.path(&identity)?, &draft, false)?;
                     crate::activation::deploy_export(&game, &output)?;
@@ -665,6 +695,7 @@ impl Editor {
                     &self.world,
                     draft.at("plan")?,
                     &store,
+                    Some(&scans),
                 )?;
                 return Ok(Value::Dict(crate::dict! {
                     "revision" => prepared.at("revision")?.clone(), "store" => store.to_string_lossy().into_owned(),

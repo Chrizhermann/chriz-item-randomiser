@@ -649,6 +649,33 @@ def validate_world(world: dict, catalog: dict) -> dict:
             "unreadable": {identity: row["reason"] for identity, row in unreadable.items()}}
 
 
+class Scans:
+    """An item catalogue and the world catalogue scanned with it, validated
+    once for a series of calls on them, such as one editor request (a preset
+    fit, a check, applying a configuration). It also keeps the original tables
+    those calls resolve for a plan. Neither catalogue may change while it is
+    in use; `items` and `index` are validate_catalog's and validate_world's
+    results for these very catalogues when the caller already has them."""
+
+    def __init__(self, catalog: dict, world: dict, *, items: dict | None = None,
+                 index: dict | None = None):
+        self.catalog, self.world = catalog, world
+        self.items = validate_catalog(catalog) if items is None else items
+        self.index = validate_world(world, catalog) if index is None else index
+        self.tables: dict = {}
+
+    def indexes(self, catalog: dict, world: dict) -> tuple[dict, dict]:
+        """The item index and the world index, for the catalogues these scans hold."""
+        if catalog is not self.catalog or world is not self.world:
+            raise ValueError("These validated scans belong to other catalogues")
+        return self.items, self.index
+
+
+def world_index(catalog: dict, world: dict, scans: Scans | None = None) -> dict:
+    """validate_world's index of these catalogues, from `scans` when given."""
+    return validate_world(world, catalog) if scans is None else scans.indexes(catalog, world)[1]
+
+
 def _page(rows: list[dict], offset: int, limit: int) -> dict:
     _integer(offset, "offset")
     _integer(limit, "limit", 1, 100)
@@ -687,9 +714,9 @@ def search_targets(world: dict, catalog: dict, query: str, *, kind: str | None =
     return _page(rows, offset, limit)
 
 
-def new_binding_plan(profile: dict, catalog: dict, world: dict) -> dict:
+def new_binding_plan(profile: dict, catalog: dict, world: dict, *, scans: Scans | None = None) -> dict:
     validate_profile(profile, catalog)
-    validate_world(world, catalog)
+    world_index(catalog, world, scans)
     return {"schema": PLAN_SCHEMA, "catalog_fingerprint": catalog["fingerprint"],
             "world_fingerprint": world["fingerprint"], "sources": [], "registrations": [], "targets": []}
 
@@ -700,10 +727,11 @@ UNUSABLE_SOURCE = {"unreferenced-inventory-record", "aliased-inventory-record", 
                    INVALID_INVENTORY, INVALID_ITEM}
 
 
-def bind_profile(profile: dict, catalog: dict, world: dict, plan: dict) -> dict:
+def bind_profile(profile: dict, catalog: dict, world: dict, plan: dict, *,
+                 scans: Scans | None = None) -> dict:
     """Freeze explicit choices with evidence, never infer safe runtime behavior."""
     frozen = validate_profile(profile, catalog)
-    indexes = validate_world(world, catalog)
+    indexes = world_index(catalog, world, scans)
     _fields(plan, PLAN_FIELDS | (set(plan) & PLAN_OPTIONAL_FIELDS if isinstance(plan, dict) else set()),
             "binding plan")
     replacements = plan.get("replacements", {})
@@ -717,7 +745,8 @@ def bind_profile(profile: dict, catalog: dict, world: dict, plan: dict) -> dict:
     present_original = set(plan) & original_keys
     if present_original and present_original != original_keys:
         raise ProfileError("Original plan metadata is incomplete")
-    source_rows, target_rows = (original_table_rows(catalog, world, plan)
+    source_rows, target_rows = (original_table_rows(catalog, world, plan,
+                                                    memo=None if scans is None else scans.tables)
                                 if present_original else ({}, {}))
     shield = plan.get("spell_shield")
     if present_original and plan["original_options"].get("more_spell_shield"):

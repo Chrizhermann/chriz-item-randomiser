@@ -14,14 +14,18 @@ back as they were before the reference runs. A call is not compared (and is
 counted as skipped, with the reason) when the test has patched the reference
 in a way the Rust port cannot mirror, when an input is not plain JSON, or when
 it writes outside the temporary folder or into a folder holding links or
-read-only files. Patched hash tables are passed on as the Rust port's
-test-only pin overrides; a patched `resolve_template` as the drafts it returns;
-a patched `translations.LANGUAGES_DIR` as the folder the port reads its
-translations from; a patched lists root (`templates.ROOT` and
+read-only files. A patch that only records calls (a mock wrapping the very
+function it replaces) does not count. Patched hash tables are passed on as
+the Rust port's test-only pin overrides; a patched `resolve_template` as the
+drafts it returns; a patched `translations.LANGUAGES_DIR` as the folder the
+port reads its translations from; a patched lists root (`templates.ROOT` and
 `original_catalog.ROOT`) as the folder the port reads its tables from,
 patched preset campaigns (`CAMPAIGNS`, `templates._PARTS`,
 `platform.PRESET_CAMPAIGNS`) as the port's, and patched Lua constant limits
-(`campaigns._LUAJIT_CONSTANTS`, `campaigns._LUA_PART`) as the port's.
+(`campaigns._LUAJIT_CONSTANTS`, `campaigns._LUA_PART`) as the port's. A call
+given validated scans (`sources.Scans`) runs in the port with scans of the
+same catalogues, or of copies of them when the reference's scans belong to
+other catalogues.
 """
 from __future__ import annotations
 
@@ -132,6 +136,15 @@ def reference_tables() -> set[int]:
     return tables
 
 
+def is_spy(patcher) -> bool:
+    """Whether a patch only records calls: a mock that wraps the very value it
+    replaces, with no return value or side effect of its own."""
+    new = getattr(patcher.target, patcher.attribute, None)
+    original = getattr(patcher, "temp_original", None)
+    return (isinstance(new, mock.NonCallableMock) and original is not None and new._mock_wraps is original
+            and new.side_effect is None and new._mock_return_value is mock.DEFAULT)
+
+
 def classify(call: str):
     """(reason to skip or None, overrides for the Rust run, mocked
     resolve_template or None, mocked registration resolve_template or None)."""
@@ -142,6 +155,8 @@ def classify(call: str):
     campaigns_patched = False
     for patcher in list(ACTIVE_PATCHES):
         target, attribute = getattr(patcher, "target", None), getattr(patcher, "attribute", "")
+        if is_spy(patcher):
+            continue
         if isinstance(target, types.ModuleType):
             module = target.__name__
             if (module, attribute) in IRRELEVANT_PATCHES:
@@ -394,7 +409,12 @@ def record(spec: Spec, original, signature, args, kwargs):
     except TypeError:
         return original(*args, **kwargs)
     values = dict(bound.arguments)
+    scans = values.pop("scans", None)
     reason, pins, resolve, registration = classify(spec.call)
+    if reason is None and scans is not None:
+        from flir_config.sources import Scans
+        if not isinstance(scans, Scans):
+            reason = "scans are not validated scans"
     if reason is None and spec.call == "deploy_export":
         # The port asks Windows whether the game runs, as the reference does
         # unpatched; a test that makes the check refuse cannot be mirrored.
@@ -451,7 +471,11 @@ def record(spec: Spec, original, signature, args, kwargs):
         return original(*args, **kwargs)
 
     try:
-        rust_line = RUNNER.run([{"call": spec.call, "args": spec.arguments(values, draft)}], pins["pins"],
+        arguments = spec.arguments(values, draft)
+        if scans is not None:
+            own = scans.catalog is values["catalog"] and scans.world is values["world"]
+            arguments["scans"] = "own" if own else "other"
+        rust_line = RUNNER.run([{"call": spec.call, "args": arguments}], pins["pins"],
                                registration_draft, pins["tables"], pins["languages"], pins["lists"],
                                pins["campaigns"], pins["lua_limits"])[0]
     except Exception as exc:  # the comparison reports it; the test goes on

@@ -21,7 +21,7 @@ use crate::profiles::{
 };
 use crate::py::{lower, upper};
 use crate::resources::{resource_type, sha256_hex, GameResources, Tlk};
-use crate::sources::{validate_world, WorldIndex, DANGLING_INVENTORY, INVALID_INVENTORY, UNRESOLVED_STORAGE};
+use crate::sources::{validate_world, Scans, WorldIndex, DANGLING_INVENTORY, INVALID_INVENTORY, UNRESOLVED_STORAGE};
 use crate::{
     container_rewards, creature_inventory, cursed_disguises, group_recipients, mode2_rewards, original_options,
     paths, quest_options, quest_rewards, scripted_sources, spell_rewards, store_inventory,
@@ -219,6 +219,10 @@ struct Compiler<'a> {
     actor_names: HashMap<String, usize>,
     container_items: HashMap<String, usize>,
     creature_items: HashMap<String, usize>,
+    /// The sources of each item in each owner, of any kind.
+    owner_items: HashMap<String, usize>,
+    /// The actors placed from each creature template, in world order.
+    template_actors: HashMap<String, Vec<&'a Value>>,
     /// The reward routes, looked at once per compile.
     routes: Option<Arc<RewardRoutes>>,
     /// Whether the revision was exported before and belongs to running saves.
@@ -574,12 +578,8 @@ impl<'a> Compiler<'a> {
             };
             let owner = source.at("owner")?;
             let item_value = source.at("item")?;
-            let mut stock_rows = 0usize;
-            for row in rows(self.world, "sources") {
-                if row.at("owner")?.py_eq(owner) && row.at("item")?.py_eq(item_value) {
-                    stock_rows += 1;
-                }
-            }
+            let stock_rows =
+                Self::count(&self.owner_items, &tuple_key(&[key_part(Some(owner)), key_part(Some(item_value))]));
             let ok = if stock_option { stock_rows <= 1 } else { stock_rows == 1 };
             require(ok, || format!("Native source shop holds another row of {}: {identity}", py_str(item_value)))?;
             let record_index = match (stock_option, self.shield) {
@@ -648,17 +648,8 @@ impl<'a> Compiler<'a> {
             self.sources.insert(identity, endpoint);
         } else {
             if kind == "cre-template" {
-                let actors: Vec<&'a Value> = rows(self.world, "targets")
-                    .iter()
-                    .filter(|target| {
-                        target.get("kind").and_then(Value::as_str) == Some("actor")
-                            && target
-                                .get("selector")
-                                .and_then(|selector| selector.get("template_resource"))
-                                .unwrap_or(&Value::Null)
-                                .py_eq(&Value::from(resource))
-                    })
-                    .collect();
+                let actors: Vec<&'a Value> =
+                    self.template_actors.get(&key_part(Some(&Value::from(resource)))).cloned().unwrap_or_default();
                 let fallback = actors.len() != 1
                     || Self::count(&self.selected_owners, resource) > 1
                     || Self::count(
@@ -1155,6 +1146,8 @@ pub fn compile(
         actor_names: HashMap::new(),
         container_items: HashMap::new(),
         creature_items: HashMap::new(),
+        owner_items: HashMap::new(),
+        template_actors: HashMap::new(),
         routes: None,
         stored,
         revision: py_str(&revision),
@@ -1198,6 +1191,16 @@ pub fn compile(
         if matches!(source.at("kind")?.as_str(), Some("cre-template" | "embedded-cre")) {
             let key = tuple_key(&[key_part(Some(source.at("owner")?)), key_part(Some(source.at("item")?))]);
             *compiler.creature_items.entry(key).or_insert(0) += 1;
+        }
+    }
+    for source in rows(world, "sources") {
+        let key = tuple_key(&[key_part(Some(source.at("owner")?)), key_part(Some(source.at("item")?))]);
+        *compiler.owner_items.entry(key).or_insert(0) += 1;
+    }
+    for target in rows(world, "targets") {
+        if target.get("kind").and_then(Value::as_str) == Some("actor") {
+            let template = target.get("selector").and_then(|selector| selector.get("template_resource"));
+            compiler.template_actors.entry(key_part(template)).or_default().push(target);
         }
     }
 
@@ -1502,7 +1505,9 @@ pub const NEXT_SCHEMA: &str = "flir-next-v2";
 /// other revisions are exported as usual. The runtime checks every listed
 /// revision at each start, so a kept revision whose guarded script or
 /// guarded area changed in the game stops the export instead. A selected
-/// revision must be prepared completely.
+/// revision must be prepared completely. `scans` holds the catalogues
+/// already validated.
+#[allow(clippy::too_many_arguments)]
 pub fn export_native(
     store: &Path,
     catalog: &Value,
@@ -1511,9 +1516,17 @@ pub fn export_native(
     revision: Option<&str>,
     starts: Option<&[(String, String)]>,
     main: Option<&str>,
+    scans: Option<&Scans>,
 ) -> Result<Value> {
-    let items = validate_catalog(catalog)?;
-    let index = validate_world(world, catalog)?;
+    let validated;
+    let (items, index) = match scans {
+        Some(scans) => scans.indexes(catalog, world)?,
+        None => {
+            let items = validate_catalog(catalog)?;
+            validated = (items, validate_world(world, catalog)?);
+            (&validated.0, &validated.1)
+        }
+    };
     let output = ensure_output_outside_game(output, catalog)?;
     let mut selected_starts: Vec<Value> = Vec::new();
     match starts {
@@ -1573,8 +1586,8 @@ pub fn export_native(
         let (native, resources, areas) = compile(
             manifest,
             world,
-            &index,
-            &items,
+            index,
+            items,
             catalog,
             is_stored.then_some(&mut problems),
             is_stored,

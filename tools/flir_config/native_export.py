@@ -8,7 +8,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from collections import Counter
+from collections import Counter, defaultdict
 from copy import deepcopy
 from pathlib import Path
 
@@ -20,7 +20,7 @@ from .profiles import (DEFAULT_SHOP_PRICING, HEX256, MAX_ITEM_PRICE, ProfileErro
                        _digest, canonical_bytes, ensure_output_outside_game,
                        validate_catalog)
 from .resources import GameResources, RESOURCE_TYPES, _Tlk
-from .sources import validate_world, DANGLING_INVENTORY, INVALID_INVENTORY, UNRESOLVED_STORAGE
+from .sources import Scans, validate_world, DANGLING_INVENTORY, INVALID_INVENTORY, UNRESOLVED_STORAGE
 from .scripted_sources import (ADAPTER_ID, ITEM, PAYLOAD, RESOURCE, SELECTOR, SOURCE_ID,
                                campaign_record)
 from .quest_rewards import QUESTS, quest_spec
@@ -165,6 +165,11 @@ def _compile(manifest: dict, world: dict, index: dict, items: dict,
                               if s["kind"] == "container")
     creature_items = Counter((s["owner"], s["item"]) for s in index["sources"].values()
                              if s["kind"] in ("cre-template", "embedded-cre"))
+    owner_items = Counter((s["owner"], s["item"]) for s in index["sources"].values())
+    template_actors = defaultdict(list)
+    for target in index["targets"].values():
+        if target["kind"] == "actor":
+            template_actors[target["selector"].get("template_resource")].append(target)
 
     def attempt(identity: str, step, *args) -> None:
         # With ``problems``, a row the runtime cannot use is recorded and left
@@ -311,8 +316,7 @@ def _compile(manifest: dict, world: dict, index: dict, items: dict,
             return
         if source["kind"] == "store":
             stock_option = shield is not None and identity == shield["source_id"]
-            stock_rows = sum(s["owner"] == source["owner"] and s["item"] == source["item"]
-                             for s in index["sources"].values())
+            stock_rows = owner_items[source["owner"], source["item"]]
             _require(stock_rows <= 1 if stock_option else stock_rows == 1,
                      f"Native source shop holds another row of {source['item']}: {identity}")
             native["sources"][identity] = {
@@ -351,9 +355,7 @@ def _compile(manifest: dict, world: dict, index: dict, items: dict,
                 native["sources"][identity]["replacement"] = replacement["resref"]
         else:
             if source["kind"] == "cre-template":
-                actors = [target for target in index["targets"].values()
-                          if target["kind"] == "actor" and
-                          target["selector"].get("template_resource") == source["resource"]]
+                actors = template_actors.get(source["resource"], [])
                 if (len(actors) != 1 or selected_owners[source["resource"]] > 1 or
                         actor_names[actors[0]["resource"], (actor_name(actors[0]) or "").lower()] != 1):
                     replacement = selected.get("replacement")
@@ -681,7 +683,7 @@ def _filename(resource: str) -> str:
 
 def export_native(store: Path, catalog: dict, world: dict, output: Path,
                   revision: str | None = None, *, starts: dict[str, str] | None = None,
-                  main: str | None = None) -> dict:
+                  main: str | None = None, scans: Scans | None = None) -> dict:
     """Export next-run settings while retaining already exported saved revisions.
 
     <starts> names the revision of each campaign start (starts.write_starts)
@@ -696,9 +698,13 @@ def export_native(store: Path, catalog: dict, world: dict, output: Path,
     other revisions are exported as usual. The runtime checks every listed
     revision at each start, so a kept revision whose guarded script or
     guarded area changed in the game stops the export instead. A selected
-    revision must be prepared completely.
+    revision must be prepared completely. ``scans`` holds the catalogues
+    already validated.
     """
-    items, index = validate_catalog(catalog), validate_world(world, catalog)
+    if scans is None:
+        items, index = validate_catalog(catalog), validate_world(world, catalog)
+    else:
+        items, index = scans.indexes(catalog, world)
     output = ensure_output_outside_game(output, catalog)
     if starts is not None:
         _require(isinstance(starts, dict) and starts and revision is None and

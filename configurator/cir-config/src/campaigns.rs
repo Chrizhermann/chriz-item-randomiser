@@ -14,7 +14,9 @@ use crate::profiles::{
     canonical_bytes, default_shop_pricing, digest, ensure_output_outside_game, is_hex256, is_profile_id,
     make_dirs, random_name, read_json, write_json,
 };
-use crate::sources::{bind_profile, PyNumber, DANGLING_INVENTORY, INVALID_INVENTORY, UNRESOLVED_STORAGE, UNUSABLE_SOURCE};
+use crate::sources::{
+    bind_profile, PyNumber, Scans, DANGLING_INVENTORY, INVALID_INVENTORY, UNRESOLVED_STORAGE, UNUSABLE_SOURCE,
+};
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io::Write;
@@ -667,8 +669,14 @@ fn validate_campaign(body: &Value) -> Result<()> {
 }
 
 /// Compile reviewed physical selections, without choosing assignments.
-pub fn compile_campaign(profile: &Value, catalog: &Value, world: &Value, plan: &Value) -> Result<Value> {
-    let bound = bind_profile(profile, catalog, world, plan)?;
+pub fn compile_campaign(
+    profile: &Value,
+    catalog: &Value,
+    world: &Value,
+    plan: &Value,
+    scans: Option<&Scans>,
+) -> Result<Value> {
+    let bound = bind_profile(profile, catalog, world, plan, scans)?;
     if bound.at("additions")?.truthy() {
         return Err(Error::profile("Campaign prototype does not support additional item copies"));
     }
@@ -1070,8 +1078,15 @@ pub fn write_immutable_replacing(path: &Path, data: &[u8], replaceable: Option<R
 }
 
 /// Publish a verified JSON/Lua pair before updating a separate draft pointer.
-pub fn write_campaign(profile: &Value, catalog: &Value, world: &Value, plan: &Value, store: &Path) -> Result<Value> {
-    let body = compile_campaign(profile, catalog, world, plan)?;
+pub fn write_campaign(
+    profile: &Value,
+    catalog: &Value,
+    world: &Value,
+    plan: &Value,
+    store: &Path,
+    scans: Option<&Scans>,
+) -> Result<Value> {
+    let body = compile_campaign(profile, catalog, world, plan, scans)?;
     let store = ensure_output_outside_game(store, catalog)?;
     let revision = body.at("revision")?.as_str().unwrap_or("").to_string();
     let revisions = Path::new("revisions");

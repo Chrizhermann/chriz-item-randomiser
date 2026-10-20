@@ -18,7 +18,7 @@ from .profiles import (DEFAULT_SHOP_PRICING, HEX256, PROFILE_ID, ProfileError,
                        _digest, canonical_bytes, ensure_output_outside_game,
                        read_json, validate_shop_pricing, write_json)
 from .sources import (DANGLING_INVENTORY, INVALID_INVENTORY, UNRESOLVED_STORAGE,
-                      UNUSABLE_SOURCE, bind_profile)
+                      UNUSABLE_SOURCE, Scans, bind_profile)
 from .scripted_sources import (ITEM, RESOURCE, SOURCE_ID,
                                campaign_record, validate_registration)
 from .virtual_sources import ADAPTER_ID as VIRTUAL_ADAPTER_ID
@@ -429,9 +429,10 @@ def _validate_campaign(body: dict) -> dict:
     return body
 
 
-def compile_campaign(profile: dict, catalog: dict, world: dict, plan: dict) -> dict:
+def compile_campaign(profile: dict, catalog: dict, world: dict, plan: dict, *,
+                     scans: Scans | None = None) -> dict:
     """Compile reviewed physical selections, without choosing assignments."""
-    bound = bind_profile(profile, catalog, world, plan)
+    bound = bind_profile(profile, catalog, world, plan, scans=scans)
     if bound["additions"]:
         raise ProfileError("Campaign prototype does not support additional item copies")
     for row in plan["registrations"]:
@@ -659,9 +660,10 @@ def _write_immutable(path: Path, data: bytes, replaceable=None) -> None:
             temporary.unlink()
 
 
-def write_campaign(profile: dict, catalog: dict, world: dict, plan: dict, store: Path) -> dict:
+def write_campaign(profile: dict, catalog: dict, world: dict, plan: dict, store: Path, *,
+                   scans: Scans | None = None) -> dict:
     """Publish a verified JSON/Lua pair before updating a separate draft pointer."""
-    body = compile_campaign(profile, catalog, world, plan)
+    body = compile_campaign(profile, catalog, world, plan, scans=scans)
     store = ensure_output_outside_game(store, catalog)
     revision = body["revision"]
     paths = {"revision_path": _store_path(store, Path("revisions") / (revision + ".json")),

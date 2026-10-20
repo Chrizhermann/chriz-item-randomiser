@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 import hashlib
+import json
 from pathlib import Path
 
 from .original_catalog import (is_spin621_source, is_spin621_target,
@@ -73,8 +74,11 @@ def _payload(value: object, item: str) -> dict:
     return payload
 
 
-def table_rows(catalog: dict, world: dict, plan: dict) -> tuple[dict, dict]:
-    """Resolve the exact checked-in pool choices recorded in a preset plan."""
+def table_rows(catalog: dict, world: dict, plan: dict, *, memo: dict | None = None) -> tuple[dict, dict]:
+    """Resolve the exact checked-in pool choices recorded in a preset plan.
+
+    ``memo`` (Scans.tables) keeps the tables already resolved for these scans;
+    their rows are shared and must not be changed."""
     template_id = plan.get("original_template_id")
     choices = plan.get("original_choices")
     options = plan.get("original_options")
@@ -84,13 +88,24 @@ def table_rows(catalog: dict, world: dict, plan: dict) -> tuple[dict, dict]:
             any(value not in POOL_CHOICES for value in choices.values()) or
             not isinstance(options, dict)):
         raise ProfileError("Invalid original pool choices or options")
-    draft = resolve_template(catalog, world, template_id, game=preset_game(world, template_id),
-                             items=choices["items"], targets=choices["targets"],
-                             options=options)
-    if draft["choices"] != choices or draft["options"] != options:
+    key = None
+    if memo is not None:
+        try:
+            key = json.dumps([template_id, choices, options], sort_keys=True)
+        except (TypeError, ValueError):
+            pass
+    tables = memo.get(key) if key is not None else None
+    if tables is None:
+        draft = resolve_template(catalog, world, template_id, game=preset_game(world, template_id),
+                                 items=choices["items"], targets=choices["targets"],
+                                 options=options)
+        tables = (draft["choices"], draft["options"], {row["id"]: row for row in draft["items"]},
+                  {row["id"]: row for row in draft["targets"]})
+        if key is not None:
+            memo[key] = tables
+    if tables[0] != choices or tables[1] != options:
         raise ProfileError("Original pool choices or options changed")
-    return ({row["id"]: row for row in draft["items"]},
-            {row["id"]: row for row in draft["targets"]})
+    return tables[2], tables[3]
 
 
 def is_unreferenced_creature_source(row: dict, physical: dict[str, dict]) -> bool:

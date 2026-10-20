@@ -24,7 +24,7 @@ from .prepared import QUEST_CHANGES, applied, applied_changes, left_out
 from .profiles import ProfileError, edit_profile, new_profile, validate_catalog
 from .resources import GameResources, RESOURCE_TYPES
 from .scripted_sources import blpool_registration
-from .sources import UNUSABLE_SOURCE, new_binding_plan, unreadable_notes, validate_world
+from .sources import Scans, UNUSABLE_SOURCE, new_binding_plan, unreadable_notes, validate_world
 from .virtual_sources import virtual_registration
 
 _SOURCE_FIELDS = ("id", "source_ref", "campaign", "family", "source", "ident",
@@ -116,7 +116,8 @@ def _original_target(row: dict, resource_hash: str) -> dict:
 def build_original_configuration(catalog: dict, world: dict, template_id: str, *,
                                  items: str | None = None, targets: str | None = None,
                                  options: dict | None = None,
-                                 exclude: dict[str, str] | None = None) -> dict:
+                                 exclude: dict[str, str] | None = None,
+                                 scans: Scans | None = None) -> dict:
     """Return a data-only ``{profile, plan}`` preserving enabled authored rows.
 
     A row this game cannot use is left out and listed in ``not_used`` instead of
@@ -124,14 +125,27 @@ def build_original_configuration(catalog: dict, world: dict, template_id: str, *
     record that is not where the tables put it or is there more than once, and
     each row named in ``exclude`` (row id -> reason). A left-out reward stays as
     the game has it. ``row_ids`` maps each plan identity to its authored row.
+    ``scans`` holds the catalogues already validated.
     """
-    exclude = exclude or {}
-    catalog_items = validate_catalog(catalog)
-    index = validate_world(world, catalog)
+    def resolve(game: str, names) -> dict:
+        return resolve_template(catalog, world, template_id, game=game,
+                                items=items, targets=targets, options=options, names=names)
+
+    return _build(catalog, world, template_id, exclude or {}, scans, resolve, {})
+
+
+def _build(catalog: dict, world: dict, template_id: str, exclude: dict[str, str],
+           scans: Scans | None, resolve, item_defaults: dict[str, list[int]]) -> dict:
+    """build_original_configuration with the draft from ``resolve(game, names)``;
+    ``item_defaults`` keeps the charges of the items already read."""
+    if scans is None:
+        catalog_items = validate_catalog(catalog)
+        index = validate_world(world, catalog)
+    else:
+        catalog_items, index = scans.indexes(catalog, world)
     game = preset_game(world, template_id)
     names = eet_names(world["game_root"]) if game == "eet" else None
-    draft = resolve_template(catalog, world, template_id, game=game,
-                             items=items, targets=targets, options=options, names=names)
+    draft = resolve(game, names)
     if draft["options"].get("flail_heads") and not applied(world["game_root"], "flail_heads"):
         raise ProfileError("The flail heads option needs Glaicus's conversation as Chriz Item Randomiser "
                            "prepares it: " + left_out(world["game_root"], "flail_heads"))
@@ -192,9 +206,10 @@ def build_original_configuration(catalog: dict, world: dict, template_id: str, *
 
     wanted_defaults = {row["item_resref"] for row in candidates
                        if row["adapter"] in ("virtual", "scripted", "unshey")}
-    defaults = _item_defaults(catalog,
-                              {name: catalog_items[name]["sha256"] for name in wanted_defaults},
-                              wanted_defaults)
+    unread = wanted_defaults - item_defaults.keys()
+    item_defaults.update(_item_defaults(catalog, {name: catalog_items[name]["sha256"] for name in unread},
+                                        unread))
+    defaults = item_defaults
 
     def choose(row: dict) -> tuple[dict | None, str | None, str | None]:
         """Return (registration, physical source id, replacement) for one reward row."""
@@ -289,7 +304,7 @@ def build_original_configuration(catalog: dict, world: dict, template_id: str, *
 
     profile = edit_profile(new_profile(catalog, template_id, draft["name"]), catalog,
                            include=sorted({row["item_resref"] for row, *_ in chosen}))
-    plan = new_binding_plan(profile, catalog, world)
+    plan = new_binding_plan(profile, catalog, world, scans=scans)
     plan["original_template_id"] = template_id
     plan["original_choices"] = draft["choices"].copy()
     plan["original_options"] = draft["options"].copy()
@@ -414,28 +429,40 @@ def _placeless_sources(plan: dict) -> list[str]:
 
 def fit_original_configuration(catalog: dict, world: dict, template_id: str, *,
                                items: str | None = None, targets: str | None = None,
-                               options: dict | None = None) -> dict:
+                               options: dict | None = None, scans: Scans | None = None) -> dict:
     """Build from the original tables, leaving out the rows the runtime cannot use.
 
     The runtime check of the built configuration names every row it cannot use
     (a quest reward without a reviewed adapter, an item its creature cannot
     drop, a recipient it cannot address); those rows are left out and listed in
     ``not_used`` and the configuration is built again until the check passes.
+    The rounds share the validated catalogues (``scans``, if the caller has
+    them), the resolved tables and the item charges they read.
     """
     from .campaigns import compile_campaign
     from .native_export import _compile
 
-    catalog_items, index = validate_catalog(catalog), validate_world(world, catalog)
+    scans = Scans(catalog, world) if scans is None else scans
+    catalog_items, index = scans.indexes(catalog, world)
+    drafts: list[dict] = []
+
+    def resolve(game: str, names) -> dict:
+        # The same template, game and names in every round.
+        if not drafts:
+            drafts.append(resolve_template(catalog, world, template_id, game=game, items=items,
+                                           targets=targets, options=options, names=names))
+        return drafts[0]
+
+    item_defaults: dict[str, list[int]] = {}
     exclude: dict[str, str] = {}
     for _ in range(_FIT_ROUNDS):
-        generated = build_original_configuration(catalog, world, template_id, items=items,
-                                                 targets=targets, options=options, exclude=exclude)
+        generated = _build(catalog, world, template_id, exclude, scans, resolve, item_defaults)
         placeless = _placeless_sources(generated["plan"])
         if placeless:
             for identity in placeless:
                 exclude[generated["row_ids"][identity]] = "no-place-in-tier"
             continue
-        campaign = compile_campaign(generated["profile"], catalog, world, generated["plan"])
+        campaign = compile_campaign(generated["profile"], catalog, world, generated["plan"], scans=scans)
         problems: dict[str, str] = {}
         _compile(campaign, world, index, catalog_items, problems, catalog=catalog)
         if not problems:

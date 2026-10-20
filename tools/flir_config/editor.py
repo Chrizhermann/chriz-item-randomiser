@@ -14,7 +14,7 @@ from .native_export import _compile as compile_native
 from .profiles import (PROFILE_ID, ProfileError, ensure_output_outside_game,
                        new_profile, read_json, search_items, validate_catalog,
                        validate_profile, write_json)
-from .sources import PLAN_FIELDS, PLAN_OPTIONAL_FIELDS, new_binding_plan, validate_world
+from .sources import PLAN_FIELDS, PLAN_OPTIONAL_FIELDS, Scans, new_binding_plan, validate_world
 from .prepared import applied, left_out
 from .scripted_sources import blpool_registration
 from .platform import preset_campaigns, recommended_campaign
@@ -48,12 +48,16 @@ class Editor:
             profile, plan = previous["profile"], previous["plan"]
         if profile is None:
             profile = new_profile(catalog, self.new_id(), "My next adventure")
-            plan = new_binding_plan(profile, catalog, world)
+            plan = new_binding_plan(profile, catalog, world, scans=self.scans())
         self.draft = self.checked({"profile": profile, "plan": plan})
 
     @staticmethod
     def new_id() -> str:
         return "adventure-" + uuid4().hex[:12]
+
+    def scans(self) -> Scans:
+        """The scans, validated when the editor started, for one request."""
+        return Scans(self.catalog, self.world, items=self.items, index=self.index)
 
     def checked(self, data: dict) -> dict:
         """Incomplete drafts may be saved; full binding checks happen on Check."""
@@ -69,10 +73,11 @@ class Editor:
             raise ProfileError("These selections belong to a different scan or an unsupported draft")
         return {"profile": profile, "plan": plan}
 
-    def check(self, draft: dict) -> dict:
+    def check(self, draft: dict, scans: Scans | None = None) -> dict:
         result = {"valid": False, "runtime_supported": False, "reward_units": 0, "target_capacity": 0}
         try:
-            campaign = compile_campaign(draft["profile"], self.catalog, self.world, draft["plan"])
+            campaign = compile_campaign(draft["profile"], self.catalog, self.world, draft["plan"],
+                                        scans=self.scans() if scans is None else scans)
             result.update(valid=True, reward_units=sum(s["quantity"] for s in campaign["sources"]),
                           target_capacity=sum(t["capacity"] for t in campaign["targets"]))
             compile_native(campaign, self.world, self.index, self.items, catalog=self.catalog)
@@ -208,14 +213,15 @@ class Editor:
             self.draft = self.checked(read_json(self.path(data["id"])))
         elif route == "/api/new":
             profile = new_profile(self.catalog, self.new_id(), data.get("name") or "My next adventure")
-            self.draft = {"profile": profile, "plan": new_binding_plan(profile, self.catalog, self.world)}
+            self.draft = {"profile": profile,
+                          "plan": new_binding_plan(profile, self.catalog, self.world, scans=self.scans())}
         elif route == "/api/template":
             # Import here so the editor's ordinary draft workflow remains usable
             # independently of optional original-table runtime integration.
             from .original_configuration import fit_original_configuration
             generated = fit_original_configuration(
                 self.catalog, self.world, data["id"], items=data.get("items"),
-                targets=data.get("targets"), options=data.get("options"))
+                targets=data.get("targets"), options=data.get("options"), scans=self.scans())
             candidate = deepcopy(generated)
             candidate["profile"]["id"] = self.new_id()
             checked = self.checked(candidate)
@@ -241,7 +247,8 @@ class Editor:
             if route == "/api/apply" and self.apply_game is None:
                 raise ProfileError("Game activation is not enabled for this editor")
             draft = self.checked(data)
-            result = self.check(draft)
+            scans = self.scans()
+            result = self.check(draft, scans)
             if not result["runtime_supported"]:
                 raise ProfileError(result["message"])
             store = ensure_output_outside_game(self.workspace / "prepared", self.catalog)
@@ -250,12 +257,13 @@ class Editor:
                 from .native_export import export_native
                 from .starts import describe_starts, write_starts
                 require_closed(self.apply_game)
-                written = write_starts(draft["profile"], draft["plan"], self.catalog, self.world, store)
+                written = write_starts(draft["profile"], draft["plan"], self.catalog, self.world, store,
+                                       scans=scans)
                 output = self.workspace / "native"
                 # Older saves may use revisions another workspace applied.
                 adopt_revisions(self.apply_game, output)
                 exported = export_native(store, self.catalog, self.world, output,
-                                         starts=written["starts"], main=written["main"])
+                                         starts=written["starts"], main=written["main"], scans=scans)
                 write_json(self.path(draft["profile"]["id"]), draft)
                 deploy_export(self.apply_game, output)
                 self.draft = draft
@@ -269,7 +277,8 @@ class Editor:
                         "message": "Saved and applied. " + describe_starts(written) +
                                    " Each new game randomizes afresh; existing saves keep their settings." +
                                    "".join(" " + note + "." for note in exported.get("notes", ()))}
-            prepared = write_campaign(draft["profile"], self.catalog, self.world, draft["plan"], store)
+            prepared = write_campaign(draft["profile"], self.catalog, self.world, draft["plan"], store,
+                                      scans=scans)
             return {"revision": prepared["revision"], "store": str(store),
                     "message": "Test settings prepared. They can now be exported for the test game; "
                                "nothing was installed or activated."}

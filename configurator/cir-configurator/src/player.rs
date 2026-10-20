@@ -213,7 +213,7 @@ fn editor(catalog: Value, world: Value, configurations: &Path, game: &Path) -> c
         Err(reopening) => {
             // Everything before reopening is checked the same way with a new
             // configuration; when it passes, reopening was what failed.
-            let (profile, plan) = Editor::new_draft(&catalog, &world)?;
+            let (profile, plan) = Editor::new_draft(&catalog, &world, None)?;
             let editor = Editor::new(catalog, world, configurations, Some(profile), Some(plan), Some(game))?;
             let reason = if earlier.is_some() { String::new() } else { format!(" ({})", reopening.message) };
             println!("The configuration applied last cannot be reopened{reason}; the editor starts with a new one.");

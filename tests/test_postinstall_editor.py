@@ -1,5 +1,5 @@
 """Editor workflows reuse the configurator's synthetic installation fixture."""
-from contextlib import nullcontext
+from contextlib import ExitStack, contextmanager, nullcontext
 from copy import deepcopy
 import json
 from pathlib import Path
@@ -29,6 +29,16 @@ from tests.test_postinstall_blpool_script import write_registry
 from test_postinstall_resources import make_itm
 from tests.test_postinstall_world_formats import make_are, make_cre, make_sto, item_record
 from sod_table_fixtures import sod_tables
+
+
+@contextmanager
+def world_checks():
+    """Spies on validate_world in each module an editor request uses."""
+    from flir_config import native_export, original_configuration, sources, starts
+    validate = sources.validate_world
+    with ExitStack() as stack:
+        yield [stack.enter_context(patch.object(module, "validate_world", wraps=validate))
+               for module in (sources, original_configuration, starts, native_export)]
 
 
 class EditorTests(unittest.TestCase):
@@ -116,8 +126,10 @@ class EditorTests(unittest.TestCase):
         module = ModuleType("flir_config.original_configuration")
         target_id = "original-target:bg1:base:target:3"
 
-        def build(catalog, world, template_id, *, items, targets, options):
+        def build(catalog, world, template_id, *, items, targets, options, scans):
             calls.append((catalog, world, template_id, items, targets, options))
+            # The fit reuses the scans the editor validated when it started.
+            self.assertIs(scans.indexes(catalog, world)[1], editor.index)
             result = deepcopy(original)
             result["profile"]["name"] = "BG1 original"
             result["plan"]["randomization"] = {"tier_rows": ["original-choice"]}
@@ -208,9 +220,12 @@ class EditorTests(unittest.TestCase):
         rows["items"] = [row for row in rows["items"] if is_spell_shield_row(row)]
         rows["targets"] = [row for row in rows["targets"] if row["id"] == "bg2:base:target:309"]
         editor = Editor(catalog, world, fx.root / "options-editor", apply_game=fx.game)
-        with patch("flir_config.original_configuration.resolve_template", return_value=rows):
+        with patch("flir_config.original_configuration.resolve_template", return_value=rows), \
+                world_checks() as spies:
             editor.post("/api/template", {"id": "bg2-original", "items": "extended", "targets": "extended",
                                           "options": options})
+        # Requests reuse the scans the editor validated when it started.
+        self.assertEqual([spy.call_count for spy in spies], [0, 0, 0, 0])
         draft = deepcopy(editor.draft)
         self.assertEqual(draft["plan"]["original_options"], options)
         self.assertEqual(draft["plan"]["spell_shield"]["source_id"], SPELL_SHIELD_SOURCE)
@@ -219,9 +234,11 @@ class EditorTests(unittest.TestCase):
         self.assertEqual((saved["profile"], saved["plan"]), (draft["profile"], draft["plan"]))
         loaded = Editor(catalog, world, editor.workspace).post("/api/load", {"id": draft["profile"]["id"]})
         self.assertEqual((loaded["profile"], loaded["plan"]), (draft["profile"], draft["plan"]))
-        self.assertTrue(editor.post("/api/validate", draft)["runtime_supported"])
-        with patch("flir_config.activation.require_closed"):
-            applied = editor.post("/api/apply", draft)
+        with world_checks() as spies:
+            self.assertTrue(editor.post("/api/validate", draft)["runtime_supported"])
+            with patch("flir_config.activation.require_closed"):
+                applied = editor.post("/api/apply", draft)
+        self.assertEqual([spy.call_count for spy in spies], [0, 0, 0, 0])
         campaign = read_campaign(editor.workspace / "prepared", applied["revision"])
         self.assertEqual(campaign["spell_shield"], draft["plan"]["spell_shield"])
         self.assertEqual(campaign["cursed_disguises"], draft["plan"]["cursed_disguises"])
