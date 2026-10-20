@@ -5,6 +5,9 @@ Host.__index = Host
 -- An unavailable target is retried after this many game ticks (15/second).
 -- Deferral never creates anything or substitutes another recipient.
 Host.DEFER_TICKS = 30
+-- Guarded sources whose lease, and whose removal, one step observes.
+Host.LEASE_CHECKS = 16
+Host.REMOVAL_CHECKS = 16
 -- Target inspection failures that describe current availability, reported
 -- before the core journals anything. Every other failure disables the host.
 Host.DEFERRABLE = { AREA_UNAVAILABLE = true, OWNER_MISSING = true, OWNER_AMBIGUOUS = true,
@@ -22,7 +25,8 @@ function Host:destroy()
     if self.native then self.native:destroy() end
     if self.guard then self.guard:destroy() end
     self.controller, self.native, self.pending = nil, nil, nil
-    self.guard, self.guarded, self.guard_pending = nil, nil, nil
+    self.guard, self.guarded, self.guard_pending, self.guard_order = nil, nil, nil, nil
+    self.view, self.view_phases, self.view_controller, self.view_version = nil, nil, nil, nil
     self.guard_monitor, self.container_latch_monitor = nil, nil
     self.last_tick, self.bundle, self.error = nil, nil, nil
     self.deferred = {}
@@ -105,6 +109,9 @@ function Host:_initialize()
     end
     self.bundle = assert(selected, "REVISION_UNAVAILABLE")
     self.guarded = guarded_indices(selected)
+    self.guard_order, self.lease_cursor, self.removal_cursor = {}, 0, 0
+    for index in pairs(self.guarded or {}) do self.guard_order[#self.guard_order + 1] = index end
+    table.sort(self.guard_order)
     self.native = require_result(deps.native(selected.fixture))
     if self.guarded then
         assert(type(deps.source_guard) == "function", "SOURCE_GUARD_ADAPTER_MISSING")
@@ -164,11 +171,25 @@ function Host:_step(tick)
     if self.guard and self.guard.check then require_result(self.guard:check()) end
     self.controller:on_observation_boundary()
     require_result(self.native:on_observation_boundary(tick))
-    local assignments = require_result(self.controller:assignments())
-    local source_phases = {}
-    for _, assignment in ipairs(assignments) do source_phases[assignment.source] = assignment.source_phase end
-    for index, state in pairs(self.guarded or {}) do
-        if state.bound and source_phases[index] == self.deps.core.PHASE.protected then
+    -- The assignments change only with the controller's state. Rebuilding them
+    -- on every engine tick cost milliseconds in campaigns of a few hundred units.
+    local version = self.controller:state_version()
+    if self.view_controller ~= self.controller or self.view_version ~= version then
+        local view, phases = require_result(self.controller:assignments()), {}
+        for _, assignment in ipairs(view) do phases[assignment.source] = assignment.source_phase end
+        self.view, self.view_phases = view, phases
+        self.view_controller, self.view_version = self.controller, version
+    end
+    local assignments, source_phases = self.view, self.view_phases
+    -- Proving every protected source's lease on every engine tick took longer
+    -- than a frame with a few hundred guarded sources. Each step proves a share
+    -- of them in turn, so a lapsed lease still stops the host within seconds; a
+    -- delivery always needs its own source's lease (Core:_begin, Core:observe).
+    local order = self.guard_order or {}
+    for _ = 1, math.min(Host.LEASE_CHECKS, #order) do
+        self.lease_cursor = self.lease_cursor % #order + 1
+        local index = order[self.lease_cursor]
+        if self.guarded[index].bound and source_phases[index] == self.deps.core.PHASE.protected then
             assert(self.controller:source_guard_active(index), "SOURCE_GUARD_INACTIVE")
         end
     end
@@ -212,6 +233,13 @@ function Host:_step(tick)
     end
     if #requests > 0 then self.guard_pending = requests; return end
     self.guard_monitor = false
+    -- Waiting for removal proof withholds no reward (see below), so each step
+    -- observes the removal of a share of the guarded sources in turn.
+    local observe_removal = {}
+    for _ = 1, math.min(Host.REMOVAL_CHECKS, #order) do
+        self.removal_cursor = self.removal_cursor % #order + 1
+        observe_removal[order[self.removal_cursor]] = true
+    end
     -- Every original must be removed or protected before exposing any rewards.
     for index, source in ipairs(self.bundle.manifest.sources) do
         local phase, state = source_phases[index], self.guarded and self.guarded[index]
@@ -222,7 +250,8 @@ function Host:_step(tick)
                 "SOURCE_NOT_READY")
             assert(state.bound, "SOURCE_GUARD_INACTIVE")
             if state.removal_pending then
-                local receipt, reason = self.guard:observe_removal(state.removal_pending)
+                local receipt, reason = nil, "SOURCE_NOT_LOADED"
+                if observe_removal[index] then receipt, reason = self.guard:observe_removal(state.removal_pending) end
                 if receipt == nil and reason == "SOURCE_NOT_LOADED" then
                     -- Waiting for physical proof never withholds an already
                     -- protected source's reward and never repeats suppression.

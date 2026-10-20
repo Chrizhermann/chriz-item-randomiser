@@ -457,6 +457,19 @@ function cases.guard_receipt_scope_epoch_destroy_and_revocation(Core,Gate,build,
     assert(not receipt.active())
 end
 
+-- The host proves leases on every tick in turn. A proof reads each event row's
+-- kind, generation and decision, never its names and payload bytes one by one.
+function cases.lease_proof_reads_no_event_row_bytes(Core,Gate,build,compile)
+    local f=fixture(Core); f:install(Gate,build,compile); f:capture(); f:prepare(); f:adapter()
+    local receipt=f:bind()
+    assert(f.gate:inspect().count>=1)
+    f.reads=0
+    assert(receipt.active())
+    assert(f.reads==#f.gate.detours,tostring(f.reads)) -- each detour's jump opcode
+    local snapshot=f.gate:inspect()
+    assert(snapshot.events[1].name_raw and snapshot.events[1].payload_raw) -- diagnostics keep whole rows
+end
+
 function cases.overflow_tampered_detour_and_source_change_reject_guard(Core,Gate,build,compile)
     for _,change in ipairs({'overflow','detour','changed'}) do
         local f=fixture(Core); f:install(Gate,build,compile); f:capture(); f:prepare(); f:adapter()

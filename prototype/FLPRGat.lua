@@ -831,7 +831,14 @@ function Runtime:_row(index)
         name_raw=self:_raw(row+56,32),payload_raw=self:_raw(row+88,20),
         detail1=q(112),detail2=q(120),detail1_raw=self:_raw(row+112,8),detail2_raw=self:_raw(row+120,8)}
 end
-function Runtime:inspect()
+-- What a proof reads of an event row. The host proves leases on every tick in
+-- turn; reading each row's names and payload bytes one by one cost the most.
+function Runtime:_proof_row(index)
+    local row=self.buffer+HEADER+index*STRIDE
+    return {kind=self.api.EEex_ReadU64(row),generation=self.api.EEex_ReadU64(row+8),
+        decision=self.api.EEex_ReadU64(row+24)}
+end
+function Runtime:inspect(proof)
     local count,generation,destroys,active=self:_q(8),self:_q(40),self:_q(104),self:_q(24)
     local result={schema='flpr-campaign-gate-trace-v1',revision=self.revision,
         installed=self.installed,armed=self:_q(0)==1,overflow=self:_q(16)~=0 or count>CAPACITY,
@@ -839,7 +846,7 @@ function Runtime:inspect()
         mask=self:_q(80),candidate=self:_q(88),skips=self:_q(96),load_skips=self:_q(120),events={}}
     local published=true
     for index=0,math.min(count,CAPACITY)-1 do
-        local row=self:_row(index)
+        local row=proof and self:_proof_row(index) or self:_row(index)
         if row.kind~=1 and row.kind~=2 and row.kind~=3 and row.kind~=4 then published=false end
         result.events[#result.events+1]=row
     end
@@ -923,7 +930,7 @@ function Runtime:prepare_new(bundle,controller)
 end
 
 function Runtime:_proof()
-    local snapshot=self:inspect()
+    local snapshot=self:inspect(true)
     if not self:_intact() or not snapshot.stable or not snapshot.armed or snapshot.overflow or
         snapshot.mode~=1 or not integer(snapshot.generation,1,2147483647) then
         return nil,'CAMPAIGN_GATE_INACTIVE'
