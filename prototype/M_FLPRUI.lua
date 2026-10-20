@@ -37,8 +37,32 @@ function FLPRUI_Text(key)
     return FALLBACK[key] or key
 end
 
+-- New Game and Import close their start menu before they call here (the stock
+-- START_SP pops itself), so a popup they show stands alone. Its Cancel opens
+-- the start screen's menus again as the engine does when the start screen
+-- returns: START, whose onOpen opens START_SP, START_MP or START_MAIN for the
+-- engine state (BG:EE and EET pop START there, BG2:EE keeps it below).
+local START_MENUS = { "START_SP", "START_MP", "START_MAIN" }
+local asking_from_start = false
+
+local function reopen_start()
+    for _, name in ipairs(START_MENUS) do
+        if Infinity_IsMenuOnStack(name) then return end
+    end
+    if Infinity_IsMenuOnStack("START") then Infinity_PopMenu("START") end
+    Infinity_PushMenu("START")
+end
+
+local function start_cancel()
+    if asking_from_start and type(Infinity_IsMenuOnStack) == "function" and
+        type(Infinity_PushMenu) == "function" and type(Infinity_PopMenu) == "function" then
+        return reopen_start
+    end
+end
+
 -- Explains why this adventure cannot be randomised. The engine's own popup
--- offers "Start without randomiser" (start_plain) and Cancel (does nothing).
+-- offers "Start without randomiser" (start_plain) and Cancel, which returns to
+-- the start screen's menus or, in character creation, to character creation.
 function FLPRUI_Ask(key, start_plain)
     local text = FLPRUI_Text(key)
     if type(popup2Button) ~= "function" or type(uiStrings) ~= "table" then
@@ -47,7 +71,17 @@ function FLPRUI_Ask(key, start_plain)
     end
     uiStrings.FLPR_POPUP = text
     uiStrings.FLPR_START_PLAIN = FLPRUI_Text("start_plain")
-    popup2Button("FLPR_POPUP", "FLPR_START_PLAIN", start_plain, "CANCEL_BUTTON")
+    popup2Button("FLPR_POPUP", "FLPR_START_PLAIN", start_plain, "CANCEL_BUTTON", start_cancel())
+end
+
+-- Runs a start button's call; popups it shows (also the runtime's) get the
+-- start screen's Cancel.
+local function from_start(call, ...)
+    asking_from_start = true
+    local ok, result = pcall(call, ...)
+    asking_from_start = false
+    if not ok then error(result, 0) end
+    return result
 end
 
 local function configured()
@@ -92,11 +126,11 @@ function FLPRUI_NewGame(...)
     local new_game = runtime("NewGame")
     if not new_game then
         local arguments = { ... }
-        return FLPRUI_Ask("not_running", function()
+        return from_start(FLPRUI_Ask, "not_running", function()
             startEngine:OnNewGameButtonClick((unpack or table.unpack)(arguments))
         end)
     end
-    return new_game(...)
+    return from_start(new_game, ...)
 end
 
 function FLPRUI_ImportCharacter(...)
@@ -105,11 +139,11 @@ function FLPRUI_ImportCharacter(...)
     local import = runtime("ImportCharacter")
     if not import then
         local arguments = { ... }
-        return FLPRUI_Ask("not_running", function()
+        return from_start(FLPRUI_Ask, "not_running", function()
             startEngine:OnImportCharacterButtonClick((unpack or table.unpack)(arguments))
         end)
     end
-    return import(...)
+    return from_start(import, ...)
 end
 
 function FLPRUI_AcceptCharacter(...)
