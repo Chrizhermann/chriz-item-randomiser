@@ -198,8 +198,13 @@ applies a configuration from the editor with the game closed (`ui ... --apply-ga
 writes `randomiser-campaigns/` data, campaign-aware dialogue/script/spell resources and the
 `BGEE.LUA` journal in `override`, and appends strings to `lang/<language>/dialog.tlk`
 (and to its `dialogF.tlk` under the same numbers, where the language has one).
-WeiDU does not track these writes. `activation.validate_runtime` accepts CIR's
-installation as well as the hand-staged lab layout.
+WeiDU does not track these writes. Apply records the files it writes outside
+`randomiser-campaigns/` in `randomiser-campaigns/applied-files.json`, with copies of
+the files they replaced in `randomiser-campaigns/before-apply/`, so that the scans read
+them as the game had them before and a later start still opens the configuration
+applied last ([Apply's own files](../post-install-configurator.md#applys-own-files)).
+`activation.validate_runtime` accepts CIR's installation as well as the hand-staged
+lab layout.
 
 The quest and dialogue changes of the default configuration are made by `cir.tp2` itself
 (`lib/campaign_patches.tpa`): the pool, altar and book reward scripts (BLPOOL, TROALT,
@@ -219,7 +224,10 @@ Uninstalling CIR restores `UI.MENU`, the other hooked menu and Lua files, `BALDU
 and removes every file it created. WeiDU keeps the appended game-text
 strings, unused, as it does for every mod; a re-install finds and reuses them. WeiDU does
 not track folders, so the `randomiser-campaigns` folder it created stays behind empty.
-Uninstall cannot remove what the configurator wrote; see B2. Re-installing over the installed component
+Uninstall cannot remove what the configurator wrote; see B2. Of Apply's files only `BGEE.LUA` is
+also the installer's: an uninstall restores the game's journal table and a re-install the
+installer's, without the Kangaxx entry until the next Apply; the copies in
+`randomiser-campaigns/before-apply/` let a player put back the others by hand. Re-installing over the installed component
 and an uninstall and install in one WeiDU run leave the game byte-identical, also with an
 applied `randomiser-campaigns/next.lua`;
 so does WeiDU's temporary uninstall and re-install of CIR behind a reinstalled earlier

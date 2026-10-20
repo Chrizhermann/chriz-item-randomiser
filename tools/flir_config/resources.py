@@ -3,6 +3,8 @@
 scan_game indexes effective ITMs; GameResources reads caller-selected resource
 types. Override entries supersede chitin.key. KEY/BIFF/TLK V1 and ITM V1 are
 supported; compressed archives are rejected. Neither API changes game data.
+The scans read the files CIR's Apply wrote as the game had them before
+(applied_files.py).
 Format references: https://gibberlings3.github.io/iesdp/file_formats/index.htm
 """
 
@@ -15,6 +17,8 @@ import struct
 import zipfile
 from pathlib import Path
 from typing import BinaryIO
+
+from . import applied_files
 
 
 class ScanError(ValueError):
@@ -360,6 +364,94 @@ def _override_resources(root: Path, resource_types: dict[str, int], snapshot: _S
     return resources
 
 
+def _applied_record(root: Path, snapshot: _ScanSnapshot) -> tuple[Path | None, dict[str, dict]]:
+    """CIR's folder in the game and its record of the files Apply wrote (applied_files.py).
+
+    Only the record and the copies a scan reads are part of its snapshot: the
+    runtime writes other files to this folder while the game runs.
+    """
+    try:
+        data = _child(root, applied_files.DATA, root, required=False)
+    except ScanError:
+        return None, {}
+    if data is None or not data.is_dir():
+        return None, {}
+    try:
+        record = _child(data, applied_files.RECORD, root, required=False)
+    except ScanError:
+        return data, {}
+    if record is None or not record.is_file():
+        return data, {}
+    snapshot.file(record)
+    return data, applied_files.read(record)
+
+
+def _before_copy(root: Path, data: Path, parts: list[str]) -> Path | None:
+    """CIR's copy of a file as the game had it before Apply wrote it, if it has one."""
+    current = data
+    try:
+        for part in (applied_files.BEFORE, *parts):
+            if not current.is_dir():
+                return None
+            current = _child(current, part, root, required=False)
+            if current is None:
+                return None
+    except ScanError:
+        return None
+    return current if current.is_file() else None
+
+
+def _applied_overrides(root: Path, data: Path | None, files: dict[str, dict],
+                       overrides: dict[str, dict[str, Path]], snapshot: _ScanSnapshot) -> None:
+    """Read the override files Apply wrote as the game had them before (applied_files.py).
+
+    A file that holds exactly the bytes Apply wrote last is read from CIR's
+    copy of the earlier file, or left out where there was none, so that the
+    archive's copy, if any, is the game's again. Any other file stays as it is,
+    as does one whose earlier copy is missing or damaged.
+    """
+    for path, entry in sorted(files.items()):
+        parts = path.split("/")
+        if len(parts) != 2 or applied_files.key(parts[0]) != "override":
+            continue
+        stem, dot, extension = parts[1].rpartition(".")
+        extension = applied_files.key(extension)
+        if not dot or extension not in overrides:
+            continue
+        try:
+            name = _resref(stem.encode("ascii"))
+        except (UnicodeEncodeError, ScanError):
+            continue
+        current = overrides[extension].get(name)
+        if current is None or hashlib.sha256(_read_file(current)).hexdigest() != entry["written"]:
+            continue
+        before = entry["before"]
+        if before is None:
+            del overrides[extension][name]
+            continue
+        copy = _before_copy(root, data, parts)
+        if copy is None:
+            continue
+        content = _read_file(copy)
+        if len(content) != before["size"] or hashlib.sha256(content).hexdigest() != before["sha256"]:
+            continue
+        snapshot.file(copy)
+        overrides[extension][name] = copy
+
+
+def _applied_text(root: Path, files: dict[str, dict], path: Path, data: bytes, tlk: _Tlk) -> None:
+    """Read game text Apply appended to as the game had it before, without Apply's entries."""
+    name = applied_files.find(files, path.relative_to(root).as_posix())
+    if name is None or not applied_files.is_text(name):
+        return
+    entry = files[name]
+    before = entry["before"]
+    if (before is None or hashlib.sha256(data).hexdigest() != entry["written"] or
+            before["strings"] > tlk.count):
+        return
+    tlk.count = before["strings"]
+
+
 class GameResources:
     """Read effective ordinary resources during one checked scan context.
 
@@ -375,11 +467,13 @@ class GameResources:
     root KEY V1 and uncompressed BIFF V1 ordinary resources are supported; the
     caller is responsible for validating each resource's own format. Override
     files with names longer than eight characters are not resources and are
-    left out.
+    left out. With ``before_apply`` the override files CIR's Apply wrote are
+    read as the game had them before (applied_files.py), as the scans read them.
     """
 
-    def __init__(self, game_root: Path, resource_types: dict[str, int]):
+    def __init__(self, game_root: Path, resource_types: dict[str, int], *, before_apply: bool = False):
         self._game_root = game_root
+        self._before_apply = before_apply
         if not isinstance(resource_types, dict) or not resource_types:
             raise ScanError("Select at least one ordinary resource type.")
         self._types: dict[str, int] = {}
@@ -412,6 +506,9 @@ class GameResources:
             self._snapshot.file(key_path)
             archive_names, self._keyed = _key_resources(_read_file(key_path), self._types)
             self._overrides = _override_resources(self.root, self._types, self._snapshot)
+            if self._before_apply:
+                _applied_overrides(self.root, *_applied_record(self.root, self._snapshot), self._overrides,
+                                   self._snapshot)
             self._archives: dict[int, Path] = {}
             # Capture every effective archive before handing control to the
             # caller, including archives it has not read yet.
@@ -626,6 +723,9 @@ def scan_game(game_root: Path, *, language: str | None = None) -> dict:
     returning. Concurrent changes fail without retry. This detects ordinary
     edits, not adversarial timestamp spoofing, and is not an atomic filesystem
     snapshot; callers should keep the installation idle for the scan.
+
+    Files CIR's Apply wrote are read as the game had them before
+    (applied_files.py): its texts appended to dialog.tlk name no item.
     """
     try:
         root = Path(game_root).resolve(strict=True)
@@ -640,9 +740,14 @@ def scan_game(game_root: Path, *, language: str | None = None) -> dict:
         archive_names, keyed_items = _key(_read_file(key_path))
         tlk_path, selected_language = _select_tlk(root, language, snapshot)
         snapshot.file(tlk_path)
-        tlk = _Tlk(_read_file(tlk_path))
+        tlk_data = _read_file(tlk_path)
+        tlk = _Tlk(tlk_data)
+        data, applied = _applied_record(root, snapshot)
+        _applied_text(root, applied, tlk_path, tlk_data, tlk)
         long_names: list[str] = []
-        overrides = _override_resources(root, {"itm": ITM_TYPE}, snapshot, long_names)["itm"]
+        overrides = _override_resources(root, {"itm": ITM_TYPE}, snapshot, long_names)
+        _applied_overrides(root, data, applied, overrides, snapshot)
+        overrides = overrides["itm"]
         effective = {}
         pending: dict[int, dict[int, list[str]]] = {}
         for name, (archive_index, resource_id) in keyed_items.items():

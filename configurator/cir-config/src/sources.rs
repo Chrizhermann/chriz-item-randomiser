@@ -155,6 +155,10 @@ fn resort_concerns(row: &mut Value) {
 /// unusual file) is left out instead of stopping the scan: it keeps its
 /// resource row, gives no sources or targets, and is listed in "unreadable"
 /// with the reason. Nothing is placed in it or taken from it.
+///
+/// The dialogues, scripts and spells CIR's Apply wrote into override are read
+/// as the game had them before (`applied_files`): applying a configuration
+/// does not change the scan it was made with.
 pub fn scan_world(catalog: &Value) -> Result<Value> {
     let item_index = validate_catalog(catalog)?;
     let game_root = catalog.at("game_root")?.as_str().expect("validated").to_string();
@@ -165,7 +169,7 @@ pub fn scan_world(catalog: &Value) -> Result<Value> {
     let mut unreadable: Vec<(String, String)> = Vec::new();
     let types: Vec<(&str, u32)> = KINDS.iter().map(|kind| (*kind, resource_type(kind))).collect();
     let root = PathBuf::from(paths::display(Path::new(&game_root)));
-    let fingerprint = GameResources::with(&root, &types, |reader| {
+    let fingerprint = GameResources::with_before_apply(&root, &types, |reader| {
         if reader.names("itm")? != item_index.resrefs() {
             return Err(Error::scan("Installed items changed; scan the item catalogue again before binding sources."));
         }

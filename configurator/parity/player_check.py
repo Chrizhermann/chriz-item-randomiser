@@ -18,6 +18,9 @@ appears on the screen; this script answers the folder window there.
 - After the player's folder was lost, a new workspace applies; the
   revisions the earlier saves use stay as they were and the source gate
   lists them with the new ones.
+- Apply of the extended reward routes writes their dialogue and script into
+  override and their text into the game text; the next start still reopens
+  that configuration, as Apply's own files are no change of the game's mods.
 - Outside a game, the folder window asks until a game with CIR is chosen:
   a folder without a game, a game without CIR, then a folder inside a
   game whose WeiDU.log records CIR.
@@ -49,6 +52,7 @@ from cli_check import PYTHON, build
 from editor_check import Server, bound, commands, masked
 
 from flir_config.activation import _gate_revisions  # noqa: E402
+from test_applied_files import AppliedGame  # noqa: E402
 from test_postinstall_resources import make_tlk  # noqa: E402
 from test_postinstall_world_formats import make_are  # noqa: E402
 
@@ -356,6 +360,44 @@ def two_languages(game: Path) -> None:
     (game / "weidu.conf").write_text("lang_dir = de_de\n")
 
 
+class RouteFixture(AppliedGame):
+    """tests/test_applied_files.py's game, built outside a test run."""
+
+    def runTest(self) -> None:
+        pass
+
+
+def route_game(game: Path) -> dict:
+    """A BG2:EE game with the ogre's and the well's extended reward routes and
+    CIR installed; returns a configuration of both routes as the editor posts
+    it, with the game's two chests as places (the reference tests fit the
+    routes with two places that are not in the shipped presets)."""
+    fixture = RouteFixture()
+    try:
+        fixture.build("bg2ee")
+        shutil.copytree(fixture.game, game)
+    finally:
+        fixture.doCleanups()
+    install_cir(game)
+    (game / "weidu.conf").write_text("lang_dir = en_us\n")
+    fixture.game = game
+    fixture.rescan()
+    fitted = fixture.fit()
+    plan = fitted["plan"]
+    places = sorted(row["id"] for row in plan["target_registrations"] if ":base:" in row["id"])
+    chests = [row["id"] for row in fixture.world["targets"] if row["kind"] == "container"]
+    plan["target_registrations"] = [row for row in plan["target_registrations"] if row["id"] not in places]
+    plan["targets"] = ([row for row in plan["targets"] if row["id"] not in places] +
+                       [{"id": chest, "capacity": 1, "optional": False} for chest in chests])
+    randomization = plan["randomization"]
+    for place_id, chest in zip(places, chests, strict=True):
+        for table in (randomization["targets"], randomization["row_filters"]["targets"]):
+            table[chest] = table.pop(place_id)
+    profile = fitted["profile"]
+    profile["id"], profile["name"] = "route-apply", "Parity route-apply"
+    return {"profile": profile, "plan": plan}
+
+
 def place(exe_folder: Path) -> Path:
     exe_folder.mkdir(parents=True, exist_ok=True)
     exe = exe_folder / EXE
@@ -495,6 +537,34 @@ def cases(check: Checks, desktop: Desktop, root: Path, starts: list) -> None:
           bool(gate) and _gate_revisions(campaigns / "source-gate.lua") == gate | set(applied.values()),
           sorted(gate))
     lost.stop()
+
+    # The extended reward routes: Apply writes their dialogue and script into
+    # override and their text into the game text; the next start reopens the
+    # configuration applied last all the same.
+    game_r = games / "Test Game R"
+    draft = route_game(game_r)
+    workspace_r = workspace_of(appdata, game_r)
+    original = {name: (game_r / "override" / name).read_bytes() for name in ("uhogre01.dlg", "ddwell.bcs")}
+    routes, _ = start(place(game_r / "cir"), "routes")
+    editor, state = found_game(check, "routes", routes, game_r, workspace_r, None)
+    status, _, _, body = editor.post("/api/apply", draft)
+    text = body.decode("utf-8", "replace")
+    check("routes: Apply", status == 200 and APPLIED in text, text[:600])
+    check("routes: Apply wrote the routes' files into override",
+          all((game_r / "override" / name).read_bytes() != data for name, data in original.items()))
+    check("routes: Apply recorded the files it wrote",
+          (game_r / "randomiser-campaigns" / "applied-files.json").is_file()
+          and {path.name for path in (game_r / "randomiser-campaigns" / "before-apply" / "override").iterdir()}
+          == {"UHOGRE01.DLG", "DDWELL.BCS"})
+    routes.stop()
+    again, _ = start(game_r / "cir" / EXE, "routes-again")
+    editor, state = found_game(check, "routes again", again, game_r, workspace_r, None)
+    output = again.text()
+    check("routes again: reopens the configuration applied last",
+          state["profile"]["id"] == "route-apply" and "cannot be reopened" not in output
+          and not (workspace_r / "configurations" / "earlier scans").exists(),
+          f"{state['profile']['id']}: {output}")
+    again.stop()
 
     # Outside a game: the folder window asks until a game with CIR is chosen.
     game_b, game_c = games / "Test Game B", games / "Test Game C"

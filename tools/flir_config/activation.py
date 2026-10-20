@@ -4,13 +4,16 @@ Runtime installation is separate. Keep exported revisions for older saves;
 publish the next-game pointer last, with the game closed.
 """
 from pathlib import Path, PurePosixPath
+import hashlib
 import os
 import re
 import shutil
 from tempfile import TemporaryDirectory
 
+from . import applied_files
 from .campaigns import read_campaign, _store_path, _write_immutable
-from .profiles import HEX256, ProfileError, ensure_output_outside_game, read_json
+from .profiles import HEX256, ProfileError, canonical_bytes, ensure_output_outside_game, read_json
+from .resources import ScanError, _Tlk
 
 # The files of the latest export in its folder. Apply copies only these, so a
 # file an older export left there never reaches the game.
@@ -110,8 +113,9 @@ def require_closed(game: Path) -> None:
 # adapter, before any configuration exists. A hand-staged test runtime has no
 # marker and is recognised by its existing next-game pointer instead.
 INSTALLED_RUNTIME = ("override/flrandomiser3.mrk", "override/M_FLPRUI.lua")
-# Applied settings and kept campaign revisions; prototype/M_FLPR.lua reads them here.
-CAMPAIGN_DATA = "randomiser-campaigns"
+# Applied settings and kept campaign revisions; prototype/M_FLPR.lua reads them
+# here. Apply also records there the files it writes elsewhere in the game.
+CAMPAIGN_DATA = applied_files.DATA
 
 
 # Item Randomiser's own randomisation (Mode 1 or Mode 2) removes items when it is
@@ -217,8 +221,53 @@ def adopt_revisions(game: Path, output: Path) -> list[str]:
     return sorted(adopted)
 
 
+def _applied(game: Path, changes: dict[Path, bytes], paths: dict[Path, str]) -> dict[Path, bytes]:
+    """The copies of earlier files and the record to write with <changes> (applied_files.py).
+
+    <paths> names, by their path in the game, the changes outside CIR's folder.
+    A file that still holds what Apply wrote last keeps the earlier file its
+    record names; any other file that Apply replaces is the earlier file now,
+    since a scan reads it as it is.
+    """
+    data = game.resolve() / CAMPAIGN_DATA
+    record = data / applied_files.RECORD
+    files = applied_files.read(record) if record.is_file() else {}
+    writes = {}
+    for target, path in sorted(paths.items(), key=lambda row: row[1]):
+        name = applied_files.find(files, path) or path
+        entry = files.get(name)
+        current = target.read_bytes() if target.is_file() else None
+        if entry is not None and current is not None and hashlib.sha256(current).hexdigest() == entry["written"]:
+            before = entry["before"]
+        elif current is None:
+            before = None
+        else:
+            before = {"sha256": hashlib.sha256(current).hexdigest(), "size": len(current)}
+            if applied_files.is_text(name):
+                # Apply only appends to game text: the earlier file is its first
+                # entries. The export read it moments ago; one that is no game
+                # text now changed since, and replacing it would lose that change.
+                try:
+                    before["strings"] = _Tlk(current).count
+                except ScanError as exc:
+                    raise ProfileError("Game text changed since export; apply again: " + path) from exc
+            else:
+                writes[_store_path(data, Path(applied_files.BEFORE, *name.split("/")))] = current
+        files[name] = {"before": before, "written": hashlib.sha256(changes[target]).hexdigest()}
+    if paths:
+        content = canonical_bytes({"schema": applied_files.SCHEMA, "files": files})
+        if not record.is_file() or record.read_bytes() != content:
+            writes[record] = content
+    return writes
+
+
 def deploy_export(game: Path, output: Path) -> None:
-    """Copy the existing export layout without touching saves or ordinary stock."""
+    """Copy the existing export layout without touching saves or ordinary stock.
+
+    The files it writes outside CIR's folder, and what the game had there
+    before, go to CIR's record of them (applied_files.py), so that a scan reads
+    them as the game had them before.
+    """
     require_closed(game)
     try:
         listing = read_json(output / EXPORT_FILES)
@@ -234,7 +283,7 @@ def deploy_export(game: Path, output: Path) -> None:
     if missing:
         raise ProfileError(f"This export is missing campaign revision {missing[0][:12]}, which older saves of "
                            "this game need; apply the settings again")
-    changes = {}
+    changes, outside = {}, {}
     for name in sorted(names):
         relative = PurePosixPath(name)
         if relative.is_absolute() or not relative.parts or ".." in relative.parts:
@@ -250,6 +299,11 @@ def deploy_export(game: Path, output: Path) -> None:
         target = (game / relative).resolve()
         if not target.is_relative_to(game.resolve()):
             raise ProfileError("An export destination is outside the game folder")
+        inside = applied_files.key(relative.parts[0]) == CAMPAIGN_DATA
+        if inside and len(relative.parts) > 1 and applied_files.key(relative.parts[1]) in (applied_files.RECORD,
+                                                                                         applied_files.BEFORE):
+            raise ProfileError("An export file would replace Chriz Item Randomiser's record of the files "
+                               "Apply writes: " + relative.as_posix())
         content = source.read_bytes()
         if target in changes and changes[target] != content:
             raise ProfileError("Conflicting export files: " + str(relative))
@@ -259,8 +313,15 @@ def deploy_export(game: Path, output: Path) -> None:
             if relative.as_posix().startswith(CAMPAIGN_DATA + "/campaign-store/revisions/"):
                 raise ProfileError("An older campaign revision differs: " + str(relative))
         changes[target] = content
-    pointer = game.resolve() / CAMPAIGN_DATA / "next.lua"
-    ordered = sorted(changes, key=lambda path: (path == pointer, str(path)))
+        if not inside and applied_files.is_game_path(relative.as_posix()):
+            outside[target] = relative.as_posix()
+    data = game.resolve() / CAMPAIGN_DATA
+    record, pointer = data / applied_files.RECORD, data / "next.lua"
+    # The earlier files first, the record after the files it names, the next-game pointer last.
+    writes = _applied(game, changes, outside)
+    order = {**{path: 0 for path in writes}, record: 2, pointer: 3}
+    changes.update(writes)
+    ordered = sorted(changes, key=lambda path: (order.get(path, 1), str(path)))
     # Roll back an actual copy error; no persistent lab-recovery framework.
     with TemporaryDirectory(prefix="apply-backup-", dir=output.parent) as temporary:
         backups = {}

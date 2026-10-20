@@ -141,7 +141,12 @@ are told in plain words; a console window that would close with the program
 waits for Enter first. Outside Windows the folder is asked for on the
 terminal.
 
-Every start scans again, so the editor sees the game as it is. After the
+Every start scans again, so the editor sees the game as it is. The files the
+last Apply wrote into override and the game text are no change of the game's
+mods: while they hold what Apply wrote, the scan reads them as the game had
+them before (`randomiser-campaigns\applied-files.json`; see
+[Apply's own files](../docs/post-install-configurator.md#applys-own-files)), so
+the configuration applied last reopens. After the
 game's mods changed, the configurations saved before cannot be opened with the
 new scan, and the editor would refuse to open a workspace that holds them (the
 reference's `ui` answers its state with "Profile belongs to another scan"
@@ -235,7 +240,9 @@ build with the feature again before the checks.
   `weidu.conf`'s language) outside the game and serves the editor state of
   `ui --apply-game`; then Apply, reopening the applied configuration, a change
   of the game's mods, Apply from a new workspace after the player's folder was
-  lost (the earlier revisions stay and the source gate keeps them), a start
+  lost (the earlier revisions stay and the source gate keeps them), Apply of
+  two extended reward routes and the next start, which reopens that
+  configuration although Apply wrote into override and the game text, a start
   outside any game (a folder without a game, a game without CIR, then a folder
   inside a game whose `WeiDU.log` records CIR), a game without CIR whose
   folder window is closed, and an incomplete installation.

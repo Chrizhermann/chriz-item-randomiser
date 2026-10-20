@@ -13,6 +13,7 @@ mod unicode_tables;
 pub mod data;
 pub mod paths;
 pub mod zip;
+pub mod applied_files;
 pub mod resources;
 pub mod profiles;
 pub mod world_formats;
