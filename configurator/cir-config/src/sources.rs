@@ -1354,9 +1354,12 @@ fn string_set(values: &[Value]) -> Option<HashSet<&str>> {
     values.iter().map(Value::as_str).collect()
 }
 
-const BINDING_PLAN_FIELDS: [&str; 6] =
+/// A binding plan's fields; binding and the editor's draft check both use them.
+pub const PLAN_FIELDS: [&str; 6] =
     ["schema", "catalog_fingerprint", "world_fingerprint", "sources", "registrations", "targets"];
-const BINDING_PLAN_OPTIONAL: [&str; 8] = [
+/// Creature replacements, randomisation rules, an original preset's settings
+/// and the metadata of its options (Spell Shield stock, cursed disguises).
+pub const PLAN_OPTIONAL_FIELDS: [&str; 8] = [
     "replacements",
     "randomization",
     "original_template_id",
@@ -1388,8 +1391,8 @@ pub fn bind_profile(profile: &Value, catalog: &Value, world: &Value, plan: &Valu
     let indexes = validate_world(world, catalog)?;
     let plan_fields = match plan.as_dict() {
         Some(fields) => {
-            let mut expected: Vec<&str> = BINDING_PLAN_FIELDS.to_vec();
-            expected.extend(BINDING_PLAN_OPTIONAL.iter().copied().filter(|key| fields.contains_key(key)));
+            let mut expected: Vec<&str> = PLAN_FIELDS.to_vec();
+            expected.extend(PLAN_OPTIONAL_FIELDS.iter().copied().filter(|key| fields.contains_key(key)));
             if !fields.has_exact_keys(&expected) {
                 return Err(Error::profile("Unsupported binding plan fields"));
             }

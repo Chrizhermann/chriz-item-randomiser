@@ -14,7 +14,7 @@ from .native_export import _compile as compile_native
 from .profiles import (PROFILE_ID, ProfileError, ensure_output_outside_game,
                        new_profile, read_json, search_items, validate_catalog,
                        validate_profile, write_json)
-from .sources import new_binding_plan, validate_world
+from .sources import PLAN_FIELDS, PLAN_OPTIONAL_FIELDS, new_binding_plan, validate_world
 from .prepared import applied, left_out
 from .scripted_sources import blpool_registration
 from .platform import preset_campaigns, recommended_campaign
@@ -59,9 +59,8 @@ class Editor:
         """Incomplete drafts may be saved; full binding checks happen on Check."""
         profile = validate_profile(data["profile"], self.catalog)
         plan = deepcopy(data["plan"])
-        expected = {"schema", "catalog_fingerprint", "world_fingerprint", "sources", "targets", "registrations"}
-        expected |= set(plan) & {"randomization", "replacements", "original_options",
-                                 "original_choices", "original_template_id", "target_registrations"}
+        # The fields binding accepts: a preset's options add their own.
+        expected = PLAN_FIELDS | (set(plan) & PLAN_OPTIONAL_FIELDS)
         if (set(plan) != expected or plan["schema"] != "flir-binding-plan-v1" or
                 plan["catalog_fingerprint"] != self.catalog["fingerprint"] or
                 plan["world_fingerprint"] != self.world["fingerprint"] or

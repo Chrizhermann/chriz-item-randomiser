@@ -36,6 +36,14 @@ INVALID_INVENTORY = "invalid-inventory-reference"
 INVALID_ITEM = "invalid-item-reference"
 UNRESOLVED_STORAGE = "unresolved-creature-storage"
 PLAN_SCHEMA = "flir-binding-plan-v1"
+# A binding plan's fields; binding and the editor's draft check both use them.
+PLAN_FIELDS = frozenset({"schema", "catalog_fingerprint", "world_fingerprint", "sources", "registrations",
+                         "targets"})
+# Creature replacements, randomisation rules, an original preset's settings and
+# the metadata of its options (Spell Shield stock, cursed disguises).
+PLAN_OPTIONAL_FIELDS = frozenset({"replacements", "randomization", "original_template_id", "original_choices",
+                                  "original_options", "target_registrations", "spell_shield",
+                                  "cursed_disguises"})
 COVERAGE = "physical-records-and-bcs-dlg-hashes"
 KINDS = ("itm", "cre", "are", "sto", "bcs", "dlg", "spl")
 # The kinds whose records the scan reads. One it cannot read is left out.
@@ -696,11 +704,8 @@ def bind_profile(profile: dict, catalog: dict, world: dict, plan: dict) -> dict:
     """Freeze explicit choices with evidence, never infer safe runtime behavior."""
     frozen = validate_profile(profile, catalog)
     indexes = validate_world(world, catalog)
-    _fields(plan, {"schema", "catalog_fingerprint", "world_fingerprint", "sources", "registrations", "targets"}
-            | ({"replacements"} if isinstance(plan, dict) and "replacements" in plan else set())
-            | ({"randomization"} if isinstance(plan, dict) and "randomization" in plan else set())
-            | (set(plan) & {"original_template_id", "original_choices", "original_options",
-                            "target_registrations", "spell_shield", "cursed_disguises"} if isinstance(plan, dict) else set()), "binding plan")
+    _fields(plan, PLAN_FIELDS | (set(plan) & PLAN_OPTIONAL_FIELDS if isinstance(plan, dict) else set()),
+            "binding plan")
     replacements = plan.get("replacements", {})
     if not isinstance(replacements, dict):
         raise ProfileError("Creature replacements must map source identities to item resrefs or blank")

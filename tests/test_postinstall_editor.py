@@ -3,6 +3,7 @@ from contextlib import nullcontext
 from copy import deepcopy
 import json
 from pathlib import Path
+import struct
 import sys
 from threading import Thread
 from types import ModuleType
@@ -15,11 +16,17 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
 from flir_config.campaigns import read_campaign, _render_lua
 from flir_config.editor import Editor, create_server
 from flir_config.native_export import NEXT_SCHEMA
+from flir_config.original_catalog import resolve_template
+from flir_config.original_options import SPELL_SHIELD_SOURCE, is_spell_shield_row
 from flir_config.profiles import edit_profile, new_profile
 from flir_config.profiles import ProfileError
-from flir_config.sources import new_binding_plan
+from flir_config.resources import scan_game
+from flir_config.sources import new_binding_plan, scan_world
+from flir_config.templates import DEFAULT_OPTIONS
 from tests import test_postinstall_native_export as fixtures
+from test_cursed_disguises import resources as cursed_resources
 from tests.test_postinstall_blpool_script import write_registry
+from test_postinstall_resources import make_itm
 from tests.test_postinstall_world_formats import make_are, make_cre, make_sto, item_record
 from sod_table_fixtures import sod_tables
 
@@ -169,6 +176,57 @@ class EditorTests(unittest.TestCase):
             with self.assertRaisesRegex(ProfileError, "different scan"):
                 editor.post("/api/template", {"id": "bg2-original"})
             self.assertEqual(editor.draft, before_error)
+
+    def test_preset_options_with_their_own_plan_fields_save_check_apply_and_reopen(self):
+        """More Spell Shield scrolls and cursed disguises add their metadata to the plan."""
+        fx = self.fx
+        scroll = bytearray(make_itm())
+        struct.pack_into("<I", scroll, 0x18, 0x4c)  # droppable, as the game's is
+        (fx.override / "scrl8x.itm").write_bytes(scroll)
+        (fx.override / "udduer01.sto").write_bytes(bytes(make_sto(
+            [(item_record("scrl8x", expiration=0, charges=(1, 1, 0), flags=0), 1, 0)])))
+        # A place of the Spell Shield scroll's tier for its randomised copies.
+        (fx.override / "ar0808.are").write_bytes(make_are([], [("Chest1", 0, 0)]))
+        for name, data in cursed_resources().items():
+            item = bytearray(data)
+            struct.pack_into("<HH", item, 0x72 + 0x1E, 0, 0)
+            (fx.override / f"{name}.itm").write_bytes(item)
+        # The disguises' texts go into the game's English text and journal table.
+        language = fx.game / "lang/en_US"
+        language.mkdir(parents=True)
+        (language / "dialog.tlk").write_bytes((fx.game / "dialog.tlk").read_bytes())
+        (fx.override / "BGEE.LUA").write_bytes(b"quests = {}\n")
+        for name in ("override/M_FLPR.lua", "override/FLPRRun.menu", "randomiser-campaigns/next.lua"):
+            path = fx.game / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("test runtime")
+        catalog = scan_game(fx.game, language="en_US")
+        world = scan_world(catalog)
+        options = DEFAULT_OPTIONS | {"scrolls": True, "more_spell_shield": True, "cursed_disguise": True}
+        rows = resolve_template(catalog, world, "bg2-original", items="extended", targets="extended",
+                                options=options)
+        rows["items"] = [row for row in rows["items"] if is_spell_shield_row(row)]
+        rows["targets"] = [row for row in rows["targets"] if row["id"] == "bg2:base:target:309"]
+        editor = Editor(catalog, world, fx.root / "options-editor", apply_game=fx.game)
+        with patch("flir_config.original_configuration.resolve_template", return_value=rows):
+            editor.post("/api/template", {"id": "bg2-original", "items": "extended", "targets": "extended",
+                                          "options": options})
+        draft = deepcopy(editor.draft)
+        self.assertEqual(draft["plan"]["original_options"], options)
+        self.assertEqual(draft["plan"]["spell_shield"]["source_id"], SPELL_SHIELD_SOURCE)
+        self.assertEqual(draft["plan"]["cursed_disguises"]["game"], "eet")
+        saved = editor.post("/api/save", draft)
+        self.assertEqual((saved["profile"], saved["plan"]), (draft["profile"], draft["plan"]))
+        loaded = Editor(catalog, world, editor.workspace).post("/api/load", {"id": draft["profile"]["id"]})
+        self.assertEqual((loaded["profile"], loaded["plan"]), (draft["profile"], draft["plan"]))
+        self.assertTrue(editor.post("/api/validate", draft)["runtime_supported"])
+        with patch("flir_config.activation.require_closed"):
+            applied = editor.post("/api/apply", draft)
+        campaign = read_campaign(editor.workspace / "prepared", applied["revision"])
+        self.assertEqual(campaign["spell_shield"], draft["plan"]["spell_shield"])
+        self.assertEqual(campaign["cursed_disguises"], draft["plan"]["cursed_disguises"])
+        # The editor reopens what was applied.
+        self.assertEqual(Editor(catalog, world, editor.workspace, apply_game=fx.game).draft, draft)
 
     def test_prepare_uses_existing_campaign_format_and_capacity_check(self):
         e = self.editor

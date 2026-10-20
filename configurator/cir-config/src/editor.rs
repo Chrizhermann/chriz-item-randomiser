@@ -43,19 +43,11 @@ fn py_int(text: &str) -> Result<Value> {
     crate::py::int_value(text).map_err(Error::value)
 }
 
-/// Python's `set(plan)` compared with the expected plan fields: Ok(true)
-/// when they are equal, the TypeError Python raises for values that are not
-/// iterable or hold unhashable members.
+/// Python's `set(plan)` compared with the fields binding accepts (a preset's
+/// options add their own): Ok(true) when they are equal, the TypeError Python
+/// raises for values that are not iterable or hold unhashable members.
 fn plan_fields_match(plan: &Value) -> Result<bool> {
-    const REQUIRED: [&str; 6] = ["schema", "catalog_fingerprint", "world_fingerprint", "sources", "targets", "registrations"];
-    const OPTIONAL: [&str; 6] = [
-        "randomization",
-        "replacements",
-        "original_options",
-        "original_choices",
-        "original_template_id",
-        "target_registrations",
-    ];
+    use crate::sources::{PLAN_FIELDS as REQUIRED, PLAN_OPTIONAL_FIELDS as OPTIONAL};
     let members: Vec<Option<&str>> = match plan {
         Value::Dict(fields) => fields.keys().map(Some).collect(),
         Value::List(values) => {
@@ -683,5 +675,39 @@ impl Editor {
             _ => return Err(Error::profile("Unknown editor request")),
         }
         self.state()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::sources::{PLAN_FIELDS, PLAN_OPTIONAL_FIELDS};
+
+    fn plan(fields: &[&str]) -> Value {
+        let mut plan = Dict::new();
+        for field in fields {
+            plan.insert(*field, Value::Null);
+        }
+        Value::Dict(plan)
+    }
+
+    fn with(extra: &[&str]) -> Value {
+        plan(&PLAN_FIELDS.iter().chain(extra).copied().collect::<Vec<_>>())
+    }
+
+    #[test]
+    fn drafts_may_hold_every_field_binding_accepts() {
+        assert!(plan_fields_match(&with(&[])).unwrap());
+        // A preset with More Spell Shield scrolls or cursed disguises adds their metadata.
+        assert!(plan_fields_match(&with(&["spell_shield", "cursed_disguises"])).unwrap());
+        for field in PLAN_OPTIONAL_FIELDS {
+            assert!(plan_fields_match(&with(&[field])).unwrap(), "{field}");
+        }
+        assert!(plan_fields_match(&with(&PLAN_OPTIONAL_FIELDS)).unwrap());
+        assert!(!plan_fields_match(&with(&["notes"])).unwrap());
+        for field in PLAN_FIELDS {
+            let fields: Vec<&str> = PLAN_FIELDS.iter().copied().filter(|name| *name != field).collect();
+            assert!(!plan_fields_match(&plan(&fields)).unwrap(), "{field}");
+        }
     }
 }

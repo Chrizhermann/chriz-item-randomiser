@@ -7,9 +7,11 @@ sends both the same session of requests and compares status, content
 headers and bodies, then the files each wrote into its workspace. Random
 draft ids (`adventure-<12 hex>`) and the workspace folders are masked; drafts
 sent back are each server's own. Further phases cover CIR's install record
-(read while the editor runs), the scripted quest-pool reward, and applying
-configurations to a synthetic test runtime, where each editor runs in turn
-on the same game and the game's files are compared afterwards.
+(read while the editor runs), the scripted quest-pool reward, a preset with
+the options that add their own plan fields (More Spell Shield copies, cursed
+disguises), and applying configurations to a synthetic test runtime, where
+each editor runs in turn on the same game and the game's files are compared
+afterwards.
 
     python configurator/parity/editor_check.py
 """
@@ -21,6 +23,7 @@ import json
 import os
 from pathlib import Path
 import re
+import struct
 import subprocess
 import sys
 import tempfile
@@ -30,8 +33,10 @@ from common import RUST_CLI, restore_tree, snapshot_tree
 from cli_check import PYTHON, build, sources
 
 from flir_config.profiles import write_json  # noqa: E402
+from test_cursed_disguises import resources as cursed_resources  # noqa: E402
 from test_postinstall_blpool_script import compiled_blpool, pool_game, pool_plan, write_registry  # noqa: E402
-from test_postinstall_resources import mark_eet  # noqa: E402
+from test_postinstall_resources import make_itm, mark_eet  # noqa: E402
+from test_postinstall_world_formats import item_record, make_are, make_sto  # noqa: E402
 
 RANDOM_ID = re.compile(r"adventure-[0-9a-f]{12}")
 HEADERS = ("Content-Type", "Content-Length", "Cache-Control")
@@ -214,10 +219,10 @@ def tree_failures(label: str, expected: dict, actual: dict) -> int:
     return failures
 
 
-def scan(game: Path, scans: Path) -> tuple[Path, Path]:
+def scan(game: Path, scans: Path, language: str | None = None) -> tuple[Path, Path]:
     scans.mkdir()
     catalog, world = scans / "catalog.json", scans / "world.json"
-    for step in (["scan", "--game", str(game), "--out", str(catalog)],
+    for step in (["scan", "--game", str(game), "--out", str(catalog)] + (["--language", language] if language else []),
                  ["world", "scan", "--catalog", str(catalog), "--out", str(world)]):
         subprocess.run(PYTHON + step, check=True, capture_output=True)
     return catalog, world
@@ -323,6 +328,60 @@ def pool_phase(root: Path):
     return concurrent_phase("quest pool", root, catalog, world, steps)
 
 
+# A preset with More Spell Shield scrolls and cursed disguises: its plan holds
+# the options' own metadata (the Spell Shield stock, the disguises' items).
+OPTIONS_PRESET = {"id": "bg2-original", "items": "extended", "targets": "extended",
+                  "options": {"scrolls": True, "more_spell_shield": True, "cursed_disguise": True}}
+
+
+def add_option_resources(game: Path) -> None:
+    """What the preset needs to fit with both options: Spell Shield's store
+    and scroll, a place of the scroll's tier, the disguise items, and English
+    game text with a journal table for the disguises' texts."""
+    override = game / "override"
+    scroll = bytearray(make_itm())
+    struct.pack_into("<I", scroll, 0x18, 0x4C)
+    (override / "scrl8x.itm").write_bytes(bytes(scroll))
+    (override / "udduer01.sto").write_bytes(bytes(make_sto(
+        [(item_record("scrl8x", expiration=0, charges=(1, 1, 0), flags=0), 1, 0)])))
+    (override / "ar0808.are").write_bytes(make_are([], [("Chest1", 0, 0)]))
+    for name, data in cursed_resources().items():
+        item = bytearray(data)
+        struct.pack_into("<HH", item, 0x72 + 0x1E, 0, 0)
+        (override / f"{name}.itm").write_bytes(bytes(item))
+    language = game / "lang" / "en_US"
+    language.mkdir(parents=True)
+    (language / "dialog.tlk").write_bytes((game / "dialog.tlk").read_bytes())
+    (override / "BGEE.LUA").write_bytes(b"quests = {}\n")
+
+
+def preset_draft(state: dict) -> dict:
+    """A server's preset draft under a fixed id: the id is part of the revision."""
+    draft = {"profile": copy.deepcopy(state["profile"]), "plan": copy.deepcopy(state["plan"])}
+    draft["profile"]["id"] = "parity-options"
+    return draft
+
+
+def options_phase(root: Path):
+    """The preset with both options: its draft saved, loaded, checked and prepared."""
+    game = root / "options-game"
+    build(game)
+    add_option_resources(game)
+    catalog, world = scan(game, root / "options-scans", "en_US")
+
+    def own(path):
+        return lambda server, state: server.post(path, preset_draft(state))
+
+    steps = [
+        ("preset with Spell Shield and disguises", lambda server, state: server.post("/api/template", OPTIONS_PRESET)),
+        ("save", own("/api/save")),
+        ("load", lambda server, state: server.post("/api/load", {"id": "parity-options"})),
+        ("validate", own("/api/validate")),
+        ("prepare", own("/api/prepare")),
+    ]
+    return concurrent_phase("preset options", root, catalog, world, steps)
+
+
 OPEN_GAME = "Close this game and its installer before applying settings"
 
 
@@ -332,39 +391,44 @@ OPEN_GAME = "Close this game and its installer before applying settings"
 APPLY_GAMES = (("eet", "area"), ("bgee", "bd0100"), ("bg2ee", "ar4000"))
 
 
-def apply_phase(root: Path, platform: str, area: str, attempts: int = 3) -> tuple[int, int, int]:
+def apply_phase(root: Path, platform: str, area: str, attempts: int = 3,
+                options: bool = False) -> tuple[int, int, int]:
     """Apply to a test runtime: each editor in turn on the same game and
     workspaces, restored in between, then the game and workspaces compared.
+    With `options`, the applied draft is the preset with both options.
 
     Both check for real that no game, loader, WeiDU or mod installer runs (the
     reference asks Windows); one started meanwhile by something else refuses
     only one side's apply, so such a run is repeated."""
+    name = platform + (" preset options" if options else "")
     for attempt in range(1, attempts + 1):
-        results, trees = apply_attempt(root / f"apply-{platform}-{attempt}", platform, area)
+        results, trees = apply_attempt(root / f"apply-{name.replace(' ', '-')}-{attempt}", platform, area, options)
         refused = any(OPEN_GAME in text for outcomes in results.values() for _, (_, _, _, text) in outcomes)
         if refused and attempt < attempts:
-            print(f"apply {platform}: a game, loader or installer ran during attempt {attempt}; repeating",
+            print(f"apply {name}: a game, loader or installer ran during attempt {attempt}; repeating",
                   flush=True)
             continue
         failures = 0
         for (label, python), (_, rust) in zip(results["python"], results["rust"]):
-            failures += compare_step(f"apply {platform}: {label}", {"python": python, "rust": rust})
-        for name in trees["python"]:
-            failures += tree_failures(f"apply {platform} {name}", trees["python"][name], trees["rust"][name])
+            failures += compare_step(f"apply {name}: {label}", {"python": python, "rust": rust})
+        for folder in trees["python"]:
+            failures += tree_failures(f"apply {name} {folder}", trees["python"][folder], trees["rust"][folder])
         files = sum(len(folder) for folder in trees["python"].values())
         return len(results["python"]), files, failures
 
 
-def apply_attempt(root: Path, platform: str, area: str) -> tuple[dict, dict]:
+def apply_attempt(root: Path, platform: str, area: str, options: bool = False) -> tuple[dict, dict]:
     root.mkdir()
     game = root / "apply-game"
     build(game, platform, area)
+    if options:
+        add_option_resources(game)
     for name in ("override/M_FLPR.lua", "override/FLPRRun.menu", "randomiser-campaigns/next.lua"):
         path = game / name
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text("test runtime")
     (game / "override" / "other-mod.txt").write_bytes(b"preserve unrelated mod content")
-    catalog, world = scan(game, root / "apply-scans")
+    catalog, world = scan(game, root / "apply-scans", "en_US" if options else None)
     workspace, other = root / "apply-workspace", root / "apply-other"
     before = snapshot_tree(game)
     results, trees = {}, {}
@@ -384,6 +448,12 @@ def apply_attempt(root: Path, platform: str, area: str) -> tuple[dict, dict]:
     def get(path):
         return lambda server, state: server.request("GET", path)
 
+    def preset(server, state):
+        return server.post("/api/template", OPTIONS_PRESET)
+
+    def apply_preset(server, state):
+        return server.post("/api/apply", preset_draft(state))
+
     for side in ("python", "rust"):
         restore_tree(game, before)
         for folder in (workspace, other):
@@ -400,12 +470,17 @@ def apply_attempt(root: Path, platform: str, area: str) -> tuple[dict, dict]:
             finally:
                 server.stop()
 
-        session(workspace, [("state", state_of), ("presets of the game", get("/api/templates")),
-                            ("recommended preset", get("/api/recommended")), ("apply", apply),
-                            ("apply again unchanged", apply), ("apply changed", changed),
-                            ("state after apply", state_of)])
-        session(workspace, [("reopened state", state_of)])
-        session(other, [("other workspace apply", apply)])
+        if options:
+            session(workspace, [("state", state_of), ("preset with Spell Shield and disguises", preset),
+                                ("apply", apply_preset), ("state after apply", state_of)])
+            session(workspace, [("reopened state", state_of)])
+        else:
+            session(workspace, [("state", state_of), ("presets of the game", get("/api/templates")),
+                                ("recommended preset", get("/api/recommended")), ("apply", apply),
+                                ("apply again unchanged", apply), ("apply changed", changed),
+                                ("state after apply", state_of)])
+            session(workspace, [("reopened state", state_of)])
+            session(other, [("other workspace apply", apply)])
         results[side] = outcomes
         trees[side] = {"game": tree(game), "workspace": tree(workspace), "other workspace": tree(other)}
     restore_tree(game, before)
@@ -422,8 +497,10 @@ def main() -> int:
         build(game)
         catalog, world = scan(game, root / "scans")
         steps = session() + registry_steps(game, ["/api/recommended"])
-        phases = [concurrent_phase("synthetic", root, catalog, world, steps), pool_phase(root)]
+        phases = [concurrent_phase("synthetic", root, catalog, world, steps), pool_phase(root),
+                  options_phase(root)]
         phases += [apply_phase(root, platform, area) for platform, area in APPLY_GAMES]
+        phases.append(apply_phase(root, "eet", "area", options=True))
         for result in phases:
             totals = [total + value for total, value in zip(totals, result)]
     print(f"editor parity: {totals[0]} requests, {totals[1]} written files compared, {totals[2]} failures")
