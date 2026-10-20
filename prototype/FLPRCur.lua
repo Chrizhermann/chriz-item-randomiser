@@ -73,54 +73,26 @@ local function selection(self,revision,index)
     return table.concat(out)
 end
 
-function Cur.new(api,bundles,pristine,compile)
-    local self=setmetatable({api=api,revisions={},ordered={},slots={}},Runtime)
+-- Owned copies of ITM bytes; FLPR.Memory (M_FLPR.lua, LuaJIT ffi) moves each
+-- in one block, otherwise every byte is written through EEex.
+local function owned(self,value)
+    if self.assets[value] then return self.assets[value] end
+    local api=self.api
+    local address=assert(api.EEex_Malloc(#value),'CURSED_ALLOC_FAILED')
+    local memory=type(api.FLPR)=='table' and api.FLPR.Memory
+    if type(memory)=='table' and type(memory.write)=='function' then memory.write(address,value)
+    else for at=1,#value do local n=value:byte(at);api.EEex_Write8(address+at-1,n>=128 and n-256 or n) end end
+    self.assets[value]=address;return address
+end
+
+-- The shared disguise state and its hooks' code. Revisions are added when a
+-- game needs them (prepare, then commit); install places the demand hooks.
+function Cur.create(api,compile)
+    assert(type(compile)=='function','CURSED_CONFIG_INVALID')
+    local self=setmetatable({api=api,compile=compile,revisions={},ordered={},slots={},assets={}},Runtime)
     local state=assert(api.EEex_Malloc(128+#NAMES*32),'CURSED_ALLOC_FAILED');self.state=state
     for at=0,128+#NAMES*32-1,8 do api.EEex_Write64(state+at,0) end
     for index,name in ipairs(NAMES) do self.slots[name]=state+128+(index-1)*32 end
-    local assets={}
-    local function bytes(value)
-        if assets[value] then return assets[value] end
-        local address=assert(api.EEex_Malloc(#value),'CURSED_ALLOC_FAILED')
-        for at=1,#value do local n=value:byte(at);api.EEex_Write8(address+at-1,n>=128 and n-256 or n) end
-        assets[value]=address;return address
-    end
-    for _,bundle in ipairs(bundles) do
-        local spec,fixture=bundle.manifest.cursed_disguises,bundle.fixture.cursed_disguises
-        if spec then
-            assert(bundle.manifest.original_options.cursed_disguise==true and fixture and
-                fixture.algorithm=='park-miller-cursed-v1' and integer(#fixture.items,1,8) and
-                #fixture.items==#spec.choices,
-                'CURSED_CONFIG_INVALID')
-            local revision=bundle.manifest.revision
-            local entry=assert(pristine and pristine[revision],'CURSED_BYTES_MISSING')
-            local current={revision=revision,items={},policy=compile(revision,'cursed_disguise')}
-            assert(not self.revisions[revision],'CURSED_REVISION_DUPLICATED')
-            self.revisions[revision]=current;self.ordered[#self.ordered+1]=current
-            local seen={}
-            for ordinal,item in ipairs(fixture.items) do
-                local name=item.resref;local authored=spec.choices[ordinal]
-                assert(self.slots[name] and not seen[name] and authored.source==name and
-                    item.sha256==spec.resource_hashes[name] and integer(#item.variants,1,7) and
-                    #item.variants==#authored.variants,
-                    'CURSED_ITEM_INVALID');seen[name]=true
-                local data=assert(entry[name],'CURSED_ITEM_BYTES_MISSING')
-                local original=data.original
-                assert(type(original)=='string' and #original==item.size and #original>=0x72 and
-                    original:sub(1,8)=='ITM V1  ' and #data.variants==#item.variants,'CURSED_ITEM_BYTES_INVALID')
-                local row={resref=name,size=#original,original=bytes(original),pointers={}}
-                row.table=assert(api.EEex_Malloc(#item.variants*8),'CURSED_ALLOC_FAILED')
-                for face,value in ipairs(data.variants) do
-                    assert(type(value)=='string' and #value==#original and value:sub(1,8)=='ITM V1  ' and
-                        value:sub(0x64+1,0x72)==original:sub(0x64+1,0x72) and
-                        item.variants[face].donor==authored.variants[face].donor,'CURSED_VARIANT_INVALID')
-                    row.pointers[face]=bytes(value);api.EEex_Write64(row.table+(face-1)*8,row.pointers[face])
-                end
-                current.items[#current.items+1]=row
-            end
-        else assert(not fixture,'CURSED_CONFIG_INVALID') end
-    end
-    assert(#self.ordered>0,'CURSED_CONFIG_MISSING')
     self.sites={}
     for index,key in ipairs(SITES) do self.sites[index]=Site.locate(api,key,'CURSED') end
     -- dimmDumpAllInTempOverride reads the current resource registry (array and
@@ -130,14 +102,14 @@ function Cur.new(api,bundles,pristine,compile)
     self.registry_count=Site.rip_target(api,Site.locate(api,'cur_registry_count','CURSED'),7)
     self.registry=Site.rip_target(api,Site.locate(api,'cur_registry_array','CURSED'),7)
     Site.check_layout(api,'cursed','CURSED')
-    local enter=save()..'mov r10, '..number(state)..'\nmov qword ptr ds:[r10], 0\n'..
+    self.enter=save()..'mov r10, '..number(state)..'\nmov qword ptr ds:[r10], 0\n'..
         'mov qword ptr ds:[r10+8], 0\nmov qword ptr ds:[r10+16], 0\n'..
         'mov qword ptr ds:[r10+48], rdx\nmov eax, r8d\nmov qword ptr ds:[r10+56], rax\n'..
         refresh(self,'gate_curse_enter_',true)..restore()
     -- The GAM being read: GAME V2.0 (BG2:EE, EET), GAME V2.1 (their saves in
     -- Throne of Bhaal) or GAME V1.1 (BG:EE), the same 0xB4-byte header and
     -- 84-byte variable records.
-    local capture_header=save()..'mov r10, '..number(state)..'\n'..[[
+    self.capture_header=save()..'mov r10, '..number(state)..'\n'..[[
         cmp r14, qword ptr ds:[r10+48]
         jne gate_curse_done
         cmp qword ptr ds:[r10+56], 0xB4
@@ -167,25 +139,8 @@ function Cur.new(api,bundles,pristine,compile)
         cmp rdx, qword ptr ds:[r10+56]
         ja gate_curse_done
     ]]
-    -- Each block fits EEex's single-page near allocator. Keep independent
-    -- revision checks and final refresh as separate existing Gate chain parts.
-    self.assemblies={{enter=enter}}
-    local combined={}
-    for index,current in ipairs(self.ordered) do
-        local prefix='gate_curse_policy_'..index..'_'
-        local capture=capture_header..'mov r10, '..number(state)..'\nmov qword ptr ds:[r10+72], 1\n'..
-            'mov qword ptr ds:[r10+80], 0\nmov qword ptr ds:[r10+88], 0\nmov qword ptr ds:[r10+96], 0\n'..
-            'mov eax, dword ptr ds:[r14+0x38]\nadd rax, r14\nmov ecx, dword ptr ds:[r14+0x3C]\n'..
-            current.policy.scan:gsub('gate_',prefix)..'\n'..prefix..'capture_log:\n'..
-            'cmp qword ptr ds:[r10+72], 0\njne '..prefix..'next\n'..
-            selection(self,current,index)..prefix..'next:\n'..'gate_curse_done:\n'..restore()
-        capture=capture:gsub('gate_curse_done','gate_curse_done_'..index)
-            :gsub('gate_curse_gam_version','gate_curse_gam_version_'..index)
-        self.assemblies[#self.assemblies+1]={capture=capture};combined[#combined+1]=capture
-    end
-    local final=save()..refresh(self,'gate_curse_refresh_',false)..restore()
-    self.assemblies[#self.assemblies+1]={capture=final};combined[#combined+1]=final
-    self.assembly={enter=enter,capture=table.concat(combined)} -- offline inspection only
+    -- After every revision's selection: refresh the views of loaded items.
+    self.final=save()..refresh(self,'gate_curse_refresh_',false)..restore()
     local demand={'mov rax, qword ptr ds:[rbx+0x40]\n',save(),
         'cmp dword ptr ds:[rbx+0x10], 0x3ED\njne gate_curse_demand_done\n'..
         'mov rcx, qword ptr ds:[rbx+8]\ntest rcx, rcx\nje gate_curse_demand_done\n'..
@@ -200,6 +155,84 @@ function Cur.new(api,bundles,pristine,compile)
         'mov qword ptr ds:[r10], rbx\nmov rcx, rbx\n'..view(state,'gate_curse_view')..
         'mov qword ptr ss:[rsp+64], rax\ngate_curse_demand_done:\n'..restore()
     self.demand=table.concat(demand)
+    return self
+end
+
+-- One campaign revision's disguises and its capture check (the GAM selects
+-- it by its policy), numbered after the revisions already committed. Nothing
+-- runs it until the caller chains the code and commits the revision.
+function Runtime:prepare(bundle,pristine)
+    local api=self.api
+    local spec,fixture=bundle.manifest.cursed_disguises,bundle.fixture.cursed_disguises
+    assert(spec and bundle.manifest.original_options.cursed_disguise==true and fixture and
+        fixture.algorithm=='park-miller-cursed-v1' and integer(#fixture.items,1,8) and
+        #fixture.items==#spec.choices,
+        'CURSED_CONFIG_INVALID')
+    local revision=bundle.manifest.revision
+    assert(not self.revisions[revision],'CURSED_REVISION_DUPLICATED')
+    local entry=assert(pristine and pristine[revision],'CURSED_BYTES_MISSING')
+    local policy=self.compile(revision,'cursed_disguise')
+    assert(type(policy)=='table' and type(policy.table)=='string' and type(policy.scan)=='string',
+        'CURSED_POLICY_INVALID')
+    local current={revision=revision,items={},policy=policy}
+    local seen={}
+    for ordinal,item in ipairs(fixture.items) do
+        local name=item.resref;local authored=spec.choices[ordinal]
+        assert(self.slots[name] and not seen[name] and authored.source==name and
+            item.sha256==spec.resource_hashes[name] and integer(#item.variants,1,7) and
+            #item.variants==#authored.variants,
+            'CURSED_ITEM_INVALID');seen[name]=true
+        local data=assert(entry[name],'CURSED_ITEM_BYTES_MISSING')
+        local original=data.original
+        assert(type(original)=='string' and #original==item.size and #original>=0x72 and
+            original:sub(1,8)=='ITM V1  ' and #data.variants==#item.variants,'CURSED_ITEM_BYTES_INVALID')
+        local row={resref=name,size=#original,original=owned(self,original),pointers={}}
+        row.table=assert(api.EEex_Malloc(#item.variants*8),'CURSED_ALLOC_FAILED')
+        for face,value in ipairs(data.variants) do
+            assert(type(value)=='string' and #value==#original and value:sub(1,8)=='ITM V1  ' and
+                value:sub(0x64+1,0x72)==original:sub(0x64+1,0x72) and
+                item.variants[face].donor==authored.variants[face].donor,'CURSED_VARIANT_INVALID')
+            row.pointers[face]=owned(self,value);api.EEex_Write64(row.table+(face-1)*8,row.pointers[face])
+        end
+        current.items[#current.items+1]=row
+    end
+    local fields=owned(self,policy.table) -- the policy's field table, which its scan names
+    local index=#self.ordered+1
+    local prefix='gate_curse_policy_'..index..'_'
+    local capture=self.capture_header..'mov r10, '..number(self.state)..'\nmov qword ptr ds:[r10+72], 1\n'..
+        'mov qword ptr ds:[r10+80], 0\nmov qword ptr ds:[r10+88], 0\nmov qword ptr ds:[r10+96], 0\n'..
+        'mov eax, dword ptr ds:[r14+0x38]\nadd rax, r14\nmov ecx, dword ptr ds:[r14+0x3C]\n'..
+        policy.scan:gsub('@POLICY_TABLE@',number(fields)):gsub('gate_',prefix)..'\n'..prefix..'capture_log:\n'..
+        'cmp qword ptr ds:[r10+72], 0\njne '..prefix..'next\n'..
+        selection(self,current,index)..prefix..'next:\n'..'gate_curse_done:\n'..restore()
+    capture=capture:gsub('gate_curse_done','gate_curse_done_'..index)
+        :gsub('gate_curse_gam_version','gate_curse_gam_version_'..index)
+    current.index=index
+    return current,{capture=capture}
+end
+
+-- After the revision's capture check is chained: it may now be selected.
+function Runtime:commit(current)
+    assert(current.index==#self.ordered+1 and not self.revisions[current.revision],'CURSED_REVISION_DUPLICATED')
+    self.revisions[current.revision]=current;self.ordered[#self.ordered+1]=current
+end
+
+-- Every cursed revision at once (offline checks and focused tests): the GAM
+-- entry reset, each revision's capture check, then the final refresh.
+function Cur.new(api,bundles,pristine,compile)
+    local self=Cur.create(api,compile)
+    self.assemblies={{enter=self.enter}}
+    local combined={}
+    for _,bundle in ipairs(bundles) do
+        if bundle.manifest.cursed_disguises or bundle.fixture.cursed_disguises then
+            local current,assembly=self:prepare(bundle,pristine)
+            self:commit(current)
+            self.assemblies[#self.assemblies+1]=assembly;combined[#combined+1]=assembly.capture
+        end
+    end
+    assert(#self.ordered>0,'CURSED_CONFIG_MISSING')
+    self.assemblies[#self.assemblies+1]={capture=self.final};combined[#combined+1]=self.final
+    self.assembly={enter=self.enter,capture=table.concat(combined)} -- offline inspection only
     return self
 end
 

@@ -19,7 +19,7 @@ from unicorn.x86_const import (
     UC_X86_REG_RBP, UC_X86_REG_RCX, UC_X86_REG_RDX, UC_X86_REG_RSP,
 )
 
-from tests.test_campaign_gate_policy import REVISION, expected_fields
+from tests.test_campaign_gate_policy import BIND, POLICY_TABLE, REVISION, expected_fields
 from tests.test_source_gate_assembly import (
     AREA, BUFFER, CODES, IMAGE, INPUT, STACK, GateMachine,
 )
@@ -89,10 +89,11 @@ def generated_hooks(configured=False):
                 'area': 'ARTEST', 'name': blob[224:256], 'payload': blob[840:860], 'index': 2,
                 'inventory': blob[224+0x40:224+0x48], 'position': blob[224+0x20:224+0x28],
             })
+        table = bytes.fromhex(lua.eval(BIND)(policy, POLICY_TABLE))
         output = assembly_factory(BUFFER, gate_targets(lua, IMAGE), policy)
-        outputs.append({name: output[name] for name in HOOKS})
+        outputs.append(({name: output[name] for name in HOOKS}, table))
     assert outputs[0] == outputs[1] == outputs[2]
-    assert outputs[0]['area_enter'] and outputs[0]['area_exit']
+    assert outputs[0][0]['area_enter'] and outputs[0][0]['area_exit']
     return outputs[0]
 
 
@@ -100,7 +101,7 @@ def generated_hooks(configured=False):
 def compiled_hooks(configured=False):
     assembler = Ks(KS_ARCH_X86, KS_MODE_64)
     binaries = {}
-    for name, source in generated_hooks(configured).items():
+    for name, source in generated_hooks(configured)[0].items():
         source = re.sub(r'\b(?:ds|ss):', '', source)
         source = source.replace('#MANUAL_HOOK_EXIT(1)', 'nop')
         binary, _ = assembler.asm(source, HOOKS[name])
@@ -119,6 +120,7 @@ class ProvenanceMachine(GateMachine):
             self.uc.mem_write(HOOKS[name], binary + b'\x90')
         self.sentinels = {name: HOOKS[name] + len(binary)
                           for name, binary in compiled_hooks(configured).items()}
+        self.write(POLICY_TABLE, generated_hooks(configured)[1])
         if configured:
             self.write(AREA+0x204, b'ARTEST\0\0')
         self.write_q(CTOR_FRAME-0x60, AREA)
@@ -190,6 +192,9 @@ def composed_source_machine(blob, specs):
             'index': record, 'inventory': bytes(blob[CONTAINER_OFFSET+0x40:CONTAINER_OFFSET+0x48]),
             'position': bytes(blob[CONTAINER_OFFSET+0x20:CONTAINER_OFFSET+0x28]),
         })
+        # Each member's policy table follows its own native state.
+        table = POLICY_TABLE - BUFFER + buffer
+        machine.write(table, bytes.fromhex(lua.eval(BIND)(policy, table)))
         assemblies.append(factory(buffer, gate_targets(lua, IMAGE), policy))
     joined = gate.compose(lua.table_from(assemblies))
     assembler = Ks(KS_ARCH_X86, KS_MODE_64)

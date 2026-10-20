@@ -27,6 +27,9 @@ from engine_sites import load
 CUR = (ROOT / "prototype/FLPRCur.lua").read_text()
 BASE, GAM, CRES, RAW, REF, STACK, ARRAY = 0x140000000, 0x500000, 0x600000, 0x610000, 0x620000, 0x700000, 0x630000
 CODES = {"enter": 0x100000, "capture": 0x110000, "demand": 0x120000}
+# The mocked EEex's allocations: large blocks at 1000, small ones (the cursed
+# state, owned ITM copies) from their own region (test_campaign_gate_bridge.py).
+SMALL = BASE + 0x4000000
 
 
 def fixture(runtime=LuaJIT, *, gate=False, second=False):
@@ -80,7 +83,11 @@ class Machine:
             self.uc.mem_map(address, size)
         self.state = int(cur.state)
         self.slots = {name: int(value) for name, value in cur.slots.items()}
-        self.uc.mem_write(1000, bytes(int(f.bytes[i] or 0) for i in range(1000, 1000 + int(f.allocated_bytes))))
+        for start, size in ((1000, f.allocated_bytes), (SMALL, f.small_bytes)):
+            size = int(size or 0)
+            if start == SMALL and size:
+                self.uc.mem_map(SMALL, (size + 0xFFF) & ~0xFFF)
+            self.uc.mem_write(start, bytes(int(f.bytes[i] or 0) for i in range(start, start + size)))
         self.lengths = {}
         for name, assembly in {"enter": cur.assembly.enter, "capture": cur.assembly.capture,
                                "demand": cur.demand}.items():
@@ -143,17 +150,23 @@ class CursedRuntimeTests(unittest.TestCase):
     def test_runtime_generators_agree_and_both_demand_sites_skip_original_mov(self):
         code = []
         for runtime in (Lua51, Lua53, LuaJIT):
-            lua, f, cur, bundle, spec, entry = fixture(runtime, gate=True)
-            code.append((cur.assembly.enter, cur.assembly.capture, cur.demand))
+            _, _, cur, _, _, _ = fixture(runtime)
             for block in cur.assemblies.values():
                 for source in block.values():
                     binary, _ = Ks(KS_ARCH_X86, KS_MODE_64).asm(re.sub(r"\b(?:ds|ss):", "", source), 0x100000)
                     self.assertLess(len(binary), 3072)  # leave page room for EEex's hook wrapper
+            lua, f, cur, bundle, spec, entry = fixture(runtime, gate=True)
             self.assertEqual(len(f.gate.members), 0)
-            self.assertEqual(len(f.hooks), 4)  # shared GAM entry/capture + exactly 2 item hooks
-            for index in (3, 4):
+            # Launch hooks the gate's 11 locations; the first cursed revision
+            # adds exactly the 2 item hooks. GAM entry and capture run its code.
+            self.assertEqual(len(f.hooks), 13)
+            self.assertEqual([f.hooks[index][1] for index in (12, 13)], list(cur.sites.values()))
+            for index in (12, 13):
                 hook = f.hooks[index]
                 self.assertEqual((hook[2], hook[3], hook[4]), (4, 4, 8))
+            code.append((f.chain(f, 1), f.chain(f, 2), cur.demand))
+            self.assertIn('_curse_enter_', code[-1][0])
+            self.assertIn('_curse_refresh_', code[-1][1])
         self.assertEqual(code[0], code[1])
         self.assertEqual(code[0], code[2])
 

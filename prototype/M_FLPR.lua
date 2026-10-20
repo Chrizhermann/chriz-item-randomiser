@@ -10,6 +10,15 @@ root.SeedSerial = root.SeedSerial or 0
 -- Applied configurations, kept campaign revisions and pristine resource copies.
 local DATA = "randomiser-campaigns/"
 root.DATA = DATA
+-- Whole-block copies into memory the runtime owns (LuaJIT ffi); without it
+-- the modules copy through EEex byte by byte.
+if root.Memory == nil then
+    local has_ffi, ffi = pcall(require, "ffi")
+    root.Memory = has_ffi and {
+        write = function(address, bytes) ffi.copy(ffi.cast("void *", address), bytes, #bytes) end,
+        read = function(address, length) return ffi.string(ffi.cast("const char *", address), length) end,
+    } or false
+end
 
 -- Extra arguments reach the module chunk as `...` (the hook location table).
 local function module(path, ...)
@@ -83,31 +92,31 @@ local ok, failure = pcall(function()
         return { manifest = manifest, fixture = fixture }
     end
     -- An applied configuration lists every revision whose sources the gate
-    -- guards. Installing here precedes New Game/GAM loading; first-world
-    -- polling would be too late.
+    -- guards. The gate's hooks are placed here, before New Game or any GAM
+    -- loading (first-world polling would be too late); a revision's checks are
+    -- built when a game needs them, so launch time does not grow with Applies.
     local prepare_source_guard, source_guard
     local gate_config = loadfile(DATA.."source-gate.lua")
     if gate_config then
         local revisions = gate_config()
         if type(revisions)=="string" then revisions={revisions} end
         assert(type(revisions)=="table","SOURCE_GATE_REVISIONS_INVALID")
-        local count=0
+        local count,seen=0,{}
         for key in pairs(revisions) do
             assert(type(key)=="number" and key==math.floor(key) and key>=1 and key<=#revisions,
                 "SOURCE_GATE_REVISIONS_INVALID")
             count=count+1
         end
         assert(count==#revisions,"SOURCE_GATE_REVISIONS_INVALID")
-        local Gate = module("override/FLPRGat.lua", Site)
-        local bundles,seen,pristine={},{},{creatures={},stores={},scripts={},templates={},spell_shield={},cursed={},auxiliary={}}
-        local Cursed
-        local needs_inventory=false
         for _,revision in ipairs(revisions) do
             assert(not seen[revision],"SOURCE_GATE_REVISION_DUPLICATED");seen[revision]=true
+        end
+        local Gate = module("override/FLPRGat.lua", Site)
+        local pristine={creatures={},stores={},scripts={},templates={},spell_shield={},cursed={},auxiliary={}}
+        -- One revision's manifest and the copies its checks compare against.
+        local function load_revision(revision)
             local guarded = assert(resolve(revision), "SOURCE_GATE_REVISION_UNAVAILABLE")
-            bundles[#bundles+1]=guarded
             if guarded.fixture.cursed_disguises then
-                Cursed=Cursed or module('override/FLPRCur.lua', Site)
                 local assets={};pristine.cursed[revision]=assets
                 for _,item in ipairs(guarded.fixture.cursed_disguises.items) do
                     local entry={variants={}};assets[item.resref]=entry
@@ -121,7 +130,6 @@ local ok, failure = pcall(function()
                 end
             end
             if guarded.fixture.spell_shield then
-                needs_inventory=true
                 local entry={}
                 for _,kind in ipairs({'original','effective'}) do
                     local path=DATA..'campaign-store/revisions/'..revision..'.spell-shield.'..kind..'.sto'
@@ -133,7 +141,6 @@ local ok, failure = pcall(function()
             for _,id in ipairs(Gate.source_ids(guarded.fixture)) do
                 local endpoint=assert(guarded.fixture.sources[id])
                 if endpoint.auxiliary_creatures then
-                    needs_inventory=true
                     local source_index
                     for index,source in ipairs(guarded.manifest.sources) do if source.id==id then source_index=index end end
                     assert(source_index,'SOURCE_GATE_SOURCE_MISSING')
@@ -146,7 +153,6 @@ local ok, failure = pcall(function()
                         entries[auxiliary.resource]=file:read('*a');assert(file:close())
                     end
                 end
-                if endpoint.kind=='guarded-template' or endpoint.multiple_stock then needs_inventory=true end
                 if endpoint.kind=='guarded-template' then
                     local source_index
                     for index,source in ipairs(guarded.manifest.sources) do if source.id==id then source_index=index end end
@@ -226,15 +232,28 @@ local ok, failure = pcall(function()
                     pristine.creatures[revision]=pristine.creatures[revision] or {}
                     pristine.creatures[revision][id]=creature
                 end
-                -- Check every profile's item before any suppression can run.
+                -- Check every item before this revision's checks can suppress one.
                 local supported,reason=Native.supported(_G,endpoint.payload)
                 assert(supported,reason)
             end
+            return guarded
         end
-        if #bundles > 0 then
-            root.SourceGate = Gate.install(_G, bundles,
-                module("override/FLPRGateAsm.lua"), module("override/FLPRCampaignPolicy.lua"),pristine,
-                module("override/FLPRScript.lua"),needs_inventory and module("override/FLPRInventoryAsm.lua") or nil,Cursed)
+        if #revisions > 0 then
+            local Inventory, Cursed
+            root.SourceGate = Gate.new(_G, {
+                revisions = revisions, load = load_revision, pristine = pristine,
+                build = module("override/FLPRGateAsm.lua"), compile = module("override/FLPRCampaignPolicy.lua"),
+                Script = module("override/FLPRScript.lua"),
+                inventory = function()
+                    Inventory = Inventory or module("override/FLPRInventoryAsm.lua")
+                    return Inventory
+                end,
+                cursed = function()
+                    Cursed = Cursed or module("override/FLPRCur.lua", Site)
+                    return Cursed
+                end,
+                report = record,
+            })
             prepare_source_guard = function(bundle, controller)
                 local unshey = 0
                 for index, source in ipairs(bundle.manifest.sources) do
@@ -427,6 +446,15 @@ local function begin_new_game(engine_call)
             refusal = "setup_failed"
         elseif not result then refusal = "other_campaign"
         else intent = { campaign = campaign, revision = result, started = started } end
+    end
+    -- The started campaign's source checks exist before the engine reads its
+    -- new-game template.
+    if intent and root.SourceGate and root.SourceGate:guards(intent.revision) then
+        local built, reason = pcall(root.SourceGate.ensure, root.SourceGate, intent.revision)
+        if not built then
+            record("new-game", reason)
+            refusal, intent = failure_message(reason), nil
+        end
     end
     if refusal then return FLPRUI_Ask(refusal, engine_call) end
     engine_call()

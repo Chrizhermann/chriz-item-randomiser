@@ -143,9 +143,14 @@ function cases.key_bootstrap_loads_spell_once_reads_spl_and_surfaces_error(Core,
         end
         if path=='override/FLPRGat.lua' then return function() return {
             source_ids=function() return {id} end,
-            install=function(api,bundles,builder,compiler,pristine)
-                assert(pristine.scripts[f.manifest.revision][id]=='REVIEWED_SPL')
-                return {prepare_new=function() return true end,reset=function() end}
+            new=function(api,deps)
+                return {guards=function() return true end,
+                    ensure=function(_,revision)
+                        deps.load(revision)
+                        assert(deps.pristine.scripts[f.manifest.revision][id]=='REVIEWED_SPL')
+                        return true
+                    end,
+                    prepare_new=function() return true end,reset=function() end}
             end,
         } end end
         return previous(path)
@@ -161,8 +166,11 @@ function cases.key_bootstrap_loads_spell_once_reads_spl_and_surfaces_error(Core,
     end
     assert((loadstring or load)(text))();assert(FLPR.Disabled==nil,tostring(FLPR.Disabled))
     local service=FLPR.Spell
-    assert(installs==1 and opened==1 and service.callback==FLPRKEY)
+    -- The reviewed SPL is read when a game needs the revision's checks.
+    assert(installs==1 and opened==0 and service.callback==FLPRKEY)
+    assert(FLPR.SourceGate:ensure(f.manifest.revision) and opened==1)
     assert((loadstring or load)(text))();assert(FLPR.Disabled==nil,tostring(FLPR.Disabled))
+    assert(FLPR.SourceGate:ensure(f.manifest.revision))
     assert(installs==1 and opened==2 and FLPR.Spell==service)
     service.last_error='callback failed'
     FLPR.Poll()

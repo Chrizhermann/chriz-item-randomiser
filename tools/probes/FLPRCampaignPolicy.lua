@@ -1,6 +1,17 @@
 -- Pure, pinned-fixture GAM policy compiler. No engine access or hook install.
 -- The caller supplies the immutable campaign revision and protected source's
 -- sorted manifest index. Never accepts player-supplied assembly or identifiers.
+-- The required GLOBALs are a table of 48-byte rows (zero-padded 32-byte name,
+-- kind, value) that the caller copies to memory it owns and names in the scan
+-- by replacing @POLICY_TABLE@. One loop reads them, so a source's scan code
+-- stays small however many fields its policy has.
+local TABLE_ROW = 48
+local KIND = { value = 0, phase = 1, seed = 2, permanent_phase = 3 }
+local function u64(value)
+    local out = {}
+    for _ = 1, 8 do out[#out+1] = string.char(value % 256); value = math.floor(value / 256) end
+    return table.concat(out)
+end
 return function(revision, source_index, permanent, selected_global)
     assert(type(revision) == 'string' and #revision == 64 and not revision:find('[^0-9a-f]'),
         'CAMPAIGN_GATE_REVISION_INVALID')
@@ -21,70 +32,100 @@ return function(revision, source_index, permanent, selected_global)
     if cursed_option then fields[#fields+1] = {name='FLPR_SEED', seed=true}
     elseif not stock_option then fields[#fields+1] = {name=string.format('FLPR_S%04d',source_index), phase=true} end
     if selected_global then fields[#fields+1]={name=selected_global,value=1} end
-    local out = {'test rcx, rcx', 'je gate_capture_log', 'gate_scan:'}
-    local function emit(line) out[#out+1]=line end
-    local function qword(bytes)
-        local pieces={}
-        for index=8,1,-1 do pieces[#pieces+1]=string.format('%02x',bytes:byte(index)) end
-        return '0x'..table.concat(pieces)
+    local rows = {}
+    for _, field in ipairs(fields) do
+        -- Every field name starts with FLPR_; the scan skips other GLOBALs on that prefix.
+        assert(field.name:sub(1, 5) == 'FLPR_' and #field.name <= 32, 'CAMPAIGN_GATE_POLICY_FIELD_INVALID')
+        local kind = field.seed and KIND.seed or
+            (field.phase and (permanent and KIND.permanent_phase or KIND.phase) or KIND.value)
+        rows[#rows+1] = field.name..string.rep('\0', 32-#field.name)..u64(kind)..u64(field.value or 0)
     end
-    for index,field in ipairs(fields) do
-        local next_label='gate_field_'..index..'_next'
-        local name=field.name..string.rep('\0',32-#field.name)
-        for offset=0,24,8 do
-            emit('mov rdx, '..qword(name:sub(offset+1,offset+8)))
-            emit('cmp qword ptr ds:[rax+'..offset..'], rdx')
-            emit('jne '..next_label)
-        end
-        local bit=2^(index-1)
-        emit('test qword ptr ds:[r10+80], '..string.format('%.0f',bit))
-        emit('jne gate_policy_duplicate')
-        emit('or qword ptr ds:[r10+80], '..string.format('%.0f',bit))
-        if field.seed then
-            emit('mov edx, dword ptr ds:[rax+0x28]')
-            emit('cmp edx, 1')
-            emit('jb gate_policy_mismatch')
-            emit('cmp edx, 2147483646')
-            emit('ja gate_policy_mismatch')
-            emit('mov qword ptr ds:[r10+96], rdx')
-        elseif field.phase then
-            -- Saved physical removal means no further suppression. In
-            -- particular, a player's returned copy must not be deleted later.
-            emit('cmp dword ptr ds:[rax+0x28], 3')
-            -- The scripted source's duplicate CRE can be instantiated after
-            -- the primary quest grant is consumed. Keep guarding that template.
-            emit(permanent and 'je gate_policy_protect' or 'je gate_policy_removed')
-            emit('cmp dword ptr ds:[rax+0x28], 1')
-            emit('je gate_policy_protect')
-            emit('cmp dword ptr ds:[rax+0x28], 6')
-            emit('jne gate_policy_mismatch')
-            emit('gate_policy_protect:')
-            emit('mov qword ptr ds:[r10+88], 1')
-            emit('jmp gate_scan_next')
-            emit('gate_policy_removed:')
-            emit('mov qword ptr ds:[r10+88], 2')
-        else
-            emit('cmp dword ptr ds:[rax+0x28], '..field.value)
-            emit('jne gate_policy_mismatch')
-        end
-        emit('jmp gate_scan_next')
-        emit(next_label..':')
-    end
-    emit('gate_scan_next:')
-    emit('add rax, 84')
-    emit('dec rcx')
-    emit('jne gate_scan')
-    emit('cmp qword ptr ds:[r10+80], '..string.format('%.0f',2^#fields-1))
-    emit('jne gate_capture_log') -- status 1: required fields missing
-    if stock_option or cursed_option then emit('mov qword ptr ds:[r10+88], 1') end
-    emit('mov qword ptr ds:[r10+72], 0')
-    emit('jmp gate_capture_log')
-    emit('gate_policy_duplicate:')
-    emit('mov qword ptr ds:[r10+72], 3')
-    emit('jmp gate_capture_log')
-    emit('gate_policy_mismatch:')
-    emit('mov qword ptr ds:[r10+72], 4')
-    emit('jmp gate_capture_log')
+    -- RAX walks the GAM's 84-byte variable records (RCX of them), R10 is the
+    -- member's buffer; R8/R9 hold the table row and its bit (hooks save both).
+    -- A record matching a row sets that row's bit once; a second match is a
+    -- duplicate. Phase: 1 or 6 protects, 3 means the original was removed
+    -- (a permanent template keeps protecting); any other value refuses.
+    local out = {[[
+        test rcx, rcx
+        je gate_capture_log
+        gate_scan:
+        cmp dword ptr ds:[rax], 0x52504C46
+        jne gate_scan_next
+        mov r8, @POLICY_TABLE@
+        xor r9d, r9d
+        gate_field:
+        mov rdx, qword ptr ds:[r8]
+        cmp qword ptr ds:[rax], rdx
+        jne gate_field_next
+        mov rdx, qword ptr ds:[r8+8]
+        cmp qword ptr ds:[rax+8], rdx
+        jne gate_field_next
+        mov rdx, qword ptr ds:[r8+16]
+        cmp qword ptr ds:[rax+16], rdx
+        jne gate_field_next
+        mov rdx, qword ptr ds:[r8+24]
+        cmp qword ptr ds:[rax+24], rdx
+        jne gate_field_next
+        bt qword ptr ds:[r10+80], r9
+        jc gate_policy_duplicate
+        bts qword ptr ds:[r10+80], r9
+        mov rdx, qword ptr ds:[r8+32]
+        test rdx, rdx
+        je gate_field_value
+        cmp rdx, 2
+        je gate_field_seed
+        cmp dword ptr ds:[rax+0x28], 3
+        jne gate_field_phase
+        cmp rdx, 3
+        je gate_policy_protect
+        mov qword ptr ds:[r10+88], 2
+        jmp gate_scan_next
+        gate_field_phase:
+        cmp dword ptr ds:[rax+0x28], 1
+        je gate_policy_protect
+        cmp dword ptr ds:[rax+0x28], 6
+        jne gate_policy_mismatch
+        gate_policy_protect:
+        mov qword ptr ds:[r10+88], 1
+        jmp gate_scan_next
+        gate_field_seed:
+        mov edx, dword ptr ds:[rax+0x28]
+        cmp edx, 1
+        jb gate_policy_mismatch
+        cmp edx, 2147483646
+        ja gate_policy_mismatch
+        mov qword ptr ds:[r10+96], rdx
+        jmp gate_scan_next
+        gate_field_value:
+        mov edx, dword ptr ds:[rax+0x28]
+        cmp edx, dword ptr ds:[r8+40]
+        jne gate_policy_mismatch
+        jmp gate_scan_next
+        gate_field_next:
+        add r8, ]]..TABLE_ROW..[[
+
+        inc r9
+        cmp r9, ]]..#fields..[[
+
+        jb gate_field
+        gate_scan_next:
+        add rax, 84
+        dec rcx
+        jne gate_scan
+        cmp qword ptr ds:[r10+80], ]]..string.format('%.0f',2^#fields-1)..[[
+
+        jne gate_capture_log]]}
+    if stock_option or cursed_option then out[#out+1] = 'mov qword ptr ds:[r10+88], 1' end
+    out[#out+1] = [[
+        mov qword ptr ds:[r10+72], 0
+        jmp gate_capture_log
+        gate_policy_duplicate:
+        mov qword ptr ds:[r10+72], 3
+        jmp gate_capture_log
+        gate_policy_mismatch:
+        mov qword ptr ds:[r10+72], 4
+        jmp gate_capture_log]]
     return {schema='flpr-campaign-gate-policy-v1', scan=table.concat(out,'\n'),
+        table=table.concat(rows), table_row=TABLE_ROW,
         revision=revision, source_index=source_index, fields=fields, mask=2^#fields-1}
 end

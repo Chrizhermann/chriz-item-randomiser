@@ -565,7 +565,9 @@ return function(buffer, targets, policy)
         end
         item='' -- A creature member never intercepts container construction.
     end
-    local store,saved_store,store_done
+    -- A saved game's restored STO files are recorded by the gate itself
+    -- (FLPRGat.lua) and mark these members before the store hook can run.
+    local store,store_done
     if policy and policy.store then
         local s=policy.store
         local function literal(bytes)
@@ -583,17 +585,6 @@ return function(buffer, targets, policy)
             or r8, r9
             cmp rax, r8
         ]]
-        saved_store=save..[[
-            test r14d, r14d
-            jne gate_done
-            cmp word ptr [rbx+0x10], 0x3F6
-            jne gate_done
-            mov rax, qword ptr [rbp-0x20]
-        ]]..match_ref..[[
-            jne gate_done
-            mov qword ptr [r10+@CONTEXT@], 1
-            gate_done:
-        ]]..restore
         store=save..[[
             cmp qword ptr [r10], 1
             jne gate_done
@@ -695,7 +686,6 @@ return function(buffer, targets, policy)
             REMOVED=s.removed,REMOVED_ITEMS=s.removed+s.items,COUNT=s.count,QBYTES=math.floor(s.length/8)*8}) do
             local replacement=type(value)=='number' and string.format('%.0f',value) or value
             store=store:gsub('@'..key..'@',replacement)
-            saved_store=saved_store:gsub('@'..key..'@',replacement)
             store_done=store_done:gsub('@'..key..'@',replacement)
         end
         item=''
@@ -709,6 +699,5 @@ return function(buffer, targets, policy)
         item=expand(item,'gate_item'), area_enter=area_enter and expand(area_enter,'gate_area_enter'),
         area_exit=area_exit and expand(area_exit,'gate_area_exit'),
         actor=actor and expand(actor,'gate_actor'), store=store and expand(store,'gate_store'),
-        saved_store=saved_store and expand(saved_store,'gate_saved_store'),
         store_done=store_done and expand(store_done,'gate_store_done')}
 end

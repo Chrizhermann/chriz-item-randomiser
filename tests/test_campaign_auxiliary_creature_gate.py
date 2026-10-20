@@ -15,7 +15,7 @@ from lupa.luajit21 import LuaRuntime as LuaJIT
 from flir_config.creature_inventory import rewrite_inventory
 from test_campaign_gate_bridge import CASES, CORE, GATE, POLICY, BUILD
 from engine_sites import gate_targets, load
-from test_campaign_gate_policy import expected_fields
+from test_campaign_gate_policy import BIND, POLICY_TABLE, expected_fields
 from test_campaign_inventory_assembly import run, BUFFER, EXPECTED, OUTPUT
 from test_postinstall_world_formats import make_cre, item_record
 from test_source_gate_assembly import GateMachine, BUFFER as POLICY_BUFFER, IMAGE, CODES
@@ -94,8 +94,10 @@ def loaded_policy(phase=1, selected=1, *, revision=REVISION, permanent=True, sel
     lua = LuaJIT(unpack_returned_tuples=True)
     policy = lua.execute(POLICY)(REVISION, 1, True if permanent else None,
                                  selected_global if permanent else None)
+    table = bytes.fromhex(lua.eval(BIND)(policy, POLICY_TABLE))
     assembly = lua.execute(BUILD)(POLICY_BUFFER, gate_targets(lua, IMAGE), policy)
     machine = GateMachine()
+    machine.uc.mem_write(POLICY_TABLE, table)
     for name in ("enter", "capture"):
         binary, _ = Ks(KS_ARCH_X86, KS_MODE_64).asm(re.sub(r"\b(?:ds|ss):", "", assembly[name]), CODES[name])
         machine.uc.mem_write(CODES[name], bytes(binary) + b"\x90")
@@ -148,7 +150,7 @@ class AuxiliaryCreatureTests(unittest.TestCase):
                 self.assertEqual(auxiliary.binding.payload.resref, item)
                 self.assertEqual(auxiliary.binding.records[1], record)
                 self.assertEqual(auxiliary.policy.fields[20].name, f"FLPR_QM2_{family}")
-                self.assertEqual(len(f.hooks), 3)
+                self.assertEqual(sum(not f.idle(f, index) for index in f.hooks.keys()), 3)
                 # A different approved creature still cannot be bound to this source.
                 endpoint = bundle.fixture.sources[f"original-source:bg2:mode2:item:{family}"]
                 endpoint.auxiliary_creatures[1].resource = "cre:scyarryl"
@@ -202,8 +204,11 @@ class AuxiliaryCreatureTests(unittest.TestCase):
                     auxiliary = f.gate.auxiliary_members[REVISION][1]
                     self.assertEqual(auxiliary.index, 1)
                     self.assertEqual(len(auxiliary.policy.fields), 20)
-                    self.assertEqual({hook[1] - 0x140000000 for hook in f.hooks.values()},
-                                     {0x292A84, 0x292F45, 0x341220})
+                    # Launch hooks every location; the source's code runs at GAM
+                    # entry, the capture and the CRE template load.
+                    self.assertEqual(len(f.hooks), 11)
+                    self.assertEqual({hook[1] - 0x140000000 for index, hook in f.hooks.items()
+                                      if not f.idle(f, index)}, {0x292A84, 0x292F45, 0x341220})
                     lua.execute("""return function(f,bundle,kept)
                         local aux=f.gate.auxiliary_members[bundle.manifest.revision][1]
                         f.values.FLPR_FRESH=1;f.values.FLPR_QM2_12=0
