@@ -606,8 +606,9 @@ function cases.original_scroll_stack_delivers_one_exact_record_to_stocked_contai
     f.target.m_lstItems[1]=old
     f.api.EEex_Action_ExecuteResponseStringOnAIBaseInstantly=function(action,owner)
         f.calls[#f.calls+1]=action
+        -- 2.7.3.0 creates a stackable item's zero usage counts as 1.
         owner.m_lstItems[2]=f.item("SCRL66",601)
-        owner.m_lstItems[2].m_useCount1=7
+        owner.m_lstItems[2].m_useCount1=7; owner.m_lstItems[2].m_useCount2=1; owner.m_lstItems[2].m_useCount3=1
     end
     local a=N.new(f.api,f.fixture)
     assert(a:inspect_source(f.source_id).payload.charges[1]==7)
@@ -616,7 +617,8 @@ function cases.original_scroll_stack_delivers_one_exact_record_to_stocked_contai
     assert(a:execute(command))
     a:on_observation_boundary(2)
     local receipt=assert(a:observe(command))
-    assert(receipt.created==1 and receipt.payload.resref=="scrl66" and receipt.payload.charges[1]==7)
+    assert(receipt.created==1 and receipt.payload.resref=="scrl66" and receipt.payload.charges[1]==7 and
+        receipt.payload.charges[2]==0)
     assert(f.target.m_lstItems[1]==old and f.target.m_lstItems[2].m_useCount1==7)
     assert(#f.calls==1 and f.calls[1]=='CreateItem("scrl66",7,0,0)')
 end
@@ -636,20 +638,99 @@ function cases.stolen_scroll_stack_uses_one_bound_creature_message(N)
         assert(owner==f.target)
         f.calls[#f.calls+1]=action
         f.queue[1]=f.message(601,2,"SCRL66",0,32767,2)
-        f.queue[1].m_item.m_useCount1=7
+        f.queue[1].m_item.m_useCount1=7; f.queue[1].m_item.m_useCount2=1; f.queue[1].m_item.m_useCount3=1
     end
     local a=N.new(f.api,f.fixture)
     assert(a:inspect_target(f.target_id,f.source_id)); a:on_observation_boundary(1)
     local command=f.command("deliver")
     assert(a:execute(command))
     assert(f.queue[1].m_item.m_flags==2 and f.queue[1].m_item.m_useCount1==7)
-    f.queue[1]=nil; inventory[18]=f.item("SCRL66",701,2); inventory[18].m_useCount1=7
+    f.queue[1]=nil; inventory[18]=f.item("SCRL66",701,2)
+    inventory[18].m_useCount1=7; inventory[18].m_useCount2=1; inventory[18].m_useCount3=1
     a:on_observation_boundary(2)
     local x,e=a:observe(command); fail(x,e,"DELIVERY_SETTLING")
     a:on_observation_boundary(3)
     local receipt=assert(a:observe(command))
     assert(receipt.held==1 and receipt.payload.flags==2 and receipt.payload.charges[1]==7)
     assert(#f.calls==1 and f.calls[1]=='GiveItemCreate("scrl66",Myself,7,0,0)')
+end
+-- The reward of a creature target, created by the fixture's engine with these
+-- usage counts and flags; returns the adapter, the command and the inventory.
+local function creature_reward(N,f,reward,stack,created,flags)
+    f.header.maxStackable=stack
+    local source=f.fixture.sources[f.source_id]
+    source.payload.resref=reward.resref; source.payload.charges=reward.charges; source.payload.flags=reward.flags
+    local target=f.fixture.targets[f.target_id]
+    target.kind="creature"; target.x=nil; target.y=nil
+    f.target.sprite=true; f.target.alive=true; f.target.m_typeAI={m_EnemyAlly=2}
+    local inventory={}
+    f.target.m_equipment={m_items={get=function(_,slot) return inventory[slot] end}}
+    f.api.EEex_Sprite_GetPortraitIndex=function() return -1 end
+    f.api.EEex_CastUD=function(object,kind) assert(kind=="CMessageAddItem"); return object end
+    f.api.EEex_Action_ExecuteResponseStringOnAIBaseInstantly=function(action,owner)
+        f.calls[#f.calls+1]=action
+        f.queue[1]=f.message(601,2,reward.resref:upper(),flags,32767,2)
+        local item=f.queue[1].m_item
+        item.m_useCount1,item.m_useCount2,item.m_useCount3=created[1],created[2],created[3]
+    end
+    local a=N.new(f.api,f.fixture)
+    assert(a:inspect_target(f.target_id,f.source_id)); a:on_observation_boundary(1)
+    return a,f.command("deliver"),inventory
+end
+function cases.zero_count_scroll_reaches_creature_as_the_engine_creates_it(N)
+    -- Reproduced on BG:EE 2.7.3 (SCS, IWDification): SCRL75 from a container
+    -- (0/0/0) for Gorion became 1/1/1 and identified (lore 0); CIR stopped.
+    local f=setup(N)
+    local a,command,inventory=creature_reward(N,f,{resref="scrl75",charges={0,0,0},flags=0},50,{1,1,1},1)
+    assert(a:execute(command))
+    assert(f.queue[1].m_item.m_flags==0)
+    f.queue[1]=nil; inventory[18]=f.item("SCRL75",701,1)
+    inventory[18].m_useCount1=1; inventory[18].m_useCount2=1; inventory[18].m_useCount3=1
+    a:on_observation_boundary(2); local x,e=a:observe(command); fail(x,e,"DELIVERY_SETTLING")
+    assert(inventory[18].m_flags==0)
+    a:on_observation_boundary(3); local receipt=assert(a:observe(command))
+    assert(receipt.held==1 and receipt.payload.flags==0 and receipt.payload.charges[1]==0 and
+        receipt.payload.charges[3]==0 and inventory[18].m_useCount1==1)
+    assert(#f.calls==1 and f.calls[1]=='GiveItemCreate("scrl75",Myself,0,0,0)')
+end
+function cases.only_a_stackable_zero_count_may_be_created_as_one(N)
+    for _,case in ipairs({
+        {stack=50, reward={7,0,0}, created={5,1,1}},  -- a nonzero count changed
+        {stack=50, reward={0,0,0}, created={2,1,1}},  -- zero became more than one
+        {stack=1, reward={0,0,0}, created={1,0,0}},   -- not stackable: counts stay exact
+    }) do
+        local f=setup(N)
+        local a,command=creature_reward(N,f,{resref="flpri1",charges=case.reward,flags=0},case.stack,case.created,0)
+        local x,e=a:execute(command); fail(x,e,"CREATED_INSTANCE_UNPROVEN")
+        assert(#f.calls==1)
+    end
+end
+function cases.created_counts_bind_the_later_copy_exactly(N)
+    local f=setup(N)
+    local a,command,inventory=creature_reward(N,f,{resref="scrl75",charges={0,0,0},flags=0},50,{1,1,1},0)
+    assert(a:execute(command))
+    f.queue[1]=nil; inventory[18]=f.item("SCRL75",701,0)
+    inventory[18].m_useCount1=2; inventory[18].m_useCount2=1; inventory[18].m_useCount3=1
+    a:on_observation_boundary(2); local x,e=a:observe(command); fail(x,e,"DELIVERY_PAYLOAD_CHANGED")
+end
+function cases.zero_count_stack_reaches_container_as_the_engine_creates_it(N)
+    local f=setup(N)
+    f.header.maxStackable=24
+    local source=f.fixture.sources[f.source_id]
+    source.payload.resref="potn08"; source.payload.charges={4,0,0}
+    f.fixture.targets[f.target_id].kind="container"
+    f.fixture.targets[f.target_id].container_type=4
+    f.api.EEex_Action_ExecuteResponseStringOnAIBaseInstantly=function(action,owner)
+        f.calls[#f.calls+1]=action
+        owner.m_lstItems[1]=f.item("POTN08",601)
+        owner.m_lstItems[1].m_useCount1=4; owner.m_lstItems[1].m_useCount2=1; owner.m_lstItems[1].m_useCount3=1
+    end
+    local a=N.new(f.api,f.fixture)
+    assert(a:inspect_target(f.target_id,f.source_id)); a:on_observation_boundary(1)
+    local command=f.command("deliver"); assert(a:execute(command))
+    a:on_observation_boundary(2); local receipt=assert(a:observe(command))
+    assert(receipt.created==1 and receipt.payload.charges[1]==4 and receipt.payload.charges[2]==0)
+    assert(f.target.m_lstItems[1].m_useCount2==1 and #f.calls==1 and f.calls[1]=='CreateItem("potn08",4,0,0)')
 end
 function cases.stackable_scroll_rejects_existing_same_resref_before_native_action(N)
     local f=setup(N)
