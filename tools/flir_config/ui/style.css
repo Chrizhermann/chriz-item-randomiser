@@ -497,6 +497,59 @@ input::placeholder {
   padding: 0;
 }
 
+.selection-filter {
+  padding: 0 0 16px;
+}
+
+.selection-filter-row {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr);
+  gap: 8px;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.chosen-main .chips {
+  display: flex;
+}
+
+.chip {
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--muted);
+  border-radius: 3px;
+  background: var(--stone);
+  color: var(--ink);
+  font-size: .78rem;
+  line-height: 1.5;
+  padding: 0 6px;
+  white-space: nowrap;
+}
+
+.chip.part-bg1 {
+  border-left-color: #4f6f8f;
+}
+
+.chip.part-sod {
+  border-left-color: #8a5a2b;
+}
+
+.chip.part-soa {
+  border-left-color: var(--moss);
+}
+
+.chip.part-wk {
+  border-left-color: #6d5a86;
+}
+
+.chip.part-tob {
+  border-left-color: var(--brass);
+}
+
 .chosen-row summary {
   list-style: none;
   display: flex;
@@ -810,7 +863,7 @@ dialog h2 {
 }
 
 @media (max-width:480px) {
-  .preset-grid, .preset-options {
+  .preset-grid, .preset-options, .selection-filter-row {
     grid-template-columns: 1fr;
   }
   .shop-pricing {

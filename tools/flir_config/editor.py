@@ -17,12 +17,14 @@ from .profiles import (PROFILE_ID, ProfileError, ensure_output_outside_game,
 from .sources import PLAN_FIELDS, PLAN_OPTIONAL_FIELDS, Scans, new_binding_plan, validate_world
 from .prepared import applied, left_out
 from .scripted_sources import blpool_registration
-from .platform import preset_campaigns, recommended_campaign
+from .platform import area_part, game_platform, preset_campaigns, recommended_campaign
 from .templates import list_templates, recommended_preset
 
 
 KIND_LABELS = {"actor": "Creature", "cre-template": "Creature template",
                "embedded-cre": "Creature", "container": "Container", "store": "Shop"}
+# The parts of the game, in game order, with the names the editor shows.
+PART_NAMES = {"bg1": "BG1", "sod": "SoD", "soa": "BG2", "wk": "Watcher's Keep", "tob": "ToB"}
 
 
 class Editor:
@@ -40,6 +42,17 @@ class Editor:
         self.sources = defaultdict(list)
         for source in world["sources"]:
             self.sources[source["item"]].append(source)
+        try:
+            self.platform = game_platform(world)
+        except ProfileError:
+            # No preset is for this game; its area names do not tell the parts.
+            self.platform = None
+        # The parts of the game each creature template is placed in.
+        self.template_parts = defaultdict(set)
+        for row in world["targets"]:
+            template = row["selector"].get("template_resource") if row["kind"] == "actor" else None
+            if isinstance(template, str):
+                self.template_parts[template] |= self.area_parts(row["resource"])
         if (profile is None) != (plan is None):
             raise ProfileError("Supply both an initial profile and its binding plan")
         applied = self.workspace / "prepared/last-applied.json"
@@ -104,7 +117,41 @@ class Editor:
                  "container": "Container destination; existing contents, locks and traps are preserved.",
                  "store": "Shop destination; prototype delivery is available when this configuration passes its check."}
         return {"id": row["id"], "label": self.label(row), "kind": row["kind"],
-                "kind_label": KIND_LABELS[row["kind"]], "note": notes[row["kind"]]}
+                "kind_label": KIND_LABELS[row["kind"]], "note": notes[row["kind"]],
+                "parts": self.parts(row["resource"])}
+
+    def area_parts(self, resource: str) -> set[str]:
+        kind, _, name = resource.partition(":")
+        part = area_part(self.platform, name) if kind == "are" and self.platform is not None else None
+        return {part} if part is not None else set()
+
+    def parts(self, resource: object) -> list[str]:
+        """The parts of the game a place is in, in game order: its area's part,
+        or the parts its creature template is placed in."""
+        if not isinstance(resource, str):
+            return []
+        found = self.template_parts.get(resource, set()) if resource.startswith("cre:") else self.area_parts(resource)
+        return [part for part in PART_NAMES if part in found]
+
+    def source_parts(self, plan: dict) -> dict[str, list[str]]:
+        """The parts of the game each original record a draft moves is in."""
+        registrations: dict = {}
+        for row in plan["registrations"]:
+            if isinstance(row, dict) and isinstance(row.get("id"), str):
+                registrations.setdefault(row["id"], row)
+        parts: dict[str, list[str]] = {}
+        for entry in plan["sources"]:
+            if not isinstance(entry, dict):
+                continue
+            for key, rows in (("source_ids", self.index["sources"]), ("registration_ids", registrations)):
+                identities = entry.get(key)
+                if not isinstance(identities, list):
+                    continue
+                for identity in identities:
+                    if isinstance(identity, str) and identity not in parts:
+                        row = rows.get(identity)
+                        parts[identity] = [] if row is None else self.parts(row.get("resource"))
+        return parts
 
     def search_text(self, row: dict) -> str:
         selector = row["selector"]
@@ -112,6 +159,7 @@ class Editor:
         names = [row["id"], self.label(row)]
         for fields in (selector, template.get("selector", {})):
             names.extend(fields.get(key, "") for key in ("name", "script_name", "cre_resref"))
+        names.extend(f"{part} {PART_NAMES[part]}" for part in self.parts(row["resource"]))
         return " ".join(names).casefold()
 
     def state(self) -> dict:
@@ -123,20 +171,23 @@ class Editor:
         authored_targets = {row.get("id"): row for row in self.draft["plan"].get("target_registrations", [])}
         for choice in self.draft["plan"]["targets"]:
             row = self.index["targets"].get(choice["id"])
-            authored = authored_targets.get(choice["id"], {}).get("authored", {})
+            registration = authored_targets.get(choice["id"], {})
+            authored = registration.get("authored", {})
             if row:
                 label = self.target(row)
             elif authored:
                 name = authored.get("target") or authored.get("endpoint_id") or choice["id"]
                 area = authored.get("area_resource") or authored.get("area") or ""
                 label = {"id": choice["id"], "label": f"{name} ({area})",
-                         "kind": "original", "kind_label": "Original recipient"}
+                         "kind": "original", "kind_label": "Original recipient",
+                         "parts": self.parts(registration.get("resource"))}
             else:
-                label = {"id": choice["id"], "label": choice["id"], "kind": "missing"}
+                label = {"id": choice["id"], "label": choice["id"], "kind": "missing", "parts": []}
             targets.append({**label,
                             "capacity": choice["capacity"]})
         return {**deepcopy(self.draft), "apply_enabled": self.apply_game is not None,
                 "items": [self.items[i] for i in self.draft["profile"]["items"]],
+                "source_parts": self.source_parts(self.draft["plan"]),
                 "targets": targets, "saved": saved, "workspace": str(self.workspace),
                 "catalog": {"item_count": len(self.items), "language": self.catalog["language"],
                             "game_name": Path(self.catalog["game_root"]).parent.name}}
@@ -180,13 +231,13 @@ class Editor:
             page = self.page(rows, offset)
             page["records"] = [{"id": s["id"], "kind": s["kind"], "concerns": s["concerns"],
                 "quantity": s["record"]["quantity"] if s["kind"] == "store" else 1,
-                "kind_label": KIND_LABELS[s["kind"]],
+                "kind_label": KIND_LABELS[s["kind"]], "parts": self.parts(s["resource"]),
                 "label": (self.label(self.index["targets"][s["owner"]]) if s["owner"] in self.index["targets"]
                           else s["owner"]) + f" · item record {s['record']['record_index']}",
                 "note": ("Container source; check configuration for current runtime support."
                          if s["kind"] == "container" else "This source type still needs runtime support.")}
                 if s["kind"] != "scripted" else {
-                    **s, "quantity": 1, "kind_label": "Quest reward",
+                    **s, "quantity": 1, "kind_label": "Quest reward", "parts": [],
                     "label": "Blood pool reward (BLPOOL)",
                     "note": "Moves the Mace of Disruption; the pool's other actions remain. "
                             "Chriz Item Randomiser prepared the pool's script when it was installed."}

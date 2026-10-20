@@ -100,6 +100,53 @@ class EditorTests(unittest.TestCase):
                 self.assertEqual([row["id"] for row in self.editor.get("/api/templates", {})], presets)
                 self.assertEqual(self.editor.get("/api/recommended", {})["id"], presets[0])
 
+    def test_records_and_recipients_show_and_find_their_parts_of_the_game(self):
+        fx = self.fx
+        record = item_record("SYNTH001", expiration=0, charges=(0, 0, 0), flags=1)
+        # EET's area names tell the part of the game; "area" tells none.
+        areas = {"bg2600": "bg1", "bd0010": "sod", "ar0602": "soa", "ar3000": "wk", "ar5500": "tob"}
+        for area in areas:
+            (fx.override / f"{area}.are").write_bytes(make_are([record], [("Chest", 0, 1)], [("Guard", "ACTOR")]))
+
+        def editor(name):
+            fx.refresh()
+            profile = edit_profile(new_profile(fx.catalog, "parts", "Parts"), fx.catalog, include=["synth001"])
+            plan = new_binding_plan(profile, fx.catalog, fx.world)
+            plan["sources"] = [{"item": "synth001", "policy": "relocate", "registration_ids": ["original-source:x"],
+                                "source_ids": [*(f"are:{area}/container/0/item/0" for area in areas), fx.first]}]
+            plan["registrations"] = [{"id": "original-source:x", "item": "synth001", "resource": "cre:actor"}]
+            plan["targets"] = [{"id": target, "capacity": 1, "optional": False} for target in
+                               (*(f"are:{area}/container/0" for area in areas), "cre:actor", "original-target:x",
+                                "are:missing/container/0")]
+            plan["target_registrations"] = [{"id": "original-target:x", "resource": "are:ar5500",
+                                             "authored": {"target": "Chest", "area": "ar5500"}}]
+            return Editor(fx.catalog, fx.world, fx.root / name, profile, plan)
+
+        every = list(areas.values())
+        parts = editor("parts-editor")
+        state = parts.get("/api/state", {})
+        # A creature template is in every part where it is placed.
+        self.assertEqual(state["source_parts"], {
+            **{f"are:{area}/container/0/item/0": [part] for area, part in areas.items()},
+            fx.first: [], "original-source:x": every})
+        self.assertEqual([row["parts"] for row in state["targets"]],
+                         [*([part] for part in areas.values()), every, ["tob"], []])
+        found = parts.get("/api/targets", {"q": "tob chest"})
+        self.assertEqual([(row["id"], row["parts"]) for row in found["records"]],
+                         [("are:ar5500/container/0", ["tob"])])
+        self.assertEqual({row["id"] for row in parts.get("/api/targets", {"q": "watcher's keep"})["records"]},
+                         {"are:ar3000/container/0", "are:ar3000/actor/0", "cre:actor"})
+        records = parts.get("/api/sources", {"item": "synth001"})["records"]
+        self.assertEqual({row["id"]: row["parts"] for row in records},
+                         {fx.first: [], **{f"are:{area}/container/0/item/0": [part] for area, part in areas.items()}})
+        # A game no preset is for: its area names tell no part.
+        (fx.override / "EET.flag").unlink()
+        plain = editor("plain-editor")
+        state = plain.get("/api/state", {})
+        self.assertEqual(set(map(tuple, state["source_parts"].values())), {()})
+        self.assertEqual({tuple(row["parts"]) for row in state["targets"]}, {()})
+        self.assertEqual(plain.get("/api/targets", {"q": "tob"})["total"], 0)
+
     def test_preset_routes_replace_only_a_checked_successful_draft(self):
         editor = self.editor
         descriptors = editor.get("/api/templates", {})

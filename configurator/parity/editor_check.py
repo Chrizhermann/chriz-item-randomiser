@@ -476,7 +476,11 @@ def apply_attempt(root: Path, platform: str, area: str, options: bool = False) -
             session(workspace, [("reopened state", state_of)])
         else:
             session(workspace, [("state", state_of), ("presets of the game", get("/api/templates")),
-                                ("recommended preset", get("/api/recommended")), ("apply", apply),
+                                ("recommended preset", get("/api/recommended")),
+                                ("records with their parts of the game", get("/api/sources?item=synth001")),
+                                *((f"recipients in {part}", get(f"/api/targets?q={part}"))
+                                  for part in ("bg1", "sod", "bg2", "tob")),
+                                ("apply", apply),
                                 ("apply again unchanged", apply), ("apply changed", changed),
                                 ("state after apply", state_of)])
             session(workspace, [("reopened state", state_of)])

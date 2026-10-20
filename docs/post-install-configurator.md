@@ -80,7 +80,8 @@ does not open a browser automatically, launch the game, rescan, or run WeiDU.
 `cir-configurator ui` serves the same editor and also opens it in the browser;
 `--no-browser` only prints the address.
 
-Search all scanned items by name or resource ID; a sole original is selected
+Search all scanned items by name or resource ID; results show each item's
+type (ring, large sword, ...). A sole original is selected
 automatically. Check several original records to relocate several copies of the
 same item; unchecked originals stay in place. Each source shows its copy count;
 a finite shop record moves its full stock quantity. Recipient
@@ -88,6 +89,16 @@ search includes the scanned names and script/resource aliases, with filters for
 creatures, containers and shops. Creature templates without a bound spawn and
 unfinished destination types are labelled as such. Reward slots allow several
 items per recipient. The selected item and recipient sections collapse separately.
+
+Each selected item and recipient shows the parts of the game its places are in
+(BG1, SoD, BG2, Watcher's Keep, ToB, as the scanned area names tell them; a
+creature template counts every area that places it) and, in a preset draft, the
+tier of each chosen original record and reward slot. A record whose place does
+not tell its part, such as a shop's stock, shows the part of its tier's table
+(BG1, SoD or BG2). **Find in this configuration** filters both lists by name,
+resource ID, item type, game part or tier, and offers one game part and one tier
+to choose; the counts then say how many items and reward slots match. Recipient
+search in the library finds game parts too (`tob`, `watcher's keep`).
 Selecting a saved configuration loads it immediately, confirming before unsaved
 edits are discarded. Save named configurations or use **Save a copy**; incomplete
 choices can be saved for later. Draft files contain the existing profile and binding plan

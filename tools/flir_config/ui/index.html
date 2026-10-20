@@ -94,6 +94,14 @@
               <span id="shopPercentHint" class="visually-hidden">Whole percentage from 0 to 4,294,967,295</span>
             </div>
           </section>
+          <div class="selection-filter" role="search" aria-label="Find in this configuration">
+            <label for="selectionFilter">Find in this configuration</label>
+            <div class="selection-filter-row">
+              <input id="selectionFilter" type="search" autocomplete="off" placeholder="Name, ID, item type, game part or tier">
+              <select id="partFilter" aria-label="Game part"><option value="">All parts</option></select>
+              <select id="tierFilter" aria-label="Tier"><option value="">All tiers</option></select>
+            </div>
+          </div>
           <details class="selection-section" open>
             <summary class="section-heading"><h3>Selected items <span id="itemCount" class="count">0 items</span></h3></summary>
             <div id="selectedItems" class="selected-list"></div>
