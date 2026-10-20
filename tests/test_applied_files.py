@@ -263,14 +263,14 @@ class RouteInArchiveTests(AppliedGame):
 
 
 class EarlierVersionTests(AppliedGame):
-    """A game where Chriz Item Randomiser 1.0.1 applied, which kept no record."""
+    """A game where a version of Chriz Item Randomiser that kept no record applied."""
 
     def test_the_first_apply_keeps_the_scan_the_player_has(self):
         self.build()
         self.apply_fitted()
         shutil.rmtree(self.game / BEFORE)
         (self.game / RECORD).unlink()
-        # Its files count as the game's, as 1.0.1 scanned them.
+        # Its files count as the game's, as that version scanned them.
         self.rescan()
         catalog, world = self.catalog, self.world
         self.assertEqual(self.rows()["dlg:uhogre01"], digest(self.override("uhogre01.dlg").read_bytes()))

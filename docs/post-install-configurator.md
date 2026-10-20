@@ -319,11 +319,12 @@ after an uninstall (decision B2 in [the packaging plan](plans/2026-10-14-mode1-p
 `before-apply/` holds the files to put back by hand. A re-install that leaves the
 installer's files as they were keeps the configuration applied last open.
 
-Games where version 1.0.1 applied the extended pools have no record. Their scans read
-CIR's files as the game's, as 1.0.1 did, so a configuration that 1.0.1 applied there
-is set aside once more at the first start, like the ones already in
-`configurations\earlier scans\`. The first Apply of a later version records only the
-files it changes, and the scan it was made with stays from then on.
+Games where a version of CIR without the record applied the extended pools have no
+record. Their scans read CIR's files as the game's, as that version did, so a
+configuration that version applied there is set aside at the first start, as that
+version would have done, and joins the ones in `configurations\earlier scans\`. The
+first Apply of a later version records only the files it changes, and the scan it was
+made with stays from then on.
 
 ## Original preset drafts
 
