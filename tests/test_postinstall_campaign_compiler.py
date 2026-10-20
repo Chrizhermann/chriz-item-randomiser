@@ -409,10 +409,10 @@ class CampaignCompilerTests(unittest.TestCase):
     def test_failed_lua_publication_leaves_old_pointer_complete(self):
         first = self.write()
         writer = campaigns._write_immutable
-        def fail_lua(path, data):
+        def fail_lua(path, data, replaceable=None):
             if path.suffix == ".lua":
                 raise OSError("simulated disk failure")
-            return writer(path, data)
+            return writer(path, data, replaceable)
         with patch.object(campaigns, "_write_immutable", side_effect=fail_lua):
             with self.assertRaisesRegex(OSError, "simulated disk failure"):
                 self.write(self.plan(["cre:actor/item/1"]))
@@ -429,6 +429,26 @@ class CampaignCompilerTests(unittest.TestCase):
                 self.write()
             path.write_bytes(original)
         self.assertEqual(read_campaign(self.store)["revision"], first["revision"])
+
+    def test_a_refused_lua_rendering_is_read_and_replaced_on_publication(self):
+        # Earlier versions wrote one table constructor even where the game's
+        # LuaJIT refuses it (tests/test_campaign_lua_rendering.py).
+        first = self.write()
+        path = Path(first["lua_path"])
+        refused = path.read_bytes()
+        with patch.object(campaigns, "_LUAJIT_CONSTANTS", 4), patch.object(campaigns, "_LUA_PART", 8):
+            body = read_campaign(self.store)
+            self.assertEqual(campaigns._refused_lua(body), refused)
+            self.assertEqual(self.write(), first)
+            self.assertEqual(path.read_bytes(), campaigns._render_lua(body))
+            self.assertNotEqual(path.read_bytes(), refused)
+            self.assertEqual(read_campaign(self.store), body)
+            path.write_bytes(refused + b"-- another version\n")
+            with self.assertRaisesRegex(ProfileError, "disagree"):
+                read_campaign(self.store)
+            with self.assertRaisesRegex(ProfileError, "conflicting content"):
+                self.write()
+        self.assertEqual(list(self.store.rglob(".flir-*.tmp")), [])
 
     def test_lua_rendering_escapes_every_utf8_byte_and_never_injects_code(self):
         hostile = '"]; os.execute("unexpected"); --\\\n123\x00한글 é'

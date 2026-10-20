@@ -4,7 +4,7 @@
 //! Runtime installation is separate. Exported revisions stay for older saves;
 //! the next-game pointer is published last, with the game closed.
 
-use crate::campaigns::{read_campaign, store_path, write_immutable};
+use crate::campaigns::{lua_upgrade, read_campaign, store_path, write_immutable};
 use crate::error::{Error, ErrorKind, Result};
 use crate::json::Value;
 use crate::paths;
@@ -399,7 +399,13 @@ pub fn adopt_revisions(game: &Path, output: &Path) -> Result<Vec<String>> {
             let content = read_bytes(&store_path(&store, &relative)?)?;
             let target = store_path(&exported, &relative)?;
             if paths::exists(&target).map_err(|error| Error::win(&error, &target))? {
-                if read_bytes(&target)? != content {
+                let existing = read_bytes(&target)?;
+                // Either may still be the refused Lua rendering of the same
+                // data; the export publishes the current one.
+                let game_file = store_path(&store, &relative)?;
+                if existing != content
+                    && !(lua_upgrade(&game_file, &existing, &content)? || lua_upgrade(&game_file, &content, &existing)?)
+                {
                     return Err(Error::profile(format!(
                         "Campaign revision {} in this configuration workspace differs from the game's ({inner}); \
                          saved games need the game's, so nothing was applied. Move {} aside, then apply again",
@@ -516,7 +522,10 @@ pub fn deploy_export(game: &Path, output: &Path) -> Result<()> {
             if existing == content {
                 continue;
             }
-            if relative.join("/").starts_with(&format!("{CAMPAIGN_DATA}/campaign-store/revisions/")) {
+            // A refused Lua rendering is replaced by the current one of the same data.
+            if relative.join("/").starts_with(&format!("{CAMPAIGN_DATA}/campaign-store/revisions/"))
+                && !lua_upgrade(&source, &existing, &content)?
+            {
                 return Err(Error::profile(format!("An older campaign revision differs: {relative_text}")));
             }
         }

@@ -221,7 +221,10 @@ build with the feature again before the checks.
   other tables and adds preset campaigns that read them (`CAMPAIGNS`,
   `_PARTS`, `PRESET_CAMPAIGNS`), as `tests/sod_table_fixtures.py` does with
   Siege of Dragonspear tables, the port reads those tables and campaigns
-  (`CIR_PARITY_LISTS`, `CIR_PARITY_CAMPAIGNS`).
+  (`CIR_PARITY_LISTS`, `CIR_PARITY_CAMPAIGNS`). Where a test lowers the Lua
+  constant limits (`campaigns._LUAJIT_CONSTANTS`, `_LUA_PART`) to exercise
+  split Lua renderings on small data, the port uses the same limits
+  (`CIR_PARITY_LUA_LIMITS`).
 - `cli_check.py` runs the command line on a synthetic installation: the whole
   workflow up to the native export, a world scan that leaves out damaged
   files, argparse's handling of unusual arguments, and every command's help at

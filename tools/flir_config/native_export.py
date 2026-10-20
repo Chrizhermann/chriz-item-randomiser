@@ -13,7 +13,7 @@ from copy import deepcopy
 from pathlib import Path
 
 from .activation import EXPORT_FILES, EXPORT_FILES_SCHEMA
-from .campaigns import read_campaign, _render_lua, _store_path, _write_immutable
+from .campaigns import read_campaign, _refused_lua, _render_lua, _store_path, _write_immutable
 from .creature_inventory import rewrite_inventory
 from .store_inventory import rewrite_inventory as rewrite_store
 from .profiles import (DEFAULT_SHOP_PRICING, HEX256, MAX_ITEM_PRICE, ProfileError,
@@ -717,6 +717,8 @@ def export_native(store: Path, catalog: dict, world: dict, output: Path,
     stored = {key for key in manifests if key not in selected_keys and
               (exported / "revisions" / f"{key}.native.json").is_file()}
     pending, required, pristine, compiled = {}, set(), set(), {}
+    # The data of each pending Lua artifact, for the refused rendering it replaces.
+    lua_values = {}
     notes, kept = [], set()
     for key, manifest in sorted(manifests.items()):
         problems = {} if key in stored else None
@@ -733,6 +735,7 @@ def export_native(store: Path, catalog: dict, world: dict, output: Path,
         base = "campaign-store/revisions/" + key
         pending[base + ".json"] = canonical_bytes(manifest)
         pending[base + ".lua"] = _render_lua(manifest)
+        lua_values[base + ".lua"] = manifest
     # Reuse the scanner's resource reader; only selected resources are demanded.
     resource_bytes = {}
     with GameResources(Path(catalog["game_root"]), {**{k: RESOURCE_TYPES[k] for k in ("itm", "are", "cre", "sto", "bcs", "dlg", "spl")},
@@ -915,6 +918,7 @@ def export_native(store: Path, catalog: dict, world: dict, output: Path,
         base = "campaign-store/revisions/" + key
         pending[base + ".native.json"] = canonical_bytes(native)
         pending[base + ".native.lua"] = _render_lua(native)
+        lua_values[base + ".native.lua"] = native
         for source_index, selected_source in enumerate(manifest["sources"], 1):
             source = selected_source["record"]
             compiled_source = compiled[key]["sources"][selected_source["id"]]
@@ -965,13 +969,23 @@ def export_native(store: Path, catalog: dict, world: dict, output: Path,
             pending[base + ".removed.cre"] = rewrite_inventory(
                 original, {source["record"]["record_index"]:
                            None if replacement == "blank" else replacement})
+    def replaceable(relative: str):
+        # A refused Lua rendering holds the same data as the current one.
+        return (lambda value=lua_values[relative]: _refused_lua(value)) if relative in lua_values else None
+
+    def changed(relative: str) -> bool:
+        path = _store_path(output, Path(relative))
+        if not path.is_file():
+            return False
+        existing, earlier = path.read_bytes(), replaceable(relative)
+        return existing != pending[relative] and (earlier is None or existing != earlier())
+
     # Where the game changed so that a revision exported earlier would now get
     # other files, its saves keep the files they were exported with.
     for key in sorted(stored - kept):
         prefix = f"campaign-store/revisions/{key}."
         own = [relative for relative in pending if relative.startswith(prefix)]
-        if not any(_store_path(output, Path(relative)).is_file() and
-                   _store_path(output, Path(relative)).read_bytes() != pending[relative] for relative in own):
+        if not any(changed(relative) for relative in own):
             continue
         kept.add(key)
         for relative in own:
@@ -1009,7 +1023,7 @@ def export_native(store: Path, catalog: dict, world: dict, output: Path,
     for relative, data in pending.items():
         path = _store_path(output, Path(relative))
         if relative.startswith("campaign-store/"):
-            _write_immutable(path, data)
+            _write_immutable(path, data, replaceable(relative))
         else:
             # These are the prepared common resources for all exported
             # revisions; adding a compatible quest branch or TLK entry can

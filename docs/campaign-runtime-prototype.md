@@ -136,6 +136,16 @@ then updates the separate `prototype-next.json` pointer. Reading verifies the
 content hash, schema, and exact generated Lua bytes. It never falls back from a
 missing requested revision to the next-run pointer. Keep revisions needed by saves.
 
+A Lua companion is one table constructor unless the game's LuaJIT would refuse
+it: LuaJIT compiles at most 65536 string, table and function constants and
+65536 number constants into one function. Larger data (extended pools of a
+whole EET campaign reach about 80,000) is built by several functions, each
+holding at most about 32,768 constants. LuaJIT and Lua 5.1 to 5.4 load it as
+the same table. Earlier versions wrote one constructor for such data too,
+which no game could load. Reading accepts that refused rendering, and
+preparation, export and Apply replace it with the loadable one of the same
+data. Every other existing file must still match byte for byte.
+
 Only finite physical relocation is accepted: creature inventory records, embedded
 creatures, containers, and finite shop stock. This is format coverage, not proof
 of runtime support for those sources. Script registrations and deliberate additions

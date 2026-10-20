@@ -786,13 +786,113 @@ pub fn compile_campaign(profile: &Value, catalog: &Value, world: &Value, plan: &
     Ok(body)
 }
 
+/// LuaJIT's per-function limit for GC constants and for number constants.
+const LUAJIT_CONSTANTS: usize = 65536;
+/// The constants of any kind a function of a split Lua rendering may hold.
+const LUA_PART: usize = 32768;
+
+/// The two limits above; with the `parity-overrides` feature as
+/// `CIR_PARITY_LUA_LIMITS` ("constants,part") names them, the way the
+/// reference's tests patch them.
+fn lua_limits() -> (usize, usize) {
+    #[cfg(feature = "parity-overrides")]
+    if let Some(text) = std::env::var_os("CIR_PARITY_LUA_LIMITS") {
+        let text = text.to_string_lossy();
+        let limits = text.split_once(',').and_then(|(constants, part)| Some((constants.parse().ok()?, part.parse().ok()?)));
+        return limits.expect("CIR_PARITY_LUA_LIMITS is constants,part");
+    }
+    (LUAJIT_CONSTANTS, LUA_PART)
+}
+
+/// Whether LuaJIT refuses the single table constructor of this value.
+///
+/// The game's LuaJIT compiles at most 65536 GC and 65536 number constants
+/// into one function. A constructor costs a GC constant (its template table)
+/// when it has a string key or a non-table value; a string key whose value is
+/// a table costs that string once per function, and an array index above
+/// 32767 whose value is a table costs a number once per function.
+fn luajit_overflows(value: &Value, limit: usize) -> bool {
+    let table = |item: &Value| matches!(item, Value::Dict(_) | Value::List(_));
+    let mut templates = 0;
+    let mut keys: HashSet<&str> = HashSet::new();
+    let mut numbers: HashSet<usize> = HashSet::new();
+    let mut pending = vec![(value, 0)];
+    while let Some((node, depth)) = pending.pop() {
+        if depth > 32 {
+            continue; // The renderer refuses it.
+        }
+        match node {
+            Value::Dict(dict) => {
+                templates += usize::from(!dict.is_empty());
+                for (key, item) in dict.iter() {
+                    if table(item) {
+                        keys.insert(key);
+                        pending.push((item, depth + 1));
+                    }
+                }
+            }
+            Value::List(list) => {
+                templates += usize::from(list.iter().any(|item| !table(item)));
+                for (index, item) in list.iter().enumerate() {
+                    if table(item) {
+                        if index + 1 > 32767 {
+                            numbers.insert(index + 1);
+                        }
+                        pending.push((item, depth + 1));
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    templates + keys.len() > limit || numbers.len() > limit
+}
+
 /// A data-only Lua table, preserving UTF-8 bytes without raw text.
 ///
 /// Fixed-width decimal escapes also prevent a following digit from joining
 /// an escape. JSON null becomes nil; null-valued object keys are therefore
 /// absent in Lua. Arrays use explicit one-based keys so nil never shifts
 /// later values. Floats and integers inexact in Lua 5.1 are unsupported.
+///
+/// A value LuaJIT cannot compile as one table constructor is built instead
+/// by functions that each hold at most about `LUA_PART` constants of any
+/// kind, so LuaJIT and Lua 5.1 to 5.4 load it. Every other value keeps the
+/// single constructor.
 pub fn render_lua(value: &Value) -> Result<Vec<u8>> {
+    render_lua_as(value, false)
+}
+
+/// The single table constructor earlier versions rendered for `value`
+/// although LuaJIT refuses it, else None. No game could load it, so the
+/// current rendering of the same data replaces it.
+pub fn refused_lua(value: &Value) -> Result<Option<Vec<u8>>> {
+    if luajit_overflows(value, lua_limits().0) {
+        render_lua_as(value, true).map(Some)
+    } else {
+        Ok(None)
+    }
+}
+
+/// Whether `new` is the current rendering of a revision Lua artifact's JSON
+/// twin (next to `lua`) and `old` the refused rendering earlier versions wrote.
+pub fn lua_upgrade(lua: &Path, old: &[u8], new: &[u8]) -> Result<bool> {
+    if lua.extension().is_none_or(|extension| extension != "lua") {
+        return Ok(false);
+    }
+    let Ok(value) = read_json(&lua.with_extension("json")) else { return Ok(false) };
+    Ok(match refused_lua(&value)? {
+        Some(refused) => old == refused.as_slice() && new == render_lua(&value)?.as_slice(),
+        None => false,
+    })
+}
+
+fn render_lua_as(value: &Value, single: bool) -> Result<Vec<u8>> {
+    render_lua_limited(value, single, lua_limits())
+}
+
+fn render_lua_limited(value: &Value, single: bool, (limit, part): (usize, usize)) -> Result<Vec<u8>> {
+    let split = !single && luajit_overflows(value, limit);
     fn string(text: &str) -> String {
         let mut out = String::with_capacity(text.len() * 4 + 2);
         out.push('"');
@@ -802,27 +902,19 @@ pub fn render_lua(value: &Value) -> Result<Vec<u8>> {
         out.push('"');
         out
     }
-    fn render(node: &Value, depth: usize, out: &mut String) -> Result<()> {
+    // The expression and, for split renderings, a bound of the constants it
+    // adds to the function evaluating it.
+    fn render(node: &Value, depth: usize, split: Option<usize>) -> Result<(String, usize)> {
         if depth > 32 {
             return Err(Error::profile("Campaign data nesting exceeds prototype limit 32"));
         }
         let entries: Vec<(String, &Value)> = match node {
-            Value::Null => {
-                out.push_str("nil");
-                return Ok(());
-            }
-            Value::Bool(flag) => {
-                out.push_str(if *flag { "true" } else { "false" });
-                return Ok(());
-            }
+            Value::Null => return Ok(("nil".to_string(), 0)),
+            Value::Bool(flag) => return Ok(((if *flag { "true" } else { "false" }).to_string(), 0)),
             Value::Int(number) if number.unsigned_abs() <= MAX_LUA_INTEGER as u64 => {
-                out.push_str(&number.to_string());
-                return Ok(());
+                return Ok((number.to_string(), 1))
             }
-            Value::Str(text) => {
-                out.push_str(&string(text));
-                return Ok(());
-            }
+            Value::Str(text) => return Ok((string(text), 1)),
             Value::Dict(dict) => {
                 let mut items: Vec<(&str, &Value)> = dict.iter().collect();
                 items.sort_by(|a, b| a.0.cmp(b.0));
@@ -843,24 +935,56 @@ pub fn render_lua(value: &Value) -> Result<Vec<u8>> {
                 ))
             }
         };
-        let indent = "  ".repeat(depth + 1);
-        out.push_str("{\n");
+        let mut rendered = Vec::with_capacity(entries.len());
+        let mut cost = 1;
         for (key, item) in entries {
-            out.push_str(&indent);
-            out.push('[');
-            out.push_str(&key);
-            out.push_str("] = ");
-            render(item, depth + 1, out)?;
-            out.push_str(",\n");
+            let (text, item_cost) = render(item, depth + 1, split)?;
+            cost += 1 + item_cost;
+            rendered.push((key, text, item_cost));
         }
-        out.push_str(&"  ".repeat(depth));
-        out.push('}');
-        Ok(())
+        let Some(part) = split.filter(|part| cost > *part) else {
+            let indent = "  ".repeat(depth + 1);
+            let mut out = String::from("{\n");
+            for (key, text, _) in &rendered {
+                out.push_str(&indent);
+                out.push('[');
+                out.push_str(key);
+                out.push_str("] = ");
+                out.push_str(text);
+                out.push_str(",\n");
+            }
+            out.push_str(&"  ".repeat(depth));
+            out.push('}');
+            return Ok((out, cost));
+        };
+        // Consecutive entries fill the table in separate functions.
+        let mut parts: Vec<String> = Vec::new();
+        let (mut body, mut entries_in_body, mut body_cost) = (String::new(), 0, 0);
+        for (key, text, item_cost) in &rendered {
+            if entries_in_body > 0 && body_cost + 1 + item_cost > part {
+                parts.push(std::mem::take(&mut body));
+                (entries_in_body, body_cost) = (0, 0);
+            }
+            body.push_str("t[");
+            body.push_str(key);
+            body.push_str("] = ");
+            body.push_str(text);
+            body.push('\n');
+            entries_in_body += 1;
+            body_cost += 1 + item_cost;
+        }
+        parts.push(body);
+        let mut out = String::from("(function()\nlocal t, parts = {}, {\n");
+        for body in &parts {
+            out.push_str("function(t)\n");
+            out.push_str(body);
+            out.push_str("end,\n");
+        }
+        out.push_str("}\nfor i = 1, #parts do parts[i](t) end\nreturn t\nend)()");
+        Ok((out, 1))
     }
-    let mut out = String::from("return ");
-    render(value, 0, &mut out)?;
-    out.push('\n');
-    Ok(out.into_bytes())
+    let (text, _) = render(value, 0, split.then_some(part))?;
+    Ok(format!("return {text}\n").into_bytes())
 }
 
 /// Reject linked artifacts and paths redirected outside this revision store.
@@ -876,15 +1000,32 @@ pub fn store_path(store: &Path, relative: &Path) -> Result<PathBuf> {
 
 /// Publish a complete revision with create-if-absent semantics.
 pub fn write_immutable(path: &Path, data: &[u8]) -> Result<()> {
+    write_immutable_replacing(path, data, None)
+}
+
+/// An earlier version's content that new content may replace, else None.
+pub type Replaceable<'a> = &'a dyn Fn() -> Result<Option<Vec<u8>>>;
+
+/// `write_immutable`, where `replaceable` returns an earlier version's
+/// content that `data` may replace (a refused Lua rendering, `refused_lua`).
+pub fn write_immutable_replacing(path: &Path, data: &[u8], replaceable: Option<Replaceable>) -> Result<()> {
     make_dirs(&paths::parent(path))?;
     if paths::is_symlink(path) {
         return Err(Error::profile("Refusing to publish a linked campaign artifact"));
     }
-    if paths::exists(path).map_err(|error| Error::win(&error, path))? {
-        if fs::read(path).map_err(|error| Error::os(&error, path))? != data {
+    let replace = paths::exists(path).map_err(|error| Error::win(&error, path))?;
+    if replace {
+        let existing = fs::read(path).map_err(|error| Error::os(&error, path))?;
+        if existing == data {
+            return Ok(());
+        }
+        let earlier = match replaceable {
+            Some(replaceable) => replaceable()?,
+            None => None,
+        };
+        if earlier.as_deref() != Some(existing.as_slice()) {
             return Err(Error::profile("An immutable campaign revision has conflicting content"));
         }
-        return Ok(());
     }
     let parent = paths::parent(path);
     let mut temporary: Option<PathBuf> = None;
@@ -903,6 +1044,10 @@ pub fn write_immutable(path: &Path, data: &[u8]) -> Result<()> {
         handle.flush().map_err(|error| Error::os(&error, &name))?;
         handle.sync_all().map_err(|error| Error::os(&error, &name))?;
         drop(handle);
+        if replace {
+            // The replaceable earlier version checked above.
+            return fs::rename(&name, path).map_err(|error| Error::win_pair(&error, &name, path));
+        }
         // A hard link publishes the fully written bytes without replacing an
         // existing immutable revision if another process won the same race.
         match fs::hard_link(&name, path) {
@@ -937,7 +1082,7 @@ pub fn write_campaign(profile: &Value, catalog: &Value, world: &Value, plan: &Va
         ensure_output_outside_game(path, catalog)?;
     }
     write_immutable(&revision_path, &canonical_bytes(&body)?)?;
-    write_immutable(&lua_path, &render_lua(&body)?)?;
+    write_immutable_replacing(&lua_path, &render_lua(&body)?, Some(&|| refused_lua(&body)))?;
     write_json(
         &pointer_path,
         &Value::Dict(crate::dict! {"schema" => POINTER_SCHEMA, "revision" => revision.as_str()}),
@@ -971,8 +1116,112 @@ pub fn read_campaign(store: &Path, revision: Option<&str>) -> Result<Value> {
         return Err(Error::profile("Campaign revision identity disagrees with its filename"));
     }
     let lua = store_path(store, &revisions.join(format!("{revision}.lua")))?;
-    if fs::read(&lua).map_err(|error| Error::os(&error, &lua))? != render_lua(&body)? {
+    let lua = fs::read(&lua).map_err(|error| Error::os(&error, &lua))?;
+    // A refused rendering is the same data; publishing it again replaces it.
+    if lua != render_lua(&body)? && Some(lua) != refused_lua(&body)? {
         return Err(Error::profile("Campaign JSON and Lua artifacts disagree"));
     }
     Ok(body)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::resources::sha256_hex;
+
+    fn list(items: impl IntoIterator<Item = Value>) -> Value {
+        Value::List(items.into_iter().collect())
+    }
+
+    fn dict<const N: usize>(entries: [(&str, Value); N]) -> Value {
+        let mut dict = Dict::new();
+        for (key, value) in entries {
+            dict.insert(key, value);
+        }
+        Value::Dict(dict)
+    }
+
+    // The boundaries tests/test_campaign_lua_rendering.py checks against LuaJIT.
+    #[test]
+    fn luajit_limits_match_the_reference_boundaries() {
+        let keyed = |count: usize| {
+            let mut keys = Dict::new();
+            for index in 0..count {
+                keys.insert(format!("k{index}"), list([Value::Int(1)]));
+            }
+            Value::Dict(keys)
+        };
+        let cases: [(&dyn Fn(usize) -> Value, usize); 5] = [
+            (&|count| list((0..count).map(|_| list([Value::Int(1)]))), 65536),
+            (&|count| list((0..count).map(|_| list([Value::Null]))), 65536),
+            (&keyed, 32767),
+            (&|count| list((0..count).map(|_| dict([("record", dict([("a", Value::Int(1))]))]))), 32767),
+            (&|count| list((0..count).map(|_| dict([]))), 98303),
+        ];
+        for (make, fits) in cases {
+            for count in [fits, fits + 1] {
+                let value = make(count);
+                assert_eq!(luajit_overflows(&value, LUAJIT_CONSTANTS), count > fits, "{fits} {count}");
+                let single = render_lua_as(&value, true).unwrap();
+                if count > fits {
+                    assert_eq!(refused_lua(&value).unwrap(), Some(single.clone()));
+                    assert_ne!(render_lua(&value).unwrap(), single);
+                } else {
+                    assert_eq!(refused_lua(&value).unwrap(), None);
+                    assert_eq!(render_lua(&value).unwrap(), single);
+                }
+            }
+        }
+    }
+
+    // The same bytes as the reference renders (tests/test_campaign_lua_rendering.py).
+    #[test]
+    fn split_renderings_match_the_reference() {
+        let rows = (0..70000i64).map(|index| {
+            dict([
+                ("flag", Value::Bool(index % 3 == 0)),
+                ("id", Value::from(format!("row-{index}"))),
+                ("n", Value::Int(index)),
+                ("none", Value::Null),
+                ("tags", list([Value::from(format!("t{}", index % 7)), Value::Int(index % 5)])),
+            ])
+        });
+        let golden = dict([("name", Value::from("golden \u{e9}")), ("rows", list(rows))]);
+        assert_eq!(
+            sha256_hex(&render_lua(&golden).unwrap()),
+            "c6449d33c1b94fba6e9414f4562af3238124a8f6eb73fc05804c5abb687d5ce8"
+        );
+        let record = || {
+            dict([
+                ("b", list([Value::Int(1), Value::Int(2), Value::Null, Value::from("x")])),
+                ("c", dict([("d", Value::Bool(true)), ("e", Value::Bool(false))])),
+            ])
+        };
+        let nested = list([list([list([list([list([Value::Int(9007199254740991)])])])])]);
+        let small = dict([
+            ("a", list((0..5).map(|_| record()))),
+            ("f", Value::from("\u{e9}\u{0}\n")),
+            ("g", Value::Null),
+            ("h", list([])),
+            ("i", dict([])),
+            ("j", nested),
+        ]);
+        let text = render_lua_limited(&small, false, (4, 8)).unwrap();
+        assert_eq!(sha256_hex(&text), "258544c293cfb8ce83942bd9b8fbe72fd4b6455cf5e6f402a414983868b519f3");
+        assert!(text.starts_with(b"return (function()\n"));
+    }
+
+    #[test]
+    fn invalid_data_is_refused_in_split_renderings_too() {
+        for value in [Value::Float(0.5), Value::Int(1 << 53), Value::BigInt("18446744073709551616".into())] {
+            let error = render_lua_limited(&list([value]), false, (0, 2)).unwrap_err();
+            assert!(error.to_string().contains("strings, exact integers"), "{error}");
+        }
+        let mut deep = list([]);
+        for _ in 0..33 {
+            deep = list([deep]);
+        }
+        let error = render_lua_limited(&deep, false, (0, 2)).unwrap_err();
+        assert!(error.to_string().contains("nesting exceeds prototype limit 32"), "{error}");
+    }
 }

@@ -9,7 +9,7 @@ import re
 import shutil
 from tempfile import TemporaryDirectory
 
-from .campaigns import read_campaign, _store_path, _write_immutable
+from .campaigns import read_campaign, _lua_upgrade, _store_path, _write_immutable
 from .profiles import HEX256, ProfileError, ensure_output_outside_game, read_json
 
 # The files of the latest export in its folder. Apply copies only these, so a
@@ -190,7 +190,11 @@ def adopt_revisions(game: Path, output: Path) -> list[str]:
             content = _store_path(store, relative).read_bytes()
             target = _store_path(exported, relative)
             if target.exists():
-                if target.read_bytes() != content:
+                existing = target.read_bytes()
+                # Either may still be the refused Lua rendering of the same data;
+                # the export publishes the current one.
+                if existing != content and not (_lua_upgrade(path, existing, content) or
+                                                _lua_upgrade(path, content, existing)):
                     raise ProfileError(
                         f"Campaign revision {key[:12]} in this configuration workspace differs from the game's "
                         f"({path.relative_to(entry.parent).as_posix()}); saved games need the game's, so nothing "
@@ -254,9 +258,12 @@ def deploy_export(game: Path, output: Path) -> None:
         if target in changes and changes[target] != content:
             raise ProfileError("Conflicting export files: " + str(relative))
         if target.exists():
-            if target.read_bytes() == content:
+            existing = target.read_bytes()
+            if existing == content:
                 continue
-            if relative.as_posix().startswith(CAMPAIGN_DATA + "/campaign-store/revisions/"):
+            # A refused Lua rendering is replaced by the current one of the same data.
+            if (relative.as_posix().startswith(CAMPAIGN_DATA + "/campaign-store/revisions/") and
+                    not _lua_upgrade(source, existing, content)):
                 raise ProfileError("An older campaign revision differs: " + str(relative))
         changes[target] = content
     pointer = game.resolve() / CAMPAIGN_DATA / "next.lua"

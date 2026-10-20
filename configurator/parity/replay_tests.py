@@ -18,9 +18,10 @@ read-only files. Patched hash tables are passed on as the Rust port's
 test-only pin overrides; a patched `resolve_template` as the drafts it returns;
 a patched `translations.LANGUAGES_DIR` as the folder the port reads its
 translations from; a patched lists root (`templates.ROOT` and
-`original_catalog.ROOT`) as the folder the port reads its tables from, and
+`original_catalog.ROOT`) as the folder the port reads its tables from,
 patched preset campaigns (`CAMPAIGNS`, `templates._PARTS`,
-`platform.PRESET_CAMPAIGNS`) as the port's.
+`platform.PRESET_CAMPAIGNS`) as the port's, and patched Lua constant limits
+(`campaigns._LUAJIT_CONSTANTS`, `campaigns._LUA_PART`) as the port's.
 """
 from __future__ import annotations
 
@@ -61,6 +62,8 @@ DATA_STARTUP: dict[str, dict] = {}
 IRRELEVANT_PATCHES = {("flir_config.activation", "require_closed")}
 # The lists root and the preset campaigns: passed on to the Rust port.
 LIST_ROOTS = {("flir_config.templates", "ROOT"), ("flir_config.original_catalog", "ROOT")}
+# The Lua constant limits a test lowers; the port takes both as CIR_PARITY_LUA_LIMITS.
+LUA_LIMITS = {("flir_config.campaigns", "_LUAJIT_CONSTANTS"), ("flir_config.campaigns", "_LUA_PART")}
 CAMPAIGN_NAMES = {("flir_config.templates", "CAMPAIGNS"), ("flir_config.platform", "CAMPAIGNS")}
 STANDARD_MODULES = {"os", "os.path", "ntpath", "posixpath", "shutil", "builtins", "io", "pathlib",
                     "tempfile", "hashlib", "json", "struct", "stat"}
@@ -132,8 +135,9 @@ def reference_tables() -> set[int]:
 def classify(call: str):
     """(reason to skip or None, overrides for the Rust run, mocked
     resolve_template or None, mocked registration resolve_template or None)."""
-    from flir_config import platform, templates
+    from flir_config import campaigns as campaign_module, platform, templates
     resolve = registration = languages = None
+    lua_limits = False
     roots: dict[str, object] = {}
     campaigns_patched = False
     for patcher in list(ACTIVE_PATCHES):
@@ -154,6 +158,9 @@ def classify(call: str):
                 continue
             if module == "flir_config.original_registrations" and attribute == "resolve_template":
                 registration = getattr(target, attribute)
+                continue
+            if (module, attribute) in LUA_LIMITS:
+                lua_limits = True
                 continue
             if module == "flir_config.translations" and attribute == "LANGUAGES_DIR":
                 folder = getattr(target, attribute)
@@ -217,6 +224,8 @@ def classify(call: str):
         if not json_native(campaigns):
             return "patched campaigns are not plain JSON", None, None, None
     overrides = {"pins": pins or None, "tables": data or None, "languages": languages, "lists": lists,
+                 "lua_limits": (f"{campaign_module._LUAJIT_CONSTANTS},{campaign_module._LUA_PART}"
+                                if lua_limits else None),
                  "campaigns": campaigns}
     return None, overrides, resolve, registration
 
@@ -444,7 +453,7 @@ def record(spec: Spec, original, signature, args, kwargs):
     try:
         rust_line = RUNNER.run([{"call": spec.call, "args": spec.arguments(values, draft)}], pins["pins"],
                                registration_draft, pins["tables"], pins["languages"], pins["lists"],
-                               pins["campaigns"])[0]
+                               pins["campaigns"], pins["lua_limits"])[0]
     except Exception as exc:  # the comparison reports it; the test goes on
         rust_line = json.dumps({"rust-failure": str(exc)})
     rust_after = {}

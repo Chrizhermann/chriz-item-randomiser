@@ -50,6 +50,10 @@ RUNTIME_REQUIREMENTS = [
 _FIELDS = {"schema", "state", "revision", "bound_revision", "profile_id",
            "world_fingerprint", "sources", "targets", "runtime_requirements"}
 _MAX_LUA_INTEGER = 2**53 - 1
+# LuaJIT's per-function limit for GC constants and for number constants.
+_LUAJIT_CONSTANTS = 65536
+# The constants of any kind a function of a split Lua rendering may hold.
+_LUA_PART = 32768
 
 
 def _fields(value: object, expected: set[str], label: str) -> dict:
@@ -494,41 +498,96 @@ def compile_campaign(profile: dict, catalog: dict, world: dict, plan: dict) -> d
     return _validate_campaign(body)
 
 
-def _render_lua(value: object) -> bytes:
+def _luajit_overflows(value: object) -> bool:
+    """Whether LuaJIT refuses the single table constructor of this value.
+
+    The game's LuaJIT compiles at most 65536 GC and 65536 number constants into
+    one function. A constructor costs a GC constant (its template table) when it
+    has a string key or a non-table value; a string key whose value is a table
+    costs that string once per function, and an array index above 32767 whose
+    value is a table costs a number once per function.
+    """
+    templates, keys, numbers = 0, set(), set()
+    pending = [(value, 0)]
+    while pending:
+        node, depth = pending.pop()
+        if depth > 32:
+            continue  # The renderer refuses it.
+        if isinstance(node, dict):
+            templates += bool(node)
+            for key, item in node.items():
+                if isinstance(item, (dict, list)):
+                    keys.add(key)
+                    pending.append((item, depth + 1))
+        elif isinstance(node, list):
+            templates += any(not isinstance(item, (dict, list)) for item in node)
+            for index, item in enumerate(node, 1):
+                if isinstance(item, (dict, list)):
+                    if index > 32767:
+                        numbers.add(index)
+                    pending.append((item, depth + 1))
+    return templates + len(keys) > _LUAJIT_CONSTANTS or len(numbers) > _LUAJIT_CONSTANTS
+
+
+def _render_lua(value: object, single: bool = False) -> bytes:
     """Render a data-only Lua table, preserving UTF-8 bytes without raw text.
 
     Fixed-width decimal escapes also prevent a following digit from joining an
     escape. JSON null becomes nil; null-valued object keys are therefore absent
     in Lua. Arrays use explicit one-based keys so nil never shifts later values.
     Floating point values and integers inexact in Lua 5.1 are unsupported.
+
+    A value LuaJIT cannot compile as one table constructor is built instead by
+    functions that each hold at most about _LUA_PART constants of any kind, so
+    LuaJIT and Lua 5.1 to 5.4 load it. Every other value keeps the single
+    constructor, which `single` also requests.
     """
-    def render(node: object, depth: int = 0) -> str:
+    split = not single and _luajit_overflows(value)
+
+    def render(node: object, depth: int = 0) -> tuple[str, int]:
+        # The expression and, for split renderings, a bound of the constants
+        # it adds to the function evaluating it.
         if depth > 32:
             raise ProfileError("Campaign data nesting exceeds prototype limit 32")
         if node is None:
-            return "nil"
+            return "nil", 0
         if type(node) is bool:
-            return "true" if node else "false"
+            return ("true" if node else "false"), 0
         if type(node) is int and abs(node) <= _MAX_LUA_INTEGER:
-            return str(node)
+            return str(node), 1
         if isinstance(node, str):
             try:
-                return '"' + ''.join(f"\\{byte:03d}" for byte in node.encode("utf-8")) + '"'
+                return '"' + ''.join(f"\\{byte:03d}" for byte in node.encode("utf-8")) + '"', 1
             except UnicodeEncodeError as exc:
                 raise ProfileError("Campaign strings must be valid UTF-8") from exc
         if isinstance(node, dict):
             if any(not isinstance(key, str) for key in node):
                 raise ProfileError("Campaign object keys must be strings")
-            entries = [(render(key, depth + 1), item) for key, item in sorted(node.items())]
+            entries = [(render(key, depth + 1)[0], item) for key, item in sorted(node.items())]
         elif isinstance(node, list):
             entries = [(str(index), item) for index, item in enumerate(node, 1)]
         else:
             raise ProfileError("Campaign data must use strings, exact integers, booleans, nulls or tables")
-        indent = "  " * (depth + 1)
-        return "{\n" + "".join(f"{indent}[{key}] = {render(item, depth + 1)},\n"
-                                for key, item in entries) + "  " * depth + "}"
+        rendered = [(key, *render(item, depth + 1)) for key, item in entries]
+        cost = 1 + sum(1 + item_cost for _, _, item_cost in rendered)
+        if not split or cost <= _LUA_PART:
+            indent = "  " * (depth + 1)
+            return "{\n" + "".join(f"{indent}[{key}] = {text},\n"
+                                   for key, text, _ in rendered) + "  " * depth + "}", cost
+        # Consecutive entries fill the table in separate functions.
+        parts, part, part_cost = [], [], 0
+        for key, text, item_cost in rendered:
+            if part and part_cost + 1 + item_cost > _LUA_PART:
+                parts.append("".join(part))
+                part, part_cost = [], 0
+            part.append(f"t[{key}] = {text}\n")
+            part_cost += 1 + item_cost
+        parts.append("".join(part))
+        return ("(function()\nlocal t, parts = {}, {\n"
+                + "".join(f"function(t)\n{body}end,\n" for body in parts)
+                + "}\nfor i = 1, #parts do parts[i](t) end\nreturn t\nend)()"), 1
 
-    return ("return " + render(value) + "\n").encode("ascii")
+    return ("return " + render(value)[0] + "\n").encode("ascii")
 
 
 def _store_path(store: Path, relative: Path) -> Path:
@@ -541,15 +600,41 @@ def _store_path(store: Path, relative: Path) -> Path:
     return resolved
 
 
-def _write_immutable(path: Path, data: bytes) -> None:
-    """Publish a complete revision with create-if-absent semantics."""
+def _refused_lua(value: object) -> bytes | None:
+    """The single table constructor earlier versions rendered for `value` although
+    LuaJIT refuses it, else None. No game could load it, so the current rendering
+    of the same data replaces it."""
+    return _render_lua(value, single=True) if _luajit_overflows(value) else None
+
+
+def _lua_upgrade(lua: Path, old: bytes, new: bytes) -> bool:
+    """Whether `new` is the current rendering of a revision Lua artifact's JSON twin
+    (next to `lua`) and `old` the refused rendering earlier versions wrote."""
+    if lua.suffix != ".lua":
+        return False
+    try:
+        value = read_json(lua.with_suffix(".json"))
+    except (OSError, ProfileError):
+        return False
+    refused = _refused_lua(value)
+    return refused is not None and old == refused and new == _render_lua(value)
+
+
+def _write_immutable(path: Path, data: bytes, replaceable=None) -> None:
+    """Publish a complete revision with create-if-absent semantics.
+
+    `replaceable` returns an earlier version's content that `data` may replace
+    (a refused Lua rendering, _refused_lua), else None.
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
     if path.is_symlink():
         raise ProfileError("Refusing to publish a linked campaign artifact")
     if path.exists():
-        if path.read_bytes() != data:
+        existing = path.read_bytes()
+        if existing == data:
+            return
+        if replaceable is None or existing != replaceable():
             raise ProfileError("An immutable campaign revision has conflicting content")
-        return
     temporary = None
     try:
         with tempfile.NamedTemporaryFile(mode="wb", prefix=".flir-", suffix=".tmp",
@@ -558,6 +643,10 @@ def _write_immutable(path: Path, data: bytes) -> None:
             handle.write(data)
             handle.flush()
             os.fsync(handle.fileno())
+        if path.exists():
+            # The replaceable earlier version checked above.
+            os.replace(temporary, path)
+            return
         # A hard link publishes the fully written bytes without replacing an
         # existing immutable revision if another process won the same race.
         try:
@@ -581,7 +670,7 @@ def write_campaign(profile: dict, catalog: dict, world: dict, plan: dict, store:
     for path in paths.values():
         ensure_output_outside_game(path, catalog)
     _write_immutable(paths["revision_path"], canonical_bytes(body))
-    _write_immutable(paths["lua_path"], _render_lua(body))
+    _write_immutable(paths["lua_path"], _render_lua(body), lambda: _refused_lua(body))
     write_json(paths["pointer_path"], {"schema": POINTER_SCHEMA, "revision": revision})
     return {"revision": revision, "state": STATE,
             **{key: str(path) for key, path in paths.items()}}
@@ -600,7 +689,8 @@ def read_campaign(store: Path, revision: str | None = None) -> dict:
     _validate_campaign(body)
     if body["revision"] != revision:
         raise ProfileError("Campaign revision identity disagrees with its filename")
-    lua = _store_path(store, Path("revisions") / (revision + ".lua"))
-    if lua.read_bytes() != _render_lua(body):
+    lua = _store_path(store, Path("revisions") / (revision + ".lua")).read_bytes()
+    # A refused rendering is the same data; publishing it again replaces it.
+    if lua != _render_lua(body) and lua != _refused_lua(body):
         raise ProfileError("Campaign JSON and Lua artifacts disagree")
     return body

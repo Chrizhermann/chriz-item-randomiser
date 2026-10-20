@@ -6,7 +6,7 @@
 //! eligibility.
 
 use crate::activation::{EXPORT_FILES, EXPORT_FILES_SCHEMA};
-use crate::campaigns::{read_campaign, render_lua, store_path, write_immutable};
+use crate::campaigns::{read_campaign, refused_lua, render_lua, store_path, write_immutable_replacing};
 use crate::error::{Error, ErrorKind, Result, CHANGED_SINCE_SCAN};
 use crate::game_text::{paired, text_files, unpaired};
 use crate::json::{parse_lenient, py_str, utf8_error_message, Dict, Value};
@@ -1559,6 +1559,9 @@ pub fn export_native(
     }
 
     let mut pending = Pending::default();
+    // The revision and kind of each pending Lua artifact, for the refused
+    // rendering of its data it replaces.
+    let mut lua_values: HashMap<String, (String, bool)> = HashMap::new();
     let mut required = BTreeSet::new();
     let mut pristine = BTreeSet::new();
     let mut compiled: BTreeMap<String, Value> = BTreeMap::new();
@@ -1597,6 +1600,7 @@ pub fn export_native(
         let base = format!("campaign-store/revisions/{key}");
         pending.insert(format!("{base}.json"), canonical_bytes(manifest)?);
         pending.insert(format!("{base}.lua"), render_lua(manifest)?);
+        lua_values.insert(format!("{base}.lua"), (key.clone(), false));
     }
 
     // Reuse the scanner's resource reader; only selected resources are read.
@@ -1926,6 +1930,7 @@ pub fn export_native(
         let base = format!("campaign-store/revisions/{key}");
         pending.insert(format!("{base}.native.json"), canonical_bytes(native)?);
         pending.insert(format!("{base}.native.lua"), render_lua(native)?);
+        lua_values.insert(format!("{base}.native.lua"), (key.clone(), true));
         let compiled_sources = native.at("sources")?;
         for (position, selected_source) in list(manifest.at("sources")?).iter().enumerate() {
             let source = selected_source.at("record")?;
@@ -1996,6 +2001,14 @@ pub fn export_native(
             }
         }
     }
+    // A refused Lua rendering holds the same data as the current one.
+    let refused = |relative: &str| -> Result<Option<Vec<u8>>> {
+        match lua_values.get(relative) {
+            Some((key, true)) => refused_lua(&compiled[key]),
+            Some((key, false)) => refused_lua(&manifests[key]),
+            None => Ok(None),
+        }
+    };
     // Where the game changed so that a revision exported earlier would now
     // get other files, its saves keep the files they were exported with.
     let candidates: Vec<String> = stored.iter().filter(|key| !kept.contains(*key)).cloned().collect();
@@ -2006,9 +2019,11 @@ pub fn export_native(
         let mut differs = false;
         for relative in &own {
             let path = store_path(&output, &relative_path(relative))?;
-            if paths::is_file(&path).map_err(|error| Error::win(&error, &path))?
-                && Some(&read_bytes(&path)?) != pending.get(relative)
-            {
+            if !paths::is_file(&path).map_err(|error| Error::win(&error, &path))? {
+                continue;
+            }
+            let existing = read_bytes(&path)?;
+            if Some(&existing) != pending.get(relative) && refused(relative)?.as_ref() != Some(&existing) {
                 differs = true;
                 break;
             }
@@ -2095,7 +2110,7 @@ pub fn export_native(
     for (relative, data) in &pending.entries {
         let path = store_path(&output, &relative_path(relative))?;
         if relative.starts_with("campaign-store/") {
-            write_immutable(&path, data)?;
+            write_immutable_replacing(&path, data, Some(&|| refused(relative)))?;
         } else {
             // These are the prepared common resources for all exported
             // revisions; adding a compatible quest branch or TLK entry can
