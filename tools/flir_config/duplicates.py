@@ -28,7 +28,7 @@ from collections import defaultdict
 
 from . import templates
 from .game_names import EetNames, convert_resource
-from .mode2_rewards import REWARDS, SOURCE_REWARDS, TRANSFER_SPECS
+from .mode2_rewards import REWARDS, SOURCE_REWARDS, transfer_spec
 
 # The scanned records of each holder kind: area containers, creature files, shops.
 KINDS = {"are": "container", "cre": "cre-template", "sto": "store"}
@@ -103,12 +103,16 @@ def holdings(sources: dict[str, dict]) -> dict[tuple[str, str], list[dict]]:
     return result
 
 
-def _route_copies(identity: str) -> set[tuple[str, str]]:
-    """(creature, item) of the copies the reward's own route already guards."""
+def _route_copies(identity: str, game: str, names: EetNames | None) -> set[tuple[str, str]]:
+    """(creature, item) of the copies the reward's own route already guards, as
+    the game names them."""
     spec = REWARDS.get(SOURCE_REWARDS.get(identity, ""), {})
-    return {(TRANSFER_SPECS[name]["source_resource"], TRANSFER_SPECS[name]["item"])
-            for name in spec.get("required_transfers", ())
-            if identity in TRANSFER_SPECS[name]["authored_source_ids"]}
+    result = set()
+    for name in spec.get("required_transfers", ()):
+        transfer = transfer_spec(name, game=game, names=names)
+        if identity in transfer["authored_source_ids"]:
+            result.add((transfer["source_resource"], transfer["item"]))
+    return result
 
 
 def expected_copies(identity: str, campaign: str, ident: str, item: str, index: dict,
@@ -121,7 +125,7 @@ def expected_copies(identity: str, campaign: str, ident: str, item: str, index: 
     leaves the reward out, since its copy cannot be found).
     """
     result = []
-    covered = _route_copies(identity)
+    covered = _route_copies(identity, game, names)
     for line, entry in sorted(table(campaign).items()):
         if entry["ident"] != ident or convert_resource(entry["item"], "itm", campaign, game, names) != item:
             continue

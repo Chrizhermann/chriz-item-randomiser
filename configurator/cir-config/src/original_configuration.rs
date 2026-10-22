@@ -7,6 +7,7 @@
 //! assignment.
 
 use crate::campaigns::{compile_campaign, OVERFLOW_TARGET_KINDS};
+use crate::duplicates::{expected_copies, holdings, reviewed};
 use crate::error::{Error, Result};
 use crate::game_names::{convert_resource, eet_names, EetNames};
 use crate::json::{Dict, Value};
@@ -32,6 +33,10 @@ const SHIPPED_REPLACEMENT_ROW: &str = "bg2:base:item:86";
 const FIT_ROUNDS: usize = 8;
 
 fn s<'a>(row: &'a Value, key: &str) -> &'a str {
+    row.get(key).and_then(Value::as_str).unwrap_or("")
+}
+
+fn s_of<'a>(row: &'a Dict, key: &str) -> &'a str {
     row.get(key).and_then(Value::as_str).unwrap_or("")
 }
 
@@ -518,8 +523,9 @@ fn build_from(
         defaults,
     };
 
-    let mut chosen: Vec<(&Value, Choice)> = Vec::new();
+    let mut chosen: Vec<(&Value, Choice, Vec<Dict>)> = Vec::new();
     let mut claimed: HashSet<String> = HashSet::new();
+    let held = holdings(world_sources);
     for row in candidates {
         let choice = match choose(row, &context)? {
             Ok(choice) => choice,
@@ -528,6 +534,29 @@ fn build_from(
                 continue;
             }
         };
+        // Item Randomiser's second copies of this reward, removed when it moves.
+        let identity = match &choice {
+            Choice::Registration(registration) => crate::json::py_str(registration.get("id").unwrap_or(&Value::Null)),
+            Choice::Physical(identity, _) => identity.clone(),
+        };
+        let item = s(row, "item_resref");
+        let copies =
+            expected_copies(&identity, s(row, "campaign"), s(row, "ident"), item, &index, &held, game, names.as_ref())?;
+        if copies.iter().any(|copy| !catalog_items.contains(copy.get("replacement").and_then(Value::as_str).unwrap_or(item))) {
+            leave_out(&mut not_used, row, "reward", &Value::from("replacement-item-absent"))?;
+            continue;
+        }
+        let mut unreviewed = false;
+        for copy in &copies {
+            if !reviewed(&Value::Dict(copy.clone()))? {
+                unreviewed = true;
+                break;
+            }
+        }
+        if unreviewed {
+            leave_out(&mut not_used, row, "reward", &Value::from("second-copy-name-unreviewed"))?;
+            continue;
+        }
         let records: Vec<String> = match &choice {
             Choice::Physical(identity, _) => vec![identity.clone()],
             Choice::Registration(registration) => registration
@@ -544,7 +573,7 @@ fn build_from(
             continue;
         }
         claimed.extend(records);
-        chosen.push((row, choice));
+        chosen.push((row, choice, copies));
     }
     let mut places: Vec<&Value> = Vec::new();
     for row in enabled_targets {
@@ -568,7 +597,7 @@ fn build_from(
 
     let include: Vec<String> = chosen
         .iter()
-        .map(|(row, _)| s(row, "item_resref").to_string())
+        .map(|(row, _, _)| s(row, "item_resref").to_string())
         .collect::<BTreeSet<_>>()
         .into_iter()
         .collect();
@@ -615,7 +644,12 @@ fn build_from(
     let mut by_item: BTreeMap<String, (Vec<String>, Vec<String>)> = BTreeMap::new();
     let mut source_rows: Vec<(String, &Value)> = Vec::new();
     let mut row_ids = Dict::new();
-    for (row, choice) in chosen {
+    let mut copies: Vec<&Dict> = chosen.iter().flat_map(|(_, _, copies)| copies).collect();
+    copies.sort_by(|a, b| (s_of(a, "source_id"), s_of(a, "id")).cmp(&(s_of(b, "source_id"), s_of(b, "id"))));
+    if !copies.is_empty() {
+        plan.insert("duplicates", Value::List(copies.into_iter().cloned().map(Value::Dict).collect()));
+    }
+    for (row, choice, _) in chosen {
         let item_choices = by_item.entry(s(row, "item_resref").to_string()).or_default();
         let identity = match choice {
             Choice::Registration(registration) => {

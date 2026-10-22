@@ -514,6 +514,62 @@ fn validate_randomization(value: &Value, sources: &[Value], targets: &[Value]) -
 
 const ORIGINAL_KEYS: [&str; 3] = ["original_template_id", "original_choices", "original_options"];
 
+/// Second copies of moved rewards (duplicates.rs): each a row of Item
+/// Randomiser's tables, holding a copy of a reward source's item.
+fn validate_copies(rows: &Value, sources: &[Value]) -> Result<()> {
+    let rows = match rows {
+        Value::List(rows) if !rows.is_empty() => rows,
+        _ => return Err(Error::profile("Invalid campaign second copies")),
+    };
+    let mut items: HashMap<&str, &Value> = HashMap::new();
+    for row in sources {
+        items.insert(row.at("id")?.as_str().unwrap_or(""), row.at("record")?.at("item")?);
+    }
+    let unnamed = || Error::profile("Campaign second copy names no reward row");
+    let mut seen: Vec<(&str, &str)> = Vec::new();
+    for row in rows {
+        let mut expected = vec!["id", "source_id", "resource", "item", "resource_sha256"];
+        if row.as_dict().is_some_and(|fields| fields.contains_key("replacement")) {
+            expected.push("replacement");
+        }
+        let copy = fields(Some(row), &expected, "second copy")?;
+        let Some((_, authored)) = crate::duplicates::row(copy.get("id"))? else {
+            return Err(unnamed());
+        };
+        let source_id = copy.get("source_id").expect("checked");
+        if matches!(source_id, Value::List(_) | Value::Dict(_)) {
+            return Err(Error::type_error(format!("unhashable type: '{}'", source_id.type_name())));
+        }
+        let source_item = source_id.as_str().and_then(|identity| items.get(identity));
+        let item = resref(copy.get("item"))?;
+        if !source_item.is_some_and(|value| value.as_str() == Some(item)) {
+            return Err(unnamed());
+        }
+        let (_, kind) = authored.source.rsplit_once('.').expect("checked when read");
+        resource(copy.get("resource"), kind)?;
+        hash(copy.get("resource_sha256"), "second copy fingerprint")?;
+        let replacement = copy.get("replacement").filter(|value| !value.is_null());
+        if let Some(replacement) = replacement {
+            let replacement = fields(Some(replacement), &["resref", "resource_sha256"], "second copy replacement")?;
+            hash(replacement.get("resource_sha256"), "second copy replacement fingerprint")?;
+            if resref(replacement.get("resref"))? == item {
+                return Err(Error::profile("Campaign second copy replacement must differ from its item"));
+            }
+        }
+        if (authored.replacement == "blank") != replacement.is_none() {
+            return Err(Error::profile("Campaign second copy replacement disagrees with its row"));
+        }
+        if !crate::duplicates::reviewed(row)? {
+            return Err(Error::profile("Campaign second copy disagrees with its row"));
+        }
+        seen.push((source_id.as_str().unwrap_or(""), copy.get("id").and_then(Value::as_str).unwrap_or("")));
+    }
+    if seen.windows(2).any(|pair| pair[0] >= pair[1]) {
+        return Err(Error::profile("Campaign second copies must be unique and sorted"));
+    }
+    Ok(())
+}
+
 fn validate_campaign(body: &Value) -> Result<()> {
     let mut expected: Vec<&str> = FIELDS.to_vec();
     if let Some(present) = body.as_dict() {
@@ -522,7 +578,9 @@ fn validate_campaign(body: &Value) -> Result<()> {
                 expected.push(key);
             }
         }
-        for key in ["original_template_id", "original_choices", "original_options", "spell_shield", "cursed_disguises"] {
+        for key in
+            ["original_template_id", "original_choices", "original_options", "spell_shield", "cursed_disguises", "duplicates"]
+        {
             if present.contains_key(key) {
                 expected.push(key);
             }
@@ -626,6 +684,12 @@ fn validate_campaign(body: &Value) -> Result<()> {
         if source_id.truthy() && sources.iter().filter(|row| row.get("id").is_some_and(|id| id.py_eq(source_id))).count() != 1 {
             return Err(Error::profile("Spell Shield option source is missing"));
         }
+    }
+    if let Some(copies) = campaign.get("duplicates") {
+        if !present_original {
+            return Err(Error::profile("Second copies of rewards need original campaign settings"));
+        }
+        validate_copies(copies, sources)?;
     }
     if !present_original
         && sources.iter().chain(targets).any(|row| {
@@ -786,6 +850,9 @@ pub fn compile_campaign(
         if let Some(value) = bound_plan.get(key) {
             body.insert(key, value.clone());
         }
+    }
+    if let Some(copies) = bound.get("duplicates") {
+        body.insert("duplicates", copies.clone());
     }
     let revision = digest(&Value::Dict(body.clone()))?;
     body.insert("revision", revision);
