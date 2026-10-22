@@ -61,7 +61,7 @@ local function guarded_indices(bundle)
         (config.source_id == nil) ~= (config.source_ids == nil), "SOURCE_GUARD_CONFIG_INVALID")
     local ids = config.source_ids or {config.source_id}
     assert(type(ids) == "table" and (#ids > 0 or type(bundle.fixture.spell_shield) == "table" or
-        type(bundle.fixture.cursed_disguises) == "table"),
+        type(bundle.fixture.cursed_disguises) == "table" or type(bundle.fixture.duplicates) == "table"),
         "SOURCE_GUARD_CONFIG_INVALID")
     local selected, result, count = {}, {}, 0
     for key, id in pairs(ids) do

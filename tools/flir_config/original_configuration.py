@@ -21,6 +21,7 @@ from .original_registrations import (SHIPPED_REPLACEMENT, is_unreferenced_creatu
                                      target_record as original_target_record)
 from .mode2_rewards import SOURCE_REWARDS as MODE2_SOURCES, source_spec as mode2_source_spec
 from .cursed_disguises import cursed_disguise_spec, item_revisions_installed
+from .duplicates import expected_copies, holdings, reviewed
 from .prepared import QUEST_CHANGES, applied, applied_changes, left_out
 from .profiles import ProfileError, edit_profile, new_profile, validate_catalog
 from .resources import GameResources, RESOURCE_TYPES
@@ -280,9 +281,17 @@ def _build(catalog: dict, world: dict, template_id: str, exclude: dict[str, str]
         return None, ids[0], None
 
     chosen, claimed = [], set()
+    held = holdings(physical)
     for row in candidates:
         try:
             registration, physical_id, replacement = choose(row)
+            # Item Randomiser's second copies of this reward, removed when it moves.
+            copies = expected_copies(registration["id"] if registration is not None else physical_id,
+                                     row["campaign"], row["ident"], row["item_resref"], index, held, game, names)
+            if any(copy.get("replacement", row["item_resref"]) not in catalog_items for copy in copies):
+                raise _NotUsable("replacement-item-absent")
+            if not all(reviewed(copy) for copy in copies):
+                raise _NotUsable("second-copy-name-unreviewed")
         except _NotUsable as exc:
             leave_out(row, "reward", str(exc))
             continue
@@ -292,7 +301,7 @@ def _build(catalog: dict, world: dict, template_id: str, exclude: dict[str, str]
             leave_out(row, "reward", "source-record-used-twice")
             continue
         claimed.update(records)
-        chosen.append((row, registration, physical_id, replacement))
+        chosen.append((row, registration, physical_id, replacement, copies))
     places = []
     for row in enabled_targets:
         if row["id"] in exclude:
@@ -333,7 +342,11 @@ def _build(catalog: dict, world: dict, template_id: str, exclude: dict[str, str]
     plan["randomization"] = randomization
     by_item = defaultdict(lambda: {"source_ids": [], "registration_ids": []})
     source_rows, row_ids = [], {}
-    for row, registration, physical_id, replacement in chosen:
+    copies = sorted((copy for *_, row_copies in chosen for copy in row_copies),
+                    key=lambda copy: (copy["source_id"], copy["id"]))
+    if copies:
+        plan["duplicates"] = copies
+    for row, registration, physical_id, replacement, _ in chosen:
         item_choices = by_item[row["item_resref"]]
         if registration is not None:
             identity = registration["id"]

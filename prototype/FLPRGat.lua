@@ -120,7 +120,7 @@ function Gate.source_ids(fixture)
         (config.source_id==nil)~=(config.source_ids==nil), 'CAMPAIGN_GATE_CONFIG_INVALID')
     local ids=config.source_ids or {config.source_id}
     assert(type(ids)=='table' and (#ids>0 or type(fixture.spell_shield)=='table' or
-        type(fixture.cursed_disguises)=='table'), 'CAMPAIGN_GATE_CONFIG_INVALID')
+        type(fixture.cursed_disguises)=='table' or type(fixture.duplicates)=='table'), 'CAMPAIGN_GATE_CONFIG_INVALID')
     local seen,result,count={},{},0
     for key,id in pairs(ids) do
         assert(integer(key,1,#ids) and type(id)=='string' and not seen[id], 'CAMPAIGN_GATE_CONFIG_INVALID')
@@ -725,6 +725,206 @@ local function prepare_auxiliary(api,bundle,id,ordinal,build,compile,pristine,ta
     return member,{enter=assembly.enter,capture=assembly.capture}
 end
 
+-- Item Randomiser's lists/duplicates/bg1.2da and bg2.2da by line: the second
+-- copies of a reward that its installer removes when the reward's row moves
+-- (tools/flir_config/duplicates.py). Only these rows are removed, each under
+-- the names reviewed for it: as authored and, for a BG1 row, as EET names
+-- them. Which records of the holder are the copies, and with which charges and
+-- flags, differs between games: the export names them, and prepare_copy checks
+-- each against the holder as the game has it.
+local DUPLICATE_ROWS={
+    ['bg1:duplicate:3']={item={'helm06'},resource={'sto:inn3351'}},
+    ['bg1:duplicate:4']={item={'sw1h03'},resource={'are:ar1006','are:bg1006'}},
+    ['bg1:duplicate:5']={item={'shld07'},resource={'cre:varci'}},
+    ['bg1:duplicate:6']={item={'sper03'},resource={'cre:knightsk'},replacement={'sper01'}},
+    ['bg1:duplicate:7']={item={'leat06'},resource={'sto:stocheap'}},
+    ['bg1:duplicate:8']={item={'scrl5l'},resource={'sto:ulgoth'}},
+    ['bg1:duplicate:9']={item={'scrl2d'},resource={'sto:ulgoth'}},
+    ['bg1:duplicate:10']={item={'scrl2f'},resource={'sto:ulgoth'}},
+    ['bg1:duplicate:11']={item={'scrl2h'},resource={'sto:ulgoth'}},
+    ['bg1:duplicate:12']={item={'scrl1q'},resource={'cre:nemphr'}},
+    ['bg2:duplicate:3']={item={'xbow06'},resource={'sto:bernard'}},
+    ['bg2:duplicate:4']={item={'ax1h16'},resource={'cre:amcarras'}},
+    ['bg2:duplicate:5']={item={'boot12'},resource={'cre:amcarras'}},
+    ['bg2:duplicate:6']={item={'plat21'},resource={'cre:amcarras'}},
+    ['bg2:duplicate:7']={item={'rods06'},resource={'sto:amsmug01'}},
+    ['bg2:duplicate:8']={item={'helm07'},resource={'cre:fwjassy'}},
+    ['bg2:duplicate:9']={item={'bow10'},resource={'sto:ribald3'}},
+    ['bg2:duplicate:10']={item={'amul16'},resource={'cre:fwjassy'}},
+    ['bg2:duplicate:11']={item={'sw1h54c'},resource={'cre:fwjassy'}},
+    ['bg2:duplicate:12']={item={'sw1h53'},resource={'sto:bernard'}},
+    ['bg2:duplicate:13']={item={'sw1h53'},resource={'sto:bernard2'}},
+    ['bg2:duplicate:14']={item={'ring07'},resource={'cre:aran02'}},
+    ['bg2:duplicate:15']={item={'ring07'},resource={'cre:rr#aran2'}},
+    ['bg2:duplicate:16']={item={'amul21'},resource={'cre:aran02'}},
+    ['bg2:duplicate:17']={item={'amul21'},resource={'cre:rr#aran2'}},
+    ['bg2:duplicate:18']={item={'helm03'},resource={'cre:sctelwyn'}},
+    ['bg2:duplicate:19']={item={'sw1h26'},resource={'cre:jugjer01'}},
+    ['bg2:duplicate:20']={item={'sw1h23'},resource={'cre:trgeni01'},replacement={'blun05'}},
+    ['bg2:duplicate:21']={item={'dagg11'},resource={'cre:loutcapt'}},
+    ['bg2:duplicate:22']={item={'ring33'},resource={'cre:tolger'}},
+    ['bg2:duplicate:23']={item={'sw2h17'},resource={'cre:abazigal'}},
+    ['bg2:duplicate:24']={item={'ring35'},resource={'cre:arnman09'}},
+    ['bg2:duplicate:25']={item={'sper08'},resource={'cre:sahpr2'},replacement={'sper02'}},
+    ['bg2:duplicate:26']={item={'blun20'},resource={'cre:scyarryl'}},
+    ['bg2:duplicate:27']={item={'ring26'},resource={'are:rr#010'}},
+    ['bg2:duplicate:28']={item={'ring35'},resource={'cre:rr#bootr'}},
+    ['bg2:duplicate:29']={item={'sw1h45'},resource={'cre:pptroll2'}},
+}
+-- A copy of the reviewed rows, for the checks that compare them with the tables.
+function Gate.duplicate_rows()
+    local result={}
+    for id,row in pairs(DUPLICATE_ROWS) do
+        local entry={}
+        for key,names in pairs(row) do
+            entry[key]={}
+            for i,name in ipairs(names) do entry[key][i]=name end
+        end
+        result[id]=entry
+    end
+    return result
+end
+local function listed(names,value)
+    for _,name in ipairs(names or {}) do if name==value then return true end end
+    return false
+end
+-- Second copy <number> of a revision: its reviewed row, the source it leaves
+-- with, and the records of its holder that the export names.
+local function copy_binding(bundle,number)
+    local m,f=bundle.manifest,bundle.fixture
+    local entry=type(f.duplicates)=='table' and f.duplicates[number]
+    local row=type(entry)=='table' and DUPLICATE_ROWS[entry.id]
+    assert(row,'CAMPAIGN_GATE_DUPLICATE_INVALID')
+    local bound
+    for _,candidate in ipairs(type(m.duplicates)=='table' and m.duplicates or {}) do
+        if candidate.id==entry.id and candidate.source_id==entry.source_id then
+            assert(not bound,'CAMPAIGN_GATE_DUPLICATE_INVALID'); bound=candidate
+        end
+    end
+    local index,source
+    for i,candidate in ipairs(m.sources) do if candidate.id==entry.source_id then index,source=i,candidate end end
+    local kind,name
+    if type(entry.resource)=='string' then kind,name=entry.resource:match('^(%a+):([a-z0-9#_%-]+)$') end
+    local stock=entry.stock
+    assert(bound and index and kind and #name<=8 and listed(row.resource,entry.resource) and
+        bound.resource==entry.resource and bound.resource_sha256==entry.resource_sha256 and
+        hash(entry.resource_sha256) and f.resource_hashes[name:upper()..'.'..kind:upper()]==entry.resource_sha256 and
+        listed(row.item,bound.item) and source.record.item==bound.item and
+        payload(entry.payload,true) and entry.payload.resref==bound.item and
+        type(entry.record_indices)=='table' and #entry.record_indices>0 and
+        ((kind=='sto')==(type(stock)=='table')) and
+        (kind~='sto' or (integer(stock.quantity,0,4294967295) and integer(stock.infinite_supply_flag,0,4294967295))),
+        'CAMPAIGN_GATE_DUPLICATE_INVALID')
+    local replacement=bound.replacement
+    assert((replacement==nil and entry.replacement==nil and row.replacement==nil) or
+        (kind=='cre' and type(replacement)=='table' and entry.replacement==replacement.resref and
+         listed(row.replacement,replacement.resref) and hash(replacement.resource_sha256) and
+         f.resource_hashes[replacement.resref:upper()..'.ITM']==replacement.resource_sha256),
+        'CAMPAIGN_GATE_DUPLICATE_REPLACEMENT_INVALID')
+    local seen,records,count={},{},0
+    for key,record in pairs(entry.record_indices) do
+        assert(integer(key,1,#entry.record_indices) and integer(record,0,65534) and not seen[record],
+            'CAMPAIGN_GATE_DUPLICATE_RECORD_INVALID')
+        seen[record],records[key],count=true,record,count+1
+    end
+    assert(count==#entry.record_indices,'CAMPAIGN_GATE_DUPLICATE_RECORD_INVALID')
+    return m.revision,index,entry.resource_sha256,{id=entry.id,source_id=entry.source_id,number=number,
+        kind=kind=='cre' and 'template' or (kind=='sto' and 'store' or 'container'),holder=kind,
+        resource=entry.resource,name=name,store=kind=='sto' and name or nil,
+        creature_resource=kind=='cre' and entry.resource or nil,records=records,record=records[1],
+        payload=entry.payload,stock=stock and {quantity=stock.quantity,infinite_supply_flag=stock.infinite_supply_flag},
+        replacement=replacement and replacement.resref,replacement_hash=replacement and replacement.resource_sha256}
+end
+
+-- The members of second copy <number>: one for a creature's or shop's
+-- inventory group, or one for each record in an area's containers. Each is
+-- active while its source moves (FLPRCampaignPolicy: any state but kept).
+local function prepare_copy(api,bundle,number,build,compile,pristine,targets,cache)
+    local revision,index,resource_hash,binding=copy_binding(bundle,number)
+    local p=binding.payload
+    local function member(buffer,policy,fields)
+        local result={api=api,buffer=buffer,revision=revision,index=index,resource_hash=resource_hash,
+            policy=policy,detours={},installed=false,binding={},
+            copy={number=number,phase=string.format('FLPR_S%04d',index)}}
+        for key,value in pairs(binding) do result.binding[key]=value end
+        for key,value in pairs(fields) do result[key]=value end
+        return setmetatable(result,Runtime)
+    end
+    if binding.holder~='are' then
+        local cre=binding.holder=='cre'
+        local original=pristine.duplicates and pristine.duplicates[revision] and pristine.duplicates[revision][number]
+        assert(type(original)=='string' and original:sub(1,8)==(cre and 'CRE V1.0' or 'STORV1.0') and
+            #original>=(cre and 0x2D4 or 0x9C),'CAMPAIGN_GATE_DUPLICATE_BYTES_MISSING')
+        local function u16(offset) local a,b=original:byte(offset+1,offset+2);return a+b*256 end
+        local function u32(offset) return u16(offset)+u16(offset+2)*65536 end
+        local stride=cre and 20 or 28
+        local offset,count=u32(cre and 0x2BC or 0x34),u32(cre and 0x2C0 or 0x38)
+        assert(offset>=(cre and 0x2D4 or 0x9C) and offset+count*stride<=#original,
+            'CAMPAIGN_GATE_DUPLICATE_LAYOUT_INVALID')
+        for _,record in ipairs(binding.records) do
+            local at=offset+record*stride
+            assert(record<count and original:sub(at+1,at+8):match('^[^%z]*'):lower()==p.resref and
+                u16(at+8)==p.expiration and u16(at+10)==p.charges[1] and u16(at+12)==p.charges[2] and
+                u16(at+14)==p.charges[3] and u32(at+16)==p.flags and
+                (cre or (u32(at+20)==binding.stock.quantity and u32(at+24)==binding.stock.infinite_supply_flag)),
+                'CAMPAIGN_GATE_DUPLICATE_BINDING_MISMATCH')
+        end
+        local buffer=api.EEex_Malloc(BODY)
+        assert(buffer and buffer~=0,'CAMPAIGN_GATE_ALLOC_FAILED')
+        zero(api,buffer,MEMORY_SIZE)
+        local policy=bind_policy(api,buffer,compile(revision,index,true,nil,true))
+        local assembly=build(buffer,targets,policy)
+        return {member(buffer,policy,{inventory_original=original})},{{enter=assembly.enter,capture=assembly.capture}}
+    end
+    local area=pristine[binding.name:upper()]
+    assert(type(area)=='table' and area.resource_sha256==resource_hash and type(area.bytes)=='string' and
+        #area.bytes>=0x11C and #area.bytes<=2147483647 and area.bytes:sub(1,8)=='AREAV1.0',
+        'CAMPAIGN_GATE_PRISTINE_INVALID')
+    local bytes=area.bytes
+    local function u16(offset) local a,b=bytes:byte(offset+1,offset+2);return a+b*256 end
+    local function u32(offset) return u16(offset)+u16(offset+2)*65536 end
+    local containers,container_count,items,item_count=u32(0x70),u16(0x74),u32(0x78),u16(0x76)
+    assert(containers>=0x11C and containers+container_count*192<=#bytes and items>=0x11C and
+        items+item_count*20<=#bytes,'CAMPAIGN_GATE_PRISTINE_LAYOUT_INVALID')
+    local members,assemblies={},{}
+    for _,record in ipairs(binding.records) do
+        -- The one container whose items hold the record; the item hook names it.
+        local container
+        for candidate=0,container_count-1 do
+            local first=u32(containers+candidate*192+0x40)
+            if first<=record and record<first+u32(containers+candidate*192+0x44) then
+                assert(container==nil,'CAMPAIGN_GATE_DUPLICATE_CONTAINER_AMBIGUOUS'); container=candidate
+            end
+        end
+        assert(container and record<item_count,'CAMPAIGN_GATE_DUPLICATE_CONTAINER_MISSING')
+        local owner,item=containers+container*192,items+record*20
+        local raw=bytes:sub(item+1,item+20)
+        assert(raw:sub(1,8):match('^[^%z]*'):lower()==p.resref and u16(item+8)==p.expiration and
+            u16(item+10)==p.charges[1] and u16(item+12)==p.charges[2] and u16(item+14)==p.charges[3] and
+            u32(item+16)==p.flags and u32(owner+0x40)+u32(owner+0x44)<=item_count,
+            'CAMPAIGN_GATE_DUPLICATE_BINDING_MISMATCH')
+        local cached=cache[resource_hash]
+        local buffer=api.EEex_Malloc(BODY+(cached and 0 or #bytes))
+        assert(buffer and buffer~=0,'CAMPAIGN_GATE_ALLOC_FAILED')
+        zero(api,buffer,MEMORY_SIZE)
+        local policy=bind_policy(api,buffer,compile(revision,index,true,nil,true))
+        local expected=cached or buffer+BODY
+        if not cached then
+            write_bytes(api,expected,bytes)
+            assert(same_bytes(api,expected,bytes),'CAMPAIGN_GATE_PRISTINE_COPY_FAILED')
+            cache[resource_hash]=expected
+        end
+        policy.provenance={expected=expected,length=#bytes,container_offset=owner,item_offset=items}
+        policy.source={area=binding.name,name=bytes:sub(owner+1,owner+32),payload=raw,index=record,
+            inventory=bytes:sub(owner+0x41,owner+0x48),position=bytes:sub(owner+0x21,owner+0x28)}
+        local copy=member(buffer,policy,{})
+        copy.binding.record,copy.binding.container=record,container
+        members[#members+1]=copy
+        assemblies[#assemblies+1]=build(buffer,targets,policy)
+    end
+    return members,assemblies
+end
+
 -- Hooks every gate location this engine has, each with an empty chain, and
 -- the saved-store record. deps: build, compile, Script, Inventory (builder)
 -- or inventory (loader), Cur (module) or cursed (loader), pristine (shared
@@ -740,9 +940,10 @@ function Gate.new(api,deps)
         type(api.EEex_GameState_GetGlobalInt)=='function' and type(api.EEex_Write8)=='function' and
         type(api.EEex_GenLuaCall)=='function','CAMPAIGN_GATE_LIFECYCLE_MISSING')
     local self=setmetatable({api=api,deps=deps,
-        pristine=deps.pristine or {creatures={},stores={},scripts={},templates={},spell_shield={},cursed={},auxiliary={}},
-        members={},by_revision={},option_members={},auxiliary_members={},cache={},
-        found={},missing={},hooked={},detours={},built={},failed={},installed=false},Group)
+        pristine=deps.pristine or {creatures={},stores={},scripts={},templates={},spell_shield={},cursed={},
+            auxiliary={},duplicates={}},
+        members={},by_revision={},option_members={},auxiliary_members={},copy_members={},copies={},
+        copy_cursor=0,cache={},found={},missing={},hooked={},detours={},built={},failed={},installed=false},Group)
     if deps.revisions then
         self.allowed={}
         for _,revision in ipairs(deps.revisions) do self.allowed[revision]=true end
@@ -835,6 +1036,14 @@ function Group:_add(selected)
         if endpoint.kind=='guarded-template' then templates=true end
         if endpoint.auxiliary_creatures then physical=true;templates=true end
     end
+    -- Second copies: areas need the item hook, creatures the template site
+    -- and shops the store sites.
+    local duplicates=type(selected.fixture.duplicates)=='table' and selected.fixture.duplicates or {}
+    for _,copy in ipairs(duplicates) do
+        local kind=type(copy)=='table' and type(copy.resource)=='string' and copy.resource:match('^(%a+):')
+        physical=true
+        if kind=='cre' then templates=true elseif kind=='sto' then stores=true end
+    end
     local needed={}
     if physical then for _,site in ipairs(sites) do needed[#needed+1]=site end end
     if cursed and not physical then needed[#needed+1]=sites[1];needed[#needed+1]=sites[2] end
@@ -851,7 +1060,7 @@ function Group:_add(selected)
         assert(Inventory,'CAMPAIGN_GATE_INVENTORY_BUILDER_MISSING')
         return Inventory
     end
-    local members,auxiliary,assemblies,inventory_groups={},{},{},{}
+    local members,auxiliary,copies,assemblies,inventory_groups={},{},{},{},{}
     local option,cur,cur_entry,first_cursed
     if cursed then
         local Cur=deps.Cur or (deps.cursed and deps.cursed())
@@ -915,6 +1124,25 @@ function Group:_add(selected)
             group.members[#group.members+1]=member_aux
         end
     end
+    for number in ipairs(duplicates) do
+        local copy_members,copy_assemblies=prepare_copy(api,selected,number,build,compile,pristine,targets,self.cache)
+        for i,member in ipairs(copy_members) do
+            copies[#copies+1]=member
+            assemblies[#assemblies+1]=copy_assemblies[i]
+            local binding=member.binding
+            if binding.holder~='are' then
+                -- The creature or shop is rewritten as a whole, with any source in it.
+                inventory()
+                local key=revision..'/'..binding.resource
+                local group=inventory_groups[key]
+                if not group then
+                    group={kind=binding.holder,ref=binding.store,original=member.inventory_original,members={}}
+                    inventory_groups[key]=group
+                else assert(group.original==member.inventory_original,'CAMPAIGN_GATE_DUPLICATE_RESOURCE_MISMATCH') end
+                group.members[#group.members+1]=member
+            end
+        end
+    end
     for _,group in pairs(inventory_groups) do
         local original=group.original
         local effective=group.effective or original
@@ -939,10 +1167,13 @@ function Group:_add(selected)
             'CAMPAIGN_GATE_INVENTORY_LAYOUT_INVALID')
         if group.slot_offset then assert(group.slot_offset+80<=#original,'CAMPAIGN_GATE_INVENTORY_LAYOUT_INVALID') end
         group.edits={}
+        -- Each record has one owner: a second edit would remove another record.
+        local edited={}
         for _,member in ipairs(group.members) do
             for _,record in ipairs(member.binding.records or {member.binding.record}) do
                 if group.insertion and not member.binding.stock_option and record>=group.insertion then record=record+1 end
-                assert(record<count,'CAMPAIGN_GATE_INVENTORY_INDEX_INVALID')
+                assert(record<count and not edited[record],'CAMPAIGN_GATE_INVENTORY_INDEX_INVALID')
+                edited[record]=true
                 group.edits[#group.edits+1]={index=record,buffer=member.buffer,
                     replacement=member.binding.replacement,context=CONTEXT}
             end
@@ -974,6 +1205,7 @@ function Group:_add(selected)
     for _,member in ipairs(members) do armed[#armed+1]=member end
     if option then armed[#armed+1]=option end
     for _,member in ipairs(auxiliary) do armed[#armed+1]=member end
+    for _,member in ipairs(copies) do armed[#armed+1]=member end
     for _,member in ipairs(armed) do
         member.detours=self.detours
         member.installed=true
@@ -981,9 +1213,11 @@ function Group:_add(selected)
     end
     for _,entry in ipairs(linked) do Gate.publish(api,entry.hooked,entry.chain) end
     for _,member in ipairs(members) do self.members[#self.members+1]=member end
+    for _,member in ipairs(copies) do self.copies[#self.copies+1]=member end
     self.by_revision[revision]=members
     self.option_members[revision]=option
     self.auxiliary_members[revision]=auxiliary
+    self.copy_members[revision]=copies
     self.built[revision]=true
     return members
 end
@@ -1066,9 +1300,12 @@ function Group:_restore_saved_stores()
     local stores={}
     for _,member in ipairs(self.members) do stores[#stores+1]=member end
     for _,member in pairs(self.option_members) do stores[#stores+1]=member end
+    for _,member in ipairs(self.copies) do stores[#stores+1]=member end
     for _,member in ipairs(stores) do
-        local store=member.policy and member.policy.store
-        if store and (overflow or restored[folded(store.ref:upper()..string.rep('\0',8-#store.ref))]) then
+        -- A shop's second copy left with the shop's saved stock.
+        local ref=member.policy and member.policy.store and member.policy.store.ref or
+            (member.copy and member.binding.store)
+        if ref and (overflow or restored[folded(ref:upper()..string.rep('\0',8-#ref))]) then
             api.EEex_Write64(member.buffer+CONTEXT,1)
         end
     end
@@ -1098,7 +1335,8 @@ function Gate.install(api,bundle,build,compile,pristine,Script,Inventory,Cur)
     for _,selected in ipairs(bundles) do group:_add(selected) end
     local has_auxiliary=false
     for _,entries in pairs(group.auxiliary_members) do if #entries>0 then has_auxiliary=true end end
-    if #group.members==1 and next(group.option_members)==nil and not group.cursed and not has_auxiliary then
+    if #group.members==1 and next(group.option_members)==nil and not group.cursed and not has_auxiliary and
+        #group.copies==0 then
         return group.members[1]
     end
     return group
@@ -1168,6 +1406,20 @@ function Runtime:_intact()
     return true
 end
 function Runtime:_bundle(bundle)
+    if self.copy then
+        local revision,index,resource_hash,binding=copy_binding(bundle,self.copy.number)
+        local b=self.binding
+        assert(revision==self.revision and index==self.index and resource_hash==self.resource_hash and
+            binding.id==b.id and binding.source_id==b.source_id and binding.resource==b.resource and
+            binding.replacement==b.replacement and binding.replacement_hash==b.replacement_hash and
+            same_payload(binding.payload,b.payload,true) and #binding.records==#b.records and
+            (binding.stock==nil)==(b.stock==nil) and (binding.stock==nil or
+             (binding.stock.quantity==b.stock.quantity and
+              binding.stock.infinite_supply_flag==b.stock.infinite_supply_flag)),
+            'CAMPAIGN_GATE_DUPLICATE_REVISION_MISMATCH')
+        for i,record in ipairs(binding.records) do assert(record==b.records[i],'CAMPAIGN_GATE_DUPLICATE_REVISION_MISMATCH') end
+        return
+    end
     if self.auxiliary then
         local revision,index,resource_hash,binding=auxiliary_binding(bundle,self.binding.id,self.binding.ordinal)
         local b=self.binding
@@ -1206,9 +1458,12 @@ function Runtime:prepare_new(bundle,controller)
     assert(self.api.EEex_GameState_GetGlobalInt('FLPR_FRESH')==1,'CAMPAIGN_GATE_FRESH_REQUIRED')
     if not self.stock_option and controller.source_is_kept and controller:source_is_kept(self.index) then return true end
     for _,field in ipairs(self.policy.fields) do
-        assert(self.api.EEex_GameState_GetGlobalInt(field.name)==(field.phase and 1 or field.value),
-            'CAMPAIGN_GATE_CAPTURE_MISMATCH')
+        local value=self.api.EEex_GameState_GetGlobalInt(field.name)
+        -- A second copy's source may be one the campaign adds (virtual: confirmed).
+        assert(value==(field.phase and 1 or field.value) or
+            (self.copy~=nil and field.phase and integer(value,1,6)),'CAMPAIGN_GATE_CAPTURE_MISMATCH')
     end
+    if self.copy then return self:_enrol_copy(controller) end
     local snapshot=self:inspect()
     assert(self:_intact() and snapshot.armed and snapshot.stable and not snapshot.overflow and
         snapshot.mode==0 and snapshot.status==1 and snapshot.load_skips==0 and not self.enrolled and
@@ -1231,6 +1486,18 @@ function Runtime:prepare_new(bundle,controller)
     self:_write(32,1) -- publish protection last
     return true
 end
+-- New Game publishes a second copy's protection without an event row: its log
+-- is no evidence (_copy_proof), and an area's item hook fills it as the area
+-- loads again in one session.
+function Runtime:_enrol_copy(controller)
+    local generation=self:_q(40)
+    assert(self:_intact() and self:_q(0)==1 and self:_q(24)==0 and self:_q(32)==0 and self:_q(72)==1 and
+        not self.enrolled and integer(generation,1,2147483646),'CAMPAIGN_GATE_NEW_CONTEXT_INVALID')
+    self:_write(40,generation+1); self:_write(112,0); self:_write(120,0)
+    self.enrolled={generation=generation+1,destroys=self:_q(104),session=controller.session}
+    self:_write(32,1)
+    return true
+end
 
 function Runtime:_proof()
     local snapshot=self:inspect(true)
@@ -1249,6 +1516,19 @@ function Runtime:_proof()
         end
     end
     return snapshot
+end
+-- A second copy is removed wherever its holder loads, and nothing waits on a
+-- removal: its member needs its hooks, its arming and its proven policy. Its
+-- event log is no evidence (an area's fills up as the area loads again).
+function Runtime:_copy_proof()
+    if not self:_intact() or self:_q(0)~=1 or self:_q(24)~=0 or self:_q(32)~=1 then
+        return nil,'CAMPAIGN_GATE_INACTIVE'
+    end
+    local enrolled=self.enrolled and self.enrolled.generation==self:_q(40) and self.enrolled.destroys==self:_q(104)
+    if not enrolled and not (self:_q(72)==0 and self:_q(80)==self.policy.mask and self:_q(88)==1) then
+        return nil,'CAMPAIGN_GATE_POLICY_UNPROVEN'
+    end
+    return true
 end
 
 function Runtime:adapter(bundle,native)
@@ -1350,9 +1630,12 @@ function Group:prepare_new(bundle,controller)
     for _,member in ipairs((self.auxiliary_members or {})[bundle.manifest.revision] or {}) do
         member:prepare_new(bundle,controller)
     end
+    for _,member in ipairs(self.copy_members[bundle.manifest.revision] or {}) do
+        member:prepare_new(bundle,controller)
+    end
     if self.cursed then self.cursed:prepare_new(bundle,controller) end
     self.active_revision=bundle.manifest.revision
-    self:check(bundle)
+    self:check(bundle,true)
     return true
 end
 function Group:reset()
@@ -1360,6 +1643,7 @@ function Group:reset()
     for _,member in ipairs(self.members) do member:reset() end
     for _,member in pairs(self.option_members or {}) do member:reset() end
     for _,entries in pairs(self.auxiliary_members or {}) do for _,member in ipairs(entries) do member:reset() end end
+    for _,member in ipairs(self.copies) do member:reset() end
     if self.cursed then self.cursed:reset() end
 end
 function Group:inspect(revision)
@@ -1385,9 +1669,15 @@ function Group:inspect(revision)
             result.auxiliary[key..'/'..member.binding.id..'/'..member.binding.creature_resource]=member:inspect()
         end
     end end
+    result.duplicates={}
+    for _,member in ipairs(self.copies) do if not revision or member.revision==revision then
+        result.duplicates[member.revision..'/'..member.binding.id..'/'..member.binding.record]=member:inspect()
+    end end
     return result
 end
-function Group:check(bundle)
+-- Second copies proved by one check, in turn; New Game and loading prove all.
+Gate.COPY_CHECKS=4
+function Group:check(bundle,full)
     if self.cursed then self.cursed:check(bundle) end
     local revision=bundle and bundle.manifest.revision or self.active_revision
     for key,entries in pairs(self.auxiliary_members or {}) do
@@ -1399,10 +1689,22 @@ function Group:check(bundle)
             else assert(member:_q(32)==0,'CAMPAIGN_GATE_AUXILIARY_UNSELECTED_ACTIVE') end
         end
     end
+    -- A second copy's member is active exactly while its source moves: in
+    -- any state but kept (7), which never changes once the campaign began.
+    local copies=self.copies
+    for _=1,full and #copies or math.min(Gate.COPY_CHECKS,#copies) do
+        self.copy_cursor=self.copy_cursor%#copies+1
+        local member=copies[self.copy_cursor]
+        if member.revision==revision and member.api.EEex_GameState_GetGlobalInt(member.copy.phase)~=7 then
+            if bundle then member:_bundle(bundle) end
+            local proof,reason=member:_copy_proof()
+            assert(proof,reason or 'CAMPAIGN_GATE_DUPLICATE_INACTIVE')
+        else assert(member:_q(32)==0,'CAMPAIGN_GATE_DUPLICATE_KEPT_ACTIVE') end
+    end
     return true
 end
 function Group:adapter(bundle,native)
-    self:check(bundle)
+    self:check(bundle,true)
     local adapters={}
     for _,member in ipairs(self:_members(bundle)) do adapters[member.index]=member:adapter(bundle,native) end
     self.active_revision=bundle.manifest.revision

@@ -254,7 +254,7 @@ function Native.new(api, fixture, seed, reward_payload)
     if guarded_count > 0 or fixture.source_gate ~= nil then
         local gate = fixture.source_gate
         assert((guarded_count > 0 or type(fixture.spell_shield)=='table' or
-            type(fixture.cursed_disguises)=='table') and type(gate) == "table" and
+            type(fixture.cursed_disguises)=='table' or type(fixture.duplicates)=='table') and type(gate) == "table" and
             gate.schema == "flpr-unvisited-fixture-gate-v1" and
             (gate.source_id == nil) ~= (gate.source_ids == nil),
             "NATIVE_SOURCE_GATE_INVALID")

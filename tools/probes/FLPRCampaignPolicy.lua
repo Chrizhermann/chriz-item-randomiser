@@ -6,13 +6,16 @@
 -- by replacing @POLICY_TABLE@. One loop reads them, so a source's scan code
 -- stays small however many fields its policy has.
 local TABLE_ROW = 48
-local KIND = { value = 0, phase = 1, seed = 2, permanent_phase = 3 }
+local KIND = { value = 0, phase = 1, seed = 2, permanent_phase = 3, copy_phase = 4 }
 local function u64(value)
     local out = {}
     for _ = 1, 8 do out[#out+1] = string.char(value % 256); value = math.floor(value / 256) end
     return table.concat(out)
 end
-return function(revision, source_index, permanent, selected_global)
+-- With copy, a second copy of a moved reward (Item Randomiser's duplicates
+-- tables): it leaves whatever the state of its source, unless the campaign
+-- keeps that source in place.
+return function(revision, source_index, permanent, selected_global, copy)
     assert(type(revision) == 'string' and #revision == 64 and not revision:find('[^0-9a-f]'),
         'CAMPAIGN_GATE_REVISION_INVALID')
     local stock_option=source_index=='more_spell_shield'
@@ -24,6 +27,7 @@ return function(revision, source_index, permanent, selected_global)
         (selected_global==nil or (permanent and (selected_global=='FLPR_QM2_12' or selected_global=='FLPR_QM2_31' or
             selected_global=='FLPR_QM2_32' or selected_global=='FLPR_QM2_39' or selected_global=='FLPR_QM2_84'))),
         'CAMPAIGN_GATE_AUXILIARY_POLICY_INVALID')
+    assert(copy==nil or (copy==true and permanent and selected_global==nil),'CAMPAIGN_GATE_COPY_POLICY_INVALID')
     local fields = {{name='FLPR_STATE', value=2}, {name='FLPR_GUARD', value=1}}
     for index=1,16 do
         fields[#fields+1] = {name=string.format('FLPR_R%02d',index),
@@ -36,15 +40,16 @@ return function(revision, source_index, permanent, selected_global)
     for _, field in ipairs(fields) do
         -- Every field name starts with FLPR_; the scan skips other GLOBALs on that prefix.
         assert(field.name:sub(1, 5) == 'FLPR_' and #field.name <= 32, 'CAMPAIGN_GATE_POLICY_FIELD_INVALID')
-        local kind = field.seed and KIND.seed or
-            (field.phase and (permanent and KIND.permanent_phase or KIND.phase) or KIND.value)
+        local kind = field.seed and KIND.seed or (field.phase and
+            (copy and KIND.copy_phase or (permanent and KIND.permanent_phase or KIND.phase)) or KIND.value)
         rows[#rows+1] = field.name..string.rep('\0', 32-#field.name)..u64(kind)..u64(field.value or 0)
     end
     -- RAX walks the GAM's 84-byte variable records (RCX of them), R10 is the
     -- member's buffer; R8/R9 hold the table row and its bit (hooks save both).
     -- A record matching a row sets that row's bit once; a second match is a
     -- duplicate. Phase: 1 or 6 protects, 3 means the original was removed
-    -- (a permanent template keeps protecting); any other value refuses.
+    -- (a permanent template keeps protecting); any other value refuses. A
+    -- second copy's phase protects from 1 to 6 (any state but kept).
     local out = {[[
         test rcx, rcx
         je gate_capture_log
@@ -73,7 +78,15 @@ return function(revision, source_index, permanent, selected_global)
         test rdx, rdx
         je gate_field_value
         cmp rdx, 2
-        je gate_field_seed
+        je gate_field_seed]]}
+    -- A second copy's source in any state but kept (7) protects.
+    if copy then out[#out+1] = [[
+        cmp dword ptr ds:[rax+0x28], 1
+        jb gate_policy_mismatch
+        cmp dword ptr ds:[rax+0x28], 6
+        ja gate_policy_mismatch
+        jmp gate_policy_protect]] end
+    out[#out+1] = [[
         cmp dword ptr ds:[rax+0x28], 3
         jne gate_field_phase
         cmp rdx, 3
@@ -114,7 +127,7 @@ return function(revision, source_index, permanent, selected_global)
         jne gate_scan
         cmp qword ptr ds:[r10+80], ]]..string.format('%.0f',2^#fields-1)..[[
 
-        jne gate_capture_log]]}
+        jne gate_capture_log]]
     if stock_option or cursed_option then out[#out+1] = 'mov qword ptr ds:[r10+88], 1' end
     out[#out+1] = [[
         mov qword ptr ds:[r10+72], 0
