@@ -66,6 +66,8 @@ REVIEWED_EET = {
                      "69505c964ee036a6d9b974407e34cbd4ff35f4cebd10373819c5ef2f5d50f73a"),
     "dlg:riftg03": ("4bb8a0866e3470ae558c108160ebef18c33de9f14ad3181ccf33ebd0d5e4912a",
                     "34e7c5e57d9e69394b40ce09f4c5cd5a5e6249d871b676c82bafbd3d707f3ff5"),
+    "dlg:sahkng01": ("c76c8624052f7e179d42157e4081ddfcdbb101d2f00b819008bc99f5660785c1",
+                     "355c4236753330c944cd87fbcb15769820475d2286efa9a49ac9614d6863944a"),
     "dlg:scsain": ("c2a43b0d67eca9b531aa591463f74d5333225a95f0be87f8d03ed1cf91f8dafe",
                    "cd1db0265daa8dc239bbe1a325cdf2ad3fc0033f3bf8eaba981a46e65c91b148"),
     "dlg:sctelwyn": ("d5dd048c43e16ba937ff583eef8f5966e549fb0c4e3f92679883d35fcdda1759",
@@ -500,7 +502,7 @@ class Mode2RewardTests(unittest.TestCase):
         self.assertIn(crlf(action(151, 40850, target=1)), new[1])
 
     def test_registry_exposes_authored_charges_and_separate_container_recipient(self):
-        self.assertEqual(len(rewards.DIRECT_REWARDS), 9)
+        self.assertEqual(len(rewards.DIRECT_REWARDS), 10)
         spec = rewards.source_spec("original-source:bg2:mode2:item:28")
         self.assertEqual(spec["payload"], {"resref": "ring31", "expiration": 0, "charges": [1, 1, 1], "flags": 0})
         spec["payload"]["charges"][0] = 99

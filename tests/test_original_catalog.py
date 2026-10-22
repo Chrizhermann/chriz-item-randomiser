@@ -319,14 +319,17 @@ class OriginalCatalogTests(unittest.TestCase):
                  "targets": [_target("are:ar1103/container/0", "are:ar1103", "container", "jugjer01")]}
         result = resolve_template({"items": []}, world, "bg2-original", items="extended", targets="extended")
         rows = {row["id"]: row for row in result["targets"]}
-        for line in (6, 25, 31, 37, 49, 50, 58, 59, 60):
+        for line in (6, 25, 31, 37, 49, 50, 59, 60):
             row = rows[f"bg2:mode2:target:{line}"]
             with self.subTest(target=row["target"], area=row["area"]):
                 self.assertEqual((row["target_ids"], row["container_name"], row["binding_problem"]),
                                  ([], None, "route-not-supported"))
-        # The quest places CIR has a route for keep theirs.
+        # The quest places CIR has a route for keep theirs, a handler's place too
+        # (the Sahuagin king's reward; this game lacks his conversation).
         self.assertEqual(rows["bg2:base:target:47"]["binding_problem"], "legacy-target-requires-adapter")
         self.assertEqual(rows["bg2:mode2:target:17"]["binding_problem"], "legacy-target-requires-adapter")
+        self.assertEqual((rows["bg2:mode2:target:58"]["area_resource"], rows["bg2:mode2:target:58"]["binding_problem"]),
+                         ("dlg:sahkng01", "target-resource-absent"))
 
     def test_quest_rewards_without_a_cir_route_are_named_before_other_problems(self):
         catalog = {"items": [{"resref": name} for name in ("shld26", "blun23", "blun12", "ring41", "brac19")]}
@@ -335,16 +338,15 @@ class OriginalCatalogTests(unittest.TestCase):
                  "sources": [], "targets": []}
         result = resolve_template(catalog, world, "bg2-original", items="extended", targets="extended")
         rows = {row["id"]: row for row in result["items"]}
-        # A conversation, the altar, the pool and the Deck of Many Things have routes.
-        for identity in ("bg2:mode2:item:14", "bg2:base:item:9", "bg2:base:item:90", "bg2:mode2:item:69"):
+        # Conversations, the altar, the pool and the Deck of Many Things have routes.
+        for identity in ("bg2:mode2:item:14", "bg2:mode2:item:57", "bg2:base:item:9", "bg2:base:item:90",
+                         "bg2:mode2:item:69"):
             self.assertEqual(rows[identity]["binding_problem"], "scripted-source-requires-adapter")
-        # The game lacks Jerlia's sword too; the missing route is named, as it would
+        # The game lacks Jermien's sword too; the missing route is named, as it would
         # leave the row out in any game.
-        for identity, available in (("bg2:mode2:item:57", True), ("bg2:mode2:item:31", False)):
-            row = rows[identity]
-            self.assertEqual((row["adapter"], row["available"], row["binding_problem"]),
-                             ("scripted", available, "route-not-supported"))
-        self.assertEqual(rows["bg2:mode2:item:31"]["availability_reason"], "item-definition-absent")
+        row = rows["bg2:mode2:item:31"]
+        self.assertEqual((row["adapter"], row["available"], row["binding_problem"], row["availability_reason"]),
+                         ("scripted", False, "route-not-supported", "item-definition-absent"))
 
     def test_only_these_list_rows_wait_for_a_cir_route(self):
         """The rows CIR leaves out in every game because it cannot change their
@@ -364,12 +366,12 @@ class OriginalCatalogTests(unittest.TestCase):
             # Conversations and scripts that give the reward.
             "bg1:mode2:item:16", "bg1:mode2:item:20", "bg1:mode2:item:159",
             "bg1:boss-loot:mode2:item:62", "bg1:boss-loot:mode2:item:71", "bg1:boss-loot:mode2:item:339",
-            "bg2:mode2:item:31", "bg2:mode2:item:57", "bg2:mode2:item:260", "bg2:mode2:item:262",
+            "bg2:mode2:item:31", "bg2:mode2:item:260", "bg2:mode2:item:262",
             # Places that Item Randomiser's own quest handlers name.
             "bg1:mode2:target:16", "bg1:mode2:target:20", "bg1:mode2:target:136",
             "bg1:boss-loot:mode2:target:46", "bg1:boss-loot:mode2:target:71",
             "bg1:boss-loot:mode2:target:291",
-            *(f"bg2:mode2:target:{line}" for line in (6, 25, 31, 37, 49, 50, 58, 59, 60, 89, 215, 252))})
+            *(f"bg2:mode2:target:{line}" for line in (6, 25, 31, 37, 49, 50, 59, 60, 89, 215, 252))})
 
     def test_a_presets_place_of_an_original_container_quest_is_that_quest(self):
         from flir_config.original_catalog import container_target_spec

@@ -352,11 +352,11 @@ quest rewards and places that Item Randomiser handled with its own conversation 
 script patches (the `.fl` places of its `mode2` tables, and rewards that a conversation
 or script gives) for which CIR has no route yet. Their reason is
 `route-not-supported`. In the original tables these are Aldeth's, Varci's and
-Nemphre's rewards and places (BG1); Jermien's reward and place, the Sahuagin king's
-reward, two scrolls that `ppbook.bcs` gives, and the places of the Sahuagin treasury,
-king and prince, the trolls of the Spellhold painting, Tolgerias, TorGal and a vampire
-or shadow thief of chapter 3 (BG2). `tests/test_original_catalog.py` lists them; a
-route for one of them takes its rows off that list.
+Nemphre's rewards and places (BG1); Jermien's reward and place, two scrolls that
+`ppbook.bcs` gives, and the places of the Sahuagin treasury, the Sahuagin prince, the
+king or the prince, the trolls of the Spellhold painting, Tolgerias, TorGal and a
+vampire or shadow thief of chapter 3 (BG2). `tests/test_original_catalog.py` lists
+them; a route for one of them takes its rows off that list.
 
 The world scan leaves out a creature, area or store file it cannot read (another
 mod's damaged or unusual file) instead of refusing the game. `world scan` names such
