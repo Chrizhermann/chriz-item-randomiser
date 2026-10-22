@@ -318,6 +318,12 @@ a cursed item. The extra Spell Shield copies stay in the shop either way; the
 scroll's own shop row is randomised too exactly when it is one of the preset's
 rewards, not when the preset fit leaves it out (a scroll the runtime cannot move, or
 a shop with two of them).
+No option depends on the game's language. Kangaxx's conversation and ward stone and
+the cursed disguises' names and descriptions are English, Polish and German, and
+English in any other language; an option a translation has only in part stays English
+as a whole, so its texts never mix two languages. Apply writes them to the game's
+`dialog.tlk` and `dialogF.tlk` like the reward texts, with the female wordings of
+Polish.
 Disabled rows remain visible with `enabled:false`.
 Loss excludes the original Flail/Kangaxx tiers; unrandomized percentage concerns
 items with original sources. These draft choices still need automatic binding to

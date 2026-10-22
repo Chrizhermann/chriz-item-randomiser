@@ -9,7 +9,8 @@ from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
-from flir_config import quest_options as options
+from flir_config import quest_options as options, translations
+from flir_config.game_text import GameText
 from flir_config.profiles import ProfileError
 from flir_config.resources import _Tlk
 from test_postinstall_resources import make_tlk
@@ -109,8 +110,8 @@ class OriginalQuestOptionTests(unittest.TestCase):
             journal = (b'function buildQuestsTable()\r\n\tcreateQuest ( 74458 )\r\n'
                        b'\tcreateEntry ( 74458, -1, 54293, {}, nil )\r\nend\r\n')
             self.assertIn(b'createEntry    ( 74458, -1, 1020, {}, nil )', options.patch_kangaxx_journal(journal, data))
-            output, _ = options.prepare_quest_options({**self.resources, "hlskull.dlg": game}, make_tlk(["old"]),
-                                                      kangaxx=True)
+            output, _ = options.prepare_quest_options({**self.resources, "hlskull.dlg": game},
+                                                      GameText(make_tlk(["old"])), kangaxx=True)
             self.assertEqual(options.original_dialogue("hlskull.dlg", output["hlskull.dlg"]), game)
 
     def test_kangaxx_new_key_dialogue_has_exact_choices_and_journal_exit(self):
@@ -147,24 +148,52 @@ class OriginalQuestOptionTests(unittest.TestCase):
             self.assertEqual(options.patch_crypt(name, data, {1500: 100, 1501: 101}), data)
 
     def test_complete_prepare_uses_authored_last_ward_text_and_is_idempotent(self):
-        output, tlk = options.prepare_quest_options(self.resources, make_tlk(["old"]), kangaxx=True)
+        output, text = options.prepare_quest_options(self.resources, GameText(make_tlk(["old"])), kangaxx=True)
         self.assertEqual(set(output), set(self.resources) | {"flrward1.itm", "flrward1.bam"})
-        parsed = _Tlk(tlk)
+        self.assertIsNone(text.female)
+        parsed = _Tlk(text.male)
         ward = output["flrward1.itm"]
         self.assertEqual(ward[0x3A:0x42], b"flrward1")
         self.assertEqual(parsed.text(struct.unpack_from("<I", ward, 8)[0], set()), "Ward Stone")
         description = parsed.text(struct.unpack_from("<I", ward, 0x54)[0], set())
         self.assertTrue(description.startswith("The cardinal points"))
-        self.assertEqual(options.prepare_quest_options(output, tlk, kangaxx=True), (output, tlk))
+        self.assertEqual(options.prepare_quest_options(output, text, kangaxx=True), (output, text))
 
     def test_no_selected_options_changes_nothing(self):
-        original = make_tlk(["old"])
+        original = GameText(make_tlk(["old"]), make_tlk(["old"]))
         self.assertEqual(options.prepare_quest_options({}, original), ({}, original))
-        # The export passes every language's game text through; only Kangaxx's
-        # texts need English.
         self.assertEqual(options.prepare_quest_options({}, original, language="de_de"), ({}, original))
-        with self.assertRaisesRegex(ProfileError, "^Original quest options currently require English game text$"):
-            options.prepare_quest_options(self.resources, original, kangaxx=True, language="de_de")
+
+    def test_kangaxx_texts_are_the_games_language_or_english(self):
+        """German and Polish games get their own texts, a female protagonist her
+        wording in dialogf.tlk; any other language gets the English ones."""
+        def prepared(language):
+            text = GameText(make_tlk(["old"]), make_tlk(["old (f)"]))
+            output, text = options.prepare_quest_options(self.resources, text, kangaxx=True, language=language)
+            male, female = _Tlk(text.male), _Tlk(text.female)
+            self.assertEqual(male.count, female.count)
+            appended = [(male.text(ref, set()), female.text(ref, set())) for ref in range(1, male.count)]
+            ward = output["flrward1.itm"]
+            return male.text(struct.unpack_from("<I", ward, 8)[0], set()), appended
+
+        def lines(language):
+            return translations.texts(language, "hlskull.tra"), translations.texts(language, "in-game.tra")
+
+        for language, name, own in (("de_DE", "Bannstein", "de_DE"), ("pl_PL", None, "pl_PL"),
+                                    ("es_ES", "Ward Stone", "en_US"), ("default", "Ward Stone", "en_US")):
+            with self.subTest(language=language):
+                ward, appended = prepared(language)
+                dialogue, items = lines(own)
+                expected = [dialogue[key] for key in range(22)] + [items[key] for key in range(1500, 1505)]
+                # Each text once (two of the conversation's replies read the same).
+                self.assertEqual(appended, list(dict.fromkeys(expected)))
+                self.assertEqual(ward, items[1503][0])
+                if name:
+                    self.assertEqual(ward, name)
+        # Polish addresses a female protagonist differently in four lines.
+        polish = [key for key, (male, female) in lines("pl_PL")[0].items() if male != female]
+        self.assertEqual(polish, [4, 7, 16, 20])
+        self.assertIn(lines("pl_PL")[0][4], prepared("pl_PL")[1])
 
     def test_new_kangaxx_journal_joins_existing_quest_and_rejects_conflicting_registration(self):
         dialogue = options.patch_hlskull(self.resources["hlskull.dlg"], self.refs)

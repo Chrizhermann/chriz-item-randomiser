@@ -319,21 +319,31 @@ def quest_options_scenario(name: str, line_endings: str) -> Scenario:
            lambda: quest_options.ward_item({1502: 5, 1503: 6, 1504: 7}))
     s.case("ward_item missing", "quest_options.ward_item", {"refs": {1502: 5, 1503: 6}},
            lambda: quest_options.ward_item({1502: 5, 1503: 6}))
-    tlk = make_tlk(["old"])
+    text = GameText(make_tlk(["old"]))
+    both = GameText(make_tlk(["old"]), make_tlk(["old (f)"]))
     with s.overrides():
-        output, prepared_tlk = quest_options.prepare_quest_options(resources, tlk, kangaxx=True)
+        output, prepared = quest_options.prepare_quest_options(resources, text, kangaxx=True)
+        _, polish = quest_options.prepare_quest_options(resources, both, kangaxx=True, language="pl_PL")
     for label, args in (
-            ("kangaxx", {"resources": resources, "tlk": tlk, "kangaxx": True, "language": "en_us"}),
-            ("kangaxx gb", {"resources": resources, "tlk": tlk, "kangaxx": True, "language": "EN_GB"}),
-            ("reexport", {"resources": output, "tlk": prepared_tlk, "kangaxx": True, "language": "english"}),
-            ("none", {"resources": {}, "tlk": tlk, "kangaxx": False, "language": "en_US"}),
-            ("german", {"resources": resources, "tlk": tlk, "kangaxx": True, "language": "de_DE"}),
-            ("german none", {"resources": {}, "tlk": tlk, "kangaxx": False, "language": "de_DE"}),
-            ("missing crypt", {"resources": {"hlskull.dlg": original}, "tlk": tlk, "kangaxx": True, "language": "en_us"}),
-            ("bad tlk", {"resources": resources, "tlk": b"invalid", "kangaxx": True, "language": "en_us"})):
+            ("kangaxx", {"resources": resources, "text": text, "kangaxx": True, "language": "en_us"}),
+            ("kangaxx gb", {"resources": resources, "text": text, "kangaxx": True, "language": "EN_GB"}),
+            ("reexport", {"resources": output, "text": prepared, "kangaxx": True, "language": "english"}),
+            ("none", {"resources": {}, "text": text, "kangaxx": False, "language": "en_US"}),
+            ("german", {"resources": resources, "text": text, "kangaxx": True, "language": "de_DE"}),
+            ("german both", {"resources": resources, "text": both, "kangaxx": True, "language": "de_DE"}),
+            ("german none", {"resources": {}, "text": text, "kangaxx": False, "language": "de_DE"}),
+            ("polish both", {"resources": resources, "text": both, "kangaxx": True, "language": "pl_PL"}),
+            ("polish again", {"resources": resources, "text": polish, "kangaxx": True, "language": "PL_pl"}),
+            ("spanish", {"resources": resources, "text": both, "kangaxx": True, "language": "es_ES"}),
+            ("default", {"resources": resources, "text": both, "kangaxx": True, "language": "default"}),
+            ("unknown", {"resources": resources, "text": text, "kangaxx": True, "language": "nb_no"}),
+            ("missing crypt", {"resources": {"hlskull.dlg": original}, "text": text, "kangaxx": True, "language": "en_us"}),
+            ("bad tlk", {"resources": resources, "text": GameText(b"invalid"), "kangaxx": True, "language": "en_us"}),
+            ("bad female", {"resources": resources, "text": GameText(make_tlk(["old"]), b"bad"), "kangaxx": True,
+                            "language": "de_DE"})):
         s.case(f"prepare_quest_options {label}", "quest_options.prepare_quest_options", args,
                lambda args=args: quest_options.prepare_quest_options(
-                   args["resources"], args["tlk"], kangaxx=args["kangaxx"], language=args["language"]))
+                   args["resources"], args["text"], kangaxx=args["kangaxx"], language=args["language"]))
     lua = (b'function buildQuestsTable()\r\n\tcreateQuest ( 74458 )\r\n'
            b'\tcreateEntry ( 74458, -1, 54293, {}, nil )\r\nend\r\n')
     with s.overrides():
@@ -1530,16 +1540,21 @@ def cursed_scenario() -> Scenario:
         s.case(f"indices {seed!r}", "cursed_disguises.cursed_disguise_indices", {"spec": spec, "seed": seed},
                lambda seed=seed: cursed_disguises.cursed_disguise_indices(spec, seed))
     revisions = cursed_disguises.cursed_disguise_spec(hashes, item_revisions=True)
-    tlk = make_tlk(["Existing text"])
-    _, _, prepared = cursed_disguises.prepare_cursed_disguises(spec, data, tlk)
+    text = GameText(make_tlk(["Existing text"]))
+    both = GameText(make_tlk(["Existing text"]), make_tlk(["Existing text (f)"]))
+    _, _, prepared = cursed_disguises.prepare_cursed_disguises(spec, data, text)
     for label, value, resources, source, language in (
-            ("all", spec, data, tlk, "en_us"), ("again", spec, data, prepared, "EN_GB"),
-            ("revisions", revisions, data, make_tlk([]), "english"), ("floats", floats, data, tlk, "en_us"),
-            ("german", spec, data, tlk, "de_de"), ("changed", spec, dict(data, brac06=data["brac06"] + b"x"), tlk, "en_us"),
-            ("missing", spec, {k: v for k, v in data.items() if k != "ring31"}, tlk, "en_us"),
-            ("bad tlk", spec, data, b"bad", "en_us")):
+            ("all", spec, data, text, "en_us"), ("again", spec, data, prepared, "EN_GB"),
+            ("revisions", revisions, data, GameText(make_tlk([])), "english"), ("floats", floats, data, text, "en_us"),
+            ("german", spec, data, text, "de_de"), ("german both", spec, data, both, "de_DE"),
+            ("polish both", spec, data, both, "pl_PL"), ("polish revisions", revisions, data, both, "pl_PL"),
+            ("spanish", spec, data, both, "es_ES"), ("default", spec, data, both, "default"),
+            ("changed", spec, dict(data, brac06=data["brac06"] + b"x"), text, "en_us"),
+            ("missing", spec, {k: v for k, v in data.items() if k != "ring31"}, text, "en_us"),
+            ("bad tlk", spec, data, GameText(b"bad"), "en_us"),
+            ("bad female", spec, data, GameText(make_tlk(["Existing text"]), b"bad"), "pl_PL")):
         s.case(f"prepare {label}", "cursed_disguises.prepare_cursed_disguises",
-               {"spec": value, "resources": resources, "tlk": source, "language": language},
+               {"spec": value, "resources": resources, "text": source, "language": language},
                lambda value=value, resources=resources, source=source, language=language:
                cursed_disguises.prepare_cursed_disguises(value, resources, source, language=language))
     return s
@@ -1652,6 +1667,11 @@ def game_text_scenario() -> Scenario:
 # Every line a text route or a golem chest shows.
 LINES = (*(line for resource in sorted(mode2_rewards.TEXT_REFS) for line in mode2_rewards.text_lines(resource)),
          *container_rewards.TEXT_LINES)
+# Every line the original options Kangaxx's items and cursed disguises show.
+OPTION_LINES = (*quest_options.KANGAXX_LINES, *sorted({
+    ("in-game.tra", face[key]) for item_revisions in (False, True)
+    for row in original_options.cursed_disguise_choices(ALL_DISGUISE_ITEMS, item_revisions=item_revisions)
+    for face in row["variants"] for key in ("description_tra", "name_tra") if face[key] is not None}))
 CODES = ("cs_CZ", "de_DE", "en_US", "es_ES", "fr_FR", "hu_HU", "it_IT", "ja_JP", "ko_KR", "pl_PL", "pt_BR", "ru_RU",
          "tr_TR", "uk_UA", "zh_CN", "default", "DEFAULT", "nb_NO", "nb_no", "pl", "PL_pl", "", "en", "de-DE", "_de",
          "en_us_extra")
@@ -1719,6 +1739,16 @@ FOLDERS = {
     "sorted files": {"czech/b.tra": b"", "czech/A.tra": b"", "czech/c.TRA": b"", "czech/sub/x.tra": b"",
                      "bgee/czech/Z.tra": b"", "bgee/polish/in-game.tra": b"@101 = ~z~\r\n"},
     "nothing": {},
+    "english": {"english/in-game.tra": b"@101 = ~Item~\r\n@399 = ~Well~ ~Well (f)~\r\n"},
+    "czech english": {"english/in-game.tra": b"@101 = ~Item~\r\n@399 = ~Well~\r\n",
+                      "czech/in-game.tra": CZECH.encode("cp1250")},
+    "czech partial english": {"english/in-game.tra": b"@101 = ~Item~\r\n@399 = ~Well~\r\n",
+                              "czech/in-game.tra": "@101 = ~Zvedáš předmět.~\r\n".encode("cp1250")},
+    "polish not cp1250 english": {"english/in-game.tra": b"@101 = ~Item~\r\n@399 = ~Well~\r\n",
+                                  "polish/in-game.tra": b"@101 = ~\x81~\r\n@399 = ~x~\r\n"},
+    "polish ee not utf-8 english": {"english/in-game.tra": b"@101 = ~Item~\r\n@399 = ~Well~\r\n",
+                                    "polish/in-game.tra": b"@101 = ~ok~\r\n@399 = ~ok~\r\n",
+                                    "bgee/polish/in-game.tra": b"@101 = ~\xff~\r\n"},
 }
 FOLDER_CALLS = (
     ("czech", "cs_CZ"), ("czech converted", "cs_CZ"), ("czech converted ee", "cs_CZ"),
@@ -1727,7 +1757,9 @@ FOLDER_CALLS = (
     ("polish not cp1250", "pl_PL"), ("polish ee not utf-8", "pl_PL"), ("japanese not cp932", "ja_JP"),
     ("japanese", "ja_JP"), ("chinese", "zh_CN"), ("korean", "ko_KR"), ("russian", "ru_RU"), ("turkish", "tr_TR"),
     ("spanish empty", "es_ES"), ("spanish huge number", "es_ES"), ("sorted files", "cs_CZ"),
-    ("sorted files", "default"), ("sorted files", "nb_NO"), ("nothing", "cs_CZ"), ("nothing", "default"))
+    ("sorted files", "default"), ("sorted files", "nb_NO"), ("nothing", "cs_CZ"), ("nothing", "default"),
+    ("english", "cs_CZ"), ("english", "default"), ("english", "en_US"), ("czech english", "cs_CZ"),
+    ("czech partial english", "cs_CZ"), ("polish not cp1250 english", "pl_PL"), ("polish ee not utf-8 english", "pl_PL"))
 
 
 def folder_call(call: str, files: dict, code: str, wanted=None, name=None):
@@ -1738,6 +1770,8 @@ def folder_call(call: str, files: dict, code: str, wanted=None, name=None):
             return translations.missing(code, wanted)
         if call == "lines":
             return listed_lines(translations.lines(code, wanted))
+        if call == "option_lines":
+            return listed_lines(translations.option_lines(code, wanted))
         if call == "texts":
             return listed_texts(translations.texts(code, name))
         return [relative(path, root) for path in translations.sources(code)]
@@ -1759,6 +1793,16 @@ def translations_scenario() -> Scenario:
                lambda code=code: listed_lines(translations.lines(code, LINES)))
         s.case(f"lines {code} none", "translations.lines", {"code": code, "wanted": []},
                lambda code=code: listed_lines(translations.lines(code, [])))
+    for code in ("en_US", "pl_PL", "de_DE", "es_ES", "default", "nb_NO", "PL_pl", "english"):
+        s.case(f"option_lines {code}", "translations.option_lines", {"code": code, "wanted": OPTION_LINES},
+               lambda code=code: listed_lines(translations.option_lines(code, OPTION_LINES)))
+        s.case(f"option_lines {code} none", "translations.option_lines", {"code": code, "wanted": []},
+               lambda code=code: listed_lines(translations.option_lines(code, [])))
+    # German lacks in-game.tra @102, so all three lines are English there.
+    mixed = [("in-game.tra", 1503), ("hlskull.tra", 4), ("in-game.tra", 102)]
+    for code in ("de_DE", "pl_PL", "es_ES"):
+        s.case(f"option_lines {code} mixed", "translations.option_lines", {"code": code, "wanted": mixed},
+               lambda code=code: listed_lines(translations.option_lines(code, mixed)))
     for code in ("en_US", "pl_PL", "de_DE", "es_ES", "default", "nb_NO"):
         for name in ("in-game.tra", "ppdjinn.tra", "hlskull.tra", "botsmith.tra", "kpglai01.tra", "udduer01.tra",
                      "setup.tra", "absent.tra"):
@@ -1768,8 +1812,8 @@ def translations_scenario() -> Scenario:
     for label, code in FOLDER_CALLS:
         files = FOLDERS[label]
         for call, arguments in (("missing", {"wanted": wanted}), ("missing", {"wanted": [("ppdjinn.tra", 99)]}),
-                                ("lines", {"wanted": wanted}), ("texts", {"name": "in-game.tra"}),
-                                ("sources", {})):
+                                ("lines", {"wanted": wanted}), ("option_lines", {"wanted": wanted}),
+                                ("texts", {"name": "in-game.tra"}), ("sources", {})):
             case = f"folder {call} {label} {code}" + (" ppdjinn" if arguments.get("wanted", wanted) != wanted else "")
             s.case(case, f"translations.{call}", {"files": files, "code": code, **arguments},
                    lambda call=call, files=files, code=code, arguments=arguments:

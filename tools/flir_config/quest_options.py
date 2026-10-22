@@ -16,10 +16,14 @@ import struct
 
 from .profiles import ProfileError
 from .quest_rewards import _blocks, _global_guard, _newline
-from .game_text import _append_texts, _string, _table
+from .game_text import GameText, _string, _table
 
 ROOT = Path(__file__).resolve().parents[2]
 KANGAXX_GLOBAL = "FLPR_KANGAXX"
+# Kangaxx's conversation and ward stone texts, in the order they are added to
+# the game text.
+KANGAXX_LINES = (*(("hlskull.tra", key) for key in range(22)),
+                 *(("in-game.tra", key) for key in range(1500, 1505)))
 ORIGINAL_HASHES = {
     "hlskull.dlg": "c7ea5cd17d5cffe9368bd980200a05fee7e78eacadf3a6cb41de882df62f56bd",
     "crypt526.bcs": "9230a20a9177fe1eef1723fba0e8daa07e949663682a3bddf18e585c0482efe6",
@@ -382,28 +386,22 @@ def ward_item(refs: dict[int, int]) -> bytes:
     return bytes(item)
 
 
-def prepare_quest_options(resources: dict[str, bytes], tlk: bytes, *,
+def prepare_quest_options(resources: dict[str, bytes], text: GameText, *,
                           kangaxx: bool = False,
-                          language: str = "en_us") -> tuple[dict[str, bytes], bytes]:
-    """Return selected patched resources and TLK, leaving file writes to caller.
+                          language: str = "en_us") -> tuple[dict[str, bytes], GameText]:
+    """Return selected patched resources and the game text, leaving file writes to caller.
 
     Input resource keys are lowercase filenames. Kangaxx needs HLSKULL.DLG and
     CRYPT526/CRYPT202.BCS. Generated ward ITM/BAM are included in Kangaxx
-    output. The caller sets the campaign flag explicitly.
+    output. Kangaxx's texts are in the game's <language> where CIR has all of
+    them, otherwise in English, with their female wordings in dialogf.tlk.
+    The caller sets the campaign flag explicitly.
     """
+    from .translations import option_lines  # translations imports this module
+
     if type(kangaxx) is not bool:
         raise ProfileError("Original quest option selections must be Booleans")
-    # Only Kangaxx's texts are English-only; other game text may be prepared
-    # in the same pass.
-    if kangaxx and language.casefold() not in {"en_us", "en_gb", "english"}:
-        raise ProfileError("Original quest options currently require English game text")
     output = {}
-
-    def append(path: str, keys: range | tuple[int, ...]) -> dict[int, int]:
-        nonlocal tlk
-        texts = _texts(path)
-        tlk, refs = _append_texts(tlk, tuple(texts[key] for key in keys))
-        return dict(zip(keys, refs))
 
     def resource(name: str) -> bytes:
         if name not in resources:
@@ -411,11 +409,14 @@ def prepare_quest_options(resources: dict[str, bytes], tlk: bytes, *,
         return resources[name]
 
     if kangaxx:
-        dialogue_refs = append("languages/english/hlskull.tra", range(22))
-        item_refs = append("languages/english/in-game.tra", tuple(range(1500, 1505)))
+        found = option_lines(language, KANGAXX_LINES)
+        text, refs = text.append(found[line] for line in KANGAXX_LINES)
+        refs = dict(zip(KANGAXX_LINES, refs))
+        dialogue_refs = {key: ref for (file, key), ref in refs.items() if file == "hlskull.tra"}
+        item_refs = {key: ref for (file, key), ref in refs.items() if file == "in-game.tra"}
         output["hlskull.dlg"] = patch_hlskull(resource("hlskull.dlg"), dialogue_refs)
         for name in ("crypt526.bcs", "crypt202.bcs"):
             output[name] = patch_crypt(name, resource(name), item_refs)
         output["flrward1.itm"] = ward_item(item_refs)
         output["flrward1.bam"] = (ROOT / "copy/flrward1.bam").read_bytes()
-    return output, tlk
+    return output, text

@@ -401,13 +401,18 @@ fn call(name: &str, args: &Args) -> Result<Value> {
             None => Value::Null,
         },
         "translations.charset" => Value::from(translations::charset(&args.str("encoding"))),
-        "translations.missing" | "translations.lines" | "translations.texts" | "translations.sources" => {
+        "translations.missing"
+        | "translations.lines"
+        | "translations.option_lines"
+        | "translations.texts"
+        | "translations.sources" => {
             let folder = args.values.get("files").map(|_| args.written("files", "languages/"));
             let source = folder.as_ref().map_or(Translations::Embedded, |folder| Translations::Folder(folder.0.join("languages")));
             let code = args.str("code");
             match name {
                 "translations.missing" => source.missing(&code, &args.lines("wanted"))?.map_or(Value::Null, Value::from),
                 "translations.lines" => listed_lines(&source.lines(&code, &args.lines("wanted"))?),
+                "translations.option_lines" => listed_lines(&source.option_lines(&code, &args.lines("wanted"))?),
                 "translations.texts" => listed_texts(&source.texts(&code, &args.str("name"))?),
                 _ => {
                     let folder = folder.as_ref().expect("sources of a folder");
@@ -483,13 +488,13 @@ fn call(name: &str, args: &Args) -> Result<Value> {
             Value::Dict(cir_config::dict! {"problem" => problem.map_or(Value::Null, Value::from), "read" => Value::List(requested)})
         }
         "quest_options.prepare_quest_options" => {
-            let (output, tlk) = quest_options::prepare_quest_options(
+            let (output, text) = quest_options::prepare_quest_options(
                 &args.blob_map("resources"),
-                &args.bytes("tlk"),
+                &args.game_text("text"),
                 args.bool("kangaxx"),
                 &args.str("language"),
             )?;
-            Value::List(vec![files(&output), bytes_value(&tlk)])
+            Value::List(vec![files(&output), game_text_value(&text)])
         }
         "spell_rewards.SPELL" => Value::Dict(spell_rewards::spell()),
         "spell_rewards.PAYLOAD" => spell_rewards::payload(),
@@ -678,13 +683,13 @@ fn call(name: &str, args: &Args) -> Result<Value> {
             Value::Dict(cursed_disguises::cursed_disguise_indices(args.value("spec"), args.value("seed"))?)
         }
         "cursed_disguises.prepare_cursed_disguises" => {
-            let (fixture, assets, tlk) = cursed_disguises::prepare_cursed_disguises(
+            let (fixture, assets, text) = cursed_disguises::prepare_cursed_disguises(
                 args.value("spec"),
                 &args.blob_map("resources"),
-                &args.bytes("tlk"),
+                &args.game_text("text"),
                 &args.str("language"),
             )?;
-            Value::List(vec![fixture, files(&assets), bytes_value(&tlk)])
+            Value::List(vec![fixture, files(&assets), game_text_value(&text)])
         }
         other => panic!("no Rust dispatch for {other}"),
     })

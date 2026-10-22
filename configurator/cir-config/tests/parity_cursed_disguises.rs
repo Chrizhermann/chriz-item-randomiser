@@ -12,7 +12,10 @@ use cir_config::error::ErrorKind;
 use cir_config::json::{Dict, Value};
 use cir_config::py::{put_u16, put_u32};
 use cir_config::quest_options::texts;
-use common::builders::{make_itm, make_tlk, sha, tlk_text, u32_at};
+use cir_config::game_text::GameText;
+use cir_config::resources::Tlk;
+use cir_config::translations;
+use common::builders::{make_itm, make_tlk, sha, tlk_text, u32_at, ALL_DISGUISE_ITEMS};
 use std::collections::{BTreeMap, HashMap};
 
 const SCENARIO: &str = "cursed_disguises";
@@ -21,13 +24,6 @@ const SCENARIO: &str = "cursed_disguises";
 fn matches_the_reference() {
     common::run(SCENARIO);
 }
-
-const ALL_DISGUISE_ITEMS: [&str; 35] = [
-    "brac08", "brac06", "brac07", "brac10", "brac09", "brac11", "brac01", "brac02", "brac03", "brac13", "brac14",
-    "brac15", "brac04", "leat06", "leat05", "leat07", "leat08", "plat17", "plat02", "plat11", "plat10", "ring04",
-    "ring23", "ring06", "ring07", "ring22", "ring09", "ring31", "ring08", "sper03", "sper05", "sper02", "sw2h03",
-    "sw2h11", "sw2h02",
-];
 
 /// `resources()`: one distinguishable ITM per catalogue name, with one
 /// ability and three global effects.
@@ -127,12 +123,15 @@ fn all_eight_items_and_exact_original_face_weights_are_frozen() {
 fn assets_copy_only_original_owned_bytes_and_exact_ee_text() {
     let data = resources();
     let spec = spec_for(&data, false);
-    let (fixture, files, tlk) = prepare_cursed_disguises(&spec, &data, &make_tlk(&["Existing text"]), "en_us").unwrap();
+    let (fixture, files, game_text) =
+        prepare_cursed_disguises(&spec, &data, &GameText::new(make_tlk(&["Existing text"])), "en_us").unwrap();
     assert_eq!(files.len(), 41); // eight originals plus 33 die faces
+    assert_eq!(game_text.female, None);
+    let tlk = &game_text.male;
     assert_eq!(fixture.get("algorithm").and_then(Value::as_str), Some("park-miller-cursed-v1"));
     let by_name: HashMap<&str, &Vec<u8>> = files.iter().map(|(name, value)| (name.as_str(), value)).collect();
     let authored = texts("languages/bgee/english/in-game.tra");
-    assert_eq!(tlk_text(&tlk, 0).as_deref(), Some("Existing text"));
+    assert_eq!(tlk_text(tlk, 0).as_deref(), Some("Existing text"));
     let items = fixture.get("items").and_then(Value::as_list).unwrap();
     assert_eq!(items.len(), choices(&spec).len());
     for (row, item) in choices(&spec).iter().zip(items) {
@@ -150,12 +149,12 @@ fn assets_copy_only_original_owned_bytes_and_exact_ee_text() {
             }
             if let Some(description) = face.get("description_tra").and_then(Value::as_int) {
                 let reference = u32_at(variant, 0x54);
-                assert_eq!(tlk_text(&tlk, reference).as_deref(), Some(authored[&description].as_str()));
+                assert_eq!(tlk_text(tlk, reference).as_deref(), Some(authored[&description].as_str()));
                 expected[0x54..0x58].copy_from_slice(&variant[0x54..0x58]);
             }
             if source == "plat17" {
                 let reference = u32_at(variant, 0x0C);
-                assert_eq!(tlk_text(&tlk, reference).as_deref(), Some(authored[&212].as_str()));
+                assert_eq!(tlk_text(tlk, reference).as_deref(), Some(authored[&212].as_str()));
                 put_u32(&mut expected, 0x0C, reference);
                 put_u32(&mut expected, 0x60, 0); // enchantment, NOT weight
                 put_u32(&mut expected, 0xAE, 3);
@@ -164,10 +163,38 @@ fn assets_copy_only_original_owned_bytes_and_exact_ee_text() {
         }
     }
     // Re-export reuses old text references, keeping prior saved revisions valid.
-    let (again, again_files, again_tlk) = prepare_cursed_disguises(&spec, &data, &tlk, "en_us").unwrap();
+    let (again, again_files, again_text) = prepare_cursed_disguises(&spec, &data, &game_text, "en_us").unwrap();
     assert!(again.py_eq(&fixture));
     assert_eq!(again_files, files);
-    assert_eq!(again_tlk, tlk);
+    assert_eq!(again_text, game_text);
+}
+
+/// German and Polish games get their own descriptions, in dialog.tlk and
+/// dialogf.tlk alike; any other language gets the English ones.
+#[test]
+fn descriptions_are_the_games_language_or_english() {
+    let data = resources();
+    let spec = spec_for(&data, false);
+    let ring = choices(&spec).iter().find(|row| text(row, "source") == "ring04").unwrap();
+    for (language, own) in [("de_DE", "de_DE"), ("pl_PL", "pl_PL"), ("es_ES", "en_US"), ("default", "en_US")] {
+        let start = GameText { male: make_tlk(&["old"]), female: Some(make_tlk(&["old (f)"])) };
+        let (_, files, game_text) = prepare_cursed_disguises(&spec, &data, &start, language).unwrap();
+        let female = game_text.female.clone().unwrap();
+        assert_eq!(Tlk::new(game_text.male.clone()).unwrap().count, Tlk::new(female.clone()).unwrap().count);
+        let expected = translations::texts(own, "in-game.tra").unwrap();
+        let by_name: HashMap<&str, &Vec<u8>> = files.iter().map(|(name, value)| (name.as_str(), value)).collect();
+        for (number, face) in (1..).zip(variants(ring)) {
+            let reference = u32_at(by_name[format!("ring04.{number}.itm").as_str()], 0x54);
+            let description = face.get("description_tra").and_then(Value::as_int).unwrap();
+            assert_eq!(
+                (tlk_text(&game_text.male, reference).unwrap(), tlk_text(&female, reference).unwrap()),
+                expected[&description],
+                "{language}"
+            );
+        }
+    }
+    let german = &translations::texts("de_DE", "in-game.tra").unwrap()[&216].0;
+    assert!(german.starts_with("Ring der Tollpatschigkeit: Des Narren Torheit\r\n"), "{german}");
 }
 
 #[test]
@@ -179,7 +206,7 @@ fn item_revisions_component_zero_selects_exact_original_compatibility() {
     }
     let data = resources();
     let spec = spec_for(&data, true);
-    let (fixture, files, _tlk) = prepare_cursed_disguises(&spec, &data, &make_tlk(&[]), "en_us").unwrap();
+    let (fixture, files, _text) = prepare_cursed_disguises(&spec, &data, &GameText::new(make_tlk(&[])), "en_us").unwrap();
     let items = fixture.get("items").and_then(Value::as_list).unwrap();
     assert!(!items.iter().any(|row| text(row, "resref") == "plat17"));
     assert!(!files.iter().any(|(name, _)| name.starts_with("plat17.")));
@@ -218,7 +245,7 @@ fn changed_install_bytes_cannot_create_new_variants_for_saved_revision() {
     let mut data = resources();
     let spec = spec_for(&data, false);
     data.get_mut("brac06").unwrap().extend_from_slice(b"different mod data");
-    let error = prepare_cursed_disguises(&spec, &data, &make_tlk(&[]), "en_us").unwrap_err();
+    let error = prepare_cursed_disguises(&spec, &data, &GameText::new(make_tlk(&[])), "en_us").unwrap_err();
     assert_eq!(error.kind, ErrorKind::Profile);
     // assertRaisesRegex "resource changed.*brac06"
     let at = error.message.find("resource changed").expect(&error.message);
@@ -236,11 +263,12 @@ fn export_assets_are_independent_of_selected_items_and_immutable() {
         put_u16(value, 0x72 + 0x20, 0);
     }
     let spec = spec_for(&data, false);
-    let (fixture, files, tlk) = prepare_cursed_disguises(&spec, &data, &make_tlk(&[]), "en_US").unwrap();
+    let (fixture, files, game_text) =
+        prepare_cursed_disguises(&spec, &data, &GameText::new(make_tlk(&[])), "en_US").unwrap();
     assert_eq!(fixture.get("items").and_then(Value::as_list).unwrap().len(), 8);
     assert_eq!(files.iter().filter(|(name, _)| name.ends_with(".itm")).count(), 41);
     assert_eq!(files.iter().find(|(name, _)| name == "plat17.original.itm").unwrap().1, data["plat17"]);
-    let again = prepare_cursed_disguises(&spec, &data, &tlk, "en_US").unwrap();
+    let again = prepare_cursed_disguises(&spec, &data, &game_text, "en_US").unwrap();
     assert!(again.0.py_eq(&fixture));
-    assert_eq!((again.1, again.2), (files, tlk));
+    assert_eq!((again.1, again.2), (files, game_text));
 }

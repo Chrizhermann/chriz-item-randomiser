@@ -11,16 +11,26 @@
 //! `quest_options.ORIGINAL_HASHES`.
 
 use crate::error::{Error, ErrorKind, Result};
-use crate::game_text::{append_texts, string, table};
+use crate::game_text::{string, table, GameText};
 use crate::py::{
     ascii_bytes, count_bytes, digits_value, find_bytes, is_line_end, is_line_start, put_u32, replace_bytes, slice, splitn_bytes,
     u32_le,
 };
 use crate::quest_rewards::{blocks, global_guard, newline};
 use crate::resources::sha256_hex;
+use crate::translations::Line;
 use std::collections::{BTreeMap, HashMap};
 
 pub const KANGAXX_GLOBAL: &str = "FLPR_KANGAXX";
+/// Patched or generated files by lowercase filename, in the reference's order.
+pub type Patches = Vec<(String, Vec<u8>)>;
+
+/// Kangaxx's conversation and ward stone texts, in the order they are added to
+/// the game text.
+pub fn kangaxx_lines() -> Vec<Line> {
+    let dialogue = (0..22).map(|key| ("hlskull.tra".to_string(), key));
+    dialogue.chain((1500..1505).map(|key| ("in-game.tra".to_string(), key))).collect()
+}
 pub const ORIGINAL_HASHES: &[(&str, &str)] = &[
     ("hlskull.dlg", "c7ea5cd17d5cffe9368bd980200a05fee7e78eacadf3a6cb41de882df62f56bd"),
     ("crypt526.bcs", "9230a20a9177fe1eef1723fba0e8daa07e949663682a3bddf18e585c0482efe6"),
@@ -836,41 +846,37 @@ pub fn ward_item(refs: &BTreeMap<i64, i64>) -> Result<Vec<u8>> {
     Ok(item)
 }
 
-/// Return selected patched resources and TLK, leaving file writes to caller.
+/// Return selected patched resources and the game text, leaving file writes
+/// to caller.
 ///
 /// Input resource keys are lowercase filenames. Kangaxx needs HLSKULL.DLG and
 /// CRYPT526/CRYPT202.BCS. Generated ward ITM/BAM are included in Kangaxx
-/// output, in the reference's order. The caller sets the campaign flag
+/// output, in the reference's order. Kangaxx's texts are in the game's
+/// `language` where CIR has all of them, otherwise in English, with their
+/// female wordings in dialogf.tlk. The caller sets the campaign flag
 /// explicitly.
 pub fn prepare_quest_options(
     resources: &BTreeMap<String, Vec<u8>>,
-    tlk: &[u8],
+    text: &GameText,
     kangaxx: bool,
     language: &str,
-) -> Result<(Vec<(String, Vec<u8>)>, Vec<u8>)> {
-    // Only Kangaxx's texts are English-only; other game text may be prepared
-    // in the same pass.
-    if kangaxx && !["en_us", "en_gb", "english"].contains(&crate::py::casefold(language).as_str()) {
-        return Err(Error::profile("Original quest options currently require English game text"));
-    }
+) -> Result<(Patches, GameText)> {
     let mut output = Vec::new();
-    let mut tlk = tlk.to_vec();
-    let append = |path: &str, keys: Vec<i64>, tlk: &mut Vec<u8>| -> Result<BTreeMap<i64, i64>> {
-        let texts = texts(path);
-        let values = keys
-            .iter()
-            .map(|key| texts.get(key).cloned().ok_or_else(|| Error::new(crate::error::ErrorKind::Key, key.to_string())))
-            .collect::<Result<Vec<String>>>()?;
-        let (updated, refs) = append_texts(tlk, &values)?;
-        *tlk = updated;
-        Ok(keys.into_iter().zip(refs.into_iter().map(i64::from)).collect())
-    };
+    let mut text = text.clone();
     let resource = |name: &str| -> Result<&Vec<u8>> {
         resources.get(name).ok_or_else(|| Error::profile(format!("Original quest option requires {name}")))
     };
     if kangaxx {
-        let dialogue_refs = append("languages/english/hlskull.tra", (0..22).collect(), &mut tlk)?;
-        let item_refs = append("languages/english/in-game.tra", (1500..1505).collect(), &mut tlk)?;
+        let wanted = kangaxx_lines();
+        let found = crate::translations::option_lines(language, &wanted)?;
+        let values: Vec<(String, String)> = wanted.iter().map(|line| found[line].clone()).collect();
+        let (updated, refs) = text.append(&values)?;
+        text = updated;
+        let (mut dialogue_refs, mut item_refs) = (BTreeMap::new(), BTreeMap::new());
+        for ((file, key), number) in wanted.iter().zip(refs) {
+            let refs = if file == "hlskull.tra" { &mut dialogue_refs } else { &mut item_refs };
+            refs.insert(*key, i64::from(number));
+        }
         output.push(("hlskull.dlg".to_string(), patch_hlskull(resource("hlskull.dlg")?, &dialogue_refs)?));
         for name in ["crypt526.bcs", "crypt202.bcs"] {
             output.push((name.to_string(), patch_crypt(name, resource(name)?, &item_refs)?));
@@ -881,5 +887,5 @@ pub fn prepare_quest_options(
             crate::data::file("copy/flrward1.bam").expect("embedded copy/flrward1.bam").to_vec(),
         ));
     }
-    Ok((output, tlk))
+    Ok((output, text))
 }

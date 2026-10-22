@@ -7,11 +7,14 @@ mod common;
 
 use cir_config::container_rewards::{self, prepare_container_texts};
 use cir_config::game_text::GameText;
+use cir_config::json::Value;
 use cir_config::mode2_rewards::{self, prepare_reward_texts};
+use cir_config::original_options::cursed_disguise_choices;
+use cir_config::quest_options::kangaxx_lines;
 use cir_config::translations::{language, Line, Translations, CONVERTED};
-use common::builders::{make_tlk, tlk_text};
+use common::builders::{make_tlk, tlk_text, ALL_DISGUISE_ITEMS};
 use common::TempDir;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
 const SCENARIO: &str = "translations";
@@ -29,6 +32,9 @@ const SHIPPED: [&str; 15] = [
 /// The languages with every reward text; a new translation adds its
 /// language (docs/translating-reward-texts.md).
 const COMPLETE: [&str; 3] = ["en_US", "pl_PL", "de_DE"];
+/// The languages with every text of the original options; the others show
+/// the English ones.
+const OPTIONS_TRANSLATED: [&str; 3] = ["en_US", "pl_PL", "de_DE"];
 
 fn line(file: &str, number: i64) -> Line {
     (file.to_string(), number)
@@ -44,6 +50,23 @@ fn every_line() -> Vec<Line> {
     }
     lines.extend(container_rewards::text_lines());
     lines
+}
+
+/// Every line the original options Kangaxx's items and cursed disguises show.
+fn option_lines() -> Vec<Line> {
+    let mut cursed = BTreeSet::new();
+    for item_revisions in [false, true] {
+        for row in cursed_disguise_choices(&ALL_DISGUISE_ITEMS, "eet", item_revisions).unwrap() {
+            for face in row.get("variants").and_then(Value::as_list).unwrap() {
+                for key in ["description_tra", "name_tra"] {
+                    if let Some(number) = face.get(key).and_then(Value::as_int) {
+                        cursed.insert(line("in-game.tra", number));
+                    }
+                }
+            }
+        }
+    }
+    kangaxx_lines().into_iter().chain(cursed).collect()
 }
 
 fn repository_languages() -> PathBuf {
@@ -106,6 +129,23 @@ fn polish_reward_texts_go_to_both_files() {
     let (golems, golem_refs) = prepare_container_texts(&text, ["bcs:kpgol01"], "pl_PL").unwrap();
     let reference = golem_refs["bcs:kpgol01"][&38758] as u32;
     assert_ne!(tlk_text(&golems.male, reference), tlk_text(golems.female.as_ref().unwrap(), reference));
+}
+
+#[test]
+fn option_texts_are_the_games_language_or_english() {
+    let wanted = option_lines();
+    let english = Translations::Embedded.lines("en_US", &wanted).unwrap();
+    for code in SHIPPED.into_iter().chain(["default", "nb_NO"]) {
+        let found = Translations::Embedded.option_lines(code, &wanted).unwrap();
+        if OPTIONS_TRANSLATED.contains(&code) {
+            assert_eq!(found, Translations::Embedded.lines(code, &wanted).unwrap(), "{code}");
+        } else {
+            assert_eq!(found, english, "{code}");
+        }
+    }
+    let german = Translations::Embedded.option_lines("de_DE", &wanted).unwrap();
+    assert_eq!(german[&line("in-game.tra", 1503)], pair("Bannstein", "Bannstein"));
+    assert_ne!(german, english);
 }
 
 #[test]
@@ -178,6 +218,30 @@ fn a_partial_or_unreadable_translation_names_what_is_missing() {
         source.missing("ja_JP", &[line("in-game.tra", 101)]).unwrap().as_deref(),
         Some("languages/japanese/in-game.tra is not Shift-JIS (Windows-932) text, which this translation file must be")
     );
+}
+
+#[test]
+fn an_option_falls_back_to_english_as_a_whole() {
+    let (temporary, _, source) = folder();
+    temporary.write("languages/english/in-game.tra", Some(b"@200 = ~Bracers~\r\n@201 = ~Ring~\r\n"));
+    let wanted = [line("in-game.tra", 200), line("in-game.tra", 201)];
+    let english =
+        BTreeMap::from([(wanted[0].clone(), pair("Bracers", "Bracers")), (wanted[1].clone(), pair("Ring", "Ring"))]);
+    // Czech lacks @201, so the option speaks one language: English.
+    temporary.write("languages/czech/in-game.tra", Some(b"@200 = ~N\xe1ramky~\r\n"));
+    assert_eq!(source.option_lines("cs_CZ", &wanted).unwrap(), english);
+    temporary.write("languages/czech/in-game.tra", Some(b"@200 = ~N\xe1ramky~\r\n@201 = ~Prsten~ ~Prsten (\x9e)~\r\n"));
+    assert_eq!(
+        source.option_lines("cs_CZ", &wanted).unwrap(),
+        BTreeMap::from([(wanted[0].clone(), pair("Náramky", "Náramky")), (wanted[1].clone(), pair("Prsten", "Prsten (ž)"))])
+    );
+    // A translation file that is not in its code page counts as none.
+    temporary.write("languages/polish/in-game.tra", Some(b"@200 = ~\x81~\r\n@201 = ~x~\r\n"));
+    assert_eq!(source.option_lines("pl_PL", &wanted).unwrap(), english);
+    assert_eq!(source.option_lines("default", &wanted).unwrap(), english);
+    // English is the fallback and must have the lines.
+    let error = source.option_lines("cs_CZ", &[line("in-game.tra", 202)]).unwrap_err();
+    assert!(error.message.contains("English translation has no reward text @202"), "{}", error.message);
 }
 
 #[test]

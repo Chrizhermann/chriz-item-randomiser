@@ -12,9 +12,13 @@
 //! unconverted.
 //!
 //! A text may carry a female wording (TRA `~text~ ~female text~`), which goes
-//! to dialogf.tlk. A text the game's language has no translation for is never
-//! replaced by the English one: the game shows its text in one language, and
-//! a route that needs the text is left out with the reason instead.
+//! to dialogf.tlk. A reward text the game's language has no translation for
+//! is never replaced by the English one: the game shows its text in one
+//! language, and a route that needs the text is left out with the reason
+//! instead. The original options' texts (Kangaxx's conversation and ward
+//! stone, the cursed disguises' descriptions) are English where the game's
+//! language has no translation of them, so that these options work in every
+//! game ([`option_lines`]).
 //!
 //! The configurator reads the translations it was built with
 //! ([`Translations::Embedded`], the mod's `languages/` folder as written), so
@@ -212,6 +216,32 @@ impl Translations {
         Ok(result)
     }
 
+    /// (text, female wording) of an original option's lines `wanted` in the
+    /// game language `code`, or the English ones where that language has no
+    /// translation of all of them.
+    ///
+    /// One option's texts stay in one language. A translation file that is
+    /// not in its code page counts as no translation, so the option still
+    /// works.
+    pub fn option_lines(&self, code: &str, wanted: &[Line]) -> Result<BTreeMap<Line, (String, String)>> {
+        let mut loaded: BTreeMap<&str, Texts> = BTreeMap::new();
+        for (file, _) in wanted {
+            if !loaded.contains_key(file.as_str()) {
+                match self.texts(code, file) {
+                    Ok(texts) => loaded.insert(file, texts),
+                    Err(error) if error.kind == ErrorKind::Profile && error.is(MISSING_TRANSLATION) => {
+                        return self.lines("en_US", wanted)
+                    }
+                    Err(error) => return Err(error),
+                };
+            }
+        }
+        if !wanted.iter().all(|(file, number)| loaded[file.as_str()].contains_key(number)) {
+            return self.lines("en_US", wanted);
+        }
+        Ok(wanted.iter().map(|(file, number)| ((file.clone(), *number), loaded[file.as_str()][number].clone())).collect())
+    }
+
     /// Why the game language `code` cannot show the lines `wanted`; `None`
     /// when it can.
     pub fn missing(&self, code: &str, wanted: &[Line]) -> Result<Option<String>> {
@@ -269,6 +299,11 @@ pub fn texts(code: &str, name: &str) -> Result<Texts> {
 /// [`Translations::lines`] of the current translations.
 pub fn lines(code: &str, wanted: &[Line]) -> Result<BTreeMap<Line, (String, String)>> {
     Translations::current().lines(code, wanted)
+}
+
+/// [`Translations::option_lines`] of the current translations.
+pub fn option_lines(code: &str, wanted: &[Line]) -> Result<BTreeMap<Line, (String, String)>> {
+    Translations::current().option_lines(code, wanted)
 }
 
 /// [`Translations::missing`] of the current translations.

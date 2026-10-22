@@ -826,10 +826,9 @@ def export_native(store: Path, catalog: dict, world: dict, output: Path,
         except GameTextError:
             raise ProfileError("Game text changed since export; rescan into a fresh export directory") from None
         _require(journal is not None, "The game has no BGEE.LUA journal table")
-        patches, tlk = prepare_quest_options(
+        patches, text = prepare_quest_options(
             {resource[4:] + "." + resource[:3]: data for resource, data in resource_bytes.items()},
-            text.male, kangaxx=kangaxx, language=language)
-        text = paired(tlk, text.female)
+            text, kangaxx=kangaxx, language=language)
         if kangaxx:
             journal = patch_kangaxx_journal(journal, patches["hlskull.dlg"])
         if text_rewards:
@@ -839,10 +838,9 @@ def export_native(store: Path, catalog: dict, world: dict, output: Path,
         for revision, manifest in sorted(manifests.items()):
             if "cursed_disguises" not in manifest:
                 continue
-            fixture, assets, tlk = prepare_cursed_disguises(manifest["cursed_disguises"],
+            fixture, assets, text = prepare_cursed_disguises(manifest["cursed_disguises"],
                 {name[4:]: data for name, data in resource_bytes.items() if name.startswith("itm:")},
-                text.male, language=language)
-            text = paired(tlk, text.female)
+                text, language=language)
             compiled[revision]["cursed_disguises"] = fixture
             for name, data in assets.items():
                 pending[f"campaign-store/revisions/{revision}.cursed/{name}"] = data

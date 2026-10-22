@@ -327,13 +327,14 @@ whatever language CIR was installed in:
   other BG2:EE languages (Czech, Spanish, French, Italian, Korean, Brazilian Portuguese,
   Russian, Ukrainian, Chinese). Call for translators, with the exact lines:
   [translating-reward-texts.md](../translating-reward-texts.md).
-- **Still English only:** the Kangaxx option (`hlskull.tra`, `in-game.tra`
-  @1500-@1504; Polish has them) and the cursed disguise option's names and
-  descriptions. In another language Apply refuses them ("Original quest options
-  currently require English game text", "Original cursed-disguise text currently
-  requires English"); the configuration check does not leave them out first. Next: read
-  them through `translations.py` as well and leave them out in the check where a
-  language has no translation.
+- **Texts of the original options** (Chris, 2026-10-22): the Kangaxx option
+  (`hlskull.tra` @0-@21, `in-game.tra` @1500-@1504) and the cursed disguise option's
+  names and descriptions (`in-game.tra` @200-@225, their EE wording) are read through
+  `translations.py` as well (`option_lines`): English, Polish (Item Randomiser's own,
+  with female wordings for `dialogF.tlk`) and German (written for this; Chris reviews
+  it). Every other language shows the English texts, so neither option is left out or
+  refused for its language. An option whose lines a translation has only in part stays
+  English as a whole, and so does one whose translation file is not in its code page.
 
 ## EEex dependency
 
