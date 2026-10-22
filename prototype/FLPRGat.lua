@@ -652,7 +652,7 @@ local function prepare_stock_option(api,bundle,build,compile,pristine,targets)
          insertion=first==nil and index or nil}
 end
 
--- Item Randomiser's Mode 2 item rows 12/32/39/84 and duplicates/bg2.2da rows 26/20/21.
+-- Item Randomiser's Mode 2 item rows 12/31/32/39/84 and duplicates/bg2.2da rows 26/19/20/21.
 -- AMCLER01's inventory route is also removed in weidu_action.tpa's amcler.fl
 -- handler. These physical copies belong to the selected dialogue source;
 -- selecting the matching reward destination alone must not remove them.
@@ -661,6 +661,7 @@ end
 -- checks each against the original CRE.
 local auxiliary_sources={
     ['original-source:bg2:mode2:item:12']={cre='scyarryl',item='blun20',selected='FLPR_QM2_12'},
+    ['original-source:bg2:mode2:item:31']={cre='jugjer01',item='sw1h26',selected='FLPR_QM2_31'},
     ['original-source:bg2:mode2:item:32']={cre='trgeni01',item='sw1h23',selected='FLPR_QM2_32',replacement='blun05'},
     ['original-source:bg2:mode2:item:39']={cre='loutcapt',item='dagg11',selected='FLPR_QM2_39'},
     ['original-source:bg2:mode2:item:84']={cre='amcler01',item='ring43',selected='FLPR_QM2_84'},

@@ -352,8 +352,8 @@ quest rewards and places that Item Randomiser handled with its own conversation 
 script patches (the `.fl` places of its `mode2` tables, and rewards that a conversation
 or script gives) for which CIR has no route yet. Their reason is
 `route-not-supported`. In the original tables these are Aldeth's, Varci's and
-Nemphre's rewards and places (BG1); Jermien's reward and place, two scrolls that
-`ppbook.bcs` gives, and the places of the Sahuagin treasury, the Sahuagin prince, the
+Nemphre's rewards and places (BG1); two scrolls that `ppbook.bcs` gives, and the
+places of the Sahuagin treasury, the Sahuagin prince, the
 king or the prince, the trolls of the Spellhold painting, Tolgerias, TorGal and a
 vampire or shadow thief of chapter 3 (BG2). `tests/test_original_catalog.py` lists
 them; a route for one of them takes its rows off that list.
@@ -367,8 +367,9 @@ reply gives the rod in a way CIR cannot gate, or AR2300 holds a second rod that 
 reply could stand for, the rod's row is left out with its reason.
 
 Rewards an NPC carries: the genie in Trademeet (`TRGENI01`), Captain Dennis
-(`LOUTCAPT`), the Amkethran priest (`AMCLER01`) and the sculptor Yarryl (`SCYARRYL`,
-his copy of the temple's reward) carry the item their conversation hands over. When
+(`LOUTCAPT`), the Amkethran priest (`AMCLER01`), the sage Jermien (`JUGJER01`, whose
+sword keeps its daily charge) and the sculptor Yarryl (`SCYARRYL`, his copy of the
+temple's reward) carry the item their conversation hands over. When
 that reward moves, the creature's copies go with it; the configuration finds them in
 the scanned creature file, whatever their place, flags or charges there and whatever
 else another mod gave the creature, and the runtime checks each copy's bytes against

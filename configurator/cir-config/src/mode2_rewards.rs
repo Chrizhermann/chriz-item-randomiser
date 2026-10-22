@@ -60,6 +60,7 @@ pub const TEXT_REFS: &[(&str, &[(i64, i64)])] = &[
     ("dlg:trgeni01", &[(43514, 110)]),
     ("dlg:amcler01", &[(74025, 100)]),
     ("dlg:udlesa", &[(52664, 104)]),
+    ("dlg:jugjer01", &[(33760, 698), (33777, 699)]),
 ];
 pub const ACTION_TEXT_REFS: &[(&str, &[i64])] = &[("dlg:amcler01", &[74025])];
 const TEXT_TRAILER: &[u8] = b"FLPRM2T1";
@@ -293,13 +294,15 @@ fn build_registry() -> Registry {
     // still work. Their dialogue transfers the carried assignment through a
     // blocking Lua callback; it never creates a second item for the dialogue
     // recipient.
-    let carried: [(&str, &str, i64, i64, &str, &str, Vec<(i64, i64)>); 3] = [
-        ("trgeni01", "sw1h23", 32, 32, "ar2014", "trgeni01", vec![(35, 0), (40, 0)]),
-        ("loutcapt", "dagg11", 39, 42, "ar0514", "Dennis", vec![(26, 0), (30, 0)]),
-        ("amcler01", "ring43", 84, 85, "ar5500", "amcler01", vec![(7, 0), (8, 0)]),
+    let carried: [(&str, &str, i64, i64, &str, &str, Vec<(i64, i64)>, [i64; 3]); 4] = [
+        ("trgeni01", "sw1h23", 32, 32, "ar2014", "trgeni01", vec![(35, 0), (40, 0)], NO_CHARGES),
+        ("loutcapt", "dagg11", 39, 42, "ar0514", "Dennis", vec![(26, 0), (30, 0)], NO_CHARGES),
+        ("amcler01", "ring43", 84, 85, "ar5500", "amcler01", vec![(7, 0), (8, 0)], NO_CHARGES),
+        // Jermien's sword (Item Randomiser's jugjer01.fl), with its daily charge.
+        ("jugjer01", "sw1h26", 31, 31, "ar1103", "Jermien", vec![(23, 0)], [1, 1, 0]),
     ];
-    for (name, item, source, target, area, script, branches) in carried {
-        alias(&mut rewards, name, item, source, Some(target), &name.to_uppercase(), &[(name, branches)], NO_CHARGES, talker);
+    for (name, item, source, target, area, script, branches, charges) in carried {
+        alias(&mut rewards, name, item, source, Some(target), &name.to_uppercase(), &[(name, branches)], charges, talker);
         let row = row_mut(&mut rewards, name);
         let source_ids = row.get("source_ids").cloned().expect("source ids");
         row.insert("grant_kind", "transfer");

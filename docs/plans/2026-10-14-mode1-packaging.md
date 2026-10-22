@@ -471,9 +471,10 @@ the package has 116 files (5,798,896 bytes).
   in `AR1202`, named Safana's area as EET does (so it did not bind on BG:EE) and took the
   table's `AR1302` for the golems, whose treasure is in `AR1303` (so they never bound).
   Still pinned to the reviewed EET bytes: the Kangaxx dialogue. Since 2026-10-22 the
-  rewards an NPC carries (`SCYARRYL`, `TRGENI01`, `LOUTCAPT`, `AMCLER01` and `UDLESA`)
-  are found in the scanned creature files, wherever the game keeps them (see "Rewards an
-  NPC carries" in [the configurator notes](../post-install-configurator.md)).
+  rewards an NPC carries (`SCYARRYL`, `TRGENI01`, `LOUTCAPT`, `AMCLER01` and `UDLESA`;
+  since 2026-10-23 also Jermien's sword, `JUGJER01`) are found in the scanned creature
+  files, wherever the game keeps them (see "Rewards an NPC carries" in
+  [the configurator notes](../post-install-configurator.md)).
 - **B3 Failure messages.** Resolved; see "Player messages".
 - **B4 Test hooks in the runtime.** Resolved: the Remote Console poll wrapper, the chapter
   screen render listener, the QA driver and its `qa-status.json` moved to the lab-only

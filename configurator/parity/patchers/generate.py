@@ -625,7 +625,7 @@ def patch_dialogue_cases(s: Scenario, allocated: dict) -> None:
                        if resource in mode2_rewards.ACTION_TEXT_REFS else None)
         for defer, numeric in ((True, True), (True, False), (False, False)):
             patch_dialogue_case(s, f"{resource} {defer} {numeric}", original, specs, action_refs, defer, numeric)
-    for name in ("trgeni01", "loutcapt", "amcler01", "udlesa"):
+    for name in ("trgeni01", "loutcapt", "amcler01", "jugjer01", "udlesa"):
         spec = mode2_rewards.resource_specs("dlg:" + name)[0]
         original = mode2_tests.dialogue_fixture(spec)
         for target_ids in (("bg1:mode2:target:32",), ("bg2:mode1:target:32",), ("bg2:mode2:target:32extra",),

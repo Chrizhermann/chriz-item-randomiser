@@ -3,11 +3,11 @@
 **Call for translators.** Chriz Item Randomiser's extended pools move the rewards of
 some Shadows of Amn quests. Where the quest's own text names the reward ("Please, take
 this ring."), CIR shows Item Randomiser's reworded line instead ("Please, accept this
-gift."). These 20 lines exist in English, Polish (Item Randomiser's own translation) and
+gift."). These 22 lines exist in English, Polish (Item Randomiser's own translation) and
 German. In a game in any other language the configurator leaves the quests that show
 them out of the extended pools, with the reason ("Item Randomiser's reward texts have no
 Spanish translation yet"); the game never shows the English line in another language.
-A translation of the 20 lines below brings those quests back for that language.
+A translation of the 22 lines below brings those quests back for that language.
 
 Only BG2:EE and EET show these texts; BG:EE's extended pools have none, so Hungarian,
 Japanese and Turkish (BG:EE only) need no translation.
@@ -80,6 +80,10 @@ translation for the game language nb_no" until a row is added to `LANGUAGES` in
 @498 = ~I will play for the magical item.~
 // replaces string 63719 (GORCAMB.DLG)
 @499 = ~You desire the magical item, and here it is.  If you wish to play again, I'd appreciate a chance to gain my freedom, friend.~
+// replaces string 33760 (JUGJER01.DLG, Jermien in Athkatla's Government District)
+@698 = ~Hmm.  I seem to recall that I've got a magical item around here that I won in a bet from that fool, Tolgerias.  I've no use for it, but it's valuable.  Find me some mimic's blood and it's yours.~
+// replaces string 33777 (JUGJER01.DLG)
+@699 = ~I took the liberty of digging out that item, earlier, just in case.  Rather prophetic of me, don't you think?  It was just collecting dust, anyway...so here you go and well earned, I might add.~
 // replaces string 32191 (UHMAY01.DLG, the mayor of Imnesvale)
 @1393 = ~No, no.  The item, itself, is more than enough.~
 // replaces string 32062 (UHMAY01.DLG)

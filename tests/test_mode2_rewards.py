@@ -54,6 +54,8 @@ REVIEWED_EET = {
                     "0a70f5274d7eacfd4c0c1941266c7bd9be3e5332026f24116c3cadfa6c441ede"),
     "dlg:hendak": ("0f5a4956e7ee05cb5d6a02e2d61bcf8be0ab575ecd921af31656578330b4a804",
                    "b19099dbd5a42cbb653b1a7abba30aeda7dbdc5697ba0e95106fe39ba7b1b7c4"),
+    "dlg:jugjer01": ("11b89e8c49ea1133b1402a3581e5c678b56fdf652dfeabb88abfd90faebca77b",
+                     "56a7c8e15c313b29f3046f0d5ddb9bc6354f55c62c07c3594d540412bfd37840"),
     "dlg:lehtin": ("a067828ca2055d4c3fd406c43672d9da3547e92b3da67a5eb84b341fdbebd2d1",
                    "980b634e457adec11ba48405c65dbc5f9c6d032eac0d51bfcf8703d1eb6c44bf"),
     "dlg:loutcapt": ("1bb3dc1337c087cc049f0d4fa431f4a7f909dbfacabf4dd30087d8b4f52f2d98",
@@ -61,7 +63,7 @@ REVIEWED_EET = {
     "dlg:mgkhol01": ("d4762221de29275f29a3516980cf2b6360612a1670ad5733f3e599a1ba72e3ea",
                      "3a47fea6c2cdb1405267342bad65ecc58741481006153dd3a15b43c3807decfd"),
     "dlg:ppdjinn": ("06c1671065b549921263594db378d7610223cb16b70b7f718b3885b45b32af38",
-                    "cf0269858c28d24c6e837074c8b6d7dfae267fee0b3d5bce647cd0f60734b332"),
+                    "4a47f40018c22a75c91bf07ac559129e8f70a6185d6ed2ec85acf891cb7113bb"),
     "dlg:ppstat01": ("7022962710da01f3d66088d8f7c5aa2a7963d7e994ff0d55f61dc5b64c9673ae",
                      "69505c964ee036a6d9b974407e34cbd4ff35f4cebd10373819c5ef2f5d50f73a"),
     "dlg:riftg03": ("4bb8a0866e3470ae558c108160ebef18c33de9f14ad3181ccf33ebd0d5e4912a",
@@ -69,25 +71,25 @@ REVIEWED_EET = {
     "dlg:sahkng01": ("c76c8624052f7e179d42157e4081ddfcdbb101d2f00b819008bc99f5660785c1",
                      "e4489ed5a331b4ad81ca9cb8dbe3234e30651cef572245c8f389e7a1e1b56b5f"),
     "dlg:scsain": ("c2a43b0d67eca9b531aa591463f74d5333225a95f0be87f8d03ed1cf91f8dafe",
-                   "cd1db0265daa8dc239bbe1a325cdf2ad3fc0033f3bf8eaba981a46e65c91b148"),
+                   "29b93af9df2e2f8883d4c6fb3332c6228462e3cb299c52328481a8c7771497e7"),
     "dlg:sctelwyn": ("d5dd048c43e16ba937ff583eef8f5966e549fb0c4e3f92679883d35fcdda1759",
-                     "6be82dfdf03c7b5f8bbeee67681344e1cb753a803fe461181c52e23ab5434067"),
+                     "3393b8eb614d6516fcc71a98426d0ced0269b66d6c21cb8e1c7ebafdea891814"),
     "dlg:scyarryl": ("f96880bdabcfe8393d9ad6df502d3d001e2d79913736e480f6cc717f012dd367",
-                     "247dd86c080239e80b4cd07516127a1ce55d90e12c6087b983ff935a3ffaea51"),
+                     "2d4c846f4a2afeb619e4fc3b168c4ef7cb95812e4b45aa850aa006de186886f7"),
     "dlg:trgeni01": ("4220763c55e065bfb2f500aa9d615a1a1e112ae3fc60eee061a3d9f3f59f7549",
-                     "0e7674a115890c50bc5cf23ae66bc428e1e39e601368130cae732b95b5502715"),
+                     "e3518c495954e2da2eceecf6fcfa9871ade8bc51f994907f0a27853d5f536d23"),
     "dlg:trhmer01": ("e5651fc5ef72780fe2ce9bb6ec8c3632665a5279d41cf79244fbef393304752e",
                      "21aac581490c963ecf778f2ffc760bb3c56cce5be72fd637f783e70eccdbdd75"),
     "dlg:uddemon": ("582fbcfecf3e71363dff1aa9bcef4dbc202d28c3af6e66e6a29840b342f1bdfd",
                     "b1976c5f2f0b948ec00f972348b5ef208b0ba127bbc5678297b133747836a042"),
     "dlg:udlesa": ("6c518483372ebe4073986dc2d41e4f7ae73a7bce133aab4289a29ef1be7c7e50",
-                   "4af88ce4eede1adcf79556223c0535768d94c8a8af5409380f21fe7c43984ee4"),
+                   "54968ec8867194ea558219a5e58518cf84d983bb9f197bd5a381984bc8abb241"),
     "dlg:udsilver": ("48f697db47942b74b4530975a5a4a46cac1a0cc850453b2b9d50ab173b01090c",
                      "593cdf5a0313db7065fb2c1eaafc8efc309485d3b5a654c24b585f397e94917b"),
     "dlg:udsvir03": ("5918919ea366eceb27f4096f025cde79c44310a9e57bcd49d123fdbb48352994",
                      "2003095671c146bb3d06b92fcc17df06dc18e5be4ab59a0e5d17bfd6db412e66"),
     "dlg:uhmay01": ("4213656595fdde6afeefee881597ddd62814ba886747bc4d60cfca25a2d852be",
-                    "45f6042dd98804a72901084fdfd503a61dd7738c45b85724f2e2a008a45e395d"),
+                    "625d9d911abba3898606930051e784685e82bd954711b520f8574c59da2d8384"),
     "dlg:uhogre01": ("8706469468f7277542ba0e6d7fcf44b47a15d36c3879f505464e0a119be00b97",
                      "722213d1f53966780ab8bba2e2dbe400e64c14ced6da2ff9f48b43749b629e25"),
 }
@@ -812,7 +814,8 @@ class Mode2RewardTests(unittest.TestCase):
     def test_carried_rewards_keep_sources_and_transfer_callbacks_before_later_actions(self):
         cases = (("trgeni01", 32, 32, "ar2014", "trgeni01"),
                  ("loutcapt", 39, 42, "ar0514", "Dennis"),
-                 ("amcler01", 84, 85, "ar5500", "amcler01"))
+                 ("amcler01", 84, 85, "ar5500", "amcler01"),
+                 ("jugjer01", 31, 31, "ar1103", "Jermien"))
         text, allocated = rewards.prepare_reward_texts(GameText(make_tlk(["Unchanged"])),
                              ("dlg:trgeni01", "dlg:amcler01"))
         self.assertEqual(_Tlk(text.male).text(allocated["dlg:amcler01"][74025], set()), "Please, accept this gift.")
@@ -826,6 +829,9 @@ class Mode2RewardTests(unittest.TestCase):
                 self.assertEqual(spec["authored_source_ids"], (identity,))
                 self.assertEqual(spec["required_transfers"], (name,))
                 self.assertEqual(spec.get("replacement"), "blun05" if name == "trgeni01" else None)
+                # The reward as the creature carries it: Jermien's sword keeps its daily charge.
+                self.assertEqual(spec["payload"], {"resref": spec["item"], "expiration": 0, "flags": 0,
+                                                   "charges": [1, 1, 0] if name == "jugjer01" else [0, 0, 0]})
                 self.assertEqual(spec["inventory_target"], {"area": area, "creature_resource": "cre:" + name, "script_name": script})
                 self.assertEqual(spec["source_resource"], "cre:" + name)
                 for pinned in ("physical_source_ids", "source_record", "source_resource_sha256"):
@@ -882,7 +888,7 @@ class Mode2RewardTests(unittest.TestCase):
             rewards.patch_reward(resource, legacy.replace(b"FLPR_Transfer(", b"FLPR_Tampered(", 1))
 
     def test_inventory_callback_survives_dialogue_parser_and_returns_lua_result(self):
-        for name in ("trgeni01", "loutcapt", "amcler01", "udlesa"):
+        for name in ("trgeni01", "loutcapt", "amcler01", "jugjer01", "udlesa"):
             spec = rewards.resource_specs("dlg:" + name)[0]
             original = dialogue_fixture(spec)
             patched = _Dialogue(rewards._patch_dialogue(original, (spec,)), name)
@@ -1005,11 +1011,13 @@ class Mode2RewardTests(unittest.TestCase):
                 if kind == "dlg" and resource in rewards.TEXT_REFS:
                     self.assertEqual(rewards._text_original(result, resource), (original, allocated[resource]))
                     clones = self.check_text_graph(resource, original, result, allocated[resource])
-                    if name in ("trgeni01", "amcler01", "udlesa"):
+                    if name in ("trgeni01", "amcler01", "jugjer01", "udlesa"):
                         action_refs = allocated[resource] if name == "amcler01" else None
                         branches = rewards._patch_dialogue(original, rewards.resource_specs(resource), action_refs=action_refs)
                         self.check_dialogue(name, original, branches, action_refs)
-                        self.assertEqual(set(clones), {"trgeni01": {35}, "amcler01": set(), "udlesa": {6}}[name])
+                        # Jermien names his sword when he offers it and when he hands it over.
+                        self.assertEqual(set(clones), {"trgeni01": {35}, "amcler01": set(), "jugjer01": {17, 23},
+                                                       "udlesa": {6}}[name])
                         if name == "udlesa":
                             dlg = _Dialogue(branches, name)
                             for state in range(6, 12):

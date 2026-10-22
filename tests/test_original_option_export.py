@@ -238,24 +238,33 @@ class OriginalOptionExportTests(unittest.TestCase):
         self.assertEqual(snapshot(f.game), staged)
         self.assertEqual(snapshot(f.output), first)
 
-    def trgeni_campaign(self, rows: list, slots: dict):
-        """The genie's sword (source and place 32) with a TRGENI01.CRE of these
-        records: fixture, revision, creature, the dialogue and its patch."""
+    # A carried reward's row (source and place), area, actor, script name and
+    # the states whose text names the reward (state -> strref).
+    CARRIED = {'trgeni01': (32, 'ar2014', 'Genie', 'trgeni01', {35: 43514}),
+               'jugjer01': (31, 'ar1103', 'Jermien', 'Jermien', {17: 33760, 23: 33777})}
+
+    def carried_campaign(self, name: str, rows: list, slots: dict):
+        """A reward the creature <name> carries (source and place of one row)
+        with a CRE of these records: fixture, revision, creature, the dialogue
+        and its patch."""
         f = self.fixture()
-        spec = mode2_rewards.REWARDS['trgeni01']
-        dialogue = _Dialogue(dialogue_fixture(mode2_rewards.resource_specs(spec['resource'])), 'trgeni01')
+        row, area, actor, script, texts = self.CARRIED[name]
+        spec = mode2_rewards.REWARDS[name]
+        dialogue = _Dialogue(dialogue_fixture(mode2_rewards.resource_specs(spec['resource'])), name)
         # Include the adapter's exact authored text location in synthetic bytes.
-        struct.pack_into('<I', dialogue.states[35], 0, 43514)
+        for state, strref in texts.items():
+            struct.pack_into('<I', dialogue.states[state], 0, strref)
         original = dialogue.render()
-        (f.override / 'trgeni01.dlg').write_bytes(original)
+        (f.override / f'{name}.dlg').write_bytes(original)
         item = (f.override / 'synth001.itm').read_bytes()
-        (f.override / 'sw1h23.itm').write_bytes(item)
-        (f.override / 'blun05.itm').write_bytes(item)
+        for resref in (spec['item'], spec.get('replacement')):
+            if resref:
+                (f.override / f'{resref}.itm').write_bytes(item)
         creature = make_cre(rows, slots=slots)
-        creature[0x280:0x2A0] = b'trgeni01' + bytes(24)
+        creature[0x280:0x2A0] = script.encode() + bytes(32 - len(script))
         creature = bytes(creature)
-        (f.override / 'trgeni01.cre').write_bytes(creature)
-        (f.override / 'ar2014.are').write_bytes(make_are([], [], [('Genie', 'TRGENI01')]))
+        (f.override / f'{name}.cre').write_bytes(creature)
+        (f.override / f'{area}.are').write_bytes(make_are([], [], [(actor, name.upper())]))
         (f.override / 'BGEE.LUA').write_bytes(b'quests = {}\n')
         language = f.game / 'lang/en_US'
         language.mkdir(parents=True)
@@ -265,14 +274,14 @@ class OriginalOptionExportTests(unittest.TestCase):
         f.world = scan_world(f.catalog)
         _, refs = mode2_rewards.prepare_reward_texts(GameText(tlk), (spec['resource'],), 'en_US')
         changed = mode2_rewards.patch_reward(spec['resource'], original, refs=refs[spec['resource']])
-        configuration = self.mode2_configuration(f, 'bg2:mode2:item:32', 'bg2:mode2:target:32')
+        configuration = self.mode2_configuration(f, f'bg2:mode2:item:{row}', f'bg2:mode2:target:{row}')
         revision = write_campaign(configuration['profile'], f.catalog, f.world,
                                   configuration['plan'], f.store)['revision']
         manifest = read_campaign(f.store, revision)
         self.assertEqual([(source['id'], source['quantity']) for source in manifest['sources']],
-                         [('original-source:bg2:mode2:item:32', 1)])
+                         [(f'original-source:bg2:mode2:item:{row}', 1)])
         self.assertEqual([(target['id'], target['record']['kind']) for target in manifest['targets']],
-                         [('original-target:bg2:mode2:target:32', 'creature-target')])
+                         [(f'original-target:bg2:mode2:target:{row}', 'creature-target')])
         return f, revision, creature, dialogue, changed
 
     def test_trgeni_inventory_reward_exports_transfer_and_frozen_original(self):
@@ -283,7 +292,7 @@ class OriginalOptionExportTests(unittest.TestCase):
                 ([item_record('SYNTH002', expiration=0, charges=(2, 3, 4), flags=1),
                   item_record('SW1H23', flags=1, **self.COPY)], {21: 0, 9: 1}, (1, 1))):
             with self.subTest(record=index):
-                f, revision, creature, dialogue, changed = self.trgeni_campaign(rows, slots)
+                f, revision, creature, dialogue, changed = self.carried_campaign('trgeni01', rows, slots)
                 item = (f.override / 'synth001.itm').read_bytes()
                 before = snapshot(f.game)
                 f.export(revision)
@@ -315,10 +324,52 @@ class OriginalOptionExportTests(unittest.TestCase):
                 self.assertEqual(snapshot(f.output), first)
                 self.assertEqual(snapshot(f.game), before)
 
+    def test_jermiens_sword_exports_his_texts_transfer_and_charged_unstealable_copy(self):
+        # Jermien keeps the sword after his other items, in a quick slot,
+        # unstealable, with one charge of its ability.
+        rows = [item_record('SYNTH002', expiration=0, charges=(2, 3, 4), flags=10),
+                item_record('SW1H26', expiration=0, charges=(1, 1, 0), flags=2)]
+        f, revision, creature, dialogue, changed = self.carried_campaign('jugjer01', rows, {0: 0, 18: 1})
+        before = snapshot(f.game)
+        f.export(revision)
+        self.assertEqual(snapshot(f.game), before)
+        base = f.output / 'campaign-store/revisions' / revision
+        manifest = read_campaign(f.store, revision)
+        self.assertEqual(manifest['sources'][0]['record']['record'],
+                         {'resref': 'sw1h26', 'expiration': 0, 'charges': [1, 1, 0], 'flags': 0})
+        native = json.loads(Path(str(base) + '.native.json').read_text())
+        target = native['targets']['original-target:bg2:mode2:target:31']
+        self.assertEqual((target['kind'], target['area'], target['script_name'],
+                          target['inventory_reward'], target['reward_resource']),
+                         ('creature', 'AR1103', 'Jermien', True, 'dlg:jugjer01'))
+        source = native['sources']['original-source:bg2:mode2:item:31']
+        self.assertEqual(source['kind'], 'guarded-script')
+        self.assertEqual(source['auxiliary_creatures'], [{
+            'resource': 'cre:jugjer01', 'resource_sha256': hashlib.sha256(creature).hexdigest(),
+            'record_indices': [1],
+            'payload': {'resref': 'sw1h26', 'expiration': 0, 'charges': [1, 1, 0], 'flags': 2},
+            'selected_global': 'FLPR_QM2_31'}])
+        self.assertEqual(Path(str(base) + '.source-1.duplicate-1.original.cre').read_bytes(), creature)
+        self.assertEqual((f.output / 'resource-overrides/JUGJER01.DLG').read_bytes(), changed)
+        # Both texts that name the sword get a copy with Item Randomiser's line about an item.
+        patched = _Dialogue(changed, 'jugjer01')
+        self.assertEqual(patched.actions[:len(dialogue.actions)], dialogue.actions)
+        self.assertEqual([struct.unpack_from('<I', patched.states[state])[0] for state in (17, 23)], [33760, 33777])
+        clones = [struct.unpack_from('<I', state)[0] for state in patched.states[len(dialogue.states):]]
+        self.assertEqual(len(clones), 2)
+        self.assertFalse({33760, 33777} & set(clones))
+        # His one reward reply, kept and selected; the text copy of its state shares them.
+        callback = b'EEex_LuaAction("return(FLPR_Transfer(EEex_LuaAction_Object,31))")'
+        self.assertEqual(sum(action.count(callback) for action in patched.actions), 2)
+        first = snapshot(f.output)
+        f.export(revision)
+        self.assertEqual(snapshot(f.output), first)
+        self.assertEqual(snapshot(f.game), before)
+
     def test_a_carried_reward_the_creature_does_not_carry_leaves_its_row_out(self):
         # The genie's dialogue hands over the sword it carries; this one has none.
-        f, revision, _, _, _ = self.trgeni_campaign(
-            [item_record('SYNTH002', expiration=0, charges=(2, 3, 4), flags=1)], {21: 0})
+        f, revision, _, _, _ = self.carried_campaign(
+            'trgeni01', [item_record('SYNTH002', expiration=0, charges=(2, 3, 4), flags=1)], {21: 0})
         with self.assertRaisesRegex(ProfileError, "TRGENI01.CRE does not carry SW1H23, which the reward of "
                                     "TRGENI01.DLG hands over: original-source:bg2:mode2:item:32"):
             f.export(revision)

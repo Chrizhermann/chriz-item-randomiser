@@ -24,7 +24,7 @@ REVISION = "a" * 64
 SOURCE = "original-source:bg2:mode2:item:12"
 INVENTORY = (ROOT / "tools/probes/FLPRInventoryAsm.lua").read_text()
 MEMORY_SIZE = 128 + 2049 * 128 + 32 + 64 * 64
-FAMILIES = {12: ("scyarryl", "blun20", 0), 32: ("trgeni01", "sw1h23", 0),
+FAMILIES = {12: ("scyarryl", "blun20", 0), 31: ("jugjer01", "sw1h26", 0), 32: ("trgeni01", "sw1h23", 0),
             39: ("loutcapt", "dagg11", 6), 84: ("amcler01", "ring43", 0)}
 SETUP = """
 return function(f,Gate,build,compile,Inventory,original,family,creature,item,records,charges,flags,expiration)
@@ -151,7 +151,7 @@ class AuxiliaryCreatureTests(unittest.TestCase):
             auxiliary._bundle(auxiliary, bundle)
 
     def test_reviewed_dialogue_families_bind_only_their_exact_duplicate(self):
-        for family in (32, 39, 84):
+        for family in (31, 32, 39, 84):
             with self.subTest(family=family):
                 _, f, bundle, _ = fixture(family=family)
                 auxiliary = f.gate.auxiliary_members[REVISION][1]
@@ -184,6 +184,24 @@ class AuxiliaryCreatureTests(unittest.TestCase):
         self.assertEqual(changed, rewrite_inventory(original, {3: "blun05"}))
         self.assertEqual(struct.unpack_from("<H", changed, group.slot_offset + 9 * 2)[0], 3)
         self.assertEqual(run(edits(group), original)[1], original)
+
+    def test_jermiens_unstealable_sword_with_its_daily_charge_leaves_his_quick_slot(self):
+        # JUGJER01 keeps SW1H26 in a quick slot, unstealable, with one charge of
+        # its ability; Item Randomiser's duplicates/bg2.2da:19 leaves nothing in its place.
+        rows = [item_record("OTHER00"), item_record("OTHER01", flags=10), item_record("OTHER02", flags=10),
+                item_record("SW1H26", expiration=0, charges=(1, 1, 0), flags=2), item_record("OTHER03")]
+        original = bytes(make_cre(rows, slots={0: 1, 1: 2, 18: 3, 19: 0, 21: 4}, gap=13))
+        _, f, _, _ = fixture(family=31, original=original, records=[3], charges=(1, 1, 0), flags=2)
+        auxiliary, group = f.gate.auxiliary_members[REVISION][1], f.groups[1]
+        self.assertEqual(auxiliary.policy.fields[20].name, "FLPR_QM2_31")
+        self.assertIsNone(auxiliary.binding.replacement)
+        pointer, changed = run(edits(group), original, active=(0,))
+        self.assertEqual(pointer, OUTPUT)
+        self.assertEqual(changed, rewrite_inventory(original, {3: None}))
+        self.assertEqual(run(edits(group), original)[1], original)
+        # Another copy than the export's is not Jermien's sword.
+        with self.assertRaisesRegex(Exception, "CAMPAIGN_GATE_AUXILIARY_BINDING_MISMATCH"):
+            fixture(family=31, original=original, records=[3], charges=(0, 0, 0), flags=2)
 
     def test_every_carried_copy_of_the_reward_leaves_with_the_source(self):
         # A LOUTCAPT that carries two DAGG11 (one with charges) loses both.
@@ -270,6 +288,15 @@ class AuxiliaryCreatureTests(unittest.TestCase):
         self.assertEqual(loaded_policy(3, 1, revision="b" * 64).read_q(POLICY_BUFFER + 32), 0)
         # Original physical source behavior still stops suppression at phase3.
         self.assertEqual(loaded_policy(3, 1, permanent=False).read_q(POLICY_BUFFER + 32), 2)
+        # Each reviewed family's flag compiles; no other flag does.
+        for family in FAMILIES:
+            with self.subTest(family=family):
+                self.assertEqual(loaded_policy(1, 1, selected_global=f"FLPR_QM2_{family}")
+                                 .read_q(POLICY_BUFFER + 32), 1)
+        lua = LuaJIT(unpack_returned_tuples=True)
+        for flag in ("FLPR_QM2_42", "FLPR_QM2_7", "FLPR_QM2_310"):
+            with self.subTest(flag=flag), self.assertRaisesRegex(Exception, "CAMPAIGN_GATE_AUXILIARY_POLICY_INVALID"):
+                lua.execute(POLICY)(REVISION, 1, True, flag)
 
     def test_auxiliary_is_not_a_second_source_adapter_and_new_kept_selection_stays_off(self):
         for runtime in (Lua51, Lua53, LuaJIT):

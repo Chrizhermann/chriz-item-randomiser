@@ -124,12 +124,14 @@ REWARDS["bhoisig"]["required_transfers"] = ("scyarryl",)
 # These rewards must remain carried by the NPC so theft and combat routes still
 # work. Their dialogue transfers the carried assignment through a blocking Lua
 # callback; it never creates a second item for the dialogue recipient.
-for _name, _item, _source, _target, _area, _script, _branches in (
-    ("trgeni01", "sw1h23", 32, 32, "ar2014", "trgeni01", ((35, 0), (40, 0))),
-    ("loutcapt", "dagg11", 39, 42, "ar0514", "Dennis", ((26, 0), (30, 0))),
-    ("amcler01", "ring43", 84, 85, "ar5500", "amcler01", ((7, 0), (8, 0))),
+for _name, _item, _source, _target, _area, _script, _branches, _charges in (
+    ("trgeni01", "sw1h23", 32, 32, "ar2014", "trgeni01", ((35, 0), (40, 0)), (0, 0, 0)),
+    ("loutcapt", "dagg11", 39, 42, "ar0514", "Dennis", ((26, 0), (30, 0)), (0, 0, 0)),
+    ("amcler01", "ring43", 84, 85, "ar5500", "amcler01", ((7, 0), (8, 0)), (0, 0, 0)),
+    # Jermien's sword (Item Randomiser's jugjer01.fl), with its daily charge.
+    ("jugjer01", "sw1h26", 31, 31, "ar1103", "Jermien", ((23, 0),), (1, 1, 0)),
 ):
-    _alias(_name, _item, _source, _target, _name.upper(), {_name: _branches})
+    _alias(_name, _item, _source, _target, _name.upper(), {_name: _branches}, charges=_charges)
     _specification = REWARDS[_name]
     _specification.update(
         grant_kind="transfer", authored_source_ids=_specification["source_ids"],
@@ -189,6 +191,7 @@ TEXT_REFS = {
     "dlg:trgeni01": {43514: 110},
     "dlg:amcler01": {74025: 100},
     "dlg:udlesa": {52664: 104},
+    "dlg:jugjer01": {33760: 698, 33777: 699},
 }
 ACTION_TEXT_REFS = {"dlg:amcler01": (74025,)}
 _TEXT_TRAILER = b"FLPRM2T1"
