@@ -51,11 +51,20 @@ local function failure_message(reason)
 end
 
 -- Tells the player once per loaded game when its randomised items can no
--- longer be handled. A game that was never randomised needs no message.
+-- longer be handled: in the message log at once and, as a line there is easily
+-- missed, in the engine's info popup as soon as the world screen is up (not
+-- over the start screen, character creation or a loading screen). A game that
+-- was never randomised needs no message.
 local function warn_stopped()
-    if root.Warned or EEex_GameState_GetGlobalInt("flpr_state") == 0 then return end
-    root.Warned = true
-    Infinity_DisplayString(text("stopped"))
+    if root.Warned == true or EEex_GameState_GetGlobalInt("flpr_state") == 0 then return end
+    if not root.Warned then
+        root.Warned = "logged"
+        Infinity_DisplayString(text("stopped"))
+    end
+    if Infinity_IsMenuOnStack("WORLD_ACTIONBAR") then
+        root.Warned = true
+        if type(FLPRUI_Tell) == "function" then FLPRUI_Tell("stopped") end
+    end
 end
 
 local ok, failure = pcall(function()

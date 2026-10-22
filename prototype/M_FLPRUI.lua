@@ -74,6 +74,15 @@ function FLPRUI_Ask(key, start_plain)
     popup2Button("FLPR_POPUP", "FLPR_START_PLAIN", start_plain, "CANCEL_BUTTON", start_cancel())
 end
 
+-- Shows a message in the engine's info popup (util.lua's popupInfo), which the
+-- player closes with Done. False when this user interface has no such popup.
+function FLPRUI_Tell(key)
+    if type(popupInfo) ~= "function" or type(uiStrings) ~= "table" then return false end
+    uiStrings.FLPR_INFO = FLPRUI_Text(key)
+    popupInfo("FLPR_INFO")
+    return true
+end
+
 -- Runs a start button's call; popups it shows (also the runtime's) get the
 -- start screen's Cancel.
 local function from_start(call, ...)
