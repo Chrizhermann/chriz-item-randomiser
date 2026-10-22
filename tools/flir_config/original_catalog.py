@@ -85,12 +85,13 @@ def _preset_mode2_place(row: dict) -> str | None:
     return same[0] if len(same) == 1 else None
 
 
-def mode2_alias_spec(row: dict) -> dict | None:
-    """Return a registered reward only for its exact authored .fl location."""
+def mode2_alias_spec(row: dict, game: str | None = None, names: EetNames | None = None) -> dict | None:
+    """Return a registered reward only for its exact authored .fl location, as
+    the game names it."""
     if (isinstance(row, dict) and row.get("id") in TARGET_REWARDS and
             isinstance(row.get("target"), str) and row["target"].endswith(".fl") and
             _authored_mode2_target(row)):
-        return target_spec(row["id"])
+        return target_spec(row["id"], game=game, names=names)
     return None
 
 
@@ -318,7 +319,7 @@ def _resolve_target(row: dict, resources: set[str], unreadable: set[str],
         row["binding_problem"] = ("legacy-target-requires-adapter" if "spl:spin621" in resources
                                   else "target-resource-absent")
         return
-    reward = mode2_alias_spec(row)
+    reward = mode2_alias_spec(row, game, names)
     if reward is not None:
         row["area_resource"] = reward["resource"]
         row["binding_problem"] = ("legacy-target-requires-adapter"

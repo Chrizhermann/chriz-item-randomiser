@@ -31,14 +31,16 @@ function Script.new(api,bundle,id,expected)
     local spec=QUESTS[id]
     if endpoint and endpoint.adapter_id=='mode2-reward-v1' then
         -- The exporter binds this endpoint to the original table row and its
-        -- reviewed grant. Derive the saved flags from that row, not table order.
-        local row=id:match('^original%-source:bg2:mode2:item:([0-9]+)$')
+        -- reviewed grant. Derive the saved flags from that row, not table order;
+        -- a BG1 row's flags are its own (B1_<row>, BG2's are M2_<row>).
+        local campaign,row=id:match('^original%-source:(bg[12]):mode2:item:([0-9]+)$')
         local resource=source and source.record and source.record.resource
         local extension,name
         if type(resource)=='string' then extension,name=resource:match('^(%a+):([a-z0-9_#%-]+)$') end
         if row and (extension=='bcs' or extension=='dlg') and name then
+            local suffix=(campaign=='bg1' and 'B1_' or 'M2_')..row
             spec={quest=name,resource=resource,extension=extension:upper(),adapter='mode2-reward-v1',
-                selected='FLPR_QM2_'..row,consumed='FLPR_XM2_'..row}
+                selected='FLPR_Q'..suffix,consumed='FLPR_X'..suffix}
         end
     end
     local legacy=source and source.record and source.record.adapter_id=='blpool-v1'

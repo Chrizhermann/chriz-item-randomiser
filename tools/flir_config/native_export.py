@@ -144,6 +144,12 @@ def _compile(manifest: dict, world: dict, index: dict, items: dict,
             routes.append(reward_routes(catalog, world))
         return routes[0].gives(name)
 
+    def naming() -> dict:
+        # The routes' items as the game names them (EET renames BG1's).
+        if not routes:
+            routes.append(reward_routes(catalog, world))
+        return {"game": routes[0].game, "names": routes[0].names}
+
     def actor_name(target: dict) -> str | None:
         selector = target["selector"]
         template = index["targets"].get(selector.get("template_resource"))
@@ -265,7 +271,7 @@ def _compile(manifest: dict, world: dict, index: dict, items: dict,
             native["resource_hashes"]["SPIN621.SPL"] = KEY_PATCHED_HASH
             return
         if source["kind"] == "authored-source" and identity in MODE2_SOURCES:
-            spec = mode2_source_spec(identity)
+            spec = mode2_source_spec(identity, **naming())
             _require(source["resource"] == spec["resource"] and record == spec["payload"],
                      f"The extended reward source differs from its route: {identity}")
             require_route(MODE2_SOURCES[identity])
@@ -274,7 +280,7 @@ def _compile(manifest: dict, world: dict, index: dict, items: dict,
                 **{key: spec[key] for key in ("quest", "resource", "selected_global", "consumed_global")},
                 "payload": deepcopy(record), "identity": _digest({"source": selected})}
             for name in spec.get("required_transfers", ()):
-                duplicate = mode2_transfer_spec(name)
+                duplicate = mode2_transfer_spec(name, **naming())
                 if identity not in duplicate["authored_source_ids"]:
                     continue
                 # The creature's own copies of the reward, wherever this game
@@ -482,7 +488,7 @@ def _compile(manifest: dict, world: dict, index: dict, items: dict,
         if authored:
             selector = target["selector"]
             use(target["resource"])
-            reward = mode2_target_spec(selector["id"]) if selector["id"] in MODE2_TARGETS else None
+            reward = mode2_target_spec(selector["id"], **naming()) if selector["id"] in MODE2_TARGETS else None
             if reward:
                 require_route(MODE2_TARGETS[selector["id"]])
             if reward and reward.get("inventory_target"):
@@ -527,7 +533,7 @@ def _compile(manifest: dict, world: dict, index: dict, items: dict,
                 return
             if target["kind"] == "scripted-target":
                 if selector["id"] in MODE2_TARGETS:
-                    spec = mode2_target_spec(selector["id"])
+                    spec = mode2_target_spec(selector["id"], **naming())
                     for resource in spec["resources"]:
                         use(resource)
                     if spec["recipient_local"] is None:
@@ -766,6 +772,11 @@ def export_native(store: Path, catalog: dict, world: dict, output: Path,
         pending[base + ".json"] = canonical_bytes(manifest)
         pending[base + ".lua"] = _render_lua(manifest)
         lua_values[base + ".lua"] = manifest
+    # The quest routes' items as the game names them (EET renames BG1's).
+    naming = {}
+    if required & MODE2_RESOURCES.keys():
+        checked = reward_routes(catalog, world)
+        naming = {"game": checked.game, "names": checked.names}
     # Reuse the scanner's resource reader; only selected resources are demanded.
     resource_bytes = {}
     with GameResources(Path(catalog["game_root"]), {**{k: RESOURCE_TYPES[k] for k in ("itm", "are", "cre", "sto", "bcs", "dlg", "spl")},
@@ -790,7 +801,7 @@ def export_native(store: Path, catalog: dict, world: dict, output: Path,
                 # A reward route is recognised again from these bytes below;
                 # the scan holds nothing else that depends on them.
                 if resource in MODE2_RESOURCES:
-                    own_patch = own_mode2_patch(resource, data)
+                    own_patch = own_mode2_patch(resource, data, **naming)
                 if resource in CONTAINER_RESOURCES:
                     own_patch = own_container_patch(resource, data)
             _require(actual_hash == expected_hash or own_patch,
@@ -810,7 +821,7 @@ def export_native(store: Path, catalog: dict, world: dict, output: Path,
         # there too; the dialogues they read must be as scanned.
         dialogues = set(reader.names("dlg"))
         copies = RewardCopies(lambda name: reader.read("dlg", name) if name in dialogues else None,
-                              {resource: row["sha256"] for resource, row in index["resources"].items()})
+                              {resource: row["sha256"] for resource, row in index["resources"].items()}, **naming)
         routes = sorted({key for resource in required & MODE2_RESOURCES.keys() for key in MODE2_RESOURCES[resource]})
         changed = sorted(set().union(*(copies.checked(key) for key in routes)) & copies.changed)
         _require(not changed, f"Installed resource changed; rescan before export: {changed[0] if changed else ''}")
@@ -886,7 +897,7 @@ def export_native(store: Path, catalog: dict, world: dict, output: Path,
     for resource in MODE2_RESOURCES:
         if resource not in required:
             continue
-        patched = patch_mode2_reward(resource, resource_bytes[resource], refs=reward_texts.get(resource))
+        patched = patch_mode2_reward(resource, resource_bytes[resource], refs=reward_texts.get(resource), **naming)
         mode2_patches[resource] = patched
         kind, name = resource.split(":")
         filename = name.upper() + "." + kind.upper()

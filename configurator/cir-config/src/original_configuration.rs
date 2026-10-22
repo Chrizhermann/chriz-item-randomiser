@@ -213,7 +213,8 @@ fn choose(row: &Value, context: &Context<'_>) -> Result<std::result::Result<Choi
         } else if resource == "spl:spin621" {
             crate::spell_rewards::payload()
         } else if crate::mode2_rewards::source_rewards().contains_key(&source_id) {
-            crate::mode2_rewards::source_spec(&source_id)?.get("payload").cloned().ok_or_else(|| Error::key("payload"))?
+            let naming = crate::mode2_rewards::Naming { game: Some(context.game), names: context.names };
+            crate::mode2_rewards::source_spec(&source_id, naming)?.get("payload").cloned().ok_or_else(|| Error::key("payload"))?
         } else {
             Value::Dict(crate::dict! {"resref" => item, "expiration" => 0, "charges" => default_charges()?, "flags" => 0})
         };

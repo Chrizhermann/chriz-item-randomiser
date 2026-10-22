@@ -158,8 +158,9 @@ fn preset_mode2_place(row: &Value) -> Result<Option<String>> {
     })
 }
 
-/// A registered reward only for its exact authored `.fl` location.
-pub fn mode2_alias_spec(row: &Value) -> Result<Option<Dict>> {
+/// A registered reward only for its exact authored `.fl` location, as the
+/// game names it.
+pub fn mode2_alias_spec(row: &Value, naming: crate::mode2_rewards::Naming<'_>) -> Result<Option<Dict>> {
     let Some(identity) = row.get("id").and_then(Value::as_str) else {
         return Ok(None);
     };
@@ -169,7 +170,7 @@ pub fn mode2_alias_spec(row: &Value) -> Result<Option<Dict>> {
     {
         return Ok(None);
     }
-    crate::mode2_rewards::target_spec(identity).map(Some)
+    crate::mode2_rewards::target_spec(identity, naming).map(Some)
 }
 
 /// The container quest at an authored place: its row of the original
@@ -519,7 +520,8 @@ fn resolve_target(row: &mut Dict, scan: &Scan<'_>, endpoints: &HashMap<String, E
         row.insert("binding_problem", problem);
         return Ok(());
     }
-    if let Some(reward) = mode2_alias_spec(&snapshot)? {
+    let naming = crate::mode2_rewards::Naming { game: Some(scan.game), names: scan.names };
+    if let Some(reward) = mode2_alias_spec(&snapshot, naming)? {
         row.insert("area_resource", reward.get("resource").cloned().unwrap_or(Value::Null));
         let present = reward
             .get("resources")

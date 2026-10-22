@@ -8,8 +8,10 @@ pub mod builders;
 pub mod mode2;
 
 use cir_config::error::{CHANGED_SINCE_SCAN, MISSING_TRANSLATION, SCRIPT_ERROR};
+use cir_config::game_names::EetNames;
 use cir_config::game_text::{self, GameText};
 use cir_config::json::{self, Dict, Value};
+use cir_config::mode2_rewards::Naming;
 use cir_config::py::{from_hex, hex};
 use cir_config::resources::sha256_hex;
 use cir_config::translations::{self, Line, Translations};
@@ -310,6 +312,24 @@ impl Args<'_> {
             .map(|(name, blob)| (name.to_string(), self.fixture.blob(blob)))
             .collect()
     }
+    /// The reward routes' `game` and EET `names` keywords (absent: each
+    /// campaign's own names).
+    fn named(&self) -> Named {
+        let names = self.values.get("names").filter(|names| !names.is_null());
+        Named(
+            self.values.get("game").and_then(Value::as_str).map(str::to_string),
+            names.map(|names| EetNames::from_value(names).expect("EET names")),
+        )
+    }
+}
+
+/// A recorded [`Naming`], owned.
+struct Named(Option<String>, Option<EetNames>);
+
+impl Named {
+    fn naming(&self) -> Naming<'_> {
+        Naming { game: self.0.as_deref(), names: self.1.as_ref() }
+    }
 }
 
 fn dump_dict(dict: &Dict) -> Value {
@@ -334,7 +354,9 @@ fn reward_copies_value(args: &Args) -> Result<Value> {
     let scanned: HashMap<String, Value> =
         args.dict("scanned").iter().map(|(resource, hash)| (resource.to_string(), hash.clone())).collect();
     let limit = args.optional_int("limit").map_or(reward_copies::LIMIT, |limit| limit as usize);
-    let found = reward_copies::RewardCopies::with_limit(&mut |name| Ok(files.get(name).cloned()), &scanned, limit)?;
+    let named = args.named();
+    let found =
+        reward_copies::RewardCopies::with_limit(&mut |name| Ok(files.get(name).cloned()), &scanned, limit, named.naming())?;
     let replies = |rows: &mode2_rewards::Replies| -> Value {
         Value::Dict(
             rows.iter()
@@ -493,12 +515,17 @@ fn call(name: &str, args: &Args) -> Result<Value> {
             mode2_rewards::ACTION_TEXT_REFS.iter().map(|(resource, refs)| (resource.to_string(), Value::from(refs.to_vec()))).collect(),
         ),
         "mode2_rewards.ADAPTER_ID" => Value::from(mode2_rewards::ADAPTER_ID),
-        "mode2_rewards.source_spec" => Value::Dict(mode2_rewards::source_spec(&args.str("source_id"))?),
-        "mode2_rewards.target_spec" => Value::Dict(mode2_rewards::target_spec(&args.str("target_id"))?),
-        "mode2_rewards.transfer_spec" => Value::Dict(mode2_rewards::transfer_spec(&args.str("name"))?),
-        "mode2_rewards.resource_specs" => {
-            Value::List(mode2_rewards::resource_specs(&args.str("resource"))?.into_iter().map(Value::Dict).collect())
+        "mode2_rewards.reward" => Value::Dict(mode2_rewards::reward(&args.str("key"), args.named().naming())?),
+        "mode2_rewards.source_spec" => {
+            Value::Dict(mode2_rewards::source_spec(&args.str("source_id"), args.named().naming())?)
         }
+        "mode2_rewards.target_spec" => {
+            Value::Dict(mode2_rewards::target_spec(&args.str("target_id"), args.named().naming())?)
+        }
+        "mode2_rewards.transfer_spec" => Value::Dict(mode2_rewards::transfer_spec(&args.str("name"), args.named().naming())?),
+        "mode2_rewards.resource_specs" => Value::List(
+            mode2_rewards::resource_specs(&args.str("resource"), args.named().naming())?.into_iter().map(Value::Dict).collect(),
+        ),
         "mode2_rewards._patch_dialogue" => {
             let specs: Vec<Dict> =
                 args.value("specs").as_list().expect("specs").iter().map(|spec| spec.as_dict().expect("spec").clone()).collect();
@@ -517,22 +544,29 @@ fn call(name: &str, args: &Args) -> Result<Value> {
             bytes_value(&mode2_rewards::patch_script(&args.bytes("data"), &args.dict("spec"), args.optional_int("text_ref"))?)
         }
         "mode2_rewards._text_original" => {
-            mode2_rewards::text_original(&args.bytes("data"), &args.str("resource"))?.map_or(Value::Null, |(original, refs)| {
-                Value::List(vec![bytes_value(&original), int_keys(&refs)])
-            })
+            mode2_rewards::text_original(&args.bytes("data"), &args.str("resource"), args.named().naming())?
+                .map_or(Value::Null, |(original, refs)| Value::List(vec![bytes_value(&original), int_keys(&refs)]))
         }
         "mode2_rewards._script_original" => recovered(mode2_rewards::script_original(&args.bytes("data"), &args.dict("spec"))?),
-        "mode2_rewards.own_patch" => Value::Bool(mode2_rewards::own_patch(&args.str("resource"), &args.bytes("data"))?),
-        "mode2_rewards.route_reasons" => Value::Dict(mode2_rewards::route_reasons(&args.str("resource"), &args.bytes("data"))?),
-        "mode2_rewards.gives_reward" => {
-            Value::Bool(mode2_rewards::gives_reward(&args.str("resource"), &args.bytes("data"), &args.str("key"))?)
+        "mode2_rewards.own_patch" => {
+            Value::Bool(mode2_rewards::own_patch(&args.str("resource"), &args.bytes("data"), args.named().naming())?)
         }
+        "mode2_rewards.route_reasons" => {
+            Value::Dict(mode2_rewards::route_reasons(&args.str("resource"), &args.bytes("data"), args.named().naming())?)
+        }
+        "mode2_rewards.gives_reward" => Value::Bool(mode2_rewards::gives_reward(
+            &args.str("resource"),
+            &args.bytes("data"),
+            &args.str("key"),
+            args.named().naming(),
+        )?),
         "mode2_rewards._patch_text_dialogue" => bytes_value(&mode2_rewards::patch_text_dialogue(
             &args.bytes("data"),
             &args.str("resource"),
             args.refs("refs").as_ref(),
             args.bool("defer_departure"),
             args.bool("numeric_target"),
+            args.named().naming(),
         )?),
         "mode2_rewards.prepare_ddwell_text" => {
             let (text, reference) = mode2_rewards::prepare_ddwell_text(&args.game_text("text"), &args.str("language"))?;
@@ -549,6 +583,7 @@ fn call(name: &str, args: &Args) -> Result<Value> {
             &args.bytes("data"),
             args.refs("refs").as_ref(),
             args.optional_int("ddwell_ref"),
+            args.named().naming(),
         )?),
         "container_rewards.TARGETS" => dump_dict(container_rewards::targets()),
         "container_rewards.RESOURCE_TARGETS" => dump_dict(container_rewards::resource_targets()),
@@ -592,7 +627,9 @@ fn call(name: &str, args: &Args) -> Result<Value> {
             &args.bytes("data"),
             args.refs("refs").as_ref(),
         )?),
-        "reward_copies.copy_spec" => Value::Dict(reward_copies::copy_spec(&args.str("key"), &args.str("resource"))?),
+        "reward_copies.copy_spec" => {
+            Value::Dict(reward_copies::copy_spec(&args.str("key"), &args.str("resource"), args.named().naming())?)
+        }
         "reward_copies.RewardCopies" => reward_copies_value(args)?,
         "store_inventory.rewrite_inventory" => {
             let removals: BTreeSet<i64> =

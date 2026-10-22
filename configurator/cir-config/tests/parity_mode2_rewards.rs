@@ -11,12 +11,14 @@
 mod common;
 
 use cir_config::error::{Error, ErrorKind};
+use cir_config::game_names::{EetNames, Tables};
 use cir_config::game_text::GameText;
 use cir_config::json::{Dict, Value};
 use cir_config::mode2_rewards::{
     direct_rewards, gives_reward, own_patch, patch_dialogue, patch_reward, physical_source_reward, prepare_ddwell_text,
     prepare_reward_texts, resource_rewards, resource_specs, rewards, route_reasons, script_original, source_rewards,
-    source_spec, target_spec, text_original, text_refs, transfer_spec, transfer_specs, PHYSICAL_SOURCE_REWARDS, TEXT_REFS,
+    source_spec, target_spec, text_original, text_refs, transfer_spec, transfer_specs, Naming, PHYSICAL_SOURCE_REWARDS,
+    TEXT_REFS,
 };
 use cir_config::py::{put_u32, str_value};
 use cir_config::quest_options::Dialogue;
@@ -29,6 +31,7 @@ use common::mode2::{
 };
 use std::collections::BTreeMap;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 const SCENARIO: &str = "mode2_rewards";
 
@@ -55,7 +58,8 @@ fn reward(name: &str) -> &'static Dict {
 }
 
 fn reasons(resource: &str, data: &[u8]) -> BTreeMap<String, String> {
-    route_reasons(resource, data).unwrap().iter().map(|(route, reason)| (route.to_string(), str_value(reason))).collect()
+    let found = route_reasons(resource, data, Naming::default()).unwrap();
+    found.iter().map(|(route, reason)| (route.to_string(), str_value(reason))).collect()
 }
 
 fn named(rows: &[(&str, &str)]) -> BTreeMap<String, String> {
@@ -251,21 +255,21 @@ fn builders_match_the_reference_builders() {
 #[test]
 fn graph_checks_reject_an_unpatched_dialogue() {
     let original = dialogue_fixture(&specs("dlg:ppstat01"));
-    let outcome = std::panic::catch_unwind(|| check_dialogue("ppstat01", &original, &original, None, None));
+    let outcome = std::panic::catch_unwind(|| check_dialogue("ppstat01", &original, &original, None, None, Naming::default()));
     assert!(outcome.is_err(), "check_dialogue accepted unbranched rewards");
 }
 
 /// `synthetic_patch(name, original)`: the patch, its re-export, and what the
 /// check reads from both and from a changed copy.
 fn synthetic_patch(name: &str, original: &[u8]) -> Vec<u8> {
-    let result = patch_reward(name, original, None, Some(100001)).unwrap();
-    assert_eq!(patch_reward(name, &result, None, None).unwrap(), result);
-    assert!(!own_patch(name, original).unwrap());
-    assert!(own_patch(name, &result).unwrap());
+    let result = patch_reward(name, original, None, Some(100001), Naming::default()).unwrap();
+    assert_eq!(patch_reward(name, &result, None, None, Naming::default()).unwrap(), result);
+    assert!(!own_patch(name, original, Naming::default()).unwrap());
+    assert!(own_patch(name, &result, Naming::default()).unwrap());
     assert!(reasons(name, original).is_empty());
     assert!(reasons(name, &result).is_empty());
     let tampered = replace(&result, b"FLPR_", b"OTHER", Some(1));
-    assert_profile(patch_reward(name, &tampered, None, None).unwrap_err(), "carries a changed copy of the reward route's own patch");
+    assert_profile(patch_reward(name, &tampered, None, None, Naming::default()).unwrap_err(), "carries a changed copy of the reward route's own patch");
     assert!(reasons(name, &tampered).values().next().unwrap().contains("changed copy"));
     result
 }
@@ -278,7 +282,7 @@ fn dialogue_both_campaign_routes_keep_exact_recipient_and_surrounding_actions() 
         if resource.starts_with("dlg:") && single && text_refs(resource).is_none() {
             let name = &resource[4..];
             let original = dialogue_fixture(&specs(resource));
-            check_dialogue(name, &original, &synthetic_patch(name, &original), None, None);
+            check_dialogue(name, &original, &synthetic_patch(name, &original), None, None, Naming::default());
         }
     }
 }
@@ -292,7 +296,7 @@ fn grants_are_found_by_meaning_in_another_layout_with_another_mods_replies() {
     for beamdog in [true, false] {
         let original = layout_dialogue("uhogre01", &ogre_states(), beamdog);
         let result = synthetic_patch("uhogre01", &original);
-        check_dialogue("uhogre01", &original, &result, None, Some(&[(9, 0), (9, 1), (12, 0)]));
+        check_dialogue("uhogre01", &original, &result, None, Some(&[(9, 0), (9, 1), (12, 0)]), Naming::default());
         let after = Dialogue::new(&result, "uhogre01").unwrap();
         // Both gated replies became two each; the added reply follows.
         let actions = &after.actions[u32_at(&outgoing(&after, 9)[4], 16) as usize];
@@ -307,8 +311,8 @@ fn routes_the_check_cannot_recognise_name_their_reason() {
     for (_, changes, reason) in ogre_reasons() {
         let data = ogre_with(&changes);
         assert_eq!(reasons("dlg:uhogre01", &data), named(&[("uhogre01", reason)]));
-        assert!(!own_patch("dlg:uhogre01", &data).unwrap());
-        assert_profile(patch_reward("dlg:uhogre01", &data, None, None).unwrap_err(), reason);
+        assert!(!own_patch("dlg:uhogre01", &data, Naming::default()).unwrap());
+        assert_profile(patch_reward("dlg:uhogre01", &data, None, None, Naming::default()).unwrap_err(), reason);
     }
     let broken = [b"DLG V1.0".as_slice(), &[0; 10]].concat();
     assert_eq!(reasons("dlg:uhogre01", &broken), named(&[("uhogre01", "UHOGRE01.DLG cannot be read as a dialogue")]));
@@ -321,7 +325,7 @@ fn routes_the_check_cannot_recognise_name_their_reason() {
     // Compiled scripts.
     for (_, data, reason) in well_reasons() {
         assert_eq!(reasons("bcs:ddwell", &data), named(&[("ddwell", reason)]));
-        assert_profile(patch_reward("bcs:ddwell", &data, None, Some(100001)).unwrap_err(), reason);
+        assert_profile(patch_reward("bcs:ddwell", &data, None, Some(100001), Naming::default()).unwrap_err(), reason);
     }
     assert_eq!(
         reasons("bcs:asysta01", &asysta_other_action()),
@@ -357,7 +361,7 @@ fn actions_that_only_take_show_or_test_the_reward_never_stop_a_route() {
     assert_eq!(fixture.input("own_patch ddwell alternatives", "data"), script);
     assert!(reasons("dlg:uhogre01", &data).is_empty());
     let result = synthetic_patch("uhogre01", &data);
-    check_dialogue("uhogre01", &data, &result, None, Some(&[(22, 0), (22, 1)]));
+    check_dialogue("uhogre01", &data, &result, None, Some(&[(22, 0), (22, 1)]), Naming::default());
     // A script block chooses one of its responses: each may give the reward
     // once, and every display of the reward's text changes.
     assert!(reasons("bcs:ddwell", &script).is_empty());
@@ -391,7 +395,7 @@ fn a_cloned_start_state_keeps_its_place_among_the_start_conditions() {
     let fixture = common::load(SCENARIO);
     assert_eq!(fixture.input("patch_reward start order first", "data"), original);
     let refs = BTreeMap::from([(48995, 100001)]);
-    let result = patch_reward("dlg:ppdjinn", &original, Some(&refs), None).unwrap();
+    let result = patch_reward("dlg:ppdjinn", &original, Some(&refs), None, Naming::default()).unwrap();
     let after = Dialogue::new(&result, "ppdjinn").unwrap();
     let clone = d.states.len();
     assert_eq!(u32_at(&after.states[clone], 0), 100001);
@@ -405,14 +409,14 @@ fn a_cloned_start_state_keeps_its_place_among_the_start_conditions() {
             b"Global(\"OtherModDjinn\",\"GLOBAL\",1)\r\n".to_vec(),
         ]
     );
-    assert_eq!(text_original(&result, "dlg:ppdjinn").unwrap(), Some((original, refs.clone())));
-    assert_eq!(patch_reward("dlg:ppdjinn", &result, None, None).unwrap(), result);
+    assert_eq!(text_original(&result, "dlg:ppdjinn", Naming::default()).unwrap(), Some((original, refs.clone())));
+    assert_eq!(patch_reward("dlg:ppdjinn", &result, None, None, Naming::default()).unwrap(), result);
     // Where every other start condition comes first, the gated pair is
     // appended, as earlier exports did.
     put_u32(&mut d.states[0], 12, 1);
     put_u32(&mut d.states[1], 12, 0);
     assert_eq!(fixture.input("patch_reward start order last", "data"), d.render());
-    let after = Dialogue::new(&patch_reward("dlg:ppdjinn", &d.render(), Some(&refs), None).unwrap(), "ppdjinn").unwrap();
+    let after = Dialogue::new(&patch_reward("dlg:ppdjinn", &d.render(), Some(&refs), None, Naming::default()).unwrap(), "ppdjinn").unwrap();
     assert_eq!(after.state_triggers[..2], d.state_triggers[..]);
     assert_eq!([1, 0, clone].map(|index| u32_at(&after.states[index], 12)), [0, 2, 3]);
 }
@@ -463,9 +467,9 @@ fn script_blocks_are_found_by_meaning_in_another_layout() {
     // it without the text: both blocks are gated, the text changes where
     // it is shown, every other block stays as it is.
     let original = crlf(well_layout());
-    let result = patch_reward("bcs:ddwell", &original, None, Some(100001)).unwrap();
-    assert_eq!(patch_reward("bcs:ddwell", &result, None, None).unwrap(), result);
-    assert!(own_patch("bcs:ddwell", &result).unwrap());
+    let result = patch_reward("bcs:ddwell", &original, None, Some(100001), Naming::default()).unwrap();
+    assert_eq!(patch_reward("bcs:ddwell", &result, None, None, Naming::default()).unwrap(), result);
+    assert!(own_patch("bcs:ddwell", &result, Naming::default()).unwrap());
     assert_eq!(script_original(&result, &specs("bcs:ddwell")[0]).unwrap(), (original.clone(), Some(100001), true));
     let old = blocks(&original, 3, b"\r\n").unwrap().0;
     let new = blocks(&result, 5, b"\r\n").unwrap().0;
@@ -492,33 +496,86 @@ fn script_blocks_are_found_by_meaning_in_another_layout() {
 }
 
 #[test]
+fn bg1_routes_have_their_own_flags_and_take_the_games_names() {
+    // Varci's payment: BG:EE names the shield SHLD07, EET SHLD07A (its rename lists).
+    let spec = source_spec("original-source:bg1:mode2:item:20", Naming::default()).unwrap();
+    assert!(Value::Dict(spec.clone()).py_eq(&Value::Dict(target_spec("bg1:mode2:target:20", Naming::default()).unwrap())));
+    assert_eq!([text(&spec, "campaign"), text(&spec, "item"), text(&spec, "resource")], ["bg1", "shld07", "dlg:varci"]);
+    assert!(spec.get("target_ids").unwrap().py_eq(&list(&["bg1:mode2:target:20"])));
+    let flags = ["selected_global", "consumed_global", "event_global", "recipient_local"].map(|key| text(&spec, key));
+    assert_eq!(flags, ["FLPR_QB1_20", "FLPR_XB1_20", "FLPR_EB1_20", "FLPR_RB1_20"]);
+    let names = eet_names();
+    for (game, shown) in [(None, "shld07"), (Some("bgee"), "shld07"), (Some("eet"), "shld07a")] {
+        let naming = Naming { game, names: Some(&names) };
+        for found in [
+            source_spec("original-source:bg1:mode2:item:20", naming).unwrap(),
+            cir_config::mode2_rewards::reward("varci", naming).unwrap(),
+            resource_specs("dlg:varci", naming).unwrap().remove(0),
+        ] {
+            let resref = found.get("payload").and_then(|payload| payload.get("resref")).and_then(Value::as_str);
+            assert_eq!((text(&found, "item"), resref), (shown, Some(shown)), "{game:?}");
+        }
+    }
+    // EET keeps the names of BG2's routes.
+    let eet = Naming { game: Some("eet"), names: Some(&names) };
+    assert!(Value::Dict(source_spec("original-source:bg2:mode2:item:14", eet).unwrap())
+        .py_eq(&Value::Dict(source_spec("original-source:bg2:mode2:item:14", Naming::default()).unwrap())));
+    assert_profile(
+        cir_config::mode2_rewards::reward("x", Naming::default()).unwrap_err(),
+        "Unsupported extended reward route: x",
+    );
+}
+
+#[test]
+fn eets_varci_gives_shld07a_to_an_object_function_and_the_route_gates_it() {
+    let names = eet_names();
+    let eet = Naming { game: Some("eet"), names: Some(&names) };
+    let spec = resource_specs("dlg:varci", eet).unwrap();
+    let original = dialogue_fixture(&spec);
+    assert!(contains(&original, b"GiveItemCreate(\"shld07a\",LastTalkedToBy(Myself),0,0,0)"));
+    // Without EET's names the route looks for BG:EE's shield and names that.
+    assert_eq!(reasons("dlg:varci", &original), named(&[("varci", "VARCI.DLG has no reply that gives SHLD07")]));
+    assert!(route_reasons("dlg:varci", &original, eet).unwrap().is_empty());
+    let result = patch_reward("dlg:varci", &original, None, None, eet).unwrap();
+    assert_eq!(patch_reward("dlg:varci", &result, None, None, eet).unwrap(), result);
+    assert!(own_patch("dlg:varci", &result, eet).unwrap());
+    assert!(route_reasons("dlg:varci", &result, eet).unwrap().is_empty());
+    let dialogue = Dialogue::new(&result, "varci").unwrap();
+    let actions = dialogue.actions.concat();
+    assert!(contains(&actions, b"ActionOverride(LastTalkedToBy(Myself),SetGlobal(\"FLPR_RB1_20\",\"LOCALS\",1))"));
+    assert!(contains(&actions, b"SetGlobal(\"FLPR_XB1_20\",\"GLOBAL\",1)"));
+    assert!(contains(&actions, b"SetGlobal(\"FLPR_EB1_20\",\"GLOBAL\",1)"));
+    assert!(contains(&dialogue.triggers.concat(), b"!Global(\"FLPR_QB1_20\",\"GLOBAL\",1)"));
+}
+
+#[test]
 fn registry_exposes_authored_charges_and_separate_container_recipient() {
-    assert_eq!(direct_rewards().len(), 10);
-    let mut spec = source_spec("original-source:bg2:mode2:item:28").unwrap();
+    assert_eq!(direct_rewards().len(), 11);
+    let mut spec = source_spec("original-source:bg2:mode2:item:28", Naming::default()).unwrap();
     let expected = cir_config::dict! {"resref" => "ring31", "expiration" => 0i64, "charges" => ints(&[1, 1, 1]), "flags" => 0i64};
     assert!(spec.get("payload").unwrap().py_eq(&Value::Dict(expected)));
     spec.get_mut("payload").and_then(|payload| payload.get_mut("charges")).and_then(Value::as_list_mut).unwrap()[0] =
         Value::from(99i64);
-    let target = target_spec("bg2:mode2:target:35").unwrap();
+    let target = target_spec("bg2:mode2:target:35", Naming::default()).unwrap();
     assert!(target.get("payload").and_then(|payload| payload.get("charges")).unwrap().py_eq(&ints(&[1, 1, 1])));
-    let container = target_spec("bg2:mode2:target:21").unwrap();
+    let container = target_spec("bg2:mode2:target:21", Naming::default()).unwrap();
     assert_eq!(text(&container, "recipient"), "are:ar1512/container/0");
     assert!(container.get("recipient_local").unwrap().is_null());
-    assert_eq!(text(&target_spec("bg2:mode2:target:40").unwrap(), "recipient"), "Player1");
-    let temple = target_spec("bg2:mode2:target:48").unwrap();
+    assert_eq!(text(&target_spec("bg2:mode2:target:40", Naming::default()).unwrap(), "recipient"), "Player1");
+    let temple = target_spec("bg2:mode2:target:48", Naming::default()).unwrap();
     assert!(temple.get("resources").unwrap().py_eq(&list(&["dlg:bhoisig", "dlg:bhnalla", "dlg:bharval"])));
-    let demon = source_spec("original-source:bg2:mode2:item:65").unwrap();
-    let silver = source_spec("original-source:bg2:mode2:item:44").unwrap();
+    let demon = source_spec("original-source:bg2:mode2:item:65", Naming::default()).unwrap();
+    let silver = source_spec("original-source:bg2:mode2:item:44", Naming::default()).unwrap();
     assert!(demon.get("payload").and_then(|payload| payload.get("charges")).unwrap().py_eq(&ints(&[0, 3, 0])));
     assert_eq!(text(&demon, "recipient"), "Player1");
     assert_eq!(text(&demon, "event_global"), text(&silver, "event_global"));
     assert_eq!(text(&demon, "recipient_local"), text(&silver, "recipient_local"));
     assert_ne!(text(&demon, "selected_global"), text(&silver, "selected_global"));
     for (message, error) in [
-        ("Unsupported extended reward source", source_spec("x").unwrap_err()),
-        ("Unsupported extended reward recipient", target_spec("x").unwrap_err()),
-        ("Unsupported carried reward", transfer_spec("x").unwrap_err()),
-        ("Unsupported extended reward resource", resource_specs("dlg:x").unwrap_err()),
+        ("Unsupported extended reward source", source_spec("x", Naming::default()).unwrap_err()),
+        ("Unsupported extended reward recipient", target_spec("x", Naming::default()).unwrap_err()),
+        ("Unsupported carried reward", transfer_spec("x", Naming::default()).unwrap_err()),
+        ("Unsupported extended reward resource", resource_specs("dlg:x", Naming::default()).unwrap_err()),
     ] {
         assert_profile(error, message);
     }
@@ -554,7 +611,7 @@ fn the_sahuagin_kings_reply_gates_the_bracer_and_the_treasury_rod_apart() {
     let result = synthetic_patch("sahkng01", &original);
     check_pair("sahkng01", &original, &result);
     for data in [&original, &result] {
-        assert!(gives_reward("dlg:sahkng01", data, "sahrod").unwrap());
+        assert!(gives_reward("dlg:sahkng01", data, "sahrod", Naming::default()).unwrap());
     }
     // Another mod's king gives no rod: the bracer's route stays, and the
     // rod needs no route at all.
@@ -562,14 +619,14 @@ fn the_sahuagin_kings_reply_gates_the_bracer_and_the_treasury_rod_apart() {
     let grant = b"GiveItemCreate(\"rods02\",LastTalkedToBy,0,0,0)\r\r\n";
     dialogue.actions = dialogue.actions.iter().map(|text| replace(text, grant, b"", None)).collect();
     let without = dialogue.render();
-    assert!(!gives_reward("dlg:sahkng01", &without, "sahrod").unwrap());
+    assert!(!gives_reward("dlg:sahkng01", &without, "sahrod", Naming::default()).unwrap());
     assert_eq!(reasons("dlg:sahkng01", &without), named(&[("sahrod", "SAHKNG01.DLG has no reply that gives RODS02")]));
-    let patched = patch_reward("dlg:sahkng01", &without, None, None).unwrap();
+    let patched = patch_reward("dlg:sahkng01", &without, None, None, Naming::default()).unwrap();
     assert!(!contains(&Dialogue::new(&patched, "sahkng01").unwrap().triggers.concat(), b"FLPR_QM2_7"));
     // One that only takes or tests the rod gives none either; one that
     // gives it another way does, and the route says why it cannot gate it.
     let taking = with_actions(&without, "sahkng01", &[((80, 0), b"TakePartyItem(\"RODS02\")\r\n".as_slice())]);
-    assert!(!gives_reward("dlg:sahkng01", &taking, "sahrod").unwrap());
+    assert!(!gives_reward("dlg:sahkng01", &taking, "sahrod", Naming::default()).unwrap());
     for (actions, reason) in [
         (
             b"ActionOverride(\"sahpr2\",GiveItemCreate(\"rods02\",LastTalkedToBy,0,0,0))\r\n".as_slice(),
@@ -579,11 +636,11 @@ fn the_sahuagin_kings_reply_gates_the_bracer_and_the_treasury_rod_apart() {
         (b"GiveItemCreate(\"rods02\",LastTalkedToBy,0,0,0\r\n", "SAHKNG01.DLG state 80 names RODS02 in actions that cannot be read"),
     ] {
         let other = with_actions(&without, "sahkng01", &[((80, 0), actions)]);
-        assert!(gives_reward("dlg:sahkng01", &other, "sahrod").unwrap(), "{reason}");
+        assert!(gives_reward("dlg:sahkng01", &other, "sahrod", Naming::default()).unwrap(), "{reason}");
         assert_eq!(reasons("dlg:sahkng01", &other)["sahrod"], reason);
     }
     assert_profile(
-        gives_reward("dlg:sahkng01", &original, "aran").unwrap_err(),
+        gives_reward("dlg:sahkng01", &original, "aran", Naming::default()).unwrap_err(),
         "Unsupported extended reward route in SAHKNG01.DLG: aran",
     );
 }
@@ -593,9 +650,9 @@ fn aran_route_left_out_alone_keeps_the_other_route() {
     let (without, neither) = aran_without();
     let amulet = named(&[("aran2", "ARAN.DLG has no reply that gives AMUL21")]);
     assert_eq!(reasons("dlg:aran", &without), amulet);
-    let result = patch_reward("dlg:aran", &without, None, None).unwrap();
-    assert!(own_patch("dlg:aran", &result).unwrap());
-    assert_eq!(patch_reward("dlg:aran", &result, None, None).unwrap(), result);
+    let result = patch_reward("dlg:aran", &without, None, None, Naming::default()).unwrap();
+    assert!(own_patch("dlg:aran", &result, Naming::default()).unwrap());
+    assert_eq!(patch_reward("dlg:aran", &result, None, None, Naming::default()).unwrap(), result);
     assert_eq!(reasons("dlg:aran", &result), amulet);
     let patched = Dialogue::new(&result, "aran").unwrap().triggers.concat();
     assert!(contains(&patched, b"FLPR_QM2_47"));
@@ -626,35 +683,35 @@ fn text_variants_preserve_original_routes_replies_and_verified_recovery() {
         let name = &resource[4..];
         let original = text_variant(resource);
         let refs = &allocated[resource];
-        let result = patch_reward(resource, &original, Some(refs), None).unwrap();
+        let result = patch_reward(resource, &original, Some(refs), None, Naming::default()).unwrap();
         check_text_graph(resource, &original, &result, refs);
-        assert_eq!(text_original(&result, resource).unwrap(), Some((original.clone(), refs.clone())));
-        assert!(!own_patch(resource, &original).unwrap());
-        assert!(own_patch(resource, &result).unwrap());
+        assert_eq!(text_original(&result, resource, Naming::default()).unwrap(), Some((original.clone(), refs.clone())));
+        assert!(!own_patch(resource, &original, Naming::default()).unwrap());
+        assert!(own_patch(resource, &result, Naming::default()).unwrap());
         assert!(reasons(resource, &result).is_empty());
-        assert_eq!(patch_reward(resource, &result, None, None).unwrap(), result);
+        assert_eq!(patch_reward(resource, &result, None, None, Naming::default()).unwrap(), result);
         let moved: BTreeMap<i64, i64> = refs.iter().map(|(old, new)| (*old, new + 1000)).collect();
-        let revised = patch_reward(resource, &result, Some(&moved), None).unwrap();
-        assert_eq!(text_original(&revised, resource).unwrap(), Some((original.clone(), moved.clone())));
+        let revised = patch_reward(resource, &result, Some(&moved), None, Naming::default()).unwrap();
+        assert_eq!(text_original(&revised, resource, Naming::default()).unwrap(), Some((original.clone(), moved.clone())));
         check_text_graph(resource, &original, &revised, &moved);
         // A changed reply or recovery record is not our patch any more.
         let mut flipped = result.clone();
         let at = flipped.len() - 20;
         flipped[at] ^= 1;
         for damaged in [replace(&result, b"FLPR_", b"OTHER", Some(1)), flipped] {
-            assert_profile(own_patch(resource, &damaged).unwrap_err(), "carries a changed copy");
+            assert_profile(own_patch(resource, &damaged, Naming::default()).unwrap_err(), "carries a changed copy");
             assert!(reasons(resource, &damaged)[name].contains("changed copy"));
         }
-        assert_profile(patch_reward(resource, &original, None, None).unwrap_err(), "allocated");
+        assert_profile(patch_reward(resource, &original, None, None, Naming::default()).unwrap_err(), "allocated");
     }
-    assert!(target_spec("bg2:mode2:target:22").unwrap().get("required_transfers").unwrap().py_eq(&list(&["scyarryl"])));
+    assert!(target_spec("bg2:mode2:target:22", Naming::default()).unwrap().get("required_transfers").unwrap().py_eq(&list(&["scyarryl"])));
     assert_eq!(text(reward("sctelwyn"), "event_global"), "FLPR_EA_SCULPTOR");
     assert_eq!(text(reward("scsain"), "event_global"), "FLPR_EA_SCULPTOR");
 }
 
 #[test]
 fn sculptor_transfer_is_source12_auxiliary_copy_and_preserves_ordinary_giveitem() {
-    let spec = transfer_spec("scyarryl").unwrap();
+    let spec = transfer_spec("scyarryl", Naming::default()).unwrap();
     let authored = "original-source:bg2:mode2:item:12";
     assert!(spec.get("authored_source_ids").unwrap().py_eq(&list(&[authored])));
     assert!(spec.get("source_ids").unwrap().py_eq(&list(&[])));
@@ -665,9 +722,9 @@ fn sculptor_transfer_is_source12_auxiliary_copy_and_preserves_ordinary_giveitem(
         assert!(!spec.contains_key(pinned), "{pinned}");
     }
     assert_eq!(text(&spec, "selected_global"), text(reward("bhoisig"), "selected_global"));
-    assert!(source_spec(authored).unwrap().get("required_transfers").unwrap().py_eq(&list(&["scyarryl"])));
+    assert!(source_spec(authored, Naming::default()).unwrap().get("required_transfers").unwrap().py_eq(&list(&["scyarryl"])));
     assert_eq!(text(&spec, "event_global"), "FLPR_EA_SCULPTOR");
-    assert!(target_spec("bg2:mode2:target:22")
+    assert!(target_spec("bg2:mode2:target:22", Naming::default())
         .unwrap()
         .get("resources")
         .unwrap()
@@ -675,7 +732,7 @@ fn sculptor_transfer_is_source12_auxiliary_copy_and_preserves_ordinary_giveitem(
     let original = dialogue_fixture(std::slice::from_ref(&spec));
     // Test the transfer branching itself independently of selected narrative.
     let result = patch_dialogue(&original, &specs("dlg:scyarryl"), &[], true, true, None).unwrap();
-    check_dialogue("scyarryl", &original, &result, None, None);
+    check_dialogue("scyarryl", &original, &result, None, None, Naming::default());
     let dlg = Dialogue::new(&result, "scyarryl").unwrap();
     let rows = outgoing(&dlg, 19);
     assert_eq!(rows.len(), 2);
@@ -700,9 +757,9 @@ fn carried_rewards_keep_sources_and_transfer_callbacks_before_later_actions() {
     assert_eq!(tlk_text(&game_text.male, allocated["dlg:amcler01"][&74025] as u32).as_deref(), Some("Please, accept this gift."));
     for (name, source, target, area, script) in cases {
         let identity = format!("original-source:bg2:mode2:item:{source}");
-        let spec = transfer_spec(name).unwrap();
-        assert!(Value::Dict(spec.clone()).py_eq(&Value::Dict(source_spec(&identity).unwrap())));
-        assert!(Value::Dict(spec.clone()).py_eq(&Value::Dict(target_spec(&format!("bg2:mode2:target:{target}")).unwrap())));
+        let spec = transfer_spec(name, Naming::default()).unwrap();
+        assert!(Value::Dict(spec.clone()).py_eq(&Value::Dict(source_spec(&identity, Naming::default()).unwrap())));
+        assert!(Value::Dict(spec.clone()).py_eq(&Value::Dict(target_spec(&format!("bg2:mode2:target:{target}"), Naming::default()).unwrap())));
         assert!(spec.get("source_ids").unwrap().py_eq(&list(&[&identity])));
         assert!(spec.get("authored_source_ids").unwrap().py_eq(&list(&[&identity])));
         assert!(spec.get("required_transfers").unwrap().py_eq(&list(&[name])));
@@ -724,7 +781,7 @@ fn carried_rewards_keep_sources_and_transfer_callbacks_before_later_actions() {
         let action_refs = if name == "amcler01" { Some(allocated[&format!("dlg:{name}")].clone()) } else { None };
         let ordered: Vec<(i64, i64)> = action_refs.iter().flatten().map(|(old, new)| (*old, *new)).collect();
         let result = patch_dialogue(&original, &specs(&format!("dlg:{name}")), &ordered, true, true, None).unwrap();
-        check_dialogue(name, &original, &result, action_refs.as_ref(), None);
+        check_dialogue(name, &original, &result, action_refs.as_ref(), None, Naming::default());
         for actions in &Dialogue::new(&result, name).unwrap().actions {
             assert!(!contains(actions, format!("GiveItemCreate(\"{}\"", text(&spec, "item")).as_bytes()));
         }
@@ -785,7 +842,7 @@ fn inventory_callback_survives_dialogue_parser() {
 
 #[test]
 fn udlesa_physical_source_and_six_distinct_duel_continuations() {
-    let spec = target_spec("bg2:mode2:target:45").unwrap();
+    let spec = target_spec("bg2:mode2:target:45", Naming::default()).unwrap();
     assert_eq!(physical_source_reward("cre:udlesa", "cre-template", "sw1h39"), Some("udlesa"));
     assert!(!source_rewards().contains_key("original-source:bg2:mode2:item:42"));
     assert!(!transfer_specs().contains_key("udlesa"));
@@ -814,7 +871,7 @@ fn udlesa_physical_source_and_six_distinct_duel_continuations() {
     }
     let original = dialogue.render();
     let result = patch_dialogue(&original, &specs("dlg:udlesa"), &[], true, true, None).unwrap();
-    check_dialogue("udlesa", &original, &result, None, None);
+    check_dialogue("udlesa", &original, &result, None, None, Naming::default());
     let after = Dialogue::new(&result, "udlesa").unwrap();
     for state in 6..12 {
         for transition in outgoing(&after, state) {
@@ -836,19 +893,19 @@ fn well_uses_appended_original_text_only_for_selected_source_and_reexports() {
     assert!(tlk_text(&updated.male, reference as u32).unwrap().contains("You pull an item from the murky water"));
     let original = script_fixture("ddwell");
     let spec = &specs("bcs:ddwell")[0];
-    let result = patch_reward("ddwell", &original, None, Some(reference)).unwrap();
-    assert_eq!(patch_reward("ddwell", &result, None, None).unwrap(), result);
+    let result = patch_reward("ddwell", &original, None, Some(reference), Naming::default()).unwrap();
+    assert_eq!(patch_reward("ddwell", &result, None, None, Naming::default()).unwrap(), result);
     assert_eq!(script_original(&result, spec).unwrap(), (original.clone(), Some(reference), true));
     assert_eq!(script_original(&original, spec).unwrap(), (original.clone(), None, false));
-    let changed_ref = patch_reward("ddwell", &result, None, Some(reference + 1)).unwrap();
+    let changed_ref = patch_reward("ddwell", &result, None, Some(reference + 1), Naming::default()).unwrap();
     assert_eq!(script_original(&changed_ref, spec).unwrap(), (original.clone(), Some(reference + 1), true));
-    assert_eq!(patch_reward("bcs:ddwell", &result, Some(&BTreeMap::from([(40850, reference + 1)])), None).unwrap(), changed_ref);
+    assert_eq!(patch_reward("bcs:ddwell", &result, Some(&BTreeMap::from([(40850, reference + 1)])), None, Naming::default()).unwrap(), changed_ref);
     assert!(contains(&result, action(151, 40850, "", 1, 0).as_bytes()));
     assert!(contains(&result, action(151, reference, "", 1, 0).as_bytes()));
     let gone = replace(&result, b"AR1202DragonWell", b"AR1202DragonGone", Some(1));
-    assert_profile(patch_reward("ddwell", &gone, None, None).unwrap_err(), "changed copy");
-    assert_profile(patch_reward("ddwell", &original, None, None).unwrap_err(), "allocated");
-    assert_profile(patch_reward("bcs:ddwell", &original, Some(&BTreeMap::from([(40849, reference)])), None).unwrap_err(), "allocated");
+    assert_profile(patch_reward("ddwell", &gone, None, None, Naming::default()).unwrap_err(), "changed copy");
+    assert_profile(patch_reward("ddwell", &original, None, None, Naming::default()).unwrap_err(), "allocated");
+    assert_profile(patch_reward("bcs:ddwell", &original, Some(&BTreeMap::from([(40849, reference)])), None, Naming::default()).unwrap_err(), "allocated");
 }
 
 /// The patcher part of test_original_option_export's
@@ -858,9 +915,9 @@ fn dialogue_grant_keeps_exact_charges() {
     let spec = reward("ppstat01").clone();
     assert!(spec.get("payload").and_then(|payload| payload.get("charges")).unwrap().py_eq(&ints(&[1, 1, 1])));
     let original = dialogue_fixture(std::slice::from_ref(&spec));
-    let changed = patch_reward("dlg:ppstat01", &original, None, None).unwrap();
-    assert_eq!(patch_reward("dlg:ppstat01", &changed, None, None).unwrap(), changed);
-    check_dialogue("ppstat01", &original, &changed, None, None);
+    let changed = patch_reward("dlg:ppstat01", &original, None, None, Naming::default()).unwrap();
+    assert_eq!(patch_reward("dlg:ppstat01", &changed, None, None, Naming::default()).unwrap(), changed);
+    check_dialogue("ppstat01", &original, &changed, None, None, Naming::default());
     let dialogue = Dialogue::new(&changed, "ppstat01").unwrap();
     let grant: &[u8] = b"GiveItemCreate(\"ring31\",LastTalkedToBy,1,1,1)";
     for (state, _ordinal) in branches(&spec) {
@@ -906,7 +963,18 @@ const REVIEWED_EET: &[(&str, &str, &str)] = &[
     ("dlg:udsvir03", "5918919ea366eceb27f4096f025cde79c44310a9e57bcd49d123fdbb48352994", "2003095671c146bb3d06b92fcc17df06dc18e5be4ab59a0e5d17bfd6db412e66"),
     ("dlg:uhmay01", "4213656595fdde6afeefee881597ddd62814ba886747bc4d60cfca25a2d852be", "625d9d911abba3898606930051e784685e82bd954711b520f8574c59da2d8384"),
     ("dlg:uhogre01", "8706469468f7277542ba0e6d7fcf44b47a15d36c3879f505464e0a119be00b97", "722213d1f53966780ab8bba2e2dbe400e64c14ced6da2ff9f48b43749b629e25"),
+    ("dlg:varci", "78c3de46c5c07c5896e5ea568ef9a71aa6e53ff5b6cb7ec8d4274d9e5dfbb017", "2ae4a7164f4200efec5e9676d7a1fe20c6b05978523015df31302c75c8495e09"),
 ];
+
+/// EET's own rename lists (EET/lib/pcu_dict.tph) name BG1's SHLD07 SHLD07A.
+fn eet_names() -> EetNames {
+    let empty = || Value::Dict(Dict::new());
+    let tables = cir_config::dict! {
+        "itm" => cir_config::dict! {"shld07" => "shld07a"}, "cre" => empty(), "dlg" => empty(), "bcs" => empty(),
+        "sto" => empty(),
+    };
+    EetNames { tables: Arc::new(Tables::from_value(&Value::Dict(tables)).unwrap()), installed: true, notes: Vec::new() }
+}
 
 /// The reference's read-only installed-resource cache (not distributed).
 pub fn reviewed_cache() -> PathBuf {
@@ -925,28 +993,30 @@ fn reviewed_eet_resources_when_available_patch_exactly_and_reexport() {
     reviewed.sort_unstable();
     known.sort_unstable();
     assert_eq!(reviewed, known);
+    let names = eet_names();
+    let eet = Naming { game: Some("eet"), names: Some(&names) };
     let (_text, allocated) = prepare_reward_texts(&GameText::new(make_tlk(&[])), known.clone(), "en_us").unwrap();
     for (resource, original_hash, patched_hash) in REVIEWED_EET {
         let (kind, name) = resource.split_once(':').unwrap();
         let original = std::fs::read(cache.join(format!("{name}.{kind}"))).unwrap();
         assert_eq!(sha(&original), *original_hash, "{resource}");
-        let result = patch_reward(resource, &original, allocated.get(*resource), None).unwrap();
+        let result = patch_reward(resource, &original, allocated.get(*resource), None, eet).unwrap();
         assert_eq!(sha(&result), *patched_hash, "{resource}");
-        assert_eq!(patch_reward(resource, &result, None, None).unwrap(), result);
-        assert!(reasons(resource, &original).is_empty(), "{resource}");
-        assert!(reasons(resource, &result).is_empty(), "{resource}");
-        assert!(!own_patch(resource, &original).unwrap());
-        assert!(own_patch(resource, &result).unwrap());
+        assert_eq!(patch_reward(resource, &result, None, None, eet).unwrap(), result);
+        assert!(route_reasons(resource, &original, eet).unwrap().is_empty(), "{resource}");
+        assert!(route_reasons(resource, &result, eet).unwrap().is_empty(), "{resource}");
+        assert!(!own_patch(resource, &original, eet).unwrap());
+        assert!(own_patch(resource, &result, eet).unwrap());
         if kind == "dlg" && text_refs(resource).is_some() {
             let refs = &allocated[*resource];
-            assert_eq!(text_original(&result, resource).unwrap(), Some((original.clone(), refs.clone())));
+            assert_eq!(text_original(&result, resource, eet).unwrap(), Some((original.clone(), refs.clone())));
             let clones = check_text_graph(resource, &original, &result, refs);
             let cloned: Vec<usize> = clones.keys().copied().collect();
             if ["trgeni01", "amcler01", "jugjer01", "udlesa"].contains(&name) {
                 let action_refs = if name == "amcler01" { Some(refs.clone()) } else { None };
                 let ordered: Vec<(i64, i64)> = action_refs.iter().flatten().map(|(old, new)| (*old, *new)).collect();
                 let branched = patch_dialogue(&original, &specs(resource), &ordered, true, true, None).unwrap();
-                check_dialogue(name, &original, &branched, action_refs.as_ref(), None);
+                check_dialogue(name, &original, &branched, action_refs.as_ref(), None, Naming::default());
                 // Jermien names his sword when he offers it and when he hands it over.
                 let expected: &[usize] = match name {
                     "trgeni01" => &[35],
@@ -981,11 +1051,11 @@ fn reviewed_eet_resources_when_available_patch_exactly_and_reexport() {
                 assert!(contains(&dlg.actions.concat(), b"ReallyForceSpell(Myself,DRYAD_TELEPORT)"));
             }
         } else if kind == "bcs" {
-            assert_eq!(script_original(&result, &specs(resource)[0]).unwrap().0, original);
+            assert_eq!(script_original(&result, &resource_specs(resource, eet).unwrap()[0]).unwrap().0, original);
         } else if ["aran", "sahkng01"].contains(&name) {
             check_pair(name, &original, &result);
         } else {
-            check_dialogue(name, &original, &result, None, None);
+            check_dialogue(name, &original, &result, None, None, eet);
         }
     }
 }

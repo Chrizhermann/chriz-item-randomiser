@@ -26,11 +26,15 @@
 //!
 //! A copy dialogue carries no trailer. As for the route dialogues, our patch
 //! is recognised by removing it and applying it again.
+//!
+//! The rewards are found as the scanned game names them (EET renames BG1's
+//! items): a [`Naming`], as [`crate::mode2_rewards`] takes it.
 
 use crate::container_rewards;
 use crate::error::{Error, ErrorKind, Result};
+use crate::game_names::EetNames;
 use crate::json::{Dict, Value};
-use crate::mode2_rewards::{self, Replies};
+use crate::mode2_rewards::{self, Naming, Replies};
 use crate::py::{find_bytes, lower, str_value, u32_le, upper};
 use crate::quest_options::Dialogue;
 use crate::resources::sha256_hex;
@@ -85,8 +89,8 @@ fn profile(message: impl Into<String>) -> Error {
 }
 
 /// The route `key` as it gates its copies in the dialogue `resource`.
-pub fn copy_spec(key: &str, resource: &str) -> Result<Dict> {
-    let mut spec = reward(key)?.clone();
+pub fn copy_spec(key: &str, resource: &str, naming: Naming<'_>) -> Result<Dict> {
+    let mut spec = mode2_rewards::reward(key, naming)?;
     spec.insert("route", key);
     spec.insert("resource", resource);
     spec.insert("quest", resource.get(4..).unwrap_or(""));
@@ -145,6 +149,11 @@ struct Loaded {
 /// `read` returns a dialogue's bytes by name, or None when the game has none;
 /// `scanned` maps resources to the hashes the scan recorded.
 pub struct RewardCopies {
+    /// How the game names the rewards (its [`Naming`]).
+    game: Option<String>,
+    names: Option<EetNames>,
+    /// Each route as the game names it.
+    specs: BTreeMap<String, Dict>,
     loaded: HashMap<String, Loaded>,
     patched: BTreeMap<String, Patched>,
     failed: HashSet<(String, String)>,
@@ -163,14 +172,26 @@ pub struct RewardCopies {
 type Reader<'a> = dyn FnMut(&str) -> Result<Option<Vec<u8>>> + 'a;
 
 impl RewardCopies {
-    pub fn new(read: &mut Reader<'_>, scanned: &HashMap<String, Value>) -> Result<RewardCopies> {
-        Self::with_limit(read, scanned, LIMIT)
+    pub fn new(read: &mut Reader<'_>, scanned: &HashMap<String, Value>, naming: Naming<'_>) -> Result<RewardCopies> {
+        Self::with_limit(read, scanned, LIMIT, naming)
     }
 
     /// [`RewardCopies::new`] following at most `limit` states per route (the
     /// reference's tests patch `LIMIT`).
-    pub fn with_limit(read: &mut Reader<'_>, scanned: &HashMap<String, Value>, limit: usize) -> Result<RewardCopies> {
+    pub fn with_limit(
+        read: &mut Reader<'_>,
+        scanned: &HashMap<String, Value>,
+        limit: usize,
+        naming: Naming<'_>,
+    ) -> Result<RewardCopies> {
+        let mut specs = BTreeMap::new();
+        for key in routes().keys() {
+            specs.insert(key.clone(), mode2_rewards::reward(key, naming)?);
+        }
         let mut copies = RewardCopies {
+            game: naming.game.map(str::to_string),
+            names: naming.names.cloned(),
+            specs,
             loaded: HashMap::new(),
             patched: BTreeMap::new(),
             failed: HashSet::new(),
@@ -193,6 +214,10 @@ impl RewardCopies {
         Ok(copies)
     }
 
+    fn naming(&self) -> Naming<'_> {
+        Naming { game: self.game.as_deref(), names: self.names.as_ref() }
+    }
+
     /// (dialogue without our patches or None, the problem reading it or None).
     fn load(&mut self, read: &mut Reader<'_>, resource: &str) -> Result<(Option<Arc<Dialogue>>, Option<String>)> {
         if !self.loaded.contains_key(resource) {
@@ -209,7 +234,7 @@ impl RewardCopies {
         let unreadable =
             || format!("{} cannot be read as a dialogue, so the route cannot check it for copies of its reward", label(resource));
         let original = if mode2_rewards::resource_rewards().contains_key(resource) {
-            mode2_rewards::examine(resource, data).map(|examined| examined.original)
+            mode2_rewards::examine(resource, data, self.naming()).map(|examined| examined.original)
         } else if container_rewards::resource_targets().contains_key(resource) {
             container_rewards::recover(resource, data).map(|recovered| recovered.0)
         } else {
@@ -228,7 +253,7 @@ impl RewardCopies {
     /// A dialogue without our copy patch; its routes are checked later.
     fn unpatched(&mut self, resource: &str, data: &[u8]) -> Result<Vec<u8>> {
         let dialogue = mode2_rewards::read_dialogue(data, resource)?;
-        let specs = routes().keys().map(|key| copy_spec(key, resource)).collect::<Result<Vec<_>>>()?;
+        let specs = routes().keys().map(|key| copy_spec(key, resource, self.naming())).collect::<Result<Vec<_>>>()?;
         if !mode2_rewards::carries_patch(&dialogue, &specs)? {
             return Ok(data.to_vec());
         }
@@ -240,7 +265,7 @@ impl RewardCopies {
         if present.is_empty() || flags.iter().collect::<BTreeSet<_>>().len() != flags.len() {
             return Err(mode2_rewards::changed_patch(resource));
         }
-        let specs = present.iter().map(|key| copy_spec(key, resource)).collect::<Result<Vec<_>>>()?;
+        let specs = present.iter().map(|key| copy_spec(key, resource, self.naming())).collect::<Result<Vec<_>>>()?;
         let original = match mode2_rewards::unpatched_dialogue(dialogue, &specs, resource) {
             Ok(original) => original,
             Err(error) if error.kind == ErrorKind::Profile => return Err(mode2_rewards::changed_patch(resource)),
@@ -259,7 +284,7 @@ impl RewardCopies {
         let mut texts = HashMap::new();
         for resource in &routes()[key] {
             let (Some(dialogue), _) = self.load(read, resource)? else { return Ok(None) };
-            let specs = mode2_rewards::resource_specs(resource)?;
+            let specs = mode2_rewards::resource_specs(resource, self.naming())?;
             let spec = specs.iter().find(|spec| spec.get("route").is_some_and(|route| str_value(route) == key)).expect("route spec");
             let grants = match mode2_rewards::dialogue_grants(&dialogue, spec, &label(resource), None) {
                 Ok(grants) => grants,
@@ -277,8 +302,8 @@ impl RewardCopies {
 
     fn route(&mut self, read: &mut Reader<'_>, key: &str, limit: usize) -> Result<()> {
         let Some(texts) = self.grants(read, key)? else { return Ok(()) };
-        let spec = reward(key)?;
-        let item = item(spec)?;
+        let item = item(&self.specs[key])?.to_string();
+        let item = item.as_str();
         let own: BTreeSet<&String> = routes()[key].iter().collect();
         self.visited.entry(key.to_string()).or_default();
         let mut found: BTreeMap<String, Replies> = BTreeMap::new();
@@ -371,7 +396,7 @@ impl RewardCopies {
         text: &[u8],
         texts: &HashMap<Vec<u8>, String>,
     ) -> Result<bool> {
-        let spec = reward(key)?;
+        let spec = &self.specs[key];
         let item = item(spec)?;
         let place = format!("{} state {index}", label(resource));
         let shown = upper(item);
@@ -400,7 +425,7 @@ impl RewardCopies {
             return Ok(false); // It takes, shows or tests the reward.
         }
         if let Some(others) = mode2_rewards::resource_rewards().get(resource).and_then(Value::as_list) {
-            let specs = mode2_rewards::resource_specs(resource)?;
+            let specs = mode2_rewards::resource_specs(resource, self.naming())?;
             for other in others.iter().map(str_value) {
                 let other_spec =
                     specs.iter().find(|row| row.get("route").is_some_and(|route| str_value(route) == other)).expect("route spec");
@@ -477,7 +502,7 @@ impl RewardCopies {
     }
 
     fn patch(&self, resource: &str, keys: &[String], failures: Option<&mut Dict>) -> Result<Vec<u8>> {
-        let specs = keys.iter().map(|key| copy_spec(key, resource)).collect::<Result<Vec<_>>>()?;
+        let specs = keys.iter().map(|key| copy_spec(key, resource, self.naming())).collect::<Result<Vec<_>>>()?;
         let only: BTreeMap<String, Replies> =
             keys.iter().map(|key| (key.clone(), self.copies[key][resource].clone())).collect();
         mode2_rewards::patch_dialogue_in(
@@ -504,7 +529,7 @@ impl RewardCopies {
             return Ok(());
         }
         let own = if mode2_rewards::resource_rewards().contains_key(resource) {
-            mode2_rewards::own_patch(resource, data)
+            mode2_rewards::own_patch(resource, data, self.naming())
         } else if container_rewards::resource_targets().contains_key(resource) {
             container_rewards::own_patch(resource, data)
         } else {

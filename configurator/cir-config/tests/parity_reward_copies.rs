@@ -5,7 +5,7 @@
 mod common;
 
 use cir_config::json::Value;
-use cir_config::mode2_rewards::{patch_reward, route_reasons, Replies};
+use cir_config::mode2_rewards::{patch_reward, route_reasons, Naming, Replies};
 use cir_config::py::put_u32;
 use cir_config::quest_options::Dialogue;
 use cir_config::reward_copies::{RewardCopies, LIMIT};
@@ -105,7 +105,7 @@ fn hashes(files: &Files) -> HashMap<String, Value> {
 /// `analyse(files, scanned)`: the scan's hashes are those of `files` unless given.
 fn analyse_with(files: &Files, scanned: Option<HashMap<String, Value>>, limit: usize) -> RewardCopies {
     let scanned = scanned.unwrap_or_else(|| hashes(files));
-    RewardCopies::with_limit(&mut |name| Ok(files.get(name).cloned()), &scanned, limit).unwrap()
+    RewardCopies::with_limit(&mut |name| Ok(files.get(name).cloned()), &scanned, limit, Naming::default()).unwrap()
 }
 
 fn analyse(files: &Files, scanned: Option<HashMap<String, Value>>) -> RewardCopies {
@@ -216,7 +216,7 @@ fn interjection_copies_are_found_and_gated_like_the_route_dialogue() {
     let patched = found.patches(&["uhogre01"]).unwrap()["dlg:xnpcj"].clone();
     assert!(found.patches(&["mgkhol01"]).unwrap().is_empty());
     // Each copy is gated exactly as the route dialogue gates the original.
-    let gated = patch_reward("dlg:uhogre01", &route, None, None).unwrap();
+    let gated = patch_reward("dlg:uhogre01", &route, None, None, Naming::default()).unwrap();
     let copied = actions_of(&patched, "xnpcj", state);
     assert_eq!(copied, actions_of(&gated, "uhogre01", 22)[1..]);
     assert_eq!(copied.iter().filter(|(_, text)| contains(text, b"GiveItemCreate(\"shld26\"")).count(), 2);
@@ -233,8 +233,8 @@ fn interject_copy_trans2_keeps_the_grant_in_the_route_dialogue() {
     let (route, npc, _) = interject(&ogre(), "uhogre01", 22, "xnpcj", false);
     let found = analyse(&files(&[("uhogre01", &route), ("xnpcj", &npc)]), None);
     assert!(found.copies.is_empty() && found.reasons.is_empty());
-    assert!(route_reasons("dlg:uhogre01", &route).unwrap().is_empty());
-    let gated = Dialogue::new(&patch_reward("dlg:uhogre01", &route, None, None).unwrap(), "uhogre01").unwrap();
+    assert!(route_reasons("dlg:uhogre01", &route, Naming::default()).unwrap().is_empty());
+    let gated = Dialogue::new(&patch_reward("dlg:uhogre01", &route, None, None, Naming::default()).unwrap(), "uhogre01").unwrap();
     // The jump gives the reward now, so it is gated as well: three replies, two variants each.
     assert_eq!(outgoing(&gated, 22).len(), 6);
 }
@@ -260,7 +260,7 @@ fn two_routes_in_one_reply_are_gated_together_in_the_copy() {
     let all: Vec<usize> = (0..8).collect();
     assert_eq!(found.copies, copies(&[("aran", "dlg:k#sarahj", state, &all), ("aran2", "dlg:k#sarahj", state, &all)]));
     let patched = found.patches(&["aran", "aran2"]).unwrap()["dlg:k#sarahj"].clone();
-    let gated = patch_reward("dlg:aran", &route, None, None).unwrap();
+    let gated = patch_reward("dlg:aran", &route, None, None, Naming::default()).unwrap();
     let copied = actions_of(&patched, "k#sarahj", state);
     assert_eq!(copied, actions_of(&gated, "aran", 4)[1..]);
     assert_eq!(copied.len(), 32);
@@ -339,7 +339,7 @@ fn our_copy_patch_is_recognised_and_a_changed_one_named() {
     let before = files(&[("uhogre01", &route), ("xnpcj", &npc)]);
     let found = analyse(&before, None);
     let applied = files(&[
-        ("uhogre01", &patch_reward("dlg:uhogre01", &route, None, None).unwrap()),
+        ("uhogre01", &patch_reward("dlg:uhogre01", &route, None, None, Naming::default()).unwrap()),
         ("xnpcj", &found.patches(&["uhogre01"]).unwrap()["dlg:xnpcj"]),
     ]);
     // The scan before Apply, and a rescan after it, both accept our patch.

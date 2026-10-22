@@ -384,32 +384,53 @@ def sorted_refs(found):
     return None if found is None else (found[0], sorted_ints(found[1]))
 
 
-def patched(s: Scenario, label: str, resource: str, data: bytes, refs=None, ddwell_ref=None):
+# How a game names the routes: EET with its rename lists as the tests give
+# them (test_mode2_rewards.EET), EET with CIR's own copy, BG:EE, and a game
+# CIR does not know.
+NAMINGS = {"eet": mode2_tests.EET, "eet copy": {"game": "eet", "names": None},
+           "bgee": {"game": "bgee", "names": None}, "bgt": {"game": "bgt", "names": None}}
+
+
+def naming_args(naming: dict | None) -> dict:
+    """The game and EET names keywords, as the Rust tests read them."""
+    if not naming:
+        return {}
+    names = naming["names"]
+    return {"game": naming["game"], "names": None if names is None else
+            {"tables": names.tables, "installed": names.installed, "notes": list(names.notes)}}
+
+
+def patched(s: Scenario, label: str, resource: str, data: bytes, refs=None, ddwell_ref=None, naming=None):
     """Record patch_reward; its result, or None when it raises."""
+    naming = naming or {}
     s.case(f"patch_reward {label}", "mode2_rewards.patch_reward",
-           {"resource": resource, "data": data, "refs": refs, "ddwell_ref": ddwell_ref},
-           lambda: mode2_rewards.patch_reward(resource, data, refs=refs, ddwell_ref=ddwell_ref))
+           {"resource": resource, "data": data, "refs": refs, "ddwell_ref": ddwell_ref, **naming_args(naming)},
+           lambda: mode2_rewards.patch_reward(resource, data, refs=refs, ddwell_ref=ddwell_ref, **naming))
     try:
-        return mode2_rewards.patch_reward(resource, data, refs=refs, ddwell_ref=ddwell_ref)
+        return mode2_rewards.patch_reward(resource, data, refs=refs, ddwell_ref=ddwell_ref, **naming)
     except ProfileError:
         return None
 
 
-def gives_case(s: Scenario, label: str, resource: str, data: bytes, key: str) -> None:
-    s.case(f"gives_reward {label}", "mode2_rewards.gives_reward", {"resource": resource, "data": data, "key": key},
-           lambda: mode2_rewards.gives_reward(resource, data, key))
+def gives_case(s: Scenario, label: str, resource: str, data: bytes, key: str, naming=None) -> None:
+    naming = naming or {}
+    s.case(f"gives_reward {label}", "mode2_rewards.gives_reward",
+           {"resource": resource, "data": data, "key": key, **naming_args(naming)},
+           lambda: mode2_rewards.gives_reward(resource, data, key, **naming))
 
 
-def reward_checks(s: Scenario, label: str, resource: str, data: bytes) -> None:
+def reward_checks(s: Scenario, label: str, resource: str, data: bytes, naming=None) -> None:
     """What the check and Apply read from these bytes: own patch, reasons, re-export."""
-    args = {"resource": resource, "data": data}
-    s.case(f"own_patch {label}", "mode2_rewards.own_patch", args, lambda: mode2_rewards.own_patch(resource, data))
+    naming = naming or {}
+    args = {"resource": resource, "data": data, **naming_args(naming)}
+    s.case(f"own_patch {label}", "mode2_rewards.own_patch", args,
+           lambda: mode2_rewards.own_patch(resource, data, **naming))
     s.case(f"route_reasons {label}", "mode2_rewards.route_reasons", args,
-           lambda: mode2_rewards.route_reasons(resource, data))
+           lambda: mode2_rewards.route_reasons(resource, data, **naming))
     if resource.startswith("dlg:"):
         for key in mode2_rewards.RESOURCE_REWARDS.get(resource, ()):
-            gives_case(s, f"{label} {key}", resource, data, key)
-    patched(s, f"again {label}", resource, data)
+            gives_case(s, f"{label} {key}", resource, data, key, naming)
+    patched(s, f"again {label}", resource, data, naming=naming)
 
 
 def patch_dialogue_case(s: Scenario, label: str, data: bytes, specs, action_refs=None, defer_departure=True,
@@ -426,9 +447,11 @@ def patch_dialogue_case(s: Scenario, label: str, data: bytes, specs, action_refs
             "numeric_target": numeric_target}, run)
 
 
-def text_original_case(s: Scenario, label: str, resource: str, data: bytes) -> None:
-    s.case(f"text_original {label}", "mode2_rewards._text_original", {"data": data, "resource": resource},
-           lambda: sorted_refs(mode2_rewards._text_original(data, resource)))
+def text_original_case(s: Scenario, label: str, resource: str, data: bytes, naming=None) -> None:
+    naming = naming or {}
+    s.case(f"text_original {label}", "mode2_rewards._text_original",
+           {"data": data, "resource": resource, **naming_args(naming)},
+           lambda: sorted_refs(mode2_rewards._text_original(data, resource, **naming)))
 
 
 def script_original_case(s: Scenario, label: str, resource: str, data: bytes) -> None:
@@ -456,6 +479,56 @@ def registry_cases(s: Scenario) -> None:
     for resource in list(mode2_rewards.RESOURCE_REWARDS) + ["DLG:ARAN", "dlg:nothing", "aran"]:
         s.case(f"resource_specs {resource}", "mode2_rewards.resource_specs", {"resource": resource},
                lambda resource=resource: mode2_rewards.resource_specs(resource))
+    for key in list(mode2_rewards.REWARDS) + ["x"]:
+        s.case(f"reward {key}", "mode2_rewards.reward", {"key": key}, lambda key=key: mode2_rewards.reward(key))
+    # Each route as each game names it: EET renames BG1's items (Varci's
+    # SHLD07A); BG2's carried routes check their places' names; an unknown
+    # game is refused.
+    for game, naming in NAMINGS.items():
+        for key in mode2_rewards.REWARDS:
+            s.case(f"reward {key} {game}", "mode2_rewards.reward", {"key": key, **naming_args(naming)},
+                   lambda key=key, naming=naming: mode2_rewards.reward(key, **naming))
+        for identity in ("original-source:bg1:mode2:item:20", "original-source:bg2:mode2:item:32", "x"):
+            s.case(f"source_spec {identity} {game}", "mode2_rewards.source_spec",
+                   {"source_id": identity, **naming_args(naming)},
+                   lambda identity=identity, naming=naming: mode2_rewards.source_spec(identity, **naming))
+        for identity in ("bg1:mode2:target:20", "bg2:mode2:target:45"):
+            s.case(f"target_spec {identity} {game}", "mode2_rewards.target_spec",
+                   {"target_id": identity, **naming_args(naming)},
+                   lambda identity=identity, naming=naming: mode2_rewards.target_spec(identity, **naming))
+        for name in mode2_rewards.TRANSFER_SPECS:
+            s.case(f"transfer_spec {name} {game}", "mode2_rewards.transfer_spec", {"name": name, **naming_args(naming)},
+                   lambda name=name, naming=naming: mode2_rewards.transfer_spec(name, **naming))
+        for resource in ("dlg:varci", "dlg:trgeni01", "bcs:asysta01"):
+            s.case(f"resource_specs {resource} {game}", "mode2_rewards.resource_specs",
+                   {"resource": resource, **naming_args(naming)},
+                   lambda resource=resource, naming=naming: mode2_rewards.resource_specs(resource, **naming))
+
+
+def bg1_route_cases(s: Scenario) -> None:
+    """test_eets_varci_gives_shld07a_to_an_object_function_and_the_route_gates_it, on every game."""
+    for game, naming in NAMINGS.items():
+        if game == "bgt":
+            continue
+        original = mode2_tests.dialogue_fixture(mode2_rewards.resource_specs("dlg:varci", **naming))
+        reward_checks(s, f"varci {game}", "dlg:varci", original, naming)
+        # The same dialogue read without the game's names, and as the other games name it.
+        reward_checks(s, f"varci {game} unnamed", "dlg:varci", original)
+        for other, other_naming in NAMINGS.items():
+            if other != game:
+                reward_checks(s, f"varci {game} as {other}", "dlg:varci", original, other_naming)
+        result = mode2_rewards.patch_reward("dlg:varci", original, **naming)
+        reward_checks(s, f"varci {game} result", "dlg:varci", result, naming)
+        reward_checks(s, f"varci {game} result unnamed", "dlg:varci", result)
+        reward_checks(s, f"varci {game} tampered", "dlg:varci", result.replace(b"FLPR_", b"OTHER", 1), naming)
+    # A carried BG2 route's text patch on EET: its places keep their names.
+    resource = "dlg:trgeni01"
+    refs = {old: 200000 + old for old in mode2_rewards.TEXT_REFS[resource]}
+    original = text_variant(resource)
+    result = patched(s, "trgeni01 eet", resource, original, refs=refs, naming=mode2_tests.EET)
+    reward_checks(s, "trgeni01 eet result", resource, result, mode2_tests.EET)
+    text_original_case(s, "trgeni01 eet", resource, result, mode2_tests.EET)
+    text_original_case(s, "trgeni01 bgt", resource, result, NAMINGS["bgt"])
 
 
 def reason_cases(s: Scenario) -> None:
@@ -798,6 +871,7 @@ def mode2_scenario() -> Scenario:
     layout_cases(s)
     aran_cases(s)
     start_order_cases(s)
+    bg1_route_cases(s)
     for resource in ("uhogre01.dlg", "UHOGRE01", "override/uhogre01.dlg", "dlg:aran.dlg", "x:y:ddwell", "nothing",
                      "DLG:UHOGRE01", "bcs:uhogre01", "dlg:", ""):
         data = originals["dlg:uhogre01"] if "ogre" in resource or "aran" in resource else originals["bcs:ddwell"]
@@ -1121,21 +1195,23 @@ def ordered(value):
 
 
 def copies_case(s: Scenario, label: str, files: dict, scanned: dict | None = None, *, limit: int | None = None,
-                routes=(("uhogre01",),)) -> None:
+                routes=(("uhogre01",),), naming=None) -> None:
     """RewardCopies over these dialogues: what it found and the patches of some routes."""
     scanned = ({"dlg:" + name: sha(data) for name, data in files.items()} if scanned is None else scanned)
+    naming = naming or {}
 
     def run():
         with ExitStack() as stack:
             if limit is not None:
                 stack.enter_context(patch.object(reward_copies, "LIMIT", limit))
-            found = reward_copies.RewardCopies(lambda name: files.get(name), scanned)
+            found = reward_copies.RewardCopies(lambda name: files.get(name), scanned, **naming)
         return {"copies": ordered(found.copies), "reasons": ordered(found.reasons),
                 "checked": {key: sorted(found.checked(key)) for key in sorted(found.visited)},
                 "changed": sorted(found.changed), "originals": ordered(found.originals),
                 "patches": [ordered(found.patches(list(keys))) for keys in routes]}
     s.case(f"copies {label}", "reward_copies.RewardCopies",
-           {"files": files, "scanned": scanned, "limit": limit, "routes": [list(keys) for keys in routes]}, run)
+           {"files": files, "scanned": scanned, "limit": limit, "routes": [list(keys) for keys in routes],
+            **naming_args(naming)}, run)
 
 
 def copies_scenario() -> Scenario:
@@ -1233,6 +1309,21 @@ def copies_scenario() -> Scenario:
     copies_case(s, "two routes applied", aran_applied, routes=(("aran", "aran2"), ("aran",)))
     one_applied = {"aran": aran_route, "k#sarahj": aran_found.patches(["aran"])["dlg:k#sarahj"]}
     copies_case(s, "one of two routes applied", one_applied, routes=(("aran", "aran2"), ("aran",)))
+    # A BG1 route's copies, found as the game names its reward (EET's SHLD07A).
+    eet = mode2_tests.EET
+    varci = mode2_tests.dialogue_fixture(mode2_rewards.resource_specs("dlg:varci", **eet))
+    varci_route, varci_npc, _ = interject(varci, "varci", 11, "xnpcj")
+    for game, naming in NAMINGS.items():
+        copies_case(s, f"bg1 {game}", {"varci": varci_route, "xnpcj": varci_npc}, routes=(("varci",),), naming=naming)
+    copies_case(s, "bg1 unnamed", {"varci": varci_route, "xnpcj": varci_npc}, routes=(("varci",),))
+    varci_found = reward_copies.RewardCopies({"varci": varci_route, "xnpcj": varci_npc}.get, {}, **eet)
+    varci_applied = {"varci": mode2_rewards.patch_reward("dlg:varci", varci_route, **eet),
+                     "xnpcj": varci_found.patches(["varci"])["dlg:xnpcj"]}
+    copies_case(s, "bg1 applied", varci_applied, routes=(("varci",),), naming=eet)
+    for key, game in (("varci", "eet"), ("varci", "bgt"), ("uhogre01", "eet"), ("x", "eet")):
+        s.case(f"copy_spec {key} {game}", "reward_copies.copy_spec",
+               {"key": key, "resource": "dlg:xnpcj", **naming_args(NAMINGS[game])},
+               lambda key=key, game=game: reward_copies.copy_spec(key, "dlg:xnpcj", **NAMINGS[game]))
     return s
 
 

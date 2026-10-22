@@ -351,12 +351,18 @@ names them apart ("… belong to quests that Chriz Item Randomiser cannot change
 quest rewards and places that Item Randomiser handled with its own conversation and
 script patches (the `.fl` places of its `mode2` tables, and rewards that a conversation
 or script gives) for which CIR has no route yet. Their reason is
-`route-not-supported`. In the original tables these are Aldeth's, Varci's and
-Nemphre's rewards and places (BG1); two scrolls that `ppbook.bcs` gives, and the
+`route-not-supported`. In the original tables these are Aldeth's and Nemphre's
+rewards and places (BG1); two scrolls that `ppbook.bcs` gives, and the
 places of the Sahuagin treasury, the Sahuagin prince, the
 king or the prince, the trolls of the Spellhold painting, Tolgerias, TorGal and a
 vampire or shadow thief of chapter 3 (BG2). `tests/test_original_catalog.py` lists
 them; a route for one of them takes its rows off that list.
+
+BG1's quest routes (Varci's payment, `VARCI.DLG`) work as BG2's do, with flags of
+their own (`FLPR_QB1_<row>` beside BG2's `FLPR_QM2_<row>`). They are registered with
+BG:EE's names, and on EET they follow EET's rename lists: there Varci gives
+`SHLD07A`, which EET's lists name for BG:EE's `SHLD07`. Without those lists (CIR's
+older copy) EET's shield is not found, and the route is left out with its reason.
 
 The Sahuagin treasury's rod (`RODS02` in AR2300) moves like any container reward,
 but the king's reward reply (SAHKNG01.DLG) creates another one. Where the game's

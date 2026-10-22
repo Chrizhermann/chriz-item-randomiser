@@ -220,7 +220,7 @@ class OriginalConfigurationTests(unittest.TestCase):
 
     def test_quests_cir_cannot_change_yet_are_left_out_and_named_apart(self):
         draft = self._draft()
-        reward = source_row("varci-shield", adapter="scripted", resource="dlg:varci", item="shld07", ident="x")
+        reward = source_row("quest-reward", adapter="scripted", resource="dlg:xquest", item="shld07", ident="x")
         reward.update(available=False, availability_reason="item-definition-absent",
                       binding_problem="route-not-supported")
         king = target_row("sahuagin-prince", "x", "24")
@@ -235,7 +235,7 @@ class OriginalConfigurationTests(unittest.TestCase):
         with patch("flir_config.original_configuration.resolve_template", return_value=draft):
             result = build_original_configuration(self.catalog, self.world, "eet-original")
         self.assertEqual([(row["id"], row["kind"], row["reason"]) for row in result["not_used"]], [
-            ("varci-shield", "reward", "route-not-supported"),
+            ("quest-reward", "reward", "route-not-supported"),
             ("sahuagin-prince", "place", "route-not-supported"),
             ("vampire-or-thief", "place", "route-not-supported"),
             ("lost-place", "place", "area-resource-absent")])

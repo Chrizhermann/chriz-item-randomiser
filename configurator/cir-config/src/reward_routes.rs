@@ -22,12 +22,17 @@
 //! identities, see [`file_identity`]) and reads them again when one changed;
 //! a resource whose bytes then differ from the scan stops the check. Apply
 //! still reads and verifies the bytes it patches.
+//!
+//! The routes are recognised as the scanned game names their items (EET
+//! renames BG1's): [`RewardRoutes::naming`] says how, for the export too.
 
 use crate::container_rewards;
 use crate::error::{Error, ErrorKind, Result, CHANGED_SINCE_SCAN};
+use crate::game_names::{eet_names, EetNames};
 use crate::game_text;
 use crate::json::Value;
-use crate::mode2_rewards;
+use crate::mode2_rewards::{self, Naming};
+use crate::platform::game_platform;
 use crate::py::str_value;
 use crate::resources::{file_identity, resource_type, sha256_hex, FileIdentity, GameResources};
 use crate::reward_copies::RewardCopies;
@@ -37,6 +42,10 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 pub struct RewardRoutes {
+    /// "eet", "bgee" or "bg2ee" ([`game_platform`]).
+    game: &'static str,
+    /// EET's renames ([`eet_names`]); None on other games.
+    names: Option<EetNames>,
     language: String,
     /// Why an appended text could not have the same number in dialogf.tlk.
     unpaired: Option<String>,
@@ -99,6 +108,9 @@ impl RewardRoutes {
             .filter(|resource| scanned.contains_key(*resource))
             .map(str::to_string)
             .collect();
+        let game = game_platform(world)?;
+        let names = if game == "eet" { Some(eet_names(game_root)?) } else { None };
+        let naming = Naming { game: Some(game), names: names.as_ref() };
         let mut changed = BTreeSet::new();
         let mut reasons = HashMap::new();
         let mut giving = BTreeSet::new();
@@ -146,7 +158,11 @@ impl RewardRoutes {
                     continue;
                 };
                 let quest = mode2_rewards::resource_rewards().contains_key(resource);
-                let own = if quest { mode2_rewards::own_patch(resource, &data) } else { container_rewards::own_patch(resource, &data) };
+                let own = if quest {
+                    mode2_rewards::own_patch(resource, &data, naming)
+                } else {
+                    container_rewards::own_patch(resource, &data)
+                };
                 let own = match own {
                     Ok(own) => own,
                     // A changed copy of our patch: route_reasons names it.
@@ -158,7 +174,7 @@ impl RewardRoutes {
                     continue;
                 }
                 let found = if quest {
-                    mode2_rewards::route_reasons(resource, &data)?
+                    mode2_rewards::route_reasons(resource, &data, naming)?
                 } else {
                     container_rewards::route_reasons(resource, &data)?
                 };
@@ -169,7 +185,7 @@ impl RewardRoutes {
                 // treasury's rod): needed where their dialogue gives the item at all.
                 let links: BTreeSet<&str> = mode2_rewards::PHYSICAL_SOURCE_REWARDS.iter().map(|row| row.3).collect();
                 for key in resource_rewards(resource).into_iter().filter(|key| links.contains(key.as_str())) {
-                    let gives = match mode2_rewards::gives_reward(resource, &data, &key) {
+                    let gives = match mode2_rewards::gives_reward(resource, &data, &key, naming) {
                         Ok(gives) => gives,
                         // Its route's reasons say why it cannot be read.
                         Err(error) if error.kind == ErrorKind::Profile => true,
@@ -180,11 +196,13 @@ impl RewardRoutes {
                     }
                 }
             }
-            let copies = RewardCopies::new(&mut |name| read("dlg", name), &scanned)?;
+            let copies = RewardCopies::new(&mut |name| read("dlg", name), &scanned, naming)?;
             Ok((journal, copies))
         })?;
         changed.extend(copies.changed.iter().cloned());
         Ok(RewardRoutes {
+            game,
+            names,
             language: language.to_string(),
             unpaired,
             translated: Mutex::new(HashMap::new()),
@@ -195,6 +213,11 @@ impl RewardRoutes {
             files,
             copies,
         })
+    }
+
+    /// How the game names the routes' items and places.
+    pub fn naming(&self) -> Naming<'_> {
+        Naming { game: Some(self.game), names: self.names.as_ref() }
     }
 
     /// Whether every file these routes were read from is as it was.

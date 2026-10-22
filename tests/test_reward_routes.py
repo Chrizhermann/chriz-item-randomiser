@@ -454,7 +454,7 @@ class TreasuryRodTests(RouteGame):
 class NoCopies:
     """The copy analysis as CIR had it before it looked for copies of reward replies."""
 
-    def __init__(self, read, scanned):
+    def __init__(self, read, scanned, **naming):
         self.copies, self.reasons, self.visited, self.changed, self.originals = {}, {}, {}, set(), {}
 
     def checked(self, key):
