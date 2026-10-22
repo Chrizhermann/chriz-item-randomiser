@@ -479,9 +479,11 @@ fn call(name: &str, args: &Args) -> Result<Value> {
         "mode2_rewards.REWARDS" => dump_dict(mode2_rewards::rewards()),
         "mode2_rewards.DIRECT_REWARDS" => Value::from(mode2_rewards::direct_rewards().to_vec()),
         "mode2_rewards.TRANSFER_SPECS" => dump_dict(mode2_rewards::transfer_specs()),
-        "mode2_rewards.PHYSICAL_SOURCE_REWARDS" => dump_dict(mode2_rewards::physical_source_rewards()),
-        "mode2_rewards.CONTAINER_SOURCE_REWARDS" => Value::List(
-            mode2_rewards::CONTAINER_SOURCE_REWARDS.iter().map(|(area, item, route)| Value::from(vec![*area, *item, *route])).collect(),
+        "mode2_rewards.PHYSICAL_SOURCE_REWARDS" => Value::List(
+            mode2_rewards::PHYSICAL_SOURCE_REWARDS
+                .iter()
+                .map(|(resource, kind, item, route)| Value::from(vec![*resource, *kind, *item, *route]))
+                .collect(),
         ),
         "mode2_rewards.RESOURCE_REWARDS" => dump_dict(mode2_rewards::resource_rewards()),
         "mode2_rewards.SOURCE_REWARDS" => dump_dict(mode2_rewards::source_rewards()),

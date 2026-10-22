@@ -14,10 +14,9 @@ use cir_config::error::{Error, ErrorKind};
 use cir_config::game_text::GameText;
 use cir_config::json::{Dict, Value};
 use cir_config::mode2_rewards::{
-    container_source_reward, direct_rewards, gives_reward, own_patch, patch_dialogue, patch_reward, physical_source_rewards,
-    prepare_ddwell_text, prepare_reward_texts, resource_rewards, resource_specs, rewards, route_reasons, script_original,
-    source_rewards, source_spec, target_spec, text_original, text_refs, transfer_spec, transfer_specs, CONTAINER_SOURCE_REWARDS,
-    TEXT_REFS,
+    direct_rewards, gives_reward, own_patch, patch_dialogue, patch_reward, physical_source_reward, prepare_ddwell_text,
+    prepare_reward_texts, resource_rewards, resource_specs, rewards, route_reasons, script_original, source_rewards,
+    source_spec, target_spec, text_original, text_refs, transfer_spec, transfer_specs, PHYSICAL_SOURCE_REWARDS, TEXT_REFS,
 };
 use cir_config::py::{put_u32, str_value};
 use cir_config::quest_options::Dialogue;
@@ -541,9 +540,13 @@ fn the_sahuagin_kings_reply_gates_the_bracer_and_the_treasury_rod_apart() {
     assert!(rod.get("target_ids").unwrap().py_eq(&list(&[])));
     assert!(rod.get("authored_source_ids").unwrap().py_eq(&list(&["original-source:bg2:mode2:item:7"])));
     assert_eq!((text(rod, "selected_global"), text(rod, "consumed_global")), ("FLPR_QM2_7", "FLPR_XM2_7"));
-    assert_eq!(CONTAINER_SOURCE_REWARDS, [("are:ar2300", "rods02", "sahrod")]);
-    assert_eq!(container_source_reward("are:ar2300", "rods02"), Some("sahrod"));
-    assert_eq!(container_source_reward("are:ar2300", "brac19"), None);
+    assert_eq!(
+        PHYSICAL_SOURCE_REWARDS,
+        [("cre:udlesa", "cre-template", "sw1h39", "udlesa"), ("are:ar2300", "container", "rods02", "sahrod")]
+    );
+    assert_eq!(physical_source_reward("are:ar2300", "container", "rods02"), Some("sahrod"));
+    assert_eq!(physical_source_reward("are:ar2300", "container", "brac19"), None);
+    assert_eq!(physical_source_reward("are:ar2300", "embedded-cre", "rods02"), None);
     assert!(!source_rewards().contains_key("original-source:bg2:mode2:item:7"));
     let specs = specs("dlg:sahkng01");
     assert_eq!(specs.iter().map(|spec| text(spec, "route")).collect::<Vec<_>>(), ["sahkng01", "sahrod"]);
@@ -656,12 +659,11 @@ fn sculptor_transfer_is_source12_auxiliary_copy_and_preserves_ordinary_giveitem(
     assert!(spec.get("authored_source_ids").unwrap().py_eq(&list(&[authored])));
     assert!(spec.get("source_ids").unwrap().py_eq(&list(&[])));
     assert_eq!(source_rewards().get(authored).and_then(Value::as_str), Some("bhoisig"));
-    assert!(spec.get("physical_source_ids").unwrap().py_eq(&list(&["cre:scyarryl/item/0"])));
-    let record = cir_config::dict! {
-        "byte_offset" => 1308i64, "record_index" => 0i64, "resref" => "blun20", "expiration" => 0i64,
-        "charges" => ints(&[0, 0, 0]), "flags" => 0i64, "slots" => ints(&[9]),
-    };
-    assert!(spec.get("source_record").unwrap().py_eq(&Value::Dict(record)));
+    // The export finds the copy in the scanned CRE; no game's bytes are pinned.
+    assert_eq!(text(&spec, "source_resource"), "cre:scyarryl");
+    for pinned in ["physical_source_ids", "source_record", "source_resource_sha256"] {
+        assert!(!spec.contains_key(pinned), "{pinned}");
+    }
     assert_eq!(text(&spec, "selected_global"), text(reward("bhoisig"), "selected_global"));
     assert!(source_spec(authored).unwrap().get("required_transfers").unwrap().py_eq(&list(&["scyarryl"])));
     assert_eq!(text(&spec, "event_global"), "FLPR_EA_SCULPTOR");
@@ -688,14 +690,14 @@ fn sculptor_transfer_is_source12_auxiliary_copy_and_preserves_ordinary_giveitem(
 #[test]
 fn carried_rewards_keep_sources_and_transfer_callbacks_before_later_actions() {
     let cases = [
-        ("trgeni01", 32, 32, "ar2014", "trgeni01", 0i64, 1152i64, 9i64),
-        ("loutcapt", 39, 42, "ar0514", "Dennis", 6, 1116, 11),
-        ("amcler01", 84, 85, "ar5500", "amcler01", 0, 1272, 4),
+        ("trgeni01", 32, 32, "ar2014", "trgeni01"),
+        ("loutcapt", 39, 42, "ar0514", "Dennis"),
+        ("amcler01", 84, 85, "ar5500", "amcler01"),
     ];
     let (game_text, allocated) =
         prepare_reward_texts(&GameText::new(make_tlk(&["Unchanged"])), ["dlg:trgeni01", "dlg:amcler01"], "en_us").unwrap();
     assert_eq!(tlk_text(&game_text.male, allocated["dlg:amcler01"][&74025] as u32).as_deref(), Some("Please, accept this gift."));
-    for (name, source, target, area, script, index, offset, slot) in cases {
+    for (name, source, target, area, script) in cases {
         let identity = format!("original-source:bg2:mode2:item:{source}");
         let spec = transfer_spec(name).unwrap();
         assert!(Value::Dict(spec.clone()).py_eq(&Value::Dict(source_spec(&identity).unwrap())));
@@ -707,12 +709,10 @@ fn carried_rewards_keep_sources_and_transfer_callbacks_before_later_actions() {
         assert_eq!(replacement, if name == "trgeni01" { Some("blun05") } else { None });
         let inventory = cir_config::dict! {"area" => area, "creature_resource" => format!("cre:{name}"), "script_name" => script};
         assert!(spec.get("inventory_target").unwrap().py_eq(&Value::Dict(inventory)));
-        assert!(spec.get("physical_source_ids").unwrap().py_eq(&list(&[&format!("cre:{name}/item/{index}")])));
-        let record = cir_config::dict! {
-            "byte_offset" => offset, "record_index" => index, "resref" => text(&spec, "item"), "expiration" => 0i64,
-            "charges" => ints(&[0, 0, 0]), "flags" => 0i64, "slots" => ints(&[slot]),
-        };
-        assert!(spec.get("source_record").unwrap().py_eq(&Value::Dict(record)));
+        assert_eq!(text(&spec, "source_resource"), format!("cre:{name}"));
+        for pinned in ["physical_source_ids", "source_record", "source_resource_sha256"] {
+            assert!(!spec.contains_key(pinned), "{name} {pinned}");
+        }
         assert_eq!(text(&spec, "recipient"), "LastTalkedToBy");
         assert_eq!(text(&spec, "grant_kind"), "transfer");
         let original = dialogue_fixture(std::slice::from_ref(&spec));
@@ -781,7 +781,7 @@ fn inventory_callback_survives_dialogue_parser() {
 #[test]
 fn udlesa_physical_source_and_six_distinct_duel_continuations() {
     let spec = target_spec("bg2:mode2:target:45").unwrap();
-    assert_eq!(physical_source_rewards().get("cre:udlesa/item/2").and_then(Value::as_str), Some("udlesa"));
+    assert_eq!(physical_source_reward("cre:udlesa", "cre-template", "sw1h39"), Some("udlesa"));
     assert!(!source_rewards().contains_key("original-source:bg2:mode2:item:42"));
     assert!(!transfer_specs().contains_key("udlesa"));
     assert!(!spec.contains_key("required_transfers"));
@@ -792,12 +792,9 @@ fn udlesa_physical_source_and_six_distinct_duel_continuations() {
     assert_eq!(text(&spec, "resource"), "dlg:udlesa");
     let inventory = cir_config::dict! {"area" => "ar2202", "creature_resource" => "cre:udlesa", "script_name" => "udlesa"};
     assert!(spec.get("inventory_target").unwrap().py_eq(&Value::Dict(inventory)));
-    assert!(spec.get("physical_source_ids").unwrap().py_eq(&list(&["cre:udlesa/item/2"])));
-    let record = cir_config::dict! {
-        "byte_offset" => 3676i64, "record_index" => 2i64, "resref" => "sw1h39", "expiration" => 0i64,
-        "charges" => ints(&[0, 0, 0]), "flags" => 0i64, "slots" => ints(&[9]),
-    };
-    assert!(spec.get("source_record").unwrap().py_eq(&Value::Dict(record)));
+    for pinned in ["physical_source_ids", "source_record", "source_resource_sha256"] {
+        assert!(!spec.contains_key(pinned), "{pinned}");
+    }
     assert_eq!(text(&spec, "selected_global"), "FLPR_QM2_42");
     assert_eq!(text(&spec, "consumed_global"), "FLPR_XM2_42");
     assert_eq!(branches(&spec), (6..12).map(|state| (state, 0)).collect::<Vec<_>>());

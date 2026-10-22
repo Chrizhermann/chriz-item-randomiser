@@ -447,7 +447,7 @@ class TreasuryRodTests(RouteGame):
         self.draft = one_of_two
         fitted = self.fit()
         self.assertEqual([(row["id"], row["kind"], row["reason"]) for row in fitted["not_used"]], [
-            ("bg2:mode2:item:7", "reward", "AR2300 holds another RODS02 that the reward of SAHKNG01.DLG "
+            ("bg2:mode2:item:7", "reward", "AR2300.ARE holds another RODS02 that the reward of SAHKNG01.DLG "
              f"could stand for: {self.ROD}")])
 
 

@@ -1129,26 +1129,7 @@
       "original-source:bg2:mode2:item:12"
      ],
      "source_resource": "cre:scyarryl",
-     "source_resource_sha256": "15e6723046533520d542f00cb14fdc5c04d74d19b327424f212542b722f0d462",
-     "physical_source_ids": [
-      "cre:scyarryl/item/0"
-     ],
      "grant_kind": "transfer",
-     "source_record": {
-      "byte_offset": 1308,
-      "record_index": 0,
-      "resref": "blun20",
-      "expiration": 0,
-      "charges": [
-       0,
-       0,
-       0
-      ],
-      "flags": 0,
-      "slots": [
-       9
-      ]
-     },
      "required_transfers": [
       "scyarryl"
      ]
@@ -1213,28 +1194,9 @@
       "script_name": "trgeni01"
      },
      "source_resource": "cre:trgeni01",
-     "source_resource_sha256": "cd31a342ec3e836a0e3cd2d85c183bd6b85c753c83a6083dcc4c2f21a0aa9c02",
-     "physical_source_ids": [
-      "cre:trgeni01/item/0"
-     ],
      "required_transfers": [
       "trgeni01"
      ],
-     "source_record": {
-      "byte_offset": 1152,
-      "record_index": 0,
-      "resref": "sw1h23",
-      "expiration": 0,
-      "charges": [
-       0,
-       0,
-       0
-      ],
-      "flags": 0,
-      "slots": [
-       9
-      ]
-     },
      "replacement": "blun05"
     },
     "loutcapt": {
@@ -1297,28 +1259,9 @@
       "script_name": "Dennis"
      },
      "source_resource": "cre:loutcapt",
-     "source_resource_sha256": "33bb5267dd0bb7b120e7e9b20c05e37b0cd8c73134e7ba642dbb8b075713e430",
-     "physical_source_ids": [
-      "cre:loutcapt/item/6"
-     ],
      "required_transfers": [
       "loutcapt"
-     ],
-     "source_record": {
-      "byte_offset": 1116,
-      "record_index": 6,
-      "resref": "dagg11",
-      "expiration": 0,
-      "charges": [
-       0,
-       0,
-       0
-      ],
-      "flags": 0,
-      "slots": [
-       11
-      ]
-     }
+     ]
     },
     "amcler01": {
      "quest": "amcler01",
@@ -1380,28 +1323,9 @@
       "script_name": "amcler01"
      },
      "source_resource": "cre:amcler01",
-     "source_resource_sha256": "c8cdf695c04d6eb9cce075bff7fd4e2c528c480a360ffbac280ef5ec6b14d4fc",
-     "physical_source_ids": [
-      "cre:amcler01/item/0"
-     ],
      "required_transfers": [
       "amcler01"
-     ],
-     "source_record": {
-      "byte_offset": 1272,
-      "record_index": 0,
-      "resref": "ring43",
-      "expiration": 0,
-      "charges": [
-       0,
-       0,
-       0
-      ],
-      "flags": 0,
-      "slots": [
-       4
-      ]
-     }
+     ]
     },
     "udlesa": {
      "quest": "udlesa",
@@ -1493,26 +1417,7 @@
       "script_name": "udlesa"
      },
      "source_resource": "cre:udlesa",
-     "source_resource_sha256": "f51eaafa2f7c4df7b0af9c76fac2576a243929c31b57a965a326fb58e2b6b8c4",
-     "physical_source_ids": [
-      "cre:udlesa/item/2"
-     ],
-     "replacement": "dwsw1h02",
-     "source_record": {
-      "byte_offset": 3676,
-      "record_index": 2,
-      "resref": "sw1h39",
-      "expiration": 0,
-      "charges": [
-       0,
-       0,
-       0
-      ],
-      "flags": 0,
-      "slots": [
-       9
-      ]
-     }
+     "replacement": "dwsw1h02"
     },
     "sahrod": {
      "quest": "sahkng01",
@@ -1626,26 +1531,7 @@
       "original-source:bg2:mode2:item:12"
      ],
      "source_resource": "cre:scyarryl",
-     "source_resource_sha256": "15e6723046533520d542f00cb14fdc5c04d74d19b327424f212542b722f0d462",
-     "physical_source_ids": [
-      "cre:scyarryl/item/0"
-     ],
      "grant_kind": "transfer",
-     "source_record": {
-      "byte_offset": 1308,
-      "record_index": 0,
-      "resref": "blun20",
-      "expiration": 0,
-      "charges": [
-       0,
-       0,
-       0
-      ],
-      "flags": 0,
-      "slots": [
-       9
-      ]
-     },
      "required_transfers": [
       "scyarryl"
      ]
@@ -1710,28 +1596,9 @@
       "script_name": "trgeni01"
      },
      "source_resource": "cre:trgeni01",
-     "source_resource_sha256": "cd31a342ec3e836a0e3cd2d85c183bd6b85c753c83a6083dcc4c2f21a0aa9c02",
-     "physical_source_ids": [
-      "cre:trgeni01/item/0"
-     ],
      "required_transfers": [
       "trgeni01"
      ],
-     "source_record": {
-      "byte_offset": 1152,
-      "record_index": 0,
-      "resref": "sw1h23",
-      "expiration": 0,
-      "charges": [
-       0,
-       0,
-       0
-      ],
-      "flags": 0,
-      "slots": [
-       9
-      ]
-     },
      "replacement": "blun05"
     },
     "loutcapt": {
@@ -1794,28 +1661,9 @@
       "script_name": "Dennis"
      },
      "source_resource": "cre:loutcapt",
-     "source_resource_sha256": "33bb5267dd0bb7b120e7e9b20c05e37b0cd8c73134e7ba642dbb8b075713e430",
-     "physical_source_ids": [
-      "cre:loutcapt/item/6"
-     ],
      "required_transfers": [
       "loutcapt"
-     ],
-     "source_record": {
-      "byte_offset": 1116,
-      "record_index": 6,
-      "resref": "dagg11",
-      "expiration": 0,
-      "charges": [
-       0,
-       0,
-       0
-      ],
-      "flags": 0,
-      "slots": [
-       11
-      ]
-     }
+     ]
     },
     "amcler01": {
      "quest": "amcler01",
@@ -1877,38 +1725,10 @@
       "script_name": "amcler01"
      },
      "source_resource": "cre:amcler01",
-     "source_resource_sha256": "c8cdf695c04d6eb9cce075bff7fd4e2c528c480a360ffbac280ef5ec6b14d4fc",
-     "physical_source_ids": [
-      "cre:amcler01/item/0"
-     ],
      "required_transfers": [
       "amcler01"
-     ],
-     "source_record": {
-      "byte_offset": 1272,
-      "record_index": 0,
-      "resref": "ring43",
-      "expiration": 0,
-      "charges": [
-       0,
-       0,
-       0
-      ],
-      "flags": 0,
-      "slots": [
-       4
-      ]
-     }
+     ]
     }
-   }
-  },
-  {
-   "name": "PHYSICAL_SOURCE_REWARDS",
-   "call": "mode2_rewards.PHYSICAL_SOURCE_REWARDS",
-   "args": {},
-   "independent": true,
-   "result": {
-    "cre:udlesa/item/2": "udlesa"
    }
   },
   {
@@ -2149,13 +1969,20 @@
    "result": "mode2-reward-v1"
   },
   {
-   "name": "CONTAINER_SOURCE_REWARDS",
-   "call": "mode2_rewards.CONTAINER_SOURCE_REWARDS",
+   "name": "PHYSICAL_SOURCE_REWARDS",
+   "call": "mode2_rewards.PHYSICAL_SOURCE_REWARDS",
    "args": {},
    "independent": true,
    "result": [
     [
+     "cre:udlesa",
+     "cre-template",
+     "sw1h39",
+     "udlesa"
+    ],
+    [
      "are:ar2300",
+     "container",
      "rods02",
      "sahrod"
     ]
@@ -3490,28 +3317,9 @@
      "script_name": "trgeni01"
     },
     "source_resource": "cre:trgeni01",
-    "source_resource_sha256": "cd31a342ec3e836a0e3cd2d85c183bd6b85c753c83a6083dcc4c2f21a0aa9c02",
-    "physical_source_ids": [
-     "cre:trgeni01/item/0"
-    ],
     "required_transfers": [
      "trgeni01"
     ],
-    "source_record": {
-     "byte_offset": 1152,
-     "record_index": 0,
-     "resref": "sw1h23",
-     "expiration": 0,
-     "charges": [
-      0,
-      0,
-      0
-     ],
-     "flags": 0,
-     "slots": [
-      9
-     ]
-    },
     "replacement": "blun05"
    }
   },
@@ -3582,28 +3390,9 @@
      "script_name": "Dennis"
     },
     "source_resource": "cre:loutcapt",
-    "source_resource_sha256": "33bb5267dd0bb7b120e7e9b20c05e37b0cd8c73134e7ba642dbb8b075713e430",
-    "physical_source_ids": [
-     "cre:loutcapt/item/6"
-    ],
     "required_transfers": [
      "loutcapt"
-    ],
-    "source_record": {
-     "byte_offset": 1116,
-     "record_index": 6,
-     "resref": "dagg11",
-     "expiration": 0,
-     "charges": [
-      0,
-      0,
-      0
-     ],
-     "flags": 0,
-     "slots": [
-      11
-     ]
-    }
+    ]
    }
   },
   {
@@ -3673,28 +3462,9 @@
      "script_name": "amcler01"
     },
     "source_resource": "cre:amcler01",
-    "source_resource_sha256": "c8cdf695c04d6eb9cce075bff7fd4e2c528c480a360ffbac280ef5ec6b14d4fc",
-    "physical_source_ids": [
-     "cre:amcler01/item/0"
-    ],
     "required_transfers": [
      "amcler01"
-    ],
-    "source_record": {
-     "byte_offset": 1272,
-     "record_index": 0,
-     "resref": "ring43",
-     "expiration": 0,
-     "charges": [
-      0,
-      0,
-      0
-     ],
-     "flags": 0,
-     "slots": [
-      4
-     ]
-    }
+    ]
    }
   },
   {
@@ -4946,28 +4716,9 @@
      "script_name": "trgeni01"
     },
     "source_resource": "cre:trgeni01",
-    "source_resource_sha256": "cd31a342ec3e836a0e3cd2d85c183bd6b85c753c83a6083dcc4c2f21a0aa9c02",
-    "physical_source_ids": [
-     "cre:trgeni01/item/0"
-    ],
     "required_transfers": [
      "trgeni01"
     ],
-    "source_record": {
-     "byte_offset": 1152,
-     "record_index": 0,
-     "resref": "sw1h23",
-     "expiration": 0,
-     "charges": [
-      0,
-      0,
-      0
-     ],
-     "flags": 0,
-     "slots": [
-      9
-     ]
-    },
     "replacement": "blun05"
    }
   },
@@ -5038,28 +4789,9 @@
      "script_name": "Dennis"
     },
     "source_resource": "cre:loutcapt",
-    "source_resource_sha256": "33bb5267dd0bb7b120e7e9b20c05e37b0cd8c73134e7ba642dbb8b075713e430",
-    "physical_source_ids": [
-     "cre:loutcapt/item/6"
-    ],
     "required_transfers": [
      "loutcapt"
-    ],
-    "source_record": {
-     "byte_offset": 1116,
-     "record_index": 6,
-     "resref": "dagg11",
-     "expiration": 0,
-     "charges": [
-      0,
-      0,
-      0
-     ],
-     "flags": 0,
-     "slots": [
-      11
-     ]
-    }
+    ]
    }
   },
   {
@@ -5129,28 +4861,9 @@
      "script_name": "amcler01"
     },
     "source_resource": "cre:amcler01",
-    "source_resource_sha256": "c8cdf695c04d6eb9cce075bff7fd4e2c528c480a360ffbac280ef5ec6b14d4fc",
-    "physical_source_ids": [
-     "cre:amcler01/item/0"
-    ],
     "required_transfers": [
      "amcler01"
-    ],
-    "source_record": {
-     "byte_offset": 1272,
-     "record_index": 0,
-     "resref": "ring43",
-     "expiration": 0,
-     "charges": [
-      0,
-      0,
-      0
-     ],
-     "flags": 0,
-     "slots": [
-      4
-     ]
-    }
+    ]
    }
   },
   {
@@ -5250,26 +4963,7 @@
      "script_name": "udlesa"
     },
     "source_resource": "cre:udlesa",
-    "source_resource_sha256": "f51eaafa2f7c4df7b0af9c76fac2576a243929c31b57a965a326fb58e2b6b8c4",
-    "physical_source_ids": [
-     "cre:udlesa/item/2"
-    ],
-    "replacement": "dwsw1h02",
-    "source_record": {
-     "byte_offset": 3676,
-     "record_index": 2,
-     "resref": "sw1h39",
-     "expiration": 0,
-     "charges": [
-      0,
-      0,
-      0
-     ],
-     "flags": 0,
-     "slots": [
-      9
-     ]
-    }
+    "replacement": "dwsw1h02"
    }
   },
   {
@@ -5335,26 +5029,7 @@
      "original-source:bg2:mode2:item:12"
     ],
     "source_resource": "cre:scyarryl",
-    "source_resource_sha256": "15e6723046533520d542f00cb14fdc5c04d74d19b327424f212542b722f0d462",
-    "physical_source_ids": [
-     "cre:scyarryl/item/0"
-    ],
     "grant_kind": "transfer",
-    "source_record": {
-     "byte_offset": 1308,
-     "record_index": 0,
-     "resref": "blun20",
-     "expiration": 0,
-     "charges": [
-      0,
-      0,
-      0
-     ],
-     "flags": 0,
-     "slots": [
-      9
-     ]
-    },
     "required_transfers": [
      "scyarryl"
     ]
@@ -5427,28 +5102,9 @@
      "script_name": "trgeni01"
     },
     "source_resource": "cre:trgeni01",
-    "source_resource_sha256": "cd31a342ec3e836a0e3cd2d85c183bd6b85c753c83a6083dcc4c2f21a0aa9c02",
-    "physical_source_ids": [
-     "cre:trgeni01/item/0"
-    ],
     "required_transfers": [
      "trgeni01"
     ],
-    "source_record": {
-     "byte_offset": 1152,
-     "record_index": 0,
-     "resref": "sw1h23",
-     "expiration": 0,
-     "charges": [
-      0,
-      0,
-      0
-     ],
-     "flags": 0,
-     "slots": [
-      9
-     ]
-    },
     "replacement": "blun05"
    }
   },
@@ -5519,28 +5175,9 @@
      "script_name": "Dennis"
     },
     "source_resource": "cre:loutcapt",
-    "source_resource_sha256": "33bb5267dd0bb7b120e7e9b20c05e37b0cd8c73134e7ba642dbb8b075713e430",
-    "physical_source_ids": [
-     "cre:loutcapt/item/6"
-    ],
     "required_transfers": [
      "loutcapt"
-    ],
-    "source_record": {
-     "byte_offset": 1116,
-     "record_index": 6,
-     "resref": "dagg11",
-     "expiration": 0,
-     "charges": [
-      0,
-      0,
-      0
-     ],
-     "flags": 0,
-     "slots": [
-      11
-     ]
-    }
+    ]
    }
   },
   {
@@ -5610,28 +5247,9 @@
      "script_name": "amcler01"
     },
     "source_resource": "cre:amcler01",
-    "source_resource_sha256": "c8cdf695c04d6eb9cce075bff7fd4e2c528c480a360ffbac280ef5ec6b14d4fc",
-    "physical_source_ids": [
-     "cre:amcler01/item/0"
-    ],
     "required_transfers": [
      "amcler01"
-    ],
-    "source_record": {
-     "byte_offset": 1272,
-     "record_index": 0,
-     "resref": "ring43",
-     "expiration": 0,
-     "charges": [
-      0,
-      0,
-      0
-     ],
-     "flags": 0,
-     "slots": [
-      4
-     ]
-    }
+    ]
    }
   },
   {
@@ -7334,26 +6952,7 @@
       "original-source:bg2:mode2:item:12"
      ],
      "source_resource": "cre:scyarryl",
-     "source_resource_sha256": "15e6723046533520d542f00cb14fdc5c04d74d19b327424f212542b722f0d462",
-     "physical_source_ids": [
-      "cre:scyarryl/item/0"
-     ],
      "grant_kind": "transfer",
-     "source_record": {
-      "byte_offset": 1308,
-      "record_index": 0,
-      "resref": "blun20",
-      "expiration": 0,
-      "charges": [
-       0,
-       0,
-       0
-      ],
-      "flags": 0,
-      "slots": [
-       9
-      ]
-     },
      "required_transfers": [
       "scyarryl"
      ],
@@ -7429,28 +7028,9 @@
       "script_name": "trgeni01"
      },
      "source_resource": "cre:trgeni01",
-     "source_resource_sha256": "cd31a342ec3e836a0e3cd2d85c183bd6b85c753c83a6083dcc4c2f21a0aa9c02",
-     "physical_source_ids": [
-      "cre:trgeni01/item/0"
-     ],
      "required_transfers": [
       "trgeni01"
      ],
-     "source_record": {
-      "byte_offset": 1152,
-      "record_index": 0,
-      "resref": "sw1h23",
-      "expiration": 0,
-      "charges": [
-       0,
-       0,
-       0
-      ],
-      "flags": 0,
-      "slots": [
-       9
-      ]
-     },
      "replacement": "blun05",
      "route": "trgeni01"
     }
@@ -7524,28 +7104,9 @@
       "script_name": "Dennis"
      },
      "source_resource": "cre:loutcapt",
-     "source_resource_sha256": "33bb5267dd0bb7b120e7e9b20c05e37b0cd8c73134e7ba642dbb8b075713e430",
-     "physical_source_ids": [
-      "cre:loutcapt/item/6"
-     ],
      "required_transfers": [
       "loutcapt"
      ],
-     "source_record": {
-      "byte_offset": 1116,
-      "record_index": 6,
-      "resref": "dagg11",
-      "expiration": 0,
-      "charges": [
-       0,
-       0,
-       0
-      ],
-      "flags": 0,
-      "slots": [
-       11
-      ]
-     },
      "route": "loutcapt"
     }
    ]
@@ -7618,28 +7179,9 @@
       "script_name": "amcler01"
      },
      "source_resource": "cre:amcler01",
-     "source_resource_sha256": "c8cdf695c04d6eb9cce075bff7fd4e2c528c480a360ffbac280ef5ec6b14d4fc",
-     "physical_source_ids": [
-      "cre:amcler01/item/0"
-     ],
      "required_transfers": [
       "amcler01"
      ],
-     "source_record": {
-      "byte_offset": 1272,
-      "record_index": 0,
-      "resref": "ring43",
-      "expiration": 0,
-      "charges": [
-       0,
-       0,
-       0
-      ],
-      "flags": 0,
-      "slots": [
-       4
-      ]
-     },
      "route": "amcler01"
     }
    ]
@@ -7742,26 +7284,7 @@
       "script_name": "udlesa"
      },
      "source_resource": "cre:udlesa",
-     "source_resource_sha256": "f51eaafa2f7c4df7b0af9c76fac2576a243929c31b57a965a326fb58e2b6b8c4",
-     "physical_source_ids": [
-      "cre:udlesa/item/2"
-     ],
      "replacement": "dwsw1h02",
-     "source_record": {
-      "byte_offset": 3676,
-      "record_index": 2,
-      "resref": "sw1h39",
-      "expiration": 0,
-      "charges": [
-       0,
-       0,
-       0
-      ],
-      "flags": 0,
-      "slots": [
-       9
-      ]
-     },
      "route": "udlesa"
     }
    ]
@@ -25761,26 +25284,7 @@
        "original-source:bg2:mode2:item:12"
       ],
       "source_resource": "cre:scyarryl",
-      "source_resource_sha256": "15e6723046533520d542f00cb14fdc5c04d74d19b327424f212542b722f0d462",
-      "physical_source_ids": [
-       "cre:scyarryl/item/0"
-      ],
       "grant_kind": "transfer",
-      "source_record": {
-       "byte_offset": 1308,
-       "record_index": 0,
-       "resref": "blun20",
-       "expiration": 0,
-       "charges": [
-        0,
-        0,
-        0
-       ],
-       "flags": 0,
-       "slots": [
-        9
-       ]
-      },
       "required_transfers": [
        "scyarryl"
       ],
@@ -25851,26 +25355,7 @@
        "original-source:bg2:mode2:item:12"
       ],
       "source_resource": "cre:scyarryl",
-      "source_resource_sha256": "15e6723046533520d542f00cb14fdc5c04d74d19b327424f212542b722f0d462",
-      "physical_source_ids": [
-       "cre:scyarryl/item/0"
-      ],
       "grant_kind": "transfer",
-      "source_record": {
-       "byte_offset": 1308,
-       "record_index": 0,
-       "resref": "blun20",
-       "expiration": 0,
-       "charges": [
-        0,
-        0,
-        0
-       ],
-       "flags": 0,
-       "slots": [
-        9
-       ]
-      },
       "required_transfers": [
        "scyarryl"
       ],
@@ -25941,26 +25426,7 @@
        "original-source:bg2:mode2:item:12"
       ],
       "source_resource": "cre:scyarryl",
-      "source_resource_sha256": "15e6723046533520d542f00cb14fdc5c04d74d19b327424f212542b722f0d462",
-      "physical_source_ids": [
-       "cre:scyarryl/item/0"
-      ],
       "grant_kind": "transfer",
-      "source_record": {
-       "byte_offset": 1308,
-       "record_index": 0,
-       "resref": "blun20",
-       "expiration": 0,
-       "charges": [
-        0,
-        0,
-        0
-       ],
-       "flags": 0,
-       "slots": [
-        9
-       ]
-      },
       "required_transfers": [
        "scyarryl"
       ],
@@ -26047,28 +25513,9 @@
        "script_name": "trgeni01"
       },
       "source_resource": "cre:trgeni01",
-      "source_resource_sha256": "cd31a342ec3e836a0e3cd2d85c183bd6b85c753c83a6083dcc4c2f21a0aa9c02",
-      "physical_source_ids": [
-       "cre:trgeni01/item/0"
-      ],
       "required_transfers": [
        "trgeni01"
       ],
-      "source_record": {
-       "byte_offset": 1152,
-       "record_index": 0,
-       "resref": "sw1h23",
-       "expiration": 0,
-       "charges": [
-        0,
-        0,
-        0
-       ],
-       "flags": 0,
-       "slots": [
-        9
-       ]
-      },
       "replacement": "blun05",
       "route": "trgeni01"
      }
@@ -26153,28 +25600,9 @@
        "script_name": "trgeni01"
       },
       "source_resource": "cre:trgeni01",
-      "source_resource_sha256": "cd31a342ec3e836a0e3cd2d85c183bd6b85c753c83a6083dcc4c2f21a0aa9c02",
-      "physical_source_ids": [
-       "cre:trgeni01/item/0"
-      ],
       "required_transfers": [
        "trgeni01"
       ],
-      "source_record": {
-       "byte_offset": 1152,
-       "record_index": 0,
-       "resref": "sw1h23",
-       "expiration": 0,
-       "charges": [
-        0,
-        0,
-        0
-       ],
-       "flags": 0,
-       "slots": [
-        9
-       ]
-      },
       "replacement": "blun05",
       "route": "trgeni01"
      }
@@ -26259,28 +25687,9 @@
        "script_name": "trgeni01"
       },
       "source_resource": "cre:trgeni01",
-      "source_resource_sha256": "cd31a342ec3e836a0e3cd2d85c183bd6b85c753c83a6083dcc4c2f21a0aa9c02",
-      "physical_source_ids": [
-       "cre:trgeni01/item/0"
-      ],
       "required_transfers": [
        "trgeni01"
       ],
-      "source_record": {
-       "byte_offset": 1152,
-       "record_index": 0,
-       "resref": "sw1h23",
-       "expiration": 0,
-       "charges": [
-        0,
-        0,
-        0
-       ],
-       "flags": 0,
-       "slots": [
-        9
-       ]
-      },
       "replacement": "blun05",
       "route": "trgeni01"
      }
@@ -26365,28 +25774,9 @@
        "script_name": "Dennis"
       },
       "source_resource": "cre:loutcapt",
-      "source_resource_sha256": "33bb5267dd0bb7b120e7e9b20c05e37b0cd8c73134e7ba642dbb8b075713e430",
-      "physical_source_ids": [
-       "cre:loutcapt/item/6"
-      ],
       "required_transfers": [
        "loutcapt"
       ],
-      "source_record": {
-       "byte_offset": 1116,
-       "record_index": 6,
-       "resref": "dagg11",
-       "expiration": 0,
-       "charges": [
-        0,
-        0,
-        0
-       ],
-       "flags": 0,
-       "slots": [
-        11
-       ]
-      },
       "route": "loutcapt"
      }
     ],
@@ -26470,28 +25860,9 @@
        "script_name": "Dennis"
       },
       "source_resource": "cre:loutcapt",
-      "source_resource_sha256": "33bb5267dd0bb7b120e7e9b20c05e37b0cd8c73134e7ba642dbb8b075713e430",
-      "physical_source_ids": [
-       "cre:loutcapt/item/6"
-      ],
       "required_transfers": [
        "loutcapt"
       ],
-      "source_record": {
-       "byte_offset": 1116,
-       "record_index": 6,
-       "resref": "dagg11",
-       "expiration": 0,
-       "charges": [
-        0,
-        0,
-        0
-       ],
-       "flags": 0,
-       "slots": [
-        11
-       ]
-      },
       "route": "loutcapt"
      }
     ],
@@ -26575,28 +25946,9 @@
        "script_name": "Dennis"
       },
       "source_resource": "cre:loutcapt",
-      "source_resource_sha256": "33bb5267dd0bb7b120e7e9b20c05e37b0cd8c73134e7ba642dbb8b075713e430",
-      "physical_source_ids": [
-       "cre:loutcapt/item/6"
-      ],
       "required_transfers": [
        "loutcapt"
       ],
-      "source_record": {
-       "byte_offset": 1116,
-       "record_index": 6,
-       "resref": "dagg11",
-       "expiration": 0,
-       "charges": [
-        0,
-        0,
-        0
-       ],
-       "flags": 0,
-       "slots": [
-        11
-       ]
-      },
       "route": "loutcapt"
      }
     ],
@@ -26680,28 +26032,9 @@
        "script_name": "amcler01"
       },
       "source_resource": "cre:amcler01",
-      "source_resource_sha256": "c8cdf695c04d6eb9cce075bff7fd4e2c528c480a360ffbac280ef5ec6b14d4fc",
-      "physical_source_ids": [
-       "cre:amcler01/item/0"
-      ],
       "required_transfers": [
        "amcler01"
       ],
-      "source_record": {
-       "byte_offset": 1272,
-       "record_index": 0,
-       "resref": "ring43",
-       "expiration": 0,
-       "charges": [
-        0,
-        0,
-        0
-       ],
-       "flags": 0,
-       "slots": [
-        4
-       ]
-      },
       "route": "amcler01"
      }
     ],
@@ -26787,28 +26120,9 @@
        "script_name": "amcler01"
       },
       "source_resource": "cre:amcler01",
-      "source_resource_sha256": "c8cdf695c04d6eb9cce075bff7fd4e2c528c480a360ffbac280ef5ec6b14d4fc",
-      "physical_source_ids": [
-       "cre:amcler01/item/0"
-      ],
       "required_transfers": [
        "amcler01"
       ],
-      "source_record": {
-       "byte_offset": 1272,
-       "record_index": 0,
-       "resref": "ring43",
-       "expiration": 0,
-       "charges": [
-        0,
-        0,
-        0
-       ],
-       "flags": 0,
-       "slots": [
-        4
-       ]
-      },
       "route": "amcler01"
      }
     ],
@@ -26894,28 +26208,9 @@
        "script_name": "amcler01"
       },
       "source_resource": "cre:amcler01",
-      "source_resource_sha256": "c8cdf695c04d6eb9cce075bff7fd4e2c528c480a360ffbac280ef5ec6b14d4fc",
-      "physical_source_ids": [
-       "cre:amcler01/item/0"
-      ],
       "required_transfers": [
        "amcler01"
       ],
-      "source_record": {
-       "byte_offset": 1272,
-       "record_index": 0,
-       "resref": "ring43",
-       "expiration": 0,
-       "charges": [
-        0,
-        0,
-        0
-       ],
-       "flags": 0,
-       "slots": [
-        4
-       ]
-      },
       "route": "amcler01"
      }
     ],
@@ -27031,26 +26326,7 @@
        "script_name": "udlesa"
       },
       "source_resource": "cre:udlesa",
-      "source_resource_sha256": "f51eaafa2f7c4df7b0af9c76fac2576a243929c31b57a965a326fb58e2b6b8c4",
-      "physical_source_ids": [
-       "cre:udlesa/item/2"
-      ],
       "replacement": "dwsw1h02",
-      "source_record": {
-       "byte_offset": 3676,
-       "record_index": 2,
-       "resref": "sw1h39",
-       "expiration": 0,
-       "charges": [
-        0,
-        0,
-        0
-       ],
-       "flags": 0,
-       "slots": [
-        9
-       ]
-      },
       "route": "udlesa"
      }
     ],
@@ -27164,26 +26440,7 @@
        "script_name": "udlesa"
       },
       "source_resource": "cre:udlesa",
-      "source_resource_sha256": "f51eaafa2f7c4df7b0af9c76fac2576a243929c31b57a965a326fb58e2b6b8c4",
-      "physical_source_ids": [
-       "cre:udlesa/item/2"
-      ],
       "replacement": "dwsw1h02",
-      "source_record": {
-       "byte_offset": 3676,
-       "record_index": 2,
-       "resref": "sw1h39",
-       "expiration": 0,
-       "charges": [
-        0,
-        0,
-        0
-       ],
-       "flags": 0,
-       "slots": [
-        9
-       ]
-      },
       "route": "udlesa"
      }
     ],
@@ -27297,26 +26554,7 @@
        "script_name": "udlesa"
       },
       "source_resource": "cre:udlesa",
-      "source_resource_sha256": "f51eaafa2f7c4df7b0af9c76fac2576a243929c31b57a965a326fb58e2b6b8c4",
-      "physical_source_ids": [
-       "cre:udlesa/item/2"
-      ],
       "replacement": "dwsw1h02",
-      "source_record": {
-       "byte_offset": 3676,
-       "record_index": 2,
-       "resref": "sw1h39",
-       "expiration": 0,
-       "charges": [
-        0,
-        0,
-        0
-       ],
-       "flags": 0,
-       "slots": [
-        9
-       ]
-      },
       "route": "udlesa"
      }
     ],
@@ -27400,28 +26638,9 @@
        "script_name": "trgeni01"
       },
       "source_resource": "cre:trgeni01",
-      "source_resource_sha256": "cd31a342ec3e836a0e3cd2d85c183bd6b85c753c83a6083dcc4c2f21a0aa9c02",
-      "physical_source_ids": [
-       "cre:trgeni01/item/0"
-      ],
       "required_transfers": [
        "trgeni01"
       ],
-      "source_record": {
-       "byte_offset": 1152,
-       "record_index": 0,
-       "resref": "sw1h23",
-       "expiration": 0,
-       "charges": [
-        0,
-        0,
-        0
-       ],
-       "flags": 0,
-       "slots": [
-        9
-       ]
-      },
       "replacement": "blun05",
       "route": "trgeni01"
      }
@@ -27504,28 +26723,9 @@
        "script_name": "trgeni01"
       },
       "source_resource": "cre:trgeni01",
-      "source_resource_sha256": "cd31a342ec3e836a0e3cd2d85c183bd6b85c753c83a6083dcc4c2f21a0aa9c02",
-      "physical_source_ids": [
-       "cre:trgeni01/item/0"
-      ],
       "required_transfers": [
        "trgeni01"
       ],
-      "source_record": {
-       "byte_offset": 1152,
-       "record_index": 0,
-       "resref": "sw1h23",
-       "expiration": 0,
-       "charges": [
-        0,
-        0,
-        0
-       ],
-       "flags": 0,
-       "slots": [
-        9
-       ]
-      },
       "replacement": "blun05",
       "route": "trgeni01"
      }
@@ -27608,28 +26808,9 @@
        "script_name": "trgeni01"
       },
       "source_resource": "cre:trgeni01",
-      "source_resource_sha256": "cd31a342ec3e836a0e3cd2d85c183bd6b85c753c83a6083dcc4c2f21a0aa9c02",
-      "physical_source_ids": [
-       "cre:trgeni01/item/0"
-      ],
       "required_transfers": [
        "trgeni01"
       ],
-      "source_record": {
-       "byte_offset": 1152,
-       "record_index": 0,
-       "resref": "sw1h23",
-       "expiration": 0,
-       "charges": [
-        0,
-        0,
-        0
-       ],
-       "flags": 0,
-       "slots": [
-        9
-       ]
-      },
       "replacement": "blun05",
       "route": "trgeni01"
      }
@@ -27713,28 +26894,9 @@
        "script_name": "trgeni01"
       },
       "source_resource": "cre:trgeni01",
-      "source_resource_sha256": "cd31a342ec3e836a0e3cd2d85c183bd6b85c753c83a6083dcc4c2f21a0aa9c02",
-      "physical_source_ids": [
-       "cre:trgeni01/item/0"
-      ],
       "required_transfers": [
        "trgeni01"
       ],
-      "source_record": {
-       "byte_offset": 1152,
-       "record_index": 0,
-       "resref": "sw1h23",
-       "expiration": 0,
-       "charges": [
-        0,
-        0,
-        0
-       ],
-       "flags": 0,
-       "slots": [
-        9
-       ]
-      },
       "replacement": "blun05",
       "route": "trgeni01"
      }
@@ -27817,28 +26979,9 @@
        "script_name": "trgeni01"
       },
       "source_resource": "cre:trgeni01",
-      "source_resource_sha256": "cd31a342ec3e836a0e3cd2d85c183bd6b85c753c83a6083dcc4c2f21a0aa9c02",
-      "physical_source_ids": [
-       "cre:trgeni01/item/0"
-      ],
       "required_transfers": [
        "trgeni01"
       ],
-      "source_record": {
-       "byte_offset": 1152,
-       "record_index": 0,
-       "resref": "sw1h23",
-       "expiration": 0,
-       "charges": [
-        0,
-        0,
-        0
-       ],
-       "flags": 0,
-       "slots": [
-        9
-       ]
-      },
       "replacement": "blun05",
       "route": "trgeni01"
      }
@@ -27919,28 +27062,9 @@
        "script_name": "trgeni01"
       },
       "source_resource": "cre:trgeni01",
-      "source_resource_sha256": "cd31a342ec3e836a0e3cd2d85c183bd6b85c753c83a6083dcc4c2f21a0aa9c02",
-      "physical_source_ids": [
-       "cre:trgeni01/item/0"
-      ],
       "required_transfers": [
        "trgeni01"
       ],
-      "source_record": {
-       "byte_offset": 1152,
-       "record_index": 0,
-       "resref": "sw1h23",
-       "expiration": 0,
-       "charges": [
-        0,
-        0,
-        0
-       ],
-       "flags": 0,
-       "slots": [
-        9
-       ]
-      },
       "replacement": "blun05",
       "route": "trgeni01"
      }
@@ -28023,28 +27147,9 @@
        "script_name": "trgeni01"
       },
       "source_resource": "cre:trgeni01",
-      "source_resource_sha256": "cd31a342ec3e836a0e3cd2d85c183bd6b85c753c83a6083dcc4c2f21a0aa9c02",
-      "physical_source_ids": [
-       "cre:trgeni01/item/0"
-      ],
       "required_transfers": [
        "trgeni01"
       ],
-      "source_record": {
-       "byte_offset": 1152,
-       "record_index": 0,
-       "resref": "sw1h23",
-       "expiration": 0,
-       "charges": [
-        0,
-        0,
-        0
-       ],
-       "flags": 0,
-       "slots": [
-        9
-       ]
-      },
       "replacement": "blun05",
       "route": "trgeni01"
      }
@@ -28129,28 +27234,9 @@
        "script_name": "trgeni01"
       },
       "source_resource": "cre:trgeni01",
-      "source_resource_sha256": "cd31a342ec3e836a0e3cd2d85c183bd6b85c753c83a6083dcc4c2f21a0aa9c02",
-      "physical_source_ids": [
-       "cre:trgeni01/item/0"
-      ],
       "required_transfers": [
        "trgeni01"
       ],
-      "source_record": {
-       "byte_offset": 1152,
-       "record_index": 0,
-       "resref": "sw1h23",
-       "expiration": 0,
-       "charges": [
-        0,
-        0,
-        0
-       ],
-       "flags": 0,
-       "slots": [
-        9
-       ]
-      },
       "replacement": "blun05",
       "route": "trgeni01"
      }
@@ -28233,28 +27319,9 @@
        "script_name": "Dennis"
       },
       "source_resource": "cre:loutcapt",
-      "source_resource_sha256": "33bb5267dd0bb7b120e7e9b20c05e37b0cd8c73134e7ba642dbb8b075713e430",
-      "physical_source_ids": [
-       "cre:loutcapt/item/6"
-      ],
       "required_transfers": [
        "loutcapt"
       ],
-      "source_record": {
-       "byte_offset": 1116,
-       "record_index": 6,
-       "resref": "dagg11",
-       "expiration": 0,
-       "charges": [
-        0,
-        0,
-        0
-       ],
-       "flags": 0,
-       "slots": [
-        11
-       ]
-      },
       "route": "loutcapt"
      }
     ],
@@ -28336,28 +27403,9 @@
        "script_name": "Dennis"
       },
       "source_resource": "cre:loutcapt",
-      "source_resource_sha256": "33bb5267dd0bb7b120e7e9b20c05e37b0cd8c73134e7ba642dbb8b075713e430",
-      "physical_source_ids": [
-       "cre:loutcapt/item/6"
-      ],
       "required_transfers": [
        "loutcapt"
       ],
-      "source_record": {
-       "byte_offset": 1116,
-       "record_index": 6,
-       "resref": "dagg11",
-       "expiration": 0,
-       "charges": [
-        0,
-        0,
-        0
-       ],
-       "flags": 0,
-       "slots": [
-        11
-       ]
-      },
       "route": "loutcapt"
      }
     ],
@@ -28439,28 +27487,9 @@
        "script_name": "Dennis"
       },
       "source_resource": "cre:loutcapt",
-      "source_resource_sha256": "33bb5267dd0bb7b120e7e9b20c05e37b0cd8c73134e7ba642dbb8b075713e430",
-      "physical_source_ids": [
-       "cre:loutcapt/item/6"
-      ],
       "required_transfers": [
        "loutcapt"
       ],
-      "source_record": {
-       "byte_offset": 1116,
-       "record_index": 6,
-       "resref": "dagg11",
-       "expiration": 0,
-       "charges": [
-        0,
-        0,
-        0
-       ],
-       "flags": 0,
-       "slots": [
-        11
-       ]
-      },
       "route": "loutcapt"
      }
     ],
@@ -28543,28 +27572,9 @@
        "script_name": "Dennis"
       },
       "source_resource": "cre:loutcapt",
-      "source_resource_sha256": "33bb5267dd0bb7b120e7e9b20c05e37b0cd8c73134e7ba642dbb8b075713e430",
-      "physical_source_ids": [
-       "cre:loutcapt/item/6"
-      ],
       "required_transfers": [
        "loutcapt"
       ],
-      "source_record": {
-       "byte_offset": 1116,
-       "record_index": 6,
-       "resref": "dagg11",
-       "expiration": 0,
-       "charges": [
-        0,
-        0,
-        0
-       ],
-       "flags": 0,
-       "slots": [
-        11
-       ]
-      },
       "route": "loutcapt"
      }
     ],
@@ -28646,28 +27656,9 @@
        "script_name": "Dennis"
       },
       "source_resource": "cre:loutcapt",
-      "source_resource_sha256": "33bb5267dd0bb7b120e7e9b20c05e37b0cd8c73134e7ba642dbb8b075713e430",
-      "physical_source_ids": [
-       "cre:loutcapt/item/6"
-      ],
       "required_transfers": [
        "loutcapt"
       ],
-      "source_record": {
-       "byte_offset": 1116,
-       "record_index": 6,
-       "resref": "dagg11",
-       "expiration": 0,
-       "charges": [
-        0,
-        0,
-        0
-       ],
-       "flags": 0,
-       "slots": [
-        11
-       ]
-      },
       "route": "loutcapt"
      }
     ],
@@ -28747,28 +27738,9 @@
        "script_name": "Dennis"
       },
       "source_resource": "cre:loutcapt",
-      "source_resource_sha256": "33bb5267dd0bb7b120e7e9b20c05e37b0cd8c73134e7ba642dbb8b075713e430",
-      "physical_source_ids": [
-       "cre:loutcapt/item/6"
-      ],
       "required_transfers": [
        "loutcapt"
       ],
-      "source_record": {
-       "byte_offset": 1116,
-       "record_index": 6,
-       "resref": "dagg11",
-       "expiration": 0,
-       "charges": [
-        0,
-        0,
-        0
-       ],
-       "flags": 0,
-       "slots": [
-        11
-       ]
-      },
       "route": "loutcapt"
      }
     ],
@@ -28850,28 +27822,9 @@
        "script_name": "Dennis"
       },
       "source_resource": "cre:loutcapt",
-      "source_resource_sha256": "33bb5267dd0bb7b120e7e9b20c05e37b0cd8c73134e7ba642dbb8b075713e430",
-      "physical_source_ids": [
-       "cre:loutcapt/item/6"
-      ],
       "required_transfers": [
        "loutcapt"
       ],
-      "source_record": {
-       "byte_offset": 1116,
-       "record_index": 6,
-       "resref": "dagg11",
-       "expiration": 0,
-       "charges": [
-        0,
-        0,
-        0
-       ],
-       "flags": 0,
-       "slots": [
-        11
-       ]
-      },
       "route": "loutcapt"
      }
     ],
@@ -28955,28 +27908,9 @@
        "script_name": "Dennis"
       },
       "source_resource": "cre:loutcapt",
-      "source_resource_sha256": "33bb5267dd0bb7b120e7e9b20c05e37b0cd8c73134e7ba642dbb8b075713e430",
-      "physical_source_ids": [
-       "cre:loutcapt/item/6"
-      ],
       "required_transfers": [
        "loutcapt"
       ],
-      "source_record": {
-       "byte_offset": 1116,
-       "record_index": 6,
-       "resref": "dagg11",
-       "expiration": 0,
-       "charges": [
-        0,
-        0,
-        0
-       ],
-       "flags": 0,
-       "slots": [
-        11
-       ]
-      },
       "route": "loutcapt"
      }
     ],
@@ -29058,28 +27992,9 @@
        "script_name": "amcler01"
       },
       "source_resource": "cre:amcler01",
-      "source_resource_sha256": "c8cdf695c04d6eb9cce075bff7fd4e2c528c480a360ffbac280ef5ec6b14d4fc",
-      "physical_source_ids": [
-       "cre:amcler01/item/0"
-      ],
       "required_transfers": [
        "amcler01"
       ],
-      "source_record": {
-       "byte_offset": 1272,
-       "record_index": 0,
-       "resref": "ring43",
-       "expiration": 0,
-       "charges": [
-        0,
-        0,
-        0
-       ],
-       "flags": 0,
-       "slots": [
-        4
-       ]
-      },
       "route": "amcler01"
      }
     ],
@@ -29161,28 +28076,9 @@
        "script_name": "amcler01"
       },
       "source_resource": "cre:amcler01",
-      "source_resource_sha256": "c8cdf695c04d6eb9cce075bff7fd4e2c528c480a360ffbac280ef5ec6b14d4fc",
-      "physical_source_ids": [
-       "cre:amcler01/item/0"
-      ],
       "required_transfers": [
        "amcler01"
       ],
-      "source_record": {
-       "byte_offset": 1272,
-       "record_index": 0,
-       "resref": "ring43",
-       "expiration": 0,
-       "charges": [
-        0,
-        0,
-        0
-       ],
-       "flags": 0,
-       "slots": [
-        4
-       ]
-      },
       "route": "amcler01"
      }
     ],
@@ -29264,28 +28160,9 @@
        "script_name": "amcler01"
       },
       "source_resource": "cre:amcler01",
-      "source_resource_sha256": "c8cdf695c04d6eb9cce075bff7fd4e2c528c480a360ffbac280ef5ec6b14d4fc",
-      "physical_source_ids": [
-       "cre:amcler01/item/0"
-      ],
       "required_transfers": [
        "amcler01"
       ],
-      "source_record": {
-       "byte_offset": 1272,
-       "record_index": 0,
-       "resref": "ring43",
-       "expiration": 0,
-       "charges": [
-        0,
-        0,
-        0
-       ],
-       "flags": 0,
-       "slots": [
-        4
-       ]
-      },
       "route": "amcler01"
      }
     ],
@@ -29368,28 +28245,9 @@
        "script_name": "amcler01"
       },
       "source_resource": "cre:amcler01",
-      "source_resource_sha256": "c8cdf695c04d6eb9cce075bff7fd4e2c528c480a360ffbac280ef5ec6b14d4fc",
-      "physical_source_ids": [
-       "cre:amcler01/item/0"
-      ],
       "required_transfers": [
        "amcler01"
       ],
-      "source_record": {
-       "byte_offset": 1272,
-       "record_index": 0,
-       "resref": "ring43",
-       "expiration": 0,
-       "charges": [
-        0,
-        0,
-        0
-       ],
-       "flags": 0,
-       "slots": [
-        4
-       ]
-      },
       "route": "amcler01"
      }
     ],
@@ -29471,28 +28329,9 @@
        "script_name": "amcler01"
       },
       "source_resource": "cre:amcler01",
-      "source_resource_sha256": "c8cdf695c04d6eb9cce075bff7fd4e2c528c480a360ffbac280ef5ec6b14d4fc",
-      "physical_source_ids": [
-       "cre:amcler01/item/0"
-      ],
       "required_transfers": [
        "amcler01"
       ],
-      "source_record": {
-       "byte_offset": 1272,
-       "record_index": 0,
-       "resref": "ring43",
-       "expiration": 0,
-       "charges": [
-        0,
-        0,
-        0
-       ],
-       "flags": 0,
-       "slots": [
-        4
-       ]
-      },
       "route": "amcler01"
      }
     ],
@@ -29572,28 +28411,9 @@
        "script_name": "amcler01"
       },
       "source_resource": "cre:amcler01",
-      "source_resource_sha256": "c8cdf695c04d6eb9cce075bff7fd4e2c528c480a360ffbac280ef5ec6b14d4fc",
-      "physical_source_ids": [
-       "cre:amcler01/item/0"
-      ],
       "required_transfers": [
        "amcler01"
       ],
-      "source_record": {
-       "byte_offset": 1272,
-       "record_index": 0,
-       "resref": "ring43",
-       "expiration": 0,
-       "charges": [
-        0,
-        0,
-        0
-       ],
-       "flags": 0,
-       "slots": [
-        4
-       ]
-      },
       "route": "amcler01"
      }
     ],
@@ -29675,28 +28495,9 @@
        "script_name": "amcler01"
       },
       "source_resource": "cre:amcler01",
-      "source_resource_sha256": "c8cdf695c04d6eb9cce075bff7fd4e2c528c480a360ffbac280ef5ec6b14d4fc",
-      "physical_source_ids": [
-       "cre:amcler01/item/0"
-      ],
       "required_transfers": [
        "amcler01"
       ],
-      "source_record": {
-       "byte_offset": 1272,
-       "record_index": 0,
-       "resref": "ring43",
-       "expiration": 0,
-       "charges": [
-        0,
-        0,
-        0
-       ],
-       "flags": 0,
-       "slots": [
-        4
-       ]
-      },
       "route": "amcler01"
      }
     ],
@@ -29780,28 +28581,9 @@
        "script_name": "amcler01"
       },
       "source_resource": "cre:amcler01",
-      "source_resource_sha256": "c8cdf695c04d6eb9cce075bff7fd4e2c528c480a360ffbac280ef5ec6b14d4fc",
-      "physical_source_ids": [
-       "cre:amcler01/item/0"
-      ],
       "required_transfers": [
        "amcler01"
       ],
-      "source_record": {
-       "byte_offset": 1272,
-       "record_index": 0,
-       "resref": "ring43",
-       "expiration": 0,
-       "charges": [
-        0,
-        0,
-        0
-       ],
-       "flags": 0,
-       "slots": [
-        4
-       ]
-      },
       "route": "amcler01"
      }
     ],
@@ -29913,26 +28695,7 @@
        "script_name": "udlesa"
       },
       "source_resource": "cre:udlesa",
-      "source_resource_sha256": "f51eaafa2f7c4df7b0af9c76fac2576a243929c31b57a965a326fb58e2b6b8c4",
-      "physical_source_ids": [
-       "cre:udlesa/item/2"
-      ],
       "replacement": "dwsw1h02",
-      "source_record": {
-       "byte_offset": 3676,
-       "record_index": 2,
-       "resref": "sw1h39",
-       "expiration": 0,
-       "charges": [
-        0,
-        0,
-        0
-       ],
-       "flags": 0,
-       "slots": [
-        9
-       ]
-      },
       "route": "udlesa"
      }
     ],
@@ -30044,26 +28807,7 @@
        "script_name": "udlesa"
       },
       "source_resource": "cre:udlesa",
-      "source_resource_sha256": "f51eaafa2f7c4df7b0af9c76fac2576a243929c31b57a965a326fb58e2b6b8c4",
-      "physical_source_ids": [
-       "cre:udlesa/item/2"
-      ],
       "replacement": "dwsw1h02",
-      "source_record": {
-       "byte_offset": 3676,
-       "record_index": 2,
-       "resref": "sw1h39",
-       "expiration": 0,
-       "charges": [
-        0,
-        0,
-        0
-       ],
-       "flags": 0,
-       "slots": [
-        9
-       ]
-      },
       "route": "udlesa"
      }
     ],
@@ -30175,26 +28919,7 @@
        "script_name": "udlesa"
       },
       "source_resource": "cre:udlesa",
-      "source_resource_sha256": "f51eaafa2f7c4df7b0af9c76fac2576a243929c31b57a965a326fb58e2b6b8c4",
-      "physical_source_ids": [
-       "cre:udlesa/item/2"
-      ],
       "replacement": "dwsw1h02",
-      "source_record": {
-       "byte_offset": 3676,
-       "record_index": 2,
-       "resref": "sw1h39",
-       "expiration": 0,
-       "charges": [
-        0,
-        0,
-        0
-       ],
-       "flags": 0,
-       "slots": [
-        9
-       ]
-      },
       "route": "udlesa"
      }
     ],
@@ -30307,26 +29032,7 @@
        "script_name": "udlesa"
       },
       "source_resource": "cre:udlesa",
-      "source_resource_sha256": "f51eaafa2f7c4df7b0af9c76fac2576a243929c31b57a965a326fb58e2b6b8c4",
-      "physical_source_ids": [
-       "cre:udlesa/item/2"
-      ],
       "replacement": "dwsw1h02",
-      "source_record": {
-       "byte_offset": 3676,
-       "record_index": 2,
-       "resref": "sw1h39",
-       "expiration": 0,
-       "charges": [
-        0,
-        0,
-        0
-       ],
-       "flags": 0,
-       "slots": [
-        9
-       ]
-      },
       "route": "udlesa"
      }
     ],
@@ -30438,26 +29144,7 @@
        "script_name": "udlesa"
       },
       "source_resource": "cre:udlesa",
-      "source_resource_sha256": "f51eaafa2f7c4df7b0af9c76fac2576a243929c31b57a965a326fb58e2b6b8c4",
-      "physical_source_ids": [
-       "cre:udlesa/item/2"
-      ],
       "replacement": "dwsw1h02",
-      "source_record": {
-       "byte_offset": 3676,
-       "record_index": 2,
-       "resref": "sw1h39",
-       "expiration": 0,
-       "charges": [
-        0,
-        0,
-        0
-       ],
-       "flags": 0,
-       "slots": [
-        9
-       ]
-      },
       "route": "udlesa"
      }
     ],
@@ -30567,26 +29254,7 @@
        "script_name": "udlesa"
       },
       "source_resource": "cre:udlesa",
-      "source_resource_sha256": "f51eaafa2f7c4df7b0af9c76fac2576a243929c31b57a965a326fb58e2b6b8c4",
-      "physical_source_ids": [
-       "cre:udlesa/item/2"
-      ],
       "replacement": "dwsw1h02",
-      "source_record": {
-       "byte_offset": 3676,
-       "record_index": 2,
-       "resref": "sw1h39",
-       "expiration": 0,
-       "charges": [
-        0,
-        0,
-        0
-       ],
-       "flags": 0,
-       "slots": [
-        9
-       ]
-      },
       "route": "udlesa"
      }
     ],
@@ -30698,26 +29366,7 @@
        "script_name": "udlesa"
       },
       "source_resource": "cre:udlesa",
-      "source_resource_sha256": "f51eaafa2f7c4df7b0af9c76fac2576a243929c31b57a965a326fb58e2b6b8c4",
-      "physical_source_ids": [
-       "cre:udlesa/item/2"
-      ],
       "replacement": "dwsw1h02",
-      "source_record": {
-       "byte_offset": 3676,
-       "record_index": 2,
-       "resref": "sw1h39",
-       "expiration": 0,
-       "charges": [
-        0,
-        0,
-        0
-       ],
-       "flags": 0,
-       "slots": [
-        9
-       ]
-      },
       "route": "udlesa"
      }
     ],
@@ -30831,26 +29480,7 @@
        "script_name": "udlesa"
       },
       "source_resource": "cre:udlesa",
-      "source_resource_sha256": "f51eaafa2f7c4df7b0af9c76fac2576a243929c31b57a965a326fb58e2b6b8c4",
-      "physical_source_ids": [
-       "cre:udlesa/item/2"
-      ],
       "replacement": "dwsw1h02",
-      "source_record": {
-       "byte_offset": 3676,
-       "record_index": 2,
-       "resref": "sw1h39",
-       "expiration": 0,
-       "charges": [
-        0,
-        0,
-        0
-       ],
-       "flags": 0,
-       "slots": [
-        9
-       ]
-      },
       "route": "udlesa"
      }
     ],
@@ -30932,28 +29562,9 @@
        "script_name": "amcler01"
       },
       "source_resource": "cre:amcler01",
-      "source_resource_sha256": "c8cdf695c04d6eb9cce075bff7fd4e2c528c480a360ffbac280ef5ec6b14d4fc",
-      "physical_source_ids": [
-       "cre:amcler01/item/0"
-      ],
       "required_transfers": [
        "amcler01"
       ],
-      "source_record": {
-       "byte_offset": 1272,
-       "record_index": 0,
-       "resref": "ring43",
-       "expiration": 0,
-       "charges": [
-        0,
-        0,
-        0
-       ],
-       "flags": 0,
-       "slots": [
-        4
-       ]
-      },
       "route": "amcler01"
      }
     ],
@@ -31040,28 +29651,9 @@
        "script_name": "amcler01"
       },
       "source_resource": "cre:amcler01",
-      "source_resource_sha256": "c8cdf695c04d6eb9cce075bff7fd4e2c528c480a360ffbac280ef5ec6b14d4fc",
-      "physical_source_ids": [
-       "cre:amcler01/item/0"
-      ],
       "required_transfers": [
        "amcler01"
       ],
-      "source_record": {
-       "byte_offset": 1272,
-       "record_index": 0,
-       "resref": "ring43",
-       "expiration": 0,
-       "charges": [
-        0,
-        0,
-        0
-       ],
-       "flags": 0,
-       "slots": [
-        4
-       ]
-      },
       "route": "amcler01"
      }
     ],
@@ -31147,28 +29739,9 @@
        "script_name": "amcler01"
       },
       "source_resource": "cre:amcler01",
-      "source_resource_sha256": "c8cdf695c04d6eb9cce075bff7fd4e2c528c480a360ffbac280ef5ec6b14d4fc",
-      "physical_source_ids": [
-       "cre:amcler01/item/0"
-      ],
       "required_transfers": [
        "amcler01"
       ],
-      "source_record": {
-       "byte_offset": 1272,
-       "record_index": 0,
-       "resref": "ring43",
-       "expiration": 0,
-       "charges": [
-        0,
-        0,
-        0
-       ],
-       "flags": 0,
-       "slots": [
-        4
-       ]
-      },
       "route": "amcler01"
      }
     ],
@@ -31392,26 +29965,7 @@
        "script_name": "udlesa"
       },
       "source_resource": "cre:udlesa",
-      "source_resource_sha256": "f51eaafa2f7c4df7b0af9c76fac2576a243929c31b57a965a326fb58e2b6b8c4",
-      "physical_source_ids": [
-       "cre:udlesa/item/2"
-      ],
       "replacement": "dwsw1h02",
-      "source_record": {
-       "byte_offset": 3676,
-       "record_index": 2,
-       "resref": "sw1h39",
-       "expiration": 0,
-       "charges": [
-        0,
-        0,
-        0
-       ],
-       "flags": 0,
-       "slots": [
-        9
-       ]
-      },
       "route": "udlesa"
      }
     ],
@@ -31479,26 +30033,7 @@
        "original-source:bg2:mode2:item:12"
       ],
       "source_resource": "cre:scyarryl",
-      "source_resource_sha256": "15e6723046533520d542f00cb14fdc5c04d74d19b327424f212542b722f0d462",
-      "physical_source_ids": [
-       "cre:scyarryl/item/0"
-      ],
       "grant_kind": "transfer",
-      "source_record": {
-       "byte_offset": 1308,
-       "record_index": 0,
-       "resref": "blun20",
-       "expiration": 0,
-       "charges": [
-        0,
-        0,
-        0
-       ],
-       "flags": 0,
-       "slots": [
-        9
-       ]
-      },
       "required_transfers": [
        "scyarryl"
       ],

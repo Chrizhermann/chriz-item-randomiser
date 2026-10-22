@@ -366,6 +366,21 @@ game without that dialogue, or whose king gives no rod, needs no link. Where the
 reply gives the rod in a way CIR cannot gate, or AR2300 holds a second rod that the
 reply could stand for, the rod's row is left out with its reason.
 
+Rewards an NPC carries: the genie in Trademeet (`TRGENI01`), Captain Dennis
+(`LOUTCAPT`), the Amkethran priest (`AMCLER01`) and the sculptor Yarryl (`SCYARRYL`,
+his copy of the temple's reward) carry the item their conversation hands over. When
+that reward moves, the creature's copies go with it; the configuration finds them in
+the scanned creature file, whatever their place, flags or charges there and whatever
+else another mod gave the creature, and the runtime checks each copy's bytes against
+the original file before it removes it (the genie keeps a `BLUN05` instead). Lesa's
+sword (`UDLESA`) is a reward of its own, and her conversation follows its row where
+her dialogue gives the sword, as the king's does for the rod. A row is left out with
+its reason where the creature does not carry its reward ("TRGENI01.CRE does not carry
+SW1H23, which the reward of TRGENI01.DLG hands over"), where its copies differ ("…
+carries BLUN20 in records that differ"), or where the creature holds a second sword
+that Lesa's conversation could stand for. A Yarryl without the club simply has no
+copy to remove.
+
 The world scan leaves out a creature, area or store file it cannot read (another
 mod's damaged or unusual file) instead of refusing the game. `world scan` names such
 files with their reason in its `warnings`, and the preset dialog names them first

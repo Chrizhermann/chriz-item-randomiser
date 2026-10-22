@@ -522,28 +522,9 @@
        "script_name": "trgeni01"
       },
       "source_resource": "cre:trgeni01",
-      "source_resource_sha256": "cd31a342ec3e836a0e3cd2d85c183bd6b85c753c83a6083dcc4c2f21a0aa9c02",
-      "physical_source_ids": [
-       "cre:trgeni01/item/0"
-      ],
       "required_transfers": [
        "trgeni01"
       ],
-      "source_record": {
-       "byte_offset": 1152,
-       "record_index": 0,
-       "resref": "sw1h23",
-       "expiration": 0,
-       "charges": [
-        0,
-        0,
-        0
-       ],
-       "flags": 0,
-       "slots": [
-        9
-       ]
-      },
       "replacement": "blun05",
       "route": "trgeni01"
      }
@@ -628,28 +609,9 @@
        "script_name": "trgeni01"
       },
       "source_resource": "cre:trgeni01",
-      "source_resource_sha256": "cd31a342ec3e836a0e3cd2d85c183bd6b85c753c83a6083dcc4c2f21a0aa9c02",
-      "physical_source_ids": [
-       "cre:trgeni01/item/0"
-      ],
       "required_transfers": [
        "trgeni01"
       ],
-      "source_record": {
-       "byte_offset": 1152,
-       "record_index": 0,
-       "resref": "sw1h23",
-       "expiration": 0,
-       "charges": [
-        0,
-        0,
-        0
-       ],
-       "flags": 0,
-       "slots": [
-        9
-       ]
-      },
       "replacement": "blun05",
       "route": "trgeni01"
      }
@@ -734,28 +696,9 @@
        "script_name": "trgeni01"
       },
       "source_resource": "cre:trgeni01",
-      "source_resource_sha256": "cd31a342ec3e836a0e3cd2d85c183bd6b85c753c83a6083dcc4c2f21a0aa9c02",
-      "physical_source_ids": [
-       "cre:trgeni01/item/0"
-      ],
       "required_transfers": [
        "trgeni01"
       ],
-      "source_record": {
-       "byte_offset": 1152,
-       "record_index": 0,
-       "resref": "sw1h23",
-       "expiration": 0,
-       "charges": [
-        0,
-        0,
-        0
-       ],
-       "flags": 0,
-       "slots": [
-        9
-       ]
-      },
       "replacement": "blun05",
       "route": "trgeni01"
      }
@@ -840,28 +783,9 @@
        "script_name": "trgeni01"
       },
       "source_resource": "cre:trgeni01",
-      "source_resource_sha256": "cd31a342ec3e836a0e3cd2d85c183bd6b85c753c83a6083dcc4c2f21a0aa9c02",
-      "physical_source_ids": [
-       "cre:trgeni01/item/0"
-      ],
       "required_transfers": [
        "trgeni01"
       ],
-      "source_record": {
-       "byte_offset": 1152,
-       "record_index": 0,
-       "resref": "sw1h23",
-       "expiration": 0,
-       "charges": [
-        0,
-        0,
-        0
-       ],
-       "flags": 0,
-       "slots": [
-        9
-       ]
-      },
       "replacement": "blun05",
       "route": "trgeni01"
      }

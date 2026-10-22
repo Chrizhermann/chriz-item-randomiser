@@ -171,18 +171,10 @@ fn row_mut<'a>(rewards: &'a mut Dict, key: &str) -> &'a mut Dict {
     rewards.get_mut(key).and_then(Value::as_dict_mut).expect("registered reward")
 }
 
-fn source_record(offset: i64, index: i64, resref: &str, slot: i64) -> Dict {
-    dict! {
-        "byte_offset" => offset, "record_index" => index, "resref" => resref,
-        "expiration" => 0, "charges" => list![0, 0, 0], "flags" => 0, "slots" => list![slot],
-    }
-}
-
 struct Registry {
     rewards: Dict,
     direct: Vec<String>,
     transfers: Dict,
-    physical: Dict,
     resources: Dict,
     sources: Dict,
     targets: Dict,
@@ -278,16 +270,15 @@ fn build_registry() -> Registry {
     // copy to BHOISIG source ident w8, and its lib/delete.tpa removes it only
     // when that source is selected. The sculptor target independently
     // converts its GiveItem into a created reward. This is an auxiliary
-    // guarded copy, never another randomized source unit.
+    // guarded copy, never another randomized source unit. Each copy is the
+    // creature's records of the reward item, as the scan finds them
+    // (native_export.rs), whatever their place or flags in this game.
     {
         let row = row_mut(&mut rewards, "scyarryl");
         row.insert("authored_source_ids", list!["original-source:bg2:mode2:item:12"]);
         row.insert("source_ids", Value::List(Vec::new()));
         row.insert("source_resource", "cre:scyarryl");
-        row.insert("source_resource_sha256", "15e6723046533520d542f00cb14fdc5c04d74d19b327424f212542b722f0d462");
-        row.insert("physical_source_ids", list!["cre:scyarryl/item/0"]);
         row.insert("grant_kind", "transfer");
-        row.insert("source_record", source_record(1308, 0, "blun20", 9));
     }
     let mut transfer_names = vec!["scyarryl"];
     for sculptor in ["sctelwyn", "scsain", "scyarryl"] {
@@ -302,48 +293,12 @@ fn build_registry() -> Registry {
     // still work. Their dialogue transfers the carried assignment through a
     // blocking Lua callback; it never creates a second item for the dialogue
     // recipient.
-    let carried: [(&str, &str, i64, i64, &str, &str, Vec<(i64, i64)>, i64, i64, i64, &str); 3] = [
-        (
-            "trgeni01",
-            "sw1h23",
-            32,
-            32,
-            "ar2014",
-            "trgeni01",
-            vec![(35, 0), (40, 0)],
-            0,
-            1152,
-            9,
-            "cd31a342ec3e836a0e3cd2d85c183bd6b85c753c83a6083dcc4c2f21a0aa9c02",
-        ),
-        (
-            "loutcapt",
-            "dagg11",
-            39,
-            42,
-            "ar0514",
-            "Dennis",
-            vec![(26, 0), (30, 0)],
-            6,
-            1116,
-            11,
-            "33bb5267dd0bb7b120e7e9b20c05e37b0cd8c73134e7ba642dbb8b075713e430",
-        ),
-        (
-            "amcler01",
-            "ring43",
-            84,
-            85,
-            "ar5500",
-            "amcler01",
-            vec![(7, 0), (8, 0)],
-            0,
-            1272,
-            4,
-            "c8cdf695c04d6eb9cce075bff7fd4e2c528c480a360ffbac280ef5ec6b14d4fc",
-        ),
+    let carried: [(&str, &str, i64, i64, &str, &str, Vec<(i64, i64)>); 3] = [
+        ("trgeni01", "sw1h23", 32, 32, "ar2014", "trgeni01", vec![(35, 0), (40, 0)]),
+        ("loutcapt", "dagg11", 39, 42, "ar0514", "Dennis", vec![(26, 0), (30, 0)]),
+        ("amcler01", "ring43", 84, 85, "ar5500", "amcler01", vec![(7, 0), (8, 0)]),
     ];
-    for (name, item, source, target, area, script, branches, record, offset, slot, hash) in carried {
+    for (name, item, source, target, area, script, branches) in carried {
         alias(&mut rewards, name, item, source, Some(target), &name.to_uppercase(), &[(name, branches)], NO_CHARGES, talker);
         let row = row_mut(&mut rewards, name);
         let source_ids = row.get("source_ids").cloned().expect("source ids");
@@ -354,10 +309,7 @@ fn build_registry() -> Registry {
             dict! {"area" => area, "creature_resource" => format!("cre:{name}"), "script_name" => script},
         );
         row.insert("source_resource", format!("cre:{name}"));
-        row.insert("source_resource_sha256", hash);
-        row.insert("physical_source_ids", list![format!("cre:{name}/item/{record}")]);
         row.insert("required_transfers", list![name]);
-        row.insert("source_record", source_record(offset, record, item, slot));
         transfer_names.push(name);
     }
     // Item Randomiser's lists/duplicates/bg2.2da:20 replaces the selected
@@ -381,19 +333,14 @@ fn build_registry() -> Registry {
             dict! {"area" => "ar2202", "creature_resource" => "cre:udlesa", "script_name" => "udlesa"},
         );
         row.insert("source_resource", "cre:udlesa");
-        row.insert("source_resource_sha256", "f51eaafa2f7c4df7b0af9c76fac2576a243929c31b57a965a326fb58e2b6b8c4");
-        row.insert("physical_source_ids", list!["cre:udlesa/item/2"]);
         row.insert("replacement", "dwsw1h02");
-        row.insert("source_record", source_record(3676, 2, "sw1h39", 9));
     }
-    let physical = dict! {"cre:udlesa/item/2" => "udlesa"};
 
     // The Sahuagin treasury's rod (row7, whose row names sahkng01.dlg and
     // sahtreas.bcs) is an ordinary container source, but the king's reward
     // reply creates another one (SAHTREAS.BCS then destroys the treasury's).
     // As with UDLESA's sword, the reply follows the source's kept/relocated
-    // decision; without a target, its selected copy only drops the grant. A
-    // game whose dialogue gives no rod needs no route ([`gives_reward`]).
+    // decision; without a target, its selected copy only drops the grant.
     alias(&mut rewards, "sahrod", "rods02", 7, None, "SAHROD", &[("sahkng01", vec![(81, 0)])], NO_CHARGES, talker);
     {
         let row = row_mut(&mut rewards, "sahrod");
@@ -431,7 +378,7 @@ fn build_registry() -> Registry {
         .into_iter()
         .map(|name| (name.to_string(), rewards.get(name).cloned().expect("transfer row")))
         .collect();
-    Registry { rewards, direct: direct_names, transfers, physical, resources, sources, targets }
+    Registry { rewards, direct: direct_names, transfers, resources, sources, targets }
 }
 
 /// `REWARDS`: every reward route by key, in the reference's order.
@@ -449,19 +396,18 @@ pub fn transfer_specs() -> &'static Dict {
     &registry().transfers
 }
 
-/// `PHYSICAL_SOURCE_REWARDS`.
-pub fn physical_source_rewards() -> &'static Dict {
-    &registry().physical
-}
+/// `PHYSICAL_SOURCE_REWARDS`: physical sources whose reward dialogue also
+/// gives their item, by (owner resource, kind, item) as the catalog binds the
+/// original row: the creature's or the area's container record of the item.
+/// A game whose dialogue gives no such item needs no route
+/// ([`gives_reward`]). Each entry is (resource, kind, item, route).
+pub const PHYSICAL_SOURCE_REWARDS: &[(&str, &str, &str, &str)] =
+    &[("cre:udlesa", "cre-template", "sw1h39", "udlesa"), ("are:ar2300", "container", "rods02", "sahrod")];
 
-/// `CONTAINER_SOURCE_REWARDS`: container sources by (area, item), as the
-/// catalog binds the original row: the one container record of the item in
-/// the area. Each entry is (area, item, route).
-pub const CONTAINER_SOURCE_REWARDS: &[(&str, &str, &str)] = &[("are:ar2300", "rods02", "sahrod")];
-
-/// The route of a container source of `item` in `area`, if one gives it too.
-pub fn container_source_reward(area: &str, item: &str) -> Option<&'static str> {
-    CONTAINER_SOURCE_REWARDS.iter().find(|row| row.0 == area && row.1 == item).map(|row| row.2)
+/// The route of a physical source of `item` (a `kind` record of `resource`),
+/// if its reward dialogue gives the item too.
+pub fn physical_source_reward(resource: &str, kind: &str, item: &str) -> Option<&'static str> {
+    PHYSICAL_SOURCE_REWARDS.iter().find(|row| (row.0, row.1, row.2) == (resource, kind, item)).map(|row| row.3)
 }
 
 /// `RESOURCE_REWARDS`: resource to the reward keys that edit it.
@@ -1924,10 +1870,10 @@ pub fn route_reasons(resource: &str, data: &[u8]) -> Result<Dict> {
 /// Whether the dialogue gives the item of the route `key` at all, in a way
 /// the route can gate or not.
 ///
-/// A route that only stops a second copy of a container reward
-/// ([`CONTAINER_SOURCE_REWARDS`]) is needed where its dialogue gives the
-/// item. A reply whose actions cannot be read counts as giving it;
-/// [`route_reasons`] says why the route cannot be prepared then.
+/// A route that follows a physical source ([`PHYSICAL_SOURCE_REWARDS`]) is
+/// needed where its dialogue gives the item. A reply whose actions cannot be
+/// read counts as giving it; [`route_reasons`] says why the route cannot be
+/// prepared then.
 pub fn gives_reward(resource: &str, data: &[u8], key: &str) -> Result<bool> {
     let resource = resource_key(resource)?;
     let mut specs = Vec::new();

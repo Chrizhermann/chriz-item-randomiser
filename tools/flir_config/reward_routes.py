@@ -38,9 +38,9 @@ class ChangedSinceScan(ProfileError):
 
 
 _CACHE: dict[tuple[str, str, str], "RewardRoutes"] = {}
-# Routes that only stop a second copy of a container reward: needed where
-# their dialogue gives the item at all (mode2_rewards.gives_reward).
-_LINKS = frozenset(mode2_rewards.CONTAINER_SOURCE_REWARDS.values())
+# Routes that follow a physical source (Lesa's sword, the treasury's rod):
+# needed where their dialogue gives the item at all (mode2_rewards.gives_reward).
+_LINKS = frozenset(mode2_rewards.PHYSICAL_SOURCE_REWARDS.values())
 
 
 def reward_routes(catalog: dict, world: dict) -> "RewardRoutes":

@@ -588,7 +588,8 @@ class Mode2RewardTests(unittest.TestCase):
         self.assertEqual((rod["item"], rod["source_ids"], rod["target_ids"], rod["authored_source_ids"]),
                          ("rods02", (), (), ("original-source:bg2:mode2:item:7",)))
         self.assertEqual((rod["selected_global"], rod["consumed_global"]), ("FLPR_QM2_7", "FLPR_XM2_7"))
-        self.assertEqual(rewards.CONTAINER_SOURCE_REWARDS, {("are:ar2300", "rods02"): "sahrod"})
+        self.assertEqual(rewards.PHYSICAL_SOURCE_REWARDS, {("cre:udlesa", "cre-template", "sw1h39"): "udlesa",
+                                                           ("are:ar2300", "container", "rods02"): "sahrod"})
         self.assertNotIn("original-source:bg2:mode2:item:7", rewards.SOURCE_REWARDS)
         specs = rewards.resource_specs("dlg:sahkng01")
         self.assertEqual([spec["route"] for spec in specs], ["sahkng01", "sahrod"])
@@ -786,9 +787,10 @@ class Mode2RewardTests(unittest.TestCase):
         self.assertEqual(spec["authored_source_ids"], ("original-source:bg2:mode2:item:12",))
         self.assertEqual(spec["source_ids"], ())
         self.assertEqual(rewards.SOURCE_REWARDS[spec["authored_source_ids"][0]], "bhoisig")
-        self.assertEqual(spec["physical_source_ids"], ("cre:scyarryl/item/0",))
-        self.assertEqual(spec["source_record"], {"byte_offset": 1308, "record_index": 0,
-                         "resref": "blun20", "expiration": 0, "charges": [0, 0, 0], "flags": 0, "slots": [9]})
+        # The export finds the copy in the scanned CRE; no game's bytes are pinned.
+        self.assertEqual(spec["source_resource"], "cre:scyarryl")
+        for pinned in ("physical_source_ids", "source_record", "source_resource_sha256"):
+            self.assertNotIn(pinned, spec)
         self.assertEqual(spec["selected_global"], rewards.REWARDS["bhoisig"]["selected_global"])
         self.assertEqual(rewards.source_spec(spec["authored_source_ids"][0])["required_transfers"], ("scyarryl",))
         self.assertEqual(spec["event_global"], "FLPR_EA_SCULPTOR")
@@ -806,24 +808,15 @@ class Mode2RewardTests(unittest.TestCase):
         self.assertNotIn(b'GiveItem("blun20"', selected_action)
         self.assertNotIn(b'GiveItemCreate("blun20"', selected_action)
         self.assertIn(b'SetGlobal("FLPR_XM2_12","GLOBAL",1)', selected_action)
-        scan = ROOT / "work/original-preset-runtime-20260929/scan-with-spells/world.json"
-        if scan.exists():
-            world = json.loads(scan.read_text(encoding="utf-8"))
-            physical = next(row for row in world["sources"] if row["id"] == spec["physical_source_ids"][0])
-            resource = next(row for row in world["resources"] if row["id"] == spec["source_resource"])
-            self.assertEqual(physical["record"], spec["source_record"])
-            self.assertEqual(resource["sha256"], spec["source_resource_sha256"])
 
     def test_carried_rewards_keep_sources_and_transfer_callbacks_before_later_actions(self):
-        cases = (("trgeni01", 32, 32, "ar2014", "trgeni01", 0, 1152, 9),
-                 ("loutcapt", 39, 42, "ar0514", "Dennis", 6, 1116, 11),
-                 ("amcler01", 84, 85, "ar5500", "amcler01", 0, 1272, 4))
+        cases = (("trgeni01", 32, 32, "ar2014", "trgeni01"),
+                 ("loutcapt", 39, 42, "ar0514", "Dennis"),
+                 ("amcler01", 84, 85, "ar5500", "amcler01"))
         text, allocated = rewards.prepare_reward_texts(GameText(make_tlk(["Unchanged"])),
                              ("dlg:trgeni01", "dlg:amcler01"))
         self.assertEqual(_Tlk(text.male).text(allocated["dlg:amcler01"][74025], set()), "Please, accept this gift.")
-        scan = ROOT / "work/original-preset-runtime-20260929/scan-with-spells/world.json"
-        world = json.loads(scan.read_text(encoding="utf-8")) if scan.exists() else None
-        for name, source, target, area, script, index, offset, slot in cases:
+        for name, source, target, area, script in cases:
             with self.subTest(resource=name):
                 identity = f"original-source:bg2:mode2:item:{source}"
                 spec = rewards.transfer_spec(name)
@@ -834,9 +827,9 @@ class Mode2RewardTests(unittest.TestCase):
                 self.assertEqual(spec["required_transfers"], (name,))
                 self.assertEqual(spec.get("replacement"), "blun05" if name == "trgeni01" else None)
                 self.assertEqual(spec["inventory_target"], {"area": area, "creature_resource": "cre:" + name, "script_name": script})
-                self.assertEqual(spec["physical_source_ids"], (f"cre:{name}/item/{index}",))
-                self.assertEqual(spec["source_record"], {"byte_offset": offset, "record_index": index,
-                    "resref": spec["item"], "expiration": 0, "charges": [0, 0, 0], "flags": 0, "slots": [slot]})
+                self.assertEqual(spec["source_resource"], "cre:" + name)
+                for pinned in ("physical_source_ids", "source_record", "source_resource_sha256"):
+                    self.assertNotIn(pinned, spec)
                 self.assertEqual(spec["recipient"], "LastTalkedToBy")
                 self.assertEqual(spec["grant_kind"], "transfer")
                 original = dialogue_fixture(spec)
@@ -845,11 +838,6 @@ class Mode2RewardTests(unittest.TestCase):
                 self.check_dialogue(name, original, result, action_refs)
                 for action_bytes in _Dialogue(result, name).actions:
                     self.assertNotIn(f'GiveItemCreate("{spec["item"]}"'.encode(), action_bytes)
-                if world:
-                    physical = next(row for row in world["sources"] if row["id"] == spec["physical_source_ids"][0])
-                    resource = next(row for row in world["resources"] if row["id"] == spec["source_resource"])
-                    self.assertEqual(physical["record"], spec["source_record"])
-                    self.assertEqual(resource["sha256"], spec["source_resource_sha256"])
 
     def test_trgeni_terminal_departure_waits_for_transfer_and_upgrades_previous_patch(self):
         resource = "dlg:trgeni01"
@@ -931,7 +919,7 @@ class Mode2RewardTests(unittest.TestCase):
 
     def test_udlesa_physical_source_and_six_distinct_duel_continuations(self):
         spec = rewards.target_spec("bg2:mode2:target:45")
-        self.assertEqual(rewards.PHYSICAL_SOURCE_REWARDS["cre:udlesa/item/2"], "udlesa")
+        self.assertEqual(rewards.PHYSICAL_SOURCE_REWARDS[("cre:udlesa", "cre-template", "sw1h39")], "udlesa")
         self.assertNotIn("original-source:bg2:mode2:item:42", rewards.SOURCE_REWARDS)
         self.assertNotIn("udlesa", rewards.TRANSFER_SPECS)
         self.assertNotIn("required_transfers", spec)
@@ -941,9 +929,8 @@ class Mode2RewardTests(unittest.TestCase):
         self.assertEqual(spec["source_resource"], "cre:udlesa")
         self.assertEqual(spec["resource"], "dlg:udlesa")
         self.assertEqual(spec["inventory_target"], {"area": "ar2202", "creature_resource": "cre:udlesa", "script_name": "udlesa"})
-        self.assertEqual(spec["physical_source_ids"], ("cre:udlesa/item/2",))
-        self.assertEqual(spec["source_record"], {"byte_offset": 3676, "record_index": 2,
-            "resref": "sw1h39", "expiration": 0, "charges": [0, 0, 0], "flags": 0, "slots": [9]})
+        for pinned in ("physical_source_ids", "source_record", "source_resource_sha256"):
+            self.assertNotIn(pinned, spec)
         self.assertEqual(spec["selected_global"], "FLPR_QM2_42")
         self.assertEqual(spec["consumed_global"], "FLPR_XM2_42")
         self.assertEqual(spec["branches"], tuple((state, 0) for state in range(6, 12)))
@@ -967,11 +954,7 @@ class Mode2RewardTests(unittest.TestCase):
         scan = ROOT / "work/original-preset-runtime-20260929/scan-with-spells/world.json"
         if scan.exists():
             world = json.loads(scan.read_text(encoding="utf-8"))
-            physical = next(row for row in world["sources"] if row["id"] == "cre:udlesa/item/2")
-            resource = next(row for row in world["resources"] if row["id"] == "cre:udlesa")
             target = next(row for row in world["targets"] if row["id"] == "cre:udlesa")
-            self.assertEqual(physical["record"], spec["source_record"])
-            self.assertEqual(resource["sha256"], spec["source_resource_sha256"])
             self.assertEqual(target["selector"]["script_name"], spec["inventory_target"]["script_name"])
 
     def test_well_uses_appended_original_text_only_for_selected_source_and_reexports(self):

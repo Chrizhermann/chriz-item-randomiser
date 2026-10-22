@@ -218,8 +218,10 @@ struct Compiler<'a> {
     container_names: HashMap<String, usize>,
     actor_names: HashMap<String, usize>,
     container_items: HashMap<String, usize>,
-    /// The container sources of each item in each area.
-    area_container_items: HashMap<String, usize>,
+    /// The sources of each item by (resource, kind, item).
+    physical_items: HashMap<String, usize>,
+    /// The records of each item in each creature file, in record order.
+    template_records: HashMap<String, Vec<&'a Value>>,
     creature_items: HashMap<String, usize>,
     /// The sources of each item in each owner, of any kind.
     owner_items: HashMap<String, usize>,
@@ -479,38 +481,44 @@ impl<'a> Compiler<'a> {
                 if !authored_ids.iter().any(|id| id.as_str() == Some(identity)) {
                     continue;
                 }
-                let records: Vec<Option<&'a Value>> = list(entry(&duplicate, "physical_source_ids")?)
-                    .iter()
-                    .map(|key| key.as_str().and_then(|key| self.index.source(self.world, key)))
-                    .collect();
-                let mut ok = true;
-                for row in &records {
-                    ok = match row {
-                        Some(row) if row.truthy() => {
-                            row.at("kind")?.as_str() == Some("cre-template")
-                                && row.at("resource")?.py_eq(entry(&duplicate, "source_resource")?)
-                                && row.at("record")?.py_eq(entry(&duplicate, "source_record")?)
-                        }
-                        _ => false,
-                    };
-                    if !ok {
-                        break;
-                    }
+                // The creature's own copies of the reward, wherever this game
+                // keeps them; the runtime checks each record's bytes again.
+                let resource = entry(&duplicate, "source_resource")?.as_str().unwrap_or("");
+                let item = entry(&duplicate, "item")?.as_str().unwrap_or("");
+                let creature = format!("{}.CRE", upper(tail(resource, 4)));
+                let key = tuple_key(&[name_part(resource), name_part(item)]);
+                let records: Vec<&'a Value> = self.template_records.get(&key).cloned().unwrap_or_default();
+                let own = list(entry(&duplicate, "source_ids")?).iter().any(|id| id.as_str() == Some(identity));
+                if records.is_empty() && !own {
+                    continue; // A copy of another route's reward that this game does not have.
                 }
-                let ok = ok
-                    && self
-                        .use_value(entry(&duplicate, "source_resource")?)?
-                        .py_eq(entry(&duplicate, "source_resource_sha256")?);
-                require(ok, || format!("Original reward's duplicate creature item changed: {identity}"))?;
+                let quest = upper(entry(&duplicate, "quest")?.as_str().unwrap_or(""));
+                require(!records.is_empty(), || {
+                    format!(
+                        "{creature} does not carry {}, which the reward of {quest}.DLG hands over: {identity}",
+                        upper(item)
+                    )
+                })?;
+                let resource_sha256 = self.use_resource(resource)?;
+                let mut payloads = Vec::with_capacity(records.len());
                 let mut indices = Vec::with_capacity(records.len());
-                for row in records.iter().flatten() {
-                    indices.push(row.at("record")?.at("record_index")?.clone());
+                for row in &records {
+                    let record = row.at("record")?;
+                    let mut payload = Dict::new();
+                    for key in ["resref", "expiration", "charges", "flags"] {
+                        payload.insert(key, record.at(key)?.clone());
+                    }
+                    payloads.push(Value::Dict(payload));
+                    indices.push(record.at("record_index")?.clone());
                 }
+                require(payloads.iter().all(|payload| payload.py_eq(&payloads[0])), || {
+                    format!("{creature} carries {} in records that differ: {identity}", upper(item))
+                })?;
                 let mut auxiliary = crate::dict! {
-                    "resource" => entry(&duplicate, "source_resource")?.clone(),
-                    "resource_sha256" => entry(&duplicate, "source_resource_sha256")?.clone(),
+                    "resource" => resource,
+                    "resource_sha256" => resource_sha256,
                     "record_indices" => Value::List(indices),
-                    "payload" => entry(&duplicate, "payload")?.clone(),
+                    "payload" => payloads.swap_remove(0),
                     "selected_global" => entry(&duplicate, "selected_global")?.clone(),
                 };
                 if let Some(replacement) = duplicate.get("replacement").filter(|replacement| replacement.truthy()) {
@@ -769,39 +777,25 @@ impl<'a> Compiler<'a> {
     /// another treasury rod.
     fn compile_inventory_reward(&mut self, selected: &Value) -> Result<()> {
         let identity = text(selected, "id")?;
-        let name;
-        let reward;
-        if let Some(physical) = mode2_rewards::physical_source_rewards().get(identity).filter(|name| name.truthy()) {
-            name = py_str(physical);
-            reward = mode2_rewards::rewards().get(&name).ok_or_else(|| Error::key(&name))?;
-            let ok = selected.at("record")?.at("record")?.py_eq(reward.at("source_record")?)
-                && self.use_value(reward.at("source_resource")?)?.py_eq(reward.at("source_resource_sha256")?);
-            require(ok, || format!("Original inventory reward source changed: {identity}"))?;
-        } else {
-            let source = selected.at("record")?;
-            let linked = if source.at("kind")?.as_str() == Some("container") {
-                mode2_rewards::container_source_reward(text(source, "resource")?, text(source, "item")?)
-            } else {
-                None
-            };
-            // Where nothing else gives the item, it moves as any container reward.
-            let Some(linked) = linked else {
-                return Ok(());
-            };
-            if !self.gives(linked)? {
-                return Ok(());
-            }
-            name = linked.to_string();
-            reward = mode2_rewards::rewards().get(&name).ok_or_else(|| Error::key(&name))?;
-            // Both records would set the one flag the reply reads.
-            let key = tuple_key(&[key_part(Some(source.at("resource")?)), key_part(Some(source.at("item")?))]);
-            let (area_name, item, quest) =
-                (area(source.at("resource")?)?, upper(text(source, "item")?), upper(text(reward, "quest")?));
-            require(Self::count(&self.area_container_items, &key) == 1, || {
-                format!("{area_name} holds another {item} that the reward of {quest}.DLG could stand for: {identity}")
-            })?;
+        let source = selected.at("record")?;
+        let (resource, kind, item) = (text(source, "resource")?, text(source, "kind")?, text(source, "item")?);
+        // Where nothing else gives the item, it moves as any other source.
+        let Some(name) = mode2_rewards::physical_source_reward(resource, kind, item) else {
+            return Ok(());
+        };
+        if !self.gives(name)? {
+            return Ok(());
         }
-        self.require_route(&name)?;
+        let reward = mode2_rewards::rewards().get(name).ok_or_else(|| Error::key(name))?;
+        // Both records would set the one flag the dialogue reads.
+        let key = tuple_key(&[name_part(resource), name_part(kind), name_part(item)]);
+        let (owner_kind, owner) = resource.split_once(':').unwrap_or((resource, ""));
+        let (file, item, quest) =
+            (format!("{}.{}", upper(owner), upper(owner_kind)), upper(item), upper(text(reward, "quest")?));
+        require(Self::count(&self.physical_items, &key) == 1, || {
+            format!("{file} holds another {item} that the reward of {quest}.DLG could stand for: {identity}")
+        })?;
+        self.require_route(name)?;
         let endpoint = self
             .sources
             .get_mut(identity)
@@ -1176,7 +1170,8 @@ pub fn compile(
         container_names: HashMap::new(),
         actor_names: HashMap::new(),
         container_items: HashMap::new(),
-        area_container_items: HashMap::new(),
+        physical_items: HashMap::new(),
+        template_records: HashMap::new(),
         creature_items: HashMap::new(),
         owner_items: HashMap::new(),
         template_actors: HashMap::new(),
@@ -1217,9 +1212,29 @@ pub fn compile(
         if source.at("kind")?.as_str() == Some("container") {
             let key = tuple_key(&[key_part(Some(source.at("owner")?)), key_part(Some(source.at("item")?))]);
             *compiler.container_items.entry(key).or_insert(0) += 1;
-            let key = tuple_key(&[key_part(Some(source.at("resource")?)), key_part(Some(source.at("item")?))]);
-            *compiler.area_container_items.entry(key).or_insert(0) += 1;
         }
+    }
+    for source in rows(world, "sources") {
+        let key = tuple_key(&[
+            key_part(Some(source.at("resource")?)),
+            key_part(Some(source.at("kind")?)),
+            key_part(Some(source.at("item")?)),
+        ]);
+        *compiler.physical_items.entry(key).or_insert(0) += 1;
+    }
+    // The records of each item in each creature file, in record order.
+    let mut templates = Vec::new();
+    for source in rows(world, "sources") {
+        if source.at("kind")?.as_str() == Some("cre-template") {
+            let index = int_like(source.at("record")?.at("record_index")?)
+                .ok_or_else(|| Error::type_error("a record index is a number".to_string()))?;
+            templates.push((index, source));
+        }
+    }
+    templates.sort_by_key(|(index, _)| *index);
+    for (_, source) in templates {
+        let key = tuple_key(&[key_part(Some(source.at("resource")?)), key_part(Some(source.at("item")?))]);
+        compiler.template_records.entry(key).or_default().push(source);
     }
     for source in rows(world, "sources") {
         if matches!(source.at("kind")?.as_str(), Some("cre-template" | "embedded-cre")) {

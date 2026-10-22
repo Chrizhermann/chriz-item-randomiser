@@ -27,14 +27,15 @@ MEMORY_SIZE = 128 + 2049 * 128 + 32 + 64 * 64
 FAMILIES = {12: ("scyarryl", "blun20", 0), 32: ("trgeni01", "sw1h23", 0),
             39: ("loutcapt", "dagg11", 6), 84: ("amcler01", "ring43", 0)}
 SETUP = """
-return function(f,Gate,build,compile,Inventory,original,family,creature,item,record)
+return function(f,Gate,build,compile,Inventory,original,family,creature,item,records,charges,flags,expiration)
     local id='original-source:bg2:mode2:item:'..family
     local selected='FLPR_QM2_'..family
-    local p={resref=item,expiration=0,charges={0,0,0},flags=0}
+    local p={resref=item,expiration=expiration,charges=charges,flags=flags}
     local aux={resource='cre:'..creature,resource_sha256=string.rep('2',64),
-        record_indices={record},payload=p,selected_global=selected}
+        record_indices=records,payload=p,selected_global=selected}
     local manifest={revision=string.rep('a',64),sources={{id=id,quantity=1,
-        resource_sha256=string.rep('1',64),record={kind='authored-source',record=p}}}}
+        resource_sha256=string.rep('1',64),record={kind='authored-source',
+        record={resref=item,expiration=0,charges={0,0,0},flags=0}}}}}
     local fixture={revision=manifest.revision,sources={[id]={kind='guarded-script',
         selected_global=selected,auxiliary_creatures={aux}}},
         resource_hashes={[creature:upper()..'.CRE']=aux.resource_sha256},
@@ -73,21 +74,33 @@ end
 """
 
 
-def fixture(runtime=LuaJIT, *, family=12, original=None):
+def fixture(runtime=LuaJIT, *, family=12, original=None, records=None, charges=(0, 0, 0), flags=0,
+            expiration=0):
+    """The gate with one family's auxiliary copy: the CRE records <records>
+    (default: the family's usual record) holding the item with <charges>,
+    <flags> and <expiration>."""
     lua = runtime(unpack_returned_tuples=True)
     core, build, policy, inventory = [lua.execute(text) for text in (CORE, BUILD, POLICY, INVENTORY)]
     gate = load(lua, GATE)
     f = lua.execute(CASES.replace("return cases", "return fixture"))(core)
     creature, item, record = FAMILIES[family]
     if original is None:
-        records = [item_record("OTHER00", charges=(1, 2, 3)) for _ in range(record)]
-        records += [item_record(item.upper(), expiration=0, charges=(0, 0, 0), flags=0),
-                    item_record("OTHER01", charges=(2, 3, 4), flags=3),
-                    item_record("OTHER02", charges=(1, 0, 7), flags=1)]
-        original = bytes(make_cre(records, slots={9: record, 21: record + 1, 22: record + 2}, gap=13))
-    bundle = lua.execute(SETUP)(f, gate, build, policy, inventory, original,
-                               family, creature, item, record)
+        rows = [item_record("OTHER00", charges=(1, 2, 3)) for _ in range(record)]
+        rows += [item_record(item.upper(), expiration=0, charges=(0, 0, 0), flags=0),
+                 item_record("OTHER01", charges=(2, 3, 4), flags=3),
+                 item_record("OTHER02", charges=(1, 0, 7), flags=1)]
+        original = bytes(make_cre(rows, slots={9: record, 21: record + 1, 22: record + 2}, gap=13))
+    bundle = lua.execute(SETUP)(f, gate, build, policy, inventory, original, family, creature, item,
+                                lua.table(*(records if records is not None else [record])),
+                                lua.table(*charges), flags, expiration)
     return lua, f, bundle, original
+
+
+def edits(group):
+    return {"kind": "cre", "length": group.length, "expected": EXPECTED, "output": OUTPUT,
+            "item_offset": group.item_offset, "slot_offset": group.slot_offset,
+            "edits": [{"index": row.index, "buffer": BUFFER, "context": 40, "replacement": row.replacement}
+                      for row in group.edits.values()]}
 
 
 def loaded_policy(phase=1, selected=1, *, revision=REVISION, permanent=True, selected_global="FLPR_QM2_12"):
@@ -156,6 +169,70 @@ class AuxiliaryCreatureTests(unittest.TestCase):
                 endpoint.auxiliary_creatures[1].resource = "cre:scyarryl"
                 with self.assertRaisesRegex(Exception, "CAMPAIGN_GATE_AUXILIARY_INVALID"):
                     auxiliary._bundle(auxiliary, bundle)
+
+    def test_auxiliary_records_are_the_exports_wherever_the_game_keeps_them(self):
+        # A modded TRGENI01 keeps the sword at record 3, flagged unstealable:
+        # the export names that record and its bytes, and BLUN05 takes its place.
+        rows = [item_record("OTHER00", charges=(1, 2, 3)), item_record("OTHER01", flags=1),
+                item_record("OTHER02"), item_record("SW1H23", expiration=0, charges=(0, 0, 0), flags=2)]
+        original = bytes(make_cre(rows, slots={9: 3, 21: 0, 22: 1, 23: 2}, gap=13))
+        _, f, _, _ = fixture(family=32, original=original, records=[3], flags=2)
+        auxiliary, group = f.gate.auxiliary_members[REVISION][1], f.groups[1]
+        self.assertEqual(list(auxiliary.binding.records.values()), [3])
+        pointer, changed = run(edits(group), original, active=(0,))
+        self.assertEqual(pointer, OUTPUT)
+        self.assertEqual(changed, rewrite_inventory(original, {3: "blun05"}))
+        self.assertEqual(struct.unpack_from("<H", changed, group.slot_offset + 9 * 2)[0], 3)
+        self.assertEqual(run(edits(group), original)[1], original)
+
+    def test_every_carried_copy_of_the_reward_leaves_with_the_source(self):
+        # A LOUTCAPT that carries two DAGG11 (one with charges) loses both.
+        rows = [item_record("OTHER00"), item_record("OTHER01"),
+                item_record("DAGG11", expiration=0, charges=(1, 0, 0), flags=0),
+                item_record("OTHER02"), item_record("OTHER03"),
+                item_record("DAGG11", expiration=0, charges=(1, 0, 0), flags=0)]
+        original = bytes(make_cre(rows, slots={9: 2, 10: 5, 21: 0, 22: 1, 23: 3, 24: 4}, gap=11))
+        _, f, _, _ = fixture(family=39, original=original, records=[2, 5], charges=(1, 0, 0))
+        group = f.groups[1]
+        self.assertEqual([row.index for row in group.edits.values()], [5, 2])
+        pointer, changed = run(edits(group), original, active=(0, 1))
+        self.assertEqual(pointer, OUTPUT)
+        self.assertEqual(changed, rewrite_inventory(original, {2: None, 5: None}))
+        self.assertEqual(run(edits(group), original)[1], original)
+
+    def test_a_copy_keeps_the_flags_and_expiry_another_mod_gave_it(self):
+        # Undroppable and stolen, with an expiry: removing the copy needs neither changed.
+        rows = [item_record("OTHER00"), item_record("RING43", expiration=7, charges=(0, 0, 0), flags=0x8000000C)]
+        original = bytes(make_cre(rows, slots={4: 1, 21: 0}, gap=5))
+        lua, f, bundle, _ = fixture(family=84, original=original, records=[1], flags=0x8000000C, expiration=7)
+        auxiliary, group = f.gate.auxiliary_members[REVISION][1], f.groups[1]
+        self.assertEqual((auxiliary.binding.payload.flags, auxiliary.binding.payload.expiration), (0x8000000C, 7))
+        self.assertEqual(run(edits(group), original, active=(0,))[1], rewrite_inventory(original, {1: None}))
+        auxiliary._bundle(auxiliary, bundle)
+        # A revision whose copy differs in its expiry is not this member's.
+        copy = bundle.fixture.sources["original-source:bg2:mode2:item:84"].auxiliary_creatures[1]
+        copy.payload = lua.eval("function(p) return {resref=p.resref,expiration=8,charges=p.charges,"
+                                "flags=p.flags} end")(copy.payload)
+        with self.assertRaisesRegex(Exception, "CAMPAIGN_GATE_AUXILIARY_REVISION_MISMATCH"):
+            auxiliary._bundle(auxiliary, bundle)
+
+    def test_auxiliary_records_must_hold_the_exported_bytes(self):
+        rows = [item_record("OTHER00"), item_record("RING43", expiration=0, charges=(0, 0, 0), flags=2)]
+        original = bytes(make_cre(rows, slots={21: 0, 22: 1}, gap=5))
+        fixture(family=84, original=original, records=[1], flags=2)
+        for case in ({"records": [0], "flags": 2}, {"records": [1], "flags": 0},
+                     {"records": [1], "flags": 2, "charges": (1, 0, 0)}, {"records": [2], "flags": 2},
+                     {"records": [1], "flags": 2, "expiration": 1}):
+            with self.subTest(**case), \
+                    self.assertRaisesRegex(Exception, "CAMPAIGN_GATE_AUXILIARY_BINDING_MISMATCH"):
+                fixture(family=84, original=original, **case)
+        for records in ([], [1, 1], [-1]):
+            with self.subTest(records=records), self.assertRaisesRegex(
+                    Exception, "CAMPAIGN_GATE_AUXILIARY_(INVALID|RECORD_INVALID)"):
+                fixture(family=84, original=original, records=records, flags=2)
+        for case in ({"flags": 2 ** 32}, {"expiration": 65536}, {"charges": (65536, 0, 0)}):
+            with self.subTest(**case), self.assertRaisesRegex(Exception, "CAMPAIGN_GATE_AUXILIARY_INVALID"):
+                fixture(family=84, original=original, records=[1], **{"flags": 2, **case})
 
     def test_loutcapt_consumed_source_removes_record_six_and_preserves_aliased_ammunition(self):
         # Inventory and slot aliases from cached scan-with-spells/world.json.

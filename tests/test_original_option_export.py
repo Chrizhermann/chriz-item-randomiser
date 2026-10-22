@@ -1,7 +1,6 @@
 """The new original options survive configuration compilation and native export."""
 import hashlib
 import json
-from copy import deepcopy
 from pathlib import Path
 import struct
 import unittest
@@ -105,48 +104,72 @@ class OriginalOptionExportTests(unittest.TestCase):
             f.export(revision)
         self.assertEqual(snapshot(f.output), first)
 
-    def test_temple_reward_exports_auxiliary_creature_without_another_unit(self):
+    TEMPLE = ('dlg:bhoisig', 'dlg:bhnalla', 'dlg:bharval')
+    COPY = {'expiration': 0, 'charges': (0, 0, 0)}
+
+    def temple_campaign(self, creature: bytes):
+        """The temple's reward (source 12) with this SCYARRYL.CRE: fixture, revision and route patches."""
         f = self.fixture()
-        temple = ('dlg:bhoisig', 'dlg:bhnalla', 'dlg:bharval')
-        resources = temple + ('dlg:hendak', 'dlg:lehtin')
-        changed = self.dialogue_routes(f, resources)
+        changed = self.dialogue_routes(f, self.TEMPLE + ('dlg:hendak', 'dlg:lehtin'))
         (f.override / 'blun20.itm').write_bytes((f.override / 'synth001.itm').read_bytes())
-        creature = bytes(make_cre([item_record('BLUN20', expiration=0, charges=(0, 0, 0), flags=0)],
-                                  slots={9: 0}))
         (f.override / 'scyarryl.cre').write_bytes(creature)
         f.refresh()
-        physical = next(row for row in f.world['sources'] if row['id'] == 'cre:scyarryl/item/0')
-        transfer = deepcopy(mode2_rewards.TRANSFER_SPECS['scyarryl'])
-        transfer['source_record'] = deepcopy(physical['record'])
-        transfer['source_resource_sha256'] = next(row['sha256'] for row in f.world['resources']
-                                                  if row['id'] == 'cre:scyarryl')
-        with patch.dict(mode2_rewards.TRANSFER_SPECS, {'scyarryl': transfer}):
-            configuration = self.mode2_configuration(f, 'bg2:mode2:item:12', 'bg2:mode2:target:18')
-            revision = write_campaign(configuration['profile'], f.catalog, f.world,
-                                      configuration['plan'], f.store)['revision']
-            manifest = read_campaign(f.store, revision)
-            self.assertEqual([(row['id'], row['quantity']) for row in manifest['sources']],
-                             [('original-source:bg2:mode2:item:12', 1)])
-            self.assertEqual(sum(row['capacity'] for row in manifest['targets']), 1)
-            before = snapshot(f.game)
+        configuration = self.mode2_configuration(f, 'bg2:mode2:item:12', 'bg2:mode2:target:18')
+        revision = write_campaign(configuration['profile'], f.catalog, f.world,
+                                  configuration['plan'], f.store)['revision']
+        manifest = read_campaign(f.store, revision)
+        self.assertEqual([(row['id'], row['quantity']) for row in manifest['sources']],
+                         [('original-source:bg2:mode2:item:12', 1)])
+        self.assertEqual(sum(row['capacity'] for row in manifest['targets']), 1)
+        return f, revision, changed
+
+    def test_temple_reward_exports_auxiliary_creature_without_another_unit(self):
+        # Yarryl's club as the game has it, and as another mod may keep it:
+        # after other items, flagged, carried twice. Without it, there is
+        # nothing to remove.
+        for rows, slots, auxiliary in (
+                ([item_record('BLUN20', flags=0, **self.COPY)], {9: 0}, ([0], 0)),
+                ([item_record('SYNTH002', expiration=0, charges=(2, 3, 4), flags=1), item_record('SYNTH001'),
+                  item_record('BLUN20', flags=2, **self.COPY), item_record('BLUN20', flags=2, **self.COPY)],
+                 {21: 0, 22: 1, 9: 2, 23: 3}, ([2, 3], 2)),
+                ([item_record('SYNTH002', expiration=0, charges=(2, 3, 4), flags=1)], {21: 0}, None)):
+            with self.subTest(auxiliary=auxiliary):
+                creature = bytes(make_cre(rows, slots=slots))
+                f, revision, changed = self.temple_campaign(creature)
+                before = snapshot(f.game)
+                f.export(revision)
+                self.assertEqual(snapshot(f.game), before)
+                base = f.output / 'campaign-store/revisions' / revision
+                native = json.loads(Path(str(base) + '.native.json').read_text())
+                self.assertEqual(list(native['sources']), ['original-source:bg2:mode2:item:12'])
+                endpoint = native['sources']['original-source:bg2:mode2:item:12']
+                self.assertEqual(endpoint['resources'], list(self.TEMPLE))
+                duplicate = Path(str(base) + '.source-1.duplicate-1.original.cre')
+                if auxiliary:
+                    indices, flags = auxiliary
+                    self.assertEqual(endpoint['auxiliary_creatures'], [{
+                        'resource': 'cre:scyarryl', 'resource_sha256': hashlib.sha256(creature).hexdigest(),
+                        'record_indices': indices,
+                        'payload': {'resref': 'blun20', 'expiration': 0, 'charges': [0, 0, 0], 'flags': flags},
+                        'selected_global': 'FLPR_QM2_12'}])
+                    self.assertEqual(duplicate.read_bytes(), creature)
+                else:
+                    self.assertNotIn('auxiliary_creatures', endpoint)
+                    self.assertFalse(duplicate.exists())
+                for number, resource in enumerate(self.TEMPLE, 1):
+                    self.assertEqual((f.output / ('resource-overrides/' + resource[4:].upper() + '.DLG')).read_bytes(),
+                                     changed[resource])
+                    self.assertEqual(Path(str(base) + f'.source-1.route-{number}.patched.dlg').read_bytes(),
+                                     changed[resource])
+
+    def test_copies_of_a_reward_that_differ_leave_its_row_out(self):
+        # The runtime checks every copy against one record's bytes.
+        creature = bytes(make_cre([item_record('BLUN20', flags=0, **self.COPY),
+                                   item_record('BLUN20', flags=2, **self.COPY)], slots={9: 0, 21: 1}))
+        f, revision, _ = self.temple_campaign(creature)
+        with self.assertRaisesRegex(ProfileError, "SCYARRYL.CRE carries BLUN20 in records that differ: "
+                                    "original-source:bg2:mode2:item:12"):
             f.export(revision)
-            self.assertEqual(snapshot(f.game), before)
-        base = f.output / 'campaign-store/revisions' / revision
-        native = json.loads(Path(str(base) + '.native.json').read_text())
-        self.assertEqual(list(native['sources']), ['original-source:bg2:mode2:item:12'])
-        endpoint = native['sources']['original-source:bg2:mode2:item:12']
-        self.assertEqual(endpoint['resources'], list(temple))
-        self.assertEqual(endpoint['auxiliary_creatures'], [{
-            'resource': 'cre:scyarryl',
-            'resource_sha256': hashlib.sha256(creature).hexdigest(),
-            'record_indices': [0], 'payload': transfer['payload'],
-            'selected_global': 'FLPR_QM2_12'}])
-        self.assertEqual(Path(str(base) + '.source-1.duplicate-1.original.cre').read_bytes(), creature)
-        for number, resource in enumerate(temple, 1):
-            self.assertEqual((f.output / ('resource-overrides/' + resource[4:].upper() + '.DLG')).read_bytes(),
-                             changed[resource])
-            self.assertEqual(Path(str(base) + f'.source-1.route-{number}.patched.dlg').read_bytes(),
-                             changed[resource])
 
     def test_ppchest_container_latch_survives_export_staging_and_rescan(self):
         f = self.fixture()
@@ -215,7 +238,9 @@ class OriginalOptionExportTests(unittest.TestCase):
         self.assertEqual(snapshot(f.game), staged)
         self.assertEqual(snapshot(f.output), first)
 
-    def test_trgeni_inventory_reward_exports_transfer_and_frozen_original(self):
+    def trgeni_campaign(self, rows: list, slots: dict):
+        """The genie's sword (source and place 32) with a TRGENI01.CRE of these
+        records: fixture, revision, creature, the dialogue and its patch."""
         f = self.fixture()
         spec = mode2_rewards.REWARDS['trgeni01']
         dialogue = _Dialogue(dialogue_fixture(mode2_rewards.resource_specs(spec['resource'])), 'trgeni01')
@@ -226,9 +251,7 @@ class OriginalOptionExportTests(unittest.TestCase):
         item = (f.override / 'synth001.itm').read_bytes()
         (f.override / 'sw1h23.itm').write_bytes(item)
         (f.override / 'blun05.itm').write_bytes(item)
-        creature = make_cre([
-            item_record('SW1H23', expiration=0, charges=(0, 0, 0), flags=0),
-            item_record('SYNTH002', expiration=0, charges=(2, 3, 4), flags=1)], slots={9: 0, 21: 1})
+        creature = make_cre(rows, slots=slots)
         creature[0x280:0x2A0] = b'trgeni01' + bytes(24)
         creature = bytes(creature)
         (f.override / 'trgeni01.cre').write_bytes(creature)
@@ -240,53 +263,82 @@ class OriginalOptionExportTests(unittest.TestCase):
         (language / 'dialog.tlk').write_bytes(tlk)
         f.catalog = scan_game(f.game, language='en_US')
         f.world = scan_world(f.catalog)
-        physical = next(row for row in f.world['sources'] if row['id'] == 'cre:trgeni01/item/0')
-        transfer = deepcopy(mode2_rewards.TRANSFER_SPECS['trgeni01'])
-        transfer['source_record'] = deepcopy(physical['record'])
-        transfer['source_resource_sha256'] = hashlib.sha256(creature).hexdigest()
-        with patch.dict(mode2_rewards.TRANSFER_SPECS, {'trgeni01': transfer}):
-            _, refs = mode2_rewards.prepare_reward_texts(GameText(tlk), (spec['resource'],), 'en_US')
-            changed = mode2_rewards.patch_reward(spec['resource'], original, refs=refs[spec['resource']])
-            configuration = self.mode2_configuration(f, 'bg2:mode2:item:32', 'bg2:mode2:target:32')
-            revision = write_campaign(configuration['profile'], f.catalog, f.world,
-                                      configuration['plan'], f.store)['revision']
-            manifest = read_campaign(f.store, revision)
-            self.assertEqual([(source['id'], source['quantity']) for source in manifest['sources']],
-                             [('original-source:bg2:mode2:item:32', 1)])
-            self.assertEqual([(target['id'], target['record']['kind']) for target in manifest['targets']],
-                             [('original-target:bg2:mode2:target:32', 'creature-target')])
-            before = snapshot(f.game)
+        _, refs = mode2_rewards.prepare_reward_texts(GameText(tlk), (spec['resource'],), 'en_US')
+        changed = mode2_rewards.patch_reward(spec['resource'], original, refs=refs[spec['resource']])
+        configuration = self.mode2_configuration(f, 'bg2:mode2:item:32', 'bg2:mode2:target:32')
+        revision = write_campaign(configuration['profile'], f.catalog, f.world,
+                                  configuration['plan'], f.store)['revision']
+        manifest = read_campaign(f.store, revision)
+        self.assertEqual([(source['id'], source['quantity']) for source in manifest['sources']],
+                         [('original-source:bg2:mode2:item:32', 1)])
+        self.assertEqual([(target['id'], target['record']['kind']) for target in manifest['targets']],
+                         [('original-target:bg2:mode2:target:32', 'creature-target')])
+        return f, revision, creature, dialogue, changed
+
+    def test_trgeni_inventory_reward_exports_transfer_and_frozen_original(self):
+        # The sword as the game has it, and after another item, identified.
+        for rows, slots, (index, flags) in (
+                ([item_record('SW1H23', flags=0, **self.COPY),
+                  item_record('SYNTH002', expiration=0, charges=(2, 3, 4), flags=1)], {9: 0, 21: 1}, (0, 0)),
+                ([item_record('SYNTH002', expiration=0, charges=(2, 3, 4), flags=1),
+                  item_record('SW1H23', flags=1, **self.COPY)], {21: 0, 9: 1}, (1, 1))):
+            with self.subTest(record=index):
+                f, revision, creature, dialogue, changed = self.trgeni_campaign(rows, slots)
+                item = (f.override / 'synth001.itm').read_bytes()
+                before = snapshot(f.game)
+                f.export(revision)
+                self.assertEqual(snapshot(f.game), before)
+                base = f.output / 'campaign-store/revisions' / revision
+                native = json.loads(Path(str(base) + '.native.json').read_text())
+                target = native['targets']['original-target:bg2:mode2:target:32']
+                self.assertEqual((target['kind'], target['area'], target['script_name'],
+                                  target['inventory_reward'], target['reward_resource']),
+                                 ('creature', 'AR2014', 'trgeni01', True, 'dlg:trgeni01'))
+                source = native['sources']['original-source:bg2:mode2:item:32']
+                self.assertEqual(source['kind'], 'guarded-script')
+                self.assertEqual(source['auxiliary_creatures'], [{
+                    'resource': 'cre:trgeni01', 'resource_sha256': hashlib.sha256(creature).hexdigest(),
+                    'record_indices': [index],
+                    'payload': {'resref': 'sw1h23', 'expiration': 0, 'charges': [0, 0, 0], 'flags': flags},
+                    'selected_global': 'FLPR_QM2_32', 'replacement': 'blun05'}])
+                self.assertEqual(native['resource_hashes']['BLUN05.ITM'], hashlib.sha256(item).hexdigest())
+                self.assertEqual(Path(str(base) + '.source-1.duplicate-1.original.cre').read_bytes(), creature)
+                self.assertEqual(Path(str(base) + '.source-1.patched.dlg').read_bytes(), changed)
+                self.assertEqual((f.output / 'resource-overrides/TRGENI01.DLG').read_bytes(), changed)
+                patched = _Dialogue(changed, 'trgeni01')
+                self.assertEqual(patched.actions[:len(dialogue.actions)], dialogue.actions)
+                callback = b'EEex_LuaAction("return(FLPR_Transfer(EEex_LuaAction_Object,32))")'
+                self.assertEqual(sum(action.count(callback) for action in patched.actions), 4)
+                self.assertEqual((f.override / 'synth002.itm').read_bytes(), item)
+                first = snapshot(f.output)
+                f.export(revision)
+                self.assertEqual(snapshot(f.output), first)
+                self.assertEqual(snapshot(f.game), before)
+
+    def test_a_carried_reward_the_creature_does_not_carry_leaves_its_row_out(self):
+        # The genie's dialogue hands over the sword it carries; this one has none.
+        f, revision, _, _, _ = self.trgeni_campaign(
+            [item_record('SYNTH002', expiration=0, charges=(2, 3, 4), flags=1)], {21: 0})
+        with self.assertRaisesRegex(ProfileError, "TRGENI01.CRE does not carry SW1H23, which the reward of "
+                                    "TRGENI01.DLG hands over: original-source:bg2:mode2:item:32"):
             f.export(revision)
-            self.assertEqual(snapshot(f.game), before)
-            base = f.output / 'campaign-store/revisions' / revision
-            native = json.loads(Path(str(base) + '.native.json').read_text())
-            target = native['targets']['original-target:bg2:mode2:target:32']
-            self.assertEqual((target['kind'], target['area'], target['script_name'],
-                              target['inventory_reward'], target['reward_resource']),
-                             ('creature', 'AR2014', 'trgeni01', True, spec['resource']))
-            source = native['sources']['original-source:bg2:mode2:item:32']
-            self.assertEqual(source['kind'], 'guarded-script')
-            self.assertEqual(source['auxiliary_creatures'], [{
-                'resource': 'cre:trgeni01', 'resource_sha256': hashlib.sha256(creature).hexdigest(),
-                'record_indices': [0], 'payload': transfer['payload'],
-                'selected_global': 'FLPR_QM2_32', 'replacement': 'blun05'}])
-            self.assertEqual(native['resource_hashes']['BLUN05.ITM'], hashlib.sha256(item).hexdigest())
-            self.assertEqual(Path(str(base) + '.source-1.duplicate-1.original.cre').read_bytes(), creature)
-            self.assertEqual(Path(str(base) + '.source-1.patched.dlg').read_bytes(), changed)
-            self.assertEqual((f.output / 'resource-overrides/TRGENI01.DLG').read_bytes(), changed)
-            patched = _Dialogue(changed, 'trgeni01')
-            self.assertEqual(patched.actions[:len(dialogue.actions)], dialogue.actions)
-            callback = b'EEex_LuaAction("return(FLPR_Transfer(EEex_LuaAction_Object,32))")'
-            self.assertEqual(sum(action.count(callback) for action in patched.actions), 4)
-            self.assertEqual((f.override / 'synth002.itm').read_bytes(), item)
-            first = snapshot(f.output)
-            f.export(revision)
-            self.assertEqual(snapshot(f.output), first)
-            self.assertEqual(snapshot(f.game), before)
 
     def test_udlesa_keeps_one_physical_source_and_links_duel_transfer(self):
+        # Lesa's sword as the game has it, and first and identified, as
+        # another mod may keep it: the link follows the record that is the row.
+        for rows, slots, index in (
+                ([item_record('SYNTH001', expiration=0, charges=(1, 2, 3), flags=1),
+                  item_record('SYNTH002', expiration=0, charges=(3, 2, 1), flags=1),
+                  item_record('SW1H39', flags=0, **self.COPY)], {21: 0, 22: 1, 9: 2}, 2),
+                ([item_record('SW1H39', flags=1, **self.COPY),
+                  item_record('SYNTH001', expiration=0, charges=(1, 2, 3), flags=1)], {9: 0, 21: 1}, 0)):
+            with self.subTest(record=index):
+                self.check_udlesa(rows, slots, index)
+
+    def check_udlesa(self, rows: list, slots: dict, index: int):
         f = self.fixture()
-        spec = deepcopy(mode2_rewards.REWARDS['udlesa'])
+        spec = mode2_rewards.REWARDS['udlesa']
+        physical = f'cre:udlesa/item/{index}'
         dialogue = _Dialogue(dialogue_fixture(mode2_rewards.resource_specs(spec['resource'])), 'udlesa')
         struct.pack_into('<I', dialogue.states[6], 0, 52664)
         original = dialogue.render()
@@ -294,11 +346,7 @@ class OriginalOptionExportTests(unittest.TestCase):
         item = (f.override / 'synth001.itm').read_bytes()
         for name in ('sw1h39', 'dwsw1h02'):
             (f.override / (name + '.itm')).write_bytes(item)
-        creature = make_cre([
-            item_record('SYNTH001', expiration=0, charges=(1, 2, 3), flags=1),
-            item_record('SYNTH002', expiration=0, charges=(3, 2, 1), flags=1),
-            item_record('SW1H39', expiration=0, charges=(0, 0, 0), flags=0)],
-            slots={21: 0, 22: 1, 9: 2})
+        creature = make_cre(rows, slots=slots)
         creature[0x280:0x2A0] = b'udlesa' + bytes(26)
         creature = bytes(creature)
         (f.override / 'udlesa.cre').write_bytes(creature)
@@ -310,56 +358,52 @@ class OriginalOptionExportTests(unittest.TestCase):
         (language / 'dialog.tlk').write_bytes(tlk)
         f.catalog = scan_game(f.game, language='en_US')
         f.world = scan_world(f.catalog)
-        physical = next(row for row in f.world['sources'] if row['id'] == 'cre:udlesa/item/2')
-        spec['source_record'] = deepcopy(physical['record'])
-        spec['source_resource_sha256'] = hashlib.sha256(creature).hexdigest()
-        with patch.dict(mode2_rewards.REWARDS, {'udlesa': spec}):
-            _, refs = mode2_rewards.prepare_reward_texts(GameText(tlk), (spec['resource'],), 'en_US')
-            changed = mode2_rewards.patch_reward(spec['resource'], original, refs=refs[spec['resource']])
-            configuration = self.mode2_configuration(f, 'bg2:mode2:item:42', 'bg2:mode2:target:45')
-            self.assertEqual(configuration['plan']['registrations'], [])
-            self.assertEqual(configuration['plan']['sources'][0]['source_ids'], ['cre:udlesa/item/2'])
-            revision = write_campaign(configuration['profile'], f.catalog, f.world,
-                                      configuration['plan'], f.store)['revision']
-            manifest = read_campaign(f.store, revision)
-            self.assertEqual([(source['id'], source['quantity'], source['record']['kind'])
-                              for source in manifest['sources']],
-                             [('cre:udlesa/item/2', 1, 'cre-template')])
-            self.assertEqual(manifest['sources'][0]['replacement']['resref'], 'dwsw1h02')
-            self.assertEqual([(target['id'], target['record']['kind'], target['record']['resource'])
-                              for target in manifest['targets']],
-                             [('original-target:bg2:mode2:target:45', 'creature-target', 'dlg:udlesa')])
-            before = snapshot(f.game)
-            f.export(revision)
-            self.assertEqual(snapshot(f.game), before)
-            base = f.output / 'campaign-store/revisions' / revision
-            native = json.loads(Path(str(base) + '.native.json').read_text())
-            self.assertEqual(list(native['sources']), ['cre:udlesa/item/2'])
-            source = native['sources']['cre:udlesa/item/2']
-            self.assertEqual((source['kind'], source['replacement'], source['reward_selected_global']),
-                             ('guarded-creature', 'dwsw1h02', 'FLPR_QM2_42'))
-            self.assertNotIn('auxiliary_creatures', source)
-            self.assertFalse(list(base.parent.glob(revision + '.source-*.duplicate-*.original.cre')))
-            self.assertEqual(native['resource_hashes']['DWSW1H02.ITM'], hashlib.sha256(item).hexdigest())
-            target = native['targets']['original-target:bg2:mode2:target:45']
-            self.assertEqual((target['kind'], target['area'], target['script_name'],
-                              target['inventory_reward'], target['reward_resource']),
-                             ('creature', 'AR2202', 'udlesa', True, 'dlg:udlesa'))
-            self.assertEqual(Path(str(base) + '.source-1.original.cre').read_bytes(), creature)
-            removed = parse_cre(Path(str(base) + '.source-1.removed.cre').read_bytes())['items']
-            pristine = parse_cre(creature)['items']
-            self.assertEqual(removed[:2], pristine[:2])
-            self.assertEqual(removed[2], {**pristine[2], 'resref': 'dwsw1h02'})
-            self.assertEqual((f.output / 'resource-overrides/UDLESA.DLG').read_bytes(), changed)
-            patched = _Dialogue(changed, 'udlesa')
-            self.assertEqual(patched.actions[:len(dialogue.actions)], dialogue.actions)
-            callback = b'EEex_LuaAction("return(FLPR_Transfer(EEex_LuaAction_Object,45))")'
-            self.assertEqual(sum(action.count(callback) for action in patched.actions), 12)
-            allocated = refs['dlg:udlesa'][52664]
-            self.assertTrue(any(struct.unpack_from('<I', state)[0] == allocated for state in patched.states))
-            exported_tlk = (f.output / 'game-overrides/lang/en_US/dialog.tlk').read_bytes()
-            self.assertEqual(_Tlk(exported_tlk).text(allocated, []),
-                             'I yield. You have proven the better combatant this day. I... I yield the victory.')
+        _, refs = mode2_rewards.prepare_reward_texts(GameText(tlk), (spec['resource'],), 'en_US')
+        changed = mode2_rewards.patch_reward(spec['resource'], original, refs=refs[spec['resource']])
+        configuration = self.mode2_configuration(f, 'bg2:mode2:item:42', 'bg2:mode2:target:45')
+        self.assertEqual(configuration['plan']['registrations'], [])
+        self.assertEqual(configuration['plan']['sources'][0]['source_ids'], [physical])
+        revision = write_campaign(configuration['profile'], f.catalog, f.world,
+                                  configuration['plan'], f.store)['revision']
+        manifest = read_campaign(f.store, revision)
+        self.assertEqual([(source['id'], source['quantity'], source['record']['kind'])
+                          for source in manifest['sources']],
+                         [(physical, 1, 'cre-template')])
+        self.assertEqual(manifest['sources'][0]['replacement']['resref'], 'dwsw1h02')
+        self.assertEqual([(target['id'], target['record']['kind'], target['record']['resource'])
+                          for target in manifest['targets']],
+                         [('original-target:bg2:mode2:target:45', 'creature-target', 'dlg:udlesa')])
+        before = snapshot(f.game)
+        f.export(revision)
+        self.assertEqual(snapshot(f.game), before)
+        base = f.output / 'campaign-store/revisions' / revision
+        native = json.loads(Path(str(base) + '.native.json').read_text())
+        self.assertEqual(list(native['sources']), [physical])
+        source = native['sources'][physical]
+        self.assertEqual((source['kind'], source['replacement'], source['reward_selected_global']),
+                         ('guarded-creature', 'dwsw1h02', 'FLPR_QM2_42'))
+        self.assertNotIn('auxiliary_creatures', source)
+        self.assertFalse(list(base.parent.glob(revision + '.source-*.duplicate-*.original.cre')))
+        self.assertEqual(native['resource_hashes']['DWSW1H02.ITM'], hashlib.sha256(item).hexdigest())
+        target = native['targets']['original-target:bg2:mode2:target:45']
+        self.assertEqual((target['kind'], target['area'], target['script_name'],
+                          target['inventory_reward'], target['reward_resource']),
+                         ('creature', 'AR2202', 'udlesa', True, 'dlg:udlesa'))
+        self.assertEqual(Path(str(base) + '.source-1.original.cre').read_bytes(), creature)
+        removed = parse_cre(Path(str(base) + '.source-1.removed.cre').read_bytes())['items']
+        pristine = parse_cre(creature)['items']
+        self.assertEqual(removed, [{**row, 'resref': 'dwsw1h02'} if number == index else row
+                                   for number, row in enumerate(pristine)])
+        self.assertEqual((f.output / 'resource-overrides/UDLESA.DLG').read_bytes(), changed)
+        patched = _Dialogue(changed, 'udlesa')
+        self.assertEqual(patched.actions[:len(dialogue.actions)], dialogue.actions)
+        callback = b'EEex_LuaAction("return(FLPR_Transfer(EEex_LuaAction_Object,45))")'
+        self.assertEqual(sum(action.count(callback) for action in patched.actions), 12)
+        allocated = refs['dlg:udlesa'][52664]
+        self.assertTrue(any(struct.unpack_from('<I', state)[0] == allocated for state in patched.states))
+        exported_tlk = (f.output / 'game-overrides/lang/en_US/dialog.tlk').read_bytes()
+        self.assertEqual(_Tlk(exported_tlk).text(allocated, []),
+                         'I yield. You have proven the better combatant this day. I... I yield the victory.')
 
     def test_dialogue_grant_keeps_exact_charges_through_export(self):
         f = self.fixture()

@@ -109,14 +109,12 @@ _alias("scyarryl", "blun20", 12, None, "SCULPTOR", {"scyarryl": ((19, 0),)})
 # source is selected. The sculptor target independently converts its GiveItem
 # into a created reward.
 # This is an auxiliary guarded copy, never another randomized source unit.
+# Each copy is the creature's records of the reward item, as the scan finds
+# them (native_export.py), whatever their place or flags in this game.
 TRANSFER_SPECS = {"scyarryl": REWARDS["scyarryl"]}
 TRANSFER_SPECS["scyarryl"].update(
     authored_source_ids=("original-source:bg2:mode2:item:12",), source_ids=(),
-    source_resource="cre:scyarryl",
-    source_resource_sha256="15e6723046533520d542f00cb14fdc5c04d74d19b327424f212542b722f0d462",
-    physical_source_ids=("cre:scyarryl/item/0",), grant_kind="transfer",
-    source_record={"byte_offset": 1308, "record_index": 0, "resref": "blun20",
-                   "expiration": 0, "charges": [0, 0, 0], "flags": 0, "slots": [9]})
+    source_resource="cre:scyarryl", grant_kind="transfer")
 for _sculptor in ("sctelwyn", "scsain", "scyarryl"):
     REWARDS[_sculptor]["resources"] = ("dlg:sctelwyn", "dlg:scsain", "dlg:scyarryl")
     REWARDS[_sculptor]["required_transfers"] = ("scyarryl",)
@@ -126,23 +124,17 @@ REWARDS["bhoisig"]["required_transfers"] = ("scyarryl",)
 # These rewards must remain carried by the NPC so theft and combat routes still
 # work. Their dialogue transfers the carried assignment through a blocking Lua
 # callback; it never creates a second item for the dialogue recipient.
-for _name, _item, _source, _target, _area, _script, _branches, _record, _offset, _slot, _hash in (
-    ("trgeni01", "sw1h23", 32, 32, "ar2014", "trgeni01", ((35, 0), (40, 0)), 0, 1152, 9,
-     "cd31a342ec3e836a0e3cd2d85c183bd6b85c753c83a6083dcc4c2f21a0aa9c02"),
-    ("loutcapt", "dagg11", 39, 42, "ar0514", "Dennis", ((26, 0), (30, 0)), 6, 1116, 11,
-     "33bb5267dd0bb7b120e7e9b20c05e37b0cd8c73134e7ba642dbb8b075713e430"),
-    ("amcler01", "ring43", 84, 85, "ar5500", "amcler01", ((7, 0), (8, 0)), 0, 1272, 4,
-     "c8cdf695c04d6eb9cce075bff7fd4e2c528c480a360ffbac280ef5ec6b14d4fc"),
+for _name, _item, _source, _target, _area, _script, _branches in (
+    ("trgeni01", "sw1h23", 32, 32, "ar2014", "trgeni01", ((35, 0), (40, 0))),
+    ("loutcapt", "dagg11", 39, 42, "ar0514", "Dennis", ((26, 0), (30, 0))),
+    ("amcler01", "ring43", 84, 85, "ar5500", "amcler01", ((7, 0), (8, 0))),
 ):
     _alias(_name, _item, _source, _target, _name.upper(), {_name: _branches})
     _specification = REWARDS[_name]
     _specification.update(
         grant_kind="transfer", authored_source_ids=_specification["source_ids"],
         inventory_target={"area": _area, "creature_resource": "cre:" + _name, "script_name": _script},
-        source_resource="cre:" + _name, source_resource_sha256=_hash,
-        physical_source_ids=(f"cre:{_name}/item/{_record}",), required_transfers=(_name,),
-        source_record={"byte_offset": _offset, "record_index": _record, "resref": _item,
-                       "expiration": 0, "charges": [0, 0, 0], "flags": 0, "slots": [_slot]})
+        source_resource="cre:" + _name, required_transfers=(_name,))
     TRANSFER_SPECS[_name] = _specification
 # Item Randomiser's lists/duplicates/bg2.2da:20 replaces the selected source's
 # carried sword with BLUN05; keep that ordinary fallback separate from its
@@ -156,24 +148,21 @@ _alias("udlesa", "sw1h39", 42, 45, "UDLESA", {"udlesa": tuple((state, 0) for sta
 REWARDS["udlesa"].update(
     source_ids=(), authored_source_ids=("original-source:bg2:mode2:item:42",), grant_kind="transfer",
     inventory_target={"area": "ar2202", "creature_resource": "cre:udlesa", "script_name": "udlesa"},
-    source_resource="cre:udlesa",
-    source_resource_sha256="f51eaafa2f7c4df7b0af9c76fac2576a243929c31b57a965a326fb58e2b6b8c4",
-    physical_source_ids=("cre:udlesa/item/2",), replacement="dwsw1h02",
-    source_record={"byte_offset": 3676, "record_index": 2, "resref": "sw1h39",
-                   "expiration": 0, "charges": [0, 0, 0], "flags": 0, "slots": [9]})
-PHYSICAL_SOURCE_REWARDS = {"cre:udlesa/item/2": "udlesa"}
+    source_resource="cre:udlesa", replacement="dwsw1h02")
 
 # The Sahuagin treasury's rod (row7, whose row names sahkng01.dlg and
 # sahtreas.bcs) is an ordinary container source, but the king's reward reply
 # creates another one (SAHTREAS.BCS then destroys the treasury's). As with
 # UDLESA's sword, the reply follows the source's kept/relocated decision;
-# without a target, its selected copy only drops the grant. A game whose
-# dialogue gives no rod needs no route (gives_reward).
+# without a target, its selected copy only drops the grant.
 _alias("sahrod", "rods02", 7, None, "SAHROD", {"sahkng01": ((81, 0),)})
 REWARDS["sahrod"].update(source_ids=(), authored_source_ids=("original-source:bg2:mode2:item:7",))
-# Container sources by (area, item), as the catalog binds the original row:
-# the one container record of the item in the area.
-CONTAINER_SOURCE_REWARDS = {("are:ar2300", "rods02"): "sahrod"}
+# Physical sources whose reward dialogue also gives their item, by (owner
+# resource, kind, item) as the catalog binds the original row: the creature's
+# or the area's container record of the item. A game whose dialogue gives
+# no such item needs no route (gives_reward).
+PHYSICAL_SOURCE_REWARDS = {("cre:udlesa", "cre-template", "sw1h39"): "udlesa",
+                           ("are:ar2300", "container", "rods02"): "sahrod"}
 for _name, _row in REWARDS.items():
     _row.setdefault("resources", (_row["resource"],))
 RESOURCE_REWARDS = {}
@@ -1084,8 +1073,8 @@ def gives_reward(resource: str, data: bytes, key: str) -> bool:
     """Whether the dialogue gives the item of the route <key> at all, in a way
     the route can gate or not.
 
-    A route that only stops a second copy of a container reward
-    (CONTAINER_SOURCE_REWARDS) is needed where its dialogue gives the item.
+    A route that follows a physical source (PHYSICAL_SOURCE_REWARDS) is
+    needed where its dialogue gives the item.
     A reply whose actions cannot be read counts as giving it; route_reasons
     says why the route cannot be prepared then.
     """

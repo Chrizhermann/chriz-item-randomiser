@@ -46,7 +46,7 @@ pub struct RewardRoutes {
     changed: BTreeSet<String>,
     /// (resource, route or container target id) to why it cannot be prepared.
     reasons: HashMap<(String, String), String>,
-    /// The routes of [`mode2_rewards::CONTAINER_SOURCE_REWARDS`] whose
+    /// The routes of [`mode2_rewards::PHYSICAL_SOURCE_REWARDS`] whose
     /// dialogue gives their item at all, or may.
     giving: BTreeSet<String>,
     /// The files the resources were read from, with their identities then.
@@ -165,9 +165,9 @@ impl RewardRoutes {
                 for (key, reason) in found.iter() {
                     reasons.insert((resource.clone(), key.to_string()), str_value(reason));
                 }
-                // Routes that only stop a second copy of a container reward:
-                // needed where their dialogue gives the item at all.
-                let links: BTreeSet<&str> = mode2_rewards::CONTAINER_SOURCE_REWARDS.iter().map(|row| row.2).collect();
+                // Routes that follow a physical source (Lesa's sword, the
+                // treasury's rod): needed where their dialogue gives the item at all.
+                let links: BTreeSet<&str> = mode2_rewards::PHYSICAL_SOURCE_REWARDS.iter().map(|row| row.3).collect();
                 for key in resource_rewards(resource).into_iter().filter(|key| links.contains(key.as_str())) {
                     let gives = match mode2_rewards::gives_reward(resource, &data, &key) {
                         Ok(gives) => gives,
@@ -307,7 +307,7 @@ impl RewardRoutes {
     }
 
     /// Whether a dialogue of the route `key` (one of
-    /// [`mode2_rewards::CONTAINER_SOURCE_REWARDS`]) gives its item at all; a
+    /// [`mode2_rewards::PHYSICAL_SOURCE_REWARDS`]) gives its item at all; a
     /// game without the dialogue gives it nowhere.
     pub fn gives(&self, key: &str) -> Result<bool> {
         let spec = mode2_rewards::rewards().get(key).ok_or_else(|| Error::key(key))?;

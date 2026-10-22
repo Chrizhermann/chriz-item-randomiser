@@ -438,12 +438,12 @@ def script_original_case(s: Scenario, label: str, resource: str, data: bytes) ->
 
 
 def registry_cases(s: Scenario) -> None:
-    for table in ("REWARDS", "DIRECT_REWARDS", "TRANSFER_SPECS", "PHYSICAL_SOURCE_REWARDS", "RESOURCE_REWARDS",
+    for table in ("REWARDS", "DIRECT_REWARDS", "TRANSFER_SPECS", "RESOURCE_REWARDS",
                   "SOURCE_REWARDS", "TARGET_REWARDS", "TEXT_REFS", "ACTION_TEXT_REFS", "ADAPTER_ID"):
         s.case(table, f"mode2_rewards.{table}", {}, lambda table=table: getattr(mode2_rewards, table))
-    # (area, item) keys as [area, item, route] rows.
-    s.case("CONTAINER_SOURCE_REWARDS", "mode2_rewards.CONTAINER_SOURCE_REWARDS", {},
-           lambda: [[area, item, route] for (area, item), route in mode2_rewards.CONTAINER_SOURCE_REWARDS.items()])
+    # (resource, kind, item) keys as [resource, kind, item, route] rows.
+    s.case("PHYSICAL_SOURCE_REWARDS", "mode2_rewards.PHYSICAL_SOURCE_REWARDS", {},
+           lambda: [[*key, route] for key, route in mode2_rewards.PHYSICAL_SOURCE_REWARDS.items()])
     for identity in list(mode2_rewards.SOURCE_REWARDS) + ["original-source:bg2:mode2:item:42", "x"]:
         s.case(f"source_spec {identity}", "mode2_rewards.source_spec", {"source_id": identity},
                lambda identity=identity: mode2_rewards.source_spec(identity))

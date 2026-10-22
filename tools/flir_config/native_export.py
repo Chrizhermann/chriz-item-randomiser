@@ -36,7 +36,7 @@ from .mode2_rewards import (SOURCE_REWARDS as MODE2_SOURCES, TARGET_REWARDS as M
                             target_spec as mode2_target_spec, patch_reward as patch_mode2_reward,
                             prepare_reward_texts, own_patch as own_mode2_patch,
                             TEXT_REFS as MODE2_TEXT_REFS, transfer_spec as mode2_transfer_spec)
-from .mode2_rewards import CONTAINER_SOURCE_REWARDS, PHYSICAL_SOURCE_REWARDS, REWARDS as MODE2_REWARDS
+from .mode2_rewards import PHYSICAL_SOURCE_REWARDS, REWARDS as MODE2_REWARDS
 from .container_rewards import (RESOURCE_TARGETS as CONTAINER_RESOURCES,
                                 TEXT_RESOURCES as CONTAINER_TEXT_RESOURCES, container_error,
                                 patch_container_resource, own_patch as own_container_patch,
@@ -168,8 +168,12 @@ def _compile(manifest: dict, world: dict, index: dict, items: dict,
                           for t in index["targets"].values() if t["kind"] == "actor")
     container_items = Counter((s["owner"], s["item"]) for s in index["sources"].values()
                               if s["kind"] == "container")
-    area_container_items = Counter((s["resource"], s["item"]) for s in index["sources"].values()
-                                   if s["kind"] == "container")
+    physical_items = Counter((s["resource"], s["kind"], s["item"]) for s in index["sources"].values())
+    # The records of each item in each creature file, in record order.
+    template_records = defaultdict(list)
+    for row in sorted((row for row in index["sources"].values() if row["kind"] == "cre-template"),
+                      key=lambda row: row["record"]["record_index"]):
+        template_records[row["resource"], row["item"]].append(row)
     creature_items = Counter((s["owner"], s["item"]) for s in index["sources"].values()
                              if s["kind"] in ("cre-template", "embedded-cre"))
     owner_items = Counter((s["owner"], s["item"]) for s in index["sources"].values())
@@ -273,18 +277,24 @@ def _compile(manifest: dict, world: dict, index: dict, items: dict,
                 duplicate = mode2_transfer_spec(name)
                 if identity not in duplicate["authored_source_ids"]:
                     continue
-                records = [index["sources"].get(key) for key in duplicate["physical_source_ids"]]
-                _require(all(row and row["kind"] == "cre-template" and
-                             row["resource"] == duplicate["source_resource"] and
-                             row["record"] == duplicate["source_record"] for row in records) and
-                         use(duplicate["source_resource"]) == duplicate["source_resource_sha256"],
-                         f"Original reward's duplicate creature item changed: {identity}")
+                # The creature's own copies of the reward, wherever this game
+                # keeps them; the runtime checks each record's bytes again.
+                resource, item = duplicate["source_resource"], duplicate["item"]
+                creature = resource[4:].upper() + ".CRE"
+                records = template_records[resource, item]
+                if not records and identity not in duplicate["source_ids"]:
+                    continue  # A copy of another route's reward that this game does not have.
+                _require(bool(records), f"{creature} does not carry {item.upper()}, which the reward of "
+                                        f"{duplicate['quest'].upper()}.DLG hands over: {identity}")
+                resource_sha256 = use(resource)
+                payloads = [{key: row["record"][key] for key in ("resref", "expiration", "charges", "flags")}
+                            for row in records]
+                _require(all(payload == payloads[0] for payload in payloads),
+                         f"{creature} carries {item.upper()} in records that differ: {identity}")
                 auxiliary = {
-                    "resource": duplicate["source_resource"],
-                    "resource_sha256": duplicate["source_resource_sha256"],
+                    "resource": resource, "resource_sha256": resource_sha256,
                     "record_indices": [row["record"]["record_index"] for row in records],
-                    "payload": deepcopy(duplicate["payload"]),
-                    "selected_global": duplicate["selected_global"]}
+                    "payload": payloads[0], "selected_global": duplicate["selected_global"]}
                 if duplicate.get("replacement"):
                     auxiliary["replacement"] = duplicate["replacement"]
                     use("itm:" + duplicate["replacement"])
@@ -440,24 +450,18 @@ def _compile(manifest: dict, world: dict, index: dict, items: dict,
     # the same kept/relocated decision without registering a second reward unit.
     # So must the Sahuagin king's reward reply, which creates another treasury rod.
     def compile_inventory_reward(selected: dict) -> None:
-        name = PHYSICAL_SOURCE_REWARDS.get(selected["id"])
-        if name:
-            reward = MODE2_REWARDS[name]
-            _require(selected["record"]["record"] == reward["source_record"] and
-                     use(reward["source_resource"]) == reward["source_resource_sha256"],
-                     f"Original inventory reward source changed: {selected['id']}")
-        else:
-            source = selected["record"]
-            name = (CONTAINER_SOURCE_REWARDS.get((source["resource"], source["item"]))
-                    if source["kind"] == "container" else None)
-            # Where nothing else gives the item, it moves as any container reward.
-            if not name or not gives(name):
-                return
-            reward = MODE2_REWARDS[name]
-            # Both records would set the one flag the reply reads.
-            _require(area_container_items[source["resource"], source["item"]] == 1,
-                     f"{_area(source['resource'])} holds another {source['item'].upper()} that the "
-                     f"reward of {reward['quest'].upper()}.DLG could stand for: {selected['id']}")
+        source = selected["record"]
+        key = (source["resource"], source["kind"], source["item"])
+        name = PHYSICAL_SOURCE_REWARDS.get(key)
+        # Where nothing else gives the item, it moves as any other source.
+        if not name or not gives(name):
+            return
+        reward = MODE2_REWARDS[name]
+        # Both records would set the one flag the dialogue reads.
+        kind, resref = source["resource"].split(":")
+        _require(physical_items[key] == 1,
+                 f"{resref.upper()}.{kind.upper()} holds another {source['item'].upper()} that the reward of "
+                 f"{reward['quest'].upper()}.DLG could stand for: {selected['id']}")
         require_route(name)
         native["sources"][selected["id"]]["reward_selected_global"] = reward["selected_global"]
         for resource in reward["resources"]:
