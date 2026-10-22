@@ -395,12 +395,20 @@ def patched(s: Scenario, label: str, resource: str, data: bytes, refs=None, ddwe
         return None
 
 
+def gives_case(s: Scenario, label: str, resource: str, data: bytes, key: str) -> None:
+    s.case(f"gives_reward {label}", "mode2_rewards.gives_reward", {"resource": resource, "data": data, "key": key},
+           lambda: mode2_rewards.gives_reward(resource, data, key))
+
+
 def reward_checks(s: Scenario, label: str, resource: str, data: bytes) -> None:
     """What the check and Apply read from these bytes: own patch, reasons, re-export."""
     args = {"resource": resource, "data": data}
     s.case(f"own_patch {label}", "mode2_rewards.own_patch", args, lambda: mode2_rewards.own_patch(resource, data))
     s.case(f"route_reasons {label}", "mode2_rewards.route_reasons", args,
            lambda: mode2_rewards.route_reasons(resource, data))
+    if resource.startswith("dlg:"):
+        for key in mode2_rewards.RESOURCE_REWARDS.get(resource, ()):
+            gives_case(s, f"{label} {key}", resource, data, key)
     patched(s, f"again {label}", resource, data)
 
 
@@ -433,6 +441,9 @@ def registry_cases(s: Scenario) -> None:
     for table in ("REWARDS", "DIRECT_REWARDS", "TRANSFER_SPECS", "PHYSICAL_SOURCE_REWARDS", "RESOURCE_REWARDS",
                   "SOURCE_REWARDS", "TARGET_REWARDS", "TEXT_REFS", "ACTION_TEXT_REFS", "ADAPTER_ID"):
         s.case(table, f"mode2_rewards.{table}", {}, lambda table=table: getattr(mode2_rewards, table))
+    # (area, item) keys as [area, item, route] rows.
+    s.case("CONTAINER_SOURCE_REWARDS", "mode2_rewards.CONTAINER_SOURCE_REWARDS", {},
+           lambda: [[area, item, route] for (area, item), route in mode2_rewards.CONTAINER_SOURCE_REWARDS.items()])
     for identity in list(mode2_rewards.SOURCE_REWARDS) + ["original-source:bg2:mode2:item:42", "x"]:
         s.case(f"source_spec {identity}", "mode2_rewards.source_spec", {"source_id": identity},
                lambda identity=identity: mode2_rewards.source_spec(identity))
@@ -490,6 +501,21 @@ def reason_cases(s: Scenario) -> None:
         reward_checks(s, f"uhogre01 {label}", "dlg:uhogre01", mode2_tests.with_actions(original, "uhogre01", changes))
     reward_checks(s, "uhogre01 broken", "dlg:uhogre01", b"DLG V1.0" + bytes(10))
     reward_checks(s, "uhogre01 no bytes", "dlg:uhogre01", b"")
+    # test_the_sahuagin_kings_reply_gates_the_bracer_and_the_treasury_rod_apart:
+    # a king who gives no rod, or gives it in other ways.
+    king = quest_options._Dialogue(mode2_tests.dialogue_fixture(mode2_rewards.resource_specs("dlg:sahkng01")), "sahkng01")
+    king.actions = [text.replace(b'GiveItemCreate("rods02",LastTalkedToBy,0,0,0)\r\r\n', b"") for text in king.actions]
+    without = king.render()
+    reward_checks(s, "sahkng01 without rods02", "dlg:sahkng01", without)
+    for label, text in (("taking", b'TakePartyItem("RODS02")\r\n'),
+                        ("override", b'ActionOverride("sahpr2",GiveItemCreate("rods02",LastTalkedToBy,0,0,0))\r\n'),
+                        ("created", b'CreateItem("rods02",0,0,0)\r\n'),
+                        ("unreadable", b'GiveItemCreate("rods02",LastTalkedToBy,0,0,0\r\n')):
+        reward_checks(s, f"sahkng01 {label}", "dlg:sahkng01",
+                      mode2_tests.with_actions(without, "sahkng01", {(80, 0): text}))
+    for label, resource, key in (("other route", "dlg:sahkng01", "aran"), ("script", "bcs:ddwell", "ddwell"),
+                                 ("unknown", "dlg:nothing", "sahrod"), ("bare", "SAHKNG01.DLG", "sahrod")):
+        gives_case(s, label, resource, without, key)
     transfer = mode2_rewards.resource_specs("dlg:loutcapt")[0]
     state, ordinal = transfer["branches"][0]
     loutcapt = mode2_tests.dialogue_fixture(transfer)

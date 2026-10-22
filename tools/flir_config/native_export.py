@@ -36,7 +36,7 @@ from .mode2_rewards import (SOURCE_REWARDS as MODE2_SOURCES, TARGET_REWARDS as M
                             target_spec as mode2_target_spec, patch_reward as patch_mode2_reward,
                             prepare_reward_texts, own_patch as own_mode2_patch,
                             TEXT_REFS as MODE2_TEXT_REFS, transfer_spec as mode2_transfer_spec)
-from .mode2_rewards import PHYSICAL_SOURCE_REWARDS, REWARDS as MODE2_REWARDS
+from .mode2_rewards import CONTAINER_SOURCE_REWARDS, PHYSICAL_SOURCE_REWARDS, REWARDS as MODE2_REWARDS
 from .container_rewards import (RESOURCE_TARGETS as CONTAINER_RESOURCES,
                                 TEXT_RESOURCES as CONTAINER_TEXT_RESOURCES, container_error,
                                 patch_container_resource, own_patch as own_container_patch,
@@ -139,6 +139,11 @@ def _compile(manifest: dict, world: dict, index: dict, items: dict,
             routes.append(reward_routes(catalog, world))
         routes[0].require_container(target_id)
 
+    def gives(name: str) -> bool:
+        if not routes:
+            routes.append(reward_routes(catalog, world))
+        return routes[0].gives(name)
+
     def actor_name(target: dict) -> str | None:
         selector = target["selector"]
         template = index["targets"].get(selector.get("template_resource"))
@@ -163,6 +168,8 @@ def _compile(manifest: dict, world: dict, index: dict, items: dict,
                           for t in index["targets"].values() if t["kind"] == "actor")
     container_items = Counter((s["owner"], s["item"]) for s in index["sources"].values()
                               if s["kind"] == "container")
+    area_container_items = Counter((s["resource"], s["item"]) for s in index["sources"].values()
+                                   if s["kind"] == "container")
     creature_items = Counter((s["owner"], s["item"]) for s in index["sources"].values()
                              if s["kind"] in ("cre-template", "embedded-cre"))
     owner_items = Counter((s["owner"], s["item"]) for s in index["sources"].values())
@@ -431,6 +438,7 @@ def _compile(manifest: dict, world: dict, index: dict, items: dict,
 
     # UDLESA's sword is an ordinary physical source. Its conversation must use
     # the same kept/relocated decision without registering a second reward unit.
+    # So must the Sahuagin king's reward reply, which creates another treasury rod.
     def compile_inventory_reward(selected: dict) -> None:
         name = PHYSICAL_SOURCE_REWARDS.get(selected["id"])
         if name:
@@ -438,10 +446,22 @@ def _compile(manifest: dict, world: dict, index: dict, items: dict,
             _require(selected["record"]["record"] == reward["source_record"] and
                      use(reward["source_resource"]) == reward["source_resource_sha256"],
                      f"Original inventory reward source changed: {selected['id']}")
-            require_route(name)
-            native["sources"][selected["id"]]["reward_selected_global"] = reward["selected_global"]
-            for resource in reward["resources"]:
-                use(resource)
+        else:
+            source = selected["record"]
+            name = (CONTAINER_SOURCE_REWARDS.get((source["resource"], source["item"]))
+                    if source["kind"] == "container" else None)
+            # Where nothing else gives the item, it moves as any container reward.
+            if not name or not gives(name):
+                return
+            reward = MODE2_REWARDS[name]
+            # Both records would set the one flag the reply reads.
+            _require(area_container_items[source["resource"], source["item"]] == 1,
+                     f"{_area(source['resource'])} holds another {source['item'].upper()} that the "
+                     f"reward of {reward['quest'].upper()}.DLG could stand for: {selected['id']}")
+        require_route(name)
+        native["sources"][selected["id"]]["reward_selected_global"] = reward["selected_global"]
+        for resource in reward["resources"]:
+            use(resource)
 
     for selected in manifest["sources"]:
         attempt(selected["id"], compile_inventory_reward, selected)

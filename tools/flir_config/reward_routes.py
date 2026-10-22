@@ -38,6 +38,9 @@ class ChangedSinceScan(ProfileError):
 
 
 _CACHE: dict[tuple[str, str, str], "RewardRoutes"] = {}
+# Routes that only stop a second copy of a container reward: needed where
+# their dialogue gives the item at all (mode2_rewards.gives_reward).
+_LINKS = frozenset(mode2_rewards.CONTAINER_SOURCE_REWARDS.values())
 
 
 def reward_routes(catalog: dict, world: dict) -> "RewardRoutes":
@@ -61,6 +64,7 @@ class RewardRoutes:
         self.language = language
         self.changed: set[str] = set()
         self.reasons: dict[tuple[str, str], str] = {}
+        self.giving: set[str] = set()
         self._files: dict[Path, tuple] = {}
         male, female = game_text.text_files(game_root, language)
         for path in [male.parent, male, *([female] if female else []), *translations.sources(language)]:
@@ -98,6 +102,13 @@ class RewardRoutes:
                     continue
                 for key, reason in adapter.route_reasons(resource, data).items():
                     self.reasons[resource, key] = reason
+                for key in sorted(_LINKS.intersection(mode2_rewards.RESOURCE_REWARDS.get(resource, ()))):
+                    try:
+                        gives = mode2_rewards.gives_reward(resource, data, key)
+                    except ProfileError:
+                        gives = True  # Its route's reasons say why it cannot be read.
+                    if gives:
+                        self.giving.add(key)
             self.copies = RewardCopies(lambda name: read("dlg", name), scanned)
         self.changed |= self.copies.changed
 
@@ -158,6 +169,12 @@ class RewardRoutes:
             raise ProfileError(prefix + reason)
         self._texts(tuple(line for resource in spec["resources"] if resource in mode2_rewards.TEXT_REFS
                           for line in mode2_rewards.text_lines(resource)), prefix)
+
+    def gives(self, key: str) -> bool:
+        """Whether a dialogue of the route <key> (one of _LINKS) gives its item at
+        all; a game without the dialogue gives it nowhere."""
+        self._unchanged(mode2_rewards.REWARDS[key]["resources"])
+        return key in self.giving
 
     def require_container(self, target_id: str) -> None:
         """Raise unless the container quest target can be prepared."""

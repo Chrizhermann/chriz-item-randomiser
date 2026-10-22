@@ -37,7 +37,7 @@ from . import container_rewards, mode2_rewards
 from .game_text import GameTextError
 from .profiles import ProfileError
 from .quest_options import _Dialogue
-from .script_text import calls, named
+from .script_text import calls
 
 LIMIT = 10000
 # Dialogues CIR changes for something other than a reward route.
@@ -56,14 +56,6 @@ def copy_spec(key: str, resource: str) -> dict:
     spec = deepcopy(mode2_rewards.REWARDS[key])
     spec.update(route=key, resource=resource, quest=resource[4:])
     return spec
-
-
-def _gives(text: bytes, call, item: str) -> bool:
-    """Whether a dialogue action puts the item somewhere, also through ActionOverride."""
-    if named(call, "ActionOverride") and len(call.args) == 2:
-        inner = calls(text, *call.args[1])
-        return inner is None or any(mode2_rewards._gives_item(text, nested, item) for nested in inner)
-    return mode2_rewards._gives_item(text, call, item)
 
 
 def _present(dialogue: _Dialogue) -> list[str]:
@@ -256,7 +248,7 @@ class RewardCopies:
         found = calls(text)
         if found is None:
             raise ProfileError(f"{where} names {shown} in actions that cannot be read")
-        if not any(_gives(text, call, spec["item"]) for call in found):
+        if not any(mode2_rewards._gives(text, call, spec["item"]) for call in found):
             return False  # It takes, shows or tests the reward.
         for other in mode2_rewards.RESOURCE_REWARDS.get(resource, ()):
             other_spec = next(row for row in mode2_rewards.resource_specs(resource) if row["route"] == other)

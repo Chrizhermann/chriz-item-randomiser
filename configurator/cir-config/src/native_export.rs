@@ -218,6 +218,8 @@ struct Compiler<'a> {
     container_names: HashMap<String, usize>,
     actor_names: HashMap<String, usize>,
     container_items: HashMap<String, usize>,
+    /// The container sources of each item in each area.
+    area_container_items: HashMap<String, usize>,
     creature_items: HashMap<String, usize>,
     /// The sources of each item in each owner, of any kind.
     owner_items: HashMap<String, usize>,
@@ -257,6 +259,10 @@ impl<'a> Compiler<'a> {
 
     fn require_container(&mut self, target_id: &str) -> Result<()> {
         self.routes()?.require_container(target_id)
+    }
+
+    fn gives(&mut self, name: &str) -> Result<bool> {
+        self.routes()?.gives(name)
     }
 
     fn scanned_hash(&self, resource: &str) -> Result<&'a Value> {
@@ -759,17 +765,42 @@ impl<'a> Compiler<'a> {
 
     /// UDLESA's sword is an ordinary physical source. Its conversation must
     /// use the same kept/relocated decision without registering a second
-    /// reward unit.
+    /// reward unit. So must the Sahuagin king's reward reply, which creates
+    /// another treasury rod.
     fn compile_inventory_reward(&mut self, selected: &Value) -> Result<()> {
         let identity = text(selected, "id")?;
-        let Some(name) = mode2_rewards::physical_source_rewards().get(identity).filter(|name| name.truthy()) else {
-            return Ok(());
-        };
-        let name = py_str(name);
-        let reward = mode2_rewards::rewards().get(&name).ok_or_else(|| Error::key(&name))?;
-        let ok = selected.at("record")?.at("record")?.py_eq(reward.at("source_record")?)
-            && self.use_value(reward.at("source_resource")?)?.py_eq(reward.at("source_resource_sha256")?);
-        require(ok, || format!("Original inventory reward source changed: {identity}"))?;
+        let name;
+        let reward;
+        if let Some(physical) = mode2_rewards::physical_source_rewards().get(identity).filter(|name| name.truthy()) {
+            name = py_str(physical);
+            reward = mode2_rewards::rewards().get(&name).ok_or_else(|| Error::key(&name))?;
+            let ok = selected.at("record")?.at("record")?.py_eq(reward.at("source_record")?)
+                && self.use_value(reward.at("source_resource")?)?.py_eq(reward.at("source_resource_sha256")?);
+            require(ok, || format!("Original inventory reward source changed: {identity}"))?;
+        } else {
+            let source = selected.at("record")?;
+            let linked = if source.at("kind")?.as_str() == Some("container") {
+                mode2_rewards::container_source_reward(text(source, "resource")?, text(source, "item")?)
+            } else {
+                None
+            };
+            // Where nothing else gives the item, it moves as any container reward.
+            let Some(linked) = linked else {
+                return Ok(());
+            };
+            if !self.gives(linked)? {
+                return Ok(());
+            }
+            name = linked.to_string();
+            reward = mode2_rewards::rewards().get(&name).ok_or_else(|| Error::key(&name))?;
+            // Both records would set the one flag the reply reads.
+            let key = tuple_key(&[key_part(Some(source.at("resource")?)), key_part(Some(source.at("item")?))]);
+            let (area_name, item, quest) =
+                (area(source.at("resource")?)?, upper(text(source, "item")?), upper(text(reward, "quest")?));
+            require(Self::count(&self.area_container_items, &key) == 1, || {
+                format!("{area_name} holds another {item} that the reward of {quest}.DLG could stand for: {identity}")
+            })?;
+        }
         self.require_route(&name)?;
         let endpoint = self
             .sources
@@ -1145,6 +1176,7 @@ pub fn compile(
         container_names: HashMap::new(),
         actor_names: HashMap::new(),
         container_items: HashMap::new(),
+        area_container_items: HashMap::new(),
         creature_items: HashMap::new(),
         owner_items: HashMap::new(),
         template_actors: HashMap::new(),
@@ -1185,6 +1217,8 @@ pub fn compile(
         if source.at("kind")?.as_str() == Some("container") {
             let key = tuple_key(&[key_part(Some(source.at("owner")?)), key_part(Some(source.at("item")?))]);
             *compiler.container_items.entry(key).or_insert(0) += 1;
+            let key = tuple_key(&[key_part(Some(source.at("resource")?)), key_part(Some(source.at("item")?))]);
+            *compiler.area_container_items.entry(key).or_insert(0) += 1;
         }
     }
     for source in rows(world, "sources") {

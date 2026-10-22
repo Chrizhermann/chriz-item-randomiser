@@ -67,7 +67,7 @@ REVIEWED_EET = {
     "dlg:riftg03": ("4bb8a0866e3470ae558c108160ebef18c33de9f14ad3181ccf33ebd0d5e4912a",
                     "34e7c5e57d9e69394b40ce09f4c5cd5a5e6249d871b676c82bafbd3d707f3ff5"),
     "dlg:sahkng01": ("c76c8624052f7e179d42157e4081ddfcdbb101d2f00b819008bc99f5660785c1",
-                     "355c4236753330c944cd87fbcb15769820475d2286efa9a49ac9614d6863944a"),
+                     "e4489ed5a331b4ad81ca9cb8dbe3234e30651cef572245c8f389e7a1e1b56b5f"),
     "dlg:scsain": ("c2a43b0d67eca9b531aa591463f74d5333225a95f0be87f8d03ed1cf91f8dafe",
                    "cd1db0265daa8dc239bbe1a325cdf2ad3fc0033f3bf8eaba981a46e65c91b148"),
     "dlg:sctelwyn": ("d5dd048c43e16ba937ff583eef8f5966e549fb0c4e3f92679883d35fcdda1759",
@@ -315,8 +315,10 @@ class Mode2RewardTests(unittest.TestCase):
             self.assertEqual(cursor, len(new))
 
     def test_dialogue_both_campaign_routes_keep_exact_recipient_and_surrounding_actions(self):
+        # Two routes of one dialogue have their own tests (check_pair).
         for resource in rewards.RESOURCE_REWARDS:
-            if resource.startswith("dlg:") and resource != "dlg:aran" and resource not in rewards.TEXT_REFS:
+            if (resource.startswith("dlg:") and len(rewards.RESOURCE_REWARDS[resource]) == 1 and
+                    resource not in rewards.TEXT_REFS):
                 name = resource[4:]
                 with self.subTest(resource=name):
                     original = dialogue_fixture(rewards.resource_specs(resource))
@@ -527,34 +529,44 @@ class Mode2RewardTests(unittest.TestCase):
             with self.assertRaisesRegex(ProfileError, message):
                 call()
 
-    def check_aran(self, original, result):
-        before, after = _Dialogue(original, "aran"), _Dialogue(result, "aran")
-        specs = rewards.resource_specs("dlg:aran")
-        self.assertEqual([spec["quest"] for spec in specs], ["aran", "aran"])
+    def check_pair(self, name, original, result):
+        """Two routes whose grants share every granting reply: four campaign combinations each."""
+        before, after = _Dialogue(original, name), _Dialogue(result, name)
+        specs = rewards.resource_specs("dlg:" + name)
+        self.assertEqual([spec["quest"] for spec in specs], [name, name])
+        shared = set(specs[0]["branches"])
+        self.assertEqual(set(specs[1]["branches"]), shared)
         for state in range(len(before.states)):
             old, new = outgoing(before, state), outgoing(after, state)
-            if state != 4:
+            ordinals = {ordinal for granting, ordinal in shared if granting == state}
+            if not ordinals:
                 self.assertEqual(new, old)
                 continue
-            self.assertEqual(len(old), 8)
-            self.assertEqual(len(new), 32)
+            self.assertEqual(len(new), len(old) + 3 * len(ordinals))
+            cursor = 0
             for ordinal, transition in enumerate(old):
+                if ordinal not in ordinals:
+                    self.assertEqual(new[cursor], transition)
+                    cursor += 1
+                    continue
                 flags, _, _, trigger, action_id = struct.unpack_from("<5I", transition)
                 prior = before.triggers[trigger] if flags & 2 else b""
                 original_actions = before.actions[action_id]
-                for bits, branch in enumerate(new[ordinal * 4:ordinal * 4 + 4]):
+                branches, cursor = new[cursor:cursor + 4], cursor + 4
+                for bits, branch in enumerate(branches):
                     condition, restored = prior, after.actions[struct.unpack_from("<I", branch, 16)[0]]
                     self.assertEqual(branch[4:12], transition[4:12])
                     self.assertEqual(branch[20:], transition[20:])
                     for spec, selected in zip(specs, (bool(bits & 2), bool(bits & 1))):
                         condition = guarded(condition,
                             f'{"" if selected else "!"}Global("{spec["selected_global"]}","GLOBAL",1)\r\n'.encode())
-                        marker = f'ActionOverride(LastTalkedToBy,SetGlobal("{spec["recipient_local"]}","LOCALS",1))\r\n'.encode()
+                        grant, recipient = grant_in(original_actions, spec)
+                        marker = (b"ActionOverride(" + recipient +
+                                  f',SetGlobal("{spec["recipient_local"]}","LOCALS",1))\r\n'.encode())
                         event = f'\r\nSetGlobal("{spec["event_global"]}","GLOBAL",1)'.encode()
                         self.assertEqual(restored.count(marker), 1)
                         self.assertEqual(restored.count(event), 1)
                         restored = restored.replace(marker, b"", 1).replace(event, b"", 1)
-                        grant, _ = grant_in(original_actions, spec)
                         if selected:
                             self.assertNotIn(grant, restored)
                             consumed = f'SetGlobal("{spec["consumed_global"]}","GLOBAL",1)'.encode()
@@ -563,10 +575,56 @@ class Mode2RewardTests(unittest.TestCase):
                             self.assertIn(grant, restored)
                     self.assertEqual(after.triggers[struct.unpack_from("<I", branch, 12)[0]], condition)
                     self.assertEqual(restored, original_actions)
+            self.assertEqual(cursor, len(new))
 
     def test_aran_two_grants_have_all_four_independent_campaign_combinations(self):
         original = dialogue_fixture(rewards.resource_specs("dlg:aran"))
-        self.check_aran(original, self.synthetic_patch("aran", original))
+        self.check_pair("aran", original, self.synthetic_patch("aran", original))
+
+    def test_the_sahuagin_kings_reply_gates_the_bracer_and_the_treasury_rod_apart(self):
+        # The rod is the treasury's container reward; the reply that creates
+        # another one follows its selected flag and sends no item anywhere.
+        rod = rewards.REWARDS["sahrod"]
+        self.assertEqual((rod["item"], rod["source_ids"], rod["target_ids"], rod["authored_source_ids"]),
+                         ("rods02", (), (), ("original-source:bg2:mode2:item:7",)))
+        self.assertEqual((rod["selected_global"], rod["consumed_global"]), ("FLPR_QM2_7", "FLPR_XM2_7"))
+        self.assertEqual(rewards.CONTAINER_SOURCE_REWARDS, {("are:ar2300", "rods02"): "sahrod"})
+        self.assertNotIn("original-source:bg2:mode2:item:7", rewards.SOURCE_REWARDS)
+        specs = rewards.resource_specs("dlg:sahkng01")
+        self.assertEqual([spec["route"] for spec in specs], ["sahkng01", "sahrod"])
+        original = dialogue_fixture(specs)
+        result = self.synthetic_patch("sahkng01", original)
+        self.check_pair("sahkng01", original, result)
+        for data in (original, result):
+            self.assertTrue(rewards.gives_reward("dlg:sahkng01", data, "sahrod"))
+        # Another mod's king gives no rod: the bracer's route stays, and the
+        # rod needs no route at all.
+        dialogue = _Dialogue(original, "sahkng01")
+        dialogue.actions = [text.replace(b'GiveItemCreate("rods02",LastTalkedToBy,0,0,0)\r\r\n', b"")
+                            for text in dialogue.actions]
+        without = dialogue.render()
+        self.assertFalse(rewards.gives_reward("dlg:sahkng01", without, "sahrod"))
+        self.assertEqual(rewards.route_reasons("dlg:sahkng01", without),
+                         {"sahrod": "SAHKNG01.DLG has no reply that gives RODS02"})
+        self.assertNotIn(b"FLPR_QM2_7", b"".join(_Dialogue(rewards.patch_reward("dlg:sahkng01", without),
+                                                           "sahkng01").triggers))
+        # One that only takes or tests the rod gives none either; one that
+        # gives it another way does, and the route says why it cannot gate it.
+        taking = with_actions(without, "sahkng01", {(80, 0): b'TakePartyItem("RODS02")\r\n'})
+        self.assertFalse(rewards.gives_reward("dlg:sahkng01", taking, "sahrod"))
+        for actions, reason in (
+                (b'ActionOverride("sahpr2",GiveItemCreate("rods02",LastTalkedToBy,0,0,0))\r\n',
+                 "SAHKNG01.DLG state 80 gives RODS02 through ActionOverride(), whose recipient the route cannot mark"),
+                (b'CreateItem("rods02",0,0,0)\r\n',
+                 "SAHKNG01.DLG state 80 also gives RODS02 with CreateItem(), which the route cannot gate"),
+                (b'GiveItemCreate("rods02",LastTalkedToBy,0,0,0\r\n',
+                 "SAHKNG01.DLG state 80 names RODS02 in actions that cannot be read")):
+            with self.subTest(actions=actions):
+                other = with_actions(without, "sahkng01", {(80, 0): actions})
+                self.assertTrue(rewards.gives_reward("dlg:sahkng01", other, "sahrod"))
+                self.assertEqual(rewards.route_reasons("dlg:sahkng01", other)["sahrod"], reason)
+        with self.assertRaisesRegex(ProfileError, "Unsupported extended reward route in SAHKNG01.DLG: aran"):
+            rewards.gives_reward("dlg:sahkng01", original, "aran")
 
     def test_aran_route_left_out_alone_keeps_the_other_route(self):
         specs = rewards.resource_specs("dlg:aran")
@@ -989,8 +1047,8 @@ class Mode2RewardTests(unittest.TestCase):
                         self.assertIn(b'ReallyForceSpell(Myself,DRYAD_TELEPORT)', b"".join(dlg.actions))
                 elif kind == "bcs":
                     self.assertEqual(rewards._script_original(result, rewards.resource_specs(resource)[0])[0], original)
-                elif name == "aran":
-                    self.check_aran(original, result)
+                elif name in ("aran", "sahkng01"):
+                    self.check_pair(name, original, result)
                 else:
                     self.check_dialogue(name, original, result)
 

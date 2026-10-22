@@ -14,9 +14,10 @@ use cir_config::error::{Error, ErrorKind};
 use cir_config::game_text::GameText;
 use cir_config::json::{Dict, Value};
 use cir_config::mode2_rewards::{
-    direct_rewards, own_patch, patch_dialogue, patch_reward, physical_source_rewards, prepare_ddwell_text, prepare_reward_texts,
-    resource_rewards, resource_specs, rewards, route_reasons, script_original, source_rewards, source_spec, target_spec, text_original,
-    text_refs, transfer_spec, transfer_specs, TEXT_REFS,
+    container_source_reward, direct_rewards, gives_reward, own_patch, patch_dialogue, patch_reward, physical_source_rewards,
+    prepare_ddwell_text, prepare_reward_texts, resource_rewards, resource_specs, rewards, route_reasons, script_original,
+    source_rewards, source_spec, target_spec, text_original, text_refs, transfer_spec, transfer_specs, CONTAINER_SOURCE_REWARDS,
+    TEXT_REFS,
 };
 use cir_config::py::{put_u32, str_value};
 use cir_config::quest_options::Dialogue;
@@ -24,7 +25,7 @@ use cir_config::quest_rewards::blocks;
 use cir_config::script_text::script_blocks;
 use common::builders::{contains, count, index, make_tlk, outgoing, replace, sha, tlk_text, u32_at};
 use common::mode2::{
-    action, action_with, alternatives, block, branches, check_aran, check_dialogue, check_text_graph, dialogue_fixture,
+    action, action_with, alternatives, block, branches, check_dialogue, check_pair, check_text_graph, dialogue_fixture,
     layout_dialogue, obj, script_fixture, specs, target_number, text, text_variant, well_reward, with_actions, LayoutReply,
 };
 use std::collections::BTreeMap;
@@ -272,8 +273,10 @@ fn synthetic_patch(name: &str, original: &[u8]) -> Vec<u8> {
 
 #[test]
 fn dialogue_both_campaign_routes_keep_exact_recipient_and_surrounding_actions() {
-    for resource in resource_rewards().keys() {
-        if resource.starts_with("dlg:") && resource != "dlg:aran" && text_refs(resource).is_none() {
+    // Two routes of one dialogue have their own tests (check_pair).
+    for (resource, keys) in resource_rewards().iter() {
+        let single = keys.as_list().is_some_and(|keys| keys.len() == 1);
+        if resource.starts_with("dlg:") && single && text_refs(resource).is_none() {
             let name = &resource[4..];
             let original = dialogue_fixture(&specs(resource));
             check_dialogue(name, &original, &synthetic_patch(name, &original), None, None);
@@ -525,7 +528,61 @@ fn registry_exposes_authored_charges_and_separate_container_recipient() {
 #[test]
 fn aran_two_grants_have_all_four_independent_campaign_combinations() {
     let original = dialogue_fixture(&specs("dlg:aran"));
-    check_aran(&original, &synthetic_patch("aran", &original));
+    check_pair("aran", &original, &synthetic_patch("aran", &original));
+}
+
+#[test]
+fn the_sahuagin_kings_reply_gates_the_bracer_and_the_treasury_rod_apart() {
+    // The rod is the treasury's container reward; the reply that creates
+    // another one follows its selected flag and sends no item anywhere.
+    let rod = reward("sahrod");
+    assert_eq!(text(rod, "item"), "rods02");
+    assert!(rod.get("source_ids").unwrap().py_eq(&list(&[])));
+    assert!(rod.get("target_ids").unwrap().py_eq(&list(&[])));
+    assert!(rod.get("authored_source_ids").unwrap().py_eq(&list(&["original-source:bg2:mode2:item:7"])));
+    assert_eq!((text(rod, "selected_global"), text(rod, "consumed_global")), ("FLPR_QM2_7", "FLPR_XM2_7"));
+    assert_eq!(CONTAINER_SOURCE_REWARDS, [("are:ar2300", "rods02", "sahrod")]);
+    assert_eq!(container_source_reward("are:ar2300", "rods02"), Some("sahrod"));
+    assert_eq!(container_source_reward("are:ar2300", "brac19"), None);
+    assert!(!source_rewards().contains_key("original-source:bg2:mode2:item:7"));
+    let specs = specs("dlg:sahkng01");
+    assert_eq!(specs.iter().map(|spec| text(spec, "route")).collect::<Vec<_>>(), ["sahkng01", "sahrod"]);
+    let original = dialogue_fixture(&specs);
+    let result = synthetic_patch("sahkng01", &original);
+    check_pair("sahkng01", &original, &result);
+    for data in [&original, &result] {
+        assert!(gives_reward("dlg:sahkng01", data, "sahrod").unwrap());
+    }
+    // Another mod's king gives no rod: the bracer's route stays, and the
+    // rod needs no route at all.
+    let mut dialogue = Dialogue::new(&original, "sahkng01").unwrap();
+    let grant = b"GiveItemCreate(\"rods02\",LastTalkedToBy,0,0,0)\r\r\n";
+    dialogue.actions = dialogue.actions.iter().map(|text| replace(text, grant, b"", None)).collect();
+    let without = dialogue.render();
+    assert!(!gives_reward("dlg:sahkng01", &without, "sahrod").unwrap());
+    assert_eq!(reasons("dlg:sahkng01", &without), named(&[("sahrod", "SAHKNG01.DLG has no reply that gives RODS02")]));
+    let patched = patch_reward("dlg:sahkng01", &without, None, None).unwrap();
+    assert!(!contains(&Dialogue::new(&patched, "sahkng01").unwrap().triggers.concat(), b"FLPR_QM2_7"));
+    // One that only takes or tests the rod gives none either; one that
+    // gives it another way does, and the route says why it cannot gate it.
+    let taking = with_actions(&without, "sahkng01", &[((80, 0), b"TakePartyItem(\"RODS02\")\r\n".as_slice())]);
+    assert!(!gives_reward("dlg:sahkng01", &taking, "sahrod").unwrap());
+    for (actions, reason) in [
+        (
+            b"ActionOverride(\"sahpr2\",GiveItemCreate(\"rods02\",LastTalkedToBy,0,0,0))\r\n".as_slice(),
+            "SAHKNG01.DLG state 80 gives RODS02 through ActionOverride(), whose recipient the route cannot mark",
+        ),
+        (b"CreateItem(\"rods02\",0,0,0)\r\n", "SAHKNG01.DLG state 80 also gives RODS02 with CreateItem(), which the route cannot gate"),
+        (b"GiveItemCreate(\"rods02\",LastTalkedToBy,0,0,0\r\n", "SAHKNG01.DLG state 80 names RODS02 in actions that cannot be read"),
+    ] {
+        let other = with_actions(&without, "sahkng01", &[((80, 0), actions)]);
+        assert!(gives_reward("dlg:sahkng01", &other, "sahrod").unwrap(), "{reason}");
+        assert_eq!(reasons("dlg:sahkng01", &other)["sahrod"], reason);
+    }
+    assert_profile(
+        gives_reward("dlg:sahkng01", &original, "aran").unwrap_err(),
+        "Unsupported extended reward route in SAHKNG01.DLG: aran",
+    );
 }
 
 #[test]
@@ -834,7 +891,7 @@ const REVIEWED_EET: &[(&str, &str, &str)] = &[
     ("dlg:ppdjinn", "06c1671065b549921263594db378d7610223cb16b70b7f718b3885b45b32af38", "cf0269858c28d24c6e837074c8b6d7dfae267fee0b3d5bce647cd0f60734b332"),
     ("dlg:ppstat01", "7022962710da01f3d66088d8f7c5aa2a7963d7e994ff0d55f61dc5b64c9673ae", "69505c964ee036a6d9b974407e34cbd4ff35f4cebd10373819c5ef2f5d50f73a"),
     ("dlg:riftg03", "4bb8a0866e3470ae558c108160ebef18c33de9f14ad3181ccf33ebd0d5e4912a", "34e7c5e57d9e69394b40ce09f4c5cd5a5e6249d871b676c82bafbd3d707f3ff5"),
-    ("dlg:sahkng01", "c76c8624052f7e179d42157e4081ddfcdbb101d2f00b819008bc99f5660785c1", "355c4236753330c944cd87fbcb15769820475d2286efa9a49ac9614d6863944a"),
+    ("dlg:sahkng01", "c76c8624052f7e179d42157e4081ddfcdbb101d2f00b819008bc99f5660785c1", "e4489ed5a331b4ad81ca9cb8dbe3234e30651cef572245c8f389e7a1e1b56b5f"),
     ("dlg:scsain", "c2a43b0d67eca9b531aa591463f74d5333225a95f0be87f8d03ed1cf91f8dafe", "cd1db0265daa8dc239bbe1a325cdf2ad3fc0033f3bf8eaba981a46e65c91b148"),
     ("dlg:sctelwyn", "d5dd048c43e16ba937ff583eef8f5966e549fb0c4e3f92679883d35fcdda1759", "6be82dfdf03c7b5f8bbeee67681344e1cb753a803fe461181c52e23ab5434067"),
     ("dlg:scyarryl", "f96880bdabcfe8393d9ad6df502d3d001e2d79913736e480f6cc717f012dd367", "247dd86c080239e80b4cd07516127a1ce55d90e12c6087b983ff935a3ffaea51"),
@@ -920,8 +977,8 @@ fn reviewed_eet_resources_when_available_patch_exactly_and_reexport() {
             }
         } else if kind == "bcs" {
             assert_eq!(script_original(&result, &specs(resource)[0]).unwrap().0, original);
-        } else if name == "aran" {
-            check_aran(&original, &result);
+        } else if ["aran", "sahkng01"].contains(&name) {
+            check_pair(name, &original, &result);
         } else {
             check_dialogue(name, &original, &result, None, None);
         }

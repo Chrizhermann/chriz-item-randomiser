@@ -429,41 +429,52 @@ pub fn check_dialogue(
     }
 }
 
-/// `check_aran(original, result)`: two grants, four campaign combinations.
-pub fn check_aran(original: &[u8], result: &[u8]) {
-    let before = Dialogue::new(original, "aran").unwrap();
-    let after = Dialogue::new(result, "aran").unwrap();
-    let specs = specs("dlg:aran");
-    assert_eq!(specs.iter().map(|spec| text(spec, "quest")).collect::<Vec<_>>(), ["aran", "aran"]);
+/// `check_pair(name, original, result)`: two routes whose grants share every
+/// granting reply, four campaign combinations each.
+pub fn check_pair(name: &str, original: &[u8], result: &[u8]) {
+    let before = Dialogue::new(original, name).unwrap();
+    let after = Dialogue::new(result, name).unwrap();
+    let specs = specs(&format!("dlg:{name}"));
+    assert_eq!(specs.iter().map(|spec| text(spec, "quest")).collect::<Vec<_>>(), [name, name]);
+    let shared: BTreeSet<(usize, usize)> = branches(&specs[0]).into_iter().collect();
+    assert_eq!(branches(&specs[1]).into_iter().collect::<BTreeSet<_>>(), shared);
     for state in 0..before.states.len() {
         let (old, new) = (outgoing(&before, state), outgoing(&after, state));
-        if state != 4 {
+        let ordinals: BTreeSet<usize> =
+            shared.iter().filter(|(granting, _)| *granting == state).map(|(_, ordinal)| *ordinal).collect();
+        if ordinals.is_empty() {
             assert_eq!(new, old);
             continue;
         }
-        assert_eq!(old.len(), 8);
-        assert_eq!(new.len(), 32);
+        assert_eq!(new.len(), old.len() + 3 * ordinals.len());
+        let mut cursor = 0;
         for (ordinal, transition) in old.iter().enumerate() {
+            if !ordinals.contains(&ordinal) {
+                assert_eq!(&new[cursor], transition);
+                cursor += 1;
+                continue;
+            }
             let flags = u32_at(transition, 0);
             let prior = if flags & 2 != 0 { before.triggers[u32_at(transition, 12) as usize].clone() } else { Vec::new() };
             let original_actions = &before.actions[u32_at(transition, 16) as usize];
-            for (bits, branch) in new[ordinal * 4..ordinal * 4 + 4].iter().enumerate() {
+            for (bits, branch) in new[cursor..cursor + 4].iter().enumerate() {
                 let mut condition = prior.clone();
                 let mut restored = after.actions[u32_at(branch, 16) as usize].clone();
                 assert_eq!(branch[4..12], transition[4..12]);
                 assert_eq!(branch[20..], transition[20..]);
                 for (spec, selected) in specs.iter().zip([bits & 2 != 0, bits & 1 != 0]) {
                     condition = guarded(&condition, &guard(text(spec, "selected_global"), selected));
-                    let marker = format!(
-                        "ActionOverride(LastTalkedToBy,SetGlobal(\"{}\",\"LOCALS\",1))\r\n",
-                        text(spec, "recipient_local")
-                    )
-                    .into_bytes();
+                    let (grant, recipient) = grant_in(original_actions, spec);
+                    let marker = [
+                        b"ActionOverride(".as_slice(),
+                        &recipient,
+                        format!(",SetGlobal(\"{}\",\"LOCALS\",1))\r\n", text(spec, "recipient_local")).as_bytes(),
+                    ]
+                    .concat();
                     let event = format!("\r\nSetGlobal(\"{}\",\"GLOBAL\",1)", text(spec, "event_global")).into_bytes();
                     assert_eq!(count(&restored, &marker), 1);
                     assert_eq!(count(&restored, &event), 1);
                     restored = replace(&replace(&restored, &marker, b"", Some(1)), &event, b"", Some(1));
-                    let (grant, _) = grant_in(original_actions, spec);
                     if selected {
                         assert!(!contains(&restored, &grant));
                         let consumed = format!("SetGlobal(\"{}\",\"GLOBAL\",1)", text(spec, "consumed_global")).into_bytes();
@@ -475,7 +486,9 @@ pub fn check_aran(original: &[u8], result: &[u8]) {
                 assert_eq!(after.triggers[u32_at(branch, 12) as usize], condition);
                 assert_eq!(&restored, original_actions);
             }
+            cursor += 4;
         }
+        assert_eq!(cursor, new.len());
     }
 }
 

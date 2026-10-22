@@ -218,7 +218,7 @@ fn build_registry() -> Registry {
         ("udsvir03", "dlg", "blun18", 50, 65, "LastTalkedToBy", [1, 1, 1], pairs(&[(35, 0), (35, 1)])),
         ("ammayor", "dlg", "compon16", 83, 84, "LastTalkedToBy", [1, 0, 0], pairs(&[(12, 0)])),
         // The Sahuagin king's bracer (Item Randomiser's tadpoles1.fl). The same
-        // reply also gives the treasury's rod, which this route leaves as it is.
+        // reply also gives the treasury's rod: see "sahrod" below.
         ("sahkng01", "dlg", "brac19", 57, 58, "LastTalkedToBy", NO_CHARGES, pairs(&[(81, 0)])),
     ];
     let direct_names = direct.iter().map(|row| row.0.to_string()).collect();
@@ -387,6 +387,19 @@ fn build_registry() -> Registry {
         row.insert("source_record", source_record(3676, 2, "sw1h39", 9));
     }
     let physical = dict! {"cre:udlesa/item/2" => "udlesa"};
+
+    // The Sahuagin treasury's rod (row7, whose row names sahkng01.dlg and
+    // sahtreas.bcs) is an ordinary container source, but the king's reward
+    // reply creates another one (SAHTREAS.BCS then destroys the treasury's).
+    // As with UDLESA's sword, the reply follows the source's kept/relocated
+    // decision; without a target, its selected copy only drops the grant. A
+    // game whose dialogue gives no rod needs no route ([`gives_reward`]).
+    alias(&mut rewards, "sahrod", "rods02", 7, None, "SAHROD", &[("sahkng01", vec![(81, 0)])], NO_CHARGES, talker);
+    {
+        let row = row_mut(&mut rewards, "sahrod");
+        row.insert("source_ids", Value::List(Vec::new()));
+        row.insert("authored_source_ids", list!["original-source:bg2:mode2:item:7"]);
+    }
     for row in rewards.values_mut() {
         let row = row.as_dict_mut().expect("reward row");
         let resource = row.get("resource").cloned().expect("resource");
@@ -439,6 +452,16 @@ pub fn transfer_specs() -> &'static Dict {
 /// `PHYSICAL_SOURCE_REWARDS`.
 pub fn physical_source_rewards() -> &'static Dict {
     &registry().physical
+}
+
+/// `CONTAINER_SOURCE_REWARDS`: container sources by (area, item), as the
+/// catalog binds the original row: the one container record of the item in
+/// the area. Each entry is (area, item, route).
+pub const CONTAINER_SOURCE_REWARDS: &[(&str, &str, &str)] = &[("are:ar2300", "rods02", "sahrod")];
+
+/// The route of a container source of `item` in `area`, if one gives it too.
+pub fn container_source_reward(area: &str, item: &str) -> Option<&'static str> {
+    CONTAINER_SOURCE_REWARDS.iter().find(|row| row.0 == area && row.1 == item).map(|row| row.2)
 }
 
 /// `RESOURCE_REWARDS`: resource to the reward keys that edit it.
@@ -687,6 +710,18 @@ pub fn gives_item(text: &[u8], call: &Call, item: &str) -> bool {
     giving_call(&call.name).is_some_and(|index| {
         string_argument(text, call, index).unwrap_or(b"").to_ascii_lowercase() == item.as_bytes()
     })
+}
+
+/// Whether a dialogue action puts the item somewhere, also through
+/// ActionOverride (`_gives`).
+pub(crate) fn gives(text: &[u8], call: &Call, item: &str) -> bool {
+    if named(call, &["ActionOverride"]) && call.args.len() == 2 {
+        return match calls_in(text, call.args[1]) {
+            None => true,
+            Some(inner) => inner.iter().any(|nested| gives_item(text, nested, item)),
+        };
+    }
+    gives_item(text, call, item)
 }
 
 /// Every reply that gives the route's item, with the call that gives it.
@@ -1884,6 +1919,47 @@ pub fn route_reasons(resource: &str, data: &[u8]) -> Result<Dict> {
         }
         Err(error) => Err(error),
     }
+}
+
+/// Whether the dialogue gives the item of the route `key` at all, in a way
+/// the route can gate or not.
+///
+/// A route that only stops a second copy of a container reward
+/// ([`CONTAINER_SOURCE_REWARDS`]) is needed where its dialogue gives the
+/// item. A reply whose actions cannot be read counts as giving it;
+/// [`route_reasons`] says why the route cannot be prepared then.
+pub fn gives_reward(resource: &str, data: &[u8], key: &str) -> Result<bool> {
+    let resource = resource_key(resource)?;
+    let mut specs = Vec::new();
+    for spec in resource_specs(&resource)? {
+        if route(&spec)? == key {
+            specs.push(spec);
+        }
+    }
+    let label = label(&resource);
+    if !resource.starts_with("dlg:") || specs.is_empty() {
+        return Err(profile(format!("Unsupported extended reward route in {label}: {key}")));
+    }
+    let item = text_field(&specs[0], "item", "encode")?;
+    let dialogue = read_dialogue(&examine(&resource, data)?.original, &resource)?;
+    for state in &dialogue.states {
+        let (first, count) = outgoing(&dialogue, state, &label)?;
+        for row in &dialogue.transitions[first..first + count] {
+            if u32_le(row, 0) & 4 == 0 {
+                continue;
+            }
+            let text = string(&dialogue.actions, u32_le(row, 16), &label)?;
+            if !names(&text, item) {
+                continue;
+            }
+            match calls(&text) {
+                None => return Ok(true),
+                Some(found) if found.iter().any(|call| gives(&text, call, item)) => return Ok(true),
+                Some(_) => {}
+            }
+        }
+    }
+    Ok(false)
 }
 
 /// Patch a resource or re-export our own patch; text routes need refs on

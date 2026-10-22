@@ -26,6 +26,19 @@
    "result": {}
   },
   {
+   "name": "gives_reward legacy trgeni01",
+   "call": "mode2_rewards.gives_reward",
+   "args": {
+    "resource": "dlg:trgeni01",
+    "data": {
+     "$blob": "212cd8378efdf7f1353802df7bedd77b786f370007bb0cffb9ec12f66b680ea3"
+    },
+    "key": "trgeni01"
+   },
+   "independent": true,
+   "result": true
+  },
+  {
    "name": "patch_reward again legacy",
    "call": "mode2_rewards.patch_reward",
    "args": {
@@ -83,6 +96,19 @@
    },
    "independent": true,
    "result": {}
+  },
+  {
+   "name": "gives_reward previous trgeni01",
+   "call": "mode2_rewards.gives_reward",
+   "args": {
+    "resource": "dlg:trgeni01",
+    "data": {
+     "$blob": "f3a8cc3617bad7a06ac04c89edfbb4bcdf8c4806b9772993bbdd88d22deff055"
+    },
+    "key": "trgeni01"
+   },
+   "independent": true,
+   "result": true
   },
   {
    "name": "patch_reward again previous",
@@ -144,6 +170,19 @@
    "result": {}
   },
   {
+   "name": "gives_reward result trgeni01",
+   "call": "mode2_rewards.gives_reward",
+   "args": {
+    "resource": "dlg:trgeni01",
+    "data": {
+     "$blob": "fea50f7ad703fe5ea28ba80017e2365fd57c3ff9cd69d4c1df9db483287ae849"
+    },
+    "key": "trgeni01"
+   },
+   "independent": true,
+   "result": true
+  },
+  {
    "name": "patch_reward again result",
    "call": "mode2_rewards.patch_reward",
    "args": {
@@ -203,6 +242,19 @@
    "result": {}
   },
   {
+   "name": "gives_reward original trgeni01",
+   "call": "mode2_rewards.gives_reward",
+   "args": {
+    "resource": "dlg:trgeni01",
+    "data": {
+     "$blob": "2715165ee84be8ecc510565e2c6154dfa3673e970ec241c320dfe44086be3760"
+    },
+    "key": "trgeni01"
+   },
+   "independent": true,
+   "result": true
+  },
+  {
    "name": "patch_reward again original",
    "call": "mode2_rewards.patch_reward",
    "args": {
@@ -258,6 +310,22 @@
    "independent": true,
    "result": {
     "trgeni01": "TRGENI01.DLG carries a changed copy of the reward route's own patch"
+   }
+  },
+  {
+   "name": "gives_reward tampered legacy trgeni01",
+   "call": "mode2_rewards.gives_reward",
+   "args": {
+    "resource": "dlg:trgeni01",
+    "data": {
+     "$blob": "333c0358829dfef35e7c1aa3fafdbf041bd4c567eb1c0d8e7d2d54b89132445d"
+    },
+    "key": "trgeni01"
+   },
+   "independent": true,
+   "error": {
+    "kind": "Profile",
+    "message": "TRGENI01.DLG carries a changed copy of the reward route's own patch"
    }
   },
   {

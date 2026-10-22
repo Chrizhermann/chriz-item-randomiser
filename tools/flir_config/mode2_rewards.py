@@ -69,7 +69,7 @@ REWARDS = {
     "udsvir03": _spec("udsvir03", "dlg", "blun18", 50, 65, "LastTalkedToBy", (1, 1, 1), ((35, 0), (35, 1))),
     "ammayor": _spec("ammayor", "dlg", "compon16", 83, 84, "LastTalkedToBy", (1, 0, 0), ((12, 0),)),
     # The Sahuagin king's bracer (Item Randomiser's tadpoles1.fl). The same
-    # reply also gives the treasury's rod, which this route leaves as it is.
+    # reply also gives the treasury's rod: see "sahrod" below.
     "sahkng01": _spec("sahkng01", "dlg", "brac19", 57, 58, "LastTalkedToBy", (0, 0, 0), ((81, 0),)),
 }
 DIRECT_REWARDS = tuple(REWARDS)
@@ -162,6 +162,18 @@ REWARDS["udlesa"].update(
     source_record={"byte_offset": 3676, "record_index": 2, "resref": "sw1h39",
                    "expiration": 0, "charges": [0, 0, 0], "flags": 0, "slots": [9]})
 PHYSICAL_SOURCE_REWARDS = {"cre:udlesa/item/2": "udlesa"}
+
+# The Sahuagin treasury's rod (row7, whose row names sahkng01.dlg and
+# sahtreas.bcs) is an ordinary container source, but the king's reward reply
+# creates another one (SAHTREAS.BCS then destroys the treasury's). As with
+# UDLESA's sword, the reply follows the source's kept/relocated decision;
+# without a target, its selected copy only drops the grant. A game whose
+# dialogue gives no rod needs no route (gives_reward).
+_alias("sahrod", "rods02", 7, None, "SAHROD", {"sahkng01": ((81, 0),)})
+REWARDS["sahrod"].update(source_ids=(), authored_source_ids=("original-source:bg2:mode2:item:7",))
+# Container sources by (area, item), as the catalog binds the original row:
+# the one container record of the item in the area.
+CONTAINER_SOURCE_REWARDS = {("are:ar2300", "rods02"): "sahrod"}
 for _name, _row in REWARDS.items():
     _row.setdefault("resources", (_row["resource"],))
 RESOURCE_REWARDS = {}
@@ -321,6 +333,14 @@ def _gives_item(text: bytes, call, item: str) -> bool:
     """Whether a dialogue action puts the item somewhere (see _GIVING)."""
     index = _GIVING_CALLS.get(call.name.decode("ascii").lower())
     return index is not None and (string_argument(text, call, index) or b"").lower() == item.encode()
+
+
+def _gives(text: bytes, call, item: str) -> bool:
+    """Whether a dialogue action puts the item somewhere, also through ActionOverride."""
+    if named(call, "ActionOverride") and len(call.args) == 2:
+        inner = calls(text, *call.args[1])
+        return inner is None or any(_gives_item(text, nested, item) for nested in inner)
+    return _gives_item(text, call, item)
 
 
 def _dialogue_grants(dialogue: _Dialogue, spec: dict, label: str,
@@ -1058,6 +1078,36 @@ def route_reasons(resource: str, data: bytes) -> dict[str, str]:
     except ProfileError as exc:
         return {spec["route"]: reasons.get(spec["route"], str(exc)) for spec in specs}
     return reasons
+
+
+def gives_reward(resource: str, data: bytes, key: str) -> bool:
+    """Whether the dialogue gives the item of the route <key> at all, in a way
+    the route can gate or not.
+
+    A route that only stops a second copy of a container reward
+    (CONTAINER_SOURCE_REWARDS) is needed where its dialogue gives the item.
+    A reply whose actions cannot be read counts as giving it; route_reasons
+    says why the route cannot be prepared then.
+    """
+    resource = _resource_key(resource)
+    specs = [spec for spec in resource_specs(resource) if spec["route"] == key]
+    if not resource.startswith("dlg:") or not specs:
+        raise ProfileError(f"Unsupported extended reward route in {_label(resource)}: {key}")
+    item, label = specs[0]["item"], _label(resource)
+    dialogue = _read_dialogue(_examine(resource, data).original, resource)
+    for state in dialogue.states:
+        first, count = _outgoing(dialogue, state, label)
+        for row in dialogue.transitions[first:first + count]:
+            flags, _, _, _, action_id = struct.unpack_from("<5I", row)
+            if not flags & 4:
+                continue
+            text = _string(dialogue.actions, action_id, label)
+            if not _names(text, item):
+                continue
+            found = calls(text)
+            if found is None or any(_gives(text, call, item) for call in found):
+                return True
+    return False
 
 
 def patch_reward(resource: str, data: bytes, *, refs: dict[int, int] | None = None,

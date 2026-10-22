@@ -46,6 +46,9 @@ pub struct RewardRoutes {
     changed: BTreeSet<String>,
     /// (resource, route or container target id) to why it cannot be prepared.
     reasons: HashMap<(String, String), String>,
+    /// The routes of [`mode2_rewards::CONTAINER_SOURCE_REWARDS`] whose
+    /// dialogue gives their item at all, or may.
+    giving: BTreeSet<String>,
     /// The files the resources were read from, with their identities then.
     files: Vec<(PathBuf, FileIdentity)>,
     /// The copies of the quest routes' reward replies in other dialogues.
@@ -98,6 +101,7 @@ impl RewardRoutes {
             .collect();
         let mut changed = BTreeSet::new();
         let mut reasons = HashMap::new();
+        let mut giving = BTreeSet::new();
         let mut files: Vec<(PathBuf, FileIdentity)> = Vec::new();
         let mut known: HashSet<PathBuf> = HashSet::new();
         let (male, female) = game_text::text_files(game_root, language)?;
@@ -161,6 +165,20 @@ impl RewardRoutes {
                 for (key, reason) in found.iter() {
                     reasons.insert((resource.clone(), key.to_string()), str_value(reason));
                 }
+                // Routes that only stop a second copy of a container reward:
+                // needed where their dialogue gives the item at all.
+                let links: BTreeSet<&str> = mode2_rewards::CONTAINER_SOURCE_REWARDS.iter().map(|row| row.2).collect();
+                for key in resource_rewards(resource).into_iter().filter(|key| links.contains(key.as_str())) {
+                    let gives = match mode2_rewards::gives_reward(resource, &data, &key) {
+                        Ok(gives) => gives,
+                        // Its route's reasons say why it cannot be read.
+                        Err(error) if error.kind == ErrorKind::Profile => true,
+                        Err(error) => return Err(error),
+                    };
+                    if gives {
+                        giving.insert(key);
+                    }
+                }
             }
             let copies = RewardCopies::new(&mut |name| read("dlg", name), &scanned)?;
             Ok((journal, copies))
@@ -173,6 +191,7 @@ impl RewardRoutes {
             journal,
             changed,
             reasons,
+            giving,
             files,
             copies,
         })
@@ -285,6 +304,15 @@ impl RewardRoutes {
             }
         }
         self.texts(lines, &prefix)
+    }
+
+    /// Whether a dialogue of the route `key` (one of
+    /// [`mode2_rewards::CONTAINER_SOURCE_REWARDS`]) gives its item at all; a
+    /// game without the dialogue gives it nowhere.
+    pub fn gives(&self, key: &str) -> Result<bool> {
+        let spec = mode2_rewards::rewards().get(key).ok_or_else(|| Error::key(key))?;
+        self.unchanged(&resources_of(spec)?)?;
+        Ok(self.giving.contains(key))
     }
 
     /// Fail unless the container quest target can be prepared.

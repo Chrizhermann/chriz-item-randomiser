@@ -358,6 +358,14 @@ king or the prince, the trolls of the Spellhold painting, Tolgerias, TorGal and 
 vampire or shadow thief of chapter 3 (BG2). `tests/test_original_catalog.py` lists
 them; a route for one of them takes its rows off that list.
 
+The Sahuagin treasury's rod (`RODS02` in AR2300) moves like any container reward,
+but the king's reward reply (SAHKNG01.DLG) creates another one. Where the game's
+dialogue gives the rod, that reply follows the rod's row, as Lesa's conversation
+does for her sword: where the plan moves the rod, the king no longer creates one. A
+game without that dialogue, or whose king gives no rod, needs no link. Where the
+reply gives the rod in a way CIR cannot gate, or AR2300 holds a second rod that the
+reply could stand for, the rod's row is left out with its reason.
+
 The world scan leaves out a creature, area or store file it cannot read (another
 mod's damaged or unusual file) instead of refusing the game. `world scan` names such
 files with their reason in its `warnings`, and the preset dialog names them first

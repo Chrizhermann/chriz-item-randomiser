@@ -6,6 +6,7 @@ with another mod's additions, is fitted and applied; one the check cannot
 recognise is left out with its reason before anything is written.
 """
 
+import hashlib
 import json
 from pathlib import Path
 import shutil
@@ -345,6 +346,109 @@ class ContainerQuestTests(RouteGame):
             ("bg2:mode2:target:13", "place", "The extended reward container of AX1H13 cannot be used: "
              "AR1303 has no container that holds AX1H13")])
         self.apply(fitted)
+
+
+ROD_GRANT = b'GiveItemCreate("rods02",LastTalkedToBy,0,0,0)\r\r\n'
+
+
+def king_dialogue(rod: bytes = ROD_GRANT) -> bytes:
+    """SAHKNG01 whose reward reply gives the bracer and, as <rod> says, the rod."""
+    dialogue = _Dialogue(dialogue_fixture(mode2_rewards.resource_specs("dlg:sahkng01")), "sahkng01")
+    dialogue.actions = [text.replace(ROD_GRANT, rod) for text in dialogue.actions]
+    return dialogue.render()
+
+
+class TreasuryRodTests(RouteGame):
+    """The Sahuagin treasury's rod: a container reward of which the king's
+    reward reply creates another one. The ogre's shield keeps a reward in the
+    configuration where the rod is left out."""
+
+    sources, targets = ("bg2:mode2:item:7", "bg2:mode2:item:14"), ("bg2:mode2:target:17",)
+    ROD = "are:ar2300/container/0/item/0"
+
+    def places(self) -> list[dict]:
+        # Chests of the rod's and the shield's tiers.
+        return [place("bg2:base:target:9002", "1", 0), place("bg2:base:target:9003", "2", 1)]
+
+    def rod_row(self, draft: dict) -> dict:
+        return next(row for row in draft["items"] if row["id"] == self.sources[0])
+
+    def build_treasury(self, platform: str, king: bytes | None, *, rods: int = 1) -> None:
+        """AR2300 with the rod in its treasury and in <rods> - 1 other chests."""
+        area = make_are([chest_item("RODS02")] * rods,
+                        [("Treasury", 0, 1)] + [(f"Chest {number}", number, 1) for number in range(1, rods)])
+        resources = {"uhogre01.dlg": ogre_dialogue()} | ({} if king is None else {"sahkng01.dlg": king})
+        self.build(platform, resources=resources, extra={"ar2300.are": area})
+        visible = (self.game / "override" / "synth001.itm").read_bytes()
+        (self.game / "override" / "rods02.itm").write_bytes(visible)
+        self.rescan()
+
+    def native(self, written: dict) -> dict:
+        return json.loads((self.output / "campaign-store" / "revisions" /
+                           f"{written['starts'][written['full']]}.native.json").read_bytes())
+
+    def test_a_moved_rod_stops_the_kings_second_one(self):
+        for platform, starts in (("bg2ee", {"SOA"}), ("eet", {"BG1", "SOD", "SOA"})):
+            with self.subTest(platform=platform):
+                self.build_treasury(platform, king_dialogue())
+                rod = self.rod_row(self.draft())
+                self.assertEqual((rod["source_ids"], rod["binding_problem"]), ([self.ROD], None))
+                before = snapshot(self.game)
+                fitted = self.fit()
+                self.assertEqual(fitted["not_used"], [])
+                written = self.apply(fitted)
+                self.assertEqual(set(written["starts"]), starts)
+                self.assertEqual(snapshot(self.game), before)
+                # The reply creates the rod only while the treasury's stays.
+                patched = mode2_rewards.patch_reward("dlg:sahkng01", king_dialogue())
+                self.assertIn(b'Global("FLPR_QM2_7","GLOBAL",1)', b"".join(_Dialogue(patched, "sahkng01").triggers))
+                self.assertEqual((self.output / "resource-overrides" / "SAHKNG01.DLG").read_bytes(), patched)
+                for revision in written["starts"].values():
+                    native = json.loads((self.output / "campaign-store" / "revisions" /
+                                         f"{revision}.native.json").read_bytes())
+                    source = native["sources"][self.ROD]
+                    self.assertEqual((source["kind"], source["reward_selected_global"]),
+                                     ("guarded-container", "FLPR_QM2_7"))
+                    self.assertEqual(native["resource_hashes"]["SAHKNG01.DLG"], hashlib.sha256(patched).hexdigest())
+
+    def test_where_nothing_else_gives_the_rod_it_moves_as_any_container_reward(self):
+        # Another mod's king who gives no rod, and a game without his dialogue.
+        for king in (king_dialogue(b""), None):
+            with self.subTest(dialogue=king is not None):
+                self.build_treasury("bg2ee", king)
+                fitted = self.fit()
+                self.assertEqual(fitted["not_used"], [])
+                written = self.apply(fitted)
+                self.assertNotIn("reward_selected_global", self.native(written)["sources"][self.ROD])
+                self.assertFalse((self.output / "resource-overrides" / "SAHKNG01.DLG").exists())
+
+    def test_a_rod_the_king_gives_in_a_way_the_route_cannot_gate_is_left_out(self):
+        self.build_treasury("bg2ee", king_dialogue(
+            b'ActionOverride("sahpr2",GiveItemCreate("rods02",LastTalkedToBy,0,0,0))\r\r\n'))
+        fitted = self.fit()
+        self.assertEqual([(row["id"], row["kind"], row["reason"]) for row in fitted["not_used"]], [
+            ("bg2:mode2:item:7", "reward", "The extended reward route for SAHROD cannot be used: SAHKNG01.DLG "
+             "state 81 gives RODS02 through ActionOverride(), whose recipient the route cannot mark")])
+        self.apply(fitted)
+        self.assertFalse((self.output / "resource-overrides" / "SAHKNG01.DLG").exists())
+
+    def test_one_of_two_rods_in_the_area_is_left_out(self):
+        # The tables' row needs the area's only rod. A configuration that names
+        # one of two cannot tell which one the king's reward stands for.
+        self.build_treasury("bg2ee", king_dialogue(), rods=2)
+        self.assertEqual(self.rod_row(self.draft())["binding_problem"], "ambiguous-source-records")
+        draft = self.draft
+
+        def one_of_two() -> dict:
+            result = draft()
+            self.rod_row(result).update(source_ids=[self.ROD], binding_problem=None)
+            return result
+
+        self.draft = one_of_two
+        fitted = self.fit()
+        self.assertEqual([(row["id"], row["kind"], row["reason"]) for row in fitted["not_used"]], [
+            ("bg2:mode2:item:7", "reward", "AR2300 holds another RODS02 that the reward of SAHKNG01.DLG "
+             f"could stand for: {self.ROD}")])
 
 
 class NoCopies:

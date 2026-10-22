@@ -480,6 +480,9 @@ fn call(name: &str, args: &Args) -> Result<Value> {
         "mode2_rewards.DIRECT_REWARDS" => Value::from(mode2_rewards::direct_rewards().to_vec()),
         "mode2_rewards.TRANSFER_SPECS" => dump_dict(mode2_rewards::transfer_specs()),
         "mode2_rewards.PHYSICAL_SOURCE_REWARDS" => dump_dict(mode2_rewards::physical_source_rewards()),
+        "mode2_rewards.CONTAINER_SOURCE_REWARDS" => Value::List(
+            mode2_rewards::CONTAINER_SOURCE_REWARDS.iter().map(|(area, item, route)| Value::from(vec![*area, *item, *route])).collect(),
+        ),
         "mode2_rewards.RESOURCE_REWARDS" => dump_dict(mode2_rewards::resource_rewards()),
         "mode2_rewards.SOURCE_REWARDS" => dump_dict(mode2_rewards::source_rewards()),
         "mode2_rewards.TARGET_REWARDS" => dump_dict(mode2_rewards::target_rewards()),
@@ -519,6 +522,9 @@ fn call(name: &str, args: &Args) -> Result<Value> {
         "mode2_rewards._script_original" => recovered(mode2_rewards::script_original(&args.bytes("data"), &args.dict("spec"))?),
         "mode2_rewards.own_patch" => Value::Bool(mode2_rewards::own_patch(&args.str("resource"), &args.bytes("data"))?),
         "mode2_rewards.route_reasons" => Value::Dict(mode2_rewards::route_reasons(&args.str("resource"), &args.bytes("data"))?),
+        "mode2_rewards.gives_reward" => {
+            Value::Bool(mode2_rewards::gives_reward(&args.str("resource"), &args.bytes("data"), &args.str("key"))?)
+        }
         "mode2_rewards._patch_text_dialogue" => bytes_value(&mode2_rewards::patch_text_dialogue(
             &args.bytes("data"),
             &args.str("resource"),

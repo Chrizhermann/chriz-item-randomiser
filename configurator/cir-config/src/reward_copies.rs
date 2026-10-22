@@ -34,7 +34,7 @@ use crate::mode2_rewards::{self, Replies};
 use crate::py::{find_bytes, lower, str_value, u32_le, upper};
 use crate::quest_options::Dialogue;
 use crate::resources::sha256_hex;
-use crate::script_text::{calls, calls_in, named, Call};
+use crate::script_text::calls;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 use std::sync::Arc;
 use std::sync::OnceLock;
@@ -91,18 +91,6 @@ pub fn copy_spec(key: &str, resource: &str) -> Result<Dict> {
     spec.insert("resource", resource);
     spec.insert("quest", resource.get(4..).unwrap_or(""));
     Ok(spec)
-}
-
-/// Whether a dialogue action puts the item somewhere, also through
-/// ActionOverride.
-fn gives(text: &[u8], call: &Call, item: &str) -> bool {
-    if named(call, &["ActionOverride"]) && call.args.len() == 2 {
-        return match calls_in(text, call.args[1]) {
-            None => true,
-            Some(inner) => inner.iter().any(|nested| mode2_rewards::gives_item(text, nested, item)),
-        };
-    }
-    mode2_rewards::gives_item(text, call, item)
 }
 
 /// The routes whose gates our copy patch put into a dialogue.
@@ -408,7 +396,7 @@ impl RewardCopies {
         let Some(found) = calls(text) else {
             return Err(profile(format!("{place} names {shown} in actions that cannot be read")));
         };
-        if !found.iter().any(|call| gives(text, call, item)) {
+        if !found.iter().any(|call| mode2_rewards::gives(text, call, item)) {
             return Ok(false); // It takes, shows or tests the reward.
         }
         if let Some(others) = mode2_rewards::resource_rewards().get(resource).and_then(Value::as_list) {
