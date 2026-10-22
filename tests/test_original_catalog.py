@@ -55,10 +55,10 @@ class OriginalCatalogTests(unittest.TestCase):
         problems = {}
         for row in resolve_template({"items": []}, world, "bg1-boss-loot", items="extended", targets="extended")["items"]:
             problems.setdefault(row["optional_mod"], set()).add(row["binding_problem"])
+        # The conversation rewards have the original lists' routes.
         self.assertEqual(problems, {"Rogue Rebalancing": {"optional-item-absent"},
                                     "IWDification": {"optional-item-absent"},
-                                    # The conversation rewards wait for a route in any game.
-                                    None: {"item-definition-absent", "route-not-supported"}})
+                                    None: {"item-definition-absent"}})
 
     def test_exact_mode2_spin621_pair_uses_spell_hash_without_area_or_physical_target(self):
         catalog = {"items": [{"resref": "ring41"}]}
@@ -370,12 +370,70 @@ class OriginalCatalogTests(unittest.TestCase):
                         if row["binding_problem"] == "route-not-supported"}
         self.assertEqual(waiting, {
             # Conversations and scripts that give the reward.
-            "bg1:boss-loot:mode2:item:62", "bg1:boss-loot:mode2:item:71", "bg1:boss-loot:mode2:item:339",
             "bg2:mode2:item:260", "bg2:mode2:item:262",
             # Places that Item Randomiser's own quest handlers name.
-            "bg1:boss-loot:mode2:target:46", "bg1:boss-loot:mode2:target:71",
-            "bg1:boss-loot:mode2:target:291",
             *(f"bg2:mode2:target:{line}" for line in (6, 25, 37, 49, 50, 59, 60, 89, 215, 252))})
+
+    def test_a_presets_rows_of_an_original_reward_route_are_that_route(self):
+        from flir_config.original_catalog import mode2_route_source, mode2_route_target
+
+        catalog = {"items": [{"resref": name} for name in ("sw1h03", "shld07", "scrl1q")]}
+        world = {"resources": [{"id": name} for name in ("dlg:aldeth", "dlg:varci", "dlg:nemphr")],
+                 "sources": [], "targets": []}
+        result = resolve_template(catalog, world, "bg1-boss-loot", game="bgee", items="extended",
+                                  targets="extended", options={"scrolls": True})
+        items = {row["id"]: row for row in result["items"]}
+        places = {row["id"]: row for row in result["targets"]}
+        # Boss Loot's rows of Aldeth's sword, Varci's shield and Nemphre's scroll.
+        for preset, original, dialogue in ((62, 16, "dlg:aldeth"), (71, 20, "dlg:varci"), (339, 159, "dlg:nemphr")):
+            row = items[f"bg1:boss-loot:mode2:item:{preset}"]
+            with self.subTest(item=preset):
+                self.assertEqual(mode2_route_source(row), f"original-source:bg1:mode2:item:{original}")
+                self.assertEqual((row["adapter"], row["source_resource"], row["binding_problem"]),
+                                 ("scripted", dialogue, "scripted-source-requires-adapter"))
+        for preset, original, dialogue in ((46, 16, "dlg:aldeth"), (71, 20, "dlg:varci"), (291, 136, "dlg:nemphr")):
+            row = places[f"bg1:boss-loot:mode2:target:{preset}"]
+            with self.subTest(place=preset):
+                self.assertEqual(mode2_route_target(row), f"bg1:mode2:target:{original}")
+                self.assertEqual((row["area_resource"], row["binding_problem"]),
+                                 (dialogue, "legacy-target-requires-adapter"))
+        # Only the preset's rows as its tables have them.
+        sword, place = items["bg1:boss-loot:mode2:item:62"], places["bg1:boss-loot:mode2:target:46"]
+        for changed in ({"tier": "27"}, {"source": "varci.dlg"}, {"id": "bg1:boss-loot:mode2:item:63"},
+                        {"campaign": "bg2"}):
+            with self.subTest(changed=changed):
+                self.assertIsNone(mode2_route_source({**sword, **changed}))
+        for changed in ({"area": "ar0617"}, {"tier": "27"}, {"id": "bg1:boss-loot:mode2:target:47"}):
+            with self.subTest(changed=changed):
+                self.assertIsNone(mode2_route_target({**place, **changed}))
+
+    def test_a_preset_with_two_rows_of_one_route_has_the_route_for_neither(self):
+        """One reward or place, one row: the runtime finds a route's row by it."""
+        import shutil
+        import tempfile
+        from unittest.mock import patch
+        from flir_config import original_catalog, templates
+        from flir_config.templates import ROOT, build_template
+
+        draft = build_template("bg1-boss-loot", items="extended", targets="extended")
+        sword = next(row for row in draft["items"] if row["id"] == "bg1:boss-loot:mode2:item:62")
+        place = next(row for row in draft["targets"] if row["id"] == "bg1:boss-loot:mode2:target:46")
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            for kind in ("items", "locations"):
+                for relative in (f"lists/{kind}/mode2/bg1.2da", f"lists/presets/boss-loot/{kind}/mode2/bg1.2da"):
+                    (root / relative).parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copyfile(ROOT / relative, root / relative)
+            # Both lists roots, as configurator/parity/replay_tests.py passes them on.
+            with patch.object(original_catalog, "ROOT", root), patch.object(templates, "ROOT", root):
+                self.assertEqual(original_catalog.mode2_route_source(sword), "original-source:bg1:mode2:item:16")
+                self.assertEqual(original_catalog.mode2_route_target(place), "bg1:mode2:target:16")
+                for relative, line in (("items", "sw1h03 blank aldeth.dlg 25 w13 v8 100"),
+                                       ("locations", "w9 26 aldeth.fl ar0128 v8 100")):
+                    with (root / f"lists/presets/boss-loot/{relative}/mode2/bg1.2da").open("a") as table:
+                        table.write("\n" + line + "\n")
+                self.assertIsNone(original_catalog.mode2_route_source(sword))
+                self.assertIsNone(original_catalog.mode2_route_target(place))
 
     def test_a_presets_place_of_an_original_container_quest_is_that_quest(self):
         from flir_config.original_catalog import container_target_spec

@@ -11,7 +11,7 @@ use crate::error::{Error, ErrorKind, Result, CHANGED_SINCE_SCAN};
 use crate::game_text::{paired, text_files, unpaired};
 use crate::json::{parse_lenient, py_str, utf8_error_message, Dict, Value};
 use crate::mode2_rewards::Naming;
-use crate::original_catalog::container_target_spec;
+use crate::original_catalog::{container_target_spec, mode2_route_source, mode2_route_target};
 use crate::platform::game_platform;
 use crate::reward_copies::RewardCopies;
 use crate::reward_routes::{reward_routes, RewardRoutes};
@@ -357,6 +357,8 @@ impl<'a> Compiler<'a> {
             || format!("Native export does not yet support this source: {identity}"),
         )?;
         let resource = text(source, "resource")?;
+        // The extended reward route this row is: its own, or a preset's row of it.
+        let route_source = if kind == "authored-source" { mode2_route_source(source.at("authored")?)? } else { None };
         if kind == "virtual" {
             let ok = resource == format!("itm:{}", text(source, "item")?)
                 && self.scanned_hash(resource)?.py_eq(selected.at("resource_sha256")?);
@@ -368,8 +370,7 @@ impl<'a> Compiler<'a> {
             // Reward route bytes are recognised below (reward_routes) and
             // again by the export, before writing any output.
             let ok = self.scanned_hash(resource)?.py_eq(selected.at("resource_sha256")?)
-                || (mode2_rewards::source_rewards().contains_key(identity)
-                    && mode2_rewards::resource_rewards().contains_key(resource));
+                || (route_source.is_some() && mode2_rewards::resource_rewards().contains_key(resource));
             require(ok, || format!("Authored source changed since the scan: {identity}"))?;
         } else if kind == "scripted" {
             require(applied(&self.game_root, "quest_pool")?, || {
@@ -463,13 +464,13 @@ impl<'a> Compiler<'a> {
             self.resource_hashes.insert("SPIN621.SPL", spell_rewards::patched_sha256());
             return Ok(());
         }
-        if kind == "authored-source" && mode2_rewards::source_rewards().contains_key(identity) {
+        if let Some(route_source) = route_source.as_deref() {
             // The routes' items as the game names them (EET renames BG1's).
             let routes = self.routes()?;
-            let spec = mode2_rewards::source_spec(identity, routes.naming())?;
+            let spec = mode2_rewards::source_spec(route_source, routes.naming())?;
             let ok = source.at("resource")?.py_eq(entry(&spec, "resource")?) && record.py_eq(entry(&spec, "payload")?);
             require(ok, || format!("The extended reward source differs from its route: {identity}"))?;
-            let route = mode2_rewards::source_rewards().get(identity).map(crate::py::str_value).unwrap_or_default();
+            let route = mode2_rewards::source_rewards().get(route_source).map(crate::py::str_value).unwrap_or_default();
             self.require_route(&route)?;
             let mut endpoint = crate::dict! {"kind" => "guarded-script", "adapter_id" => "mode2-reward-v1"};
             for key in ["quest", "resource", "selected_global", "consumed_global"] {
@@ -477,11 +478,16 @@ impl<'a> Compiler<'a> {
             }
             endpoint.insert("payload", record.clone());
             endpoint.insert("identity", source_identity()?);
+            if route_source != identity {
+                // A preset's row: the runtime knows the route's flags and
+                // copies by the route's own row.
+                endpoint.insert("route_source", route_source);
+            }
             self.sources.insert(identity, endpoint);
             for name in spec.get("required_transfers").map(list).unwrap_or(&[]) {
                 let duplicate = mode2_rewards::transfer_spec(name.as_str().unwrap_or(""), routes.naming())?;
                 let authored_ids = list(entry(&duplicate, "authored_source_ids")?);
-                if !authored_ids.iter().any(|id| id.as_str() == Some(identity)) {
+                if !authored_ids.iter().any(|id| id.as_str() == Some(route_source)) {
                     continue;
                 }
                 // The creature's own copies of the reward, wherever this game
@@ -504,7 +510,7 @@ impl<'a> Compiler<'a> {
                 })?;
                 let key = tuple_key(&[name_part(resource), name_part(item)]);
                 let records: Vec<&'a Value> = self.template_records.get(&key).cloned().unwrap_or_default();
-                let own = list(entry(&duplicate, "source_ids")?).iter().any(|id| id.as_str() == Some(identity));
+                let own = list(entry(&duplicate, "source_ids")?).iter().any(|id| id.as_str() == Some(route_source));
                 if records.is_empty() && !own {
                     continue; // A copy of another route's reward that this game does not have.
                 }
@@ -830,30 +836,24 @@ impl<'a> Compiler<'a> {
         let target_identity = || identity_of(crate::dict! {"target" => selected.clone()});
         let authored = target.get("adapter_id").and_then(Value::as_str) == Some("original-target-v1");
         let container_quest = if authored { container_target_spec(target.at("selector")?)? } else { None };
+        // The extended reward route's place this row is: its own, or a preset's row there.
+        let route_target = if authored { mode2_route_target(target.at("selector")?)? } else { None };
         let ok = (authored || self.index.target(self.world, identity).is_some_and(|row| row.py_eq(target))) && {
             let resource = text(target, "resource")?;
             self.scanned_hash(resource)?.py_eq(selected.at("resource_sha256")?)
-                || (authored
-                    && target
-                        .at("selector")?
-                        .at("id")?
-                        .as_str()
-                        .is_some_and(|id| mode2_rewards::target_rewards().contains_key(id))
-                    && mode2_rewards::resource_rewards().contains_key(resource))
+                || (route_target.is_some() && mode2_rewards::resource_rewards().contains_key(resource))
         };
         require(ok, || format!("Selected target differs from the scan: {identity}"))?;
         if authored {
             let selector = target.at("selector")?;
             self.use_resource(text(target, "resource")?)?;
-            let selector_id = selector.at("id")?;
-            let reward = match selector_id.as_str() {
-                Some(id) if mode2_rewards::target_rewards().contains_key(id) => {
-                    Some(mode2_rewards::target_spec(id, self.routes()?.naming())?)
-                }
-                _ => None,
+            let reward = match route_target.as_deref() {
+                Some(id) => Some(mode2_rewards::target_spec(id, self.routes()?.naming())?),
+                None => None,
             };
             if reward.as_ref().is_some_and(|reward| !reward.is_empty()) {
-                let route = mode2_rewards::target_rewards().get(selector_id.as_str().unwrap_or("")).map(py_str).unwrap_or_default();
+                let route =
+                    mode2_rewards::target_rewards().get(route_target.as_deref().unwrap_or("")).map(py_str).unwrap_or_default();
                 self.require_route(&route)?;
             }
             let placement = reward
@@ -881,7 +881,7 @@ impl<'a> Compiler<'a> {
                 for resource in &resources {
                     self.use_resource(resource)?;
                 }
-                let endpoint = crate::dict! {
+                let mut endpoint = crate::dict! {
                     "kind" => "creature", "area" => upper(placement_area),
                     "script_name" => script_name(Some(placement.at("script_name")?), identity)?,
                     "inventory_reward" => true, "reward_resource" => entry(reward, "resource")?.clone(),
@@ -889,6 +889,11 @@ impl<'a> Compiler<'a> {
                         "target" => selected.clone(), "creature" => creature.cloned().unwrap_or(Value::Null),
                     })?,
                 };
+                let route = format!("original-target:{}", route_target.as_deref().unwrap_or(""));
+                if route != identity {
+                    // A preset's row: the reward reply names the route's own row.
+                    endpoint.insert("route_target", route);
+                }
                 self.targets.insert(identity, endpoint);
                 return Ok(());
             }
@@ -929,7 +934,7 @@ impl<'a> Compiler<'a> {
                 return Ok(());
             }
             if target_kind == "scripted-target" {
-                if let Some(id) = selector_id.as_str().filter(|id| mode2_rewards::target_rewards().contains_key(*id)) {
+                if let Some(id) = route_target.as_deref() {
                     let spec = mode2_rewards::target_spec(id, self.routes()?.naming())?;
                     for resource in list(entry(&spec, "resources")?) {
                         self.use_value(resource)?;

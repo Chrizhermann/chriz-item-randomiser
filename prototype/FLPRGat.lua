@@ -675,7 +675,14 @@ local function auxiliary_binding(bundle,id,ordinal)
     local auxiliary=endpoint and endpoint.auxiliary_creatures and endpoint.auxiliary_creatures[ordinal]
     local index,source
     for i,row in ipairs(m.sources) do if row.id==id then index,source=i,row end end
-    local approved=auxiliary_sources[id]
+    -- A preset's row of one of these routes names the route's row, of the same campaign.
+    local route=id
+    if endpoint and endpoint.route_source~=nil then
+        local preset=id:match('^original%-source:(bg[12]):[a-z0-9%-]+:mode2:item:[0-9]+$')
+        route=preset and type(endpoint.route_source)=='string' and
+            endpoint.route_source:match('^original%-source:'..preset..':mode2:item:[0-9]+$') or ''
+    end
+    local approved=auxiliary_sources[route]
     assert(approved and index and source.quantity==1 and ordinal==1 and
         endpoint.kind=='guarded-script' and auxiliary and auxiliary.resource=='cre:'..approved.cre and
         auxiliary.selected_global==approved.selected and endpoint.selected_global==auxiliary.selected_global and

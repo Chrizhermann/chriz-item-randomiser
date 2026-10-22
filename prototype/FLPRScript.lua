@@ -32,8 +32,15 @@ function Script.new(api,bundle,id,expected)
     if endpoint and endpoint.adapter_id=='mode2-reward-v1' then
         -- The exporter binds this endpoint to the original table row and its
         -- reviewed grant. Derive the saved flags from that row, not table order;
-        -- a BG1 row's flags are its own (B1_<row>, BG2's are M2_<row>).
-        local campaign,row=id:match('^original%-source:(bg[12]):mode2:item:([0-9]+)$')
+        -- a BG1 row's flags are its own (B1_<row>, BG2's are M2_<row>). A
+        -- preset's row of the route names that row, of the same campaign.
+        local route=id
+        if endpoint.route_source~=nil then
+            local preset=id:match('^original%-source:(bg[12]):[a-z0-9%-]+:mode2:item:[0-9]+$')
+            route=preset and type(endpoint.route_source)=='string' and
+                endpoint.route_source:match('^original%-source:'..preset..':mode2:item:[0-9]+$') or ''
+        end
+        local campaign,row=route:match('^original%-source:(bg[12]):mode2:item:([0-9]+)$')
         local resource=source and source.record and source.record.resource
         local extension,name
         if type(resource)=='string' then extension,name=resource:match('^(%a+):([a-z0-9_#%-]+)$') end

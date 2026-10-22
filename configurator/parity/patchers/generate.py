@@ -38,8 +38,8 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[3]
 sys.path[:0] = [str(ROOT / "tools"), str(ROOT / "tests"), str(ROOT)]
 
-from flir_config import container_rewards, cursed_disguises, mode2_rewards, original_options  # noqa: E402
-from flir_config import quest_options, quest_rewards, reward_copies, spell_rewards  # noqa: E402
+from flir_config import container_rewards, cursed_disguises, mode2_rewards, original_catalog, original_options  # noqa: E402
+from flir_config import quest_options, quest_rewards, reward_copies, spell_rewards, templates  # noqa: E402
 from flir_config import creature_inventory, game_text, group_recipients, store_inventory, translations  # noqa: E402
 from flir_config.game_text import GameText, GameTextError  # noqa: E402
 from flir_config.profiles import ProfileError  # noqa: E402
@@ -1606,6 +1606,58 @@ def original_options_scenario() -> Scenario:
     return s
 
 
+def reward_route_rows_scenario() -> Scenario:
+    """test_a_presets_rows_of_an_original_reward_route_are_that_route, on every
+    extended row of the presets and original tables: a row is a reward route's
+    own row, or a preset's row of the reward or place one original row names,
+    and only as its table has it."""
+    s = Scenario("reward_route_rows")
+    options = {"scrolls": True, "kangaxx": True, "flail_heads": True, "totsc_tome": True}
+    calls = {"items": "mode2_route_source", "targets": "mode2_route_target"}
+    keys = {"items": ("id", "campaign", "source", "source_ref"),
+            "targets": ("id", "campaign", "target", "area", "source_ref")}
+    rows = {}
+    for template in ("eet-original", "eet-boss-loot"):
+        draft = templates.build_template(template, items="extended", targets="extended", options=options)
+        for kind in calls:
+            standard = [row for row in draft[kind] if row.get("family") != "mode2"]
+            rows.update(((kind, row["id"]), row) for row in draft[kind] if row.get("family") == "mode2")
+            rows.update(((kind, row["id"]), row) for row in standard[:3])
+
+    def check(kind: str, label: str, row) -> None:
+        call = calls[kind]
+        s.case(f"{call} {label}", f"original_catalog.{call}", {"row": row},
+               lambda call=call, row=row: getattr(original_catalog, call)(row))
+
+    for (kind, identity), row in sorted(rows.items()):
+        check(kind, identity, row)
+    # Boss Loot's rows of Aldeth's, Varci's and Nemphre's rewards and places,
+    # an original row of each, and BG2's ogre place, which is no .fl place.
+    changes = {"items": ({"tier": "27"}, {"source": "ALDETH.DLG"}, {"source": "varci.dlg"}, {"source": 5},
+                         {"token": "w99"}, {"ident": "x"}, {"campaign": "bg2"}, {"id": "bg1:boss-loot:mode2:item:63"},
+                         {"id": None}, {"source_ref": "lists/items/mode2/bg1.2da:62"}),
+               "targets": ({"tier": "27"}, {"area": "AR0617"}, {"area": "ar0617"}, {"target": "aldeth"},
+                           {"location": "w9"}, {"campaign": "bg2"}, {"id": "bg1:boss-loot:mode2:target:47"},
+                           {"id": None}, {"source_ref": "lists/locations/mode2/bg1.2da:46"})}
+    chosen = {"items": ("bg1:boss-loot:mode2:item:62", "bg1:boss-loot:mode2:item:71",
+                        "bg1:boss-loot:mode2:item:339", "bg1:mode2:item:16"),
+              "targets": ("bg1:boss-loot:mode2:target:46", "bg1:boss-loot:mode2:target:71",
+                          "bg1:boss-loot:mode2:target:291", "bg1:mode2:target:16", "bg2:mode2:target:17")}
+    for kind, identities in chosen.items():
+        for identity in identities:
+            row = rows[(kind, identity)]
+            for change in changes[kind]:
+                check(kind, f"{identity} {json.dumps(change, sort_keys=True)}", dict(row, **change))
+            for key in keys[kind]:
+                check(kind, f"{identity} without {key}", {name: value for name, value in row.items() if name != key})
+    for label, value in (("none", None), ("list", [rows[("items", "bg1:mode2:item:16")]]), ("text", "bg1:mode2:item:16"),
+                         ("empty", {}), ("number id", {"id": 16}), ("own id only", {"id": "bg1:mode2:item:16"}),
+                         ("own place id only", {"id": "bg1:mode2:target:16"})):
+        for kind in calls:
+            check(kind, label, value)
+    return s
+
+
 def cursed_scenario() -> Scenario:
     s = Scenario("cursed_disguises")
     for label, log in (("core", b'// ignored\n~ITEM_REV/ITEM_REV.TP2~ #2 #0 // core\n'),
@@ -2022,6 +2074,7 @@ def main() -> None:
         container_scenario("container_rewards_crlf", "crlf"),
         *inventory_scenarios(),
         original_options_scenario(),
+        reward_route_rows_scenario(),
         cursed_scenario(),
         game_text_scenario(),
         translations_scenario(),

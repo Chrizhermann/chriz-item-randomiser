@@ -75,6 +75,46 @@ fn mode2_locations(campaign: &str) -> Result<&'static Lines> {
     cell.get_or_init(load).as_ref().map_err(Clone::clone)
 }
 
+/// The lines of table `relative` (rows of `columns` fields) whose two fields
+/// `fields` are `values` (lower case).
+fn same_lines(relative: &str, columns: usize, fields: (usize, usize), values: (&str, &str)) -> Result<Vec<usize>> {
+    Ok(table_rows(relative, columns)?
+        .into_iter()
+        .filter(|(_, row)| crate::py::lower(&row[fields.0]) == values.0 && crate::py::lower(&row[fields.1]) == values.1)
+        .map(|(line, _)| line)
+        .collect())
+}
+
+/// The item of line N of the extended items table `relative` when `row` is
+/// that line, as the table has it, with the identity `{prefix}:item:N`.
+fn table_item(row: &Value, campaign: &str, relative: &str, prefix: &str) -> Result<Option<String>> {
+    let identity = row.at("id")?;
+    let start = format!("{prefix}:item:");
+    let Some(line) = identity
+        .as_str()
+        .and_then(|identity| identity.strip_prefix(&start))
+        .and_then(|number| number.parse::<usize>().ok().filter(|line| line.to_string() == number))
+    else {
+        return Ok(None);
+    };
+    let lines: Lines = table_rows(relative, 7)?.into_iter().collect();
+    let Some(fields) = lines.get(&line) else {
+        return Ok(None);
+    };
+    let lower = |index: usize| crate::py::lower(&fields[index]);
+    let expected = [
+        ("source_ref", format!("{relative}:{line}")),
+        ("campaign", campaign.to_string()),
+        ("family", "mode2".to_string()),
+        ("source", lower(2)),
+        ("tier", lower(3)),
+        ("token", lower(4)),
+        ("ident", lower(5)),
+    ];
+    let same = expected.iter().all(|(key, value)| row.get(key).and_then(Value::as_str) == Some(value.as_str()));
+    Ok(same.then(|| lower(0)))
+}
+
 /// Whether `row` of `campaign` is line N of the extended locations table
 /// `relative` (its rows `lines`), as it has it, with the identity
 /// `{prefix}:target:N`.
@@ -158,19 +198,80 @@ fn preset_mode2_place(row: &Value) -> Result<Option<String>> {
     })
 }
 
-/// A registered reward only for its exact authored `.fl` location, as the
-/// game names it.
-pub fn mode2_alias_spec(row: &Value, naming: crate::mode2_rewards::Naming<'_>) -> Result<Option<Dict>> {
-    let Some(identity) = row.get("id").and_then(Value::as_str) else {
+/// The source of the extended reward route (`mode2_rewards::source_rewards`)
+/// that a row is: its own original row, or a preset's row of the reward that
+/// one original row names (its conversation or script and item), as Boss
+/// Loot's row of Aldeth's sword is his route. One reward has one row: a
+/// preset with two rows of it has no route for either.
+pub fn mode2_route_source(row: &Value) -> Result<Option<String>> {
+    let Some(identity) = row.get("id").and_then(Value::as_str).filter(|_| row.is_dict()) else {
         return Ok(None);
     };
-    if !crate::mode2_rewards::target_rewards().contains_key(identity)
-        || !row.get("target").and_then(Value::as_str).is_some_and(|target| target.ends_with(".fl"))
-        || !authored_mode2_target(row)?
-    {
+    let rewards = crate::mode2_rewards::source_rewards();
+    let own = format!("original-source:{identity}");
+    if rewards.contains_key(own.as_str()) {
+        return Ok(Some(own));
+    }
+    let (Some(campaign), Some(source)) = (mode2_campaign(row), row.get("source").and_then(Value::as_str)) else {
+        return Ok(None);
+    };
+    let mut found = None;
+    for preset in crate::templates::PRESETS.iter().filter(|preset| preset.campaigns.contains(&campaign)) {
+        let relative = format!("lists/presets/{}/items/mode2/{campaign}.2da", preset.id);
+        if let Some(item) = table_item(row, campaign, &relative, &format!("{campaign}:{}:mode2", preset.id))? {
+            found = Some((relative, item));
+            break;
+        }
+    }
+    let Some((relative, item)) = found else {
+        return Ok(None);
+    };
+    if same_lines(&relative, 7, (2, 0), (source, &item))?.len() != 1 {
         return Ok(None);
     }
-    crate::mode2_rewards::target_spec(identity, naming).map(Some)
+    let same = same_lines(&format!("lists/items/mode2/{campaign}.2da"), 7, (2, 0), (source, &item))?;
+    Ok(match same.as_slice() {
+        [line] => Some(format!("original-source:{campaign}:mode2:item:{line}"))
+            .filter(|identity| rewards.contains_key(identity.as_str())),
+        _ => None,
+    })
+}
+
+/// The place of the extended reward route (`mode2_rewards::target_rewards`)
+/// that a row is: its own original row, or a preset's row at the `.fl` place
+/// of one (`preset_mode2_place`). One place has one row: a preset with two
+/// rows there has no route for either.
+pub fn mode2_route_target(row: &Value) -> Result<Option<String>> {
+    if !row.is_dict() {
+        return Ok(None);
+    }
+    let rewards = crate::mode2_rewards::target_rewards();
+    if let Some(identity) = row.get("id").and_then(Value::as_str).filter(|identity| rewards.contains_key(identity)) {
+        return Ok(Some(identity.to_string()));
+    }
+    let Some(original) = preset_mode2_place(row)?.filter(|original| rewards.contains_key(original.as_str())) else {
+        return Ok(None);
+    };
+    let reference = row.at("source_ref")?.as_str().unwrap_or("");
+    let relative = reference.rsplit_once(':').map_or(reference, |(relative, _)| relative);
+    let place = (text_of(row.get("target")), text_of(row.get("area")));
+    Ok((same_lines(relative, 6, (2, 3), place)?.len() == 1).then_some(original))
+}
+
+/// A registered reward only for its exact authored `.fl` location, or a
+/// preset's row there (`mode2_route_target`), as the game names it.
+pub fn mode2_alias_spec(row: &Value, naming: crate::mode2_rewards::Naming<'_>) -> Result<Option<Dict>> {
+    if !row.is_dict() || !row.get("target").and_then(Value::as_str).is_some_and(|target| target.ends_with(".fl")) {
+        return Ok(None);
+    }
+    let own = row.get("id").and_then(Value::as_str).is_some_and(|identity| crate::mode2_rewards::target_rewards().contains_key(identity));
+    if own && !authored_mode2_target(row)? {
+        return Ok(None);
+    }
+    match mode2_route_target(row)? {
+        Some(target) => crate::mode2_rewards::target_spec(&target, naming).map(Some),
+        None => Ok(None),
+    }
 }
 
 /// The container quest at an authored place: its row of the original
@@ -286,7 +387,7 @@ fn note_problem(row: &mut Dict, reason: &str) {
 /// extended reward route, one of the original quests, or the pool.
 fn routed_source(row: &Dict, resource: &str, item: &str) -> Result<bool> {
     let identity = format!("original-source:{}", str_field(row, "id")?);
-    Ok(crate::mode2_rewards::source_rewards().contains_key(identity.as_str())
+    Ok(mode2_route_source(&Value::Dict(row.clone()))?.is_some()
         || crate::quest_rewards::source_quests().contains_key(identity.as_str())
         || (resource, item) == (crate::scripted_sources::RESOURCE, crate::scripted_sources::ITEM))
 }

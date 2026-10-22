@@ -372,6 +372,16 @@ Nemphre's place is a row of its own (136, her scroll is 159); Item Randomiser's 
 give it scrolls only, so her words ("take this scroll") stay true and need no text of
 Item Randomiser's.
 
+A preset's row of such a reward or place is that route: the row of the same
+conversation or script and item, or of the same `.fl` place and area, as one row of
+the original table names it. Boss Loot's rows of Aldeth's sword, Varci's shield and
+Nemphre's scroll (items 62, 71 and 339; places 46, 71 and 291) use the routes of the
+original rows 16, 20 and 159 (places 16, 20 and 136), with those rows' flags. The
+native fixture names the route's row beside the preset's (`route_source`,
+`route_target`), and the runtime refuses any other route (`NATIVE_ROUTE_INVALID`). A
+preset with two rows of one reward or place has the route for neither, since the
+runtime finds a route's row by it; both are left out with `route-not-supported`.
+
 The Sahuagin treasury's rod (`RODS02` in AR2300) moves like any container reward,
 but the king's reward reply (SAHKNG01.DLG) creates another one. Where the game's
 dialogue gives the rod, that reply follows the rod's row, as Lesa's conversation

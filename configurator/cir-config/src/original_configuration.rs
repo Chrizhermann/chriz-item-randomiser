@@ -207,14 +207,13 @@ fn choose(row: &Value, context: &Context<'_>) -> Result<std::result::Result<Choi
             return Ok(Err("ambiguous-unshey-records".into()));
         }
         let default_charges = || context.defaults.get(item).cloned().ok_or_else(|| Error::key(item));
-        let source_id = format!("original-source:{}", s(row, "id"));
         let payload = if adapter == Some("unshey") {
             record_payload(physical.get(matched[0].as_str()).ok_or_else(|| Error::key(&matched[0]))?)?
         } else if resource == "spl:spin621" {
             crate::spell_rewards::payload()
-        } else if crate::mode2_rewards::source_rewards().contains_key(&source_id) {
+        } else if let Some(route) = crate::original_catalog::mode2_route_source(row)? {
             let naming = crate::mode2_rewards::Naming { game: Some(context.game), names: context.names };
-            crate::mode2_rewards::source_spec(&source_id, naming)?.get("payload").cloned().ok_or_else(|| Error::key("payload"))?
+            crate::mode2_rewards::source_spec(&route, naming)?.get("payload").cloned().ok_or_else(|| Error::key("payload"))?
         } else {
             Value::Dict(crate::dict! {"resref" => item, "expiration" => 0, "charges" => default_charges()?, "flags" => 0})
         };

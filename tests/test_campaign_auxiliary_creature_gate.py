@@ -40,7 +40,7 @@ def family_names(family):
 
 SETUP = """
 return function(f,Gate,build,compile,Inventory,original,family,creature,item,records,charges,flags,expiration,
-        id,selected)
+        id,selected,route)
     local p={resref=item,expiration=expiration,charges=charges,flags=flags}
     local aux={resource='cre:'..creature,resource_sha256=string.rep('2',64),
         record_indices=records,payload=p,selected_global=selected}
@@ -48,7 +48,7 @@ return function(f,Gate,build,compile,Inventory,original,family,creature,item,rec
         resource_sha256=string.rep('1',64),record={kind='authored-source',
         record={resref=item,expiration=0,charges={0,0,0},flags=0}}}}}
     local fixture={revision=manifest.revision,sources={[id]={kind='guarded-script',
-        selected_global=selected,auxiliary_creatures={aux}}},
+        selected_global=selected,auxiliary_creatures={aux},route_source=route}},
         resource_hashes={[creature:upper()..'.CRE']=aux.resource_sha256},
         source_gate={schema='flpr-unvisited-fixture-gate-v1',source_ids={id}}}
     if family==32 then
@@ -86,10 +86,11 @@ end
 
 
 def fixture(runtime=LuaJIT, *, family=12, original=None, records=None, charges=(0, 0, 0), flags=0,
-            expiration=0):
+            expiration=0, identity=None, route=None):
     """The gate with one family's auxiliary copy: the CRE records <records>
     (default: the family's usual record) holding the item with <charges>,
-    <flags> and <expiration>."""
+    <flags> and <expiration>. <identity> is a preset's row of the family's
+    route instead of its own, which names the <route>."""
     lua = runtime(unpack_returned_tuples=True)
     core, build, policy, inventory = [lua.execute(text) for text in (CORE, BUILD, POLICY, INVENTORY)]
     gate = load(lua, GATE)
@@ -101,9 +102,10 @@ def fixture(runtime=LuaJIT, *, family=12, original=None, records=None, charges=(
                  item_record("OTHER01", charges=(2, 3, 4), flags=3),
                  item_record("OTHER02", charges=(1, 0, 7), flags=1)]
         original = bytes(make_cre(rows, slots={9: record, 21: record + 1, 22: record + 2}, gap=13))
+    source, selected = family_names(family)
     bundle = lua.execute(SETUP)(f, gate, build, policy, inventory, original, family, creature, item,
                                 lua.table(*(records if records is not None else [record])),
-                                lua.table(*charges), flags, expiration, *family_names(family))
+                                lua.table(*charges), flags, expiration, identity or source, selected, route)
     return lua, f, bundle, original
 
 
@@ -182,6 +184,26 @@ class AuxiliaryCreatureTests(unittest.TestCase):
                 endpoint.auxiliary_creatures[1].resource = "cre:scyarryl"
                 with self.assertRaisesRegex(Exception, "CAMPAIGN_GATE_AUXILIARY_INVALID"):
                     auxiliary._bundle(auxiliary, bundle)
+
+    def test_a_presets_row_of_a_carried_route_binds_the_routes_copy(self):
+        # Boss Loot's rows of Aldeth's sword (62) and Nemphre's scroll (339)
+        # name their routes' rows 16 and 159, whose copies and flags they take.
+        for family, identity in ((16, "original-source:bg1:boss-loot:mode2:item:62"),
+                                 (159, "original-source:bg1:boss-loot:mode2:item:339")):
+            with self.subTest(family=family):
+                _, f, _, _ = fixture(family=family, identity=identity, route=family_names(family)[0])
+                auxiliary = f.gate.auxiliary_members[REVISION][1]
+                self.assertEqual(auxiliary.binding.creature_resource, "cre:" + FAMILIES[family][0])
+                self.assertEqual(auxiliary.policy.fields[20].name, family_names(family)[1])
+        # Without its route's row, with another campaign's or another route's,
+        # the preset's row binds no copy; nor does a route on a route's own row.
+        for identity, route in (("original-source:bg1:boss-loot:mode2:item:62", None),
+                                ("original-source:bg1:boss-loot:mode2:item:62", "original-source:bg2:mode2:item:16"),
+                                ("original-source:bg1:boss-loot:mode2:item:62", "original-source:bg1:mode2:item:159"),
+                                ("original-source:bg1:mode2:item:16", "original-source:bg1:mode2:item:16")):
+            with self.subTest(identity=identity, route=route), \
+                    self.assertRaisesRegex(Exception, "CAMPAIGN_GATE_AUXILIARY_INVALID"):
+                fixture(family=16, identity=identity, route=route)
 
     def test_auxiliary_records_are_the_exports_wherever_the_game_keeps_them(self):
         # A modded TRGENI01 keeps the sword at record 3, flagged unstealable:

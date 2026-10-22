@@ -45,7 +45,7 @@ from .platform import game_platform
 from .reward_copies import RewardCopies
 from .game_text import GameTextError, paired, text_files, unpaired
 from .reward_routes import ChangedSinceScan, reward_routes
-from .original_catalog import container_target_spec
+from .original_catalog import container_target_spec, mode2_route_source, mode2_route_target
 from .cursed_disguises import validate_cursed_disguise_spec, prepare_cursed_disguises
 
 # next.lua: the revision of each campaign start (read by M_FLPR.lua).
@@ -212,6 +212,8 @@ def _compile(manifest: dict, world: dict, index: dict, items: dict,
         source, identity = selected["record"], selected["id"]
         _require(source["kind"] in ("container", "cre-template", "embedded-cre", "store", "scripted", "virtual", "authored-source"),
                  f"Native export does not yet support this source: {identity}")
+        # The extended reward route this row is: its own, or a preset's row of it.
+        route = mode2_route_source(source["authored"]) if source["kind"] == "authored-source" else None
         if source["kind"] == "virtual":
             _require(source["resource"] == "itm:" + source["item"] and
                      index["resources"][source["resource"]]["sha256"] == selected["resource_sha256"],
@@ -221,7 +223,7 @@ def _compile(manifest: dict, world: dict, index: dict, items: dict,
             # Reward route bytes are recognised below (reward_routes.py) and
             # again by the export, before writing any output.
             _require(index["resources"][source["resource"]]["sha256"] == selected["resource_sha256"] or
-                     (identity in MODE2_SOURCES and source["resource"] in MODE2_RESOURCES),
+                     (route is not None and source["resource"] in MODE2_RESOURCES),
                      f"Authored source changed since the scan: {identity}")
         elif source["kind"] == "scripted":
             _require(applied(world["game_root"], "quest_pool"),
@@ -270,18 +272,22 @@ def _compile(manifest: dict, world: dict, index: dict, items: dict,
             use(source["resource"]); use("itm:" + source["item"])
             native["resource_hashes"]["SPIN621.SPL"] = KEY_PATCHED_HASH
             return
-        if source["kind"] == "authored-source" and identity in MODE2_SOURCES:
-            spec = mode2_source_spec(identity, **naming())
+        if route is not None:
+            spec = mode2_source_spec(route, **naming())
             _require(source["resource"] == spec["resource"] and record == spec["payload"],
                      f"The extended reward source differs from its route: {identity}")
-            require_route(MODE2_SOURCES[identity])
+            require_route(MODE2_SOURCES[route])
             native["sources"][identity] = {
                 "kind": "guarded-script", "adapter_id": "mode2-reward-v1",
                 **{key: spec[key] for key in ("quest", "resource", "selected_global", "consumed_global")},
                 "payload": deepcopy(record), "identity": _digest({"source": selected})}
+            if route != identity:
+                # A preset's row: the runtime knows the route's flags and
+                # copies by the route's own row.
+                native["sources"][identity]["route_source"] = route
             for name in spec.get("required_transfers", ()):
                 duplicate = mode2_transfer_spec(name, **naming())
-                if identity not in duplicate["authored_source_ids"]:
+                if route not in duplicate["authored_source_ids"]:
                     continue
                 # The creature's own copies of the reward, wherever this game
                 # keeps them; the runtime checks each record's bytes again.
@@ -295,7 +301,7 @@ def _compile(manifest: dict, world: dict, index: dict, items: dict,
                          f"{registered['item'].upper()}, which Chriz Item Randomiser's runtime knows "
                          f"only by those names: {identity}")
                 records = template_records[resource, item]
-                if not records and identity not in duplicate["source_ids"]:
+                if not records and route not in duplicate["source_ids"]:
                     continue  # A copy of another route's reward that this game does not have.
                 _require(bool(records), f"{creature} does not carry {item.upper()}, which the reward of "
                                         f"{duplicate['quest'].upper()}.DLG hands over: {identity}")
@@ -487,17 +493,18 @@ def _compile(manifest: dict, world: dict, index: dict, items: dict,
         target, identity = selected["record"], selected["id"]
         authored = target.get("adapter_id") == "original-target-v1"
         container_quest = container_target_spec(target["selector"]) if authored else None
+        # The extended reward route's place this row is: its own, or a preset's row there.
+        route = mode2_route_target(target["selector"]) if authored else None
         _require((authored or index["targets"].get(identity) == target) and
                  (index["resources"][target["resource"]]["sha256"] == selected["resource_sha256"] or
-                  (authored and target["selector"]["id"] in MODE2_TARGETS and
-                   target["resource"] in MODE2_RESOURCES)),
+                  (route is not None and target["resource"] in MODE2_RESOURCES)),
                  f"Selected target differs from the scan: {identity}")
         if authored:
             selector = target["selector"]
             use(target["resource"])
-            reward = mode2_target_spec(selector["id"], **naming()) if selector["id"] in MODE2_TARGETS else None
+            reward = mode2_target_spec(route, **naming()) if route is not None else None
             if reward:
-                require_route(MODE2_TARGETS[selector["id"]])
+                require_route(MODE2_TARGETS[route])
             if reward and reward.get("inventory_target"):
                 placement = reward["inventory_target"]
                 readable(placement["creature_resource"])
@@ -514,6 +521,9 @@ def _compile(manifest: dict, world: dict, index: dict, items: dict,
                     "script_name": _name(placement["script_name"], identity),
                     "inventory_reward": True, "reward_resource": reward["resource"],
                     "identity": _digest({"target": selected, "creature": creature})}
+                if "original-target:" + route != identity:
+                    # A preset's row: the reward reply names the route's own row.
+                    native["targets"][identity]["route_target"] = "original-target:" + route
                 return
             if target["kind"] in ("group", "creature-target"):
                 resources = selector["members"] if target["kind"] == "group" else [selector["creature_resource"]]
@@ -539,8 +549,8 @@ def _compile(manifest: dict, world: dict, index: dict, items: dict,
                 native["targets"][identity] = endpoint
                 return
             if target["kind"] == "scripted-target":
-                if selector["id"] in MODE2_TARGETS:
-                    spec = mode2_target_spec(selector["id"], **naming())
+                if route is not None:
+                    spec = mode2_target_spec(route, **naming())
                     for resource in spec["resources"]:
                         use(resource)
                     if spec["recipient_local"] is None:

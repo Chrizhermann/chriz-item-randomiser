@@ -17,8 +17,8 @@ use cir_config::resources::sha256_hex;
 use cir_config::translations::{self, Line, Translations};
 use cir_config::{
     codepages, container_rewards, creature_inventory, cursed_disguises, group_recipients, mode2_rewards,
-    original_options, quest_options, quest_rewards, reward_copies, spell_rewards, store_inventory, Error, ErrorKind,
-    Result,
+    original_catalog, original_options, quest_options, quest_rewards, reward_copies, spell_rewards, store_inventory,
+    Error, ErrorKind, Result,
 };
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
@@ -702,6 +702,12 @@ fn call(name: &str, args: &Args) -> Result<Value> {
             bytes_value(&original_options::patch_spell_shield_stock(&args.bytes("data"))?)
         }
         "original_options.is_spell_shield_row" => Value::Bool(original_options::is_spell_shield_row(args.value("row"))),
+        "original_catalog.mode2_route_source" => {
+            original_catalog::mode2_route_source(args.value("row"))?.map_or(Value::Null, Value::from)
+        }
+        "original_catalog.mode2_route_target" => {
+            original_catalog::mode2_route_target(args.value("row"))?.map_or(Value::Null, Value::from)
+        }
         "original_options.spell_shield_spec" => original_options::spell_shield_spec(args.value("world"), args.bool("randomized"))?,
         "original_options.validate_spell_shield_spec" => {
             original_options::validate_spell_shield_spec(args.value("spec"))?;
