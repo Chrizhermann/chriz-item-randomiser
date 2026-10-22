@@ -215,6 +215,12 @@ def _optional_mod(preset: str | None, item: str) -> str | None:
                  if item.lower().startswith(prefix)), None)
 
 
+def optional_mod_prefixes(mod: str) -> tuple[str, ...]:
+    """The name prefixes of the items that <mod> (an optional_items mod) adds."""
+    return tuple(sorted({prefix for spec in PRESETS.values()
+                         for prefix, name in spec["optional_items"] if name == mod}))
+
+
 def _load_items(campaign: str, family: str, options: dict, preset: str | None = None) -> list[dict]:
     relative, prefix = _list_set("items", campaign, family, preset)
     occurrences: Counter[tuple[str, str]] = Counter()

@@ -13,9 +13,10 @@ from pathlib import Path
 
 from .campaigns import OVERFLOW_TARGET_KINDS
 from .game_names import convert_resource, eet_names
-from .original_catalog import UNREADABLE_PLACE_PROBLEMS, resolve_template
+from .original_catalog import NO_ROUTE, UNREADABLE_PLACE_PROBLEMS, resolve_template
 from .original_options import is_spell_shield_row, spell_shield_spec, tome_variants
 from .platform import preset_game
+from .templates import optional_mod_prefixes
 from .original_registrations import (SHIPPED_REPLACEMENT, is_unreferenced_creature_source,
                                      target_record as original_target_record)
 from .mode2_rewards import SOURCE_REWARDS as MODE2_SOURCES, source_spec as mode2_source_spec
@@ -123,9 +124,11 @@ def build_original_configuration(catalog: dict, world: dict, template_id: str, *
     A row this game cannot use is left out and listed in ``not_used`` instead of
     stopping the configuration: an item, area or creature the game lacks, a
     record that is not where the tables put it or is there more than once, and
-    each row named in ``exclude`` (row id -> reason). A left-out reward stays as
-    the game has it. ``row_ids`` maps each plan identity to its authored row.
-    ``scans`` holds the catalogues already validated.
+    each row named in ``exclude`` (row id -> reason). So is a quest reward or
+    place whose conversation or script CIR cannot change yet (NO_ROUTE), in
+    every game; the notes name these apart. A left-out reward stays as the game
+    has it. ``row_ids`` maps each plan identity to its authored row. ``scans``
+    holds the catalogues already validated.
     """
     def resolve(game: str, names) -> dict:
         return resolve_template(catalog, world, template_id, game=game,
@@ -182,6 +185,9 @@ def _build(catalog: dict, world: dict, template_id: str, exclude: dict[str, str]
             if row["item_resref"] not in catalog_items:
                 raise ProfileError("More Spell Shield scrolls requires SCRL8X.ITM")
             candidates.append(row)
+            continue
+        if row["binding_problem"] == NO_ROUTE:
+            leave_out(row, "reward", NO_ROUTE)
             continue
         if row["binding_problem"] == "original-source-has-no-matching-record":
             continue
@@ -291,6 +297,8 @@ def _build(catalog: dict, world: dict, template_id: str, exclude: dict[str, str]
     for row in enabled_targets:
         if row["id"] in exclude:
             leave_out(row, "place", exclude[row["id"]])
+        elif row["binding_problem"] == NO_ROUTE:
+            leave_out(row, "place", NO_ROUTE)
         elif row["area_resource"] not in index["resources"]:
             leave_out(row, "place", "area-resource-absent")
         elif row["binding_problem"] in UNREADABLE_PLACE_PROBLEMS:
@@ -377,9 +385,7 @@ def _build(catalog: dict, world: dict, template_id: str, exclude: dict[str, str]
     plan["targets"].sort(key=lambda row: row["id"])
     return {"profile": profile, "plan": plan,
             "left_out": [left_out(world["game_root"], change) for change in sorted(unprepared)],
-            "absent_mods": [f"{mod} is not installed, so {count} "
-                            f"{'reward' if count == 1 else 'rewards'} from it "
-                            f"{'is' if count == 1 else 'are'} left out"
+            "absent_mods": [_absent_mod_note(mod, count, catalog_items)
                             for mod, count in sorted(absent_mods.items())],
             "not_used": not_used,
             "not_used_notes": (unreadable_notes(world) + list(names.notes if names else ())
@@ -387,15 +393,42 @@ def _build(catalog: dict, world: dict, template_id: str, exclude: dict[str, str]
             "row_ids": row_ids}
 
 
+def _absent_mod_note(mod: str, count: int, catalog_items) -> str:
+    """Why <count> rewards of a preset's optional <mod> are left out: the mod is
+    not installed, or (when the game has any item of it) not the part of it
+    that adds them."""
+    prefixes = optional_mod_prefixes(mod)
+    if not any(name.startswith(prefixes) for name in catalog_items):
+        return (f"{mod} is not installed, so {count} {'reward' if count == 1 else 'rewards'} from it "
+                f"{'is' if count == 1 else 'are'} left out")
+    return (f"{count} {'reward needs an item' if count == 1 else 'rewards need items'} of {mod} "
+            f"that this game does not have, so {'it is' if count == 1 else 'they are'} left out")
+
+
 def _not_used_notes(rows: list[dict]) -> list[str]:
+    """What the left-out rows are: those this game cannot use, then those whose
+    quest CIR cannot change yet, then what becomes of a left-out reward."""
+    unusable = [row for row in rows if row["reason"] != NO_ROUTE]
+    waiting = [row for row in rows if row["reason"] == NO_ROUTE]
+    notes = []
+    if unusable:
+        notes.append(f"{_counted(unusable)} from the lists cannot be used in this game, so "
+                     + ("it is" if len(unusable) == 1 else "they are") + " left out")
+    if waiting:
+        notes.append(f"{_counted(waiting)} from the lists "
+                     + ("belongs to a quest" if len(waiting) == 1 else "belong to quests")
+                     + " that Chriz Item Randomiser cannot change yet, so "
+                     + ("it is" if len(waiting) == 1 else "they are") + " left out")
+    if any(row["kind"] == "reward" for row in rows):
+        notes.append("A left-out reward stays as the game has it")
+    return notes
+
+
+def _counted(rows: list[dict]) -> str:
+    """How many rewards and places <rows> are, as "2 rewards and 1 place"."""
     rewards = sum(row["kind"] == "reward" for row in rows)
-    counts = [f"{count} {noun if count == 1 else noun + 's'}"
-              for count, noun in ((rewards, "reward"), (len(rows) - rewards, "place")) if count]
-    if not counts:
-        return []
-    note = (" and ".join(counts) + " from the lists cannot be used in this game, so "
-            + ("it is" if len(rows) == 1 else "they are") + " left out")
-    return [note + ("; a left-out reward stays as the game has it" if rewards else "")]
+    return " and ".join(f"{count} {noun if count == 1 else noun + 's'}"
+                        for count, noun in ((rewards, "reward"), (len(rows) - rewards, "place")) if count)
 
 
 def _placeless_sources(plan: dict) -> list[str]:

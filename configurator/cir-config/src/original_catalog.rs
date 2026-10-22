@@ -18,6 +18,9 @@ const SCRIPTED_SOURCES: [&str; 2] = ["bcs", "dlg"];
 /// A place whose file the scan could not read (sources::scan_world) is left out.
 pub const UNREADABLE_PLACE_PROBLEMS: [&str; 3] =
     ["area-resource-unreadable", "creature-resource-unreadable", "store-resource-unreadable"];
+/// A quest reward or place whose conversation or script CIR cannot change
+/// yet: its row is left out in every game, whatever else the game lacks.
+pub const NO_ROUTE: &str = "route-not-supported";
 
 /// `all(row.get(key) == value ...)` for a dict row.
 fn has_values(row: &Value, expected: &[(&str, &str)]) -> bool {
@@ -72,22 +75,20 @@ fn mode2_locations(campaign: &str) -> Result<&'static Lines> {
     cell.get_or_init(load).as_ref().map_err(Clone::clone)
 }
 
-fn authored_mode2_target(row: &Value) -> Result<bool> {
-    let campaign = match row.get("campaign").and_then(Value::as_str) {
-        Some(campaign @ ("bg1" | "bg2")) => campaign,
-        _ => return Ok(false),
-    };
-    let relative = format!("lists/locations/mode2/{campaign}.2da");
+/// Whether `row` of `campaign` is line N of the extended locations table
+/// `relative` (its rows `lines`), as it has it, with the identity
+/// `{prefix}:target:N`.
+fn table_place(row: &Value, campaign: &str, relative: &str, prefix: &str, lines: &Lines) -> Result<bool> {
     let identity = row.at("id")?;
-    let prefix = format!("{campaign}:mode2:target:");
+    let start = format!("{prefix}:target:");
     let Some(line) = identity
         .as_str()
-        .and_then(|identity| identity.strip_prefix(&prefix))
+        .and_then(|identity| identity.strip_prefix(&start))
         .and_then(|number| number.parse::<usize>().ok().filter(|line| line.to_string() == number))
     else {
         return Ok(false);
     };
-    let Some(fields) = mode2_locations(campaign)?.get(&line) else {
+    let Some(fields) = lines.get(&line) else {
         return Ok(false);
     };
     let lower = |index: usize| crate::py::lower(&fields[index]);
@@ -104,6 +105,59 @@ fn authored_mode2_target(row: &Value) -> Result<bool> {
     Ok(expected.iter().all(|(key, value)| row.get(key).and_then(Value::as_str) == Some(value.as_str())))
 }
 
+fn mode2_campaign(row: &Value) -> Option<&'static str> {
+    match row.get("campaign").and_then(Value::as_str) {
+        Some("bg1") => Some("bg1"),
+        Some("bg2") => Some("bg2"),
+        _ => None,
+    }
+}
+
+fn authored_mode2_target(row: &Value) -> Result<bool> {
+    let Some(campaign) = mode2_campaign(row) else {
+        return Ok(false);
+    };
+    let relative = format!("lists/locations/mode2/{campaign}.2da");
+    table_place(row, campaign, &relative, &format!("{campaign}:mode2"), mode2_locations(campaign)?)
+}
+
+/// The original extended row of the place a preset's `.fl` row names: the
+/// one row of the original table with its target and area, as a preset's
+/// standard places take the endpoint of the same place (templates'
+/// `place_endpoints`).
+fn preset_mode2_place(row: &Value) -> Result<Option<String>> {
+    let Some(campaign) = mode2_campaign(row) else {
+        return Ok(None);
+    };
+    let Some(target) = row.get("target").and_then(Value::as_str).filter(|target| target.ends_with(".fl")) else {
+        return Ok(None);
+    };
+    let mut preset_row = false;
+    for preset in crate::templates::PRESETS.iter().filter(|preset| preset.campaigns.contains(&campaign)) {
+        let relative = format!("lists/presets/{}/locations/mode2/{campaign}.2da", preset.id);
+        let lines: Lines = table_rows(&relative, 6)?.into_iter().collect();
+        if table_place(row, campaign, &relative, &format!("{campaign}:{}:mode2", preset.id), &lines)? {
+            preset_row = true;
+            break;
+        }
+    }
+    if !preset_row {
+        return Ok(None);
+    }
+    let area = row.get("area").and_then(Value::as_str);
+    let same: Vec<usize> = mode2_locations(campaign)?
+        .iter()
+        .filter(|(_, fields)| {
+            crate::py::lower(&fields[2]) == target && area == Some(crate::py::lower(&fields[3]).as_str())
+        })
+        .map(|(line, _)| *line)
+        .collect();
+    Ok(match same.as_slice() {
+        [line] => Some(format!("{campaign}:mode2:target:{line}")),
+        _ => None,
+    })
+}
+
 /// A registered reward only for its exact authored `.fl` location.
 pub fn mode2_alias_spec(row: &Value) -> Result<Option<Dict>> {
     let Some(identity) = row.get("id").and_then(Value::as_str) else {
@@ -118,14 +172,21 @@ pub fn mode2_alias_spec(row: &Value) -> Result<Option<Dict>> {
     crate::mode2_rewards::target_spec(identity).map(Some)
 }
 
+/// The container quest at an authored place: its row of the original
+/// extended table, or a preset's row at the same place (Boss Loot's Safana).
+/// The quest is the spec's `target_id`.
 pub fn container_target_spec(row: &Value) -> Result<Option<Dict>> {
-    let Some(identity) = row.get("id").and_then(Value::as_str) else {
-        return Ok(None);
-    };
-    if !crate::container_rewards::targets().contains_key(identity) || !authored_mode2_target(row)? {
+    if !row.is_dict() {
         return Ok(None);
     }
-    crate::container_rewards::target_spec(identity).map(Some)
+    let quests = crate::container_rewards::targets();
+    if let Some(identity) = row.get("id").and_then(Value::as_str).filter(|identity| quests.contains_key(identity)) {
+        return if authored_mode2_target(row)? { crate::container_rewards::target_spec(identity).map(Some) } else { Ok(None) };
+    }
+    match preset_mode2_place(row)? {
+        Some(original) if quests.contains_key(original.as_str()) => crate::container_rewards::target_spec(&original).map(Some),
+        _ => Ok(None),
+    }
 }
 
 /// The two authored Spellhold scroll selectors have legacy suffixes absent
@@ -220,6 +281,15 @@ fn note_problem(row: &mut Dict, reason: &str) {
     }
 }
 
+/// Whether CIR has a route for the reward a conversation or script gives: an
+/// extended reward route, one of the original quests, or the pool.
+fn routed_source(row: &Dict, resource: &str, item: &str) -> Result<bool> {
+    let identity = format!("original-source:{}", str_field(row, "id")?);
+    Ok(crate::mode2_rewards::source_rewards().contains_key(identity.as_str())
+        || crate::quest_rewards::source_quests().contains_key(identity.as_str())
+        || (resource, item) == (crate::scripted_sources::RESOURCE, crate::scripted_sources::ITEM))
+}
+
 fn unreadable_source(row: &mut Dict) {
     row.insert("available", false);
     row.insert("availability_reason", "source-resource-unreadable");
@@ -306,7 +376,12 @@ fn resolve_source(row: &mut Dict, scan: &Scan<'_>, selectors: &HashMap<String, S
     row.insert("source_resource", resource.as_str());
     if SCRIPTED_SOURCES.contains(&extension) || spell_grant {
         row.insert("adapter", "scripted");
-        note_problem(row, "scripted-source-requires-adapter");
+        if spell_grant || routed_source(row, &resource, &item)? {
+            note_problem(row, "scripted-source-requires-adapter");
+        } else {
+            // Named before an absent item or file: no game could give its reward to CIR.
+            row.insert("binding_problem", NO_ROUTE);
+        }
         if !scan.resources.contains(resource.as_str()) {
             row.insert("available", false);
             row.insert("availability_reason", "source-resource-absent");
@@ -398,10 +473,10 @@ fn resolve_target(row: &mut Dict, scan: &Scan<'_>, endpoints: &HashMap<String, E
     if let Some(container) = container_target_spec(&snapshot)? {
         // The container that holds the quest's treasure, in the quest's own
         // area: the table's area column is not where every handler puts it.
-        let identity = str_field(row, "id")?.to_string();
-        let area_resource = format!("are:{}", treasure_area(&identity, scan.game)?);
+        let quest = text_of(container.get("target_id")).to_string();
+        let area_resource = format!("are:{}", treasure_area(&quest, scan.game)?);
         row.insert("area_resource", area_resource.as_str());
-        let physical_id = match treasure_container(&identity, scan.world_sources, scan.game) {
+        let physical_id = match treasure_container(&quest, scan.world_sources, scan.game) {
             Ok(chest) => Some(chest),
             Err(error) if error.kind == ErrorKind::Profile => None,
             Err(error) => return Err(error),
@@ -451,6 +526,12 @@ fn resolve_target(row: &mut Dict, scan: &Scan<'_>, endpoints: &HashMap<String, E
             .and_then(Value::as_list)
             .is_none_or(|resources| resources.iter().all(|resource| scan.resources.contains(text_of(Some(resource)))));
         row.insert("binding_problem", if present { "legacy-target-requires-adapter" } else { "target-resource-absent" });
+        return Ok(());
+    }
+    if str_field(row, "target")?.ends_with(".fl") {
+        // One of Item Randomiser's own quest handlers (its lib/weidu_action.tpa)
+        // that the routes above do not cover; it names no container or creature.
+        row.insert("binding_problem", NO_ROUTE);
         return Ok(());
     }
     let endpoint_id = row.get("endpoint_id").cloned().unwrap_or(Value::Null);
