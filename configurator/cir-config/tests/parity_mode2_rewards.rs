@@ -491,7 +491,7 @@ fn script_blocks_are_found_by_meaning_in_another_layout() {
 
 #[test]
 fn registry_exposes_authored_charges_and_separate_container_recipient() {
-    assert_eq!(direct_rewards().len(), 9);
+    assert_eq!(direct_rewards().len(), 10);
     let mut spec = source_spec("original-source:bg2:mode2:item:28").unwrap();
     let expected = cir_config::dict! {"resref" => "ring31", "expiration" => 0i64, "charges" => ints(&[1, 1, 1]), "flags" => 0i64};
     assert!(spec.get("payload").unwrap().py_eq(&Value::Dict(expected)));
@@ -834,6 +834,7 @@ const REVIEWED_EET: &[(&str, &str, &str)] = &[
     ("dlg:ppdjinn", "06c1671065b549921263594db378d7610223cb16b70b7f718b3885b45b32af38", "cf0269858c28d24c6e837074c8b6d7dfae267fee0b3d5bce647cd0f60734b332"),
     ("dlg:ppstat01", "7022962710da01f3d66088d8f7c5aa2a7963d7e994ff0d55f61dc5b64c9673ae", "69505c964ee036a6d9b974407e34cbd4ff35f4cebd10373819c5ef2f5d50f73a"),
     ("dlg:riftg03", "4bb8a0866e3470ae558c108160ebef18c33de9f14ad3181ccf33ebd0d5e4912a", "34e7c5e57d9e69394b40ce09f4c5cd5a5e6249d871b676c82bafbd3d707f3ff5"),
+    ("dlg:sahkng01", "c76c8624052f7e179d42157e4081ddfcdbb101d2f00b819008bc99f5660785c1", "355c4236753330c944cd87fbcb15769820475d2286efa9a49ac9614d6863944a"),
     ("dlg:scsain", "c2a43b0d67eca9b531aa591463f74d5333225a95f0be87f8d03ed1cf91f8dafe", "cd1db0265daa8dc239bbe1a325cdf2ad3fc0033f3bf8eaba981a46e65c91b148"),
     ("dlg:sctelwyn", "d5dd048c43e16ba937ff583eef8f5966e549fb0c4e3f92679883d35fcdda1759", "6be82dfdf03c7b5f8bbeee67681344e1cb753a803fe461181c52e23ab5434067"),
     ("dlg:scyarryl", "f96880bdabcfe8393d9ad6df502d3d001e2d79913736e480f6cc717f012dd367", "247dd86c080239e80b4cd07516127a1ce55d90e12c6087b983ff935a3ffaea51"),

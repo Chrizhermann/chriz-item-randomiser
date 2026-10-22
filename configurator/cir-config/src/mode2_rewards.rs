@@ -207,7 +207,7 @@ fn registry() -> &'static Registry {
 fn build_registry() -> Registry {
     const NO_CHARGES: [i64; 3] = [0, 0, 0];
     let mut rewards = Dict::new();
-    let direct: [(&str, &str, &str, i64, i64, &str, [i64; 3], Value); 9] = [
+    let direct: [(&str, &str, &str, i64, i64, &str, [i64; 3], Value); 10] = [
         ("uhogre01", "dlg", "shld26", 14, 17, "LastTalkedToBy", NO_CHARGES, pairs(&[(22, 0), (22, 1)])),
         ("asysta01", "bcs", "helm19", 5, 21, "are:ar1512/container/0", NO_CHARGES, list![0]),
         ("ddwell", "bcs", "helm21", 27, 27, "LastTrigger", NO_CHARGES, list![1]),
@@ -217,6 +217,9 @@ fn build_registry() -> Registry {
         ("trhmer01", "dlg", "shld25", 52, 44, "LastTalkedToBy", NO_CHARGES, pairs(&[(12, 0), (37, 0)])),
         ("udsvir03", "dlg", "blun18", 50, 65, "LastTalkedToBy", [1, 1, 1], pairs(&[(35, 0), (35, 1)])),
         ("ammayor", "dlg", "compon16", 83, 84, "LastTalkedToBy", [1, 0, 0], pairs(&[(12, 0)])),
+        // The Sahuagin king's bracer (Item Randomiser's tadpoles1.fl). The same
+        // reply also gives the treasury's rod, which this route leaves as it is.
+        ("sahkng01", "dlg", "brac19", 57, 58, "LastTalkedToBy", NO_CHARGES, pairs(&[(81, 0)])),
     ];
     let direct_names = direct.iter().map(|row| row.0.to_string()).collect();
     for (name, extension, item, source, target, recipient, charges, branches) in direct {

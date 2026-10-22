@@ -300,8 +300,8 @@ class UnreadablePresetTests(unittest.TestCase):
         self.assertEqual(generated["not_used_notes"], [
             "BD1000.ARE (Truncated AREA header) cannot be read, so Chriz Item Randomiser leaves it out: "
             "its items stay as the game has them and no reward goes there",
-            "1 reward and 1 place from the lists cannot be used in this game, so they are left out; "
-            "a left-out reward stays as the game has it"])
+            "1 reward and 1 place from the lists cannot be used in this game, so they are left out",
+            "A left-out reward stays as the game has it"])
         self.assertEqual([(row["id"], row["kind"], row["reason"]) for row in generated["not_used"]],
                          [("sod:base:item:4", "reward", "source-resource-unreadable"),
                           ("sod:base:target:4", "place", "area-resource-unreadable")])

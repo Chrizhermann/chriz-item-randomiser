@@ -362,6 +362,9 @@ local function bootstrap(Core,Host,Globals,text,options)
         f.popups[#f.popups+1]={text=uiStrings[info],ok=uiStrings[ok_text],start=ok_func,
             cancel=uiStrings[cancel_text],cancel_func=cancel_func}
     end
+    -- util.lua's info popup, which the player closes with Done.
+    f.infos={}
+    popupInfo=function(info) f.infos[#f.infos+1]=uiStrings[info] end
     print=function(message) f.last_log=message end
     io={open=function(path,mode)
         if path=='randomiser-campaigns/last-error.txt' then
@@ -913,13 +916,28 @@ function cases.bootstrap_stopped_campaign_tells_the_player_once(Core,Host,Global
     assert(f.root.Host.status=="disabled" and f.error_file:find("campaign: NATIVE_OBSERVATION_FAILED",1,true),
         tostring(f.error_file))
     assert(#f.shown==2 and f.shown[2]==FLPRUI_Text("stopped"),tostring(f.shown[2]))
+    -- A line in the message log is easily missed: the info popup shows it too, once.
+    assert(#f.infos==1 and f.infos[1]==FLPRUI_Text("stopped"),tostring(f.infos[1]))
+    for i=1,3 do clock.m_gameTime=clock.m_gameTime+1; f.root.Poll() end
+    assert(#f.shown==2 and #f.infos==1)
 end
 function cases.bootstrap_runtime_that_cannot_start_warns_each_randomised_game_once(Core,Host,Globals,text)
     local f=bootstrap(Core,Host,Globals,text,{gate=true,allow_disabled=true,install_fail=true})
-    f.root.Poll(); f.root.Poll(); assert(#f.shown==0)
-    f.values.flpr_state=2
-    f.root.Poll(); f.root.Poll(); assert(#f.shown==1 and f.shown[1]==FLPRUI_Text("stopped"))
-    f.listeners.destroy(); f.root.Poll(); assert(#f.shown==2)
+    f.root.Poll(); f.root.Poll(); assert(#f.shown==0 and #f.infos==0)
+    -- A randomised game loads: the message log at once, the popup once the world screen is up.
+    f.values.flpr_state=2; f.world=false
+    f.root.Poll(); f.root.Poll()
+    assert(#f.shown==1 and f.shown[1]==FLPRUI_Text("stopped") and #f.infos==0)
+    f.world=true
+    f.root.Poll(); f.root.Poll()
+    assert(#f.shown==1 and #f.infos==1 and f.infos[1]==FLPRUI_Text("stopped"))
+    f.listeners.destroy(); f.root.Poll(); assert(#f.shown==2 and #f.infos==2)
+end
+function cases.bootstrap_stopped_message_stays_in_the_log_without_the_engine_popup(Core,Host,Globals,text)
+    local f=bootstrap(Core,Host,Globals,text,{gate=true,allow_disabled=true,install_fail=true})
+    popupInfo=nil; f.values.flpr_state=2
+    f.root.Poll(); f.root.Poll()
+    assert(#f.shown==1 and f.shown[1]==FLPRUI_Text("stopped") and #f.infos==0)
 end
 function cases.bootstrap_stops_held_capture_when_host_stops_or_world_changes(Core,Host,Globals,text)
     for _, boundary in ipairs({"disabled", "new-game", "destroy"}) do

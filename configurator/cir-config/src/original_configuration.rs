@@ -10,7 +10,7 @@ use crate::campaigns::{compile_campaign, OVERFLOW_TARGET_KINDS};
 use crate::error::{Error, ErrorKind, Result};
 use crate::game_names::{convert_resource, eet_names, EetNames};
 use crate::json::{Dict, Value};
-use crate::original_catalog::{resolve_template, UNREADABLE_PLACE_PROBLEMS};
+use crate::original_catalog::{resolve_template, NO_ROUTE, UNREADABLE_PLACE_PROBLEMS};
 use crate::original_registrations::{
     is_unreferenced_creature_source, source_lookup, target_record, SourceLookup, PAYLOAD_FIELDS, SHIPPED_REPLACEMENT,
     SOURCE_FIELDS, TARGET_FIELDS,
@@ -282,23 +282,62 @@ fn choose(row: &Value, context: &Context<'_>) -> Result<std::result::Result<Choi
     Ok(Ok(Choice::Physical(ids[0].clone(), None)))
 }
 
+/// Why `count` rewards of a preset's optional `module` are left out: the mod
+/// is not installed, or (when the game has any item of it) not the part of
+/// it that adds them.
+fn absent_mod_note(module: &str, count: usize, catalog_items: &ItemIndex) -> String {
+    let prefixes = crate::templates::optional_mod_prefixes(module);
+    let one = count == 1;
+    if !catalog_items.resrefs().iter().any(|name| prefixes.iter().any(|prefix| name.starts_with(prefix))) {
+        return format!(
+            "{module} is not installed, so {count} {} from it {} left out",
+            if one { "reward" } else { "rewards" },
+            if one { "is" } else { "are" }
+        );
+    }
+    format!(
+        "{count} {} of {module} that this game does not have, so {} left out",
+        if one { "reward needs an item" } else { "rewards need items" },
+        if one { "it is" } else { "they are" }
+    )
+}
+
+/// What the left-out rows are: those this game cannot use, then those whose
+/// quest CIR cannot change yet, then what becomes of a left-out reward.
 fn not_used_notes(rows: &[Value]) -> Vec<String> {
+    let (waiting, unusable): (Vec<&Value>, Vec<&Value>) = rows.iter().partition(|row| s(row, "reason") == NO_ROUTE);
+    let it_is = |rows: &[&Value]| if rows.len() == 1 { "it is" } else { "they are" };
+    let mut notes = Vec::new();
+    if !unusable.is_empty() {
+        notes.push(format!(
+            "{} from the lists cannot be used in this game, so {} left out",
+            counted(&unusable),
+            it_is(&unusable)
+        ));
+    }
+    if !waiting.is_empty() {
+        notes.push(format!(
+            "{} from the lists {} that Chriz Item Randomiser cannot change yet, so {} left out",
+            counted(&waiting),
+            if waiting.len() == 1 { "belongs to a quest" } else { "belong to quests" },
+            it_is(&waiting)
+        ));
+    }
+    if rows.iter().any(|row| s(row, "kind") == "reward") {
+        notes.push("A left-out reward stays as the game has it".to_string());
+    }
+    notes
+}
+
+/// How many rewards and places `rows` are, as "2 rewards and 1 place".
+fn counted(rows: &[&Value]) -> String {
     let rewards = rows.iter().filter(|row| s(row, "kind") == "reward").count();
-    let places = rows.len() - rewards;
-    let counts: Vec<String> = [(rewards, "reward"), (places, "place")]
+    [(rewards, "reward"), (rows.len() - rewards, "place")]
         .into_iter()
         .filter(|(count, _)| *count > 0)
         .map(|(count, noun)| if count == 1 { format!("{count} {noun}") } else { format!("{count} {noun}s") })
-        .collect();
-    if counts.is_empty() {
-        return Vec::new();
-    }
-    let note = format!(
-        "{} from the lists cannot be used in this game, so {} left out",
-        counts.join(" and "),
-        if rows.len() == 1 { "it is" } else { "they are" }
-    );
-    vec![if rewards > 0 { format!("{note}; a left-out reward stays as the game has it") } else { note }]
+        .collect::<Vec<_>>()
+        .join(" and ")
 }
 
 /// Why this game cannot have the Kangaxx option, or `None`; reads the quest
@@ -529,6 +568,10 @@ fn build_from(
             continue;
         }
         let problem = row.get("binding_problem").and_then(Value::as_str);
+        if problem == Some(NO_ROUTE) {
+            leave_out(&mut not_used, row, "reward", &Value::from(NO_ROUTE))?;
+            continue;
+        }
         if problem == Some("original-source-has-no-matching-record") {
             continue;
         }
@@ -615,6 +658,8 @@ fn build_from(
     for row in enabled_targets {
         if let Some(reason) = exclude.get(s(row, "id")) {
             leave_out(&mut not_used, row, "place", &Value::from(reason.as_str()))?;
+        } else if row.at("binding_problem")?.as_str() == Some(NO_ROUTE) {
+            leave_out(&mut not_used, row, "place", &Value::from(NO_ROUTE))?;
         } else if !index.resources.contains(s(row, "area_resource")) {
             leave_out(&mut not_used, row, "place", &Value::from("area-resource-absent"))?;
         } else if row.at("binding_problem")?.as_str().is_some_and(|problem| {
@@ -787,16 +832,8 @@ fn build_from(
     for change in unprepared.keys() {
         left.push(Value::from(left_out(&game_root, change)?));
     }
-    let absent: Vec<Value> = absent_mods
-        .iter()
-        .map(|(module, count)| {
-            Value::from(format!(
-                "{module} is not installed, so {count} {} from it {} left out",
-                if *count == 1 { "reward" } else { "rewards" },
-                if *count == 1 { "is" } else { "are" }
-            ))
-        })
-        .collect();
+    let absent: Vec<Value> =
+        absent_mods.iter().map(|(module, count)| Value::from(absent_mod_note(module, *count, &catalog_items))).collect();
     let notes: Vec<Value> = unreadable_notes(world)
         .into_iter()
         .chain(names.iter().flat_map(|names| names.notes.iter().cloned()))

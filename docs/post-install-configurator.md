@@ -335,10 +335,14 @@ Boss Loot, aShuN's BG1 lists (`bg1-boss-loot`, `eet-boss-loot`; see
 `bg1:boss-loot:<family>:<kind>:<line>`. A place of its standard pool takes the
 authored endpoint of the same place in the original tables; ten places that the
 original standard tables do not use have none and are bound by name like the places
-of the extended pool. Its
+of the extended pool. A place of its extended pool at the place of one of the
+original tables' container quests (Safana's treasure) is that quest. Its
 Rogue Rebalancing (`rr#…`) and IWDification (`cdia…`) items are optional: a game
-without such an item leaves its rows out and the preset dialog names the mod. On a
-reference EET scan, `eet-boss-loot` passes the configuration check like `eet-original`.
+without such an item leaves its rows out and the preset dialog names the mod. It says
+the mod is not installed only when the game has no item of it at all; otherwise it
+says how many rewards need items of the mod that the game does not have (a part of
+the mod that is not installed). On a reference EET scan, `eet-boss-loot` passes the
+configuration check like `eet-original`.
 
 On EET, BG1 and SoD resource names follow EET's own rename lists
 (`EET/lib/pcu_dict.tph`, `game_names.eet_names`). Without them, or when they cannot be
@@ -355,6 +359,18 @@ longer give it ("The extended reward route for MGKHOL01 cannot be used: MGKHOL01
 has no reply that gives BELT02") or an item its creature cannot drop. The draft is checked with the
 same runtime check as "Check configuration", which then passes. `/api/template`
 also returns the left-out rows with their table line and reason (`not_used_rows`).
+
+Some rows of the extended pools are left out in every game, and the preset dialog
+names them apart ("… belong to quests that Chriz Item Randomiser cannot change yet"):
+quest rewards and places that Item Randomiser handled with its own conversation and
+script patches (the `.fl` places of its `mode2` tables, and rewards that a conversation
+or script gives) for which CIR has no route yet. Their reason is
+`route-not-supported`. In the original tables these are Aldeth's, Varci's and
+Nemphre's rewards and places (BG1); Jermien's reward and place, two scrolls that
+`ppbook.bcs` gives, and the places of the Sahuagin treasury, the Sahuagin prince, the
+king or the prince, the trolls of the Spellhold painting, Tolgerias, TorGal and a
+vampire or shadow thief of chapter 3 (BG2). `tests/test_original_catalog.py` lists
+them; a route for one of them takes its rows off that list.
 
 The world scan leaves out a creature, area or store file it cannot read (another
 mod's damaged or unusual file) instead of refusing the game. `world scan` names such

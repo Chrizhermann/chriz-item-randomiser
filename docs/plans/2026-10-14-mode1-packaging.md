@@ -302,14 +302,15 @@ English text as a fallback. Failure details go to `randomiser-campaigns/last-err
 | A New Game or character import of a start the applied settings have no revision for (Black Pits, tutorial, a start they reach nothing in) | New Game popup: the settings have nothing to randomise in this campaign |
 | Capture fails at character acceptance (for example a later mod replaced `BALDUR.GAM`) | Popup: could not randomise; Cancel keeps character creation open for a retry |
 | Capture succeeded | Message log, once, when the world first appears: items are randomised |
-| The runtime stops in a randomised adventure, or one is loaded while it cannot run | Message log, once per loaded game: stopped working, unplaced items may be missing |
+| The runtime stops in a randomised adventure, or one is loaded while it cannot run | Once per loaded game: stopped working, unplaced items may be missing. In the message log at once, and in the engine's info popup (closed with Done) as soon as the world screen is up |
 
 Each popup offers "Start without randomiser" (the engine's own New Game or character
 acceptance, unrandomised) and Cancel. Capture is atomic: every GLOBAL written while
 capturing is restored and the source gate is disarmed when any step fails, so starting
 without randomiser leaves no partial campaign. Messages appear in the engine's
 `POPUP_TWOBUTTON`, whose text area holds about four lines; translations should stay
-similarly short.
+similarly short. The stop message uses `POPUP_INFO` (util.lua's `popupInfo`), which
+is about as large; a user interface without it keeps the message log line.
 
 ## Translations
 

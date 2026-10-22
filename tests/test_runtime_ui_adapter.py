@@ -188,6 +188,19 @@ class UiAdapterTests(unittest.TestCase):
                 lua.execute("Infinity_FetchString = nil")
                 self.assertEqual(lua.eval('FLPRUI_Text("not_running")'), english)
 
+    def test_a_message_shows_in_the_engines_info_popup(self):
+        for name, module in RUNTIMES:
+            with self.subTest(name):
+                lua = self.lua(module)
+                lua.execute("infos = {}; function popupInfo(info) infos[#infos + 1] = uiStrings[info] end")
+                self.assertTrue(lua.eval('FLPRUI_Tell("stopped")'))
+                infos = lua.globals().infos
+                self.assertEqual([infos[i] for i in range(1, len(infos) + 1)],
+                                 [lua.eval('FLPRUI_Text("stopped")')])
+                # Without the popup the caller's message log line is all there is.
+                lua.execute("popupInfo = nil")
+                self.assertFalse(lua.eval('FLPRUI_Tell("stopped")'))
+
     def test_engine_lua_without_io_detects_the_configuration_through_loadfile(self):
         for name, module in RUNTIMES:
             with self.subTest(name, configured=False):

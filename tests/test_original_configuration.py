@@ -193,8 +193,67 @@ class OriginalConfigurationTests(unittest.TestCase):
         self.assertEqual(result["not_used"], [{"id": "rr-2", "row": "lists/items/base/bg1.2da:1",
                                                "kind": "reward", "reason": "item-definition-absent"}])
         self.assertEqual(result["not_used_notes"], [
-            "1 reward from the lists cannot be used in this game, so it is left out; "
-            "a left-out reward stays as the game has it"])
+            "1 reward from the lists cannot be used in this game, so it is left out",
+            "A left-out reward stays as the game has it"])
+
+    def test_an_installed_mod_without_the_presets_items_is_not_called_absent(self):
+        # IWDification is installed (it added CDIA101), but not the part that adds the preset's items.
+        (self.root / "override" / "cdia101.itm").write_bytes(make_itm())
+        catalog = scan_game(self.root)
+        world = scan_world(catalog)
+        draft = self._draft()
+        for identity, item, mod in (("iwd-1", "cdia126", "IWDification"), ("iwd-2", "cdia226", "IWDification"),
+                                    ("rr-1", "rr#buc03", "Rogue Rebalancing")):
+            row = source_row(identity, item=item, ident="x")
+            row.update(optional_mod=mod, available=False, availability_reason="optional-item-absent",
+                       binding_problem="optional-item-absent")
+            draft["items"].append(row)
+        with patch("flir_config.original_configuration.resolve_template", return_value=draft):
+            result = build_original_configuration(catalog, world, "eet-original")
+        self.assertEqual(result["absent_mods"], [
+            "2 rewards need items of IWDification that this game does not have, so they are left out",
+            "Rogue Rebalancing is not installed, so 1 reward from it is left out"])
+        draft["items"] = [row for row in draft["items"] if row["id"] != "iwd-2"]
+        with patch("flir_config.original_configuration.resolve_template", return_value=draft):
+            result = build_original_configuration(catalog, world, "eet-original")
+        self.assertEqual(result["absent_mods"][0],
+                         "1 reward needs an item of IWDification that this game does not have, so it is left out")
+
+    def test_quests_cir_cannot_change_yet_are_left_out_and_named_apart(self):
+        draft = self._draft()
+        reward = source_row("jerlia", adapter="scripted", resource="dlg:jugjer01", item="sw1h26", ident="x")
+        reward.update(available=False, availability_reason="item-definition-absent",
+                      binding_problem="route-not-supported")
+        king = target_row("sahuagin-king", "x", "24")
+        thief = target_row("vampire-or-thief", "x", "24")
+        for place, target, area in ((king, "tadpoles1.fl", "ar2300"), (thief, "chapter3.fl", "blank")):
+            place.update(target=target, area=area, area_resource=f"are:{area}", container_name=None,
+                         endpoint_id=None, endpoint_kind=None, binding_problem="route-not-supported")
+        lost = target_row("lost-place", "x", "24")
+        lost["area_resource"] = "are:gone"
+        draft["items"].append(reward)
+        draft["targets"] += [king, thief, lost]
+        with patch("flir_config.original_configuration.resolve_template", return_value=draft):
+            result = build_original_configuration(self.catalog, self.world, "eet-original")
+        self.assertEqual([(row["id"], row["kind"], row["reason"]) for row in result["not_used"]], [
+            ("jerlia", "reward", "route-not-supported"),
+            ("sahuagin-king", "place", "route-not-supported"),
+            ("vampire-or-thief", "place", "route-not-supported"),
+            ("lost-place", "place", "area-resource-absent")])
+        self.assertEqual(result["not_used_notes"], [
+            "1 place from the lists cannot be used in this game, so it is left out",
+            "1 reward and 2 places from the lists belong to quests that Chriz Item Randomiser "
+            "cannot change yet, so they are left out",
+            "A left-out reward stays as the game has it"])
+        self.assertEqual(len(result["plan"]["target_registrations"]), 2)
+        # Alone, one place: nothing is said about rewards.
+        draft["items"].remove(reward)
+        draft["targets"] = [row for row in draft["targets"] if row not in (thief, lost)]
+        with patch("flir_config.original_configuration.resolve_template", return_value=draft):
+            result = build_original_configuration(self.catalog, self.world, "eet-original")
+        self.assertEqual(result["not_used_notes"], [
+            "1 place from the lists belongs to a quest that Chriz Item Randomiser cannot change yet, "
+            "so it is left out"])
 
     def test_rows_this_game_cannot_use_are_left_out_and_named(self):
         draft = self._draft()
@@ -214,8 +273,8 @@ class OriginalConfigurationTests(unittest.TestCase):
             ("twice", "reward", "source-record-used-twice"),
             ("lost-place", "place", "area-resource-absent")])
         self.assertEqual(result["not_used_notes"], [
-            "3 rewards and 1 place from the lists cannot be used in this game, so they are left out; "
-            "a left-out reward stays as the game has it"])
+            "3 rewards and 1 place from the lists cannot be used in this game, so they are left out",
+            "A left-out reward stays as the game has it"])
         plan = result["plan"]
         self.assertEqual(plan["sources"], [{"item": "synth001", "policy": "relocate",
                                             "source_ids": [self.physical], "registration_ids": []}])

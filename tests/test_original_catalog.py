@@ -57,7 +57,8 @@ class OriginalCatalogTests(unittest.TestCase):
             problems.setdefault(row["optional_mod"], set()).add(row["binding_problem"])
         self.assertEqual(problems, {"Rogue Rebalancing": {"optional-item-absent"},
                                     "IWDification": {"optional-item-absent"},
-                                    None: {"item-definition-absent"}})
+                                    # The conversation rewards wait for a route in any game.
+                                    None: {"item-definition-absent", "route-not-supported"}})
 
     def test_exact_mode2_spin621_pair_uses_spell_hash_without_area_or_physical_target(self):
         catalog = {"items": [{"resref": "ring41"}]}
@@ -309,6 +310,92 @@ class OriginalCatalogTests(unittest.TestCase):
                 row = next(row for row in result["targets"] if row["id"] == place["id"])
                 self.assertEqual(row["target_ids"], [actor["id"] for actor in actors])
                 self.assertEqual(row["binding_problem"], problem)
+
+    def test_quest_places_without_a_cir_route_are_named_not_taken_for_containers(self):
+        world = {"resources": [{"id": name} for name in ("are:ar1103", "are:ar2300", "are:ar1514",
+                                                         "are:ar0801", "are:ar1100", "dlg:uhogre01")],
+                 "sources": [],
+                 # A chest named like the place is not the place.
+                 "targets": [_target("are:ar1103/container/0", "are:ar1103", "container", "jugjer01")]}
+        result = resolve_template({"items": []}, world, "bg2-original", items="extended", targets="extended")
+        rows = {row["id"]: row for row in result["targets"]}
+        for line in (6, 25, 31, 37, 49, 50, 59, 60):
+            row = rows[f"bg2:mode2:target:{line}"]
+            with self.subTest(target=row["target"], area=row["area"]):
+                self.assertEqual((row["target_ids"], row["container_name"], row["binding_problem"]),
+                                 ([], None, "route-not-supported"))
+        # The quest places CIR has a route for keep theirs, a handler's place too
+        # (the Sahuagin king's reward; this game lacks his conversation).
+        self.assertEqual(rows["bg2:base:target:47"]["binding_problem"], "legacy-target-requires-adapter")
+        self.assertEqual(rows["bg2:mode2:target:17"]["binding_problem"], "legacy-target-requires-adapter")
+        self.assertEqual((rows["bg2:mode2:target:58"]["area_resource"], rows["bg2:mode2:target:58"]["binding_problem"]),
+                         ("dlg:sahkng01", "target-resource-absent"))
+
+    def test_quest_rewards_without_a_cir_route_are_named_before_other_problems(self):
+        catalog = {"items": [{"resref": name} for name in ("shld26", "blun23", "blun12", "ring41", "brac19")]}
+        world = {"resources": [{"id": name} for name in ("dlg:uhogre01", "bcs:troalt", "bcs:blpool",
+                                                         "spl:spin621", "dlg:sahkng01", "dlg:jugjer01")],
+                 "sources": [], "targets": []}
+        result = resolve_template(catalog, world, "bg2-original", items="extended", targets="extended")
+        rows = {row["id"]: row for row in result["items"]}
+        # Conversations, the altar, the pool and the Deck of Many Things have routes.
+        for identity in ("bg2:mode2:item:14", "bg2:mode2:item:57", "bg2:base:item:9", "bg2:base:item:90",
+                         "bg2:mode2:item:69"):
+            self.assertEqual(rows[identity]["binding_problem"], "scripted-source-requires-adapter")
+        # The game lacks Jermien's sword too; the missing route is named, as it would
+        # leave the row out in any game.
+        row = rows["bg2:mode2:item:31"]
+        self.assertEqual((row["adapter"], row["available"], row["binding_problem"], row["availability_reason"]),
+                         ("scripted", False, "route-not-supported", "item-definition-absent"))
+
+    def test_only_these_list_rows_wait_for_a_cir_route(self):
+        """The rows CIR leaves out in every game because it cannot change their
+        quest yet. A new route takes its rows off this list."""
+        from flir_config.templates import list_templates
+
+        options = dict.fromkeys(("scrolls", "kangaxx", "flail_heads", "totsc_tome",
+                                 "more_spell_shield", "cursed_disguise"), True)
+        world = {"resources": [], "sources": [], "targets": []}
+        waiting = set()
+        for template in list_templates():
+            result = resolve_template({"items": []}, world, template["id"], items="extended",
+                                      targets="extended", options=options)
+            waiting |= {row["id"] for row in result["items"] + result["targets"]
+                        if row["binding_problem"] == "route-not-supported"}
+        self.assertEqual(waiting, {
+            # Conversations and scripts that give the reward.
+            "bg1:mode2:item:16", "bg1:mode2:item:20", "bg1:mode2:item:159",
+            "bg1:boss-loot:mode2:item:62", "bg1:boss-loot:mode2:item:71", "bg1:boss-loot:mode2:item:339",
+            "bg2:mode2:item:31", "bg2:mode2:item:260", "bg2:mode2:item:262",
+            # Places that Item Randomiser's own quest handlers name.
+            "bg1:mode2:target:16", "bg1:mode2:target:20", "bg1:mode2:target:136",
+            "bg1:boss-loot:mode2:target:46", "bg1:boss-loot:mode2:target:71",
+            "bg1:boss-loot:mode2:target:291",
+            *(f"bg2:mode2:target:{line}" for line in (6, 25, 31, 37, 49, 50, 59, 60, 89, 215, 252))})
+
+    def test_a_presets_place_of_an_original_container_quest_is_that_quest(self):
+        from flir_config.original_catalog import container_target_spec
+
+        chest = _target("are:bg3601/container/0", "are:bg3601", "container", "Container 1")
+        book = {"id": "are:bg3601/container/0/item/0", "resource": "are:bg3601", "item": "book03",
+                "owner": chest["id"], "kind": "container", "record": {"container_index": 0}}
+        world = {"resources": [{"id": name} for name in ("are:bg3601", "bcs:safana", "dlg:safanj")],
+                 "sources": [book], "targets": [chest]}
+        rows = {}
+        for template in ("eet-original", "eet-boss-loot"):
+            result = resolve_template({"items": []}, world, template, items="extended", targets="extended")
+            rows.update((row["id"], row) for row in result["targets"])
+        safana = rows["bg1:boss-loot:mode2:target:47"]
+        for row in (rows["bg1:mode2:target:22"], safana):
+            with self.subTest(row=row["id"]):
+                self.assertEqual((row["area_resource"], row["target_ids"], row["container_name"],
+                                  row["binding_problem"]),
+                                 ("are:bg3601", [chest["id"]], "Container 1", None))
+        self.assertEqual(container_target_spec(safana)["target_id"], "bg1:mode2:target:22")
+        # Only the preset's row as its table has it: another place, or a changed row, is no quest.
+        for changed in ({"area": "ar0128"}, {"tier": "27"}, {"id": "bg1:boss-loot:mode2:target:46"}):
+            with self.subTest(changed=changed):
+                self.assertIsNone(container_target_spec({**safana, **changed}))
 
 
 if __name__ == "__main__":

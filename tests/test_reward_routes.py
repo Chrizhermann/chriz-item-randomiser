@@ -166,8 +166,8 @@ class FitAndApplyTests(RouteGame):
         self.assertEqual(sorted((row["id"], row["kind"], row["reason"]) for row in fitted["not_used"]),
                          [("bg2:mode2:item:33", "reward", KHOLLOS), ("bg2:mode2:target:33", "place", KHOLLOS)])
         self.assertEqual(fitted["not_used_notes"], [
-            "1 reward and 1 place from the lists cannot be used in this game, so they are left out; "
-            "a left-out reward stays as the game has it"])
+            "1 reward and 1 place from the lists cannot be used in this game, so they are left out",
+            "A left-out reward stays as the game has it"])
         sources = {row["id"] for row in fitted["plan"]["registrations"]}
         self.assertEqual(sources, {"original-source:bg2:mode2:item:14", "original-source:bg2:mode2:item:27"})
         targets = {row["id"] for row in fitted["plan"]["target_registrations"]}

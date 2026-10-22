@@ -68,6 +68,9 @@ REWARDS = {
     "trhmer01": _spec("trhmer01", "dlg", "shld25", 52, 44, "LastTalkedToBy", (0, 0, 0), ((12, 0), (37, 0))),
     "udsvir03": _spec("udsvir03", "dlg", "blun18", 50, 65, "LastTalkedToBy", (1, 1, 1), ((35, 0), (35, 1))),
     "ammayor": _spec("ammayor", "dlg", "compon16", 83, 84, "LastTalkedToBy", (1, 0, 0), ((12, 0),)),
+    # The Sahuagin king's bracer (Item Randomiser's tadpoles1.fl). The same
+    # reply also gives the treasury's rod, which this route leaves as it is.
+    "sahkng01": _spec("sahkng01", "dlg", "brac19", 57, 58, "LastTalkedToBy", (0, 0, 0), ((81, 0),)),
 }
 DIRECT_REWARDS = tuple(REWARDS)
 
