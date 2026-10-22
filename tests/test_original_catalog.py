@@ -370,11 +370,9 @@ class OriginalCatalogTests(unittest.TestCase):
                         if row["binding_problem"] == "route-not-supported"}
         self.assertEqual(waiting, {
             # Conversations and scripts that give the reward.
-            "bg1:mode2:item:16", "bg1:mode2:item:159",
             "bg1:boss-loot:mode2:item:62", "bg1:boss-loot:mode2:item:71", "bg1:boss-loot:mode2:item:339",
             "bg2:mode2:item:260", "bg2:mode2:item:262",
             # Places that Item Randomiser's own quest handlers name.
-            "bg1:mode2:target:16", "bg1:mode2:target:136",
             "bg1:boss-loot:mode2:target:46", "bg1:boss-loot:mode2:target:71",
             "bg1:boss-loot:mode2:target:291",
             *(f"bg2:mode2:target:{line}" for line in (6, 25, 37, 49, 50, 59, 60, 89, 215, 252))})

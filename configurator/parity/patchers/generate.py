@@ -810,6 +810,64 @@ def start_order_cases(s: Scenario) -> None:
     patched(s, "start order unconditioned", "dlg:ppdjinn", d.render(), refs={48995: 100001})
 
 
+def journal_cases(s: Scenario) -> None:
+    """test_bg1_texts_take_the_games_numbers_and_a_journal_entry_keeps_its_title and
+    test_journal_lua_files_the_new_entry_under_the_quests_of_the_one_it_replaces."""
+    games = (None, "bgee", "eet", "bg2ee", "bgt")
+    for resource in ("dlg:aldeth", "dlg:jugjer01", "dlg:uhmay01", "bcs:ddwell", "dlg:varci", "dlg:nothing"):
+        for game in games:
+            args = {"resource": resource, **({} if game is None else {"game": game})}
+            s.case(f"text_refs {resource} {game}", "mode2_rewards.text_refs", args,
+                   lambda resource=resource, game=game: sorted_ints(mode2_rewards.text_refs(resource, game)))
+            s.case(f"journal_refs {resource} {game}", "mode2_rewards.journal_refs", args,
+                   lambda resource=resource, game=game: mode2_rewards.journal_refs(resource, game))
+    for label, original in (
+            ("lf", "The Merchant League\nOld words."), ("crlf twice", "Liga Kupiecka\r\n\r\nStare."),
+            ("one line", "One line only"), ("blank rest", "Title\n \n"), ("no title first", "\nNo title first"),
+            ("empty", ""), ("none", None), ("lone cr", "Title\rBody"), ("cr lf lf", "Title\r\n\nBody"),
+            ("lf cr cr lf", "Title\n\r\r\nBody"), ("spaced title", "  Title  \n  Body"),
+            ("blank title", " \t\nBody"), ("separator rest", "Title\n\x1c\x1f"), ("separator title", "\x1d\nBody"),
+            ("nel", "Title\x85Body\nMore"), ("unicode", "Księga　\nTreść"), ("ideographic rest", "Title\n　"),
+            ("form feed", "Title\x0c\nBody"), ("three lines", "Title\nOld\nWords")):
+        s.case(f"_titled {label}", "mode2_rewards._titled", {"original": original, "body": "New words."},
+               lambda original=original: mode2_rewards._titled(original, "New words."))
+    lua = (b"createQuest( 87 )\r\n"
+           b"createEntry    ( 87, -1, 26822, {}, nil )\r\n"
+           b"createEntry    ( 87, -1, 26828, {}, nil )\r\n"
+           b"createEntry    ( 87, -1, 126828, {}, nil )\r\n"
+           b"\tcreateEntry(90,-1,26828,{1,2},nil)\r\n"
+           b"createEntry    ( 91, -1, 268280, {}, nil )\r\n")
+    aldeth = {"dlg:aldeth": {5740: 300000, 26828: 300001}}
+    eet = {"dlg:aldeth": {205740: 400000, 226828: 400001}}
+    listed = mode2_rewards.journal_lua(lua, aldeth)
+    for label, data, texts, game in (
+            ("listed", lua, aldeth, None), ("again", listed, aldeth, None), ("bgee", lua, aldeth, "bgee"),
+            ("unlisted", b"createEntry    ( 87, -1, 26822, {}, nil )\n", aldeth, None),
+            ("other route", lua, {"dlg:jugjer01": {33760: 300002, 33777: 300003}}, None),
+            ("eet", b"createEntry    ( 87, -1, 226828, {}, nil )\n", eet, "eet"),
+            ("eet numbers on bgee", b"createEntry    ( 87, -1, 226828, {}, nil )\n", eet, "bgee"),
+            ("lf", lua.replace(b"\r\n", b"\n"), aldeth, None), ("lone cr", lua.replace(b"\r\n", b"\r"), aldeth, None),
+            ("no line end", b"createEntry(87,-1,26828,{},nil)", aldeth, None),
+            ("cr end", b"createEntry(87,-1,26828,{},nil)\r", aldeth, None),
+            ("first line", b"createEntry(87,-1,26828,{},nil)\nx\n", aldeth, None),
+            ("comment", b"-- createEntry(87,-1,26828,{},nil)\n", aldeth, None),
+            ("no quest", b"createEntry(,-1,26828,{},nil)\n", aldeth, None),
+            ("named quest", b"createEntry(q,-1,26828,{},nil)\n", aldeth, None),
+            ("third argument", b"createEntry(87,26828,-1,{},nil)\n", aldeth, None),
+            ("no rest", b"createEntry(87,-1,26828)\n", aldeth, None),
+            ("other case", b"CreateEntry(87,-1,26828,{},nil)\n", aldeth, None),
+            ("spaced", b"  createEntry \t( \t87 \t,\t-1 ,\t 26828 \t, {}, nil )   \r\n", aldeth, None),
+            ("two quests", b"createEntry(87,-1,26828,{},nil)\ncreateEntry(88,-1,26828,{},nil)\n"
+                           b"createEntry(88,-1,300001,{},nil)\n", aldeth, None),
+            ("zero quest", b"createEntry(087,-1,26828,{},nil)\ncreateEntry(87,-1,300001,{},nil)\n", aldeth, None),
+            ("missing text", lua, {"dlg:aldeth": {5740: 300000}}, None),
+            ("unknown resource", lua, {"dlg:nothing": {26828: 300001}}, None),
+            ("empty", b"", aldeth, None), ("no texts", lua, {}, None)):
+        args = {"lua": data, "texts": texts, **({} if game is None else {"game": game})}
+        s.case(f"journal_lua {label}", "mode2_rewards.journal_lua", args,
+               lambda data=data, texts=texts, game=game: mode2_rewards.journal_lua(data, texts, game))
+
+
 def mode2_scenario() -> Scenario:
     originals = mode2_inputs()
     s = Scenario("mode2_rewards")
@@ -843,6 +901,7 @@ def mode2_scenario() -> Scenario:
     for resource in sorted(mode2_rewards.TEXT_REFS) + ["dlg:uhogre01"]:
         s.case(f"text_lines {resource}", "mode2_rewards.text_lines", {"resource": resource},
                lambda resource=resource: mode2_rewards.text_lines(resource))
+    journal_cases(s)
     ddwell_tlk = make_tlk(["Existing unrelated text", "Existing helmet narrative"])
     updated, ref = mode2_rewards.prepare_ddwell_text(GameText(ddwell_tlk))
     for label, source, language in (("fresh", GameText(ddwell_tlk), "en_us"), ("again", updated, "en_us"),
@@ -1656,6 +1715,25 @@ def game_text_scenario() -> Scenario:
             ("bad male empty", GameText(b"bad"), ())):
         s.case(f"append {label}", "game_text.GameText.append", {"text": value, "texts": texts},
                lambda value=value, texts=texts: value.append(texts))
+    # One entry's text in both files (test_string_reads_an_entry_from_both_files).
+    unicode = make_tlk(["Zvedáš", "Bad X"]).replace(b"Bad X", b"Bad \xff")
+    beyond = bytearray(make_tlk(["Short", "Other"]))
+    struct.pack_into("<I", beyond, 0x12 + 0x16, 1000)
+    for label, value, refs in (
+            ("both", GameText(male, female), (0, 1, 2, 3, 4, -1)),
+            ("male only", GameText(male), (0, 3, 4)),
+            ("voiced", GameText(sounded(male, 1), sounded(female, 2, flags=2)), (1, 2)),
+            ("no text flag", GameText(sounded(male, 1, flags=4, sound=b""), female), (1,)),
+            ("unicode", GameText(unicode, unicode), (0, 1)),
+            ("beyond", GameText(bytes(beyond), make_tlk(["Short (f)", "Other (f)"])), (0, 1)),
+            ("short table", GameText(struct.pack("<8sHII", b"TLK V1  ", 0, 7, 0x12)), (0, 6, 7)),
+            ("empty", GameText(make_tlk([])), (0,)),
+            ("bad male", GameText(b"bad", female), (0,)),
+            ("bad female", GameText(male, b"TLK V1  "), (0,)),
+            ("other signature", GameText(b"TLK V2  " + male[8:]), (0,))):
+        for ref in refs:
+            s.case(f"string {label} {ref}", "game_text.GameText.string", {"text": value, "ref": ref},
+                   lambda value=value, ref=ref: value.string(ref))
     one, two = make_tlk(["One", "Two"]), make_tlk(["One (f)", "Two (f)"])
     grown = bytearray(game_text._append_texts(one, ("Three", "Four"))[0])
     # Entries are copied as they are, sound and all.

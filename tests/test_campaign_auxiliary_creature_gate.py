@@ -25,11 +25,22 @@ SOURCE = "original-source:bg2:mode2:item:12"
 INVENTORY = (ROOT / "tools/probes/FLPRInventoryAsm.lua").read_text()
 MEMORY_SIZE = 128 + 2049 * 128 + 32 + 64 * 64
 FAMILIES = {12: ("scyarryl", "blun20", 0), 31: ("jugjer01", "sw1h26", 0), 32: ("trgeni01", "sw1h23", 0),
-            39: ("loutcapt", "dagg11", 6), 84: ("amcler01", "ring43", 0)}
+            39: ("loutcapt", "dagg11", 6), 84: ("amcler01", "ring43", 0),
+            16: ("aldeth", "sw1h03", 0), 159: ("nemphr", "scrl1q", 0)}
+# Item Randomiser's BG1 list rows among them; the others are BG2's.
+BG1_FAMILIES = {16, 159}
+
+
+def family_names(family):
+    """The source id and selection flag of a family's list row."""
+    if family in BG1_FAMILIES:
+        return f"original-source:bg1:mode2:item:{family}", f"FLPR_QB1_{family}"
+    return f"original-source:bg2:mode2:item:{family}", f"FLPR_QM2_{family}"
+
+
 SETUP = """
-return function(f,Gate,build,compile,Inventory,original,family,creature,item,records,charges,flags,expiration)
-    local id='original-source:bg2:mode2:item:'..family
-    local selected='FLPR_QM2_'..family
+return function(f,Gate,build,compile,Inventory,original,family,creature,item,records,charges,flags,expiration,
+        id,selected)
     local p={resref=item,expiration=expiration,charges=charges,flags=flags}
     local aux={resource='cre:'..creature,resource_sha256=string.rep('2',64),
         record_indices=records,payload=p,selected_global=selected}
@@ -92,7 +103,7 @@ def fixture(runtime=LuaJIT, *, family=12, original=None, records=None, charges=(
         original = bytes(make_cre(rows, slots={9: record, 21: record + 1, 22: record + 2}, gap=13))
     bundle = lua.execute(SETUP)(f, gate, build, policy, inventory, original, family, creature, item,
                                 lua.table(*(records if records is not None else [record])),
-                                lua.table(*charges), flags, expiration)
+                                lua.table(*charges), flags, expiration, *family_names(family))
     return lua, f, bundle, original
 
 
@@ -151,21 +162,23 @@ class AuxiliaryCreatureTests(unittest.TestCase):
             auxiliary._bundle(auxiliary, bundle)
 
     def test_reviewed_dialogue_families_bind_only_their_exact_duplicate(self):
-        for family in (31, 32, 39, 84):
+        # BG1's Aldeth and Nemphre keep these names in EET too.
+        for family in (31, 32, 39, 84, 16, 159):
             with self.subTest(family=family):
                 _, f, bundle, _ = fixture(family=family)
                 auxiliary = f.gate.auxiliary_members[REVISION][1]
                 creature, item, record = FAMILIES[family]
+                identity, selected = family_names(family)
                 self.assertEqual(len(bundle.manifest.sources), 1)
                 self.assertEqual(len(f.gate.members), 1)
                 self.assertEqual(auxiliary.index, 1)
                 self.assertEqual(auxiliary.binding.creature_resource, "cre:" + creature)
                 self.assertEqual(auxiliary.binding.payload.resref, item)
                 self.assertEqual(auxiliary.binding.records[1], record)
-                self.assertEqual(auxiliary.policy.fields[20].name, f"FLPR_QM2_{family}")
+                self.assertEqual(auxiliary.policy.fields[20].name, selected)
                 self.assertEqual(sum(not f.idle(f, index) for index in f.hooks.keys()), 3)
                 # A different approved creature still cannot be bound to this source.
-                endpoint = bundle.fixture.sources[f"original-source:bg2:mode2:item:{family}"]
+                endpoint = bundle.fixture.sources[identity]
                 endpoint.auxiliary_creatures[1].resource = "cre:scyarryl"
                 with self.assertRaisesRegex(Exception, "CAMPAIGN_GATE_AUXILIARY_INVALID"):
                     auxiliary._bundle(auxiliary, bundle)
@@ -291,10 +304,10 @@ class AuxiliaryCreatureTests(unittest.TestCase):
         # Each reviewed family's flag compiles; no other flag does.
         for family in FAMILIES:
             with self.subTest(family=family):
-                self.assertEqual(loaded_policy(1, 1, selected_global=f"FLPR_QM2_{family}")
+                self.assertEqual(loaded_policy(1, 1, selected_global=family_names(family)[1])
                                  .read_q(POLICY_BUFFER + 32), 1)
         lua = LuaJIT(unpack_returned_tuples=True)
-        for flag in ("FLPR_QM2_42", "FLPR_QM2_7", "FLPR_QM2_310"):
+        for flag in ("FLPR_QM2_42", "FLPR_QM2_7", "FLPR_QM2_310", "FLPR_QM2_16", "FLPR_QB1_20", "FLPR_QB1_12"):
             with self.subTest(flag=flag), self.assertRaisesRegex(Exception, "CAMPAIGN_GATE_AUXILIARY_POLICY_INVALID"):
                 lua.execute(POLICY)(REVISION, 1, True, flag)
 

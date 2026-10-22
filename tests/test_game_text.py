@@ -73,6 +73,22 @@ class GameTextTests(unittest.TestCase):
         with self.assertRaisesRegex(game_text.GameTextError, "different numbers of strings"):
             game_text.GameText(male, make_tlk(["Shared (f)"])).append((("New", "New"),))
 
+    def test_string_reads_an_entry_from_both_files(self):
+        male = bytearray(make_tlk(["One", "Two", "Three", "x"]))
+        female = make_tlk(["One (f)", "Two (f)", "Three (f)", "x"])
+        # dialog.tlk's entry 2 has no text; entry 3's is not UTF-8.
+        struct.pack_into("<H", male, 0x12 + 2 * 0x1A, 0)
+        male[-1:] = b"\xe9"
+        text = game_text.GameText(bytes(male), female)
+        self.assertEqual(text.string(1), ("Two", "Two (f)"))
+        self.assertEqual(text.string(2), (None, "Three (f)"))
+        self.assertEqual(text.string(3), (None, "x"))
+        for missing in (4, -1):
+            self.assertEqual(text.string(missing), (None, None))
+        self.assertEqual(game_text.GameText(bytes(male)).string(0), ("One", None))
+        with self.assertRaisesRegex(game_text.GameTextError, "TLK V1"):
+            game_text.GameText(b"invalid").string(0)
+
     def test_paired_copies_what_dialog_tlk_alone_gained(self):
         male, female = make_tlk(["One", "Two"]), make_tlk(["One (f)", "Two (f)"])
         grown = bytearray(game_text._append_texts(male, ("Three", "Four"))[0])

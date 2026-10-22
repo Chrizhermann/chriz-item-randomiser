@@ -81,13 +81,16 @@ class InventoryRewardRuntimeTests(unittest.TestCase):
         ''' + callback + r'''
             assert(FLPR_Transfer({},'excluded')==-1)
             state=2;assert(FLPR_Transfer({},'selected')==0)
-            local speaker,assignments={},{}
+            local speaker,assignments,expected={},{},'original-target:bg2:mode2:target:32'
             root.Host={controller={assignments=function() return assignments end},native={
                 transfer_inventory_reward=function(_,actor,id,rows,phases)
-                    assert(actor==speaker and id=='original-target:bg2:mode2:target:32' and rows==assignments and phases.held==4)
+                    assert(actor==speaker and id==expected and rows==assignments and phases.held==4)
                     return -1
                 end}}
             assert(FLPR_Transfer(speaker,32)==-1)
+            -- A BG1 row passes its campaign (1).
+            expected='original-target:bg1:mode2:target:16'
+            assert(FLPR_Transfer(speaker,16,1)==-1)
         ''')
 
 

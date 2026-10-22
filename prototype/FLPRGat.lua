@@ -652,7 +652,8 @@ local function prepare_stock_option(api,bundle,build,compile,pristine,targets)
          insertion=first==nil and index or nil}
 end
 
--- Item Randomiser's Mode 2 item rows 12/31/32/39/84 and duplicates/bg2.2da rows 26/19/20/21.
+-- Item Randomiser's Mode 2 item rows 12/31/32/39/84 and duplicates/bg2.2da rows 26/19/20/21;
+-- BG1's rows 16 and 159 (duplicates/bg1.2da's Nemphre copy). EET keeps these BG1 names.
 -- AMCLER01's inventory route is also removed in weidu_action.tpa's amcler.fl
 -- handler. These physical copies belong to the selected dialogue source;
 -- selecting the matching reward destination alone must not remove them.
@@ -665,6 +666,8 @@ local auxiliary_sources={
     ['original-source:bg2:mode2:item:32']={cre='trgeni01',item='sw1h23',selected='FLPR_QM2_32',replacement='blun05'},
     ['original-source:bg2:mode2:item:39']={cre='loutcapt',item='dagg11',selected='FLPR_QM2_39'},
     ['original-source:bg2:mode2:item:84']={cre='amcler01',item='ring43',selected='FLPR_QM2_84'},
+    ['original-source:bg1:mode2:item:16']={cre='aldeth',item='sw1h03',selected='FLPR_QB1_16'},
+    ['original-source:bg1:mode2:item:159']={cre='nemphr',item='scrl1q',selected='FLPR_QB1_159'},
 }
 local function auxiliary_binding(bundle,id,ordinal)
     local m,f=bundle.manifest,bundle.fixture

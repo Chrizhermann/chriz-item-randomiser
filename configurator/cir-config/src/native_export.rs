@@ -489,6 +489,19 @@ impl<'a> Compiler<'a> {
                 let resource = entry(&duplicate, "source_resource")?.as_str().unwrap_or("");
                 let item = entry(&duplicate, "item")?.as_str().unwrap_or("");
                 let creature = format!("{}.CRE", upper(tail(resource, 4)));
+                // The runtime accepts each copy under its registered names
+                // (FLPRGat.lua's auxiliary_sources), which EET keeps.
+                let registered = mode2_rewards::transfer_spec(name.as_str().unwrap_or(""), Naming::default())?;
+                let registered_resource = entry(&registered, "source_resource")?.as_str().unwrap_or("");
+                let registered_item = entry(&registered, "item")?.as_str().unwrap_or("");
+                require((resource, item) == (registered_resource, registered_item), || {
+                    format!(
+                        "This game renames {}.CRE or {}, which Chriz Item Randomiser's runtime knows only by those \
+                         names: {identity}",
+                        upper(tail(registered_resource, 4)),
+                        upper(registered_item)
+                    )
+                })?;
                 let key = tuple_key(&[name_part(resource), name_part(item)]);
                 let records: Vec<&'a Value> = self.template_records.get(&key).cloned().unwrap_or_default();
                 let own = list(entry(&duplicate, "source_ids")?).iter().any(|id| id.as_str() == Some(identity));
@@ -1845,7 +1858,9 @@ pub fn export_native(
             journal = quest_options::patch_kangaxx_journal(&journal, dialogue)?;
         }
         if !text_rewards.is_empty() {
-            let (updated, refs) = mode2_rewards::prepare_reward_texts(&game_text, text_rewards.iter(), language)?;
+            let (updated, refs) =
+                mode2_rewards::prepare_reward_texts(&game_text, text_rewards.iter(), language, naming.game)?;
+            journal = mode2_rewards::journal_lua(&journal, &refs, naming.game)?;
             game_text = updated;
             reward_texts = refs;
         }

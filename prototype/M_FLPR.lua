@@ -340,11 +340,12 @@ local ok, failure = pcall(function()
     })
     -- EEex_LuaAction's NORMAL return holds the speaker before EscapeArea until
     -- its randomized inventory is ready. DONE resumes the original dialogue.
-    function FLPR_Transfer(speaker, target_id)
+    function FLPR_Transfer(speaker, target_id, campaign)
         -- Dialogue parsing strips spaces and colons from Lua chunks. Authored
-        -- Mode 2 inventory rewards pass their numeric row; expand it here.
+        -- Mode 2 inventory rewards pass their numeric row, a BG1 row its
+        -- campaign too (1); expand it here.
         if type(target_id)=='number' then
-            target_id='original-target:bg2:mode2:target:'..tostring(target_id)
+            target_id='original-target:'..(campaign==1 and 'bg1' or 'bg2')..':mode2:target:'..tostring(target_id)
         end
         if storage:get(Core.G.state)==0 then return -1 end -- Existing non-randomized campaign.
         local host=root.Host

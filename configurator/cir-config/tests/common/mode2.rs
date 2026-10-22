@@ -29,10 +29,14 @@ pub fn branches(spec: &Dict) -> Vec<(usize, usize)> {
         .collect()
 }
 
+/// `spec["target_ids"][0]`.
+pub fn target_id(spec: &Dict) -> &str {
+    spec.get("target_ids").and_then(Value::as_list).unwrap()[0].as_str().unwrap()
+}
+
 /// `spec["target_ids"][0].rsplit(":", 1)[1]`.
 pub fn target_number(spec: &Dict) -> &str {
-    let id = spec.get("target_ids").and_then(Value::as_list).unwrap()[0].as_str().unwrap();
-    id.rsplit(':').next().unwrap()
+    target_id(spec).rsplit(':').next().unwrap()
 }
 
 pub fn specs(resource: &str) -> Vec<Dict> {
@@ -396,8 +400,11 @@ pub fn check_dialogue(
                 let event: Vec<u8>;
                 let mut restored;
                 if spec.get("inventory_target").is_some_and(Value::truthy) {
+                    // The target's row, and a BG1 row's campaign (1).
                     let target = target_number(spec);
-                    event = format!("\r\nEEex_LuaAction(\"return(FLPR_Transfer(EEex_LuaAction_Object,{target}))\")").into_bytes();
+                    let campaign = if target_id(spec).starts_with("bg1:") { ",1" } else { "" };
+                    event = format!("\r\nEEex_LuaAction(\"return(FLPR_Transfer(EEex_LuaAction_Object,{target}{campaign}))\")")
+                        .into_bytes();
                     assert_eq!(count(changed, &event), 1);
                     assert!(!contains(changed, text(spec, "recipient_local").as_bytes()));
                     assert!(!contains(changed, text(spec, "event_global").as_bytes()));
@@ -504,10 +511,17 @@ pub fn check_pair(name: &str, original: &[u8], result: &[u8]) {
     }
 }
 
-/// `check_text_graph(resource, original, result, refs)`; returns the clones.
-pub fn check_text_graph(resource: &str, original: &[u8], result: &[u8], refs: &BTreeMap<i64, i64>) -> BTreeMap<usize, usize> {
+/// `check_text_graph(resource, original, result, refs, naming)`; returns the
+/// clones.
+pub fn check_text_graph(
+    resource: &str,
+    original: &[u8],
+    result: &[u8],
+    refs: &BTreeMap<i64, i64>,
+    naming: Naming<'_>,
+) -> BTreeMap<usize, usize> {
     let name = resource.split(':').nth(1).unwrap();
-    let specs = specs(resource);
+    let specs = resource_specs(resource, naming).unwrap();
     // Grant branching is checked independently. Check every text-route edge
     // against that graph, including unchanged external entry states.
     let action_refs: Vec<(i64, i64)> = action_text_refs(resource).into_iter().map(|old| (old, refs[&old])).collect();
@@ -516,10 +530,13 @@ pub fn check_text_graph(resource: &str, original: &[u8], result: &[u8], refs: &B
     let flag = text(&specs[0], "selected_global");
     let mut clones = BTreeMap::new();
     for (state_index, state) in before.states.iter().enumerate() {
+        // A reply's own text (flag 1) and its journal entry (flag 0x10).
         let affected = refs.contains_key(&(u32_at(state, 0) as i64))
-            || outgoing(&before, state_index)
-                .iter()
-                .any(|row| u32_at(row, 0) & 1 != 0 && refs.contains_key(&(u32_at(row, 4) as i64)));
+            || outgoing(&before, state_index).iter().any(|row| {
+                [(1, 4), (0x10, 8)]
+                    .iter()
+                    .any(|&(bit, offset)| u32_at(row, 0) & bit != 0 && refs.contains_key(&(u32_at(row, offset) as i64)))
+            });
         if affected {
             let clone = before.states.len() + clones.len();
             clones.insert(state_index, clone);
@@ -540,6 +557,9 @@ pub fn check_text_graph(resource: &str, original: &[u8], result: &[u8], refs: &B
             if old_entry != 0xFFFF_FFFF && clones.contains_key(&state_index) {
                 let expected = guarded(&before.state_triggers[old_entry as usize], &guard(flag, selected_text));
                 assert_eq!(after.state_triggers[entry as usize], expected);
+            } else if old_entry != 0xFFFF_FFFF {
+                // Another start state keeps its condition; a gated pair before it moves it.
+                assert_eq!(after.state_triggers[entry as usize], before.state_triggers[old_entry as usize]);
             } else {
                 assert_eq!(entry, old_entry);
             }
@@ -557,9 +577,10 @@ pub fn check_text_graph(resource: &str, original: &[u8], result: &[u8], refs: &B
                     let new = &new_rows[cursor];
                     cursor += 1;
                     let expected_reply = if selected_text && flags & 1 != 0 { lookup(reply) } else { reply };
+                    let expected_journal = if selected_text && flags & 0x10 != 0 { lookup(journal) } else { journal };
                     assert_eq!(
                         (u32_at(new, 0), u32_at(new, 4), u32_at(new, 8), u32_at(new, 16), &new[20..28]),
-                        (if reroute { flags | 2 } else { flags }, expected_reply, journal, action_id, next_dialogue)
+                        (if reroute { flags | 2 } else { flags }, expected_reply, expected_journal, action_id, next_dialogue)
                     );
                     let expected_state =
                         if reroute && selected_edge { clones[&(next_state as usize)] as u32 } else { next_state };
@@ -575,5 +596,18 @@ pub fn check_text_graph(resource: &str, original: &[u8], result: &[u8], refs: &B
             assert_eq!(cursor, new_rows.len());
         }
     }
+    // The engine tries start states in the order of their conditions: each
+    // gated pair takes the original condition's place.
+    let start_order = |dialogue: &Dialogue| -> Vec<usize> {
+        let mut entries: Vec<(u32, usize)> =
+            dialogue.states.iter().enumerate().map(|(index, state)| (u32_at(state, 12), index)).collect();
+        entries.sort_unstable();
+        entries.into_iter().filter(|(entry, _)| *entry != 0xFFFF_FFFF).map(|(_, index)| index).collect()
+    };
+    let expected: Vec<usize> = start_order(&before)
+        .into_iter()
+        .flat_map(|state| std::iter::once(state).chain(clones.get(&state).copied()))
+        .collect();
+    assert_eq!(start_order(&after), expected);
     clones
 }

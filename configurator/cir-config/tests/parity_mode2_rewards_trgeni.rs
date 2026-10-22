@@ -52,7 +52,7 @@ fn trgeni_terminal_departure_waits_for_transfer_and_upgrades_previous_patch() {
     assert_eq!(text_original(&result, resource, Naming::default()).unwrap(), Some((original.clone(), refs.clone())));
     let branches = patch_dialogue(&original, std::slice::from_ref(&spec), &[], true, true, None).unwrap();
     check_dialogue("trgeni01", &original, &branches, None, None, Naming::default());
-    check_text_graph(resource, &original, &result, &refs);
+    check_text_graph(resource, &original, &result, &refs, Naming::default());
     for state in [37, 38] {
         let before = Dialogue::new(&legacy, "trgeni01").unwrap();
         let old = &before.actions[u32_at(&outgoing(&before, state)[0], 16) as usize];

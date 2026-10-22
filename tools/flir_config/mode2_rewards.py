@@ -9,7 +9,9 @@ case, other strrefs, replies and blocks that another mod added -- is kept as
 found, and every reply or block that gives the item is gated.
 
 Only the grant is suppressed; its surrounding actions, conditions, dialogue
-replies and journal fields stay intact. The reward event captures the original
+replies and journal fields stay intact (a text route shows Item Randomiser's
+words instead of the texts that name the reward, journal entries among them,
+where the reward moved: TEXT_REFS). The reward event captures the original
 recipient at the grant position. A route whose grant cannot be told apart (no
 grant, the item given twice by one reply or script response, or given another
 way, such as through ActionOverride) is not prepared; the configuration check
@@ -137,14 +139,22 @@ REWARDS["bhoisig"]["required_transfers"] = ("scyarryl",)
 # These rewards must remain carried by the NPC so theft and combat routes still
 # work. Their dialogue transfers the carried assignment through a blocking Lua
 # callback; it never creates a second item for the dialogue recipient.
-for _name, _item, _source, _target, _area, _script, _branches, _charges in (
-    ("trgeni01", "sw1h23", 32, 32, "ar2014", "trgeni01", ((35, 0), (40, 0)), (0, 0, 0)),
-    ("loutcapt", "dagg11", 39, 42, "ar0514", "Dennis", ((26, 0), (30, 0)), (0, 0, 0)),
-    ("amcler01", "ring43", 84, 85, "ar5500", "amcler01", ((7, 0), (8, 0)), (0, 0, 0)),
+for _name, _item, _source, _target, _area, _script, _branches, _charges, _campaign in (
+    ("trgeni01", "sw1h23", 32, 32, "ar2014", "trgeni01", ((35, 0), (40, 0)), (0, 0, 0), "bg2"),
+    ("loutcapt", "dagg11", 39, 42, "ar0514", "Dennis", ((26, 0), (30, 0)), (0, 0, 0), "bg2"),
+    ("amcler01", "ring43", 84, 85, "ar5500", "amcler01", ((7, 0), (8, 0)), (0, 0, 0), "bg2"),
     # Jermien's sword (Item Randomiser's jugjer01.fl), with its daily charge.
-    ("jugjer01", "sw1h26", 31, 31, "ar1103", "Jermien", ((23, 0),), (1, 1, 0)),
+    ("jugjer01", "sw1h26", 31, 31, "ar1103", "Jermien", ((23, 0),), (1, 1, 0), "bg2"),
+    # Aldeth's sword (Item Randomiser's aldeth.fl). He thanks the party in his
+    # estate (AR0128), whose script creates him there.
+    ("aldeth", "sw1h03", 16, 16, "ar0128", "Aldeth", ((27, 0),), (0, 0, 0), "bg1"),
+    # Nemphre's scroll for Arkion's amulet (Item Randomiser's nemphr.fl).
+    # Item Randomiser's lists give her place scrolls only (tier sc), so her
+    # words ("take this scroll") stay true.
+    ("nemphr", "scrl1q", 159, 136, "ar0813", "Nemphre", ((3, 0),), (0, 0, 0), "bg1"),
 ):
-    _alias(_name, _item, _source, _target, _name.upper(), {_name: _branches}, charges=_charges)
+    _alias(_name, _item, _source, _target, _name.upper(), {_name: _branches}, charges=_charges,
+           campaign=_campaign)
     _specification = REWARDS[_name]
     _specification.update(
         grant_kind="transfer", authored_source_ids=_specification["source_ids"],
@@ -190,8 +200,9 @@ SOURCE_REWARDS = {identity: name for name, spec in REWARDS.items() for identity 
 TARGET_REWARDS = {identity: name for name, spec in REWARDS.items() for identity in spec["target_ids"]}
 
 # Original generic descriptions from the matching special WeiDU handlers.
-# Keys are the strrefs of the text that names the reward (the same in EET and
-# BG2:EE), values are source TRA entries.
+# Keys are the strrefs of the text that names the reward (BG2's the same in
+# EET and BG2:EE, BG1's as BG:EE numbers them: see text_refs), values are
+# source TRA entries.
 TEXT_REFS = {
     "bcs:ddwell": {40850: 399},
     "dlg:ppdjinn": {48995: 99},
@@ -205,9 +216,19 @@ TEXT_REFS = {
     "dlg:amcler01": {74025: 100},
     "dlg:udlesa": {52664: 104},
     "dlg:jugjer01": {33760: 698, 33777: 699},
+    # Aldeth's thanks and the journal entry his reward reply adds.
+    "dlg:aldeth": {5740: 1649, 26828: 1650},
 }
 ACTION_TEXT_REFS = {"dlg:amcler01": (74025,)}
+# Journal entries among the TEXT_REFS: their new text keeps the original's
+# title line, and BGEE.LUA lists it with the original's quest (journal_lua).
+JOURNAL_REFS = {"dlg:aldeth": (26828,)}
+# EET numbers BG:EE's own texts 200000 higher than BG:EE does.
+_EET_BG1_TEXTS = 200000
 _TEXT_TRAILER = b"FLPRM2T1"
+# The texts a reply shows: (its flag, the strref's offset), for its own text
+# and its journal entry.
+_TEXT_FIELDS = ((1, 4), (0x10, 8))
 # DestroySelf is instant during dialogue; LuaAction is queued. A speaker whose
 # carried reward is handed over by a queued transfer leaves after it instead.
 _DEPARTURE = (b'EEex_LuaAction("EEex_Action_QueueResponseStringOnAIBase('
@@ -297,6 +318,24 @@ def resource_specs(resource: str, *, game: str | None = None, names: EetNames | 
     return tuple(result)
 
 
+def _text_shift(resource: str, game: str | None) -> int:
+    """How much higher the game numbers a route resource's texts than its campaign does."""
+    campaigns = {REWARDS[key]["campaign"] for key in RESOURCE_REWARDS[resource]}
+    return _EET_BG1_TEXTS if game == "eet" and campaigns == {"bg1"} else 0
+
+
+def text_refs(resource: str, game: str | None = None) -> dict[int, int]:
+    """TEXT_REFS[<resource>] as the game numbers its texts (EET numbers BG1's higher)."""
+    shift = _text_shift(resource, game)
+    return {old + shift: tra for old, tra in TEXT_REFS[resource].items()}
+
+
+def journal_refs(resource: str, game: str | None = None) -> tuple[int, ...]:
+    """The journal entries among the resource's text_refs, as the game numbers them."""
+    shift = _text_shift(resource, game)
+    return tuple(old + shift for old in JOURNAL_REFS.get(resource, ()))
+
+
 def _label(resource: str) -> str:
     kind, name = resource.split(":")
     return f"{name.upper()}.{kind.upper()}"
@@ -357,13 +396,14 @@ def _mark(spec: dict, recipient: bytes) -> bytes:
 
 def _callback(spec: dict, numeric: bool) -> bytes:
     target = spec["target_ids"]
-    match = re.fullmatch(r"bg2:mode2:target:([1-9][0-9]*)", target[0]) if len(target) == 1 else None
+    match = re.fullmatch(r"(bg[12]):mode2:target:([1-9][0-9]*)", target[0]) if len(target) == 1 else None
     if match is None:
         raise ProfileError("The carried reward's transfer target changed")
     # The dialogue parser strips spaces and colons even inside Lua strings.
-    # Parenthesize return; pass the row.
+    # Parenthesize return; pass the row, and a BG1 row's campaign (1).
     if numeric:
-        return f'EEex_LuaAction("return(FLPR_Transfer(EEex_LuaAction_Object,{match[1]}))")'.encode()
+        campaign = ",1" if match[1] == "bg1" else ""
+        return f'EEex_LuaAction("return(FLPR_Transfer(EEex_LuaAction_Object,{match[2]}{campaign}))")'.encode()
     return ('EEex_LuaAction("return FLPR_Transfer(EEex_LuaAction_Object,'
             f'[[original-target:{target[0]}]])")').encode()
 
@@ -585,8 +625,8 @@ def _patch_dialogue(data: bytes, specs: tuple[dict, ...], *, action_refs=None,
     return dialogue.render()
 
 
-def _valid_refs(refs, resource: str) -> bool:
-    return (isinstance(refs, dict) and set(refs) == set(TEXT_REFS[resource]) and
+def _valid_refs(refs, resource: str, game: str | None) -> bool:
+    return (isinstance(refs, dict) and set(refs) == set(text_refs(resource, game)) and
             all(type(value) is int and 0 <= value < 0xFFFFFFFF for value in refs.values()))
 
 
@@ -637,7 +677,7 @@ def _gate_start_states(dlg: _Dialogue, states: list, starts: list[tuple[int, int
 
 def _patch_text_dialogue(data: bytes, resource: str, refs: dict[int, int], *,
                          defer_departure=True, numeric_target=True, game=None, names=None) -> bytes:
-    if not _valid_refs(refs, resource):
+    if not _valid_refs(refs, resource, game):
         raise ProfileError(f"{_label(resource)} requires allocated original reward text")
     specs = resource_specs(resource, game=game, names=names)
     if len(specs) != 1:
@@ -655,9 +695,9 @@ def _patch_text_dialogue(data: bytes, resource: str, refs: dict[int, int], *,
         text, first, count, entry = struct.unpack("<4I", state)
         _outgoing(dlg, state, label)
         transitions = dlg.transitions[first:first + count]
-        replies = {struct.unpack_from("<I", row, 4)[0] for row in transitions
-                   if struct.unpack_from("<I", row)[0] & 1}
-        affected = (replies | {text}) & refs.keys()
+        texts = {struct.unpack_from("<I", row, offset)[0] for row in transitions for bit, offset in _TEXT_FIELDS
+                 if struct.unpack_from("<I", row)[0] & bit}
+        affected = (texts | {text}) & refs.keys()
         if not affected:
             continue
         found.update(affected)
@@ -665,9 +705,10 @@ def _patch_text_dialogue(data: bytes, resource: str, refs: dict[int, int], *,
         struct.pack_into("<I", clone, 0, refs.get(text, text))
         rows = [bytearray(row) for row in transitions]
         for row in rows:
-            if struct.unpack_from("<I", row)[0] & 1:
-                reply = struct.unpack_from("<I", row, 4)[0]
-                struct.pack_into("<I", row, 4, refs.get(reply, reply))
+            for bit, offset in _TEXT_FIELDS:
+                if struct.unpack_from("<I", row)[0] & bit:
+                    old = struct.unpack_from("<I", row, offset)[0]
+                    struct.pack_into("<I", row, offset, refs.get(old, old))
         struct.pack_into("<II", clone, 4, len(dlg.transitions), len(rows))
         dlg.transitions.extend(rows)
         if entry != 0xFFFFFFFF:
@@ -742,7 +783,7 @@ def _text_original(data: bytes, resource: str, *, game=None,
         raise _changed_patch(resource)
     original = header + data[52:size]
     refs = dict(struct.unpack_from("<II", trailer, 60 + n * 8) for n in range(count))
-    if not _valid_refs(refs, resource):
+    if not _valid_refs(refs, resource, game):
         raise _changed_patch(resource)
     variants = [{}]
     # Accept only the exact prior inventory callback patches on a rescan.
@@ -902,6 +943,7 @@ def _script_grants(script, spec: dict, label: str) -> dict[int, tuple]:
     container = spec["recipient_local"] is None
     opcode = _script_grant_opcode(spec)
     shown = spec["item"].upper()
+    # The script text routes are BG2's, which every game numbers alike (text_refs).
     refs = TEXT_REFS.get(spec["resource"], {})
     found = {}
     for index, block in enumerate(script.blocks):
@@ -1060,12 +1102,27 @@ def text_lines(resource: str) -> tuple[tuple[str, int], ...]:
     return tuple((file, number) for number in sorted(set(TEXT_REFS[resource].values())))
 
 
-def prepare_reward_texts(text: GameText, resources, language: str = "en_us") -> tuple[GameText, dict]:
+# A journal entry's title line and the line breaks after it (one or two,
+# as the language's texts have them), before its text.
+_TITLE = re.compile(r"[^\r\n]*\S[^\r\n]*(?:\r?\n)+(?=[\s\S]*\S)")
+
+
+def _titled(original: str | None, body: str) -> str:
+    """<body> under the title of the journal entry <original>, as the Enhanced
+    Editions' quest entries begin; <body> alone if it has none."""
+    title = _TITLE.match(original or "")
+    return title[0] + body if title else body
+
+
+def prepare_reward_texts(text: GameText, resources, language: str = "en_us", *,
+                         game: str | None = None) -> tuple[GameText, dict]:
     """Allocate the requested reward texts, in the game's language, in one append/dedup pass.
 
-    A text's female wording goes to the game's dialogf.tlk. Raises
-    translations.MissingTranslation when the language has no translation of
-    one of them.
+    A text's female wording goes to the game's dialogf.tlk. A journal entry
+    (JOURNAL_REFS) keeps the title line of the entry it replaces, in the
+    game's own words. Raises translations.MissingTranslation when the
+    language has no translation of one of them. The result maps each
+    resource's texts as the <game> numbers them (text_refs) to the new ones.
     """
     needed = sorted(set(resource.lower() for resource in resources) & TEXT_REFS.keys())
     if not needed:
@@ -1074,14 +1131,44 @@ def prepare_reward_texts(text: GameText, resources, language: str = "en_us") -> 
     entries, texts = [], []
     for resource in needed:
         file = text_lines(resource)[0][0]
-        for old, tra in TEXT_REFS[resource].items():
+        journals = journal_refs(resource, game)
+        for old, tra in text_refs(resource, game).items():
             entries.append((resource, old))
-            texts.append(found[file, tra])
+            wording = found[file, tra]
+            if old in journals:
+                wording = tuple(_titled(original, new) for original, new in zip(text.string(old), wording))
+            texts.append(wording)
     updated, refs = text.append(texts)
     result = {resource: {} for resource in needed}
     for (resource, old), ref in zip(entries, refs):
         result[resource][old] = ref
     return updated, result
+
+
+def _journal_entries(lua: bytes, ref: int) -> list[re.Match]:
+    """BGEE.LUA's createEntry lines that list the journal text <ref>: (start, quest, rest)."""
+    return list(re.finditer(rb"(?m)^([ \t]*createEntry[ \t]*\([ \t]*(\d+)[ \t]*,[^,\r\n]*,[ \t]*)"
+                            + str(ref).encode() + rb"([ \t]*,[^\r\n]*\r?\n)", lua))
+
+
+def journal_lua(lua: bytes, texts: dict[str, dict[int, int]], game: str | None = None) -> bytes:
+    """BGEE.LUA with each new journal text listed as the text it replaces is.
+
+    <texts> are prepare_reward_texts' result. The Enhanced Editions' journal
+    files an entry under its quest by BGEE.LUA's createEntry lines: the new
+    text gets a copy of each line that lists the original, beside it. An
+    original that no quest lists stays unlisted, and so does its new text.
+    """
+    for resource, refs in sorted(texts.items()):
+        for old in journal_refs(resource, game):
+            new = refs[old]
+            listed = {entry[2] for entry in _journal_entries(lua, new)}
+            for entry in reversed(_journal_entries(lua, old)):
+                if entry[2] in listed:
+                    continue
+                line = entry[1] + str(new).encode() + entry[3]
+                lua = lua[:entry.end()] + line + lua[entry.end():]
+    return lua
 
 
 def _resource_key(resource: str) -> str:
@@ -1115,7 +1202,7 @@ def route_reasons(resource: str, data: bytes, *, game: str | None = None,
         if resource.startswith("bcs:"):
             _patch_script(examined.original, specs[0], 0)
         elif resource in TEXT_REFS:
-            _patch_text_dialogue(examined.original, resource, {old: old for old in TEXT_REFS[resource]},
+            _patch_text_dialogue(examined.original, resource, {old: old for old in text_refs(resource, game)},
                                  game=game, names=names)
         else:
             _patch_dialogue(examined.original, specs, reasons=reasons)
@@ -1163,7 +1250,7 @@ def patch_reward(resource: str, data: bytes, *, refs: dict[int, int] | None = No
     specs = resource_specs(resource, game=game, names=names)
     if resource.startswith("bcs:"):
         if refs is not None:
-            if resource not in TEXT_REFS or set(refs) != set(TEXT_REFS[resource]):
+            if resource not in TEXT_REFS or set(refs) != set(text_refs(resource, game)):
                 raise ProfileError(f"{_label(resource)} requires its allocated original reward text")
             ddwell_ref = next(iter(refs.values()))
         return _patch_script(examined.original, specs[0],

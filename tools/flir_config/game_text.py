@@ -45,6 +45,24 @@ def _tlk(data: bytes) -> _Tlk:
         raise GameTextError(str(exc)) from exc
 
 
+def _entry_text(data: bytes, ref: int) -> str | None:
+    """The text of entry <ref>; None where the file has no such entry or text, or none in UTF-8."""
+    if len(data) < 0x12 or data[:8] != b"TLK V1  ":
+        raise GameTextError("Unsupported TLK format; expected TLK V1.")
+    count, strings = struct.unpack_from("<II", data, 0xA)
+    base = 0x12 + ref * 0x1A
+    if not 0 <= ref < count or base + 0x1A > len(data):
+        return None
+    flags, = struct.unpack_from("<H", data, base)
+    offset, length = struct.unpack_from("<II", data, base + 0x12)
+    if not flags & 1 or strings + offset + length > len(data):
+        return None
+    try:
+        return data[strings + offset:strings + offset + length].decode("utf-8")
+    except UnicodeDecodeError:
+        return None
+
+
 def _plain(data: bytes, tlk: _Tlk) -> dict[int, bytes]:
     """The text of every text-only entry (no sound), by number."""
     result = {}
@@ -73,6 +91,10 @@ class GameText(NamedTuple):
     """A language's dialog.tlk and its dialogf.tlk, if it has one."""
     male: bytes
     female: bytes | None = None
+
+    def string(self, ref: int) -> tuple[str | None, str | None]:
+        """Entry <ref>'s text in dialog.tlk and in dialogf.tlk; None where a file has none."""
+        return _entry_text(self.male, ref), None if self.female is None else _entry_text(self.female, ref)
 
     def append(self, texts) -> tuple["GameText", list[int]]:
         """Append (male, female) texts as text-only entries, preserving all existing entries and data.

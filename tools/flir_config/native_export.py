@@ -34,7 +34,7 @@ from .original_options import SPELL_SHIELD_SOURCE, spell_shield_spec, patch_spel
 from .mode2_rewards import (SOURCE_REWARDS as MODE2_SOURCES, TARGET_REWARDS as MODE2_TARGETS,
                             RESOURCE_REWARDS as MODE2_RESOURCES, source_spec as mode2_source_spec,
                             target_spec as mode2_target_spec, patch_reward as patch_mode2_reward,
-                            prepare_reward_texts, own_patch as own_mode2_patch,
+                            prepare_reward_texts, own_patch as own_mode2_patch, journal_lua as mode2_journal_lua,
                             TEXT_REFS as MODE2_TEXT_REFS, transfer_spec as mode2_transfer_spec)
 from .mode2_rewards import PHYSICAL_SOURCE_REWARDS, REWARDS as MODE2_REWARDS
 from .container_rewards import (RESOURCE_TARGETS as CONTAINER_RESOURCES,
@@ -287,6 +287,13 @@ def _compile(manifest: dict, world: dict, index: dict, items: dict,
                 # keeps them; the runtime checks each record's bytes again.
                 resource, item = duplicate["source_resource"], duplicate["item"]
                 creature = resource[4:].upper() + ".CRE"
+                # The runtime accepts each copy under its registered names
+                # (FLPRGat.lua's auxiliary_sources), which EET keeps.
+                registered = mode2_transfer_spec(name)
+                _require((resource, item) == (registered["source_resource"], registered["item"]),
+                         f"This game renames {registered['source_resource'][4:].upper()}.CRE or "
+                         f"{registered['item'].upper()}, which Chriz Item Randomiser's runtime knows "
+                         f"only by those names: {identity}")
                 records = template_records[resource, item]
                 if not records and identity not in duplicate["source_ids"]:
                     continue  # A copy of another route's reward that this game does not have.
@@ -867,7 +874,8 @@ def export_native(store: Path, catalog: dict, world: dict, output: Path,
         if kangaxx:
             journal = patch_kangaxx_journal(journal, patches["hlskull.dlg"])
         if text_rewards:
-            text, reward_texts = prepare_reward_texts(text, text_rewards, language)
+            text, reward_texts = prepare_reward_texts(text, text_rewards, language, game=naming.get("game"))
+            journal = mode2_journal_lua(journal, reward_texts, naming.get("game"))
         if container_text_resources:
             text, container_texts = prepare_container_texts(text, container_text_resources, language)
         for revision, manifest in sorted(manifests.items()):

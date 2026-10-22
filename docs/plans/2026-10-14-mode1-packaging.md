@@ -315,18 +315,23 @@ is about as large; a user interface without it keeps the message log line.
 ## Translations
 
 The installer offers English and Polish (Item Randomiser's own translation; CIR's new
-lines, the player messages @1700-@1706 and the journal texts @1650-@1653, fall back to
+lines, the player messages @1700-@1706 and the journal titles @1651-@1653, fall back to
 English there). The configurator writes text into the game's language (`lang/<code>`),
 whatever language CIR was installed in:
 
-- **Reward texts of the extended pools** (2026-10-18): the 20 lines Item Randomiser
-  rewords where a BG2 quest's text names its reward, read by the game's language from
+- **Reward texts of the extended pools** (2026-10-18): the lines Item Randomiser
+  rewords where a quest's text names its reward (24 since 2026-10-23: Jermien's two and
+  Aldeth's thanks and journal entry, @1649 and @1650, came with their routes), read by
+  the game's language from
   `languages/<folder>/` (`tools/flir_config/translations.py`), with a translation's
   female wording in `dialogF.tlk`. English, Polish and German (written for this; Chris
-  reviews it). In other languages those routes are left out with the reason. Open: the
-  other BG2:EE languages (Czech, Spanish, French, Italian, Korean, Brazilian Portuguese,
-  Russian, Ukrainian, Chinese). Call for translators, with the exact lines:
-  [translating-reward-texts.md](../translating-reward-texts.md).
+  reviews it; Polish @1650 is CIR's too, Item Randomiser's Polish lacks it). In other
+  languages those routes are left out with the reason. Aldeth's journal entry keeps the
+  title line of the game's own entry instead of Item Randomiser's titles @1651-@1653,
+  so it needs no title translation. Open: the other languages (Czech, Spanish, French,
+  Italian, Korean, Brazilian Portuguese, Russian, Ukrainian, Chinese; for BG:EE's
+  Aldeth also Hungarian, Japanese and Turkish). Call for translators, with the exact
+  lines: [translating-reward-texts.md](../translating-reward-texts.md).
 - **Still English only:** the Kangaxx option (`hlskull.tra`, `in-game.tra`
   @1500-@1504; Polish has them) and the cursed disguise option's names and
   descriptions. In another language Apply refuses them ("Original quest options
@@ -472,7 +477,8 @@ the package has 116 files (5,798,896 bytes).
   table's `AR1302` for the golems, whose treasure is in `AR1303` (so they never bound).
   Still pinned to the reviewed EET bytes: the Kangaxx dialogue. Since 2026-10-22 the
   rewards an NPC carries (`SCYARRYL`, `TRGENI01`, `LOUTCAPT`, `AMCLER01` and `UDLESA`;
-  since 2026-10-23 also Jermien's sword, `JUGJER01`) are found in the scanned creature
+  since 2026-10-23 also Jermien's sword, `JUGJER01`, and BG1's Aldeth and Nemphre,
+  `ALDETH` and `NEMPHR`) are found in the scanned creature
   files, wherever the game keeps them (see "Rewards an NPC carries" in
   [the configurator notes](../post-install-configurator.md)).
 - **B3 Failure messages.** Resolved; see "Player messages".
