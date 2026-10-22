@@ -25,12 +25,13 @@ from .scripted_sources import (ADAPTER_ID, ITEM, PAYLOAD, RESOURCE, SELECTOR, SO
                                campaign_record)
 from .quest_rewards import QUESTS, quest_spec
 from .prepared import QUEST_CHANGES, applied, require_installed
-from .quest_options import (prepare_quest_options, patch_kangaxx_journal,
+from .quest_options import (KANGAXX_RESOURCES, prepare_quest_options, patch_kangaxx_journal,
                             original_dialogue, original_crypt)
 from .spell_rewards import (SPELL, PAYLOAD as KEY_PAYLOAD, patch_key_spell,
                             ORIGINAL_SHA256 as KEY_ORIGINAL_HASH,
                             PATCHED_SHA256 as KEY_PATCHED_HASH)
-from .original_options import SPELL_SHIELD_SOURCE, spell_shield_spec, patch_spell_shield_stock
+from .original_options import (SPELL_SHIELD_SOURCE, spell_shield_randomized, spell_shield_spec,
+                               patch_spell_shield_stock)
 from .mode2_rewards import (SOURCE_REWARDS as MODE2_SOURCES, TARGET_REWARDS as MODE2_TARGETS,
                             RESOURCE_REWARDS as MODE2_RESOURCES, source_spec as mode2_source_spec,
                             target_spec as mode2_target_spec, patch_reward as patch_mode2_reward,
@@ -146,8 +147,8 @@ def _compile(manifest: dict, world: dict, index: dict, items: dict,
 
     shield = manifest.get("spell_shield")
     if shield is not None:
-        _require(shield == spell_shield_spec(world, randomized=bool(shield["source_id"])),
-                 "Spell Shield stock differs from the scan")
+        randomized = spell_shield_randomized(source["record"].get("authored") for source in manifest["sources"])
+        _require(shield == spell_shield_spec(world, randomized=randomized), "Spell Shield stock differs from the scan")
         native["spell_shield"] = deepcopy(shield)
         use(shield["resource"])
     if "cursed_disguises" in manifest:
@@ -616,7 +617,7 @@ def _compile(manifest: dict, world: dict, index: dict, items: dict,
         native["source_gate"] = {"schema": "flpr-unvisited-fixture-gate-v1", "source_ids": guarded_ids}
     options = manifest.get("original_options", {})
     if options.get("kangaxx"):
-        for resource in ("dlg:hlskull", "bcs:crypt526", "bcs:crypt202"):
+        for resource in KANGAXX_RESOURCES:
             use(resource)
     if options.get("flail_heads"):
         use("dlg:kpglai01")

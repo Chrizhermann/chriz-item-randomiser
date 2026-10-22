@@ -88,7 +88,7 @@ class OriginalOptionTests(unittest.TestCase):
         rows = {row["source"]: row for row in cursed_disguise_choices(ALL_DISGUISE_ITEMS, item_revisions=True)}
         self.assertNotIn("plat17", rows)
         self.assertEqual([v["description_tra"] for v in rows["leat06"]["variants"]], [210, 210, 211])
-        with self.assertRaisesRegex(ProfileError, "needs brac06"):
+        with self.assertRaisesRegex(ProfileError, "need BRAC06.ITM to disguise BRAC08.ITM"):
             cursed_disguise_choices(ALL_DISGUISE_ITEMS - {"brac06"})
 
     def test_disguise_changes_only_appearance_and_requested_description(self):

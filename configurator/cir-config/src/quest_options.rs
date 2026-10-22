@@ -10,7 +10,7 @@
 //! The reviewed hashes are read through [`crate::pins`] as
 //! `quest_options.ORIGINAL_HASHES`.
 
-use crate::error::{Error, Result};
+use crate::error::{Error, ErrorKind, Result};
 use crate::game_text::{append_texts, string, table};
 use crate::py::{
     ascii_bytes, count_bytes, digits_value, find_bytes, is_line_end, is_line_start, put_u32, replace_bytes, slice, splitn_bytes,
@@ -26,11 +26,92 @@ pub const ORIGINAL_HASHES: &[(&str, &str)] = &[
     ("crypt526.bcs", "9230a20a9177fe1eef1723fba0e8daa07e949663682a3bddf18e585c0482efe6"),
     ("crypt202.bcs", "ac8fd01b37e902f4484f0cf136def8411be5682aa396ebaabcb1c3723f748aaf"),
 ];
+/// BG2:EE's own HLSKULL.DLG (2.7.3.0); EET installs the one above in
+/// override. It has the same states and transitions; only the texts of its
+/// triggers and actions differ (no final line breaks, IfValidForPartyDialogue,
+/// facing SW), and the patch copies those unchanged.
+pub const BG2EE_HASHES: &[(&str, &str)] =
+    &[("hlskull.dlg", "61f119c7d0bf21b236b169c084e5921f015e365cf39917ba5558e73c4eb8fe6c")];
+/// The quest's files the Kangaxx option changes.
+pub const KANGAXX_RESOURCES: [&str; 3] = ["dlg:hlskull", "bcs:crypt526", "bcs:crypt202"];
 const TRAILER: &[u8] = b"FLPROPT1";
 
 /// `ORIGINAL_HASHES[name]` with any test overrides.
 pub fn original_hash(name: &str) -> Result<String> {
     crate::pins::get("quest_options.ORIGINAL_HASHES", ORIGINAL_HASHES, name).ok_or_else(|| Error::key(name))
+}
+
+/// Whether `digest` is a reviewed original of `name` (`ORIGINAL_HASHES[name]`
+/// or `BG2EE_HASHES.get(name)`, with any test overrides).
+fn reviewed(name: &str, digest: &str) -> Result<bool> {
+    Ok(digest == original_hash(name)?
+        || crate::pins::get("quest_options.BG2EE_HASHES", BG2EE_HASHES, name).is_some_and(|hash| hash == digest))
+}
+
+/// `KANGAXX_RESOURCES`' file names in a sentence: "A", "A and B", "A, B and C".
+fn filenames(resources: &[&str]) -> String {
+    let names: Vec<String> = resources
+        .iter()
+        .map(|resource| {
+            let (kind, name) = resource.split_once(':').expect("kind:name");
+            format!("{}.{}", name.to_ascii_uppercase(), kind.to_ascii_uppercase())
+        })
+        .collect();
+    match names.split_last() {
+        Some((last, [])) => last.clone(),
+        Some((last, rest)) => format!("{} and {last}", rest.join(", ")),
+        None => String::new(),
+    }
+}
+
+/// Why a game cannot have the Kangaxx option, or `None`.
+///
+/// The option changes the quest's files as Baldur's Gate II has them, or as
+/// it changed them before. `hash(identity)` is a game resource's SHA-256, if
+/// the game has it; `read(identities)` returns the bytes of the files that are
+/// no reviewed original, to recognise this option's own change in them. It is
+/// called once at most.
+pub fn kangaxx_problem(
+    hash: impl Fn(&str) -> Option<String>,
+    read: impl FnOnce(&[&str]) -> Result<HashMap<String, Vec<u8>>>,
+) -> Result<Option<String>> {
+    let missing: Vec<&str> = KANGAXX_RESOURCES.into_iter().filter(|resource| hash(resource).is_none()).collect();
+    if !missing.is_empty() {
+        return Ok(Some(format!("Kangaxx items need {}, which this game does not have", filenames(&missing))));
+    }
+    let filename = |resource: &str| {
+        let (kind, name) = resource.split_once(':').expect("kind:name");
+        format!("{name}.{kind}")
+    };
+    let mut unreviewed = Vec::new();
+    for resource in KANGAXX_RESOURCES {
+        if !reviewed(&filename(resource), &hash(resource).expect("present"))? {
+            unreviewed.push(resource);
+        }
+    }
+    let found = if unreviewed.is_empty() { HashMap::new() } else { read(&unreviewed)? };
+    let mut changed = Vec::new();
+    for resource in unreviewed {
+        let data = found.get(resource).ok_or_else(|| Error::key(resource))?;
+        let recovered = if resource.starts_with("dlg:") {
+            original_dialogue(&filename(resource), data)
+        } else {
+            original_crypt(&filename(resource), data)
+        };
+        match recovered {
+            Ok(_) => {}
+            Err(error) if error.kind == ErrorKind::Profile => changed.push(resource),
+            Err(error) => return Err(error),
+        }
+    }
+    if changed.is_empty() {
+        return Ok(None);
+    }
+    let them = if changed.len() == 1 { "it" } else { "them" };
+    Ok(Some(format!(
+        "Kangaxx items need {} as Baldur's Gate II has {them}; another mod changed {them}",
+        filenames(&changed)
+    )))
 }
 
 fn check(data: &[u8], expected: &str, label: &str) -> Result<()> {
@@ -192,8 +273,7 @@ pub fn original_dialogue(name: &str, data: &[u8]) -> Result<Vec<u8>> {
     if name != "hlskull.dlg" {
         return Err(Error::profile("Unsupported original-option dialogue"));
     }
-    let expected = original_hash(name)?;
-    if sha256_hex(data) == expected {
+    if reviewed(name, &sha256_hex(data))? {
         return Ok(data.to_vec());
     }
     if data.len() < 12 || &data[data.len() - 12..data.len() - 4] != TRAILER {
@@ -218,7 +298,10 @@ pub fn original_dialogue(name: &str, data: &[u8]) -> Result<Vec<u8>> {
         return Err(Error::profile("Invalid original-option dialogue recovery references"));
     }
     let original = [header, &data[0x34..size]].concat();
-    check(&original, &expected, name)?;
+    let expected = sha256_hex(&original);
+    if !reviewed(name, &expected)? {
+        return Err(Error::profile(format!("{name} changed; review the original option adapter")));
+    }
     if patch_hlskull_original(&original, &refs, &expected)? != data {
         return Err(Error::profile("Original-option dialogue patch changed"));
     }
@@ -450,7 +533,8 @@ fn patch_hlskull_original(data: &[u8], refs: &BTreeMap<i64, i64>, expected: &str
 /// Patch HLSKULL.DLG (original or our own verified patch) with `refs[0..22]`.
 pub fn patch_hlskull(data: &[u8], refs: &BTreeMap<i64, i64>) -> Result<Vec<u8>> {
     let original = original_dialogue("hlskull.dlg", data)?;
-    patch_hlskull_original(&original, refs, &original_hash("hlskull.dlg")?)
+    let expected = sha256_hex(&original);
+    patch_hlskull_original(&original, refs, &expected)
 }
 
 /// One `re.finditer` match of the createEntry pattern: (start, end,

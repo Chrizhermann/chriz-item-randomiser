@@ -9,9 +9,10 @@ draft ids (`adventure-<12 hex>`) and the workspace folders are masked; drafts
 sent back are each server's own. Further phases cover CIR's install record
 (read while the editor runs), the scripted quest-pool reward, a preset with
 the options that add their own plan fields (More Spell Shield copies, cursed
-disguises), and applying configurations to a synthetic test runtime, where
-each editor runs in turn on the same game and the game's files are compared
-afterwards.
+disguises), the options each game's preset offers and refuses, More Spell
+Shield copies where the scroll's own row cannot be randomised, and applying
+configurations to a synthetic test runtime, where each editor runs in turn on
+the same game and the game's files are compared afterwards.
 
     python configurator/parity/editor_check.py
 """
@@ -35,6 +36,7 @@ from cli_check import PYTHON, build, sources
 from flir_config.profiles import write_json  # noqa: E402
 from test_cursed_disguises import resources as cursed_resources  # noqa: E402
 from test_postinstall_blpool_script import compiled_blpool, pool_game, pool_plan, write_registry  # noqa: E402
+from test_quest_options import crypt_fixture, dialogue_fixture  # noqa: E402
 from test_postinstall_resources import make_itm, mark_eet  # noqa: E402
 from test_postinstall_world_formats import item_record, make_are, make_sto  # noqa: E402
 
@@ -382,6 +384,67 @@ def options_phase(root: Path):
     return concurrent_phase("preset options", root, catalog, world, steps)
 
 
+# Each game's own preset, by platform.
+OWN_PRESET = {"eet": "eet-original", "bgee": "bg1-original", "bg2ee": "bg2-original"}
+# The options that need something of the game, asked for one at a time.
+NEEDY_OPTIONS = ("kangaxx", "flail_heads", "totsc_tome", "more_spell_shield", "cursed_disguise")
+
+
+def availability_phase(root: Path, platform: str, area: str, *, quest_files: bool = False):
+    """The options the recommended preset offers on this game, with the
+    reasons for those it cannot apply, and the preset asked for each of them
+    anyway. With `quest_files`, the EET game has the shop, its scroll and the
+    cursed items, and Kangaxx's quest files as another mod changed them."""
+    name = f"options offered {platform}" + (" with quest files" if quest_files else "")
+    game = root / name.replace(" ", "-")
+    build(game, platform, area)
+    if quest_files:
+        add_option_resources(game)
+        quest = {"hlskull.dlg": dialogue_fixture("hlskull.dlg"), "crypt526.bcs": crypt_fixture("AR0526"),
+                 "crypt202.bcs": crypt_fixture("AR0202")}
+        for filename, data in quest.items():
+            (game / "override" / filename).write_bytes(data)
+    catalog, world = scan(game, root / f"{name.replace(' ', '-')}-scans", "en_US" if quest_files else None)
+    steps = [("recommended", lambda server, state: server.request("GET", "/api/recommended"))]
+    for option in NEEDY_OPTIONS:
+        preset = {"id": OWN_PRESET[platform], "options": {option: True}}
+        steps.append((f"preset with {option}", lambda server, state, preset=preset: server.post("/api/template", preset)))
+    return concurrent_phase(name, root, catalog, world, steps)
+
+
+def spell_shield_phase(root: Path, label: str, *, scroll_flags: int = 0x4C,
+                       scroll_rows: int = 1) -> tuple[int, int, int]:
+    """The preset with More Spell Shield copies where the scroll's own row
+    cannot be randomised: one that inventories do not show (`scroll_flags`),
+    or two SCRL8X rows in the shop. The fit leaves the row out, the shop keeps
+    the extra copies, and the shop's Spell Sequencer scroll (the same tier)
+    stays a reward."""
+    name = f"spell shield {label}"
+    game = root / name.replace(" ", "-")
+    build(game)
+    add_option_resources(game)
+    override = game / "override"
+    for resref, flags in (("scrl8x", scroll_flags), ("scrl8l", 0x4C)):
+        scroll = bytearray(make_itm())
+        struct.pack_into("<I", scroll, 0x18, flags)
+        (override / f"{resref}.itm").write_bytes(bytes(scroll))
+    rows = [(item_record(resref, expiration=0, charges=(1, 1, 0), flags=0), 1, 0)
+            for resref in ["scrl8x"] * scroll_rows + ["scrl8l"]]
+    (override / "udduer01.sto").write_bytes(bytes(make_sto(rows)))
+    catalog, world = scan(game, root / f"{name.replace(' ', '-')}-scans", "en_US")
+
+    def own(path):
+        return lambda server, state: server.post(path, preset_draft(state))
+
+    steps = [
+        ("preset", lambda server, state: server.post("/api/template", OPTIONS_PRESET)),
+        ("save", own("/api/save")),
+        ("validate", own("/api/validate")),
+        ("prepare", own("/api/prepare")),
+    ]
+    return concurrent_phase(name, root, catalog, world, steps)
+
+
 OPEN_GAME = "Close this game and its installer before applying settings"
 
 
@@ -503,6 +566,10 @@ def main() -> int:
         steps = session() + registry_steps(game, ["/api/recommended"])
         phases = [concurrent_phase("synthetic", root, catalog, world, steps), pool_phase(root),
                   options_phase(root)]
+        phases += [availability_phase(root, platform, area) for platform, area in APPLY_GAMES]
+        phases.append(availability_phase(root, "eet", "area", quest_files=True))
+        phases += [spell_shield_phase(root, "hidden scroll", scroll_flags=0x44),
+                   spell_shield_phase(root, "two scroll rows", scroll_rows=2)]
         phases += [apply_phase(root, platform, area) for platform, area in APPLY_GAMES]
         phases.append(apply_phase(root, "eet", "area", options=True))
         for result in phases:

@@ -1154,7 +1154,12 @@ pub fn compile(
         notes: Vec::new(),
     };
     if let Some(shield) = shield {
-        let expected = original_options::spell_shield_spec(world, shield.at("source_id")?.truthy())?;
+        let randomized = original_options::spell_shield_randomized(
+            manifest_sources
+                .iter()
+                .map(|source| source.at("record").ok().and_then(|record| record.get("authored")).unwrap_or(&Value::Null)),
+        );
+        let expected = original_options::spell_shield_spec(world, randomized)?;
         require(shield.py_eq(&expected), || "Spell Shield stock differs from the scan".into())?;
         compiler.use_value(shield.at("resource")?)?;
     }
@@ -1250,7 +1255,7 @@ pub fn compile(
     let options = manifest.get("original_options");
     let option = |name: &str| options.and_then(|options| options.get(name)).is_some_and(Value::truthy);
     if option("kangaxx") {
-        for resource in ["dlg:hlskull", "bcs:crypt526", "bcs:crypt202"] {
+        for resource in quest_options::KANGAXX_RESOURCES {
             compiler.use_resource(resource)?;
         }
     }

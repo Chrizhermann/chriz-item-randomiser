@@ -2,6 +2,7 @@
 
 from copy import deepcopy
 from pathlib import Path
+import struct
 import sys
 import tempfile
 import unittest
@@ -129,27 +130,123 @@ class SpellShieldOptionTests(unittest.TestCase):
         with self.assertRaisesRegex(ProfileError, "Spell Shield"):
             _validate_campaign(manifest)
 
-    def test_randomised_stock_follows_whether_the_preset_reads_bg2s_tables(self):
+    def test_randomised_stock_follows_the_campaigns_rewards(self):
+        """The scroll's shop row is randomised exactly when it is one of the
+        campaign's rewards, whatever the preset, its tables or pool choices."""
         _, catalog, world, profile, plan, _, _ = self.fixture(randomized=False)
-        manifest = compile_campaign(profile, catalog, world, plan)
-        manifest["original_options"]["scrolls"] = True
-        # The scroll's row is in BG2's extended table: only a preset reading it randomises it,
-        # also one that reads Siege of Dragonspear's tables (synthetic ones here).
+        copies = compile_campaign(profile, catalog, world, plan)
+        _, catalog, world, profile, plan, _, _ = self.fixture()
+        randomised = compile_campaign(profile, catalog, world, plan)
         with sod_tables():
-            for template, randomised in (("bg1-original", False), ("bg1-boss-loot", False),
-                                         ("bg2-original", True), ("eet-original", True),
-                                         ("sod-original", False), ("bg1-sod-original", False),
-                                         ("eet-sod-original", True), ("eet-sod-boss-loot", True)):
-                with self.subTest(template=template):
-                    altered = deepcopy(manifest)
-                    altered["original_template_id"] = template
-                    altered["revision"] = _digest({key: value for key, value in altered.items()
-                                                   if key != "revision"})
-                    if randomised:
-                        with self.assertRaisesRegex(ProfileError, "Spell Shield source does not match"):
+            for template in ("bg1-original", "bg1-boss-loot", "bg2-original", "eet-original",
+                             "sod-original", "bg1-sod-original", "eet-sod-original", "eet-sod-boss-loot"):
+                for name, manifest in (("copies", copies), ("randomised", randomised)):
+                    for scrolls, items in ((True, "extended"), (False, "standard")):
+                        with self.subTest(template=template, manifest=name, scrolls=scrolls, items=items):
+                            altered = deepcopy(manifest)
+                            altered["original_template_id"] = template
+                            altered["original_options"]["scrolls"] = scrolls
+                            altered["original_choices"]["items"] = items
+                            altered["revision"] = _digest({key: value for key, value in altered.items()
+                                                           if key != "revision"})
                             _validate_campaign(altered)
-                    else:
-                        _validate_campaign(altered)
+        # Metadata that disagrees with the rewards is refused both ways.
+        for manifest, source_id in ((copies, SPELL_SHIELD_SOURCE), (randomised, "")):
+            with self.subTest(source_id=source_id):
+                altered = deepcopy(manifest)
+                altered["spell_shield"]["source_id"] = source_id
+                altered["revision"] = _digest({key: value for key, value in altered.items()
+                                               if key != "revision"})
+                with self.assertRaisesRegex(ProfileError, "Spell Shield"):
+                    _validate_campaign(altered)
+
+    def test_binding_takes_the_randomised_source_from_the_plans_rewards(self):
+        """With the scroll's row enabled, a plan without it among its rewards
+        keeps the shop's extra copies; its metadata must say so."""
+        _, catalog, world, profile, plan, _, _ = self.fixture()
+        bind_profile(profile, catalog, world, plan)
+        copies_profile = edit_profile(profile, catalog, include=["synth001"], exclude=["scrl8x"])
+        copies = deepcopy(plan)
+        copies.update(registrations=[], spell_shield=spell_shield_spec(world, randomized=False),
+                      sources=[{"item": "synth001", "policy": "relocate",
+                                "source_ids": ["sto:udduer01/item/0"], "registration_ids": []}])
+        bound = bind_profile(copies_profile, catalog, world, copies)
+        self.assertEqual(bound["plan"]["spell_shield"]["quantity"], 3)
+        self.assertEqual(compile_campaign(copies_profile, catalog, world, copies)["spell_shield"]["source_id"], "")
+        for altered_profile, altered, source_id in ((copies_profile, copies, SPELL_SHIELD_SOURCE),
+                                                    (profile, plan, "")):
+            with self.subTest(source_id=source_id):
+                forged = deepcopy(altered)
+                forged["spell_shield"]["source_id"] = source_id
+                with self.assertRaisesRegex(ProfileError, "Spell Shield"):
+                    bind_profile(altered_profile, catalog, world, forged)
+
+    def fit_game(self, *, scroll_flags=0x4C, scroll_rows=1):
+        """A game for fitting the preset: the Spell Shield scroll (its item
+        flags, its shop rows), another shop reward of the scroll's tier and a
+        place of that tier; the draft holds only those rows."""
+        temp = tempfile.TemporaryDirectory(prefix="flir-spell-shield-fit-")
+        self.addCleanup(temp.cleanup)
+        game = Path(temp.name) / "game"
+        make_game(game, [("SCRL8X", make_itm()), ("SYNTH001", make_itm())])
+        mark_eet(game)
+        for name, flags in (("scrl8x", scroll_flags), ("synth001", 0x4C)):
+            item = bytearray(make_itm())
+            struct.pack_into("<I", item, 0x18, flags)
+            (game / "override" / f"{name}.itm").write_bytes(item)
+        rows = [(item_record("synth001", expiration=0, flags=1), 1, 0)]
+        rows += [(item_record("scrl8x", expiration=0, charges=(1, 1, 0), flags=0), 1, 0)] * scroll_rows
+        (game / "override" / "udduer01.sto").write_bytes(bytes(make_sto(rows)))
+        (game / "override" / "ar0808.are").write_bytes(make_are([], [("Chest1", 0, 0)]))
+        catalog = scan_game(game)
+        world = scan_world(catalog)
+        draft = resolve_template(catalog, world, "bg2-original", items="extended", targets="extended",
+                                 options=self.FIT_OPTIONS)
+        other = source_row("bg2:base:item:9001", item="synth001", resource="sto:udduer01", ident="x",
+                           source_ids=["sto:udduer01/item/0"])
+        other.update(campaign="bg2", tier="s7", source="udduer01.sto",
+                     source_ref="lists/items/base/bg2.2da:9001")
+        draft["items"] = [row for row in draft["items"] if is_spell_shield_row(row)] + [other]
+        draft["targets"] = [row for row in draft["targets"] if row["id"] == "bg2:base:target:309"]
+        return catalog, world, draft
+
+    FIT_OPTIONS = DEFAULT_OPTIONS | {"scrolls": True, "more_spell_shield": True}
+
+    def fit(self, catalog, world, draft, function=None):
+        from flir_config.original_configuration import fit_original_configuration
+        with patch("flir_config.original_configuration.resolve_template", return_value=draft), \
+                patch("flir_config.original_registrations.resolve_template", return_value=draft):
+            fitted = (function or fit_original_configuration)(
+                catalog, world, "bg2-original", items="extended", targets="extended", options=self.FIT_OPTIONS)
+            return fitted, compile_campaign(fitted["profile"], catalog, world, fitted["plan"])
+
+    def test_fit_that_leaves_the_scroll_row_out_keeps_the_copies(self):
+        """The runtime check rejects this game's scroll (not shown in
+        inventories): the fit leaves its row out, the shop keeps the copies."""
+        catalog, world, draft = self.fit_game(scroll_flags=0x44)
+        fitted, campaign = self.fit(catalog, world, draft)
+        self.assertEqual(fitted["plan"]["spell_shield"], spell_shield_spec(world, randomized=False))
+        self.assertEqual(campaign["spell_shield"]["quantity"], 3)
+        self.assertEqual([(row["id"], row["reason"]) for row in fitted["not_used"]], [
+            ("bg2:mode2:item:228", "Native source requires an unexpired, visible droppable item: "
+                                   + SPELL_SHIELD_SOURCE)])
+        self.assertEqual({row["id"] for row in campaign["sources"]}, {"sto:udduer01/item/0"})
+        # A scroll the runtime can move is randomised.
+        catalog, world, draft = self.fit_game()
+        fitted, campaign = self.fit(catalog, world, draft)
+        self.assertEqual(fitted["plan"]["spell_shield"], spell_shield_spec(world, randomized=True))
+        self.assertEqual({row["id"] for row in campaign["sources"]}, {"sto:udduer01/item/0", SPELL_SHIELD_SOURCE})
+
+    def test_duplicate_scroll_rows_leave_the_scroll_row_out_and_keep_the_copies(self):
+        """Two SCRL8X rows in the shop: the first gets the copies as in the
+        original component, and the row the lists randomise is ambiguous."""
+        catalog, world, draft = self.fit_game(scroll_rows=2)
+        built, campaign = self.fit(catalog, world, draft, build_original_configuration)
+        self.assertEqual(built["plan"]["spell_shield"], spell_shield_spec(world, randomized=False))
+        self.assertEqual(built["plan"]["spell_shield"]["original_source_id"], "sto:udduer01/item/1")
+        self.assertEqual(built["not_used"], [{"id": "bg2:mode2:item:228", "row": "lists/items/mode2/bg2.2da:228",
+                                              "kind": "reward", "reason": "ambiguous-source-records"}])
+        self.assertEqual({row["id"] for row in campaign["sources"]}, {"sto:udduer01/item/0"})
 
     def test_duplicate_stock_keeps_first_row_option_but_cannot_silently_drop_rewards(self):
         _, _, world, _, plan, _, _ = self.fixture()

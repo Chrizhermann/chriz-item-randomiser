@@ -16,7 +16,7 @@ from test_postinstall_resources import make_tlk
 from test_game_text import parse_dialogue
 
 
-def dialogue_fixture(name):
+def dialogue_fixture(name, action=b'SetGlobal("KangaxxQuest","GLOBAL",1)\r\n'):
     kangaxx = name == "hlskull.dlg"
     states, transitions = [], []
     count = 16 if kangaxx else 10
@@ -34,7 +34,6 @@ def dialogue_fixture(name):
     data = bytearray(b"DLG V1.0" + bytes(0x34 - 8))
     so = len(data); data.extend(b"".join(states))
     to = len(data); data.extend(b"".join(transitions))
-    action = b'SetGlobal("KangaxxQuest","GLOBAL",1)\r\n'
     text = len(data); data.extend(action)
     ao = len(data); data.extend(struct.pack("<II", text, len(action)))
     struct.pack_into("<10I", data, 8, len(states), so, len(transitions), to,
@@ -90,6 +89,29 @@ class OriginalQuestOptionTests(unittest.TestCase):
             else: self.assertEqual(selected[2], self.refs[20])
         self.assertEqual(options.original_dialogue("hlskull.dlg", data), self.resources["hlskull.dlg"])
         self.assertEqual(options.patch_hlskull(data, self.refs), data)
+
+    def test_kangaxx_takes_bg2ees_own_dialogue_too(self):
+        """BG2:EE's own HLSKULL.DLG has EET's states and transitions; only the
+        texts of its triggers and actions differ, which the patch copies."""
+        game = dialogue_fixture("hlskull.dlg", action=b'SetGlobal("KangaxxQuest","GLOBAL",1)')
+        eet = parse_dialogue(options.patch_hlskull(self.resources["hlskull.dlg"], self.refs))
+        with self.assertRaisesRegex(ProfileError, "^hlskull.dlg changed; review original-option dialogue$"):
+            options.patch_hlskull(game, self.refs)
+        with patch.dict(options.BG2EE_HASHES, {"hlskull.dlg": hashlib.sha256(game).hexdigest()}):
+            data = options.patch_hlskull(game, self.refs)
+            new = parse_dialogue(data)
+            self.assertEqual((new["states"], new["transitions"], new["transition_triggers"]),
+                             (eet["states"], eet["transitions"], eet["transition_triggers"]))
+            self.assertEqual(new["actions"][0], b'SetGlobal("KangaxxQuest","GLOBAL",1)')
+            self.assertEqual(new["actions"][1:], eet["actions"][1:])
+            self.assertEqual(options.original_dialogue("hlskull.dlg", data), game)
+            self.assertEqual(options.patch_hlskull(data, self.refs), data)
+            journal = (b'function buildQuestsTable()\r\n\tcreateQuest ( 74458 )\r\n'
+                       b'\tcreateEntry ( 74458, -1, 54293, {}, nil )\r\nend\r\n')
+            self.assertIn(b'createEntry    ( 74458, -1, 1020, {}, nil )', options.patch_kangaxx_journal(journal, data))
+            output, _ = options.prepare_quest_options({**self.resources, "hlskull.dlg": game}, make_tlk(["old"]),
+                                                      kangaxx=True)
+            self.assertEqual(options.original_dialogue("hlskull.dlg", output["hlskull.dlg"]), game)
 
     def test_kangaxx_new_key_dialogue_has_exact_choices_and_journal_exit(self):
         new = parse_dialogue(options.patch_hlskull(self.resources["hlskull.dlg"], self.refs))

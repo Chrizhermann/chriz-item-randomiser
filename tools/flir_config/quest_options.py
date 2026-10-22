@@ -8,6 +8,7 @@ CIR makes the Flail of Ages change itself when it is installed
 """
 from __future__ import annotations
 
+from collections.abc import Callable, Mapping
 import hashlib
 from pathlib import Path
 import re
@@ -24,12 +25,62 @@ ORIGINAL_HASHES = {
     "crypt526.bcs": "9230a20a9177fe1eef1723fba0e8daa07e949663682a3bddf18e585c0482efe6",
     "crypt202.bcs": "ac8fd01b37e902f4484f0cf136def8411be5682aa396ebaabcb1c3723f748aaf",
 }
+# BG2:EE's own HLSKULL.DLG (2.7.3.0); EET installs the one above in override.
+# It has the same states and transitions; only the texts of its triggers and
+# actions differ (no final line breaks, IfValidForPartyDialogue, facing SW),
+# and the patch copies those unchanged.
+BG2EE_HASHES = {
+    "hlskull.dlg": "61f119c7d0bf21b236b169c084e5921f015e365cf39917ba5558e73c4eb8fe6c",
+}
+# The quest's files the Kangaxx option changes.
+KANGAXX_RESOURCES = ("dlg:hlskull", "bcs:crypt526", "bcs:crypt202")
 _TRAILER = b"FLPROPT1"
+
+
+def _filenames(resources: list[str]) -> str:
+    names = [f"{name.upper()}.{kind.upper()}" for kind, name in (resource.split(":") for resource in resources)]
+    return names[0] if len(names) == 1 else ", ".join(names[:-1]) + " and " + names[-1]
+
+
+def kangaxx_problem(hashes: Mapping[str, str],
+                    read: Callable[[list[str]], Mapping[str, bytes]]) -> str | None:
+    """Why a game cannot have the Kangaxx option, or None.
+
+    The option changes the quest's files as Baldur's Gate II has them, or as
+    it changed them before. <hashes> maps the game's resource identities to
+    their SHA-256; <read>(identities) returns the bytes of the files that are
+    no reviewed original, to recognise this option's own change in them. It
+    is called once at most.
+    """
+    missing = [resource for resource in KANGAXX_RESOURCES if resource not in hashes]
+    if missing:
+        return f"Kangaxx items need {_filenames(missing)}, which this game does not have"
+    filenames = {resource: "{1}.{0}".format(*resource.split(":")) for resource in KANGAXX_RESOURCES}
+    unreviewed = [resource for resource in KANGAXX_RESOURCES if hashes[resource] not in
+                  (ORIGINAL_HASHES[filenames[resource]], BG2EE_HASHES.get(filenames[resource]))]
+    found = read(unreviewed) if unreviewed else {}
+    changed = []
+    for resource in unreviewed:
+        try:
+            (original_dialogue if resource.startswith("dlg:") else original_crypt)(filenames[resource],
+                                                                                   found[resource])
+        except ProfileError:
+            changed.append(resource)
+    if not changed:
+        return None
+    them = "it" if len(changed) == 1 else "them"
+    return f"Kangaxx items need {_filenames(changed)} as Baldur's Gate II has {them}; another mod changed {them}"
 
 
 def _check(data: bytes, expected: str, label: str) -> None:
     if hashlib.sha256(data).hexdigest() != expected:
         raise ProfileError(f"{label} changed; review the original option adapter")
+
+
+def _original_hash(name: str, data: bytes) -> str | None:
+    """The hash of these bytes when they are a reviewed original of <name>."""
+    digest = hashlib.sha256(data).hexdigest()
+    return digest if digest in (ORIGINAL_HASHES[name], BG2EE_HASHES.get(name)) else None
 
 
 def _texts(path: str) -> dict[int, str]:
@@ -76,7 +127,7 @@ def original_dialogue(name: str, data: bytes) -> bytes:
     """Recover only exact original bytes or a fully verified patch made here."""
     if name != "hlskull.dlg":
         raise ProfileError("Unsupported original-option dialogue")
-    if hashlib.sha256(data).hexdigest() == ORIGINAL_HASHES[name]:
+    if _original_hash(name, data):
         return data
     if len(data) < 12 or data[-12:-4] != _TRAILER:
         raise ProfileError(f"{name} changed; review original-option dialogue")
@@ -91,8 +142,10 @@ def original_dialogue(name: str, data: bytes) -> bytes:
     if len(refs) != count:
         raise ProfileError("Invalid original-option dialogue recovery references")
     original = header + data[0x34:size]
-    _check(original, ORIGINAL_HASHES[name], name)
-    if _patch_hlskull(original, refs, ORIGINAL_HASHES[name]) != data:
+    expected = _original_hash(name, original)
+    if expected is None:
+        raise ProfileError(f"{name} changed; review the original option adapter")
+    if _patch_hlskull(original, refs, expected) != data:
         raise ProfileError("Original-option dialogue patch changed")
     return original
 
@@ -209,7 +262,8 @@ def _patch_hlskull(data: bytes, refs: dict[int, int], expected: str) -> bytes:
 
 
 def patch_hlskull(data: bytes, refs: dict[int, int]) -> bytes:
-    return _patch_hlskull(original_dialogue("hlskull.dlg", data), refs, ORIGINAL_HASHES["hlskull.dlg"])
+    original = original_dialogue("hlskull.dlg", data)
+    return _patch_hlskull(original, refs, hashlib.sha256(original).hexdigest())
 
 
 def patch_kangaxx_journal(lua: bytes, patched_dialogue: bytes) -> bytes:

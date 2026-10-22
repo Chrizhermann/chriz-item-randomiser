@@ -463,6 +463,25 @@ fn call(name: &str, args: &Args) -> Result<Value> {
             &args.refs("refs").expect("refs"),
         )?),
         "quest_options.ward_item" => bytes_value(&quest_options::ward_item(&args.refs("refs").expect("refs"))?),
+        "quest_options.kangaxx_problem" => {
+            let hashes = args.dict("hashes");
+            let files = args.blob_map("files");
+            let mut requested = Vec::new();
+            let problem = quest_options::kangaxx_problem(
+                |resource| hashes.get(resource).and_then(Value::as_str).map(str::to_string),
+                |wanted| {
+                    requested.push(Value::from(wanted.iter().map(|resource| resource.to_string()).collect::<Vec<_>>()));
+                    wanted
+                        .iter()
+                        .map(|resource| {
+                            let data = files.get(*resource).ok_or_else(|| Error::key(resource))?;
+                            Ok((resource.to_string(), data.clone()))
+                        })
+                        .collect()
+                },
+            )?;
+            Value::Dict(cir_config::dict! {"problem" => problem.map_or(Value::Null, Value::from), "read" => Value::List(requested)})
+        }
         "quest_options.prepare_quest_options" => {
             let (output, tlk) = quest_options::prepare_quest_options(
                 &args.blob_map("resources"),
@@ -624,6 +643,9 @@ fn call(name: &str, args: &Args) -> Result<Value> {
             bytes_value(&original_options::patch_spell_shield_stock(&args.bytes("data"))?)
         }
         "original_options.is_spell_shield_row" => Value::Bool(original_options::is_spell_shield_row(args.value("row"))),
+        "original_options.spell_shield_randomized" => Value::Bool(original_options::spell_shield_randomized(
+            args.value("rows").as_list().expect("list argument"),
+        )),
         "original_options.spell_shield_spec" => original_options::spell_shield_spec(args.value("world"), args.bool("randomized"))?,
         "original_options.validate_spell_shield_spec" => {
             original_options::validate_spell_shield_spec(args.value("spec"))?;

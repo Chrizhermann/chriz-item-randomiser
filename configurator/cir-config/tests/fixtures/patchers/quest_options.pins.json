@@ -1,4 +1,7 @@
 {
+ "quest_options.BG2EE_HASHES": {
+  "hlskull.dlg": "dd6f7476964f2b23d88045a9b4a044a532104a274e5039b3e13a73e91a1f43d9"
+ },
  "quest_options.ORIGINAL_HASHES": {
   "crypt202.bcs": "bd3e1fdd4f41015b13b049daf1f5caf7cd7ac5ee7cd0e0b1d494171a2cee10d0",
   "crypt526.bcs": "2583f4a85daef90eced3e5c8bfb96ed17f4363d4c7653a8be73fb0b045b3793c",

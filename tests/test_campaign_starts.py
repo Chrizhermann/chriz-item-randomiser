@@ -21,6 +21,7 @@ sys.path.insert(0, str(ROOT / "tools"))
 from flir_config.campaigns import _render_lua, read_campaign
 from flir_config.native_export import NEXT_SCHEMA, export_native
 from flir_config.original_configuration import build_original_configuration
+from flir_config.original_options import SPELL_SHIELD_SOURCE, spell_shield_spec
 from flir_config.platform import (PRESET_CAMPAIGNS, STARTS, area_part, game_platform, has_sod,
                                   preset_campaigns, preset_game, recommended_campaign)
 from flir_config.profiles import ProfileError, edit_profile, new_profile
@@ -361,6 +362,44 @@ class PresetStartTests(StartsFixture):
         tob = read_campaign(self.store, written["starts"]["TOB"])
         self.assertEqual(set(tob["randomization"]["sources"]), {chest("ar4000")})
         self.assertEqual(set(tob["randomization"]["targets"]), {"original-target:bg2:base:target:2"})
+
+    def test_a_start_without_the_spell_shield_source_keeps_the_shops_copies(self):
+        """More Spell Shield copies are a shop change of their own: a start that
+        cannot reach the randomised scroll leaves it in the shop, with the copies."""
+        self.build("eet", ("ar0100", "ar0200", "ar4000"))
+        scroll = bytearray(make_itm())
+        struct.pack_into("<I", scroll, 0x18, 0x4c)
+        (self.game / "override" / "scrl8x.itm").write_bytes(scroll)
+        (self.game / "override" / "udduer01.sto").write_bytes(make_sto([(reward("SCRL8X"), 1, 0)]))
+        self.catalog = scan_game(self.game)
+        self.world = scan_world(self.catalog)
+        draft = self.draft()
+        draft["options"] |= {"scrolls": True, "more_spell_shield": True}
+        shield = source_row("bg2:mode2:item:228", item="scrl8x", resource="sto:udduer01", ident="sw10",
+                            tier="s7", source_ids=["sto:udduer01/item/0"])
+        shield.update(campaign="bg2", family="mode2", source="udduer01.sto", token="w01",
+                      source_ref="lists/items/mode2/bg2.2da:228")
+        place_s7 = next(row for row in draft["targets"] if row["id"] == "bg2:base:target:1")
+        place_s7 = {**place_s7, "id": "bg2:base:target:3", "tier": "s7", "area": "ar0200",
+                    "location": "ar0200.are", "area_resource": "are:ar0200", "target_ids": [place("ar0200")]}
+        draft["items"] = [row for row in draft["items"] if row["campaign"] == "bg2"] + [shield]
+        draft["targets"] = [row for row in draft["targets"] if row["campaign"] == "bg2"] + [place_s7]
+        with patch("flir_config.original_configuration.resolve_template", return_value=draft), \
+                patch("flir_config.original_registrations.resolve_template", return_value=draft):
+            built = build_original_configuration(self.catalog, self.world, "eet-original")
+            written = write_starts(built["profile"], built["plan"], self.catalog, self.world, self.store)
+            export_native(self.store, self.catalog, self.world, self.output,
+                          starts=written["starts"], main=written["main"])
+        copies = spell_shield_spec(self.world, randomized=False)
+        for start, randomised in (("BG1", True), ("SOD", True), ("SOA", True), ("TOB", False)):
+            with self.subTest(start=start):
+                campaign = read_campaign(self.store, written["starts"][start])
+                self.assertTrue(campaign["original_options"]["more_spell_shield"])
+                self.assertEqual(campaign["spell_shield"], {**copies, "source_id": SPELL_SHIELD_SOURCE}
+                                 if randomised else copies)
+                self.assertEqual(SPELL_SHIELD_SOURCE in {row["id"] for row in campaign["sources"]}, randomised)
+                self.assertTrue((self.output / "campaign-store" / "revisions" /
+                                 f"{campaign['revision']}.spell-shield.effective.sto").is_file())
 
     def sod_draft(self, campaigns: tuple[str, ...]) -> dict:
         """The draft above with SoD table rows (one in BD0100, one virtual) and, on BG:EE,

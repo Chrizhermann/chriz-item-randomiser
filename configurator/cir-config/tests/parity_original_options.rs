@@ -135,7 +135,7 @@ fn item_revisions_keeps_plate_and_uses_its_authored_leather_descriptions() {
     assert_eq!(descriptions, [Some(210), Some(210), Some(211)]);
     let error = cursed_disguise_choices(&without(&["brac06"]), "eet", false).unwrap_err();
     assert_eq!(error.kind, ErrorKind::Profile);
-    assert!(error.message.contains("needs brac06"), "{}", error.message);
+    assert!(error.message.contains("need BRAC06.ITM to disguise BRAC08.ITM"), "{}", error.message);
 }
 
 #[test]

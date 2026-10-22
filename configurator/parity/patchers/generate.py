@@ -58,7 +58,8 @@ from test_postinstall_world_formats import item_record, make_cre, make_sto  # no
 from configurator.parity import codepages  # noqa: E402
 
 OUT = ROOT / "configurator" / "cir-config" / "tests" / "fixtures" / "patchers"
-TABLES = {"quest_options.ORIGINAL_HASHES": quest_options.ORIGINAL_HASHES}
+TABLES = {"quest_options.ORIGINAL_HASHES": quest_options.ORIGINAL_HASHES,
+          "quest_options.BG2EE_HASHES": quest_options.BG2EE_HASHES}
 ERROR_KINDS = ((ProfileError, "Profile"), (ScanError, "Scan"), (GameTextError, "GameText"), (KeyError, "Key"),
                (TypeError, "Type"))
 
@@ -195,9 +196,46 @@ def quest_option_inputs(line_endings: str) -> dict:
     return resources
 
 
+def kangaxx_cases(s: Scenario, resources: dict, patched: bytes, crypts: dict, bg2ee: bytes) -> None:
+    """kangaxx_problem: which files it reads, and why a game cannot have the option."""
+    ids = {"dlg:hlskull": "hlskull.dlg", "bcs:crypt526": "crypt526.bcs", "bcs:crypt202": "crypt202.bcs"}
+    other = quest_tests.dialogue_fixture("hlskull.dlg", action=b'SetGlobal("KangaxxQuest","GLOBAL",2)\r\n')
+    originals = {resource: resources[name] for resource, name in ids.items()}
+    own = {"dlg:hlskull": patched, **{resource: crypts[name] for resource, name in ids.items() if name in crypts}}
+    for label, files in (
+            ("reviewed", originals), ("bg2ee dialogue", {**originals, "dlg:hlskull": bg2ee}),
+            ("own dialogue", {**originals, "dlg:hlskull": patched}), ("own patches", own),
+            ("other dialogue", {**originals, "dlg:hlskull": other}),
+            ("other crypts", {**originals, "bcs:crypt526": originals["bcs:crypt526"] + b"x",
+                              "bcs:crypt202": b"SC\nCR\nCO\nCO\nRS\nRS\nCR\nSC\n"}),
+            ("other everything", {"dlg:hlskull": other, "bcs:crypt526": b"", "bcs:crypt202": patched}),
+            ("missing crypt", {key: value for key, value in originals.items() if key != "bcs:crypt202"}),
+            ("missing dialogue and crypt", {"bcs:crypt526": originals["bcs:crypt526"]}),
+            ("missing all", {"are:other": b"area"})):
+        hashes = {resource: sha(data) for resource, data in files.items()}
+
+        def run(files=files, hashes=hashes):
+            requested = []
+
+            def read(wanted):
+                requested.append(list(wanted))
+                return {resource: files[resource] for resource in wanted}
+
+            return {"problem": quest_options.kangaxx_problem(hashes, read), "read": requested}
+
+        s.case(f"kangaxx_problem {label}", "quest_options.kangaxx_problem", {"hashes": hashes, "files": files}, run)
+    # A file the read cannot supply.
+    hashes = {resource: sha(data) for resource, data in {**originals, "dlg:hlskull": other}.items()}
+    s.case("kangaxx_problem unread", "quest_options.kangaxx_problem", {"hashes": hashes, "files": {}},
+           lambda: {"problem": quest_options.kangaxx_problem(hashes, lambda wanted: {}), "read": [["dlg:hlskull"]]})
+
+
 def quest_options_scenario(name: str, line_endings: str) -> Scenario:
     resources = quest_option_inputs(line_endings)
-    s = Scenario(name, {"quest_options.ORIGINAL_HASHES": {key: sha(value) for key, value in resources.items()}})
+    # BG2:EE's own HLSKULL.DLG: no final line break after its action.
+    bg2ee = quest_tests.dialogue_fixture("hlskull.dlg", action=b'SetGlobal("KangaxxQuest","GLOBAL",1)')
+    s = Scenario(name, {"quest_options.ORIGINAL_HASHES": {key: sha(value) for key, value in resources.items()},
+                        "quest_options.BG2EE_HASHES": {"hlskull.dlg": sha(bg2ee)}})
     if line_endings == "lf":
         quest_rewards_cases(s)
         for path in ("languages/english/hlskull.tra", "languages/english/in-game.tra",
@@ -220,6 +258,13 @@ def quest_options_scenario(name: str, line_endings: str) -> Scenario:
            lambda: quest_options.patch_hlskull(patched, refs))
     s.case("patch_hlskull moved refs", "quest_options.patch_hlskull", {"data": patched, "refs": moved},
            lambda: quest_options.patch_hlskull(patched, moved))
+    with s.overrides():
+        bg2ee_patched = quest_options.patch_hlskull(bg2ee, refs)
+    for label, data in (("bg2ee", bg2ee), ("bg2ee reexport", bg2ee_patched)):
+        s.case(f"patch_hlskull {label}", "quest_options.patch_hlskull", {"data": data, "refs": refs},
+               lambda data=data: quest_options.patch_hlskull(data, refs))
+        s.case(f"original_dialogue {label}", "quest_options.original_dialogue", {"name": "hlskull.dlg", "data": data},
+               lambda data=data: quest_options.original_dialogue("hlskull.dlg", data))
     for label, bad in (("missing ref", {k: v for k, v in refs.items() if k != 21}),
                        ("ref sentinel", {**refs, 4: 0xFFFFFFFF}), ("negative ref", {**refs, 4: -1})):
         s.case(f"patch_hlskull {label}", "quest_options.patch_hlskull", {"data": original, "refs": bad},
@@ -309,6 +354,7 @@ def quest_options_scenario(name: str, line_endings: str) -> Scenario:
         s.case(f"patch_kangaxx_journal {label}", "quest_options.patch_kangaxx_journal",
                {"lua": journal, "patched_dialogue": dialogue},
                lambda journal=journal, dialogue=dialogue: quest_options.patch_kangaxx_journal(journal, dialogue))
+    kangaxx_cases(s, resources, patched, crypts, bg2ee)
     return s
 
 
@@ -1305,11 +1351,15 @@ def inventory_scenarios() -> list[Scenario]:
     return [store, creature, group]
 
 
-def shop_world(records, *, sha256="1" * 64, extra_sources=(), resource_id="sto:udduer01"):
+SCROLL_ITEM = {"id": "itm:scrl8x", "sha256": "3" * 64}
+
+
+def shop_world(records, *, sha256="1" * 64, extra_sources=(), resource_id="sto:udduer01", scroll=SCROLL_ITEM):
     store = parse_sto(bytes(make_sto(records)))
     sources = [{"id": f"sto:udduer01/item/{row['record_index']}", "resource": "sto:udduer01", "item": row["resref"],
                 "record": row} for row in store["items"]]
-    return {"resources": [{"id": "are:other", "sha256": "2" * 64}, {"id": resource_id, "sha256": sha256}],
+    return {"resources": [{"id": "are:other", "sha256": "2" * 64}, {"id": resource_id, "sha256": sha256}]
+            + ([scroll] if scroll else []),
             "sources": list(reversed(sources)) + list(extra_sources)}
 
 
@@ -1341,6 +1391,10 @@ def original_options_scenario() -> Scenario:
                          ("list", [row]), ("none", None)):
         s.case(f"is_spell_shield_row {label}", "original_options.is_spell_shield_row", {"row": value},
                lambda value=value: original_options.is_spell_shield_row(value))
+    for label, rows in (("none", []), ("row", [row]), ("among others", [{"id": "x"}, None, row, "row"]),
+                        ("changed", [dict(row, token="w02")]), ("others", [{"id": "x"}, [row]])):
+        s.case(f"spell_shield_randomized {label}", "original_options.spell_shield_randomized", {"rows": rows},
+               lambda rows=rows: original_options.spell_shield_randomized(rows))
     worlds = {
         "existing": shop_world([(item_record("other"), 4, 0), (item_record("scrl8x", charges=(1, 2, 3), flags=7), 9, 1)]),
         "zero": shop_world([(item_record("scrl8x"), 0, 0)]),
@@ -1352,9 +1406,12 @@ def original_options_scenario() -> Scenario:
         "bad hash": shop_world([(item_record("scrl8x"), 1, 0)], sha256="ABC"),
         "string index": shop_world([(item_record("scrl8x"), 1, 0)], extra_sources=[
             {"id": "x", "resource": "sto:udduer01", "item": "other", "record": {"record_index": "a"}}]),
-        "missing key": {"resources": [{"id": "sto:udduer01", "sha256": "1" * 64}],
+        "missing key": {"resources": [{"id": "sto:udduer01", "sha256": "1" * 64}, SCROLL_ITEM],
                         "sources": [{"id": "x", "resource": "sto:udduer01", "record": {"record_index": 0}}]},
-        "no sources": {"resources": [{"id": "sto:udduer01", "sha256": "1" * 64}]},
+        "no sources": {"resources": [{"id": "sto:udduer01", "sha256": "1" * 64}, SCROLL_ITEM]},
+        # The option stocks SCRL8X.ITM, which another mod may have removed.
+        "no scroll item": shop_world([(item_record("scrl8x"), 1, 0)], scroll=None),
+        "scroll row without id": shop_world([(item_record("scrl8x"), 1, 0)], scroll={"sha256": "3" * 64}),
         "quantity float": shop_world([(item_record("scrl8x"), 1, 0)]),
         # The world scan left out a file it could not read (sources.scan_world).
         "unreadable store": dict(shop_world([]), unreadable=[{"id": "sto:udduer01", "reason": "Truncated STOR header."}]),
