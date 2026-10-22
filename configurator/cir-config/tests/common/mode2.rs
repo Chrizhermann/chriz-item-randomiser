@@ -4,7 +4,7 @@
 
 use super::builders::{contains, count, index, outgoing, replace, u32_at};
 use cir_config::json::{Dict, Value};
-use cir_config::mode2_rewards::{patch_dialogue, resource_specs, ACTION_TEXT_REFS};
+use cir_config::mode2_rewards::{patch_dialogue, resource_specs, Naming, ACTION_TEXT_REFS};
 use cir_config::py::{put_u32, splitlines_bytes, str_value};
 use cir_config::quest_options::Dialogue;
 use std::collections::{BTreeMap, BTreeSet};
@@ -36,7 +36,7 @@ pub fn target_number(spec: &Dict) -> &str {
 }
 
 pub fn specs(resource: &str) -> Vec<Dict> {
-    resource_specs(resource).unwrap()
+    resource_specs(resource, Naming::default()).unwrap()
 }
 
 /// Python's `bytes.isspace()` for one byte; also what `\s` matches in a
@@ -49,8 +49,9 @@ fn is_word(byte: u8) -> bool {
     byte.is_ascii_alphanumeric() || byte == b'_'
 }
 
-/// One match of `(?i)\bVERB\(\s*"ITEM"\s*,\s*([^,()]+?)\s*(?:,[^()]*)?\)` at
-/// `at`: its end and the group's span.
+/// One match of `(?i)\bVERB\(\s*"ITEM"\s*,\s*([^,()]+?(?:\([^()]*\))?)\s*(?:,[^()]*)?\)`
+/// at `at`: its end and the group's span. A recipient may be an object
+/// function, as Varci's `LastTalkedToBy(Myself)`.
 fn grant_at(actions: &[u8], at: usize, verb: &[u8], item: &[u8]) -> Option<(usize, (usize, usize))> {
     let spaces = |mut at: usize| {
         while actions.get(at).is_some_and(|byte| is_space(*byte)) {
@@ -82,6 +83,16 @@ fn grant_at(actions: &[u8], at: usize, verb: &[u8], item: &[u8]) -> Option<(usiz
     // The lazy group ends where only spaces lead to the call's end or to
     // further arguments without a nested call.
     for end in group + 1..=limit {
+        // The object function's own arguments follow its name at once.
+        let end = if end == limit && actions.get(end) == Some(&b'(') {
+            let close = end + 1 + actions[end + 1..].iter().take_while(|byte| !matches!(byte, b'(' | b')')).count();
+            if actions.get(close) != Some(&b')') {
+                return None;
+            }
+            close + 1
+        } else {
+            end
+        };
         let after = spaces(end);
         match actions.get(after) {
             Some(b',') => {
@@ -330,15 +341,16 @@ fn guard(flag: &str, selected: bool) -> Vec<u8> {
     format!("{}Global(\"{flag}\",\"GLOBAL\",1)\r\n", if selected { "" } else { "!" }).into_bytes()
 }
 
-/// `check_dialogue(name, original, result, action_refs, branches)`.
+/// `check_dialogue(name, original, result, action_refs, branches, naming)`.
 pub fn check_dialogue(
     name: &str,
     original: &[u8],
     result: &[u8],
     action_refs: Option<&BTreeMap<i64, i64>>,
     gated: Option<&[(usize, usize)]>,
+    naming: Naming<'_>,
 ) {
-    let spec = &specs(&format!("dlg:{name}"))[0];
+    let spec = &resource_specs(&format!("dlg:{name}"), naming).unwrap()[0];
     let reviewed = gated.map_or_else(|| branches(spec), <[_]>::to_vec);
     let before = Dialogue::new(original, name).unwrap();
     let after = Dialogue::new(result, name).unwrap();

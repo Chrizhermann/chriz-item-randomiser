@@ -21,6 +21,12 @@ Own patches are recognised too, so an exported revision re-exports byte for
 byte: text routes and container dialogues carry a recovery trailer, scripts
 are reconstructed exactly, and the other dialogues are checked by removing the
 patch and applying it again.
+
+The routes are registered as each campaign's own game names its resources
+(BG:EE's names for BG1's routes). EET renames BG1's areas and the BG1 items
+whose names Baldur's Gate II uses (game_names.py): the functions that take a
+<game> and its EET <names> return a route as that game names it. Without a
+game, a route keeps its campaign's own names.
 """
 from __future__ import annotations
 
@@ -31,6 +37,7 @@ import re
 import struct
 
 from . import translations
+from .game_names import EetNames, convert_resource
 from .profiles import ProfileError
 from .quest_options import _Dialogue
 from .quest_rewards import _global_action, _global_guard
@@ -41,12 +48,13 @@ from .script_text import (argument, block_actions, block_parts, calls, integer_a
 ADAPTER_ID = "mode2-reward-v1"
 
 
-def _spec(name, extension, item, source, target, recipient, charges, branches):
-    suffix = f"M2_{source}"
+def _spec(name, extension, item, source, target, recipient, charges, branches, campaign="bg2"):
+    # A BG1 route's flags are its own: B1_<row> beside BG2's M2_<row>.
+    suffix = f"{'B1' if campaign == 'bg1' else 'M2'}_{source}"
     return {
-        "quest": name, "resource": f"{extension}:{name}", "item": item,
-        "source_ids": (f"original-source:bg2:mode2:item:{source}",),
-        "target_ids": (f"bg2:mode2:target:{target}",),
+        "quest": name, "resource": f"{extension}:{name}", "item": item, "campaign": campaign,
+        "source_ids": (f"original-source:{campaign}:mode2:item:{source}",),
+        "target_ids": (f"{campaign}:mode2:target:{target}",),
         "selected_global": "FLPR_Q" + suffix, "consumed_global": "FLPR_X" + suffix,
         "event_global": "FLPR_E" + suffix,
         "recipient_local": None if extension == "bcs" and name == "asysta01" else "FLPR_R" + suffix,
@@ -71,13 +79,18 @@ REWARDS = {
     # The Sahuagin king's bracer (Item Randomiser's tadpoles1.fl). The same
     # reply also gives the treasury's rod: see "sahrod" below.
     "sahkng01": _spec("sahkng01", "dlg", "brac19", 57, 58, "LastTalkedToBy", (0, 0, 0), ((81, 0),)),
+    # Varci's payment for Casson's rescue (Item Randomiser's varci.fl), the
+    # shield EET names SHLD07A.
+    "varci": _spec("varci", "dlg", "shld07", 20, 20, "LastTalkedToBy(Myself)", (0, 0, 0), ((11, 0),),
+                   campaign="bg1"),
 }
 DIRECT_REWARDS = tuple(REWARDS)
 
 
-def _alias(key, item, source, target, alias, dialogues, *, charges=(0, 0, 0), recipient="LastTalkedToBy"):
+def _alias(key, item, source, target, alias, dialogues, *, charges=(0, 0, 0), recipient="LastTalkedToBy",
+           campaign="bg2"):
     primary = next(iter(dialogues))
-    spec = _spec(primary, "dlg", item, source, target, recipient, charges, dialogues[primary])
+    spec = _spec(primary, "dlg", item, source, target, recipient, charges, dialogues[primary], campaign)
     spec.update(resources=tuple("dlg:" + name for name in dialogues), dialogues=dialogues,
                 event_global="FLPR_EA_" + alias, recipient_local="FLPR_RA_" + alias)
     if target is None:
@@ -212,26 +225,60 @@ _GIVING = {140: ("GiveItemCreate", 0, 0), 82: ("CreateItem", 0, 0), 15: ("GiveIt
 _GIVING_CALLS = {name.lower(): text for name, text, _ in _GIVING.values()}
 
 
-def source_spec(source_id: str) -> dict:
+def _in_game(spec: dict, game: str | None, names: EetNames | None) -> dict:
+    """The route as the scanned game names its items and places (EET renames BG1's).
+
+    Its conversations keep their names: EET renames only BG1 resources whose
+    names Baldur's Gate II uses, which no route's conversation does. Were one
+    renamed, its rows would name another conversation than the route and be
+    left out.
+    """
+    if game is None:
+        return spec
+
+    def name(resref: str, kind: str) -> str:
+        return convert_resource(resref, kind, spec["campaign"], game, names)
+
+    spec["item"] = spec["payload"]["resref"] = name(spec["item"], "itm")
+    if spec.get("replacement"):
+        spec["replacement"] = name(spec["replacement"], "itm")
+    if spec.get("source_resource"):
+        kind, resref = spec["source_resource"].split(":")
+        spec["source_resource"] = f"{kind}:{name(resref, kind)}"
+    placement = spec.get("inventory_target")
+    if placement:
+        placement["area"] = name(placement["area"], "are")
+        placement["creature_resource"] = "cre:" + name(placement["creature_resource"][4:], "cre")
+    return spec
+
+
+def reward(key: str, *, game: str | None = None, names: EetNames | None = None) -> dict:
+    """The route <key> (a REWARDS key) as the game names it."""
+    if key not in REWARDS:
+        raise ProfileError(f"Unsupported extended reward route: {key}")
+    return _in_game(deepcopy(REWARDS[key]), game, names)
+
+
+def source_spec(source_id: str, *, game: str | None = None, names: EetNames | None = None) -> dict:
     if source_id not in SOURCE_REWARDS:
         raise ProfileError(f"Unsupported extended reward source: {source_id}")
-    return deepcopy(REWARDS[SOURCE_REWARDS[source_id]])
+    return _in_game(deepcopy(REWARDS[SOURCE_REWARDS[source_id]]), game, names)
 
 
-def target_spec(target_id: str) -> dict:
+def target_spec(target_id: str, *, game: str | None = None, names: EetNames | None = None) -> dict:
     if target_id not in TARGET_REWARDS:
         raise ProfileError(f"Unsupported extended reward recipient: {target_id}")
-    return deepcopy(REWARDS[TARGET_REWARDS[target_id]])
+    return _in_game(deepcopy(REWARDS[TARGET_REWARDS[target_id]]), game, names)
 
 
-def transfer_spec(name: str) -> dict:
+def transfer_spec(name: str, *, game: str | None = None, names: EetNames | None = None) -> dict:
     """Inventory copies which must be guarded alongside a scripted source."""
     if name not in TRANSFER_SPECS:
         raise ProfileError(f"Unsupported carried reward: {name}")
-    return deepcopy(TRANSFER_SPECS[name])
+    return _in_game(deepcopy(TRANSFER_SPECS[name]), game, names)
 
 
-def resource_specs(resource: str) -> tuple[dict, ...]:
+def resource_specs(resource: str, *, game: str | None = None, names: EetNames | None = None) -> tuple[dict, ...]:
     """All routes with a grant in a resource; includes both independent ARAN rewards.
 
     Each copy names its route (the REWARDS key) under "route".
@@ -241,7 +288,7 @@ def resource_specs(resource: str) -> tuple[dict, ...]:
         raise ProfileError(f"Unsupported extended reward resource: {resource}")
     result = []
     for key in RESOURCE_REWARDS[resource]:
-        spec = deepcopy(REWARDS[key])
+        spec = _in_game(deepcopy(REWARDS[key]), game, names)
         spec["route"] = key
         spec["resource"] = resource
         spec["quest"] = resource.split(":")[1]
@@ -589,10 +636,10 @@ def _gate_start_states(dlg: _Dialogue, states: list, starts: list[tuple[int, int
 
 
 def _patch_text_dialogue(data: bytes, resource: str, refs: dict[int, int], *,
-                         defer_departure=True, numeric_target=True) -> bytes:
+                         defer_departure=True, numeric_target=True, game=None, names=None) -> bytes:
     if not _valid_refs(refs, resource):
         raise ProfileError(f"{_label(resource)} requires allocated original reward text")
-    specs = resource_specs(resource)
+    specs = resource_specs(resource, game=game, names=names)
     if len(specs) != 1:
         raise ProfileError("A text route needs exactly one source flag")
     flag = specs[0]["selected_global"]
@@ -678,10 +725,12 @@ def _changed_patch(resource: str) -> ProfileError:
     return ProfileError(f"{_label(resource)} carries a changed copy of the reward route's own patch")
 
 
-def _text_original(data: bytes, resource: str) -> tuple[bytes, dict[int, int]] | None:
+def _text_original(data: bytes, resource: str, *, game=None,
+                   names=None) -> tuple[bytes, dict[int, int]] | None:
     """The original and text refs of a text route this adapter patched; None if unpatched."""
+    specs = resource_specs(resource, game=game, names=names)
     if len(data) < 12 or data[-12:-4] != _TEXT_TRAILER:
-        if _carries_patch(_read_dialogue(data, resource), resource_specs(resource)):
+        if _carries_patch(_read_dialogue(data, resource), specs):
             raise _changed_patch(resource)
         return None
     length = struct.unpack_from("<I", data, len(data) - 4)[0]
@@ -698,11 +747,12 @@ def _text_original(data: bytes, resource: str) -> tuple[bytes, dict[int, int]] |
     variants = [{}]
     # Accept only the exact prior inventory callback patches on a rescan.
     # TRGENI had exports both before and after its departure-order fix.
-    if resource_specs(resource)[0].get("inventory_target"):
+    if specs[0].get("inventory_target"):
         variants += [{"defer_departure": departure, "numeric_target": False}
                      for departure in ((True, False) if resource == "dlg:trgeni01" else (True,))]
     try:
-        if any(_patch_text_dialogue(original, resource, refs, **variant) == data for variant in variants):
+        if any(_patch_text_dialogue(original, resource, refs, game=game, names=names, **variant) == data
+               for variant in variants):
             return original, refs
     except ProfileError:
         pass
@@ -763,13 +813,13 @@ def _logical(data: bytes, resource: str) -> tuple:
     return data[:8], data[48:52], tuple(states)
 
 
-def _static_original(data: bytes, resource: str) -> bytes | None:
+def _static_original(data: bytes, resource: str, *, game=None, names=None) -> bytes | None:
     """Undo this adapter's patch of a dialogue without a trailer; None if unpatched.
 
     The result reads as the original did. Patching it again must give the same
     dialogue as <data>, or <data> is not exactly this adapter's patch.
     """
-    specs = resource_specs(resource)
+    specs = resource_specs(resource, game=game, names=names)
     dialogue = _read_dialogue(data, resource)
     if not _carries_patch(dialogue, specs):
         return None
@@ -984,17 +1034,17 @@ def _unpatched_script(data: bytes, spec: dict, newline: bytes, selected: bytes,
 _Examined = namedtuple("_Examined", "original own refs")
 
 
-def _examine(resource: str, data: bytes) -> _Examined:
+def _examine(resource: str, data: bytes, *, game=None, names=None) -> _Examined:
     """The unpatched resource (exact, or as the engine reads it), and our patch's text refs."""
     if not isinstance(data, bytes):
         raise ProfileError("Unsupported reward resource bytes")
     if resource.startswith("bcs:"):
-        original, ref, own = _script_original(data, resource_specs(resource)[0])
+        original, ref, own = _script_original(data, resource_specs(resource, game=game, names=names)[0])
         return _Examined(original, own, ref)
     if resource in TEXT_REFS:
-        recovered = _text_original(data, resource)
+        recovered = _text_original(data, resource, game=game, names=names)
         return _Examined(data, False, None) if recovered is None else _Examined(recovered[0], True, recovered[1])
-    original = _static_original(data, resource)
+    original = _static_original(data, resource, game=game, names=names)
     return _Examined(data, False, None) if original is None else _Examined(original, True, None)
 
 
@@ -1042,29 +1092,31 @@ def _resource_key(resource: str) -> str:
     return candidates[0]
 
 
-def own_patch(resource: str, data: bytes) -> bool:
+def own_patch(resource: str, data: bytes, *, game: str | None = None, names: EetNames | None = None) -> bool:
     """Whether the bytes are this adapter's own patch, verified exactly.
 
     False for an unpatched resource; raises for a changed copy of our patch.
     """
-    return _examine(_resource_key(resource), data).own
+    return _examine(_resource_key(resource), data, game=game, names=names).own
 
 
-def route_reasons(resource: str, data: bytes) -> dict[str, str]:
+def route_reasons(resource: str, data: bytes, *, game: str | None = None,
+                  names: EetNames | None = None) -> dict[str, str]:
     """Why each route with a grant in this resource cannot be prepared from these bytes.
 
     Routes missing from the result can be prepared; this runs the same patch
     that the export runs, with stand-in text references.
     """
     resource = _resource_key(resource)
-    specs = resource_specs(resource)
+    specs = resource_specs(resource, game=game, names=names)
     reasons: dict[str, str] = {}
     try:
-        examined = _examine(resource, data)
+        examined = _examine(resource, data, game=game, names=names)
         if resource.startswith("bcs:"):
             _patch_script(examined.original, specs[0], 0)
         elif resource in TEXT_REFS:
-            _patch_text_dialogue(examined.original, resource, {old: old for old in TEXT_REFS[resource]})
+            _patch_text_dialogue(examined.original, resource, {old: old for old in TEXT_REFS[resource]},
+                                 game=game, names=names)
         else:
             _patch_dialogue(examined.original, specs, reasons=reasons)
     except ProfileError as exc:
@@ -1072,7 +1124,8 @@ def route_reasons(resource: str, data: bytes) -> dict[str, str]:
     return reasons
 
 
-def gives_reward(resource: str, data: bytes, key: str) -> bool:
+def gives_reward(resource: str, data: bytes, key: str, *, game: str | None = None,
+                 names: EetNames | None = None) -> bool:
     """Whether the dialogue gives the item of the route <key> at all, in a way
     the route can gate or not.
 
@@ -1082,11 +1135,11 @@ def gives_reward(resource: str, data: bytes, key: str) -> bool:
     says why the route cannot be prepared then.
     """
     resource = _resource_key(resource)
-    specs = [spec for spec in resource_specs(resource) if spec["route"] == key]
+    specs = [spec for spec in resource_specs(resource, game=game, names=names) if spec["route"] == key]
     if not resource.startswith("dlg:") or not specs:
         raise ProfileError(f"Unsupported extended reward route in {_label(resource)}: {key}")
     item, label = specs[0]["item"], _label(resource)
-    dialogue = _read_dialogue(_examine(resource, data).original, resource)
+    dialogue = _read_dialogue(_examine(resource, data, game=game, names=names).original, resource)
     for state in dialogue.states:
         first, count = _outgoing(dialogue, state, label)
         for row in dialogue.transitions[first:first + count]:
@@ -1103,11 +1156,11 @@ def gives_reward(resource: str, data: bytes, key: str) -> bool:
 
 
 def patch_reward(resource: str, data: bytes, *, refs: dict[int, int] | None = None,
-                 ddwell_ref: int | None = None) -> bytes:
+                 ddwell_ref: int | None = None, game: str | None = None, names: EetNames | None = None) -> bytes:
     """Patch a resource or re-export our own patch; text routes need refs on their first export."""
     resource = _resource_key(resource)
-    examined = _examine(resource, data)
-    specs = resource_specs(resource)
+    examined = _examine(resource, data, game=game, names=names)
+    specs = resource_specs(resource, game=game, names=names)
     if resource.startswith("bcs:"):
         if refs is not None:
             if resource not in TEXT_REFS or set(refs) != set(TEXT_REFS[resource]):
@@ -1116,7 +1169,8 @@ def patch_reward(resource: str, data: bytes, *, refs: dict[int, int] | None = No
         return _patch_script(examined.original, specs[0],
                              examined.refs if ddwell_ref is None else ddwell_ref)
     if resource in TEXT_REFS:
-        return _patch_text_dialogue(examined.original, resource, examined.refs if refs is None else refs)
+        return _patch_text_dialogue(examined.original, resource, examined.refs if refs is None else refs,
+                                    game=game, names=names)
     if examined.own:
         return data
     return _patch_dialogue(data, specs)

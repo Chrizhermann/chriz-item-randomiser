@@ -25,8 +25,15 @@
 //! for byte: text routes and container dialogues carry a recovery trailer,
 //! scripts are reconstructed exactly, and the other dialogues are checked by
 //! removing the patch and applying it again.
+//!
+//! The routes are registered as each campaign's own game names its resources
+//! (BG:EE's names for BG1's routes). EET renames BG1's areas and the BG1 items
+//! whose names Baldur's Gate II uses ([`crate::game_names`]): the functions
+//! that take a [`Naming`] return a route as that game names it. Without a
+//! game ([`Naming::default`]), a route keeps its campaign's own names.
 
 use crate::error::{Error, ErrorKind, Result};
+use crate::game_names::{convert_resource, EetNames};
 use crate::game_text::GameText;
 use crate::json::{Dict, Value};
 use crate::py::{count_bytes, find_bytes, put_u32, replace_bytes, rfind_bytes, str_value, u32_le, upper};
@@ -42,6 +49,16 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::OnceLock;
 
 pub const ADAPTER_ID: &str = "mode2-reward-v1";
+
+/// How the scanned game names the routes' items and places (the reference's
+/// `game` and `names` keywords): its platform ("eet", "bgee" or "bg2ee") and
+/// EET's renames ([`crate::game_names::eet_names`]; without them, CIR's own
+/// copy of EET's lists).
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Naming<'a> {
+    pub game: Option<&'a str>,
+    pub names: Option<&'a EetNames>,
+}
 
 /// Original generic descriptions from the matching special WeiDU handlers.
 /// Keys are the strrefs of the text that names the reward (the same in EET
@@ -123,8 +140,10 @@ fn spec(
     recipient: &str,
     charges: [i64; 3],
     branches: Value,
+    campaign: &str,
 ) -> Dict {
-    let suffix = format!("M2_{source}");
+    // A BG1 route's flags are its own: B1_<row> beside BG2's M2_<row>.
+    let suffix = format!("{}_{source}", if campaign == "bg1" { "B1" } else { "M2" });
     let target = target.map_or_else(|| "None".to_string(), |target| target.to_string());
     let recipient_local =
         if extension == "bcs" && name == "asysta01" { Value::Null } else { Value::from(format!("FLPR_R{suffix}")) };
@@ -132,8 +151,9 @@ fn spec(
         "quest" => name,
         "resource" => format!("{extension}:{name}"),
         "item" => item,
-        "source_ids" => list![format!("original-source:bg2:mode2:item:{source}")],
-        "target_ids" => list![format!("bg2:mode2:target:{target}")],
+        "campaign" => campaign,
+        "source_ids" => list![format!("original-source:{campaign}:mode2:item:{source}")],
+        "target_ids" => list![format!("{campaign}:mode2:target:{target}")],
         "selected_global" => format!("FLPR_Q{suffix}"),
         "consumed_global" => format!("FLPR_X{suffix}"),
         "event_global" => format!("FLPR_E{suffix}"),
@@ -157,7 +177,7 @@ fn alias(
     recipient: &str,
 ) {
     let (primary, branches) = &dialogues[0];
-    let mut row = spec(primary, "dlg", item, source, target, recipient, charges, pairs(branches));
+    let mut row = spec(primary, "dlg", item, source, target, recipient, charges, pairs(branches), "bg2");
     row.insert("resources", Value::List(dialogues.iter().map(|(name, _)| Value::from(format!("dlg:{name}"))).collect()));
     row.insert("dialogues", dialogues.iter().map(|(name, rows)| (name.to_string(), pairs(rows))).collect::<Dict>());
     row.insert("event_global", format!("FLPR_EA_{alias}"));
@@ -214,10 +234,15 @@ fn build_registry() -> Registry {
         // reply also gives the treasury's rod: see "sahrod" below.
         ("sahkng01", "dlg", "brac19", 57, 58, "LastTalkedToBy", NO_CHARGES, pairs(&[(81, 0)])),
     ];
-    let direct_names = direct.iter().map(|row| row.0.to_string()).collect();
+    let mut direct_names: Vec<String> = direct.iter().map(|row| row.0.to_string()).collect();
     for (name, extension, item, source, target, recipient, charges, branches) in direct {
-        rewards.insert(name, spec(name, extension, item, source, Some(target), recipient, charges, branches));
+        rewards.insert(name, spec(name, extension, item, source, Some(target), recipient, charges, branches, "bg2"));
     }
+    // Varci's payment for Casson's rescue (Item Randomiser's varci.fl), the
+    // shield EET names SHLD07A.
+    let recipient = "LastTalkedToBy(Myself)";
+    rewards.insert("varci", spec("varci", "dlg", "shld07", 20, Some(20), recipient, NO_CHARGES, pairs(&[(11, 0)]), "bg1"));
+    direct_names.push("varci".to_string());
     let talker = "LastTalkedToBy";
     alias(
         &mut rewards,
@@ -428,35 +453,87 @@ pub fn target_rewards() -> &'static Dict {
     &registry().targets
 }
 
-fn reward(key: &str) -> Dict {
-    rewards().get(key).and_then(Value::as_dict).expect("registered reward").clone()
+/// The route as the scanned game names its items and places (EET renames
+/// BG1's).
+///
+/// Its conversations keep their names: EET renames only BG1 resources whose
+/// names Baldur's Gate II uses, which no route's conversation does. Were one
+/// renamed, its rows would name another conversation than the route and be
+/// left out.
+fn in_game(mut spec: Dict, naming: Naming<'_>) -> Result<Dict> {
+    let Some(game) = naming.game else {
+        return Ok(spec);
+    };
+    let campaign = text_field(&spec, "campaign", "lower")?.to_string();
+    let name = |resref: &str, kind: &str| convert_resource(resref, kind, &campaign, game, naming.names);
+    let item = Value::from(name(text_field(&spec, "item", "lower")?, "itm")?);
+    spec.insert("item", item.clone());
+    match spec.get_mut("payload").ok_or_else(|| Error::key("payload"))? {
+        Value::Dict(payload) => payload.insert("resref", item),
+        other => return Err(Error::type_error(format!("'{}' object does not support item assignment", other.type_name()))),
+    };
+    if spec.get("replacement").is_some_and(Value::truthy) {
+        let replacement = name(text_field(&spec, "replacement", "lower")?, "itm")?;
+        spec.insert("replacement", replacement);
+    }
+    if spec.get("source_resource").is_some_and(Value::truthy) {
+        let source = text_field(&spec, "source_resource", "split")?;
+        let parts: Vec<&str> = source.split(':').collect();
+        let [kind, resref] = parts[..] else {
+            return Err(Error::value(if parts.len() > 2 {
+                "too many values to unpack (expected 2)".to_string()
+            } else {
+                format!("not enough values to unpack (expected 2, got {})", parts.len())
+            }));
+        };
+        let source = format!("{kind}:{}", name(resref, kind)?);
+        spec.insert("source_resource", source);
+    }
+    if let Some(Value::Dict(placement)) = spec.get("inventory_target").filter(|placement| placement.truthy()) {
+        let mut placement = placement.clone();
+        let area = name(text_field(&placement, "area", "lower")?, "are")?;
+        let creature = text_field(&placement, "creature_resource", "lower")?.chars().skip(4).collect::<String>();
+        let creature = format!("cre:{}", name(&creature, "cre")?);
+        placement.insert("area", area);
+        placement.insert("creature_resource", creature);
+        spec.insert("inventory_target", placement);
+    }
+    Ok(spec)
 }
 
-pub fn source_spec(source_id: &str) -> Result<Dict> {
+/// The route `key` (a [`rewards`] key) as the game names it.
+pub fn reward(key: &str, naming: Naming<'_>) -> Result<Dict> {
+    match rewards().get(key).and_then(Value::as_dict) {
+        Some(row) => in_game(row.clone(), naming),
+        None => Err(Error::profile(format!("Unsupported extended reward route: {key}"))),
+    }
+}
+
+pub fn source_spec(source_id: &str, naming: Naming<'_>) -> Result<Dict> {
     match source_rewards().get(source_id).and_then(Value::as_str) {
-        Some(key) => Ok(reward(key)),
+        Some(key) => reward(key, naming),
         None => Err(Error::profile(format!("Unsupported extended reward source: {source_id}"))),
     }
 }
 
-pub fn target_spec(target_id: &str) -> Result<Dict> {
+pub fn target_spec(target_id: &str, naming: Naming<'_>) -> Result<Dict> {
     match target_rewards().get(target_id).and_then(Value::as_str) {
-        Some(key) => Ok(reward(key)),
+        Some(key) => reward(key, naming),
         None => Err(Error::profile(format!("Unsupported extended reward recipient: {target_id}"))),
     }
 }
 
 /// Inventory copies which must be guarded alongside a scripted source.
-pub fn transfer_spec(name: &str) -> Result<Dict> {
+pub fn transfer_spec(name: &str, naming: Naming<'_>) -> Result<Dict> {
     match transfer_specs().get(name).and_then(Value::as_dict) {
-        Some(row) => Ok(row.clone()),
+        Some(row) => in_game(row.clone(), naming),
         None => Err(Error::profile(format!("Unsupported carried reward: {name}"))),
     }
 }
 
 /// All routes with a grant in a resource; includes both independent ARAN
 /// rewards. Each copy names its route (the `REWARDS` key) under "route".
-pub fn resource_specs(resource: &str) -> Result<Vec<Dict>> {
+pub fn resource_specs(resource: &str, naming: Naming<'_>) -> Result<Vec<Dict>> {
     let resource = crate::py::lower(resource);
     let Some(keys) = resource_rewards().get(&resource).and_then(Value::as_list) else {
         return Err(Error::profile(format!("Unsupported extended reward resource: {resource}")));
@@ -465,7 +542,7 @@ pub fn resource_specs(resource: &str) -> Result<Vec<Dict>> {
     let mut result = Vec::new();
     for key in keys {
         let key = key.as_str().expect("reward key");
-        let mut spec = reward(key);
+        let mut spec = reward(key, naming)?;
         spec.insert("route", key);
         spec.insert("resource", resource.as_str());
         spec.insert("quest", name.as_str());
@@ -1080,12 +1157,13 @@ pub fn patch_text_dialogue(
     refs: Option<&BTreeMap<i64, i64>>,
     defer_departure: bool,
     numeric_target: bool,
+    naming: Naming<'_>,
 ) -> Result<Vec<u8>> {
     if !valid_refs(refs, resource)? {
         return Err(profile(format!("{} requires allocated original reward text", label(resource))));
     }
     let refs = refs.expect("valid refs");
-    let specs = resource_specs(resource)?;
+    let specs = resource_specs(resource, naming)?;
     if specs.len() != 1 {
         return Err(profile("A text route needs exactly one source flag"));
     }
@@ -1231,9 +1309,10 @@ pub type TextOriginal = (Vec<u8>, BTreeMap<i64, i64>);
 
 /// The original and text refs of a text route this adapter patched
 /// (`_text_original`); None if unpatched.
-pub fn text_original(data: &[u8], resource: &str) -> Result<Option<TextOriginal>> {
+pub fn text_original(data: &[u8], resource: &str, naming: Naming<'_>) -> Result<Option<TextOriginal>> {
+    let specs = resource_specs(resource, naming)?;
     if data.len() < 12 || &data[data.len() - 12..data.len() - 4] != TEXT_TRAILER {
-        if carries_patch(&read_dialogue(data, resource)?, &resource_specs(resource)?)? {
+        if carries_patch(&read_dialogue(data, resource)?, &specs)? {
             return Err(changed_patch(resource));
         }
         return Ok(None);
@@ -1259,12 +1338,12 @@ pub fn text_original(data: &[u8], resource: &str) -> Result<Option<TextOriginal>
     // Accept only the exact prior inventory callback patches on a rescan.
     // TRGENI had exports both before and after its departure-order fix.
     let mut variants = vec![(true, true)];
-    if resource_specs(resource)?[0].get("inventory_target").is_some_and(Value::truthy) {
+    if specs[0].get("inventory_target").is_some_and(Value::truthy) {
         let departures: &[bool] = if resource == "dlg:trgeni01" { &[true, false] } else { &[true] };
         variants.extend(departures.iter().map(|&departure| (departure, false)));
     }
     for (defer_departure, numeric_target) in variants {
-        match patch_text_dialogue(&original, resource, Some(&refs), defer_departure, numeric_target) {
+        match patch_text_dialogue(&original, resource, Some(&refs), defer_departure, numeric_target, naming) {
             Ok(patched) if patched == data => return Ok(Some((original, refs))),
             Ok(_) => {}
             Err(error) if error.kind == ErrorKind::Profile => break,
@@ -1404,8 +1483,8 @@ pub(crate) fn logical(data: &[u8], resource: &str) -> Result<Logical> {
 ///
 /// The result reads as the original did. Patching it again must give the
 /// same dialogue as `data`, or `data` is not exactly this adapter's patch.
-fn static_original(data: &[u8], resource: &str) -> Result<Option<Vec<u8>>> {
-    let specs = resource_specs(resource)?;
+fn static_original(data: &[u8], resource: &str, naming: Naming<'_>) -> Result<Option<Vec<u8>>> {
+    let specs = resource_specs(resource, naming)?;
     let dialogue = read_dialogue(data, resource)?;
     if !carries_patch(&dialogue, &specs)? {
         return Ok(None);
@@ -1735,19 +1814,19 @@ pub(crate) struct Examined {
     text_refs: Option<BTreeMap<i64, i64>>,
 }
 
-pub(crate) fn examine(resource: &str, data: &[u8]) -> Result<Examined> {
+pub(crate) fn examine(resource: &str, data: &[u8], naming: Naming<'_>) -> Result<Examined> {
     if resource.starts_with("bcs:") {
-        let (original, script_ref, own) = script_original(data, &resource_specs(resource)?[0])?;
+        let (original, script_ref, own) = script_original(data, &resource_specs(resource, naming)?[0])?;
         return Ok(Examined { original, own, script_ref, text_refs: None });
     }
     let unpatched = || Examined { original: data.to_vec(), own: false, script_ref: None, text_refs: None };
     if text_refs(resource).is_some() {
-        return Ok(match text_original(data, resource)? {
+        return Ok(match text_original(data, resource, naming)? {
             None => unpatched(),
             Some((original, refs)) => Examined { original, own: true, script_ref: None, text_refs: Some(refs) },
         });
     }
-    Ok(match static_original(data, resource)? {
+    Ok(match static_original(data, resource, naming)? {
         None => unpatched(),
         Some(original) => Examined { original, own: true, script_ref: None, text_refs: None },
     })
@@ -1829,17 +1908,17 @@ fn resource_key(resource: &str) -> Result<String> {
 /// Whether the bytes are this adapter's own patch, verified exactly.
 ///
 /// False for an unpatched resource; raises for a changed copy of our patch.
-pub fn own_patch(resource: &str, data: &[u8]) -> Result<bool> {
-    Ok(examine(&resource_key(resource)?, data)?.own)
+pub fn own_patch(resource: &str, data: &[u8], naming: Naming<'_>) -> Result<bool> {
+    Ok(examine(&resource_key(resource)?, data, naming)?.own)
 }
 
-fn prepare_routes(resource: &str, specs: &[Dict], data: &[u8], reasons: &mut Dict) -> Result<()> {
-    let examined = examine(resource, data)?;
+fn prepare_routes(resource: &str, specs: &[Dict], data: &[u8], reasons: &mut Dict, naming: Naming<'_>) -> Result<()> {
+    let examined = examine(resource, data, naming)?;
     if resource.starts_with("bcs:") {
         patch_script(&examined.original, &specs[0], Some(0))?;
     } else if let Some(refs) = text_refs(resource) {
         let stand_in: BTreeMap<i64, i64> = refs.iter().map(|(old, _)| (*old, *old)).collect();
-        patch_text_dialogue(&examined.original, resource, Some(&stand_in), true, true)?;
+        patch_text_dialogue(&examined.original, resource, Some(&stand_in), true, true, naming)?;
     } else {
         patch_dialogue(&examined.original, specs, &[], true, true, Some(reasons))?;
     }
@@ -1851,11 +1930,11 @@ fn prepare_routes(resource: &str, specs: &[Dict], data: &[u8], reasons: &mut Dic
 ///
 /// Routes missing from the result can be prepared; this runs the same patch
 /// that the export runs, with stand-in text references.
-pub fn route_reasons(resource: &str, data: &[u8]) -> Result<Dict> {
+pub fn route_reasons(resource: &str, data: &[u8], naming: Naming<'_>) -> Result<Dict> {
     let resource = resource_key(resource)?;
-    let specs = resource_specs(&resource)?;
+    let specs = resource_specs(&resource, naming)?;
     let mut reasons = Dict::new();
-    match prepare_routes(&resource, &specs, data, &mut reasons) {
+    match prepare_routes(&resource, &specs, data, &mut reasons, naming) {
         Ok(()) => Ok(reasons),
         Err(error) if error.kind == ErrorKind::Profile => {
             let mut all = Dict::new();
@@ -1877,10 +1956,10 @@ pub fn route_reasons(resource: &str, data: &[u8]) -> Result<Dict> {
 /// needed where its dialogue gives the item. A reply whose actions cannot be
 /// read counts as giving it; [`route_reasons`] says why the route cannot be
 /// prepared then.
-pub fn gives_reward(resource: &str, data: &[u8], key: &str) -> Result<bool> {
+pub fn gives_reward(resource: &str, data: &[u8], key: &str, naming: Naming<'_>) -> Result<bool> {
     let resource = resource_key(resource)?;
     let mut specs = Vec::new();
-    for spec in resource_specs(&resource)? {
+    for spec in resource_specs(&resource, naming)? {
         if route(&spec)? == key {
             specs.push(spec);
         }
@@ -1890,7 +1969,7 @@ pub fn gives_reward(resource: &str, data: &[u8], key: &str) -> Result<bool> {
         return Err(profile(format!("Unsupported extended reward route in {label}: {key}")));
     }
     let item = text_field(&specs[0], "item", "encode")?;
-    let dialogue = read_dialogue(&examine(&resource, data)?.original, &resource)?;
+    let dialogue = read_dialogue(&examine(&resource, data, naming)?.original, &resource)?;
     for state in &dialogue.states {
         let (first, count) = outgoing(&dialogue, state, &label)?;
         for row in &dialogue.transitions[first..first + count] {
@@ -1918,10 +1997,11 @@ pub fn patch_reward(
     data: &[u8],
     refs: Option<&BTreeMap<i64, i64>>,
     ddwell_ref: Option<i64>,
+    naming: Naming<'_>,
 ) -> Result<Vec<u8>> {
     let resource = resource_key(resource)?;
-    let examined = examine(&resource, data)?;
-    let specs = resource_specs(&resource)?;
+    let examined = examine(&resource, data, naming)?;
+    let specs = resource_specs(&resource, naming)?;
     if resource.starts_with("bcs:") {
         let mut ddwell_ref = ddwell_ref;
         if let Some(refs) = refs {
@@ -1937,7 +2017,7 @@ pub fn patch_reward(
         return patch_script(&examined.original, &specs[0], ddwell_ref.or(examined.script_ref));
     }
     if text_refs(&resource).is_some() {
-        return patch_text_dialogue(&examined.original, &resource, refs.or(examined.text_refs.as_ref()), true, true);
+        return patch_text_dialogue(&examined.original, &resource, refs.or(examined.text_refs.as_ref()), true, true, naming);
     }
     if examined.own {
         return Ok(data.to_vec());

@@ -466,6 +466,7 @@
       "quest": "trgeni01",
       "resource": "dlg:trgeni01",
       "item": "sw1h23",
+      "campaign": "bg2",
       "source_ids": [
        "original-source:bg2:mode2:item:32"
       ],
@@ -553,6 +554,7 @@
       "quest": "trgeni01",
       "resource": "dlg:trgeni01",
       "item": "sw1h23",
+      "campaign": "bg2",
       "source_ids": [
        "original-source:bg2:mode2:item:32"
       ],
@@ -640,6 +642,7 @@
       "quest": "trgeni01",
       "resource": "dlg:trgeni01",
       "item": "sw1h23",
+      "campaign": "bg2",
       "source_ids": [
        "original-source:bg2:mode2:item:32"
       ],
@@ -727,6 +730,7 @@
       "quest": "trgeni01",
       "resource": "dlg:trgeni01",
       "item": "sw1h23",
+      "campaign": "bg2",
       "source_ids": [
        "original-source:bg2:mode2:item:32"
       ],

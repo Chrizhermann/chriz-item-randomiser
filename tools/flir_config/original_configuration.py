@@ -247,7 +247,7 @@ def _build(catalog: dict, world: dict, template_id: str, exclude: dict[str, str]
                 from .spell_rewards import PAYLOAD
                 payload = {**PAYLOAD, "charges": list(PAYLOAD["charges"])}
             elif "original-source:" + row["id"] in MODE2_SOURCES:
-                payload = mode2_source_spec("original-source:" + row["id"])["payload"]
+                payload = mode2_source_spec("original-source:" + row["id"], game=game, names=names)["payload"]
             return _original_source(row, index["resources"][resource]["sha256"], payload,
                                     matched if row["adapter"] == "unshey" else []), None, None
         ids = row["source_ids"]

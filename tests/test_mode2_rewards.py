@@ -15,6 +15,7 @@ from lupa.luajit21 import LuaRuntime as LuaJIT
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
 from flir_config import mode2_rewards as rewards
+from flir_config.game_names import EetNames
 from flir_config.game_text import GameText
 from flir_config.profiles import ProfileError
 from flir_config.quest_options import _Dialogue
@@ -92,7 +93,12 @@ REVIEWED_EET = {
                     "625d9d911abba3898606930051e784685e82bd954711b520f8574c59da2d8384"),
     "dlg:uhogre01": ("8706469468f7277542ba0e6d7fcf44b47a15d36c3879f505464e0a119be00b97",
                      "722213d1f53966780ab8bba2e2dbe400e64c14ced6da2ff9f48b43749b629e25"),
+    "dlg:varci": ("78c3de46c5c07c5896e5ea568ef9a71aa6e53ff5b6cb7ec8d4274d9e5dfbb017",
+                  "2ae4a7164f4200efec5e9676d7a1fe20c6b05978523015df31302c75c8495e09"),
 }
+# EET's own rename lists (EET/lib/pcu_dict.tph) name BG1's SHLD07 SHLD07A.
+EET = {"game": "eet", "names": EetNames({"itm": {"shld07": "shld07a"}, "cre": {}, "dlg": {}, "bcs": {}, "sto": {}},
+                                        True)}
 
 
 def outgoing(dialogue, state):
@@ -103,8 +109,9 @@ def outgoing(dialogue, state):
 def grant_in(actions, spec):
     """The grant of the route's item in one reply's actions, and its recipient."""
     verb = b"GiveItem" if spec.get("grant_kind") == "transfer" else b"GiveItemCreate"
+    # A recipient may be an object function, as Varci's LastTalkedToBy(Myself).
     found = list(re.finditer(rb'(?i)\b' + verb + rb'\(\s*"' + re.escape(spec["item"].encode()) +
-                             rb'"\s*,\s*([^,()]+?)\s*(?:,[^()]*)?\)', actions))
+                             rb'"\s*,\s*([^,()]+?(?:\([^()]*\))?)\s*(?:,[^()]*)?\)', actions))
     assert len(found) == 1, actions
     return found[0][0], found[0][1]
 
@@ -244,8 +251,8 @@ class Mode2RewardTests(unittest.TestCase):
         self.assertIn("changed copy", next(iter(rewards.route_reasons(name, tampered).values())))
         return result
 
-    def check_dialogue(self, name, original, result, action_refs=None, branches=None):
-        spec = rewards.resource_specs("dlg:" + name)[0]
+    def check_dialogue(self, name, original, result, action_refs=None, branches=None, naming=None):
+        spec = rewards.resource_specs("dlg:" + name, **(naming or {}))[0]
         branches = spec["branches"] if branches is None else branches
         before, after = _Dialogue(original, name), _Dialogue(result, name)
         self.assertEqual(after.state_triggers, before.state_triggers)
@@ -505,8 +512,51 @@ class Mode2RewardTests(unittest.TestCase):
         self.assertIn(crlf(action(151, 100001, target=1)), new[2])
         self.assertIn(crlf(action(151, 40850, target=1)), new[1])
 
+    def test_bg1_routes_have_their_own_flags_and_take_the_games_names(self):
+        # Varci's payment: BG:EE names the shield SHLD07, EET SHLD07A (its rename lists).
+        spec = rewards.source_spec("original-source:bg1:mode2:item:20")
+        self.assertEqual(spec, rewards.target_spec("bg1:mode2:target:20"))
+        self.assertEqual((spec["campaign"], spec["item"], spec["resource"], spec["target_ids"]),
+                         ("bg1", "shld07", "dlg:varci", ("bg1:mode2:target:20",)))
+        self.assertEqual([spec[key] for key in ("selected_global", "consumed_global", "event_global",
+                                                 "recipient_local")],
+                         ["FLPR_QB1_20", "FLPR_XB1_20", "FLPR_EB1_20", "FLPR_RB1_20"])
+        names = EetNames({"itm": {"shld07": "shld07a"}, "cre": {}, "dlg": {}, "bcs": {}, "sto": {}}, True)
+        for game, shown in ((None, "shld07"), ("bgee", "shld07"), ("eet", "shld07a")):
+            with self.subTest(game=game):
+                for found in (rewards.source_spec("original-source:bg1:mode2:item:20", game=game, names=names),
+                              rewards.reward("varci", game=game, names=names),
+                              rewards.resource_specs("dlg:varci", game=game, names=names)[0]):
+                    self.assertEqual((found["item"], found["payload"]["resref"]), (shown, shown))
+        # EET keeps the names of BG2's routes.
+        self.assertEqual(rewards.source_spec("original-source:bg2:mode2:item:14", game="eet", names=names),
+                         rewards.source_spec("original-source:bg2:mode2:item:14"))
+        with self.assertRaisesRegex(ProfileError, "Unsupported extended reward route: x"):
+            rewards.reward("x")
+
+    def test_eets_varci_gives_shld07a_to_an_object_function_and_the_route_gates_it(self):
+        eet = {"game": "eet", "names": EetNames({"itm": {"shld07": "shld07a"}, "cre": {}, "dlg": {}, "bcs": {},
+                                                 "sto": {}}, True)}
+        spec = rewards.resource_specs("dlg:varci", **eet)[0]
+        original = dialogue_fixture(spec)
+        self.assertIn(b'GiveItemCreate("shld07a",LastTalkedToBy(Myself),0,0,0)', original)
+        # Without EET's names the route looks for BG:EE's shield and names that.
+        self.assertEqual(rewards.route_reasons("dlg:varci", original),
+                         {"varci": "VARCI.DLG has no reply that gives SHLD07"})
+        self.assertEqual(rewards.route_reasons("dlg:varci", original, **eet), {})
+        result = rewards.patch_reward("dlg:varci", original, **eet)
+        self.assertEqual(rewards.patch_reward("dlg:varci", result, **eet), result)
+        self.assertTrue(rewards.own_patch("dlg:varci", result, **eet))
+        self.assertEqual(rewards.route_reasons("dlg:varci", result, **eet), {})
+        actions = b"".join(_Dialogue(result, "varci").actions)
+        self.assertIn(b'ActionOverride(LastTalkedToBy(Myself),SetGlobal("FLPR_RB1_20","LOCALS",1))', actions)
+        self.assertIn(b'SetGlobal("FLPR_XB1_20","GLOBAL",1)', actions)
+        self.assertIn(b'SetGlobal("FLPR_EB1_20","GLOBAL",1)', actions)
+        triggers = b"".join(_Dialogue(result, "varci").triggers)
+        self.assertIn(b'!Global("FLPR_QB1_20","GLOBAL",1)', triggers)
+
     def test_registry_exposes_authored_charges_and_separate_container_recipient(self):
-        self.assertEqual(len(rewards.DIRECT_REWARDS), 10)
+        self.assertEqual(len(rewards.DIRECT_REWARDS), 11)
         spec = rewards.source_spec("original-source:bg2:mode2:item:28")
         self.assertEqual(spec["payload"], {"resref": "ring31", "expiration": 0, "charges": [1, 1, 1], "flags": 0})
         spec["payload"]["charges"][0] = 99
@@ -1001,15 +1051,15 @@ class Mode2RewardTests(unittest.TestCase):
                 original = (cache / (name + "." + kind)).read_bytes()
                 reviewed, patched = REVIEWED_EET[resource]
                 self.assertEqual(hashlib.sha256(original).hexdigest(), reviewed)
-                result = rewards.patch_reward(resource, original, refs=allocated.get(resource))
+                result = rewards.patch_reward(resource, original, refs=allocated.get(resource), **EET)
                 self.assertEqual(hashlib.sha256(result).hexdigest(), patched)
-                self.assertEqual(rewards.patch_reward(resource, result), result)
-                self.assertEqual(rewards.route_reasons(resource, original), {})
-                self.assertEqual(rewards.route_reasons(resource, result), {})
-                self.assertFalse(rewards.own_patch(resource, original))
-                self.assertTrue(rewards.own_patch(resource, result))
+                self.assertEqual(rewards.patch_reward(resource, result, **EET), result)
+                self.assertEqual(rewards.route_reasons(resource, original, **EET), {})
+                self.assertEqual(rewards.route_reasons(resource, result, **EET), {})
+                self.assertFalse(rewards.own_patch(resource, original, **EET))
+                self.assertTrue(rewards.own_patch(resource, result, **EET))
                 if kind == "dlg" and resource in rewards.TEXT_REFS:
-                    self.assertEqual(rewards._text_original(result, resource), (original, allocated[resource]))
+                    self.assertEqual(rewards._text_original(result, resource, **EET), (original, allocated[resource]))
                     clones = self.check_text_graph(resource, original, result, allocated[resource])
                     if name in ("trgeni01", "amcler01", "jugjer01", "udlesa"):
                         action_refs = allocated[resource] if name == "amcler01" else None
@@ -1037,11 +1087,12 @@ class Mode2RewardTests(unittest.TestCase):
                             self.assertIn(b"NumTimesTalkedTo(0)", dlg.state_triggers[entry])
                         self.assertIn(b'ReallyForceSpell(Myself,DRYAD_TELEPORT)', b"".join(dlg.actions))
                 elif kind == "bcs":
-                    self.assertEqual(rewards._script_original(result, rewards.resource_specs(resource)[0])[0], original)
+                    self.assertEqual(rewards._script_original(result, rewards.resource_specs(resource, **EET)[0])[0],
+                                     original)
                 elif name in ("aran", "sahkng01"):
                     self.check_pair(name, original, result)
                 else:
-                    self.check_dialogue(name, original, result)
+                    self.check_dialogue(name, original, result, naming=EET)
 
 
 if __name__ == "__main__":

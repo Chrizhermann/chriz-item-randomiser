@@ -24,16 +24,19 @@ conditions of their states, which interjections do not copy.
 
 A copy dialogue carries no trailer. As for the route dialogues, our patch is
 recognised by removing it and applying it again.
+
+The rewards are found as the scanned game names them (EET renames BG1's
+items): <game> and <names>, as mode2_rewards takes them.
 """
 from __future__ import annotations
 
 from collections import deque
-from copy import deepcopy
 import hashlib
 import struct
 from typing import Callable
 
 from . import container_rewards, mode2_rewards
+from .game_names import EetNames
 from .game_text import GameTextError
 from .profiles import ProfileError
 from .quest_options import _Dialogue
@@ -51,9 +54,9 @@ def _label(resource: str) -> str:
     return resource[4:].upper() + ".DLG"
 
 
-def copy_spec(key: str, resource: str) -> dict:
+def copy_spec(key: str, resource: str, *, game: str | None = None, names: EetNames | None = None) -> dict:
     """The route <key> as it gates its copies in the dialogue <resource>."""
-    spec = deepcopy(mode2_rewards.REWARDS[key])
+    spec = mode2_rewards.reward(key, game=game, names=names)
     spec.update(route=key, resource=resource, quest=resource[4:])
     return spec
 
@@ -79,8 +82,11 @@ class RewardCopies:
     originals: copy dialogue -> its bytes without our patch.
     """
 
-    def __init__(self, read: Callable[[str], bytes | None], scanned: dict[str, str]):
+    def __init__(self, read: Callable[[str], bytes | None], scanned: dict[str, str], *,
+                 game: str | None = None, names: EetNames | None = None):
         self._read, self._scanned = read, scanned
+        self._naming = {"game": game, "names": names}
+        self._specs = {key: mode2_rewards.reward(key, game=game, names=names) for key in _ROUTES}
         self._loaded: dict[str, tuple] = {}
         self._patched: dict[str, tuple[bytes, list[str]]] = {}
         self._failed: set[tuple[str, str]] = set()
@@ -108,7 +114,7 @@ class RewardCopies:
         label = _label(resource)
         try:
             if resource in mode2_rewards.RESOURCE_REWARDS:
-                original = mode2_rewards._examine(resource, data).original
+                original = mode2_rewards._examine(resource, data, **self._naming).original
             elif resource in container_rewards.RESOURCE_TARGETS:
                 original = container_rewards._recover(resource, data)[0]
             else:
@@ -124,7 +130,7 @@ class RewardCopies:
     def _unpatched(self, resource: str, data: bytes) -> bytes:
         """A dialogue without our copy patch; its routes are checked later."""
         dialogue = mode2_rewards._read_dialogue(data, resource)
-        specs = tuple(copy_spec(key, resource) for key in sorted(_ROUTES))
+        specs = tuple(copy_spec(key, resource, **self._naming) for key in sorted(_ROUTES))
         if not mode2_rewards._carries_patch(dialogue, specs):
             return data
         present = _present(dialogue)
@@ -133,7 +139,7 @@ class RewardCopies:
             raise mode2_rewards._changed_patch(resource)
         try:
             original = mode2_rewards._unpatched_dialogue(
-                dialogue, tuple(copy_spec(key, resource) for key in present), resource)
+                dialogue, tuple(copy_spec(key, resource, **self._naming) for key in present), resource)
         except ProfileError:
             raise mode2_rewards._changed_patch(resource) from None
         self._patched[resource] = (data, present)
@@ -150,7 +156,8 @@ class RewardCopies:
             dialogue, problem = self._load(resource)
             if dialogue is None:
                 return None
-            spec = next(spec for spec in mode2_rewards.resource_specs(resource) if spec["route"] == key)
+            spec = next(spec for spec in mode2_rewards.resource_specs(resource, **self._naming)
+                        if spec["route"] == key)
             try:
                 grants = mode2_rewards._dialogue_grants(dialogue, spec, _label(resource))
             except ProfileError:
@@ -165,7 +172,7 @@ class RewardCopies:
         texts = self._grants(key)
         if texts is None:
             return
-        spec = mode2_rewards.REWARDS[key]
+        spec = self._specs[key]
         own = set(_ROUTES[key])
         visited = self.visited.setdefault(key, set())
         found: dict[str, dict[int, set[int]]] = {}
@@ -232,7 +239,7 @@ class RewardCopies:
 
         Raises with the reason when the route cannot gate what the reply does.
         """
-        spec = mode2_rewards.REWARDS[key]
+        spec = self._specs[key]
         where = f"{_label(resource)} state {index}"
         shown = spec["item"].upper()
         if text in texts:
@@ -251,7 +258,8 @@ class RewardCopies:
         if not any(mode2_rewards._gives(text, call, spec["item"]) for call in found):
             return False  # It takes, shows or tests the reward.
         for other in mode2_rewards.RESOURCE_REWARDS.get(resource, ()):
-            other_spec = next(row for row in mode2_rewards.resource_specs(resource) if row["route"] == other)
+            other_spec = next(row for row in mode2_rewards.resource_specs(resource, **self._naming)
+                              if row["route"] == other)
             if other_spec["item"] != spec["item"]:
                 continue
             try:
@@ -294,7 +302,7 @@ class RewardCopies:
                     self.reasons.setdefault(key, str(mode2_rewards._changed_patch(resource)))
 
     def _patch(self, resource: str, keys, failures: dict | None = None) -> bytes:
-        specs = tuple(copy_spec(key, resource) for key in keys)
+        specs = tuple(copy_spec(key, resource, **self._naming) for key in keys)
         return mode2_rewards._patch_dialogue(self.originals[resource], specs, reasons=failures,
                                              only={key: self.copies[key][resource] for key in keys},
                                              resource=resource)
@@ -309,7 +317,7 @@ class RewardCopies:
             return
         try:
             if resource in mode2_rewards.RESOURCE_REWARDS:
-                own = mode2_rewards.own_patch(resource, data)
+                own = mode2_rewards.own_patch(resource, data, **self._naming)
             elif resource in container_rewards.RESOURCE_TARGETS:
                 own = container_rewards.own_patch(resource, data)
             else:

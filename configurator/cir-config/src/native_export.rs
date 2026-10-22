@@ -10,6 +10,7 @@ use crate::campaigns::{read_campaign, refused_lua, render_lua, store_path, write
 use crate::error::{Error, ErrorKind, Result, CHANGED_SINCE_SCAN};
 use crate::game_text::{paired, text_files, unpaired};
 use crate::json::{parse_lenient, py_str, utf8_error_message, Dict, Value};
+use crate::mode2_rewards::Naming;
 use crate::original_catalog::container_target_spec;
 use crate::platform::game_platform;
 use crate::reward_copies::RewardCopies;
@@ -463,7 +464,9 @@ impl<'a> Compiler<'a> {
             return Ok(());
         }
         if kind == "authored-source" && mode2_rewards::source_rewards().contains_key(identity) {
-            let spec = mode2_rewards::source_spec(identity)?;
+            // The routes' items as the game names them (EET renames BG1's).
+            let routes = self.routes()?;
+            let spec = mode2_rewards::source_spec(identity, routes.naming())?;
             let ok = source.at("resource")?.py_eq(entry(&spec, "resource")?) && record.py_eq(entry(&spec, "payload")?);
             require(ok, || format!("The extended reward source differs from its route: {identity}"))?;
             let route = mode2_rewards::source_rewards().get(identity).map(crate::py::str_value).unwrap_or_default();
@@ -476,7 +479,7 @@ impl<'a> Compiler<'a> {
             endpoint.insert("identity", source_identity()?);
             self.sources.insert(identity, endpoint);
             for name in spec.get("required_transfers").map(list).unwrap_or(&[]) {
-                let duplicate = mode2_rewards::transfer_spec(name.as_str().unwrap_or(""))?;
+                let duplicate = mode2_rewards::transfer_spec(name.as_str().unwrap_or(""), routes.naming())?;
                 let authored_ids = list(entry(&duplicate, "authored_source_ids")?);
                 if !authored_ids.iter().any(|id| id.as_str() == Some(identity)) {
                     continue;
@@ -831,7 +834,9 @@ impl<'a> Compiler<'a> {
             self.use_resource(text(target, "resource")?)?;
             let selector_id = selector.at("id")?;
             let reward = match selector_id.as_str() {
-                Some(id) if mode2_rewards::target_rewards().contains_key(id) => Some(mode2_rewards::target_spec(id)?),
+                Some(id) if mode2_rewards::target_rewards().contains_key(id) => {
+                    Some(mode2_rewards::target_spec(id, self.routes()?.naming())?)
+                }
                 _ => None,
             };
             if reward.as_ref().is_some_and(|reward| !reward.is_empty()) {
@@ -912,7 +917,7 @@ impl<'a> Compiler<'a> {
             }
             if target_kind == "scripted-target" {
                 if let Some(id) = selector_id.as_str().filter(|id| mode2_rewards::target_rewards().contains_key(*id)) {
-                    let spec = mode2_rewards::target_spec(id)?;
+                    let spec = mode2_rewards::target_spec(id, self.routes()?.naming())?;
                     for resource in list(entry(&spec, "resources")?) {
                         self.use_value(resource)?;
                     }
@@ -1665,6 +1670,13 @@ pub fn export_native(
         lua_values.insert(format!("{base}.lua"), (key.clone(), false));
     }
 
+    // The quest routes' items as the game names them (EET renames BG1's).
+    let checked = if required.iter().any(|resource| mode2_rewards::resource_rewards().contains_key(resource)) {
+        Some(reward_routes(catalog, world)?)
+    } else {
+        None
+    };
+    let naming = checked.as_deref().map_or_else(Naming::default, RewardRoutes::naming);
     // Reuse the scanner's resource reader; only selected resources are read.
     let game_root_text = text(catalog, "game_root")?.to_string();
     let game_root = PathBuf::from(&game_root_text);
@@ -1703,7 +1715,7 @@ pub fn export_native(
                 // A reward route is recognised again from these bytes below;
                 // the scan holds nothing else that depends on them.
                 if mode2_rewards::resource_rewards().contains_key(resource) {
-                    own_patch = mode2_rewards::own_patch(resource, &data)?;
+                    own_patch = mode2_rewards::own_patch(resource, &data, naming)?;
                 }
                 if container_rewards::resource_targets().contains_key(resource) {
                     own_patch = container_rewards::own_patch(resource, &data)?;
@@ -1735,6 +1747,7 @@ pub fn export_native(
         let copies = RewardCopies::new(
             &mut |name| if dialogues.contains(name) { reader.read("dlg", name).map(Some) } else { Ok(None) },
             &scanned,
+            naming,
         )?;
         let mut routes = BTreeSet::new();
         for resource in &required {
@@ -1888,7 +1901,7 @@ pub fn export_native(
             continue;
         }
         let data = resource_bytes.get(resource).ok_or_else(|| Error::key(resource))?;
-        let patched = mode2_rewards::patch_reward(resource, data, reward_texts.get(resource), None)?;
+        let patched = mode2_rewards::patch_reward(resource, data, reward_texts.get(resource), None, naming)?;
         let (kind, name) = resource.split_once(':').unwrap_or((resource, ""));
         let filename = format!("{}.{}", upper(name), upper(kind));
         pending.insert(format!("resource-overrides/{filename}"), patched.clone());
