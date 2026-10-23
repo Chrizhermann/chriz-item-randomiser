@@ -38,7 +38,8 @@ The code that reads SoD tables as a part of their own (table campaign `sod`) sta
   `_PARTS`). A preset campaign that reads SoD's tables is offered only where the game has
   SoD's areas (`platform.has_sod`, `preset_campaigns`; `PRESET_CAMPAIGNS` lists the games
   that can have it). Building one elsewhere is refused with "this game does not have Siege
-  of Dragonspear". The More Spell Shield option follows the tables a preset reads.
+  of Dragonspear". The More Spell Shield option randomises the scroll's shop row only
+  when that row (BG2's extended items) is one of the preset's rewards.
 
 Preset names and descriptions for SoD come with Chris's design.
 `tests/sod_table_fixtures.py` plugs small synthetic SoD tables in this way, and the tests

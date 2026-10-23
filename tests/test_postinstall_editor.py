@@ -1,8 +1,10 @@
 """Editor workflows reuse the configurator's synthetic installation fixture."""
 from contextlib import ExitStack, contextmanager, nullcontext
 from copy import deepcopy
+import hashlib
 import json
 from pathlib import Path
+import re
 import struct
 import sys
 from threading import Thread
@@ -24,7 +26,9 @@ from flir_config.resources import scan_game
 from flir_config.sources import new_binding_plan, scan_world
 from flir_config.templates import DEFAULT_OPTIONS
 from tests import test_postinstall_native_export as fixtures
+from flir_config import quest_options
 from test_cursed_disguises import resources as cursed_resources
+from test_quest_options import crypt_fixture, dialogue_fixture
 from tests.test_postinstall_blpool_script import write_registry
 from test_postinstall_resources import make_itm
 from tests.test_postinstall_world_formats import make_are, make_cre, make_sto, item_record
@@ -162,7 +166,7 @@ class EditorTests(unittest.TestCase):
         write_registry(self.fx.game)
         recommended = editor.get("/api/recommended", {})
         self.assertTrue(recommended["options"]["flail_heads"] and recommended["options"]["totsc_tome"])
-        self.assertEqual(recommended["unavailable"], {})
+        self.assertNotIn("flail_heads", recommended["unavailable"])
         write_registry(self.fx.game, flail_heads="dialogue-unrecognised")
         recommended = editor.get("/api/recommended", {})
         self.assertFalse(recommended["options"]["flail_heads"])
@@ -235,6 +239,90 @@ class EditorTests(unittest.TestCase):
             with self.assertRaisesRegex(ProfileError, "different scan"):
                 editor.post("/api/template", {"id": "bg2-original"})
             self.assertEqual(editor.draft, before_error)
+
+    def test_presets_offer_only_the_options_this_game_can_apply(self):
+        """An option a game cannot apply is not offered, with the reason; asked
+        for anyway, it is refused with that reason before anything is built."""
+        fx = self.fx
+        write_registry(fx.game)
+        kangaxx = "Kangaxx items need HLSKULL.DLG, CRYPT526.BCS and CRYPT202.BCS, which this game does not have"
+        shop = "More Spell Shield copies need the shop UDDUER01.STO, which this game does not have"
+        tome = ("The ToTSC tome variant changes a reward of Baldur's Gate's lists, "
+                "which no preset for this game uses")
+        cursed = "Cursed disguise items need one of the cursed items they disguise, which this game does not have"
+        quest = {"hlskull.dlg": dialogue_fixture("hlskull.dlg"), "crypt526.bcs": crypt_fixture("AR0526"),
+                 "crypt202.bcs": crypt_fixture("AR0202")}
+        reviewed = patch.dict(quest_options.ORIGINAL_HASHES,
+                              {name: hashlib.sha256(data).hexdigest() for name, data in quest.items()})
+        reviewed.start()
+        self.addCleanup(reviewed.stop)
+
+        def recommended():
+            fx.refresh()
+            self.reset_editor()
+            preset = self.editor.get("/api/recommended", {})
+            for option in preset["unavailable"]:
+                self.assertIs(preset["options"][option], False)
+            return preset["unavailable"]
+
+        def refused(options, reason):
+            with self.subTest(options=options), self.assertRaisesRegex(ProfileError, "^" + re.escape(reason) + "$"):
+                self.editor.post("/api/template", {"id": "eet-original", "options": options})
+
+        self.assertEqual(recommended(), {"kangaxx": kangaxx, "more_spell_shield": shop, "cursed_disguise": cursed})
+        refused({"kangaxx": True}, kangaxx)
+        refused({"more_spell_shield": True}, shop)
+        # With Kangaxx's quest files, the Underdark shop and the cursed items,
+        # every option is offered; also after CIR changed the quest's files.
+        for name, data in quest.items():
+            (fx.override / name).write_bytes(data)
+        (fx.override / "udduer01.sto").write_bytes(bytes(make_sto(
+            [(item_record("scrl8x", expiration=0, charges=(1, 1, 0), flags=0), 1, 0)])))
+        (fx.override / "scrl8x.itm").write_bytes(make_itm())
+        cursed_items = {}
+        for name, data in cursed_resources().items():
+            # The scan reads the item's ability without effects.
+            cursed_items[name] = bytearray(data)
+            struct.pack_into("<HH", cursed_items[name], 0x72 + 0x1E, 0, 0)
+            (fx.override / f"{name}.itm").write_bytes(cursed_items[name])
+        self.assertEqual(recommended(), {})
+        (fx.override / "hlskull.dlg").write_bytes(
+            quest_options.patch_hlskull(quest["hlskull.dlg"], dict(enumerate(range(1000, 1022)))))
+        self.assertEqual(recommended(), {})
+        # Another mod's version of a quest file.
+        (fx.override / "hlskull.dlg").write_bytes(
+            dialogue_fixture("hlskull.dlg", action=b'SetGlobal("KangaxxQuest","GLOBAL",2)\r\n'))
+        changed = "Kangaxx items need HLSKULL.DLG as Baldur's Gate II has it; another mod changed it"
+        self.assertEqual(recommended(), {"kangaxx": changed})
+        refused({"kangaxx": True}, changed)
+        (fx.override / "hlskull.dlg").write_bytes(quest["hlskull.dlg"])
+        for name in ("crypt202.bcs", "scrl8x.itm", "brac06.itm"):
+            (fx.override / name).unlink()
+        self.assertEqual(recommended(), {
+            "kangaxx": "Kangaxx items need CRYPT202.BCS, which this game does not have",
+            "more_spell_shield": "More Spell Shield copies need SCRL8X.ITM, which this game does not have",
+            "cursed_disguise": "Cursed disguise items need BRAC06.ITM to disguise BRAC08.ITM, "
+                               "and this game does not have it"})
+        (fx.override / "scrl8x.itm").write_bytes(make_itm())
+        (fx.override / "brac06.itm").write_bytes(cursed_items["brac06"])
+        (fx.override / "udduer01.sto").write_bytes(b"STORV1.0" + bytes(8))
+        self.assertEqual(recommended()["more_spell_shield"],
+                         "More Spell Shield copies need the shop UDDUER01.STO, which cannot be read")
+        # BG:EE has neither Kangaxx nor the shop, and its installer could not
+        # prepare Glaicus's conversation.
+        (fx.override / "EET.flag").unlink()
+        for name in ("hlskull.dlg", "crypt526.bcs", "udduer01.sto", "scrl8x.itm"):
+            (fx.override / name).unlink()
+        (fx.override / "oh1000.are").write_bytes(make_are())
+        write_registry(fx.game, flail_heads="absent")
+        self.assertEqual(recommended(), {
+            "kangaxx": kangaxx, "flail_heads": "KPGLAI01.DLG was left as installed (the game has no such file)",
+            "more_spell_shield": shop})
+        # BG2:EE's presets have no Baldur's Gate lists for the tome variant.
+        (fx.override / "oh1000.are").unlink()
+        (fx.override / "oh6000.are").write_bytes(make_are())
+        write_registry(fx.game)
+        self.assertEqual(recommended(), {"kangaxx": kangaxx, "totsc_tome": tome, "more_spell_shield": shop})
 
     def test_preset_options_with_their_own_plan_fields_save_check_apply_and_reopen(self):
         """More Spell Shield scrolls and cursed disguises add their metadata to the plan."""

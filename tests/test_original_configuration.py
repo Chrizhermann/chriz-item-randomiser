@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 import shutil
 import struct
@@ -388,6 +389,33 @@ class OriginalConfigurationTests(unittest.TestCase):
         # the binding, and the world is validated once, or not at all when the
         # caller has validated it.
         self.assertEqual(counts, [(1, 1, 1), (1, 1, 0)])
+
+    def test_fitting_rounds_check_kangaxx_quest_files_once(self):
+        """CIR's own change of Kangaxx's conversation is recognised from the
+        file's bytes, read once for every round of the fit."""
+        from flir_config import original_configuration, quest_options
+        from flir_config.original_configuration import fit_original_configuration
+        from test_quest_options import crypt_fixture, dialogue_fixture
+
+        quest = {"hlskull.dlg": dialogue_fixture("hlskull.dlg"), "crypt526.bcs": crypt_fixture("AR0526"),
+                 "crypt202.bcs": crypt_fixture("AR0202")}
+        with patch.dict(quest_options.ORIGINAL_HASHES,
+                        {name: hashlib.sha256(data).hexdigest() for name, data in quest.items()}):
+            for name, data in quest.items():
+                (self.root / "override" / name).write_bytes(data)
+            (self.root / "override" / "hlskull.dlg").write_bytes(
+                quest_options.patch_hlskull(quest["hlskull.dlg"], dict(enumerate(range(1000, 1022)))))
+            catalog, world, draft = self._fitting_game()
+            draft["options"]["kangaxx"] = True
+            with patch("flir_config.original_configuration.resolve_template", return_value=draft), \
+                    patch("flir_config.original_registrations.resolve_template", return_value=draft), \
+                    patch.object(original_configuration, "kangaxx_problem",
+                                 wraps=quest_options.kangaxx_problem) as checked:
+                result = fit_original_configuration(catalog, world, "eet-original")
+        # Three rounds, as above.
+        self.assertEqual(len(result["not_used"]), 2)
+        self.assertIs(result["plan"]["original_options"]["kangaxx"], True)
+        self.assertEqual(checked.call_count, 1)
 
     def test_validated_scans_belong_to_their_own_catalogues(self):
         from flir_config.original_configuration import fit_original_configuration

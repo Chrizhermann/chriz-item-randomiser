@@ -12,8 +12,8 @@ import re
 
 from .original_options import cursed_disguise_choices, patch_cursed_disguise
 from .profiles import HEX256, ProfileError
-from .quest_options import _texts
-from .game_text import _append_texts
+from .game_text import GameText
+from .translations import option_lines
 
 ALGORITHM = "park-miller-cursed-v1"
 SEED_RANGE = 2147483646
@@ -77,27 +77,27 @@ def cursed_disguise_indices(spec: dict, seed: int) -> dict[str, int]:
     return result
 
 
-def prepare_cursed_disguises(spec: dict, resources: Mapping[str, bytes], tlk: bytes, *,
-                            language: str = "en_us") -> tuple[dict, dict[str, bytes], bytes]:
-    """Materialise immutable original and face assets, plus exact authored text.
+def prepare_cursed_disguises(spec: dict, resources: Mapping[str, bytes], text: GameText, *,
+                            language: str = "en_us") -> tuple[dict, dict[str, bytes], GameText]:
+    """Materialise immutable original and face assets, plus the authored text.
 
     Resource keys are lowercase resrefs. The caller prefixes returned filenames
     with the revision in its private asset directory, never the game override.
     The native fixture retains all faces, including duplicate fallback faces.
+    The texts are in the game's <language> where CIR has all of them,
+    otherwise in English, with their female wordings in dialogf.tlk.
     """
     validate_cursed_disguise_spec(spec)
-    if language.casefold() not in {"en_us", "en_gb", "english"}:
-        raise ProfileError("Original cursed-disguise text currently requires English")
     for name, expected in spec["resource_hashes"].items():
         if name not in resources or hashlib.sha256(resources[name]).hexdigest() != expected:
             raise ProfileError(f"Cursed-disguise resource changed; rescan before export: {name}")
-    # cir.tp2's ALWAYS block loads these EE overrides after the general strings
-    # on both bgee and bg2ee engines (including EET); use their exact CRLF text.
-    texts = _texts("languages/english/in-game.tra")
-    texts.update(_texts("languages/bgee/english/in-game.tra"))
+    # cir.tp2's ALWAYS block loads the EE overrides after the general strings
+    # on both bgee and bg2ee engines (including EET), and so does option_lines;
+    # their exact CRLF text.
     ids = sorted({face[key] for row in spec["choices"] for face in row["variants"]
                   for key in ("description_tra", "name_tra") if face[key] is not None})
-    tlk, allocated = _append_texts(tlk, tuple(texts[key] for key in ids))
+    found = option_lines(language, [("in-game.tra", key) for key in ids])
+    text, allocated = text.append(found["in-game.tra", key] for key in ids)
     refs = dict(zip(ids, allocated))
     fixture, files = {"algorithm": ALGORITHM, "items": []}, {}
     for row in spec["choices"]:
@@ -114,4 +114,4 @@ def prepare_cursed_disguises(spec: dict, resources: Mapping[str, bytes], tlk: by
             item["variants"].append({"donor": face["donor"],
                                      "sha256": hashlib.sha256(patched).hexdigest()})
         fixture["items"].append(item)
-    return fixture, files, tlk
+    return fixture, files, text

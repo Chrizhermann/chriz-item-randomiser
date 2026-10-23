@@ -12,6 +12,7 @@ use crate::profiles::{digest, int_in, is_hex256, validate_catalog, validate_prof
 use crate::resources::{resource_type, sha256_hex, GameResources};
 use crate::world_formats::{parse_are, parse_cre, parse_sto, reference};
 use std::borrow::Cow;
+use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
@@ -1213,21 +1214,23 @@ pub fn validate_world(world: &Value, catalog: &Value) -> Result<WorldIndex> {
 /// An item catalogue and the world catalogue scanned with it, validated once
 /// for a series of calls on them, such as one editor request (a preset fit,
 /// a check, applying a configuration). It also keeps the original tables
-/// those calls resolve for a plan. Neither catalogue may change while it is
-/// in use.
+/// those calls resolve for a plan, and why an original option cannot apply
+/// when they read the game's files to find out. Neither catalogue may change
+/// while it is in use.
 pub struct Scans<'a> {
     catalog: &'a Value,
     world: &'a Value,
     items: &'a ItemIndex,
     index: &'a WorldIndex,
     pub tables: crate::original_registrations::TableMemo,
+    pub option_problems: RefCell<HashMap<&'static str, Option<String>>>,
 }
 
 impl<'a> Scans<'a> {
     /// `items` and `index` are `validate_catalog`'s and `validate_world`'s
     /// results for these very catalogues.
     pub fn new(catalog: &'a Value, world: &'a Value, items: &'a ItemIndex, index: &'a WorldIndex) -> Scans<'a> {
-        Scans { catalog, world, items, index, tables: Default::default() }
+        Scans { catalog, world, items, index, tables: Default::default(), option_problems: Default::default() }
     }
 
     /// The item index and the world index, for the catalogues these scans hold.
@@ -1479,12 +1482,19 @@ pub fn bind_profile(profile: &Value, catalog: &Value, world: &Value, plan: &Valu
         plan_fields.get("original_options").and_then(|options| options.get(name)).is_some_and(Value::truthy)
     };
     if present_original && original_option("more_spell_shield") {
-        let randomized = source_rows.values().any(|row| {
-            row.get("enabled").is_some_and(Value::truthy) && crate::original_options::is_spell_shield_row(row)
-        });
+        // The scroll's shop row is randomised exactly when it is one of the plan's rewards.
+        let registrations = rows(plan_fields.get("registrations"), "registration")?;
+        let randomized = crate::original_options::spell_shield_randomized(
+            registrations
+                .iter()
+                .filter(|registration| {
+                    registration.get("adapter_id").and_then(Value::as_str) == Some(original::SOURCE_ADAPTER)
+                })
+                .map(|registration| registration.get("authored").unwrap_or(&Value::Null)),
+        );
         let expected = crate::original_options::spell_shield_spec(world, randomized)?;
         if !shield.unwrap_or(&Value::Null).py_eq(&expected) {
-            return Err(Error::profile("Spell Shield stock metadata disagrees with the scan and original options"));
+            return Err(Error::profile("Spell Shield stock metadata disagrees with the scan and the plan's rewards"));
         }
     } else if plan_fields.contains_key("spell_shield") {
         return Err(Error::profile("Spell Shield stock metadata requires its original option"));

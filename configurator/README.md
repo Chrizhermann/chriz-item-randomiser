@@ -190,7 +190,7 @@ language WeiDU installed its mods in and its folder for scans and
 configurations. `sources::Scans` holds an item catalogue and its world
 catalogue validated once; the editor gives it to the calls of one request (a
 preset fit, a check, Apply), which then neither validate the catalogues again
-nor read the same original tables twice.
+nor read the same original tables or Kangaxx's quest files twice.
 
 ## Parity with the Python reference
 

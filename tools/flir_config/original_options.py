@@ -59,19 +59,28 @@ def is_spell_shield_row(row: dict) -> bool:
         "ident": "sw10", "tier": "s7", "token": "w01"}.items())
 
 
+def spell_shield_randomized(rows) -> bool:
+    """Whether the scroll's shop row is among these authored rows: the rewards
+    a configuration finally holds, whatever its tables or pool choices."""
+    return any(is_spell_shield_row(row) for row in rows)
+
+
 def spell_shield_spec(world: dict, *, randomized: bool) -> dict:
     """Describe the effective stock without changing the scan or source IDs.
 
     Existing payload, supply flags and quantities above three remain exact.
     An absent row uses ADD_STORE_ITEM's authored identified, zero-charge payload.
     Source selection remains separate: the shop option also works without
-    scroll randomisation or the extended item pool.
+    scroll randomisation or the extended item pool. <randomized> says whether
+    the scroll's shop row is one of the configuration's rewards.
     """
     resource = next((row for row in world["resources"] if row["id"] == "sto:udduer01"), None)
     if resource is None:
-        raise ProfileError("More Spell Shield scrolls requires UDDUER01.STO")
+        raise ProfileError("More Spell Shield copies need the shop UDDUER01.STO, which this game does not have")
     if any(row["id"] == "sto:udduer01" for row in world.get("unreadable", [])):
-        raise ProfileError("More Spell Shield scrolls requires UDDUER01.STO, which cannot be read")
+        raise ProfileError("More Spell Shield copies need the shop UDDUER01.STO, which cannot be read")
+    if not any(row["id"] == "itm:scrl8x" for row in world["resources"]):
+        raise ProfileError("More Spell Shield copies need SCRL8X.ITM, which this game does not have")
     rows = sorted((row for row in world["sources"] if row["resource"] == "sto:udduer01"),
                   key=lambda row: row["record"]["record_index"])
     if randomized and sum(row["item"] == "scrl8x" for row in rows) > 1:
@@ -159,7 +168,8 @@ def cursed_disguise_choices(available: Collection[str], *, game: str = "eet",
             if donor not in names and donor in (optional or set()):
                 donor, description = fallback
             if donor not in names:
-                raise ProfileError(f"Original cursed disguise needs {donor}.itm for {source}")
+                raise ProfileError(f"Cursed disguise items need {donor.upper()}.ITM to disguise "
+                                   f"{source.upper()}.ITM, and this game does not have it")
             variants.append({"donor": donor, "description_tra": description,
                              "name_tra": 212 if plate else None,
                              "nerf_plate": plate})

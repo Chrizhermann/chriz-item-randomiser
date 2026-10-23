@@ -9,15 +9,19 @@ draft ids (`adventure-<12 hex>`) and the workspace folders are masked; drafts
 sent back are each server's own. Further phases cover CIR's install record
 (read while the editor runs), the scripted quest-pool reward, a preset with
 the options that add their own plan fields (More Spell Shield copies, cursed
-disguises), and applying configurations to a synthetic test runtime, where
-each editor runs in turn on the same game and the game's files are compared
-afterwards.
+disguises), the options each game's preset offers and refuses, More Spell
+Shield copies where the scroll's own row cannot be randomised, and applying
+configurations to a synthetic test runtime, where each editor runs in turn on
+the same game and the game's files are compared afterwards, the original
+options also in games of other languages.
 
     python configurator/parity/editor_check.py
 """
 from __future__ import annotations
 
+import contextlib
 import copy
+import hashlib
 import http.client
 import json
 import os
@@ -35,6 +39,7 @@ from cli_check import PYTHON, build, sources
 from flir_config.profiles import write_json  # noqa: E402
 from test_cursed_disguises import resources as cursed_resources  # noqa: E402
 from test_postinstall_blpool_script import compiled_blpool, pool_game, pool_plan, write_registry  # noqa: E402
+from test_quest_options import crypt_fixture, dialogue_fixture  # noqa: E402
 from test_postinstall_resources import make_itm, mark_eet  # noqa: E402
 from test_postinstall_world_formats import item_record, make_are, make_sto  # noqa: E402
 
@@ -334,10 +339,39 @@ OPTIONS_PRESET = {"id": "bg2-original", "items": "extended", "targets": "extende
                   "options": {"scrolls": True, "more_spell_shield": True, "cursed_disguise": True}}
 
 
-def add_option_resources(game: Path) -> None:
-    """What the preset needs to fit with both options: Spell Shield's store
-    and scroll, a place of the scroll's tier, the disguise items, and English
-    game text with a journal table for the disguises' texts."""
+# Kangaxx's quest files, synthetic: the phases that apply the option pin their
+# hashes (pinned()), as the reference's tests patch ORIGINAL_HASHES.
+QUEST_FILES = {"hlskull.dlg": dialogue_fixture("hlskull.dlg"), "crypt526.bcs": crypt_fixture("AR0526"),
+               "crypt202.bcs": crypt_fixture("AR0202")}
+# A journal table with Kangaxx's quest, which the option adds an entry to.
+KANGAXX_JOURNAL = (b'function buildQuestsTable()\r\n\tcreateQuest ( 74458 )\r\n'
+                   b'\tcreateEntry ( 74458, -1, 54293, {}, nil )\r\nend\r\n')
+
+
+@contextlib.contextmanager
+def pinned(folder: Path):
+    """The scans and editors started meanwhile take QUEST_FILES as Kangaxx's
+    reviewed originals (CIR_PIN_OVERRIDES, which both sides read)."""
+    path = folder / "pins.json"
+    hashes = {name: hashlib.sha256(data).hexdigest() for name, data in QUEST_FILES.items()}
+    path.write_text(json.dumps({"quest_options.ORIGINAL_HASHES": hashes}), encoding="utf-8")
+    before = os.environ.get("CIR_PIN_OVERRIDES")
+    os.environ["CIR_PIN_OVERRIDES"] = str(path)
+    try:
+        yield
+    finally:
+        if before is None:
+            del os.environ["CIR_PIN_OVERRIDES"]
+        else:
+            os.environ["CIR_PIN_OVERRIDES"] = before
+
+
+def add_option_resources(game: Path, language: str = "en_US", *, kangaxx: bool = False) -> None:
+    """What the preset needs to fit with its options: Spell Shield's store
+    and scroll, a place of the scroll's tier, the disguise items, and the game
+    text of `language` (outside English with its dialogF.tlk) with a journal
+    table for the options' texts. With `kangaxx`, Kangaxx's quest files and
+    his quest in the journal."""
     override = game / "override"
     scroll = bytearray(make_itm())
     struct.pack_into("<I", scroll, 0x18, 0x4C)
@@ -349,10 +383,13 @@ def add_option_resources(game: Path) -> None:
         item = bytearray(data)
         struct.pack_into("<HH", item, 0x72 + 0x1E, 0, 0)
         (override / f"{name}.itm").write_bytes(bytes(item))
-    language = game / "lang" / "en_US"
-    language.mkdir(parents=True)
-    (language / "dialog.tlk").write_bytes((game / "dialog.tlk").read_bytes())
-    (override / "BGEE.LUA").write_bytes(b"quests = {}\n")
+    folder = game / "lang" / language
+    folder.mkdir(parents=True)
+    for name in ("dialog.tlk", "dialogF.tlk") if language != "en_US" else ("dialog.tlk",):
+        (folder / name).write_bytes((game / "dialog.tlk").read_bytes())
+    (override / "BGEE.LUA").write_bytes(KANGAXX_JOURNAL if kangaxx else b"quests = {}\n")
+    for filename, data in QUEST_FILES.items() if kangaxx else ():
+        (override / filename).write_bytes(data)
 
 
 def preset_draft(state: dict) -> dict:
@@ -382,6 +419,65 @@ def options_phase(root: Path):
     return concurrent_phase("preset options", root, catalog, world, steps)
 
 
+# Each game's own preset, by platform.
+OWN_PRESET = {"eet": "eet-original", "bgee": "bg1-original", "bg2ee": "bg2-original"}
+# The options that need something of the game, asked for one at a time.
+NEEDY_OPTIONS = ("kangaxx", "flail_heads", "totsc_tome", "more_spell_shield", "cursed_disguise")
+
+
+def availability_phase(root: Path, platform: str, area: str, *, quest_files: bool = False):
+    """The options the recommended preset offers on this game, with the
+    reasons for those it cannot apply, and the preset asked for each of them
+    anyway. With `quest_files`, the EET game has the shop, its scroll and the
+    cursed items, and Kangaxx's quest files as another mod changed them."""
+    name = f"options offered {platform}" + (" with quest files" if quest_files else "")
+    game = root / name.replace(" ", "-")
+    build(game, platform, area)
+    if quest_files:
+        add_option_resources(game)
+        for filename, data in QUEST_FILES.items():
+            (game / "override" / filename).write_bytes(data)
+    catalog, world = scan(game, root / f"{name.replace(' ', '-')}-scans", "en_US" if quest_files else None)
+    steps = [("recommended", lambda server, state: server.request("GET", "/api/recommended"))]
+    for option in NEEDY_OPTIONS:
+        preset = {"id": OWN_PRESET[platform], "options": {option: True}}
+        steps.append((f"preset with {option}", lambda server, state, preset=preset: server.post("/api/template", preset)))
+    return concurrent_phase(name, root, catalog, world, steps)
+
+
+def spell_shield_phase(root: Path, label: str, *, scroll_flags: int = 0x4C,
+                       scroll_rows: int = 1) -> tuple[int, int, int]:
+    """The preset with More Spell Shield copies where the scroll's own row
+    cannot be randomised: one that inventories do not show (`scroll_flags`),
+    or two SCRL8X rows in the shop. The fit leaves the row out, the shop keeps
+    the extra copies, and the shop's Spell Sequencer scroll (the same tier)
+    stays a reward."""
+    name = f"spell shield {label}"
+    game = root / name.replace(" ", "-")
+    build(game)
+    add_option_resources(game)
+    override = game / "override"
+    for resref, flags in (("scrl8x", scroll_flags), ("scrl8l", 0x4C)):
+        scroll = bytearray(make_itm())
+        struct.pack_into("<I", scroll, 0x18, flags)
+        (override / f"{resref}.itm").write_bytes(bytes(scroll))
+    rows = [(item_record(resref, expiration=0, charges=(1, 1, 0), flags=0), 1, 0)
+            for resref in ["scrl8x"] * scroll_rows + ["scrl8l"]]
+    (override / "udduer01.sto").write_bytes(bytes(make_sto(rows)))
+    catalog, world = scan(game, root / f"{name.replace(' ', '-')}-scans", "en_US")
+
+    def own(path):
+        return lambda server, state: server.post(path, preset_draft(state))
+
+    steps = [
+        ("preset", lambda server, state: server.post("/api/template", OPTIONS_PRESET)),
+        ("save", own("/api/save")),
+        ("validate", own("/api/validate")),
+        ("prepare", own("/api/prepare")),
+    ]
+    return concurrent_phase(name, root, catalog, world, steps)
+
+
 OPEN_GAME = "Close this game and its installer before applying settings"
 
 
@@ -389,20 +485,29 @@ OPEN_GAME = "Close this game and its installer before applying settings"
 # campaign starts reach it: none on EET ("area"), Siege of Dragonspear on
 # BG:EE ("bd0100"), Throne of Bhaal on BG2:EE ("ar4000").
 APPLY_GAMES = (("eet", "area"), ("bgee", "bd0100"), ("bg2ee", "ar4000"))
+# The preset with Kangaxx's items too, applied in games of other languages:
+# German and Polish have CIR's own texts for the options (Polish with its
+# female wordings for dialogF.tlk), Spanish shows the English ones.
+LANGUAGE_PRESET = {**OPTIONS_PRESET, "options": {**OPTIONS_PRESET["options"], "kangaxx": True}}
+OPTION_LANGUAGES = ("de_DE", "pl_PL", "es_ES")
 
 
 def apply_phase(root: Path, platform: str, area: str, attempts: int = 3,
-                options: bool = False) -> tuple[int, int, int]:
+                options: bool = False, language: str | None = None) -> tuple[int, int, int]:
     """Apply to a test runtime: each editor in turn on the same game and
     workspaces, restored in between, then the game and workspaces compared.
-    With `options`, the applied draft is the preset with both options.
+    With `options`, the applied draft is the preset with both options; with a
+    `language`, the preset with Kangaxx's items too, in that language's game.
 
     Both check for real that no game, loader, WeiDU or mod installer runs (the
     reference asks Windows); one started meanwhile by something else refuses
     only one side's apply, so such a run is repeated."""
-    name = platform + (" preset options" if options else "")
+    name = platform + (f" options {language}" if language else " preset options" if options else "")
     for attempt in range(1, attempts + 1):
-        results, trees = apply_attempt(root / f"apply-{name.replace(' ', '-')}-{attempt}", platform, area, options)
+        folder = root / f"apply-{name.replace(' ', '-')}-{attempt}"
+        folder.mkdir()
+        with pinned(folder) if language else contextlib.nullcontext():
+            results, trees = apply_attempt(folder / "attempt", platform, area, options, language)
         refused = any(OPEN_GAME in text for outcomes in results.values() for _, (_, _, _, text) in outcomes)
         if refused and attempt < attempts:
             print(f"apply {name}: a game, loader or installer ran during attempt {attempt}; repeating",
@@ -417,18 +522,19 @@ def apply_phase(root: Path, platform: str, area: str, attempts: int = 3,
         return len(results["python"]), files, failures
 
 
-def apply_attempt(root: Path, platform: str, area: str, options: bool = False) -> tuple[dict, dict]:
+def apply_attempt(root: Path, platform: str, area: str, options: bool = False,
+                  language: str | None = None) -> tuple[dict, dict]:
     root.mkdir()
     game = root / "apply-game"
     build(game, platform, area)
-    if options:
-        add_option_resources(game)
+    if options or language:
+        add_option_resources(game, language or "en_US", kangaxx=language is not None)
     for name in ("override/M_FLPR.lua", "override/FLPRRun.menu", "randomiser-campaigns/next.lua"):
         path = game / name
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text("test runtime")
     (game / "override" / "other-mod.txt").write_bytes(b"preserve unrelated mod content")
-    catalog, world = scan(game, root / "apply-scans", "en_US" if options else None)
+    catalog, world = scan(game, root / "apply-scans", language or ("en_US" if options else None))
     workspace, other = root / "apply-workspace", root / "apply-other"
     before = snapshot_tree(game)
     results, trees = {}, {}
@@ -449,7 +555,7 @@ def apply_attempt(root: Path, platform: str, area: str, options: bool = False) -
         return lambda server, state: server.request("GET", path)
 
     def preset(server, state):
-        return server.post("/api/template", OPTIONS_PRESET)
+        return server.post("/api/template", LANGUAGE_PRESET if language else OPTIONS_PRESET)
 
     def apply_preset(server, state):
         return server.post("/api/apply", preset_draft(state))
@@ -470,7 +576,13 @@ def apply_attempt(root: Path, platform: str, area: str, options: bool = False) -
             finally:
                 server.stop()
 
-        if options:
+        if language:
+            session(workspace, [("state", state_of), ("recommended preset", get("/api/recommended")),
+                                ("preset with Kangaxx, Spell Shield and disguises", preset),
+                                ("apply", apply_preset), ("apply again unchanged", apply_preset),
+                                ("state after apply", state_of)])
+            session(workspace, [("reopened state", state_of)])
+        elif options:
             session(workspace, [("state", state_of), ("preset with Spell Shield and disguises", preset),
                                 ("apply", apply_preset), ("state after apply", state_of)])
             session(workspace, [("reopened state", state_of)])
@@ -503,8 +615,13 @@ def main() -> int:
         steps = session() + registry_steps(game, ["/api/recommended"])
         phases = [concurrent_phase("synthetic", root, catalog, world, steps), pool_phase(root),
                   options_phase(root)]
+        phases += [availability_phase(root, platform, area) for platform, area in APPLY_GAMES]
+        phases.append(availability_phase(root, "eet", "area", quest_files=True))
+        phases += [spell_shield_phase(root, "hidden scroll", scroll_flags=0x44),
+                   spell_shield_phase(root, "two scroll rows", scroll_rows=2)]
         phases += [apply_phase(root, platform, area) for platform, area in APPLY_GAMES]
         phases.append(apply_phase(root, "eet", "area", options=True))
+        phases += [apply_phase(root, "eet", "area", language=language) for language in OPTION_LANGUAGES]
         for result in phases:
             totals = [total + value for total, value in zip(totals, result)]
     print(f"editor parity: {totals[0]} requests, {totals[1]} written files compared, {totals[2]} failures")

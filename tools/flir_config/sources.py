@@ -18,7 +18,7 @@ from .resources import GameResources, ITEM_SEMANTIC_FIELDS, RESOURCE_TYPES, Scan
 from .world_formats import _reference, parse_are, parse_cre, parse_sto
 from .virtual_sources import ADAPTER_ID as VIRTUAL_ADAPTER_ID
 from .virtual_sources import validate_registration as validate_virtual_registration
-from .original_options import is_spell_shield_row, spell_shield_spec
+from .original_options import spell_shield_randomized, spell_shield_spec
 from .cursed_disguises import cursed_disguise_spec, validate_cursed_disguise_spec
 from .original_registrations import (SOURCE_ADAPTER as ORIGINAL_SOURCE_ADAPTER,
                                      TARGET_ADAPTER as ORIGINAL_TARGET_ADAPTER,
@@ -658,9 +658,11 @@ class Scans:
     """An item catalogue and the world catalogue scanned with it, validated
     once for a series of calls on them, such as one editor request (a preset
     fit, a check, applying a configuration). It also keeps the original tables
-    those calls resolve for a plan. Neither catalogue may change while it is
-    in use; `items` and `index` are validate_catalog's and validate_world's
-    results for these very catalogues when the caller already has them."""
+    those calls resolve for a plan, and why an original option cannot apply
+    when they read the game's files to find out. Neither catalogue may change
+    while it is in use; `items` and `index` are validate_catalog's and
+    validate_world's results for these very catalogues when the caller
+    already has them."""
 
     def __init__(self, catalog: dict, world: dict, *, items: dict | None = None,
                  index: dict | None = None):
@@ -668,6 +670,7 @@ class Scans:
         self.items = validate_catalog(catalog) if items is None else items
         self.index = validate_world(world, catalog) if index is None else index
         self.tables: dict = {}
+        self.option_problems: dict[str, str | None] = {}
 
     def indexes(self, catalog: dict, world: dict) -> tuple[dict, dict]:
         """The item index and the world index, for the catalogues these scans hold."""
@@ -755,10 +758,12 @@ def bind_profile(profile: dict, catalog: dict, world: dict, plan: dict, *,
                                 if present_original else ({}, {}))
     shield = plan.get("spell_shield")
     if present_original and plan["original_options"].get("more_spell_shield"):
-        expected = spell_shield_spec(world, randomized=any(
-            row["enabled"] and is_spell_shield_row(row) for row in source_rows.values()))
+        # The scroll's shop row is randomised exactly when it is one of the plan's rewards.
+        expected = spell_shield_spec(world, randomized=spell_shield_randomized(
+            registration.get("authored") for registration in _rows(plan["registrations"], "registration")
+            if registration.get("adapter_id") == ORIGINAL_SOURCE_ADAPTER))
         if shield != expected:
-            raise ProfileError("Spell Shield stock metadata disagrees with the scan and original options")
+            raise ProfileError("Spell Shield stock metadata disagrees with the scan and the plan's rewards")
     elif "spell_shield" in plan:
         raise ProfileError("Spell Shield stock metadata requires its original option")
     if present_original and plan["original_options"].get("cursed_disguise"):

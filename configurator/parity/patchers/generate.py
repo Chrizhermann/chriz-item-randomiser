@@ -58,7 +58,8 @@ from test_postinstall_world_formats import item_record, make_cre, make_sto  # no
 from configurator.parity import codepages  # noqa: E402
 
 OUT = ROOT / "configurator" / "cir-config" / "tests" / "fixtures" / "patchers"
-TABLES = {"quest_options.ORIGINAL_HASHES": quest_options.ORIGINAL_HASHES}
+TABLES = {"quest_options.ORIGINAL_HASHES": quest_options.ORIGINAL_HASHES,
+          "quest_options.BG2EE_HASHES": quest_options.BG2EE_HASHES}
 ERROR_KINDS = ((ProfileError, "Profile"), (ScanError, "Scan"), (GameTextError, "GameText"), (KeyError, "Key"),
                (TypeError, "Type"))
 
@@ -195,9 +196,46 @@ def quest_option_inputs(line_endings: str) -> dict:
     return resources
 
 
+def kangaxx_cases(s: Scenario, resources: dict, patched: bytes, crypts: dict, bg2ee: bytes) -> None:
+    """kangaxx_problem: which files it reads, and why a game cannot have the option."""
+    ids = {"dlg:hlskull": "hlskull.dlg", "bcs:crypt526": "crypt526.bcs", "bcs:crypt202": "crypt202.bcs"}
+    other = quest_tests.dialogue_fixture("hlskull.dlg", action=b'SetGlobal("KangaxxQuest","GLOBAL",2)\r\n')
+    originals = {resource: resources[name] for resource, name in ids.items()}
+    own = {"dlg:hlskull": patched, **{resource: crypts[name] for resource, name in ids.items() if name in crypts}}
+    for label, files in (
+            ("reviewed", originals), ("bg2ee dialogue", {**originals, "dlg:hlskull": bg2ee}),
+            ("own dialogue", {**originals, "dlg:hlskull": patched}), ("own patches", own),
+            ("other dialogue", {**originals, "dlg:hlskull": other}),
+            ("other crypts", {**originals, "bcs:crypt526": originals["bcs:crypt526"] + b"x",
+                              "bcs:crypt202": b"SC\nCR\nCO\nCO\nRS\nRS\nCR\nSC\n"}),
+            ("other everything", {"dlg:hlskull": other, "bcs:crypt526": b"", "bcs:crypt202": patched}),
+            ("missing crypt", {key: value for key, value in originals.items() if key != "bcs:crypt202"}),
+            ("missing dialogue and crypt", {"bcs:crypt526": originals["bcs:crypt526"]}),
+            ("missing all", {"are:other": b"area"})):
+        hashes = {resource: sha(data) for resource, data in files.items()}
+
+        def run(files=files, hashes=hashes):
+            requested = []
+
+            def read(wanted):
+                requested.append(list(wanted))
+                return {resource: files[resource] for resource in wanted}
+
+            return {"problem": quest_options.kangaxx_problem(hashes, read), "read": requested}
+
+        s.case(f"kangaxx_problem {label}", "quest_options.kangaxx_problem", {"hashes": hashes, "files": files}, run)
+    # A file the read cannot supply.
+    hashes = {resource: sha(data) for resource, data in {**originals, "dlg:hlskull": other}.items()}
+    s.case("kangaxx_problem unread", "quest_options.kangaxx_problem", {"hashes": hashes, "files": {}},
+           lambda: {"problem": quest_options.kangaxx_problem(hashes, lambda wanted: {}), "read": [["dlg:hlskull"]]})
+
+
 def quest_options_scenario(name: str, line_endings: str) -> Scenario:
     resources = quest_option_inputs(line_endings)
-    s = Scenario(name, {"quest_options.ORIGINAL_HASHES": {key: sha(value) for key, value in resources.items()}})
+    # BG2:EE's own HLSKULL.DLG: no final line break after its action.
+    bg2ee = quest_tests.dialogue_fixture("hlskull.dlg", action=b'SetGlobal("KangaxxQuest","GLOBAL",1)')
+    s = Scenario(name, {"quest_options.ORIGINAL_HASHES": {key: sha(value) for key, value in resources.items()},
+                        "quest_options.BG2EE_HASHES": {"hlskull.dlg": sha(bg2ee)}})
     if line_endings == "lf":
         quest_rewards_cases(s)
         for path in ("languages/english/hlskull.tra", "languages/english/in-game.tra",
@@ -220,6 +258,13 @@ def quest_options_scenario(name: str, line_endings: str) -> Scenario:
            lambda: quest_options.patch_hlskull(patched, refs))
     s.case("patch_hlskull moved refs", "quest_options.patch_hlskull", {"data": patched, "refs": moved},
            lambda: quest_options.patch_hlskull(patched, moved))
+    with s.overrides():
+        bg2ee_patched = quest_options.patch_hlskull(bg2ee, refs)
+    for label, data in (("bg2ee", bg2ee), ("bg2ee reexport", bg2ee_patched)):
+        s.case(f"patch_hlskull {label}", "quest_options.patch_hlskull", {"data": data, "refs": refs},
+               lambda data=data: quest_options.patch_hlskull(data, refs))
+        s.case(f"original_dialogue {label}", "quest_options.original_dialogue", {"name": "hlskull.dlg", "data": data},
+               lambda data=data: quest_options.original_dialogue("hlskull.dlg", data))
     for label, bad in (("missing ref", {k: v for k, v in refs.items() if k != 21}),
                        ("ref sentinel", {**refs, 4: 0xFFFFFFFF}), ("negative ref", {**refs, 4: -1})):
         s.case(f"patch_hlskull {label}", "quest_options.patch_hlskull", {"data": original, "refs": bad},
@@ -274,21 +319,31 @@ def quest_options_scenario(name: str, line_endings: str) -> Scenario:
            lambda: quest_options.ward_item({1502: 5, 1503: 6, 1504: 7}))
     s.case("ward_item missing", "quest_options.ward_item", {"refs": {1502: 5, 1503: 6}},
            lambda: quest_options.ward_item({1502: 5, 1503: 6}))
-    tlk = make_tlk(["old"])
+    text = GameText(make_tlk(["old"]))
+    both = GameText(make_tlk(["old"]), make_tlk(["old (f)"]))
     with s.overrides():
-        output, prepared_tlk = quest_options.prepare_quest_options(resources, tlk, kangaxx=True)
+        output, prepared = quest_options.prepare_quest_options(resources, text, kangaxx=True)
+        _, polish = quest_options.prepare_quest_options(resources, both, kangaxx=True, language="pl_PL")
     for label, args in (
-            ("kangaxx", {"resources": resources, "tlk": tlk, "kangaxx": True, "language": "en_us"}),
-            ("kangaxx gb", {"resources": resources, "tlk": tlk, "kangaxx": True, "language": "EN_GB"}),
-            ("reexport", {"resources": output, "tlk": prepared_tlk, "kangaxx": True, "language": "english"}),
-            ("none", {"resources": {}, "tlk": tlk, "kangaxx": False, "language": "en_US"}),
-            ("german", {"resources": resources, "tlk": tlk, "kangaxx": True, "language": "de_DE"}),
-            ("german none", {"resources": {}, "tlk": tlk, "kangaxx": False, "language": "de_DE"}),
-            ("missing crypt", {"resources": {"hlskull.dlg": original}, "tlk": tlk, "kangaxx": True, "language": "en_us"}),
-            ("bad tlk", {"resources": resources, "tlk": b"invalid", "kangaxx": True, "language": "en_us"})):
+            ("kangaxx", {"resources": resources, "text": text, "kangaxx": True, "language": "en_us"}),
+            ("kangaxx gb", {"resources": resources, "text": text, "kangaxx": True, "language": "EN_GB"}),
+            ("reexport", {"resources": output, "text": prepared, "kangaxx": True, "language": "english"}),
+            ("none", {"resources": {}, "text": text, "kangaxx": False, "language": "en_US"}),
+            ("german", {"resources": resources, "text": text, "kangaxx": True, "language": "de_DE"}),
+            ("german both", {"resources": resources, "text": both, "kangaxx": True, "language": "de_DE"}),
+            ("german none", {"resources": {}, "text": text, "kangaxx": False, "language": "de_DE"}),
+            ("polish both", {"resources": resources, "text": both, "kangaxx": True, "language": "pl_PL"}),
+            ("polish again", {"resources": resources, "text": polish, "kangaxx": True, "language": "PL_pl"}),
+            ("spanish", {"resources": resources, "text": both, "kangaxx": True, "language": "es_ES"}),
+            ("default", {"resources": resources, "text": both, "kangaxx": True, "language": "default"}),
+            ("unknown", {"resources": resources, "text": text, "kangaxx": True, "language": "nb_no"}),
+            ("missing crypt", {"resources": {"hlskull.dlg": original}, "text": text, "kangaxx": True, "language": "en_us"}),
+            ("bad tlk", {"resources": resources, "text": GameText(b"invalid"), "kangaxx": True, "language": "en_us"}),
+            ("bad female", {"resources": resources, "text": GameText(make_tlk(["old"]), b"bad"), "kangaxx": True,
+                            "language": "de_DE"})):
         s.case(f"prepare_quest_options {label}", "quest_options.prepare_quest_options", args,
                lambda args=args: quest_options.prepare_quest_options(
-                   args["resources"], args["tlk"], kangaxx=args["kangaxx"], language=args["language"]))
+                   args["resources"], args["text"], kangaxx=args["kangaxx"], language=args["language"]))
     lua = (b'function buildQuestsTable()\r\n\tcreateQuest ( 74458 )\r\n'
            b'\tcreateEntry ( 74458, -1, 54293, {}, nil )\r\nend\r\n')
     with s.overrides():
@@ -309,6 +364,7 @@ def quest_options_scenario(name: str, line_endings: str) -> Scenario:
         s.case(f"patch_kangaxx_journal {label}", "quest_options.patch_kangaxx_journal",
                {"lua": journal, "patched_dialogue": dialogue},
                lambda journal=journal, dialogue=dialogue: quest_options.patch_kangaxx_journal(journal, dialogue))
+    kangaxx_cases(s, resources, patched, crypts, bg2ee)
     return s
 
 
@@ -1512,11 +1568,15 @@ def inventory_scenarios() -> list[Scenario]:
     return [store, creature, group]
 
 
-def shop_world(records, *, sha256="1" * 64, extra_sources=(), resource_id="sto:udduer01"):
+SCROLL_ITEM = {"id": "itm:scrl8x", "sha256": "3" * 64}
+
+
+def shop_world(records, *, sha256="1" * 64, extra_sources=(), resource_id="sto:udduer01", scroll=SCROLL_ITEM):
     store = parse_sto(bytes(make_sto(records)))
     sources = [{"id": f"sto:udduer01/item/{row['record_index']}", "resource": "sto:udduer01", "item": row["resref"],
                 "record": row} for row in store["items"]]
-    return {"resources": [{"id": "are:other", "sha256": "2" * 64}, {"id": resource_id, "sha256": sha256}],
+    return {"resources": [{"id": "are:other", "sha256": "2" * 64}, {"id": resource_id, "sha256": sha256}]
+            + ([scroll] if scroll else []),
             "sources": list(reversed(sources)) + list(extra_sources)}
 
 
@@ -1548,6 +1608,10 @@ def original_options_scenario() -> Scenario:
                          ("list", [row]), ("none", None)):
         s.case(f"is_spell_shield_row {label}", "original_options.is_spell_shield_row", {"row": value},
                lambda value=value: original_options.is_spell_shield_row(value))
+    for label, rows in (("none", []), ("row", [row]), ("among others", [{"id": "x"}, None, row, "row"]),
+                        ("changed", [dict(row, token="w02")]), ("others", [{"id": "x"}, [row]])):
+        s.case(f"spell_shield_randomized {label}", "original_options.spell_shield_randomized", {"rows": rows},
+               lambda rows=rows: original_options.spell_shield_randomized(rows))
     worlds = {
         "existing": shop_world([(item_record("other"), 4, 0), (item_record("scrl8x", charges=(1, 2, 3), flags=7), 9, 1)]),
         "zero": shop_world([(item_record("scrl8x"), 0, 0)]),
@@ -1559,9 +1623,12 @@ def original_options_scenario() -> Scenario:
         "bad hash": shop_world([(item_record("scrl8x"), 1, 0)], sha256="ABC"),
         "string index": shop_world([(item_record("scrl8x"), 1, 0)], extra_sources=[
             {"id": "x", "resource": "sto:udduer01", "item": "other", "record": {"record_index": "a"}}]),
-        "missing key": {"resources": [{"id": "sto:udduer01", "sha256": "1" * 64}],
+        "missing key": {"resources": [{"id": "sto:udduer01", "sha256": "1" * 64}, SCROLL_ITEM],
                         "sources": [{"id": "x", "resource": "sto:udduer01", "record": {"record_index": 0}}]},
-        "no sources": {"resources": [{"id": "sto:udduer01", "sha256": "1" * 64}]},
+        "no sources": {"resources": [{"id": "sto:udduer01", "sha256": "1" * 64}, SCROLL_ITEM]},
+        # The option stocks SCRL8X.ITM, which another mod may have removed.
+        "no scroll item": shop_world([(item_record("scrl8x"), 1, 0)], scroll=None),
+        "scroll row without id": shop_world([(item_record("scrl8x"), 1, 0)], scroll={"sha256": "3" * 64}),
         "quantity float": shop_world([(item_record("scrl8x"), 1, 0)]),
         # The world scan left out a file it could not read (sources.scan_world).
         "unreadable store": dict(shop_world([]), unreadable=[{"id": "sto:udduer01", "reason": "Truncated STOR header."}]),
@@ -1732,16 +1799,21 @@ def cursed_scenario() -> Scenario:
         s.case(f"indices {seed!r}", "cursed_disguises.cursed_disguise_indices", {"spec": spec, "seed": seed},
                lambda seed=seed: cursed_disguises.cursed_disguise_indices(spec, seed))
     revisions = cursed_disguises.cursed_disguise_spec(hashes, item_revisions=True)
-    tlk = make_tlk(["Existing text"])
-    _, _, prepared = cursed_disguises.prepare_cursed_disguises(spec, data, tlk)
+    text = GameText(make_tlk(["Existing text"]))
+    both = GameText(make_tlk(["Existing text"]), make_tlk(["Existing text (f)"]))
+    _, _, prepared = cursed_disguises.prepare_cursed_disguises(spec, data, text)
     for label, value, resources, source, language in (
-            ("all", spec, data, tlk, "en_us"), ("again", spec, data, prepared, "EN_GB"),
-            ("revisions", revisions, data, make_tlk([]), "english"), ("floats", floats, data, tlk, "en_us"),
-            ("german", spec, data, tlk, "de_de"), ("changed", spec, dict(data, brac06=data["brac06"] + b"x"), tlk, "en_us"),
-            ("missing", spec, {k: v for k, v in data.items() if k != "ring31"}, tlk, "en_us"),
-            ("bad tlk", spec, data, b"bad", "en_us")):
+            ("all", spec, data, text, "en_us"), ("again", spec, data, prepared, "EN_GB"),
+            ("revisions", revisions, data, GameText(make_tlk([])), "english"), ("floats", floats, data, text, "en_us"),
+            ("german", spec, data, text, "de_de"), ("german both", spec, data, both, "de_DE"),
+            ("polish both", spec, data, both, "pl_PL"), ("polish revisions", revisions, data, both, "pl_PL"),
+            ("spanish", spec, data, both, "es_ES"), ("default", spec, data, both, "default"),
+            ("changed", spec, dict(data, brac06=data["brac06"] + b"x"), text, "en_us"),
+            ("missing", spec, {k: v for k, v in data.items() if k != "ring31"}, text, "en_us"),
+            ("bad tlk", spec, data, GameText(b"bad"), "en_us"),
+            ("bad female", spec, data, GameText(make_tlk(["Existing text"]), b"bad"), "pl_PL")):
         s.case(f"prepare {label}", "cursed_disguises.prepare_cursed_disguises",
-               {"spec": value, "resources": resources, "tlk": source, "language": language},
+               {"spec": value, "resources": resources, "text": source, "language": language},
                lambda value=value, resources=resources, source=source, language=language:
                cursed_disguises.prepare_cursed_disguises(value, resources, source, language=language))
     return s
@@ -1873,6 +1945,11 @@ def game_text_scenario() -> Scenario:
 # Every line a text route or a golem chest shows.
 LINES = (*(line for resource in sorted(mode2_rewards.TEXT_REFS) for line in mode2_rewards.text_lines(resource)),
          *container_rewards.TEXT_LINES)
+# Every line the original options Kangaxx's items and cursed disguises show.
+OPTION_LINES = (*quest_options.KANGAXX_LINES, *sorted({
+    ("in-game.tra", face[key]) for item_revisions in (False, True)
+    for row in original_options.cursed_disguise_choices(ALL_DISGUISE_ITEMS, item_revisions=item_revisions)
+    for face in row["variants"] for key in ("description_tra", "name_tra") if face[key] is not None}))
 CODES = ("cs_CZ", "de_DE", "en_US", "es_ES", "fr_FR", "hu_HU", "it_IT", "ja_JP", "ko_KR", "pl_PL", "pt_BR", "ru_RU",
          "tr_TR", "uk_UA", "zh_CN", "default", "DEFAULT", "nb_NO", "nb_no", "pl", "PL_pl", "", "en", "de-DE", "_de",
          "en_us_extra")
@@ -1940,6 +2017,16 @@ FOLDERS = {
     "sorted files": {"czech/b.tra": b"", "czech/A.tra": b"", "czech/c.TRA": b"", "czech/sub/x.tra": b"",
                      "bgee/czech/Z.tra": b"", "bgee/polish/in-game.tra": b"@101 = ~z~\r\n"},
     "nothing": {},
+    "english": {"english/in-game.tra": b"@101 = ~Item~\r\n@399 = ~Well~ ~Well (f)~\r\n"},
+    "czech english": {"english/in-game.tra": b"@101 = ~Item~\r\n@399 = ~Well~\r\n",
+                      "czech/in-game.tra": CZECH.encode("cp1250")},
+    "czech partial english": {"english/in-game.tra": b"@101 = ~Item~\r\n@399 = ~Well~\r\n",
+                              "czech/in-game.tra": "@101 = ~Zvedáš předmět.~\r\n".encode("cp1250")},
+    "polish not cp1250 english": {"english/in-game.tra": b"@101 = ~Item~\r\n@399 = ~Well~\r\n",
+                                  "polish/in-game.tra": b"@101 = ~\x81~\r\n@399 = ~x~\r\n"},
+    "polish ee not utf-8 english": {"english/in-game.tra": b"@101 = ~Item~\r\n@399 = ~Well~\r\n",
+                                    "polish/in-game.tra": b"@101 = ~ok~\r\n@399 = ~ok~\r\n",
+                                    "bgee/polish/in-game.tra": b"@101 = ~\xff~\r\n"},
 }
 FOLDER_CALLS = (
     ("czech", "cs_CZ"), ("czech converted", "cs_CZ"), ("czech converted ee", "cs_CZ"),
@@ -1948,7 +2035,9 @@ FOLDER_CALLS = (
     ("polish not cp1250", "pl_PL"), ("polish ee not utf-8", "pl_PL"), ("japanese not cp932", "ja_JP"),
     ("japanese", "ja_JP"), ("chinese", "zh_CN"), ("korean", "ko_KR"), ("russian", "ru_RU"), ("turkish", "tr_TR"),
     ("spanish empty", "es_ES"), ("spanish huge number", "es_ES"), ("sorted files", "cs_CZ"),
-    ("sorted files", "default"), ("sorted files", "nb_NO"), ("nothing", "cs_CZ"), ("nothing", "default"))
+    ("sorted files", "default"), ("sorted files", "nb_NO"), ("nothing", "cs_CZ"), ("nothing", "default"),
+    ("english", "cs_CZ"), ("english", "default"), ("english", "en_US"), ("czech english", "cs_CZ"),
+    ("czech partial english", "cs_CZ"), ("polish not cp1250 english", "pl_PL"), ("polish ee not utf-8 english", "pl_PL"))
 
 
 def folder_call(call: str, files: dict, code: str, wanted=None, name=None):
@@ -1959,6 +2048,8 @@ def folder_call(call: str, files: dict, code: str, wanted=None, name=None):
             return translations.missing(code, wanted)
         if call == "lines":
             return listed_lines(translations.lines(code, wanted))
+        if call == "option_lines":
+            return listed_lines(translations.option_lines(code, wanted))
         if call == "texts":
             return listed_texts(translations.texts(code, name))
         return [relative(path, root) for path in translations.sources(code)]
@@ -1980,6 +2071,16 @@ def translations_scenario() -> Scenario:
                lambda code=code: listed_lines(translations.lines(code, LINES)))
         s.case(f"lines {code} none", "translations.lines", {"code": code, "wanted": []},
                lambda code=code: listed_lines(translations.lines(code, [])))
+    for code in ("en_US", "pl_PL", "de_DE", "es_ES", "default", "nb_NO", "PL_pl", "english"):
+        s.case(f"option_lines {code}", "translations.option_lines", {"code": code, "wanted": OPTION_LINES},
+               lambda code=code: listed_lines(translations.option_lines(code, OPTION_LINES)))
+        s.case(f"option_lines {code} none", "translations.option_lines", {"code": code, "wanted": []},
+               lambda code=code: listed_lines(translations.option_lines(code, [])))
+    # German lacks in-game.tra @102, so all three lines are English there.
+    mixed = [("in-game.tra", 1503), ("hlskull.tra", 4), ("in-game.tra", 102)]
+    for code in ("de_DE", "pl_PL", "es_ES"):
+        s.case(f"option_lines {code} mixed", "translations.option_lines", {"code": code, "wanted": mixed},
+               lambda code=code: listed_lines(translations.option_lines(code, mixed)))
     for code in ("en_US", "pl_PL", "de_DE", "es_ES", "default", "nb_NO"):
         for name in ("in-game.tra", "ppdjinn.tra", "hlskull.tra", "botsmith.tra", "kpglai01.tra", "udduer01.tra",
                      "setup.tra", "absent.tra"):
@@ -1989,8 +2090,8 @@ def translations_scenario() -> Scenario:
     for label, code in FOLDER_CALLS:
         files = FOLDERS[label]
         for call, arguments in (("missing", {"wanted": wanted}), ("missing", {"wanted": [("ppdjinn.tra", 99)]}),
-                                ("lines", {"wanted": wanted}), ("texts", {"name": "in-game.tra"}),
-                                ("sources", {})):
+                                ("lines", {"wanted": wanted}), ("option_lines", {"wanted": wanted}),
+                                ("texts", {"name": "in-game.tra"}), ("sources", {})):
             case = f"folder {call} {label} {code}" + (" ppdjinn" if arguments.get("wanted", wanted) != wanted else "")
             s.case(case, f"translations.{call}", {"files": files, "code": code, **arguments},
                    lambda call=call, files=files, code=code, arguments=arguments:

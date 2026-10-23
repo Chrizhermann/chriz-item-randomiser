@@ -8,6 +8,7 @@
 
 mod common;
 
+use cir_config::game_text::GameText;
 use cir_config::json::Value;
 use cir_config::quest_options::prepare_quest_options;
 use cir_config::quest_rewards::quests;
@@ -110,16 +111,9 @@ fn builders_match_the_pinned_synthetic_hashes() {
 
 #[test]
 fn no_selected_options_changes_nothing() {
-    let original = make_tlk(&["old"]);
-    let (output, tlk) = prepare_quest_options(&BTreeMap::new(), &original, false, "en_us").unwrap();
-    assert!(output.is_empty());
-    assert_eq!(tlk, original);
-    // The export passes every language's game text through; only Kangaxx's
-    // texts need English.
+    let original = GameText { male: make_tlk(&["old"]), female: Some(make_tlk(&["old"])) };
+    assert_eq!(prepare_quest_options(&BTreeMap::new(), &original, false, "en_us").unwrap(), (Vec::new(), original.clone()));
     assert_eq!(prepare_quest_options(&BTreeMap::new(), &original, false, "de_de").unwrap(), (Vec::new(), original.clone()));
-    let error = prepare_quest_options(&resources(), &original, true, "de_de").unwrap_err();
-    assert_eq!(error.kind, cir_config::error::ErrorKind::Profile);
-    assert_eq!(error.message, "Original quest options currently require English game text");
 }
 
 /// The data the reference's Lua guard test (test_postinstall_quest_rewards)
@@ -150,6 +144,8 @@ mod pinned_synthetic_resources {
     use cir_config::error::ErrorKind;
     use cir_config::quest_options::{original_crypt, original_dialogue, patch_crypt, patch_hlskull, patch_kangaxx_journal};
     use cir_config::quest_rewards::blocks;
+    use cir_config::resources::Tlk;
+    use cir_config::translations::{self, Texts};
     use common::builders::{contains, count, parse_dialogue, replace, tlk_text, u32_at, ParsedDialogue};
 
     fn refs() -> BTreeMap<i64, i64> {
@@ -244,17 +240,66 @@ mod pinned_synthetic_resources {
     #[test]
     fn complete_prepare_uses_authored_last_ward_text_and_is_idempotent() {
         let resources = setup();
-        let (output, tlk) = prepare_quest_options(&resources, &make_tlk(&["old"]), true, "en_us").unwrap();
+        let (output, text) = prepare_quest_options(&resources, &GameText::new(make_tlk(&["old"])), true, "en_us").unwrap();
         let mut names: Vec<&str> = output.iter().map(|(name, _)| name.as_str()).collect();
         names.sort();
         assert_eq!(names, ["crypt202.bcs", "crypt526.bcs", "flrward1.bam", "flrward1.itm", "hlskull.dlg"]);
+        assert_eq!(text.female, None);
         let ward = &output.iter().find(|(name, _)| name == "flrward1.itm").unwrap().1;
         assert_eq!(&ward[0x3A..0x42], b"flrward1");
-        assert_eq!(tlk_text(&tlk, u32_at(ward, 8)).as_deref(), Some("Ward Stone"));
-        let description = tlk_text(&tlk, u32_at(ward, 0x54)).unwrap();
+        assert_eq!(tlk_text(&text.male, u32_at(ward, 8)).as_deref(), Some("Ward Stone"));
+        let description = tlk_text(&text.male, u32_at(ward, 0x54)).unwrap();
         assert!(description.starts_with("The cardinal points"), "{description}");
         let again_input: BTreeMap<String, Vec<u8>> = output.iter().cloned().collect();
-        assert_eq!(prepare_quest_options(&again_input, &tlk, true, "en_us").unwrap(), (output, tlk));
+        assert_eq!(prepare_quest_options(&again_input, &text, true, "en_us").unwrap(), (output, text));
+    }
+
+    /// German and Polish games get their own texts, a female protagonist her
+    /// wording in dialogf.tlk; any other language gets the English ones.
+    #[test]
+    fn kangaxx_texts_are_the_games_language_or_english() {
+        let resources = setup();
+        let prepared = |language: &str| {
+            let start = GameText { male: make_tlk(&["old"]), female: Some(make_tlk(&["old (f)"])) };
+            let (output, text) = prepare_quest_options(&resources, &start, true, language).unwrap();
+            let female = text.female.clone().unwrap();
+            let count = Tlk::new(text.male.clone()).unwrap().count;
+            assert_eq!(Tlk::new(female.clone()).unwrap().count, count);
+            let appended: Vec<(String, String)> = (1..count)
+                .map(|number| (tlk_text(&text.male, number).unwrap(), tlk_text(&female, number).unwrap()))
+                .collect();
+            let ward = &output.iter().find(|(name, _)| name == "flrward1.itm").unwrap().1;
+            (tlk_text(&text.male, u32_at(ward, 8)).unwrap(), appended)
+        };
+        let lines = |language: &str| -> (Texts, Texts) {
+            (translations::texts(language, "hlskull.tra").unwrap(), translations::texts(language, "in-game.tra").unwrap())
+        };
+        for (language, name, own) in [
+            ("de_DE", Some("Bannstein"), "de_DE"),
+            ("pl_PL", None, "pl_PL"),
+            ("es_ES", Some("Ward Stone"), "en_US"),
+            ("default", Some("Ward Stone"), "en_US"),
+        ] {
+            let (ward, appended) = prepared(language);
+            let (dialogue, items) = lines(own);
+            // Each text once (two of the conversation's replies read the same).
+            let mut expected: Vec<(String, String)> = Vec::new();
+            for text in (0..22).map(|key| &dialogue[&key]).chain((1500..1505).map(|key| &items[&key])) {
+                if !expected.contains(text) {
+                    expected.push(text.clone());
+                }
+            }
+            assert_eq!(appended, expected, "{language}");
+            assert_eq!(ward, items[&1503].0, "{language}");
+            if let Some(name) = name {
+                assert_eq!(ward, name);
+            }
+        }
+        // Polish addresses a female protagonist differently in four lines.
+        let polish: Vec<i64> =
+            lines("pl_PL").0.iter().filter(|(_, (male, female))| male != female).map(|(key, _)| *key).collect();
+        assert_eq!(polish, [4, 7, 16, 20]);
+        assert!(prepared("pl_PL").1.contains(&lines("pl_PL").0[&4]));
     }
 
     #[test]

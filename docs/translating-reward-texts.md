@@ -117,6 +117,21 @@ translation for the game language nb_no" until a row is added to `LANGUAGES` in
 @99 = ~The stone commands and I must obey. This item is the gift to those of sound mind. A riddle. A reward. Thusly was my home built and I have fulfilled my duties. You are doing well, <GABBER>.~
 ```
 
+## The original options' texts
+
+Two of Item Randomiser's original options bring texts of their own: "Include Kangaxx
+items" (Kangaxx's conversation, `hlskull.tra` @0-@21, and the ward stone, `in-game.tra`
+@1500-@1504) and "Cursed disguise item" (the names and descriptions of the disguised
+items, `in-game.tra` @200-@225, whose Enhanced Edition wording is in
+`languages/bgee/english/in-game.tra`). English, Polish and German have them. In a game
+in any other language these options show the English texts, so they work in every
+game; a translation of all of an option's lines shows it in that language instead. An
+option whose lines a translation has only in part stays English, so that its texts
+never mix two languages. The English files are the template: translate each text,
+keep the `@` numbers and the line breaks of the descriptions' lists, and add female
+wordings as above. To check them, add the language to `OPTIONS_TRANSLATED` in
+`tests/test_translations.py`.
+
 ## Checking a translation
 
 With the translation in place, the configurator's check accepts the quests in a game of

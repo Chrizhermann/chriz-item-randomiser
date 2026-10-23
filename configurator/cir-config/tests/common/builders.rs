@@ -7,6 +7,15 @@ use cir_config::py::{put_u16, put_u32, u16_le, u32_le};
 use cir_config::resources::Tlk;
 use std::collections::BTreeSet;
 
+/// `ALL_DISGUISE_ITEMS` (`tests/test_original_options.py`): every original
+/// cursed item and die-face donor.
+pub const ALL_DISGUISE_ITEMS: [&str; 35] = [
+    "brac08", "brac06", "brac07", "brac10", "brac09", "brac11", "brac01", "brac02", "brac03", "brac13", "brac14",
+    "brac15", "brac04", "leat06", "leat05", "leat07", "leat08", "plat17", "plat02", "plat11", "plat10", "ring04",
+    "ring23", "ring06", "ring07", "ring22", "ring09", "ring31", "ring08", "sper03", "sper05", "sper02", "sw2h03",
+    "sw2h11", "sw2h02",
+];
+
 pub fn u32s(values: &[u32]) -> Vec<u8> {
     values.iter().flat_map(|value| value.to_le_bytes()).collect()
 }

@@ -1,0 +1,28 @@
+// Chriz Item Randomiser: Kangaxx's conversation (HLSKULL.DLG) and journal entry for the
+// configurator's option "Include Kangaxx items", in German.
+// Translated from languages/english/hlskull.tra. Windows-1252.
+
+@0    = ~Die Unholde, die mir dies angetan haben, halten mich in Qualen gefangen: Sie haben meinen Körper zerrissen und seine Teile getrennt voneinander weggeschlossen. Ihr müsst die Schlüssel finden und mir meinen Körper zurückbringen, damit ich wieder ganz werde.~
+@1    = ~Was sind das für Schlüssel, von denen Ihr sprecht?~
+@2    = ~Und wo finde ich Euren Körper?~
+@3    = ~Als mein Körper zerrissen wurde, schloss man drei Teile davon weg. Tapfere Abenteurer wie Ihr hörten mein Flehen um Hilfe und konnten meinen Kopf befreien. Doch die beiden anderen Schlüssel gingen verloren.~
+@4    = ~Ihr müsst die beiden Schlüssel finden. Ihr werdet sie erkennen, denn sie künden von meiner äonenlangen Gefangenschaft. Mächtige Wesen werden in den Schlüsseln die machtvollen Gegenstände erkennen, die sie sind. Ich zweifle nicht daran, dass die Schlüssel ihren Weg zu solchen Wesen gefunden haben.~
+@5    = ~Ich werde tun, worum Ihr mich bittet.~
+@6    = ~Verstehe. Wo finde ich Euren Körper?~
+@7    = ~Ich bin bereits weit gereist. Vielleicht habe ich, ohne es zu wissen, einen dieser Schlüssel gefunden, von denen Ihr sprecht. Könnt Ihr das erkennen?~
+@8    = ~Das klingt nach zu viel Mühe. Das wäre wie die Suche nach der Nadel im Heuhaufen. Ich muss ablehnen.~
+@9    = ~Ja! Ein Schlüssel! Ihr habt ihn! Schnell, bringt mir meinen Körper zurück!~
+@10   = ~Ich kehre mit den Teilen Eures Körpers zurück.~
+@11   = ~Ich fürchte, ich muss ablehnen. Dabei kann ich Euch nicht helfen.~
+@12   = ~Ihr besitzt keinen der beiden Schlüssel. Ihr müsst sie finden. Findet sie und bringt mir meinen Körper.~
+@13   = ~Nun gut. Ich werde nach diesen Schlüsseln suchen.~
+@14   = ~Wo ist dieser Körper, von dem Ihr sprecht?~
+@15   = ~Dabei kann ich Euch nicht helfen.~
+@16   = ~Die Teile sind nicht weit. Sie liegen in Grabstätten wie dieser hier. Sucht sie auf und bringt mir die Teile. Ihr werdet über Eure kühnsten Träume hinaus belohnt werden.~
+@17   = ~Ich werde tun, worum Ihr mich bittet.~
+@18   = ~Das klingt nach zu viel Mühe. Ich fürchte, ich muss ablehnen.~
+@19   = ~Findet die Schlüssel und bringt mir meinen Körper zurück. Ich werde Euch über Eure kühnsten Träume hinaus belohnen.~
+@20   = ~Kangaxx' Körper wiederherstellen
+
+Im Hafenbezirk bin ich auf einen goldenen Schädel gestoßen, der mir Reichtum und Macht jenseits meiner Träume versprochen hat, wenn ich ihn nur von seinem Fluch befreie und seinen Körper wiederherstelle. Er glaubt, dass seine Arme, seine Beine und sein Rumpf auf Grabstätten in der Stadt verteilt wurden. Diese Grabstätten sollen verschlossen sein, und ich werde die Schlüssel finden müssen, um sie zu öffnen. Leider weiß ich nicht, wo die Schlüssel zu finden sind.~
+@21   = ~Was sind das für Schlüssel, von denen Ihr gesprochen habt?~
