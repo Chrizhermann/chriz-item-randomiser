@@ -993,8 +993,10 @@ end
 function cases.ground_waits_for_a_party_member_familiar_copy_full_corpse_or_busy_queue(N)
     local wants = {party="TARGET_NOT_ALIVE", familiar="TARGET_NOT_ALIVE", copy="CORPSE_ITEM_AMBIGUOUS",
         full="TARGET_INVENTORY_FULL", busy="TARGET_QUEUE_BUSY", reward="TARGET_QUEUE_BUSY",
+        pile="TARGET_QUEUE_BUSY", far="TARGET_QUEUE_BUSY",
         unnamed="TARGET_NOT_ALIVE", area="AREA_UNAVAILABLE", gone="OWNER_MISSING"}
-    for _, variant in ipairs({"party", "familiar", "copy", "full", "busy", "reward", "unnamed", "area", "gone"}) do
+    for _, variant in ipairs({"party", "familiar", "copy", "full", "busy", "reward", "pile", "far", "unnamed",
+        "area", "gone"}) do
         local f = ground_world(N)
         if variant == "party" then f.creature.portrait = 2
         elseif variant == "familiar" then f.creature.m_typeAI.m_EnemyAlly = 3
@@ -1003,6 +1005,10 @@ function cases.ground_waits_for_a_party_member_familiar_copy_full_corpse_or_busy
             for slot = 15, 34 do if not f.creature.slots[slot] then f.creature.slots[slot] = f.item("FILL", 400 + slot) end end
         elseif variant == "busy" then f.queue[1] = f.message(3, "OTHER", 40)
         elseif variant == "reward" then f.queue[1] = f.message(77, "FLPRI2", 12)
+        elseif variant == "pile" or variant == "far" then
+            -- A drop or death drop on its way into the pile the drop would reuse, or anywhere.
+            local pile_id = variant == "pile" and f.pile_at(500, 595, {}) or f.pile_at(2000, 2000, {})
+            f.area.m_lVertSortBack = {pile_id}; f.queue[1] = f.message(pile_id, "OTHER", 12, pile_id)
         elseif variant == "area" then f.area.m_resref = {get=function() return "BG0100" end}
         elseif variant == "gone" then f.area.m_lVertSort = {1, 2} end
         local x, e
@@ -1020,13 +1026,9 @@ function cases.ground_waits_for_a_party_member_familiar_copy_full_corpse_or_busy
 end
 function cases.ground_execute_requires_one_created_instance_and_one_drop_message(N)
     for _, variant in ipairs({"none", "queues", "kept", "stays", "both", "other", "extra", "self", "slot",
-        "payload", "pending"}) do
+        "payload"}) do
         local f = ground_world(N); local a = f.adapter
         if variant == "none" or variant == "queues" then f.create_variant = variant
-        elseif variant == "pending" then
-            -- An earlier add into the pile the drop then reuses.
-            local pile_id = f.pile_at(500, 595, {})
-            f.area.m_lVertSortBack = {pile_id}; f.queue[1] = f.message(pile_id, "OTHER", 12, pile_id)
         else f.drop_variant = variant end
         assert(a:inspect_target(f.target_id, f.source_ids[1], 1)); f.boundary()
         local command = f.command(1)
@@ -1040,13 +1042,16 @@ function cases.ground_execute_requires_one_created_instance_and_one_drop_message
 end
 function cases.ground_execute_rejects_a_changed_corpse_or_queue(N)
     local wants = {replaced="OWNER_CHANGED", alive="OWNER_CHANGED", items="INVENTORY_CHANGED",
-        queued="DELIVERY_QUEUE_NOT_EXCLUSIVE"}
-    for _, variant in ipairs({"replaced", "alive", "items", "queued"}) do
+        queued="DELIVERY_QUEUE_NOT_EXCLUSIVE", pile="DELIVERY_QUEUE_NOT_EXCLUSIVE"}
+    for _, variant in ipairs({"replaced", "alive", "items", "queued", "pile"}) do
         local f = ground_world(N); local a = f.adapter
         assert(a:inspect_target(f.target_id, f.source_ids[1], 1)); f.boundary()
         if variant == "replaced" then f.creature.address = 999
         elseif variant == "alive" then f.creature.alive = true
         elseif variant == "items" then f.creature.slots[23] = f.item("OTHER", 556)
+        elseif variant == "pile" then
+            local pile_id = f.pile_at(500, 595, {})
+            f.area.m_lVertSortBack = {pile_id}; f.queue[1] = f.message(pile_id, "OTHER", 12, pile_id)
         else f.queue[1] = f.message(3, "OTHER", 40) end
         local x, e = a:execute(f.command(1)); fail(x, e, wants[variant])
         assert(#f.calls == 0)

@@ -64,12 +64,17 @@ With this change staged over CIR 1.0.2's runtime, in a BG1 campaign of the lab:
   - slots 15 to 34 of the corpse are all taken, so `CreateItem` would not store it
     there (`TARGET_INVENTORY_FULL`);
   - a queued message is addressed to the corpse or carries an item of the campaign
-    (`TARGET_QUEUE_BUSY`).
-- **Execution** (`Adapter:_execute_ground`). `CreateItem` must add exactly one
+    (`TARGET_QUEUE_BUSY`);
+  - any container add is queued, anywhere (`TARGET_QUEUE_BUSY`). `DropItem` may
+    reuse a pile near the corpse, and another drop or a death drop on its way into
+    that pile would stop the campaign after the drop. Such an add runs on the next
+    update, so this wait is short.
+- **Execution** (`Adapter:_execute_ground`). It checks the queue again before acting.
+  `CreateItem` must add exactly one
   instance, with the reward's payload, in one of the empty slots and queue nothing.
   `DropItem` must then leave the corpse exactly as before and queue exactly one new
   container add with slot 32767, the same target and source, and that instance's
-  payload. No other queued item may reach that pile. The pile must be a type-4
+  payload. So no other queued add can reach that pile. The pile must be a type-4
   container of the area or not be listed yet. CIR binds the message to the
   delivery's nonce and sets the source's flags (identified, unstealable) on it.
 - **Observation** (`Adapter:_observe_ground`). While the message waits, a pile that
@@ -91,5 +96,13 @@ recipient and never put at its original place.
   yet. Its reward still waits.
 - A creature that dies in the one or two ticks between `GiveItemCreate` and its
   receipt stops the campaign (`TARGET_DIED_DURING_DELIVERY`), as before.
+- A reused pile that changes in the one or two updates after the drop (an item
+  dropped there or taken out right then) stops the campaign: CIR could no longer
+  tell which item is the reward.
+- A corpse that keeps another item of the reward's name (an undroppable copy, say)
+  makes the reward wait for as long as it keeps it (`CORPSE_ITEM_AMBIGUOUS`).
+- A reward stack of more than one item (arrows, say) was not dropped in the lab. If
+  `DropItem` took only part of it, the corpse would not be as before and CIR would
+  stop the campaign.
 - Checked on EET only so far (its BG1 part); BG:EE and BG2:EE run the same engine
   version.

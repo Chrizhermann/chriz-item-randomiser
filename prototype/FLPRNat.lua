@@ -543,6 +543,16 @@ local function creature_conflict(queue, owner_id, resrefs, ignore)
     return false
 end
 
+-- DropItem may reuse any pile near a corpse. Another queued add (a drop, a
+-- death drop) could reach that pile too and stop the campaign after the
+-- drop, so a ground delivery waits until no container add is queued.
+local function container_add(queue)
+    for _, message in ipairs(queue.additions) do
+        if message.form == "container" then return true end
+    end
+    return false
+end
+
 local function addition_at(queue, address)
     for _, message in ipairs(queue.additions) do
         if message.pointer == address then return message end
@@ -810,7 +820,10 @@ function Adapter:_inspect_ground(endpoint, id, reward, corpse)
     end
     local empty = empty_slots(items, Native.CREATE_FIRST, Native.CREATE_LAST)
     if #empty == 0 then return nil, "TARGET_INVENTORY_FULL" end
-    if creature_conflict(self:_queue(), corpse.id, self.source_resrefs) then return nil, "TARGET_QUEUE_BUSY" end
+    local queue = self:_queue()
+    if creature_conflict(queue, corpse.id, self.source_resrefs) or container_add(queue) then
+        return nil, "TARGET_QUEUE_BUSY"
+    end
     self.reservations[endpoint.identity] = { owner = corpse, items = items, kind = "deliver", id = id,
         ground = true, empty = empty, reward = reward }
     return { identity = endpoint.identity, target_id = id, accepts = 1, ground = true }
@@ -1018,7 +1031,7 @@ function Adapter:_execute_ground(command, reserved, endpoint, p)
     local supported, stack_limit; supported, reason, stack_limit = self:_supported(p)
     if not supported then return nil, reason end
     local before_queue = self:_queue()
-    if creature_conflict(before_queue, corpse.id, self.source_resrefs) then
+    if creature_conflict(before_queue, corpse.id, self.source_resrefs) or container_add(before_queue) then
         return nil, "DELIVERY_QUEUE_NOT_EXCLUSIVE"
     end
     local tried = self.attempted[command.session] or {}
@@ -1051,13 +1064,11 @@ function Adapter:_execute_ground(command, reserved, endpoint, p)
     end
     local message = #added == 1 and added[1] or nil
     -- The message carries the corpse's instance as it was; nothing else in the
-    -- corpse may have changed, and no other queued item may reach that pile.
+    -- corpse may have changed. No other queued add can reach that pile: none
+    -- was queued before (container_add), and this is the only new one.
     if not message or not unchanged(before, self:_items(corpse, true)) or message.form ~= "container" or
         message.slot ~= 32767 or message.target ~= message.source or
         not same(message.payload, placed.payload) then return unproven() end
-    for _, other in ipairs(after_queue.additions) do
-        if other.pointer ~= message.pointer and conflicts(other, message.target, p) then return unproven() end
-    end
     local pile, missing = self:_ground_pile(message.target, endpoint)
     if not pile and missing ~= "GROUND_PILE_MISSING" then return unproven() end
     self:_preserve_message_flags(message, created)
