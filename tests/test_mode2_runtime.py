@@ -81,6 +81,31 @@ class Mode2RuntimeTests(unittest.TestCase):
                         'original-source:bg2:mode2:item:14', 'uhogre01', 'dlg:uhogre01',
                         'FLPR_QM2_14', 'FLPR_XM2_14', kept, 'PATCHED', 'PATCHED', False))
 
+    def test_a_presets_row_takes_the_flags_of_its_routes_row(self):
+        # Boss Loot's row 71 of Varci's shield is his route's row 20.
+        case = SCRIPT_CASE.replace("legacy and 'blpool-v1' or 'original-quest-v1'",
+                                   "legacy and 'blpool-v1' or 'mode2-reward-v1'")
+        case = case.replace("..'.BCS'", "..'.DLG'")
+        case = case.replace("local bundle=", "endpoint.route_source=ROUTE\n    local bundle=")
+        preset, route = 'original-source:bg1:boss-loot:mode2:item:71', 'original-source:bg1:mode2:item:20'
+        for runtime in (Lua51, Lua53, LuaJIT):
+            lua = runtime(unpack_returned_tuples=True)
+            run, script = lua.execute(case), lua.execute(SCRIPT)
+            with self.subTest(runtime=runtime.__module__):
+                lua.globals().ROUTE = route
+                self.assertTrue(run(script, preset, 'varci', 'dlg:varci', 'FLPR_QB1_20', 'FLPR_XB1_20',
+                                    False, 'PATCHED', 'PATCHED', False))
+                # Not the flags of the preset's own row, nor a route of another
+                # campaign, nor a route for an original row.
+                for identity, flags, named in ((preset, ('FLPR_QB1_71', 'FLPR_XB1_71'), route),
+                                               (preset, ('FLPR_QM2_20', 'FLPR_XM2_20'),
+                                                'original-source:bg2:mode2:item:20'),
+                                               (route, ('FLPR_QB1_20', 'FLPR_XB1_20'), route),
+                                               (preset, ('FLPR_QB1_20', 'FLPR_XB1_20'), 20)):
+                    lua.globals().ROUTE = named
+                    with self.assertRaisesRegex(Exception, 'CAMPAIGN_SCRIPT_BINDING_INVALID'):
+                        run(script, identity, 'varci', 'dlg:varci', *flags, False, 'PATCHED', 'PATCHED', False)
+
     def test_native_reward_recipient_and_timing(self):
         fixture = NATIVE_FIXTURE.rsplit('return cases', 1)[0] + NATIVE_CASES + CASES + '\nreturn cases'
         for runtime in (Lua51, Lua53, LuaJIT):

@@ -221,12 +221,12 @@ class OriginalConfigurationTests(unittest.TestCase):
 
     def test_quests_cir_cannot_change_yet_are_left_out_and_named_apart(self):
         draft = self._draft()
-        reward = source_row("jerlia", adapter="scripted", resource="dlg:jugjer01", item="sw1h26", ident="x")
+        reward = source_row("quest-reward", adapter="scripted", resource="dlg:xquest", item="shld07", ident="x")
         reward.update(available=False, availability_reason="item-definition-absent",
                       binding_problem="route-not-supported")
-        king = target_row("sahuagin-king", "x", "24")
+        king = target_row("sahuagin-prince", "x", "24")
         thief = target_row("vampire-or-thief", "x", "24")
-        for place, target, area in ((king, "tadpoles1.fl", "ar2300"), (thief, "chapter3.fl", "blank")):
+        for place, target, area in ((king, "tadpoles2.fl", "ar2300"), (thief, "chapter3.fl", "blank")):
             place.update(target=target, area=area, area_resource=f"are:{area}", container_name=None,
                          endpoint_id=None, endpoint_kind=None, binding_problem="route-not-supported")
         lost = target_row("lost-place", "x", "24")
@@ -236,8 +236,8 @@ class OriginalConfigurationTests(unittest.TestCase):
         with patch("flir_config.original_configuration.resolve_template", return_value=draft):
             result = build_original_configuration(self.catalog, self.world, "eet-original")
         self.assertEqual([(row["id"], row["kind"], row["reason"]) for row in result["not_used"]], [
-            ("jerlia", "reward", "route-not-supported"),
-            ("sahuagin-king", "place", "route-not-supported"),
+            ("quest-reward", "reward", "route-not-supported"),
+            ("sahuagin-prince", "place", "route-not-supported"),
             ("vampire-or-thief", "place", "route-not-supported"),
             ("lost-place", "place", "area-resource-absent")])
         self.assertEqual(result["not_used_notes"], [

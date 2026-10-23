@@ -61,6 +61,27 @@ def _table_place(row: dict, relative: str, prefix: str) -> bool:
     return False
 
 
+def _table_item(row: dict, relative: str, prefix: str) -> str | None:
+    """The item of line N of the extended items table <relative> when <row> is
+    that line, as the table has it, with the identity <prefix>:item:N."""
+    campaign = row.get("campaign")
+    for line, fields in _table_rows(ROOT / relative, 7):
+        if row["id"] != f"{prefix}:item:{line}":
+            continue
+        item, _, source, tier, token, ident = fields[:6]
+        expected = {"source_ref": f"{relative}:{line}", "campaign": campaign,
+                    "family": "mode2", "source": source.lower(), "tier": tier.lower(),
+                    "token": token.lower(), "ident": ident.lower()}
+        return item.lower() if all(row.get(key) == value for key, value in expected.items()) else None
+    return None
+
+
+def _same_lines(relative: str, columns: int, fields: tuple[int, int], values: tuple) -> list[int]:
+    """The lines of table <relative> whose two <fields> are <values> (lower case)."""
+    return [line for line, row in _table_rows(ROOT / relative, columns)
+            if (row[fields[0]].lower(), row[fields[1]].lower()) == values]
+
+
 def _authored_mode2_target(row: dict) -> bool:
     campaign = row.get("campaign")
     if campaign not in ("bg1", "bg2"):
@@ -85,13 +106,59 @@ def _preset_mode2_place(row: dict) -> str | None:
     return same[0] if len(same) == 1 else None
 
 
-def mode2_alias_spec(row: dict) -> dict | None:
-    """Return a registered reward only for its exact authored .fl location."""
-    if (isinstance(row, dict) and row.get("id") in TARGET_REWARDS and
-            isinstance(row.get("target"), str) and row["target"].endswith(".fl") and
-            _authored_mode2_target(row)):
-        return target_spec(row["id"])
-    return None
+def mode2_route_source(row: dict) -> str | None:
+    """The source of the extended reward route (mode2_rewards.SOURCE_REWARDS)
+    that a row is: its own original row, or a preset's row of the reward that
+    one original row names (its conversation or script and item), as Boss
+    Loot's row of Aldeth's sword is his route. One reward has one row: a preset
+    with two rows of it has no route for either."""
+    if not isinstance(row, dict) or not isinstance(row.get("id"), str):
+        return None
+    if "original-source:" + row["id"] in SOURCE_REWARDS:
+        return "original-source:" + row["id"]
+    campaign, source = row.get("campaign"), row.get("source")
+    if campaign not in ("bg1", "bg2") or not isinstance(source, str):
+        return None
+    for preset, spec in PRESETS.items():
+        relative = f"lists/presets/{preset}/items/mode2/{campaign}.2da"
+        item = (_table_item(row, relative, f"{campaign}:{preset}:mode2")
+                if campaign in spec["campaigns"] else None)
+        if item is not None:
+            break
+    else:
+        return None
+    if len(_same_lines(relative, 7, (2, 0), (source, item))) != 1:
+        return None
+    same = _same_lines(f"lists/items/mode2/{campaign}.2da", 7, (2, 0), (source, item))
+    identity = f"original-source:{campaign}:mode2:item:{same[0]}" if len(same) == 1 else None
+    return identity if identity in SOURCE_REWARDS else None
+
+
+def mode2_route_target(row: dict) -> str | None:
+    """The place of the extended reward route (mode2_rewards.TARGET_REWARDS)
+    that a row is: its own original row, or a preset's row at the .fl place of
+    one (_preset_mode2_place). One place has one row: a preset with two rows
+    there has no route for either."""
+    if not isinstance(row, dict):
+        return None
+    if row.get("id") in TARGET_REWARDS:
+        return row["id"]
+    original = _preset_mode2_place(row)
+    if original not in TARGET_REWARDS:
+        return None
+    relative = row["source_ref"].rsplit(":", 1)[0]
+    return original if len(_same_lines(relative, 6, (2, 3), (row["target"], row["area"]))) == 1 else None
+
+
+def mode2_alias_spec(row: dict, game: str | None = None, names: EetNames | None = None) -> dict | None:
+    """Return a registered reward only for its exact authored .fl location, or
+    a preset's row there (mode2_route_target), as the game names it."""
+    if not isinstance(row, dict) or not isinstance(row.get("target"), str) or not row["target"].endswith(".fl"):
+        return None
+    if row.get("id") in TARGET_REWARDS and not _authored_mode2_target(row):
+        return None
+    target = mode2_route_target(row)
+    return None if target is None else target_spec(target, game=game, names=names)
 
 
 def container_target_spec(row: dict) -> dict | None:
@@ -175,8 +242,7 @@ def _source_owner_name(source: dict, targets_by_id: dict[str, dict]) -> str:
 def _routed_source(row: dict, resource: str, item: str) -> bool:
     """Whether CIR has a route for the reward a conversation or script gives:
     an extended reward route, one of the original quests, or the pool."""
-    identity = "original-source:" + row["id"]
-    return (identity in SOURCE_REWARDS or identity in SOURCE_QUESTS
+    return (mode2_route_source(row) is not None or "original-source:" + row["id"] in SOURCE_QUESTS
             or (resource, item) == (POOL_RESOURCE, POOL_ITEM))
 
 
@@ -318,7 +384,7 @@ def _resolve_target(row: dict, resources: set[str], unreadable: set[str],
         row["binding_problem"] = ("legacy-target-requires-adapter" if "spl:spin621" in resources
                                   else "target-resource-absent")
         return
-    reward = mode2_alias_spec(row)
+    reward = mode2_alias_spec(row, game, names)
     if reward is not None:
         row["area_resource"] = reward["resource"]
         row["binding_problem"] = ("legacy-target-requires-adapter"

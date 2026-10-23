@@ -55,10 +55,10 @@ class OriginalCatalogTests(unittest.TestCase):
         problems = {}
         for row in resolve_template({"items": []}, world, "bg1-boss-loot", items="extended", targets="extended")["items"]:
             problems.setdefault(row["optional_mod"], set()).add(row["binding_problem"])
+        # The conversation rewards have the original lists' routes.
         self.assertEqual(problems, {"Rogue Rebalancing": {"optional-item-absent"},
                                     "IWDification": {"optional-item-absent"},
-                                    # The conversation rewards wait for a route in any game.
-                                    None: {"item-definition-absent", "route-not-supported"}})
+                                    None: {"item-definition-absent"}})
 
     def test_exact_mode2_spin621_pair_uses_spell_hash_without_area_or_physical_target(self):
         catalog = {"items": [{"resref": "ring41"}]}
@@ -316,37 +316,44 @@ class OriginalCatalogTests(unittest.TestCase):
                                                          "are:ar0801", "are:ar1100", "dlg:uhogre01")],
                  "sources": [],
                  # A chest named like the place is not the place.
-                 "targets": [_target("are:ar1103/container/0", "are:ar1103", "container", "jugjer01")]}
+                 "targets": [_target("are:ar1514/container/0", "are:ar1514", "container", "pptroll"),
+                             _target("are:ar1103/container/0", "are:ar1103", "container", "jugjer01")]}
         result = resolve_template({"items": []}, world, "bg2-original", items="extended", targets="extended")
         rows = {row["id"]: row for row in result["targets"]}
-        for line in (6, 25, 31, 37, 49, 50, 59, 60):
+        for line in (6, 25, 37, 49, 50, 59, 60):
             row = rows[f"bg2:mode2:target:{line}"]
             with self.subTest(target=row["target"], area=row["area"]):
                 self.assertEqual((row["target_ids"], row["container_name"], row["binding_problem"]),
                                  ([], None, "route-not-supported"))
         # The quest places CIR has a route for keep theirs, a handler's place too
-        # (the Sahuagin king's reward; this game lacks his conversation).
+        # (the Sahuagin king's and Jermien's rewards; this game lacks their conversations).
         self.assertEqual(rows["bg2:base:target:47"]["binding_problem"], "legacy-target-requires-adapter")
         self.assertEqual(rows["bg2:mode2:target:17"]["binding_problem"], "legacy-target-requires-adapter")
-        self.assertEqual((rows["bg2:mode2:target:58"]["area_resource"], rows["bg2:mode2:target:58"]["binding_problem"]),
-                         ("dlg:sahkng01", "target-resource-absent"))
+        for line, dialogue in ((58, "dlg:sahkng01"), (31, "dlg:jugjer01")):
+            row = rows[f"bg2:mode2:target:{line}"]
+            self.assertEqual((row["area_resource"], row["target_ids"], row["container_name"], row["binding_problem"]),
+                             (dialogue, [], None, "target-resource-absent"))
 
-    def test_quest_rewards_without_a_cir_route_are_named_before_other_problems(self):
-        catalog = {"items": [{"resref": name} for name in ("shld26", "blun23", "blun12", "ring41", "brac19")]}
+    def test_quest_rewards_with_a_cir_route_are_bound_to_it(self):
+        catalog = {"items": [{"resref": name} for name in ("shld26", "blun23", "blun12", "ring41", "brac19",
+                                                            "sw1h26", "scrl9b")]}
         world = {"resources": [{"id": name} for name in ("dlg:uhogre01", "bcs:troalt", "bcs:blpool",
-                                                         "spl:spin621", "dlg:sahkng01", "dlg:jugjer01")],
+                                                         "spl:spin621", "dlg:sahkng01", "dlg:jugjer01",
+                                                         "bcs:ppbook")],
                  "sources": [], "targets": []}
-        result = resolve_template(catalog, world, "bg2-original", items="extended", targets="extended")
+        result = resolve_template(catalog, world, "bg2-original", items="extended", targets="extended",
+                                  options={"scrolls": True})
         rows = {row["id"]: row for row in result["items"]}
-        # Conversations, the altar, the pool and the Deck of Many Things have routes.
-        for identity in ("bg2:mode2:item:14", "bg2:mode2:item:57", "bg2:base:item:9", "bg2:base:item:90",
-                         "bg2:mode2:item:69"):
+        # Conversations, the altar, the pool, the Deck of Many Things and the
+        # Spellhold book's scrolls have routes.
+        for identity in ("bg2:mode2:item:14", "bg2:mode2:item:31", "bg2:mode2:item:57", "bg2:base:item:9",
+                         "bg2:base:item:90", "bg2:mode2:item:69", "bg2:mode2:item:260"):
             self.assertEqual(rows[identity]["binding_problem"], "scripted-source-requires-adapter")
-        # The game lacks Jermien's sword too; the missing route is named, as it would
-        # leave the row out in any game.
-        row = rows["bg2:mode2:item:31"]
+        # The game lacks the book's other scroll: that row is left out for its
+        # item, as any other.
+        row = rows["bg2:mode2:item:262"]
         self.assertEqual((row["adapter"], row["available"], row["binding_problem"], row["availability_reason"]),
-                         ("scripted", False, "route-not-supported", "item-definition-absent"))
+                         ("scripted", False, "item-definition-absent", "item-definition-absent"))
 
     def test_only_these_list_rows_wait_for_a_cir_route(self):
         """The rows CIR leaves out in every game because it cannot change their
@@ -362,16 +369,69 @@ class OriginalCatalogTests(unittest.TestCase):
                                       targets="extended", options=options)
             waiting |= {row["id"] for row in result["items"] + result["targets"]
                         if row["binding_problem"] == "route-not-supported"}
-        self.assertEqual(waiting, {
-            # Conversations and scripts that give the reward.
-            "bg1:mode2:item:16", "bg1:mode2:item:20", "bg1:mode2:item:159",
-            "bg1:boss-loot:mode2:item:62", "bg1:boss-loot:mode2:item:71", "bg1:boss-loot:mode2:item:339",
-            "bg2:mode2:item:31", "bg2:mode2:item:260", "bg2:mode2:item:262",
-            # Places that Item Randomiser's own quest handlers name.
-            "bg1:mode2:target:16", "bg1:mode2:target:20", "bg1:mode2:target:136",
-            "bg1:boss-loot:mode2:target:46", "bg1:boss-loot:mode2:target:71",
-            "bg1:boss-loot:mode2:target:291",
-            *(f"bg2:mode2:target:{line}" for line in (6, 25, 31, 37, 49, 50, 59, 60, 89, 215, 252))})
+        # Places that Item Randomiser's own quest handlers name.
+        self.assertEqual(waiting, {f"bg2:mode2:target:{line}" for line in (6, 25, 37, 49, 50, 59, 60, 89, 215, 252)})
+
+    def test_a_presets_rows_of_an_original_reward_route_are_that_route(self):
+        from flir_config.original_catalog import mode2_route_source, mode2_route_target
+
+        catalog = {"items": [{"resref": name} for name in ("sw1h03", "shld07", "scrl1q")]}
+        world = {"resources": [{"id": name} for name in ("dlg:aldeth", "dlg:varci", "dlg:nemphr")],
+                 "sources": [], "targets": []}
+        result = resolve_template(catalog, world, "bg1-boss-loot", game="bgee", items="extended",
+                                  targets="extended", options={"scrolls": True})
+        items = {row["id"]: row for row in result["items"]}
+        places = {row["id"]: row for row in result["targets"]}
+        # Boss Loot's rows of Aldeth's sword, Varci's shield and Nemphre's scroll.
+        for preset, original, dialogue in ((62, 16, "dlg:aldeth"), (71, 20, "dlg:varci"), (339, 159, "dlg:nemphr")):
+            row = items[f"bg1:boss-loot:mode2:item:{preset}"]
+            with self.subTest(item=preset):
+                self.assertEqual(mode2_route_source(row), f"original-source:bg1:mode2:item:{original}")
+                self.assertEqual((row["adapter"], row["source_resource"], row["binding_problem"]),
+                                 ("scripted", dialogue, "scripted-source-requires-adapter"))
+        for preset, original, dialogue in ((46, 16, "dlg:aldeth"), (71, 20, "dlg:varci"), (291, 136, "dlg:nemphr")):
+            row = places[f"bg1:boss-loot:mode2:target:{preset}"]
+            with self.subTest(place=preset):
+                self.assertEqual(mode2_route_target(row), f"bg1:mode2:target:{original}")
+                self.assertEqual((row["area_resource"], row["binding_problem"]),
+                                 (dialogue, "legacy-target-requires-adapter"))
+        # Only the preset's rows as its tables have them.
+        sword, place = items["bg1:boss-loot:mode2:item:62"], places["bg1:boss-loot:mode2:target:46"]
+        for changed in ({"tier": "27"}, {"source": "varci.dlg"}, {"id": "bg1:boss-loot:mode2:item:63"},
+                        {"campaign": "bg2"}):
+            with self.subTest(changed=changed):
+                self.assertIsNone(mode2_route_source({**sword, **changed}))
+        for changed in ({"area": "ar0617"}, {"tier": "27"}, {"id": "bg1:boss-loot:mode2:target:47"}):
+            with self.subTest(changed=changed):
+                self.assertIsNone(mode2_route_target({**place, **changed}))
+
+    def test_a_preset_with_two_rows_of_one_route_has_the_route_for_neither(self):
+        """One reward or place, one row: the runtime finds a route's row by it."""
+        import shutil
+        import tempfile
+        from unittest.mock import patch
+        from flir_config import original_catalog, templates
+        from flir_config.templates import ROOT, build_template
+
+        draft = build_template("bg1-boss-loot", items="extended", targets="extended")
+        sword = next(row for row in draft["items"] if row["id"] == "bg1:boss-loot:mode2:item:62")
+        place = next(row for row in draft["targets"] if row["id"] == "bg1:boss-loot:mode2:target:46")
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            for kind in ("items", "locations"):
+                for relative in (f"lists/{kind}/mode2/bg1.2da", f"lists/presets/boss-loot/{kind}/mode2/bg1.2da"):
+                    (root / relative).parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copyfile(ROOT / relative, root / relative)
+            # Both lists roots, as configurator/parity/replay_tests.py passes them on.
+            with patch.object(original_catalog, "ROOT", root), patch.object(templates, "ROOT", root):
+                self.assertEqual(original_catalog.mode2_route_source(sword), "original-source:bg1:mode2:item:16")
+                self.assertEqual(original_catalog.mode2_route_target(place), "bg1:mode2:target:16")
+                for relative, line in (("items", "sw1h03 blank aldeth.dlg 25 w13 v8 100"),
+                                       ("locations", "w9 26 aldeth.fl ar0128 v8 100")):
+                    with (root / f"lists/presets/boss-loot/{relative}/mode2/bg1.2da").open("a") as table:
+                        table.write("\n" + line + "\n")
+                self.assertIsNone(original_catalog.mode2_route_source(sword))
+                self.assertIsNone(original_catalog.mode2_route_target(place))
 
     def test_a_presets_place_of_an_original_container_quest_is_that_quest(self):
         from flir_config.original_catalog import container_target_spec

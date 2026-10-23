@@ -4,6 +4,7 @@ Runtime installation is separate. Keep exported revisions for older saves;
 publish the next-game pointer last, with the game closed.
 """
 from pathlib import Path, PurePosixPath
+import functools
 import os
 import re
 import shutil
@@ -33,13 +34,10 @@ _GAME_OR_INSTALLER = re.compile(r"(?:baldur|infinityloader|weidu)(?:\.exe|\Z)|se
                                 re.IGNORECASE | re.ASCII | re.DOTALL)
 
 
-def _game_or_installer_executables() -> list[str | None]:
-    """The executable of each running game, loader, WeiDU or mod installer;
-    None where Windows does not tell it, such as for another user's process.
-
-    Windows' process snapshot, not WMI: other programs can keep WMI busy
-    enough that it cancels the query.
-    """
+@functools.cache
+def _kernel32():
+    """kernel32 with the signatures of the calls that list running programs,
+    and its PROCESSENTRY32W."""
     import ctypes
     from ctypes import wintypes
 
@@ -60,9 +58,50 @@ def _game_or_installer_executables() -> list[str | None]:
     kernel32.QueryFullProcessImageNameW.argtypes = (wintypes.HANDLE, wintypes.DWORD, wintypes.LPWSTR,
                                                     ctypes.POINTER(wintypes.DWORD))
     kernel32.QueryFullProcessImageNameW.restype = wintypes.BOOL
+    kernel32.GetExitCodeProcess.argtypes = (wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD))
+    kernel32.GetExitCodeProcess.restype = wintypes.BOOL
     kernel32.CloseHandle.argtypes = (wintypes.HANDLE,)
-    snapshot_processes, query_limited_information = 0x2, 0x1000
-    no_more_files, invalid_parameter = 18, 87
+    return kernel32, ProcessEntry
+
+
+def _listed_executable(process_id: int) -> list[str | None]:
+    """The executable of a process the snapshot listed, or None where Windows
+    does not tell it; nothing for one that has ended since."""
+    import ctypes
+    from ctypes import wintypes
+
+    kernel32, _ = _kernel32()
+    query_limited_information, invalid_parameter, still_active = 0x1000, 87, 259
+    process = kernel32.OpenProcess(query_limited_information, False, process_id)
+    if not process:
+        # One that has ended, and that no handle keeps, is gone.
+        return [] if ctypes.get_last_error() == invalid_parameter else [None]
+    try:
+        size = wintypes.DWORD(32768)
+        path = ctypes.create_unicode_buffer(size.value)
+        known = kernel32.QueryFullProcessImageNameW(process, 0, path, ctypes.byref(size))
+        # One that has ended, kept by another program's handle, no longer runs;
+        # Windows may not tell its file then.
+        code = wintypes.DWORD()
+        if kernel32.GetExitCodeProcess(process, ctypes.byref(code)) and code.value != still_active:
+            return []
+        return [path.value if known else None]
+    finally:
+        kernel32.CloseHandle(process)
+
+
+def _game_or_installer_executables() -> list[str | None]:
+    """The executable of each running game, loader, WeiDU or mod installer;
+    None where Windows does not tell it, such as for another user's process.
+
+    Windows' process snapshot, not WMI: other programs can keep WMI busy
+    enough that it cancels the query.
+    """
+    import ctypes
+    from ctypes import wintypes
+
+    kernel32, ProcessEntry = _kernel32()
+    snapshot_processes, no_more_files = 0x2, 18
 
     snapshot = kernel32.CreateToolhelp32Snapshot(snapshot_processes, 0)
     if snapshot == wintypes.HANDLE(-1).value:
@@ -73,17 +112,7 @@ def _game_or_installer_executables() -> list[str | None]:
         listed = kernel32.Process32FirstW(snapshot, ctypes.byref(entry))
         while listed:
             if _GAME_OR_INSTALLER.match(entry.name):
-                process = kernel32.OpenProcess(query_limited_information, False, entry.process)
-                if process:
-                    try:
-                        size = wintypes.DWORD(32768)
-                        path = ctypes.create_unicode_buffer(size.value)
-                        executables.append(path.value if kernel32.QueryFullProcessImageNameW(
-                            process, 0, path, ctypes.byref(size)) else None)
-                    finally:
-                        kernel32.CloseHandle(process)
-                elif ctypes.get_last_error() != invalid_parameter:  # one that ended since is not listed
-                    executables.append(None)
+                executables += _listed_executable(entry.process)
             listed = kernel32.Process32NextW(snapshot, ctypes.byref(entry))
         if ctypes.get_last_error() != no_more_files:
             raise ctypes.WinError(ctypes.get_last_error())

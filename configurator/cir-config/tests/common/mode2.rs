@@ -4,7 +4,7 @@
 
 use super::builders::{contains, count, index, outgoing, replace, u32_at};
 use cir_config::json::{Dict, Value};
-use cir_config::mode2_rewards::{patch_dialogue, resource_specs, ACTION_TEXT_REFS};
+use cir_config::mode2_rewards::{patch_dialogue, resource_specs, Naming, ACTION_TEXT_REFS};
 use cir_config::py::{put_u32, splitlines_bytes, str_value};
 use cir_config::quest_options::Dialogue;
 use std::collections::{BTreeMap, BTreeSet};
@@ -29,14 +29,18 @@ pub fn branches(spec: &Dict) -> Vec<(usize, usize)> {
         .collect()
 }
 
+/// `spec["target_ids"][0]`.
+pub fn target_id(spec: &Dict) -> &str {
+    spec.get("target_ids").and_then(Value::as_list).unwrap()[0].as_str().unwrap()
+}
+
 /// `spec["target_ids"][0].rsplit(":", 1)[1]`.
 pub fn target_number(spec: &Dict) -> &str {
-    let id = spec.get("target_ids").and_then(Value::as_list).unwrap()[0].as_str().unwrap();
-    id.rsplit(':').next().unwrap()
+    target_id(spec).rsplit(':').next().unwrap()
 }
 
 pub fn specs(resource: &str) -> Vec<Dict> {
-    resource_specs(resource).unwrap()
+    resource_specs(resource, Naming::default()).unwrap()
 }
 
 /// Python's `bytes.isspace()` for one byte; also what `\s` matches in a
@@ -49,8 +53,9 @@ fn is_word(byte: u8) -> bool {
     byte.is_ascii_alphanumeric() || byte == b'_'
 }
 
-/// One match of `(?i)\bVERB\(\s*"ITEM"\s*,\s*([^,()]+?)\s*(?:,[^()]*)?\)` at
-/// `at`: its end and the group's span.
+/// One match of `(?i)\bVERB\(\s*"ITEM"\s*,\s*([^,()]+?(?:\([^()]*\))?)\s*(?:,[^()]*)?\)`
+/// at `at`: its end and the group's span. A recipient may be an object
+/// function, as Varci's `LastTalkedToBy(Myself)`.
 fn grant_at(actions: &[u8], at: usize, verb: &[u8], item: &[u8]) -> Option<(usize, (usize, usize))> {
     let spaces = |mut at: usize| {
         while actions.get(at).is_some_and(|byte| is_space(*byte)) {
@@ -82,6 +87,16 @@ fn grant_at(actions: &[u8], at: usize, verb: &[u8], item: &[u8]) -> Option<(usiz
     // The lazy group ends where only spaces lead to the call's end or to
     // further arguments without a nested call.
     for end in group + 1..=limit {
+        // The object function's own arguments follow its name at once.
+        let end = if end == limit && actions.get(end) == Some(&b'(') {
+            let close = end + 1 + actions[end + 1..].iter().take_while(|byte| !matches!(byte, b'(' | b')')).count();
+            if actions.get(close) != Some(&b')') {
+                return None;
+            }
+            close + 1
+        } else {
+            end
+        };
         let after = spaces(end);
         match actions.get(after) {
             Some(b',') => {
@@ -299,6 +314,48 @@ pub fn script_fixture(name: &str) -> Vec<u8> {
     format!("SC\n{other}{}{other}SC\n", block(&well_reward(21, 40850), "AR1202Quest")).into_bytes()
 }
 
+/// `trigger(opcode, value=0, text="", negate=0)`.
+pub fn trigger(opcode: u32, value: i64, text: &str, negate: u32) -> String {
+    format!("TR\n{opcode} {value} {negate} 0 0 \"{text}\" \"\" OB\n{}TR\n", obj(0))
+}
+
+/// `book_block(triggers, actions)`: a block with one response.
+pub fn book_block(triggers: &[String], actions: &str) -> String {
+    format!("CR\nCO\n{}CO\nRS\nRE\n100{actions}RE\nRS\nCR\n", triggers.concat())
+}
+
+/// `BOOK_GIFTS`: the two scrolls the book gives the reader.
+pub fn book_gifts() -> String {
+    action(140, 0, "scrl8z", 17, 0) + &action(140, 0, "scrl9b", 17, 0)
+}
+
+/// `book_fixture(installed=True)`: PPBOOK.BCS as the game has it, or as CIR's
+/// installer splits its last page for the ring (FLPR_QBOOK): that page gives
+/// the ring and both scrolls to the reader (LastTrigger).
+pub fn book_fixture(installed: bool) -> Vec<u8> {
+    let (clicked, page) = (trigger(112, 0, "", 0), trigger(16399, 5, "AR1513page", 0));
+    let turn = action(151, 50658, "", 1, 0) + &action(109, 1, "AR1513page", 0, 0);
+    let ring = action(140, 0, "ring09", 17, 0);
+    let earlier = book_block(
+        &[clicked.clone(), trigger(16399, 4, "AR1513page", 0)],
+        &(action(151, 50657, "", 1, 0) + &action(109, 1, "AR1513page", 0, 0)),
+    );
+    let gifts = book_gifts();
+    let pages = if installed {
+        let event = action(30, 1, "GLOBALFLPR_EBOOK", 0, 0);
+        book_block(
+            &[clicked.clone(), page.clone(), trigger(16399, 1, "GLOBALFLPR_QBOOK", 0)],
+            &[turn.as_str(), &action(30, 1, "GLOBALFLPR_XBOOK", 0, 0), &gifts, &event].concat(),
+        ) + &book_block(
+            &[clicked, page, trigger(16399, 1, "GLOBALFLPR_QBOOK", 1)],
+            &[turn.as_str(), &ring, &gifts, &event].concat(),
+        )
+    } else {
+        book_block(&[clicked, page], &[turn.as_str(), &ring, &gifts].concat())
+    };
+    format!("SC\n{earlier}{pages}SC\n").into_bytes()
+}
+
 /// The text-route fixture of test_text_variants_preserve_original_routes...
 pub fn text_variant(resource: &str) -> Vec<u8> {
     let name = resource.split(':').nth(1).unwrap();
@@ -330,15 +387,16 @@ fn guard(flag: &str, selected: bool) -> Vec<u8> {
     format!("{}Global(\"{flag}\",\"GLOBAL\",1)\r\n", if selected { "" } else { "!" }).into_bytes()
 }
 
-/// `check_dialogue(name, original, result, action_refs, branches)`.
+/// `check_dialogue(name, original, result, action_refs, branches, naming)`.
 pub fn check_dialogue(
     name: &str,
     original: &[u8],
     result: &[u8],
     action_refs: Option<&BTreeMap<i64, i64>>,
     gated: Option<&[(usize, usize)]>,
+    naming: Naming<'_>,
 ) {
-    let spec = &specs(&format!("dlg:{name}"))[0];
+    let spec = &resource_specs(&format!("dlg:{name}"), naming).unwrap()[0];
     let reviewed = gated.map_or_else(|| branches(spec), <[_]>::to_vec);
     let before = Dialogue::new(original, name).unwrap();
     let after = Dialogue::new(result, name).unwrap();
@@ -384,8 +442,11 @@ pub fn check_dialogue(
                 let event: Vec<u8>;
                 let mut restored;
                 if spec.get("inventory_target").is_some_and(Value::truthy) {
+                    // The target's row, and a BG1 row's campaign (1).
                     let target = target_number(spec);
-                    event = format!("\r\nEEex_LuaAction(\"return(FLPR_Transfer(EEex_LuaAction_Object,{target}))\")").into_bytes();
+                    let campaign = if target_id(spec).starts_with("bg1:") { ",1" } else { "" };
+                    event = format!("\r\nEEex_LuaAction(\"return(FLPR_Transfer(EEex_LuaAction_Object,{target}{campaign}))\")")
+                        .into_bytes();
                     assert_eq!(count(changed, &event), 1);
                     assert!(!contains(changed, text(spec, "recipient_local").as_bytes()));
                     assert!(!contains(changed, text(spec, "event_global").as_bytes()));
@@ -429,41 +490,52 @@ pub fn check_dialogue(
     }
 }
 
-/// `check_aran(original, result)`: two grants, four campaign combinations.
-pub fn check_aran(original: &[u8], result: &[u8]) {
-    let before = Dialogue::new(original, "aran").unwrap();
-    let after = Dialogue::new(result, "aran").unwrap();
-    let specs = specs("dlg:aran");
-    assert_eq!(specs.iter().map(|spec| text(spec, "quest")).collect::<Vec<_>>(), ["aran", "aran"]);
+/// `check_pair(name, original, result)`: two routes whose grants share every
+/// granting reply, four campaign combinations each.
+pub fn check_pair(name: &str, original: &[u8], result: &[u8]) {
+    let before = Dialogue::new(original, name).unwrap();
+    let after = Dialogue::new(result, name).unwrap();
+    let specs = specs(&format!("dlg:{name}"));
+    assert_eq!(specs.iter().map(|spec| text(spec, "quest")).collect::<Vec<_>>(), [name, name]);
+    let shared: BTreeSet<(usize, usize)> = branches(&specs[0]).into_iter().collect();
+    assert_eq!(branches(&specs[1]).into_iter().collect::<BTreeSet<_>>(), shared);
     for state in 0..before.states.len() {
         let (old, new) = (outgoing(&before, state), outgoing(&after, state));
-        if state != 4 {
+        let ordinals: BTreeSet<usize> =
+            shared.iter().filter(|(granting, _)| *granting == state).map(|(_, ordinal)| *ordinal).collect();
+        if ordinals.is_empty() {
             assert_eq!(new, old);
             continue;
         }
-        assert_eq!(old.len(), 8);
-        assert_eq!(new.len(), 32);
+        assert_eq!(new.len(), old.len() + 3 * ordinals.len());
+        let mut cursor = 0;
         for (ordinal, transition) in old.iter().enumerate() {
+            if !ordinals.contains(&ordinal) {
+                assert_eq!(&new[cursor], transition);
+                cursor += 1;
+                continue;
+            }
             let flags = u32_at(transition, 0);
             let prior = if flags & 2 != 0 { before.triggers[u32_at(transition, 12) as usize].clone() } else { Vec::new() };
             let original_actions = &before.actions[u32_at(transition, 16) as usize];
-            for (bits, branch) in new[ordinal * 4..ordinal * 4 + 4].iter().enumerate() {
+            for (bits, branch) in new[cursor..cursor + 4].iter().enumerate() {
                 let mut condition = prior.clone();
                 let mut restored = after.actions[u32_at(branch, 16) as usize].clone();
                 assert_eq!(branch[4..12], transition[4..12]);
                 assert_eq!(branch[20..], transition[20..]);
                 for (spec, selected) in specs.iter().zip([bits & 2 != 0, bits & 1 != 0]) {
                     condition = guarded(&condition, &guard(text(spec, "selected_global"), selected));
-                    let marker = format!(
-                        "ActionOverride(LastTalkedToBy,SetGlobal(\"{}\",\"LOCALS\",1))\r\n",
-                        text(spec, "recipient_local")
-                    )
-                    .into_bytes();
+                    let (grant, recipient) = grant_in(original_actions, spec);
+                    let marker = [
+                        b"ActionOverride(".as_slice(),
+                        &recipient,
+                        format!(",SetGlobal(\"{}\",\"LOCALS\",1))\r\n", text(spec, "recipient_local")).as_bytes(),
+                    ]
+                    .concat();
                     let event = format!("\r\nSetGlobal(\"{}\",\"GLOBAL\",1)", text(spec, "event_global")).into_bytes();
                     assert_eq!(count(&restored, &marker), 1);
                     assert_eq!(count(&restored, &event), 1);
                     restored = replace(&replace(&restored, &marker, b"", Some(1)), &event, b"", Some(1));
-                    let (grant, _) = grant_in(original_actions, spec);
                     if selected {
                         assert!(!contains(&restored, &grant));
                         let consumed = format!("SetGlobal(\"{}\",\"GLOBAL\",1)", text(spec, "consumed_global")).into_bytes();
@@ -475,14 +547,23 @@ pub fn check_aran(original: &[u8], result: &[u8]) {
                 assert_eq!(after.triggers[u32_at(branch, 12) as usize], condition);
                 assert_eq!(&restored, original_actions);
             }
+            cursor += 4;
         }
+        assert_eq!(cursor, new.len());
     }
 }
 
-/// `check_text_graph(resource, original, result, refs)`; returns the clones.
-pub fn check_text_graph(resource: &str, original: &[u8], result: &[u8], refs: &BTreeMap<i64, i64>) -> BTreeMap<usize, usize> {
+/// `check_text_graph(resource, original, result, refs, naming)`; returns the
+/// clones.
+pub fn check_text_graph(
+    resource: &str,
+    original: &[u8],
+    result: &[u8],
+    refs: &BTreeMap<i64, i64>,
+    naming: Naming<'_>,
+) -> BTreeMap<usize, usize> {
     let name = resource.split(':').nth(1).unwrap();
-    let specs = specs(resource);
+    let specs = resource_specs(resource, naming).unwrap();
     // Grant branching is checked independently. Check every text-route edge
     // against that graph, including unchanged external entry states.
     let action_refs: Vec<(i64, i64)> = action_text_refs(resource).into_iter().map(|old| (old, refs[&old])).collect();
@@ -491,10 +572,13 @@ pub fn check_text_graph(resource: &str, original: &[u8], result: &[u8], refs: &B
     let flag = text(&specs[0], "selected_global");
     let mut clones = BTreeMap::new();
     for (state_index, state) in before.states.iter().enumerate() {
+        // A reply's own text (flag 1) and its journal entry (flag 0x10).
         let affected = refs.contains_key(&(u32_at(state, 0) as i64))
-            || outgoing(&before, state_index)
-                .iter()
-                .any(|row| u32_at(row, 0) & 1 != 0 && refs.contains_key(&(u32_at(row, 4) as i64)));
+            || outgoing(&before, state_index).iter().any(|row| {
+                [(1, 4), (0x10, 8)]
+                    .iter()
+                    .any(|&(bit, offset)| u32_at(row, 0) & bit != 0 && refs.contains_key(&(u32_at(row, offset) as i64)))
+            });
         if affected {
             let clone = before.states.len() + clones.len();
             clones.insert(state_index, clone);
@@ -515,6 +599,9 @@ pub fn check_text_graph(resource: &str, original: &[u8], result: &[u8], refs: &B
             if old_entry != 0xFFFF_FFFF && clones.contains_key(&state_index) {
                 let expected = guarded(&before.state_triggers[old_entry as usize], &guard(flag, selected_text));
                 assert_eq!(after.state_triggers[entry as usize], expected);
+            } else if old_entry != 0xFFFF_FFFF {
+                // Another start state keeps its condition; a gated pair before it moves it.
+                assert_eq!(after.state_triggers[entry as usize], before.state_triggers[old_entry as usize]);
             } else {
                 assert_eq!(entry, old_entry);
             }
@@ -532,9 +619,10 @@ pub fn check_text_graph(resource: &str, original: &[u8], result: &[u8], refs: &B
                     let new = &new_rows[cursor];
                     cursor += 1;
                     let expected_reply = if selected_text && flags & 1 != 0 { lookup(reply) } else { reply };
+                    let expected_journal = if selected_text && flags & 0x10 != 0 { lookup(journal) } else { journal };
                     assert_eq!(
                         (u32_at(new, 0), u32_at(new, 4), u32_at(new, 8), u32_at(new, 16), &new[20..28]),
-                        (if reroute { flags | 2 } else { flags }, expected_reply, journal, action_id, next_dialogue)
+                        (if reroute { flags | 2 } else { flags }, expected_reply, expected_journal, action_id, next_dialogue)
                     );
                     let expected_state =
                         if reroute && selected_edge { clones[&(next_state as usize)] as u32 } else { next_state };
@@ -550,5 +638,18 @@ pub fn check_text_graph(resource: &str, original: &[u8], result: &[u8], refs: &B
             assert_eq!(cursor, new_rows.len());
         }
     }
+    // The engine tries start states in the order of their conditions: each
+    // gated pair takes the original condition's place.
+    let start_order = |dialogue: &Dialogue| -> Vec<usize> {
+        let mut entries: Vec<(u32, usize)> =
+            dialogue.states.iter().enumerate().map(|(index, state)| (u32_at(state, 12), index)).collect();
+        entries.sort_unstable();
+        entries.into_iter().filter(|(entry, _)| *entry != 0xFFFF_FFFF).map(|(_, index)| index).collect()
+    };
+    let expected: Vec<usize> = start_order(&before)
+        .into_iter()
+        .flat_map(|state| std::iter::once(state).chain(clones.get(&state).copied()))
+        .collect();
+    assert_eq!(start_order(&after), expected);
     clones
 }

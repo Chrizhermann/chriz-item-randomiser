@@ -100,16 +100,19 @@ end
 local function integer(value,lo,hi)
     return type(value)=='number' and value==math.floor(value) and value>=lo and value<=hi
 end
-local function payload(value)
+-- With copy, a creature's copy of a reward, which is only removed or renamed:
+-- whatever flags or expiry another mod gave it stay as they are.
+local function payload(value,copy)
     if type(value)~='table' or type(value.resref)~='string' or #value.resref<1 or #value.resref>8 or
-        value.resref:find('[^a-z0-9#_%-]') or value.expiration~=0 or
-        not integer(value.flags,0,3) or type(value.charges)~='table' then return false end
+        value.resref:find('[^a-z0-9#_%-]') or not integer(value.expiration,0,copy and 65535 or 0) or
+        not integer(value.flags,0,copy and 4294967295 or 3) or type(value.charges)~='table' then return false end
     for i=1,3 do if not integer(value.charges[i],0,65535) then return false end end
     return true
 end
-local function same_payload(a,b)
-    return payload(a) and payload(b) and a.resref==b.resref and a.flags==b.flags and
-        a.charges[1]==b.charges[1] and a.charges[2]==b.charges[2] and a.charges[3]==b.charges[3]
+local function same_payload(a,b,copy)
+    return payload(a,copy) and payload(b,copy) and a.resref==b.resref and a.expiration==b.expiration and
+        a.flags==b.flags and a.charges[1]==b.charges[1] and a.charges[2]==b.charges[2] and
+        a.charges[3]==b.charges[3]
 end
 function Gate.source_ids(fixture)
     local config=type(fixture)=='table' and fixture.source_gate
@@ -649,15 +652,22 @@ local function prepare_stock_option(api,bundle,build,compile,pristine,targets)
          insertion=first==nil and index or nil}
 end
 
--- Item Randomiser's Mode 2 item rows 12/32/39/84 and duplicates/bg2.2da rows 26/20/21.
+-- Item Randomiser's Mode 2 item rows 12/31/32/39/84 and duplicates/bg2.2da rows 26/19/20/21;
+-- BG1's rows 16 and 159 (duplicates/bg1.2da's Nemphre copy). EET keeps these BG1 names.
 -- AMCLER01's inventory route is also removed in weidu_action.tpa's amcler.fl
 -- handler. These physical copies belong to the selected dialogue source;
 -- selecting the matching reward destination alone must not remove them.
+-- Which records of the creature hold the item, and with which charges and
+-- flags, differs between games: the export names them, and prepare_auxiliary
+-- checks each against the original CRE.
 local auxiliary_sources={
-    ['original-source:bg2:mode2:item:12']={cre='scyarryl',item='blun20',record=0,selected='FLPR_QM2_12'},
-    ['original-source:bg2:mode2:item:32']={cre='trgeni01',item='sw1h23',record=0,selected='FLPR_QM2_32',replacement='blun05'},
-    ['original-source:bg2:mode2:item:39']={cre='loutcapt',item='dagg11',record=6,selected='FLPR_QM2_39'},
-    ['original-source:bg2:mode2:item:84']={cre='amcler01',item='ring43',record=0,selected='FLPR_QM2_84'},
+    ['original-source:bg2:mode2:item:12']={cre='scyarryl',item='blun20',selected='FLPR_QM2_12'},
+    ['original-source:bg2:mode2:item:31']={cre='jugjer01',item='sw1h26',selected='FLPR_QM2_31'},
+    ['original-source:bg2:mode2:item:32']={cre='trgeni01',item='sw1h23',selected='FLPR_QM2_32',replacement='blun05'},
+    ['original-source:bg2:mode2:item:39']={cre='loutcapt',item='dagg11',selected='FLPR_QM2_39'},
+    ['original-source:bg2:mode2:item:84']={cre='amcler01',item='ring43',selected='FLPR_QM2_84'},
+    ['original-source:bg1:mode2:item:16']={cre='aldeth',item='sw1h03',selected='FLPR_QB1_16'},
+    ['original-source:bg1:mode2:item:159']={cre='nemphr',item='scrl1q',selected='FLPR_QB1_159'},
 }
 local function auxiliary_binding(bundle,id,ordinal)
     local m,f=bundle.manifest,bundle.fixture
@@ -665,18 +675,23 @@ local function auxiliary_binding(bundle,id,ordinal)
     local auxiliary=endpoint and endpoint.auxiliary_creatures and endpoint.auxiliary_creatures[ordinal]
     local index,source
     for i,row in ipairs(m.sources) do if row.id==id then index,source=i,row end end
-    local approved=auxiliary_sources[id]
+    -- A preset's row of one of these routes names the route's row, of the same campaign.
+    local route=id
+    if endpoint and endpoint.route_source~=nil then
+        local preset=id:match('^original%-source:(bg[12]):[a-z0-9%-]+:mode2:item:[0-9]+$')
+        route=preset and type(endpoint.route_source)=='string' and
+            endpoint.route_source:match('^original%-source:'..preset..':mode2:item:[0-9]+$') or ''
+    end
+    local approved=auxiliary_sources[route]
     assert(approved and index and source.quantity==1 and ordinal==1 and
         endpoint.kind=='guarded-script' and auxiliary and auxiliary.resource=='cre:'..approved.cre and
         auxiliary.selected_global==approved.selected and endpoint.selected_global==auxiliary.selected_global and
         hash(auxiliary.resource_sha256) and f.resource_hashes[approved.cre:upper()..'.CRE']==auxiliary.resource_sha256 and
-        payload(auxiliary.payload) and auxiliary.payload.resref==approved.item and auxiliary.payload.flags==0 and
-        auxiliary.payload.charges[1]==0 and auxiliary.payload.charges[2]==0 and auxiliary.payload.charges[3]==0 and
-        type(auxiliary.record_indices)=='table' and #auxiliary.record_indices==1 and
-        auxiliary.record_indices[1]==approved.record,
+        payload(auxiliary.payload,true) and auxiliary.payload.resref==approved.item and
+        type(auxiliary.record_indices)=='table' and #auxiliary.record_indices>0,
         'CAMPAIGN_GATE_AUXILIARY_INVALID')
     -- Item Randomiser's duplicates/bg2.2da:20 leaves BLUN05 in TRGENI01's original weapon slot.
-    -- The other reviewed auxiliary records are removed without substitutes.
+    -- The other auxiliary records are removed without substitutes.
     assert(auxiliary.replacement==approved.replacement and (not approved.replacement or
         hash(f.resource_hashes[approved.replacement:upper()..'.ITM'])),
         'CAMPAIGN_GATE_AUXILIARY_REPLACEMENT_INVALID')
@@ -873,7 +888,7 @@ function Group:_add(selected)
         local member,assembly
         if selected.fixture.sources[id].kind=='guarded-script' then
             assert(deps.Script,'CAMPAIGN_SCRIPT_ADAPTER_MISSING')
-            member=deps.Script.new(api,selected,id,pristine.scripts[revision][id])
+            member=deps.Script.new(api,selected,id,pristine.scripts[revision][id],pristine.extended)
         else
             member,assembly=prepare(api,selected,build,compile,pristine,id,targets,self.cache)
             local endpoint=selected.fixture.sources[id]
@@ -1169,7 +1184,7 @@ function Runtime:_bundle(bundle)
         assert(revision==self.revision and index==self.index and resource_hash==self.resource_hash and
             binding.creature_resource==b.creature_resource and binding.selected_global==b.selected_global and
             binding.replacement==b.replacement and binding.replacement_hash==b.replacement_hash and
-            same_payload(binding.payload,b.payload) and #binding.records==#b.records,
+            same_payload(binding.payload,b.payload,true) and #binding.records==#b.records,
             'CAMPAIGN_GATE_AUXILIARY_REVISION_MISMATCH')
         for i,record in ipairs(binding.records) do assert(record==b.records[i],'CAMPAIGN_GATE_AUXILIARY_REVISION_MISMATCH') end
         return

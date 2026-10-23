@@ -11,8 +11,10 @@
 //! the item is gated.
 //!
 //! Only the grant is suppressed; its surrounding actions, conditions,
-//! dialogue replies and journal fields stay intact. The reward event captures
-//! the original recipient at the grant position. Actions that only take, show
+//! dialogue replies and journal fields stay intact (a text route shows Item
+//! Randomiser's words instead of the texts that name the reward, journal
+//! entries among them, where the reward moved: [`TEXT_REFS`]). The reward
+//! event captures the original recipient at the grant position. Actions that only take, show
 //! or test the reward stay as they are. A route is not prepared only where
 //! its grant cannot be told apart or gated (no grant, a grant without a
 //! recipient or in actions that cannot be read, the item given twice by one
@@ -25,8 +27,15 @@
 //! for byte: text routes and container dialogues carry a recovery trailer,
 //! scripts are reconstructed exactly, and the other dialogues are checked by
 //! removing the patch and applying it again.
+//!
+//! The routes are registered as each campaign's own game names its resources
+//! (BG:EE's names for BG1's routes). EET renames BG1's areas and the BG1 items
+//! whose names Baldur's Gate II uses ([`crate::game_names`]): the functions
+//! that take a [`Naming`] return a route as that game names it. Without a
+//! game ([`Naming::default`]), a route keeps its campaign's own names.
 
 use crate::error::{Error, ErrorKind, Result};
+use crate::game_names::{convert_resource, EetNames};
 use crate::game_text::GameText;
 use crate::json::{Dict, Value};
 use crate::py::{count_bytes, find_bytes, put_u32, replace_bytes, rfind_bytes, str_value, u32_le, upper};
@@ -43,9 +52,20 @@ use std::sync::OnceLock;
 
 pub const ADAPTER_ID: &str = "mode2-reward-v1";
 
+/// How the scanned game names the routes' items and places (the reference's
+/// `game` and `names` keywords): its platform ("eet", "bgee" or "bg2ee") and
+/// EET's renames ([`crate::game_names::eet_names`]; without them, CIR's own
+/// copy of EET's lists).
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Naming<'a> {
+    pub game: Option<&'a str>,
+    pub names: Option<&'a EetNames>,
+}
+
 /// Original generic descriptions from the matching special WeiDU handlers.
-/// Keys are the strrefs of the text that names the reward (the same in EET
-/// and BG2:EE), values are source TRA entries.
+/// Keys are the strrefs of the text that names the reward (BG2's the same in
+/// EET and BG2:EE, BG1's as BG:EE numbers them: see [`game_text_refs`]),
+/// values are source TRA entries.
 pub const TEXT_REFS: &[(&str, &[(i64, i64)])] = &[
     ("bcs:ddwell", &[(40850, 399)]),
     ("dlg:ppdjinn", &[(48995, 99)]),
@@ -60,9 +80,21 @@ pub const TEXT_REFS: &[(&str, &[(i64, i64)])] = &[
     ("dlg:trgeni01", &[(43514, 110)]),
     ("dlg:amcler01", &[(74025, 100)]),
     ("dlg:udlesa", &[(52664, 104)]),
+    ("dlg:jugjer01", &[(33760, 698), (33777, 699)]),
+    // Aldeth's thanks and the journal entry his reward reply adds.
+    ("dlg:aldeth", &[(5740, 1649), (26828, 1650)]),
 ];
 pub const ACTION_TEXT_REFS: &[(&str, &[i64])] = &[("dlg:amcler01", &[74025])];
+/// Journal entries among the [`TEXT_REFS`]: their new text keeps the
+/// original's title line, and BGEE.LUA lists it with the original's quest
+/// ([`journal_lua`]).
+pub const JOURNAL_REFS: &[(&str, &[i64])] = &[("dlg:aldeth", &[26828])];
+/// EET numbers BG:EE's own texts 200000 higher than BG:EE does.
+const EET_BG1_TEXTS: i64 = 200000;
 const TEXT_TRAILER: &[u8] = b"FLPRM2T1";
+/// The texts a reply shows: (its flag, the strref's offset), for its own text
+/// and its journal entry.
+const TEXT_FIELDS: [(u32, usize); 2] = [(1, 4), (0x10, 8)];
 /// DestroySelf is instant during dialogue; LuaAction is queued. A speaker
 /// whose carried reward is handed over by a queued transfer leaves after it
 /// instead.
@@ -102,6 +134,37 @@ pub fn text_refs(resource: &str) -> Option<&'static [(i64, i64)]> {
     TEXT_REFS.iter().find(|(key, _)| *key == resource).map(|(_, refs)| *refs)
 }
 
+/// `_text_shift`: how much higher the game numbers a route resource's texts
+/// than its campaign does.
+fn text_shift(resource: &str, game: Option<&str>) -> Result<i64> {
+    let keys = resource_rewards().get(resource).and_then(Value::as_list).ok_or_else(|| Error::key(resource))?;
+    let mut campaigns = BTreeSet::new();
+    for key in keys {
+        let key = key.as_str().expect("reward key");
+        let row = rewards().get(key).and_then(Value::as_dict).ok_or_else(|| Error::key(key))?;
+        campaigns.insert(text(row, "campaign")?);
+    }
+    Ok(if game == Some("eet") && campaigns.len() == 1 && campaigns.contains("bg1") { EET_BG1_TEXTS } else { 0 })
+}
+
+/// `text_refs(resource, game)`: `TEXT_REFS[resource]` as the game numbers its
+/// texts (EET numbers BG1's higher).
+pub fn game_text_refs(resource: &str, game: Option<&str>) -> Result<Vec<(i64, i64)>> {
+    let shift = text_shift(resource, game)?;
+    let refs = text_refs(resource).ok_or_else(|| Error::key(resource))?;
+    Ok(refs.iter().map(|&(old, tra)| (old + shift, tra)).collect())
+}
+
+/// `journal_refs(resource, game)`: the journal entries among the resource's
+/// text refs, as the game numbers them.
+pub fn journal_refs(resource: &str, game: Option<&str>) -> Result<Vec<i64>> {
+    let shift = text_shift(resource, game)?;
+    Ok(JOURNAL_REFS
+        .iter()
+        .find(|(key, _)| *key == resource)
+        .map_or_else(Vec::new, |(_, refs)| refs.iter().map(|old| old + shift).collect()))
+}
+
 fn action_text_refs(resource: &str) -> &'static [i64] {
     ACTION_TEXT_REFS.iter().find(|(key, _)| *key == resource).map_or(&[], |(_, refs)| *refs)
 }
@@ -122,8 +185,10 @@ fn spec(
     recipient: &str,
     charges: [i64; 3],
     branches: Value,
+    campaign: &str,
 ) -> Dict {
-    let suffix = format!("M2_{source}");
+    // A BG1 route's flags are its own: B1_<row> beside BG2's M2_<row>.
+    let suffix = format!("{}_{source}", if campaign == "bg1" { "B1" } else { "M2" });
     let target = target.map_or_else(|| "None".to_string(), |target| target.to_string());
     let recipient_local =
         if extension == "bcs" && name == "asysta01" { Value::Null } else { Value::from(format!("FLPR_R{suffix}")) };
@@ -131,8 +196,9 @@ fn spec(
         "quest" => name,
         "resource" => format!("{extension}:{name}"),
         "item" => item,
-        "source_ids" => list![format!("original-source:bg2:mode2:item:{source}")],
-        "target_ids" => list![format!("bg2:mode2:target:{target}")],
+        "campaign" => campaign,
+        "source_ids" => list![format!("original-source:{campaign}:mode2:item:{source}")],
+        "target_ids" => list![format!("{campaign}:mode2:target:{target}")],
         "selected_global" => format!("FLPR_Q{suffix}"),
         "consumed_global" => format!("FLPR_X{suffix}"),
         "event_global" => format!("FLPR_E{suffix}"),
@@ -155,8 +221,25 @@ fn alias(
     charges: [i64; 3],
     recipient: &str,
 ) {
+    campaign_alias(rewards, key, item, source, target, alias, dialogues, charges, recipient, "bg2");
+}
+
+/// `_alias(..., campaign=<campaign>)`: a route of BG1's lists has BG1's flags.
+#[allow(clippy::too_many_arguments)]
+fn campaign_alias(
+    rewards: &mut Dict,
+    key: &str,
+    item: &str,
+    source: i64,
+    target: Option<i64>,
+    alias: &str,
+    dialogues: &[(&str, Vec<(i64, i64)>)],
+    charges: [i64; 3],
+    recipient: &str,
+    campaign: &str,
+) {
     let (primary, branches) = &dialogues[0];
-    let mut row = spec(primary, "dlg", item, source, target, recipient, charges, pairs(branches));
+    let mut row = spec(primary, "dlg", item, source, target, recipient, charges, pairs(branches), campaign);
     row.insert("resources", Value::List(dialogues.iter().map(|(name, _)| Value::from(format!("dlg:{name}"))).collect()));
     row.insert("dialogues", dialogues.iter().map(|(name, rows)| (name.to_string(), pairs(rows))).collect::<Dict>());
     row.insert("event_global", format!("FLPR_EA_{alias}"));
@@ -171,18 +254,10 @@ fn row_mut<'a>(rewards: &'a mut Dict, key: &str) -> &'a mut Dict {
     rewards.get_mut(key).and_then(Value::as_dict_mut).expect("registered reward")
 }
 
-fn source_record(offset: i64, index: i64, resref: &str, slot: i64) -> Dict {
-    dict! {
-        "byte_offset" => offset, "record_index" => index, "resref" => resref,
-        "expiration" => 0, "charges" => list![0, 0, 0], "flags" => 0, "slots" => list![slot],
-    }
-}
-
 struct Registry {
     rewards: Dict,
     direct: Vec<String>,
     transfers: Dict,
-    physical: Dict,
     resources: Dict,
     sources: Dict,
     targets: Dict,
@@ -218,13 +293,18 @@ fn build_registry() -> Registry {
         ("udsvir03", "dlg", "blun18", 50, 65, "LastTalkedToBy", [1, 1, 1], pairs(&[(35, 0), (35, 1)])),
         ("ammayor", "dlg", "compon16", 83, 84, "LastTalkedToBy", [1, 0, 0], pairs(&[(12, 0)])),
         // The Sahuagin king's bracer (Item Randomiser's tadpoles1.fl). The same
-        // reply also gives the treasury's rod, which this route leaves as it is.
+        // reply also gives the treasury's rod: see "sahrod" below.
         ("sahkng01", "dlg", "brac19", 57, 58, "LastTalkedToBy", NO_CHARGES, pairs(&[(81, 0)])),
     ];
-    let direct_names = direct.iter().map(|row| row.0.to_string()).collect();
+    let mut direct_names: Vec<String> = direct.iter().map(|row| row.0.to_string()).collect();
     for (name, extension, item, source, target, recipient, charges, branches) in direct {
-        rewards.insert(name, spec(name, extension, item, source, Some(target), recipient, charges, branches));
+        rewards.insert(name, spec(name, extension, item, source, Some(target), recipient, charges, branches, "bg2"));
     }
+    // Varci's payment for Casson's rescue (Item Randomiser's varci.fl), the
+    // shield EET names SHLD07A.
+    let recipient = "LastTalkedToBy(Myself)";
+    rewards.insert("varci", spec("varci", "dlg", "shld07", 20, Some(20), recipient, NO_CHARGES, pairs(&[(11, 0)]), "bg1"));
+    direct_names.push("varci".to_string());
     let talker = "LastTalkedToBy";
     alias(
         &mut rewards,
@@ -278,16 +358,15 @@ fn build_registry() -> Registry {
     // copy to BHOISIG source ident w8, and its lib/delete.tpa removes it only
     // when that source is selected. The sculptor target independently
     // converts its GiveItem into a created reward. This is an auxiliary
-    // guarded copy, never another randomized source unit.
+    // guarded copy, never another randomized source unit. Each copy is the
+    // creature's records of the reward item, as the scan finds them
+    // (native_export.rs), whatever their place or flags in this game.
     {
         let row = row_mut(&mut rewards, "scyarryl");
         row.insert("authored_source_ids", list!["original-source:bg2:mode2:item:12"]);
         row.insert("source_ids", Value::List(Vec::new()));
         row.insert("source_resource", "cre:scyarryl");
-        row.insert("source_resource_sha256", "15e6723046533520d542f00cb14fdc5c04d74d19b327424f212542b722f0d462");
-        row.insert("physical_source_ids", list!["cre:scyarryl/item/0"]);
         row.insert("grant_kind", "transfer");
-        row.insert("source_record", source_record(1308, 0, "blun20", 9));
     }
     let mut transfer_names = vec!["scyarryl"];
     for sculptor in ["sctelwyn", "scsain", "scyarryl"] {
@@ -302,49 +381,24 @@ fn build_registry() -> Registry {
     // still work. Their dialogue transfers the carried assignment through a
     // blocking Lua callback; it never creates a second item for the dialogue
     // recipient.
-    let carried: [(&str, &str, i64, i64, &str, &str, Vec<(i64, i64)>, i64, i64, i64, &str); 3] = [
-        (
-            "trgeni01",
-            "sw1h23",
-            32,
-            32,
-            "ar2014",
-            "trgeni01",
-            vec![(35, 0), (40, 0)],
-            0,
-            1152,
-            9,
-            "cd31a342ec3e836a0e3cd2d85c183bd6b85c753c83a6083dcc4c2f21a0aa9c02",
-        ),
-        (
-            "loutcapt",
-            "dagg11",
-            39,
-            42,
-            "ar0514",
-            "Dennis",
-            vec![(26, 0), (30, 0)],
-            6,
-            1116,
-            11,
-            "33bb5267dd0bb7b120e7e9b20c05e37b0cd8c73134e7ba642dbb8b075713e430",
-        ),
-        (
-            "amcler01",
-            "ring43",
-            84,
-            85,
-            "ar5500",
-            "amcler01",
-            vec![(7, 0), (8, 0)],
-            0,
-            1272,
-            4,
-            "c8cdf695c04d6eb9cce075bff7fd4e2c528c480a360ffbac280ef5ec6b14d4fc",
-        ),
+    type Carried = (&'static str, &'static str, i64, i64, &'static str, &'static str, Vec<(i64, i64)>, [i64; 3], &'static str);
+    let carried: [Carried; 6] = [
+        ("trgeni01", "sw1h23", 32, 32, "ar2014", "trgeni01", vec![(35, 0), (40, 0)], NO_CHARGES, "bg2"),
+        ("loutcapt", "dagg11", 39, 42, "ar0514", "Dennis", vec![(26, 0), (30, 0)], NO_CHARGES, "bg2"),
+        ("amcler01", "ring43", 84, 85, "ar5500", "amcler01", vec![(7, 0), (8, 0)], NO_CHARGES, "bg2"),
+        // Jermien's sword (Item Randomiser's jugjer01.fl), with its daily charge.
+        ("jugjer01", "sw1h26", 31, 31, "ar1103", "Jermien", vec![(23, 0)], [1, 1, 0], "bg2"),
+        // Aldeth's sword (Item Randomiser's aldeth.fl). He thanks the party in
+        // his estate (AR0128), whose script creates him there.
+        ("aldeth", "sw1h03", 16, 16, "ar0128", "Aldeth", vec![(27, 0)], NO_CHARGES, "bg1"),
+        // Nemphre's scroll for Arkion's amulet (Item Randomiser's nemphr.fl).
+        // Item Randomiser's lists give her place scrolls only (tier sc), so her
+        // words ("take this scroll") stay true.
+        ("nemphr", "scrl1q", 159, 136, "ar0813", "Nemphre", vec![(3, 0)], NO_CHARGES, "bg1"),
     ];
-    for (name, item, source, target, area, script, branches, record, offset, slot, hash) in carried {
-        alias(&mut rewards, name, item, source, Some(target), &name.to_uppercase(), &[(name, branches)], NO_CHARGES, talker);
+    for (name, item, source, target, area, script, branches, charges, campaign) in carried {
+        let alias_name = name.to_uppercase();
+        campaign_alias(&mut rewards, name, item, source, Some(target), &alias_name, &[(name, branches)], charges, talker, campaign);
         let row = row_mut(&mut rewards, name);
         let source_ids = row.get("source_ids").cloned().expect("source ids");
         row.insert("grant_kind", "transfer");
@@ -354,10 +408,7 @@ fn build_registry() -> Registry {
             dict! {"area" => area, "creature_resource" => format!("cre:{name}"), "script_name" => script},
         );
         row.insert("source_resource", format!("cre:{name}"));
-        row.insert("source_resource_sha256", hash);
-        row.insert("physical_source_ids", list![format!("cre:{name}/item/{record}")]);
         row.insert("required_transfers", list![name]);
-        row.insert("source_record", source_record(offset, record, item, slot));
         transfer_names.push(name);
     }
     // Item Randomiser's lists/duplicates/bg2.2da:20 replaces the selected
@@ -381,12 +432,32 @@ fn build_registry() -> Registry {
             dict! {"area" => "ar2202", "creature_resource" => "cre:udlesa", "script_name" => "udlesa"},
         );
         row.insert("source_resource", "cre:udlesa");
-        row.insert("source_resource_sha256", "f51eaafa2f7c4df7b0af9c76fac2576a243929c31b57a965a326fb58e2b6b8c4");
-        row.insert("physical_source_ids", list!["cre:udlesa/item/2"]);
         row.insert("replacement", "dwsw1h02");
-        row.insert("source_record", source_record(3676, 2, "sw1h39", 9));
     }
-    let physical = dict! {"cre:udlesa/item/2" => "udlesa"};
+
+    // The Sahuagin treasury's rod (row7, whose row names sahkng01.dlg and
+    // sahtreas.bcs) is an ordinary container source, but the king's reward
+    // reply creates another one (SAHTREAS.BCS then destroys the treasury's).
+    // As with UDLESA's sword, the reply follows the source's kept/relocated
+    // decision; without a target, its selected copy only drops the grant.
+    alias(&mut rewards, "sahrod", "rods02", 7, None, "SAHROD", &[("sahkng01", vec![(81, 0)])], NO_CHARGES, talker);
+    {
+        let row = row_mut(&mut rewards, "sahrod");
+        row.insert("source_ids", Value::List(Vec::new()));
+        row.insert("authored_source_ids", list!["original-source:bg2:mode2:item:7"]);
+    }
+    // The two scrolls that the book of Lavok's sphere (PPBOOK.BCS, AR1513)
+    // gives with its ring on the last page (Item Randomiser's rows 260 and
+    // 262). The book's places are the ring's quest (the installer splits that
+    // page for the ring: quest_rewards::QUESTS), whose event delivers what
+    // they receive; a scroll's route only drops its grant where its row moved,
+    // so it has no place of its own. The installed book gives them in two
+    // blocks, 6 and 7.
+    for (key, item, source) in [("ppbook", "scrl9b", 260), ("ppbook2", "scrl8z", 262)] {
+        let mut row = spec("ppbook", "bcs", item, source, None, "LastTrigger", NO_CHARGES, list![6, 7], "bg2");
+        row.insert("target_ids", Value::List(Vec::new()));
+        rewards.insert(key, row);
+    }
     for row in rewards.values_mut() {
         let row = row.as_dict_mut().expect("reward row");
         let resource = row.get("resource").cloned().expect("resource");
@@ -418,7 +489,7 @@ fn build_registry() -> Registry {
         .into_iter()
         .map(|name| (name.to_string(), rewards.get(name).cloned().expect("transfer row")))
         .collect();
-    Registry { rewards, direct: direct_names, transfers, physical, resources, sources, targets }
+    Registry { rewards, direct: direct_names, transfers, resources, sources, targets }
 }
 
 /// `REWARDS`: every reward route by key, in the reference's order.
@@ -436,9 +507,18 @@ pub fn transfer_specs() -> &'static Dict {
     &registry().transfers
 }
 
-/// `PHYSICAL_SOURCE_REWARDS`.
-pub fn physical_source_rewards() -> &'static Dict {
-    &registry().physical
+/// `PHYSICAL_SOURCE_REWARDS`: physical sources whose reward dialogue also
+/// gives their item, by (owner resource, kind, item) as the catalog binds the
+/// original row: the creature's or the area's container record of the item.
+/// A game whose dialogue gives no such item needs no route
+/// ([`gives_reward`]). Each entry is (resource, kind, item, route).
+pub const PHYSICAL_SOURCE_REWARDS: &[(&str, &str, &str, &str)] =
+    &[("cre:udlesa", "cre-template", "sw1h39", "udlesa"), ("are:ar2300", "container", "rods02", "sahrod")];
+
+/// The route of a physical source of `item` (a `kind` record of `resource`),
+/// if its reward dialogue gives the item too.
+pub fn physical_source_reward(resource: &str, kind: &str, item: &str) -> Option<&'static str> {
+    PHYSICAL_SOURCE_REWARDS.iter().find(|row| (row.0, row.1, row.2) == (resource, kind, item)).map(|row| row.3)
 }
 
 /// `RESOURCE_REWARDS`: resource to the reward keys that edit it.
@@ -456,35 +536,87 @@ pub fn target_rewards() -> &'static Dict {
     &registry().targets
 }
 
-fn reward(key: &str) -> Dict {
-    rewards().get(key).and_then(Value::as_dict).expect("registered reward").clone()
+/// The route as the scanned game names its items and places (EET renames
+/// BG1's).
+///
+/// Its conversations keep their names: EET renames only BG1 resources whose
+/// names Baldur's Gate II uses, which no route's conversation does. Were one
+/// renamed, its rows would name another conversation than the route and be
+/// left out.
+fn in_game(mut spec: Dict, naming: Naming<'_>) -> Result<Dict> {
+    let Some(game) = naming.game else {
+        return Ok(spec);
+    };
+    let campaign = text_field(&spec, "campaign", "lower")?.to_string();
+    let name = |resref: &str, kind: &str| convert_resource(resref, kind, &campaign, game, naming.names);
+    let item = Value::from(name(text_field(&spec, "item", "lower")?, "itm")?);
+    spec.insert("item", item.clone());
+    match spec.get_mut("payload").ok_or_else(|| Error::key("payload"))? {
+        Value::Dict(payload) => payload.insert("resref", item),
+        other => return Err(Error::type_error(format!("'{}' object does not support item assignment", other.type_name()))),
+    };
+    if spec.get("replacement").is_some_and(Value::truthy) {
+        let replacement = name(text_field(&spec, "replacement", "lower")?, "itm")?;
+        spec.insert("replacement", replacement);
+    }
+    if spec.get("source_resource").is_some_and(Value::truthy) {
+        let source = text_field(&spec, "source_resource", "split")?;
+        let parts: Vec<&str> = source.split(':').collect();
+        let [kind, resref] = parts[..] else {
+            return Err(Error::value(if parts.len() > 2 {
+                "too many values to unpack (expected 2)".to_string()
+            } else {
+                format!("not enough values to unpack (expected 2, got {})", parts.len())
+            }));
+        };
+        let source = format!("{kind}:{}", name(resref, kind)?);
+        spec.insert("source_resource", source);
+    }
+    if let Some(Value::Dict(placement)) = spec.get("inventory_target").filter(|placement| placement.truthy()) {
+        let mut placement = placement.clone();
+        let area = name(text_field(&placement, "area", "lower")?, "are")?;
+        let creature = text_field(&placement, "creature_resource", "lower")?.chars().skip(4).collect::<String>();
+        let creature = format!("cre:{}", name(&creature, "cre")?);
+        placement.insert("area", area);
+        placement.insert("creature_resource", creature);
+        spec.insert("inventory_target", placement);
+    }
+    Ok(spec)
 }
 
-pub fn source_spec(source_id: &str) -> Result<Dict> {
+/// The route `key` (a [`rewards`] key) as the game names it.
+pub fn reward(key: &str, naming: Naming<'_>) -> Result<Dict> {
+    match rewards().get(key).and_then(Value::as_dict) {
+        Some(row) => in_game(row.clone(), naming),
+        None => Err(Error::profile(format!("Unsupported extended reward route: {key}"))),
+    }
+}
+
+pub fn source_spec(source_id: &str, naming: Naming<'_>) -> Result<Dict> {
     match source_rewards().get(source_id).and_then(Value::as_str) {
-        Some(key) => Ok(reward(key)),
+        Some(key) => reward(key, naming),
         None => Err(Error::profile(format!("Unsupported extended reward source: {source_id}"))),
     }
 }
 
-pub fn target_spec(target_id: &str) -> Result<Dict> {
+pub fn target_spec(target_id: &str, naming: Naming<'_>) -> Result<Dict> {
     match target_rewards().get(target_id).and_then(Value::as_str) {
-        Some(key) => Ok(reward(key)),
+        Some(key) => reward(key, naming),
         None => Err(Error::profile(format!("Unsupported extended reward recipient: {target_id}"))),
     }
 }
 
 /// Inventory copies which must be guarded alongside a scripted source.
-pub fn transfer_spec(name: &str) -> Result<Dict> {
+pub fn transfer_spec(name: &str, naming: Naming<'_>) -> Result<Dict> {
     match transfer_specs().get(name).and_then(Value::as_dict) {
-        Some(row) => Ok(row.clone()),
+        Some(row) => in_game(row.clone(), naming),
         None => Err(Error::profile(format!("Unsupported carried reward: {name}"))),
     }
 }
 
 /// All routes with a grant in a resource; includes both independent ARAN
 /// rewards. Each copy names its route (the `REWARDS` key) under "route".
-pub fn resource_specs(resource: &str) -> Result<Vec<Dict>> {
+pub fn resource_specs(resource: &str, naming: Naming<'_>) -> Result<Vec<Dict>> {
     let resource = crate::py::lower(resource);
     let Some(keys) = resource_rewards().get(&resource).and_then(Value::as_list) else {
         return Err(Error::profile(format!("Unsupported extended reward resource: {resource}")));
@@ -493,7 +625,7 @@ pub fn resource_specs(resource: &str) -> Result<Vec<Dict>> {
     let mut result = Vec::new();
     for key in keys {
         let key = key.as_str().expect("reward key");
-        let mut spec = reward(key);
+        let mut spec = reward(key, naming)?;
         spec.insert("route", key);
         spec.insert("resource", resource.as_str());
         spec.insert("quest", name.as_str());
@@ -641,11 +773,16 @@ fn mark(spec: &Dict, recipient: &[u8]) -> Result<Vec<u8>> {
     Ok([b"ActionOverride(" as &[u8], recipient, local.as_bytes()].concat())
 }
 
-/// `re.fullmatch(r"bg2:mode2:target:([1-9][0-9]*)", target)` group 1.
-fn numeric_target_row(target: &str) -> Option<&str> {
-    let row = target.strip_prefix("bg2:mode2:target:")?;
+/// `re.fullmatch(r"(bg[12]):mode2:target:([1-9][0-9]*)", target)`: the
+/// campaign and the row.
+fn numeric_target_row(target: &str) -> Option<(&str, &str)> {
+    let (campaign, row) = target.split_once(":mode2:target:")?;
     let bytes = row.as_bytes();
-    (!bytes.is_empty() && (b'1'..=b'9').contains(&bytes[0]) && bytes[1..].iter().all(u8::is_ascii_digit)).then_some(row)
+    (matches!(campaign, "bg1" | "bg2")
+        && !bytes.is_empty()
+        && (b'1'..=b'9').contains(&bytes[0])
+        && bytes[1..].iter().all(u8::is_ascii_digit))
+    .then_some((campaign, row))
 }
 
 /// The blocking Lua callback that hands a carried reward over.
@@ -659,13 +796,14 @@ fn callback(spec: &Dict, numeric: bool) -> Result<Vec<u8>> {
         }
         None => None,
     };
-    let Some(row) = row else {
+    let Some((campaign, row)) = row else {
         return Err(profile("The carried reward's transfer target changed"));
     };
     // The dialogue parser strips spaces and colons even inside Lua strings.
-    // Parenthesize return; pass the row.
+    // Parenthesize return; pass the row, and a BG1 row's campaign (1).
     Ok(if numeric {
-        format!("EEex_LuaAction(\"return(FLPR_Transfer(EEex_LuaAction_Object,{row}))\")")
+        let campaign = if campaign == "bg1" { ",1" } else { "" };
+        format!("EEex_LuaAction(\"return(FLPR_Transfer(EEex_LuaAction_Object,{row}{campaign}))\")")
     } else {
         format!(
             "EEex_LuaAction(\"return FLPR_Transfer(EEex_LuaAction_Object,[[original-target:{}]])\")",
@@ -687,6 +825,18 @@ pub fn gives_item(text: &[u8], call: &Call, item: &str) -> bool {
     giving_call(&call.name).is_some_and(|index| {
         string_argument(text, call, index).unwrap_or(b"").to_ascii_lowercase() == item.as_bytes()
     })
+}
+
+/// Whether a dialogue action puts the item somewhere, also through
+/// ActionOverride (`_gives`).
+pub(crate) fn gives(text: &[u8], call: &Call, item: &str) -> bool {
+    if named(call, &["ActionOverride"]) && call.args.len() == 2 {
+        return match calls_in(text, call.args[1]) {
+            None => true,
+            Some(inner) => inner.iter().any(|nested| gives_item(text, nested, item)),
+        };
+    }
+    gives_item(text, call, item)
 }
 
 /// Every reply that gives the route's item, with the call that gives it.
@@ -1010,10 +1160,11 @@ pub fn patch_dialogue_in(
     Ok(dialogue.render())
 }
 
-/// `_valid_refs`: allocated text for exactly the route's original strrefs.
-fn valid_refs(refs: Option<&BTreeMap<i64, i64>>, resource: &str) -> Result<bool> {
+/// `_valid_refs`: allocated text for exactly the route's original strrefs, as
+/// the game numbers them.
+fn valid_refs(refs: Option<&BTreeMap<i64, i64>>, resource: &str, game: Option<&str>) -> Result<bool> {
     let Some(refs) = refs else { return Ok(false) };
-    let expected = text_refs(resource).ok_or_else(|| Error::key(resource))?;
+    let expected = game_text_refs(resource, game)?;
     Ok(refs.len() == expected.len()
         && expected.iter().all(|(old, _)| refs.contains_key(old))
         && refs.values().all(|value| (0..0xFFFF_FFFF).contains(value)))
@@ -1096,12 +1247,13 @@ pub fn patch_text_dialogue(
     refs: Option<&BTreeMap<i64, i64>>,
     defer_departure: bool,
     numeric_target: bool,
+    naming: Naming<'_>,
 ) -> Result<Vec<u8>> {
-    if !valid_refs(refs, resource)? {
+    if !valid_refs(refs, resource, naming.game)? {
         return Err(profile(format!("{} requires allocated original reward text", label(resource))));
     }
     let refs = refs.expect("valid refs");
-    let specs = resource_specs(resource)?;
+    let specs = resource_specs(resource, naming)?;
     if specs.len() != 1 {
         return Err(profile("A text route needs exactly one source flag"));
     }
@@ -1131,8 +1283,13 @@ pub fn patch_text_dialogue(
         let (text_ref, entry) = (u32_le(&state, 0), u32_le(&state, 12));
         let (first, count) = outgoing(&dlg, &state, &label)?;
         let transitions = dlg.transitions[first..first + count].to_vec();
-        let mut affected: BTreeSet<i64> =
-            transitions.iter().filter(|row| u32_le(row, 0) & 1 != 0).map(|row| u32_le(row, 4) as i64).collect();
+        let mut affected: BTreeSet<i64> = transitions
+            .iter()
+            .flat_map(|row| {
+                let shown = TEXT_FIELDS.iter().filter(move |(bit, _)| u32_le(row, 0) & bit != 0);
+                shown.map(move |&(_, offset)| u32_le(row, offset) as i64)
+            })
+            .collect();
         affected.insert(text_ref as i64);
         affected.retain(|value| refs.contains_key(value));
         if affected.is_empty() {
@@ -1143,9 +1300,11 @@ pub fn patch_text_dialogue(
         put_u32(&mut clone, 0, lookup(text_ref));
         let mut rows = transitions;
         for row in rows.iter_mut() {
-            if u32_le(row, 0) & 1 != 0 {
-                let reply = u32_le(row, 4);
-                put_u32(row, 4, lookup(reply));
+            for &(bit, offset) in &TEXT_FIELDS {
+                if u32_le(row, 0) & bit != 0 {
+                    let old = u32_le(row, offset);
+                    put_u32(row, offset, lookup(old));
+                }
             }
         }
         put_u32(&mut clone, 4, dlg.transitions.len() as u32);
@@ -1247,9 +1406,10 @@ pub type TextOriginal = (Vec<u8>, BTreeMap<i64, i64>);
 
 /// The original and text refs of a text route this adapter patched
 /// (`_text_original`); None if unpatched.
-pub fn text_original(data: &[u8], resource: &str) -> Result<Option<TextOriginal>> {
+pub fn text_original(data: &[u8], resource: &str, naming: Naming<'_>) -> Result<Option<TextOriginal>> {
+    let specs = resource_specs(resource, naming)?;
     if data.len() < 12 || &data[data.len() - 12..data.len() - 4] != TEXT_TRAILER {
-        if carries_patch(&read_dialogue(data, resource)?, &resource_specs(resource)?)? {
+        if carries_patch(&read_dialogue(data, resource)?, &specs)? {
             return Err(changed_patch(resource));
         }
         return Ok(None);
@@ -1269,18 +1429,18 @@ pub fn text_original(data: &[u8], resource: &str) -> Result<Option<TextOriginal>
     for index in 0..count {
         refs.insert(u32_le(trailer, 60 + index * 8) as i64, u32_le(trailer, 64 + index * 8) as i64);
     }
-    if !valid_refs(Some(&refs), resource)? {
+    if !valid_refs(Some(&refs), resource, naming.game)? {
         return Err(changed_patch(resource));
     }
     // Accept only the exact prior inventory callback patches on a rescan.
     // TRGENI had exports both before and after its departure-order fix.
     let mut variants = vec![(true, true)];
-    if resource_specs(resource)?[0].get("inventory_target").is_some_and(Value::truthy) {
+    if specs[0].get("inventory_target").is_some_and(Value::truthy) {
         let departures: &[bool] = if resource == "dlg:trgeni01" { &[true, false] } else { &[true] };
         variants.extend(departures.iter().map(|&departure| (departure, false)));
     }
     for (defer_departure, numeric_target) in variants {
-        match patch_text_dialogue(&original, resource, Some(&refs), defer_departure, numeric_target) {
+        match patch_text_dialogue(&original, resource, Some(&refs), defer_departure, numeric_target, naming) {
             Ok(patched) if patched == data => return Ok(Some((original, refs))),
             Ok(_) => {}
             Err(error) if error.kind == ErrorKind::Profile => break,
@@ -1420,8 +1580,8 @@ pub(crate) fn logical(data: &[u8], resource: &str) -> Result<Logical> {
 ///
 /// The result reads as the original did. Patching it again must give the
 /// same dialogue as `data`, or `data` is not exactly this adapter's patch.
-fn static_original(data: &[u8], resource: &str) -> Result<Option<Vec<u8>>> {
-    let specs = resource_specs(resource)?;
+fn static_original(data: &[u8], resource: &str, naming: Naming<'_>) -> Result<Option<Vec<u8>>> {
+    let specs = resource_specs(resource, naming)?;
     let dialogue = read_dialogue(data, resource)?;
     if !carries_patch(&dialogue, &specs)? {
         return Ok(None);
@@ -1554,6 +1714,7 @@ fn script_grants(script: &Script, spec: &Dict, label: &str) -> Result<BTreeMap<u
     let container = field(spec, "recipient_local")?.is_null();
     let opcode = script_grant_opcode(spec)?;
     let shown = upper(item_name);
+    // The script text routes are BG2's, which every game numbers alike (text_refs).
     let refs = text_refs(&text(spec, "resource")?).unwrap_or(&[]);
     let mut found = BTreeMap::new();
     for (index, block) in script.blocks.iter().enumerate() {
@@ -1652,22 +1813,66 @@ pub fn patch_script(data: &[u8], spec: &Dict, text_ref: Option<i64>) -> Result<V
     Ok([script.prefix, blocks.concat(), script.suffix].concat())
 }
 
+/// Gate the blocks that give each route's item, one route after the other
+/// (`_patch_scripts`).
+///
+/// A route whose grant is not recognised keeps its blocks as they are; its
+/// reason goes to `reasons`. With no route recognised, nothing is prepared.
+pub fn patch_scripts(data: &[u8], specs: &[Dict], text_ref: Option<i64>, reasons: Option<&mut Dict>) -> Result<Vec<u8>> {
+    let mut data = data.to_vec();
+    let mut failures = Dict::new();
+    for spec in specs {
+        match patch_script(&data, spec, text_ref) {
+            Ok(patched) => data = patched,
+            Err(error) if error.kind == ErrorKind::Profile => failures.insert(route(spec)?, error.message),
+            Err(error) => return Err(error),
+        }
+    }
+    if let Some(reasons) = reasons {
+        for (key, reason) in failures.iter() {
+            reasons.insert(key, reason.clone());
+        }
+    }
+    if failures.len() == specs.len() {
+        let first = specs.first().ok_or_else(index_error)?;
+        return Err(profile(failures.get(&route(first)?).map(str_value).unwrap_or_default()));
+    }
+    Ok(data)
+}
+
 /// The original of a reward script, its text ref and whether we patched it
 /// (`_script_original`).
-pub fn script_original(data: &[u8], spec: &Dict) -> Result<(Vec<u8>, Option<i64>, bool)> {
-    let resource = text(spec, "resource")?;
+///
+/// The routes' patches are undone in the reverse order of [`patch_scripts`];
+/// patching the result again must give `data` exactly.
+pub fn script_original(data: &[u8], specs: &[Dict]) -> Result<(Vec<u8>, Option<i64>, bool)> {
+    let resource = text(specs.first().ok_or_else(index_error)?, "resource")?;
     let newline: &[u8] = if find_bytes(data, b"\r\n", 0).is_some() { b"\r\n" } else { b"\n" };
-    let flag = text_field(spec, "selected_global", "encode")?;
-    let unselected = global_guard(flag, false, newline)?;
-    let selected = global_guard(flag, true, newline)?;
-    if find_bytes(data, &[b"\"GLOBAL", flag.as_bytes(), b"\""].concat(), 0).is_none() {
+    let mut patched = Vec::new();
+    for spec in specs {
+        let flag = text_field(spec, "selected_global", "encode")?;
+        if find_bytes(data, &[b"\"GLOBAL", flag.as_bytes(), b"\""].concat(), 0).is_some() {
+            patched.push(spec);
+        }
+    }
+    if patched.is_empty() {
         return Ok((data.to_vec(), None, false));
     }
-    let (original, numbers) = match unpatched_script(data, spec, newline, &selected, &unselected) {
-        Ok(found) => found,
-        Err(error) if error.kind == ErrorKind::Profile => return Err(changed_patch(&resource)),
-        Err(error) => return Err(error),
-    };
+    let (mut original, mut numbers) = (data.to_vec(), BTreeSet::new());
+    for spec in patched.into_iter().rev() {
+        let undone = (|| {
+            let flag = text_field(spec, "selected_global", "encode")?;
+            unpatch_script(&original, spec, newline, &global_guard(flag, true, newline)?, &global_guard(flag, false, newline)?)
+        })();
+        match undone {
+            Ok((restored, found)) => {
+                original = restored;
+                numbers.extend(found);
+            }
+            Err(error) if error.kind == ErrorKind::Profile => return Err(changed_patch(&resource)),
+            Err(error) => return Err(error),
+        }
+    }
     // The allocated text is one of the selected copies' numbers; only a
     // possible strref can be it.
     let candidates: Vec<Option<i64>> = if text_refs(&resource).is_some() {
@@ -1676,7 +1881,7 @@ pub fn script_original(data: &[u8], spec: &Dict) -> Result<(Vec<u8>, Option<i64>
         vec![None]
     };
     for reference in candidates {
-        match patch_script(&original, spec, reference) {
+        match patch_scripts(&original, specs, reference, None) {
             Ok(patched) if patched == data => return Ok((original, reference, true)),
             Ok(_) => {}
             Err(error) if error.kind == ErrorKind::Profile => break,
@@ -1691,7 +1896,7 @@ pub fn script_original(data: &[u8], spec: &Dict) -> Result<(Vec<u8>, Option<i64>
 ///
 /// Also returns the integers of the selected copies' actions, among them the
 /// allocated reward text.
-fn unpatched_script(
+fn unpatch_script(
     data: &[u8],
     spec: &Dict,
     newline: &[u8],
@@ -1751,19 +1956,19 @@ pub(crate) struct Examined {
     text_refs: Option<BTreeMap<i64, i64>>,
 }
 
-pub(crate) fn examine(resource: &str, data: &[u8]) -> Result<Examined> {
+pub(crate) fn examine(resource: &str, data: &[u8], naming: Naming<'_>) -> Result<Examined> {
     if resource.starts_with("bcs:") {
-        let (original, script_ref, own) = script_original(data, &resource_specs(resource)?[0])?;
+        let (original, script_ref, own) = script_original(data, &resource_specs(resource, naming)?)?;
         return Ok(Examined { original, own, script_ref, text_refs: None });
     }
     let unpatched = || Examined { original: data.to_vec(), own: false, script_ref: None, text_refs: None };
     if text_refs(resource).is_some() {
-        return Ok(match text_original(data, resource)? {
+        return Ok(match text_original(data, resource, naming)? {
             None => unpatched(),
             Some((original, refs)) => Examined { original, own: true, script_ref: None, text_refs: Some(refs) },
         });
     }
-    Ok(match static_original(data, resource)? {
+    Ok(match static_original(data, resource, naming)? {
         None => unpatched(),
         Some(original) => Examined { original, own: true, script_ref: None, text_refs: None },
     })
@@ -1776,7 +1981,7 @@ pub type TextRefs = BTreeMap<String, BTreeMap<i64, i64>>;
 
 /// Append the original generic well description; never replace shared text.
 pub fn prepare_ddwell_text(text: &GameText, language: &str) -> Result<(GameText, i64)> {
-    let (updated, refs) = prepare_reward_texts(text, ["bcs:ddwell"], language)?;
+    let (updated, refs) = prepare_reward_texts(text, ["bcs:ddwell"], language, None)?;
     Ok((updated, refs["bcs:ddwell"][&40850]))
 }
 
@@ -1789,13 +1994,49 @@ pub fn text_lines(resource: &str) -> Result<Vec<Line>> {
     Ok(numbers.into_iter().map(|number| (file.to_string(), number)).collect())
 }
 
+/// `_titled`: `body` under the title of the journal entry `original`, as the
+/// Enhanced Editions' quest entries begin; `body` alone if it has none.
+///
+/// The title (`_TITLE`) is the entry's first line, which has text, and the
+/// line breaks after it (one or two, as the language's texts have them),
+/// before more text.
+pub fn titled(original: Option<&str>, body: &str) -> String {
+    let original = original.unwrap_or("");
+    let line = original.find(['\r', '\n']).unwrap_or(original.len());
+    let mut end = line;
+    loop {
+        let rest = &original[end..];
+        if rest.starts_with("\r\n") {
+            end += 2;
+        } else if rest.starts_with('\n') {
+            end += 1;
+        } else {
+            break;
+        }
+    }
+    let has_text = |text: &str| text.chars().any(|c| !crate::py::is_space(c));
+    if end > line && has_text(&original[..line]) && has_text(&original[end..]) {
+        format!("{}{body}", &original[..end])
+    } else {
+        body.to_string()
+    }
+}
+
 /// Allocate the requested reward texts, in the game's language, in one
 /// append/dedup pass.
 ///
-/// A text's female wording goes to the game's dialogf.tlk. Fails with
-/// MissingTranslation ([`crate::translations`]) when the language has no
-/// translation of one of them.
-pub fn prepare_reward_texts<I, S>(text: &GameText, resources: I, language: &str) -> Result<(GameText, TextRefs)>
+/// A text's female wording goes to the game's dialogf.tlk. A journal entry
+/// ([`JOURNAL_REFS`]) keeps the title line of the entry it replaces, in the
+/// game's own words. Fails with MissingTranslation ([`crate::translations`])
+/// when the language has no translation of one of them. The result maps each
+/// resource's texts as the `game` numbers them ([`game_text_refs`]) to the
+/// new ones.
+pub fn prepare_reward_texts<I, S>(
+    text: &GameText,
+    resources: I,
+    language: &str,
+    game: Option<&str>,
+) -> Result<(GameText, TextRefs)>
 where
     I: IntoIterator<Item = S>,
     S: AsRef<str>,
@@ -1814,9 +2055,15 @@ where
     let mut values = Vec::new();
     for &resource in &needed {
         let file = text_lines(resource)?.remove(0).0;
-        for &(old, tra) in text_refs(resource).expect("text resource") {
+        let journals = journal_refs(resource, game)?;
+        for (old, tra) in game_text_refs(resource, game)? {
             entries.push((resource, old));
-            values.push(found[&(file.clone(), tra)].clone());
+            let mut wording = found[&(file.clone(), tra)].clone();
+            if journals.contains(&old) {
+                let (male, female) = text.string(old)?;
+                wording = (titled(male.as_deref(), &wording.0), titled(female.as_deref(), &wording.1));
+            }
+            values.push(wording);
         }
     }
     let (updated, refs) = text.append(&values)?;
@@ -1826,6 +2073,72 @@ where
         result.get_mut(resource).expect("needed").insert(old, reference as i64);
     }
     Ok((updated, result))
+}
+
+/// A createEntry line of BGEE.LUA that lists a journal text: where it ends,
+/// its start up to the text, its quest and the rest of it (`_journal_entries`).
+struct JournalEntry {
+    end: usize,
+    start: Vec<u8>,
+    quest: Vec<u8>,
+    rest: Vec<u8>,
+}
+
+/// BGEE.LUA's createEntry lines that list the journal text `reference`
+/// (`(?m)^([ \t]*createEntry[ \t]*\([ \t]*(\d+)[ \t]*,[^,\r\n]*,[ \t]*)<reference>([ \t]*,[^\r\n]*\r?\n)`).
+fn journal_entries(lua: &[u8], reference: i64) -> Vec<JournalEntry> {
+    let reference = reference.to_string().into_bytes();
+    let blanks = |at: usize| at + lua[at..].iter().take_while(|&&byte| byte == b' ' || byte == b'\t').count();
+    let entry = |line: usize| -> Option<JournalEntry> {
+        let mut at = blanks(line);
+        at = blanks(at + lua[at..].starts_with(b"createEntry").then_some(11)?);
+        at = blanks(at + (lua.get(at) == Some(&b'(')).then_some(1)?);
+        let digits = lua[at..].iter().take_while(|byte| byte.is_ascii_digit()).count();
+        let quest = (digits > 0).then(|| lua[at..at + digits].to_vec())?;
+        at = blanks(at + digits);
+        at += (lua.get(at) == Some(&b',')).then_some(1)?;
+        at += lua[at..].iter().position(|&byte| matches!(byte, b',' | b'\r' | b'\n'))?;
+        at = blanks(at + (lua[at] == b',').then_some(1)?);
+        let start = lua[line..at].to_vec();
+        at += lua[at..].starts_with(&reference).then_some(reference.len())?;
+        let after = at;
+        at = blanks(at);
+        at += (lua.get(at) == Some(&b',')).then_some(1)?;
+        at += lua[at..].iter().position(|&byte| matches!(byte, b'\r' | b'\n'))?;
+        let end = match &lua[at..] {
+            [b'\n', ..] => at + 1,
+            [b'\r', b'\n', ..] => at + 2,
+            _ => return None,
+        };
+        Some(JournalEntry { end, start, quest, rest: lua[after..end].to_vec() })
+    };
+    let lines = std::iter::once(0).chain(lua.iter().enumerate().filter(|(_, &byte)| byte == b'\n').map(|(index, _)| index + 1));
+    lines.filter(|&line| line < lua.len()).filter_map(entry).collect()
+}
+
+/// BGEE.LUA with each new journal text listed as the text it replaces is
+/// (`journal_lua`).
+///
+/// `texts` are [`prepare_reward_texts`]' result. The Enhanced Editions'
+/// journal files an entry under its quest by BGEE.LUA's createEntry lines:
+/// the new text gets a copy of each line that lists the original, beside it.
+/// An original that no quest lists stays unlisted, and so does its new text.
+pub fn journal_lua(lua: &[u8], texts: &TextRefs, game: Option<&str>) -> Result<Vec<u8>> {
+    let mut lua = lua.to_vec();
+    for (resource, refs) in texts {
+        for old in journal_refs(resource, game)? {
+            let new = *refs.get(&old).ok_or_else(|| Error::new(ErrorKind::Key, old.to_string()))?;
+            let listed: BTreeSet<Vec<u8>> = journal_entries(&lua, new).into_iter().map(|entry| entry.quest).collect();
+            for entry in journal_entries(&lua, old).into_iter().rev() {
+                if listed.contains(&entry.quest) {
+                    continue;
+                }
+                let line = [entry.start.as_slice(), new.to_string().as_bytes(), entry.rest.as_slice()].concat();
+                lua = [&lua[..entry.end], line.as_slice(), &lua[entry.end..]].concat();
+            }
+        }
+    }
+    Ok(lua)
 }
 
 // ---------------------------------------------------------------- routes
@@ -1845,17 +2158,28 @@ fn resource_key(resource: &str) -> Result<String> {
 /// Whether the bytes are this adapter's own patch, verified exactly.
 ///
 /// False for an unpatched resource; raises for a changed copy of our patch.
-pub fn own_patch(resource: &str, data: &[u8]) -> Result<bool> {
-    Ok(examine(&resource_key(resource)?, data)?.own)
+pub fn own_patch(resource: &str, data: &[u8], naming: Naming<'_>) -> Result<bool> {
+    Ok(examine(&resource_key(resource)?, data, naming)?.own)
 }
 
-fn prepare_routes(resource: &str, specs: &[Dict], data: &[u8], reasons: &mut Dict) -> Result<()> {
-    let examined = examine(resource, data)?;
+/// The script this adapter's patch was made from, exactly; `data` itself
+/// when it is not our patch. Raises for a changed copy of our patch.
+pub fn unpatched_script(resource: &str, data: &[u8], naming: Naming<'_>) -> Result<Vec<u8>> {
+    let resource = resource_key(resource)?;
+    if !resource.starts_with("bcs:") {
+        return Err(profile(format!("{} is not a reward script", label(&resource))));
+    }
+    Ok(examine(&resource, data, naming)?.original)
+}
+
+fn prepare_routes(resource: &str, specs: &[Dict], data: &[u8], reasons: &mut Dict, naming: Naming<'_>) -> Result<()> {
+    let examined = examine(resource, data, naming)?;
     if resource.starts_with("bcs:") {
-        patch_script(&examined.original, &specs[0], Some(0))?;
-    } else if let Some(refs) = text_refs(resource) {
-        let stand_in: BTreeMap<i64, i64> = refs.iter().map(|(old, _)| (*old, *old)).collect();
-        patch_text_dialogue(&examined.original, resource, Some(&stand_in), true, true)?;
+        patch_scripts(&examined.original, specs, Some(0), Some(reasons))?;
+    } else if text_refs(resource).is_some() {
+        let stand_in: BTreeMap<i64, i64> =
+            game_text_refs(resource, naming.game)?.into_iter().map(|(old, _)| (old, old)).collect();
+        patch_text_dialogue(&examined.original, resource, Some(&stand_in), true, true, naming)?;
     } else {
         patch_dialogue(&examined.original, specs, &[], true, true, Some(reasons))?;
     }
@@ -1867,11 +2191,11 @@ fn prepare_routes(resource: &str, specs: &[Dict], data: &[u8], reasons: &mut Dic
 ///
 /// Routes missing from the result can be prepared; this runs the same patch
 /// that the export runs, with stand-in text references.
-pub fn route_reasons(resource: &str, data: &[u8]) -> Result<Dict> {
+pub fn route_reasons(resource: &str, data: &[u8], naming: Naming<'_>) -> Result<Dict> {
     let resource = resource_key(resource)?;
-    let specs = resource_specs(&resource)?;
+    let specs = resource_specs(&resource, naming)?;
     let mut reasons = Dict::new();
-    match prepare_routes(&resource, &specs, data, &mut reasons) {
+    match prepare_routes(&resource, &specs, data, &mut reasons, naming) {
         Ok(()) => Ok(reasons),
         Err(error) if error.kind == ErrorKind::Profile => {
             let mut all = Dict::new();
@@ -1886,6 +2210,47 @@ pub fn route_reasons(resource: &str, data: &[u8]) -> Result<Dict> {
     }
 }
 
+/// Whether the dialogue gives the item of the route `key` at all, in a way
+/// the route can gate or not.
+///
+/// A route that follows a physical source ([`PHYSICAL_SOURCE_REWARDS`]) is
+/// needed where its dialogue gives the item. A reply whose actions cannot be
+/// read counts as giving it; [`route_reasons`] says why the route cannot be
+/// prepared then.
+pub fn gives_reward(resource: &str, data: &[u8], key: &str, naming: Naming<'_>) -> Result<bool> {
+    let resource = resource_key(resource)?;
+    let mut specs = Vec::new();
+    for spec in resource_specs(&resource, naming)? {
+        if route(&spec)? == key {
+            specs.push(spec);
+        }
+    }
+    let label = label(&resource);
+    if !resource.starts_with("dlg:") || specs.is_empty() {
+        return Err(profile(format!("Unsupported extended reward route in {label}: {key}")));
+    }
+    let item = text_field(&specs[0], "item", "encode")?;
+    let dialogue = read_dialogue(&examine(&resource, data, naming)?.original, &resource)?;
+    for state in &dialogue.states {
+        let (first, count) = outgoing(&dialogue, state, &label)?;
+        for row in &dialogue.transitions[first..first + count] {
+            if u32_le(row, 0) & 4 == 0 {
+                continue;
+            }
+            let text = string(&dialogue.actions, u32_le(row, 16), &label)?;
+            if !names(&text, item) {
+                continue;
+            }
+            match calls(&text) {
+                None => return Ok(true),
+                Some(found) if found.iter().any(|call| gives(&text, call, item)) => return Ok(true),
+                Some(_) => {}
+            }
+        }
+    }
+    Ok(false)
+}
+
 /// Patch a resource or re-export our own patch; text routes need refs on
 /// their first export.
 pub fn patch_reward(
@@ -1893,26 +2258,30 @@ pub fn patch_reward(
     data: &[u8],
     refs: Option<&BTreeMap<i64, i64>>,
     ddwell_ref: Option<i64>,
+    naming: Naming<'_>,
 ) -> Result<Vec<u8>> {
     let resource = resource_key(resource)?;
-    let examined = examine(&resource, data)?;
-    let specs = resource_specs(&resource)?;
+    let examined = examine(&resource, data, naming)?;
+    let specs = resource_specs(&resource, naming)?;
     if resource.starts_with("bcs:") {
         let mut ddwell_ref = ddwell_ref;
         if let Some(refs) = refs {
-            let expected = text_refs(&resource);
-            let same = expected.is_some_and(|expected| {
-                refs.len() == expected.len() && expected.iter().all(|(old, _)| refs.contains_key(old))
-            });
+            let same = match text_refs(&resource) {
+                None => false,
+                Some(_) => {
+                    let expected = game_text_refs(&resource, naming.game)?;
+                    refs.len() == expected.len() && expected.iter().all(|(old, _)| refs.contains_key(old))
+                }
+            };
             if !same {
                 return Err(profile(format!("{} requires its allocated original reward text", label(&resource))));
             }
             ddwell_ref = refs.values().next().copied();
         }
-        return patch_script(&examined.original, &specs[0], ddwell_ref.or(examined.script_ref));
+        return patch_scripts(&examined.original, &specs, ddwell_ref.or(examined.script_ref), None);
     }
     if text_refs(&resource).is_some() {
-        return patch_text_dialogue(&examined.original, &resource, refs.or(examined.text_refs.as_ref()), true, true);
+        return patch_text_dialogue(&examined.original, &resource, refs.or(examined.text_refs.as_ref()), true, true, naming);
     }
     if examined.own {
         return Ok(data.to_vec());

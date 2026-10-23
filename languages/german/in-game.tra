@@ -324,6 +324,8 @@ Gewicht: 0~
 @497 = ~Ausgezeichnet. Ich habe einen magischen Gegenstand und eine Wunschrolle, beides recht beeindruckende Dinge. Und dann ist da noch der Edelstein. Worum möchtet Ihr spielen?~
 @498 = ~Ich spiele um den magischen Gegenstand.~
 @499 = ~Ihr wünscht Euch den magischen Gegenstand, und hier ist er. Wenn Ihr noch einmal spielen wollt, wäre ich für eine Gelegenheit dankbar, meine Freiheit zu gewinnen, mein Freund.~ ~Ihr wünscht Euch den magischen Gegenstand, und hier ist er. Wenn Ihr noch einmal spielen wollt, wäre ich für eine Gelegenheit dankbar, meine Freiheit zu gewinnen, meine Freundin.~
+@698 = ~Hmm. Wenn ich mich richtig erinnere, habe ich hier irgendwo einen magischen Gegenstand herumliegen. Ich habe ihn von diesem Trottel Tolgerias bei einer Wette gewonnen. Ich kann nichts damit anfangen, aber er ist recht wertvoll. Wenn Ihr mir das Blut eines Nachahmers bringt, gehört der Gegenstand Euch.~
+@699 = ~Ich nahm mir die Freiheit, den magischen Gegenstand schon herauszusuchen, nur für den Fall der Fälle. Ich bin wohl ziemlich prophetisch veranlagt, meint Ihr nicht auch? Bei mir hat er ohnehin nur als Staubfänger gedient ... So, hier ist er, und ich möchte hinzufügen, Ihr habt Euch die Belohnung wahrlich verdient.~
 @1393 = ~Nein, nein. Der Gegenstand selbst ist mehr als genug.~
 @1394 = ~Hmmm ... nun, mein Dorf ist in großer Not. Ich sage Euch was ... wenn Ihr den Morden ein Ende setzt, gebe ich Euch einen magischen Gegenstand, der unserem ersten Waldläufer-Protektor gehört hat.~
 @1395 = ~Wie vereinbart, hier ist der Gegenstand meines Vorfahren, des Waldläufers ... ich versichere Euch, er ist von sehr starker Magie durchdrungen!~
@@ -332,6 +334,8 @@ Gewicht: 0~
 @1398 = ~Ich biete Euch dasselbe wie der Rittersfrau ... einen feinen magischen Gegenstand, der meinem Vorfahren, dem Waldläufer, gehört hat! Und Gold dazu, wenn Ihr es verlangt. Werdet Ihr uns helfen?~
 @1399 = ~Nicht so schnell. Das Geld, das Ihr mir vorhin gegeben habt, war nur ein Vorschuss. Ich erwarte mehr als irgendeinen alten Gegenstand. Bezahlt mich jetzt, bevor ich wütend werde.~
 @1449 = ~Das war mein Vorfahr, und ich habe ihn behalten. Man sagt mir, er sei von starker Magie umhüllt. Ich würde ihn Euch gern anbieten -- und etwas Gold dazu --, um mein Dorf zu retten.~
+@1649 = ~Lasst mich Euch dafür danken, dass Ihr die Liga gerettet habt! Für das, was Ihr für mich getan habt, werde ich Euch alle reich belohnen. Ich hoffe, die Belohnung ist Euch groß genug. Dieser Gegenstand ist Teil des Familienerbes, und ich bin sicher, dass er Euch nützlich sein wird. Seid gewiss, dass Ihr stets zu mir kommen könnt, wenn Ihr in Gefahr seid.~
+@1650 = ~Im Gebäude der Händlerliga wimmelte es von Gestaltwandlern! Ich habe sie nun alle beseitigt. Aldeth Sashenstar hat mich dafür gelobt, dass ich ihm diese Arbeit abgenommen habe, und heißt mich in seinem Anwesen jederzeit willkommen, falls ich einmal in Schwierigkeiten gerate. Das könnte ich noch brauchen.~
 
 // The configurator's option "Include Kangaxx items": the crypts' sarcophagi and
 // the ward stone that opens them.

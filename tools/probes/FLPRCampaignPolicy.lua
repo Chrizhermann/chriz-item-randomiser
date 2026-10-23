@@ -21,8 +21,9 @@ return function(revision, source_index, permanent, selected_global)
         source_index >= 1 and source_index <= 4096), 'CAMPAIGN_GATE_SOURCE_INDEX_INVALID')
     assert((permanent==nil or permanent==true) and
         (not permanent or (not stock_option and not cursed_option)) and
-        (selected_global==nil or (permanent and (selected_global=='FLPR_QM2_12' or
-            selected_global=='FLPR_QM2_32' or selected_global=='FLPR_QM2_39' or selected_global=='FLPR_QM2_84'))),
+        (selected_global==nil or (permanent and (selected_global=='FLPR_QM2_12' or selected_global=='FLPR_QM2_31' or
+            selected_global=='FLPR_QM2_32' or selected_global=='FLPR_QM2_39' or selected_global=='FLPR_QM2_84' or
+            selected_global=='FLPR_QB1_16' or selected_global=='FLPR_QB1_159'))),
         'CAMPAIGN_GATE_AUXILIARY_POLICY_INVALID')
     local fields = {{name='FLPR_STATE', value=2}, {name='FLPR_GUARD', value=1}}
     for index=1,16 do

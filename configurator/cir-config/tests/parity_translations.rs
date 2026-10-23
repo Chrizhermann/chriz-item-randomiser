@@ -118,14 +118,14 @@ fn texts_are_read_in_their_code_page_with_their_female_wording() {
 #[test]
 fn polish_reward_texts_go_to_both_files() {
     let start = GameText { male: make_tlk(&["a"]), female: Some(make_tlk(&["a (f)"])) };
-    let (text, refs) = prepare_reward_texts(&start, ["dlg:sctelwyn", "bcs:ddwell"], "pl_PL").unwrap();
+    let (text, refs) = prepare_reward_texts(&start, ["dlg:sctelwyn", "bcs:ddwell"], "pl_PL", None).unwrap();
     for (resource, old, number) in [("dlg:sctelwyn", 29325, 111), ("bcs:ddwell", 40850, 399)] {
         let reference = refs[resource][&old] as u32;
         let shown = (tlk_text(&text.male, reference).unwrap(), tlk_text(text.female.as_ref().unwrap(), reference).unwrap());
         let wanted = line("in-game.tra", number);
         assert_eq!(shown, Translations::Embedded.lines("pl_PL", std::slice::from_ref(&wanted)).unwrap()[&wanted], "{resource}");
     }
-    assert_eq!(prepare_reward_texts(&text, ["dlg:sctelwyn", "bcs:ddwell"], "pl_PL").unwrap(), (text.clone(), refs));
+    assert_eq!(prepare_reward_texts(&text, ["dlg:sctelwyn", "bcs:ddwell"], "pl_PL", None).unwrap(), (text.clone(), refs));
     let (golems, golem_refs) = prepare_container_texts(&text, ["bcs:kpgol01"], "pl_PL").unwrap();
     let reference = golem_refs["bcs:kpgol01"][&38758] as u32;
     assert_ne!(tlk_text(&golems.male, reference), tlk_text(golems.female.as_ref().unwrap(), reference));

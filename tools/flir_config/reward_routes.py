@@ -21,6 +21,9 @@ files and CIR's translations with what was read (their stat identities, see
 resources.file_identity) and reads them again when one changed; a resource
 whose bytes then differ from the scan stops the check. Apply still reads and
 verifies the bytes it patches.
+
+The routes are recognised as the scanned game names their items (EET renames
+BG1's): `game` and `names` say how, for the export too.
 """
 from __future__ import annotations
 
@@ -28,6 +31,8 @@ import hashlib
 from pathlib import Path
 
 from . import container_rewards, game_text, mode2_rewards, translations
+from .game_names import eet_names
+from .platform import game_platform
 from .profiles import ProfileError
 from .resources import GameResources, RESOURCE_TYPES, file_identity
 from .reward_copies import RewardCopies
@@ -38,6 +43,9 @@ class ChangedSinceScan(ProfileError):
 
 
 _CACHE: dict[tuple[str, str, str], "RewardRoutes"] = {}
+# Routes that follow a physical source (Lesa's sword, the treasury's rod):
+# needed where their dialogue gives the item at all (mode2_rewards.gives_reward).
+_LINKS = frozenset(mode2_rewards.PHYSICAL_SOURCE_REWARDS.values())
 
 
 def reward_routes(catalog: dict, world: dict) -> "RewardRoutes":
@@ -58,9 +66,13 @@ class RewardRoutes:
         resources = sorted(resource for resource in
                            {*mode2_rewards.RESOURCE_REWARDS, *container_rewards.RESOURCE_TARGETS}
                            if resource in scanned)
+        self.game = game_platform(world)
+        self.names = eet_names(game_root) if self.game == "eet" else None
+        naming = {"game": self.game, "names": self.names}
         self.language = language
         self.changed: set[str] = set()
         self.reasons: dict[tuple[str, str], str] = {}
+        self.giving: set[str] = set()
         self._files: dict[Path, tuple] = {}
         male, female = game_text.text_files(game_root, language)
         for path in [male.parent, male, *([female] if female else []), *translations.sources(language)]:
@@ -88,17 +100,26 @@ class RewardRoutes:
                 if data is None:
                     self.changed.add(resource)
                     continue
-                adapter = mode2_rewards if resource in mode2_rewards.RESOURCE_REWARDS else container_rewards
+                quest = resource in mode2_rewards.RESOURCE_REWARDS
+                adapter = mode2_rewards if quest else container_rewards
+                named = naming if quest else {}
                 try:
-                    own = adapter.own_patch(resource, data)
+                    own = adapter.own_patch(resource, data, **named)
                 except ProfileError:
                     own = True  # A changed copy of our patch: route_reasons names it.
                 if not own and hashlib.sha256(data).hexdigest() != scanned[resource]:
                     self.changed.add(resource)
                     continue
-                for key, reason in adapter.route_reasons(resource, data).items():
+                for key, reason in adapter.route_reasons(resource, data, **named).items():
                     self.reasons[resource, key] = reason
-            self.copies = RewardCopies(lambda name: read("dlg", name), scanned)
+                for key in sorted(_LINKS.intersection(mode2_rewards.RESOURCE_REWARDS.get(resource, ()))):
+                    try:
+                        gives = mode2_rewards.gives_reward(resource, data, key, **naming)
+                    except ProfileError:
+                        gives = True  # Its route's reasons say why it cannot be read.
+                    if gives:
+                        self.giving.add(key)
+            self.copies = RewardCopies(lambda name: read("dlg", name), scanned, **naming)
         self.changed |= self.copies.changed
 
     def current(self) -> bool:
@@ -158,6 +179,12 @@ class RewardRoutes:
             raise ProfileError(prefix + reason)
         self._texts(tuple(line for resource in spec["resources"] if resource in mode2_rewards.TEXT_REFS
                           for line in mode2_rewards.text_lines(resource)), prefix)
+
+    def gives(self, key: str) -> bool:
+        """Whether a dialogue of the route <key> (one of _LINKS) gives its item at
+        all; a game without the dialogue gives it nowhere."""
+        self._unchanged(mode2_rewards.REWARDS[key]["resources"])
+        return key in self.giving
 
     def require_container(self, target_id: str) -> None:
         """Raise unless the container quest target can be prepared."""

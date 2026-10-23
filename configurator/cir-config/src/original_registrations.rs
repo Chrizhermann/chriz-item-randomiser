@@ -3,6 +3,7 @@
 
 use crate::error::{Error, Result};
 use crate::json::{Dict, Value};
+use crate::mode2_rewards::Naming;
 use crate::original_catalog::{
     container_target_spec, is_spin621_source, is_spin621_target, mode2_alias_spec, resolve_template,
 };
@@ -418,7 +419,7 @@ pub fn validate_target_registration(registration: &Value, rows: &Rows) -> Result
 }
 
 fn target_resource(authored: &Value, resource_value: &Value) -> Result<()> {
-    if let Some(reward) = mode2_alias_spec(authored)? {
+    if let Some(reward) = mode2_alias_spec(authored, Naming::default())? {
         if !reward.get("resource").is_some_and(|primary| primary.py_eq(resource_value)) {
             return Err(Error::profile("Original reward target must use its registered primary resource"));
         }
@@ -434,7 +435,7 @@ pub fn target_kind(authored: &Value) -> Result<String> {
     if container_target_spec(authored)?.is_some() {
         return Ok("container".into());
     }
-    let reward = mode2_alias_spec(authored)?;
+    let reward = mode2_alias_spec(authored, Naming::default())?;
     if reward.as_ref().is_some_and(|reward| reward.get("inventory_target").is_some_and(Value::truthy)) {
         return Ok("creature-target".into());
     }

@@ -2,8 +2,9 @@
 
 Runs the Python test suite (tests/test_*.py) with the reference implementation
 as usual. Every call the tests make to the configurator library -- game and
-world scans, preset drafts and fitting with left-out rows, binding, campaign
-compile and publish, native export -- is also run by the Rust port on the same
+world scans, preset drafts and fitting with left-out rows, the reward routes
+of table rows, binding, campaign compile and publish, native export -- is
+also run by the Rust port on the same
 inputs and the same folder state. Results, errors and written files must match
 exactly; the synthetic games are the ones the reference tests build.
 
@@ -276,14 +277,18 @@ class Spec:
     text only (another type cannot be passed to it at all), those it takes as
     a mapping of text to text, those it takes as a sequence (a tuple becomes
     a JSON list), those that become JSON through a function (an object of the
-    reference's), and how the reference's result becomes JSON."""
+    reference's), how the reference's result becomes JSON, and whether only
+    the tests' own calls are recorded (`tests_only`: a helper the
+    configurator calls for each row is compared through the calls that make
+    it, not once per row)."""
 
     def __init__(self, call: str, arguments, *, paths=(), writes=(), texts=(), text_maps=(), sequences=(),
-                 converters=None, result=None):
+                 converters=None, result=None, tests_only=False):
         self.call, self.arguments, self.paths, self.writes = call, arguments, set(paths), tuple(writes)
         self.texts, self.text_maps, self.sequences = set(texts), set(text_maps), set(sequences)
         self.converters = converters or {}
         self.result = result
+        self.tests_only = tests_only
 
 
 def names_value(names) -> dict:
@@ -306,6 +311,10 @@ SPECS = {
             catalog=file(v["catalog"]), world=file(v["world"]), template_id=v["template_id"], game=v["game"],
             items=v["items"], targets=v["targets"], options=v["options"], names=v["names"]),
         texts=("template_id", "game"), converters={"names": names_value}),
+    ("flir_config.original_catalog", "mode2_route_source"): Spec(
+        "mode2_route_source", lambda v, d: {"row": v["row"]}, tests_only=True),
+    ("flir_config.original_catalog", "mode2_route_target"): Spec(
+        "mode2_route_target", lambda v, d: {"row": v["row"]}, tests_only=True),
     ("flir_config.templates", "build_template"): Spec(
         "build_template", lambda v, d: present(template_id=v["template_id"], items=v["items"], targets=v["targets"],
                                                options=v["options"]),
@@ -487,6 +496,9 @@ def record(spec: Spec, original, signature, args, kwargs):
             rust_after[root] = snapshot_tree(root)
         except (ValueError, OSError) as exc:
             rust_after[root] = {"<unreadable>": str(exc).encode()}
+    # Only once every root is read: one root can hold another (a game folder
+    # beside the export, both in the folder holding the export).
+    for root in roots:
         restore_tree(root, before[root])
 
     error = None
@@ -517,10 +529,13 @@ def record(spec: Spec, original, signature, args, kwargs):
 
 def make_wrapper(spec: Spec, original):
     signature = inspect.signature(original)
+    tests = str(ROOT / "tests")
 
     @functools.wraps(original)
     def wrapper(*args, **kwargs):
         if getattr(STATE, "active", False):
+            return original(*args, **kwargs)
+        if spec.tests_only and not sys._getframe(1).f_code.co_filename.startswith(tests):
             return original(*args, **kwargs)
         STATE.active = True
         try:

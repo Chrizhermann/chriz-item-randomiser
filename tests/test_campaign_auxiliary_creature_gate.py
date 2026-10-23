@@ -24,19 +24,31 @@ REVISION = "a" * 64
 SOURCE = "original-source:bg2:mode2:item:12"
 INVENTORY = (ROOT / "tools/probes/FLPRInventoryAsm.lua").read_text()
 MEMORY_SIZE = 128 + 2049 * 128 + 32 + 64 * 64
-FAMILIES = {12: ("scyarryl", "blun20", 0), 32: ("trgeni01", "sw1h23", 0),
-            39: ("loutcapt", "dagg11", 6), 84: ("amcler01", "ring43", 0)}
+FAMILIES = {12: ("scyarryl", "blun20", 0), 31: ("jugjer01", "sw1h26", 0), 32: ("trgeni01", "sw1h23", 0),
+            39: ("loutcapt", "dagg11", 6), 84: ("amcler01", "ring43", 0),
+            16: ("aldeth", "sw1h03", 0), 159: ("nemphr", "scrl1q", 0)}
+# Item Randomiser's BG1 list rows among them; the others are BG2's.
+BG1_FAMILIES = {16, 159}
+
+
+def family_names(family):
+    """The source id and selection flag of a family's list row."""
+    if family in BG1_FAMILIES:
+        return f"original-source:bg1:mode2:item:{family}", f"FLPR_QB1_{family}"
+    return f"original-source:bg2:mode2:item:{family}", f"FLPR_QM2_{family}"
+
+
 SETUP = """
-return function(f,Gate,build,compile,Inventory,original,family,creature,item,record)
-    local id='original-source:bg2:mode2:item:'..family
-    local selected='FLPR_QM2_'..family
-    local p={resref=item,expiration=0,charges={0,0,0},flags=0}
+return function(f,Gate,build,compile,Inventory,original,family,creature,item,records,charges,flags,expiration,
+        id,selected,route)
+    local p={resref=item,expiration=expiration,charges=charges,flags=flags}
     local aux={resource='cre:'..creature,resource_sha256=string.rep('2',64),
-        record_indices={record},payload=p,selected_global=selected}
+        record_indices=records,payload=p,selected_global=selected}
     local manifest={revision=string.rep('a',64),sources={{id=id,quantity=1,
-        resource_sha256=string.rep('1',64),record={kind='authored-source',record=p}}}}
+        resource_sha256=string.rep('1',64),record={kind='authored-source',
+        record={resref=item,expiration=0,charges={0,0,0},flags=0}}}}}
     local fixture={revision=manifest.revision,sources={[id]={kind='guarded-script',
-        selected_global=selected,auxiliary_creatures={aux}}},
+        selected_global=selected,auxiliary_creatures={aux},route_source=route}},
         resource_hashes={[creature:upper()..'.CRE']=aux.resource_sha256},
         source_gate={schema='flpr-unvisited-fixture-gate-v1',source_ids={id}}}
     if family==32 then
@@ -73,21 +85,35 @@ end
 """
 
 
-def fixture(runtime=LuaJIT, *, family=12, original=None):
+def fixture(runtime=LuaJIT, *, family=12, original=None, records=None, charges=(0, 0, 0), flags=0,
+            expiration=0, identity=None, route=None):
+    """The gate with one family's auxiliary copy: the CRE records <records>
+    (default: the family's usual record) holding the item with <charges>,
+    <flags> and <expiration>. <identity> is a preset's row of the family's
+    route instead of its own, which names the <route>."""
     lua = runtime(unpack_returned_tuples=True)
     core, build, policy, inventory = [lua.execute(text) for text in (CORE, BUILD, POLICY, INVENTORY)]
     gate = load(lua, GATE)
     f = lua.execute(CASES.replace("return cases", "return fixture"))(core)
     creature, item, record = FAMILIES[family]
     if original is None:
-        records = [item_record("OTHER00", charges=(1, 2, 3)) for _ in range(record)]
-        records += [item_record(item.upper(), expiration=0, charges=(0, 0, 0), flags=0),
-                    item_record("OTHER01", charges=(2, 3, 4), flags=3),
-                    item_record("OTHER02", charges=(1, 0, 7), flags=1)]
-        original = bytes(make_cre(records, slots={9: record, 21: record + 1, 22: record + 2}, gap=13))
-    bundle = lua.execute(SETUP)(f, gate, build, policy, inventory, original,
-                               family, creature, item, record)
+        rows = [item_record("OTHER00", charges=(1, 2, 3)) for _ in range(record)]
+        rows += [item_record(item.upper(), expiration=0, charges=(0, 0, 0), flags=0),
+                 item_record("OTHER01", charges=(2, 3, 4), flags=3),
+                 item_record("OTHER02", charges=(1, 0, 7), flags=1)]
+        original = bytes(make_cre(rows, slots={9: record, 21: record + 1, 22: record + 2}, gap=13))
+    source, selected = family_names(family)
+    bundle = lua.execute(SETUP)(f, gate, build, policy, inventory, original, family, creature, item,
+                                lua.table(*(records if records is not None else [record])),
+                                lua.table(*charges), flags, expiration, identity or source, selected, route)
     return lua, f, bundle, original
+
+
+def edits(group):
+    return {"kind": "cre", "length": group.length, "expected": EXPECTED, "output": OUTPUT,
+            "item_offset": group.item_offset, "slot_offset": group.slot_offset,
+            "edits": [{"index": row.index, "buffer": BUFFER, "context": 40, "replacement": row.replacement}
+                      for row in group.edits.values()]}
 
 
 def loaded_policy(phase=1, selected=1, *, revision=REVISION, permanent=True, selected_global="FLPR_QM2_12"):
@@ -138,24 +164,128 @@ class AuxiliaryCreatureTests(unittest.TestCase):
             auxiliary._bundle(auxiliary, bundle)
 
     def test_reviewed_dialogue_families_bind_only_their_exact_duplicate(self):
-        for family in (32, 39, 84):
+        # BG1's Aldeth and Nemphre keep these names in EET too.
+        for family in (31, 32, 39, 84, 16, 159):
             with self.subTest(family=family):
                 _, f, bundle, _ = fixture(family=family)
                 auxiliary = f.gate.auxiliary_members[REVISION][1]
                 creature, item, record = FAMILIES[family]
+                identity, selected = family_names(family)
                 self.assertEqual(len(bundle.manifest.sources), 1)
                 self.assertEqual(len(f.gate.members), 1)
                 self.assertEqual(auxiliary.index, 1)
                 self.assertEqual(auxiliary.binding.creature_resource, "cre:" + creature)
                 self.assertEqual(auxiliary.binding.payload.resref, item)
                 self.assertEqual(auxiliary.binding.records[1], record)
-                self.assertEqual(auxiliary.policy.fields[20].name, f"FLPR_QM2_{family}")
+                self.assertEqual(auxiliary.policy.fields[20].name, selected)
                 self.assertEqual(sum(not f.idle(f, index) for index in f.hooks.keys()), 3)
                 # A different approved creature still cannot be bound to this source.
-                endpoint = bundle.fixture.sources[f"original-source:bg2:mode2:item:{family}"]
+                endpoint = bundle.fixture.sources[identity]
                 endpoint.auxiliary_creatures[1].resource = "cre:scyarryl"
                 with self.assertRaisesRegex(Exception, "CAMPAIGN_GATE_AUXILIARY_INVALID"):
                     auxiliary._bundle(auxiliary, bundle)
+
+    def test_a_presets_row_of_a_carried_route_binds_the_routes_copy(self):
+        # Boss Loot's rows of Aldeth's sword (62) and Nemphre's scroll (339)
+        # name their routes' rows 16 and 159, whose copies and flags they take.
+        for family, identity in ((16, "original-source:bg1:boss-loot:mode2:item:62"),
+                                 (159, "original-source:bg1:boss-loot:mode2:item:339")):
+            with self.subTest(family=family):
+                _, f, _, _ = fixture(family=family, identity=identity, route=family_names(family)[0])
+                auxiliary = f.gate.auxiliary_members[REVISION][1]
+                self.assertEqual(auxiliary.binding.creature_resource, "cre:" + FAMILIES[family][0])
+                self.assertEqual(auxiliary.policy.fields[20].name, family_names(family)[1])
+        # Without its route's row, with another campaign's or another route's,
+        # the preset's row binds no copy; nor does a route on a route's own row.
+        for identity, route in (("original-source:bg1:boss-loot:mode2:item:62", None),
+                                ("original-source:bg1:boss-loot:mode2:item:62", "original-source:bg2:mode2:item:16"),
+                                ("original-source:bg1:boss-loot:mode2:item:62", "original-source:bg1:mode2:item:159"),
+                                ("original-source:bg1:mode2:item:16", "original-source:bg1:mode2:item:16")):
+            with self.subTest(identity=identity, route=route), \
+                    self.assertRaisesRegex(Exception, "CAMPAIGN_GATE_AUXILIARY_INVALID"):
+                fixture(family=16, identity=identity, route=route)
+
+    def test_auxiliary_records_are_the_exports_wherever_the_game_keeps_them(self):
+        # A modded TRGENI01 keeps the sword at record 3, flagged unstealable:
+        # the export names that record and its bytes, and BLUN05 takes its place.
+        rows = [item_record("OTHER00", charges=(1, 2, 3)), item_record("OTHER01", flags=1),
+                item_record("OTHER02"), item_record("SW1H23", expiration=0, charges=(0, 0, 0), flags=2)]
+        original = bytes(make_cre(rows, slots={9: 3, 21: 0, 22: 1, 23: 2}, gap=13))
+        _, f, _, _ = fixture(family=32, original=original, records=[3], flags=2)
+        auxiliary, group = f.gate.auxiliary_members[REVISION][1], f.groups[1]
+        self.assertEqual(list(auxiliary.binding.records.values()), [3])
+        pointer, changed = run(edits(group), original, active=(0,))
+        self.assertEqual(pointer, OUTPUT)
+        self.assertEqual(changed, rewrite_inventory(original, {3: "blun05"}))
+        self.assertEqual(struct.unpack_from("<H", changed, group.slot_offset + 9 * 2)[0], 3)
+        self.assertEqual(run(edits(group), original)[1], original)
+
+    def test_jermiens_unstealable_sword_with_its_daily_charge_leaves_his_quick_slot(self):
+        # JUGJER01 keeps SW1H26 in a quick slot, unstealable, with one charge of
+        # its ability; Item Randomiser's duplicates/bg2.2da:19 leaves nothing in its place.
+        rows = [item_record("OTHER00"), item_record("OTHER01", flags=10), item_record("OTHER02", flags=10),
+                item_record("SW1H26", expiration=0, charges=(1, 1, 0), flags=2), item_record("OTHER03")]
+        original = bytes(make_cre(rows, slots={0: 1, 1: 2, 18: 3, 19: 0, 21: 4}, gap=13))
+        _, f, _, _ = fixture(family=31, original=original, records=[3], charges=(1, 1, 0), flags=2)
+        auxiliary, group = f.gate.auxiliary_members[REVISION][1], f.groups[1]
+        self.assertEqual(auxiliary.policy.fields[20].name, "FLPR_QM2_31")
+        self.assertIsNone(auxiliary.binding.replacement)
+        pointer, changed = run(edits(group), original, active=(0,))
+        self.assertEqual(pointer, OUTPUT)
+        self.assertEqual(changed, rewrite_inventory(original, {3: None}))
+        self.assertEqual(run(edits(group), original)[1], original)
+        # Another copy than the export's is not Jermien's sword.
+        with self.assertRaisesRegex(Exception, "CAMPAIGN_GATE_AUXILIARY_BINDING_MISMATCH"):
+            fixture(family=31, original=original, records=[3], charges=(0, 0, 0), flags=2)
+
+    def test_every_carried_copy_of_the_reward_leaves_with_the_source(self):
+        # A LOUTCAPT that carries two DAGG11 (one with charges) loses both.
+        rows = [item_record("OTHER00"), item_record("OTHER01"),
+                item_record("DAGG11", expiration=0, charges=(1, 0, 0), flags=0),
+                item_record("OTHER02"), item_record("OTHER03"),
+                item_record("DAGG11", expiration=0, charges=(1, 0, 0), flags=0)]
+        original = bytes(make_cre(rows, slots={9: 2, 10: 5, 21: 0, 22: 1, 23: 3, 24: 4}, gap=11))
+        _, f, _, _ = fixture(family=39, original=original, records=[2, 5], charges=(1, 0, 0))
+        group = f.groups[1]
+        self.assertEqual([row.index for row in group.edits.values()], [5, 2])
+        pointer, changed = run(edits(group), original, active=(0, 1))
+        self.assertEqual(pointer, OUTPUT)
+        self.assertEqual(changed, rewrite_inventory(original, {2: None, 5: None}))
+        self.assertEqual(run(edits(group), original)[1], original)
+
+    def test_a_copy_keeps_the_flags_and_expiry_another_mod_gave_it(self):
+        # Undroppable and stolen, with an expiry: removing the copy needs neither changed.
+        rows = [item_record("OTHER00"), item_record("RING43", expiration=7, charges=(0, 0, 0), flags=0x8000000C)]
+        original = bytes(make_cre(rows, slots={4: 1, 21: 0}, gap=5))
+        lua, f, bundle, _ = fixture(family=84, original=original, records=[1], flags=0x8000000C, expiration=7)
+        auxiliary, group = f.gate.auxiliary_members[REVISION][1], f.groups[1]
+        self.assertEqual((auxiliary.binding.payload.flags, auxiliary.binding.payload.expiration), (0x8000000C, 7))
+        self.assertEqual(run(edits(group), original, active=(0,))[1], rewrite_inventory(original, {1: None}))
+        auxiliary._bundle(auxiliary, bundle)
+        # A revision whose copy differs in its expiry is not this member's.
+        copy = bundle.fixture.sources["original-source:bg2:mode2:item:84"].auxiliary_creatures[1]
+        copy.payload = lua.eval("function(p) return {resref=p.resref,expiration=8,charges=p.charges,"
+                                "flags=p.flags} end")(copy.payload)
+        with self.assertRaisesRegex(Exception, "CAMPAIGN_GATE_AUXILIARY_REVISION_MISMATCH"):
+            auxiliary._bundle(auxiliary, bundle)
+
+    def test_auxiliary_records_must_hold_the_exported_bytes(self):
+        rows = [item_record("OTHER00"), item_record("RING43", expiration=0, charges=(0, 0, 0), flags=2)]
+        original = bytes(make_cre(rows, slots={21: 0, 22: 1}, gap=5))
+        fixture(family=84, original=original, records=[1], flags=2)
+        for case in ({"records": [0], "flags": 2}, {"records": [1], "flags": 0},
+                     {"records": [1], "flags": 2, "charges": (1, 0, 0)}, {"records": [2], "flags": 2},
+                     {"records": [1], "flags": 2, "expiration": 1}):
+            with self.subTest(**case), \
+                    self.assertRaisesRegex(Exception, "CAMPAIGN_GATE_AUXILIARY_BINDING_MISMATCH"):
+                fixture(family=84, original=original, **case)
+        for records in ([], [1, 1], [-1]):
+            with self.subTest(records=records), self.assertRaisesRegex(
+                    Exception, "CAMPAIGN_GATE_AUXILIARY_(INVALID|RECORD_INVALID)"):
+                fixture(family=84, original=original, records=records, flags=2)
+        for case in ({"flags": 2 ** 32}, {"expiration": 65536}, {"charges": (65536, 0, 0)}):
+            with self.subTest(**case), self.assertRaisesRegex(Exception, "CAMPAIGN_GATE_AUXILIARY_INVALID"):
+                fixture(family=84, original=original, records=[1], **{"flags": 2, **case})
 
     def test_loutcapt_consumed_source_removes_record_six_and_preserves_aliased_ammunition(self):
         # Inventory and slot aliases from cached scan-with-spells/world.json.
@@ -193,6 +323,15 @@ class AuxiliaryCreatureTests(unittest.TestCase):
         self.assertEqual(loaded_policy(3, 1, revision="b" * 64).read_q(POLICY_BUFFER + 32), 0)
         # Original physical source behavior still stops suppression at phase3.
         self.assertEqual(loaded_policy(3, 1, permanent=False).read_q(POLICY_BUFFER + 32), 2)
+        # Each reviewed family's flag compiles; no other flag does.
+        for family in FAMILIES:
+            with self.subTest(family=family):
+                self.assertEqual(loaded_policy(1, 1, selected_global=family_names(family)[1])
+                                 .read_q(POLICY_BUFFER + 32), 1)
+        lua = LuaJIT(unpack_returned_tuples=True)
+        for flag in ("FLPR_QM2_42", "FLPR_QM2_7", "FLPR_QM2_310", "FLPR_QM2_16", "FLPR_QB1_20", "FLPR_QB1_12"):
+            with self.subTest(flag=flag), self.assertRaisesRegex(Exception, "CAMPAIGN_GATE_AUXILIARY_POLICY_INVALID"):
+                lua.execute(POLICY)(REVISION, 1, True, flag)
 
     def test_auxiliary_is_not_a_second_source_adapter_and_new_kept_selection_stays_off(self):
         for runtime in (Lua51, Lua53, LuaJIT):

@@ -10,7 +10,8 @@ use crate::campaigns::{read_campaign, refused_lua, render_lua, store_path, write
 use crate::error::{Error, ErrorKind, Result, CHANGED_SINCE_SCAN};
 use crate::game_text::{paired, text_files, unpaired};
 use crate::json::{parse_lenient, py_str, utf8_error_message, Dict, Value};
-use crate::original_catalog::container_target_spec;
+use crate::mode2_rewards::Naming;
+use crate::original_catalog::{container_target_spec, mode2_route_source, mode2_route_target};
 use crate::platform::game_platform;
 use crate::reward_copies::RewardCopies;
 use crate::reward_routes::{reward_routes, RewardRoutes};
@@ -212,12 +213,20 @@ struct Compiler<'a> {
     resource_hashes: Dict,
     required: BTreeSet<String>,
     pristine: BTreeSet<String>,
+    /// The resources that the campaign's reward routes patch.
+    routed: BTreeSet<String>,
+    /// The quest scripts it needs as CIR's installer prepared them.
+    quests: BTreeSet<String>,
     selected_items: BTreeSet<String>,
     selected_actors: HashSet<String>,
     selected_owners: HashMap<String, usize>,
     container_names: HashMap<String, usize>,
     actor_names: HashMap<String, usize>,
     container_items: HashMap<String, usize>,
+    /// The sources of each item by (resource, kind, item).
+    physical_items: HashMap<String, usize>,
+    /// The records of each item in each creature file, in record order.
+    template_records: HashMap<String, Vec<&'a Value>>,
     creature_items: HashMap<String, usize>,
     /// The sources of each item in each owner, of any kind.
     owner_items: HashMap<String, usize>,
@@ -259,6 +268,10 @@ impl<'a> Compiler<'a> {
         self.routes()?.require_container(target_id)
     }
 
+    fn gives(&mut self, name: &str) -> Result<bool> {
+        self.routes()?.gives(name)
+    }
+
     fn scanned_hash(&self, resource: &str) -> Result<&'a Value> {
         self.index.resource(self.world, resource).ok_or_else(|| Error::key(resource))?.at("sha256")
     }
@@ -288,6 +301,21 @@ impl<'a> Compiler<'a> {
 
     fn use_value(&mut self, resource: &Value) -> Result<Value> {
         self.use_resource(resource.as_str().unwrap_or(""))
+    }
+
+    /// `use_route`: Apply writes this resource with the reward routes' patch.
+    fn use_route(&mut self, resource: &str) -> Result<()> {
+        self.use_resource(resource)?;
+        self.routed.insert(resource.to_string());
+        Ok(())
+    }
+
+    /// `use_quest`: the quest script as the installer prepared it (or as
+    /// Apply extended it).
+    fn use_quest(&mut self, resource: &str) -> Result<()> {
+        self.use_resource(resource)?;
+        self.quests.insert(resource.to_string());
+        Ok(())
     }
 
     fn container_key(&self, resource: Option<&Value>, name: &str, selector: &Value) -> Result<String> {
@@ -348,6 +376,8 @@ impl<'a> Compiler<'a> {
             || format!("Native export does not yet support this source: {identity}"),
         )?;
         let resource = text(source, "resource")?;
+        // The extended reward route this row is: its own, or a preset's row of it.
+        let route_source = if kind == "authored-source" { mode2_route_source(source.at("authored")?)? } else { None };
         if kind == "virtual" {
             let ok = resource == format!("itm:{}", text(source, "item")?)
                 && self.scanned_hash(resource)?.py_eq(selected.at("resource_sha256")?);
@@ -355,12 +385,12 @@ impl<'a> Compiler<'a> {
         } else if kind == "authored-source"
             || (self.shield_truthy() && identity == original_options::SPELL_SHIELD_SOURCE)
         {
-            // A post-install rescan sees our campaign-aware DLG/BCS patch.
+            // A post-install rescan sees our campaign-aware DLG/BCS patch,
+            // also in a quest script that the installer prepared (the book's).
             // Reward route bytes are recognised below (reward_routes) and
             // again by the export, before writing any output.
             let ok = self.scanned_hash(resource)?.py_eq(selected.at("resource_sha256")?)
-                || (mode2_rewards::source_rewards().contains_key(identity)
-                    && mode2_rewards::resource_rewards().contains_key(resource));
+                || mode2_rewards::resource_rewards().contains_key(resource);
             require(ok, || format!("Authored source changed since the scan: {identity}"))?;
         } else if kind == "scripted" {
             require(applied(&self.game_root, "quest_pool")?, || {
@@ -454,11 +484,13 @@ impl<'a> Compiler<'a> {
             self.resource_hashes.insert("SPIN621.SPL", spell_rewards::patched_sha256());
             return Ok(());
         }
-        if kind == "authored-source" && mode2_rewards::source_rewards().contains_key(identity) {
-            let spec = mode2_rewards::source_spec(identity)?;
+        if let Some(route_source) = route_source.as_deref() {
+            // The routes' items as the game names them (EET renames BG1's).
+            let routes = self.routes()?;
+            let spec = mode2_rewards::source_spec(route_source, routes.naming())?;
             let ok = source.at("resource")?.py_eq(entry(&spec, "resource")?) && record.py_eq(entry(&spec, "payload")?);
             require(ok, || format!("The extended reward source differs from its route: {identity}"))?;
-            let route = mode2_rewards::source_rewards().get(identity).map(crate::py::str_value).unwrap_or_default();
+            let route = mode2_rewards::source_rewards().get(route_source).map(crate::py::str_value).unwrap_or_default();
             self.require_route(&route)?;
             let mut endpoint = crate::dict! {"kind" => "guarded-script", "adapter_id" => "mode2-reward-v1"};
             for key in ["quest", "resource", "selected_global", "consumed_global"] {
@@ -466,45 +498,69 @@ impl<'a> Compiler<'a> {
             }
             endpoint.insert("payload", record.clone());
             endpoint.insert("identity", source_identity()?);
+            if route_source != identity {
+                // A preset's row: the runtime knows the route's flags and
+                // copies by the route's own row.
+                endpoint.insert("route_source", route_source);
+            }
             self.sources.insert(identity, endpoint);
             for name in spec.get("required_transfers").map(list).unwrap_or(&[]) {
-                let duplicate = mode2_rewards::transfer_spec(name.as_str().unwrap_or(""))?;
+                let duplicate = mode2_rewards::transfer_spec(name.as_str().unwrap_or(""), routes.naming())?;
                 let authored_ids = list(entry(&duplicate, "authored_source_ids")?);
-                if !authored_ids.iter().any(|id| id.as_str() == Some(identity)) {
+                if !authored_ids.iter().any(|id| id.as_str() == Some(route_source)) {
                     continue;
                 }
-                let records: Vec<Option<&'a Value>> = list(entry(&duplicate, "physical_source_ids")?)
-                    .iter()
-                    .map(|key| key.as_str().and_then(|key| self.index.source(self.world, key)))
-                    .collect();
-                let mut ok = true;
-                for row in &records {
-                    ok = match row {
-                        Some(row) if row.truthy() => {
-                            row.at("kind")?.as_str() == Some("cre-template")
-                                && row.at("resource")?.py_eq(entry(&duplicate, "source_resource")?)
-                                && row.at("record")?.py_eq(entry(&duplicate, "source_record")?)
-                        }
-                        _ => false,
-                    };
-                    if !ok {
-                        break;
-                    }
+                // The creature's own copies of the reward, wherever this game
+                // keeps them; the runtime checks each record's bytes again.
+                let resource = entry(&duplicate, "source_resource")?.as_str().unwrap_or("");
+                let item = entry(&duplicate, "item")?.as_str().unwrap_or("");
+                let creature = format!("{}.CRE", upper(tail(resource, 4)));
+                // The runtime accepts each copy under its registered names
+                // (FLPRGat.lua's auxiliary_sources), which EET keeps.
+                let registered = mode2_rewards::transfer_spec(name.as_str().unwrap_or(""), Naming::default())?;
+                let registered_resource = entry(&registered, "source_resource")?.as_str().unwrap_or("");
+                let registered_item = entry(&registered, "item")?.as_str().unwrap_or("");
+                require((resource, item) == (registered_resource, registered_item), || {
+                    format!(
+                        "This game renames {}.CRE or {}, which Chriz Item Randomiser's runtime knows only by those \
+                         names: {identity}",
+                        upper(tail(registered_resource, 4)),
+                        upper(registered_item)
+                    )
+                })?;
+                let key = tuple_key(&[name_part(resource), name_part(item)]);
+                let records: Vec<&'a Value> = self.template_records.get(&key).cloned().unwrap_or_default();
+                let own = list(entry(&duplicate, "source_ids")?).iter().any(|id| id.as_str() == Some(route_source));
+                if records.is_empty() && !own {
+                    continue; // A copy of another route's reward that this game does not have.
                 }
-                let ok = ok
-                    && self
-                        .use_value(entry(&duplicate, "source_resource")?)?
-                        .py_eq(entry(&duplicate, "source_resource_sha256")?);
-                require(ok, || format!("Original reward's duplicate creature item changed: {identity}"))?;
+                let quest = upper(entry(&duplicate, "quest")?.as_str().unwrap_or(""));
+                require(!records.is_empty(), || {
+                    format!(
+                        "{creature} does not carry {}, which the reward of {quest}.DLG hands over: {identity}",
+                        upper(item)
+                    )
+                })?;
+                let resource_sha256 = self.use_resource(resource)?;
+                let mut payloads = Vec::with_capacity(records.len());
                 let mut indices = Vec::with_capacity(records.len());
-                for row in records.iter().flatten() {
-                    indices.push(row.at("record")?.at("record_index")?.clone());
+                for row in &records {
+                    let record = row.at("record")?;
+                    let mut payload = Dict::new();
+                    for key in ["resref", "expiration", "charges", "flags"] {
+                        payload.insert(key, record.at(key)?.clone());
+                    }
+                    payloads.push(Value::Dict(payload));
+                    indices.push(record.at("record_index")?.clone());
                 }
+                require(payloads.iter().all(|payload| payload.py_eq(&payloads[0])), || {
+                    format!("{creature} carries {} in records that differ: {identity}", upper(item))
+                })?;
                 let mut auxiliary = crate::dict! {
-                    "resource" => entry(&duplicate, "source_resource")?.clone(),
-                    "resource_sha256" => entry(&duplicate, "source_resource_sha256")?.clone(),
+                    "resource" => resource,
+                    "resource_sha256" => resource_sha256,
                     "record_indices" => Value::List(indices),
-                    "payload" => entry(&duplicate, "payload")?.clone(),
+                    "payload" => payloads.swap_remove(0),
                     "selected_global" => entry(&duplicate, "selected_global")?.clone(),
                 };
                 if let Some(replacement) = duplicate.get("replacement").filter(|replacement| replacement.truthy()) {
@@ -526,7 +582,7 @@ impl<'a> Compiler<'a> {
                 endpoint.insert("resources", Value::List(resources.to_vec()));
             }
             for resource in resources {
-                self.use_value(resource)?;
+                self.use_route(resource.as_str().unwrap_or(""))?;
             }
             self.use_resource(&item_resource)?;
             return Ok(());
@@ -550,7 +606,7 @@ impl<'a> Compiler<'a> {
             endpoint.insert("payload", record.clone());
             endpoint.insert("identity", source_identity()?);
             self.sources.insert(identity, endpoint);
-            self.use_resource(resource)?;
+            self.use_quest(resource)?;
             self.use_resource(&item_resource)?;
             return Ok(());
         }
@@ -567,7 +623,7 @@ impl<'a> Compiler<'a> {
                 "payload" => scripted_sources::payload(), "identity" => source_identity()?,
             };
             self.sources.insert(identity, endpoint);
-            self.use_resource(scripted_sources::RESOURCE)?;
+            self.use_quest(scripted_sources::RESOURCE)?;
             self.use_resource(&item_resource)?;
             return Ok(());
         }
@@ -759,18 +815,29 @@ impl<'a> Compiler<'a> {
 
     /// UDLESA's sword is an ordinary physical source. Its conversation must
     /// use the same kept/relocated decision without registering a second
-    /// reward unit.
+    /// reward unit. So must the Sahuagin king's reward reply, which creates
+    /// another treasury rod.
     fn compile_inventory_reward(&mut self, selected: &Value) -> Result<()> {
         let identity = text(selected, "id")?;
-        let Some(name) = mode2_rewards::physical_source_rewards().get(identity).filter(|name| name.truthy()) else {
+        let source = selected.at("record")?;
+        let (resource, kind, item) = (text(source, "resource")?, text(source, "kind")?, text(source, "item")?);
+        // Where nothing else gives the item, it moves as any other source.
+        let Some(name) = mode2_rewards::physical_source_reward(resource, kind, item) else {
             return Ok(());
         };
-        let name = py_str(name);
-        let reward = mode2_rewards::rewards().get(&name).ok_or_else(|| Error::key(&name))?;
-        let ok = selected.at("record")?.at("record")?.py_eq(reward.at("source_record")?)
-            && self.use_value(reward.at("source_resource")?)?.py_eq(reward.at("source_resource_sha256")?);
-        require(ok, || format!("Original inventory reward source changed: {identity}"))?;
-        self.require_route(&name)?;
+        if !self.gives(name)? {
+            return Ok(());
+        }
+        let reward = mode2_rewards::rewards().get(name).ok_or_else(|| Error::key(name))?;
+        // Both records would set the one flag the dialogue reads.
+        let key = tuple_key(&[name_part(resource), name_part(kind), name_part(item)]);
+        let (owner_kind, owner) = resource.split_once(':').unwrap_or((resource, ""));
+        let (file, item, quest) =
+            (format!("{}.{}", upper(owner), upper(owner_kind)), upper(item), upper(text(reward, "quest")?));
+        require(Self::count(&self.physical_items, &key) == 1, || {
+            format!("{file} holds another {item} that the reward of {quest}.DLG could stand for: {identity}")
+        })?;
+        self.require_route(name)?;
         let endpoint = self
             .sources
             .get_mut(identity)
@@ -778,7 +845,7 @@ impl<'a> Compiler<'a> {
             .ok_or_else(|| Error::key(identity))?;
         endpoint.insert("reward_selected_global", reward.at("selected_global")?.clone());
         for resource in list(reward.at("resources")?) {
-            self.use_value(resource)?;
+            self.use_route(resource.as_str().unwrap_or(""))?;
         }
         Ok(())
     }
@@ -789,28 +856,24 @@ impl<'a> Compiler<'a> {
         let target_identity = || identity_of(crate::dict! {"target" => selected.clone()});
         let authored = target.get("adapter_id").and_then(Value::as_str) == Some("original-target-v1");
         let container_quest = if authored { container_target_spec(target.at("selector")?)? } else { None };
+        // The extended reward route's place this row is: its own, or a preset's row there.
+        let route_target = if authored { mode2_route_target(target.at("selector")?)? } else { None };
         let ok = (authored || self.index.target(self.world, identity).is_some_and(|row| row.py_eq(target))) && {
             let resource = text(target, "resource")?;
             self.scanned_hash(resource)?.py_eq(selected.at("resource_sha256")?)
-                || (authored
-                    && target
-                        .at("selector")?
-                        .at("id")?
-                        .as_str()
-                        .is_some_and(|id| mode2_rewards::target_rewards().contains_key(id))
-                    && mode2_rewards::resource_rewards().contains_key(resource))
+                || (route_target.is_some() && mode2_rewards::resource_rewards().contains_key(resource))
         };
         require(ok, || format!("Selected target differs from the scan: {identity}"))?;
         if authored {
             let selector = target.at("selector")?;
             self.use_resource(text(target, "resource")?)?;
-            let selector_id = selector.at("id")?;
-            let reward = match selector_id.as_str() {
-                Some(id) if mode2_rewards::target_rewards().contains_key(id) => Some(mode2_rewards::target_spec(id)?),
-                _ => None,
+            let reward = match route_target.as_deref() {
+                Some(id) => Some(mode2_rewards::target_spec(id, self.routes()?.naming())?),
+                None => None,
             };
             if reward.as_ref().is_some_and(|reward| !reward.is_empty()) {
-                let route = mode2_rewards::target_rewards().get(selector_id.as_str().unwrap_or("")).map(py_str).unwrap_or_default();
+                let route =
+                    mode2_rewards::target_rewards().get(route_target.as_deref().unwrap_or("")).map(py_str).unwrap_or_default();
                 self.require_route(&route)?;
             }
             let placement = reward
@@ -832,13 +895,13 @@ impl<'a> Compiler<'a> {
                     None => false,
                 };
                 require(ok, || format!("Original reward recipient changed: {identity}"))?;
-                let mut resources: Vec<String> = list(entry(reward, "resources")?).iter().map(py_str).collect();
-                resources.push(creature_resource.to_string());
-                resources.push(format!("are:{}", lower(placement_area)));
-                for resource in &resources {
-                    self.use_resource(resource)?;
+                for resource in list(entry(reward, "resources")?) {
+                    self.use_route(&py_str(resource))?;
                 }
-                let endpoint = crate::dict! {
+                for resource in [creature_resource.to_string(), format!("are:{}", lower(placement_area))] {
+                    self.use_resource(&resource)?;
+                }
+                let mut endpoint = crate::dict! {
                     "kind" => "creature", "area" => upper(placement_area),
                     "script_name" => script_name(Some(placement.at("script_name")?), identity)?,
                     "inventory_reward" => true, "reward_resource" => entry(reward, "resource")?.clone(),
@@ -846,6 +909,11 @@ impl<'a> Compiler<'a> {
                         "target" => selected.clone(), "creature" => creature.cloned().unwrap_or(Value::Null),
                     })?,
                 };
+                let route = format!("original-target:{}", route_target.as_deref().unwrap_or(""));
+                if route != identity {
+                    // A preset's row: the reward reply names the route's own row.
+                    endpoint.insert("route_target", route);
+                }
                 self.targets.insert(identity, endpoint);
                 return Ok(());
             }
@@ -886,10 +954,10 @@ impl<'a> Compiler<'a> {
                 return Ok(());
             }
             if target_kind == "scripted-target" {
-                if let Some(id) = selector_id.as_str().filter(|id| mode2_rewards::target_rewards().contains_key(*id)) {
-                    let spec = mode2_rewards::target_spec(id)?;
+                if let Some(id) = route_target.as_deref() {
+                    let spec = mode2_rewards::target_spec(id, self.routes()?.naming())?;
                     for resource in list(entry(&spec, "resources")?) {
-                        self.use_value(resource)?;
+                        self.use_route(resource.as_str().unwrap_or(""))?;
                     }
                     if entry(&spec, "recipient_local")?.is_null() {
                         let recipient = entry(&spec, "recipient")?.as_str().unwrap_or("");
@@ -954,7 +1022,7 @@ impl<'a> Compiler<'a> {
                 require(applied(&self.game_root, change)?, || {
                     format!("Chriz Item Randomiser did not prepare this quest reward; reinstall it, then rescan: {identity}")
                 })?;
-                self.use_resource(&format!("bcs:{name}"))?;
+                self.use_quest(&format!("bcs:{name}"))?;
                 let endpoint = crate::dict! {
                     "kind" => "quest", "area" => area(target.at("resource")?)?, "resource" => format!("bcs:{name}"),
                     "event_global" => entry(quests, name)?.at("event_global")?.clone(), "identity" => target_identity()?,
@@ -1089,6 +1157,10 @@ impl<'a> Compiler<'a> {
 /// container quests' bindings, and its reward routes when CIR's newer check
 /// finds a copy of their reward replies that cannot be gated (said in
 /// `notes`).
+///
+/// `routed` collects the resources that the campaign's reward routes patch,
+/// `quests` the quest scripts it needs as CIR's installer prepared them (both
+/// among the required resources).
 #[allow(clippy::too_many_arguments)]
 pub fn compile(
     manifest: &Value,
@@ -1099,6 +1171,8 @@ pub fn compile(
     mut problems: Option<&mut Dict>,
     stored: bool,
     notes: Option<&mut Vec<String>>,
+    routed: Option<&mut BTreeSet<String>>,
+    quests: Option<&mut BTreeSet<String>>,
 ) -> Result<(Value, BTreeSet<String>, BTreeSet<String>)> {
     // A rescan can discover unrelated resources (or a new resource type).
     // Compare the selected records and resource hashes below; existing native
@@ -1139,12 +1213,16 @@ pub fn compile(
         resource_hashes: Dict::new(),
         required: BTreeSet::new(),
         pristine: BTreeSet::new(),
+        routed: BTreeSet::new(),
+        quests: BTreeSet::new(),
         selected_items: BTreeSet::new(),
         selected_actors: HashSet::new(),
         selected_owners,
         container_names: HashMap::new(),
         actor_names: HashMap::new(),
         container_items: HashMap::new(),
+        physical_items: HashMap::new(),
+        template_records: HashMap::new(),
         creature_items: HashMap::new(),
         owner_items: HashMap::new(),
         template_actors: HashMap::new(),
@@ -1191,6 +1269,28 @@ pub fn compile(
             let key = tuple_key(&[key_part(Some(source.at("owner")?)), key_part(Some(source.at("item")?))]);
             *compiler.container_items.entry(key).or_insert(0) += 1;
         }
+    }
+    for source in rows(world, "sources") {
+        let key = tuple_key(&[
+            key_part(Some(source.at("resource")?)),
+            key_part(Some(source.at("kind")?)),
+            key_part(Some(source.at("item")?)),
+        ]);
+        *compiler.physical_items.entry(key).or_insert(0) += 1;
+    }
+    // The records of each item in each creature file, in record order.
+    let mut templates = Vec::new();
+    for source in rows(world, "sources") {
+        if source.at("kind")?.as_str() == Some("cre-template") {
+            let index = int_like(source.at("record")?.at("record_index")?)
+                .ok_or_else(|| Error::type_error("a record index is a number".to_string()))?;
+            templates.push((index, source));
+        }
+    }
+    templates.sort_by_key(|(index, _)| *index);
+    for (_, source) in templates {
+        let key = tuple_key(&[key_part(Some(source.at("resource")?)), key_part(Some(source.at("item")?))]);
+        compiler.template_records.entry(key).or_default().push(source);
     }
     for source in rows(world, "sources") {
         if matches!(source.at("kind")?.as_str(), Some("cre-template" | "embedded-cre")) {
@@ -1283,6 +1383,12 @@ pub fn compile(
     if let Some(notes) = notes {
         notes.append(&mut compiler.notes);
     }
+    if let Some(routed) = routed {
+        routed.append(&mut compiler.routed);
+    }
+    if let Some(quests) = quests {
+        quests.append(&mut compiler.quests);
+    }
     Ok((Value::Dict(native), compiler.required, compiler.pristine))
 }
 
@@ -1345,12 +1451,14 @@ fn stored_native(exported: &Path, key: &str) -> Result<Value> {
     parse_lenient(&text.replace("\r\n", "\n").replace('\r', "\n"))
 }
 
-/// (resource, staged file) for each file a revision's guarded scripts need
-/// in override (`_staged_scripts`).
+/// (resource, staged file, quest) for each file a revision's guarded scripts
+/// need in override (`_staged_scripts`).
 ///
 /// At every start the runtime compares these staged bytes with the game's
-/// override file (FLPRScript.lua).
-fn staged_scripts(key: &str, manifest: &Value, native: &Value) -> Result<Vec<(String, String)>> {
+/// override file (FLPRScript.lua). A quest script that the installer
+/// prepared (`quest`) may also be the version Apply extended it to
+/// ([`extended_scripts`]).
+fn staged_scripts(key: &str, manifest: &Value, native: &Value) -> Result<Vec<(String, String, bool)>> {
     let mut result = Vec::new();
     let endpoints = native.at("sources")?;
     for (position, source) in list(manifest.at("sources")?).iter().enumerate() {
@@ -1364,17 +1472,26 @@ fn staged_scripts(key: &str, manifest: &Value, native: &Value) -> Result<Vec<(St
                 for (route, resource) in list(resources).iter().enumerate() {
                     let resource = py_str(resource);
                     let extension = resource.split(':').next().unwrap_or("").to_string();
-                    result.push((resource, format!("{base}.route-{}.patched.{extension}", route + 1)));
+                    result.push((resource, format!("{base}.route-{}.patched.{extension}", route + 1), false));
                 }
             }
             None => {
                 let resource = py_str(source.at("record")?.at("resource")?);
                 let extension = resource.split(':').next().unwrap_or("").to_string();
-                result.push((resource, format!("{base}.patched.{extension}")));
+                let quest = endpoint.get("adapter_id").and_then(Value::as_str) == Some("original-quest-v1");
+                result.push((resource, format!("{base}.patched.{extension}"), quest));
             }
         }
     }
     Ok(result)
+}
+
+/// The files that keep an installer-prepared quest script and the version
+/// Apply extended it to with reward routes (read by M_FLPR.lua;
+/// `_extended_scripts`).
+fn extended_scripts(resource: &str) -> (String, String) {
+    let name = upper(resource.split(':').nth(1).unwrap_or(""));
+    (format!("{name}.installed.bcs"), format!("{name}.applied.bcs"))
 }
 
 /// The areas whose shared pristine copy the runtime compares with a
@@ -1583,11 +1700,16 @@ pub fn export_native(
     let mut required = BTreeSet::new();
     let mut pristine = BTreeSet::new();
     let mut compiled: BTreeMap<String, Value> = BTreeMap::new();
+    // The resources each revision's reward routes patch, and the quest
+    // scripts it needs as the installer prepared them.
+    let mut routed_by: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    let mut quests_by: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
     let mut notes: Vec<String> = Vec::new();
     let mut kept: BTreeSet<String> = BTreeSet::new();
     for (key, manifest) in &manifests {
         let is_stored = stored.contains(key);
         let mut problems = Dict::new();
+        let (routed_here, quests_here) = (routed_by.entry(key.clone()).or_default(), quests_by.entry(key.clone()).or_default());
         let (native, resources, areas) = compile(
             manifest,
             world,
@@ -1597,6 +1719,8 @@ pub fn export_native(
             is_stored.then_some(&mut problems),
             is_stored,
             Some(&mut notes),
+            Some(routed_here),
+            Some(quests_here),
         )?;
         compiled.insert(key.clone(), native);
         required.extend(resources);
@@ -1620,7 +1744,16 @@ pub fn export_native(
         pending.insert(format!("{base}.lua"), render_lua(manifest)?);
         lua_values.insert(format!("{base}.lua"), (key.clone(), false));
     }
+    let routed: BTreeSet<String> = routed_by.values().flatten().cloned().collect();
+    let quest_scripts: BTreeSet<String> = quests_by.values().flatten().cloned().collect();
 
+    // The quest routes' items as the game names them (EET renames BG1's).
+    let checked = if required.iter().any(|resource| mode2_rewards::resource_rewards().contains_key(resource)) {
+        Some(reward_routes(catalog, world)?)
+    } else {
+        None
+    };
+    let naming = checked.as_deref().map_or_else(Naming::default, RewardRoutes::naming);
     // Reuse the scanner's resource reader; only selected resources are read.
     let game_root_text = text(catalog, "game_root")?.to_string();
     let game_root = PathBuf::from(&game_root_text);
@@ -1628,6 +1761,8 @@ pub fn export_native(
     let spell = spell_rewards::spell();
     let spell_resource = entry(&spell, "resource")?.as_str().unwrap_or("").to_string();
     let mut resource_bytes: BTreeMap<String, Vec<u8>> = BTreeMap::new();
+    // The quest scripts as the installer prepared them, before any route's patch.
+    let mut installed_scripts: BTreeMap<String, Vec<u8>> = BTreeMap::new();
     let mut journal: Option<Vec<u8>> = None;
     let (copies, routes, live) = GameResources::with(&game_root, &types, |reader| {
         // The EE journal table: EET installs it in override, BG:EE and BG2:EE
@@ -1659,7 +1794,7 @@ pub fn export_native(
                 // A reward route is recognised again from these bytes below;
                 // the scan holds nothing else that depends on them.
                 if mode2_rewards::resource_rewards().contains_key(resource) {
-                    own_patch = mode2_rewards::own_patch(resource, &data)?;
+                    own_patch = mode2_rewards::own_patch(resource, &data, naming)?;
                 }
                 if container_rewards::resource_targets().contains_key(resource) {
                     own_patch = container_rewards::own_patch(resource, &data)?;
@@ -1669,12 +1804,20 @@ pub fn export_native(
                 format!("Installed resource changed; rescan before export: {resource}")
             })?;
             // The installer changed these files when it was installed; the
-            // export only checks that they still carry its changes.
-            match (kind, quest_change(name)) {
-                ("bcs", Some(change)) => require_installed(&game_root_text, change, &data)?,
-                _ if resource == "dlg:unshey" => require_installed(&game_root_text, "unshey", &data)?,
-                _ if resource == "dlg:kpglai01" => require_installed(&game_root_text, "flail_heads", &data)?,
-                _ => {}
+            // export only checks that they still carry its changes. Apply's
+            // reward routes keep them (the book's scrolls).
+            if quest_scripts.contains(resource) {
+                require_installed(&game_root_text, quest_change(name).ok_or_else(|| Error::key(name))?, &data)?;
+                let installed = if mode2_rewards::resource_rewards().contains_key(resource) {
+                    mode2_rewards::unpatched_script(resource, &data, naming)?
+                } else {
+                    data.clone()
+                };
+                installed_scripts.insert(resource.clone(), installed);
+            } else if resource == "dlg:unshey" {
+                require_installed(&game_root_text, "unshey", &data)?;
+            } else if resource == "dlg:kpglai01" {
+                require_installed(&game_root_text, "flail_heads", &data)?;
             }
             if pristine.contains(resource) {
                 pending.insert(format!("{}.pristine.are", upper(name)), data.clone());
@@ -1691,9 +1834,10 @@ pub fn export_native(
         let copies = RewardCopies::new(
             &mut |name| if dialogues.contains(name) { reader.read("dlg", name).map(Some) } else { Ok(None) },
             &scanned,
+            naming,
         )?;
         let mut routes = BTreeSet::new();
-        for resource in &required {
+        for resource in &routed {
             if let Some(keys) = mode2_rewards::resource_rewards().get(resource).and_then(Value::as_list) {
                 routes.extend(keys.iter().map(py_str));
             }
@@ -1708,7 +1852,7 @@ pub fn export_native(
         // revisions exported before; checked below for those that are kept.
         let mut live: HashMap<String, Option<Vec<u8>>> = HashMap::new();
         for key in &stored {
-            for (resource, _) in staged_scripts(key, &manifests[key], &stored_native(&exported, key)?)? {
+            for (resource, _, _) in staged_scripts(key, &manifests[key], &stored_native(&exported, key)?)? {
                 let Some((kind, name)) = resource.split_once(':') else {
                     return Err(Error::value("not enough values to unpack (expected 2, got 1)"));
                 };
@@ -1788,7 +1932,9 @@ pub fn export_native(
             journal = quest_options::patch_kangaxx_journal(&journal, dialogue)?;
         }
         if !text_rewards.is_empty() {
-            let (updated, refs) = mode2_rewards::prepare_reward_texts(&game_text, text_rewards.iter(), language)?;
+            let (updated, refs) =
+                mode2_rewards::prepare_reward_texts(&game_text, text_rewards.iter(), language, naming.game)?;
+            journal = mode2_rewards::journal_lua(&journal, &refs, naming.game)?;
             game_text = updated;
             reward_texts = refs;
         }
@@ -1837,23 +1983,41 @@ pub fn export_native(
 
     // Each reward route patch reads campaign flags. Prepare it once,
     // retaining the same bytes for every revision that shares the resource.
+    // A quest script that the installer prepared (the book's) is written only
+    // when a revision's routes patch it. Revisions that need the installer's
+    // version still record that one: the runtime also accepts the version
+    // Apply extended it to, which Apply keeps beside it (`extended_scripts`).
     let mut mode2_patches: HashMap<String, Vec<u8>> = HashMap::new();
     for resource in mode2_rewards::resource_rewards().keys() {
-        if !required.contains(resource) {
+        if !routed.contains(resource) {
             continue;
         }
         let data = resource_bytes.get(resource).ok_or_else(|| Error::key(resource))?;
-        let patched = mode2_rewards::patch_reward(resource, data, reward_texts.get(resource), None)?;
+        let patched = mode2_rewards::patch_reward(resource, data, reward_texts.get(resource), None, naming)?;
         let (kind, name) = resource.split_once(':').unwrap_or((resource, ""));
         let filename = format!("{}.{}", upper(name), upper(kind));
         pending.insert(format!("resource-overrides/{filename}"), patched.clone());
-        for native in compiled.values_mut() {
+        for (key, native) in compiled.iter_mut() {
             let hashes = hashes_mut(native);
-            if hashes.contains_key(&filename) {
+            if hashes.contains_key(&filename) && routed_by[key].contains(resource) {
                 hashes.insert(filename.as_str(), sha256_hex(&patched));
             }
         }
+        if quest_scripts.contains(resource) {
+            let (installed, applied) = extended_scripts(resource);
+            pending.insert(installed, installed_scripts.get(resource).ok_or_else(|| Error::key(resource))?.clone());
+            pending.insert(applied, patched.clone());
+        }
         mode2_patches.insert(resource.to_string(), patched);
+    }
+    // A revision that needs only the installer's version of a quest script
+    // records that version, whichever the game has.
+    for (key, native) in compiled.iter_mut() {
+        let hashes = hashes_mut(native);
+        for resource in quests_by[key].difference(&routed_by[key]) {
+            let installed = installed_scripts.get(resource).ok_or_else(|| Error::key(resource))?;
+            hashes.insert(filename(resource), sha256_hex(installed));
+        }
     }
     for (resource, patched) in copies.patches(&routes)? {
         let filename = format!("{}.DLG", upper(tail(&resource, 4)));
@@ -1979,8 +2143,9 @@ pub fn export_native(
                             pending.insert("resource-overrides/SPIN621.SPL", patched);
                         }
                         // The installer's script: the runtime checks that
-                        // the game still has exactly these bytes.
-                        _ => pending.insert(format!("{base}.patched.bcs"), raw.clone()),
+                        // the game still has exactly these bytes, or the
+                        // version Apply extended them to (`extended_scripts`).
+                        _ => pending.insert(format!("{base}.patched.bcs"), installed_scripts.get(resource).unwrap_or(raw).clone()),
                     }
                 }
                 "guarded-store" => {
@@ -2083,16 +2248,37 @@ pub fn export_native(
     // area each guarded area source recorded against the shared pristine
     // copy. A kept revision that would fail there stops the runtime for
     // every game.
+    /// A file as the game has it, as Apply would leave it, as the revision
+    /// needs it, and the installer's and Apply's versions that also meet a
+    /// quest script's need.
+    struct Needed {
+        name: String,
+        current: Held,
+        installed: Held,
+        expected: Held,
+        extended: (Held, Held),
+    }
     for key in &kept {
         let before = stored_native(&exported, key)?;
-        // (file, as the game has it, as Apply would leave it, as the revision needs it)
-        let mut needed: Vec<(String, Held, Held, Held)> = Vec::new();
-        for (resource, staged) in staged_scripts(key, &manifests[key], &before)? {
+        let mut needed: Vec<Needed> = Vec::new();
+        for (resource, staged, quest) in staged_scripts(key, &manifests[key], &before)? {
             let name = filename(&resource);
             let current = live.get(&resource).and_then(Option::as_ref);
             let installed = pending.get(&format!("resource-overrides/{name}")).or(current);
             let expected = read_bytes(&store_path(&output, &relative_path(&staged))?)?;
-            needed.push((name, Held::from_bytes(current), Held::from_bytes(installed), Held::Bytes(expected)));
+            let extended = if quest {
+                let (installed, applied) = extended_scripts(&resource);
+                (Held::from_bytes(pending.get(&installed)), Held::from_bytes(pending.get(&applied)))
+            } else {
+                (Held::Absent, Held::Absent)
+            };
+            needed.push(Needed {
+                name,
+                current: Held::from_bytes(current),
+                installed: Held::from_bytes(installed),
+                expected: Held::Bytes(expected),
+                extended,
+            });
         }
         for area in gate_areas(&before)? {
             // The pristine copy is the game's area as Apply prepares it now.
@@ -2110,15 +2296,25 @@ pub fn export_native(
             };
             let recorded = before.at("resource_hashes")?.get(&format!("{area}.ARE")).filter(|hash| !hash.is_null());
             let expected = recorded.map_or(Held::Absent, |hash| Held::Hash(hash.clone()));
-            needed.push((format!("{area}.ARE"), digest(), digest(), expected));
+            needed.push(Needed {
+                name: format!("{area}.ARE"),
+                current: digest(),
+                installed: digest(),
+                expected,
+                extended: (Held::Absent, Held::Absent),
+            });
         }
-        for (name, current, installed, expected) in needed {
-            let change = if !current.same(&expected) {
+        for Needed { name, current, installed, expected, extended: (base, extended) } in needed {
+            let meets = |version: &Held| {
+                version.same(&expected)
+                    || (!matches!(base, Held::Absent) && base.same(&expected) && version.same(&extended))
+            };
+            let change = if !meets(&current) {
                 format!("it changed in the game since then; {CHECKED}. Restore {name} before applying")
             } else {
                 format!("Apply would now replace it with another version; {CHECKED}")
             };
-            require(installed.same(&expected), || {
+            require(meets(&installed), || {
                 format!("Saved games of revision {} need {name} as it was when they were exported, but {change}", short(key))
             })?;
         }
