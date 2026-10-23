@@ -50,6 +50,11 @@ With this change staged over CIR 1.0.2's runtime, in a BG1 campaign of the lab:
    that was not yet in the area. On the next update the pile was there with the
    potion, identified again by the add; CIR set the source's flags back, pinned that
    instance and gave a lootable receipt one update later.
+3. **A stack.** The same by hand, with this change and the stolen-flag rule, on a
+   spawned rat killed with two rewards in its backpack: its death drop made a pile, and
+   a reward of 10 darts (`DART11`, flags 5) went into that pile as one entry of 10,
+   with its flags. The receipt was lootable; after a QA save and load the pile still
+   held the 10 darts with flags 5.
 
 ## How CIR delivers it (`prototype/FLPRNat.lua`)
 
@@ -101,8 +106,5 @@ recipient and never put at its original place.
   tell which item is the reward.
 - A corpse that keeps another item of the reward's name (an undroppable copy, say)
   makes the reward wait for as long as it keeps it (`CORPSE_ITEM_AMBIGUOUS`).
-- A reward stack of more than one item (arrows, say) was not dropped in the lab. If
-  `DropItem` took only part of it, the corpse would not be as before and CIR would
-  stop the campaign.
 - Checked on EET only so far (its BG1 part); BG:EE and BG2:EE run the same engine
   version.
