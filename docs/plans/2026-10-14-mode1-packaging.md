@@ -224,14 +224,17 @@ Uninstalling CIR restores `UI.MENU`, the other hooked menu and Lua files, `BALDU
 and removes every file it created. WeiDU keeps the appended game-text
 strings, unused, as it does for every mod; a re-install finds and reuses them. WeiDU does
 not track folders, so the `randomiser-campaigns` folder it created stays behind empty.
-Uninstall cannot remove what the configurator wrote; see B2. Of Apply's files only `BGEE.LUA` is
-also the installer's: an uninstall restores the game's journal table and a re-install the
-installer's, without the Kangaxx entry until the next Apply; the copies in
+Uninstall cannot remove what the configurator wrote; see B2. Of Apply's files `BGEE.LUA` and
+`PPBOOK.BCS` are also the installer's: an uninstall restores the game's versions and a
+re-install the installer's, without Apply's journal entries and the book's scroll routes
+until the next Apply; the copies in
 `randomiser-campaigns/before-apply/` let a player put back the others by hand. Re-installing over the installed component
 and an uninstall and install in one WeiDU run leave the game byte-identical, also with an
 applied `randomiser-campaigns/next.lua`;
 so does WeiDU's temporary uninstall and re-install of CIR behind a reinstalled earlier
-mod.
+mod. The one exception is a book that Apply extended with the routes of its two scrolls
+(`PPBOOK.BCS`, see B2): a re-install returns it to the installer's version, and a
+configuration that moves a scroll needs Apply again before its games start.
 
 ## Campaign starts
 
@@ -310,30 +313,36 @@ English text as a fallback. Failure details go to `randomiser-campaigns/last-err
 | A New Game or character import of a start the applied settings have no revision for (Black Pits, tutorial, a start they reach nothing in) | New Game popup: the settings have nothing to randomise in this campaign |
 | Capture fails at character acceptance (for example a later mod replaced `BALDUR.GAM`) | Popup: could not randomise; Cancel keeps character creation open for a retry |
 | Capture succeeded | Message log, once, when the world first appears: items are randomised |
-| The runtime stops in a randomised adventure, or one is loaded while it cannot run | Message log, once per loaded game: stopped working, unplaced items may be missing |
+| The runtime stops in a randomised adventure, or one is loaded while it cannot run | Once per loaded game: stopped working, unplaced items may be missing. In the message log at once, and in the engine's info popup (closed with Done) as soon as the world screen is up |
 
 Each popup offers "Start without randomiser" (the engine's own New Game or character
 acceptance, unrandomised) and Cancel. Capture is atomic: every GLOBAL written while
 capturing is restored and the source gate is disarmed when any step fails, so starting
 without randomiser leaves no partial campaign. Messages appear in the engine's
 `POPUP_TWOBUTTON`, whose text area holds about four lines; translations should stay
-similarly short.
+similarly short. The stop message uses `POPUP_INFO` (util.lua's `popupInfo`), which
+is about as large; a user interface without it keeps the message log line.
 
 ## Translations
 
 The installer offers English and Polish (Item Randomiser's own translation; CIR's new
-lines, the player messages @1700-@1706 and the journal texts @1650-@1653, fall back to
+lines, the player messages @1700-@1706 and the journal titles @1651-@1653, fall back to
 English there). The configurator writes text into the game's language (`lang/<code>`),
 whatever language CIR was installed in:
 
-- **Reward texts of the extended pools** (2026-10-18): the 20 lines Item Randomiser
-  rewords where a BG2 quest's text names its reward, read by the game's language from
+- **Reward texts of the extended pools** (2026-10-18): the lines Item Randomiser
+  rewords where a quest's text names its reward (24 since 2026-10-23: Jermien's two and
+  Aldeth's thanks and journal entry, @1649 and @1650, came with their routes), read by
+  the game's language from
   `languages/<folder>/` (`tools/flir_config/translations.py`), with a translation's
   female wording in `dialogF.tlk`. English, Polish and German (written for this; Chris
-  reviews it). In other languages those routes are left out with the reason. Open: the
-  other BG2:EE languages (Czech, Spanish, French, Italian, Korean, Brazilian Portuguese,
-  Russian, Ukrainian, Chinese). Call for translators, with the exact lines:
-  [translating-reward-texts.md](../translating-reward-texts.md).
+  reviews it; Polish @1650 is CIR's too, Item Randomiser's Polish lacks it). In other
+  languages those routes are left out with the reason. Aldeth's journal entry keeps the
+  title line of the game's own entry instead of Item Randomiser's titles @1651-@1653,
+  so it needs no title translation. Open: the other languages (Czech, Spanish, French,
+  Italian, Korean, Brazilian Portuguese, Russian, Ukrainian, Chinese; for BG:EE's
+  Aldeth also Hungarian, Japanese and Turkish). Call for translators, with the exact
+  lines: [translating-reward-texts.md](../translating-reward-texts.md).
 - **Still English only:** the Kangaxx option (`hlskull.tra`, `in-game.tra`
   @1500-@1504; Polish has them) and the cursed disguise option's names and
   descriptions. In another language Apply refuses them ("Original quest options
@@ -465,7 +474,13 @@ the package has 116 files (5,798,896 bytes).
   "Configuration, uninstall and re-install"), so its Apply writes only
   `randomiser-campaigns/`, and Apply copies only the files its latest export lists. The
   extended pools' reward scripts, dialogues and containers, the Deck of Many Things key
-  spell (`SPIN621.SPL`) and the Kangaxx option are still written by Apply. Since
+  spell (`SPIN621.SPL`) and the Kangaxx option are still written by Apply. Besides the `BGEE.LUA`
+  journal table (Unshey's entry from the installer, Apply's own entries), the one file
+  both write is the book of the ring's quest (`PPBOOK.BCS`, since 2026-10-23): Apply
+  writes it only for a revision that moves one of its two scrolls, and keeps the
+  installer's version and its own beside it (`randomiser-campaigns/PPBOOK.installed.bcs`,
+  `PPBOOK.applied.bcs`), so the saves of a revision that moves only the ring still start
+  (the runtime accepts Apply's book for them while both match). Since
   2026-10-18 Apply recognises each reward route by its meaning in the game's own files
   (BG2:EE's and EET's layouts, other mods' added replies and blocks) instead of by the
   hash of the reviewed EET file, and the configuration check runs the same recognition:
@@ -477,9 +492,12 @@ the package has 116 files (5,798,896 bytes).
   revision would fail because the game changed a file it needs. The old pins bound Samia's places to the container before her chest
   in `AR1202`, named Safana's area as EET does (so it did not bind on BG:EE) and took the
   table's `AR1302` for the golems, whose treasure is in `AR1303` (so they never bound).
-  Still pinned to the reviewed EET bytes: the Kangaxx dialogue and
-  the creature files and records of the rewards an NPC carries (`SCYARRYL`, `TRGENI01`,
-  `LOUTCAPT`, `AMCLER01` and `UDLESA`).
+  Still pinned to the reviewed EET bytes: the Kangaxx dialogue. Since 2026-10-22 the
+  rewards an NPC carries (`SCYARRYL`, `TRGENI01`, `LOUTCAPT`, `AMCLER01` and `UDLESA`;
+  since 2026-10-23 also Jermien's sword, `JUGJER01`, and BG1's Aldeth and Nemphre,
+  `ALDETH` and `NEMPHR`) are found in the scanned creature
+  files, wherever the game keeps them (see "Rewards an NPC carries" in
+  [the configurator notes](../post-install-configurator.md)).
 - **B3 Failure messages.** Resolved; see "Player messages".
 - **B4 Test hooks in the runtime.** Resolved: the Remote Console poll wrapper, the chapter
   screen render listener, the QA driver and its `qa-status.json` moved to the lab-only

@@ -233,25 +233,72 @@ function Controller:_clear_guards()
     self.source_guards, self.guard_requests, self.guard_removal_requests = {}, {}, {}
 end
 
+-- Only this controller writes its GLOBALs while a game runs, so every value it
+-- has read or written is kept. Reading them all from the engine again for each
+-- request cost more than a frame per tick in campaigns of a few hundred units
+-- (2.7.3.0 looks a GLOBAL up by name, about 20 microseconds in a modded game).
+-- Each observation boundary re-reads the state, the journal and a rotating
+-- share of the kept values: one changed behind the controller's back still
+-- stops the campaign, within seconds.
+Core.CACHE_CHECKS = 8
+
+function Controller:_clear_cache()
+    self.cache, self.cache_order, self.cache_known, self.cache_cursor, self.hashes = {}, {}, {}, 0, {}
+    self.version = (self.version or 0) + 1
+end
+
+-- Changes whenever a value this controller reports may have changed: on every
+-- write, and when it restores or forgets a campaign.
+function Controller:state_version()
+    return self.version
+end
+
 function Core.new(storage, resolve_revision)
     if type(storage) ~= "table" or type(storage.get) ~= "function" or
         type(storage.set) ~= "function" or type(resolve_revision) ~= "function" then
         return nil, "ADAPTER_INVALID"
     end
-    return setmetatable({ storage = storage, resolve_revision = resolve_revision, session = {},
+    local controller = setmetatable({ storage = storage, resolve_revision = resolve_revision, session = {},
         boundary = 0, issued_boundary = 0, held_requests = {},
         source_guards = {}, guard_requests = {}, guard_removal_requests = {} }, Controller)
+    controller:_clear_cache()
+    return controller
 end
 
 function Controller:_get(key)
-    local value = self.storage:get(key)
+    local value = self.cache[key]
+    if value ~= nil then return value end
+    value = self.storage:get(key)
     if not integer(value, -2147483648, 2147483647) then error("GLOBAL_INVALID") end
+    if not self.cache_known[key] then
+        self.cache_known[key] = true
+        self.cache_order[#self.cache_order + 1] = key
+    end
+    self.cache[key] = value
     return value
 end
 
 function Controller:_set(key, value)
+    -- A write that throws, or lands and then throws, leaves no kept value.
+    self.cache[key], self.hashes, self.version = nil, {}, self.version + 1
     self.storage:set(key, value)
     if self:_get(key) ~= value then error("GLOBAL_WRITE_FAILED") end
+end
+
+function Controller:_check_cached(key)
+    local kept = self.cache[key]
+    if kept ~= nil and self.storage:get(key) ~= kept then error("GLOBAL_CHANGED") end
+end
+
+function Controller:_validate_cache()
+    self:_check_cached(G.state)
+    self:_check_cached(G.journal)
+    local keys = self.cache_order
+    local count = #keys
+    for _ = 1, math.min(Core.CACHE_CHECKS, count) do
+        self.cache_cursor = self.cache_cursor % count + 1
+        self:_check_cached(keys[self.cache_cursor])
+    end
 end
 
 function Controller:_phase(prefix, index)
@@ -278,13 +325,15 @@ function Controller:_write_hash(prefix, value)
 end
 
 function Controller:_read_hash(prefix)
+    if self.hashes[prefix] then return self.hashes[prefix] end
     local pieces = {}
     for index = 1, 16 do
         local value = self:_get(hash_name(prefix, index))
         if not integer(value, 0, 65535) then return nil end
         pieces[index] = string.format("%04x", value)
     end
-    return table.concat(pieces)
+    self.hashes[prefix] = table.concat(pieces)
+    return self.hashes[prefix]
 end
 
 local function random_draw(seed)
@@ -454,6 +503,7 @@ function Controller:restore()
     self.session = {}
     self.held_requests = {}
     self:_clear_guards()
+    self:_clear_cache()
     self.boundary, self.issued_boundary = 0, 0
     local state = self:_get(G.state)
     if state == 0 then return nil, "INACTIVE" end
@@ -558,11 +608,13 @@ function Controller:destroy()
     self.session = {}
     self.held_requests = {}
     self:_clear_guards()
+    self:_clear_cache()
     self.boundary, self.issued_boundary = 0, 0
 end
 
 function Controller:on_observation_boundary()
     self.boundary = self.boundary + 1
+    self:_validate_cache()
 end
 
 function Controller:_active()
@@ -587,7 +639,8 @@ function Controller:assignments()
         end
         if self.shape.rewards[index] then result[index].payload = copy(self.shape.rewards[index]) end
     end
-    return copy(result)
+    -- Every table in the result is new; the caller cannot reach campaign state.
+    return result
 end
 
 function Controller:source_is_kept(index)

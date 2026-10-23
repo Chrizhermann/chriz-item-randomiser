@@ -6,6 +6,7 @@ watchdog macro, game memory lifetime, and native installation are not modeled.
 from functools import lru_cache
 from pathlib import Path
 import re
+import struct
 import unittest
 
 from keystone import Ks, KS_ARCH_X86, KS_MODE_64
@@ -22,6 +23,13 @@ from tests.engine_sites import gate_targets
 ROOT = Path(__file__).resolve().parents[1]
 REVISION = "".join(f"{0x1000 + index:04x}" for index in range(16))
 RUNTIMES = (Lua51, Lua53, LuaJIT)
+# A member's policy table follows its native state (FLPRGat.lua).
+POLICY_TABLE = BUFFER + 128 + 2049*128 + 32 + 64*64
+# Names the table in the scan, as FLPRGat.lua does, and returns it as hex.
+BIND = '''function(policy, address)
+    policy.scan = policy.scan:gsub('@POLICY_TABLE@', string.format('%.0f', address))
+    return (policy.table:gsub('.', function(c) return string.format('%02x', c:byte()) end))
+end'''
 
 
 def expected_fields(revision=REVISION, source_index=1, phase=1):
@@ -47,9 +55,10 @@ def generated_policy(source_index=1):
         policy = compile_policy(REVISION, source_index)
         fields = [(policy['fields'][index]['name'], policy['fields'][index]['value'])
                   for index in range(1, 20)]
+        table = bytes.fromhex(lua.eval(BIND)(policy, POLICY_TABLE))
         output = assemble(BUFFER, gate_targets(lua, IMAGE), policy)
         results.append((policy['schema'], policy['mask'], fields,
-                        {name: output[name] for name in CODES}))
+                        {name: output[name] for name in CODES}, table))
     assert results[0] == results[1] == results[2]
     return results[0]
 
@@ -73,6 +82,7 @@ class PolicyMachine(GateMachine):
             self.uc.mem_write(CODES[name], binary + b"\x90")
         self.sentinels = {name: CODES[name] + len(binary)
                           for name, binary in policy_code(source_index).items()}
+        self.uc.mem_write(POLICY_TABLE, generated_policy(source_index)[4])
 
     def capture_fields(self, fields, *, declared=None, **kwargs):
         if declared is None:
@@ -85,7 +95,7 @@ class PolicyMachine(GateMachine):
 
 class CampaignGatePolicyTests(unittest.TestCase):
     def test_policy_has_exact_19_fields_and_legacy_builder_is_unchanged(self):
-        schema, mask, fields, code = generated_policy()
+        schema, mask, fields, code, table = generated_policy()
         self.assertEqual(schema, 'flpr-campaign-gate-policy-v1')
         self.assertEqual(mask, (1 << 19) - 1)
         self.assertEqual(len(fields), 19)
@@ -93,6 +103,18 @@ class CampaignGatePolicyTests(unittest.TestCase):
         self.assertEqual(fields[18][0], 'FLPR_S0001')
         self.assertIsNone(fields[18][1])
         self.assertTrue(all(code[name] for name in CODES))
+        # One 48-byte row per field: zero-padded name, kind (0 value, 1 phase), value.
+        rows = [table[at:at+48] for at in range(0, len(table), 48)]
+        self.assertEqual(len(rows), 19)
+        for row, (name, value) in zip(rows, expected_fields()):
+            self.assertEqual(row[:32], name.encode().ljust(32, b'\0'))
+            self.assertEqual(struct.unpack('<QQ', row[32:]), (1, 0) if name == 'FLPR_S0001' else (0, value))
+        # The scan reads the table, so every source's scan is the same code.
+        for runtime in RUNTIMES:
+            with self.subTest(runtime=runtime.__module__):
+                _, compile_policy = factory(runtime, ROOT / 'tools/probes/FLPRCampaignPolicy.lua')
+                self.assertEqual(compile_policy(REVISION, 1)['scan'], compile_policy('f' * 64, 4096)['scan'])
+                self.assertLess(len(compile_policy(REVISION, 1)['scan']), 2500)
         for runtime in RUNTIMES:
             with self.subTest(runtime=runtime.__module__):
                 lua, assemble = factory(runtime, ROOT / 'tools/probes/FLPRGateAsm.lua')

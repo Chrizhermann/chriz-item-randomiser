@@ -25,7 +25,7 @@ use crate::error::{Error, ErrorKind, Result};
 use crate::json::{py_str, Dict, Value};
 use crate::platform::{self, area_part, campaign_parts, Part};
 use crate::profiles::{edit_profile, validate_catalog, ProfileEdit};
-use crate::sources::{validate_world, WorldIndex};
+use crate::sources::{validate_world, Scans, WorldIndex};
 use std::cmp::Ordering;
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::path::Path;
@@ -149,7 +149,14 @@ struct Places<'a> {
 }
 
 impl<'a> Places<'a> {
-    fn new(catalog: &Value, world: &'a Value, index: &'a WorldIndex, plan: &Value, platform: &'a str) -> Result<Self> {
+    fn new(
+        catalog: &Value,
+        world: &'a Value,
+        index: &'a WorldIndex,
+        plan: &Value,
+        platform: &'a str,
+        tables: Option<&crate::original_registrations::TableMemo>,
+    ) -> Result<Self> {
         let mut placed: HashMap<String, BTreeSet<Option<Part>>> = HashMap::new();
         for target in world.at("targets")?.as_list().map(Vec::as_slice).unwrap_or(&[]) {
             let template = if target.at("kind")?.as_str() == Some("actor") {
@@ -164,8 +171,8 @@ impl<'a> Places<'a> {
         }
         let mut campaigns = HashMap::new();
         if plan.as_dict().is_some_and(|plan| plan.contains_key("original_template_id")) {
-            let (rows, _) = crate::original_registrations::table_rows(catalog, world, plan)?;
-            for row in rows.values() {
+            let tables = crate::original_registrations::table_rows(catalog, world, plan, tables)?;
+            for row in tables.sources.values() {
                 let selected = match get(row, "source_ids")? {
                     Some(value) if value.truthy() => identities(value)?,
                     _ => Vec::new(),
@@ -588,10 +595,18 @@ pub fn restrict(
     world: &Value,
     platform: &str,
     reach: &[Part],
+    scans: Option<&Scans>,
 ) -> Result<Option<(Value, Value)>> {
-    let items = validate_catalog(catalog)?;
-    let index = validate_world(world, catalog)?;
-    let places = Places::new(catalog, world, &index, plan, platform)?;
+    let validated;
+    let (items, index) = match scans {
+        Some(scans) => scans.indexes(catalog, world)?,
+        None => {
+            let items = validate_catalog(catalog)?;
+            validated = (items, validate_world(world, catalog)?);
+            (&validated.0, &validated.1)
+        }
+    };
+    let places = Places::new(catalog, world, index, plan, platform, scans.map(|scans| &scans.tables))?;
     let registrations = by_id(plan.at("registrations")?)?;
     let target_registrations = match get(plan, "target_registrations")? {
         Some(rows) => by_id(rows)?,
@@ -655,8 +670,8 @@ pub fn restrict(
             continue;
         }
         let mut problems = Dict::new();
-        let campaign = compile_campaign(&profile, catalog, world, &plan)?;
-        crate::native_export::compile(&campaign, world, &index, &items, catalog, Some(&mut problems), false, None)?;
+        let campaign = compile_campaign(&profile, catalog, world, &plan, scans)?;
+        crate::native_export::compile(&campaign, world, index, items, catalog, Some(&mut problems), false, None, None, None)?;
         if problems.is_empty() {
             return Ok(Some((profile, plan)));
         }
@@ -682,8 +697,16 @@ pub fn restrict(
 ///
 /// Returns the game, its starts and their revisions, the start the engine
 /// makes without a campaign row ("main", null on EET) and, for each start
-/// that gets no revision, the reason.
-pub fn write_starts(profile: &Value, plan: &Value, catalog: &Value, world: &Value, store: &Path) -> Result<Value> {
+/// that gets no revision, the reason. `scans` holds the catalogues already
+/// validated.
+pub fn write_starts(
+    profile: &Value,
+    plan: &Value,
+    catalog: &Value,
+    world: &Value,
+    store: &Path,
+    scans: Option<&Scans>,
+) -> Result<Value> {
     let platform = platform::game_platform(world)?;
     let full = platform::full_start(platform)?;
     let mut revisions: Vec<(String, Value)> = Vec::new();
@@ -692,7 +715,7 @@ pub fn write_starts(profile: &Value, plan: &Value, catalog: &Value, world: &Valu
         if *start == full {
             continue;
         }
-        let restricted = match restrict(profile, plan, catalog, world, platform, reach) {
+        let restricted = match restrict(profile, plan, catalog, world, platform, reach, scans) {
             Ok(restricted) => restricted,
             Err(error) if error.kind == ErrorKind::Profile => {
                 skipped.insert(*start, error.message);
@@ -704,11 +727,11 @@ pub fn write_starts(profile: &Value, plan: &Value, catalog: &Value, world: &Valu
             skipped.insert(*start, "nothing in this configuration is reached from this start");
             continue;
         };
-        let written = write_campaign(&start_profile, catalog, world, &start_plan, store)?;
+        let written = write_campaign(&start_profile, catalog, world, &start_plan, store, scans)?;
         revisions.push((start.to_string(), written.at("revision")?.clone()));
     }
     // Written last, so the store's own pointer names the whole configuration.
-    let written = write_campaign(profile, catalog, world, plan, store)?;
+    let written = write_campaign(profile, catalog, world, plan, store, scans)?;
     revisions.push((full.to_string(), written.at("revision")?.clone()));
     revisions.sort_by(|a, b| a.0.cmp(&b.0));
     let mut starts = Dict::new();

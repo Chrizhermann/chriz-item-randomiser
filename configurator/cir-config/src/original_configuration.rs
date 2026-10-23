@@ -10,7 +10,7 @@ use crate::campaigns::{compile_campaign, OVERFLOW_TARGET_KINDS};
 use crate::error::{Error, Result};
 use crate::game_names::{convert_resource, eet_names, EetNames};
 use crate::json::{Dict, Value};
-use crate::original_catalog::{resolve_template, UNREADABLE_PLACE_PROBLEMS};
+use crate::original_catalog::{resolve_template, NO_ROUTE, UNREADABLE_PLACE_PROBLEMS};
 use crate::original_registrations::{
     is_unreferenced_creature_source, source_lookup, target_record, SourceLookup, PAYLOAD_FIELDS, SHIPPED_REPLACEMENT,
     SOURCE_FIELDS, TARGET_FIELDS,
@@ -18,7 +18,8 @@ use crate::original_registrations::{
 use crate::prepared::{applied, applied_changes, left_out, quest_change};
 use crate::profiles::{edit_profile, new_profile, validate_catalog, ItemIndex, ProfileEdit};
 use crate::resources::{sha256_hex, GameResources, ITM_TYPE};
-use crate::sources::{new_binding_plan, unreadable_notes, validate_world, WorldIndex, UNUSABLE_SOURCE};
+use crate::sources::{new_binding_plan, unreadable_notes, validate_world, Scans, WorldIndex, UNUSABLE_SOURCE};
+use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::path::Path;
 
@@ -38,23 +39,27 @@ fn tier(row: &Value) -> String {
     format!("{}:{}", crate::json::py_str(row.get("campaign").unwrap_or(&Value::Null)), crate::json::py_str(row.get("tier").unwrap_or(&Value::Null)))
 }
 
-/// The change the installer makes that this reward row needs.
-fn source_change(row: &Value) -> Option<&'static str> {
+/// The change the installer makes that this reward row needs. An extended
+/// reward route needs none: Apply patches the game's own script for it, also
+/// the book that the installer prepared for the ring's quest.
+fn source_change(row: &Value) -> Result<Option<&'static str>> {
     let adapter = row.get("adapter").and_then(Value::as_str);
     if adapter == Some("unshey") {
-        return Some("unshey");
+        return Ok(Some("unshey"));
     }
     let resource = s(row, "source_resource");
     if adapter == Some("scripted") {
         if let Some(quest) = resource.strip_prefix("bcs:") {
-            return quest_change(quest);
+            if crate::original_catalog::mode2_route_source(row)?.is_none() {
+                return Ok(quest_change(quest));
+            }
         }
     }
-    None
+    Ok(None)
 }
 
-fn target_change(row: &Value) -> Option<&'static str> {
-    s(row, "target").strip_suffix(".bcs").and_then(quest_change)
+fn target_change(row: &Value) -> Result<Option<&'static str>> {
+    Ok(s(row, "target").strip_suffix(".bcs").and_then(quest_change))
 }
 
 /// Default charges of each named installed item.
@@ -206,13 +211,13 @@ fn choose(row: &Value, context: &Context<'_>) -> Result<std::result::Result<Choi
             return Ok(Err("ambiguous-unshey-records".into()));
         }
         let default_charges = || context.defaults.get(item).cloned().ok_or_else(|| Error::key(item));
-        let source_id = format!("original-source:{}", s(row, "id"));
         let payload = if adapter == Some("unshey") {
             record_payload(physical.get(matched[0].as_str()).ok_or_else(|| Error::key(&matched[0]))?)?
         } else if resource == "spl:spin621" {
             crate::spell_rewards::payload()
-        } else if crate::mode2_rewards::source_rewards().contains_key(&source_id) {
-            crate::mode2_rewards::source_spec(&source_id)?.get("payload").cloned().ok_or_else(|| Error::key("payload"))?
+        } else if let Some(route) = crate::original_catalog::mode2_route_source(row)? {
+            let naming = crate::mode2_rewards::Naming { game: Some(context.game), names: context.names };
+            crate::mode2_rewards::source_spec(&route, naming)?.get("payload").cloned().ok_or_else(|| Error::key("payload"))?
         } else {
             Value::Dict(crate::dict! {"resref" => item, "expiration" => 0, "charges" => default_charges()?, "flags" => 0})
         };
@@ -271,23 +276,62 @@ fn choose(row: &Value, context: &Context<'_>) -> Result<std::result::Result<Choi
     Ok(Ok(Choice::Physical(ids[0].clone(), None)))
 }
 
+/// Why `count` rewards of a preset's optional `module` are left out: the mod
+/// is not installed, or (when the game has any item of it) not the part of
+/// it that adds them.
+fn absent_mod_note(module: &str, count: usize, catalog_items: &ItemIndex) -> String {
+    let prefixes = crate::templates::optional_mod_prefixes(module);
+    let one = count == 1;
+    if !catalog_items.resrefs().iter().any(|name| prefixes.iter().any(|prefix| name.starts_with(prefix))) {
+        return format!(
+            "{module} is not installed, so {count} {} from it {} left out",
+            if one { "reward" } else { "rewards" },
+            if one { "is" } else { "are" }
+        );
+    }
+    format!(
+        "{count} {} of {module} that this game does not have, so {} left out",
+        if one { "reward needs an item" } else { "rewards need items" },
+        if one { "it is" } else { "they are" }
+    )
+}
+
+/// What the left-out rows are: those this game cannot use, then those whose
+/// quest CIR cannot change yet, then what becomes of a left-out reward.
 fn not_used_notes(rows: &[Value]) -> Vec<String> {
+    let (waiting, unusable): (Vec<&Value>, Vec<&Value>) = rows.iter().partition(|row| s(row, "reason") == NO_ROUTE);
+    let it_is = |rows: &[&Value]| if rows.len() == 1 { "it is" } else { "they are" };
+    let mut notes = Vec::new();
+    if !unusable.is_empty() {
+        notes.push(format!(
+            "{} from the lists cannot be used in this game, so {} left out",
+            counted(&unusable),
+            it_is(&unusable)
+        ));
+    }
+    if !waiting.is_empty() {
+        notes.push(format!(
+            "{} from the lists {} that Chriz Item Randomiser cannot change yet, so {} left out",
+            counted(&waiting),
+            if waiting.len() == 1 { "belongs to a quest" } else { "belong to quests" },
+            it_is(&waiting)
+        ));
+    }
+    if rows.iter().any(|row| s(row, "kind") == "reward") {
+        notes.push("A left-out reward stays as the game has it".to_string());
+    }
+    notes
+}
+
+/// How many rewards and places `rows` are, as "2 rewards and 1 place".
+fn counted(rows: &[&Value]) -> String {
     let rewards = rows.iter().filter(|row| s(row, "kind") == "reward").count();
-    let places = rows.len() - rewards;
-    let counts: Vec<String> = [(rewards, "reward"), (places, "place")]
+    [(rewards, "reward"), (rows.len() - rewards, "place")]
         .into_iter()
         .filter(|(count, _)| *count > 0)
         .map(|(count, noun)| if count == 1 { format!("{count} {noun}") } else { format!("{count} {noun}s") })
-        .collect();
-    if counts.is_empty() {
-        return Vec::new();
-    }
-    let note = format!(
-        "{} from the lists cannot be used in this game, so {} left out",
-        counts.join(" and "),
-        if rows.len() == 1 { "it is" } else { "they are" }
-    );
-    vec![if rewards > 0 { format!("{note}; a left-out reward stays as the game has it") } else { note }]
+        .collect::<Vec<_>>()
+        .join(" and ")
 }
 
 /// Return a data-only `{profile, plan}` preserving enabled authored rows.
@@ -297,6 +341,8 @@ fn not_used_notes(rows: &[Value]) -> Vec<String> {
 /// record that is not where the tables put it or is there more than once,
 /// and each row named in `exclude` (row id -> reason). A left-out reward
 /// stays as the game has it. `row_ids` maps each plan identity to its row.
+/// `scans` holds the catalogues already validated.
+#[allow(clippy::too_many_arguments)]
 pub fn build_original_configuration(
     catalog: &Value,
     world: &Value,
@@ -305,8 +351,9 @@ pub fn build_original_configuration(
     targets: Option<&Value>,
     options: Option<&Value>,
     exclude: &HashMap<String, String>,
+    scans: Option<&Scans>,
 ) -> Result<Value> {
-    build_from(catalog, world, template_id, exclude, |game, names| {
+    build_from(catalog, world, template_id, exclude, scans, &mut HashMap::new(), |game, names| {
         resolve_template(catalog, world, template_id, game, items, targets, options, names)
     })
 }
@@ -319,19 +366,32 @@ pub fn build_original_configuration_from(
     template_id: &str,
     draft: &Value,
     exclude: &HashMap<String, String>,
+    scans: Option<&Scans>,
 ) -> Result<Value> {
-    build_from(catalog, world, template_id, exclude, |_, _| Ok(draft.clone()))
+    build_from(catalog, world, template_id, exclude, scans, &mut HashMap::new(), |_, _| Ok(draft.clone()))
 }
 
+/// `build_original_configuration` with the draft from `resolve(game, names)`;
+/// `defaults` keeps the charges of the items already read.
 fn build_from(
     catalog: &Value,
     world: &Value,
     template_id: &str,
     exclude: &HashMap<String, String>,
+    scans: Option<&Scans>,
+    defaults: &mut HashMap<String, Value>,
     resolve: impl FnOnce(&str, Option<&EetNames>) -> Result<Value>,
 ) -> Result<Value> {
-    let catalog_items = validate_catalog(catalog)?;
-    let index = validate_world(world, catalog)?;
+    let (catalog_items, index) = match scans {
+        Some(scans) => {
+            let (items, index) = scans.indexes(catalog, world)?;
+            (Cow::Borrowed(items), Cow::Borrowed(index))
+        }
+        None => {
+            let items = validate_catalog(catalog)?;
+            (Cow::Owned(items), Cow::Owned(validate_world(world, catalog)?))
+        }
+    };
     let game = crate::platform::preset_game(world, template_id)?;
     let names = match game {
         "eet" => Some(eet_names(&crate::paths::path_argument(world.at("game_root")?)?)?),
@@ -355,12 +415,12 @@ fn build_from(
     let draft_items = draft.at("items")?.as_list().map(Vec::as_slice).unwrap_or(&[]);
     let draft_targets = draft.at("targets")?.as_list().map(Vec::as_slice).unwrap_or(&[]);
     for (rows, change_of, enabled) in [
-        (draft_items, source_change as fn(&Value) -> Option<&'static str>, &mut enabled_sources),
-        (draft_targets, target_change as fn(&Value) -> Option<&'static str>, &mut enabled_targets),
+        (draft_items, source_change as fn(&Value) -> Result<Option<&'static str>>, &mut enabled_sources),
+        (draft_targets, target_change as fn(&Value) -> Result<Option<&'static str>>, &mut enabled_targets),
     ] {
         for row in rows {
             let is_enabled = row.get("enabled").is_some_and(Value::truthy);
-            let change = if is_enabled { change_of(row) } else { None };
+            let change = if is_enabled { change_of(row)? } else { None };
             match change {
                 Some(change) if !prepared.contains(change) => {
                     unprepared.entry(change).or_default().push(row.at("id")?.clone());
@@ -403,6 +463,10 @@ fn build_from(
             continue;
         }
         let problem = row.get("binding_problem").and_then(Value::as_str);
+        if problem == Some(NO_ROUTE) {
+            leave_out(&mut not_used, row, "reward", &Value::from(NO_ROUTE))?;
+            continue;
+        }
         if problem == Some("original-source-has-no-matching-record") {
             continue;
         }
@@ -443,7 +507,8 @@ fn build_from(
             return Err(Error::key(name));
         }
     }
-    let defaults = item_defaults(catalog, &catalog_items, &wanted_defaults)?;
+    let unread: BTreeSet<String> = wanted_defaults.iter().filter(|name| !defaults.contains_key(*name)).cloned().collect();
+    defaults.extend(item_defaults(catalog, &catalog_items, &unread)?);
     let context = Context {
         catalog,
         world,
@@ -453,7 +518,7 @@ fn build_from(
         index: &index,
         physical: source_lookup(world),
         shield: shield.as_ref().filter(|shield| shield.truthy()),
-        defaults: &defaults,
+        defaults,
     };
 
     let mut chosen: Vec<(&Value, Choice)> = Vec::new();
@@ -488,6 +553,8 @@ fn build_from(
     for row in enabled_targets {
         if let Some(reason) = exclude.get(s(row, "id")) {
             leave_out(&mut not_used, row, "place", &Value::from(reason.as_str()))?;
+        } else if row.at("binding_problem")?.as_str() == Some(NO_ROUTE) {
+            leave_out(&mut not_used, row, "place", &Value::from(NO_ROUTE))?;
         } else if !index.resources.contains(s(row, "area_resource")) {
             leave_out(&mut not_used, row, "place", &Value::from("area-resource-absent"))?;
         } else if row.at("binding_problem")?.as_str().is_some_and(|problem| {
@@ -514,7 +581,7 @@ fn build_from(
         catalog,
         ProfileEdit { include: &include, ..ProfileEdit::default() },
     )?;
-    let mut plan = new_binding_plan(&profile, catalog, world)?.as_dict().cloned().unwrap_or_default();
+    let mut plan = new_binding_plan(&profile, catalog, world, scans)?.as_dict().cloned().unwrap_or_default();
     plan.insert("original_template_id", template_id);
     plan.insert("original_choices", draft.at("choices")?.clone());
     plan.insert("original_options", draft.at("options")?.clone());
@@ -670,16 +737,8 @@ fn build_from(
     for change in unprepared.keys() {
         left.push(Value::from(left_out(&game_root, change)?));
     }
-    let absent: Vec<Value> = absent_mods
-        .iter()
-        .map(|(module, count)| {
-            Value::from(format!(
-                "{module} is not installed, so {count} {} from it {} left out",
-                if *count == 1 { "reward" } else { "rewards" },
-                if *count == 1 { "is" } else { "are" }
-            ))
-        })
-        .collect();
+    let absent: Vec<Value> =
+        absent_mods.iter().map(|(module, count)| Value::from(absent_mod_note(module, *count, &catalog_items))).collect();
     let notes: Vec<Value> = unreadable_notes(world)
         .into_iter()
         .chain(names.iter().flat_map(|names| names.notes.iter().cloned()))
@@ -758,7 +817,8 @@ fn placeless_sources(plan: &Value) -> Result<Vec<String>> {
 /// use (a quest reward without a reviewed adapter, an item its creature
 /// cannot drop, a recipient it cannot address); those rows are left out and
 /// listed in `not_used`, and the configuration is built again until the
-/// check passes.
+/// check passes. The rounds share the validated catalogues (`scans`, if the
+/// caller has them), the resolved tables and the item charges they read.
 pub fn fit_original_configuration(
     catalog: &Value,
     world: &Value,
@@ -766,24 +826,47 @@ pub fn fit_original_configuration(
     items: Option<&Value>,
     targets: Option<&Value>,
     options: Option<&Value>,
+    scans: Option<&Scans>,
 ) -> Result<Value> {
-    fit_from(catalog, world, template_id, &|template_id, game, names| {
+    fit_from(catalog, world, template_id, scans, &|template_id, game, names| {
         resolve_template(catalog, world, template_id, game, items, targets, options, names)
     })
 }
 
 /// `fit_original_configuration` over an already resolved draft.
-pub fn fit_original_configuration_from(catalog: &Value, world: &Value, template_id: &Value, draft: &Value) -> Result<Value> {
-    fit_from(catalog, world, template_id, &|_, _, _| Ok(draft.clone()))
+pub fn fit_original_configuration_from(
+    catalog: &Value,
+    world: &Value,
+    template_id: &Value,
+    draft: &Value,
+    scans: Option<&Scans>,
+) -> Result<Value> {
+    fit_from(catalog, world, template_id, scans, &|_, _, _| Ok(draft.clone()))
 }
 
 /// How `fit_from` gets a draft: `resolve_template` for (template id, game,
 /// names), or the draft a test patched in.
 type Resolve<'a> = dyn Fn(&str, &str, Option<&EetNames>) -> Result<Value> + 'a;
 
-fn fit_from(catalog: &Value, world: &Value, template_id: &Value, resolve: &Resolve<'_>) -> Result<Value> {
-    let catalog_items = validate_catalog(catalog)?;
-    let index = validate_world(world, catalog)?;
+fn fit_from(
+    catalog: &Value,
+    world: &Value,
+    template_id: &Value,
+    scans: Option<&Scans>,
+    resolve: &Resolve<'_>,
+) -> Result<Value> {
+    let validated;
+    let own;
+    let scans = match scans {
+        Some(scans) => scans,
+        None => {
+            let items = validate_catalog(catalog)?;
+            validated = (items, validate_world(world, catalog)?);
+            own = Scans::new(catalog, world, &validated.0, &validated.1);
+            &own
+        }
+    };
+    let (catalog_items, index) = scans.indexes(catalog, world)?;
     // preset_game's lookup of an unknown or non-text identity, after it has
     // told the game apart.
     let template_id = match template_id {
@@ -796,9 +879,21 @@ fn fit_from(catalog: &Value, world: &Value, template_id: &Value, resolve: &Resol
             });
         }
     };
+    let mut resolved: Option<Value> = None;
+    let mut defaults = HashMap::new();
     let mut exclude: HashMap<String, String> = HashMap::new();
     for _ in 0..FIT_ROUNDS {
-        let generated = build_from(catalog, world, template_id, &exclude, |game, names| resolve(template_id, game, names))?;
+        let generated = build_from(catalog, world, template_id, &exclude, Some(scans), &mut defaults, |game, names| {
+            // The same template, game and names in every round.
+            match &resolved {
+                Some(draft) => Ok(draft.clone()),
+                None => {
+                    let draft = resolve(template_id, game, names)?;
+                    resolved = Some(draft.clone());
+                    Ok(draft)
+                }
+            }
+        })?;
         let row_ids = generated.at("row_ids")?;
         let placeless = placeless_sources(generated.at("plan")?)?;
         if !placeless.is_empty() {
@@ -808,9 +903,20 @@ fn fit_from(catalog: &Value, world: &Value, template_id: &Value, resolve: &Resol
             }
             continue;
         }
-        let campaign = compile_campaign(generated.at("profile")?, catalog, world, generated.at("plan")?)?;
+        let campaign = compile_campaign(generated.at("profile")?, catalog, world, generated.at("plan")?, Some(scans))?;
         let mut problems = Dict::new();
-        crate::native_export::compile(&campaign, world, &index, &catalog_items, catalog, Some(&mut problems), false, None)?;
+        crate::native_export::compile(
+            &campaign,
+            world,
+            index,
+            catalog_items,
+            catalog,
+            Some(&mut problems),
+            false,
+            None,
+            None,
+            None,
+        )?;
         if problems.is_empty() {
             return Ok(generated);
         }

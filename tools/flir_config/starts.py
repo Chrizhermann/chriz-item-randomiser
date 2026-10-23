@@ -30,7 +30,7 @@ from .platform import (FULL_START, MAIN_START, START_NAMES, STARTS, TABLE_PARTS,
                        campaign_parts, game_platform)
 from .profiles import ProfileError, edit_profile, validate_catalog
 from .scripted_sources import ADAPTER_ID as SCRIPTED_ADAPTER, CAMPAIGN as SCRIPTED_CAMPAIGN
-from .sources import validate_world
+from .sources import Scans, validate_world
 
 # Rounds of leaving out what the check names before giving up on a start.
 _FIT_ROUNDS = 8
@@ -45,7 +45,8 @@ def _table_campaign(selector: object) -> str | None:
 class _Places:
     """Where the sources and targets of one configuration are, in one game."""
 
-    def __init__(self, catalog: dict, world: dict, index: dict, plan: dict, platform: str):
+    def __init__(self, catalog: dict, world: dict, index: dict, plan: dict, platform: str,
+                 tables: dict | None = None):
         self.platform = platform
         self.sources, self.targets = index["sources"], index["targets"]
         placed = defaultdict(set)
@@ -57,7 +58,7 @@ class _Places:
         # The table each physical source an Item Randomiser row selects comes from.
         self.campaigns = {}
         if "original_template_id" in plan:
-            for row in table_rows(catalog, world, plan)[0].values():
+            for row in table_rows(catalog, world, plan, memo=tables)[0].values():
                 for identity in row.get("source_ids") or ():
                     self.campaigns[identity] = row["campaign"]
 
@@ -176,12 +177,15 @@ def _without_place(plan: dict, places: _Places) -> list[str]:
 
 
 def restrict(profile: dict, plan: dict, catalog: dict, world: dict, platform: str,
-             reach: frozenset) -> tuple[dict, dict] | None:
+             reach: frozenset, *, scans: Scans | None = None) -> tuple[dict, dict] | None:
     """The configuration for a start that reaches these parts, or None if nothing is left."""
     from .native_export import _compile
 
-    items, index = validate_catalog(catalog), validate_world(world, catalog)
-    places = _Places(catalog, world, index, plan, platform)
+    if scans is None:
+        items, index = validate_catalog(catalog), validate_world(world, catalog)
+    else:
+        items, index = scans.indexes(catalog, world)
+    places = _Places(catalog, world, index, plan, platform, None if scans is None else scans.tables)
     registrations = {row["id"]: row for row in plan["registrations"]}
     target_registrations = {row["id"]: row for row in plan.get("target_registrations", [])}
     sources, targets = set(), set()
@@ -219,7 +223,8 @@ def restrict(profile: dict, plan: dict, catalog: dict, world: dict, platform: st
             profile, plan = _without(profile, plan, catalog, set(placeless), set())
             continue
         problems: dict[str, str] = {}
-        _compile(compile_campaign(profile, catalog, world, plan), world, index, items, problems, catalog=catalog)
+        _compile(compile_campaign(profile, catalog, world, plan, scans=scans), world, index, items, problems,
+                 catalog=catalog)
         if not problems:
             return profile, plan
         source_ids = set(_units(plan, places))
@@ -232,12 +237,14 @@ def restrict(profile: dict, plan: dict, catalog: dict, world: dict, platform: st
     raise ProfileError("The runtime check kept finding rewards or places this start cannot use")
 
 
-def write_starts(profile: dict, plan: dict, catalog: dict, world: dict, store: Path) -> dict:
+def write_starts(profile: dict, plan: dict, catalog: dict, world: dict, store: Path, *,
+                 scans: Scans | None = None) -> dict:
     """Write the revision of each campaign start of this game to the store.
 
     Returns the game, its starts and their revisions, the start the engine
     makes without a campaign row ("main", None on EET) and, for each start that
-    gets no revision, the reason.
+    gets no revision, the reason. ``scans`` holds the catalogues already
+    validated.
     """
     platform = game_platform(world)
     full = FULL_START[platform]
@@ -246,7 +253,7 @@ def write_starts(profile: dict, plan: dict, catalog: dict, world: dict, store: P
         if start == full:
             continue
         try:
-            restricted = restrict(profile, plan, catalog, world, platform, reach)
+            restricted = restrict(profile, plan, catalog, world, platform, reach, scans=scans)
         except ProfileError as exc:
             skipped[start] = str(exc)
             continue
@@ -254,9 +261,10 @@ def write_starts(profile: dict, plan: dict, catalog: dict, world: dict, store: P
             skipped[start] = "nothing in this configuration is reached from this start"
             continue
         start_profile, start_plan = restricted
-        revisions[start] = write_campaign(start_profile, catalog, world, start_plan, store)["revision"]
+        revisions[start] = write_campaign(start_profile, catalog, world, start_plan, store,
+                                          scans=scans)["revision"]
     # Written last, so the store's own pointer names the whole configuration.
-    revisions[full] = write_campaign(profile, catalog, world, plan, store)["revision"]
+    revisions[full] = write_campaign(profile, catalog, world, plan, store, scans=scans)["revision"]
     return {"platform": platform, "full": full, "main": MAIN_START[platform],
             "starts": dict(sorted(revisions.items())), "skipped": skipped}
 

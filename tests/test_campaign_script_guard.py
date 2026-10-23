@@ -41,14 +41,21 @@ local function fixture(Core,Gate,Script)
     f.storage={}
     function f.storage:get(key) return f.values[key] or 0 end
     function f.storage:set(key,value) f.values[key]=value end
+    -- No engine image: the gate finds no location, which a script source
+    -- does not need. Launch still keeps the saved-store record.
     f.api={EEex_Active=true,
-        EEex_Write8=function() end,EEex_DisableCodeProtection=function() end,
+        EEex_Write8=function() end,EEex_Write64=function() end,
+        EEex_Malloc=function() return 0x1000 end,
+        EEex_GenLuaCall=function() error('a script source needs no game hook') end,
+        EEex_DisableCodeProtection=function() end,
         EEex_EnableCodeProtection=function() end,
         EEex_GameState_GetGlobalInt=function(key) return f.globals[key] or 0 end,
         EEex_GameState_SetGlobalInt=function(key,value) f.globals[key]=value end,
         EEex_GameState_AddDestroyedListener=function(callback)
             f.callbacks[#f.callbacks+1]=callback
         end}
+    -- A script source needs no native checks.
+    local function native() error('a script source builds no native code') end
     f.pristine={scripts={[REV]={[ID]=BYTES}}}
     function f:controller_new()
         return assert(Core.new(self.storage,function(revision)
@@ -63,7 +70,7 @@ local function fixture(Core,Gate,Script)
             return {read=function(_,request) assert(request=='*a'); return BYTES end,
                     close=function() return true end}
         end
-        local ok,value=pcall(Gate.install,self.api,self.bundle,nil,nil,self.pristine,Script)
+        local ok,value=pcall(Gate.install,self.api,self.bundle,native,native,self.pristine,Script)
         io.open=old
         assert(ok,value)
         self.gate=value

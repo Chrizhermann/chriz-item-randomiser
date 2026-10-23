@@ -21,7 +21,7 @@ from flir_config.store_inventory import rewrite_inventory
 from tests import test_spell_shield_option as option_tests
 from tests.test_campaign_gate_bridge import CASES, CORE, GATE, POLICY, BUILD
 from engine_sites import gate_targets, load
-from tests.test_campaign_gate_policy import expected_fields
+from tests.test_campaign_gate_policy import BIND, POLICY_TABLE, expected_fields
 from tests.test_campaign_inventory_assembly import run, EXPECTED, OUTPUT, INPUT, BUFFER
 from tests.test_source_gate_assembly import GateMachine, CODES, IMAGE, BUFFER as GATE_BUFFER
 
@@ -74,17 +74,20 @@ class SpellShieldRuntimeTests(unittest.TestCase):
 
     def test_option_policy_uses_revision_without_any_source_phase_and_rejects_old_campaign(self):
         revision = "abcd" * 16
-        sources = []
+        sources, tables = [], set()
         for runtime in (Lua51, Lua53, LuaJIT):
             lua = runtime(unpack_returned_tuples=True)
             policy = lua.execute(POLICY)(revision, "more_spell_shield")
             self.assertEqual(len(policy.fields), 18)
             self.assertEqual(policy.mask, (1 << 18) - 1)
+            tables.add(bytes.fromhex(lua.eval(BIND)(policy, POLICY_TABLE)))
             sources.append(lua.execute(BUILD)(GATE_BUFFER, gate_targets(lua, IMAGE), policy))
+        self.assertEqual(len(tables), 1)
         for fields, expected in ((expected_fields(revision)[:18], 1),
                                  (expected_fields("0123" * 16)[:18], 0),
                                  (expected_fields(revision)[:17], 0)):
             machine = GateMachine()
+            machine.uc.mem_write(POLICY_TABLE, next(iter(tables)))
             for name in ("enter", "capture"):
                 assembly = sources[0][name]
                 self.assertEqual(assembly, sources[1][name])

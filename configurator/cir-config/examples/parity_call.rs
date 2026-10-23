@@ -3,12 +3,14 @@
 //!
 //! Usage: `parity_call <calls.json> <outcomes.jsonl>`. The calls file holds
 //! `{"calls": [{"call": name, "args": {...}}]}`; an argument written as
-//! `{"$file": path}` is read from that JSON file. This is a test tool, not
-//! part of the configurator executable.
+//! `{"$file": path}` is read from that JSON file. A call the reference made
+//! with validated scans has `"scans": "own"` (scans of the catalogues it was
+//! given) or `"scans": "other"` (scans of other catalogues). This is a test
+//! tool, not part of the configurator executable.
 
 use cir_config::json::{dumps_ascii, Dict, Value};
 use cir_config::profiles::{read_json, validate_catalog};
-use cir_config::sources::validate_world;
+use cir_config::sources::{validate_world, Scans};
 use cir_config::game_names::{self, EetNames};
 use cir_config::{
     activation, campaigns, native_export, original_catalog, original_configuration, platform, sources, starts, templates,
@@ -56,6 +58,31 @@ fn names(args: &Dict) -> Result<Option<EetNames>> {
     argument(args, "names")?.filter(|value| !value.is_null()).map(|value| EetNames::from_value(&value)).transpose()
 }
 
+/// `call` with the validated scans the reference's call was given, if any:
+/// scans of `catalog` and `world` themselves, or of copies of them (which
+/// the call refuses as other catalogues).
+fn with_scans<T>(
+    args: &Dict,
+    catalog: &Value,
+    world: &Value,
+    call: impl FnOnce(Option<&Scans>) -> Result<T>,
+) -> Result<T> {
+    let kind = argument(args, "scans")?;
+    let Some(kind) = kind.as_ref().and_then(Value::as_str) else {
+        return call(None);
+    };
+    let items = validate_catalog(catalog)?;
+    let index = validate_world(world, catalog)?;
+    match kind {
+        "own" => call(Some(&Scans::new(catalog, world, &items, &index))),
+        "other" => {
+            let (catalog, world) = (catalog.clone(), world.clone());
+            call(Some(&Scans::new(&catalog, &world, &items, &index)))
+        }
+        _ => Err(Error::value(format!("Unknown scans argument: {kind}"))),
+    }
+}
+
 fn texts(values: Vec<&str>) -> Value {
     Value::List(values.into_iter().map(Value::from).collect())
 }
@@ -82,6 +109,12 @@ fn run(name: &str, args: &Dict) -> Result<Value> {
             argument(args, "options")?.as_ref(),
             names(args)?.as_ref(),
         ),
+        "mode2_route_source" => {
+            original_catalog::mode2_route_source(&required(args, "row")?).map(|route| route.map_or(Value::Null, Value::from))
+        }
+        "mode2_route_target" => {
+            original_catalog::mode2_route_target(&required(args, "row")?).map(|route| route.map_or(Value::Null, Value::from))
+        }
         "build_template" => templates::build_template(
             &text(args, "template_id")?,
             argument(args, "items")?.as_ref(),
@@ -113,48 +146,55 @@ fn run(name: &str, args: &Dict) -> Result<Value> {
                 .iter()
                 .map(|(row, reason)| (row.to_string(), reason.as_str().unwrap_or("").to_string()))
                 .collect();
-            match argument(args, "draft")? {
+            let draft = argument(args, "draft")?;
+            let (items, targets, options) = (argument(args, "items")?, argument(args, "targets")?, argument(args, "options")?);
+            with_scans(args, &catalog, &world, |scans| match &draft {
                 Some(draft) => original_configuration::build_original_configuration_from(
-                    &catalog, &world, &template_id, &draft, &exclude,
+                    &catalog, &world, &template_id, draft, &exclude, scans,
                 ),
                 None => original_configuration::build_original_configuration(
                     &catalog,
                     &world,
                     &template_id,
-                    argument(args, "items")?.as_ref(),
-                    argument(args, "targets")?.as_ref(),
-                    argument(args, "options")?.as_ref(),
+                    items.as_ref(),
+                    targets.as_ref(),
+                    options.as_ref(),
                     &exclude,
+                    scans,
                 ),
-            }
+            })
         }
         "fit_original_configuration" => {
             let catalog = required(args, "catalog")?;
             let world = required(args, "world")?;
             let template_id = required(args, "template_id")?;
-            match argument(args, "draft")? {
+            let draft = argument(args, "draft")?;
+            let (items, targets, options) = (argument(args, "items")?, argument(args, "targets")?, argument(args, "options")?);
+            with_scans(args, &catalog, &world, |scans| match &draft {
                 Some(draft) => {
-                    original_configuration::fit_original_configuration_from(&catalog, &world, &template_id, &draft)
+                    original_configuration::fit_original_configuration_from(&catalog, &world, &template_id, draft, scans)
                 }
                 None => original_configuration::fit_original_configuration(
                     &catalog,
                     &world,
                     &template_id,
-                    argument(args, "items")?.as_ref(),
-                    argument(args, "targets")?.as_ref(),
-                    argument(args, "options")?.as_ref(),
+                    items.as_ref(),
+                    targets.as_ref(),
+                    options.as_ref(),
+                    scans,
                 ),
-            }
+            })
         }
         "new_binding_plan" => {
-            sources::new_binding_plan(&required(args, "profile")?, &required(args, "catalog")?, &required(args, "world")?)
+            let (catalog, world) = (required(args, "catalog")?, required(args, "world")?);
+            let profile = required(args, "profile")?;
+            with_scans(args, &catalog, &world, |scans| sources::new_binding_plan(&profile, &catalog, &world, scans))
         }
-        "bind_profile" => sources::bind_profile(
-            &required(args, "profile")?,
-            &required(args, "catalog")?,
-            &required(args, "world")?,
-            &required(args, "plan")?,
-        ),
+        "bind_profile" => {
+            let (catalog, world) = (required(args, "catalog")?, required(args, "world")?);
+            let (profile, plan) = (required(args, "profile")?, required(args, "plan")?);
+            with_scans(args, &catalog, &world, |scans| sources::bind_profile(&profile, &catalog, &world, &plan, scans))
+        }
         "prepare_bound_profile" => sources::prepare_bound_profile(
             &required(args, "profile")?,
             &required(args, "catalog")?,
@@ -166,19 +206,19 @@ fn run(name: &str, args: &Dict) -> Result<Value> {
             let revision = argument(args, "revision")?;
             sources::read_bound_profile(Path::new(&text(args, "store")?), revision.as_ref().and_then(Value::as_str))
         }
-        "compile_campaign" => campaigns::compile_campaign(
-            &required(args, "profile")?,
-            &required(args, "catalog")?,
-            &required(args, "world")?,
-            &required(args, "plan")?,
-        ),
-        "write_campaign" => campaigns::write_campaign(
-            &required(args, "profile")?,
-            &required(args, "catalog")?,
-            &required(args, "world")?,
-            &required(args, "plan")?,
-            Path::new(&text(args, "store")?),
-        ),
+        "compile_campaign" => {
+            let (catalog, world) = (required(args, "catalog")?, required(args, "world")?);
+            let (profile, plan) = (required(args, "profile")?, required(args, "plan")?);
+            with_scans(args, &catalog, &world, |scans| campaigns::compile_campaign(&profile, &catalog, &world, &plan, scans))
+        }
+        "write_campaign" => {
+            let (catalog, world) = (required(args, "catalog")?, required(args, "world")?);
+            let (profile, plan) = (required(args, "profile")?, required(args, "plan")?);
+            let store = text(args, "store")?;
+            with_scans(args, &catalog, &world, |scans| {
+                campaigns::write_campaign(&profile, &catalog, &world, &plan, Path::new(&store), scans)
+            })
+        }
         "native_compile" => {
             let catalog = required(args, "catalog")?;
             let world = required(args, "world")?;
@@ -196,6 +236,8 @@ fn run(name: &str, args: &Dict) -> Result<Value> {
                 &catalog,
                 if collect { Some(&mut problems) } else { None },
                 stored,
+                None,
+                None,
                 None,
             )?;
             let mut problems: Vec<(String, Value)> =
@@ -221,23 +263,29 @@ fn run(name: &str, args: &Dict) -> Result<Value> {
                     starts.iter().map(|(start, key)| (start.to_string(), key.as_str().unwrap_or("").to_string())).collect()
                 })
             });
-            native_export::export_native(
-                Path::new(&text(args, "store")?),
-                &required(args, "catalog")?,
-                &required(args, "world")?,
-                Path::new(&text(args, "output")?),
-                revision.as_ref().and_then(Value::as_str),
-                starts.as_deref(),
-                main.as_ref().and_then(Value::as_str),
-            )
+            let (catalog, world) = (required(args, "catalog")?, required(args, "world")?);
+            let (store, output) = (text(args, "store")?, text(args, "output")?);
+            with_scans(args, &catalog, &world, |scans| {
+                native_export::export_native(
+                    Path::new(&store),
+                    &catalog,
+                    &world,
+                    Path::new(&output),
+                    revision.as_ref().and_then(Value::as_str),
+                    starts.as_deref(),
+                    main.as_ref().and_then(Value::as_str),
+                    scans,
+                )
+            })
         }
-        "write_starts" => starts::write_starts(
-            &required(args, "profile")?,
-            &required(args, "plan")?,
-            &required(args, "catalog")?,
-            &required(args, "world")?,
-            Path::new(&text(args, "store")?),
-        ),
+        "write_starts" => {
+            let (catalog, world) = (required(args, "catalog")?, required(args, "world")?);
+            let (profile, plan) = (required(args, "profile")?, required(args, "plan")?);
+            let store = text(args, "store")?;
+            with_scans(args, &catalog, &world, |scans| {
+                starts::write_starts(&profile, &plan, &catalog, &world, Path::new(&store), scans)
+            })
+        }
         "describe_starts" => starts::describe_starts(&required(args, "written")?).map(Value::from),
         "game_platform" => platform::game_platform(&required(args, "world")?).map(Value::from),
         "preset_game" => platform::preset_game(&required(args, "world")?, &text(args, "template_id")?).map(Value::from),

@@ -3,7 +3,8 @@
 const $ = (id) => document.getElementById(id);
 const ui = Object.fromEntries([
   "appShell", "gameContext", "savedSelect", "newButton", "presetButton", "profileName",
-  "saveButton", "copyButton", "validateButton", "prepareButton", "status", "validation",
+  "saveButton", "copyButton", "validateButton", "prepareButton", "status", "statusSpinner",
+  "statusText", "statusElapsed", "validation",
   "applySafetyNote", "applyDevelopmentNote", "itemsTab",
   "enemiesTab", "searchLabel", "librarySearch", "searchSummary", "libraryResults",
   "recipientFilterRow", "moreResults", "dirtyMark", "itemCount", "targetCount", "selectedItems",
@@ -11,9 +12,25 @@ const ui = Object.fromEntries([
   "presetDialog", "presetForm", "presetSelect", "presetItems", "presetTargets", "presetScrolls",
   "presetKangaxx", "presetFlailHeads", "presetTotscTome", "presetMoreSpellShield",
   "presetCursedDisguise", "presetLossMode", "presetLossPercent", "presetUnrandomizedPercent",
-  "presetNote", "presetError", "cancelPreset", "tierDialog", "tierForm", "tierTitle", "tierPrompt",
-  "tierSelect", "cancelTier"
+  "presetNote", "presetError", "presetFields", "presetProgress", "presetElapsed", "createPreset",
+  "cancelPreset", "tierDialog", "tierForm", "tierTitle", "tierPrompt",
+  "tierSelect", "cancelTier", "selectionFilter", "partFilter", "tierFilter"
 ].map((id) => [id, $(id)]));
+
+// The parts of the game, in game order: the names the editor shows and the full titles.
+const PART_NAMES = { bg1: "BG1", sod: "SoD", soa: "BG2", wk: "Watcher's Keep", tob: "ToB" };
+const PART_TITLES = {
+  bg1: "Baldur's Gate", sod: "Siege of Dragonspear", soa: "Shadows of Amn",
+  wk: "Watcher's Keep", tob: "Throne of Bhaal"
+};
+// The part a preset table's tiers stand for where a record's place does not tell it.
+const TABLE_PARTS = { bg1: "bg1", sod: "sod", bg2: "soa" };
+const TABLE_ORDER = ["bg1", "sod", "bg2"];
+// Item types by the category number in their ITM file.
+const ITEM_TYPES = ["Miscellaneous", "Amulet", "Armor", "Belt", "Boots", "Arrows", "Bracers or gauntlets",
+  "Headgear", "Key", "Potion", "Ring", "Scroll", "Shield", "Food", "Bullets", "Bow", "Dagger", "Mace", "Sling",
+  "Small sword", "Large sword", "Hammer", "Morning star", "Flail", "Darts", "Axe", "Quarterstaff", "Crossbow",
+  "Hand-to-hand weapon", "Spear", "Halberd", "Bolts", "Cloak or robe", "Gold", "Gem", "Wand"];
 
 let profile = null;
 let plan = null;
@@ -35,6 +52,8 @@ let searchTimer = null;
 let recommendedPreset = null;
 let presetTemplates = null;
 let pendingItemTiers = new Map();
+let sourceParts = new Map();
+let filterTimer = null;
 const searches = {
   items: { query: "", records: [], total: 0, next: null, sequence: 0, loading: false, searched: false },
   enemies: { query: "", records: [], total: 0, next: null, sequence: 0, loading: false, searched: false }
@@ -48,14 +67,51 @@ function node(tag, className, content) {
 }
 
 function setStatus(message, error = false) {
-  ui.status.textContent = message;
+  ui.statusText.textContent = message;
   ui.status.classList.toggle("error", error);
 }
 
+// Seconds since `started`, for a running action and its result.
+function seconds(started) {
+  return Math.floor((Date.now() - started) / 1000);
+}
+
+// While an action runs, the status line shows a spinner and the seconds so far.
+let statusTimer = null;
+let actionStarted = 0;
 function setBusy(value) {
   busy = value;
   ui.appShell.inert = value;
   ui.appShell.setAttribute("aria-busy", String(value));
+  ui.status.classList.toggle("working", value);
+  ui.statusSpinner.hidden = !value;
+  clearInterval(statusTimer);
+  statusTimer = null;
+  ui.statusElapsed.textContent = "";
+  if (!value) return;
+  actionStarted = Date.now();
+  statusTimer = setInterval(() => { ui.statusElapsed.textContent = `${seconds(actionStarted)} s`; }, 1000);
+}
+
+// " (12 s)" after an action that took a noticeable time.
+function took() {
+  const elapsed = seconds(actionStarted);
+  return elapsed >= 2 ? ` (${elapsed} s)` : "";
+}
+
+// A message as a sentence, so that more sentences can follow it.
+function sentence(text) {
+  return /[.!?]$/.test(text) ? text : text + ".";
+}
+
+// A check's item copies and recipient slots, and what their balance means;
+// a check that could not build the campaign has none.
+function counts(result) {
+  const units = result.reward_units, slots = result.target_capacity;
+  if (result.valid !== true || !Number.isInteger(units) || !Number.isInteger(slots)) return "";
+  const balance = units > slots ? " Some recipients receive more than one item."
+    : units < slots ? " Some recipient slots stay empty." : "";
+  return ` ${units.toLocaleString()} item copies for ${slots.toLocaleString()} recipient slots.${balance}`;
 }
 
 function changed() {
@@ -109,6 +165,7 @@ function acceptState(state, message, preserveSourceChoices = false) {
   basePriceDrafts = new Map();
   shopPercentDraft = String(profile.shop_pricing?.percent ?? 120);
   sourcePages = new Map();
+  sourceParts = new Map(Object.entries(state.source_parts || {}));
   if (!preserveSourceChoices) sourceChoiceTouched = new Set();
   expandedItems = new Set();
   pendingItemTiers = new Map();
@@ -173,7 +230,134 @@ function namedTiers() {
     ...Object.values(rules.sources || {}).map((row) => row.tier),
     ...Object.values(rules.targets || {}).flat()
   ]);
-  return [...names].filter((value) => typeof value === "string" && value).sort();
+  return [...names].filter((value) => typeof value === "string" && value).sort(compareTiers);
+}
+
+function itemType(category) {
+  return Number.isInteger(category) ? ITEM_TYPES[category] || `Category ${category}` : "";
+}
+
+// "bg2:12" is tier 12 of the BG2 tables.
+function tierCode(tier) {
+  return tier.slice(tier.indexOf(":") + 1);
+}
+
+function tierTable(tier) {
+  const colon = tier.indexOf(":");
+  return colon > 0 ? tier.slice(0, colon) : "";
+}
+
+function tierName(tier) {
+  const table = PART_NAMES[TABLE_PARTS[tierTable(tier)]];
+  return `${table ? `${table} ` : ""}tier ${tierCode(tier)}`;
+}
+
+// Tables in game order, then their tiers, numbered ones by number.
+function compareTiers(a, b) {
+  const rank = (tier) => {
+    const index = TABLE_ORDER.indexOf(tierTable(tier));
+    return index < 0 ? TABLE_ORDER.length : index;
+  };
+  return rank(a) - rank(b) || a.localeCompare(b, undefined, { numeric: true });
+}
+
+function partNames(parts) {
+  return (parts || []).map((part) => PART_NAMES[part] || part).join(", ");
+}
+
+// One chip per game part and tier of [parts, tier] pairs (a chosen record, or a
+// reward slot), with how many pairs it stands for. A record whose place does not
+// tell its part takes the part of its tier's table.
+function chipsOf(pairs) {
+  const chips = new Map();
+  for (const [parts, slotTier] of pairs) {
+    const tier = typeof slotTier === "string" ? slotTier : "";
+    const known = parts && parts.length ? parts : [TABLE_PARTS[tierTable(tier)] || ""];
+    for (const part of known) {
+      const key = `${part}\u0000${tier}`;
+      const chip = chips.get(key) || { part, tier, count: 0 };
+      chip.count += 1;
+      chips.set(key, chip);
+    }
+  }
+  const order = Object.keys(PART_NAMES);
+  const rank = (part) => (order.includes(part) ? order.indexOf(part) : order.length);
+  return [...chips.values()].filter((chip) => chip.part || chip.tier)
+    .sort((a, b) => rank(a.part) - rank(b.part) || compareTiers(a.tier, b.tier));
+}
+
+function itemChips(item) {
+  const entry = sourceEntry(item);
+  const ids = [...(entry?.source_ids || []), ...(entry?.registration_ids || [])];
+  const rules = tierRules();
+  return chipsOf(ids.map((id) => [sourceParts.get(id), rules?.sources?.[id]?.tier]));
+}
+
+function slotPairs(target) {
+  const parts = getTarget(target.id).parts;
+  const slots = tierRules()?.targets?.[target.id];
+  const tiers = Array.isArray(slots) && slots.length ? slots
+    : Array(Number.isInteger(target.capacity) && target.capacity > 0 ? target.capacity : 1).fill("");
+  return tiers.map((tier) => [parts, tier]);
+}
+
+function chipLabel(chip, counted) {
+  const part = chip.part ? PART_NAMES[chip.part] || chip.part : "Place unknown";
+  return `${part}${chip.tier ? ` · tier ${tierCode(chip.tier)}` : ""}${counted && chip.count > 1 ? ` ×${chip.count}` : ""}`;
+}
+
+function chipList(chips, counted) {
+  const list = node("span", "chips");
+  const shown = chips.length > 6 ? chips.slice(0, 5) : chips;
+  for (const chip of shown) {
+    const element = node("span", `chip${chip.part ? ` part-${chip.part}` : ""}`, chipLabel(chip, counted));
+    element.title = [PART_TITLES[chip.part], chip.tier ? tierName(chip.tier) : ""].filter(Boolean).join(", ");
+    list.append(element);
+  }
+  if (shown.length < chips.length) list.append(node("span", "chip", `+${chips.length - shown.length} more`));
+  return list;
+}
+
+function chipText(chips) {
+  return chips.map((chip) => [chip.part, PART_NAMES[chip.part], PART_TITLES[chip.part], chip.tier,
+    chip.tier ? `tier ${tierCode(chip.tier)}` : ""].filter(Boolean).join(" ")).join(" ");
+}
+
+// The filter over this configuration's lists; null when it shows everything.
+function listFilter() {
+  const terms = ui.selectionFilter.value.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const part = ui.partFilter.value;
+  const tier = ui.tierFilter.value;
+  return terms.length || part || tier ? { terms, part, tier } : null;
+}
+
+function chipMatches(filter, chip) {
+  return (!filter.part || chip.part === filter.part) && (!filter.tier || chip.tier === filter.tier);
+}
+
+function textMatches(filter, text) {
+  const haystack = text.toLowerCase();
+  return filter.terms.every((term) => haystack.includes(term));
+}
+
+// Keeps the filter's choices to the game parts and tiers this configuration has
+// (and the current choice), rebuilding them only when that set changes.
+function updateFilterOptions(chips) {
+  const order = Object.keys(PART_NAMES);
+  const parts = new Set(chips.map((chip) => chip.part).filter(Boolean));
+  const tiers = new Set(chips.map((chip) => chip.tier).filter(Boolean));
+  if (ui.partFilter.value) parts.add(ui.partFilter.value);
+  if (ui.tierFilter.value) tiers.add(ui.tierFilter.value);
+  const partList = [...parts].sort((a, b) => order.indexOf(a) - order.indexOf(b));
+  const tierList = [...tiers].sort(compareTiers);
+  const signature = JSON.stringify([partList, tierList]);
+  if (ui.partFilter.dataset.signature === signature) return;
+  ui.partFilter.dataset.signature = signature;
+  const [part, tier] = [ui.partFilter.value, ui.tierFilter.value];
+  ui.partFilter.replaceChildren(new Option("All parts", ""), ...partList.map((name) => new Option(PART_NAMES[name] || name, name)));
+  ui.tierFilter.replaceChildren(new Option("All tiers", ""), ...tierList.map((name) => new Option(tierName(name), name)));
+  ui.partFilter.value = part;
+  ui.tierFilter.value = tier;
 }
 
 function chooseTier(prompt) {
@@ -223,17 +407,45 @@ function renderSelected() {
   if (!profile || !plan) return;
   ui.selectedItems.replaceChildren();
   ui.selectedTargets.replaceChildren();
-  ui.itemCount.textContent = `${profile.items.length} ${profile.items.length === 1 ? "item" : "items"}`;
+  const filter = listFilter();
+  const itemRows = profile.items.map((item) => ({ item, data: getItem(item), chips: itemChips(item) }));
+  const targetRows = plan.targets.map((target) => {
+    const pairs = slotPairs(target);
+    return { target, data: getTarget(target.id), pairs, chips: chipsOf(pairs) };
+  });
+  updateFilterOptions([...itemRows, ...targetRows].flatMap((row) => row.chips));
+  const shownItems = itemRows.filter(({ item, data, chips }) => !filter
+    || (textMatches(filter, [data.name, item, itemType(data.category), chipText(chips)].join(" "))
+      && (!filter.part && !filter.tier || chips.some((chip) => chipMatches(filter, chip)))));
+  const itemTotal = `${profile.items.length} ${profile.items.length === 1 ? "item" : "items"}`;
+  ui.itemCount.textContent = filter ? `${shownItems.length} of ${itemTotal}` : itemTotal;
   const slots = plan.targets.reduce((sum, row) => sum + (Number.isInteger(row.capacity) ? row.capacity : 0), 0);
-  ui.targetCount.textContent = `${slots} ${slots === 1 ? "slot" : "slots"}`;
+  const slotTotal = `${slots} ${slots === 1 ? "slot" : "slots"}`;
+  // A reward slot matches when its recipient matches the words and its own game
+  // part and tier match the choices.
+  let shownSlots = 0;
+  const shownTargets = targetRows.filter(({ target, data, pairs, chips }) => {
+    if (!filter) return true;
+    if (!textMatches(filter, [data.label, target.id, data.kind_label || data.kind, chipText(chips)].join(" "))) return false;
+    if (!filter.part && !filter.tier) {
+      shownSlots += Number.isInteger(target.capacity) ? target.capacity : 0;
+      return true;
+    }
+    const matching = pairs.filter((pair) => chipsOf([pair]).some((chip) => chipMatches(filter, chip))).length;
+    shownSlots += matching;
+    return matching > 0;
+  });
+  ui.targetCount.textContent = filter ? `${shownSlots} of ${slotTotal}` : slotTotal;
   if (!profile.items.length) ui.selectedItems.append(node("p", "empty", "No items selected. Search the library to add one."));
-  for (const item of profile.items) {
-    const data = getItem(item);
+  else if (!shownItems.length) ui.selectedItems.append(node("p", "empty", "No selected item matches this search."));
+  for (const { item, data, chips } of shownItems) {
     const details = node("details", "chosen-row");
     details.open = expandedItems.has(item);
     const summary = node("summary");
     const title = node("span", "chosen-main");
-    title.append(node("span", "record-name", data.name || item), node("span", "record-detail", item));
+    title.append(node("span", "record-name", data.name || item),
+      node("span", "record-detail", [item, itemType(data.category)].filter(Boolean).join(" · ")));
+    if (chips.length) title.append(chipList(chips, false));
     summary.append(title);
     details.append(summary);
     const body = node("div", "chosen-body");
@@ -288,13 +500,14 @@ function renderSelected() {
     ui.selectedItems.append(details);
   }
   if (!plan.targets.length) ui.selectedTargets.append(node("p", "empty", "No recipients selected. Search Recipients to add reward slots."));
-  for (const target of plan.targets) {
-    const data = getTarget(target.id);
+  else if (!shownTargets.length) ui.selectedTargets.append(node("p", "empty", "No recipient matches this search."));
+  for (const { target, data, chips } of shownTargets) {
     const row = node("div", "chosen-row");
     const heading = node("div", "result-row");
     const main = node("div", "result-main");
     main.append(node("div", "record-name", data.label || target.id),
       node("div", "record-detail", `${target.id}${data.kind_label || data.kind ? ` · ${data.kind_label || data.kind}` : ""}`));
+    if (chips.length) main.append(chipList(chips, true));
     const remove = node("button", "text-button remove", "Remove");
     remove.type = "button";
     remove.setAttribute("aria-label", `Remove ${data.label || target.id}`);
@@ -381,8 +594,9 @@ function renderSourcePicker(item, body) {
     checkbox.setAttribute("aria-label", `Keep original source ${authored.source || registration.id}`);
     checkbox.addEventListener("change", () => setSourceSelected(item, registration.id, checkbox.checked));
     const text = node("span");
+    const where = partNames(sourceParts.get(registration.id));
     text.append(node("span", "record-name", authored.source || registration.id),
-      node("span", "record-detail", `${authored.campaign || "Original"} · tier ${authored.tier || "?"} · ${authored.source_ref || registration.id}`));
+      node("span", "record-detail", `${authored.campaign || "Original"} · tier ${authored.tier || "?"}${where ? ` · ${where}` : ""} · ${authored.source_ref || registration.id}`));
     label.append(checkbox, text);
     body.append(label);
   }
@@ -418,8 +632,9 @@ function renderSourcePicker(item, body) {
     const stock = source.concerns?.includes("infinite-stock")
       ? "infinite stock"
       : `${source.quantity.toLocaleString()} ${source.quantity === 1 ? "copy" : "copies"}`;
+    const where = partNames(source.parts);
     text.append(node("span", "record-name", source.label || source.id),
-      node("span", "record-detail", `${source.id}${source.kind_label || source.kind ? ` · ${source.kind_label || source.kind}` : ""} · ${stock}`));
+      node("span", "record-detail", `${source.id}${source.kind_label || source.kind ? ` · ${source.kind_label || source.kind}` : ""}${where ? ` · ${where}` : ""} · ${stock}`));
     if (source.note) text.append(node("span", "record-detail", source.note));
     if (source.concerns && source.concerns.length) text.append(node("span", "record-detail", `Scan notes: ${source.concerns.join(", ")}`));
     label.append(checkbox, text);
@@ -451,6 +666,9 @@ async function fetchSources(item, append = false) {
     const result = await request(`/api/sources?item=${encodeURIComponent(item)}&offset=${offset}`);
     if (generation !== currentGeneration || !profile.items.includes(item) || sourcePages.get(item) !== page) return;
     page.records = append ? [...page.records, ...(result.records || [])] : (result.records || []);
+    for (const record of result.records || []) {
+      if (typeof record.id === "string" && Array.isArray(record.parts)) sourceParts.set(record.id, record.parts);
+    }
     page.next = result.next_offset;
     page.total = result.total;
     const entry = sourceEntry(item);
@@ -617,8 +835,9 @@ function renderResults() {
     const chosen = isItem ? profile.items.includes(id) : plan.targets.some((target) => target.id === id);
     const result = node("div", "result-row");
     const main = node("div", "result-main");
+    const kind = isItem ? itemType(row.category) : [row.kind_label || row.kind, partNames(row.parts)].filter(Boolean).join(" · ");
     main.append(node("div", "record-name", isItem ? row.name || id : row.label || id),
-      node("div", "record-detail", `${id}${isItem && row.category !== undefined ? ` · category ${row.category}` : row.kind_label || row.kind ? ` · ${row.kind_label || row.kind}` : ""}`));
+      node("div", "record-detail", `${id}${kind ? ` · ${kind}` : ""}`));
     if (row.note) main.append(node("div", "record-detail", row.note));
     const button = node("button", "button secondary", chosen ? "Added" : "Add");
     button.type = "button";
@@ -683,8 +902,8 @@ function setTab(tab) {
   ui.enemiesTab.setAttribute("aria-selected", String(tab === "enemies"));
   ui.libraryResults.setAttribute("aria-labelledby", tab === "items" ? "itemsTab" : "enemiesTab");
   ui.recipientFilterRow.hidden = tab !== "enemies";
-  ui.searchLabel.textContent = tab === "items" ? "Search items by name or resource ID" : "Search recipients by name or resource ID";
-  ui.librarySearch.placeholder = tab === "items" ? "Enter an item name or ID" : "Enter a name, area or resource ID";
+  ui.searchLabel.textContent = tab === "items" ? "Search items by name or resource ID" : "Search recipients by name, area, game part or resource ID";
+  ui.librarySearch.placeholder = tab === "items" ? "Enter an item name or ID" : "Enter a name, area, game part or ID";
   ui.librarySearch.value = searches[tab].query;
   renderResults();
   if (searches[tab].query.trim() && !searches[tab].searched && !searches[tab].loading) searchPage(tab);
@@ -734,6 +953,23 @@ async function perform(action, busyMessage) {
   finally { setBusy(false); }
 }
 
+// The preset dialog covers the page's status line, so it shows its own progress
+// and stays open until the draft is built.
+let presetTimer = null;
+function setPresetBusy(value) {
+  ui.presetFields.disabled = value;
+  ui.presetForm.setAttribute("aria-busy", String(value));
+  ui.createPreset.textContent = value ? "Creating…" : "Create preset draft";
+  ui.presetProgress.hidden = !value;
+  clearInterval(presetTimer);
+  presetTimer = null;
+  if (!value) return;
+  const started = Date.now();
+  const showElapsed = () => { ui.presetElapsed.textContent = `${seconds(started)} s`; };
+  showElapsed();
+  presetTimer = setInterval(showElapsed, 1000);
+}
+
 ui.librarySearch.addEventListener("input", () => {
   const search = searches[activeTab];
   search.query = ui.librarySearch.value;
@@ -763,6 +999,12 @@ ui.recipientFilterRow.addEventListener("change", () => {
   if (search.query.trim()) searchPage("enemies");
 });
 ui.moreResults.addEventListener("click", () => searchPage(activeTab, true));
+ui.selectionFilter.addEventListener("input", () => {
+  clearTimeout(filterTimer);
+  filterTimer = setTimeout(renderSelected, 150);
+});
+ui.partFilter.addEventListener("change", renderSelected);
+ui.tierFilter.addEventListener("change", renderSelected);
 ui.profileName.addEventListener("input", () => { if (profile) { profile.name = ui.profileName.value; changed(); } });
 ui.shopPercent.addEventListener("input", () => {
   if (!profile) return;
@@ -831,6 +1073,9 @@ ui.presetLossMode.addEventListener("change", () => {
   if (ui.presetLossPercent.disabled) ui.presetLossPercent.value = "0";
 });
 ui.cancelPreset.addEventListener("click", () => ui.presetDialog.close());
+ui.presetDialog.addEventListener("cancel", (event) => {
+  if (ui.presetFields.disabled) event.preventDefault();
+});
 ui.cancelTier.addEventListener("click", () => ui.tierDialog.close(""));
 ui.tierForm.addEventListener("submit", (event) => {
   event.preventDefault();
@@ -857,6 +1102,9 @@ ui.presetForm.addEventListener("submit", (event) => {
     loss_percent: ui.presetLossMode.value === "some" ? Number(ui.presetLossPercent.value) : 0,
     unrandomized_percent: Number(ui.presetUnrandomizedPercent.value)
   };
+  if (busy) return;
+  ui.presetError.hidden = true;
+  setPresetBusy(true);
   perform(async () => {
     try {
       const state = await post("/api/template", {
@@ -866,7 +1114,7 @@ ui.presetForm.addEventListener("submit", (event) => {
       const leftOut = (state.left_out || []).map((reason) => " " + reason + ".").join("");
       const absentMods = (state.absent_mods || []).map((reason) => " " + reason + ".").join("");
       const notUsed = (state.not_used || []).map((reason) => " " + reason + ".").join("");
-      acceptState(state, "Preset draft created. Check configuration for current runtime support." +
+      acceptState(state, `Preset draft created${took()}. Check configuration for current runtime support.` +
         (leftOut ? " Rewards that stay as installed:" + leftOut : "") + absentMods + notUsed);
       ui.presetDialog.close();
     } catch (error) {
@@ -874,7 +1122,7 @@ ui.presetForm.addEventListener("submit", (event) => {
       ui.presetError.hidden = false;
       throw error;
     }
-  }, "Creating preset draft…");
+  }, "Creating preset draft…").finally(() => setPresetBusy(false));
 });
 ui.saveButton.addEventListener("click", () => {
   if (!localInputValid()) return;
@@ -891,28 +1139,27 @@ ui.validateButton.addEventListener("click", () => {
   profile.name = ui.profileName.value.trim();
   verified = false;
   ui.prepareButton.disabled = true;
+  ui.validation.hidden = true;
   perform(async () => {
     const result = await post("/api/validate", { profile, plan });
     verified = result.valid === true && result.runtime_supported === true;
     ui.prepareButton.disabled = !verified;
     ui.validation.hidden = false;
     ui.validation.className = `validation ${result.valid && result.runtime_supported ? "supported" : result.valid ? "warning" : "error"}`;
-    const counts = Number.isInteger(result.reward_units) && Number.isInteger(result.target_capacity)
-      ? ` ${result.reward_units} reward units, ${result.target_capacity} target slots.` : "";
-    ui.validation.textContent = `${result.message || "Configuration checked."}${counts}`;
-    setStatus("Configuration check complete. This check does not change the game.");
-  }, "Checking configuration…");
+    ui.validation.textContent = sentence(result.message || "Configuration checked.") + counts(result);
+    setStatus(`Configuration check complete${took()}. This check does not change the game.`);
+  }, "Checking the configuration against your game…");
 });
 ui.prepareButton.addEventListener("click", () => {
   if (!verified || !localInputValid()) return;
   perform(async () => {
     if (applyEnabled) {
       const result = await post("/api/apply", { profile, plan });
-      const message = result.message || "Configuration applied for the next game.";
-      acceptState(await request("/api/state"), message);
+      // The result box holds the details; the status line only says it is done.
+      acceptState(await request("/api/state"), `Applied to the game${took()}.`);
       ui.validation.hidden = false;
       ui.validation.className = "validation supported";
-      ui.validation.textContent = message;
+      ui.validation.textContent = result.message || "Configuration applied for the next game.";
       return;
     }
     const result = await post("/api/prepare", { profile, plan });
@@ -920,8 +1167,9 @@ ui.prepareButton.addEventListener("click", () => {
     ui.validation.hidden = false;
     ui.validation.className = "validation supported";
     ui.validation.textContent = `${result.message || "Test settings prepared."}${location}`;
-    setStatus("Test settings prepared outside the game.");
-  }, "Preparing test settings…");
+    setStatus(`Test settings prepared outside the game${took()}.`);
+  }, applyEnabled ? "Applying: building the randomised settings for each start and writing them into the game…"
+    : "Preparing test settings…");
 });
 window.addEventListener("beforeunload", (event) => { if (dirty) { event.preventDefault(); event.returnValue = ""; } });
 

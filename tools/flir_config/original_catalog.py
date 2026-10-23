@@ -11,11 +11,13 @@ from collections import defaultdict
 import re
 
 from .game_names import EetNames, convert_resource, eet_names
-from .mode2_rewards import TARGET_REWARDS, target_spec
+from .mode2_rewards import SOURCE_REWARDS, TARGET_REWARDS, target_spec
 from .container_rewards import (TARGETS as CONTAINER_TARGETS, target_spec as container_spec,
                                 treasure_area, treasure_container)
 from .profiles import ProfileError
-from .templates import ENDPOINT_CAMPAIGNS, ROOT, _table_rows, build_template
+from .quest_rewards import SOURCE_QUESTS
+from .scripted_sources import ITEM as POOL_ITEM, RESOURCE as POOL_RESOURCE
+from .templates import ENDPOINT_CAMPAIGNS, PRESETS, ROOT, _table_rows, build_template
 
 
 _PHYSICAL_SOURCES = {"are", "cre", "sto"}
@@ -23,6 +25,9 @@ _SCRIPTED_SOURCES = {"bcs", "dlg"}
 # A place whose file the scan could not read (sources.scan_world) is left out.
 UNREADABLE_PLACE_PROBLEMS = ("area-resource-unreadable", "creature-resource-unreadable",
                              "store-resource-unreadable")
+# A quest reward or place whose conversation or script CIR cannot change yet:
+# its row is left out in every game, whatever else the game lacks.
+NO_ROUTE = "route-not-supported"
 
 
 def is_spin621_source(row: dict) -> bool:
@@ -41,13 +46,12 @@ def is_spin621_target(row: dict) -> bool:
         "area": "blank", "ident": "w26", "tier": "10", "location": "w1"}.items())
 
 
-def _authored_mode2_target(row: dict) -> bool:
+def _table_place(row: dict, relative: str, prefix: str) -> bool:
+    """Whether <row> is line N of the extended locations table <relative>, as
+    it has it, with the identity <prefix>:target:N."""
     campaign = row.get("campaign")
-    if campaign not in ("bg1", "bg2"):
-        return False
-    relative = f"lists/locations/mode2/{campaign}.2da"
     for line, fields in _table_rows(ROOT / relative, 6):
-        if row["id"] != f"{campaign}:mode2:target:{line}":
+        if row["id"] != f"{prefix}:target:{line}":
             continue
         location, tier, target, area, ident = fields[:5]
         expected = {"source_ref": f"{relative}:{line}", "campaign": campaign,
@@ -57,20 +61,116 @@ def _authored_mode2_target(row: dict) -> bool:
     return False
 
 
-def mode2_alias_spec(row: dict) -> dict | None:
-    """Return a registered reward only for its exact authored .fl location."""
-    if (isinstance(row, dict) and row.get("id") in TARGET_REWARDS and
-            isinstance(row.get("target"), str) and row["target"].endswith(".fl") and
-            _authored_mode2_target(row)):
-        return target_spec(row["id"])
+def _table_item(row: dict, relative: str, prefix: str) -> str | None:
+    """The item of line N of the extended items table <relative> when <row> is
+    that line, as the table has it, with the identity <prefix>:item:N."""
+    campaign = row.get("campaign")
+    for line, fields in _table_rows(ROOT / relative, 7):
+        if row["id"] != f"{prefix}:item:{line}":
+            continue
+        item, _, source, tier, token, ident = fields[:6]
+        expected = {"source_ref": f"{relative}:{line}", "campaign": campaign,
+                    "family": "mode2", "source": source.lower(), "tier": tier.lower(),
+                    "token": token.lower(), "ident": ident.lower()}
+        return item.lower() if all(row.get(key) == value for key, value in expected.items()) else None
     return None
+
+
+def _same_lines(relative: str, columns: int, fields: tuple[int, int], values: tuple) -> list[int]:
+    """The lines of table <relative> whose two <fields> are <values> (lower case)."""
+    return [line for line, row in _table_rows(ROOT / relative, columns)
+            if (row[fields[0]].lower(), row[fields[1]].lower()) == values]
+
+
+def _authored_mode2_target(row: dict) -> bool:
+    campaign = row.get("campaign")
+    if campaign not in ("bg1", "bg2"):
+        return False
+    return _table_place(row, f"lists/locations/mode2/{campaign}.2da", f"{campaign}:mode2")
+
+
+def _preset_mode2_place(row: dict) -> str | None:
+    """The original extended row of the place a preset's .fl row names: the one
+    row of the original table with its target and area, as a preset's standard
+    places take the endpoint of the same place (templates._place_endpoints)."""
+    campaign, target = row.get("campaign"), row.get("target")
+    if campaign not in ("bg1", "bg2") or not isinstance(target, str) or not target.endswith(".fl"):
+        return None
+    if not any(campaign in spec["campaigns"] and
+               _table_place(row, f"lists/presets/{preset}/locations/mode2/{campaign}.2da",
+                            f"{campaign}:{preset}:mode2") for preset, spec in PRESETS.items()):
+        return None
+    same = [f"{campaign}:mode2:target:{line}"
+            for line, fields in _table_rows(ROOT / f"lists/locations/mode2/{campaign}.2da", 6)
+            if (fields[2].lower(), fields[3].lower()) == (target, row.get("area"))]
+    return same[0] if len(same) == 1 else None
+
+
+def mode2_route_source(row: dict) -> str | None:
+    """The source of the extended reward route (mode2_rewards.SOURCE_REWARDS)
+    that a row is: its own original row, or a preset's row of the reward that
+    one original row names (its conversation or script and item), as Boss
+    Loot's row of Aldeth's sword is his route. One reward has one row: a preset
+    with two rows of it has no route for either."""
+    if not isinstance(row, dict) or not isinstance(row.get("id"), str):
+        return None
+    if "original-source:" + row["id"] in SOURCE_REWARDS:
+        return "original-source:" + row["id"]
+    campaign, source = row.get("campaign"), row.get("source")
+    if campaign not in ("bg1", "bg2") or not isinstance(source, str):
+        return None
+    for preset, spec in PRESETS.items():
+        relative = f"lists/presets/{preset}/items/mode2/{campaign}.2da"
+        item = (_table_item(row, relative, f"{campaign}:{preset}:mode2")
+                if campaign in spec["campaigns"] else None)
+        if item is not None:
+            break
+    else:
+        return None
+    if len(_same_lines(relative, 7, (2, 0), (source, item))) != 1:
+        return None
+    same = _same_lines(f"lists/items/mode2/{campaign}.2da", 7, (2, 0), (source, item))
+    identity = f"original-source:{campaign}:mode2:item:{same[0]}" if len(same) == 1 else None
+    return identity if identity in SOURCE_REWARDS else None
+
+
+def mode2_route_target(row: dict) -> str | None:
+    """The place of the extended reward route (mode2_rewards.TARGET_REWARDS)
+    that a row is: its own original row, or a preset's row at the .fl place of
+    one (_preset_mode2_place). One place has one row: a preset with two rows
+    there has no route for either."""
+    if not isinstance(row, dict):
+        return None
+    if row.get("id") in TARGET_REWARDS:
+        return row["id"]
+    original = _preset_mode2_place(row)
+    if original not in TARGET_REWARDS:
+        return None
+    relative = row["source_ref"].rsplit(":", 1)[0]
+    return original if len(_same_lines(relative, 6, (2, 3), (row["target"], row["area"]))) == 1 else None
+
+
+def mode2_alias_spec(row: dict, game: str | None = None, names: EetNames | None = None) -> dict | None:
+    """Return a registered reward only for its exact authored .fl location, or
+    a preset's row there (mode2_route_target), as the game names it."""
+    if not isinstance(row, dict) or not isinstance(row.get("target"), str) or not row["target"].endswith(".fl"):
+        return None
+    if row.get("id") in TARGET_REWARDS and not _authored_mode2_target(row):
+        return None
+    target = mode2_route_target(row)
+    return None if target is None else target_spec(target, game=game, names=names)
 
 
 def container_target_spec(row: dict) -> dict | None:
-    if (isinstance(row, dict) and row.get("id") in CONTAINER_TARGETS and
-            _authored_mode2_target(row)):
-        return container_spec(row["id"])
-    return None
+    """The container quest at an authored place: its row of the original
+    extended table, or a preset's row at the same place (Boss Loot's Safana).
+    The quest is the spec's target_id."""
+    if not isinstance(row, dict):
+        return None
+    if row.get("id") in CONTAINER_TARGETS:
+        return container_spec(row["id"]) if _authored_mode2_target(row) else None
+    original = _preset_mode2_place(row)
+    return container_spec(original) if original in CONTAINER_TARGETS else None
 # The two authored Spellhold scroll selectors have legacy suffixes absent
 # from the scanned EET AR0411 container names. Each has one same-item record
 # under the corresponding base name; retain exact-name precedence so a game
@@ -139,6 +239,13 @@ def _source_owner_name(source: dict, targets_by_id: dict[str, dict]) -> str:
     return owner.get("selector", {}).get("name", "")
 
 
+def _routed_source(row: dict, resource: str, item: str) -> bool:
+    """Whether CIR has a route for the reward a conversation or script gives:
+    an extended reward route, one of the original quests, or the pool."""
+    return (mode2_route_source(row) is not None or "original-source:" + row["id"] in SOURCE_QUESTS
+            or (resource, item) == (POOL_RESOURCE, POOL_ITEM))
+
+
 def _unreadable_source(row: dict) -> None:
     row["available"] = False
     row["availability_reason"] = "source-resource-unreadable"
@@ -189,7 +296,11 @@ def _resolve_source(row: dict, catalog_items: set[str], resources: set[str],
     row["source_resource"] = resource
     if extension in _SCRIPTED_SOURCES or spell_grant:
         row["adapter"] = "scripted"
-        row["binding_problem"] = row["binding_problem"] or "scripted-source-requires-adapter"
+        if spell_grant or _routed_source(row, resource, item):
+            row["binding_problem"] = row["binding_problem"] or "scripted-source-requires-adapter"
+        else:
+            # Named before an absent item or file: no game could give its reward to CIR.
+            row["binding_problem"] = NO_ROUTE
         if resource not in resources:
             row["available"] = False
             row["availability_reason"] = "source-resource-absent"
@@ -251,9 +362,10 @@ def _resolve_target(row: dict, resources: set[str], unreadable: set[str],
     if container is not None:
         # The container that holds the quest's treasure, in the quest's own
         # area: the table's area column is not where every handler puts it.
-        row["area_resource"] = f"are:{treasure_area(row['id'], game)}"
+        quest = container["target_id"]
+        row["area_resource"] = f"are:{treasure_area(quest, game)}"
         try:
-            physical_id = treasure_container(row["id"], sources, game)
+            physical_id = treasure_container(quest, sources, game)
         except ProfileError:
             physical_id = None
         matches = [target for target in targets_by_resource.get(row["area_resource"], [])
@@ -272,12 +384,17 @@ def _resolve_target(row: dict, resources: set[str], unreadable: set[str],
         row["binding_problem"] = ("legacy-target-requires-adapter" if "spl:spin621" in resources
                                   else "target-resource-absent")
         return
-    reward = mode2_alias_spec(row)
+    reward = mode2_alias_spec(row, game, names)
     if reward is not None:
         row["area_resource"] = reward["resource"]
         row["binding_problem"] = ("legacy-target-requires-adapter"
                                   if all(resource in resources for resource in reward["resources"])
                                   else "target-resource-absent")
+        return
+    if row["target"].endswith(".fl"):
+        # One of Item Randomiser's own quest handlers (its lib/weidu_action.tpa)
+        # that the routes above do not cover; it names no container or creature.
+        row["binding_problem"] = NO_ROUTE
         return
     endpoint = endpoints[campaign].get(row["endpoint_id"]) if row["endpoint_id"] else None
     kind = endpoint[0] if endpoint else None

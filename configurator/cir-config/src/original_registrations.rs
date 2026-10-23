@@ -3,13 +3,16 @@
 
 use crate::error::{Error, Result};
 use crate::json::{Dict, Value};
+use crate::mode2_rewards::Naming;
 use crate::original_catalog::{
     container_target_spec, is_spin621_source, is_spin621_target, mode2_alias_spec, resolve_template,
 };
 use crate::original_options::{is_spell_shield_row, validate_spell_shield_spec};
 use crate::profiles::value_is_hex256;
 use crate::templates::POOL_CHOICES;
+use std::cell::RefCell;
 use std::collections::HashMap;
+use std::rc::Rc;
 
 pub const SOURCE_ADAPTER: &str = "original-source-v1";
 pub const TARGET_ADAPTER: &str = "original-target-v1";
@@ -126,8 +129,22 @@ fn hashable_str(value: Option<&Value>) -> Result<Option<&str>> {
     }
 }
 
-/// Resolve the exact checked-in pool choices recorded in a preset plan.
-pub fn table_rows(catalog: &Value, world: &Value, plan: &Value) -> Result<(Rows, Rows)> {
+/// The original tables a plan's choices resolve to: the resolved draft's
+/// choices and options, and its item and target rows by identity.
+pub struct Tables {
+    choices: Value,
+    options: Value,
+    pub sources: Rows,
+    pub targets: Rows,
+}
+
+/// The tables already resolved for one set of scans (`Scans::tables`), by
+/// the template, choices and options that name them.
+pub type TableMemo = RefCell<HashMap<String, Rc<Tables>>>;
+
+/// Resolve the exact checked-in pool choices recorded in a preset plan;
+/// `memo` keeps the tables already resolved for these scans.
+pub fn table_rows(catalog: &Value, world: &Value, plan: &Value, memo: Option<&TableMemo>) -> Result<Rc<Tables>> {
     let template_id = hashable_str(plan.get("original_template_id"))?;
     let choices = plan.get("original_choices");
     let options = plan.get("original_options");
@@ -143,17 +160,51 @@ pub fn table_rows(catalog: &Value, world: &Value, plan: &Value) -> Result<(Rows,
         return Err(Error::profile("Invalid original pool choices or options"));
     }
     let choices = choices.expect("checked");
+    let options = options.expect("checked");
     // The game is told apart before the tables are read, also when a test
     // substitutes the resolved draft.
     let game = crate::platform::preset_game(world, template_id)?;
-    let draft = match crate::pins::registration_draft() {
-        Some(draft) => draft,
-        None => resolve_template(catalog, world, template_id, game, choices.get("items"), choices.get("targets"), options, None)?,
+    let pinned = crate::pins::registration_draft();
+    // A test's substituted draft is never kept.
+    let key = memo.filter(|_| pinned.is_none()).map(|_| {
+        crate::json::dumps_ascii(&crate::list![template_id, choices.clone(), options.clone()], true)
+    });
+    let kept = match (memo, &key) {
+        (Some(memo), Some(key)) => memo.borrow().get(key).cloned(),
+        _ => None,
     };
-    if !draft.at("choices")?.py_eq(choices) || !draft.at("options")?.py_eq(options.expect("checked")) {
+    let tables = match kept {
+        Some(tables) => tables,
+        None => {
+            let draft = match pinned {
+                Some(draft) => draft,
+                None => resolve_template(
+                    catalog,
+                    world,
+                    template_id,
+                    game,
+                    choices.get("items"),
+                    choices.get("targets"),
+                    Some(options),
+                    None,
+                )?,
+            };
+            let tables = Rc::new(Tables {
+                choices: draft.at("choices")?.clone(),
+                options: draft.at("options")?.clone(),
+                sources: by_id(draft.at("items")?),
+                targets: by_id(draft.at("targets")?),
+            });
+            if let (Some(memo), Some(key)) = (memo, key) {
+                memo.borrow_mut().insert(key, Rc::clone(&tables));
+            }
+            tables
+        }
+    };
+    if !tables.choices.py_eq(choices) || !tables.options.py_eq(options) {
         return Err(Error::profile("Original pool choices or options changed"));
     }
-    Ok((by_id(draft.at("items")?), by_id(draft.at("targets")?)))
+    Ok(tables)
 }
 
 /// Physical sources by identity.
@@ -368,7 +419,7 @@ pub fn validate_target_registration(registration: &Value, rows: &Rows) -> Result
 }
 
 fn target_resource(authored: &Value, resource_value: &Value) -> Result<()> {
-    if let Some(reward) = mode2_alias_spec(authored)? {
+    if let Some(reward) = mode2_alias_spec(authored, Naming::default())? {
         if !reward.get("resource").is_some_and(|primary| primary.py_eq(resource_value)) {
             return Err(Error::profile("Original reward target must use its registered primary resource"));
         }
@@ -384,7 +435,7 @@ pub fn target_kind(authored: &Value) -> Result<String> {
     if container_target_spec(authored)?.is_some() {
         return Ok("container".into());
     }
-    let reward = mode2_alias_spec(authored)?;
+    let reward = mode2_alias_spec(authored, Naming::default())?;
     if reward.as_ref().is_some_and(|reward| reward.get("inventory_target").is_some_and(Value::truthy)) {
         return Ok("creature-target".into());
     }

@@ -2,15 +2,16 @@
 //! `editor.py` without its HTTP transport). Applying settings to a game
 //! requires the explicit `apply_game` opt-in.
 
-use crate::error::{Error, Result};
+use crate::error::{Error, ErrorKind, Result};
 use crate::json::{Dict, Value};
 use crate::paths;
 use crate::profiles::{
     ensure_output_outside_game, is_profile_id, new_profile_named, read_json, search_items_from, validate_catalog,
     validate_profile, write_json, ItemIndex,
 };
-use crate::sources::{new_binding_plan, validate_world, WorldIndex};
-use std::collections::HashMap;
+use crate::platform::{area_part, game_platform, Part};
+use crate::sources::{new_binding_plan, validate_world, Scans, WorldIndex};
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 pub const KIND_LABELS: [(&str, &str); 5] = [
@@ -25,6 +26,20 @@ fn kind_label(kind: &str) -> Result<&'static str> {
     KIND_LABELS.iter().find(|(name, _)| *name == kind).map(|(_, label)| *label).ok_or_else(|| Error::key(kind))
 }
 
+/// The parts of the game, in game order, with the names the editor shows.
+pub const PART_NAMES: [(&str, &str); 5] =
+    [("bg1", "BG1"), ("sod", "SoD"), ("soa", "BG2"), ("wk", "Watcher's Keep"), ("tob", "ToB")];
+
+/// The part of the game an area resource (`are:` and its name) is in, if
+/// the game is one a preset is for and the name tells it.
+fn area_parts(platform: Option<&str>, resource: &str) -> Option<Part> {
+    let (kind, name) = resource.split_once(':')?;
+    if kind != "are" {
+        return None;
+    }
+    area_part(platform?, name)
+}
+
 const DEFAULT_NAME: &str = "My next adventure";
 
 pub struct Editor {
@@ -35,6 +50,11 @@ pub struct Editor {
     pub workspace: PathBuf,
     pub apply_game: Option<PathBuf>,
     sources: HashMap<String, Vec<usize>>,
+    /// The game's platform; None for a game no preset is for, whose area
+    /// names do not tell the parts.
+    platform: Option<&'static str>,
+    /// The parts of the game each creature template is placed in.
+    template_parts: HashMap<String, HashSet<Part>>,
     draft: Value,
 }
 
@@ -43,19 +63,11 @@ fn py_int(text: &str) -> Result<Value> {
     crate::py::int_value(text).map_err(Error::value)
 }
 
-/// Python's `set(plan)` compared with the expected plan fields: Ok(true)
-/// when they are equal, the TypeError Python raises for values that are not
-/// iterable or hold unhashable members.
+/// Python's `set(plan)` compared with the fields binding accepts (a preset's
+/// options add their own): Ok(true) when they are equal, the TypeError Python
+/// raises for values that are not iterable or hold unhashable members.
 fn plan_fields_match(plan: &Value) -> Result<bool> {
-    const REQUIRED: [&str; 6] = ["schema", "catalog_fingerprint", "world_fingerprint", "sources", "targets", "registrations"];
-    const OPTIONAL: [&str; 6] = [
-        "randomization",
-        "replacements",
-        "original_options",
-        "original_choices",
-        "original_template_id",
-        "target_registrations",
-    ];
+    use crate::sources::{PLAN_FIELDS as REQUIRED, PLAN_OPTIONAL_FIELDS as OPTIONAL};
     let members: Vec<Option<&str>> = match plan {
         Value::Dict(fields) => fields.keys().map(Some).collect(),
         Value::List(values) => {
@@ -154,6 +166,23 @@ impl Editor {
             let item = source.get("item").and_then(Value::as_str).unwrap_or("").to_string();
             sources.entry(item).or_default().push(position);
         }
+        let platform = match game_platform(&world) {
+            Ok(platform) => Some(platform),
+            // No preset is for this game; its area names do not tell the parts.
+            Err(error) if error.kind == ErrorKind::Profile => None,
+            Err(error) => return Err(error),
+        };
+        let mut template_parts: HashMap<String, HashSet<Part>> = HashMap::new();
+        for row in world.at("targets")?.as_list().into_iter().flatten() {
+            if row.get("kind").and_then(Value::as_str) != Some("actor") {
+                continue;
+            }
+            let template = row.get("selector").and_then(|selector| selector.get("template_resource"));
+            if let Some(template) = template.and_then(Value::as_str) {
+                let parts = template_parts.entry(template.to_string()).or_default();
+                parts.extend(area_parts(platform, row.get("resource").and_then(Value::as_str).unwrap_or("")));
+            }
+        }
         if profile.is_none() != plan.is_none() {
             return Err(Error::profile("Supply both an initial profile and its binding plan"));
         }
@@ -165,6 +194,8 @@ impl Editor {
             workspace,
             apply_game,
             sources,
+            platform,
+            template_parts,
             draft: Value::Null,
         };
         let (mut profile, mut plan) = (profile, plan);
@@ -181,7 +212,7 @@ impl Editor {
         }
         let (profile, plan) = match (profile, plan) {
             (Some(profile), Some(plan)) => (profile, plan),
-            _ => Editor::new_draft(&editor.catalog, &editor.world)?,
+            _ => Editor::new_draft(&editor.catalog, &editor.world, Some(&editor.scans()))?,
         };
         editor.draft = editor.checked(&Value::Dict(crate::dict! {"profile" => profile, "plan" => plan}))?;
         Ok(editor)
@@ -193,10 +224,15 @@ impl Editor {
 
     /// The profile and binding plan of a new configuration for these scans,
     /// as the editor starts with when it reopens none.
-    pub fn new_draft(catalog: &Value, world: &Value) -> Result<(Value, Value)> {
+    pub fn new_draft(catalog: &Value, world: &Value, scans: Option<&Scans>) -> Result<(Value, Value)> {
         let profile = new_profile_named(catalog, &Editor::new_id(), &Value::from(DEFAULT_NAME))?;
-        let plan = new_binding_plan(&profile, catalog, world)?;
+        let plan = new_binding_plan(&profile, catalog, world, scans)?;
         Ok((profile, plan))
+    }
+
+    /// The scans, validated when the editor started, for one request.
+    pub fn scans(&self) -> Scans<'_> {
+        Scans::new(&self.catalog, &self.world, &self.items, &self.index)
     }
 
     /// Incomplete drafts may be saved; full binding checks happen on Check.
@@ -204,7 +240,15 @@ impl Editor {
         checked_draft(&self.catalog, &self.world, data)
     }
 
-    pub fn check(&self, draft: &Value) -> Result<Value> {
+    pub fn check(&self, draft: &Value, scans: Option<&Scans>) -> Result<Value> {
+        let own;
+        let scans = match scans {
+            Some(scans) => scans,
+            None => {
+                own = self.scans();
+                &own
+            }
+        };
         let mut result = crate::dict! {
             "valid" => false, "runtime_supported" => false, "reward_units" => 0, "target_capacity" => 0,
         };
@@ -214,6 +258,7 @@ impl Editor {
                 &self.catalog,
                 &self.world,
                 field(draft, "plan")?,
+                Some(scans),
             )?;
             let mut units: i128 = 0;
             for source in campaign.at("sources")?.as_list().into_iter().flatten() {
@@ -226,7 +271,18 @@ impl Editor {
             result.insert("valid", true);
             result.insert("reward_units", Value::from(units));
             result.insert("target_capacity", Value::from(capacity));
-            crate::native_export::compile(&campaign, &self.world, &self.index, &self.items, &self.catalog, None, false, None)?;
+            crate::native_export::compile(
+                &campaign,
+                &self.world,
+                &self.index,
+                &self.items,
+                &self.catalog,
+                None,
+                false,
+                None,
+                None,
+                None,
+            )?;
             Ok(())
         })();
         match attempt {
@@ -275,6 +331,61 @@ impl Editor {
         Ok(format!("{name} ({})", crate::py::upper(suffix)))
     }
 
+    /// The parts of the game a place is in, in game order: its area's part,
+    /// or the parts its creature template is placed in.
+    fn parts(&self, resource: Option<&Value>) -> Vec<Part> {
+        let Some(resource) = resource.and_then(Value::as_str) else {
+            return Vec::new();
+        };
+        let found: HashSet<Part> = if resource.starts_with("cre:") {
+            self.template_parts.get(resource).cloned().unwrap_or_default()
+        } else {
+            area_parts(self.platform, resource).into_iter().collect()
+        };
+        PART_NAMES.iter().map(|(part, _)| *part).filter(|part| found.contains(part)).collect()
+    }
+
+    fn parts_value(&self, resource: Option<&Value>) -> Value {
+        Value::List(self.parts(resource).into_iter().map(Value::from).collect())
+    }
+
+    /// The parts of the game each original record a draft moves is in.
+    fn source_parts(&self, plan: &Value) -> Result<Value> {
+        let mut registrations: HashMap<&str, &Value> = HashMap::new();
+        for row in field(plan, "registrations")?.as_list().into_iter().flatten() {
+            if let Some(identity) = row.as_dict().and_then(|row| row.get("id")).and_then(Value::as_str) {
+                registrations.entry(identity).or_insert(row);
+            }
+        }
+        let mut parts = Dict::new();
+        for entry in field(plan, "sources")?.as_list().into_iter().flatten() {
+            let Some(entry) = entry.as_dict() else {
+                continue;
+            };
+            for key in ["source_ids", "registration_ids"] {
+                let Some(identities) = entry.get(key).and_then(Value::as_list) else {
+                    continue;
+                };
+                for identity in identities.iter().filter_map(Value::as_str) {
+                    if parts.contains_key(identity) {
+                        continue;
+                    }
+                    let row = if key == "source_ids" {
+                        self.index.source(&self.world, identity)
+                    } else {
+                        registrations.get(identity).copied()
+                    };
+                    let found = match row {
+                        Some(row) => self.parts_value(row.get("resource")),
+                        None => Value::List(Vec::new()),
+                    };
+                    parts.insert(identity, found);
+                }
+            }
+        }
+        Ok(Value::Dict(parts))
+    }
+
     pub fn target(&self, row: &Value) -> Result<Value> {
         let identity = field(row, "id")?.clone();
         let label = self.label(row)?;
@@ -289,6 +400,7 @@ impl Editor {
         };
         Ok(Value::Dict(crate::dict! {
             "id" => identity, "label" => label, "kind" => kind, "kind_label" => kind_label, "note" => note,
+            "parts" => self.parts_value(row.get("resource")),
         }))
     }
 
@@ -320,6 +432,10 @@ impl Editor {
                 }
             }
         }
+        for part in self.parts(row.get("resource")) {
+            let name = PART_NAMES.iter().find(|(known, _)| *known == part).map_or("", |(_, name)| *name);
+            names.push(format!("{part} {name}"));
+        }
         Ok(crate::py::casefold(&names.join(" ")))
     }
 
@@ -346,8 +462,8 @@ impl Editor {
         for choice in field(plan, "targets")?.as_list().into_iter().flatten() {
             let identity = field(choice, "id")?;
             let row = identity.as_str().and_then(|id| self.index.target(&self.world, id));
-            let authored = authored_targets
-                .get(&crate::json::py_repr(identity))
+            let registration = authored_targets.get(&crate::json::py_repr(identity)).copied();
+            let authored = registration
                 .and_then(|row| row.get("authored"))
                 .cloned()
                 .unwrap_or(Value::Dict(Dict::new()));
@@ -363,9 +479,13 @@ impl Editor {
                     "id" => identity.clone(),
                     "label" => format!("{} ({})", crate::json::py_str(&name), crate::json::py_str(&area)),
                     "kind" => "original", "kind_label" => "Original recipient",
+                    "parts" => self.parts_value(registration.and_then(|row| row.get("resource"))),
                 }
             } else {
-                crate::dict! {"id" => identity.clone(), "label" => identity.clone(), "kind" => "missing"}
+                crate::dict! {
+                    "id" => identity.clone(), "label" => identity.clone(), "kind" => "missing",
+                    "parts" => Value::List(Vec::new()),
+                }
             };
             label.insert("capacity", field(choice, "capacity")?.clone());
             targets.push(Value::Dict(label));
@@ -380,6 +500,7 @@ impl Editor {
         let mut state = self.draft.as_dict().cloned().unwrap_or_default();
         state.insert("apply_enabled", self.apply_game.is_some());
         state.insert("items", Value::List(items));
+        state.insert("source_parts", self.source_parts(plan)?);
         state.insert("targets", Value::List(targets));
         state.insert("saved", Value::List(saved));
         state.insert("workspace", self.workspace.to_string_lossy().into_owned());
@@ -474,6 +595,7 @@ impl Editor {
                         let mut row = source.as_dict().cloned().unwrap();
                         row.insert("quantity", 1);
                         row.insert("kind_label", "Quest reward");
+                        row.insert("parts", Value::List(Vec::new()));
                         row.insert("label", "Blood pool reward (BLPOOL)");
                         row.insert(
                             "note",
@@ -498,7 +620,7 @@ impl Editor {
                     shown.push(Value::Dict(crate::dict! {
                         "id" => field(&source, "id")?.clone(), "kind" => kind.clone(),
                         "concerns" => field(&source, "concerns")?.clone(), "quantity" => quantity,
-                        "kind_label" => kind_label(&kind)?,
+                        "kind_label" => kind_label(&kind)?, "parts" => self.parts_value(source.get("resource")),
                         "label" => format!("{owner_label} \u{b7} item record {}", crate::json::py_str(field(record, "record_index")?)),
                         "note" => note,
                     }));
@@ -555,7 +677,7 @@ impl Editor {
                     _ => Value::from(DEFAULT_NAME),
                 };
                 let profile = new_profile_named(&self.catalog, &Editor::new_id(), &name)?;
-                let plan = new_binding_plan(&profile, &self.catalog, &self.world)?;
+                let plan = new_binding_plan(&profile, &self.catalog, &self.world, Some(&self.scans()))?;
                 self.draft = Value::Dict(crate::dict! {"profile" => profile, "plan" => plan});
             }
             "/api/template" => {
@@ -566,6 +688,7 @@ impl Editor {
                     data.get("items"),
                     data.get("targets"),
                     data.get("options"),
+                    Some(&self.scans()),
                 )?;
                 let mut candidate = generated.clone();
                 candidate
@@ -599,14 +722,15 @@ impl Editor {
             }
             "/api/validate" => {
                 let draft = self.checked(data)?;
-                return self.check(&draft);
+                return self.check(&draft, None);
             }
             "/api/prepare" | "/api/apply" => {
                 if route == "/api/apply" && self.apply_game.is_none() {
                     return Err(Error::profile("Game activation is not enabled for this editor"));
                 }
                 let draft = self.checked(data)?;
-                let result = self.check(&draft)?;
+                let scans = self.scans();
+                let result = self.check(&draft, Some(&scans))?;
                 if !result.get("runtime_supported").is_some_and(Value::truthy) {
                     return Err(Error::profile(result.get("message").and_then(Value::as_str).unwrap_or("").to_string()));
                 }
@@ -614,8 +738,14 @@ impl Editor {
                 if route == "/api/apply" {
                     let game = self.apply_game.clone().expect("checked");
                     crate::activation::require_closed(&game)?;
-                    let written =
-                        crate::starts::write_starts(draft.at("profile")?, draft.at("plan")?, &self.catalog, &self.world, &store)?;
+                    let written = crate::starts::write_starts(
+                        draft.at("profile")?,
+                        draft.at("plan")?,
+                        &self.catalog,
+                        &self.world,
+                        &store,
+                        Some(&scans),
+                    )?;
                     let output = self.workspace.join("native");
                     // Older saves may use revisions another workspace applied.
                     crate::activation::adopt_revisions(&game, &output)?;
@@ -627,8 +757,16 @@ impl Editor {
                         .map(|(start, revision)| (start.to_string(), crate::json::py_str(revision)))
                         .collect();
                     let main = written.at("main")?.as_str();
-                    let exported =
-                        crate::native_export::export_native(&store, &self.catalog, &self.world, &output, None, Some(&starts), main)?;
+                    let exported = crate::native_export::export_native(
+                        &store,
+                        &self.catalog,
+                        &self.world,
+                        &output,
+                        None,
+                        Some(&starts),
+                        main,
+                        Some(&scans),
+                    )?;
                     let identity = draft.at("profile")?.at("id")?.clone();
                     write_json(&self.path(&identity)?, &draft, false)?;
                     crate::activation::deploy_export(&game, &output)?;
@@ -673,6 +811,7 @@ impl Editor {
                     &self.world,
                     draft.at("plan")?,
                     &store,
+                    Some(&scans),
                 )?;
                 return Ok(Value::Dict(crate::dict! {
                     "revision" => prepared.at("revision")?.clone(), "store" => store.to_string_lossy().into_owned(),
@@ -683,5 +822,39 @@ impl Editor {
             _ => return Err(Error::profile("Unknown editor request")),
         }
         self.state()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::sources::{PLAN_FIELDS, PLAN_OPTIONAL_FIELDS};
+
+    fn plan(fields: &[&str]) -> Value {
+        let mut plan = Dict::new();
+        for field in fields {
+            plan.insert(*field, Value::Null);
+        }
+        Value::Dict(plan)
+    }
+
+    fn with(extra: &[&str]) -> Value {
+        plan(&PLAN_FIELDS.iter().chain(extra).copied().collect::<Vec<_>>())
+    }
+
+    #[test]
+    fn drafts_may_hold_every_field_binding_accepts() {
+        assert!(plan_fields_match(&with(&[])).unwrap());
+        // A preset with More Spell Shield scrolls or cursed disguises adds their metadata.
+        assert!(plan_fields_match(&with(&["spell_shield", "cursed_disguises"])).unwrap());
+        for field in PLAN_OPTIONAL_FIELDS {
+            assert!(plan_fields_match(&with(&[field])).unwrap(), "{field}");
+        }
+        assert!(plan_fields_match(&with(&PLAN_OPTIONAL_FIELDS)).unwrap());
+        assert!(!plan_fields_match(&with(&["notes"])).unwrap());
+        for field in PLAN_FIELDS {
+            let fields: Vec<&str> = PLAN_FIELDS.iter().copied().filter(|name| *name != field).collect();
+            assert!(!plan_fields_match(&plan(&fields)).unwrap(), "{field}");
+        }
     }
 }

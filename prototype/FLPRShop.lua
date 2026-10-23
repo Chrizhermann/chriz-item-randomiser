@@ -1,6 +1,7 @@
 -- Single-player shop transport. Uses AddStoreItem and the engine's normal
--- save/cache path. Only the newly appended stock row is corrected to preserve
--- the selected source payload. Hook locations: FLPRSite.lua.
+-- save/cache path. Only the newly appended stock row is corrected: it keeps
+-- the selected source payload, identified like a shop's own stock. Hook
+-- locations: FLPRSite.lua.
 local Site = ...
 assert(type(Site)=='table' and type(Site.locate)=='function', 'SHOP_SITES_MISSING')
 local Shop = {}
@@ -99,13 +100,16 @@ function Shop:deliver(endpoint,payload,unit)
     local ready,reason=self:inspect_target(endpoint)
     if not ready then return nil,reason end
     assert(api.EEex_ReadU64(b)==0, 'SHOP_OPERATION_PENDING')
+    -- Shops sell identified stock. Most sources are a creature's or a
+    -- container's unidentified item; the source's other flags stay.
+    local flags=payload.flags%2==0 and payload.flags+1 or payload.flags
     write_ref(api,b+8,endpoint.store);write_ref(api,b+16,payload.resref)
     api.EEex_Write16(b+24,payload.expiration)
     for i=1,3 do api.EEex_Write16(b+24+i*2,payload.charges[i]) end
-    api.EEex_Write32(b+32,payload.flags)
+    api.EEex_Write32(b+32,flags)
     api.EEex_Write64(b+48,1);api.EEex_Write64(b,1)
     local ok,failure=pcall(api.EEex_Action_ExecuteResponseStringOnAIBaseInstantly,
-        string.format('AddStoreItem("%s","%s",1,%d)',endpoint.store,payload.resref,payload.flags),
+        string.format('AddStoreItem("%s","%s",1,%d)',endpoint.store,payload.resref,flags),
         api.EEex_Sprite_GetInPortrait(0))
     api.EEex_Write64(b,0)
     if not ok then return nil,tostring(failure) end

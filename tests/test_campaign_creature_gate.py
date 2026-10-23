@@ -72,14 +72,15 @@ class CreatureGateTests(unittest.TestCase):
                 lua.table_from({'original': self.original, 'removed': self.removed})})}),
         })
         lua.globals().f = f
-        lua.execute('f.api.EEex_HookBeforeCall=function(address,code) '
-                    'f.api.EEex_HookBeforeRestore(address,0,5,5,code) end')
         f.install(f, gate, build, compile_policy)
         f.capture(f)
         f.prepare(f)
         f.adapter(f)
         f.bind(f)
-        self.assertEqual(len(f.hooks), 6)  # Four shared load hooks + two CRE calls.
+        # Launch hooks every location; this source's code runs at the four
+        # shared load hooks and both CRE calls (HOOKED order, bridge test).
+        self.assertEqual(len(f.hooks), 11)
+        self.assertEqual([index for index in range(1, 12) if not f.idle(f, index)], [1, 2, 4, 5, 6, 7])
         assembly = build(BUFFER, gate_targets(lua, 0x10000000), f.gate.policy)
         self.assertEqual(assembly.item, '')
         machine = ProvenanceMachine(blob=self.area)

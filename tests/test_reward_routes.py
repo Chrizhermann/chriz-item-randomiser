@@ -6,6 +6,7 @@ with another mod's additions, is fitted and applied; one the check cannot
 recognise is left out with its reason before anything is written.
 """
 
+import hashlib
 import json
 from pathlib import Path
 import shutil
@@ -31,7 +32,8 @@ from flir_config.reward_routes import ChangedSinceScan, reward_routes
 from flir_config.sources import scan_world, validate_world
 from flir_config.starts import write_starts
 from test_container_rewards import dialogue_fixture as container_dialogue, script_fixture
-from test_mode2_rewards import action, block, dialogue_fixture, layout_dialogue, well_reward, with_actions
+from test_mode2_rewards import (BOOK_GIFTS, action, block, book_fixture, dialogue_fixture, layout_dialogue,
+                                well_reward, with_actions)
 from test_original_configuration import target_row
 from test_postinstall_resources import make_game, make_itm, make_tlk, mark_eet, snapshot
 from test_postinstall_world_formats import item_record, make_are
@@ -83,6 +85,8 @@ def place(identity: str, tier: str, container: int) -> dict:
 
 class RouteGame(unittest.TestCase):
     sources, targets = SOURCES, TARGETS
+    # The preset's options (Item Randomiser's components) that bring the rows.
+    options = None
 
     def build(self, platform: str, *, language: str | None = "en_US", female: bytes | None = None,
               journal: bool = True, resources: dict[str, bytes] | None = None,
@@ -136,7 +140,7 @@ class RouteGame(unittest.TestCase):
 
     def draft(self) -> dict:
         draft = resolve_template(self.catalog, self.world, self.template, game=self.platform,
-                                 items="extended", targets="extended")
+                                 items="extended", targets="extended", options=self.options)
         draft["items"] = [row for row in draft["items"] if row["id"] in self.sources]
         draft["targets"] = [row for row in draft["targets"] if row["id"] in self.targets] + self.places()
         self.assertEqual(len(draft["items"]), len(self.sources))
@@ -166,8 +170,8 @@ class FitAndApplyTests(RouteGame):
         self.assertEqual(sorted((row["id"], row["kind"], row["reason"]) for row in fitted["not_used"]),
                          [("bg2:mode2:item:33", "reward", KHOLLOS), ("bg2:mode2:target:33", "place", KHOLLOS)])
         self.assertEqual(fitted["not_used_notes"], [
-            "1 reward and 1 place from the lists cannot be used in this game, so they are left out; "
-            "a left-out reward stays as the game has it"])
+            "1 reward and 1 place from the lists cannot be used in this game, so they are left out",
+            "A left-out reward stays as the game has it"])
         sources = {row["id"] for row in fitted["plan"]["registrations"]}
         self.assertEqual(sources, {"original-source:bg2:mode2:item:14", "original-source:bg2:mode2:item:27"})
         targets = {row["id"] for row in fitted["plan"]["target_registrations"]}
@@ -185,8 +189,7 @@ class FitAndApplyTests(RouteGame):
         ogre, well = (overrides / "UHOGRE01.DLG").read_bytes(), (overrides / "DDWELL.BCS").read_bytes()
         self.assertFalse((overrides / "MGKHOL01.DLG").exists())
         self.assertEqual(ogre, mode2_rewards.patch_reward("dlg:uhogre01", self.resources["uhogre01.dlg"]))
-        spec = mode2_rewards.resource_specs("bcs:ddwell")[0]
-        original, ref, own = mode2_rewards._script_original(well, spec)
+        original, ref, own = mode2_rewards._script_original(well, mode2_rewards.resource_specs("bcs:ddwell"))
         self.assertEqual((original, own), (self.resources["ddwell.bcs"], True))
         tlk = (self.output / "game-overrides/lang/en_US/dialog.tlk").read_bytes()
         self.assertIn("You pull an item from the murky water", _Tlk(tlk).text(ref, []))
@@ -347,10 +350,242 @@ class ContainerQuestTests(RouteGame):
         self.apply(fitted)
 
 
+ROD_GRANT = b'GiveItemCreate("rods02",LastTalkedToBy,0,0,0)\r\r\n'
+
+
+def king_dialogue(rod: bytes = ROD_GRANT) -> bytes:
+    """SAHKNG01 whose reward reply gives the bracer and, as <rod> says, the rod."""
+    dialogue = _Dialogue(dialogue_fixture(mode2_rewards.resource_specs("dlg:sahkng01")), "sahkng01")
+    dialogue.actions = [text.replace(ROD_GRANT, rod) for text in dialogue.actions]
+    return dialogue.render()
+
+
+class TreasuryRodTests(RouteGame):
+    """The Sahuagin treasury's rod: a container reward of which the king's
+    reward reply creates another one. The ogre's shield keeps a reward in the
+    configuration where the rod is left out."""
+
+    sources, targets = ("bg2:mode2:item:7", "bg2:mode2:item:14"), ("bg2:mode2:target:17",)
+    ROD = "are:ar2300/container/0/item/0"
+
+    def places(self) -> list[dict]:
+        # Chests of the rod's and the shield's tiers.
+        return [place("bg2:base:target:9002", "1", 0), place("bg2:base:target:9003", "2", 1)]
+
+    def rod_row(self, draft: dict) -> dict:
+        return next(row for row in draft["items"] if row["id"] == self.sources[0])
+
+    def build_treasury(self, platform: str, king: bytes | None, *, rods: int = 1) -> None:
+        """AR2300 with the rod in its treasury and in <rods> - 1 other chests."""
+        area = make_are([chest_item("RODS02")] * rods,
+                        [("Treasury", 0, 1)] + [(f"Chest {number}", number, 1) for number in range(1, rods)])
+        resources = {"uhogre01.dlg": ogre_dialogue()} | ({} if king is None else {"sahkng01.dlg": king})
+        self.build(platform, resources=resources, extra={"ar2300.are": area})
+        visible = (self.game / "override" / "synth001.itm").read_bytes()
+        (self.game / "override" / "rods02.itm").write_bytes(visible)
+        self.rescan()
+
+    def native(self, written: dict) -> dict:
+        return json.loads((self.output / "campaign-store" / "revisions" /
+                           f"{written['starts'][written['full']]}.native.json").read_bytes())
+
+    def test_a_moved_rod_stops_the_kings_second_one(self):
+        for platform, starts in (("bg2ee", {"SOA"}), ("eet", {"BG1", "SOD", "SOA"})):
+            with self.subTest(platform=platform):
+                self.build_treasury(platform, king_dialogue())
+                rod = self.rod_row(self.draft())
+                self.assertEqual((rod["source_ids"], rod["binding_problem"]), ([self.ROD], None))
+                before = snapshot(self.game)
+                fitted = self.fit()
+                self.assertEqual(fitted["not_used"], [])
+                written = self.apply(fitted)
+                self.assertEqual(set(written["starts"]), starts)
+                self.assertEqual(snapshot(self.game), before)
+                # The reply creates the rod only while the treasury's stays.
+                patched = mode2_rewards.patch_reward("dlg:sahkng01", king_dialogue())
+                self.assertIn(b'Global("FLPR_QM2_7","GLOBAL",1)', b"".join(_Dialogue(patched, "sahkng01").triggers))
+                self.assertEqual((self.output / "resource-overrides" / "SAHKNG01.DLG").read_bytes(), patched)
+                for revision in written["starts"].values():
+                    native = json.loads((self.output / "campaign-store" / "revisions" /
+                                         f"{revision}.native.json").read_bytes())
+                    source = native["sources"][self.ROD]
+                    self.assertEqual((source["kind"], source["reward_selected_global"]),
+                                     ("guarded-container", "FLPR_QM2_7"))
+                    self.assertEqual(native["resource_hashes"]["SAHKNG01.DLG"], hashlib.sha256(patched).hexdigest())
+
+    def test_where_nothing_else_gives_the_rod_it_moves_as_any_container_reward(self):
+        # Another mod's king who gives no rod, and a game without his dialogue.
+        for king in (king_dialogue(b""), None):
+            with self.subTest(dialogue=king is not None):
+                self.build_treasury("bg2ee", king)
+                fitted = self.fit()
+                self.assertEqual(fitted["not_used"], [])
+                written = self.apply(fitted)
+                self.assertNotIn("reward_selected_global", self.native(written)["sources"][self.ROD])
+                self.assertFalse((self.output / "resource-overrides" / "SAHKNG01.DLG").exists())
+
+    def test_a_rod_the_king_gives_in_a_way_the_route_cannot_gate_is_left_out(self):
+        self.build_treasury("bg2ee", king_dialogue(
+            b'ActionOverride("sahpr2",GiveItemCreate("rods02",LastTalkedToBy,0,0,0))\r\r\n'))
+        fitted = self.fit()
+        self.assertEqual([(row["id"], row["kind"], row["reason"]) for row in fitted["not_used"]], [
+            ("bg2:mode2:item:7", "reward", "The extended reward route for SAHROD cannot be used: SAHKNG01.DLG "
+             "state 81 gives RODS02 through ActionOverride(), whose recipient the route cannot mark")])
+        self.apply(fitted)
+        self.assertFalse((self.output / "resource-overrides" / "SAHKNG01.DLG").exists())
+
+    def test_one_of_two_rods_in_the_area_is_left_out(self):
+        # The tables' row needs the area's only rod. A configuration that names
+        # one of two cannot tell which one the king's reward stands for.
+        self.build_treasury("bg2ee", king_dialogue(), rods=2)
+        self.assertEqual(self.rod_row(self.draft())["binding_problem"], "ambiguous-source-records")
+        draft = self.draft
+
+        def one_of_two() -> dict:
+            result = draft()
+            self.rod_row(result).update(source_ids=[self.ROD], binding_problem=None)
+            return result
+
+        self.draft = one_of_two
+        fitted = self.fit()
+        self.assertEqual([(row["id"], row["kind"], row["reason"]) for row in fitted["not_used"]], [
+            ("bg2:mode2:item:7", "reward", "AR2300.ARE holds another RODS02 that the reward of SAHKNG01.DLG "
+             f"could stand for: {self.ROD}")])
+
+
+class BookScrollTests(RouteGame):
+    """The two scrolls of the Spellhold book (rows 260 and 262) beside its
+    ring (row 109), whose quest CIR's installer prepared in PPBOOK.BCS."""
+
+    RING, SCROLLS = ("bg2:base:item:109",), ("bg2:mode2:item:260", "bg2:mode2:item:262")
+    targets = ()
+    options = {"scrolls": True}
+
+    def places(self) -> list[dict]:
+        # Chests of the ring's and the scrolls' tiers.
+        return [place("bg2:base:target:9002", "6", 0), place("bg2:base:target:9003", "s8", 1),
+                place("bg2:base:target:9004", "s8", 2)]
+
+    def build_book(self, *, installed: bool = True) -> None:
+        chests = make_are([], [("Place2", 0, 0), ("Place3", 0, 0), ("Place4", 0, 0)])
+        self.build("bg2ee", resources={"ppbook.bcs": book_fixture(installed)},
+                   extra={"ar0100.are": chests, "ar1513.are": make_are()})
+        override = self.game / "override"
+        visible = (override / "synth001.itm").read_bytes()
+        for name in ("ring09", "scrl9b", "scrl8z"):
+            (override / f"{name}.itm").write_bytes(visible)
+        if installed:
+            (override / "FLPRPAT.lua").write_text('quest_book = {status="applied"},\n', encoding="utf-8")
+        self.rescan()
+
+    def applied(self, sources: tuple[str, ...]) -> tuple[str, dict]:
+        """Fit, apply and deploy a configuration of <sources>; its revision and native settings."""
+        self.sources = sources
+        fitted = self.fit()
+        self.assertEqual(fitted["not_used"], [])
+        written = self.apply(fitted)
+        deploy_export(self.game, self.output)
+        revision = written["starts"][written["full"]]
+        return revision, json.loads((self.output / "campaign-store" / "revisions" /
+                                     f"{revision}.native.json").read_bytes())
+
+    def staged(self, revision: str) -> dict[str, bytes]:
+        """The scripts a revision's guarded sources need in override, by source."""
+        manifest = read_campaign(self.output / "campaign-store", revision)
+        folder = self.output / "campaign-store" / "revisions"
+        return {source["id"]: (folder / f"{revision}.source-{number}.patched.bcs").read_bytes()
+                for number, source in enumerate(manifest["sources"], 1)}
+
+    def test_apply_writes_the_book_only_for_its_scrolls_and_earlier_saves_keep_the_ring(self):
+        self.build_book()
+        installed = book_fixture()
+        patched = mode2_rewards.patch_reward("bcs:ppbook", installed)
+        overrides, versions = self.output / "resource-overrides", (self.output / "PPBOOK.installed.bcs",
+                                                                   self.output / "PPBOOK.applied.bcs")
+        # The ring alone: the book stays as the installer prepared it.
+        ring, ring_native = self.applied(self.RING)
+        self.assertFalse((overrides / "PPBOOK.BCS").exists())
+        self.assertFalse(any(path.exists() for path in versions))
+        self.assertEqual(set(self.staged(ring).values()), {installed})
+        self.assertEqual(ring_native["resource_hashes"]["PPBOOK.BCS"], hashlib.sha256(installed).hexdigest())
+        self.assertEqual((self.game / "override" / "PPBOOK.BCS").read_bytes(), installed)
+        ring_files = {path.name: path.read_bytes() for path in (self.output / "campaign-store" / "revisions").iterdir()
+                      if path.name.startswith(ring)}
+        # The ring and both scrolls: Apply writes the book with the scrolls'
+        # routes and keeps the installer's version beside it.
+        both, both_native = self.applied(self.RING + self.SCROLLS)
+        self.assertNotIn("notes", self.exported)
+        self.assertEqual((overrides / "PPBOOK.BCS").read_bytes(), patched)
+        self.assertEqual([path.read_bytes() for path in versions], [installed, patched])
+        self.assertEqual((self.game / "override" / "PPBOOK.BCS").read_bytes(), patched)
+        self.assertEqual((self.game / "randomiser-campaigns" / "PPBOOK.installed.bcs").read_bytes(), installed)
+        self.assertEqual((self.game / "randomiser-campaigns" / "PPBOOK.applied.bcs").read_bytes(), patched)
+        staged = self.staged(both)
+        self.assertEqual(staged, {"original-source:bg2:base:item:109": installed,
+                                  "original-source:bg2:mode2:item:260": patched,
+                                  "original-source:bg2:mode2:item:262": patched})
+        self.assertEqual({identity: both_native["sources"][identity]["adapter_id"] for identity in staged},
+                         {"original-source:bg2:base:item:109": "original-quest-v1",
+                          "original-source:bg2:mode2:item:260": "mode2-reward-v1",
+                          "original-source:bg2:mode2:item:262": "mode2-reward-v1"})
+        self.assertEqual(both_native["resource_hashes"]["PPBOOK.BCS"], hashlib.sha256(patched).hexdigest())
+        # The ring's earlier revision keeps its files: its saves accept the
+        # book Apply wrote, beside the installer's version (FLPRScript.lua).
+        self.assertEqual({path.name: path.read_bytes() for path in (self.output / "campaign-store" / "revisions").iterdir()
+                          if path.name.startswith(ring)}, ring_files)
+        # A rescan sees Apply's book; the ring alone again records the
+        # installer's version, and nothing earlier changes.
+        self.rescan()
+        again, again_native = self.applied(self.RING)
+        self.assertNotIn("notes", self.exported)
+        self.assertEqual(set(self.staged(again).values()), {installed})
+        self.assertEqual(again_native["resource_hashes"]["PPBOOK.BCS"], hashlib.sha256(installed).hexdigest())
+        self.assertEqual((overrides / "PPBOOK.BCS").read_bytes(), patched)
+        # When the earlier revisions are kept for another change (their chests'
+        # area), the ring's installer version still meets their need.
+        (self.game / "override" / "ar0100.are").write_bytes(
+            make_are([], [("Place2", 0, 0), ("Place3", 0, 0), ("Place4", 0, 0), ("Place5", 0, 0)]))
+        self.rescan()
+        self.applied(self.RING + self.SCROLLS)
+        self.assertEqual(len(self.exported["notes"]), 3 * 3)
+        self.assertTrue(all("keep their settings" in note for note in self.exported["notes"]))
+
+    def test_the_scrolls_alone_need_no_prepared_book(self):
+        # A book the installer left as it was: the ring's quest is left out,
+        # the scrolls' routes patch the game's own book.
+        self.build_book(installed=False)
+        self.sources = self.RING + self.SCROLLS
+        fitted = self.fit()
+        self.assertEqual(fitted["not_used"], [])
+        self.assertEqual(fitted["left_out"], ["PPBOOK.BCS was not prepared: this version of "
+                                              "Chriz Item Randomiser is not installed"])
+        self.assertEqual({row["id"] for row in fitted["plan"]["registrations"]},
+                         {"original-source:" + identity for identity in self.SCROLLS})
+        self.apply(fitted)
+        self.assertEqual((self.output / "resource-overrides" / "PPBOOK.BCS").read_bytes(),
+                         mode2_rewards.patch_reward("bcs:ppbook", book_fixture(False)))
+        self.assertFalse((self.output / "PPBOOK.installed.bcs").exists())
+
+    def test_a_scroll_the_book_gives_twice_is_left_out(self):
+        self.build_book()
+        twice = book_fixture().replace(BOOK_GIFTS.encode(),
+                                       (BOOK_GIFTS + action(140, text="scrl9b", target=17)).encode())
+        (self.game / "override" / "ppbook.bcs").write_bytes(twice)
+        self.rescan()
+        self.sources = self.RING + self.SCROLLS
+        fitted = self.fit()
+        self.assertEqual([(row["id"], row["kind"], row["reason"]) for row in fitted["not_used"]], [
+            ("bg2:mode2:item:260", "reward", "The extended reward route for PPBOOK cannot be used: "
+             "PPBOOK.BCS block 1 gives SCRL9B twice in one response")])
+        self.apply(fitted)
+        self.assertEqual((self.output / "resource-overrides" / "PPBOOK.BCS").read_bytes(),
+                         mode2_rewards.patch_reward("bcs:ppbook", twice))
+
+
 class NoCopies:
     """The copy analysis as CIR had it before it looked for copies of reward replies."""
 
-    def __init__(self, read, scanned):
+    def __init__(self, read, scanned, **naming):
         self.copies, self.reasons, self.visited, self.changed, self.originals = {}, {}, {}, set(), {}
 
     def checked(self, key):

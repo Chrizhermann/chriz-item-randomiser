@@ -308,6 +308,7 @@ fn run_with_catalog(names: &[&str], parsed: &Parsed) -> Result<Value> {
             parsed.text("revision"),
             None,
             None,
+            None,
         ),
         ["prototype", "prepare"] => cir_config::campaigns::write_campaign(
             &read(parsed, "profile")?,
@@ -315,6 +316,7 @@ fn run_with_catalog(names: &[&str], parsed: &Parsed) -> Result<Value> {
             &read(parsed, "world")?,
             &read(parsed, "plan")?,
             &path(parsed, "store"),
+            None,
         ),
         ["world", "scan"] => {
             let destination = profiles::ensure_output_outside_game(&path(parsed, "out"), &catalog)?;
@@ -369,7 +371,7 @@ fn run_with_catalog(names: &[&str], parsed: &Parsed) -> Result<Value> {
             let world = read(parsed, "world")?;
             let profile = read(parsed, "profile")?;
             if *operation == "create" {
-                let plan = sources::new_binding_plan(&profile, &catalog, &world)?;
+                let plan = sources::new_binding_plan(&profile, &catalog, &world, None)?;
                 let destination = profiles::ensure_output_outside_game(&path(parsed, "out"), &catalog)?;
                 profiles::write_json(&destination, &plan, false)?;
                 return Ok(result_dict(vec![
@@ -381,7 +383,7 @@ fn run_with_catalog(names: &[&str], parsed: &Parsed) -> Result<Value> {
             if *operation == "prepare" {
                 return sources::prepare_bound_profile(&profile, &catalog, &world, &plan, &path(parsed, "store"));
             }
-            let body = sources::bind_profile(&profile, &catalog, &world, &plan)?;
+            let body = sources::bind_profile(&profile, &catalog, &world, &plan, None)?;
             Ok(result_dict(vec![
                 ("valid", Value::Bool(true)),
                 ("state", body.at("state")?.clone()),

@@ -14,7 +14,8 @@ import unittest
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
-from flir_config.activation import _GAME_OR_INSTALLER, _game_or_installer_executables, require_closed
+from flir_config.activation import (_GAME_OR_INSTALLER, _game_or_installer_executables, _listed_executable,
+                                    require_closed)
 from flir_config.profiles import ProfileError
 
 OPEN = "Close this game and its installer before applying settings"
@@ -81,8 +82,14 @@ class RequireClosedTests(unittest.TestCase):
         installer = start(self.game / "setup-mod.exe")
         with self.assertRaisesRegex(ProfileError, OPEN):
             require_closed(self.game)
+        self.assertEqual([Path(path).resolve() for path in _listed_executable(installer.pid)],
+                         [(self.game / "setup-mod.exe").resolve()])
+        # Listed, then it ends before its file is asked for. The handle this
+        # test holds keeps the ended process, as another program's would; it
+        # does not run, though Windows may no longer tell its file.
         installer.kill()
         installer.wait()
+        self.assertEqual(_listed_executable(installer.pid), [])
         require_closed(self.game)
 
 

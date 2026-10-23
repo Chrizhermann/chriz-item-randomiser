@@ -94,7 +94,7 @@ class RustRunner:
 
     def run(self, calls: list[dict], pins: dict | None = None, registration_draft=None,
             tables: dict | None = None, languages: str | None = None, lists: str | None = None,
-            campaigns: dict | None = None) -> list[str]:
+            campaigns: dict | None = None, lua_limits: str | None = None) -> list[str]:
         self.count += 1
         request = self.scratch / f"calls-{self.count}.json"
         outcomes = self.scratch / f"outcomes-{self.count}.jsonl"
@@ -111,6 +111,10 @@ class RustRunner:
         environment.pop("CIR_PARITY_LANGUAGES", None)
         environment.pop("CIR_PARITY_LISTS", None)
         environment.pop("CIR_PARITY_CAMPAIGNS", None)
+        environment.pop("CIR_PARITY_LUA_LIMITS", None)
+        if lua_limits is not None:
+            # "constants,part" as a test patches campaigns._LUAJIT_CONSTANTS and _LUA_PART.
+            environment["CIR_PARITY_LUA_LIMITS"] = lua_limits
         if languages is not None:
             # The translations folder a test points translations.LANGUAGES_DIR at.
             environment["CIR_PARITY_LANGUAGES"] = languages

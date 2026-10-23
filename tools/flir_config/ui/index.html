@@ -45,7 +45,7 @@
         </div>
       </section>
 
-      <p id="status" class="status" role="status" aria-live="polite">Loading configuration…</p>
+      <p id="status" class="status" role="status" aria-live="polite"><span id="statusSpinner" class="spinner" aria-hidden="true" hidden></span><span id="statusText">Loading configuration…</span><span id="statusElapsed" class="elapsed" aria-hidden="true"></span></p>
       <p id="validation" class="validation" role="status" aria-live="polite" hidden></p>
       <p id="applySafetyNote" class="small-note" hidden>Close the game before applying a configuration. Existing saves retain their settings.</p>
       <p id="applyDevelopmentNote" class="small-note" hidden>Applied settings take effect when you start a new adventure; after applying, the configurator says which starts are randomised. The extended pools and some optional quest rules are still in development.</p>
@@ -94,6 +94,14 @@
               <span id="shopPercentHint" class="visually-hidden">Whole percentage from 0 to 4,294,967,295</span>
             </div>
           </section>
+          <div class="selection-filter" role="search" aria-label="Find in this configuration">
+            <label for="selectionFilter">Find in this configuration</label>
+            <div class="selection-filter-row">
+              <input id="selectionFilter" type="search" autocomplete="off" placeholder="Name, ID, item type, game part or tier">
+              <select id="partFilter" aria-label="Game part"><option value="">All parts</option></select>
+              <select id="tierFilter" aria-label="Tier"><option value="">All tiers</option></select>
+            </div>
+          </div>
           <details class="selection-section" open>
             <summary class="section-heading"><h3>Selected items <span id="itemCount" class="count">0 items</span></h3></summary>
             <div id="selectedItems" class="selected-list"></div>
@@ -123,6 +131,7 @@
     <form id="presetForm">
       <h2 id="presetTitle">Start from a preset</h2>
       <p class="small-note">Choose the item and recipient pools separately. Extended pools also use Item Randomiser's larger lists: more items from creatures, shops and containers, quest rewards, and more places. The new draft still needs a configuration check for this installation.</p>
+      <fieldset id="presetFields" class="preset-fields">
       <div class="preset-grid">
         <div>
           <label for="presetSelect">Game preset</label>
@@ -171,10 +180,12 @@
       </div>
       <p id="presetNote" class="validation warning" hidden></p>
       <p id="presetError" class="validation error" role="alert" hidden></p>
+      <p id="presetProgress" class="preset-progress" role="status" hidden><span class="spinner" aria-hidden="true"></span><span>Building the draft from the preset and checking it against your game…</span><span id="presetElapsed" class="elapsed" aria-hidden="true"></span></p>
       <div class="dialog-actions">
         <button type="button" id="cancelPreset" class="button secondary">Cancel</button>
-        <button type="submit" class="button primary">Create preset draft</button>
+        <button type="submit" id="createPreset" class="button primary">Create preset draft</button>
       </div>
+      </fieldset>
     </form>
   </dialog>
   <dialog id="tierDialog" aria-labelledby="tierTitle">

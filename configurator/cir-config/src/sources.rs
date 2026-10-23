@@ -11,6 +11,7 @@ use crate::paths;
 use crate::profiles::{digest, int_in, is_hex256, validate_catalog, validate_profile, ItemIndex};
 use crate::resources::{resource_type, sha256_hex, GameResources};
 use crate::world_formats::{parse_are, parse_cre, parse_sto, reference};
+use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
@@ -1209,6 +1210,43 @@ pub fn validate_world(world: &Value, catalog: &Value) -> Result<WorldIndex> {
     Ok(index)
 }
 
+/// An item catalogue and the world catalogue scanned with it, validated once
+/// for a series of calls on them, such as one editor request (a preset fit,
+/// a check, applying a configuration). It also keeps the original tables
+/// those calls resolve for a plan. Neither catalogue may change while it is
+/// in use.
+pub struct Scans<'a> {
+    catalog: &'a Value,
+    world: &'a Value,
+    items: &'a ItemIndex,
+    index: &'a WorldIndex,
+    pub tables: crate::original_registrations::TableMemo,
+}
+
+impl<'a> Scans<'a> {
+    /// `items` and `index` are `validate_catalog`'s and `validate_world`'s
+    /// results for these very catalogues.
+    pub fn new(catalog: &'a Value, world: &'a Value, items: &'a ItemIndex, index: &'a WorldIndex) -> Scans<'a> {
+        Scans { catalog, world, items, index, tables: Default::default() }
+    }
+
+    /// The item index and the world index, for the catalogues these scans hold.
+    pub fn indexes(&self, catalog: &Value, world: &Value) -> Result<(&'a ItemIndex, &'a WorldIndex)> {
+        if !std::ptr::eq(catalog, self.catalog) || !std::ptr::eq(world, self.world) {
+            return Err(Error::value("These validated scans belong to other catalogues"));
+        }
+        Ok((self.items, self.index))
+    }
+}
+
+/// `validate_world`'s index of these catalogues, from `scans` when given.
+pub fn world_index<'a>(catalog: &Value, world: &Value, scans: Option<&Scans<'a>>) -> Result<Cow<'a, WorldIndex>> {
+    match scans {
+        Some(scans) => Ok(Cow::Borrowed(scans.indexes(catalog, world)?.1)),
+        None => Ok(Cow::Owned(validate_world(world, catalog)?)),
+    }
+}
+
 fn page(rows: Vec<&Value>, offset: i64, limit: i64) -> Result<Dict> {
     integer(Some(&Value::Int(offset)), "offset", 0, 0xFFFF_FFFF)?;
     integer(Some(&Value::Int(limit)), "limit", 1, 100)?;
@@ -1288,9 +1326,9 @@ pub fn search_targets(
     Ok(Value::Dict(page(rows, offset, limit)?))
 }
 
-pub fn new_binding_plan(profile: &Value, catalog: &Value, world: &Value) -> Result<Value> {
+pub fn new_binding_plan(profile: &Value, catalog: &Value, world: &Value, scans: Option<&Scans>) -> Result<Value> {
     validate_profile(profile, catalog, false)?;
-    validate_world(world, catalog)?;
+    world_index(catalog, world, scans)?;
     Ok(Value::Dict(crate::dict! {
         "schema" => PLAN_SCHEMA, "catalog_fingerprint" => catalog.at("fingerprint")?.clone(),
         "world_fingerprint" => world.at("fingerprint")?.clone(), "sources" => crate::list![],
@@ -1358,9 +1396,12 @@ fn string_set(values: &[Value]) -> Option<HashSet<&str>> {
     values.iter().map(Value::as_str).collect()
 }
 
-const BINDING_PLAN_FIELDS: [&str; 6] =
+/// A binding plan's fields; binding and the editor's draft check both use them.
+pub const PLAN_FIELDS: [&str; 6] =
     ["schema", "catalog_fingerprint", "world_fingerprint", "sources", "registrations", "targets"];
-const BINDING_PLAN_OPTIONAL: [&str; 8] = [
+/// Creature replacements, randomisation rules, an original preset's settings
+/// and the metadata of its options (Spell Shield stock, cursed disguises).
+pub const PLAN_OPTIONAL_FIELDS: [&str; 8] = [
     "replacements",
     "randomization",
     "original_template_id",
@@ -1386,14 +1427,14 @@ fn sha_of<'a>(world: &'a Value, index: &WorldIndex, resource: &str) -> Option<&'
 }
 
 /// Freeze explicit choices with evidence, never infer safe runtime behavior.
-pub fn bind_profile(profile: &Value, catalog: &Value, world: &Value, plan: &Value) -> Result<Value> {
+pub fn bind_profile(profile: &Value, catalog: &Value, world: &Value, plan: &Value, scans: Option<&Scans>) -> Result<Value> {
     use crate::original_registrations as original;
     let frozen = validate_profile(profile, catalog, false)?;
-    let indexes = validate_world(world, catalog)?;
+    let indexes = world_index(catalog, world, scans)?;
     let plan_fields = match plan.as_dict() {
         Some(fields) => {
-            let mut expected: Vec<&str> = BINDING_PLAN_FIELDS.to_vec();
-            expected.extend(BINDING_PLAN_OPTIONAL.iter().copied().filter(|key| fields.contains_key(key)));
+            let mut expected: Vec<&str> = PLAN_FIELDS.to_vec();
+            expected.extend(PLAN_OPTIONAL_FIELDS.iter().copied().filter(|key| fields.contains_key(key)));
             if !fields.has_exact_keys(&expected) {
                 return Err(Error::profile("Unsupported binding plan fields"));
             }
@@ -1423,8 +1464,16 @@ pub fn bind_profile(profile: &Value, catalog: &Value, world: &Value, plan: &Valu
         return Err(Error::profile("Original plan metadata is incomplete"));
     }
     let present_original = present_original != 0;
-    let (source_rows, target_rows) =
-        if present_original { original::table_rows(catalog, world, plan)? } else { (Dict::new(), Dict::new()) };
+    let tables = if present_original {
+        Some(original::table_rows(catalog, world, plan, scans.map(|scans| &scans.tables))?)
+    } else {
+        None
+    };
+    let no_rows = Dict::new();
+    let (source_rows, target_rows) = match &tables {
+        Some(tables) => (&tables.sources, &tables.targets),
+        None => (&no_rows, &no_rows),
+    };
     let shield = plan_fields.get("spell_shield");
     let original_option = |name: &str| {
         plan_fields.get("original_options").and_then(|options| options.get(name)).is_some_and(Value::truthy)
@@ -1474,7 +1523,7 @@ pub fn bind_profile(profile: &Value, catalog: &Value, world: &Value, plan: &Valu
             if !present_original {
                 return Err(Error::profile("Original source needs original plan metadata"));
             }
-            let physical_ids = original::validate_source_registration(registration, &source_rows, world, shield)?;
+            let physical_ids = original::validate_source_registration(registration, source_rows, world, shield)?;
             let resource = registration.at("resource")?.as_str().and_then(|resource| sha_of(world, &indexes, resource));
             if !resource.is_some_and(|sha| sha.py_eq(registration.at("resource_sha256").unwrap_or(&Value::Null))) {
                 return Err(Error::profile("Original source resource changed or is absent"));
@@ -1682,7 +1731,7 @@ pub fn bind_profile(profile: &Value, catalog: &Value, world: &Value, plan: &Valu
         if !present_original {
             return Err(Error::profile("Original target needs original plan metadata"));
         }
-        original::validate_target_registration(registration, &target_rows)?;
+        original::validate_target_registration(registration, target_rows)?;
         let identity = crate::json::py_str(registration.at("id")?);
         if original_targets.iter().any(|(known, _)| *known == identity) {
             return Err(Error::profile("Duplicate original target registration"));
@@ -1826,7 +1875,7 @@ pub fn bind_profile(profile: &Value, catalog: &Value, world: &Value, plan: &Valu
 
 pub fn prepare_bound_profile(profile: &Value, catalog: &Value, world: &Value, plan: &Value, store: &Path) -> Result<Value> {
     use crate::profiles::{ensure_output_outside_game, write_json};
-    let body = bind_profile(profile, catalog, world, plan)?;
+    let body = bind_profile(profile, catalog, world, plan, None)?;
     let store = ensure_output_outside_game(store, catalog)?;
     let revision = body.at("fingerprint")?.as_str().unwrap_or("").to_string();
     let revision_path = ensure_output_outside_game(&store.join("revisions").join(format!("{revision}.json")), catalog)?;

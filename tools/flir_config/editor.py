@@ -14,15 +14,17 @@ from .native_export import _compile as compile_native
 from .profiles import (PROFILE_ID, ProfileError, ensure_output_outside_game,
                        new_profile, read_json, search_items, validate_catalog,
                        validate_profile, write_json)
-from .sources import new_binding_plan, validate_world
+from .sources import PLAN_FIELDS, PLAN_OPTIONAL_FIELDS, Scans, new_binding_plan, validate_world
 from .prepared import applied, left_out
 from .scripted_sources import blpool_registration
-from .platform import preset_campaigns, recommended_campaign
+from .platform import area_part, game_platform, preset_campaigns, recommended_campaign
 from .templates import list_templates, recommended_preset
 
 
 KIND_LABELS = {"actor": "Creature", "cre-template": "Creature template",
                "embedded-cre": "Creature", "container": "Container", "store": "Shop"}
+# The parts of the game, in game order, with the names the editor shows.
+PART_NAMES = {"bg1": "BG1", "sod": "SoD", "soa": "BG2", "wk": "Watcher's Keep", "tob": "ToB"}
 
 
 class Editor:
@@ -40,6 +42,17 @@ class Editor:
         self.sources = defaultdict(list)
         for source in world["sources"]:
             self.sources[source["item"]].append(source)
+        try:
+            self.platform = game_platform(world)
+        except ProfileError:
+            # No preset is for this game; its area names do not tell the parts.
+            self.platform = None
+        # The parts of the game each creature template is placed in.
+        self.template_parts = defaultdict(set)
+        for row in world["targets"]:
+            template = row["selector"].get("template_resource") if row["kind"] == "actor" else None
+            if isinstance(template, str):
+                self.template_parts[template] |= self.area_parts(row["resource"])
         if (profile is None) != (plan is None):
             raise ProfileError("Supply both an initial profile and its binding plan")
         applied = self.workspace / "prepared/last-applied.json"
@@ -48,20 +61,23 @@ class Editor:
             profile, plan = previous["profile"], previous["plan"]
         if profile is None:
             profile = new_profile(catalog, self.new_id(), "My next adventure")
-            plan = new_binding_plan(profile, catalog, world)
+            plan = new_binding_plan(profile, catalog, world, scans=self.scans())
         self.draft = self.checked({"profile": profile, "plan": plan})
 
     @staticmethod
     def new_id() -> str:
         return "adventure-" + uuid4().hex[:12]
 
+    def scans(self) -> Scans:
+        """The scans, validated when the editor started, for one request."""
+        return Scans(self.catalog, self.world, items=self.items, index=self.index)
+
     def checked(self, data: dict) -> dict:
         """Incomplete drafts may be saved; full binding checks happen on Check."""
         profile = validate_profile(data["profile"], self.catalog)
         plan = deepcopy(data["plan"])
-        expected = {"schema", "catalog_fingerprint", "world_fingerprint", "sources", "targets", "registrations"}
-        expected |= set(plan) & {"randomization", "replacements", "original_options",
-                                 "original_choices", "original_template_id", "target_registrations"}
+        # The fields binding accepts: a preset's options add their own.
+        expected = PLAN_FIELDS | (set(plan) & PLAN_OPTIONAL_FIELDS)
         if (set(plan) != expected or plan["schema"] != "flir-binding-plan-v1" or
                 plan["catalog_fingerprint"] != self.catalog["fingerprint"] or
                 plan["world_fingerprint"] != self.world["fingerprint"] or
@@ -70,10 +86,11 @@ class Editor:
             raise ProfileError("These selections belong to a different scan or an unsupported draft")
         return {"profile": profile, "plan": plan}
 
-    def check(self, draft: dict) -> dict:
+    def check(self, draft: dict, scans: Scans | None = None) -> dict:
         result = {"valid": False, "runtime_supported": False, "reward_units": 0, "target_capacity": 0}
         try:
-            campaign = compile_campaign(draft["profile"], self.catalog, self.world, draft["plan"])
+            campaign = compile_campaign(draft["profile"], self.catalog, self.world, draft["plan"],
+                                        scans=self.scans() if scans is None else scans)
             result.update(valid=True, reward_units=sum(s["quantity"] for s in campaign["sources"]),
                           target_capacity=sum(t["capacity"] for t in campaign["targets"]))
             compile_native(campaign, self.world, self.index, self.items, catalog=self.catalog)
@@ -100,7 +117,41 @@ class Editor:
                  "container": "Container destination; existing contents, locks and traps are preserved.",
                  "store": "Shop destination; prototype delivery is available when this configuration passes its check."}
         return {"id": row["id"], "label": self.label(row), "kind": row["kind"],
-                "kind_label": KIND_LABELS[row["kind"]], "note": notes[row["kind"]]}
+                "kind_label": KIND_LABELS[row["kind"]], "note": notes[row["kind"]],
+                "parts": self.parts(row["resource"])}
+
+    def area_parts(self, resource: str) -> set[str]:
+        kind, _, name = resource.partition(":")
+        part = area_part(self.platform, name) if kind == "are" and self.platform is not None else None
+        return {part} if part is not None else set()
+
+    def parts(self, resource: object) -> list[str]:
+        """The parts of the game a place is in, in game order: its area's part,
+        or the parts its creature template is placed in."""
+        if not isinstance(resource, str):
+            return []
+        found = self.template_parts.get(resource, set()) if resource.startswith("cre:") else self.area_parts(resource)
+        return [part for part in PART_NAMES if part in found]
+
+    def source_parts(self, plan: dict) -> dict[str, list[str]]:
+        """The parts of the game each original record a draft moves is in."""
+        registrations: dict = {}
+        for row in plan["registrations"]:
+            if isinstance(row, dict) and isinstance(row.get("id"), str):
+                registrations.setdefault(row["id"], row)
+        parts: dict[str, list[str]] = {}
+        for entry in plan["sources"]:
+            if not isinstance(entry, dict):
+                continue
+            for key, rows in (("source_ids", self.index["sources"]), ("registration_ids", registrations)):
+                identities = entry.get(key)
+                if not isinstance(identities, list):
+                    continue
+                for identity in identities:
+                    if isinstance(identity, str) and identity not in parts:
+                        row = rows.get(identity)
+                        parts[identity] = [] if row is None else self.parts(row.get("resource"))
+        return parts
 
     def search_text(self, row: dict) -> str:
         selector = row["selector"]
@@ -108,6 +159,7 @@ class Editor:
         names = [row["id"], self.label(row)]
         for fields in (selector, template.get("selector", {})):
             names.extend(fields.get(key, "") for key in ("name", "script_name", "cre_resref"))
+        names.extend(f"{part} {PART_NAMES[part]}" for part in self.parts(row["resource"]))
         return " ".join(names).casefold()
 
     def state(self) -> dict:
@@ -119,20 +171,23 @@ class Editor:
         authored_targets = {row.get("id"): row for row in self.draft["plan"].get("target_registrations", [])}
         for choice in self.draft["plan"]["targets"]:
             row = self.index["targets"].get(choice["id"])
-            authored = authored_targets.get(choice["id"], {}).get("authored", {})
+            registration = authored_targets.get(choice["id"], {})
+            authored = registration.get("authored", {})
             if row:
                 label = self.target(row)
             elif authored:
                 name = authored.get("target") or authored.get("endpoint_id") or choice["id"]
                 area = authored.get("area_resource") or authored.get("area") or ""
                 label = {"id": choice["id"], "label": f"{name} ({area})",
-                         "kind": "original", "kind_label": "Original recipient"}
+                         "kind": "original", "kind_label": "Original recipient",
+                         "parts": self.parts(registration.get("resource"))}
             else:
-                label = {"id": choice["id"], "label": choice["id"], "kind": "missing"}
+                label = {"id": choice["id"], "label": choice["id"], "kind": "missing", "parts": []}
             targets.append({**label,
                             "capacity": choice["capacity"]})
         return {**deepcopy(self.draft), "apply_enabled": self.apply_game is not None,
                 "items": [self.items[i] for i in self.draft["profile"]["items"]],
+                "source_parts": self.source_parts(self.draft["plan"]),
                 "targets": targets, "saved": saved, "workspace": str(self.workspace),
                 "catalog": {"item_count": len(self.items), "language": self.catalog["language"],
                             "game_name": Path(self.catalog["game_root"]).parent.name}}
@@ -176,13 +231,13 @@ class Editor:
             page = self.page(rows, offset)
             page["records"] = [{"id": s["id"], "kind": s["kind"], "concerns": s["concerns"],
                 "quantity": s["record"]["quantity"] if s["kind"] == "store" else 1,
-                "kind_label": KIND_LABELS[s["kind"]],
+                "kind_label": KIND_LABELS[s["kind"]], "parts": self.parts(s["resource"]),
                 "label": (self.label(self.index["targets"][s["owner"]]) if s["owner"] in self.index["targets"]
                           else s["owner"]) + f" · item record {s['record']['record_index']}",
                 "note": ("Container source; check configuration for current runtime support."
                          if s["kind"] == "container" else "This source type still needs runtime support.")}
                 if s["kind"] != "scripted" else {
-                    **s, "quantity": 1, "kind_label": "Quest reward",
+                    **s, "quantity": 1, "kind_label": "Quest reward", "parts": [],
                     "label": "Blood pool reward (BLPOOL)",
                     "note": "Moves the Mace of Disruption; the pool's other actions remain. "
                             "Chriz Item Randomiser prepared the pool's script when it was installed."}
@@ -209,14 +264,15 @@ class Editor:
             self.draft = self.checked(read_json(self.path(data["id"])))
         elif route == "/api/new":
             profile = new_profile(self.catalog, self.new_id(), data.get("name") or "My next adventure")
-            self.draft = {"profile": profile, "plan": new_binding_plan(profile, self.catalog, self.world)}
+            self.draft = {"profile": profile,
+                          "plan": new_binding_plan(profile, self.catalog, self.world, scans=self.scans())}
         elif route == "/api/template":
             # Import here so the editor's ordinary draft workflow remains usable
             # independently of optional original-table runtime integration.
             from .original_configuration import fit_original_configuration
             generated = fit_original_configuration(
                 self.catalog, self.world, data["id"], items=data.get("items"),
-                targets=data.get("targets"), options=data.get("options"))
+                targets=data.get("targets"), options=data.get("options"), scans=self.scans())
             candidate = deepcopy(generated)
             candidate["profile"]["id"] = self.new_id()
             checked = self.checked(candidate)
@@ -242,7 +298,8 @@ class Editor:
             if route == "/api/apply" and self.apply_game is None:
                 raise ProfileError("Game activation is not enabled for this editor")
             draft = self.checked(data)
-            result = self.check(draft)
+            scans = self.scans()
+            result = self.check(draft, scans)
             if not result["runtime_supported"]:
                 raise ProfileError(result["message"])
             store = ensure_output_outside_game(self.workspace / "prepared", self.catalog)
@@ -251,12 +308,13 @@ class Editor:
                 from .native_export import export_native
                 from .starts import describe_starts, write_starts
                 require_closed(self.apply_game)
-                written = write_starts(draft["profile"], draft["plan"], self.catalog, self.world, store)
+                written = write_starts(draft["profile"], draft["plan"], self.catalog, self.world, store,
+                                       scans=scans)
                 output = self.workspace / "native"
                 # Older saves may use revisions another workspace applied.
                 adopt_revisions(self.apply_game, output)
                 exported = export_native(store, self.catalog, self.world, output,
-                                         starts=written["starts"], main=written["main"])
+                                         starts=written["starts"], main=written["main"], scans=scans)
                 write_json(self.path(draft["profile"]["id"]), draft)
                 deploy_export(self.apply_game, output)
                 self.draft = draft
@@ -270,7 +328,8 @@ class Editor:
                         "message": "Saved and applied. " + describe_starts(written) +
                                    " Each new game randomizes afresh; existing saves keep their settings." +
                                    "".join(" " + note + "." for note in exported.get("notes", ()))}
-            prepared = write_campaign(draft["profile"], self.catalog, self.world, draft["plan"], store)
+            prepared = write_campaign(draft["profile"], self.catalog, self.world, draft["plan"], store,
+                                      scans=scans)
             return {"revision": prepared["revision"], "store": str(store),
                     "message": "Test settings prepared. They can now be exported for the test game; "
                                "nothing was installed or activated."}

@@ -32,6 +32,16 @@ local cases={}
 local ID='are:flpru1/container/0/item/1'
 local BASE, BUFFER, CAPACITY, STRIDE=0x140000000,1000,2048,128
 local MEMORY_SIZE=128+2049*128+32+64*64
+-- A member's policy table (19 rows of 48 bytes) and then its pristine copies
+-- follow its native state (FLPRGat.lua).
+local POLICY_TABLE,TABLE=MEMORY_SIZE,19*48
+local BODY=MEMORY_SIZE+1024
+-- Hook slots, the saved-store record and other small blocks come from their
+-- own region, so a member's buffer is the first allocation at BUFFER.
+local SMALL=BASE+0x4000000
+-- Locations with code or the saved-store record, in hook order (FLPRGat.lua).
+local HOOKED={'gate_enter','gate_capture','gate_item','gate_area_enter','gate_area_exit',
+    'gate_actor1','gate_actor2','gate_store','gate_saved_store','gate_store_done','gate_template'}
 local function u32(value)
     return string.char(value%256,math.floor(value/256)%256,math.floor(value/65536)%256,
         math.floor(value/16777216)%256)
@@ -117,6 +127,12 @@ local function fixture(Core)
         return value>=2147483648 and value-4294967296 or value
     end
     function f.api.EEex_Malloc(size)
+        if size<MEMORY_SIZE then
+            local address=SMALL+(f.small_bytes or 0)
+            f.small_bytes=(f.small_bytes or 0)+size+(8-size%8)%8
+            f.small_allocations=(f.small_allocations or 0)+1
+            return address
+        end
         local address=BUFFER+(f.allocated_bytes or 0)
         f.allocated_bytes=(f.allocated_bytes or 0)+size
         f.allocations=f.allocations+1; f.malloc_size=size; return address
@@ -173,18 +189,55 @@ local function fixture(Core)
     function f.api.EEex_JITAt(address,assembly)
         local code=table.concat(assembly)
         local target=assert(tonumber(code:match('^jmp short (%d+)')))
-        local chunks,next_address={},target
-        while f.jit[next_address] do
-            local chunk=f.jit[next_address]; chunks[#chunks+1]=chunk
-            assert(#chunks<=f.jit_count,'chain cycle')
-            next_address=tonumber(chunk:match('jmp (%d+)%s*$'))
-        end
         local _,padding=code:gsub('nop\n','')
         local size=5+padding; local index=#f.hooks+1
-        f.hooks[index]={address,0,size,size,{table.concat(chunks,'\n')}}
+        f.hooks[index]={address,0,size,size,entry=target}
         f.events[#f.events+1]='hook'..index
         if f.fail_hook==index then error('HOOK_FAILED') end
         f:poke(address,0xE9,1); f:poke(address+1,target-address-5,4)
+    end
+    -- The code a hooked location runs now: its entry jumps through a slot to
+    -- the newest chain, whose chunks end in jumps to the next and the tail.
+    function f:chain(index)
+        local entry=self.jit[self.hooks[index].entry]
+        local slot=assert(tonumber(entry:match('mov rax, (%d+)\nmov rax, qword ptr ds:%[rax%]\njmp rax')))
+        local chunks,next_address={entry},self:peek(slot,8)
+        while self.jit[next_address] do
+            local chunk=self.jit[next_address]; chunks[#chunks+1]=chunk
+            assert(#chunks<=self.jit_count+1,'chain cycle')
+            next_address=tonumber(chunk:match('jmp (%d+)%s*$'))
+        end
+        return table.concat(chunks,'\n')
+    end
+    -- Whether a hooked location still runs only its empty chain.
+    function f:empty(index)
+        local entry=self.jit[self.hooks[index].entry]
+        local slot=assert(tonumber(entry:match('mov rax, (%d+)\nmov rax, qword ptr ds:%[rax%]\njmp rax')))
+        local code=self.jit[self:peek(slot,8)]
+        return code:match('^pop rax\njmp (%d+)\n$')~=nil and
+            self.jit[tonumber(code:match('jmp (%d+)'))]:find('#MANUAL_HOOK_EXIT(0)',1,true)==1
+    end
+    -- Whether a hooked location runs only what launch placed there: its empty
+    -- chain, or the saved-store record, and then the original instructions.
+    function f:idle(index)
+        local entry=self.jit[self.hooks[index].entry]
+        local slot=assert(tonumber(entry:match('mov rax, (%d+)\nmov rax, qword ptr ds:%[rax%]\njmp rax')))
+        local address=self:peek(slot,8)
+        while self.jit[address] do
+            local chunk=self.jit[address]
+            if chunk:find('#MANUAL_HOOK_EXIT(0)',1,true)==1 then return true end
+            if not chunk:match('^pop rax\njmp %d+\n$') and not chunk:find('gate_recorder_done',1,true) then
+                return false
+            end
+            address=tonumber(chunk:match('jmp (%d+)%s*$'))
+        end
+        return false
+    end
+    -- EEex's generated Lua call; the GAM hook passes the data and its size.
+    function f.api.EEex_GenLuaCall(name,meta)
+        assert(type(meta)=='table' and #meta.args==2)
+        f.lua_calls=(f.lua_calls or 0)+1
+        return {'; lua call '..name..'\n'}
     end
     function f.api.EEex_HookBeforeRestore(address,delay,size,return_delay,assembly)
         local index=#f.hooks+1
@@ -265,30 +318,49 @@ end
 function cases.full_authored_bundle_and_install_contract(Core,Gate,build,compile)
     local f=fixture(Core); local gate=f:install(Gate,build,compile)
     assert(gate.installed and gate.revision==f.revision and gate.index==1)
-    assert(f.allocations==1 and f.malloc_size==MEMORY_SIZE+27492)
-    assert(f.byte_writes==27492 and #f.hooks==5 and #f.callbacks==1 and f:q(0)==1)
-    assert(f:peek(BUFFER+MEMORY_SIZE+0x70,4)==0x68D4 and
-        f:peek(BUFFER+MEMORY_SIZE+0x78,4)==0x6B14)
-    assert(gate.policy.provenance.expected==BUFFER+MEMORY_SIZE and
+    assert(f.allocations==1 and f.malloc_size==BODY+27492)
+    assert(f.byte_writes==TABLE+27492 and #f.hooks==#HOOKED and #f.callbacks==1 and f:q(0)==1)
+    assert(f:peek(BUFFER+BODY+0x70,4)==0x68D4 and f:peek(BUFFER+BODY+0x78,4)==0x6B14)
+    assert(gate.policy.provenance.expected==BUFFER+BODY and
         gate.policy.provenance.length==27492 and gate.policy.provenance.container_offset==0x68D4 and
         gate.policy.provenance.item_offset==0x6B14)
+    -- The policy's field table follows the native state; the scan names it.
+    assert(gate.policy.table_address==BUFFER+POLICY_TABLE and f:peek(BUFFER+POLICY_TABLE,4)==0x52504C46 and
+        f:chain(2):find('mov r8, '..string.format('%.0f',BUFFER+POLICY_TABLE)..'\n',1,true))
     assert(f.events[1]=='unprotect' and f.events[#f.events]=='protect')
-    for index,site in ipairs({{0x292A84,8},{0x292F45,7},{0x190270,7},
-        {0x18B8AC,8},{0x18DF94,8}}) do
+    -- Every location is hooked; a container source's code runs at the first five.
+    for index,key in ipairs(HOOKED) do
+        local engine=f.api.FLPR_ENGINE_SITES
         local call=f.hooks[index]
-        assert(call[1]==BASE+site[1] and call[2]==0 and call[3]==site[2] and call[4]==site[2])
-        assert(type(call[5])=='table' and type(call[5][1])=='string')
+        assert(call[1]==engine.base+engine.offsets[key][1] and call[2]==0)
+        assert(f:idle(index)==(index>5) and f:empty(index)==(index>5 and key~='gate_saved_store'),key)
     end
+    for index,size in ipairs({8,7,7,8,8}) do
+        assert(f.hooks[index][3]==size and f.hooks[index][4]==size)
+        assert(f:chain(index):find('source1_',1,true))
+    end
+    -- Only the GAM hook calls back into Lua, before its chain.
+    assert(f.lua_calls==1 and f:chain(1):find('; lua call FLPR_CampaignGateGame\n',1,true))
+    for index=2,#HOOKED do assert(not f:chain(index):find('; lua call',1,true)) end
 end
 
+-- A location this engine lacks is never written, and fails only the revisions
+-- that need it, before any of their code is built or reachable.
 function cases.every_location_is_checked_before_any_write(Core,Gate,build,compile,Site)
-    local function untouched(f)
-        assert(f.allocations==0 and f.writes==0 and #f.hooks==0 and #f.events==0)
-        assert(f.api.FLPR_CAMPAIGN_GATE==nil)
-    end
     local function address(f,key)
         local engine=f.api.FLPR_ENGINE_SITES
         return engine.base+engine.offsets[key][1]
+    end
+    local function untouched(f,key)
+        assert(f.allocations==0 and f.api.FLPR_CAMPAIGN_GATE and next(f.api.FLPR_CAMPAIGN_GATE.built)==nil)
+        for index=1,#f.hooks do assert(f:idle(index)) end
+        if key then
+            local engine=f.api.FLPR_ENGINE_SITES
+            for _,offset in ipairs(engine.offsets[key]) do
+                for _,call in ipairs(f.hooks) do assert(call[1]~=engine.base+offset) end
+            end
+            assert(not f.api.FLPR_CAMPAIGN_GATE.hooked[key])
+        end
     end
     for _,key in ipairs(GATE_KEYS) do
         local spec=Site.SPECS[key]
@@ -302,14 +374,14 @@ function cases.every_location_is_checked_before_any_write(Core,Gate,build,compil
             f.bytes[changed]=(f.bytes[changed]+1)%256
             fails('CAMPAIGN_GATE_CODE_MISMATCH:'..key..':differs-at:'..offset,
                 function() f:install(Gate,build,compile) end)
-            untouched(f)
+            untouched(f,key)
         end
         for _,matches in ipairs({0,2}) do
             local f=fixture(Core); local offsets=f.api.FLPR_ENGINE_SITES.offsets
             offsets[key]=matches==2 and {offsets[key][1],offsets[key][1]+64} or {}
             fails('CAMPAIGN_GATE_CODE_MISMATCH:'..key..(matches==2 and ':ambiguous:2' or ':not-found'),
                 function() f:install(Gate,build,compile) end)
-            untouched(f)
+            untouched(f,key)
         end
     end
     -- Bytes a hook relies on outside its own location: the item hook takes the
@@ -331,11 +403,11 @@ function cases.every_location_is_checked_before_any_write(Core,Gate,build,compil
     f=fixture(Core); f.api.FLPR_ENGINE_SITES=nil
     fails('CAMPAIGN_GATE_CODE_MISMATCH:engine:executable-not-found',function() f:install(Gate,build,compile) end)
     Site.read_file=read
-    untouched(f)
+    untouched(f); assert(#f.hooks==0)
 end
 
 function cases.partial_hook_failure_cannot_arm_or_retry(Core,Gate,build,compile)
-    for failing=1,5 do
+    for failing=1,#HOOKED do
         local f=fixture(Core); f.fail_hook=failing
         fails('HOOK_FAILED',function() f:install(Gate,build,compile) end)
         assert(f.events[#f.events]=='protect' and f:q(0)==0 and #f.hooks==failing)
@@ -346,7 +418,9 @@ function cases.partial_hook_failure_cannot_arm_or_retry(Core,Gate,build,compile)
     end
 end
 
-function cases.pristine_rejection_and_copy_failure_precede_hooks(Core,Gate,build,compile)
+-- A revision whose pristine copy is rejected, or whose copies do not read
+-- back, is never armed and none of its code becomes reachable.
+function cases.pristine_rejection_and_copy_failure_publish_nothing(Core,Gate,build,compile)
     for _,change in ipairs({
         function(f) f.pristine=nil end,
         function(f) f.pristine.bytes=f.pristine.bytes:sub(1,-2) end,
@@ -357,14 +431,20 @@ function cases.pristine_rejection_and_copy_failure_precede_hooks(Core,Gate,build
     }) do
         local f=fixture(Core); change(f)
         local ok=pcall(function() f:install(Gate,build,compile) end)
-        assert(not ok and f.allocations==0 and f.writes==0 and #f.hooks==0 and #f.events==0)
-        assert(f.api.FLPR_CAMPAIGN_GATE==nil)
+        assert(not ok and f.allocations==0 and #f.hooks==#HOOKED)
+        for index=1,#HOOKED do assert(f:idle(index)) end
+        assert(next(f.api.FLPR_CAMPAIGN_GATE.built)==nil)
     end
-    for _,offset in ipairs({0,0x70,27491}) do
-        local f=fixture(Core); f.copy_corrupt=offset
-        fails('CAMPAIGN_GATE_PRISTINE_COPY_FAILED',function() f:install(Gate,build,compile) end)
-        assert(f.allocations==1 and f.byte_writes==27492 and #f.hooks==0 and #f.events==0)
-        assert(f.api.FLPR_CAMPAIGN_GATE==nil)
+    -- The policy table is copied first, then the pristine ARE.
+    for _,case in ipairs({{0,'CAMPAIGN_GATE_POLICY_COPY_FAILED',TABLE},
+        {TABLE,'CAMPAIGN_GATE_PRISTINE_COPY_FAILED',TABLE+27492},
+        {TABLE+0x70,'CAMPAIGN_GATE_PRISTINE_COPY_FAILED',TABLE+27492},
+        {TABLE+27491,'CAMPAIGN_GATE_PRISTINE_COPY_FAILED',TABLE+27492}}) do
+        local f=fixture(Core); f.copy_corrupt=case[1]
+        fails(case[2],function() f:install(Gate,build,compile) end)
+        assert(f.allocations==1 and f.byte_writes==case[3] and f:q(0)==0)
+        for index=1,#HOOKED do assert(f:idle(index)) end
+        assert(next(f.api.FLPR_CAMPAIGN_GATE.built)==nil)
     end
 end
 
@@ -395,7 +475,8 @@ function cases.bound_config_is_strict_before_mutation(Core,Gate,build,compile)
     }) do
         local f=fixture(Core); change(f)
         local ok=pcall(function() f:install(Gate,build,compile) end)
-        assert(not ok and f.allocations==0 and f.writes==0 and #f.hooks==0)
+        assert(not ok and f.allocations==0 and #f.hooks==#HOOKED)
+        for index=1,#HOOKED do assert(f:idle(index)) end
     end
 end
 
@@ -455,6 +536,19 @@ function cases.guard_receipt_scope_epoch_destroy_and_revocation(Core,Gate,build,
     f.adapter_instance:destroy(); assert(not receipt.active())
     f.callbacks[1](); assert(f:q(32)==0 and f:q(112)==0)
     assert(not receipt.active())
+end
+
+-- The host proves leases on every tick in turn. A proof reads each event row's
+-- kind, generation and decision, never its names and payload bytes one by one.
+function cases.lease_proof_reads_no_event_row_bytes(Core,Gate,build,compile)
+    local f=fixture(Core); f:install(Gate,build,compile); f:capture(); f:prepare(); f:adapter()
+    local receipt=f:bind()
+    assert(f.gate:inspect().count>=1)
+    f.reads=0
+    assert(receipt.active())
+    assert(f.reads==#f.gate.detours,tostring(f.reads)) -- each detour's jump opcode
+    local snapshot=f.gate:inspect()
+    assert(snapshot.events[1].name_raw and snapshot.events[1].payload_raw) -- diagnostics keep whole rows
 end
 
 function cases.overflow_tampered_detour_and_source_change_reject_guard(Core,Gate,build,compile)
@@ -543,7 +637,7 @@ function cases.configured_second_container_uses_its_own_bytes_and_witness(Core,G
     assert(source_bytes.area=='flprv2' and source_bytes.index==3 and
         source_bytes.name=='FLPRV2B'..string.rep('\0',25) and
         source_bytes.payload=='FLPRX2'..string.rep('\0',2)..u16(0)..u16(2)..u16(3)..u16(4)..u32(0))
-    local assembly=f.hooks[3][5][1]
+    local assembly=f:chain(3)
     local function literal(bytes)
         local result={}
         for i=#bytes,1,-1 do result[#result+1]=string.format('%02x',bytes:byte(i)) end
@@ -582,8 +676,8 @@ function cases.multiple_sources_share_hooks_but_keep_separate_receipts(Core,Gate
     local offset=0x6B14+40
     f.pristine.bytes=f.pristine.bytes:sub(1,offset)..raw..f.pristine.bytes:sub(offset+21)
     f:install(Gate,build,compile); local members=f.gate.members
-    assert(#members==2 and #f.hooks==5 and #f.callbacks==1 and f.allocations==2)
-    assert(members[1].buffer~=members[2].buffer and f.byte_writes==#f.pristine.bytes)
+    assert(#members==2 and #f.hooks==#HOOKED and #f.callbacks==1 and f.allocations==2)
+    assert(members[1].buffer~=members[2].buffer and f.byte_writes==2*TABLE+#f.pristine.bytes)
     assert(members[1].policy.provenance.expected==members[2].policy.provenance.expected)
     f:capture()
     for _,member in ipairs(members) do member:_write(40,1); member:_write(72,1) end
@@ -616,8 +710,8 @@ function cases.profiles_share_hooks_and_select_receipts_by_frozen_revision(Core,
     changed.manifest.revision=string.rep('e',64)
     changed.fixture.revision=changed.manifest.revision
     f.gate=Gate.install(f.api,{original,changed},build,compile,f.pristine)
-    assert(#f.gate.members==2 and #f.hooks==5 and #f.callbacks==1)
-    assert(f.byte_writes==#f.pristine.bytes)
+    assert(#f.gate.members==2 and #f.hooks==#HOOKED and #f.callbacks==1)
+    assert(f.byte_writes==2*TABLE+#f.pristine.bytes)
     local stale
     for _,bundle in ipairs({changed,original}) do
         f.gate:reset(); f.values={}
@@ -638,6 +732,187 @@ function cases.profiles_share_hooks_and_select_receipts_by_frozen_revision(Core,
     end
     f.callbacks[1]()
     assert(not stale.active() and f.gate.active_revision==nil)
+end
+
+-- The gate as M_FLPR creates it at launch: hooks only; revisions come from
+-- the loader when a game needs them.
+local function lazy(f,Gate,build,compile,revisions)
+    f.loads,f.reports={},{}
+    f.gate=Gate.new(f.api,{build=build,compile=compile,pristine=f.pristine,
+        revisions=revisions or {f.revision},
+        load=function(revision)
+            f.loads[#f.loads+1]=revision
+            if f.load_error then error(f.load_error,0) end
+            return (f.bundles or {})[revision] or f.bundle
+        end,
+        report=function(context,reason) f.reports[#f.reports+1]=context..':'..tostring(reason) end})
+    return f.gate
+end
+-- A GAM in fake memory: header, then 84-byte variable records (name, value at 0x28).
+local function gam(f,address,fields,options)
+    options=options or {}
+    local offset=options.offset or 0xB4
+    for at=0,offset-1 do f.bytes[address+at]=0 end
+    f:pokestring(address,options.version or 'GAMEV2.0')
+    f:poke(address+0x38,offset,4); f:poke(address+0x3C,options.count or #fields,4)
+    for index,field in ipairs(fields) do
+        local record=address+offset+(index-1)*84
+        for at=0,83 do f.bytes[record+at]=0 end
+        f:pokestring(record,field[1])
+        f:poke(record+0x28,field[2]%4294967296,4)
+    end
+    return offset+#fields*84
+end
+local REVISION=string.rep('0123456789abcdef',4)
+local function campaign_fields(revision,extra)
+    local fields={{'FLPR_STATE',2},{'OTHER_GLOBAL',7}}
+    for index=1,16 do
+        fields[#fields+1]={string.format('FLPR_R%02d',index),tonumber(revision:sub(index*4-3,index*4),16)}
+    end
+    for _,field in ipairs(extra or {}) do fields[#fields+1]=field end
+    return fields
+end
+
+function cases.launch_hooks_only_and_builds_a_revision_when_a_game_needs_it(Core,Gate,build,compile)
+    local f=fixture(Core)
+    local second=clone(f.bundle); second.manifest.revision=string.rep('e',64)
+    second.fixture.revision=second.manifest.revision
+    f.bundles={[f.revision]=f.bundle,[second.manifest.revision]=second}
+    local gate=lazy(f,Gate,build,compile,{f.revision,second.manifest.revision})
+    -- Launch: every location hooked with nothing reachable; no revision read.
+    assert(gate.installed and #f.hooks==#HOOKED and #f.callbacks==1 and #f.loads==0 and f.allocations==0)
+    for index=1,#HOOKED do assert(f:idle(index)) end
+    assert(gate:guards(f.revision) and gate:guards(second.manifest.revision) and
+        not gate:guards(string.rep('f',64)) and not gate:guards('wrong'))
+    -- The Host's guard is told when a game never needed the revision.
+    fails('CAMPAIGN_GATE_REVISION_NOT_BUILT',function() gate:adapter(f.bundle,{}) end)
+    -- A game's revision is built once; its members are armed before any of
+    -- its code is reachable, and only the locations it uses run code.
+    assert(gate:ensure(f.revision) and gate:ensure(f.revision))
+    assert(#f.loads==1 and f.allocations==1 and f:q(0)==1 and gate.built[f.revision])
+    for index=1,#HOOKED do assert(f:idle(index)==(index>5)) end
+    assert(#gate.members==1 and gate.by_revision[f.revision][1]==gate.members[1])
+    -- Another revision's checks run before those already built, which stay.
+    assert(gate:ensure(second.manifest.revision) and #f.loads==2 and #gate.members==2)
+    local newer=gate.by_revision[second.manifest.revision][1]
+    assert(newer.buffer~=BUFFER and newer.policy.provenance.expected==BUFFER+BODY) -- shared ARE copy
+    for index=1,5 do
+        local code=f:chain(index)
+        local older_at=code:find('mov r10, '..string.format('%.0f',BUFFER)..'\n',1,true)
+        local newer_at=code:find('mov r10, '..string.format('%.0f',newer.buffer)..'\n',1,true)
+        assert(older_at and newer_at and newer_at<older_at,index)
+    end
+    f.callbacks[1]()
+    for _,member in ipairs(gate.members) do assert(member:_q(104)==1) end
+end
+
+function cases.failed_revision_is_cached_reported_and_named(Core,Gate,build,compile)
+    local f=fixture(Core); local gate=lazy(f,Gate,build,compile)
+    f.load_error='SOURCE_GATE_PRISTINE_MISSING'
+    fails('SOURCE_GATE_PRISTINE_MISSING',function() gate:ensure(f.revision) end)
+    f.load_error=nil
+    fails('SOURCE_GATE_PRISTINE_MISSING',function() gate:ensure(f.revision) end)
+    assert(#f.loads==1 and not gate.built[f.revision] and f.allocations==0)
+    fails('SOURCE_GATE_PRISTINE_MISSING',function() gate:adapter(f.bundle,{}) end)
+    -- A revision the configuration does not list is never loaded.
+    fails('CAMPAIGN_GATE_REVISION_NOT_APPLIED',function() gate:ensure(string.rep('f',64)) end)
+    assert(#f.loads==1)
+    -- The loader must return the revision asked for.
+    f=fixture(Core); gate=lazy(f,Gate,build,compile,{string.rep('e',64)})
+    fails('CAMPAIGN_GATE_REVISION_MISMATCH',function() gate:ensure(string.rep('e',64)) end)
+    assert(f.allocations==0)
+    for index=1,#HOOKED do assert(f:idle(index)) end
+end
+
+function cases.gam_revision_reads_the_campaign_fields_exactly(Core,Gate,build,compile)
+    local f=fixture(Core); local gate=lazy(f,Gate,build,compile)
+    local G=SMALL+0x100000
+    local function read(fields,options)
+        local size=gam(f,G,fields,options)
+        return gate:_gam_revision(G,(options or {}).size or size)
+    end
+    -- Other GLOBALs, FLPR_ names that are not R01..R16 and any order are fine.
+    local fields=campaign_fields(REVISION,{{'FLPR_RKEY',1},{'FLPR_R17',5},{'FLPR_R00',5},{'FLPR_S0001',6}})
+    assert(read(fields)==REVISION)
+    local reversed={}
+    for index=#fields,1,-1 do reversed[#reversed+1]=fields[index] end
+    assert(read(reversed)==REVISION)
+    for _,version in ipairs({'GAMEV2.1','GAMEV1.1'}) do assert(read(fields,{version=version})==REVISION) end
+    assert(read(fields,{version='GAMEV9.9'})==nil)
+    -- Each field is needed once, zero-padded, with a value of 0..0xFFFF.
+    for index=3,18 do
+        local missing,duplicate,large,padded={},{},{},{}
+        for at,field in ipairs(fields) do
+            if at~=index then missing[#missing+1]=field end
+            duplicate[#duplicate+1]=field
+            large[#large+1]=at==index and {field[1],0x10000} or field
+            padded[#padded+1]=at==index and {field[1]..'X',field[2]} or field
+        end
+        duplicate[#duplicate+1]=fields[index]
+        assert(read(missing)==nil and read(duplicate)==nil and read(large)==nil and read(padded)==nil,index)
+    end
+    local negative=clone(fields); negative[3][2]=-1
+    assert(read(negative)==nil)
+    -- The variable table must lie inside the GAM it came with.
+    local size=gam(f,G,fields)
+    assert(gate:_gam_revision(G,size-1)==nil and gate:_gam_revision(G,0xB3)==nil)
+    assert(read(fields,{offset=0xB3})==nil and read(fields,{count=16385})==nil)
+    assert(gate:_gam_revision(0,size)==nil and gate:_gam_revision(G,0x1000001)==nil)
+end
+
+function cases.game_entry_builds_the_saved_revision_and_reports_failures(Core,Gate,build,compile)
+    local f=fixture(Core); f.revision=REVISION; f.bundle.manifest.revision=REVISION
+    f.bundle.fixture.revision=REVISION
+    local gate=lazy(f,Gate,build,compile)
+    local G=SMALL+0x100000
+    local size=gam(f,G,campaign_fields(REVISION))
+    f.api.FLPR_CampaignGateGame(G,size)
+    assert(gate.built[REVISION] and #f.loads==1 and #f.reports==0)
+    f.api.FLPR_CampaignGateGame(G,size)
+    assert(#f.loads==1)
+    -- New Game templates and saves without a listed revision build nothing.
+    f=fixture(Core); gate=lazy(f,Gate,build,compile,{REVISION})
+    for _,fields in ipairs({{{'FLPR_FRESH',1}},campaign_fields(string.rep('f',64))}) do
+        f.api.FLPR_CampaignGateGame(G,gam(f,G,fields))
+    end
+    assert(#f.loads==0 and next(gate.built)==nil and #f.reports==0)
+    -- A failure is reported and kept; the engine call returns normally.
+    f.load_error='SOURCE_GATE_REVISION_UNAVAILABLE'
+    f.api.FLPR_CampaignGateGame(G,gam(f,G,campaign_fields(REVISION)))
+    f.api.FLPR_CampaignGateGame(G,gam(f,G,campaign_fields(REVISION)))
+    assert(#f.loads==1 and #f.reports==1 and f.reports[1]=='gate:SOURCE_GATE_REVISION_UNAVAILABLE')
+    assert(gate.failed[REVISION]=='SOURCE_GATE_REVISION_UNAVAILABLE')
+end
+
+function cases.owned_copies_move_in_blocks_when_available(Core,Gate,build,compile)
+    local function bulk(f)
+        f.blocks,f.memsets={},{}
+        f.api.FLPR={Memory={
+            write=function(address,value)
+                f.blocks[#f.blocks+1]={address,#value}; f:pokestring(address,value)
+                if f.bulk_corrupt==address then f.bytes[address+0x70]=0xFF end
+            end,
+            read=function(address,length)
+                local out={}
+                for at=0,length-1 do out[#out+1]=string.char(f.bytes[address+at] or 0) end
+                return table.concat(out)
+            end}}
+        function f.api.EEex_Memset(address,value,size)
+            assert(value==0); f.memsets[#f.memsets+1]={address,size}
+        end
+    end
+    local f=fixture(Core); bulk(f)
+    local gate=f:install(Gate,build,compile)
+    assert(gate.installed and f.byte_writes==nil and #f.blocks==2)
+    assert(f.blocks[1][1]==BUFFER+POLICY_TABLE and f.blocks[1][2]==TABLE)
+    assert(f.blocks[2][1]==BUFFER+BODY and f.blocks[2][2]==27492 and f:peek(BUFFER+BODY+0x70,4)==0x68D4)
+    local zeroed=false
+    for _,call in ipairs(f.memsets) do if call[1]==BUFFER and call[2]==MEMORY_SIZE then zeroed=true end end
+    assert(zeroed)
+    -- A block that does not read back is refused.
+    f=fixture(Core); bulk(f); f.bulk_corrupt=BUFFER+BODY
+    fails('CAMPAIGN_GATE_PRISTINE_COPY_FAILED',function() f:install(Gate,build,compile) end)
+    for index=1,#HOOKED do assert(f:idle(index)) end
 end
 
 return cases
@@ -685,13 +960,21 @@ class CampaignGateBridgeTests(unittest.TestCase):
                         labels.update((pair[1], pair[2]) for pair in pairs.values())
                         result = action(); labels.clear(); return result
 
+                    # The location's original call, which the chain's tail replays.
+                    uc.mem_write(site, b'\xe8' + struct.pack('<i', callee - site - 5))
+                    slot = data + 0x800
                     api = lua.table_from({
                         'EEex_HookIntegrityWatchdog_IgnoreRegisters': lambda *_: None,
                         'EEex_HookIntegrityWatchdog_DefaultIgnoreStack': lambda *_: None,
                         'EEex_HookIntegrityWatchdog_HookEnter': lua.table_from([counter(0)]),
                         'EEex_RunWithAssemblyLabels': scoped,
                         'EEex_JITNear': jit, 'EEex_JITAt': emit,
-                        'EEex_Read32': lambda _: callee-site-5,
+                        'EEex_Malloc': lambda size: slot,
+                        'EEex_Write64': lambda address, value: uc.mem_write(
+                            int(address), struct.pack('<Q', int(value))),
+                        'EEex_ReadU8': lambda address: uc.mem_read(int(address), 1)[0],
+                        'EEex_Read32': lambda address: struct.unpack(
+                            '<i', uc.mem_read(int(address), 4))[0],
                         'EEex_StoreBytesAssembly': lambda *_: lua.table_from(
                             ['mov rax, qword ptr [rsp+32]\n']),
                     })
@@ -713,9 +996,12 @@ class CampaignGateBridgeTests(unittest.TestCase):
                               'je selected\npopfq\njmp done\nselected:\npopfq\n'
                               f'#MANUAL_HOOK_EXIT(1)\njmp {skip}\ndone:\n;'+
                               ('padding '*1200)+'\n')
-                    gate.install_chain(api, lua.table_from({'call': call, 'size': 5}),
+                    key = 'gate_actor1' if call else 'gate_enter'
+                    gate.install_chain(api, lua.table_from({'key': key, 'call': call, 'size': 5}),
                                        site, lua.table_from([first, second]))
-                    self.assertEqual(len(compiled), 4)  # tail, two chunks, entry
+                    # Hook: tail, empty chain, entry. Chain: two chunks, its entry.
+                    self.assertEqual(len(compiled), 6)
+                    self.assertEqual(struct.unpack('<Q', uc.mem_read(slot, 8))[0], compiled[5])
                     emit(callee, lua.table_from(['mov rax, [rsp+40]\nret\n']))
                     stopped = []
 

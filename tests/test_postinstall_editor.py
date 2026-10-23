@@ -1,8 +1,9 @@
 """Editor workflows reuse the configurator's synthetic installation fixture."""
-from contextlib import nullcontext
+from contextlib import ExitStack, contextmanager, nullcontext
 from copy import deepcopy
 import json
 from pathlib import Path
+import struct
 import sys
 from threading import Thread
 from types import ModuleType
@@ -15,13 +16,29 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
 from flir_config.campaigns import read_campaign, _render_lua
 from flir_config.editor import Editor, create_server
 from flir_config.native_export import NEXT_SCHEMA
+from flir_config.original_catalog import resolve_template
+from flir_config.original_options import SPELL_SHIELD_SOURCE, is_spell_shield_row
 from flir_config.profiles import edit_profile, new_profile
 from flir_config.profiles import ProfileError
-from flir_config.sources import new_binding_plan
+from flir_config.resources import scan_game
+from flir_config.sources import new_binding_plan, scan_world
+from flir_config.templates import DEFAULT_OPTIONS
 from tests import test_postinstall_native_export as fixtures
+from test_cursed_disguises import resources as cursed_resources
 from tests.test_postinstall_blpool_script import write_registry
+from test_postinstall_resources import make_itm
 from tests.test_postinstall_world_formats import make_are, make_cre, make_sto, item_record
 from sod_table_fixtures import sod_tables
+
+
+@contextmanager
+def world_checks():
+    """Spies on validate_world in each module an editor request uses."""
+    from flir_config import native_export, original_configuration, sources, starts
+    validate = sources.validate_world
+    with ExitStack() as stack:
+        yield [stack.enter_context(patch.object(module, "validate_world", wraps=validate))
+               for module in (sources, original_configuration, starts, native_export)]
 
 
 class EditorTests(unittest.TestCase):
@@ -83,6 +100,53 @@ class EditorTests(unittest.TestCase):
                 self.assertEqual([row["id"] for row in self.editor.get("/api/templates", {})], presets)
                 self.assertEqual(self.editor.get("/api/recommended", {})["id"], presets[0])
 
+    def test_records_and_recipients_show_and_find_their_parts_of_the_game(self):
+        fx = self.fx
+        record = item_record("SYNTH001", expiration=0, charges=(0, 0, 0), flags=1)
+        # EET's area names tell the part of the game; "area" tells none.
+        areas = {"bg2600": "bg1", "bd0010": "sod", "ar0602": "soa", "ar3000": "wk", "ar5500": "tob"}
+        for area in areas:
+            (fx.override / f"{area}.are").write_bytes(make_are([record], [("Chest", 0, 1)], [("Guard", "ACTOR")]))
+
+        def editor(name):
+            fx.refresh()
+            profile = edit_profile(new_profile(fx.catalog, "parts", "Parts"), fx.catalog, include=["synth001"])
+            plan = new_binding_plan(profile, fx.catalog, fx.world)
+            plan["sources"] = [{"item": "synth001", "policy": "relocate", "registration_ids": ["original-source:x"],
+                                "source_ids": [*(f"are:{area}/container/0/item/0" for area in areas), fx.first]}]
+            plan["registrations"] = [{"id": "original-source:x", "item": "synth001", "resource": "cre:actor"}]
+            plan["targets"] = [{"id": target, "capacity": 1, "optional": False} for target in
+                               (*(f"are:{area}/container/0" for area in areas), "cre:actor", "original-target:x",
+                                "are:missing/container/0")]
+            plan["target_registrations"] = [{"id": "original-target:x", "resource": "are:ar5500",
+                                             "authored": {"target": "Chest", "area": "ar5500"}}]
+            return Editor(fx.catalog, fx.world, fx.root / name, profile, plan)
+
+        every = list(areas.values())
+        parts = editor("parts-editor")
+        state = parts.get("/api/state", {})
+        # A creature template is in every part where it is placed.
+        self.assertEqual(state["source_parts"], {
+            **{f"are:{area}/container/0/item/0": [part] for area, part in areas.items()},
+            fx.first: [], "original-source:x": every})
+        self.assertEqual([row["parts"] for row in state["targets"]],
+                         [*([part] for part in areas.values()), every, ["tob"], []])
+        found = parts.get("/api/targets", {"q": "tob chest"})
+        self.assertEqual([(row["id"], row["parts"]) for row in found["records"]],
+                         [("are:ar5500/container/0", ["tob"])])
+        self.assertEqual({row["id"] for row in parts.get("/api/targets", {"q": "watcher's keep"})["records"]},
+                         {"are:ar3000/container/0", "are:ar3000/actor/0", "cre:actor"})
+        records = parts.get("/api/sources", {"item": "synth001"})["records"]
+        self.assertEqual({row["id"]: row["parts"] for row in records},
+                         {fx.first: [], **{f"are:{area}/container/0/item/0": [part] for area, part in areas.items()}})
+        # A game no preset is for: its area names tell no part.
+        (fx.override / "EET.flag").unlink()
+        plain = editor("plain-editor")
+        state = plain.get("/api/state", {})
+        self.assertEqual(set(map(tuple, state["source_parts"].values())), {()})
+        self.assertEqual({tuple(row["parts"]) for row in state["targets"]}, {()})
+        self.assertEqual(plain.get("/api/targets", {"q": "tob"})["total"], 0)
+
     def test_preset_routes_replace_only_a_checked_successful_draft(self):
         editor = self.editor
         descriptors = editor.get("/api/templates", {})
@@ -109,8 +173,10 @@ class EditorTests(unittest.TestCase):
         module = ModuleType("flir_config.original_configuration")
         target_id = "original-target:bg1:base:target:3"
 
-        def build(catalog, world, template_id, *, items, targets, options):
+        def build(catalog, world, template_id, *, items, targets, options, scans):
             calls.append((catalog, world, template_id, items, targets, options))
+            # The fit reuses the scans the editor validated when it started.
+            self.assertIs(scans.indexes(catalog, world)[1], editor.index)
             result = deepcopy(original)
             result["profile"]["name"] = "BG1 original"
             result["plan"]["randomization"] = {"tier_rows": ["original-choice"]}
@@ -169,6 +235,62 @@ class EditorTests(unittest.TestCase):
             with self.assertRaisesRegex(ProfileError, "different scan"):
                 editor.post("/api/template", {"id": "bg2-original"})
             self.assertEqual(editor.draft, before_error)
+
+    def test_preset_options_with_their_own_plan_fields_save_check_apply_and_reopen(self):
+        """More Spell Shield scrolls and cursed disguises add their metadata to the plan."""
+        fx = self.fx
+        scroll = bytearray(make_itm())
+        struct.pack_into("<I", scroll, 0x18, 0x4c)  # droppable, as the game's is
+        (fx.override / "scrl8x.itm").write_bytes(scroll)
+        (fx.override / "udduer01.sto").write_bytes(bytes(make_sto(
+            [(item_record("scrl8x", expiration=0, charges=(1, 1, 0), flags=0), 1, 0)])))
+        # A place of the Spell Shield scroll's tier for its randomised copies.
+        (fx.override / "ar0808.are").write_bytes(make_are([], [("Chest1", 0, 0)]))
+        for name, data in cursed_resources().items():
+            item = bytearray(data)
+            struct.pack_into("<HH", item, 0x72 + 0x1E, 0, 0)
+            (fx.override / f"{name}.itm").write_bytes(item)
+        # The disguises' texts go into the game's English text and journal table.
+        language = fx.game / "lang/en_US"
+        language.mkdir(parents=True)
+        (language / "dialog.tlk").write_bytes((fx.game / "dialog.tlk").read_bytes())
+        (fx.override / "BGEE.LUA").write_bytes(b"quests = {}\n")
+        for name in ("override/M_FLPR.lua", "override/FLPRRun.menu", "randomiser-campaigns/next.lua"):
+            path = fx.game / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("test runtime")
+        catalog = scan_game(fx.game, language="en_US")
+        world = scan_world(catalog)
+        options = DEFAULT_OPTIONS | {"scrolls": True, "more_spell_shield": True, "cursed_disguise": True}
+        rows = resolve_template(catalog, world, "bg2-original", items="extended", targets="extended",
+                                options=options)
+        rows["items"] = [row for row in rows["items"] if is_spell_shield_row(row)]
+        rows["targets"] = [row for row in rows["targets"] if row["id"] == "bg2:base:target:309"]
+        editor = Editor(catalog, world, fx.root / "options-editor", apply_game=fx.game)
+        with patch("flir_config.original_configuration.resolve_template", return_value=rows), \
+                world_checks() as spies:
+            editor.post("/api/template", {"id": "bg2-original", "items": "extended", "targets": "extended",
+                                          "options": options})
+        # Requests reuse the scans the editor validated when it started.
+        self.assertEqual([spy.call_count for spy in spies], [0, 0, 0, 0])
+        draft = deepcopy(editor.draft)
+        self.assertEqual(draft["plan"]["original_options"], options)
+        self.assertEqual(draft["plan"]["spell_shield"]["source_id"], SPELL_SHIELD_SOURCE)
+        self.assertEqual(draft["plan"]["cursed_disguises"]["game"], "eet")
+        saved = editor.post("/api/save", draft)
+        self.assertEqual((saved["profile"], saved["plan"]), (draft["profile"], draft["plan"]))
+        loaded = Editor(catalog, world, editor.workspace).post("/api/load", {"id": draft["profile"]["id"]})
+        self.assertEqual((loaded["profile"], loaded["plan"]), (draft["profile"], draft["plan"]))
+        with world_checks() as spies:
+            self.assertTrue(editor.post("/api/validate", draft)["runtime_supported"])
+            with patch("flir_config.activation.require_closed"):
+                applied = editor.post("/api/apply", draft)
+        self.assertEqual([spy.call_count for spy in spies], [0, 0, 0, 0])
+        campaign = read_campaign(editor.workspace / "prepared", applied["revision"])
+        self.assertEqual(campaign["spell_shield"], draft["plan"]["spell_shield"])
+        self.assertEqual(campaign["cursed_disguises"], draft["plan"]["cursed_disguises"])
+        # The editor reopens what was applied.
+        self.assertEqual(Editor(catalog, world, editor.workspace, apply_game=fx.game).draft, draft)
 
     def test_prepare_uses_existing_campaign_format_and_capacity_check(self):
         e = self.editor

@@ -4,6 +4,7 @@ Such an install has no configuration yet, so Apply must not require an
 existing next-game pointer, while a hand-staged test runtime still needs one.
 """
 from copy import deepcopy
+import json
 from pathlib import Path
 import re
 import sys
@@ -11,13 +12,17 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
+from lupa.luajit21 import LuaRuntime as LuaJIT
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
+from flir_config import campaigns
 from flir_config.activation import adopt_revisions, deploy_export, validate_runtime
 from flir_config.campaigns import _render_lua
 from flir_config.editor import Editor
 from flir_config.native_export import NEXT_SCHEMA
 from flir_config.profiles import ProfileError, edit_profile, new_profile
 from flir_config.sources import new_binding_plan
+from tests import test_campaign_lua_rendering as lua_rendering
 from tests import test_postinstall_editor as editor_tests
 from tests.test_postinstall_resources import snapshot
 from tests.test_postinstall_world_formats import item_record, make_are, make_cre, make_sto
@@ -205,6 +210,49 @@ class OtherWorkspaceApplyTests(unittest.TestCase):
                          (kept, later))
         self.assertEqual((self.data / "source-gate.lua").read_bytes(),
                          _render_lua(sorted([first["revision"], second["revision"], third["revision"]])))
+
+    def assert_upgraded(self, revision: str, refused: dict[str, bytes]) -> dict[str, bytes]:
+        """The game's Lua files of <revision> are the current renderings of their JSON
+        twins, which LuaJIT loads; every other file is as <refused> had it."""
+        files = self.revision_files(revision)
+        names = {f"{revision}.lua", f"{revision}.native.lua"}
+        for name in names:
+            value = json.loads(files[name.removesuffix(".lua") + ".json"])
+            self.assertNotEqual(files[name], refused[name])
+            self.assertEqual(files[name], campaigns._render_lua(value))
+            lua = LuaJIT()
+            loaded, failure = lua_rendering.load(lua, files[name])
+            self.assertIsNone(failure)
+            self.assertTrue(lua_rendering.same(loaded, value, lua.globals().type))
+        self.assertEqual({name: data for name, data in files.items() if name not in names},
+                         {name: data for name, data in refused.items() if name not in names})
+        return files
+
+    def test_apply_replaces_a_refused_lua_rendering_of_the_same_revision(self):
+        # Earlier versions wrote one table constructor even where the game's
+        # LuaJIT refuses it; no game could start with it.
+        first = self.apply("workspace-a")
+        refused = self.revision_files(first["revision"])
+        with patch.object(campaigns, "_LUAJIT_CONSTANTS", 4), patch.object(campaigns, "_LUA_PART", 8):
+            again = self.apply("workspace-a")
+            self.assertEqual(again["revision"], first["revision"])
+            self.assert_upgraded(first["revision"], refused)
+
+    def test_apply_replaces_a_refused_lua_rendering_of_an_earlier_revision(self):
+        first = self.apply("workspace-a")
+        refused = self.revision_files(first["revision"])
+        with patch.object(campaigns, "_LUAJIT_CONSTANTS", 4), patch.object(campaigns, "_LUA_PART", 8):
+            # A new workspace adopts the game's refused files; its export and Apply replace them.
+            self.fx.refresh()
+            second = self.apply("workspace-b", "synth002", self.fx.second)
+            upgraded = self.assert_upgraded(first["revision"], refused)
+            self.assertNotIn("Saved games", second["message"])
+            # Workspace A still holds the refused files and applies other settings.
+            self.apply("workspace-a", "synth002", self.fx.second, target="are:area/actor/0")
+            self.assertEqual(self.revision_files(first["revision"]), upgraded)
+            self.assertEqual(self.revision_files(second["revision"]),
+                             {name: (self.fx.root / "workspace-a" / "native" / "campaign-store" / "revisions" /
+                                     name).read_bytes() for name in self.revision_files(second["revision"])})
 
     def test_adopting_copies_each_revision_once_as_the_game_has_it(self):
         first = self.apply("workspace-a")

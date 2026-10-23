@@ -111,8 +111,13 @@ class InventoryGateTests(unittest.TestCase):
                 _, f, _, _, _ = self.setup_gate(runtime)
                 self.assertEqual(len(f.gate.members), 8)
                 self.assertEqual(len(f.inventory_groups), 4)
-                self.assertEqual({f.hooks[i][1] - 0x140000000 for i in range(1, len(f.hooks)+1)},
-                                 {0x292A84, 0x292F45, 0x250765, 0x405295, 0x341220})
+                # Launch hooks every location; these sources' code runs at GAM
+                # entry, the capture, the STO and the CRE template loads. The
+                # inventory rewrite needs no receipt after the store is parsed.
+                hooked = {f.hooks[i][1] - 0x140000000: i for i in range(1, len(f.hooks)+1)}
+                self.assertEqual(len(hooked), 11)
+                self.assertEqual({rva for rva, index in hooked.items() if not f.idle(f, index)},
+                                 {0x292A84, 0x292F45, 0x250765, 0x341220})
                 buffers = set()
                 for group in f.inventory_groups.values():
                     self.assertEqual(len(group.members), 2)
@@ -120,9 +125,9 @@ class InventoryGateTests(unittest.TestCase):
                     self.assertEqual(group.members[1].revision, group.members[2].revision)
                     self.assertTrue(all(member.permanent for member in group.members.values()))
                     hook_rva = 0x341220 if group.kind == 'cre' else 0x250765
-                    hook = next(h for h in f.hooks.values() if h[1] == 0x140000000+hook_rva)
+                    hook = f.chain(f, hooked[hook_rva])
                     for edit in group.edits.values():
-                        self.assertIn(f'mov r10, {int(edit.buffer)}', hook[5][1])
+                        self.assertIn(f'mov r10, {int(edit.buffer)}', hook)
                         self.assertNotIn(edit.buffer, buffers)
                         buffers.add(edit.buffer)
 

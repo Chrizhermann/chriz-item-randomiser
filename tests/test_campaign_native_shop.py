@@ -182,6 +182,18 @@ function cases.deliver_publishes_exact_payload_then_activates_unit(Shop)
         shop.last_delivery.after_count==5)
 end
 
+function cases.deliver_identifies_the_shop_row_and_keeps_other_flags(Shop)
+    -- Sources are mostly a creature's or a container's unidentified item.
+    for source,row in pairs({[0]=1,[1]=1,[2]=3,[3]=3}) do
+        local f=setup();f.payload.flags=source
+        local shop=Shop.install(f.api);shop:bind(f.fixture,f.controller)
+        assert(shop:deliver(f.fixture.targets[f.target_id],f.payload,7))
+        local call=assert(f.calls[1])
+        assert(call.action==string.format('AddStoreItem("shop","synth001",1,%d)',row) and call.flags==row)
+        assert(f.payload.flags==source)
+    end
+end
+
 function cases.failed_or_unproven_delivery_does_not_activate(Shop)
     for _,mode in ipairs({'error','collision'}) do
         local f=setup();f.action_mode=mode

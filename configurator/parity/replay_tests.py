@@ -2,8 +2,9 @@
 
 Runs the Python test suite (tests/test_*.py) with the reference implementation
 as usual. Every call the tests make to the configurator library -- game and
-world scans, preset drafts and fitting with left-out rows, binding, campaign
-compile and publish, native export -- is also run by the Rust port on the same
+world scans, preset drafts and fitting with left-out rows, the reward routes
+of table rows, binding, campaign compile and publish, native export -- is
+also run by the Rust port on the same
 inputs and the same folder state. Results, errors and written files must match
 exactly; the synthetic games are the ones the reference tests build.
 
@@ -14,13 +15,18 @@ back as they were before the reference runs. A call is not compared (and is
 counted as skipped, with the reason) when the test has patched the reference
 in a way the Rust port cannot mirror, when an input is not plain JSON, or when
 it writes outside the temporary folder or into a folder holding links or
-read-only files. Patched hash tables are passed on as the Rust port's
-test-only pin overrides; a patched `resolve_template` as the drafts it returns;
-a patched `translations.LANGUAGES_DIR` as the folder the port reads its
-translations from; a patched lists root (`templates.ROOT` and
-`original_catalog.ROOT`) as the folder the port reads its tables from, and
+read-only files. A patch that only records calls (a mock wrapping the very
+function it replaces) does not count. Patched hash tables are passed on as
+the Rust port's test-only pin overrides; a patched `resolve_template` as the
+drafts it returns; a patched `translations.LANGUAGES_DIR` as the folder the
+port reads its translations from; a patched lists root (`templates.ROOT` and
+`original_catalog.ROOT`) as the folder the port reads its tables from,
 patched preset campaigns (`CAMPAIGNS`, `templates._PARTS`,
-`platform.PRESET_CAMPAIGNS`) as the port's.
+`platform.PRESET_CAMPAIGNS`) as the port's, and patched Lua constant limits
+(`campaigns._LUAJIT_CONSTANTS`, `campaigns._LUA_PART`) as the port's. A call
+given validated scans (`sources.Scans`) runs in the port with scans of the
+same catalogues, or of copies of them when the reference's scans belong to
+other catalogues.
 """
 from __future__ import annotations
 
@@ -61,6 +67,8 @@ DATA_STARTUP: dict[str, dict] = {}
 IRRELEVANT_PATCHES = {("flir_config.activation", "require_closed")}
 # The lists root and the preset campaigns: passed on to the Rust port.
 LIST_ROOTS = {("flir_config.templates", "ROOT"), ("flir_config.original_catalog", "ROOT")}
+# The Lua constant limits a test lowers; the port takes both as CIR_PARITY_LUA_LIMITS.
+LUA_LIMITS = {("flir_config.campaigns", "_LUAJIT_CONSTANTS"), ("flir_config.campaigns", "_LUA_PART")}
 CAMPAIGN_NAMES = {("flir_config.templates", "CAMPAIGNS"), ("flir_config.platform", "CAMPAIGNS")}
 STANDARD_MODULES = {"os", "os.path", "ntpath", "posixpath", "shutil", "builtins", "io", "pathlib",
                     "tempfile", "hashlib", "json", "struct", "stat"}
@@ -129,15 +137,27 @@ def reference_tables() -> set[int]:
     return tables
 
 
+def is_spy(patcher) -> bool:
+    """Whether a patch only records calls: a mock that wraps the very value it
+    replaces, with no return value or side effect of its own."""
+    new = getattr(patcher.target, patcher.attribute, None)
+    original = getattr(patcher, "temp_original", None)
+    return (isinstance(new, mock.NonCallableMock) and original is not None and new._mock_wraps is original
+            and new.side_effect is None and new._mock_return_value is mock.DEFAULT)
+
+
 def classify(call: str):
     """(reason to skip or None, overrides for the Rust run, mocked
     resolve_template or None, mocked registration resolve_template or None)."""
-    from flir_config import platform, templates
+    from flir_config import campaigns as campaign_module, platform, templates
     resolve = registration = languages = None
+    lua_limits = False
     roots: dict[str, object] = {}
     campaigns_patched = False
     for patcher in list(ACTIVE_PATCHES):
         target, attribute = getattr(patcher, "target", None), getattr(patcher, "attribute", "")
+        if is_spy(patcher):
+            continue
         if isinstance(target, types.ModuleType):
             module = target.__name__
             if (module, attribute) in IRRELEVANT_PATCHES:
@@ -154,6 +174,9 @@ def classify(call: str):
                 continue
             if module == "flir_config.original_registrations" and attribute == "resolve_template":
                 registration = getattr(target, attribute)
+                continue
+            if (module, attribute) in LUA_LIMITS:
+                lua_limits = True
                 continue
             if module == "flir_config.translations" and attribute == "LANGUAGES_DIR":
                 folder = getattr(target, attribute)
@@ -217,6 +240,8 @@ def classify(call: str):
         if not json_native(campaigns):
             return "patched campaigns are not plain JSON", None, None, None
     overrides = {"pins": pins or None, "tables": data or None, "languages": languages, "lists": lists,
+                 "lua_limits": (f"{campaign_module._LUAJIT_CONSTANTS},{campaign_module._LUA_PART}"
+                                if lua_limits else None),
                  "campaigns": campaigns}
     return None, overrides, resolve, registration
 
@@ -251,14 +276,18 @@ class Spec:
     text only (another type cannot be passed to it at all), those it takes as
     a mapping of text to text, those it takes as a sequence (a tuple becomes
     a JSON list), those that become JSON through a function (an object of the
-    reference's), and how the reference's result becomes JSON."""
+    reference's), how the reference's result becomes JSON, and whether only
+    the tests' own calls are recorded (`tests_only`: a helper the
+    configurator calls for each row is compared through the calls that make
+    it, not once per row)."""
 
     def __init__(self, call: str, arguments, *, paths=(), writes=(), texts=(), text_maps=(), sequences=(),
-                 converters=None, result=None):
+                 converters=None, result=None, tests_only=False):
         self.call, self.arguments, self.paths, self.writes = call, arguments, set(paths), tuple(writes)
         self.texts, self.text_maps, self.sequences = set(texts), set(text_maps), set(sequences)
         self.converters = converters or {}
         self.result = result
+        self.tests_only = tests_only
 
 
 def names_value(names) -> dict:
@@ -281,6 +310,10 @@ SPECS = {
             catalog=file(v["catalog"]), world=file(v["world"]), template_id=v["template_id"], game=v["game"],
             items=v["items"], targets=v["targets"], options=v["options"], names=v["names"]),
         texts=("template_id", "game"), converters={"names": names_value}),
+    ("flir_config.original_catalog", "mode2_route_source"): Spec(
+        "mode2_route_source", lambda v, d: {"row": v["row"]}, tests_only=True),
+    ("flir_config.original_catalog", "mode2_route_target"): Spec(
+        "mode2_route_target", lambda v, d: {"row": v["row"]}, tests_only=True),
     ("flir_config.templates", "build_template"): Spec(
         "build_template", lambda v, d: present(template_id=v["template_id"], items=v["items"], targets=v["targets"],
                                                options=v["options"]),
@@ -385,7 +418,12 @@ def record(spec: Spec, original, signature, args, kwargs):
     except TypeError:
         return original(*args, **kwargs)
     values = dict(bound.arguments)
+    scans = values.pop("scans", None)
     reason, pins, resolve, registration = classify(spec.call)
+    if reason is None and scans is not None:
+        from flir_config.sources import Scans
+        if not isinstance(scans, Scans):
+            reason = "scans are not validated scans"
     if reason is None and spec.call == "deploy_export":
         # The port asks Windows whether the game runs, as the reference does
         # unpatched; a test that makes the check refuse cannot be mirrored.
@@ -442,9 +480,13 @@ def record(spec: Spec, original, signature, args, kwargs):
         return original(*args, **kwargs)
 
     try:
-        rust_line = RUNNER.run([{"call": spec.call, "args": spec.arguments(values, draft)}], pins["pins"],
+        arguments = spec.arguments(values, draft)
+        if scans is not None:
+            own = scans.catalog is values["catalog"] and scans.world is values["world"]
+            arguments["scans"] = "own" if own else "other"
+        rust_line = RUNNER.run([{"call": spec.call, "args": arguments}], pins["pins"],
                                registration_draft, pins["tables"], pins["languages"], pins["lists"],
-                               pins["campaigns"])[0]
+                               pins["campaigns"], pins["lua_limits"])[0]
     except Exception as exc:  # the comparison reports it; the test goes on
         rust_line = json.dumps({"rust-failure": str(exc)})
     rust_after = {}
@@ -453,6 +495,9 @@ def record(spec: Spec, original, signature, args, kwargs):
             rust_after[root] = snapshot_tree(root)
         except (ValueError, OSError) as exc:
             rust_after[root] = {"<unreadable>": str(exc).encode()}
+    # Only once every root is read: one root can hold another (a game folder
+    # beside the export, both in the folder holding the export).
+    for root in roots:
         restore_tree(root, before[root])
 
     error = None
@@ -483,10 +528,13 @@ def record(spec: Spec, original, signature, args, kwargs):
 
 def make_wrapper(spec: Spec, original):
     signature = inspect.signature(original)
+    tests = str(ROOT / "tests")
 
     @functools.wraps(original)
     def wrapper(*args, **kwargs):
         if getattr(STATE, "active", False):
+            return original(*args, **kwargs)
+        if spec.tests_only and not sys._getframe(1).f_code.co_filename.startswith(tests):
             return original(*args, **kwargs)
         STATE.active = True
         try:

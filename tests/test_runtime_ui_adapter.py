@@ -188,6 +188,19 @@ class UiAdapterTests(unittest.TestCase):
                 lua.execute("Infinity_FetchString = nil")
                 self.assertEqual(lua.eval('FLPRUI_Text("not_running")'), english)
 
+    def test_a_message_shows_in_the_engines_info_popup(self):
+        for name, module in RUNTIMES:
+            with self.subTest(name):
+                lua = self.lua(module)
+                lua.execute("infos = {}; function popupInfo(info) infos[#infos + 1] = uiStrings[info] end")
+                self.assertTrue(lua.eval('FLPRUI_Tell("stopped")'))
+                infos = lua.globals().infos
+                self.assertEqual([infos[i] for i in range(1, len(infos) + 1)],
+                                 [lua.eval('FLPRUI_Text("stopped")')])
+                # Without the popup the caller's message log line is all there is.
+                lua.execute("popupInfo = nil")
+                self.assertFalse(lua.eval('FLPRUI_Tell("stopped")'))
+
     def test_engine_lua_without_io_detects_the_configuration_through_loadfile(self):
         for name, module in RUNTIMES:
             with self.subTest(name, configured=False):
@@ -240,6 +253,68 @@ class UiAdapterTests(unittest.TestCase):
                 self.assertTrue(lua.eval("dwSystemCallDefault['createCharScreen:AcceptCharacter'] == nil"))
                 lua.execute("dwSystemCallDefault = 'not a table'")
                 self.assertEqual(lua.eval("FLPRUI_NewGame()"), "runtime:new-game")
+
+    def test_cancel_after_a_start_button_reopens_the_start_menus(self):
+        # The stock New Game and Import buttons pop START_SP before they call the
+        # adapter. Without its menus again, Cancel left the start screen black.
+        menus = r'''
+        menus = {}
+        local function find(name)
+            for index = #menus, 1, -1 do if menus[index] == name then return index end end
+        end
+        function Infinity_IsMenuOnStack(name) return find(name) ~= nil end
+        function Infinity_PopMenu(name) local index = find(name); if index then table.remove(menus, index) end end
+        function Infinity_PushMenu(name)
+            menus[#menus + 1] = name
+            -- START's onOpen for single player: BG:EE and EET replace START, BG2:EE keeps it.
+            if name == "START" then
+                if pop_start then Infinity_PopMenu("START") end
+                Infinity_PushMenu("START_SP")
+            end
+        end
+        '''
+        failing = r'''FLPR = {
+            NewGame = function() FLPRUI_Ask("setup_failed", function() calls[#calls + 1] = {"plain"} end) end,
+            ImportCharacter = function() FLPRUI_Ask("other_campaign", function() end) end,
+            AcceptCharacter = function() FLPRUI_Ask("setup_failed", function() end) end,
+        }'''
+        self.configure()
+        for name, module in RUNTIMES:
+            for style, below in (("BG:EE and EET", []), ("BG2:EE", ["START"])):
+                for runtime, start in ((False, "FLPRUI_NewGame()"), (False, "FLPRUI_ImportCharacter()"),
+                                       (True, "FLPRUI_NewGame()"), (True, "FLPRUI_ImportCharacter()")):
+                    with self.subTest(name, style=style, runtime=runtime, start=start):
+                        lua = self.lua(module)
+                        lua.execute(menus)
+                        lua.execute(f"pop_start = {'true' if not below else 'false'}")
+                        if runtime:
+                            lua.execute(failing)
+                        for menu in below:
+                            lua.execute(f'menus[#menus + 1] = "{menu}"')
+                        lua.execute(start)
+                        popup = lua.globals().popups[1]
+                        self.assertIsNotNone(popup.cancel_func)
+                        popup.cancel_func()
+                        stack = lua.globals().menus
+                        self.assertEqual([stack[i] for i in range(1, len(stack) + 1)], below + ["START_SP"])
+                        # Pressed again with the start menu open, Cancel changes nothing.
+                        popup.cancel_func()
+                        self.assertEqual([stack[i] for i in range(1, len(stack) + 1)], below + ["START_SP"])
+                        self.assertEqual(self.calls(lua), [])
+            with self.subTest(name, accept=True):
+                # Character creation stays open under its popup: Cancel only closes it.
+                lua = self.lua(module)
+                lua.execute(menus)
+                lua.execute(failing)
+                lua.execute('menus[1] = "CHARGEN"')
+                lua.execute("FLPRUI_AcceptCharacter(-1)")
+                self.assertIsNone(lua.globals().popups[1].cancel_func)
+                # A start button's own failure does not leave the start Cancel behind.
+                lua.execute("FLPR.NewGame = function() error('broken runtime', 0) end")
+                with self.assertRaisesRegex(module.LuaError, "broken runtime"):
+                    lua.execute("FLPRUI_NewGame()")
+                lua.execute("FLPRUI_AcceptCharacter(-1)")
+                self.assertIsNone(lua.globals().popups[2].cancel_func)
 
     def test_without_io_or_loadfile_a_configuration_cannot_be_seen(self):
         # Documented limit: such an engine Lua starts New Game unrandomised.

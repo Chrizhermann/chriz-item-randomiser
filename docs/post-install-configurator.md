@@ -80,7 +80,8 @@ does not open a browser automatically, launch the game, rescan, or run WeiDU.
 `cir-configurator ui` serves the same editor and also opens it in the browser;
 `--no-browser` only prints the address.
 
-Search all scanned items by name or resource ID; a sole original is selected
+Search all scanned items by name or resource ID; results show each item's
+type (ring, large sword, ...). A sole original is selected
 automatically. Check several original records to relocate several copies of the
 same item; unchecked originals stay in place. Each source shows its copy count;
 a finite shop record moves its full stock quantity. Recipient
@@ -88,6 +89,16 @@ search includes the scanned names and script/resource aliases, with filters for
 creatures, containers and shops. Creature templates without a bound spawn and
 unfinished destination types are labelled as such. Reward slots allow several
 items per recipient. The selected item and recipient sections collapse separately.
+
+Each selected item and recipient shows the parts of the game its places are in
+(BG1, SoD, BG2, Watcher's Keep, ToB, as the scanned area names tell them; a
+creature template counts every area that places it) and, in a preset draft, the
+tier of each chosen original record and reward slot. A record whose place does
+not tell its part, such as a shop's stock, shows the part of its tier's table
+(BG1, SoD or BG2). **Find in this configuration** filters both lists by name,
+resource ID, item type, game part or tier, and offers one game part and one tier
+to choose; the counts then say how many items and reward slots match. Recipient
+search in the library finds game parts too (`tob`, `watcher's keep`).
 Selecting a saved configuration loads it immediately, confirming before unsaved
 edits are discarded. Save named configurations or use **Save a copy**; incomplete
 choices can be saved for later. Draft files contain the existing profile and binding plan
@@ -223,8 +234,8 @@ gated: the item would come from another speaker than the one that carries it, CI
 changes that dialogue for something else, or another reply there gives the item in
 another way ("XNPCJ.DLG state 0 also gives SHLD26, but not with a copy of a reward
 reply of UHOGRE01.DLG, so the route cannot tell whether it is the same reward").
-Routes that show Item Randomiser's reward text (the BG2 quests that name their reward,
-the golems' chests) need `BGEE.LUA` and that text in the game's language: English,
+Routes that show Item Randomiser's reward text (the quests that name their reward,
+such as Aldeth's in BG1, the golems' chests) need `BGEE.LUA` and that text in the game's language: English,
 Polish and German so far (`tools/flir_config/translations.py`). In another language they
 are left out with the reason ("Item Randomiser's reward texts have no Spanish
 translation yet"), never shown in English; translators can add a language with
@@ -233,7 +244,12 @@ translation yet"), never shown in English; translators can add a language with
 the same numbers, with the translation's female wording, which the game shows to a
 female protagonist. A game whose `dialogF.tlk` holds another number of strings than its
 `dialog.tlk` leaves those routes out, since a new text could not get the same number
-in both. Each check run reads these files again when the game folder changed
+in both. Where the reward reply's journal entry names the reward (Aldeth's), the
+selected copy of the reply adds Item Randomiser's entry instead: it keeps the title
+line of the game's own entry, in the game's words, and Apply files it in `BGEE.LUA`
+under the quest that files the original (a copy of each `createEntry` line that
+lists it). EET numbers BG1's texts 200000 higher than BG:EE does; the routes look
+for them under EET's numbers there. Each check run reads these files again when the game folder changed
 since the last one, so a reward file, or a dialogue the route's copies were looked
 for in, that changed after the scan stops that check until the game is scanned
 again. Saved games keep the revision they started with, and its files never
@@ -309,11 +325,15 @@ a later Apply compiles the revisions that saved games keep against the scan they
 made with.
 
 WeiDU does not track these files. Uninstalling CIR restores only the files its
-installer changed; of Apply's files that is `BGEE.LUA`, where the installer files
-Unshey's journal entry. An uninstall puts back the game's own journal table and a
-re-install the installer's, without the Kangaxx entry Apply filed, until the next
-Apply files it again; the scans do not read `BGEE.LUA`, and the next Apply records
-the installer's version as the earlier file. Apply's other files, the strings it
+installer changed. Two of Apply's files are also the installer's: `BGEE.LUA`, where
+the installer files Unshey's journal entry, and the book of Lavok's sphere
+(`PPBOOK.BCS`), which the installer prepares for the ring's quest and Apply extends
+with its scrolls' routes. An uninstall puts back the game's own versions and a
+re-install the installer's, without what Apply added (its journal entries, the
+scrolls' routes) until the next Apply writes them again. A file that holds the
+installer's version is read as it is, as the scans read it before Apply, and the next
+Apply records it as the earlier file; the scans do not read `BGEE.LUA`. Apply's other
+files, the strings it
 appended (WeiDU keeps appended strings) and `randomiser-campaigns/` stay as they were
 after an uninstall (decision B2 in [the packaging plan](plans/2026-10-14-mode1-packaging.md));
 `before-apply/` holds the files to put back by hand. A re-install that leaves the
@@ -371,10 +391,14 @@ Boss Loot, aShuN's BG1 lists (`bg1-boss-loot`, `eet-boss-loot`; see
 `bg1:boss-loot:<family>:<kind>:<line>`. A place of its standard pool takes the
 authored endpoint of the same place in the original tables; ten places that the
 original standard tables do not use have none and are bound by name like the places
-of the extended pool. Its
+of the extended pool. A place of its extended pool at the place of one of the
+original tables' container quests (Safana's treasure) is that quest. Its
 Rogue Rebalancing (`rr#…`) and IWDification (`cdia…`) items are optional: a game
-without such an item leaves its rows out and the preset dialog names the mod. On a
-reference EET scan, `eet-boss-loot` passes the configuration check like `eet-original`.
+without such an item leaves its rows out and the preset dialog names the mod. It says
+the mod is not installed only when the game has no item of it at all; otherwise it
+says how many rewards need items of the mod that the game does not have (a part of
+the mod that is not installed). On a reference EET scan, `eet-boss-loot` passes the
+configuration check like `eet-original`.
 
 On EET, BG1 and SoD resource names follow EET's own rename lists
 (`EET/lib/pcu_dict.tph`, `game_names.eet_names`). Without them, or when they cannot be
@@ -391,6 +415,79 @@ longer give it ("The extended reward route for MGKHOL01 cannot be used: MGKHOL01
 has no reply that gives BELT02") or an item its creature cannot drop. The draft is checked with the
 same runtime check as "Check configuration", which then passes. `/api/template`
 also returns the left-out rows with their table line and reason (`not_used_rows`).
+
+Some rows of the extended pools are left out in every game, and the preset dialog
+names them apart ("… belong to quests that Chriz Item Randomiser cannot change yet"):
+quest rewards and places that Item Randomiser handled with its own conversation and
+script patches (the `.fl` places of its `mode2` tables, and rewards that a conversation
+or script gives) for which CIR has no route yet. Their reason is
+`route-not-supported`. In the original tables these are the places of the Sahuagin
+treasury, the Sahuagin prince, the king or the prince, the trolls of the Spellhold
+painting, Tolgerias, TorGal and a vampire or shadow thief of chapter 3 (BG2).
+`tests/test_original_catalog.py` lists them; a route for one of them takes its rows off
+that list.
+
+BG1's quest routes (Varci's payment, `VARCI.DLG`; Aldeth's sword, `ALDETH.DLG`;
+Nemphre's scroll, `NEMPHR.DLG`) work as BG2's do, with flags of
+their own (`FLPR_QB1_<row>` beside BG2's `FLPR_QM2_<row>`). They are registered with
+BG:EE's names, and on EET they follow EET's rename lists: there Varci gives
+`SHLD07A`, which EET's lists name for BG:EE's `SHLD07`. Without those lists (CIR's
+older copy) EET's shield is not found, and the route is left out with its reason.
+Nemphre's place is a row of its own (136, her scroll is 159); Item Randomiser's lists
+give it scrolls only, so her words ("take this scroll") stay true and need no text of
+Item Randomiser's.
+
+A preset's row of such a reward or place is that route: the row of the same
+conversation or script and item, or of the same `.fl` place and area, as one row of
+the original table names it. Boss Loot's rows of Aldeth's sword, Varci's shield and
+Nemphre's scroll (items 62, 71 and 339; places 46, 71 and 291) use the routes of the
+original rows 16, 20 and 159 (places 16, 20 and 136), with those rows' flags. The
+native fixture names the route's row beside the preset's (`route_source`,
+`route_target`), and the runtime refuses any other route (`NATIVE_ROUTE_INVALID`). A
+preset with two rows of one reward or place has the route for neither, since the
+runtime finds a route's row by it; both are left out with `route-not-supported`.
+
+The Sahuagin treasury's rod (`RODS02` in AR2300) moves like any container reward,
+but the king's reward reply (SAHKNG01.DLG) creates another one. Where the game's
+dialogue gives the rod, that reply follows the rod's row, as Lesa's conversation
+does for her sword: where the plan moves the rod, the king no longer creates one. A
+game without that dialogue, or whose king gives no rod, needs no link. Where the
+reply gives the rod in a way CIR cannot gate, or AR2300 holds a second rod that the
+reply could stand for, the rod's row is left out with its reason.
+
+The book of Lavok's sphere (`PPBOOK.BCS`, AR1513) gives two scrolls with the ring on
+its last page (rows 260 and 262 of the extended tables, beside the ring's row 109).
+Each scroll has a route of its own, which only drops its grant where its row moves the
+scroll; the book's places are the ring's quest, so the scrolls have no place of their
+own. The installer prepares the book for the ring's quest; the scrolls' routes patch
+the game's own book, so they need no prepared book (a game whose book the installer
+left as it was can still move the scrolls; the ring stays as the game has it). Apply
+writes the book only for a revision that moves a scroll; otherwise it stays as the
+installer prepared it. A revision that moves only the ring records the installer's
+book, and Apply keeps that version and the one it wrote side by side
+(`randomiser-campaigns/PPBOOK.installed.bcs` and `PPBOOK.applied.bcs`): the runtime
+accepts the book Apply wrote for that revision's saves when both still match. A
+re-install of CIR returns the book to the installer's version; a configuration that
+moves a scroll then needs Apply again before its games start.
+
+Rewards an NPC carries: the genie in Trademeet (`TRGENI01`), Captain Dennis
+(`LOUTCAPT`), the Amkethran priest (`AMCLER01`), the sage Jermien (`JUGJER01`, whose
+sword keeps its daily charge), the sculptor Yarryl (`SCYARRYL`, his copy of the
+temple's reward), and in BG1 Aldeth (`ALDETH`) and Nemphre (`NEMPHR`) carry the item
+their conversation hands over. The runtime knows each of these copies by its
+creature's and item's names, which EET keeps; a game that renames one leaves its row
+out with its reason. When
+that reward moves, the creature's copies go with it; the configuration finds them in
+the scanned creature file, whatever their place, flags or charges there and whatever
+else another mod gave the creature, and the runtime checks each copy's bytes against
+the original file before it removes it (the genie keeps a `BLUN05` instead). Lesa's
+sword (`UDLESA`) is a reward of its own, and her conversation follows its row where
+her dialogue gives the sword, as the king's does for the rod. A row is left out with
+its reason where the creature does not carry its reward ("TRGENI01.CRE does not carry
+SW1H23, which the reward of TRGENI01.DLG hands over"), where its copies differ ("…
+carries BLUN20 in records that differ"), or where the creature holds a second sword
+that Lesa's conversation could stand for. A Yarryl without the club simply has no
+copy to remove.
 
 The world scan leaves out a creature, area or store file it cannot read (another
 mod's damaged or unusual file) instead of refusing the game. `world scan` names such

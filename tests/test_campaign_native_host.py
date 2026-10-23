@@ -362,6 +362,9 @@ local function bootstrap(Core,Host,Globals,text,options)
         f.popups[#f.popups+1]={text=uiStrings[info],ok=uiStrings[ok_text],start=ok_func,
             cancel=uiStrings[cancel_text],cancel_func=cancel_func}
     end
+    -- util.lua's info popup, which the player closes with Done.
+    f.infos={}
+    popupInfo=function(info) f.infos[#f.infos+1]=uiStrings[info] end
     print=function(message) f.last_log=message end
     io={open=function(path,mode)
         if path=='randomiser-campaigns/last-error.txt' then
@@ -445,24 +448,40 @@ local function bootstrap(Core,Host,Globals,text,options)
         f.builder,f.compiler=builder,compiler
         modules["override/FLPRGateAsm.lua"]=builder
         modules["override/FLPRCampaignPolicy.lua"]=compiler
+        -- The gate hooks at launch and builds a revision's checks when a game
+        -- needs it, through the loader M_FLPR hands it (FLPRGat.lua).
         modules["override/FLPRGat.lua"]={
             source_ids=function(fixture) return fixture.source_gate.source_ids or {fixture.source_gate.source_id} end,
-            install=function(env,bundles,build,compile,pristine,script)
+            new=function(env,deps)
             f.bootstrap_events[#f.bootstrap_events+1]="install"
-            assert(env==_G and type(bundles)=='table' and #bundles==(options.multiple_pinned and 2 or 1))
-            assert(bundles[1].manifest==f.manifest and bundles[1].fixture==f.native_fixture)
-            if options.multiple_pinned then
-                local second=f.bundles[f.pinned_revisions[2]]
-                assert(bundles[2].manifest==second.manifest and bundles[2].fixture==second.fixture)
-            end
-            assert(build==builder and compile==compiler and script==script_module)
-            assert(type(pristine.FLPRU1)=='table' and pristine.FLPRU1.bytes==f.pristine_bytes and
-                #pristine.FLPRU1.bytes==27492 and pristine.FLPRU1.resource_sha256==
-                bundles[1].fixture.resource_hashes['FLPRU1.ARE'])
+            assert(env==_G and type(deps)=='table' and type(deps.load)=='function' and
+                type(deps.report)=='function' and type(deps.inventory)=='function' and
+                type(deps.cursed)=='function' and type(deps.pristine)=='table')
+            local pinned=options.missing_pinned and {string.rep("e",64)} or
+                f.pinned_revisions or {f.manifest.revision}
+            assert(#deps.revisions==#pinned)
+            for index,revision in ipairs(pinned) do assert(deps.revisions[index]==revision) end
+            assert(deps.build==builder and deps.compile==compiler and deps.Script==script_module)
             if options.install_fail then error(options.install_fail==true and "GATE_INSTALL_FAILED" or
                 options.install_fail) end
-            f.gate_installed=true; f.gate_bundles=bundles
+            f.gate_installed=true; f.gate_deps=deps; f.gate_bundles={}
+            local allowed={}
+            for _,revision in ipairs(deps.revisions) do allowed[revision]=true end
             return {
+                guards=function(_,revision) return allowed[revision]==true end,
+                ensure=function(_,revision)
+                    f.bootstrap_events[#f.bootstrap_events+1]="ensure"
+                    local bundle=deps.load(revision)
+                    assert(bundle.manifest==f.bundles[revision].manifest and
+                        bundle.fixture==f.bundles[revision].fixture)
+                    local pristine=deps.pristine.FLPRU1
+                    assert(type(pristine)=='table' and pristine.bytes==f.pristine_bytes and
+                        #pristine.bytes==27492 and pristine.resource_sha256==
+                        bundle.fixture.resource_hashes['FLPRU1.ARE'])
+                    if options.ensure_fail then error(options.ensure_fail,0) end
+                    f.gate_bundles[#f.gate_bundles+1]=bundle
+                    return true
+                end,
                 reset=function()
                     f.bootstrap_events[#f.bootstrap_events+1]="reset"
                     f.reset_calls=(f.reset_calls or 0)+1
@@ -472,6 +491,11 @@ local function bootstrap(Core,Host,Globals,text,options)
                     f.prepare_calls[#f.prepare_calls+1]={bundle=selected,controller=controller,
                         state=f.values.flpr_state,fresh=f.values.FLPR_FRESH}
                     assert(selected.manifest==f.manifest and selected.fixture==f.native_fixture)
+                    local built=false
+                    for _,bundle in ipairs(f.gate_bundles) do
+                        if bundle.manifest.revision==selected.manifest.revision then built=true end
+                    end
+                    if not built then return nil,"CAMPAIGN_GATE_REVISION_NOT_BUILT" end
                     if options.prepare_fail then return nil,"GATE_PREPARE_FAILED" end
                     return true
                 end,
@@ -499,6 +523,7 @@ local function bootstrap(Core,Host,Globals,text,options)
             return function() return f.next_pointer or {schema="flir-next-v2",starts={BG1=f.next_revision}} end
         end
         local revision=path:match("revisions/([0-9a-f]+)%.lua$")
+        if revision then f.revision_reads=(f.revision_reads or 0)+1 end
         if revision and f.bundles[revision] then return function() return f.bundles[revision].manifest end end
         return nil
     end
@@ -506,68 +531,6 @@ local function bootstrap(Core,Host,Globals,text,options)
     if not options.allow_disabled then assert(FLPR.Disabled==nil,tostring(FLPR.Disabled)) end
     f.root=FLPR; f.listeners=listeners
     return f
-end
-function cases.bootstrap_accept_captures_before_engine_accept(Core,Host,Globals,text)
-    local f=bootstrap(Core,Host,Globals,text)
-    assert(f.pristine_opens==0 and f.root.SourceGate==nil)
-    f.root.NewGame(); f.values.FLPR_FRESH=1
-    assert(f.root.AcceptCharacter(2)==2 and f.accepted_state==2 and f.accepted_fresh==0)
-    assert(f.new_game_clicked==1 and f.accept_count==1)
-    local seed=f.values.flpr_seed; assert(f.root.AcceptCharacter(3)==3 and f.values.flpr_seed==seed)
-end
-function cases.bootstrap_unsupported_item_stops_before_source_suppression(Core,Host,Globals,text)
-    local f=bootstrap(Core,Host,Globals,text,{gate=true,unsupported_item=true,allow_disabled=true})
-    assert(f.root.Disabled:find('ITEM_NOT_NONSTACKABLE',1,true) and not f.gate_installed)
-    assert(f.root.Host==nil and not f.accept_count)
-end
-function cases.bootstrap_second_profile_unsupported_stops_before_hooks_or_host(Core,Host,Globals,text)
-    local f=bootstrap(Core,Host,Globals,text,
-        {gate=true,multiple_pinned=true,unsupported_second=true,allow_disabled=true})
-    assert(f.root.Disabled:find('ITEM_NOT_NONSTACKABLE',1,true))
-    assert(table.concat(f.supported_items,',')=='flpri1,flpri2')
-    assert(f.pristine_opens==1 and not f.gate_installed and f.root.Host==nil)
-    assert(table.concat(f.bootstrap_events,',')=='pristine_open,pristine_read,pristine_close')
-end
-function cases.bootstrap_two_profiles_share_one_pristine_area_copy(Core,Host,Globals,text)
-    local f=bootstrap(Core,Host,Globals,text,{gate=true,multiple_pinned=true})
-    assert(f.root.Disabled==nil and f.gate_installed and f.root.Host)
-    assert(f.pristine_opens==1 and table.concat(f.supported_items,',')=='flpri1,flpri2')
-    assert(#f.gate_bundles==2 and f.gate_bundles[1].manifest==f.manifest and
-        f.gate_bundles[1].fixture==f.native_fixture)
-    local second=f.bundles[f.pinned_revisions[2]]
-    assert(f.gate_bundles[2].manifest==second.manifest and f.gate_bundles[2].fixture==second.fixture)
-    assert(table.concat(f.bootstrap_events,',')==
-        'pristine_open,pristine_read,pristine_close,install,host_new')
-end
-function cases.bootstrap_opt_in_gate_installs_prepares_once_and_binds_frozen_native(Core,Host,Globals,text)
-    local f=bootstrap(Core,Host,Globals,text,{gate=true})
-    assert(f.gate_installed and f.pristine_opens==1 and
-        table.concat(f.bootstrap_events,",")=="pristine_open,pristine_read,pristine_close,install,host_new")
-    local gate_args=f.module_args["override/FLPRGat.lua"]
-    assert(#gate_args==1 and gate_args[1]==f.site_module)
-    assert(f.new_game_clicked==nil and f.values.flpr_state==nil and f.accept_count==nil)
-    f.root.NewGame(); f.values.FLPR_FRESH=1
-    assert(f.reset_calls==1 and f.bootstrap_events[#f.bootstrap_events-1]=="reset" and
-        f.bootstrap_events[#f.bootstrap_events]=="newgame")
-    assert(f.root.AcceptCharacter(2)==2)
-    assert(#f.prepare_calls==1 and f.prepare_calls[1].state==2 and f.prepare_calls[1].fresh==1)
-    assert(f.prepare_calls[1].bundle.manifest==f.manifest and
-        f.prepare_calls[1].bundle.fixture==f.native_fixture)
-    assert(f.accepted_state==2 and f.accepted_fresh==0)
-    assert(table.concat(f.bootstrap_events,",")==
-        "pristine_open,pristine_read,pristine_close,install,host_new,reset,newgame,prepare,engine_accept")
-    local seed=f.values.flpr_seed
-    assert(f.root.AcceptCharacter(3)==3)
-    assert(#f.prepare_calls==1 and f.values.flpr_seed==seed and f.accept_count==2)
-    f.next_revision=string.rep("e",64)
-    f.root.Poll()
-    EngineGlobals.g_pBaldurChitin.m_pObjectGame.m_worldTime.m_gameTime=1
-    f.root.Poll()
-    assert(#f.factory_calls==1 and f.factory_calls[1].bundle==f.root.Host.bundle and
-        f.factory_calls[1].native==f.root.Host.native)
-    assert(f.factory_calls[1].bundle.manifest.revision==f.manifest.revision and
-        f.factory_calls[1].bundle.fixture==f.native_fixture)
-    assert(f.bootstrap_events[#f.bootstrap_events]=="factory")
 end
 -- A refused New Game or character acceptance shows the engine's two-button
 -- popup: "Start without randomiser" (start) or Cancel (nothing happens).
@@ -583,20 +546,95 @@ local function captured_nothing(f)
         assert(name=="FLPR_FRESH" or value==0,name.."="..tostring(value))
     end
 end
-function cases.bootstrap_opt_in_gate_failure_disables_before_capture_acceptance(Core,Host,Globals,text)
-    for _,variant in ipairs({"missing_pinned","missing_pristine","install_fail","code_mismatch"}) do
+function cases.bootstrap_accept_captures_before_engine_accept(Core,Host,Globals,text)
+    local f=bootstrap(Core,Host,Globals,text)
+    assert(f.pristine_opens==0 and f.root.SourceGate==nil)
+    f.root.NewGame(); f.values.FLPR_FRESH=1
+    assert(f.root.AcceptCharacter(2)==2 and f.accepted_state==2 and f.accepted_fresh==0)
+    assert(f.new_game_clicked==1 and f.accept_count==1)
+    local seed=f.values.flpr_seed; assert(f.root.AcceptCharacter(3)==3 and f.values.flpr_seed==seed)
+end
+-- An item this engine cannot handle stops its revision before any of its
+-- sources is suppressed: New Game asks, and the start choice is unrandomised.
+function cases.bootstrap_unsupported_item_stops_before_source_suppression(Core,Host,Globals,text)
+    local f=bootstrap(Core,Host,Globals,text,{gate=true,unsupported_item=true})
+    assert(f.root.Disabled==nil and f.gate_installed and f.root.Host and f.pristine_opens==0)
+    f.root.NewGame()
+    local shown=popup(f,"setup_failed")
+    assert(f.error_file:find("new-game: ",1,true) and f.error_file:find('ITEM_NOT_NONSTACKABLE',1,true))
+    assert(#f.gate_bundles==0 and f.new_game_clicked==nil and f.root.NewGameIntent==nil)
+    shown.start(); f.values.FLPR_FRESH=1
+    assert(f.new_game_clicked==1 and f.root.AcceptCharacter(2)==2 and f.accept_count==1)
+    assert(f.values.flpr_state==nil and #f.prepare_calls==0)
+end
+-- Launch reads no campaign revision, so a revision whose item this engine
+-- cannot handle fails only the games that need it.
+function cases.bootstrap_second_profile_unsupported_fails_only_its_games(Core,Host,Globals,text)
+    local f=bootstrap(Core,Host,Globals,text,{gate=true,multiple_pinned=true,unsupported_second=true})
+    assert(f.root.Disabled==nil and f.gate_installed and f.root.Host)
+    assert(f.pristine_opens==0 and #f.supported_items==0 and f.revision_reads==nil)
+    f.root.NewGame(); f.values.FLPR_FRESH=1
+    assert(#f.popups==0 and f.root.AcceptCharacter(2)==2 and f.accepted_state==2)
+    assert(table.concat(f.supported_items,',')=='flpri1')
+    local ok,reason=pcall(f.gate_deps.load,f.pinned_revisions[2])
+    assert(not ok and tostring(reason):find('ITEM_NOT_NONSTACKABLE',1,true))
+    assert(table.concat(f.supported_items,',')=='flpri1,flpri2' and f.pristine_opens==1)
+end
+function cases.bootstrap_two_profiles_share_one_pristine_area_copy(Core,Host,Globals,text)
+    local f=bootstrap(Core,Host,Globals,text,{gate=true,multiple_pinned=true})
+    assert(f.root.Disabled==nil and f.gate_installed and f.root.Host and f.pristine_opens==0)
+    for _,revision in ipairs(f.pinned_revisions) do assert(f.root.SourceGate:ensure(revision)) end
+    assert(f.pristine_opens==1 and table.concat(f.supported_items,',')=='flpri1,flpri2')
+    assert(#f.gate_bundles==2 and f.gate_bundles[1].manifest==f.manifest and
+        f.gate_bundles[1].fixture==f.native_fixture)
+    local second=f.bundles[f.pinned_revisions[2]]
+    assert(f.gate_bundles[2].manifest==second.manifest and f.gate_bundles[2].fixture==second.fixture)
+    assert(table.concat(f.bootstrap_events,',')==
+        'install,host_new,ensure,pristine_open,pristine_read,pristine_close,ensure')
+end
+function cases.bootstrap_opt_in_gate_installs_prepares_once_and_binds_frozen_native(Core,Host,Globals,text)
+    local f=bootstrap(Core,Host,Globals,text,{gate=true})
+    -- Launch places the gate's hooks and reads no campaign revision.
+    assert(f.gate_installed and f.pristine_opens==0 and f.revision_reads==nil and
+        table.concat(f.bootstrap_events,",")=="install,host_new")
+    local gate_args=f.module_args["override/FLPRGat.lua"]
+    assert(#gate_args==1 and gate_args[1]==f.site_module)
+    assert(f.new_game_clicked==nil and f.values.flpr_state==nil and f.accept_count==nil)
+    -- New Game builds the started campaign's checks before the engine starts it.
+    f.root.NewGame(); f.values.FLPR_FRESH=1
+    assert(f.reset_calls==1 and f.pristine_opens==1 and #f.gate_bundles==1 and
+        f.bootstrap_events[#f.bootstrap_events]=="newgame")
+    assert(f.root.AcceptCharacter(2)==2)
+    assert(#f.prepare_calls==1 and f.prepare_calls[1].state==2 and f.prepare_calls[1].fresh==1)
+    assert(f.prepare_calls[1].bundle.manifest==f.manifest and
+        f.prepare_calls[1].bundle.fixture==f.native_fixture)
+    assert(f.accepted_state==2 and f.accepted_fresh==0)
+    assert(table.concat(f.bootstrap_events,",")==
+        "install,host_new,reset,ensure,pristine_open,pristine_read,pristine_close,newgame,prepare,engine_accept")
+    local seed=f.values.flpr_seed
+    assert(f.root.AcceptCharacter(3)==3)
+    assert(#f.prepare_calls==1 and f.values.flpr_seed==seed and f.accept_count==2)
+    f.next_revision=string.rep("e",64)
+    f.root.Poll()
+    EngineGlobals.g_pBaldurChitin.m_pObjectGame.m_worldTime.m_gameTime=1
+    f.root.Poll()
+    assert(#f.factory_calls==1 and f.factory_calls[1].bundle==f.root.Host.bundle and
+        f.factory_calls[1].native==f.root.Host.native)
+    assert(f.factory_calls[1].bundle.manifest.revision==f.manifest.revision and
+        f.factory_calls[1].bundle.fixture==f.native_fixture)
+    assert(f.bootstrap_events[#f.bootstrap_events]=="factory")
+end
+-- A gate that cannot place its hooks stops the runtime at launch.
+function cases.bootstrap_gate_install_failure_disables_before_capture_acceptance(Core,Host,Globals,text)
+    for _,variant in ipairs({"install_fail","code_mismatch"}) do
         local options={gate=true,allow_disabled=true}
-        if variant=="code_mismatch" then options.install_fail="CAMPAIGN_GATE_CODE_MISMATCH"
-        else options[variant]=true end
+        options.install_fail=variant=="code_mismatch" and "CAMPAIGN_GATE_CODE_MISMATCH" or true
         local f=bootstrap(Core,Host,Globals,text,options)
-        local expected=(variant=="missing_pinned" and "SOURCE_GATE_REVISION_UNAVAILABLE") or
-            (variant=="missing_pristine" and "SOURCE_GATE_PRISTINE_MISSING") or
-            (variant=="install_fail" and "GATE_INSTALL_FAILED") or "CAMPAIGN_GATE_CODE_MISMATCH"
+        local expected=variant=="install_fail" and "GATE_INSTALL_FAILED" or "CAMPAIGN_GATE_CODE_MISMATCH"
         assert(f.root.Disabled and tostring(f.root.Disabled):find(expected,1,true))
         assert(f.error_file:find("start: ",1,true) and f.error_file:find(expected,1,true),f.error_file)
         assert(f.root.Host==nil and f.gate_installed==nil and f.values.flpr_state==nil)
-        assert(#f.prepare_calls==0 and #f.factory_calls==0)
-        assert(f.pristine_opens==((variant=="missing_pinned") and 0 or 1))
+        assert(#f.prepare_calls==0 and #f.factory_calls==0 and f.pristine_opens==0)
         f.root.NewGame()
         local shown=popup(f,variant=="code_mismatch" and "unsupported" or "setup_failed")
         assert(f.new_game_clicked==nil and f.root.NewGameIntent==nil)
@@ -607,6 +645,36 @@ function cases.bootstrap_opt_in_gate_failure_disables_before_capture_acceptance(
         assert(f.values.flpr_state==nil and f.seeds==0 and #f.popups==0)
         assert(#f.prepare_calls==0 and #f.factory_calls==0)
     end
+end
+-- A revision whose checks cannot be built stops only its own starts: New Game
+-- asks, and the start choice is unrandomised. An older applied revision whose
+-- files are gone fails only when a game needs it.
+function cases.bootstrap_revision_failure_asks_before_capture_acceptance(Core,Host,Globals,text)
+    for _,variant in ipairs({"missing_pristine","build_fail","code_mismatch"}) do
+        local options={gate=true}
+        if variant=="missing_pristine" then options.missing_pristine=true
+        else options.ensure_fail=variant=="code_mismatch" and "CAMPAIGN_GATE_CODE_MISMATCH:gate_item:not-found" or
+            "GATE_BUILD_FAILED" end
+        local f=bootstrap(Core,Host,Globals,text,options)
+        assert(f.root.Disabled==nil and f.root.Host and f.gate_installed and f.pristine_opens==0)
+        local expected=(variant=="missing_pristine" and "SOURCE_GATE_PRISTINE_MISSING") or
+            (variant=="build_fail" and "GATE_BUILD_FAILED") or "CAMPAIGN_GATE_CODE_MISMATCH:gate_item"
+        f.root.NewGame()
+        assert(f.error_file:find("new-game: ",1,true) and f.error_file:find(expected,1,true),f.error_file)
+        assert(f.pristine_opens==1 and #f.gate_bundles==0)
+        local shown=popup(f,variant=="code_mismatch" and "unsupported" or "setup_failed")
+        assert(f.new_game_clicked==nil and f.root.NewGameIntent==nil)
+        shown.start()
+        assert(f.new_game_clicked==1 and f.root.NewGameIntent==nil)
+        f.values.FLPR_FRESH=1
+        assert(f.root.AcceptCharacter(2)==2 and f.accept_count==1 and f.accepted_fresh==1)
+        assert(f.values.flpr_state==nil and f.seeds==0 and #f.popups==0)
+        assert(#f.prepare_calls==0 and #f.factory_calls==0)
+    end
+    local f=bootstrap(Core,Host,Globals,text,{gate=true,missing_pinned=true})
+    assert(f.root.Disabled==nil and f.root.Host and f.pristine_opens==0 and f.revision_reads==nil)
+    local ok,reason=pcall(f.gate_deps.load,string.rep("e",64))
+    assert(not ok and tostring(reason):find("SOURCE_GATE_REVISION_UNAVAILABLE",1,true))
 end
 -- Item Randomiser's Mode 1 or Mode 2, installed after this mod, stops the runtime
 -- before it loads anything: New Game asks, and the start choice is unrandomised.
@@ -848,13 +916,28 @@ function cases.bootstrap_stopped_campaign_tells_the_player_once(Core,Host,Global
     assert(f.root.Host.status=="disabled" and f.error_file:find("campaign: NATIVE_OBSERVATION_FAILED",1,true),
         tostring(f.error_file))
     assert(#f.shown==2 and f.shown[2]==FLPRUI_Text("stopped"),tostring(f.shown[2]))
+    -- A line in the message log is easily missed: the info popup shows it too, once.
+    assert(#f.infos==1 and f.infos[1]==FLPRUI_Text("stopped"),tostring(f.infos[1]))
+    for i=1,3 do clock.m_gameTime=clock.m_gameTime+1; f.root.Poll() end
+    assert(#f.shown==2 and #f.infos==1)
 end
 function cases.bootstrap_runtime_that_cannot_start_warns_each_randomised_game_once(Core,Host,Globals,text)
     local f=bootstrap(Core,Host,Globals,text,{gate=true,allow_disabled=true,install_fail=true})
-    f.root.Poll(); f.root.Poll(); assert(#f.shown==0)
-    f.values.flpr_state=2
-    f.root.Poll(); f.root.Poll(); assert(#f.shown==1 and f.shown[1]==FLPRUI_Text("stopped"))
-    f.listeners.destroy(); f.root.Poll(); assert(#f.shown==2)
+    f.root.Poll(); f.root.Poll(); assert(#f.shown==0 and #f.infos==0)
+    -- A randomised game loads: the message log at once, the popup once the world screen is up.
+    f.values.flpr_state=2; f.world=false
+    f.root.Poll(); f.root.Poll()
+    assert(#f.shown==1 and f.shown[1]==FLPRUI_Text("stopped") and #f.infos==0)
+    f.world=true
+    f.root.Poll(); f.root.Poll()
+    assert(#f.shown==1 and #f.infos==1 and f.infos[1]==FLPRUI_Text("stopped"))
+    f.listeners.destroy(); f.root.Poll(); assert(#f.shown==2 and #f.infos==2)
+end
+function cases.bootstrap_stopped_message_stays_in_the_log_without_the_engine_popup(Core,Host,Globals,text)
+    local f=bootstrap(Core,Host,Globals,text,{gate=true,allow_disabled=true,install_fail=true})
+    popupInfo=nil; f.values.flpr_state=2
+    f.root.Poll(); f.root.Poll()
+    assert(#f.shown==1 and f.shown[1]==FLPRUI_Text("stopped") and #f.infos==0)
 end
 function cases.bootstrap_stops_held_capture_when_host_stops_or_world_changes(Core,Host,Globals,text)
     for _, boundary in ipairs({"disabled", "new-game", "destroy"}) do

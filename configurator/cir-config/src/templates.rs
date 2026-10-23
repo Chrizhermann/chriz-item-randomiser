@@ -340,6 +340,19 @@ fn optional_mod(preset_id: Option<&str>, item: &str) -> Option<&'static str> {
     preset.optional_items.iter().find(|(prefix, _)| lowered.starts_with(prefix)).map(|(_, name)| *name)
 }
 
+/// The name prefixes of the items that `module` (an `optional_items` mod) adds.
+pub fn optional_mod_prefixes(module: &str) -> Vec<&'static str> {
+    let mut prefixes: Vec<&'static str> = PRESETS
+        .iter()
+        .flat_map(|preset| preset.optional_items.iter())
+        .filter(|(_, name)| *name == module)
+        .map(|(prefix, _)| *prefix)
+        .collect();
+    prefixes.sort_unstable();
+    prefixes.dedup();
+    prefixes
+}
+
 fn enabled(gate: Option<&str>, options: &Dict) -> bool {
     match gate {
         None => true,

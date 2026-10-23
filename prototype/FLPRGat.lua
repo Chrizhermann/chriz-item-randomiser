@@ -1,6 +1,11 @@
 -- Campaign source gate for configured ARE container, creature, store and
 -- template sources. Hook locations and their expected bytes: FLPRSite.lua.
 -- build = tools/probes/FLPRGateAsm.lua; compile = FLPRCampaignPolicy.lua.
+-- The hooks are placed once, at game launch, each with an empty chain. A
+-- campaign revision's source checks are built only when a game needs them:
+-- New Game builds the revision it starts, and loading a saved game builds the
+-- revision its GLOBALs name (CInfGame::Unmarshal calls back into Lua before
+-- any source check reads the GAM). Every built revision's checks stay chained.
 local Site = ...
 assert(type(Site)=='table' and type(Site.locate)=='function', 'CAMPAIGN_GATE_SITES_MISSING')
 local Gate = {}
@@ -10,6 +15,52 @@ local Group = {}; Group.__index = Group
 local CAPACITY, HEADER, STRIDE = 2048, 128, 128
 local CONTEXT=HEADER+(CAPACITY+1)*STRIDE
 local MEMORY_SIZE=CONTEXT+32+64*64
+-- A member's policy table (FLPRCampaignPolicy) follows its native state; the
+-- pristine copies a member owns follow the table.
+local POLICY_TABLE, TABLE_SIZE = MEMORY_SIZE, 1024
+local BODY=MEMORY_SIZE+TABLE_SIZE
+-- STO resrefs restored from a saved game since the last game was destroyed.
+local RECORDS=4096
+local function number(value) return string.format('%.0f',value) end
+-- EEex_Memset and FLPR.Memory (M_FLPR.lua, LuaJIT ffi) move whole blocks;
+-- without them every byte is written and checked through EEex.
+local function zero(api,address,size)
+    if type(api.EEex_Memset)=='function' then api.EEex_Memset(address,0,size); return end
+    for offset=0,size-1,8 do api.EEex_Write64(address+offset,0) end
+end
+local function bulk(api)
+    local root=api.FLPR
+    local memory=type(root)=='table' and root.Memory
+    if type(memory)=='table' and type(memory.write)=='function' and type(memory.read)=='function' then return memory end
+end
+local function write_bytes(api,address,value)
+    local memory=bulk(api)
+    if memory then memory.write(address,value); return address end
+    for offset=1,#value do
+        local byte=value:byte(offset)
+        api.EEex_Write8(address+offset-1,byte>=128 and byte-256 or byte) -- Write8 takes signed bytes.
+    end
+    return address
+end
+local function same_bytes(api,address,value)
+    local memory=bulk(api)
+    if memory then return memory.read(address,#value)==value end
+    for offset=1,#value do
+        if api.EEex_ReadU8(address+offset-1)~=value:byte(offset) then return false end
+    end
+    return true
+end
+-- Copies the policy's field table behind the member's state and names it in
+-- the policy's scan code.
+local function bind_policy(api,buffer,policy)
+    assert(type(policy)=='table' and type(policy.table)=='string' and #policy.table<=TABLE_SIZE and
+        type(policy.scan)=='string','CAMPAIGN_GATE_POLICY_INVALID')
+    local address=write_bytes(api,buffer+POLICY_TABLE,policy.table)
+    assert(same_bytes(api,address,policy.table),'CAMPAIGN_GATE_POLICY_COPY_FAILED')
+    policy.table_address=address
+    policy.scan=policy.scan:gsub('@POLICY_TABLE@',number(address))
+    return policy
+end
 -- Entries without code are only checked: the container call's return address,
 -- the constructor frame and the item loop are what the item hook relies on.
 local sites = {
@@ -26,12 +77,20 @@ local actor_sites = {
     {key='gate_actor1',code='actor',call=true},
     {key='gate_actor2',code='actor',call=true},
 }
+-- The saved-store site only records which STO files a saved game restores
+-- (dimmUncompressResources runs before CInfGame::Unmarshal, so before a
+-- loaded game's revision is known); Group:_on_game applies the record.
 local store_sites = {
     {key='gate_store',size=8,code='store'},
-    {key='gate_saved_store',size=7,code='saved_store'},
+    {key='gate_saved_store',size=7,recorder=true},
     {key='gate_store_done',size=5,code='store_done'},
 }
 local template_site = {key='gate_template',size=5,code='template'}
+-- Every location the gate can use, in hook order.
+local all_sites = {}
+for _,list in ipairs({sites,actor_sites,store_sites,{template_site}}) do
+    for _,site in ipairs(list) do all_sites[#all_sites+1]=site end
+end
 -- The item hook resumes at the instruction after the item address computation
 -- (the verified bytes of gate_item cover it).
 local ITEM_RESUME = 15
@@ -41,16 +100,19 @@ end
 local function integer(value,lo,hi)
     return type(value)=='number' and value==math.floor(value) and value>=lo and value<=hi
 end
-local function payload(value)
+-- With copy, a creature's copy of a reward, which is only removed or renamed:
+-- whatever flags or expiry another mod gave it stay as they are.
+local function payload(value,copy)
     if type(value)~='table' or type(value.resref)~='string' or #value.resref<1 or #value.resref>8 or
-        value.resref:find('[^a-z0-9#_%-]') or value.expiration~=0 or
-        not integer(value.flags,0,3) or type(value.charges)~='table' then return false end
+        value.resref:find('[^a-z0-9#_%-]') or not integer(value.expiration,0,copy and 65535 or 0) or
+        not integer(value.flags,0,copy and 4294967295 or 3) or type(value.charges)~='table' then return false end
     for i=1,3 do if not integer(value.charges[i],0,65535) then return false end end
     return true
 end
-local function same_payload(a,b)
-    return payload(a) and payload(b) and a.resref==b.resref and a.flags==b.flags and
-        a.charges[1]==b.charges[1] and a.charges[2]==b.charges[2] and a.charges[3]==b.charges[3]
+local function same_payload(a,b,copy)
+    return payload(a,copy) and payload(b,copy) and a.resref==b.resref and a.expiration==b.expiration and
+        a.flags==b.flags and a.charges[1]==b.charges[1] and a.charges[2]==b.charges[2] and
+        a.charges[3]==b.charges[3]
 end
 function Gate.source_ids(fixture)
     local config=type(fixture)=='table' and fixture.source_gate
@@ -242,21 +304,17 @@ local function prepare_creature(api,bundle,build,compile,pristine,id,targets,cac
         u16(original,item+14)==binding.payload.charges[3] and u32(original,item+16)==binding.payload.flags,
         'CAMPAIGN_GATE_PRISTINE_BINDING_MISMATCH')
     local cached=cache[binding.area_hash]
-    local buffer=api.EEex_Malloc(MEMORY_SIZE+(cached and 0 or #bytes)+2*#original)
+    local buffer=api.EEex_Malloc(BODY+(cached and 0 or #bytes)+2*#original)
     assert(buffer and buffer~=0,'CAMPAIGN_GATE_ALLOC_FAILED')
-    for offset=0,MEMORY_SIZE-1,8 do api.EEex_Write64(buffer+offset,0) end
-    local cursor=buffer+MEMORY_SIZE
+    zero(api,buffer,MEMORY_SIZE)
+    local cursor=buffer+BODY
     local function copy(value)
-        local address=cursor
-        for offset=1,#value do
-            local byte=value:byte(offset)
-            api.EEex_Write8(address+offset-1,byte>=128 and byte-256 or byte)
-        end
+        local address=write_bytes(api,cursor,value)
         cursor=cursor+#value
         return address
     end
     local expected=cached or copy(bytes); cache[binding.area_hash]=expected
-    local policy=compile(revision,index)
+    local policy=bind_policy(api,buffer,compile(revision,index))
     -- Reuse the ARE invocation binding. Its owner pointer is this actor record.
     policy.provenance={expected=expected,length=#bytes,container_offset=owner,item_offset=owner}
     policy.creature={expected=copy(original),removed=copy(removed),length=#original,
@@ -272,9 +330,10 @@ local function prepare(api,bundle,build,compile,pristine,id,targets,cache)
         local revision,index,resource_hash,binding=validate(bundle,id)
         local original=assert(pristine.templates[revision][id],'CAMPAIGN_GATE_TEMPLATE_MISSING')
         assert(original:sub(1,8)=='CRE V1.0' and #original>=0x2D4,'CAMPAIGN_GATE_TEMPLATE_INVALID')
-        local buffer=api.EEex_Malloc(MEMORY_SIZE)
-        for offset=0,MEMORY_SIZE-1,8 do api.EEex_Write64(buffer+offset,0) end
-        local policy=compile(revision,index)
+        local buffer=api.EEex_Malloc(BODY)
+        assert(buffer and buffer~=0,'CAMPAIGN_GATE_ALLOC_FAILED')
+        zero(api,buffer,MEMORY_SIZE)
+        local policy=bind_policy(api,buffer,compile(revision,index))
         local assembly=build(buffer,targets,policy)
         local self=setmetatable({api=api,buffer=buffer,revision=revision,index=index,
             resource_hash=resource_hash,binding=binding,policy=policy,detours={},installed=false,
@@ -304,18 +363,11 @@ local function prepare(api,bundle,build,compile,pristine,id,targets,cache)
             removed:sub(items+1,items+(count-1)*28)==
                 original:sub(items+1,item)..original:sub(item+29,items+count*28),
             'CAMPAIGN_GATE_PRISTINE_BINDING_MISMATCH')
-        local buffer=api.EEex_Malloc(MEMORY_SIZE+2*#original)
+        local buffer=api.EEex_Malloc(BODY+2*#original)
         assert(buffer and buffer~=0,'CAMPAIGN_GATE_ALLOC_FAILED')
-        for offset=0,MEMORY_SIZE-1,8 do api.EEex_Write64(buffer+offset,0) end
-        local function copy(value,address)
-            for offset=1,#value do
-                local byte=value:byte(offset)
-                api.EEex_Write8(address+offset-1,byte>=128 and byte-256 or byte)
-            end
-            return address
-        end
-        local policy=compile(revision,index)
-        policy.store={expected=copy(original,buffer+MEMORY_SIZE),removed=copy(removed,buffer+MEMORY_SIZE+#original),
+        zero(api,buffer,MEMORY_SIZE)
+        local policy=bind_policy(api,buffer,compile(revision,index))
+        policy.store={expected=write_bytes(api,buffer+BODY,original),removed=write_bytes(api,buffer+BODY+#original,removed),
             length=#original,items=items,count=count-1,index=binding.record,ref=binding.store,
             context=CONTEXT,payload=raw}
         local self=setmetatable({api=api,buffer=buffer,revision=revision,index=index,
@@ -363,22 +415,16 @@ local function prepare(api,bundle,build,compile,pristine,id,targets,cache)
     local expected={name_raw=hex(name),payload_raw=hex(raw),index=binding.record,
         detail1_raw=hex(bytes:sub(owner+0x41,owner+0x48)),
         detail2_raw=hex(bytes:sub(owner+0x21,owner+0x28))}
-    local policy=compile(revision,index)
     local cached=cache[resource_hash]
-    local buffer=api.EEex_Malloc(MEMORY_SIZE+(cached and 0 or #pristine.bytes)+(binding.replacement and 20 or 0))
+    local buffer=api.EEex_Malloc(BODY+(cached and 0 or #pristine.bytes)+(binding.replacement and 20 or 0))
     assert(buffer and buffer~=0,'CAMPAIGN_GATE_ALLOC_FAILED')
-    for offset=0,MEMORY_SIZE-1,8 do api.EEex_Write64(buffer+offset,0) end
-    local expected_pointer=cached or buffer+MEMORY_SIZE
+    zero(api,buffer,MEMORY_SIZE)
+    local policy=bind_policy(api,buffer,compile(revision,index))
+    local expected_pointer=cached or buffer+BODY
     if not cached then
-        -- WriteLString truncates binary data at NUL; Write8 takes signed bytes.
-        for offset=1,#pristine.bytes do
-            local byte=pristine.bytes:byte(offset)
-            api.EEex_Write8(expected_pointer+offset-1,byte>=128 and byte-256 or byte)
-        end
-        for offset=1,#pristine.bytes do
-            assert(api.EEex_ReadU8(expected_pointer+offset-1)==pristine.bytes:byte(offset),
-                'CAMPAIGN_GATE_PRISTINE_COPY_FAILED')
-        end
+        -- WriteLString truncates binary data at NUL.
+        write_bytes(api,expected_pointer,pristine.bytes)
+        assert(same_bytes(api,expected_pointer,pristine.bytes),'CAMPAIGN_GATE_PRISTINE_COPY_FAILED')
         cache[resource_hash]=expected_pointer
     end
     policy.provenance={expected=expected_pointer,length=#pristine.bytes,
@@ -386,11 +432,8 @@ local function prepare(api,bundle,build,compile,pristine,id,targets,cache)
     policy.source={area=binding.area,name=name,payload=raw,index=binding.record,
         inventory=bytes:sub(owner+0x41,owner+0x48),position=bytes:sub(owner+0x21,owner+0x28)}
     if binding.replacement then
-        local address=buffer+MEMORY_SIZE+(cached and 0 or #pristine.bytes)
-        local value=binding.replacement..string.rep('\0',8-#binding.replacement)..raw:sub(9)
-        for n=1,#value do
-            local byte=value:byte(n);api.EEex_Write8(address+n-1,byte>=128 and byte-256 or byte)
-        end
+        local address=buffer+BODY+(cached and 0 or #pristine.bytes)
+        write_bytes(api,address,binding.replacement..string.rep('\0',8-#binding.replacement)..raw:sub(9))
         policy.source.replacement_pointer=address
     end
     local self=setmetatable({api=api,buffer=buffer,revision=revision,index=index,
@@ -401,19 +444,28 @@ end
 -- Each block preserves registers and flags. A matched item exits the shared
 -- hook immediately; other blocks see the original constructor inputs.
 function Gate.compose(assemblies,with_parts)
-    local joined,parts={},{}
+    local parts={}
     for index,assembly in ipairs(assemblies) do
         for name,code in pairs(assembly) do
             if code~='' then
-                local part=code:gsub('gate_', 'source'..index..'_')..'\n'
-                joined[name]=(joined[name] or '')..part
-                parts[name]=parts[name] or {}
-                parts[name][#parts[name]+1]=part
+                local list=parts[name]
+                if not list then list={}; parts[name]=list end
+                list[#list+1]=code:gsub('gate_', 'source'..index..'_')..'\n'
             end
         end
     end
+    local joined={}
+    for name,list in pairs(parts) do joined[name]=table.concat(list) end
     if with_parts then return joined,parts end
     return joined
+end
+
+-- Each hooked location jumps to a fixed entry that reads its next code from a
+-- slot: an empty chain at first, later the newest revision's source checks.
+-- The jump saves RAX on the stack and every slot target begins by restoring
+-- it, so the checks see the engine's registers, flags and stack unchanged.
+local function jump_via(slot)
+    return 'push rax\nmov rax, '..number(slot)..'\nmov rax, qword ptr ds:[rax]\njmp rax\n'
 end
 
 -- EEex's near-code allocator accepts one code page per JIT request. A full
@@ -421,32 +473,117 @@ end
 -- Keep whole source blocks together and jump between allocations: CALL would
 -- shift the engine stack used by the constructor checks. The entry/exit below
 -- follows EEex_HookBeforeRestore / EEex_HookBeforeCall, using EEex's allocator.
-function Gate.install_chain(api,site,address,parts)
-    local chunks={}
-    for _,part in ipairs(parts) do
-        if #chunks==0 or #chunks[#chunks]+#part>16384 then chunks[#chunks+1]='' end
-        chunks[#chunks]=chunks[#chunks]..part
-    end
+function Gate.hook(api,site,address,prologue)
     api.EEex_HookIntegrityWatchdog_IgnoreRegisters(address,{})
     api.EEex_HookIntegrityWatchdog_DefaultIgnoreStack(address)
+    local slot=api.EEex_Malloc(8)
+    assert(slot and slot~=0,'CAMPAIGN_GATE_ALLOC_FAILED')
+    local hooked={site=site,address=address,slot=slot}
     local entry=api.EEex_RunWithAssemblyLabels({{'hook_address',address}},function()
         local tail={'#MANUAL_HOOK_EXIT(0)\n'}
         if site.call then
-            tail[#tail+1]='call '..string.format('%.0f',address+5+api.EEex_Read32(address+1))..'\n'
+            tail[#tail+1]='call '..number(address+5+api.EEex_Read32(address+1))..'\n'
         else
             tail[#tail+1]=api.EEex_StoreBytesAssembly(address,site.size)
         end
-        tail[#tail+1]='\njmp '..string.format('%.0f',address+(site.call and 5 or site.size))..'\n'
-        local next_address=api.EEex_JITNear(api.EEex_FlattenTable(tail))
-        for index=#chunks,1,-1 do
-            next_address=api.EEex_JITNear({chunks[index], '\njmp '..string.format('%.0f',next_address)..'\n'})
-        end
+        tail[#tail+1]='\njmp '..number(address+(site.call and 5 or site.size))..'\n'
+        hooked.tail=api.EEex_JITNear(api.EEex_FlattenTable(tail))
+        hooked.empty=api.EEex_JITNear({'pop rax\njmp '..number(hooked.tail)..'\n'})
+        api.EEex_Write64(slot,hooked.empty)
         return api.EEex_JITNear(api.EEex_FlattenTable({api.EEex_HookIntegrityWatchdog_HookEnter,
-            '\njmp '..string.format('%.0f',next_address)..'\n'}))
+            prologue or '','\n',jump_via(slot)}))
     end)
-    api.EEex_JITAt(address,{'jmp short '..string.format('%.0f',entry)..'\n'..
+    hooked.entry,hooked.head=entry,hooked.tail
+    api.EEex_JITAt(address,{'jmp short '..number(entry)..'\n'..
         string.rep('nop\n',(site.call and 5 or site.size)-5)})
+    assert(api.EEex_ReadU8(address)==0xE9,'CAMPAIGN_GATE_DETOUR_NOT_WRITTEN')
+    local target=address+5+api.EEex_Read32(address+1)
+    assert(target>0 and (target<address or target>=address+#Site.SPECS[site.key].bytes/2),
+        'CAMPAIGN_GATE_DETOUR_INVALID')
+    hooked.detour={address=address,target=target}
+    return hooked
 end
+
+-- JIT code for parts in front of the location's current chain. Nothing runs
+-- it until Gate.publish points the slot at it.
+function Gate.link(api,hooked,parts)
+    local chunks,size={},0
+    for _,part in ipairs(parts) do
+        if #chunks==0 or size+#part>16384 then chunks[#chunks+1]={}; size=0 end
+        local chunk=chunks[#chunks]
+        chunk[#chunk+1]=part; size=size+#part
+    end
+    return api.EEex_RunWithAssemblyLabels({{'hook_address',hooked.address}},function()
+        local next_address=hooked.head
+        for index=#chunks,1,-1 do
+            next_address=api.EEex_JITNear({table.concat(chunks[index]),'\njmp '..number(next_address)..'\n'})
+        end
+        return {first=next_address,entry=api.EEex_JITNear({'pop rax\njmp '..number(next_address)..'\n'})}
+    end)
+end
+
+function Gate.publish(api,hooked,linked)
+    api.EEex_Write64(hooked.slot,linked.entry)
+    hooked.head=linked.first
+end
+
+-- One location with one chain (focused checks of the chain mechanics).
+function Gate.install_chain(api,site,address,parts)
+    local hooked=Gate.hook(api,site,address)
+    Gate.publish(api,hooked,Gate.link(api,hooked,parts))
+    return hooked
+end
+
+-- Calls the Lua dispatcher Group:_on_game with the GAM bytes and size at
+-- CInfGame::Unmarshal entry, preserving every register and the flags.
+local function dispatcher(api,name)
+    return api.EEex_FlattenTable({
+        {[[
+            pushfq
+            #STACK_MOD(8)
+            #MAKE_SHADOW_SPACE(120)
+            mov qword ptr ss:[rsp+#SHADOW_SPACE_BOTTOM(-8)], rax
+            mov qword ptr ss:[rsp+#SHADOW_SPACE_BOTTOM(-16)], rcx
+            mov qword ptr ss:[rsp+#SHADOW_SPACE_BOTTOM(-24)], rdx
+            mov qword ptr ss:[rsp+#SHADOW_SPACE_BOTTOM(-32)], r8
+            mov qword ptr ss:[rsp+#SHADOW_SPACE_BOTTOM(-40)], r9
+            mov qword ptr ss:[rsp+#SHADOW_SPACE_BOTTOM(-48)], r10
+            mov qword ptr ss:[rsp+#SHADOW_SPACE_BOTTOM(-56)], r11
+        ]]},
+        api.EEex_GenLuaCall(name,{args={
+            function(offset) return {'mov qword ptr ss:[rsp+#$(1)], rdx #ENDL',{offset}} end,
+            function(offset) return {'mov eax, r8d #ENDL mov qword ptr ss:[rsp+#$(1)], rax #ENDL',{offset}} end,
+        }}),
+        {[[
+            call_error:
+            mov r11, qword ptr ss:[rsp+#SHADOW_SPACE_BOTTOM(-56)]
+            mov r10, qword ptr ss:[rsp+#SHADOW_SPACE_BOTTOM(-48)]
+            mov r9, qword ptr ss:[rsp+#SHADOW_SPACE_BOTTOM(-40)]
+            mov r8, qword ptr ss:[rsp+#SHADOW_SPACE_BOTTOM(-32)]
+            mov rdx, qword ptr ss:[rsp+#SHADOW_SPACE_BOTTOM(-24)]
+            mov rcx, qword ptr ss:[rsp+#SHADOW_SPACE_BOTTOM(-16)]
+            mov rax, qword ptr ss:[rsp+#SHADOW_SPACE_BOTTOM(-8)]
+            #DESTROY_SHADOW_SPACE
+            popfq
+            #STACK_MOD(-8)
+        ]]},
+    })
+end
+
+-- dimmUncompressResources: records each STO resref (raw) it restores. RBX is
+-- the resource, R14D zero for a restore, [RBP-0x20] the resref.
+local function recorder(address)
+    return 'pushfq\npush rax\npush r10\npush r11\n'..
+        'test r14d, r14d\njne gate_recorder_done\n'..
+        'cmp word ptr ds:[rbx+0x10], 0x3F6\njne gate_recorder_done\n'..
+        'mov r10, '..number(address)..'\nmov r11, qword ptr ds:[r10]\n'..
+        'cmp r11, '..RECORDS..'\njae gate_recorder_full\n'..
+        'mov rax, qword ptr ss:[rbp-0x20]\nmov qword ptr ds:[r10+r11*8+16], rax\n'..
+        'inc qword ptr ds:[r10]\njmp gate_recorder_done\n'..
+        'gate_recorder_full:\nmov qword ptr ds:[r10+8], 1\n'..
+        'gate_recorder_done:\npop r11\npop r10\npop rax\npopfq\n'
+end
+Gate.recorder=recorder
 local function prepare_stock_option(api,bundle,build,compile,pristine,targets)
     local spec=bundle.manifest.spell_shield
     local native=bundle.fixture.spell_shield
@@ -499,10 +636,10 @@ local function prepare_stock_option(api,bundle,build,compile,pristine,targets)
         spec.payload.charges[1]==u16(raw,10) and spec.payload.charges[2]==u16(raw,12) and
         spec.payload.charges[3]==u16(raw,14) and spec.payload.flags==u32(raw,16),
         'CAMPAIGN_GATE_STOCK_EFFECTIVE_MISMATCH')
-    local buffer=api.EEex_Malloc(MEMORY_SIZE)
+    local buffer=api.EEex_Malloc(BODY)
     assert(buffer and buffer~=0,'CAMPAIGN_GATE_ALLOC_FAILED')
-    for at=0,MEMORY_SIZE-1,8 do api.EEex_Write64(buffer+at,0) end
-    local policy=compile(revision,'more_spell_shield')
+    zero(api,buffer,MEMORY_SIZE)
+    local policy=bind_policy(api,buffer,compile(revision,'more_spell_shield'))
     policy.store={expected=0,removed=0,length=#original,items=offset,count=count,
         index=index,ref='udduer01',context=CONTEXT,payload=raw}
     local assembly=build(buffer,targets,policy)
@@ -510,20 +647,27 @@ local function prepare_stock_option(api,bundle,build,compile,pristine,targets)
         resource_hash=spec.resource_sha256,binding={id='@spell-shield',kind='store',store='udduer01',
         record=index,quantity=spec.quantity,payload=spec.payload},policy=policy,detours={},installed=false,
         stock_option=true,permanent=true},Runtime)
-    return member,{enter=assembly.enter,capture=assembly.capture,saved_store=assembly.saved_store},
+    return member,{enter=assembly.enter,capture=assembly.capture},
         {kind='sto',ref='udduer01',original=original,effective=effective,members={},option_member=member,
          insertion=first==nil and index or nil}
 end
 
--- Item Randomiser's Mode 2 item rows 12/32/39/84 and duplicates/bg2.2da rows 26/20/21.
+-- Item Randomiser's Mode 2 item rows 12/31/32/39/84 and duplicates/bg2.2da rows 26/19/20/21;
+-- BG1's rows 16 and 159 (duplicates/bg1.2da's Nemphre copy). EET keeps these BG1 names.
 -- AMCLER01's inventory route is also removed in weidu_action.tpa's amcler.fl
 -- handler. These physical copies belong to the selected dialogue source;
 -- selecting the matching reward destination alone must not remove them.
+-- Which records of the creature hold the item, and with which charges and
+-- flags, differs between games: the export names them, and prepare_auxiliary
+-- checks each against the original CRE.
 local auxiliary_sources={
-    ['original-source:bg2:mode2:item:12']={cre='scyarryl',item='blun20',record=0,selected='FLPR_QM2_12'},
-    ['original-source:bg2:mode2:item:32']={cre='trgeni01',item='sw1h23',record=0,selected='FLPR_QM2_32',replacement='blun05'},
-    ['original-source:bg2:mode2:item:39']={cre='loutcapt',item='dagg11',record=6,selected='FLPR_QM2_39'},
-    ['original-source:bg2:mode2:item:84']={cre='amcler01',item='ring43',record=0,selected='FLPR_QM2_84'},
+    ['original-source:bg2:mode2:item:12']={cre='scyarryl',item='blun20',selected='FLPR_QM2_12'},
+    ['original-source:bg2:mode2:item:31']={cre='jugjer01',item='sw1h26',selected='FLPR_QM2_31'},
+    ['original-source:bg2:mode2:item:32']={cre='trgeni01',item='sw1h23',selected='FLPR_QM2_32',replacement='blun05'},
+    ['original-source:bg2:mode2:item:39']={cre='loutcapt',item='dagg11',selected='FLPR_QM2_39'},
+    ['original-source:bg2:mode2:item:84']={cre='amcler01',item='ring43',selected='FLPR_QM2_84'},
+    ['original-source:bg1:mode2:item:16']={cre='aldeth',item='sw1h03',selected='FLPR_QB1_16'},
+    ['original-source:bg1:mode2:item:159']={cre='nemphr',item='scrl1q',selected='FLPR_QB1_159'},
 }
 local function auxiliary_binding(bundle,id,ordinal)
     local m,f=bundle.manifest,bundle.fixture
@@ -531,18 +675,23 @@ local function auxiliary_binding(bundle,id,ordinal)
     local auxiliary=endpoint and endpoint.auxiliary_creatures and endpoint.auxiliary_creatures[ordinal]
     local index,source
     for i,row in ipairs(m.sources) do if row.id==id then index,source=i,row end end
-    local approved=auxiliary_sources[id]
+    -- A preset's row of one of these routes names the route's row, of the same campaign.
+    local route=id
+    if endpoint and endpoint.route_source~=nil then
+        local preset=id:match('^original%-source:(bg[12]):[a-z0-9%-]+:mode2:item:[0-9]+$')
+        route=preset and type(endpoint.route_source)=='string' and
+            endpoint.route_source:match('^original%-source:'..preset..':mode2:item:[0-9]+$') or ''
+    end
+    local approved=auxiliary_sources[route]
     assert(approved and index and source.quantity==1 and ordinal==1 and
         endpoint.kind=='guarded-script' and auxiliary and auxiliary.resource=='cre:'..approved.cre and
         auxiliary.selected_global==approved.selected and endpoint.selected_global==auxiliary.selected_global and
         hash(auxiliary.resource_sha256) and f.resource_hashes[approved.cre:upper()..'.CRE']==auxiliary.resource_sha256 and
-        payload(auxiliary.payload) and auxiliary.payload.resref==approved.item and auxiliary.payload.flags==0 and
-        auxiliary.payload.charges[1]==0 and auxiliary.payload.charges[2]==0 and auxiliary.payload.charges[3]==0 and
-        type(auxiliary.record_indices)=='table' and #auxiliary.record_indices==1 and
-        auxiliary.record_indices[1]==approved.record,
+        payload(auxiliary.payload,true) and auxiliary.payload.resref==approved.item and
+        type(auxiliary.record_indices)=='table' and #auxiliary.record_indices>0,
         'CAMPAIGN_GATE_AUXILIARY_INVALID')
     -- Item Randomiser's duplicates/bg2.2da:20 leaves BLUN05 in TRGENI01's original weapon slot.
-    -- The other reviewed auxiliary records are removed without substitutes.
+    -- The other auxiliary records are removed without substitutes.
     assert(auxiliary.replacement==approved.replacement and (not approved.replacement or
         hash(f.resource_hashes[approved.replacement:upper()..'.ITM'])),
         'CAMPAIGN_GATE_AUXILIARY_REPLACEMENT_INVALID')
@@ -575,10 +724,10 @@ local function prepare_auxiliary(api,bundle,id,ordinal,build,compile,pristine,ta
             u16(at+12)==binding.payload.charges[2] and u16(at+14)==binding.payload.charges[3] and
             u32(at+16)==binding.payload.flags,'CAMPAIGN_GATE_AUXILIARY_BINDING_MISMATCH')
     end
-    local buffer=api.EEex_Malloc(MEMORY_SIZE)
+    local buffer=api.EEex_Malloc(BODY)
     assert(buffer and buffer~=0,'CAMPAIGN_GATE_ALLOC_FAILED')
-    for at=0,MEMORY_SIZE-1,8 do api.EEex_Write64(buffer+at,0) end
-    local policy=compile(revision,index,true,binding.selected_global)
+    zero(api,buffer,MEMORY_SIZE)
+    local policy=bind_policy(api,buffer,compile(revision,index,true,binding.selected_global))
     local assembly=build(buffer,targets,policy)
     local member=setmetatable({api=api,buffer=buffer,revision=revision,index=index,
         resource_hash=resource_hash,binding=binding,policy=policy,detours={},installed=false,
@@ -586,119 +735,194 @@ local function prepare_auxiliary(api,bundle,id,ordinal,build,compile,pristine,ta
     return member,{enter=assembly.enter,capture=assembly.capture}
 end
 
-function Gate.install(api,bundle,build,compile,pristine,Script,Inventory,Cur)
-    local bundles=bundle.manifest and {bundle} or bundle
-    assert(type(bundles)=='table' and #bundles>0, 'CAMPAIGN_GATE_CONFIG_INVALID')
+-- Hooks every gate location this engine has, each with an empty chain, and
+-- the saved-store record. deps: build, compile, Script, Inventory (builder)
+-- or inventory (loader), Cur (module) or cursed (loader), pristine (shared
+-- table), load (revision -> bundle, filling pristine), revisions (the applied
+-- ones), report (context, reason). A location this engine lacks only fails
+-- the revisions that need it.
+function Gate.new(api,deps)
+    assert(type(deps)=='table' and type(deps.build)=='function' and type(deps.compile)=='function',
+        'CAMPAIGN_GATE_CONFIG_INVALID')
     assert(api.EEex_Active and not api.FLPR_SOURCE_GATE and not api.FLPR_AREA_TRACE and
         not api.FLPR_CAMPAIGN_GATE, 'CAMPAIGN_GATE_INSTALL_CONTEXT_INVALID')
     assert(type(api.EEex_GameState_AddDestroyedListener)=='function' and
-        type(api.EEex_GameState_GetGlobalInt)=='function' and type(api.EEex_Write8)=='function',
-        'CAMPAIGN_GATE_LIFECYCLE_MISSING')
-    local selected_sites={}
-    local physical,creatures,stores,templates,cursed=false,false,false,false,false
-    for _,selected in ipairs(bundles) do
-        if selected.manifest.spell_shield then physical=true;stores=true end
-        if selected.manifest.cursed_disguises then cursed=true end
-        for _,endpoint in pairs(selected.fixture.sources) do
-            if endpoint.kind~='guarded-script' then physical=true end
-            if endpoint.kind=='guarded-creature' then creatures=true end
-            if endpoint.kind=='guarded-store' then stores=true end
-            if endpoint.kind=='guarded-template' then templates=true end
-            if endpoint.auxiliary_creatures then physical=true;templates=true end
-        end
+        type(api.EEex_GameState_GetGlobalInt)=='function' and type(api.EEex_Write8)=='function' and
+        type(api.EEex_GenLuaCall)=='function','CAMPAIGN_GATE_LIFECYCLE_MISSING')
+    local self=setmetatable({api=api,deps=deps,
+        pristine=deps.pristine or {creatures={},stores={},scripts={},templates={},spell_shield={},cursed={},auxiliary={}},
+        members={},by_revision={},option_members={},auxiliary_members={},cache={},
+        found={},missing={},hooked={},detours={},built={},failed={},installed=false},Group)
+    if deps.revisions then
+        self.allowed={}
+        for _,revision in ipairs(deps.revisions) do self.allowed[revision]=true end
     end
-    if physical then for _,site in ipairs(sites) do selected_sites[#selected_sites+1]=site end end
-    if cursed and not physical then
-        selected_sites[#selected_sites+1]=sites[1];selected_sites[#selected_sites+1]=sites[2]
-    end
-    if creatures then
-        assert(type(api.EEex_HookBeforeCall)=='function','CAMPAIGN_GATE_CREATURE_HOOK_MISSING')
-        for _,site in ipairs(actor_sites) do selected_sites[#selected_sites+1]=site end
-    end
-    if stores then for _,site in ipairs(store_sites) do selected_sites[#selected_sites+1]=site end end
-    if templates then selected_sites[#selected_sites+1]=template_site end
     -- Every location is found and checked before the first write.
-    local found={}
-    for _,site in ipairs(selected_sites) do found[site.key]=Site.locate(api,site.key,'CAMPAIGN_GATE') end
-    Site.check_layout(api,'gate','CAMPAIGN_GATE')
-    local function calls(key,target_key)
-        local target=found[target_key] or Site.locate(api,target_key,'CAMPAIGN_GATE')
-        if Site.call_target(api,found[key])~=target then
-            error('CAMPAIGN_GATE_CODE_MISMATCH:'..key..':call-target',0)
-        end
+    local layout_ok,layout=pcall(Site.check_layout,api,'gate','CAMPAIGN_GATE')
+    for _,site in ipairs(all_sites) do
+        local address,reason=Site.find(api,site.key)
+        if not layout_ok then self.missing[site.key]=tostring(layout)
+        elseif address then self.found[site.key]=address
+        else self.missing[site.key]='CAMPAIGN_GATE_CODE_MISMATCH:'..reason end
     end
     -- Both actor hooks hand the CRE bytes to the creature constructor, and the
     -- item hook identifies the area loader's container call by its return.
-    if creatures then for _,site in ipairs(actor_sites) do calls(site.key,'gate_template') end end
-    local targets
-    if physical then
-        calls('gate_container_call','gate_container_entry')
-        targets={item_resume=found.gate_item+ITEM_RESUME,container_return=found.gate_container_call+5,
+    local function calls(key,target_key)
+        if not self.found[key] then return end
+        local target=self.found[target_key]
+        if not target then
+            self.missing[key]=self.missing[target_key]; self.found[key]=nil
+        elseif Site.call_target(api,self.found[key])~=target then
+            self.missing[key]='CAMPAIGN_GATE_CODE_MISMATCH:'..key..':call-target'; self.found[key]=nil
+        end
+    end
+    for _,site in ipairs(actor_sites) do calls(site.key,'gate_template') end
+    calls('gate_container_call','gate_container_entry')
+    local found=self.found
+    if found.gate_item and found.gate_container_call and found.gate_container_skip then
+        self.targets={item_resume=found.gate_item+ITEM_RESUME,container_return=found.gate_container_call+5,
             container_skip=found.gate_container_skip}
     end
-    local members,assemblies,cache,by_revision,inventory_groups,option_members,auxiliary_members={},{},{},{},{},{},{}
-    local cursed_runtime
-    if cursed then
-        assert(Cur,'CAMPAIGN_GATE_CURSED_ADAPTER_MISSING')
-        cursed_runtime=Cur.new(api,bundles,pristine.cursed,compile)
-        for _,assembly in ipairs(cursed_runtime.assemblies) do assemblies[#assemblies+1]=assembly end
-    end
-    local count=0
-    for key in pairs(bundles) do assert(integer(key,1,#bundles), 'CAMPAIGN_GATE_CONFIG_INVALID'); count=count+1 end
-    assert(count==#bundles, 'CAMPAIGN_GATE_CONFIG_INVALID')
-    for _,selected in ipairs(bundles) do
-        local revision=selected.manifest.revision
-        assert(not by_revision[revision], 'CAMPAIGN_GATE_REVISION_DUPLICATED')
-        local current={}; by_revision[revision]=current
-        auxiliary_members[revision]={}
-        if selected.manifest.spell_shield then
-            assert(Inventory,'CAMPAIGN_GATE_INVENTORY_BUILDER_MISSING')
-            local member,assembly,group=prepare_stock_option(api,selected,build,compile,pristine,targets)
-            option_members[revision]=member
-            assemblies[#assemblies+1]=assembly
-            inventory_groups[revision..'/sto:udduer01']=group
+    self.recorder=api.EEex_Malloc(16+RECORDS*8)
+    assert(self.recorder and self.recorder~=0,'CAMPAIGN_GATE_ALLOC_FAILED')
+    zero(api,self.recorder,16+RECORDS*8)
+    api.FLPR_CAMPAIGN_GATE=self -- partial installation is never retried in-process
+    api.FLPR_CampaignGateGame=function(data,size)
+        local ok,reason=pcall(self._on_game,self,data,size)
+        if not ok then
+            self.last_error=tostring(reason)
+            if deps.report then pcall(deps.report,'gate',reason) end
         end
-        for _,id in ipairs(Gate.source_ids(selected.fixture)) do
-            local member,assembly
-            if selected.fixture.sources[id].kind=='guarded-script' then
-                assert(Script,'CAMPAIGN_SCRIPT_ADAPTER_MISSING')
-                member=Script.new(api,selected,id,pristine.scripts[revision][id])
-            else
-                member,assembly=prepare(api,selected,build,compile,pristine,id,targets,cache)
-                local endpoint=selected.fixture.sources[id]
-                if endpoint.kind=='guarded-template' or endpoint.multiple_stock or
-                    (selected.manifest.spell_shield and endpoint.kind=='guarded-store' and endpoint.store=='udduer01') then
-                    assert(Inventory,'CAMPAIGN_GATE_INVENTORY_BUILDER_MISSING')
-                    local kind=endpoint.kind=='guarded-template' and 'cre' or 'sto'
-                    local resource=kind=='cre' and endpoint.creature_resource or 'sto:'..endpoint.store
-                    local key=revision..'/'..resource
-                    local group=inventory_groups[key]
-                    if not group then
-                        local original=kind=='cre' and member.inventory_original or pristine.stores[revision][id].original
-                        group={kind=kind,ref=endpoint.store,original=original,members={}}
-                        inventory_groups[key]=group
+    end
+    api.EEex_DisableCodeProtection()
+    local ok,failure=pcall(function()
+        for _,site in ipairs(all_sites) do
+            local address=found[site.key]
+            if address and (site.code or site.recorder) then
+                local hooked=Gate.hook(api,site,address,
+                    site.key=='gate_enter' and dispatcher(api,'FLPR_CampaignGateGame') or nil)
+                if api.EEex_HookIntegrityWatchdog_Load then
+                    local register=api.EEex_HookIntegrityWatchdogRegister
+                    if site.call then
+                        api.EEex_HookIntegrityWatchdog_IgnoreRegisters(address,{register.RAX,register.RDX})
+                    elseif site.code=='store' or site.code=='template' or site.code=='item' then
+                        api.EEex_HookIntegrityWatchdog_IgnoreRegisters(address,{
+                            site.code=='store' and register.RDI or
+                                (site.code=='item' and register.R13 or register.RDX)})
                     end
-                    group.members[#group.members+1]=member
-                    member.permanent=true
-                    assembly={enter=assembly.enter,capture=assembly.capture,saved_store=assembly.saved_store}
                 end
-                assemblies[#assemblies+1]=assembly
+                self.hooked[site.key]=hooked
+                self.detours[#self.detours+1]=hooked.detour
+                if site.recorder then Gate.publish(api,hooked,Gate.link(api,hooked,{recorder(self.recorder)})) end
             end
-            members[#members+1]=member
-            current[#current+1]=member
-            for ordinal in ipairs(selected.fixture.sources[id].auxiliary_creatures or {}) do
-                assert(Inventory,'CAMPAIGN_GATE_INVENTORY_BUILDER_MISSING')
-                local auxiliary,auxiliary_assembly=prepare_auxiliary(api,selected,id,ordinal,build,compile,pristine,targets)
-                auxiliary_members[revision][#auxiliary_members[revision]+1]=auxiliary
-                assemblies[#assemblies+1]=auxiliary_assembly
-                local key=revision..'/'..auxiliary.binding.creature_resource
+        end
+    end)
+    api.EEex_EnableCodeProtection()
+    assert(ok,failure)
+    api.EEex_GameState_AddDestroyedListener(function()
+        self:reset()
+        api.EEex_Write64(self.recorder,0); api.EEex_Write64(self.recorder+8,0)
+    end)
+    self.installed=true
+    return self
+end
+
+-- Builds the source checks of one campaign revision and puts them in front
+-- of every chain they use. Nothing changes the running chains until all of
+-- the revision's code is built; then its members are armed and published.
+function Group:_add(selected)
+    local api,deps,pristine=self.api,self.deps,self.pristine
+    local build,compile=deps.build,deps.compile
+    local revision=selected.manifest.revision
+    assert(not self.by_revision[revision], 'CAMPAIGN_GATE_REVISION_DUPLICATED')
+    local physical,creatures,stores,templates=false,false,false,false
+    local cursed=selected.manifest.cursed_disguises~=nil or selected.fixture.cursed_disguises~=nil
+    if selected.manifest.spell_shield then physical=true;stores=true end
+    for _,endpoint in pairs(selected.fixture.sources) do
+        if endpoint.kind~='guarded-script' then physical=true end
+        if endpoint.kind=='guarded-creature' then creatures=true end
+        if endpoint.kind=='guarded-store' then stores=true end
+        if endpoint.kind=='guarded-template' then templates=true end
+        if endpoint.auxiliary_creatures then physical=true;templates=true end
+    end
+    local needed={}
+    if physical then for _,site in ipairs(sites) do needed[#needed+1]=site end end
+    if cursed and not physical then needed[#needed+1]=sites[1];needed[#needed+1]=sites[2] end
+    if creatures then for _,site in ipairs(actor_sites) do needed[#needed+1]=site end end
+    if stores then for _,site in ipairs(store_sites) do needed[#needed+1]=site end end
+    if templates then needed[#needed+1]=template_site end
+    for _,site in ipairs(needed) do
+        if self.missing[site.key] then error(self.missing[site.key],0) end
+    end
+    local targets=physical and self.targets or nil
+    local Inventory=deps.Inventory
+    local function inventory()
+        Inventory=Inventory or (deps.inventory and deps.inventory())
+        assert(Inventory,'CAMPAIGN_GATE_INVENTORY_BUILDER_MISSING')
+        return Inventory
+    end
+    local members,auxiliary,assemblies,inventory_groups={},{},{},{}
+    local option,cur,cur_entry,first_cursed
+    if cursed then
+        local Cur=deps.Cur or (deps.cursed and deps.cursed())
+        assert(Cur,'CAMPAIGN_GATE_CURSED_ADAPTER_MISSING')
+        first_cursed=not self.cursed
+        cur=self.cursed or Cur.create(api,compile)
+        local assembly
+        cur_entry,assembly=cur:prepare(selected,pristine.cursed)
+        -- The disguise state is reset at GAM entry and its views refreshed after
+        -- every revision's selection: the first cursed revision's chain, which
+        -- later revisions' chains precede, carries both.
+        if first_cursed then assemblies[#assemblies+1]={enter=cur.enter} end
+        assemblies[#assemblies+1]=assembly
+        if first_cursed then assemblies[#assemblies+1]={capture=cur.final} end
+    end
+    if selected.manifest.spell_shield then
+        inventory()
+        local member,assembly,group=prepare_stock_option(api,selected,build,compile,pristine,targets)
+        option=member
+        assemblies[#assemblies+1]=assembly
+        inventory_groups[revision..'/sto:udduer01']=group
+    end
+    for _,id in ipairs(Gate.source_ids(selected.fixture)) do
+        local member,assembly
+        if selected.fixture.sources[id].kind=='guarded-script' then
+            assert(deps.Script,'CAMPAIGN_SCRIPT_ADAPTER_MISSING')
+            member=deps.Script.new(api,selected,id,pristine.scripts[revision][id],pristine.extended)
+        else
+            member,assembly=prepare(api,selected,build,compile,pristine,id,targets,self.cache)
+            local endpoint=selected.fixture.sources[id]
+            if endpoint.kind=='guarded-template' or endpoint.multiple_stock or
+                (selected.manifest.spell_shield and endpoint.kind=='guarded-store' and endpoint.store=='udduer01') then
+                inventory()
+                local kind=endpoint.kind=='guarded-template' and 'cre' or 'sto'
+                local resource=kind=='cre' and endpoint.creature_resource or 'sto:'..endpoint.store
+                local key=revision..'/'..resource
                 local group=inventory_groups[key]
                 if not group then
-                    group={kind='cre',original=auxiliary.inventory_original,members={}}
+                    local original=kind=='cre' and member.inventory_original or pristine.stores[revision][id].original
+                    group={kind=kind,ref=endpoint.store,original=original,members={}}
                     inventory_groups[key]=group
-                else assert(group.original==auxiliary.inventory_original,'CAMPAIGN_GATE_AUXILIARY_RESOURCE_MISMATCH') end
-                group.members[#group.members+1]=auxiliary
+                end
+                group.members[#group.members+1]=member
+                member.permanent=true
+                assembly={enter=assembly.enter,capture=assembly.capture}
             end
+            assemblies[#assemblies+1]=assembly
+        end
+        members[#members+1]=member
+        for ordinal in ipairs(selected.fixture.sources[id].auxiliary_creatures or {}) do
+            inventory()
+            local member_aux,auxiliary_assembly=prepare_auxiliary(api,selected,id,ordinal,build,compile,pristine,targets)
+            auxiliary[#auxiliary+1]=member_aux
+            assemblies[#assemblies+1]=auxiliary_assembly
+            local key=revision..'/'..member_aux.binding.creature_resource
+            local group=inventory_groups[key]
+            if not group then
+                group={kind='cre',original=member_aux.inventory_original,members={}}
+                inventory_groups[key]=group
+            else assert(group.original==member_aux.inventory_original,'CAMPAIGN_GATE_AUXILIARY_RESOURCE_MISMATCH') end
+            group.members[#group.members+1]=member_aux
         end
     end
     for _,group in pairs(inventory_groups) do
@@ -706,15 +930,9 @@ function Gate.install(api,bundle,build,compile,pristine,Script,Inventory,Cur)
         local effective=group.effective or original
         local address=api.EEex_Malloc(#original+(group.option_member and 2 or 1)*#effective)
         assert(address and address~=0,'CAMPAIGN_GATE_ALLOC_FAILED')
-        for n=1,#original do
-            local byte=original:byte(n)
-            api.EEex_Write8(address+n-1,byte>=128 and byte-256 or byte)
-        end
+        write_bytes(api,address,original)
         if group.option_member then
-            for n=1,#effective do
-                local byte=effective:byte(n)
-                api.EEex_Write8(address+#original+n-1,byte>=128 and byte-256 or byte)
-            end
+            write_bytes(api,address+#original,effective)
             group.spell_shield={buffer=group.option_member.buffer,context=CONTEXT,
                 effective=address+#original,length=#effective}
         end
@@ -740,65 +958,160 @@ function Gate.install(api,bundle,build,compile,pristine,Script,Inventory,Cur)
             end
         end
         table.sort(group.edits,function(a,b) return a.index>b.index end)
-        assemblies[#assemblies+1]={[group.kind=='cre' and 'template' or 'store']=Inventory(group)}
+        assemblies[#assemblies+1]={[group.kind=='cre' and 'template' or 'store']=inventory()(group)}
     end
-    local has_auxiliary=false
-    for _,entries in pairs(auxiliary_members) do if #entries>0 then has_auxiliary=true end end
-    local self=#members==1 and next(option_members)==nil and not cursed_runtime and not has_auxiliary and members[1] or
-        setmetatable({members=members,by_revision=by_revision,option_members=option_members,
-            auxiliary_members=auxiliary_members,cursed=cursed_runtime,installed=false},Group)
-    local assembly,parts=Gate.compose(assemblies,true)
-    local detours={}
-    for _,member in ipairs(members) do member.detours=detours end
-    for _,member in pairs(option_members) do member.detours=detours end
-    for _,entries in pairs(auxiliary_members) do for _,member in ipairs(entries) do member.detours=detours end end
-    api.FLPR_CAMPAIGN_GATE=self -- partial installation is never retried in-process
-    api.EEex_DisableCodeProtection()
-    local ok,failure=pcall(function()
-        for _,site in ipairs(selected_sites) do
-            if site.code and assembly[site.code] and assembly[site.code]~='' then
-                local address=found[site.key]
-                local chained=#assembly[site.code]>16384
-                if chained then Gate.install_chain(api,site,address,parts[site.code]) end
-                if site.call then
-                    if not chained then api.EEex_HookBeforeCall(address,{assembly[site.code]}) end
-                    if api.EEex_HookIntegrityWatchdog_Load then
-                        api.EEex_HookIntegrityWatchdog_IgnoreRegisters(address,{
-                            api.EEex_HookIntegrityWatchdogRegister.RAX,api.EEex_HookIntegrityWatchdogRegister.RDX})
-                    end
-                else
-                    if not chained then api.EEex_HookBeforeRestore(address,0,site.size,site.size,{assembly[site.code]}) end
-                    if (site.code=='store' or site.code=='template' or site.code=='item') and api.EEex_HookIntegrityWatchdog_Load then
-                        api.EEex_HookIntegrityWatchdog_IgnoreRegisters(address,{
-                            site.code=='store' and api.EEex_HookIntegrityWatchdogRegister.RDI or
-                                (site.code=='item' and api.EEex_HookIntegrityWatchdogRegister.R13 or
-                                 api.EEex_HookIntegrityWatchdogRegister.RDX)})
-                    end
-                end
-                assert(api.EEex_ReadU8(address)==0xE9,'CAMPAIGN_GATE_DETOUR_NOT_WRITTEN')
-                local target=address+5+api.EEex_Read32(address+1)
-                assert(target>0 and (target<address or target>=address+#Site.SPECS[site.key].bytes/2),
-                    'CAMPAIGN_GATE_DETOUR_INVALID')
-                detours[#detours+1]={address=address,target=target}
+    local _,parts=Gate.compose(assemblies,true)
+    local linked={}
+    for _,site in ipairs(all_sites) do
+        local list=site.code and parts[site.code]
+        if list and #list>0 then
+            local hooked=self.hooked[site.key]
+            if not hooked then error(self.missing[site.key] or 'CAMPAIGN_GATE_CODE_MISMATCH:'..site.key..':not-hooked',0) end
+            linked[#linked+1]={hooked=hooked,chain=Gate.link(api,hooked,list)}
+        end
+    end
+    if first_cursed then
+        api.EEex_DisableCodeProtection()
+        local ok,failure=pcall(cur.install,cur,self.detours)
+        api.EEex_EnableCodeProtection()
+        assert(ok,failure)
+        self.cursed=cur
+    end
+    -- Nothing below can fail: arm (before New Game or any GAM load reaches
+    -- them), then chain, then record the revision.
+    if cur then cur:commit(cur_entry) end
+    local armed={}
+    for _,member in ipairs(members) do armed[#armed+1]=member end
+    if option then armed[#armed+1]=option end
+    for _,member in ipairs(auxiliary) do armed[#armed+1]=member end
+    for _,member in ipairs(armed) do
+        member.detours=self.detours
+        member.installed=true
+        if member.buffer then api.EEex_Write64(member.buffer,1) end
+    end
+    for _,entry in ipairs(linked) do Gate.publish(api,entry.hooked,entry.chain) end
+    for _,member in ipairs(members) do self.members[#self.members+1]=member end
+    self.by_revision[revision]=members
+    self.option_members[revision]=option
+    self.auxiliary_members[revision]=auxiliary
+    self.built[revision]=true
+    return members
+end
+
+-- Whether the applied configuration lists this revision for the gate.
+function Group:guards(revision)
+    return hash(revision) and (not self.allowed or self.allowed[revision]==true)
+end
+
+-- Builds a campaign revision's source checks unless they exist; refuses a
+-- revision the applied configuration does not list.
+function Group:ensure(revision)
+    if self.built[revision] then return true end
+    if self.failed[revision] then error(self.failed[revision],0) end
+    local ok,reason=pcall(function()
+        assert(self:guards(revision),'CAMPAIGN_GATE_REVISION_NOT_APPLIED')
+        assert(type(self.deps.load)=='function','CAMPAIGN_GATE_REVISION_UNAVAILABLE')
+        local bundle=self.deps.load(revision)
+        assert(type(bundle)=='table' and type(bundle.manifest)=='table' and type(bundle.fixture)=='table' and
+            bundle.manifest.revision==revision,'CAMPAIGN_GATE_REVISION_MISMATCH')
+        self:_add(bundle)
+    end)
+    if not ok then self.failed[revision]=tostring(reason); error(reason,0) end
+    return true
+end
+
+local GAM_VERSIONS={['GAMEV2.0']=true,['GAMEV2.1']=true,['GAMEV1.1']=true}
+-- The revision a GAM's FLPR_R01..FLPR_R16 name (each once, zero-padded,
+-- 0..0xFFFF), as the source checks' policy reads them; nil otherwise.
+function Group:_gam_revision(data,size)
+    local api=self.api
+    if type(data)~='number' or data<=0 or type(size)~='number' or size<0xB4 or size>0x1000000 then return nil end
+    local version={}
+    for offset=0,7 do version[#version+1]=string.char(api.EEex_ReadU8(data+offset)) end
+    if not GAM_VERSIONS[table.concat(version)] then return nil end
+    local offset,count=api.EEex_Read32(data+0x38),api.EEex_Read32(data+0x3C)
+    if offset<0xB4 or count<0 or count>16384 or offset+count*84>size then return nil end
+    local values,seen={},0
+    for index=0,count-1 do
+        local record=data+offset+index*84
+        if api.EEex_Read32(record)==0x52504C46 and api.EEex_ReadU8(record+4)==0x5F and
+            api.EEex_ReadU8(record+5)==0x52 then
+            local tens,ones=api.EEex_ReadU8(record+6)-48,api.EEex_ReadU8(record+7)-48
+            local field=tens*10+ones
+            local padded=true
+            for at=8,28,4 do if api.EEex_Read32(record+at)~=0 then padded=false end end
+            if padded and tens>=0 and tens<=9 and ones>=0 and ones<=9 and field>=1 and field<=16 then
+                if values[field] then return nil end
+                local value=api.EEex_Read32(record+0x28)
+                if value<0 or value>0xFFFF then return nil end
+                values[field]=value; seen=seen+1
             end
         end
-        if cursed_runtime then cursed_runtime:install(detours) end
-    end)
-    api.EEex_EnableCodeProtection()
-    assert(ok,failure)
-    api.EEex_GameState_AddDestroyedListener(function()
-        self:reset()
-    end)
-    for _,member in ipairs(members) do
-        member.installed=true
-        if member.buffer then api.EEex_Write64(member.buffer,1) end -- before New Game / any saved GAM load
     end
-    for _,member in pairs(option_members) do member.installed=true;api.EEex_Write64(member.buffer,1) end
-    for _,entries in pairs(auxiliary_members) do for _,member in ipairs(entries) do
-        member.installed=true;api.EEex_Write64(member.buffer,1)
-    end end
-    self.installed=true
-    return self
+    if seen~=16 then return nil end
+    local out={}
+    for field=1,16 do out[field]=string.format('%04x',values[field]) end
+    return table.concat(out)
+end
+
+-- Resrefs compared as the store hook compares them: every byte OR 0x20.
+local function folded(value)
+    return (value:gsub('.',function(c)
+        local byte=c:byte()
+        return string.char(math.floor(byte/32)%2==1 and byte or byte+32)
+    end))
+end
+-- Marks each built store source whose STO the loaded game restored, as a
+-- saved store: its original stock is the saved game's, not suppressed again.
+function Group:_restore_saved_stores()
+    local api,recorder=self.api,self.recorder
+    local count,overflow=api.EEex_ReadU64(recorder),api.EEex_ReadU64(recorder+8)~=0
+    if count==0 and not overflow then return end
+    local restored={}
+    for index=0,math.min(count,RECORDS)-1 do
+        local raw={}
+        for offset=0,7 do raw[#raw+1]=string.char(api.EEex_ReadU8(recorder+16+index*8+offset)) end
+        restored[folded(table.concat(raw))]=true
+    end
+    local stores={}
+    for _,member in ipairs(self.members) do stores[#stores+1]=member end
+    for _,member in pairs(self.option_members) do stores[#stores+1]=member end
+    for _,member in ipairs(stores) do
+        local store=member.policy and member.policy.store
+        if store and (overflow or restored[folded(store.ref:upper()..string.rep('\0',8-#store.ref))]) then
+            api.EEex_Write64(member.buffer+CONTEXT,1)
+        end
+    end
+end
+
+-- CInfGame::Unmarshal entry (New Game template or saved game), before any
+-- source check reads the GAM: builds the revision a saved game names.
+function Group:_on_game(data,size)
+    local revision=self:_gam_revision(data,size)
+    if revision and not self.built[revision] and not self.failed[revision] and self.deps.load and
+        self:guards(revision) then
+        local ok,reason=pcall(self.ensure,self,revision)
+        if not ok and self.deps.report then pcall(self.deps.report,'gate',reason) end
+    end
+    self:_restore_saved_stores()
+    return revision
+end
+
+-- All applied revisions at once (offline checks and focused tests).
+function Gate.install(api,bundle,build,compile,pristine,Script,Inventory,Cur)
+    local bundles=bundle.manifest and {bundle} or bundle
+    assert(type(bundles)=='table' and #bundles>0, 'CAMPAIGN_GATE_CONFIG_INVALID')
+    local count=0
+    for key in pairs(bundles) do assert(integer(key,1,#bundles), 'CAMPAIGN_GATE_CONFIG_INVALID'); count=count+1 end
+    assert(count==#bundles, 'CAMPAIGN_GATE_CONFIG_INVALID')
+    local group=Gate.new(api,{build=build,compile=compile,pristine=pristine,Script=Script,Inventory=Inventory,Cur=Cur})
+    for _,selected in ipairs(bundles) do group:_add(selected) end
+    local has_auxiliary=false
+    for _,entries in pairs(group.auxiliary_members) do if #entries>0 then has_auxiliary=true end end
+    if #group.members==1 and next(group.option_members)==nil and not group.cursed and not has_auxiliary then
+        return group.members[1]
+    end
+    return group
 end
 
 function Runtime:reset()
@@ -831,7 +1144,14 @@ function Runtime:_row(index)
         name_raw=self:_raw(row+56,32),payload_raw=self:_raw(row+88,20),
         detail1=q(112),detail2=q(120),detail1_raw=self:_raw(row+112,8),detail2_raw=self:_raw(row+120,8)}
 end
-function Runtime:inspect()
+-- What a proof reads of an event row. The host proves leases on every tick in
+-- turn; reading each row's names and payload bytes one by one cost the most.
+function Runtime:_proof_row(index)
+    local row=self.buffer+HEADER+index*STRIDE
+    return {kind=self.api.EEex_ReadU64(row),generation=self.api.EEex_ReadU64(row+8),
+        decision=self.api.EEex_ReadU64(row+24)}
+end
+function Runtime:inspect(proof)
     local count,generation,destroys,active=self:_q(8),self:_q(40),self:_q(104),self:_q(24)
     local result={schema='flpr-campaign-gate-trace-v1',revision=self.revision,
         installed=self.installed,armed=self:_q(0)==1,overflow=self:_q(16)~=0 or count>CAPACITY,
@@ -839,7 +1159,7 @@ function Runtime:inspect()
         mask=self:_q(80),candidate=self:_q(88),skips=self:_q(96),load_skips=self:_q(120),events={}}
     local published=true
     for index=0,math.min(count,CAPACITY)-1 do
-        local row=self:_row(index)
+        local row=proof and self:_proof_row(index) or self:_row(index)
         if row.kind~=1 and row.kind~=2 and row.kind~=3 and row.kind~=4 then published=false end
         result.events[#result.events+1]=row
     end
@@ -864,7 +1184,7 @@ function Runtime:_bundle(bundle)
         assert(revision==self.revision and index==self.index and resource_hash==self.resource_hash and
             binding.creature_resource==b.creature_resource and binding.selected_global==b.selected_global and
             binding.replacement==b.replacement and binding.replacement_hash==b.replacement_hash and
-            same_payload(binding.payload,b.payload) and #binding.records==#b.records,
+            same_payload(binding.payload,b.payload,true) and #binding.records==#b.records,
             'CAMPAIGN_GATE_AUXILIARY_REVISION_MISMATCH')
         for i,record in ipairs(binding.records) do assert(record==b.records[i],'CAMPAIGN_GATE_AUXILIARY_REVISION_MISMATCH') end
         return
@@ -923,7 +1243,7 @@ function Runtime:prepare_new(bundle,controller)
 end
 
 function Runtime:_proof()
-    local snapshot=self:inspect()
+    local snapshot=self:inspect(true)
     if not self:_intact() or not snapshot.stable or not snapshot.armed or snapshot.overflow or
         snapshot.mode~=1 or not integer(snapshot.generation,1,2147483647) then
         return nil,'CAMPAIGN_GATE_INACTIVE'
@@ -1021,8 +1341,13 @@ function Adapter:observe_removal(request)
     return result
 end
 
+-- A revision's checks exist once a game needed them (Group:ensure): New Game
+-- builds them first, loading a saved game at CInfGame::Unmarshal entry.
 function Group:_members(bundle)
-    local members=self.by_revision[bundle.manifest.revision]
+    local revision=bundle.manifest.revision
+    local members=self.by_revision[revision]
+    if not members and self.failed[revision] then error(self.failed[revision],0) end
+    assert(members or not self:guards(revision),'CAMPAIGN_GATE_REVISION_NOT_BUILT')
     assert(members and #Gate.source_ids(bundle.fixture)==#members, 'CAMPAIGN_GATE_REVISION_MISMATCH')
     for _,member in ipairs(members) do member:_bundle(bundle) end
     return members

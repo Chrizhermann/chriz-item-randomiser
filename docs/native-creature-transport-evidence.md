@@ -66,6 +66,15 @@ Executing `GiveItemCreate("RES",Myself,c1,c2,c3)` on the recipient therefore
 queues exactly one type 67/subtype 2 message with source and target both equal to
 that recipient. The backpack is not changed until the message runs.
 
+The constructor also makes every usage count 0 of a stackable item 1 (BG:EE
+2.7.3.0, `CreateItem` on a party member, 2026-10-20: SCRL75 0/0/0 became 1/1/1,
+SCRL75 2/0/0 2/1/1, POTN08 4/0/0 4/1/1, AROW01 0/0/0 1/1/1; WAND10, SW1H01,
+PLAT01 and RING05 kept their zeros). A source record's 0 asks for that default,
+so the adapter accepts exactly this difference from the reward and binds the
+counts the engine created. Before CIR 1.0.2 it demanded the reward's counts,
+and the first stackable reward (a scroll from a container for Gorion) stopped
+CIR for the rest of that game.
+
 ## Consumer: `CMessageHandler::AsynchronousUpdate`
 
 The local loop at the start of `AsynchronousUpdate` (`0x140204E00`) repeatedly

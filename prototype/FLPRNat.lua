@@ -57,13 +57,22 @@ local function same(a, b)
     return a and b and a.resref == b.resref and a.expiration == b.expiration and a.flags == b.flags and
         a.charges[1] == b.charges[1] and a.charges[2] == b.charges[2] and a.charges[3] == b.charges[3]
 end
-local function constructor_payload(actual, expected)
-    -- CreateItem/GiveItemCreate choose only identification from the ITM.
-    -- The source's stolen bit must be set on the one proven new instance.
+-- The reward as CreateItem/GiveItemCreate made it, or nil. They choose
+-- identification from the ITM, and they make every usage count 0 of a
+-- stackable item 1 (2.7.3.0: SCRL75 0/0/0 is created 1/1/1, POTN08 4/0/0
+-- 4/1/1; WAND10 and PLAT01 keep 0/0/0). Every other field is the reward's.
+-- The source's flags are then set on the one proven new instance.
+local function created_payload(actual, expected, stack_limit)
     local created = payload(actual)
-    if not created or (created.flags ~= 0 and created.flags ~= 1) then return false end
+    if not created or created.resref ~= expected.resref or created.expiration ~= expected.expiration or
+        (created.flags ~= 0 and created.flags ~= 1) then return nil end
+    for index = 1, 3 do
+        local count = expected.charges[index]
+        if created.charges[index] ~= count and not (count == 0 and stack_limit > 1 and
+            created.charges[index] == 1) then return nil end
+    end
     created.flags = expected.flags
-    return same(created, expected)
+    return created
 end
 local function pointer(api, object)
     local address = api.EEex_UDToPtr(object)
@@ -76,8 +85,8 @@ function Native.new(api, fixture, seed, reward_payload)
     for _, name in ipairs(required) do assert(type(api[name]) == "function", name .. "_MISSING") end
     local self = setmetatable({ api = api, sources = {}, targets = {}, reservations = {},
         attempted = {}, tick = nil, pending = nil, last_error = nil, source_resrefs = {}, held = {},
-        seed=seed, reward_payload=reward_payload, container_latched={} }, Adapter)
-    local identities, source_resrefs, creatures, guarded_ids = {}, self.source_resrefs, false, {}
+        seed=seed, reward_payload=reward_payload, container_latched={}, route_targets={} }, Adapter)
+    local identities, source_resrefs, creatures, guarded_ids, routes = {}, self.source_resrefs, false, {}, {}
     local guarded_count = 0
     for _, kind in ipairs({ "sources", "targets" }) do
         assert(type(fixture[kind]) == "table", "NATIVE_CONFIG_INVALID")
@@ -238,6 +247,25 @@ function Native.new(api, fixture, seed, reward_payload)
                 end
                 copy.loot_latch={activation_global=latch.activation_global,
                     latch_global=latch.latch_global,latch_scope=latch.latch_scope}
+            end
+            -- A preset's row of an extended reward route names the route's own
+            -- row of the same campaign, which this fixture has no endpoint of;
+            -- each route has one row. FLPRScript and FLPRGat take the source's
+            -- flags and copies by it, the reward reply names the target by it.
+            local route=endpoint.route_target
+            if kind=='sources' then route=endpoint.route_source end
+            if route~=nil then
+                local unit=kind=='sources' and 'item' or 'target'
+                local prefix=kind=='sources' and '^original%-source:' or '^original%-target:'
+                local campaign=id:match(prefix..'(bg[12]):[a-z0-9%-]+:mode2:'..unit..':[0-9]+$')
+                assert(campaign and type(route)=='string' and
+                    route:match(prefix..campaign..':mode2:'..unit..':[0-9]+$') and
+                    not routes[route] and fixture[kind][route]==nil and
+                    (kind=='targets' and copy.inventory_reward or
+                     kind=='sources' and script_source and endpoint.adapter_id=='mode2-reward-v1'),
+                    'NATIVE_ROUTE_INVALID')
+                routes[route]=id
+                if kind=='targets' then self.route_targets[route]=id end
             end
             self[kind][id] = copy
         end
@@ -621,6 +649,8 @@ end
 -- and pickpocketing remain valid alternatives. Wait for delivery to settle,
 -- then use the original transfer action; never recreate a missing item.
 function Adapter:transfer_inventory_reward(speaker, target_id, assignments, phases)
+    -- The reply names the route's own row; a preset's row may stand for it.
+    target_id=self.route_targets[target_id] or target_id
     local endpoint=self.targets[target_id]
     if not endpoint then return -1 end -- Target excluded from this campaign.
     assert(endpoint.inventory_reward, 'NATIVE_INVENTORY_REWARD_INVALID')
@@ -871,16 +901,17 @@ function Adapter:execute(command)
             if not before_queue.addresses[entry.pointer] then added[#added + 1] = entry.pointer end
         end
         local message = #added == 1 and addition_at(after_queue, added[1]) or nil
+        local created = message and created_payload(message.payload, p, stack_limit)
         -- GiveItemCreate chooses identification from the ITM's lore value;
         -- it does not accept the original inventory's identified flag. Bind
         -- the newly created message first, then preserve that selected flag.
         if not unchanged(reserved.items, after) or not message or message.form ~= "creature" or
-            message.target ~= owner.id or message.source ~= owner.id or not constructor_payload(message.payload, p) or
+            message.target ~= owner.id or message.source ~= owner.id or not created or
             creature_conflict(after_queue, owner.id, self.source_resrefs, message.pointer) then
             self.last_error = "CREATED_INSTANCE_UNPROVEN"; return nil, self.last_error
         end
-        self:_preserve_message_flags(message, p)
-        self.pending.queued, self.pending.empty = message, reserved.empty
+        self:_preserve_message_flags(message, created)
+        self.pending.queued, self.pending.empty, self.pending.created = message, reserved.empty, created
     else
         local after_queue, added, conflicting = self:_queue(), {}, 0
         for _, message in ipairs(after_queue.additions) do
@@ -888,18 +919,20 @@ function Adapter:execute(command)
             if conflicts(message, owner.id, p) then conflicting = conflicting + 1 end
         end
         local placed = placed_item(before, after, {#before + 1})
-        if placed and constructor_payload(placed.payload, p) and #added == 0 and conflicting == 0 then
-            self:_preserve_container_flags(owner, placed, p)
-            self.pending.created_pointer = placed.pointer
-        elseif unchanged(before, after) and #added == 1 and conflicting == 1 and added[1].target == owner.id and added[1].source == owner.id and
-            added[1].form == "container" and added[1].slot == 32767 and constructor_payload(added[1].payload, p) then
+        local created = placed and created_payload(placed.payload, p, stack_limit)
+        local queued = #added == 1 and created_payload(added[1].payload, p, stack_limit)
+        if created and #added == 0 and conflicting == 0 then
+            self:_preserve_container_flags(owner, placed, created)
+            self.pending.created_pointer, self.pending.created = placed.pointer, created
+        elseif queued and unchanged(before, after) and conflicting == 1 and added[1].target == owner.id and
+            added[1].source == owner.id and added[1].form == "container" and added[1].slot == 32767 then
             -- The engine queues an embedded CItem value, then Run() heap-copies
             -- it and appends to the container, preserving its earlier contents. Message and inventory
             -- pointers are intentionally different. Bind the exact new message
             -- to this nonce before allowing later observations to establish the
             -- resulting pointer; never resubmit CreateItem.
-            self:_preserve_message_flags(added[1], p)
-            self.pending.queued = added[1]
+            self:_preserve_message_flags(added[1], queued)
+            self.pending.queued, self.pending.created = added[1], queued
         else
             self.last_error = "CREATED_INSTANCE_UNPROVEN"; return nil, self.last_error
         end
@@ -979,7 +1012,8 @@ function Adapter:observe(command)
                 if queue.addresses[pending.queued.pointer] then return nil, "DELIVERY_MESSAGE_REUSED" end
                 local placed = placed_item(pending.before, items, {#pending.before + 1})
                 if not placed then return nil, "DELIVERY_MESSAGE_LOST" end
-                if not same(placed.payload, receipt.payload) then
+                local created = pending.created
+                if not same(placed.payload, created) then
                     -- CMessageContainerAddItem::Run copies the message's item with
                     -- the same CItem copy constructor as CMessageAddItem::Run, which
                     -- can identify a zero-lore item again (AMUL12 on EET 2.7.3).
@@ -987,10 +1021,10 @@ function Adapter:observe(command)
                     -- instance, just as on its message; nothing else may differ.
                     local found = placed.payload
                     local expected = { resref = found.resref, charges = found.charges,
-                        expiration = found.expiration, flags = receipt.payload.flags }
-                    if receipt.payload.flags % 2 ~= 0 or found.flags ~= receipt.payload.flags + 1 or
-                        not same(expected, receipt.payload) then return nil, "DELIVERY_PAYLOAD_CHANGED" end
-                    self:_preserve_container_flags(owner, placed, receipt.payload)
+                        expiration = found.expiration, flags = created.flags }
+                    if created.flags % 2 ~= 0 or found.flags ~= created.flags + 1 or
+                        not same(expected, created) then return nil, "DELIVERY_PAYLOAD_CHANGED" end
+                    self:_preserve_container_flags(owner, placed, created)
                 end
                 -- The exact message has been consumed. Its append operation
                 -- produced one new full-payload item and preserved existing
@@ -1009,7 +1043,7 @@ function Adapter:observe(command)
         end
         local placed = placed_item(pending.before, items, {#pending.before + 1})
         if not placed or placed.pointer ~= pending.created_pointer or
-            not same(placed.payload, receipt.payload) then return nil, "CREATED_INSTANCE_CHANGED" end
+            not same(placed.payload, pending.created) then return nil, "CREATED_INSTANCE_CHANGED" end
         local supported; supported, reason = self:_supported(receipt.payload)
         if not supported then return nil, reason end
         -- Container access (locks, traps, and normal opening) remains the
@@ -1038,20 +1072,21 @@ function Adapter:_observe_creature(pending, receipt, owner, items)
         -- then demand another later tick before publishing anything.
         local placed, failure = placed_item(pending.before, items, pending.empty)
         if not placed then return nil, failure end
-        if not same(placed.payload, receipt.payload) then
+        local created = pending.created
+        if not same(placed.payload, created) then
             -- CMessageAddItem::Run can identify a zero-lore item again while
             -- copying it from the message. Preserve the source's flags on the
             -- one proven new inventory instance, just as on its message.
             local expected=payload(placed.payload)
-            expected.flags=receipt.payload.flags
-            if receipt.payload.flags%2~=0 or placed.payload.flags~=receipt.payload.flags+1 or
-                not same(expected,receipt.payload) then return nil,'DELIVERY_PAYLOAD_CHANGED' end
+            expected.flags=created.flags
+            if created.flags%2~=0 or placed.payload.flags~=created.flags+1 or
+                not same(expected,created) then return nil,'DELIVERY_PAYLOAD_CHANGED' end
             local item=owner.object.m_equipment.m_items:get(placed.slot)
             assert(pointer(self.api,item)==placed.pointer and same(self:_item(item).payload,placed.payload),
                 'CREATED_INSTANCE_CHANGED')
-            item.m_flags=receipt.payload.flags
-            assert(same(self:_item(item).payload,receipt.payload),'CREATED_FLAGS_NOT_PRESERVED')
-            placed.payload.flags=receipt.payload.flags
+            item.m_flags=created.flags
+            assert(same(self:_item(item).payload,created),'CREATED_FLAGS_NOT_PRESERVED')
+            placed.payload.flags=created.flags
         end
         pending.created_pointer, pending.created_slot, pending.pinned_tick = placed.pointer, placed.slot, self.tick
         return nil, "DELIVERY_SETTLING"
@@ -1060,7 +1095,7 @@ function Adapter:_observe_creature(pending, receipt, owner, items)
     if self.tick <= pending.pinned_tick then return nil, "DELIVERY_SETTLING" end
     local placed = placed_item(pending.before, items, pending.empty)
     if not placed or placed.pointer ~= pending.created_pointer or placed.slot ~= pending.created_slot or
-        not same(placed.payload, receipt.payload) then return nil, "CREATED_INSTANCE_CHANGED" end
+        not same(placed.payload, pending.created) then return nil, "CREATED_INSTANCE_CHANGED" end
     local supported, reason = self:_supported(receipt.payload)
     if not supported then return nil, reason end
     -- Held by a living, non-party creature in its backpack. That is not proof
@@ -1078,7 +1113,8 @@ function Adapter:_observe_creature(pending, receipt, owner, items)
     self.held[receipt.index] = { session=receipt.session, revision=receipt.revision,
         nonce=receipt.nonce, source_id=receipt.source_id, target_id=receipt.target_id,
         owner_id=owner.id, owner_pointer=owner.pointer, item_pointer=placed.pointer,
-        slot=placed.slot, payload=payload(placed.payload), endpoint=pending.endpoint }
+        slot=placed.slot, payload=payload(placed.payload), reward=payload(receipt.payload),
+        endpoint=pending.endpoint }
     self.pending = nil
     return receipt
 end
@@ -1090,7 +1126,7 @@ function Adapter:_held(request)
         if request[key] ~= held[key] then return nil, "HELD_BINDING_MISMATCH" end
     end
     if request.kind ~= "verify-held-drop" or request.mode ~= "observe-only" or
-        not same(payload(request.payload), held.payload) then return nil, "HELD_BINDING_MISMATCH" end
+        not same(payload(request.payload), held.reward) then return nil, "HELD_BINDING_MISMATCH" end
     return held
 end
 

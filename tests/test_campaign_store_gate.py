@@ -59,10 +59,14 @@ class StoreGateTests(unittest.TestCase):
         f.prepare(f)
         f.adapter(f)
         f.bind(f)
-        assembly = build(BUFFER, gate_targets(lua, IMAGE), f.gate.policy)
+        assembly = dict(build(BUFFER, gate_targets(lua, IMAGE), f.gate.policy).items())
+        # The saved-store record the gate keeps (FLPRGat.lua), and its hook code.
+        self.record = int(lua.execute('return f.api.FLPR_CAMPAIGN_GATE.recorder'))
+        assembly['saved_store'] = gate.recorder(self.record)
 
         machine = GateMachine()
         machine.uc.mem_map(0x130000, 0x50000)
+        machine.uc.mem_map(self.record & ~0xFFFF, 0x20000)
         assembler = Ks(KS_ARCH_X86, KS_MODE_64)
         for name, address in (('enter', 0x100000), ('capture', 0x110000),
                               ('store', STORE_CODE), ('saved_store', SAVED_CODE),
@@ -131,10 +135,56 @@ class StoreGateTests(unittest.TestCase):
                          'assert(f.controller:confirm_guarded_source_removal(receipt))')
         self.assertEqual(f['values'].flpr_s0001, 3)
 
+    def restore(self, *names, r14=0, kind=0x3F6, count=None):
+        """dimmUncompressResources restores each named resource from a saved
+        game; then CInfGame::Unmarshal's entry applies the record (Lua)."""
+        machine, f = self.machine, self.f
+        if count is not None:
+            machine.write_q(self.record, count)
+        for name in names:
+            machine.write_q(STACK + 0x8000 - 0x20, int.from_bytes(name.ljust(8, b'\0'), 'little'))
+            machine.write_d(STORE_OBJECT + 0x10, kind)
+            machine.uc.reg_write(UC_X86_REG_RBX, STORE_OBJECT)
+            machine.uc.reg_write(UC_X86_REG_RSP, STACK + 0xF000)
+            machine.uc.reg_write(UC_X86_REG_RBP, STACK + 0x8000)
+            machine.uc.reg_write(UC_X86_REG_R14, r14)
+            machine.stop, machine.steps = None, 0
+            machine.uc.emu_start(SAVED_CODE, 0, count=10000)
+            self.assertEqual(machine.stop, 'continue')
+        f.pokestring(f, self.record, bytes(machine.uc.mem_read(self.record, 16 + 8 * 4096)))
+        self.lua.execute('f.api.FLPR_CAMPAIGN_GATE:_restore_saved_stores()')
+        context = BUFFER + int(f.gate.policy.store.context)
+        machine.write_q(context, int(f.peek(f, context, 8)))
+        machine.write_d(STORE_OBJECT + 0x10, 0x3F6)
+        return machine.read_q(context)
+
     def test_saved_store_marker_blocks_reapplication_even_if_row_is_present(self):
-        self.hook('saved_store')
+        self.assertEqual(self.restore(b'SHOP'), 1)
         self.assertEqual(self.hook('store'), RAW_STO)
         self.assertEqual(self.machine.read_q(BUFFER + 120), 0)
+
+    def test_saved_store_record_needs_this_restored_sto(self):
+        # Another STO, a resource the engine does not restore, or another
+        # resource type leaves the source guarded; case does not matter.
+        for names, options in (((b'OTHER', b'SHOP2'), {}), ((b'SHOP',), {'r14': 1}),
+                               ((b'SHOP',), {'kind': 0x3ED})):
+            with self.subTest(names=names, **options):
+                self.assertEqual(self.restore(*names, **options), 0)
+        self.assertEqual(self.machine.read_q(self.record), 2)
+        self.assertEqual(self.restore(b'shop'), 1)
+        self.assertEqual(self.hook('store'), RAW_STO)
+
+    def test_full_saved_store_record_marks_every_store_source(self):
+        self.assertEqual(self.restore(b'OTHER', count=4096), 1)
+        self.assertEqual(self.machine.read_q(self.record + 8), 1)
+        self.assertEqual(self.hook('store'), RAW_STO)
+
+    def test_destroyed_game_clears_the_saved_store_record(self):
+        self.restore(b'SHOP')
+        self.lua.execute('for _,callback in ipairs(f.callbacks) do callback() end')
+        self.assertEqual(int(self.f.peek(self.f, self.record, 8)), 0)
+        context = BUFFER + int(self.f.gate.policy.store.context)
+        self.assertEqual(int(self.f.peek(self.f, context, 8)), 0)
 
     def test_saved_campaign_revision_and_phase_control_store_guard(self):
         machine, f = self.machine, self.f
