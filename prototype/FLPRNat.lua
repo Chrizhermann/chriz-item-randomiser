@@ -44,9 +44,12 @@ end
 local function hash(value)
     return type(value) == "string" and #value == 64 and not value:find("[^0-9a-f]")
 end
+-- A reward keeps its source's flags, except undroppable (8): the export
+-- refuses that source, since such a reward would never leave a creature.
 local function payload(value)
     if type(value) ~= "table" or not resref(value.resref) or value.expiration ~= 0 or
-        not integer(value.flags, 0, 3) or type(value.charges) ~= "table" then return nil end
+        not integer(value.flags, 0, 4294967295) or value.flags % 16 >= 8 or
+        type(value.charges) ~= "table" then return nil end
     local charges = {}
     for index = 1, 3 do
         if not integer(value.charges[index], 0, 65535) then return nil end

@@ -427,11 +427,14 @@ impl<'a> Compiler<'a> {
         let record = source.at("record")?;
         let item_name = text(source, "item")?;
         let item = self.items.row(self.catalog, item_name).ok_or_else(|| Error::key(item_name))?;
+        // The reward keeps the source's flags (identified, unstealable, stolen
+        // and bits another mod set). An undroppable one (8) would never leave
+        // a creature target.
         let ok = is_resref(item_name)
             && record.at("expiration")?.py_eq(&Value::Int(0))
             && {
                 let flags = record.at("flags")?;
-                (0..4).any(|flag| flags.py_eq(&Value::Int(flag)))
+                flags.as_int().is_some_and(|flags| (0..=0xFFFF_FFFF).contains(&flags) && flags & 8 == 0)
             }
             && entry(item, "flags")?.as_int().unwrap_or(0) & 12 == 12;
         require(ok, || format!("Native source requires an unexpired, visible droppable item: {identity}"))?;

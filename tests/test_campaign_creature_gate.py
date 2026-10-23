@@ -28,15 +28,15 @@ class CreatureGateTests(unittest.TestCase):
     def setUp(self):
         self.build_fixture()
 
-    def build_fixture(self, embedded=False, equipped=False, replacement=None):
+    def build_fixture(self, embedded=False, equipped=False, replacement=None, flags=1):
         fixture = export_tests.NativeExportTests()
         fixture.setUp()
         self.addCleanup(fixture.doCleanups)
         self.original = bytes(make_cre(
             [item_record('SYNTH001', expiration=0,
-                         charges=(2, 3, 4) if equipped else (0, 0, 0), flags=1)]
+                         charges=(2, 3, 4) if equipped else (0, 0, 0), flags=flags)]
             if equipped else [
-                item_record('SYNTH001', expiration=0, charges=(0, 0, 0), flags=1),
+                item_record('SYNTH001', expiration=0, charges=(0, 0, 0), flags=flags),
                 item_record('SYNTH002', expiration=0, charges=(2, 3, 4), flags=1)],
             slots={9: 0} if equipped else None))
         if embedded:
@@ -142,6 +142,17 @@ class CreatureGateTests(unittest.TestCase):
         self.machine.write(RAW+len(self.area)-1, bytes([self.area[-1] ^ 1]))
         self.assertEqual(self.actor(), CRE_INPUT)
         self.assertEqual(self.machine.read_q(BUFFER+120), 0)
+
+    def test_stolen_source_gets_the_same_private_inventory_handoff(self):
+        # Baeloth's items are identified and stolen (5); a mod gave Koshi's sword 0x3E7.
+        for flags in (5, 0x3E7):
+            with self.subTest(flags=hex(flags)):
+                self.build_fixture(flags=flags)
+                self.assertEqual(self.f.bundle.fixture.sources[self.source['id']].payload.flags, flags)
+                pointer = self.actor()
+                self.assertEqual(pointer, self.f.gate.policy.creature.removed)
+                self.assertEqual(bytes(self.machine.uc.mem_read(pointer, len(self.removed))), self.removed)
+                self.assertEqual(self.machine.read_q(BUFFER+120), 1)
 
     def test_embedded_creature_uses_same_private_inventory_handoff(self):
         self.build_fixture(embedded=True)

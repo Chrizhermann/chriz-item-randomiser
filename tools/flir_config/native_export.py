@@ -270,9 +270,13 @@ def _compile(manifest: dict, world: dict, index: dict, items: dict,
                      f"Selected source differs from the scan: {identity}")
         record = source["record"]
         item = items[source["item"]]
+        # The reward keeps the source's flags (identified, unstealable, stolen
+        # and bits another mod set). An undroppable one (8) would never leave
+        # a creature target.
+        flags = record["flags"]
         _require(re.fullmatch(r"[a-z0-9#_-]{1,8}", source["item"]) is not None and
-                 record["expiration"] == 0 and record["flags"] in (0, 1, 2, 3) and
-                 item["flags"] & 12 == 12,
+                 record["expiration"] == 0 and type(flags) is int and 0 <= flags <= 0xFFFFFFFF and
+                 not flags & 8 and item["flags"] & 12 == 12,
                  f"Native source requires an unexpired, visible droppable item: {identity}")
         selected_items.add(source["item"])
         if source["kind"] == "authored-source" and source["resource"].startswith("cre:"):

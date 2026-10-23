@@ -2,6 +2,7 @@
 
 import json
 from pathlib import Path
+import re
 import struct
 import sys
 import tempfile
@@ -472,6 +473,35 @@ class NativeExportTests(unittest.TestCase):
         self.assertNotEqual(later, revision)
         self.assertEqual(original_path.read_bytes(), original)
         self.assertEqual(removed_path.read_bytes(), removed)
+
+    def test_creature_source_keeps_stolen_and_other_flags_but_never_undroppable(self):
+        # Baeloth's items are identified and stolen (5); a mod gave Koshi's sword 0x3E7.
+        # An undroppable reward (8) would never leave a creature target.
+        for flags, exported in ((5, True), (0x3E7, True), (0x80000004, True),
+                                (8, False), (9, False), (0x3EF, False)):
+            with self.subTest(flags=hex(flags)):
+                original = bytes(make_cre([
+                    item_record("SYNTH001", expiration=0, charges=(0, 0, 0), flags=flags),
+                    item_record("SYNTH002", expiration=0, charges=(2, 3, 4), flags=1)]))
+                (self.override / "actor.cre").write_bytes(original)
+                self.refresh()
+                self.output = self.root / f"randomiser-campaigns-{flags:x}"
+                revision, source = self.write_creature_source("cre-template", "are:area/actor/1")
+                if not exported:
+                    with self.assertRaisesRegex(ProfileError, "^Native source requires an unexpired, "
+                                                "visible droppable item: " + re.escape(source["id"]) + "$"):
+                        self.export(revision)
+                    self.assertFalse((self.output / "next.lua").exists())
+                    continue
+                self.export(revision)
+                native = json.loads((self.output / "campaign-store" / "revisions" /
+                                     f"{revision}.native.json").read_bytes())
+                self.assertEqual(native["sources"][source["id"]]["payload"], {
+                    "resref": "synth001", "expiration": 0, "charges": [0, 0, 0], "flags": flags})
+                original_path, removed_path = self.creature_artifacts(revision)
+                self.assertEqual(original_path.read_bytes(), original)
+                self.assertEqual([(row["resref"], row["flags"]) for row in
+                                  parse_cre(removed_path.read_bytes())["items"]], [("synth002", 1)])
 
     def test_embedded_creature_source_exports_exact_embedded_bytes(self):
         embedded = bytes(make_cre([

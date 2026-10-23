@@ -661,6 +661,24 @@ function cases.configured_second_container_uses_its_own_bytes_and_witness(Core,G
     assert(f.values.flpr_s0001==3)
 end
 
+function cases.source_flags_other_than_undroppable_are_bound_exactly(Core,Gate,build,compile)
+    -- Identified and stolen (Baeloth's items), and bits a mod set (0x3E7).
+    for _,flags in ipairs({5,0x3E7,13}) do
+        local f=fixture(Core)
+        f.manifest.sources[1].record.record.flags=flags
+        f.bundle.fixture.sources[ID].payload.flags=flags
+        f.pristine.bytes=pristine_bytes({flags=flags})
+        if flags==13 then
+            -- Undroppable: such a reward would never leave a creature target.
+            fails('CAMPAIGN_GATE_SOURCE_INVALID',function() f:install(Gate,build,compile) end)
+            assert(f.allocations==0)
+        else
+            local gate=f:install(Gate,build,compile)
+            assert(gate.binding.payload.flags==flags and gate.policy.source.payload:sub(17,20)==u32(flags))
+        end
+    end
+end
+
 function cases.multiple_sources_share_hooks_but_keep_separate_receipts(Core,Gate,build,compile)
     local f=fixture(Core)
     local second='are:flpru1/container/0/item/2'
