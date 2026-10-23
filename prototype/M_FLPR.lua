@@ -122,7 +122,7 @@ local ok, failure = pcall(function()
         end
         local Gate = module("override/FLPRGat.lua", Site)
         local pristine={creatures={},stores={},scripts={},templates={},spell_shield={},cursed={},auxiliary={},
-            duplicates={}}
+            extended={},duplicates={}}
         -- An area's shared pristine copy, as the export wrote it.
         local function pristine_area(area,resource_hash)
             assert(type(area)=='string' and #area>=1 and #area<=8 and not area:find('[^A-Za-z0-9#_%-]'),
@@ -197,6 +197,20 @@ local ok, failure = pcall(function()
                     local file=assert(io.open(path,'rb'),'SOURCE_GATE_SCRIPT_MISSING')
                     pristine.scripts[revision]=pristine.scripts[revision] or {}
                     pristine.scripts[revision][id]=file:read('*a'); assert(file:close())
+                    -- Where Apply extended an installer-prepared quest script
+                    -- with reward routes, it keeps the installer's version and
+                    -- its own (native_export.py); FLPRScript.lua accepts either.
+                    local resource=endpoint.resource
+                    if endpoint.adapter_id=='original-quest-v1' and type(resource)=='string' and
+                        not pristine.extended[resource] then
+                        local name=assert(resource:match('^bcs:([a-z0-9_#%-]+)$'),'SOURCE_GATE_SCRIPT_KIND_INVALID')
+                        local versions={}
+                        for _,kind in ipairs({'installed','applied'}) do
+                            local copy=io.open(DATA..name:upper()..'.'..kind..'.bcs','rb')
+                            if copy then versions[kind]=copy:read('*a'); assert(copy:close()) end
+                        end
+                        pristine.extended[resource]=(versions.installed and versions.applied) and versions or false
+                    end
                     if endpoint.resources then
                         local routes={}
                         for number,resource in ipairs(endpoint.resources) do
@@ -363,11 +377,12 @@ local ok, failure = pcall(function()
     })
     -- EEex_LuaAction's NORMAL return holds the speaker before EscapeArea until
     -- its randomized inventory is ready. DONE resumes the original dialogue.
-    function FLPR_Transfer(speaker, target_id)
+    function FLPR_Transfer(speaker, target_id, campaign)
         -- Dialogue parsing strips spaces and colons from Lua chunks. Authored
-        -- Mode 2 inventory rewards pass their numeric row; expand it here.
+        -- Mode 2 inventory rewards pass their numeric row, a BG1 row its
+        -- campaign too (1); expand it here.
         if type(target_id)=='number' then
-            target_id='original-target:bg2:mode2:target:'..tostring(target_id)
+            target_id='original-target:'..(campaign==1 and 'bg1' or 'bg2')..':mode2:target:'..tostring(target_id)
         end
         if storage:get(Core.G.state)==0 then return -1 end -- Existing non-randomized campaign.
         local host=root.Host

@@ -13,13 +13,13 @@ from pathlib import Path
 
 from .campaigns import OVERFLOW_TARGET_KINDS
 from .game_names import convert_resource, eet_names
-from .original_catalog import NO_ROUTE, UNREADABLE_PLACE_PROBLEMS, resolve_template
+from .original_catalog import NO_ROUTE, UNREADABLE_PLACE_PROBLEMS, mode2_route_source, resolve_template
 from .original_options import is_spell_shield_row, spell_shield_spec, tome_variants
 from .platform import preset_game
 from .templates import optional_mod_prefixes
 from .original_registrations import (SHIPPED_REPLACEMENT, is_unreferenced_creature_source,
                                      target_record as original_target_record)
-from .mode2_rewards import SOURCE_REWARDS as MODE2_SOURCES, source_spec as mode2_source_spec
+from .mode2_rewards import source_spec as mode2_source_spec
 from .cursed_disguises import cursed_disguise_spec, item_revisions_installed
 from .duplicates import expected_copies, holdings, reviewed
 from .prepared import QUEST_CHANGES, applied, applied_changes, left_out
@@ -53,11 +53,13 @@ def _tier(row: dict) -> str:
 
 
 def _source_change(row: dict) -> str | None:
-    """The change the installer makes that this reward row needs."""
+    """The change the installer makes that this reward row needs. An extended
+    reward route needs none: Apply patches the game's own script for it, also
+    the book that the installer prepared for the ring's quest."""
     if row["adapter"] == "unshey":
         return "unshey"
     resource = row["source_resource"] or ""
-    if row["adapter"] == "scripted" and resource.startswith("bcs:"):
+    if row["adapter"] == "scripted" and resource.startswith("bcs:") and mode2_route_source(row) is None:
         return QUEST_CHANGES.get(resource[4:])
     return None
 
@@ -246,8 +248,8 @@ def _build(catalog: dict, world: dict, template_id: str, exclude: dict[str, str]
             elif resource == "spl:spin621":
                 from .spell_rewards import PAYLOAD
                 payload = {**PAYLOAD, "charges": list(PAYLOAD["charges"])}
-            elif "original-source:" + row["id"] in MODE2_SOURCES:
-                payload = mode2_source_spec("original-source:" + row["id"], game=game, names=names)["payload"]
+            elif mode2_route_source(row) is not None:
+                payload = mode2_source_spec(mode2_route_source(row), game=game, names=names)["payload"]
             return _original_source(row, index["resources"][resource]["sha256"], payload,
                                     matched if row["adapter"] == "unshey" else []), None, None
         ids = row["source_ids"]

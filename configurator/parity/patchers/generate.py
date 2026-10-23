@@ -38,8 +38,8 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[3]
 sys.path[:0] = [str(ROOT / "tools"), str(ROOT / "tests"), str(ROOT)]
 
-from flir_config import container_rewards, cursed_disguises, mode2_rewards, original_options  # noqa: E402
-from flir_config import quest_options, quest_rewards, reward_copies, spell_rewards  # noqa: E402
+from flir_config import container_rewards, cursed_disguises, mode2_rewards, original_catalog, original_options  # noqa: E402
+from flir_config import quest_options, quest_rewards, reward_copies, spell_rewards, templates  # noqa: E402
 from flir_config import creature_inventory, game_text, group_recipients, store_inventory, translations  # noqa: E402
 from flir_config.game_text import GameText, GameTextError  # noqa: E402
 from flir_config.profiles import ProfileError  # noqa: E402
@@ -376,6 +376,7 @@ def mode2_inputs() -> dict:
                                    else mode2_tests.dialogue_fixture(mode2_rewards.resource_specs(resource)))
     originals["bcs:asysta01"] = mode2_tests.script_fixture("asysta01")
     originals["bcs:ddwell"] = mode2_tests.script_fixture("ddwell")
+    originals["bcs:ppbook"] = mode2_tests.book_fixture()
     return originals
 
 
@@ -455,9 +456,38 @@ def text_original_case(s: Scenario, label: str, resource: str, data: bytes, nami
 
 
 def script_original_case(s: Scenario, label: str, resource: str, data: bytes) -> None:
-    spec = mode2_rewards.resource_specs(resource)[0]
-    s.case(f"script_original {label}", "mode2_rewards._script_original", {"data": data, "spec": spec},
-           lambda: mode2_rewards._script_original(data, spec))
+    specs = mode2_rewards.resource_specs(resource)
+    s.case(f"script_original {label}", "mode2_rewards._script_original", {"data": data, "specs": list(specs)},
+           lambda: mode2_rewards._script_original(data, specs))
+
+
+def unpatched_case(s: Scenario, label: str, resource: str, data: bytes) -> None:
+    s.case(f"unpatched_script {label}", "mode2_rewards.unpatched_script", {"resource": resource, "data": data},
+           lambda: mode2_rewards.unpatched_script(resource, data))
+
+
+def book_cases(s: Scenario) -> None:
+    """test_the_books_two_scrolls_are_gated_apart_beside_the_rings_quest."""
+    gifts = mode2_tests.BOOK_GIFTS.encode()
+    installed = mode2_tests.book_fixture()
+    twice = installed.replace(gifts, gifts + mode2_tests.action(140, text="scrl9b", target=17).encode())
+    for label, original in (("installed", installed), ("game's own", mode2_tests.book_fixture(False)),
+                            ("crlf", crlf(installed)), ("twice", twice),
+                            ("neither", installed.replace(gifts, b""))):
+        result = patched(s, f"book {label}", "bcs:ppbook", original)
+        reward_checks(s, f"book original {label}", "bcs:ppbook", original)
+        script_original_case(s, f"book original {label}", "bcs:ppbook", original)
+        unpatched_case(s, f"book original {label}", "PPBOOK", original)
+        if result is None:
+            continue
+        reward_checks(s, f"book result {label}", "bcs:ppbook", result)
+        script_original_case(s, f"book result {label}", "bcs:ppbook", result)
+        unpatched_case(s, f"book result {label}", "ppbook.bcs", result)
+        tampered = result.replace(b"FLPR_RM2_262", b"FLPR_OTHERS", 1)
+        reward_checks(s, f"book tampered {label}", "bcs:ppbook", tampered)
+        unpatched_case(s, f"book tampered {label}", "bcs:ppbook", tampered)
+    unpatched_case(s, "dialogue", "dlg:uhogre01", b"")
+    unpatched_case(s, "unknown", "bcs:nothing", installed)
 
 
 def registry_cases(s: Scenario) -> None:
@@ -810,6 +840,64 @@ def start_order_cases(s: Scenario) -> None:
     patched(s, "start order unconditioned", "dlg:ppdjinn", d.render(), refs={48995: 100001})
 
 
+def journal_cases(s: Scenario) -> None:
+    """test_bg1_texts_take_the_games_numbers_and_a_journal_entry_keeps_its_title and
+    test_journal_lua_files_the_new_entry_under_the_quests_of_the_one_it_replaces."""
+    games = (None, "bgee", "eet", "bg2ee", "bgt")
+    for resource in ("dlg:aldeth", "dlg:jugjer01", "dlg:uhmay01", "bcs:ddwell", "dlg:varci", "dlg:nothing"):
+        for game in games:
+            args = {"resource": resource, **({} if game is None else {"game": game})}
+            s.case(f"text_refs {resource} {game}", "mode2_rewards.text_refs", args,
+                   lambda resource=resource, game=game: sorted_ints(mode2_rewards.text_refs(resource, game)))
+            s.case(f"journal_refs {resource} {game}", "mode2_rewards.journal_refs", args,
+                   lambda resource=resource, game=game: mode2_rewards.journal_refs(resource, game))
+    for label, original in (
+            ("lf", "The Merchant League\nOld words."), ("crlf twice", "Liga Kupiecka\r\n\r\nStare."),
+            ("one line", "One line only"), ("blank rest", "Title\n \n"), ("no title first", "\nNo title first"),
+            ("empty", ""), ("none", None), ("lone cr", "Title\rBody"), ("cr lf lf", "Title\r\n\nBody"),
+            ("lf cr cr lf", "Title\n\r\r\nBody"), ("spaced title", "  Title  \n  Body"),
+            ("blank title", " \t\nBody"), ("separator rest", "Title\n\x1c\x1f"), ("separator title", "\x1d\nBody"),
+            ("nel", "Title\x85Body\nMore"), ("unicode", "Księga　\nTreść"), ("ideographic rest", "Title\n　"),
+            ("form feed", "Title\x0c\nBody"), ("three lines", "Title\nOld\nWords")):
+        s.case(f"_titled {label}", "mode2_rewards._titled", {"original": original, "body": "New words."},
+               lambda original=original: mode2_rewards._titled(original, "New words."))
+    lua = (b"createQuest( 87 )\r\n"
+           b"createEntry    ( 87, -1, 26822, {}, nil )\r\n"
+           b"createEntry    ( 87, -1, 26828, {}, nil )\r\n"
+           b"createEntry    ( 87, -1, 126828, {}, nil )\r\n"
+           b"\tcreateEntry(90,-1,26828,{1,2},nil)\r\n"
+           b"createEntry    ( 91, -1, 268280, {}, nil )\r\n")
+    aldeth = {"dlg:aldeth": {5740: 300000, 26828: 300001}}
+    eet = {"dlg:aldeth": {205740: 400000, 226828: 400001}}
+    listed = mode2_rewards.journal_lua(lua, aldeth)
+    for label, data, texts, game in (
+            ("listed", lua, aldeth, None), ("again", listed, aldeth, None), ("bgee", lua, aldeth, "bgee"),
+            ("unlisted", b"createEntry    ( 87, -1, 26822, {}, nil )\n", aldeth, None),
+            ("other route", lua, {"dlg:jugjer01": {33760: 300002, 33777: 300003}}, None),
+            ("eet", b"createEntry    ( 87, -1, 226828, {}, nil )\n", eet, "eet"),
+            ("eet numbers on bgee", b"createEntry    ( 87, -1, 226828, {}, nil )\n", eet, "bgee"),
+            ("lf", lua.replace(b"\r\n", b"\n"), aldeth, None), ("lone cr", lua.replace(b"\r\n", b"\r"), aldeth, None),
+            ("no line end", b"createEntry(87,-1,26828,{},nil)", aldeth, None),
+            ("cr end", b"createEntry(87,-1,26828,{},nil)\r", aldeth, None),
+            ("first line", b"createEntry(87,-1,26828,{},nil)\nx\n", aldeth, None),
+            ("comment", b"-- createEntry(87,-1,26828,{},nil)\n", aldeth, None),
+            ("no quest", b"createEntry(,-1,26828,{},nil)\n", aldeth, None),
+            ("named quest", b"createEntry(q,-1,26828,{},nil)\n", aldeth, None),
+            ("third argument", b"createEntry(87,26828,-1,{},nil)\n", aldeth, None),
+            ("no rest", b"createEntry(87,-1,26828)\n", aldeth, None),
+            ("other case", b"CreateEntry(87,-1,26828,{},nil)\n", aldeth, None),
+            ("spaced", b"  createEntry \t( \t87 \t,\t-1 ,\t 26828 \t, {}, nil )   \r\n", aldeth, None),
+            ("two quests", b"createEntry(87,-1,26828,{},nil)\ncreateEntry(88,-1,26828,{},nil)\n"
+                           b"createEntry(88,-1,300001,{},nil)\n", aldeth, None),
+            ("zero quest", b"createEntry(087,-1,26828,{},nil)\ncreateEntry(87,-1,300001,{},nil)\n", aldeth, None),
+            ("missing text", lua, {"dlg:aldeth": {5740: 300000}}, None),
+            ("unknown resource", lua, {"dlg:nothing": {26828: 300001}}, None),
+            ("empty", b"", aldeth, None), ("no texts", lua, {}, None)):
+        args = {"lua": data, "texts": texts, **({} if game is None else {"game": game})}
+        s.case(f"journal_lua {label}", "mode2_rewards.journal_lua", args,
+               lambda data=data, texts=texts, game=game: mode2_rewards.journal_lua(data, texts, game))
+
+
 def mode2_scenario() -> Scenario:
     originals = mode2_inputs()
     s = Scenario("mode2_rewards")
@@ -843,6 +931,7 @@ def mode2_scenario() -> Scenario:
     for resource in sorted(mode2_rewards.TEXT_REFS) + ["dlg:uhogre01"]:
         s.case(f"text_lines {resource}", "mode2_rewards.text_lines", {"resource": resource},
                lambda resource=resource: mode2_rewards.text_lines(resource))
+    journal_cases(s)
     ddwell_tlk = make_tlk(["Existing unrelated text", "Existing helmet narrative"])
     updated, ref = mode2_rewards.prepare_ddwell_text(GameText(ddwell_tlk))
     for label, source, language in (("fresh", GameText(ddwell_tlk), "en_us"), ("again", updated, "en_us"),
@@ -867,6 +956,7 @@ def mode2_scenario() -> Scenario:
     patch_dialogue_cases(s, allocated)
     text_route_cases(s, originals, allocated)
     ddwell_cases(s, originals["bcs:ddwell"], results["bcs:ddwell"])
+    book_cases(s)
     reason_cases(s)
     layout_cases(s)
     aran_cases(s)
@@ -1547,6 +1637,58 @@ def original_options_scenario() -> Scenario:
     return s
 
 
+def reward_route_rows_scenario() -> Scenario:
+    """test_a_presets_rows_of_an_original_reward_route_are_that_route, on every
+    extended row of the presets and original tables: a row is a reward route's
+    own row, or a preset's row of the reward or place one original row names,
+    and only as its table has it."""
+    s = Scenario("reward_route_rows")
+    options = {"scrolls": True, "kangaxx": True, "flail_heads": True, "totsc_tome": True}
+    calls = {"items": "mode2_route_source", "targets": "mode2_route_target"}
+    keys = {"items": ("id", "campaign", "source", "source_ref"),
+            "targets": ("id", "campaign", "target", "area", "source_ref")}
+    rows = {}
+    for template in ("eet-original", "eet-boss-loot"):
+        draft = templates.build_template(template, items="extended", targets="extended", options=options)
+        for kind in calls:
+            standard = [row for row in draft[kind] if row.get("family") != "mode2"]
+            rows.update(((kind, row["id"]), row) for row in draft[kind] if row.get("family") == "mode2")
+            rows.update(((kind, row["id"]), row) for row in standard[:3])
+
+    def check(kind: str, label: str, row) -> None:
+        call = calls[kind]
+        s.case(f"{call} {label}", f"original_catalog.{call}", {"row": row},
+               lambda call=call, row=row: getattr(original_catalog, call)(row))
+
+    for (kind, identity), row in sorted(rows.items()):
+        check(kind, identity, row)
+    # Boss Loot's rows of Aldeth's, Varci's and Nemphre's rewards and places,
+    # an original row of each, and BG2's ogre place, which is no .fl place.
+    changes = {"items": ({"tier": "27"}, {"source": "ALDETH.DLG"}, {"source": "varci.dlg"}, {"source": 5},
+                         {"token": "w99"}, {"ident": "x"}, {"campaign": "bg2"}, {"id": "bg1:boss-loot:mode2:item:63"},
+                         {"id": None}, {"source_ref": "lists/items/mode2/bg1.2da:62"}),
+               "targets": ({"tier": "27"}, {"area": "AR0617"}, {"area": "ar0617"}, {"target": "aldeth"},
+                           {"location": "w9"}, {"campaign": "bg2"}, {"id": "bg1:boss-loot:mode2:target:47"},
+                           {"id": None}, {"source_ref": "lists/locations/mode2/bg1.2da:46"})}
+    chosen = {"items": ("bg1:boss-loot:mode2:item:62", "bg1:boss-loot:mode2:item:71",
+                        "bg1:boss-loot:mode2:item:339", "bg1:mode2:item:16"),
+              "targets": ("bg1:boss-loot:mode2:target:46", "bg1:boss-loot:mode2:target:71",
+                          "bg1:boss-loot:mode2:target:291", "bg1:mode2:target:16", "bg2:mode2:target:17")}
+    for kind, identities in chosen.items():
+        for identity in identities:
+            row = rows[(kind, identity)]
+            for change in changes[kind]:
+                check(kind, f"{identity} {json.dumps(change, sort_keys=True)}", dict(row, **change))
+            for key in keys[kind]:
+                check(kind, f"{identity} without {key}", {name: value for name, value in row.items() if name != key})
+    for label, value in (("none", None), ("list", [rows[("items", "bg1:mode2:item:16")]]), ("text", "bg1:mode2:item:16"),
+                         ("empty", {}), ("number id", {"id": 16}), ("own id only", {"id": "bg1:mode2:item:16"}),
+                         ("own place id only", {"id": "bg1:mode2:target:16"})):
+        for kind in calls:
+            check(kind, label, value)
+    return s
+
+
 def cursed_scenario() -> Scenario:
     s = Scenario("cursed_disguises")
     for label, log in (("core", b'// ignored\n~ITEM_REV/ITEM_REV.TP2~ #2 #0 // core\n'),
@@ -1656,6 +1798,25 @@ def game_text_scenario() -> Scenario:
             ("bad male empty", GameText(b"bad"), ())):
         s.case(f"append {label}", "game_text.GameText.append", {"text": value, "texts": texts},
                lambda value=value, texts=texts: value.append(texts))
+    # One entry's text in both files (test_string_reads_an_entry_from_both_files).
+    unicode = make_tlk(["Zvedáš", "Bad X"]).replace(b"Bad X", b"Bad \xff")
+    beyond = bytearray(make_tlk(["Short", "Other"]))
+    struct.pack_into("<I", beyond, 0x12 + 0x16, 1000)
+    for label, value, refs in (
+            ("both", GameText(male, female), (0, 1, 2, 3, 4, -1)),
+            ("male only", GameText(male), (0, 3, 4)),
+            ("voiced", GameText(sounded(male, 1), sounded(female, 2, flags=2)), (1, 2)),
+            ("no text flag", GameText(sounded(male, 1, flags=4, sound=b""), female), (1,)),
+            ("unicode", GameText(unicode, unicode), (0, 1)),
+            ("beyond", GameText(bytes(beyond), make_tlk(["Short (f)", "Other (f)"])), (0, 1)),
+            ("short table", GameText(struct.pack("<8sHII", b"TLK V1  ", 0, 7, 0x12)), (0, 6, 7)),
+            ("empty", GameText(make_tlk([])), (0,)),
+            ("bad male", GameText(b"bad", female), (0,)),
+            ("bad female", GameText(male, b"TLK V1  "), (0,)),
+            ("other signature", GameText(b"TLK V2  " + male[8:]), (0,))):
+        for ref in refs:
+            s.case(f"string {label} {ref}", "game_text.GameText.string", {"text": value, "ref": ref},
+                   lambda value=value, ref=ref: value.string(ref))
     one, two = make_tlk(["One", "Two"]), make_tlk(["One (f)", "Two (f)"])
     grown = bytearray(game_text._append_texts(one, ("Three", "Four"))[0])
     # Entries are copied as they are, sound and all.
@@ -1944,6 +2105,7 @@ def main() -> None:
         container_scenario("container_rewards_crlf", "crlf"),
         *inventory_scenarios(),
         original_options_scenario(),
+        reward_route_rows_scenario(),
         cursed_scenario(),
         game_text_scenario(),
         translations_scenario(),

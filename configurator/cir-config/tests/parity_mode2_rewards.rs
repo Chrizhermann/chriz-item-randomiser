@@ -15,21 +15,23 @@ use cir_config::game_names::{EetNames, Tables};
 use cir_config::game_text::GameText;
 use cir_config::json::{Dict, Value};
 use cir_config::mode2_rewards::{
-    direct_rewards, gives_reward, own_patch, patch_dialogue, patch_reward, physical_source_reward, prepare_ddwell_text,
-    prepare_reward_texts, resource_rewards, resource_specs, rewards, route_reasons, script_original, source_rewards,
-    source_spec, target_spec, text_original, text_refs, transfer_spec, transfer_specs, Naming, PHYSICAL_SOURCE_REWARDS,
+    direct_rewards, game_text_refs, gives_reward, journal_lua, journal_refs, own_patch, patch_dialogue, patch_reward,
+    physical_source_reward, prepare_ddwell_text, prepare_reward_texts, resource_rewards, resource_specs, rewards,
+    route_reasons, script_original, source_rewards, source_spec, target_rewards, target_spec, text_lines, text_original,
+    text_refs, titled, transfer_spec, transfer_specs, unpatched_script, Naming, TextRefs, PHYSICAL_SOURCE_REWARDS,
     TEXT_REFS,
 };
 use cir_config::py::{put_u32, str_value};
 use cir_config::quest_options::Dialogue;
-use cir_config::quest_rewards::blocks;
+use cir_config::quest_rewards::{blocks, global_guard};
 use cir_config::script_text::script_blocks;
 use common::builders::{contains, count, index, make_tlk, outgoing, replace, sha, tlk_text, u32_at};
 use common::mode2::{
-    action, action_with, alternatives, block, branches, check_dialogue, check_pair, check_text_graph, dialogue_fixture,
-    layout_dialogue, obj, script_fixture, specs, target_number, text, text_variant, well_reward, with_actions, LayoutReply,
+    action, action_with, alternatives, block, book_fixture, book_gifts, branches, check_dialogue, check_pair,
+    check_text_graph, dialogue_fixture, layout_dialogue, obj, script_fixture, specs, target_number, text, text_variant,
+    well_reward, with_actions, LayoutReply,
 };
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -85,6 +87,7 @@ fn originals() -> Vec<(String, Vec<u8>)> {
     }
     result.push(("bcs:asysta01".into(), script_fixture("asysta01")));
     result.push(("bcs:ddwell".into(), script_fixture("ddwell")));
+    result.push(("bcs:ppbook".into(), book_fixture(true)));
     result
 }
 
@@ -470,7 +473,7 @@ fn script_blocks_are_found_by_meaning_in_another_layout() {
     let result = patch_reward("bcs:ddwell", &original, None, Some(100001), Naming::default()).unwrap();
     assert_eq!(patch_reward("bcs:ddwell", &result, None, None, Naming::default()).unwrap(), result);
     assert!(own_patch("bcs:ddwell", &result, Naming::default()).unwrap());
-    assert_eq!(script_original(&result, &specs("bcs:ddwell")[0]).unwrap(), (original.clone(), Some(100001), true));
+    assert_eq!(script_original(&result, &specs("bcs:ddwell")).unwrap(), (original.clone(), Some(100001), true));
     let old = blocks(&original, 3, b"\r\n").unwrap().0;
     let new = blocks(&result, 5, b"\r\n").unwrap().0;
     assert_eq!(new[0], old[0]);
@@ -668,15 +671,15 @@ fn aran_route_left_out_alone_keeps_the_other_route() {
 fn text_variants_preserve_original_routes_replies_and_verified_recovery() {
     let resources = text_dialogues();
     let (game_text, allocated) =
-        prepare_reward_texts(&GameText::new(make_tlk(&["Unchanged text"])), resources.clone(), "en_us").unwrap();
-    assert_eq!(prepare_reward_texts(&game_text, resources.clone(), "en_us").unwrap(), (game_text.clone(), allocated.clone()));
+        prepare_reward_texts(&GameText::new(make_tlk(&["Unchanged text"])), resources.clone(), "en_us", None).unwrap();
+    assert_eq!(prepare_reward_texts(&game_text, resources.clone(), "en_us", None).unwrap(), (game_text.clone(), allocated.clone()));
     assert_eq!(game_text.female, None);
     let tlk = game_text.male.clone();
     assert_eq!(tlk_text(&tlk, 0).as_deref(), Some("Unchanged text"));
     assert!(tlk_text(&tlk, allocated["dlg:ppdjinn"][&48995] as u32).unwrap().contains("<GABBER>"));
     assert_eq!(allocated["dlg:gorcamb"][&63681], allocated["dlg:gorcamb"][&64609]);
     assert_profile(
-        prepare_reward_texts(&game_text, resources.clone(), "es_ES").unwrap_err(),
+        prepare_reward_texts(&game_text, resources.clone(), "es_ES", None).unwrap_err(),
         "reward texts have no Spanish translation yet",
     );
     for resource in resources {
@@ -684,7 +687,7 @@ fn text_variants_preserve_original_routes_replies_and_verified_recovery() {
         let original = text_variant(resource);
         let refs = &allocated[resource];
         let result = patch_reward(resource, &original, Some(refs), None, Naming::default()).unwrap();
-        check_text_graph(resource, &original, &result, refs);
+        check_text_graph(resource, &original, &result, refs, Naming::default());
         assert_eq!(text_original(&result, resource, Naming::default()).unwrap(), Some((original.clone(), refs.clone())));
         assert!(!own_patch(resource, &original, Naming::default()).unwrap());
         assert!(own_patch(resource, &result, Naming::default()).unwrap());
@@ -693,7 +696,7 @@ fn text_variants_preserve_original_routes_replies_and_verified_recovery() {
         let moved: BTreeMap<i64, i64> = refs.iter().map(|(old, new)| (*old, new + 1000)).collect();
         let revised = patch_reward(resource, &result, Some(&moved), None, Naming::default()).unwrap();
         assert_eq!(text_original(&revised, resource, Naming::default()).unwrap(), Some((original.clone(), moved.clone())));
-        check_text_graph(resource, &original, &revised, &moved);
+        check_text_graph(resource, &original, &revised, &moved, Naming::default());
         // A changed reply or recovery record is not our patch any more.
         let mut flipped = result.clone();
         let at = flipped.len() - 20;
@@ -707,6 +710,86 @@ fn text_variants_preserve_original_routes_replies_and_verified_recovery() {
     assert!(target_spec("bg2:mode2:target:22", Naming::default()).unwrap().get("required_transfers").unwrap().py_eq(&list(&["scyarryl"])));
     assert_eq!(text(reward("sctelwyn"), "event_global"), "FLPR_EA_SCULPTOR");
     assert_eq!(text(reward("scsain"), "event_global"), "FLPR_EA_SCULPTOR");
+}
+
+#[test]
+fn bg1_texts_take_the_games_numbers_and_a_journal_entry_keeps_its_title() {
+    // EET numbers BG:EE's texts 200000 higher; BG2's keep their numbers in every game.
+    for game in [None, Some("bgee")] {
+        assert_eq!(game_text_refs("dlg:aldeth", game).unwrap(), [(5740, 1649), (26828, 1650)]);
+        assert_eq!(journal_refs("dlg:aldeth", game).unwrap(), [26828]);
+    }
+    assert_eq!(game_text_refs("dlg:aldeth", Some("eet")).unwrap(), [(205740, 1649), (226828, 1650)]);
+    assert_eq!(journal_refs("dlg:aldeth", Some("eet")).unwrap(), [226828]);
+    for game in ["eet", "bg2ee"] {
+        assert_eq!(game_text_refs("dlg:jugjer01", Some(game)).unwrap(), text_refs("dlg:jugjer01").unwrap());
+        assert!(journal_refs("dlg:jugjer01", Some(game)).unwrap().is_empty());
+    }
+    // A quest entry's first line is its title; languages put one or two line breaks after it.
+    assert_eq!(titled(Some("The Merchant League\nOld words."), "New words."), "The Merchant League\nNew words.");
+    assert_eq!(titled(Some("Liga Kupiecka\r\n\r\nStare."), "Nowe."), "Liga Kupiecka\r\n\r\nNowe.");
+    for untitled in [Some("One line only"), Some("Title\n \n"), Some("\nNo title first"), Some(""), None] {
+        assert_eq!(titled(untitled, "New words."), "New words.");
+    }
+    // The new entry has the title of the game's own entry, in each of its text files.
+    let (mut male, mut female) = (vec![String::new(); 26829], vec![String::new(); 26829]);
+    male[26828] = "The Merchant League Investigation\nAldeth gave me a sword.".into();
+    female[26828] = "The Merchant League Investigation (f)\nAldeth gave me a sword.".into();
+    male[5740] = "Take this sword.".into();
+    female[5740] = "Take this sword.".into();
+    let tlk = |texts: &[String]| make_tlk(&texts.iter().map(String::as_str).collect::<Vec<_>>());
+    let source = GameText { male: tlk(&male), female: Some(tlk(&female)) };
+    let (text, refs) = prepare_reward_texts(&source, ["dlg:aldeth"], "en_us", Some("bgee")).unwrap();
+    assert_eq!(refs["dlg:aldeth"].keys().copied().collect::<Vec<_>>(), [5740, 26828]);
+    let found = cir_config::translations::lines("en_us", &text_lines("dlg:aldeth").unwrap()).unwrap();
+    let (thanks, entry) = (&found[&("in-game.tra".to_string(), 1649)], &found[&("in-game.tra".to_string(), 1650)]);
+    let (journal, words) = (refs["dlg:aldeth"][&26828] as u32, refs["dlg:aldeth"][&5740] as u32);
+    let new_female = text.female.as_ref().unwrap();
+    assert_eq!(tlk_text(&text.male, journal).unwrap(), format!("The Merchant League Investigation\n{}", entry.0));
+    assert_eq!(tlk_text(new_female, journal).unwrap(), format!("The Merchant League Investigation (f)\n{}", entry.1));
+    // His words are no journal entry: they need no title.
+    assert_eq!((tlk_text(&text.male, words).unwrap(), tlk_text(new_female, words).unwrap()), thanks.clone());
+    // EET: the numbers EET gives these texts.
+    let (_text, eet) = prepare_reward_texts(&GameText::new(make_tlk(&[])), ["dlg:aldeth"], "en_us", Some("eet")).unwrap();
+    assert_eq!(eet["dlg:aldeth"].keys().copied().collect::<Vec<_>>(), [205740, 226828]);
+}
+
+#[test]
+fn journal_lua_files_the_new_entry_under_the_quests_of_the_one_it_replaces() {
+    let lua: &[u8] = b"createQuest( 87 )\r\n\
+        createEntry    ( 87, -1, 26822, {}, nil )\r\n\
+        createEntry    ( 87, -1, 26828, {}, nil )\r\n\
+        createEntry    ( 87, -1, 126828, {}, nil )\r\n\
+        \tcreateEntry(90,-1,26828,{1,2},nil)\r\n\
+        createEntry    ( 91, -1, 268280, {}, nil )\r\n";
+    let texts = |resource: &str, refs: &[(i64, i64)]| -> TextRefs {
+        BTreeMap::from([(resource.to_string(), refs.iter().copied().collect())])
+    };
+    let aldeth = texts("dlg:aldeth", &[(5740, 300000), (26828, 300001)]);
+    let result = journal_lua(lua, &aldeth, None).unwrap();
+    let expected = replace(
+        &replace(
+            lua,
+            b"createEntry    ( 87, -1, 26828, {}, nil )\r\n",
+            b"createEntry    ( 87, -1, 26828, {}, nil )\r\ncreateEntry    ( 87, -1, 300001, {}, nil )\r\n",
+            None,
+        ),
+        b"\tcreateEntry(90,-1,26828,{1,2},nil)\r\n",
+        b"\tcreateEntry(90,-1,26828,{1,2},nil)\r\n\tcreateEntry(90,-1,300001,{1,2},nil)\r\n",
+        None,
+    );
+    assert_eq!(result, expected);
+    // A second export lists it once; an entry no quest lists stays unlisted.
+    assert_eq!(journal_lua(&result, &aldeth, None).unwrap(), result);
+    let unlisted: &[u8] = b"createEntry    ( 87, -1, 26822, {}, nil )\n";
+    assert_eq!(journal_lua(unlisted, &aldeth, None).unwrap(), unlisted);
+    // Texts other than journal entries and other routes' texts are not filed.
+    let jermien = texts("dlg:jugjer01", &[(33760, 300002), (33777, 300003)]);
+    assert_eq!(journal_lua(lua, &jermien, None).unwrap(), lua);
+    // EET's numbers.
+    let eet: &[u8] = b"createEntry    ( 87, -1, 226828, {}, nil )\n";
+    let numbers = texts("dlg:aldeth", &[(205740, 400000), (226828, 400001)]);
+    assert_eq!(journal_lua(eet, &numbers, Some("eet")).unwrap(), [eet, b"createEntry    ( 87, -1, 400001, {}, nil )\n"].concat());
 }
 
 #[test]
@@ -753,7 +836,7 @@ fn carried_rewards_keep_sources_and_transfer_callbacks_before_later_actions() {
         ("jugjer01", 31, 31, "ar1103", "Jermien"),
     ];
     let (game_text, allocated) =
-        prepare_reward_texts(&GameText::new(make_tlk(&["Unchanged"])), ["dlg:trgeni01", "dlg:amcler01"], "en_us").unwrap();
+        prepare_reward_texts(&GameText::new(make_tlk(&["Unchanged"])), ["dlg:trgeni01", "dlg:amcler01"], "en_us", None).unwrap();
     assert_eq!(tlk_text(&game_text.male, allocated["dlg:amcler01"][&74025] as u32).as_deref(), Some("Please, accept this gift."));
     for (name, source, target, area, script) in cases {
         let identity = format!("original-source:bg2:mode2:item:{source}");
@@ -810,12 +893,14 @@ fn lua_chunks(actions: &[u8]) -> Vec<Vec<u8>> {
 #[test]
 fn inventory_callback_survives_dialogue_parser() {
     // The Lua evaluation of each chunk stays with the reference test.
-    for name in ["trgeni01", "loutcapt", "amcler01", "jugjer01", "udlesa"] {
+    for name in ["trgeni01", "loutcapt", "amcler01", "jugjer01", "udlesa", "aldeth", "nemphr"] {
         let spec = specs(&format!("dlg:{name}")).remove(0);
         let original = dialogue_fixture(std::slice::from_ref(&spec));
         let patched =
             Dialogue::new(&patch_dialogue(&original, std::slice::from_ref(&spec), &[], true, true, None).unwrap(), name).unwrap();
         let target = target_number(&spec);
+        // A BG1 row passes its campaign (1); M_FLPR.lua names the target from both.
+        let passed = if text(&spec, "campaign") == "bg1" { format!("{target},1") } else { target.to_string() };
         let mut chunks = Vec::new();
         for (state, _ordinal) in branches(&spec) {
             for row in outgoing(&patched, state) {
@@ -824,11 +909,11 @@ fn inventory_callback_survives_dialogue_parser() {
         }
         assert_eq!(chunks.len(), branches(&spec).len() * 2, "{name}");
         for chunk in &chunks {
-            assert_eq!(chunk, format!("return(FLPR_Transfer(EEex_LuaAction_Object,{target}))").as_bytes());
+            assert_eq!(chunk, format!("return(FLPR_Transfer(EEex_LuaAction_Object,{passed}))").as_bytes());
             assert!(!chunk.contains(&b' ') && !chunk.contains(&b':'));
         }
         for target_ids in [
-            &["bg1:mode2:target:32"][..],
+            &["sod:mode2:target:32"][..],
             &["bg2:mode1:target:32"],
             &["bg2:mode2:target:32extra"],
             &["bg2:mode2:target:32", "bg2:mode2:target:42"],
@@ -892,7 +977,7 @@ fn well_uses_appended_original_text_only_for_selected_source_and_reexports() {
     assert_eq!(tlk_text(&updated.male, 1).as_deref(), Some("Existing helmet narrative"));
     assert!(tlk_text(&updated.male, reference as u32).unwrap().contains("You pull an item from the murky water"));
     let original = script_fixture("ddwell");
-    let spec = &specs("bcs:ddwell")[0];
+    let spec = &specs("bcs:ddwell");
     let result = patch_reward("ddwell", &original, None, Some(reference), Naming::default()).unwrap();
     assert_eq!(patch_reward("ddwell", &result, None, None, Naming::default()).unwrap(), result);
     assert_eq!(script_original(&result, spec).unwrap(), (original.clone(), Some(reference), true));
@@ -906,6 +991,87 @@ fn well_uses_appended_original_text_only_for_selected_source_and_reexports() {
     assert_profile(patch_reward("ddwell", &gone, None, None, Naming::default()).unwrap_err(), "changed copy");
     assert_profile(patch_reward("ddwell", &original, None, None, Naming::default()).unwrap_err(), "allocated");
     assert_profile(patch_reward("bcs:ddwell", &original, Some(&BTreeMap::from([(40849, reference)])), None, Naming::default()).unwrap_err(), "allocated");
+}
+
+#[test]
+fn the_books_two_scrolls_are_gated_apart_beside_the_rings_quest() {
+    let book = specs("bcs:ppbook");
+    let rows: Vec<(&str, &str, &str)> =
+        book.iter().map(|spec| (text(spec, "route"), text(spec, "quest"), text(spec, "item"))).collect();
+    assert_eq!(rows, [("ppbook", "ppbook", "scrl9b"), ("ppbook2", "ppbook", "scrl8z")]);
+    assert!(book.iter().all(|spec| spec.get("target_ids").unwrap().py_eq(&list(&[]))));
+    let payload = source_spec("original-source:bg2:mode2:item:262", Naming::default()).unwrap();
+    let expected = cir_config::dict! {"resref" => "scrl8z", "expiration" => 0, "charges" => ints(&[0, 0, 0]), "flags" => 0};
+    assert!(payload.get("payload").unwrap().py_eq(&Value::Dict(expected)));
+    assert!(!target_rewards().values().any(|route| route.as_str() == Some("ppbook")));
+    for installed in [true, false] {
+        let original = book_fixture(installed);
+        let result = synthetic_patch("ppbook", &original);
+        assert_eq!(script_original(&result, &book).unwrap(), (original.clone(), None, true));
+        let old = blocks(&original, if installed { 3 } else { 2 }, b"\n").unwrap().0;
+        let new = blocks(&result, if installed { 9 } else { 5 }, b"\n").unwrap().0;
+        assert_eq!(new[0], old[0]);
+        // Each block of the last page became four, one for each choice of the
+        // scrolls' rows; the ring's actions and guard stay.
+        for (number, source) in old[1..].iter().enumerate() {
+            for (index, choice) in [[false, false], [false, true], [true, false], [true, true]].into_iter().enumerate() {
+                let branch = &new[1 + number * 4 + index];
+                for (spec, selected) in book.iter().zip(choice) {
+                    assert!(contains(branch, &global_guard(text(spec, "selected_global"), selected, b"\n").unwrap()));
+                    let grant = action(140, 0, text(spec, "item"), 17, 0);
+                    assert_eq!(count(branch, grant.as_bytes()), usize::from(!selected), "{installed} {number} {index}");
+                    let consumed = format!("GLOBAL{}", text(spec, "consumed_global"));
+                    assert_eq!(count(branch, consumed.as_bytes()), usize::from(selected));
+                    assert_eq!(count(branch, format!("GLOBAL{}", text(spec, "event_global")).as_bytes()), 1);
+                    let marker = format!(
+                        "AC\n30OB\n{}OB\n{}OB\n{}1 0 0 0 0\"LOCALS{}\" \"\" AC\n",
+                        obj(17),
+                        obj(0),
+                        obj(0),
+                        text(spec, "recipient_local")
+                    );
+                    assert_eq!(count(branch, marker.as_bytes()), 1);
+                }
+                for kept in [
+                    b"\"ring09\"".to_vec(),
+                    b"GLOBALFLPR_QBOOK".to_vec(),
+                    b"GLOBALFLPR_XBOOK".to_vec(),
+                    b"GLOBALFLPR_EBOOK".to_vec(),
+                    action(151, 50658, "", 1, 0).into_bytes(),
+                ] {
+                    assert_eq!(count(branch, &kept), count(source, &kept));
+                }
+            }
+        }
+    }
+    // A scroll that the page gives twice leaves its route out; the other
+    // scroll's route is prepared alone, and recognised again.
+    let gifts = book_gifts();
+    let twice = replace(&book_fixture(true), gifts.as_bytes(), (gifts.clone() + &action(140, 0, "scrl9b", 17, 0)).as_bytes(), None);
+    let expected = named(&[("ppbook", "PPBOOK.BCS block 1 gives SCRL9B twice in one response")]);
+    assert_eq!(reasons("ppbook", &twice), expected);
+    let partial = patch_reward("ppbook", &twice, None, None, Naming::default()).unwrap();
+    assert!(!contains(&partial, b"FLPR_QM2_260"));
+    assert!(contains(&partial, b"FLPR_QM2_262"));
+    assert_eq!(patch_reward("ppbook", &partial, None, None, Naming::default()).unwrap(), partial);
+    assert!(own_patch("ppbook", &partial, Naming::default()).unwrap());
+    assert_eq!(reasons("ppbook", &partial), expected);
+    // Without the scrolls nothing is prepared.
+    let neither = replace(&book_fixture(true), gifts.as_bytes(), b"", None);
+    assert_eq!(
+        reasons("ppbook", &neither),
+        named(&[("ppbook", "PPBOOK.BCS has no block that gives SCRL9B"), ("ppbook2", "PPBOOK.BCS has no block that gives SCRL8Z")])
+    );
+    assert_profile(patch_reward("ppbook", &neither, None, None, Naming::default()).unwrap_err(), "no block that gives SCRL9B");
+    // Another copy of one route's patch is not this adapter's.
+    let result = patch_reward("ppbook", &book_fixture(true), None, None, Naming::default()).unwrap();
+    let tampered = replace(&result, b"FLPR_RM2_262", b"FLPR_OTHERS", Some(1));
+    assert_profile(patch_reward("ppbook", &tampered, None, None, Naming::default()).unwrap_err(), "carries a changed copy");
+    // The script the patch was made from; a conversation is none.
+    assert_eq!(unpatched_script("ppbook", &result, Naming::default()).unwrap(), book_fixture(true));
+    assert_eq!(unpatched_script("bcs:ppbook", &book_fixture(false), Naming::default()).unwrap(), book_fixture(false));
+    assert_profile(unpatched_script("ppbook", &tampered, Naming::default()).unwrap_err(), "carries a changed copy");
+    assert_profile(unpatched_script("dlg:uhogre01", b"", Naming::default()).unwrap_err(), "UHOGRE01.DLG is not a reward script");
 }
 
 /// The patcher part of test_original_option_export's
@@ -927,41 +1093,47 @@ fn dialogue_grant_keeps_exact_charges() {
     }
 }
 
-/// The reviewed EET resources and their exact patches (text routes with the
-/// reward texts appended to an empty dialog.tlk), as the reference test
-/// lists them: regression evidence, nothing pins these.
+/// The reviewed EET resources and their exact patches (text routes with their
+/// own reward texts appended to an empty dialog.tlk, so a new route's texts
+/// leave the others' numbers alone), as the reference test lists them:
+/// regression evidence, nothing pins these.
 const REVIEWED_EET: &[(&str, &str, &str)] = &[
     ("bcs:asysta01", "f0f1773357f2280b7b6a05695ff278650110dc60898e2c7ddc1241867782fadd", "26bf2a67793e7b05fe35781f85ec4885aac806520927c35deba9aed5a2f5b841"),
     ("bcs:ddwell", "4d2232892ce30f7e55333f696bb2717e5208e3d588e0ef77e990fc0077955544", "d0422206eb8c983e6fc14dea29ec78a8607674dd74548c0ff29be93fbd0accdb"),
-    ("dlg:amcler01", "5bac12a183463f6faa912b15e80c45c321cd2189f318c5056cf38b2150a6d79e", "4f891f7909f6d3f0f22e747b5f2cb2bdb5b96d6875e95c7ab299719cd7cedf28"),
+    // The book as CIR's installer prepares it for the ring's quest; the
+    // scrolls' routes gate its two blocks that give them.
+    ("bcs:ppbook", "39b1f5119d8abc96d5158eec54d212475e639516cb35d86de27e7d6e4cbbd515", "e501c882a3fccf42e7cd5643d36c54dd67b5c38f3518d252cf98c453ddf1062a"),
+    ("dlg:aldeth", "c9c9ec1e62045e24c585040effad5ec9561a404df3b84c8eb971264b1ef242ef", "b6a08cfc2f712b30335ab0eb3534662785b68d8ed77b414e75377c01780d0982"),
+    ("dlg:amcler01", "5bac12a183463f6faa912b15e80c45c321cd2189f318c5056cf38b2150a6d79e", "f1a7a795b6b22abf209fd9be5f3357e71ced3e432db3e86e5ee38c9ad88d65e9"),
     ("dlg:ammayor", "d37409df94285e4bdce88bdfdb38382790dca567dc6304744244d9d5504030d6", "d71af3922a33954154f7f2745df7466647465ad3920b6a04548b6a9df73a2e05"),
     ("dlg:aran", "da4bebc9ceb58fad2d34cf261b73d458ece55ad70128c656ede9e44a8631cee1", "26551e099ce0936a8e0da8e128ae41546650d058685091849cc6406a882d50a7"),
     ("dlg:bharval", "ef4e704dc616f3658410cb798bb48b323b49b3b419986ff0345eb81979fb2730", "d1ca99803daf9f609ea13f438eb75fe65ffb87d0f417b483a4873ece6006f31a"),
     ("dlg:bhnalla", "038818ff7d8e4fc3a62e10530b74764657e26b3f44203ebd1877db7535d17ab3", "69fa93487cb7f0f4aa9883733e5d8a784155dbb726e06d88c595f591dfd763d5"),
     ("dlg:bhoisig", "5a55df4f2a0b814027735467fbf69017d9a13b0cd749d8566cf4f57c1f932377", "43ca1ecf37968c0737109cb06b8c9fbb522a2becbe51a89662ef1d14df3c52f7"),
     ("dlg:gorbat1", "c1da7c158296ed5e553942a735ebc84773007b099a4eadb1cc78a50142a0088a", "39d7e944e7d9efb983bb34013e7be3a9ab7cca2825d18010f16a22da60443c27"),
-    ("dlg:gorcamb", "76cdb11e99cdbd676d7af08f48713fceb01061ea6180e762e6be1c997f3b1de4", "cae698747ba37b187f0ab294ec01401630b868e1572c3f7717d5ed258bcd8665"),
+    ("dlg:gorcamb", "76cdb11e99cdbd676d7af08f48713fceb01061ea6180e762e6be1c997f3b1de4", "4e881c91d3f63ef88cdbdc8cdb7c0f862d129657bb9696fb13e9d24bec915df5"),
     ("dlg:gorlum2", "8228c02ac6dee8ac4652ad550a0fef83a8ddf2d59400fcb7c1e025f6395b5e9c", "28a2a669d4388c155abfcece1857611260628717e38c3bb49b1af245ce1e4ca5"),
     ("dlg:gortan1", "27a8575386e30a36a1f00f63c2004a095f301b511cd310eb03e36606265f3f3c", "0a70f5274d7eacfd4c0c1941266c7bd9be3e5332026f24116c3cadfa6c441ede"),
     ("dlg:hendak", "0f5a4956e7ee05cb5d6a02e2d61bcf8be0ab575ecd921af31656578330b4a804", "b19099dbd5a42cbb653b1a7abba30aeda7dbdc5697ba0e95106fe39ba7b1b7c4"),
-    ("dlg:jugjer01", "11b89e8c49ea1133b1402a3581e5c678b56fdf652dfeabb88abfd90faebca77b", "56a7c8e15c313b29f3046f0d5ddb9bc6354f55c62c07c3594d540412bfd37840"),
+    ("dlg:jugjer01", "11b89e8c49ea1133b1402a3581e5c678b56fdf652dfeabb88abfd90faebca77b", "f0c13318d605bacd0ca9758c078d875669dd12b82454e1b7a4327d868f631084"),
     ("dlg:lehtin", "a067828ca2055d4c3fd406c43672d9da3547e92b3da67a5eb84b341fdbebd2d1", "980b634e457adec11ba48405c65dbc5f9c6d032eac0d51bfcf8703d1eb6c44bf"),
     ("dlg:loutcapt", "1bb3dc1337c087cc049f0d4fa431f4a7f909dbfacabf4dd30087d8b4f52f2d98", "9a7db245aa8f59ff1743421ed4621b96391521f48e8f6eeafb0d44070a1ddd25"),
     ("dlg:mgkhol01", "d4762221de29275f29a3516980cf2b6360612a1670ad5733f3e599a1ba72e3ea", "3a47fea6c2cdb1405267342bad65ecc58741481006153dd3a15b43c3807decfd"),
-    ("dlg:ppdjinn", "06c1671065b549921263594db378d7610223cb16b70b7f718b3885b45b32af38", "4a47f40018c22a75c91bf07ac559129e8f70a6185d6ed2ec85acf891cb7113bb"),
+    ("dlg:nemphr", "088f49c9a4a41ed5e566f7cdad8263287bd519aa1ac1768888501ad779aa82e0", "bdc6e2d1c2d23ec77b3b489cf1f9c7d58edd3269b61561fa1168cbc6c3cff72f"),
+    ("dlg:ppdjinn", "06c1671065b549921263594db378d7610223cb16b70b7f718b3885b45b32af38", "dae488faf269ff5d144fb33093c777c00f3a539f4778d85fc91bb1af60d750ca"),
     ("dlg:ppstat01", "7022962710da01f3d66088d8f7c5aa2a7963d7e994ff0d55f61dc5b64c9673ae", "69505c964ee036a6d9b974407e34cbd4ff35f4cebd10373819c5ef2f5d50f73a"),
     ("dlg:riftg03", "4bb8a0866e3470ae558c108160ebef18c33de9f14ad3181ccf33ebd0d5e4912a", "34e7c5e57d9e69394b40ce09f4c5cd5a5e6249d871b676c82bafbd3d707f3ff5"),
     ("dlg:sahkng01", "c76c8624052f7e179d42157e4081ddfcdbb101d2f00b819008bc99f5660785c1", "e4489ed5a331b4ad81ca9cb8dbe3234e30651cef572245c8f389e7a1e1b56b5f"),
-    ("dlg:scsain", "c2a43b0d67eca9b531aa591463f74d5333225a95f0be87f8d03ed1cf91f8dafe", "29b93af9df2e2f8883d4c6fb3332c6228462e3cb299c52328481a8c7771497e7"),
-    ("dlg:sctelwyn", "d5dd048c43e16ba937ff583eef8f5966e549fb0c4e3f92679883d35fcdda1759", "3393b8eb614d6516fcc71a98426d0ced0269b66d6c21cb8e1c7ebafdea891814"),
-    ("dlg:scyarryl", "f96880bdabcfe8393d9ad6df502d3d001e2d79913736e480f6cc717f012dd367", "2d4c846f4a2afeb619e4fc3b168c4ef7cb95812e4b45aa850aa006de186886f7"),
-    ("dlg:trgeni01", "4220763c55e065bfb2f500aa9d615a1a1e112ae3fc60eee061a3d9f3f59f7549", "e3518c495954e2da2eceecf6fcfa9871ade8bc51f994907f0a27853d5f536d23"),
+    ("dlg:scsain", "c2a43b0d67eca9b531aa591463f74d5333225a95f0be87f8d03ed1cf91f8dafe", "efbc5faa5490e6f89b6ca54a30a02ba74871353e19f7c8f640439974c175caca"),
+    ("dlg:sctelwyn", "d5dd048c43e16ba937ff583eef8f5966e549fb0c4e3f92679883d35fcdda1759", "bcafc54734313b1513100537abb486fd42298c69795d647f525da7e06b5f9c39"),
+    ("dlg:scyarryl", "f96880bdabcfe8393d9ad6df502d3d001e2d79913736e480f6cc717f012dd367", "33b842e20c6602bdbd9e62da78ec7d79e402d8cb2006282ce7568257d776698c"),
+    ("dlg:trgeni01", "4220763c55e065bfb2f500aa9d615a1a1e112ae3fc60eee061a3d9f3f59f7549", "5cb6cc95b0461934c198b687b0e6d868576e21f80cbc3050cc72b05216369877"),
     ("dlg:trhmer01", "e5651fc5ef72780fe2ce9bb6ec8c3632665a5279d41cf79244fbef393304752e", "21aac581490c963ecf778f2ffc760bb3c56cce5be72fd637f783e70eccdbdd75"),
     ("dlg:uddemon", "582fbcfecf3e71363dff1aa9bcef4dbc202d28c3af6e66e6a29840b342f1bdfd", "b1976c5f2f0b948ec00f972348b5ef208b0ba127bbc5678297b133747836a042"),
-    ("dlg:udlesa", "6c518483372ebe4073986dc2d41e4f7ae73a7bce133aab4289a29ef1be7c7e50", "54968ec8867194ea558219a5e58518cf84d983bb9f197bd5a381984bc8abb241"),
+    ("dlg:udlesa", "6c518483372ebe4073986dc2d41e4f7ae73a7bce133aab4289a29ef1be7c7e50", "02e3d2ad97dad0ba3c42c82c11601c0d13373b733d8eafff1bab9799f484a8ab"),
     ("dlg:udsilver", "48f697db47942b74b4530975a5a4a46cac1a0cc850453b2b9d50ab173b01090c", "593cdf5a0313db7065fb2c1eaafc8efc309485d3b5a654c24b585f397e94917b"),
     ("dlg:udsvir03", "5918919ea366eceb27f4096f025cde79c44310a9e57bcd49d123fdbb48352994", "2003095671c146bb3d06b92fcc17df06dc18e5be4ab59a0e5d17bfd6db412e66"),
-    ("dlg:uhmay01", "4213656595fdde6afeefee881597ddd62814ba886747bc4d60cfca25a2d852be", "625d9d911abba3898606930051e784685e82bd954711b520f8574c59da2d8384"),
+    ("dlg:uhmay01", "4213656595fdde6afeefee881597ddd62814ba886747bc4d60cfca25a2d852be", "fddebc84098847bf55786d953b1f400eba8a97250343e8076a174f6e15f3919c"),
     ("dlg:uhogre01", "8706469468f7277542ba0e6d7fcf44b47a15d36c3879f505464e0a119be00b97", "722213d1f53966780ab8bba2e2dbe400e64c14ced6da2ff9f48b43749b629e25"),
     ("dlg:varci", "78c3de46c5c07c5896e5ea568ef9a71aa6e53ff5b6cb7ec8d4274d9e5dfbb017", "2ae4a7164f4200efec5e9676d7a1fe20c6b05978523015df31302c75c8495e09"),
 ];
@@ -995,9 +1167,11 @@ fn reviewed_eet_resources_when_available_patch_exactly_and_reexport() {
     assert_eq!(reviewed, known);
     let names = eet_names();
     let eet = Naming { game: Some("eet"), names: Some(&names) };
-    let (_text, allocated) = prepare_reward_texts(&GameText::new(make_tlk(&[])), known.clone(), "en_us").unwrap();
     for (resource, original_hash, patched_hash) in REVIEWED_EET {
         let (kind, name) = resource.split_once(':').unwrap();
+        // EET numbers BG1's texts (Aldeth's) 200000 higher than BG:EE does.
+        let (_text, allocated) =
+            prepare_reward_texts(&GameText::new(make_tlk(&[])), [*resource], "en_us", Some("eet")).unwrap();
         let original = std::fs::read(cache.join(format!("{name}.{kind}"))).unwrap();
         assert_eq!(sha(&original), *original_hash, "{resource}");
         let result = patch_reward(resource, &original, allocated.get(*resource), None, eet).unwrap();
@@ -1010,21 +1184,33 @@ fn reviewed_eet_resources_when_available_patch_exactly_and_reexport() {
         if kind == "dlg" && text_refs(resource).is_some() {
             let refs = &allocated[*resource];
             assert_eq!(text_original(&result, resource, eet).unwrap(), Some((original.clone(), refs.clone())));
-            let clones = check_text_graph(resource, &original, &result, refs);
+            let clones = check_text_graph(resource, &original, &result, refs, eet);
             let cloned: Vec<usize> = clones.keys().copied().collect();
-            if ["trgeni01", "amcler01", "jugjer01", "udlesa"].contains(&name) {
+            if ["trgeni01", "amcler01", "jugjer01", "udlesa", "aldeth"].contains(&name) {
                 let action_refs = if name == "amcler01" { Some(refs.clone()) } else { None };
                 let ordered: Vec<(i64, i64)> = action_refs.iter().flatten().map(|(old, new)| (*old, *new)).collect();
-                let branched = patch_dialogue(&original, &specs(resource), &ordered, true, true, None).unwrap();
-                check_dialogue(name, &original, &branched, action_refs.as_ref(), None, Naming::default());
-                // Jermien names his sword when he offers it and when he hands it over.
+                let branched =
+                    patch_dialogue(&original, &resource_specs(resource, eet).unwrap(), &ordered, true, true, None).unwrap();
+                check_dialogue(name, &original, &branched, action_refs.as_ref(), None, eet);
+                // Jermien names his sword when he offers it and when he hands it over;
+                // Aldeth's thanks and the journal entry of his reply name his.
                 let expected: &[usize] = match name {
                     "trgeni01" => &[35],
                     "jugjer01" => &[17, 23],
                     "udlesa" => &[6],
+                    "aldeth" => &[27],
                     _ => &[],
                 };
                 assert_eq!(cloned, expected, "{resource}");
+                if name == "aldeth" {
+                    let dlg = Dialogue::new(&result, name).unwrap();
+                    assert_eq!(u32_at(&dlg.states[clones[&27]], 0) as i64, refs[&205740]);
+                    let journals = |state: usize| -> BTreeSet<i64> {
+                        outgoing(&dlg, state).iter().map(|row| u32_at(row, 8) as i64).collect()
+                    };
+                    assert_eq!(journals(clones[&27]), BTreeSet::from([refs[&226828]]));
+                    assert_eq!(journals(27), BTreeSet::from([226828]));
+                }
                 if name == "udlesa" {
                     let dlg = Dialogue::new(&branched, name).unwrap();
                     for state in 6..12 {
@@ -1051,7 +1237,7 @@ fn reviewed_eet_resources_when_available_patch_exactly_and_reexport() {
                 assert!(contains(&dlg.actions.concat(), b"ReallyForceSpell(Myself,DRYAD_TELEPORT)"));
             }
         } else if kind == "bcs" {
-            assert_eq!(script_original(&result, &resource_specs(resource, eet).unwrap()[0]).unwrap().0, original);
+            assert_eq!(script_original(&result, &resource_specs(resource, eet).unwrap()).unwrap().0, original);
         } else if ["aran", "sahkng01"].contains(&name) {
             check_pair(name, &original, &result);
         } else {

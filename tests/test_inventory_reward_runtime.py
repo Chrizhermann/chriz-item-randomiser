@@ -61,12 +61,84 @@ end
 '''
 
 
+ROUTES = r'''
+return function(N,Core)
+    local f=setup(N)
+    -- Boss Loot's rows of Aldeth's place and sword stand for the rows of his
+    -- route: his reward reply names the place's row 16.
+    local route,place='original-target:bg1:mode2:target:16','original-target:bg1:boss-loot:mode2:target:46'
+    local sword='original-source:bg1:boss-loot:mode2:item:62'
+    local endpoint=f.fixture.targets[f.target_id]
+    endpoint.inventory_reward,endpoint.route_target=true,route
+    f.fixture.targets[f.target_id],f.fixture.targets[place]=nil,endpoint
+    f.fixture.sources[sword]={kind='guarded-script',adapter_id='mode2-reward-v1',quest='aldeth',
+        resource='dlg:aldeth',selected_global='FLPR_QB1_16',consumed_global='FLPR_XB1_16',
+        route_source='original-source:bg1:mode2:item:16',identity=string.rep('d',64),
+        payload={resref='sw1h03',charges={0,0,0},expiration=0,flags=0}}
+    f.fixture.source_gate={schema='flpr-unvisited-fixture-gate-v1',source_id=sword}
+    local adapter=N.new(f.api,f.fixture)
+    local assignments={}
+    for n,id in ipairs(f.source_ids) do
+        assignments[n]={unit=n,source_id=id,target_id=place,delivery_phase=Core.PHASE.held}
+    end
+    local calls={}
+    f.api.EEex_Action_ExecuteResponseStringOnAIBaseInstantly=function(action,speaker)
+        assert(speaker==f.creature)
+        calls[#calls+1]=assert(action:match('^GiveItem%("([^"]+)",LastTalkedToBy%)$'),action)
+    end
+    assert(adapter:transfer_inventory_reward(f.creature,route,assignments,Core.PHASE)==-1)
+    assert(#calls==2 and calls[1]=='flpri1' and calls[2]=='flpri2')
+    -- Another route's row has no endpoint in this campaign.
+    assert(adapter:transfer_inventory_reward(f.creature,'original-target:bg1:mode2:target:136',
+        assignments,Core.PHASE)==-1 and #calls==2)
+    adapter:destroy()
+    -- A route is the route's own row of the same campaign, for one row of a
+    -- preset that can use it; anything else stops the campaign.
+    local function refused(change)
+        local fixture=clone(f.fixture)
+        change(fixture)
+        local ok,err=pcall(N.new,f.api,fixture)
+        assert(not ok and tostring(err):find('NATIVE_ROUTE_INVALID',1,true),tostring(err))
+    end
+    refused(function(x) x.targets[place].route_target='original-target:bg2:mode2:target:16' end)
+    refused(function(x) x.targets[place].route_target='original-target:bg1:boss-loot:mode2:target:16' end)
+    refused(function(x) x.targets[place].route_target=16 end)
+    refused(function(x) x.targets[place].inventory_reward=nil end)
+    refused(function(x) x.targets[route],x.targets[place]=x.targets[place],nil end)
+    refused(function(x)
+        local other=clone(x.targets[place]);other.identity=string.rep('e',64)
+        x.targets['original-target:bg1:boss-loot:mode2:target:47']=other
+    end)
+    refused(function(x)
+        local other=clone(x.targets[place]);other.identity,other.route_target=string.rep('e',64),nil
+        x.targets[route]=other
+    end)
+    refused(function(x) x.sources[sword].route_source='original-source:bg2:mode2:item:16' end)
+    refused(function(x) x.sources[sword].route_source=route end)
+    refused(function(x) x.sources[sword].adapter_id='original-quest-v1' end)
+    refused(function(x) x.sources[f.source_ids[1]].route_source='original-source:bg1:mode2:item:20' end)
+    -- Without its route names, the preset's place is no route's.
+    local fixture=clone(f.fixture)
+    fixture.targets[place].route_target=nil
+    adapter=N.new(f.api,fixture)
+    assert(adapter:transfer_inventory_reward(f.creature,route,assignments,Core.PHASE)==-1 and #calls==2)
+end
+'''
+
+
 class InventoryRewardRuntimeTests(unittest.TestCase):
     def test_wait_transfer_and_reload(self):
         for runtime in (Lua51, Lua53, LuaJIT):
             lua = runtime(unpack_returned_tuples=True)
             with self.subTest(runtime=runtime.__module__):
                 lua.execute(FIXTURE.rsplit("return cases", 1)[0] + SCENARIO)(
+                    lua.execute(NATIVE), lua.execute(CORE))
+
+    def test_a_presets_rows_stand_for_the_rows_of_their_route(self):
+        for runtime in (Lua51, Lua53, LuaJIT):
+            lua = runtime(unpack_returned_tuples=True)
+            with self.subTest(runtime=runtime.__module__):
+                lua.execute(FIXTURE.rsplit("return cases", 1)[0] + ROUTES)(
                     lua.execute(NATIVE), lua.execute(CORE))
 
     def test_callback_leaves_unmanaged_campaigns_and_waits_for_managed_loads(self):
@@ -81,13 +153,16 @@ class InventoryRewardRuntimeTests(unittest.TestCase):
         ''' + callback + r'''
             assert(FLPR_Transfer({},'excluded')==-1)
             state=2;assert(FLPR_Transfer({},'selected')==0)
-            local speaker,assignments={},{}
+            local speaker,assignments,expected={},{},'original-target:bg2:mode2:target:32'
             root.Host={controller={assignments=function() return assignments end},native={
                 transfer_inventory_reward=function(_,actor,id,rows,phases)
-                    assert(actor==speaker and id=='original-target:bg2:mode2:target:32' and rows==assignments and phases.held==4)
+                    assert(actor==speaker and id==expected and rows==assignments and phases.held==4)
                     return -1
                 end}}
             assert(FLPR_Transfer(speaker,32)==-1)
+            -- A BG1 row passes its campaign (1).
+            expected='original-target:bg1:mode2:target:16'
+            assert(FLPR_Transfer(speaker,16,1)==-1)
         ''')
 
 

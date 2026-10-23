@@ -17,8 +17,8 @@ use cir_config::resources::sha256_hex;
 use cir_config::translations::{self, Line, Translations};
 use cir_config::{
     codepages, container_rewards, creature_inventory, cursed_disguises, group_recipients, mode2_rewards,
-    original_options, quest_options, quest_rewards, reward_copies, spell_rewards, store_inventory, Error, ErrorKind,
-    Result,
+    original_catalog, original_options, quest_options, quest_rewards, reward_copies, spell_rewards, store_inventory,
+    Error, ErrorKind, Result,
 };
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
@@ -441,6 +441,11 @@ fn call(name: &str, args: &Args) -> Result<Value> {
             let (text, refs) = args.game_text("text").append(&args.pairs("texts"))?;
             Value::List(vec![game_text_value(&text), strrefs(&refs)])
         }
+        "game_text.GameText.string" => {
+            let (male, female) = args.game_text("text").string(args.int("ref"))?;
+            let text = |text: Option<String>| text.map_or(Value::Null, Value::from);
+            Value::List(vec![text(male), text(female)])
+        }
         "game_text.paired" => game_text_value(&game_text::paired(args.bytes("male"), args.optional_bytes("female"))?),
         "game_text._append_texts" => {
             let (data, refs) = game_text::append_texts(&args.bytes("data"), &args.strings("texts"))?;
@@ -547,7 +552,16 @@ fn call(name: &str, args: &Args) -> Result<Value> {
             mode2_rewards::text_original(&args.bytes("data"), &args.str("resource"), args.named().naming())?
                 .map_or(Value::Null, |(original, refs)| Value::List(vec![bytes_value(&original), int_keys(&refs)]))
         }
-        "mode2_rewards._script_original" => recovered(mode2_rewards::script_original(&args.bytes("data"), &args.dict("spec"))?),
+        "mode2_rewards._script_original" => {
+            let specs: Vec<Dict> =
+                args.value("specs").as_list().expect("specs").iter().map(|spec| spec.as_dict().expect("spec").clone()).collect();
+            recovered(mode2_rewards::script_original(&args.bytes("data"), &specs)?)
+        }
+        "mode2_rewards.unpatched_script" => bytes_value(&mode2_rewards::unpatched_script(
+            &args.str("resource"),
+            &args.bytes("data"),
+            args.named().naming(),
+        )?),
         "mode2_rewards.own_patch" => {
             Value::Bool(mode2_rewards::own_patch(&args.str("resource"), &args.bytes("data"), args.named().naming())?)
         }
@@ -573,9 +587,37 @@ fn call(name: &str, args: &Args) -> Result<Value> {
             Value::List(vec![game_text_value(&text), Value::from(reference)])
         }
         "mode2_rewards.prepare_reward_texts" => {
-            let (text, refs) =
-                mode2_rewards::prepare_reward_texts(&args.game_text("text"), args.strings("resources"), &args.str("language"))?;
+            let named = args.named();
+            let (text, refs) = mode2_rewards::prepare_reward_texts(
+                &args.game_text("text"),
+                args.strings("resources"),
+                &args.str("language"),
+                named.naming().game,
+            )?;
             Value::List(vec![game_text_value(&text), nested_refs(&refs)])
+        }
+        "mode2_rewards.text_refs" => {
+            let refs: BTreeMap<i64, i64> =
+                mode2_rewards::game_text_refs(&args.str("resource"), args.named().naming().game)?.into_iter().collect();
+            Value::Dict(refs.into_iter().map(|(old, tra)| (old.to_string(), Value::from(tra))).collect())
+        }
+        "mode2_rewards.journal_refs" => {
+            Value::from(mode2_rewards::journal_refs(&args.str("resource"), args.named().naming().game)?)
+        }
+        "mode2_rewards._titled" => {
+            Value::from(mode2_rewards::titled(args.value("original").as_str(), &args.str("body")))
+        }
+        "mode2_rewards.journal_lua" => {
+            let texts: mode2_rewards::TextRefs = args
+                .dict("texts")
+                .iter()
+                .map(|(resource, refs)| {
+                    let refs = refs.as_dict().expect("refs");
+                    let refs = refs.iter().map(|(old, new)| (old.parse().expect("int key"), new.as_int().expect("int ref")));
+                    (resource.to_string(), refs.collect())
+                })
+                .collect();
+            bytes_value(&mode2_rewards::journal_lua(&args.bytes("lua"), &texts, args.named().naming().game)?)
         }
         "mode2_rewards.text_lines" => lines_value(&mode2_rewards::text_lines(&args.str("resource"))?),
         "mode2_rewards.patch_reward" => bytes_value(&mode2_rewards::patch_reward(
@@ -669,6 +711,12 @@ fn call(name: &str, args: &Args) -> Result<Value> {
             bytes_value(&original_options::patch_spell_shield_stock(&args.bytes("data"))?)
         }
         "original_options.is_spell_shield_row" => Value::Bool(original_options::is_spell_shield_row(args.value("row"))),
+        "original_catalog.mode2_route_source" => {
+            original_catalog::mode2_route_source(args.value("row"))?.map_or(Value::Null, Value::from)
+        }
+        "original_catalog.mode2_route_target" => {
+            original_catalog::mode2_route_target(args.value("row"))?.map_or(Value::Null, Value::from)
+        }
         "original_options.spell_shield_spec" => original_options::spell_shield_spec(args.value("world"), args.bool("randomized"))?,
         "original_options.validate_spell_shield_spec" => {
             original_options::validate_spell_shield_spec(args.value("spec"))?;

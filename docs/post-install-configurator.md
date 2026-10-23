@@ -227,8 +227,8 @@ gated: the item would come from another speaker than the one that carries it, CI
 changes that dialogue for something else, or another reply there gives the item in
 another way ("XNPCJ.DLG state 0 also gives SHLD26, but not with a copy of a reward
 reply of UHOGRE01.DLG, so the route cannot tell whether it is the same reward").
-Routes that show Item Randomiser's reward text (the BG2 quests that name their reward,
-the golems' chests) need `BGEE.LUA` and that text in the game's language: English,
+Routes that show Item Randomiser's reward text (the quests that name their reward,
+such as Aldeth's in BG1, the golems' chests) need `BGEE.LUA` and that text in the game's language: English,
 Polish and German so far (`tools/flir_config/translations.py`). In another language they
 are left out with the reason ("Item Randomiser's reward texts have no Spanish
 translation yet"), never shown in English; translators can add a language with
@@ -237,7 +237,12 @@ translation yet"), never shown in English; translators can add a language with
 the same numbers, with the translation's female wording, which the game shows to a
 female protagonist. A game whose `dialogF.tlk` holds another number of strings than its
 `dialog.tlk` leaves those routes out, since a new text could not get the same number
-in both. Each check run reads these files again when the game folder changed
+in both. Where the reward reply's journal entry names the reward (Aldeth's), the
+selected copy of the reply adds Item Randomiser's entry instead: it keeps the title
+line of the game's own entry, in the game's words, and Apply files it in `BGEE.LUA`
+under the quest that files the original (a copy of each `createEntry` line that
+lists it). EET numbers BG1's texts 200000 higher than BG:EE does; the routes look
+for them under EET's numbers there. Each check run reads these files again when the game folder changed
 since the last one, so a reward file, or a dialogue the route's copies were looked
 for in, that changed after the scan stops that check until the game is scanned
 again. Saved games keep the revision they started with, and its files never
@@ -351,18 +356,31 @@ names them apart ("… belong to quests that Chriz Item Randomiser cannot change
 quest rewards and places that Item Randomiser handled with its own conversation and
 script patches (the `.fl` places of its `mode2` tables, and rewards that a conversation
 or script gives) for which CIR has no route yet. Their reason is
-`route-not-supported`. In the original tables these are Aldeth's and Nemphre's
-rewards and places (BG1); two scrolls that `ppbook.bcs` gives, and the
-places of the Sahuagin treasury, the Sahuagin prince, the
-king or the prince, the trolls of the Spellhold painting, Tolgerias, TorGal and a
-vampire or shadow thief of chapter 3 (BG2). `tests/test_original_catalog.py` lists
-them; a route for one of them takes its rows off that list.
+`route-not-supported`. In the original tables these are the places of the Sahuagin
+treasury, the Sahuagin prince, the king or the prince, the trolls of the Spellhold
+painting, Tolgerias, TorGal and a vampire or shadow thief of chapter 3 (BG2).
+`tests/test_original_catalog.py` lists them; a route for one of them takes its rows off
+that list.
 
-BG1's quest routes (Varci's payment, `VARCI.DLG`) work as BG2's do, with flags of
+BG1's quest routes (Varci's payment, `VARCI.DLG`; Aldeth's sword, `ALDETH.DLG`;
+Nemphre's scroll, `NEMPHR.DLG`) work as BG2's do, with flags of
 their own (`FLPR_QB1_<row>` beside BG2's `FLPR_QM2_<row>`). They are registered with
 BG:EE's names, and on EET they follow EET's rename lists: there Varci gives
 `SHLD07A`, which EET's lists name for BG:EE's `SHLD07`. Without those lists (CIR's
 older copy) EET's shield is not found, and the route is left out with its reason.
+Nemphre's place is a row of its own (136, her scroll is 159); Item Randomiser's lists
+give it scrolls only, so her words ("take this scroll") stay true and need no text of
+Item Randomiser's.
+
+A preset's row of such a reward or place is that route: the row of the same
+conversation or script and item, or of the same `.fl` place and area, as one row of
+the original table names it. Boss Loot's rows of Aldeth's sword, Varci's shield and
+Nemphre's scroll (items 62, 71 and 339; places 46, 71 and 291) use the routes of the
+original rows 16, 20 and 159 (places 16, 20 and 136), with those rows' flags. The
+native fixture names the route's row beside the preset's (`route_source`,
+`route_target`), and the runtime refuses any other route (`NATIVE_ROUTE_INVALID`). A
+preset with two rows of one reward or place has the route for neither, since the
+runtime finds a route's row by it; both are left out with `route-not-supported`.
 
 The Sahuagin treasury's rod (`RODS02` in AR2300) moves like any container reward,
 but the king's reward reply (SAHKNG01.DLG) creates another one. Where the game's
@@ -372,10 +390,28 @@ game without that dialogue, or whose king gives no rod, needs no link. Where the
 reply gives the rod in a way CIR cannot gate, or AR2300 holds a second rod that the
 reply could stand for, the rod's row is left out with its reason.
 
+The book of Lavok's sphere (`PPBOOK.BCS`, AR1513) gives two scrolls with the ring on
+its last page (rows 260 and 262 of the extended tables, beside the ring's row 109).
+Each scroll has a route of its own, which only drops its grant where its row moves the
+scroll; the book's places are the ring's quest, so the scrolls have no place of their
+own. The installer prepares the book for the ring's quest; the scrolls' routes patch
+the game's own book, so they need no prepared book (a game whose book the installer
+left as it was can still move the scrolls; the ring stays as the game has it). Apply
+writes the book only for a revision that moves a scroll; otherwise it stays as the
+installer prepared it. A revision that moves only the ring records the installer's
+book, and Apply keeps that version and the one it wrote side by side
+(`randomiser-campaigns/PPBOOK.installed.bcs` and `PPBOOK.applied.bcs`): the runtime
+accepts the book Apply wrote for that revision's saves when both still match. A
+re-install of CIR returns the book to the installer's version; a configuration that
+moves a scroll then needs Apply again before its games start.
+
 Rewards an NPC carries: the genie in Trademeet (`TRGENI01`), Captain Dennis
 (`LOUTCAPT`), the Amkethran priest (`AMCLER01`), the sage Jermien (`JUGJER01`, whose
-sword keeps its daily charge) and the sculptor Yarryl (`SCYARRYL`, his copy of the
-temple's reward) carry the item their conversation hands over. When
+sword keeps its daily charge), the sculptor Yarryl (`SCYARRYL`, his copy of the
+temple's reward), and in BG1 Aldeth (`ALDETH`) and Nemphre (`NEMPHR`) carry the item
+their conversation hands over. The runtime knows each of these copies by its
+creature's and item's names, which EET keeps; a game that renames one leaves its row
+out with its reason. When
 that reward moves, the creature's copies go with it; the configuration finds them in
 the scanned creature file, whatever their place, flags or charges there and whatever
 else another mod gave the creature, and the runtime checks each copy's bytes against

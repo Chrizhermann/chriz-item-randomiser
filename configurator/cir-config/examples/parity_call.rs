@@ -109,6 +109,12 @@ fn run(name: &str, args: &Dict) -> Result<Value> {
             argument(args, "options")?.as_ref(),
             names(args)?.as_ref(),
         ),
+        "mode2_route_source" => {
+            original_catalog::mode2_route_source(&required(args, "row")?).map(|route| route.map_or(Value::Null, Value::from))
+        }
+        "mode2_route_target" => {
+            original_catalog::mode2_route_target(&required(args, "row")?).map(|route| route.map_or(Value::Null, Value::from))
+        }
         "build_template" => templates::build_template(
             &text(args, "template_id")?,
             argument(args, "items")?.as_ref(),
@@ -230,6 +236,8 @@ fn run(name: &str, args: &Dict) -> Result<Value> {
                 &catalog,
                 if collect { Some(&mut problems) } else { None },
                 stored,
+                None,
+                None,
                 None,
             )?;
             let mut problems: Vec<(String, Value)> =

@@ -271,7 +271,18 @@ impl Editor {
             result.insert("valid", true);
             result.insert("reward_units", Value::from(units));
             result.insert("target_capacity", Value::from(capacity));
-            crate::native_export::compile(&campaign, &self.world, &self.index, &self.items, &self.catalog, None, false, None)?;
+            crate::native_export::compile(
+                &campaign,
+                &self.world,
+                &self.index,
+                &self.items,
+                &self.catalog,
+                None,
+                false,
+                None,
+                None,
+                None,
+            )?;
             Ok(())
         })();
         match attempt {

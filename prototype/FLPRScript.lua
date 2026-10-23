@@ -24,7 +24,10 @@ local function read(path)
     local file=assert(io.open(path,'rb'),'CAMPAIGN_SCRIPT_PATCH_MISSING')
     local bytes=file:read('*a'); assert(file:close()); return bytes
 end
-function Script.new(api,bundle,id,expected)
+-- <extended> holds, by resource, a quest script that CIR's installer prepared
+-- and the version Apply wrote over it with the extended pools' reward routes
+-- (M_FLPR.lua reads both from the applied configuration).
+function Script.new(api,bundle,id,expected,extended)
     local index,source
     for i,row in ipairs(bundle.manifest.sources) do if row.id==id then index,source=i,row end end
     local endpoint=bundle.fixture.sources[id]
@@ -32,8 +35,15 @@ function Script.new(api,bundle,id,expected)
     if endpoint and endpoint.adapter_id=='mode2-reward-v1' then
         -- The exporter binds this endpoint to the original table row and its
         -- reviewed grant. Derive the saved flags from that row, not table order;
-        -- a BG1 row's flags are its own (B1_<row>, BG2's are M2_<row>).
-        local campaign,row=id:match('^original%-source:(bg[12]):mode2:item:([0-9]+)$')
+        -- a BG1 row's flags are its own (B1_<row>, BG2's are M2_<row>). A
+        -- preset's row of the route names that row, of the same campaign.
+        local route=id
+        if endpoint.route_source~=nil then
+            local preset=id:match('^original%-source:(bg[12]):[a-z0-9%-]+:mode2:item:[0-9]+$')
+            route=preset and type(endpoint.route_source)=='string' and
+                endpoint.route_source:match('^original%-source:'..preset..':mode2:item:[0-9]+$') or ''
+        end
+        local campaign,row=route:match('^original%-source:(bg[12]):mode2:item:([0-9]+)$')
         local resource=source and source.record and source.record.resource
         local extension,name
         if type(resource)=='string' then extension,name=resource:match('^(%a+):([a-z0-9_#%-]+)$') end
@@ -69,8 +79,14 @@ function Script.new(api,bundle,id,expected)
         local bytes=endpoint.resources and type(expected)=='table' and expected[resource] or expected
         assert(type(bytes)=='string' and #bytes>0,'CAMPAIGN_SCRIPT_PATCH_CHANGED')
         -- The game must still hold the bytes this revision was exported with.
+        -- An installer-prepared quest also accepts Apply's version of its
+        -- script, which keeps the quest's branches and adds the routes' own,
+        -- when the revision was exported with the installer's.
         local actual=read('override/'..name:upper()..'.'..extension:upper())
-        assert(actual==bytes,'CAMPAIGN_SCRIPT_PATCH_CHANGED')
+        local applied=endpoint.adapter_id=='original-quest-v1' and type(extended)=='table' and
+            type(extended[resource])=='table' and extended[resource]
+        assert(actual==bytes or (applied and applied.installed==bytes and applied.applied==actual),
+            'CAMPAIGN_SCRIPT_PATCH_CHANGED')
     end
     assert(primary,'CAMPAIGN_SCRIPT_BINDING_INVALID')
     assert(type(api.EEex_GameState_SetGlobalInt)=='function','CAMPAIGN_SCRIPT_GLOBALS_MISSING')

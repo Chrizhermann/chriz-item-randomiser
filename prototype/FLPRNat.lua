@@ -85,8 +85,8 @@ function Native.new(api, fixture, seed, reward_payload)
     for _, name in ipairs(required) do assert(type(api[name]) == "function", name .. "_MISSING") end
     local self = setmetatable({ api = api, sources = {}, targets = {}, reservations = {},
         attempted = {}, tick = nil, pending = nil, last_error = nil, source_resrefs = {}, held = {},
-        seed=seed, reward_payload=reward_payload, container_latched={} }, Adapter)
-    local identities, source_resrefs, creatures, guarded_ids = {}, self.source_resrefs, false, {}
+        seed=seed, reward_payload=reward_payload, container_latched={}, route_targets={} }, Adapter)
+    local identities, source_resrefs, creatures, guarded_ids, routes = {}, self.source_resrefs, false, {}, {}
     local guarded_count = 0
     for _, kind in ipairs({ "sources", "targets" }) do
         assert(type(fixture[kind]) == "table", "NATIVE_CONFIG_INVALID")
@@ -247,6 +247,25 @@ function Native.new(api, fixture, seed, reward_payload)
                 end
                 copy.loot_latch={activation_global=latch.activation_global,
                     latch_global=latch.latch_global,latch_scope=latch.latch_scope}
+            end
+            -- A preset's row of an extended reward route names the route's own
+            -- row of the same campaign, which this fixture has no endpoint of;
+            -- each route has one row. FLPRScript and FLPRGat take the source's
+            -- flags and copies by it, the reward reply names the target by it.
+            local route=endpoint.route_target
+            if kind=='sources' then route=endpoint.route_source end
+            if route~=nil then
+                local unit=kind=='sources' and 'item' or 'target'
+                local prefix=kind=='sources' and '^original%-source:' or '^original%-target:'
+                local campaign=id:match(prefix..'(bg[12]):[a-z0-9%-]+:mode2:'..unit..':[0-9]+$')
+                assert(campaign and type(route)=='string' and
+                    route:match(prefix..campaign..':mode2:'..unit..':[0-9]+$') and
+                    not routes[route] and fixture[kind][route]==nil and
+                    (kind=='targets' and copy.inventory_reward or
+                     kind=='sources' and script_source and endpoint.adapter_id=='mode2-reward-v1'),
+                    'NATIVE_ROUTE_INVALID')
+                routes[route]=id
+                if kind=='targets' then self.route_targets[route]=id end
             end
             self[kind][id] = copy
         end
@@ -630,6 +649,8 @@ end
 -- and pickpocketing remain valid alternatives. Wait for delivery to settle,
 -- then use the original transfer action; never recreate a missing item.
 function Adapter:transfer_inventory_reward(speaker, target_id, assignments, phases)
+    -- The reply names the route's own row; a preset's row may stand for it.
+    target_id=self.route_targets[target_id] or target_id
     local endpoint=self.targets[target_id]
     if not endpoint then return -1 end -- Target excluded from this campaign.
     assert(endpoint.inventory_reward, 'NATIVE_INVENTORY_REWARD_INVALID')

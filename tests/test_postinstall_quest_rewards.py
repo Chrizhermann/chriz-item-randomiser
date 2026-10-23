@@ -14,7 +14,7 @@ from flir_config import quest_rewards as quests
 
 SCRIPT = (ROOT / "prototype" / "FLPRScript.lua").read_text(encoding="utf-8")
 SCRIPT_CASE = r'''
-return function(Script,id,quest,resource,selected,consumed,kept,expected,actual,legacy)
+return function(Script,id,quest,resource,selected,consumed,kept,expected,actual,legacy,extended)
     local p={resref=quest=='pool' and 'blun12' or (quest=='altar' and 'blun23' or 'ring09'),
         charges={0,0,0},expiration=0,flags=0}
     local globals={FLPR_FRESH=1}
@@ -34,7 +34,7 @@ return function(Script,id,quest,resource,selected,consumed,kept,expected,actual,
         return {read=function(_,request) assert(request=='*a'); return actual end,
                 close=function() return true end}
     end
-    local ok,member=pcall(Script.new,api,bundle,id,expected)
+    local ok,member=pcall(Script.new,api,bundle,id,expected,extended)
     io.open=old
     assert(ok,member)
     member.installed=true
@@ -90,6 +90,39 @@ class QuestRewardTests(unittest.TestCase):
                     case(script, spec["source_ids"][0], spec["quest"], spec["resource"],
                          spec["selected_global"], spec["consumed_global"],
                          False, "EXPORTED_SCRIPT_BYTES", "SCRIPT_REPLACED_LATER", legacy)
+
+    def test_an_installed_quest_script_accepts_the_version_apply_extended_it_to(self):
+        # Apply adds the book's scroll routes to the installer's PPBOOK.BCS and
+        # keeps both versions; a revision exported with the installer's
+        # accepts Apply's, and nothing else.
+        spec = quests.QUESTS["ppbook"]
+        args = (spec["source_ids"][0], spec["quest"], spec["resource"], spec["selected_global"],
+                spec["consumed_global"], False)
+        for runtime in (Lua51, Lua53, LuaJIT):
+            lua = runtime(unpack_returned_tuples=True)
+            script, case = lua.execute(SCRIPT), lua.execute(SCRIPT_CASE)
+
+            def versions(resource="bcs:ppbook", installed="INSTALLED", applied="APPLIED"):
+                return lua.table_from({resource: lua.table_from({"installed": installed, "applied": applied})})
+            with self.subTest(runtime=runtime.__module__):
+                self.assertTrue(case(script, *args, "INSTALLED", "APPLIED", False, versions()))
+                self.assertTrue(case(script, *args, "INSTALLED", "INSTALLED", False, versions()))
+                self.assertTrue(case(script, *args, "APPLIED", "APPLIED", False, versions()))
+            for label, expected, actual, extended in (
+                    ("no versions", "INSTALLED", "APPLIED", None),
+                    ("another installed", "OLDER", "APPLIED", versions()),
+                    ("another applied", "INSTALLED", "CHANGED", versions()),
+                    ("another script", "INSTALLED", "APPLIED", versions("bcs:troalt")),
+                    ("only one", "INSTALLED", "APPLIED", lua.table_from({"bcs:ppbook": False}))):
+                with self.subTest(runtime=runtime.__module__, case=label), \
+                        self.assertRaisesRegex(Exception, "CAMPAIGN_SCRIPT_PATCH_CHANGED"):
+                    case(script, *args, expected, actual, False, extended)
+            # The pool's legacy adapter has no installer-prepared script.
+            pool = quests.QUESTS["blpool"]
+            with self.subTest(runtime=runtime.__module__, case="legacy"), \
+                    self.assertRaisesRegex(Exception, "CAMPAIGN_SCRIPT_PATCH_CHANGED"):
+                case(script, pool["source_ids"][0], pool["quest"], pool["resource"], pool["selected_global"],
+                     pool["consumed_global"], False, "INSTALLED", "APPLIED", True, versions("bcs:blpool"))
 
 
 if __name__ == "__main__":

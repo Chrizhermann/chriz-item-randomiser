@@ -1,16 +1,18 @@
 # Translating CIR's reward texts
 
 **Call for translators.** Chriz Item Randomiser's extended pools move the rewards of
-some Shadows of Amn quests. Where the quest's own text names the reward ("Please, take
-this ring."), CIR shows Item Randomiser's reworded line instead ("Please, accept this
-gift."). These 22 lines exist in English, Polish (Item Randomiser's own translation) and
-German. In a game in any other language the configurator leaves the quests that show
-them out of the extended pools, with the reason ("Item Randomiser's reward texts have no
-Spanish translation yet"); the game never shows the English line in another language.
-A translation of the 22 lines below brings those quests back for that language.
+some Shadows of Amn quests and of Aldeth's quest in Baldur's Gate. Where the quest's own
+text names the reward ("Please, take this ring."), CIR shows Item Randomiser's reworded
+line instead ("Please, accept this gift."). These 24 lines exist in English, Polish
+(Item Randomiser's own translation) and German. In a game in any other language the
+configurator leaves the quests that show them out of the extended pools, with the
+reason ("Item Randomiser's reward texts have no Spanish translation yet"); the game
+never shows the English line in another language. A translation of the 24 lines below
+brings those quests back for that language.
 
-Only BG2:EE and EET show these texts; BG:EE's extended pools have none, so Hungarian,
-Japanese and Turkish (BG:EE only) need no translation.
+BG:EE shows only Aldeth's two lines (@1649 and @1650), so Hungarian, Japanese and
+Turkish (BG:EE only) need just those two. CIR wrote the German lines and Polish @1650
+itself; Item Randomiser has the others.
 
 ## Languages
 
@@ -19,10 +21,13 @@ Japanese and Turkish (BG:EE only) need no translation.
 | Czech (`cs_CZ`) | `languages/czech/` | Windows-1250 | not used |
 | Spanish (`es_ES`) | `languages/spanish/` | Windows-1252 | used |
 | French (`fr_FR`) | `languages/french/` | Windows-1252 | used |
+| Hungarian (`hu_HU`, BG:EE) | `languages/hungarian/` | Windows-1250 | not used |
 | Italian (`it_IT`) | `languages/italian/` | Windows-1252 | used |
+| Japanese (`ja_JP`, BG:EE) | `languages/japanese/` | Shift JIS (Windows-932) | used |
 | Korean (`ko_KR`) | `languages/korean/` | Windows-949 | not used |
 | Brazilian Portuguese (`pt_BR`) | `languages/portuguese/` | Windows-1252 | used |
 | Russian (`ru_RU`) | `languages/russian/` | Windows-1251 | used |
+| Turkish (`tr_TR`, BG:EE) | `languages/turkish/` | Windows-1254 | not used |
 | Ukrainian (`uk_UA`) | `languages/ukrainian/` | Windows-1251 | used |
 | Chinese (`zh_CN`) | `languages/schinese/` | GBK (Windows-936) | not used |
 
@@ -49,7 +54,9 @@ translation for the game language nb_no" until a row is added to `LANGUAGES` in
    the speaker, the tone and the names your translation uses (Imnesvale, the Storm Lord).
    Translate Item Randomiser's line, which speaks of "an item", not the game's string,
    which names the original reward.
-6. Send the two files as a pull request or attach them to an issue at
+6. @1650 replaces a journal entry. Write its text only: CIR puts the title line of the
+   game's own entry above it, in the game's words.
+7. Send the two files as a pull request or attach them to an issue at
    <https://github.com/Chrizhermann/chriz-item-randomiser>.
 
 `languages/german/` is an example of a finished translation.
@@ -100,6 +107,10 @@ translation for the game language nb_no" until a row is added to `LANGUAGES` in
 @1399 = ~Not so fast. The money you gave me before was an advance only. I expect more than some aged item. Pay me now before I become angry.~
 // replaces string 32063 (UHMAY01.DLG)
 @1449 = ~That was my ancestor, and I've kept it.  I'm told it's wrapped up with strong magics.  I'd be happy to offer it-- and some gold-- to save my village.~
+// replaces string 5740 (ALDETH.DLG, Aldeth Sashenstar in Baldur's Gate; 205740 in EET)
+@1649 = ~I must thank you for saving my consortium!  I will reward all of you greatly for what you have done for me.  I hope what I give you now is reward enough.  This item is a family heirloom, and I am sure you will find it useful.  Know that if ever you are in trouble, you can come to my estate.~
+// replaces journal entry 26828 (ALDETH.DLG; 226828 in EET), below the game's own title line
+@1650 = ~The estate was infested with doppelgangers! I have now cleaned them out. Aldeth Sashenstar has praised me for doing the job for him and is happy to welcome me into his estate if I am ever in trouble. I may yet need it.~
 
 // languages/<folder>/ppdjinn.tra
 // replaces string 48995 (PPDJINN.DLG, a djinni)

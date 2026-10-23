@@ -41,6 +41,24 @@ fn layout(data: &[u8]) -> Result<(u32, u32)> {
     Tlk::layout(data).map_err(|error| Error::game_text(error.message))
 }
 
+/// The text of entry `reference`; `None` where the file has no such entry or
+/// text, or none in UTF-8.
+fn entry_text(data: &[u8], reference: i64) -> Result<Option<String>> {
+    if data.len() < 0x12 || &data[..8] != b"TLK V1  " {
+        return Err(Error::game_text("Unsupported TLK format; expected TLK V1."));
+    }
+    let (count, strings) = (u32_le(data, 0xA) as i64, u32_le(data, 0xE) as usize);
+    if !(0..count).contains(&reference) || 0x12 + reference as usize * 0x1A + 0x1A > data.len() {
+        return Ok(None);
+    }
+    let base = 0x12 + reference as usize * 0x1A;
+    let (offset, length) = (u32_le(data, base + 0x12) as usize, u32_le(data, base + 0x16) as usize);
+    if u16_le(data, base) & 1 == 0 || strings + offset + length > data.len() {
+        return Ok(None);
+    }
+    Ok(String::from_utf8(data[strings + offset..strings + offset + length].to_vec()).ok())
+}
+
 /// The text of every text-only entry (no sound), by number.
 fn plain(data: &[u8], (count, offset): (u32, u32)) -> BTreeMap<u32, &[u8]> {
     let mut result = BTreeMap::new();
@@ -120,6 +138,17 @@ impl GameText {
     /// The game text of a language without dialogf.tlk.
     pub fn new(male: Vec<u8>) -> GameText {
         GameText { male, female: None }
+    }
+
+    /// Entry `reference`'s text in dialog.tlk and in dialogf.tlk; `None`
+    /// where a file has none.
+    pub fn string(&self, reference: i64) -> Result<(Option<String>, Option<String>)> {
+        let male = entry_text(&self.male, reference)?;
+        let female = match &self.female {
+            Some(female) => entry_text(female, reference)?,
+            None => None,
+        };
+        Ok((male, female))
     }
 
     /// Append (male, female) texts as text-only entries, preserving all

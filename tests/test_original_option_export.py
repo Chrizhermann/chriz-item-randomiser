@@ -11,8 +11,9 @@ from test_container_rewards import compiled_conditions, script_fixture
 from test_cursed_disguises import resources as cursed_resources, spec_for
 from test_mode2_rewards import dialogue_fixture
 from test_postinstall_world_formats import item_record, make_are, make_cre
-from test_postinstall_resources import snapshot
-from flir_config import container_rewards, mode2_rewards
+from test_postinstall_resources import snapshot, write_eet_names
+from flir_config import container_rewards, mode2_rewards, translations
+from flir_config.game_names import _eet_tables, eet_names
 from flir_config.game_text import GameText
 from flir_config.campaigns import read_campaign, write_campaign
 from flir_config.original_catalog import resolve_template
@@ -42,14 +43,16 @@ class OriginalOptionExportTests(unittest.TestCase):
         return {resource: mode2_rewards.patch_reward(resource, data)
                 for resource, data in originals.items()}
 
-    def mode2_configuration(self, f, source, target):
-        draft = resolve_template(f.catalog, f.world, 'bg2-original', items='extended', targets='extended')
+    def mode2_configuration(self, f, source, target, template='bg2-original', options=None):
+        draft = resolve_template(f.catalog, f.world, template, items='extended', targets='extended',
+                                 options=options)
         draft['items'] = [row for row in draft['items'] if row['id'] == source]
         draft['targets'] = [row for row in draft['targets'] if row['id'] == target]
         self.assertEqual(len(draft['items']), 1)
         self.assertEqual(len(draft['targets']), 1)
         with patch('flir_config.original_configuration.resolve_template', return_value=draft):
-            configuration = build_original_configuration(f.catalog, f.world, 'bg2-original', items='extended', targets='extended')
+            configuration = build_original_configuration(f.catalog, f.world, template, items='extended',
+                                                         targets='extended', options=options)
         configuration['plan']['randomization']['overflow'] = False
         return configuration
 
@@ -238,26 +241,44 @@ class OriginalOptionExportTests(unittest.TestCase):
         self.assertEqual(snapshot(f.game), staged)
         self.assertEqual(snapshot(f.output), first)
 
-    # A carried reward's row (source and place), area, actor, script name and
-    # the states whose text names the reward (state -> strref).
-    CARRIED = {'trgeni01': (32, 'ar2014', 'Genie', 'trgeni01', {35: 43514}),
-               'jugjer01': (31, 'ar1103', 'Jermien', 'Jermien', {17: 33760, 23: 33777})}
+    # A carried reward's area, actor, script name and the states whose text
+    # names the reward (state -> strref). The fixture is EET: BG1's area has
+    # EET's name and BG1's texts EET's numbers.
+    CARRIED = {'trgeni01': ('ar2014', 'Genie', 'trgeni01', {35: 43514}),
+               'jugjer01': ('ar1103', 'Jermien', 'Jermien', {17: 33760, 23: 33777}),
+               'aldeth': ('bg0128', 'Aldeth', 'Aldeth', {27: 205740}),
+               'nemphr': ('bg0813', 'Nemphre', 'Nemphre', {})}
+    # A BGEE.LUA that files Aldeth's journal entry under its quest.
+    JOURNAL = (b'createQuest( 87 )\r\ncreateEntry    ( 87, -1, 226822, {}, nil )\r\n'
+               b'createEntry    ( 87, -1, 226828, {}, nil )\r\n')
 
-    def carried_campaign(self, name: str, rows: list, slots: dict):
-        """A reward the creature <name> carries (source and place of one row)
-        with a CRE of these records: fixture, revision, creature, the dialogue
-        and its patch."""
+    def carried_campaign(self, name: str, rows: list, slots: dict, *, journals: dict | None = None,
+                         lua: bytes = b'quests = {}\n', renames: dict | None = None, options: dict | None = None,
+                         preset: tuple[str, str, str] | None = None):
+        """A reward the creature <name> carries (the source and place of its
+        route) with a CRE of these records: fixture, revision, creature, the
+        dialogue and its patch. <journals> sets journal entries of reward
+        replies (state -> strref); <renames> adds item renames to EET's lists;
+        <options> are the template's; <preset> names a template and its rows
+        of the route's reward and place instead of the route's own rows."""
         f = self.fixture()
-        row, area, actor, script, texts = self.CARRIED[name]
+        area, actor, script, texts = self.CARRIED[name]
         spec = mode2_rewards.REWARDS[name]
-        dialogue = _Dialogue(dialogue_fixture(mode2_rewards.resource_specs(spec['resource'])), name)
+        if renames:
+            write_eet_names(f.game, {**_eet_tables(), 'itm': {**_eet_tables()['itm'], **renames}})
+        naming = {'game': 'eet', 'names': eet_names(f.game)}
+        named = mode2_rewards.reward(name, **naming)
+        dialogue = _Dialogue(dialogue_fixture(mode2_rewards.resource_specs(spec['resource'], **naming)), name)
         # Include the adapter's exact authored text location in synthetic bytes.
         for state, strref in texts.items():
             struct.pack_into('<I', dialogue.states[state], 0, strref)
+        for state, strref in (journals or {}).items():
+            first = struct.unpack_from('<I', dialogue.states[state], 4)[0]
+            struct.pack_into('<I', dialogue.transitions[first], 8, strref)
         original = dialogue.render()
         (f.override / f'{name}.dlg').write_bytes(original)
         item = (f.override / 'synth001.itm').read_bytes()
-        for resref in (spec['item'], spec.get('replacement')):
+        for resref in (named['item'], named.get('replacement')):
             if resref:
                 (f.override / f'{resref}.itm').write_bytes(item)
         creature = make_cre(rows, slots=slots)
@@ -265,23 +286,33 @@ class OriginalOptionExportTests(unittest.TestCase):
         creature = bytes(creature)
         (f.override / f'{name}.cre').write_bytes(creature)
         (f.override / f'{area}.are').write_bytes(make_are([], [], [(actor, name.upper())]))
-        (f.override / 'BGEE.LUA').write_bytes(b'quests = {}\n')
+        (f.override / 'BGEE.LUA').write_bytes(lua)
         language = f.game / 'lang/en_US'
         language.mkdir(parents=True)
         tlk = (f.game / 'dialog.tlk').read_bytes()
         (language / 'dialog.tlk').write_bytes(tlk)
         f.catalog = scan_game(f.game, language='en_US')
         f.world = scan_world(f.catalog)
-        _, refs = mode2_rewards.prepare_reward_texts(GameText(tlk), (spec['resource'],), 'en_US')
-        changed = mode2_rewards.patch_reward(spec['resource'], original, refs=refs[spec['resource']])
-        configuration = self.mode2_configuration(f, f'bg2:mode2:item:{row}', f'bg2:mode2:target:{row}')
+        _, refs = mode2_rewards.prepare_reward_texts(GameText(tlk), (spec['resource'],), 'en_US', game='eet')
+        changed = mode2_rewards.patch_reward(spec['resource'], original, refs=refs.get(spec['resource']),
+                                             **naming)
+        source, target = spec['source_ids'][0], spec['target_ids'][0]
+        template = 'eet-original' if spec['campaign'] == 'bg1' else 'bg2-original'
+        if preset:
+            template, row, target = preset
+            source = 'original-source:' + row
+        configuration = self.mode2_configuration(f, source.removeprefix('original-source:'), target,
+                                                 template, options)
+        if preset:
+            # A preset's two rows may have other tiers: this route/export
+            # fixture pairs them without tiers.
+            del configuration['plan']['randomization']
         revision = write_campaign(configuration['profile'], f.catalog, f.world,
                                   configuration['plan'], f.store)['revision']
         manifest = read_campaign(f.store, revision)
-        self.assertEqual([(source['id'], source['quantity']) for source in manifest['sources']],
-                         [(f'original-source:bg2:mode2:item:{row}', 1)])
-        self.assertEqual([(target['id'], target['record']['kind']) for target in manifest['targets']],
-                         [(f'original-target:bg2:mode2:target:{row}', 'creature-target')])
+        self.assertEqual([(row['id'], row['quantity']) for row in manifest['sources']], [(source, 1)])
+        self.assertEqual([(row['id'], row['record']['kind']) for row in manifest['targets']],
+                         [('original-target:' + target, 'creature-target')])
         return f, revision, creature, dialogue, changed
 
     def test_trgeni_inventory_reward_exports_transfer_and_frozen_original(self):
@@ -365,6 +396,149 @@ class OriginalOptionExportTests(unittest.TestCase):
         f.export(revision)
         self.assertEqual(snapshot(f.output), first)
         self.assertEqual(snapshot(f.game), before)
+
+    def test_aldeths_sword_exports_his_texts_journal_entry_and_bg1_transfer(self):
+        # Aldeth keeps the sword after another item. EET numbers his thanks
+        # and his reward reply's journal entry 200000 higher than BG:EE.
+        rows = [item_record('SYNTH002', expiration=0, charges=(2, 3, 4), flags=1),
+                item_record('SW1H03', flags=0, **self.COPY)]
+        f, revision, creature, dialogue, changed = self.carried_campaign(
+            'aldeth', rows, {21: 0, 9: 1}, journals={27: 226828}, lua=self.JOURNAL)
+        before = snapshot(f.game)
+        f.export(revision)
+        self.assertEqual(snapshot(f.game), before)
+        base = f.output / 'campaign-store/revisions' / revision
+        native = json.loads(Path(str(base) + '.native.json').read_text())
+        target = native['targets']['original-target:bg1:mode2:target:16']
+        self.assertEqual((target['kind'], target['area'], target['script_name'],
+                          target['inventory_reward'], target['reward_resource']),
+                         ('creature', 'BG0128', 'Aldeth', True, 'dlg:aldeth'))
+        source = native['sources']['original-source:bg1:mode2:item:16']
+        self.assertEqual(source['kind'], 'guarded-script')
+        self.assertEqual(source['auxiliary_creatures'], [{
+            'resource': 'cre:aldeth', 'resource_sha256': hashlib.sha256(creature).hexdigest(),
+            'record_indices': [1],
+            'payload': {'resref': 'sw1h03', 'expiration': 0, 'charges': [0, 0, 0], 'flags': 0},
+            'selected_global': 'FLPR_QB1_16'}])
+        self.assertEqual(Path(str(base) + '.source-1.duplicate-1.original.cre').read_bytes(), creature)
+        self.assertEqual((f.output / 'resource-overrides/ALDETH.DLG').read_bytes(), changed)
+        # His reward reply, kept and selected, passes the BG1 place's row and campaign.
+        patched = _Dialogue(changed, 'aldeth')
+        callback = b'EEex_LuaAction("return(FLPR_Transfer(EEex_LuaAction_Object,16,1))")'
+        self.assertEqual(sum(action.count(callback) for action in patched.actions), 2)
+        # The copy of his state shows Item Randomiser's thanks, and its replies its journal entry.
+        self.assertEqual(len(patched.states), len(dialogue.states) + 1)
+        clone = patched.states[-1]
+        first, count = struct.unpack_from('<II', clone, 4)
+        journals = {struct.unpack_from('<I', row, 8)[0] for row in patched.transitions[first:first + count]}
+        self.assertEqual(len(journals), 1)
+        thanks, entry = struct.unpack_from('<I', clone)[0], journals.pop()
+        found = translations.lines('en_US', mode2_rewards.text_lines('dlg:aldeth'))
+        tlk = _Tlk((f.output / 'game-overrides/lang/en_US/dialog.tlk').read_bytes())
+        # This game's dialog.tlk has no entry 226828, so no title to keep.
+        self.assertEqual((tlk.text(thanks, set()), tlk.text(entry, set())),
+                         (found['in-game.tra', 1649][0], found['in-game.tra', 1650][0]))
+        # BGEE.LUA files the new entry under the original's quest.
+        self.assertEqual((f.output / 'resource-overrides/BGEE.LUA').read_bytes(),
+                         self.JOURNAL + f'createEntry    ( 87, -1, {entry}, {{}}, nil )\r\n'.encode())
+        first = snapshot(f.output)
+        f.export(revision)
+        self.assertEqual(snapshot(f.output), first)
+        self.assertEqual(snapshot(f.game), before)
+
+    def test_nemphres_scroll_exports_the_bg1_transfer_to_her_own_place(self):
+        # Item Randomiser's lists name her scroll row 159 and her place row 136,
+        # both scroll tiers: the scrolls option enables them.
+        rows = [item_record('SCRL1Q', flags=0, **self.COPY)]
+        f, revision, creature, dialogue, changed = self.carried_campaign('nemphr', rows, {21: 0},
+                                                                         options={'scrolls': True})
+        f.export(revision)
+        base = f.output / 'campaign-store/revisions' / revision
+        native = json.loads(Path(str(base) + '.native.json').read_text())
+        target = native['targets']['original-target:bg1:mode2:target:136']
+        self.assertEqual((target['kind'], target['area'], target['script_name'],
+                          target['inventory_reward'], target['reward_resource']),
+                         ('creature', 'BG0813', 'Nemphre', True, 'dlg:nemphr'))
+        source = native['sources']['original-source:bg1:mode2:item:159']
+        self.assertEqual(source['auxiliary_creatures'], [{
+            'resource': 'cre:nemphr', 'resource_sha256': hashlib.sha256(creature).hexdigest(),
+            'record_indices': [0],
+            'payload': {'resref': 'scrl1q', 'expiration': 0, 'charges': [0, 0, 0], 'flags': 0},
+            'selected_global': 'FLPR_QB1_159'}])
+        self.assertEqual((f.output / 'resource-overrides/NEMPHR.DLG').read_bytes(), changed)
+        patched = _Dialogue(changed, 'nemphr')
+        self.assertEqual(len(patched.states), len(dialogue.states))
+        callback = b'EEex_LuaAction("return(FLPR_Transfer(EEex_LuaAction_Object,136,1))")'
+        self.assertEqual(sum(action.count(callback) for action in patched.actions), 2)
+
+    def test_boss_loots_rows_of_a_carried_reward_take_its_route(self):
+        # Boss Loot's rows of Aldeth's sword and place, and of Nemphre's scroll
+        # and place, are their routes: the same reply patch, and the runtime
+        # finds the flags, copies and the place the reply names by the route's rows.
+        for name, rows, slots, kwargs, preset, (source_row, target_row, flag) in (
+                ('aldeth', [item_record('SW1H03', flags=0, **self.COPY)], {9: 0},
+                 {'journals': {27: 226828}, 'lua': self.JOURNAL},
+                 ('eet-boss-loot', 'bg1:boss-loot:mode2:item:62', 'bg1:boss-loot:mode2:target:46'),
+                 (16, 16, 'FLPR_QB1_16')),
+                ('nemphr', [item_record('SCRL1Q', flags=0, **self.COPY)], {21: 0}, {'options': {'scrolls': True}},
+                 ('eet-boss-loot', 'bg1:boss-loot:mode2:item:339', 'bg1:boss-loot:mode2:target:291'),
+                 (159, 136, 'FLPR_QB1_159'))):
+            with self.subTest(route=name):
+                f, revision, creature, _, changed = self.carried_campaign(name, rows, slots, preset=preset,
+                                                                          **kwargs)
+                f.export(revision)
+                base = f.output / 'campaign-store/revisions' / revision
+                native = json.loads(Path(str(base) + '.native.json').read_text())
+                source = native['sources']['original-source:' + preset[1]]
+                self.assertEqual((source['kind'], source['route_source'], source['selected_global']),
+                                 ('guarded-script', f'original-source:bg1:mode2:item:{source_row}', flag))
+                self.assertEqual([(copy['resource'], copy['selected_global'])
+                                  for copy in source['auxiliary_creatures']], [('cre:' + name, flag)])
+                self.assertEqual(Path(str(base) + '.source-1.duplicate-1.original.cre').read_bytes(), creature)
+                target = native['targets']['original-target:' + preset[2]]
+                self.assertEqual((target['kind'], target['inventory_reward'], target['route_target']),
+                                 ('creature', True, f'original-target:bg1:mode2:target:{target_row}'))
+                self.assertEqual((f.output / f'resource-overrides/{name.upper()}.DLG').read_bytes(), changed)
+                callback = f'EEex_LuaAction("return(FLPR_Transfer(EEex_LuaAction_Object,{target_row},1))")'
+                self.assertEqual(sum(action.count(callback.encode()) for action in _Dialogue(changed, name).actions),
+                                 2)
+
+    def test_boss_loots_rows_of_varcis_shield_take_his_route(self):
+        # A route whose reply gives the shield: the runtime finds the place by
+        # its flags, so only the source names its route's row.
+        f = self.fixture()
+        naming = {'game': 'eet', 'names': eet_names(f.game)}
+        named = mode2_rewards.reward('varci', **naming)
+        original = dialogue_fixture(mode2_rewards.resource_specs('dlg:varci', **naming))
+        (f.override / 'varci.dlg').write_bytes(original)
+        (f.override / f"{named['item']}.itm").write_bytes((f.override / 'synth001.itm').read_bytes())
+        f.refresh()
+        changed = mode2_rewards.patch_reward('dlg:varci', original, **naming)
+        configuration = self.mode2_configuration(f, 'bg1:boss-loot:mode2:item:71', 'bg1:boss-loot:mode2:target:71',
+                                                 'eet-boss-loot')
+        revision = write_campaign(configuration['profile'], f.catalog, f.world,
+                                  configuration['plan'], f.store)['revision']
+        f.export(revision)
+        base = f.output / 'campaign-store/revisions' / revision
+        native = json.loads(Path(str(base) + '.native.json').read_text())
+        source = native['sources']['original-source:bg1:boss-loot:mode2:item:71']
+        self.assertEqual((source['route_source'], source['selected_global'], source['consumed_global']),
+                         ('original-source:bg1:mode2:item:20', 'FLPR_QB1_20', 'FLPR_XB1_20'))
+        target = native['targets']['original-target:bg1:boss-loot:mode2:target:71']
+        self.assertEqual((target['kind'], target['area'], target['event_global'], target['recipient_local']),
+                         ('quest', '*', 'FLPR_EB1_20', 'FLPR_RB1_20'))
+        self.assertNotIn('route_target', target)
+        self.assertEqual((f.output / 'resource-overrides/VARCI.DLG').read_bytes(), changed)
+
+    def test_a_carried_bg1_reward_this_game_renames_cannot_be_exported(self):
+        # The runtime accepts Aldeth's copy only as ALDETH.CRE's SW1H03.
+        rows = [item_record('SW1H03X', flags=0, **self.COPY)]
+        f, revision, _, _, _ = self.carried_campaign('aldeth', rows, {9: 0}, journals={27: 226828},
+                                                     renames={'sw1h03': 'sw1h03x'})
+        with self.assertRaisesRegex(ProfileError, "This game renames ALDETH.CRE or SW1H03, which Chriz Item "
+                                    "Randomiser's runtime knows only by those names: "
+                                    "original-source:bg1:mode2:item:16"):
+            f.export(revision)
 
     def test_a_carried_reward_the_creature_does_not_carry_leaves_its_row_out(self):
         # The genie's dialogue hands over the sword it carries; this one has none.
