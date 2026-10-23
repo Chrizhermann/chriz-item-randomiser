@@ -4,9 +4,12 @@
 //! `scan_game` indexes effective ITMs; `GameResources` reads caller-selected
 //! resource types. Override entries supersede chitin.key. KEY/BIFF/TLK V1 and
 //! ITM V1 are supported; compressed archives are rejected. Nothing here
-//! writes to the game. Formats: https://gibberlings3.github.io/iesdp/file_formats/
+//! writes to the game. The scans read the files CIR's Apply wrote as the game
+//! had them before (`applied_files`).
+//! Formats: https://gibberlings3.github.io/iesdp/file_formats/
 
-use crate::error::{Error, Result};
+use crate::applied_files;
+use crate::error::{Error, ErrorKind, Result};
 use crate::json::{Dict, Value};
 use crate::paths;
 use crate::py::{hex, u16_le, u32_le};
@@ -616,6 +619,115 @@ fn override_resources(
     Ok(resources)
 }
 
+/// `child`, with a path the scan cannot use (ambiguous or outside the game) as none.
+fn usable_child(parent: &Path, name: &str, root: &Path) -> Result<Option<PathBuf>> {
+    match child(parent, name, root, false) {
+        Err(error) if error.kind == ErrorKind::Scan => Ok(None),
+        found => found,
+    }
+}
+
+/// CIR's folder in the game and its record of the files Apply wrote (`applied_files`).
+///
+/// Only the record and the copies a scan reads are part of its snapshot: the
+/// runtime writes other files to this folder while the game runs.
+fn applied_record(root: &Path, snapshot: &mut ScanSnapshot) -> Result<(Option<PathBuf>, Dict)> {
+    let Some(data) = usable_child(root, applied_files::DATA, root)? else { return Ok((None, Dict::new())) };
+    if !is_dir(&data)? {
+        return Ok((None, Dict::new()));
+    }
+    let Some(record) = usable_child(&data, applied_files::RECORD, root)? else { return Ok((Some(data), Dict::new())) };
+    if !is_file(&record)? {
+        return Ok((Some(data), Dict::new()));
+    }
+    snapshot.file(&record)?;
+    let files = applied_files::read(&record)?;
+    Ok((Some(data), files))
+}
+
+/// CIR's copy of a file as the game had it before Apply wrote it, if it has one.
+fn before_copy(root: &Path, data: &Path, parts: &[&str]) -> Result<Option<PathBuf>> {
+    let mut current = data.to_path_buf();
+    for part in std::iter::once(applied_files::BEFORE).chain(parts.iter().copied()) {
+        if !is_dir(&current)? {
+            return Ok(None);
+        }
+        let Some(next) = usable_child(&current, part, root)? else { return Ok(None) };
+        current = next;
+    }
+    Ok(if is_file(&current)? { Some(current) } else { None })
+}
+
+/// Read the override files Apply wrote as the game had them before (`applied_files`).
+///
+/// A file that holds exactly the bytes Apply wrote last is read from CIR's
+/// copy of the earlier file, or left out where there was none, so that the
+/// archive's copy, if any, is the game's again. Any other file stays as it is,
+/// as does one whose earlier copy is missing or damaged.
+fn applied_overrides(
+    root: &Path,
+    data: Option<&Path>,
+    files: &Dict,
+    overrides: &mut Overrides,
+    snapshot: &mut ScanSnapshot,
+) -> Result<()> {
+    // A record is only read from CIR's folder.
+    let Some(data) = data else { return Ok(()) };
+    let mut entries: Vec<(&str, &Value)> = files.iter().collect();
+    entries.sort_by(|a, b| a.0.cmp(b.0));
+    for (path, entry) in entries {
+        let parts: Vec<&str> = path.split('/').collect();
+        if parts.len() != 2 || applied_files::key(parts[0]) != "override" {
+            continue;
+        }
+        let Some((stem, extension)) = parts[1].rsplit_once('.') else { continue };
+        let extension = applied_files::key(extension);
+        let Some(slot) = overrides.iter().position(|(name, _)| *name == extension) else { continue };
+        if !stem.is_ascii() {
+            continue;
+        }
+        let Ok(name) = resref(stem.as_bytes()) else { continue };
+        let Some(current) = overrides[slot].1.get(&name) else { continue };
+        let written = entry.get("written").and_then(Value::as_str).expect("checked by entries");
+        if sha256_hex(&read_file(current)?) != written {
+            continue;
+        }
+        let Some(Value::Dict(before)) = entry.get("before") else {
+            overrides[slot].1.remove(&name);
+            continue;
+        };
+        let Some(copy) = before_copy(root, data, &parts)? else { continue };
+        let content = read_file(&copy)?;
+        if content.len() as u64 != applied_files::number(before, "size") ||
+            before.get("sha256").and_then(Value::as_str) != Some(sha256_hex(&content).as_str())
+        {
+            continue;
+        }
+        snapshot.file(&copy)?;
+        overrides[slot].1.insert(name, copy);
+    }
+    Ok(())
+}
+
+/// Read game text Apply appended to as the game had it before, without Apply's entries.
+fn applied_text(root: &Path, files: &Dict, path: &Path, tlk: &mut Tlk) {
+    if !paths::is_relative_to(path, root) {
+        return;
+    }
+    let relative = paths::parts(path)[paths::parts(root).len()..].join("/");
+    let Some(name) = applied_files::find(files, &relative) else { return };
+    if !applied_files::is_text(name) {
+        return;
+    }
+    let entry = files.get(name).and_then(Value::as_dict).expect("checked by entries");
+    let Some(Value::Dict(before)) = entry.get("before") else { return };
+    let strings = applied_files::number(before, "strings");
+    if entry.get("written").and_then(Value::as_str) != Some(sha256_hex(&tlk.data).as_str()) || strings > tlk.count as u64 {
+        return;
+    }
+    tlk.count = strings as u32;
+}
+
 fn resolve_root(game_root: &Path) -> Result<PathBuf> {
     let root = paths::resolve(game_root, true).map_err(|(error, at)| Error::win(&error, &at))?;
     if !is_dir(&root)? {
@@ -630,7 +742,10 @@ fn resolve_root(game_root: &Path) -> Result<PathBuf> {
 /// until `finish`. Changed files make `finish` fail. Archive indexes are
 /// cached, payloads are not; no files are written and no archive stays open
 /// between calls. Override files with names longer than eight characters are
-/// not resources and are left out.
+/// not resources and are left out. Opened with
+/// [`GameResources::with_before_apply`], it reads the override files CIR's
+/// Apply wrote as the game had them before (`applied_files`), as the scans
+/// read them.
 pub struct GameResources {
     pub root: PathBuf,
     types: Vec<(String, u32)>,
@@ -665,7 +780,7 @@ impl GameResources {
         Ok(types)
     }
 
-    fn open(game_root: &Path, types: Vec<(String, u32)>) -> Result<GameResources> {
+    fn open(game_root: &Path, types: Vec<(String, u32)>, before_apply: bool) -> Result<GameResources> {
         let root = resolve_root(game_root)?;
         let mut snapshot = ScanSnapshot::default();
         snapshot.directory(&root)?;
@@ -673,7 +788,11 @@ impl GameResources {
         let key_path = child(&root, "chitin.key", &root, true)?.expect("required");
         snapshot.file(&key_path)?;
         let key = key_resources(&read_file(&key_path)?, &types)?;
-        let overrides = override_resources(&root, &types, &mut snapshot, None)?;
+        let mut overrides = override_resources(&root, &types, &mut snapshot, None)?;
+        if before_apply {
+            let (data, files) = applied_record(&root, &mut snapshot)?;
+            applied_overrides(&root, data.as_deref(), &files, &mut overrides, &mut snapshot)?;
+        }
         let mut archives = HashMap::new();
         // Capture every effective archive before handing control to the
         // caller, including archives it has not read yet.
@@ -701,8 +820,26 @@ impl GameResources {
         resource_types: &[(&str, u32)],
         body: impl FnOnce(&GameResources) -> Result<T>,
     ) -> Result<T> {
+        Self::run(game_root, resource_types, false, body)
+    }
+
+    /// `with GameResources(root, types, before_apply=True) as resources: body(resources)`.
+    pub fn with_before_apply<T>(
+        game_root: &Path,
+        resource_types: &[(&str, u32)],
+        body: impl FnOnce(&GameResources) -> Result<T>,
+    ) -> Result<T> {
+        Self::run(game_root, resource_types, true, body)
+    }
+
+    fn run<T>(
+        game_root: &Path,
+        resource_types: &[(&str, u32)],
+        before_apply: bool,
+        body: impl FnOnce(&GameResources) -> Result<T>,
+    ) -> Result<T> {
         let types = Self::validate_types(resource_types)?;
-        let resources = Self::open(game_root, types).map_err(unreadable)?;
+        let resources = Self::open(game_root, types, before_apply).map_err(unreadable)?;
         let result = body(&resources)?;
         resources.indexes.borrow_mut().clear();
         resources.snapshot.verify()?;
@@ -979,6 +1116,9 @@ fn item(name: &str, data: &[u8], origin: &str, tlk: &Tlk, warnings: &mut BTreeSe
 /// A root dialog.tlk takes precedence when no language is given; otherwise a
 /// sole lang/*/dialog.tlk is selected. The fingerprint excludes physical
 /// paths and packaging. Concurrent changes fail without retry.
+///
+/// Files CIR's Apply wrote are read as the game had them before
+/// (`applied_files`): its texts appended to dialog.tlk name no item.
 pub fn scan_game(game_root: &Path, language: Option<&str>) -> Result<Value> {
     scan_game_inner(game_root, language).map_err(unreadable)
 }
@@ -994,9 +1134,13 @@ fn scan_game_inner(game_root: &Path, language: Option<&str>) -> Result<Value> {
     let key = key_resources(&read_file(&key_path)?, &types)?;
     let (tlk_path, selected_language) = select_tlk(&root, language, &mut snapshot)?;
     snapshot.file(&tlk_path)?;
-    let tlk = Tlk::new(read_file(&tlk_path)?)?;
+    let mut tlk = Tlk::new(read_file(&tlk_path)?)?;
+    let (data, applied) = applied_record(&root, &mut snapshot)?;
+    applied_text(&root, &applied, &tlk_path, &mut tlk);
     let mut long_names = Vec::new();
-    let overrides = override_resources(&root, &types, &mut snapshot, Some(&mut long_names))?.remove(0).1;
+    let mut overrides = override_resources(&root, &types, &mut snapshot, Some(&mut long_names))?;
+    applied_overrides(&root, data.as_deref(), &applied, &mut overrides, &mut snapshot)?;
+    let overrides = overrides.remove(0).1;
     let keyed = &key.resources[0].1;
     let mut effective: HashMap<String, (Vec<u8>, &'static str)> = HashMap::new();
     // archive index → [(resource id, names)] in first-seen order.

@@ -153,6 +153,13 @@ This editor check did not launch or modify the game.
   coverage and limitations.
 - Its fingerprint covers item content and resolved search metadata. It is not a
   compatibility fingerprint for the complete installation or a running campaign.
+- Files the configurator's Apply wrote are no change of the game's mods. While such a
+  file holds exactly what Apply wrote last, `scan`, `world scan` and every start of the
+  executable read it as the game had it before Apply first wrote it, and item names do
+  not use the texts Apply appended to the game text. Applying a configuration therefore
+  leaves the scans as they were, and the next start reopens the configuration applied
+  last. A file another mod or the player changed since is read as it is, as is every
+  other file; see [Apply's own files](#applys-own-files).
 
 If mods change, run scan again. A profile referring to an older catalogue cannot be
 prepared against the new catalogue without an explicit `profile rebase`. Rebase
@@ -280,6 +287,71 @@ The output contains configuration only. It does **not** install the experimental
 runtime, activate the released mod, or modify the game. Collection UI, ordinary mod
 packaging, and general scripted source interception remain unfinished.
 See [native source results](campaign-source-guards-20260927.md) for current evidence.
+
+## Apply's own files
+
+Outside `randomiser-campaigns/`, Apply writes only what a configuration prepares: in
+`override` the extended pools' route dialogues and scripts and the copies of their
+reward replies in other dialogues, the Kangaxx option's dialogue and scripts, the Deck
+of Many Things key spell `SPIN621.SPL` and the `BGEE.LUA` journal table, and the texts
+it appends to `lang/<language>/dialog.tlk` and `dialogF.tlk`. Each Apply records them
+in `randomiser-campaigns/applied-files.json` (schema `flir-applied-files-v1`), by
+their path in the game as the export names them (`override/SAFANJ.DLG`,
+`lang/en_us/dialog.tlk`): `written` is the SHA-256 of the bytes Apply wrote last,
+`before` what the game had there before CIR first wrote it (null where it had no such
+file, else its SHA-256 and size, and for game text the number of strings it held).
+`randomiser-campaigns/before-apply/<path>` keeps a copy of each earlier file; game
+text needs none, since Apply only appends to it. Apply writes the copies first, the
+record after the files it names and the next-game pointer last, and puts everything
+back when a write fails. An Apply that writes nothing outside `randomiser-campaigns/`,
+such as one with the standard pools, writes no record.
+
+The scans read a file that still holds exactly the bytes Apply wrote last as that
+earlier file: CIR's copy of it, the archive's resource where override had none before,
+or the game text without the strings Apply appended. Anything else is read as it is: a
+file another mod or the player changed since Apply, a copy that is missing or does
+not match the record, and every file when the record cannot be read. So a real change
+of the game's mods still changes the scan and sets the earlier configurations aside;
+putting back Apply's file, or the file the game had before, makes the game what the
+scan knew again. Route recognition, the configuration check and the export keep
+reading the game's files as they are and recognise CIR's own patches there, so
+applying the extended pools again on a game whose `SAFANJ.DLG` already is Safana's
+route copy offers and exports her route as before. When Apply replaces a file that
+still holds its last bytes, the record keeps the earlier file; any other file it
+replaces becomes the earlier file, since the scan read that one. After a record that
+could not be read, the scans read Apply's own earlier files as the game's; the first
+Apply that writes outside `randomiser-campaigns/` then starts a new record, which
+takes each file it replaces as it is, Apply's earlier ones included, so the scan the
+configurations were made with stays (an Apply that writes nothing new there leaves
+the unreadable record unused). The export finds the installer's version of the book in the book Apply wrote, with or
+without a record, and keeps it in `PPBOOK.installed.bcs` for the runtime. Apply
+refuses an
+export that would replace the record or a copy, and game text that is no longer
+readable, which changed since the export. Since applying leaves the scan as it was,
+a later Apply compiles the revisions that saved games keep against the scan they were
+made with.
+
+WeiDU does not track these files. Uninstalling CIR restores only the files its
+installer changed. Two of Apply's files are also the installer's: `BGEE.LUA`, where
+the installer files Unshey's journal entry, and the book of Lavok's sphere
+(`PPBOOK.BCS`), which the installer prepares for the ring's quest and Apply extends
+with its scrolls' routes. An uninstall puts back the game's own versions and a
+re-install the installer's, without what Apply added (its journal entries, the
+scrolls' routes) until the next Apply writes them again. A file that holds the
+installer's version is read as it is, as the scans read it before Apply, and the next
+Apply records it as the earlier file; the scans do not read `BGEE.LUA`. Apply's other
+files, the strings it
+appended (WeiDU keeps appended strings) and `randomiser-campaigns/` stay as they were
+after an uninstall (decision B2 in [the packaging plan](plans/2026-10-14-mode1-packaging.md));
+`before-apply/` holds the files to put back by hand. A re-install that leaves the
+installer's files as they were keeps the configuration applied last open.
+
+Games where a version of CIR without the record applied the extended pools have no
+record. Their scans read CIR's files as the game's, as that version did, so a
+configuration that version applied there is set aside at the first start, as that
+version would have done, and joins the ones in `configurations\earlier scans\`. The
+first Apply of a later version records only the files it changes, and the scan it was
+made with stays from then on.
 
 ## Original preset drafts
 

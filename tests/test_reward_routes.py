@@ -533,16 +533,59 @@ class BookScrollTests(RouteGame):
         # book Apply wrote, beside the installer's version (FLPRScript.lua).
         self.assertEqual({path.name: path.read_bytes() for path in (self.output / "campaign-store" / "revisions").iterdir()
                           if path.name.startswith(ring)}, ring_files)
-        # A rescan sees Apply's book; the ring alone again records the
-        # installer's version, and nothing earlier changes.
+        # A rescan reads Apply's book as the installer prepared it
+        # (applied_files.py), so the ring alone again is the ring's revision:
+        # it records the installer's version, and nothing earlier changes.
         self.rescan()
+        self.assertEqual(next(row["sha256"] for row in self.world["resources"] if row["id"] == "bcs:ppbook"),
+                         hashlib.sha256(installed).hexdigest())
         again, again_native = self.applied(self.RING)
+        self.assertEqual(again, ring)
         self.assertNotIn("notes", self.exported)
         self.assertEqual(set(self.staged(again).values()), {installed})
         self.assertEqual(again_native["resource_hashes"]["PPBOOK.BCS"], hashlib.sha256(installed).hexdigest())
         self.assertEqual((overrides / "PPBOOK.BCS").read_bytes(), patched)
-        # When the earlier revisions are kept for another change (their chests'
-        # area), the ring's installer version still meets their need.
+        # When the two earlier revisions are kept for another change (their
+        # chests' area), the ring's installer version still meets their need.
+        (self.game / "override" / "ar0100.are").write_bytes(
+            make_are([], [("Place2", 0, 0), ("Place3", 0, 0), ("Place4", 0, 0), ("Place5", 0, 0)]))
+        self.rescan()
+        self.applied(self.RING + self.SCROLLS)
+        self.assertEqual(len(self.exported["notes"]), 2 * 3)
+        self.assertTrue(all("keep their settings" in note for note in self.exported["notes"]))
+
+    def test_without_a_readable_record_the_scan_sees_the_book_apply_wrote(self):
+        # As before CIR kept a record of Apply's files: the scans read Apply's
+        # book as the game's, and the book's pair keeps the installer's version.
+        self.build_book()
+        installed = book_fixture()
+        patched = mode2_rewards.patch_reward("bcs:ppbook", installed)
+        revisions = self.output / "campaign-store" / "revisions"
+        ring, _ = self.applied(self.RING)
+        ring_files = {path.name: path.read_bytes() for path in revisions.iterdir() if path.name.startswith(ring)}
+        self.applied(self.RING + self.SCROLLS)
+        record = self.game / "randomiser-campaigns" / "applied-files.json"
+        self.assertTrue(record.is_file())
+        record.write_text("{", encoding="utf-8")
+        self.rescan()
+        self.assertEqual(next(row["sha256"] for row in self.world["resources"] if row["id"] == "bcs:ppbook"),
+                         hashlib.sha256(patched).hexdigest())
+        # The ring alone gets a revision of its own, which still records the
+        # installer's version; the game keeps Apply's book beside it.
+        again, again_native = self.applied(self.RING)
+        self.assertNotEqual(again, ring)
+        self.assertNotIn("notes", self.exported)
+        self.assertEqual(set(self.staged(again).values()), {installed})
+        self.assertEqual(again_native["resource_hashes"]["PPBOOK.BCS"], hashlib.sha256(installed).hexdigest())
+        self.assertEqual((self.game / "override" / "PPBOOK.BCS").read_bytes(), patched)
+        self.assertEqual((self.game / "randomiser-campaigns" / "PPBOOK.installed.bcs").read_bytes(), installed)
+        self.assertEqual((self.game / "randomiser-campaigns" / "PPBOOK.applied.bcs").read_bytes(), patched)
+        self.assertEqual({path.name: path.read_bytes() for path in revisions.iterdir() if path.name.startswith(ring)},
+                         ring_files)
+        # That Apply wrote nothing new outside CIR's folder, so no new record
+        # took Apply's book for the game's.
+        self.assertEqual(record.read_text(encoding="utf-8"), "{")
+        # The area change keeps all three earlier revisions.
         (self.game / "override" / "ar0100.are").write_bytes(
             make_are([], [("Place2", 0, 0), ("Place3", 0, 0), ("Place4", 0, 0), ("Place5", 0, 0)]))
         self.rescan()

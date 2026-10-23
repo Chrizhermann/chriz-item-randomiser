@@ -42,9 +42,13 @@ import build_release  # noqa: E402
 import campaign_patch_fixtures as fixtures  # noqa: E402
 import tweak_fixtures as tweaks  # noqa: E402
 from build_mode1_fixture import mark_initial_gam  # noqa: E402
-from flir_config.activation import validate_runtime  # noqa: E402
+from flir_config.activation import EXPORT_FILES, EXPORT_FILES_SCHEMA, deploy_export, validate_runtime  # noqa: E402
+from flir_config.game_text import GameText  # noqa: E402
 from flir_config.prepared import REASONS, read_prepared  # noqa: E402
-from flir_config.profiles import ProfileError  # noqa: E402
+from flir_config.profiles import ProfileError, canonical_bytes  # noqa: E402
+from flir_config.resources import scan_game  # noqa: E402
+from flir_config.sources import scan_world  # noqa: E402
+from test_postinstall_resources import make_itm  # noqa: E402
 
 RESOURCE_TYPES = {"ITM": 1005, "BCS": 1007, "IDS": 1008, "ARE": 1010, "DLG": 1011, "GAM": 1013,
                   "STO": 1014, "MENU": 1032, "LUA": 1033}
@@ -674,6 +678,71 @@ class Suite:
             override={**fixtures.ids_files(), "TROALT.BCS": compiled["troalt.bcs"],
                       "PPBOOK.BCS": compiled["ppbook.bcs"], "KPGLAI01.DLG": compiled["kpglai01.dlg"]})
 
+    def applied_files(self, compiled: Mapping[str, bytes]) -> None:
+        """Apply's own files across an uninstall and a re-install of CIR.
+
+        WeiDU puts back only the files the installer changed. Of the files
+        Apply writes, that is the BGEE.LUA journal table, where the installer
+        files Unshey's entry: an uninstall restores the game's own (here the
+        archive's) and a re-install the installer's. Apply's other files, the
+        strings it appended and its record in randomiser-campaigns stay as
+        they were, so the scans after a re-install equal those after Apply
+        (docs/post-install-configurator.md, "Apply's own files").
+        """
+        name = "AppliedFiles"
+        game = self.game(tlk=fixtures.text_tlk(),
+                         biff=[("BLPOOL", "BCS", compiled["blpool.bcs"]), ("UNSHEY", "DLG", compiled["unshey.dlg"]),
+                               ("BGEE", "LUA", fixtures.quest_table(fixtures.UNSHEY_JOURNAL))],
+                         # The scan reads every item; this mod's item is a complete one here.
+                         override={**fixtures.ids_files(), "TROALT.BCS": compiled["troalt.bcs"],
+                                   "PPBOOK.BCS": compiled["ppbook.bcs"], "KPGLAI01.DLG": compiled["kpglai01.dlg"],
+                                   "UNRELATED.ITM": make_itm()})
+        result = game.install()
+        self.check(f"{name}_Installs", installed(result) and game.active(COMPONENT), result)
+        journal = (game.root / "override" / "bgee.lua").read_bytes()
+
+        def scans() -> tuple[bytes, bytes]:
+            catalog = scan_game(game.root, language="en_us")
+            return canonical_bytes(catalog), canonical_bytes(scan_world(catalog))
+
+        installed_scans = scans()
+        # An export as Apply's: a route's dialogue, the Kangaxx option's entry
+        # in the journal table and one appended text.
+        text, _ = GameText((game.root / "lang" / "en_us" / "dialog.tlk").read_bytes()).append(
+            [("Apply's text", "Apply's text")])
+        export = {"next.lua": b"return {}\n", "source-gate.lua": b"return {}\n",
+                  "resource-overrides/UHOGRE01.DLG": b"DLG V1.0 a route's dialogue as Apply writes it",
+                  "resource-overrides/BGEE.LUA": journal + b"-- the Kangaxx option's entry\r\n",
+                  "game-overrides/lang/en_us/dialog.tlk": text.male}
+        output = self.scratch / f"{name}-export"
+        for relative, data in export.items():
+            write_bytes(output / relative, data)
+        write_bytes(output / EXPORT_FILES, canonical_bytes({"schema": EXPORT_FILES_SCHEMA, "files": sorted(export)}))
+        deploy_export(game.root, output)
+        applied = game.data()
+        record = applied.get(CAMPAIGN_DATA + "/applied-files.json")
+        self.check(f"{name}_ScansAfterApplyAsInstalled", record is not None and scans() == installed_scans)
+        kept = {key: data for key, data in applied.items()
+                if key.startswith(CAMPAIGN_DATA + "/") or key in ("override/uhogre01.dlg", "lang/en_us/dialog.tlk")}
+        result = game.uninstall()
+        after = game.data()
+        self.check(f"{name}_UninstallKeepsApplysOtherFiles",
+                   uninstalled(result) and {key: after.get(key) for key in kept} == kept, result)
+        self.check(f"{name}_UninstallRestoresTheGamesJournalTable", "override/bgee.lua" not in after)
+        result = game.install()
+        after = game.data()
+        self.check(f"{name}_ReinstallRestoresTheInstallersJournalTable",
+                   installed(result) and after.get("override/bgee.lua") == journal, result)
+        self.check(f"{name}_ReinstallKeepsApplysOtherFiles", {key: after.get(key) for key in kept} == kept)
+        self.check(f"{name}_ScansAfterReinstallAsInstalled", scans() == installed_scans)
+        # The next Apply files the entry again; the installer's table stays the earlier file.
+        deploy_export(game.root, output)
+        after = game.data()
+        self.check(f"{name}_NextApplyKeepsItsRecord",
+                   after.get("override/bgee.lua") == export["resource-overrides/BGEE.LUA"]
+                   and after.get(CAMPAIGN_DATA + "/applied-files.json") == record
+                   and after.get(CAMPAIGN_DATA + "/before-apply/override/bgee.lua") == journal)
+
     def left_out(self, name: str, compiled: Mapping[str, bytes], statuses: Mapping[str, str],
                  *, archived: bool) -> None:
         """Files the installer cannot change unambiguously stay as installed, with a note."""
@@ -955,6 +1024,7 @@ def run_suite(args: argparse.Namespace) -> int:
     # The installer's quest and dialogue changes, on synthetic files.
     compiled = compile_fixtures(scratch, weidu, {**fixtures.SOURCES, **tweaks.sources(mod)})
     suite.quest_changes(compiled["applied"])
+    suite.applied_files(compiled["applied"])
     suite.left_out("QuestFilesLeftOut", compiled["left-out"], {
         "quest_pool": "grant-ambiguous", "quest_altar": "grant-missing", "quest_book": "prepared-elsewhere",
         "unshey": "item-missing", "flail_heads": "dialogue-unrecognised", "totsc_tome": "applied"},

@@ -4,11 +4,13 @@
 //! Runtime installation is separate. Exported revisions stay for older saves;
 //! the next-game pointer is published last, with the game closed.
 
+use crate::applied_files;
 use crate::campaigns::{lua_upgrade, read_campaign, store_path, write_immutable};
 use crate::error::{Error, ErrorKind, Result};
-use crate::json::Value;
+use crate::json::{Dict, Value};
 use crate::paths;
-use crate::profiles::{ensure_output_outside_game, is_hex256, make_dirs, read_json};
+use crate::profiles::{canonical_bytes, ensure_output_outside_game, is_hex256, make_dirs, read_json};
+use crate::resources::{sha256_hex, Tlk};
 use std::collections::{BTreeSet, HashMap};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -21,8 +23,9 @@ pub const EXPORT_FILES_SCHEMA: &str = "flir-export-files-v1";
 /// configuration exists. A hand-staged runtime has no marker and is
 /// recognised by its existing next-game pointer instead.
 pub const INSTALLED_RUNTIME: [&str; 2] = ["override/flrandomiser3.mrk", "override/M_FLPRUI.lua"];
-/// Applied settings and kept campaign revisions; prototype/M_FLPR.lua reads them here.
-pub const CAMPAIGN_DATA: &str = "randomiser-campaigns";
+/// Applied settings and kept campaign revisions; prototype/M_FLPR.lua reads
+/// them here. Apply also records there the files it writes elsewhere in the game.
+pub const CAMPAIGN_DATA: &str = applied_files::DATA;
 /// Item Randomiser's own randomisation (Mode 1 or Mode 2) removes items when
 /// it is installed; its More Spell Shield scrolls (component 560) change the
 /// stock a campaign restores. Item Randomiser does not know CIR and can be
@@ -447,7 +450,79 @@ pub fn adopt_revisions(game: &Path, output: &Path) -> Result<Vec<String>> {
     Ok(adopted.into_iter().collect())
 }
 
+fn is_file(path: &Path) -> Result<bool> {
+    paths::is_file(path).map_err(|error| Error::win(&error, path))
+}
+
+/// The copies of earlier files and the record to write with `changes` (`applied_files`).
+///
+/// `outside` names, by their path in the game, the changes outside CIR's
+/// folder (by their position in `changes`). A file that still holds what Apply
+/// wrote last keeps the earlier file its record names; any other file that
+/// Apply replaces is the earlier file now, since a scan reads it as it is.
+fn applied(
+    game_root: &Path,
+    changes: &[(PathBuf, Vec<u8>)],
+    outside: &HashMap<usize, String>,
+) -> Result<Vec<(PathBuf, Vec<u8>)>> {
+    let data = game_root.join(CAMPAIGN_DATA);
+    let record = data.join(applied_files::RECORD);
+    let mut files = if is_file(&record)? { applied_files::read(&record)? } else { Dict::new() };
+    let mut writes = Vec::new();
+    let mut named: Vec<(&str, usize)> = outside.iter().map(|(position, path)| (path.as_str(), *position)).collect();
+    named.sort();
+    for (path, position) in named {
+        let (target, content) = &changes[position];
+        let name = applied_files::find(&files, path).unwrap_or(path).to_string();
+        let current = if is_file(target)? { Some(read_bytes(target)?) } else { None };
+        let kept = match (files.get(&name).and_then(Value::as_dict), &current) {
+            (Some(entry), Some(current))
+                if entry.get("written").and_then(Value::as_str) == Some(sha256_hex(current).as_str()) =>
+            {
+                entry.get("before").cloned()
+            }
+            _ => None,
+        };
+        let before = match (kept, current) {
+            (Some(before), _) => before,
+            (None, None) => Value::Null,
+            (None, Some(current)) => {
+                let mut before = crate::dict! {"sha256" => sha256_hex(&current), "size" => current.len()};
+                if applied_files::is_text(&name) {
+                    // Apply only appends to game text: the earlier file is its
+                    // first entries. The export read it moments ago; one that is
+                    // no game text now changed since, and replacing it would lose
+                    // that change.
+                    let (strings, _) = Tlk::layout(&current).map_err(|error| match error.kind {
+                        ErrorKind::Scan => Error::profile(format!("Game text changed since export; apply again: {path}")),
+                        _ => error,
+                    })?;
+                    before.insert("strings", strings);
+                } else {
+                    let relative =
+                        name.split('/').fold(PathBuf::from(applied_files::BEFORE), |relative, part| relative.join(part));
+                    writes.push((store_path(&data, &relative)?, current));
+                }
+                Value::Dict(before)
+            }
+        };
+        files.insert(name, Value::Dict(crate::dict! {"before" => before, "written" => sha256_hex(content)}));
+    }
+    if !outside.is_empty() {
+        let content =
+            canonical_bytes(&Value::Dict(crate::dict! {"schema" => applied_files::SCHEMA, "files" => Value::Dict(files)}))?;
+        if !is_file(&record)? || read_bytes(&record)? != content {
+            writes.push((record, content));
+        }
+    }
+    Ok(writes)
+}
+
 /// Copy the existing export layout without touching saves or ordinary stock.
+///
+/// The files it writes outside CIR's folder, and what the game had there
+/// before, go to CIR's record of them (`applied_files`), so that a scan reads
+/// them as the game had them before.
 pub fn deploy_export(game: &Path, output: &Path) -> Result<()> {
     require_closed(game)?;
     let incomplete = || Error::profile("The runtime export is incomplete; export the settings again");
@@ -489,6 +564,8 @@ pub fn deploy_export(game: &Path, output: &Path) -> Result<()> {
     let game_root = paths::resolve(game, false).map_err(|(error, at)| Error::win(&error, &at))?;
     let mut changes: Vec<(PathBuf, Vec<u8>)> = Vec::new();
     let mut positions: HashMap<String, usize> = HashMap::new();
+    // The changes outside CIR's folder, by their path in the game.
+    let mut outside: HashMap<usize, String> = HashMap::new();
     let mut sorted_names = names.clone();
     sorted_names.sort();
     for name in sorted_names {
@@ -510,6 +587,19 @@ pub fn deploy_export(game: &Path, output: &Path) -> Result<()> {
         if !paths::is_relative_to(&target, &game_root) {
             return Err(Error::profile("An export destination is outside the game folder"));
         }
+        // The destination's parts as Windows reads them (`Path(*parts).parts`).
+        let destination = paths::parts(Path::new(&relative_text));
+        let posix = destination.join("/");
+        let inside = applied_files::key(&destination[0]) == CAMPAIGN_DATA;
+        if inside &&
+            destination
+                .get(1)
+                .is_some_and(|part| [applied_files::RECORD, applied_files::BEFORE].contains(&applied_files::key(part).as_str()))
+        {
+            return Err(Error::profile(format!(
+                "An export file would replace Chriz Item Randomiser's record of the files Apply writes: {posix}"
+            )));
+        }
         let content = fs::read(&source).map_err(|error| Error::os(&error, &source))?;
         let key = crate::py::lower(&target.to_string_lossy());
         if let Some(position) = positions.get(&key) {
@@ -529,18 +619,41 @@ pub fn deploy_export(game: &Path, output: &Path) -> Result<()> {
                 return Err(Error::profile(format!("An older campaign revision differs: {relative_text}")));
             }
         }
-        match positions.get(&key) {
-            Some(position) => changes[*position].1 = content,
+        let position = match positions.get(&key) {
+            Some(position) => {
+                changes[*position].1 = content;
+                *position
+            }
             None => {
                 positions.insert(key, changes.len());
                 changes.push((target, content));
+                changes.len() - 1
             }
+        };
+        if !inside && applied_files::is_game_path(&posix) {
+            outside.insert(position, posix);
         }
     }
-    let pointer = game_root.join(CAMPAIGN_DATA).join("next.lua");
-    let is_pointer = |path: &Path| paths::path_cmp(path, &pointer) == std::cmp::Ordering::Equal;
+    let data = game_root.join(CAMPAIGN_DATA);
+    let (record, pointer) = (data.join(applied_files::RECORD), data.join("next.lua"));
+    // The earlier files first, the record after the files it names, the next-game pointer last.
+    let writes = applied(&game_root, &changes, &outside)?;
+    let same = |a: &Path, b: &Path| paths::path_cmp(a, b) == std::cmp::Ordering::Equal;
+    let copies: Vec<PathBuf> = writes.iter().map(|(path, _)| path.clone()).filter(|path| !same(path, &record)).collect();
+    changes.extend(writes);
+    let order = |path: &Path| {
+        if same(path, &pointer) {
+            3
+        } else if same(path, &record) {
+            2
+        } else if copies.iter().any(|copy| same(copy, path)) {
+            0
+        } else {
+            1
+        }
+    };
     changes.sort_by(|a, b| {
-        is_pointer(&a.0).cmp(&is_pointer(&b.0)).then_with(|| a.0.to_string_lossy().as_bytes().cmp(b.0.to_string_lossy().as_bytes()))
+        order(&a.0).cmp(&order(&b.0)).then_with(|| a.0.to_string_lossy().as_bytes().cmp(b.0.to_string_lossy().as_bytes()))
     });
     // Roll back an actual copy error; no persistent lab-recovery framework.
     let backup_root = paths::parent(output).join(format!("apply-backup-{}", crate::profiles::random_name()));

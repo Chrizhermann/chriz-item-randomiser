@@ -115,13 +115,18 @@ def scan_world(catalog: dict) -> dict:
     unusual file) is left out instead of stopping the scan: it keeps its
     resource row, gives no sources or targets, and is listed in "unreadable"
     with the reason. Nothing is placed in it or taken from it.
+
+    The dialogues, scripts and spells CIR's Apply wrote into override are read
+    as the game had them before (applied_files.py): applying a configuration
+    does not change the scan it was made with.
     """
     item_index = validate_catalog(catalog)
     world = {"schema": WORLD_SCHEMA, "game_root": catalog["game_root"],
              "catalog_fingerprint": catalog["fingerprint"], "coverage": COVERAGE,
              "resources": [], "sources": [], "targets": []}
     unreadable = {}
-    with GameResources(Path(catalog["game_root"]), {key: RESOURCE_TYPES[key] for key in KINDS}) as reader:
+    with GameResources(Path(catalog["game_root"]), {key: RESOURCE_TYPES[key] for key in KINDS},
+                       before_apply=True) as reader:
         if reader.names("itm") != sorted(item_index):
             raise ScanError("Installed items changed; scan the item catalogue again before binding sources.")
         for kind in KINDS:
