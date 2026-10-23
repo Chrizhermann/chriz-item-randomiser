@@ -34,8 +34,18 @@ flags 5.
 5. **Save and load.** The container and the pile kept every flag: the cloak and the
    darts 5, the amulet 0x3E7.
 
-The running campaign of the lab game kept running, and the lab was restored
-afterwards.
+A second run, from the same save, added Koshi's sword exactly as the test install's
+`HLKOSHI.CRE` has it (`SW1H51`, usage counts 0/1/1, flags 0x3E7) and a lore-0
+potion `POTN08` with bit 31 set (0x80000004):
+
+6. **Creature and container.** Both reached a spawned rat and the area container
+   with their exact counts and flags. The engine's item field reads bit 31 back as
+   unsigned (2147483652), as CIR checks.
+7. **Save and load.** The sword kept 0x3E7 in both places. The potion kept bits 31
+   and 2; the engine identified it (0x80000005), as any lore-0 item.
+
+Both times the running campaign of the lab game kept running, and the lab was
+restored afterwards.
 
 ## Not covered
 
