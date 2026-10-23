@@ -379,7 +379,7 @@ function cases.identified_payload_is_preserved_in_witness_and_source_receipt(N)
     a:on_observation_boundary(2); local receipt=assert(a:observe(command))
     assert(receipt.payload.flags==1 and receipt.removed==1)
 end
-function cases.stolen_original_flag_is_preserved_in_source_receipt(N)
+function cases.unstealable_original_flag_is_preserved_in_source_receipt(N)
     local f=setup(N)
     f.fixture.sources[f.source_id].payload.flags=2
     f.slots[21].m_flags=2
@@ -401,7 +401,7 @@ function cases.identified_delivery_preserves_exact_flags(N)
     local command=f.command("deliver"); assert(a:execute(command)); a:on_observation_boundary(2)
     local receipt=assert(a:observe(command)); assert(receipt.payload.flags==1 and receipt.created==1)
 end
-function cases.stolen_flag_is_set_on_proven_synchronous_container_item(N)
+function cases.unstealable_flag_is_set_on_proven_synchronous_container_item(N)
     local f=setup(N)
     f.fixture.sources[f.source_id].payload.flags=2
     local a=N.new(f.api,f.fixture)
@@ -413,7 +413,7 @@ function cases.stolen_flag_is_set_on_proven_synchronous_container_item(N)
     local receipt=assert(a:observe(command))
     assert(receipt.payload.flags==2 and receipt.created==1)
 end
-function cases.stolen_identified_flag_is_set_on_bound_queued_container_item(N)
+function cases.unstealable_identified_flag_is_set_on_bound_queued_container_item(N)
     local f=setup(N)
     f.fixture.sources[f.source_id].payload.flags=3
     f.api.EEex_Action_ExecuteResponseStringOnAIBaseInstantly=function(action)
@@ -442,8 +442,9 @@ function cases.identified_configuration_rejects_unidentified_source_but_corrects
     a:on_observation_boundary(2)
     assert(a:observe(command).payload.flags==1)
 end
-function cases.nonstealable_and_nondroppable_flags_are_unsupported(N)
-    for _,flags in ipairs({4,8,9}) do
+function cases.undroppable_flags_are_unsupported(N)
+    -- Such a reward would never leave a creature target; the export refuses its source.
+    for _,flags in ipairs({8,9,13,0x3EF,0x80000008}) do
         local f=setup(N); f.fixture.sources[f.source_id].payload.flags=flags
         local ok,reason=pcall(function() N.new(f.api,f.fixture) end)
         assert(not ok and tostring(reason):find("NATIVE_PAYLOAD_UNSUPPORTED",1,true))
@@ -622,7 +623,7 @@ function cases.original_scroll_stack_delivers_one_exact_record_to_stocked_contai
     assert(f.target.m_lstItems[1]==old and f.target.m_lstItems[2].m_useCount1==7)
     assert(#f.calls==1 and f.calls[1]=='CreateItem("scrl66",7,0,0)')
 end
-function cases.stolen_scroll_stack_uses_one_bound_creature_message(N)
+function cases.unstealable_scroll_stack_uses_one_bound_creature_message(N)
     local f=setup(N)
     f.header.maxStackable=20
     local source=f.fixture.sources[f.source_id]
@@ -876,7 +877,7 @@ function cases.consumed_message_without_item_is_not_a_success(N)
 end
 function cases.queued_container_copy_identifying_zero_lore_item_keeps_source_flags(N)
     -- Reproduced with AMUL12 (lore 0) on EET 2.7.3: CMessageContainerAddItem::Run's
-    -- heap copy identified the unidentified source's item. Its stolen bit stays.
+    -- heap copy identified the unidentified source's item. Its unstealable bit stays.
     for _,selected in ipairs({0,2}) do
         local f=setup(N); f.fixture.sources[f.source_id].payload.flags=selected
         f.adapter=N.new(f.api,f.fixture)
@@ -912,6 +913,31 @@ function cases.queued_container_copy_with_other_flag_changes_is_rejected(N)
         f.queue[1]=nil; f.target.m_lstItems[1]=f.item("FLPRI1",701,flags[2])
         a:on_observation_boundary(2); local x,e=a:observe(command); fail(x,e,"DELIVERY_PAYLOAD_CHANGED")
         assert(f.target.m_lstItems[1].m_flags==flags[2] and #f.calls==1)
+    end
+end
+function cases.stolen_and_other_flags_travel_with_the_reward(N)
+    -- Baeloth's items are identified and stolen (5); a mod gave Koshi's sword 0x3E7.
+    for _,flags in ipairs({4,5,0x3E6,0x3E7,0x80000004}) do
+        local f=setup(N); f.fixture.sources[f.source_id].payload.flags=flags; f.slots[21].m_flags=flags
+        local a=N.new(f.api,f.fixture)
+        assert(a:inspect_source(f.source_id).payload.flags==flags)
+        a:on_observation_boundary(1); local command=f.command("suppress"); assert(a:execute(command))
+        a:on_observation_boundary(2); assert(a:observe(command).payload.flags==flags)
+        -- A synchronous container delivery sets them on the one created item.
+        f=setup(N); f.fixture.sources[f.source_id].payload.flags=flags
+        a=N.new(f.api,f.fixture); assert(a:inspect_target(f.target_id)); a:on_observation_boundary(1)
+        command=f.command("deliver"); assert(a:execute(command))
+        assert(f.target.m_lstItems[1].m_flags==flags)
+        a:on_observation_boundary(2); assert(a:observe(command).payload.flags==flags)
+        -- A queued one on its message, and again when the engine's copy identifies the item.
+        f=setup(N); f.fixture.sources[f.source_id].payload.flags=flags
+        f.adapter=N.new(f.api,f.fixture); a,command=queued(f)
+        assert(f.queue[1].m_item.m_flags==flags)
+        f.queue[1]=nil; f.target.m_lstItems[1]=f.item("FLPRI1",701,flags%2==0 and flags+1 or flags)
+        a:on_observation_boundary(2); local x,e=a:observe(command); fail(x,e,"DELIVERY_SETTLING")
+        assert(f.target.m_lstItems[1].m_flags==flags)
+        a:on_observation_boundary(3); local receipt=assert(a:observe(command))
+        assert(receipt.payload.flags==flags and receipt.created==1 and #f.calls==1)
     end
 end
 function cases.queued_container_copy_with_other_payload_changes_is_rejected(N)

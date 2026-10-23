@@ -206,8 +206,9 @@ function cases.one_reward_is_bound_to_its_message_and_held_after_two_later_ticks
     unrelated_intact(f); assert(#f.calls == 1)
     x, e = a:execute(command); fail(x, e, "ALREADY_ATTEMPTED")
 end
-function cases.creature_message_preserves_selected_identification_only(N)
-    for _, values in ipairs({{0, 1}, {1, 0}}) do
+function cases.creature_message_preserves_the_selected_flags_only(N)
+    -- Identified and stolen (Baeloth's items), and bits a mod set (0x3E7).
+    for _, values in ipairs({{0, 1}, {1, 0}, {0, 5}, {1, 4}, {1, 0x3E7}, {0, 0x80000004}}) do
         local engine_flag, selected_flag = values[1], values[2]
         local f = setup(N)
         f.fixture.sources[f.source_ids[1]].payload.flags = selected_flag
@@ -232,8 +233,8 @@ function cases.creature_message_preserves_selected_identification_only(N)
         unrelated_intact(f)
     end
     -- Reproduced with RING43: the engine identifies the later heap copy too.
-    -- Preserve both an unidentified source and its independent stolen flag.
-    for _,selected in ipairs({0,2}) do
+    -- Preserve both an unidentified source and its other flags.
+    for _,selected in ipairs({0,2,4,0x3E6,0x80000004}) do
         local f=setup(N)
         f.fixture.sources[f.source_ids[1]].payload.flags=selected
         f.adapter=N.new(f.api,f.fixture)

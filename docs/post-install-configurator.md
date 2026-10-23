@@ -272,7 +272,10 @@ container that holds AX1H13").
 Destinations can be uniquely named ARE actors, static containers (including
 stocked chests), or shops allowing purchases. Container delivery appends rewards
 without changing existing contents, locks or traps. The current item restrictions remain:
-unexpired, nonstackable, visible droppable items. Several originals of the same
+unexpired, visible droppable items. A reward keeps its original's flags (identified,
+unstealable, stolen, and bits another mod set), so Baeloth's stolen items stay stolen;
+an original flagged undroppable (8) is left out, since it would never leave a creature
+recipient. Several originals of the same
 item can be relocated from separate owners, including to one creature recipient.
 Ambiguous identical copies within a single source owner remain unsupported.
 Equipped originals need an explicit replacement. Export reports unsupported

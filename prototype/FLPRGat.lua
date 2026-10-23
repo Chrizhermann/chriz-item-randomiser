@@ -100,12 +100,14 @@ end
 local function integer(value,lo,hi)
     return type(value)=='number' and value==math.floor(value) and value>=lo and value<=hi
 end
--- With copy, a creature's copy of a reward, which is only removed or renamed:
--- whatever flags or expiry another mod gave it stay as they are.
+-- A source keeps its flags on the reward, except undroppable (8). With copy,
+-- a creature's copy of a reward, which is only removed or renamed: whatever
+-- flags or expiry another mod gave it stay as they are.
 local function payload(value,copy)
     if type(value)~='table' or type(value.resref)~='string' or #value.resref<1 or #value.resref>8 or
         value.resref:find('[^a-z0-9#_%-]') or not integer(value.expiration,0,copy and 65535 or 0) or
-        not integer(value.flags,0,copy and 4294967295 or 3) or type(value.charges)~='table' then return false end
+        not integer(value.flags,0,4294967295) or not copy and value.flags%16>=8 or
+        type(value.charges)~='table' then return false end
     for i=1,3 do if not integer(value.charges[i],0,65535) then return false end end
     return true
 end
