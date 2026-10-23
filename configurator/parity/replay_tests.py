@@ -495,6 +495,9 @@ def record(spec: Spec, original, signature, args, kwargs):
             rust_after[root] = snapshot_tree(root)
         except (ValueError, OSError) as exc:
             rust_after[root] = {"<unreadable>": str(exc).encode()}
+    # Only once every root is read: one root can hold another (a game folder
+    # beside the export, both in the folder holding the export).
+    for root in roots:
         restore_tree(root, before[root])
 
     error = None
