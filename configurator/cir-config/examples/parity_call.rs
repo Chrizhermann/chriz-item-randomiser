@@ -237,6 +237,8 @@ fn run(name: &str, args: &Dict) -> Result<Value> {
                 if collect { Some(&mut problems) } else { None },
                 stored,
                 None,
+                None,
+                None,
             )?;
             let mut problems: Vec<(String, Value)> =
                 problems.iter().map(|(identity, reason)| (identity.to_string(), reason.clone())).collect();

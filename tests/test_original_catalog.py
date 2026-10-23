@@ -334,9 +334,9 @@ class OriginalCatalogTests(unittest.TestCase):
             self.assertEqual((row["area_resource"], row["target_ids"], row["container_name"], row["binding_problem"]),
                              (dialogue, [], None, "target-resource-absent"))
 
-    def test_quest_rewards_without_a_cir_route_are_named_before_other_problems(self):
+    def test_quest_rewards_with_a_cir_route_are_bound_to_it(self):
         catalog = {"items": [{"resref": name} for name in ("shld26", "blun23", "blun12", "ring41", "brac19",
-                                                            "sw1h26")]}
+                                                            "sw1h26", "scrl9b")]}
         world = {"resources": [{"id": name} for name in ("dlg:uhogre01", "bcs:troalt", "bcs:blpool",
                                                          "spl:spin621", "dlg:sahkng01", "dlg:jugjer01",
                                                          "bcs:ppbook")],
@@ -344,15 +344,16 @@ class OriginalCatalogTests(unittest.TestCase):
         result = resolve_template(catalog, world, "bg2-original", items="extended", targets="extended",
                                   options={"scrolls": True})
         rows = {row["id"]: row for row in result["items"]}
-        # Conversations, the altar, the pool and the Deck of Many Things have routes.
+        # Conversations, the altar, the pool, the Deck of Many Things and the
+        # Spellhold book's scrolls have routes.
         for identity in ("bg2:mode2:item:14", "bg2:mode2:item:31", "bg2:mode2:item:57", "bg2:base:item:9",
-                         "bg2:base:item:90", "bg2:mode2:item:69"):
+                         "bg2:base:item:90", "bg2:mode2:item:69", "bg2:mode2:item:260"):
             self.assertEqual(rows[identity]["binding_problem"], "scripted-source-requires-adapter")
-        # The game lacks the Spellhold book's scroll too; the missing route is named,
-        # as it would leave the row out in any game.
-        row = rows["bg2:mode2:item:260"]
+        # The game lacks the book's other scroll: that row is left out for its
+        # item, as any other.
+        row = rows["bg2:mode2:item:262"]
         self.assertEqual((row["adapter"], row["available"], row["binding_problem"], row["availability_reason"]),
-                         ("scripted", False, "route-not-supported", "item-definition-absent"))
+                         ("scripted", False, "item-definition-absent", "item-definition-absent"))
 
     def test_only_these_list_rows_wait_for_a_cir_route(self):
         """The rows CIR leaves out in every game because it cannot change their
@@ -368,11 +369,8 @@ class OriginalCatalogTests(unittest.TestCase):
                                       targets="extended", options=options)
             waiting |= {row["id"] for row in result["items"] + result["targets"]
                         if row["binding_problem"] == "route-not-supported"}
-        self.assertEqual(waiting, {
-            # Conversations and scripts that give the reward.
-            "bg2:mode2:item:260", "bg2:mode2:item:262",
-            # Places that Item Randomiser's own quest handlers name.
-            *(f"bg2:mode2:target:{line}" for line in (6, 25, 37, 49, 50, 59, 60, 89, 215, 252))})
+        # Places that Item Randomiser's own quest handlers name.
+        self.assertEqual(waiting, {f"bg2:mode2:target:{line}" for line in (6, 25, 37, 49, 50, 59, 60, 89, 215, 252)})
 
     def test_a_presets_rows_of_an_original_reward_route_are_that_route(self):
         from flir_config.original_catalog import mode2_route_source, mode2_route_target

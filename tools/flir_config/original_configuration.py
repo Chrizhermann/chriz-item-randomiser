@@ -52,11 +52,13 @@ def _tier(row: dict) -> str:
 
 
 def _source_change(row: dict) -> str | None:
-    """The change the installer makes that this reward row needs."""
+    """The change the installer makes that this reward row needs. An extended
+    reward route needs none: Apply patches the game's own script for it, also
+    the book that the installer prepared for the ring's quest."""
     if row["adapter"] == "unshey":
         return "unshey"
     resource = row["source_resource"] or ""
-    if row["adapter"] == "scripted" and resource.startswith("bcs:"):
+    if row["adapter"] == "scripted" and resource.startswith("bcs:") and mode2_route_source(row) is None:
         return QUEST_CHANGES.get(resource[4:])
     return None
 

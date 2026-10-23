@@ -552,7 +552,16 @@ fn call(name: &str, args: &Args) -> Result<Value> {
             mode2_rewards::text_original(&args.bytes("data"), &args.str("resource"), args.named().naming())?
                 .map_or(Value::Null, |(original, refs)| Value::List(vec![bytes_value(&original), int_keys(&refs)]))
         }
-        "mode2_rewards._script_original" => recovered(mode2_rewards::script_original(&args.bytes("data"), &args.dict("spec"))?),
+        "mode2_rewards._script_original" => {
+            let specs: Vec<Dict> =
+                args.value("specs").as_list().expect("specs").iter().map(|spec| spec.as_dict().expect("spec").clone()).collect();
+            recovered(mode2_rewards::script_original(&args.bytes("data"), &specs)?)
+        }
+        "mode2_rewards.unpatched_script" => bytes_value(&mode2_rewards::unpatched_script(
+            &args.str("resource"),
+            &args.bytes("data"),
+            args.named().naming(),
+        )?),
         "mode2_rewards.own_patch" => {
             Value::Bool(mode2_rewards::own_patch(&args.str("resource"), &args.bytes("data"), args.named().naming())?)
         }

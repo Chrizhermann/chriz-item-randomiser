@@ -121,7 +121,8 @@ local ok, failure = pcall(function()
             assert(not seen[revision],"SOURCE_GATE_REVISION_DUPLICATED");seen[revision]=true
         end
         local Gate = module("override/FLPRGat.lua", Site)
-        local pristine={creatures={},stores={},scripts={},templates={},spell_shield={},cursed={},auxiliary={}}
+        local pristine={creatures={},stores={},scripts={},templates={},spell_shield={},cursed={},auxiliary={},
+            extended={}}
         -- One revision's manifest and the copies its checks compare against.
         local function load_revision(revision)
             local guarded = assert(resolve(revision), "SOURCE_GATE_REVISION_UNAVAILABLE")
@@ -184,6 +185,20 @@ local ok, failure = pcall(function()
                     local file=assert(io.open(path,'rb'),'SOURCE_GATE_SCRIPT_MISSING')
                     pristine.scripts[revision]=pristine.scripts[revision] or {}
                     pristine.scripts[revision][id]=file:read('*a'); assert(file:close())
+                    -- Where Apply extended an installer-prepared quest script
+                    -- with reward routes, it keeps the installer's version and
+                    -- its own (native_export.py); FLPRScript.lua accepts either.
+                    local resource=endpoint.resource
+                    if endpoint.adapter_id=='original-quest-v1' and type(resource)=='string' and
+                        not pristine.extended[resource] then
+                        local name=assert(resource:match('^bcs:([a-z0-9_#%-]+)$'),'SOURCE_GATE_SCRIPT_KIND_INVALID')
+                        local versions={}
+                        for _,kind in ipairs({'installed','applied'}) do
+                            local copy=io.open(DATA..name:upper()..'.'..kind..'.bcs','rb')
+                            if copy then versions[kind]=copy:read('*a'); assert(copy:close()) end
+                        end
+                        pristine.extended[resource]=(versions.installed and versions.applied) and versions or false
+                    end
                     if endpoint.resources then
                         local routes={}
                         for number,resource in ipairs(endpoint.resources) do

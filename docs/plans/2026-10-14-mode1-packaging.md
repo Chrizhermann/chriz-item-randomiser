@@ -223,7 +223,9 @@ Uninstall cannot remove what the configurator wrote; see B2. Re-installing over 
 and an uninstall and install in one WeiDU run leave the game byte-identical, also with an
 applied `randomiser-campaigns/next.lua`;
 so does WeiDU's temporary uninstall and re-install of CIR behind a reinstalled earlier
-mod.
+mod. The one exception is a book that Apply extended with the routes of its two scrolls
+(`PPBOOK.BCS`, see B2): a re-install returns it to the installer's version, and a
+configuration that moves a scroll needs Apply again before its games start.
 
 ## Campaign starts
 
@@ -463,7 +465,12 @@ the package has 116 files (5,798,896 bytes).
   "Configuration, uninstall and re-install"), so its Apply writes only
   `randomiser-campaigns/`, and Apply copies only the files its latest export lists. The
   extended pools' reward scripts, dialogues and containers, the Deck of Many Things key
-  spell (`SPIN621.SPL`) and the Kangaxx option are still written by Apply. Since
+  spell (`SPIN621.SPL`) and the Kangaxx option are still written by Apply. The one file
+  both write is the book of the ring's quest (`PPBOOK.BCS`, since 2026-10-23): Apply
+  writes it only for a revision that moves one of its two scrolls, and keeps the
+  installer's version and its own beside it (`randomiser-campaigns/PPBOOK.installed.bcs`,
+  `PPBOOK.applied.bcs`), so the saves of a revision that moves only the ring still start
+  (the runtime accepts Apply's book for them while both match). Since
   2026-10-18 Apply recognises each reward route by its meaning in the game's own files
   (BG2:EE's and EET's layouts, other mods' added replies and blocks) instead of by the
   hash of the reviewed EET file, and the configuration check runs the same recognition:

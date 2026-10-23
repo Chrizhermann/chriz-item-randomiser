@@ -356,11 +356,11 @@ names them apart ("… belong to quests that Chriz Item Randomiser cannot change
 quest rewards and places that Item Randomiser handled with its own conversation and
 script patches (the `.fl` places of its `mode2` tables, and rewards that a conversation
 or script gives) for which CIR has no route yet. Their reason is
-`route-not-supported`. In the original tables these are two scrolls that
-`ppbook.bcs` gives, and the places of the Sahuagin treasury, the Sahuagin prince, the
-king or the prince, the trolls of the Spellhold painting, Tolgerias, TorGal and a
-vampire or shadow thief of chapter 3 (BG2). `tests/test_original_catalog.py` lists
-them; a route for one of them takes its rows off that list.
+`route-not-supported`. In the original tables these are the places of the Sahuagin
+treasury, the Sahuagin prince, the king or the prince, the trolls of the Spellhold
+painting, Tolgerias, TorGal and a vampire or shadow thief of chapter 3 (BG2).
+`tests/test_original_catalog.py` lists them; a route for one of them takes its rows off
+that list.
 
 BG1's quest routes (Varci's payment, `VARCI.DLG`; Aldeth's sword, `ALDETH.DLG`;
 Nemphre's scroll, `NEMPHR.DLG`) work as BG2's do, with flags of
@@ -389,6 +389,21 @@ does for her sword: where the plan moves the rod, the king no longer creates one
 game without that dialogue, or whose king gives no rod, needs no link. Where the
 reply gives the rod in a way CIR cannot gate, or AR2300 holds a second rod that the
 reply could stand for, the rod's row is left out with its reason.
+
+The book of Lavok's sphere (`PPBOOK.BCS`, AR1513) gives two scrolls with the ring on
+its last page (rows 260 and 262 of the extended tables, beside the ring's row 109).
+Each scroll has a route of its own, which only drops its grant where its row moves the
+scroll; the book's places are the ring's quest, so the scrolls have no place of their
+own. The installer prepares the book for the ring's quest; the scrolls' routes patch
+the game's own book, so they need no prepared book (a game whose book the installer
+left as it was can still move the scrolls; the ring stays as the game has it). Apply
+writes the book only for a revision that moves a scroll; otherwise it stays as the
+installer prepared it. A revision that moves only the ring records the installer's
+book, and Apply keeps that version and the one it wrote side by side
+(`randomiser-campaigns/PPBOOK.installed.bcs` and `PPBOOK.applied.bcs`): the runtime
+accepts the book Apply wrote for that revision's saves when both still match. A
+re-install of CIR returns the book to the installer's version; a configuration that
+moves a scroll then needs Apply again before its games start.
 
 Rewards an NPC carries: the genie in Trademeet (`TRGENI01`), Captain Dennis
 (`LOUTCAPT`), the Amkethran priest (`AMCLER01`), the sage Jermien (`JUGJER01`, whose

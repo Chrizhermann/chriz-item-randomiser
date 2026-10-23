@@ -314,6 +314,48 @@ pub fn script_fixture(name: &str) -> Vec<u8> {
     format!("SC\n{other}{}{other}SC\n", block(&well_reward(21, 40850), "AR1202Quest")).into_bytes()
 }
 
+/// `trigger(opcode, value=0, text="", negate=0)`.
+pub fn trigger(opcode: u32, value: i64, text: &str, negate: u32) -> String {
+    format!("TR\n{opcode} {value} {negate} 0 0 \"{text}\" \"\" OB\n{}TR\n", obj(0))
+}
+
+/// `book_block(triggers, actions)`: a block with one response.
+pub fn book_block(triggers: &[String], actions: &str) -> String {
+    format!("CR\nCO\n{}CO\nRS\nRE\n100{actions}RE\nRS\nCR\n", triggers.concat())
+}
+
+/// `BOOK_GIFTS`: the two scrolls the book gives the reader.
+pub fn book_gifts() -> String {
+    action(140, 0, "scrl8z", 17, 0) + &action(140, 0, "scrl9b", 17, 0)
+}
+
+/// `book_fixture(installed=True)`: PPBOOK.BCS as the game has it, or as CIR's
+/// installer splits its last page for the ring (FLPR_QBOOK): that page gives
+/// the ring and both scrolls to the reader (LastTrigger).
+pub fn book_fixture(installed: bool) -> Vec<u8> {
+    let (clicked, page) = (trigger(112, 0, "", 0), trigger(16399, 5, "AR1513page", 0));
+    let turn = action(151, 50658, "", 1, 0) + &action(109, 1, "AR1513page", 0, 0);
+    let ring = action(140, 0, "ring09", 17, 0);
+    let earlier = book_block(
+        &[clicked.clone(), trigger(16399, 4, "AR1513page", 0)],
+        &(action(151, 50657, "", 1, 0) + &action(109, 1, "AR1513page", 0, 0)),
+    );
+    let gifts = book_gifts();
+    let pages = if installed {
+        let event = action(30, 1, "GLOBALFLPR_EBOOK", 0, 0);
+        book_block(
+            &[clicked.clone(), page.clone(), trigger(16399, 1, "GLOBALFLPR_QBOOK", 0)],
+            &[turn.as_str(), &action(30, 1, "GLOBALFLPR_XBOOK", 0, 0), &gifts, &event].concat(),
+        ) + &book_block(
+            &[clicked, page, trigger(16399, 1, "GLOBALFLPR_QBOOK", 1)],
+            &[turn.as_str(), &ring, &gifts, &event].concat(),
+        )
+    } else {
+        book_block(&[clicked, page], &[turn.as_str(), &ring, &gifts].concat())
+    };
+    format!("SC\n{earlier}{pages}SC\n").into_bytes()
+}
+
 /// The text-route fixture of test_text_variants_preserve_original_routes...
 pub fn text_variant(resource: &str) -> Vec<u8> {
     let name = resource.split(':').nth(1).unwrap();

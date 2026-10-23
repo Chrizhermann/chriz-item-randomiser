@@ -888,7 +888,7 @@ function Group:_add(selected)
         local member,assembly
         if selected.fixture.sources[id].kind=='guarded-script' then
             assert(deps.Script,'CAMPAIGN_SCRIPT_ADAPTER_MISSING')
-            member=deps.Script.new(api,selected,id,pristine.scripts[revision][id])
+            member=deps.Script.new(api,selected,id,pristine.scripts[revision][id],pristine.extended)
         else
             member,assembly=prepare(api,selected,build,compile,pristine,id,targets,self.cache)
             local endpoint=selected.fixture.sources[id]

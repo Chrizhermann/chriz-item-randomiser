@@ -1,6 +1,7 @@
 """The extended pools' quest reward routes, recognised by meaning in synthetic
 resources, and the reviewed EET resources as regression evidence when present."""
 import hashlib
+from itertools import product
 import json
 from pathlib import Path
 import re
@@ -20,7 +21,7 @@ from flir_config.game_names import EetNames
 from flir_config.game_text import GameText
 from flir_config.profiles import ProfileError
 from flir_config.quest_options import _Dialogue
-from flir_config.quest_rewards import _blocks
+from flir_config.quest_rewards import _blocks, _global_guard
 from flir_config.resources import _Tlk
 from flir_config.script_text import script_blocks
 from test_postinstall_resources import make_tlk
@@ -35,6 +36,9 @@ REVIEWED_EET = {
                      "26bf2a67793e7b05fe35781f85ec4885aac806520927c35deba9aed5a2f5b841"),
     "bcs:ddwell": ("4d2232892ce30f7e55333f696bb2717e5208e3d588e0ef77e990fc0077955544",
                    "d0422206eb8c983e6fc14dea29ec78a8607674dd74548c0ff29be93fbd0accdb"),
+    # The book as CIR's installer prepares it for the ring (EET, BG2:EE alike).
+    "bcs:ppbook": ("39b1f5119d8abc96d5158eec54d212475e639516cb35d86de27e7d6e4cbbd515",
+                   "e501c882a3fccf42e7cd5643d36c54dd67b5c38f3518d252cf98c453ddf1062a"),
     "dlg:aldeth": ("c9c9ec1e62045e24c585040effad5ec9561a404df3b84c8eb971264b1ef242ef",
                    "b6a08cfc2f712b30335ab0eb3534662785b68d8ed77b414e75377c01780d0982"),
     "dlg:amcler01": ("5bac12a183463f6faa912b15e80c45c321cd2189f318c5056cf38b2150a6d79e",
@@ -241,6 +245,37 @@ def script_fixture(name):
                                 action(82, text="Misc8y") + action(30, 2, "AR1512PlantedItems")) + 'SC\n').encode()
     other = block(action(151, 40849, target=1))
     return ('SC\n' + other + block(well_reward()) + other + 'SC\n').encode()
+
+
+def trigger(opcode, value=0, text="", negate=0):
+    return f'TR\n{opcode} {value} {negate} 0 0 "{text}" "" OB\n{obj()}TR\n'
+
+
+def book_block(triggers, actions):
+    return 'CR\nCO\n' + "".join(triggers) + 'CO\nRS\nRE\n100' + actions + 'RE\nRS\nCR\n'
+
+
+BOOK_GIFTS = action(140, text="scrl8z", target=17) + action(140, text="scrl9b", target=17)
+
+
+def book_fixture(installed=True):
+    """PPBOOK.BCS as the game has it, or as CIR's installer splits its last page
+    for the ring (FLPR_QBOOK): that page gives the ring and both scrolls to the
+    reader (LastTrigger)."""
+    clicked, page = trigger(112), trigger(16399, 5, "AR1513page")
+    turn = action(151, 50658, target=1) + action(109, 1, "AR1513page")
+    ring = action(140, text="ring09", target=17)
+    earlier = book_block([clicked, trigger(16399, 4, "AR1513page")],
+                         action(151, 50657, target=1) + action(109, 1, "AR1513page"))
+    if installed:
+        event = action(30, 1, "GLOBALFLPR_EBOOK")
+        pages = (book_block([clicked, page, trigger(16399, 1, "GLOBALFLPR_QBOOK")],
+                            turn + action(30, 1, "GLOBALFLPR_XBOOK") + BOOK_GIFTS + event) +
+                 book_block([clicked, page, trigger(16399, 1, "GLOBALFLPR_QBOOK", negate=1)],
+                            turn + ring + BOOK_GIFTS + event))
+    else:
+        pages = book_block([clicked, page], turn + ring + BOOK_GIFTS)
+    return ('SC\n' + earlier + pages + 'SC\n').encode()
 
 
 class Mode2RewardTests(unittest.TestCase):
@@ -501,7 +536,7 @@ class Mode2RewardTests(unittest.TestCase):
         result = rewards.patch_reward("bcs:ddwell", original, ddwell_ref=100001)
         self.assertEqual(rewards.patch_reward("bcs:ddwell", result), result)
         self.assertTrue(rewards.own_patch("bcs:ddwell", result))
-        self.assertEqual(rewards._script_original(result, rewards.resource_specs("bcs:ddwell")[0]),
+        self.assertEqual(rewards._script_original(result, rewards.resource_specs("bcs:ddwell")),
                          (original, 100001, True))
         old, _, _ = _blocks(original, 3, b"\r\n")
         new, _, _ = _blocks(result, 5, b"\r\n")
@@ -520,6 +555,70 @@ class Mode2RewardTests(unittest.TestCase):
             self.assertIn(b"GLOBALFLPR_XM2_27", selected)
         self.assertIn(crlf(action(151, 100001, target=1)), new[2])
         self.assertIn(crlf(action(151, 40850, target=1)), new[1])
+
+    def test_the_books_two_scrolls_are_gated_apart_beside_the_rings_quest(self):
+        specs = rewards.resource_specs("bcs:ppbook")
+        self.assertEqual([(spec["route"], spec["quest"], spec["item"], spec["target_ids"]) for spec in specs],
+                         [("ppbook", "ppbook", "scrl9b", ()), ("ppbook2", "ppbook", "scrl8z", ())])
+        self.assertEqual(rewards.source_spec("original-source:bg2:mode2:item:262")["payload"],
+                         {"resref": "scrl8z", "expiration": 0, "charges": [0, 0, 0], "flags": 0})
+        self.assertNotIn("ppbook", rewards.TARGET_REWARDS.values())
+        for installed in (True, False):
+            with self.subTest(installed=installed):
+                original = book_fixture(installed)
+                result = self.synthetic_patch("ppbook", original)
+                self.assertEqual(rewards._script_original(result, specs), (original, None, True))
+                old, _, _ = _blocks(original, 3 if installed else 2, b"\n")
+                new, _, _ = _blocks(result, 9 if installed else 5, b"\n")
+                self.assertEqual(new[0], old[0])
+                # Each block of the last page became four, one for each choice
+                # of the scrolls' rows; the ring's actions and guard stay.
+                for number, source in enumerate(old[1:]):
+                    for index, choice in enumerate(product((False, True), repeat=2)):
+                        branch = new[1 + number * 4 + index]
+                        for spec, selected in zip(specs, choice):
+                            self.assertIn(_global_guard(spec["selected_global"], selected, b"\n"), branch)
+                            grant = action(140, text=spec["item"], target=17).encode()
+                            self.assertEqual(branch.count(grant), 0 if selected else 1)
+                            self.assertEqual(branch.count(b"GLOBAL" + spec["consumed_global"].encode()), selected)
+                            self.assertEqual(branch.count(b"GLOBAL" + spec["event_global"].encode()), 1)
+                            marker = (f'AC\n30OB\n{obj(17)}OB\n{obj()}OB\n{obj()}'
+                                      f'1 0 0 0 0"LOCALS{spec["recipient_local"]}" "" AC\n').encode()
+                            self.assertEqual(branch.count(marker), 1)
+                        for kept in (b'"ring09"', b"GLOBALFLPR_QBOOK", b"GLOBALFLPR_XBOOK", b"GLOBALFLPR_EBOOK",
+                                     action(151, 50658, target=1).encode()):
+                            self.assertEqual(branch.count(kept), source.count(kept))
+        # A scroll that the page gives twice leaves its route out; the other
+        # scroll's route is prepared alone, and recognised again.
+        twice = book_fixture().replace(BOOK_GIFTS.encode(),
+                                       (BOOK_GIFTS + action(140, text="scrl9b", target=17)).encode())
+        reasons = {"ppbook": "PPBOOK.BCS block 1 gives SCRL9B twice in one response"}
+        self.assertEqual(rewards.route_reasons("ppbook", twice), reasons)
+        partial = rewards.patch_reward("ppbook", twice)
+        self.assertNotIn(b"FLPR_QM2_260", partial)
+        self.assertIn(b"FLPR_QM2_262", partial)
+        self.assertEqual(rewards.patch_reward("ppbook", partial), partial)
+        self.assertTrue(rewards.own_patch("ppbook", partial))
+        self.assertEqual(rewards.route_reasons("ppbook", partial), reasons)
+        # Without the scrolls nothing is prepared.
+        neither = book_fixture().replace(BOOK_GIFTS.encode(), b"")
+        self.assertEqual(rewards.route_reasons("ppbook", neither),
+                         {"ppbook": "PPBOOK.BCS has no block that gives SCRL9B",
+                          "ppbook2": "PPBOOK.BCS has no block that gives SCRL8Z"})
+        with self.assertRaisesRegex(ProfileError, "no block that gives SCRL9B"):
+            rewards.patch_reward("ppbook", neither)
+        # Another copy of one route's patch is not this adapter's.
+        result = rewards.patch_reward("ppbook", book_fixture())
+        tampered = result.replace(b"FLPR_RM2_262", b"FLPR_OTHERS", 1)
+        with self.assertRaisesRegex(ProfileError, "carries a changed copy"):
+            rewards.patch_reward("ppbook", tampered)
+        # The script the patch was made from; a conversation is none.
+        self.assertEqual(rewards.unpatched_script("ppbook", result), book_fixture())
+        self.assertEqual(rewards.unpatched_script("bcs:ppbook", book_fixture(False)), book_fixture(False))
+        with self.assertRaisesRegex(ProfileError, "carries a changed copy"):
+            rewards.unpatched_script("ppbook", tampered)
+        with self.assertRaisesRegex(ProfileError, "UHOGRE01.DLG is not a reward script"):
+            rewards.unpatched_script("dlg:uhogre01", b"")
 
     def test_bg1_routes_have_their_own_flags_and_take_the_games_names(self):
         # Varci's payment: BG:EE names the shield SHLD07, EET SHLD07A (its rename lists).
@@ -1110,13 +1209,13 @@ class Mode2RewardTests(unittest.TestCase):
         self.assertEqual(text.text(1, set()), "Existing helmet narrative")
         self.assertIn("You pull an item from the murky water", text.text(ref, set()))
         original = script_fixture("ddwell")
-        spec = rewards.resource_specs("bcs:ddwell")[0]
+        specs = rewards.resource_specs("bcs:ddwell")
         result = rewards.patch_reward("ddwell", original, ddwell_ref=ref)
         self.assertEqual(rewards.patch_reward("ddwell", result), result)
-        self.assertEqual(rewards._script_original(result, spec), (original, ref, True))
-        self.assertEqual(rewards._script_original(original, spec), (original, None, False))
+        self.assertEqual(rewards._script_original(result, specs), (original, ref, True))
+        self.assertEqual(rewards._script_original(original, specs), (original, None, False))
         changed_ref = rewards.patch_reward("ddwell", result, ddwell_ref=ref + 1)
-        self.assertEqual(rewards._script_original(changed_ref, spec), (original, ref + 1, True))
+        self.assertEqual(rewards._script_original(changed_ref, specs), (original, ref + 1, True))
         self.assertEqual(rewards.patch_reward("bcs:ddwell", result, refs={40850: ref + 1}), changed_ref)
         self.assertIn(action(151, 40850, target=1).encode(), result)
         self.assertIn(action(151, ref, target=1).encode(), result)
@@ -1186,7 +1285,7 @@ class Mode2RewardTests(unittest.TestCase):
                             self.assertIn(b"NumTimesTalkedTo(0)", dlg.state_triggers[entry])
                         self.assertIn(b'ReallyForceSpell(Myself,DRYAD_TELEPORT)', b"".join(dlg.actions))
                 elif kind == "bcs":
-                    self.assertEqual(rewards._script_original(result, rewards.resource_specs(resource, **EET)[0])[0],
+                    self.assertEqual(rewards._script_original(result, rewards.resource_specs(resource, **EET))[0],
                                      original)
                 elif name in ("aran", "sahkng01"):
                     self.check_pair(name, original, result)

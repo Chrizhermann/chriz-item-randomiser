@@ -39,23 +39,27 @@ fn tier(row: &Value) -> String {
     format!("{}:{}", crate::json::py_str(row.get("campaign").unwrap_or(&Value::Null)), crate::json::py_str(row.get("tier").unwrap_or(&Value::Null)))
 }
 
-/// The change the installer makes that this reward row needs.
-fn source_change(row: &Value) -> Option<&'static str> {
+/// The change the installer makes that this reward row needs. An extended
+/// reward route needs none: Apply patches the game's own script for it, also
+/// the book that the installer prepared for the ring's quest.
+fn source_change(row: &Value) -> Result<Option<&'static str>> {
     let adapter = row.get("adapter").and_then(Value::as_str);
     if adapter == Some("unshey") {
-        return Some("unshey");
+        return Ok(Some("unshey"));
     }
     let resource = s(row, "source_resource");
     if adapter == Some("scripted") {
         if let Some(quest) = resource.strip_prefix("bcs:") {
-            return quest_change(quest);
+            if crate::original_catalog::mode2_route_source(row)?.is_none() {
+                return Ok(quest_change(quest));
+            }
         }
     }
-    None
+    Ok(None)
 }
 
-fn target_change(row: &Value) -> Option<&'static str> {
-    s(row, "target").strip_suffix(".bcs").and_then(quest_change)
+fn target_change(row: &Value) -> Result<Option<&'static str>> {
+    Ok(s(row, "target").strip_suffix(".bcs").and_then(quest_change))
 }
 
 /// Default charges of each named installed item.
@@ -411,12 +415,12 @@ fn build_from(
     let draft_items = draft.at("items")?.as_list().map(Vec::as_slice).unwrap_or(&[]);
     let draft_targets = draft.at("targets")?.as_list().map(Vec::as_slice).unwrap_or(&[]);
     for (rows, change_of, enabled) in [
-        (draft_items, source_change as fn(&Value) -> Option<&'static str>, &mut enabled_sources),
-        (draft_targets, target_change as fn(&Value) -> Option<&'static str>, &mut enabled_targets),
+        (draft_items, source_change as fn(&Value) -> Result<Option<&'static str>>, &mut enabled_sources),
+        (draft_targets, target_change as fn(&Value) -> Result<Option<&'static str>>, &mut enabled_targets),
     ] {
         for row in rows {
             let is_enabled = row.get("enabled").is_some_and(Value::truthy);
-            let change = if is_enabled { change_of(row) } else { None };
+            let change = if is_enabled { change_of(row)? } else { None };
             match change {
                 Some(change) if !prepared.contains(change) => {
                     unprepared.entry(change).or_default().push(row.at("id")?.clone());
@@ -901,7 +905,18 @@ fn fit_from(
         }
         let campaign = compile_campaign(generated.at("profile")?, catalog, world, generated.at("plan")?, Some(scans))?;
         let mut problems = Dict::new();
-        crate::native_export::compile(&campaign, world, index, catalog_items, catalog, Some(&mut problems), false, None)?;
+        crate::native_export::compile(
+            &campaign,
+            world,
+            index,
+            catalog_items,
+            catalog,
+            Some(&mut problems),
+            false,
+            None,
+            None,
+            None,
+        )?;
         if problems.is_empty() {
             return Ok(generated);
         }

@@ -17,17 +17,19 @@ use cir_config::json::{Dict, Value};
 use cir_config::mode2_rewards::{
     direct_rewards, game_text_refs, gives_reward, journal_lua, journal_refs, own_patch, patch_dialogue, patch_reward,
     physical_source_reward, prepare_ddwell_text, prepare_reward_texts, resource_rewards, resource_specs, rewards,
-    route_reasons, script_original, source_rewards, source_spec, target_spec, text_lines, text_original, text_refs,
-    titled, transfer_spec, transfer_specs, Naming, TextRefs, PHYSICAL_SOURCE_REWARDS, TEXT_REFS,
+    route_reasons, script_original, source_rewards, source_spec, target_rewards, target_spec, text_lines, text_original,
+    text_refs, titled, transfer_spec, transfer_specs, unpatched_script, Naming, TextRefs, PHYSICAL_SOURCE_REWARDS,
+    TEXT_REFS,
 };
 use cir_config::py::{put_u32, str_value};
 use cir_config::quest_options::Dialogue;
-use cir_config::quest_rewards::blocks;
+use cir_config::quest_rewards::{blocks, global_guard};
 use cir_config::script_text::script_blocks;
 use common::builders::{contains, count, index, make_tlk, outgoing, replace, sha, tlk_text, u32_at};
 use common::mode2::{
-    action, action_with, alternatives, block, branches, check_dialogue, check_pair, check_text_graph, dialogue_fixture,
-    layout_dialogue, obj, script_fixture, specs, target_number, text, text_variant, well_reward, with_actions, LayoutReply,
+    action, action_with, alternatives, block, book_fixture, book_gifts, branches, check_dialogue, check_pair,
+    check_text_graph, dialogue_fixture, layout_dialogue, obj, script_fixture, specs, target_number, text, text_variant,
+    well_reward, with_actions, LayoutReply,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
@@ -85,6 +87,7 @@ fn originals() -> Vec<(String, Vec<u8>)> {
     }
     result.push(("bcs:asysta01".into(), script_fixture("asysta01")));
     result.push(("bcs:ddwell".into(), script_fixture("ddwell")));
+    result.push(("bcs:ppbook".into(), book_fixture(true)));
     result
 }
 
@@ -470,7 +473,7 @@ fn script_blocks_are_found_by_meaning_in_another_layout() {
     let result = patch_reward("bcs:ddwell", &original, None, Some(100001), Naming::default()).unwrap();
     assert_eq!(patch_reward("bcs:ddwell", &result, None, None, Naming::default()).unwrap(), result);
     assert!(own_patch("bcs:ddwell", &result, Naming::default()).unwrap());
-    assert_eq!(script_original(&result, &specs("bcs:ddwell")[0]).unwrap(), (original.clone(), Some(100001), true));
+    assert_eq!(script_original(&result, &specs("bcs:ddwell")).unwrap(), (original.clone(), Some(100001), true));
     let old = blocks(&original, 3, b"\r\n").unwrap().0;
     let new = blocks(&result, 5, b"\r\n").unwrap().0;
     assert_eq!(new[0], old[0]);
@@ -974,7 +977,7 @@ fn well_uses_appended_original_text_only_for_selected_source_and_reexports() {
     assert_eq!(tlk_text(&updated.male, 1).as_deref(), Some("Existing helmet narrative"));
     assert!(tlk_text(&updated.male, reference as u32).unwrap().contains("You pull an item from the murky water"));
     let original = script_fixture("ddwell");
-    let spec = &specs("bcs:ddwell")[0];
+    let spec = &specs("bcs:ddwell");
     let result = patch_reward("ddwell", &original, None, Some(reference), Naming::default()).unwrap();
     assert_eq!(patch_reward("ddwell", &result, None, None, Naming::default()).unwrap(), result);
     assert_eq!(script_original(&result, spec).unwrap(), (original.clone(), Some(reference), true));
@@ -988,6 +991,87 @@ fn well_uses_appended_original_text_only_for_selected_source_and_reexports() {
     assert_profile(patch_reward("ddwell", &gone, None, None, Naming::default()).unwrap_err(), "changed copy");
     assert_profile(patch_reward("ddwell", &original, None, None, Naming::default()).unwrap_err(), "allocated");
     assert_profile(patch_reward("bcs:ddwell", &original, Some(&BTreeMap::from([(40849, reference)])), None, Naming::default()).unwrap_err(), "allocated");
+}
+
+#[test]
+fn the_books_two_scrolls_are_gated_apart_beside_the_rings_quest() {
+    let book = specs("bcs:ppbook");
+    let rows: Vec<(&str, &str, &str)> =
+        book.iter().map(|spec| (text(spec, "route"), text(spec, "quest"), text(spec, "item"))).collect();
+    assert_eq!(rows, [("ppbook", "ppbook", "scrl9b"), ("ppbook2", "ppbook", "scrl8z")]);
+    assert!(book.iter().all(|spec| spec.get("target_ids").unwrap().py_eq(&list(&[]))));
+    let payload = source_spec("original-source:bg2:mode2:item:262", Naming::default()).unwrap();
+    let expected = cir_config::dict! {"resref" => "scrl8z", "expiration" => 0, "charges" => ints(&[0, 0, 0]), "flags" => 0};
+    assert!(payload.get("payload").unwrap().py_eq(&Value::Dict(expected)));
+    assert!(!target_rewards().values().any(|route| route.as_str() == Some("ppbook")));
+    for installed in [true, false] {
+        let original = book_fixture(installed);
+        let result = synthetic_patch("ppbook", &original);
+        assert_eq!(script_original(&result, &book).unwrap(), (original.clone(), None, true));
+        let old = blocks(&original, if installed { 3 } else { 2 }, b"\n").unwrap().0;
+        let new = blocks(&result, if installed { 9 } else { 5 }, b"\n").unwrap().0;
+        assert_eq!(new[0], old[0]);
+        // Each block of the last page became four, one for each choice of the
+        // scrolls' rows; the ring's actions and guard stay.
+        for (number, source) in old[1..].iter().enumerate() {
+            for (index, choice) in [[false, false], [false, true], [true, false], [true, true]].into_iter().enumerate() {
+                let branch = &new[1 + number * 4 + index];
+                for (spec, selected) in book.iter().zip(choice) {
+                    assert!(contains(branch, &global_guard(text(spec, "selected_global"), selected, b"\n").unwrap()));
+                    let grant = action(140, 0, text(spec, "item"), 17, 0);
+                    assert_eq!(count(branch, grant.as_bytes()), usize::from(!selected), "{installed} {number} {index}");
+                    let consumed = format!("GLOBAL{}", text(spec, "consumed_global"));
+                    assert_eq!(count(branch, consumed.as_bytes()), usize::from(selected));
+                    assert_eq!(count(branch, format!("GLOBAL{}", text(spec, "event_global")).as_bytes()), 1);
+                    let marker = format!(
+                        "AC\n30OB\n{}OB\n{}OB\n{}1 0 0 0 0\"LOCALS{}\" \"\" AC\n",
+                        obj(17),
+                        obj(0),
+                        obj(0),
+                        text(spec, "recipient_local")
+                    );
+                    assert_eq!(count(branch, marker.as_bytes()), 1);
+                }
+                for kept in [
+                    b"\"ring09\"".to_vec(),
+                    b"GLOBALFLPR_QBOOK".to_vec(),
+                    b"GLOBALFLPR_XBOOK".to_vec(),
+                    b"GLOBALFLPR_EBOOK".to_vec(),
+                    action(151, 50658, "", 1, 0).into_bytes(),
+                ] {
+                    assert_eq!(count(branch, &kept), count(source, &kept));
+                }
+            }
+        }
+    }
+    // A scroll that the page gives twice leaves its route out; the other
+    // scroll's route is prepared alone, and recognised again.
+    let gifts = book_gifts();
+    let twice = replace(&book_fixture(true), gifts.as_bytes(), (gifts.clone() + &action(140, 0, "scrl9b", 17, 0)).as_bytes(), None);
+    let expected = named(&[("ppbook", "PPBOOK.BCS block 1 gives SCRL9B twice in one response")]);
+    assert_eq!(reasons("ppbook", &twice), expected);
+    let partial = patch_reward("ppbook", &twice, None, None, Naming::default()).unwrap();
+    assert!(!contains(&partial, b"FLPR_QM2_260"));
+    assert!(contains(&partial, b"FLPR_QM2_262"));
+    assert_eq!(patch_reward("ppbook", &partial, None, None, Naming::default()).unwrap(), partial);
+    assert!(own_patch("ppbook", &partial, Naming::default()).unwrap());
+    assert_eq!(reasons("ppbook", &partial), expected);
+    // Without the scrolls nothing is prepared.
+    let neither = replace(&book_fixture(true), gifts.as_bytes(), b"", None);
+    assert_eq!(
+        reasons("ppbook", &neither),
+        named(&[("ppbook", "PPBOOK.BCS has no block that gives SCRL9B"), ("ppbook2", "PPBOOK.BCS has no block that gives SCRL8Z")])
+    );
+    assert_profile(patch_reward("ppbook", &neither, None, None, Naming::default()).unwrap_err(), "no block that gives SCRL9B");
+    // Another copy of one route's patch is not this adapter's.
+    let result = patch_reward("ppbook", &book_fixture(true), None, None, Naming::default()).unwrap();
+    let tampered = replace(&result, b"FLPR_RM2_262", b"FLPR_OTHERS", Some(1));
+    assert_profile(patch_reward("ppbook", &tampered, None, None, Naming::default()).unwrap_err(), "carries a changed copy");
+    // The script the patch was made from; a conversation is none.
+    assert_eq!(unpatched_script("ppbook", &result, Naming::default()).unwrap(), book_fixture(true));
+    assert_eq!(unpatched_script("bcs:ppbook", &book_fixture(false), Naming::default()).unwrap(), book_fixture(false));
+    assert_profile(unpatched_script("ppbook", &tampered, Naming::default()).unwrap_err(), "carries a changed copy");
+    assert_profile(unpatched_script("dlg:uhogre01", b"", Naming::default()).unwrap_err(), "UHOGRE01.DLG is not a reward script");
 }
 
 /// The patcher part of test_original_option_export's
@@ -1016,6 +1100,9 @@ fn dialogue_grant_keeps_exact_charges() {
 const REVIEWED_EET: &[(&str, &str, &str)] = &[
     ("bcs:asysta01", "f0f1773357f2280b7b6a05695ff278650110dc60898e2c7ddc1241867782fadd", "26bf2a67793e7b05fe35781f85ec4885aac806520927c35deba9aed5a2f5b841"),
     ("bcs:ddwell", "4d2232892ce30f7e55333f696bb2717e5208e3d588e0ef77e990fc0077955544", "d0422206eb8c983e6fc14dea29ec78a8607674dd74548c0ff29be93fbd0accdb"),
+    // The book as CIR's installer prepares it for the ring's quest; the
+    // scrolls' routes gate its two blocks that give them.
+    ("bcs:ppbook", "39b1f5119d8abc96d5158eec54d212475e639516cb35d86de27e7d6e4cbbd515", "e501c882a3fccf42e7cd5643d36c54dd67b5c38f3518d252cf98c453ddf1062a"),
     ("dlg:aldeth", "c9c9ec1e62045e24c585040effad5ec9561a404df3b84c8eb971264b1ef242ef", "b6a08cfc2f712b30335ab0eb3534662785b68d8ed77b414e75377c01780d0982"),
     ("dlg:amcler01", "5bac12a183463f6faa912b15e80c45c321cd2189f318c5056cf38b2150a6d79e", "f1a7a795b6b22abf209fd9be5f3357e71ced3e432db3e86e5ee38c9ad88d65e9"),
     ("dlg:ammayor", "d37409df94285e4bdce88bdfdb38382790dca567dc6304744244d9d5504030d6", "d71af3922a33954154f7f2745df7466647465ad3920b6a04548b6a9df73a2e05"),
@@ -1150,7 +1237,7 @@ fn reviewed_eet_resources_when_available_patch_exactly_and_reexport() {
                 assert!(contains(&dlg.actions.concat(), b"ReallyForceSpell(Myself,DRYAD_TELEPORT)"));
             }
         } else if kind == "bcs" {
-            assert_eq!(script_original(&result, &resource_specs(resource, eet).unwrap()[0]).unwrap().0, original);
+            assert_eq!(script_original(&result, &resource_specs(resource, eet).unwrap()).unwrap().0, original);
         } else if ["aran", "sahkng01"].contains(&name) {
             check_pair(name, &original, &result);
         } else {

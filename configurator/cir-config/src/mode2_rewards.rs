@@ -446,6 +446,18 @@ fn build_registry() -> Registry {
         row.insert("source_ids", Value::List(Vec::new()));
         row.insert("authored_source_ids", list!["original-source:bg2:mode2:item:7"]);
     }
+    // The two scrolls that the book of Lavok's sphere (PPBOOK.BCS, AR1513)
+    // gives with its ring on the last page (Item Randomiser's rows 260 and
+    // 262). The book's places are the ring's quest (the installer splits that
+    // page for the ring: quest_rewards::QUESTS), whose event delivers what
+    // they receive; a scroll's route only drops its grant where its row moved,
+    // so it has no place of its own. The installed book gives them in two
+    // blocks, 6 and 7.
+    for (key, item, source) in [("ppbook", "scrl9b", 260), ("ppbook2", "scrl8z", 262)] {
+        let mut row = spec("ppbook", "bcs", item, source, None, "LastTrigger", NO_CHARGES, list![6, 7], "bg2");
+        row.insert("target_ids", Value::List(Vec::new()));
+        rewards.insert(key, row);
+    }
     for row in rewards.values_mut() {
         let row = row.as_dict_mut().expect("reward row");
         let resource = row.get("resource").cloned().expect("resource");
@@ -1801,22 +1813,66 @@ pub fn patch_script(data: &[u8], spec: &Dict, text_ref: Option<i64>) -> Result<V
     Ok([script.prefix, blocks.concat(), script.suffix].concat())
 }
 
+/// Gate the blocks that give each route's item, one route after the other
+/// (`_patch_scripts`).
+///
+/// A route whose grant is not recognised keeps its blocks as they are; its
+/// reason goes to `reasons`. With no route recognised, nothing is prepared.
+pub fn patch_scripts(data: &[u8], specs: &[Dict], text_ref: Option<i64>, reasons: Option<&mut Dict>) -> Result<Vec<u8>> {
+    let mut data = data.to_vec();
+    let mut failures = Dict::new();
+    for spec in specs {
+        match patch_script(&data, spec, text_ref) {
+            Ok(patched) => data = patched,
+            Err(error) if error.kind == ErrorKind::Profile => failures.insert(route(spec)?, error.message),
+            Err(error) => return Err(error),
+        }
+    }
+    if let Some(reasons) = reasons {
+        for (key, reason) in failures.iter() {
+            reasons.insert(key, reason.clone());
+        }
+    }
+    if failures.len() == specs.len() {
+        let first = specs.first().ok_or_else(index_error)?;
+        return Err(profile(failures.get(&route(first)?).map(str_value).unwrap_or_default()));
+    }
+    Ok(data)
+}
+
 /// The original of a reward script, its text ref and whether we patched it
 /// (`_script_original`).
-pub fn script_original(data: &[u8], spec: &Dict) -> Result<(Vec<u8>, Option<i64>, bool)> {
-    let resource = text(spec, "resource")?;
+///
+/// The routes' patches are undone in the reverse order of [`patch_scripts`];
+/// patching the result again must give `data` exactly.
+pub fn script_original(data: &[u8], specs: &[Dict]) -> Result<(Vec<u8>, Option<i64>, bool)> {
+    let resource = text(specs.first().ok_or_else(index_error)?, "resource")?;
     let newline: &[u8] = if find_bytes(data, b"\r\n", 0).is_some() { b"\r\n" } else { b"\n" };
-    let flag = text_field(spec, "selected_global", "encode")?;
-    let unselected = global_guard(flag, false, newline)?;
-    let selected = global_guard(flag, true, newline)?;
-    if find_bytes(data, &[b"\"GLOBAL", flag.as_bytes(), b"\""].concat(), 0).is_none() {
+    let mut patched = Vec::new();
+    for spec in specs {
+        let flag = text_field(spec, "selected_global", "encode")?;
+        if find_bytes(data, &[b"\"GLOBAL", flag.as_bytes(), b"\""].concat(), 0).is_some() {
+            patched.push(spec);
+        }
+    }
+    if patched.is_empty() {
         return Ok((data.to_vec(), None, false));
     }
-    let (original, numbers) = match unpatched_script(data, spec, newline, &selected, &unselected) {
-        Ok(found) => found,
-        Err(error) if error.kind == ErrorKind::Profile => return Err(changed_patch(&resource)),
-        Err(error) => return Err(error),
-    };
+    let (mut original, mut numbers) = (data.to_vec(), BTreeSet::new());
+    for spec in patched.into_iter().rev() {
+        let undone = (|| {
+            let flag = text_field(spec, "selected_global", "encode")?;
+            unpatch_script(&original, spec, newline, &global_guard(flag, true, newline)?, &global_guard(flag, false, newline)?)
+        })();
+        match undone {
+            Ok((restored, found)) => {
+                original = restored;
+                numbers.extend(found);
+            }
+            Err(error) if error.kind == ErrorKind::Profile => return Err(changed_patch(&resource)),
+            Err(error) => return Err(error),
+        }
+    }
     // The allocated text is one of the selected copies' numbers; only a
     // possible strref can be it.
     let candidates: Vec<Option<i64>> = if text_refs(&resource).is_some() {
@@ -1825,7 +1881,7 @@ pub fn script_original(data: &[u8], spec: &Dict) -> Result<(Vec<u8>, Option<i64>
         vec![None]
     };
     for reference in candidates {
-        match patch_script(&original, spec, reference) {
+        match patch_scripts(&original, specs, reference, None) {
             Ok(patched) if patched == data => return Ok((original, reference, true)),
             Ok(_) => {}
             Err(error) if error.kind == ErrorKind::Profile => break,
@@ -1840,7 +1896,7 @@ pub fn script_original(data: &[u8], spec: &Dict) -> Result<(Vec<u8>, Option<i64>
 ///
 /// Also returns the integers of the selected copies' actions, among them the
 /// allocated reward text.
-fn unpatched_script(
+fn unpatch_script(
     data: &[u8],
     spec: &Dict,
     newline: &[u8],
@@ -1902,7 +1958,7 @@ pub(crate) struct Examined {
 
 pub(crate) fn examine(resource: &str, data: &[u8], naming: Naming<'_>) -> Result<Examined> {
     if resource.starts_with("bcs:") {
-        let (original, script_ref, own) = script_original(data, &resource_specs(resource, naming)?[0])?;
+        let (original, script_ref, own) = script_original(data, &resource_specs(resource, naming)?)?;
         return Ok(Examined { original, own, script_ref, text_refs: None });
     }
     let unpatched = || Examined { original: data.to_vec(), own: false, script_ref: None, text_refs: None };
@@ -2106,10 +2162,20 @@ pub fn own_patch(resource: &str, data: &[u8], naming: Naming<'_>) -> Result<bool
     Ok(examine(&resource_key(resource)?, data, naming)?.own)
 }
 
+/// The script this adapter's patch was made from, exactly; `data` itself
+/// when it is not our patch. Raises for a changed copy of our patch.
+pub fn unpatched_script(resource: &str, data: &[u8], naming: Naming<'_>) -> Result<Vec<u8>> {
+    let resource = resource_key(resource)?;
+    if !resource.starts_with("bcs:") {
+        return Err(profile(format!("{} is not a reward script", label(&resource))));
+    }
+    Ok(examine(&resource, data, naming)?.original)
+}
+
 fn prepare_routes(resource: &str, specs: &[Dict], data: &[u8], reasons: &mut Dict, naming: Naming<'_>) -> Result<()> {
     let examined = examine(resource, data, naming)?;
     if resource.starts_with("bcs:") {
-        patch_script(&examined.original, &specs[0], Some(0))?;
+        patch_scripts(&examined.original, specs, Some(0), Some(reasons))?;
     } else if text_refs(resource).is_some() {
         let stand_in: BTreeMap<i64, i64> =
             game_text_refs(resource, naming.game)?.into_iter().map(|(old, _)| (old, old)).collect();
@@ -2212,7 +2278,7 @@ pub fn patch_reward(
             }
             ddwell_ref = refs.values().next().copied();
         }
-        return patch_script(&examined.original, &specs[0], ddwell_ref.or(examined.script_ref));
+        return patch_scripts(&examined.original, &specs, ddwell_ref.or(examined.script_ref), None);
     }
     if text_refs(&resource).is_some() {
         return patch_text_dialogue(&examined.original, &resource, refs.or(examined.text_refs.as_ref()), true, true, naming);

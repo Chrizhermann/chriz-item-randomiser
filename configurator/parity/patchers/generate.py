@@ -376,6 +376,7 @@ def mode2_inputs() -> dict:
                                    else mode2_tests.dialogue_fixture(mode2_rewards.resource_specs(resource)))
     originals["bcs:asysta01"] = mode2_tests.script_fixture("asysta01")
     originals["bcs:ddwell"] = mode2_tests.script_fixture("ddwell")
+    originals["bcs:ppbook"] = mode2_tests.book_fixture()
     return originals
 
 
@@ -455,9 +456,38 @@ def text_original_case(s: Scenario, label: str, resource: str, data: bytes, nami
 
 
 def script_original_case(s: Scenario, label: str, resource: str, data: bytes) -> None:
-    spec = mode2_rewards.resource_specs(resource)[0]
-    s.case(f"script_original {label}", "mode2_rewards._script_original", {"data": data, "spec": spec},
-           lambda: mode2_rewards._script_original(data, spec))
+    specs = mode2_rewards.resource_specs(resource)
+    s.case(f"script_original {label}", "mode2_rewards._script_original", {"data": data, "specs": list(specs)},
+           lambda: mode2_rewards._script_original(data, specs))
+
+
+def unpatched_case(s: Scenario, label: str, resource: str, data: bytes) -> None:
+    s.case(f"unpatched_script {label}", "mode2_rewards.unpatched_script", {"resource": resource, "data": data},
+           lambda: mode2_rewards.unpatched_script(resource, data))
+
+
+def book_cases(s: Scenario) -> None:
+    """test_the_books_two_scrolls_are_gated_apart_beside_the_rings_quest."""
+    gifts = mode2_tests.BOOK_GIFTS.encode()
+    installed = mode2_tests.book_fixture()
+    twice = installed.replace(gifts, gifts + mode2_tests.action(140, text="scrl9b", target=17).encode())
+    for label, original in (("installed", installed), ("game's own", mode2_tests.book_fixture(False)),
+                            ("crlf", crlf(installed)), ("twice", twice),
+                            ("neither", installed.replace(gifts, b""))):
+        result = patched(s, f"book {label}", "bcs:ppbook", original)
+        reward_checks(s, f"book original {label}", "bcs:ppbook", original)
+        script_original_case(s, f"book original {label}", "bcs:ppbook", original)
+        unpatched_case(s, f"book original {label}", "PPBOOK", original)
+        if result is None:
+            continue
+        reward_checks(s, f"book result {label}", "bcs:ppbook", result)
+        script_original_case(s, f"book result {label}", "bcs:ppbook", result)
+        unpatched_case(s, f"book result {label}", "ppbook.bcs", result)
+        tampered = result.replace(b"FLPR_RM2_262", b"FLPR_OTHERS", 1)
+        reward_checks(s, f"book tampered {label}", "bcs:ppbook", tampered)
+        unpatched_case(s, f"book tampered {label}", "bcs:ppbook", tampered)
+    unpatched_case(s, "dialogue", "dlg:uhogre01", b"")
+    unpatched_case(s, "unknown", "bcs:nothing", installed)
 
 
 def registry_cases(s: Scenario) -> None:
@@ -926,6 +956,7 @@ def mode2_scenario() -> Scenario:
     patch_dialogue_cases(s, allocated)
     text_route_cases(s, originals, allocated)
     ddwell_cases(s, originals["bcs:ddwell"], results["bcs:ddwell"])
+    book_cases(s)
     reason_cases(s)
     layout_cases(s)
     aran_cases(s)

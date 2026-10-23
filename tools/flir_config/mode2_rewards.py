@@ -182,6 +182,15 @@ REWARDS["udlesa"].update(
 # without a target, its selected copy only drops the grant.
 _alias("sahrod", "rods02", 7, None, "SAHROD", {"sahkng01": ((81, 0),)})
 REWARDS["sahrod"].update(source_ids=(), authored_source_ids=("original-source:bg2:mode2:item:7",))
+# The two scrolls that the book of Lavok's sphere (PPBOOK.BCS, AR1513) gives
+# with its ring on the last page (Item Randomiser's rows 260 and 262). The
+# book's places are the ring's quest (the installer splits that page for the
+# ring: quest_rewards.QUESTS), whose event delivers what they receive; a
+# scroll's route only drops its grant where its row moved, so it has no place
+# of its own. The installed book gives them in two blocks, 6 and 7.
+for _key, _item, _source in (("ppbook", "scrl9b", 260), ("ppbook2", "scrl8z", 262)):
+    REWARDS[_key] = _spec("ppbook", "bcs", _item, _source, None, "LastTrigger", (0, 0, 0), (6, 7))
+    REWARDS[_key]["target_ids"] = ()
 # Physical sources whose reward dialogue also gives their item, by (owner
 # resource, kind, item) as the catalog binds the original row: the creature's
 # or the area's container record of the item. A game whose dialogue gives
@@ -1010,16 +1019,44 @@ def _patch_script(data: bytes, spec: dict, text_ref: int | None = None) -> bytes
     return script.prefix + b"".join(blocks) + script.suffix
 
 
-def _script_original(data: bytes, spec: dict) -> tuple[bytes, int | None, bool]:
-    """The original of a reward script, its text ref and whether we patched it."""
-    resource = spec["resource"]
+def _patch_scripts(data: bytes, specs: tuple[dict, ...], text_ref: int | None = None, *,
+                   reasons: dict[str, str] | None = None) -> bytes:
+    """Gate the blocks that give each route's item, one route after the other.
+
+    A route whose grant is not recognised keeps its blocks as they are; its
+    reason goes to <reasons>. With no route recognised, nothing is prepared.
+    """
+    failures = {}
+    for spec in specs:
+        try:
+            data = _patch_script(data, spec, text_ref)
+        except ProfileError as exc:
+            failures[spec["route"]] = str(exc)
+    if reasons is not None:
+        reasons.update(failures)
+    if len(failures) == len(specs):
+        raise ProfileError(failures[specs[0]["route"]])
+    return data
+
+
+def _script_original(data: bytes, specs: tuple[dict, ...]) -> tuple[bytes, int | None, bool]:
+    """The original of a reward script, its text ref and whether we patched it.
+
+    The routes' patches are undone in the reverse order of _patch_scripts;
+    patching the result again must give <data> exactly.
+    """
+    resource = specs[0]["resource"]
     newline = b"\r\n" if b"\r\n" in data else b"\n"
-    unselected = _global_guard(spec["selected_global"], False, newline)
-    selected = _global_guard(spec["selected_global"], True, newline)
-    if b'"GLOBAL' + spec["selected_global"].encode() + b'"' not in data:
+    patched = [spec for spec in specs if b'"GLOBAL' + spec["selected_global"].encode() + b'"' in data]
+    if not patched:
         return data, None, False
+    original, numbers = data, set()
     try:
-        original, numbers = _unpatched_script(data, spec, newline, selected, unselected)
+        for spec in reversed(patched):
+            original, found = _unpatched_script(original, spec, newline,
+                                                _global_guard(spec["selected_global"], True, newline),
+                                                _global_guard(spec["selected_global"], False, newline))
+            numbers |= found
     except ProfileError:
         raise _changed_patch(resource) from None
     # The allocated text is one of the selected copies' numbers; only a
@@ -1028,7 +1065,7 @@ def _script_original(data: bytes, spec: dict) -> tuple[bytes, int | None, bool]:
                   if resource in TEXT_REFS else [None])
     for ref in candidates:
         try:
-            if _patch_script(original, spec, ref) == data:
+            if _patch_scripts(original, specs, ref) == data:
                 return original, ref, True
         except ProfileError:
             break
@@ -1081,7 +1118,7 @@ def _examine(resource: str, data: bytes, *, game=None, names=None) -> _Examined:
     if not isinstance(data, bytes):
         raise ProfileError("Unsupported reward resource bytes")
     if resource.startswith("bcs:"):
-        original, ref, own = _script_original(data, resource_specs(resource, game=game, names=names)[0])
+        original, ref, own = _script_original(data, resource_specs(resource, game=game, names=names))
         return _Examined(original, own, ref)
     if resource in TEXT_REFS:
         recovered = _text_original(data, resource, game=game, names=names)
@@ -1187,6 +1224,16 @@ def own_patch(resource: str, data: bytes, *, game: str | None = None, names: Eet
     return _examine(_resource_key(resource), data, game=game, names=names).own
 
 
+def unpatched_script(resource: str, data: bytes, *, game: str | None = None,
+                     names: EetNames | None = None) -> bytes:
+    """The script this adapter's patch was made from, exactly; <data> itself
+    when it is not our patch. Raises for a changed copy of our patch."""
+    resource = _resource_key(resource)
+    if not resource.startswith("bcs:"):
+        raise ProfileError(f"{_label(resource)} is not a reward script")
+    return _examine(resource, data, game=game, names=names).original
+
+
 def route_reasons(resource: str, data: bytes, *, game: str | None = None,
                   names: EetNames | None = None) -> dict[str, str]:
     """Why each route with a grant in this resource cannot be prepared from these bytes.
@@ -1200,7 +1247,7 @@ def route_reasons(resource: str, data: bytes, *, game: str | None = None,
     try:
         examined = _examine(resource, data, game=game, names=names)
         if resource.startswith("bcs:"):
-            _patch_script(examined.original, specs[0], 0)
+            _patch_scripts(examined.original, specs, 0, reasons=reasons)
         elif resource in TEXT_REFS:
             _patch_text_dialogue(examined.original, resource, {old: old for old in text_refs(resource, game)},
                                  game=game, names=names)
@@ -1253,8 +1300,8 @@ def patch_reward(resource: str, data: bytes, *, refs: dict[int, int] | None = No
             if resource not in TEXT_REFS or set(refs) != set(text_refs(resource, game)):
                 raise ProfileError(f"{_label(resource)} requires its allocated original reward text")
             ddwell_ref = next(iter(refs.values()))
-        return _patch_script(examined.original, specs[0],
-                             examined.refs if ddwell_ref is None else ddwell_ref)
+        return _patch_scripts(examined.original, specs,
+                              examined.refs if ddwell_ref is None else ddwell_ref)
     if resource in TEXT_REFS:
         return _patch_text_dialogue(examined.original, resource, examined.refs if refs is None else refs,
                                     game=game, names=names)

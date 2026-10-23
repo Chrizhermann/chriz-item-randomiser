@@ -21488,7 +21488,7 @@
     }
    },
    "independent": true,
-   "result": null
+   "result": "original-source:bg2:mode2:item:260"
   },
   {
    "name": "mode2_route_source bg2:mode2:item:261",
@@ -21546,7 +21546,7 @@
     }
    },
    "independent": true,
-   "result": null
+   "result": "original-source:bg2:mode2:item:262"
   },
   {
    "name": "mode2_route_source bg2:mode2:item:263",
