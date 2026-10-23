@@ -13,7 +13,8 @@ A copy is found by meaning in the scanned game: every record of the moved item
 in the holder, with EET's names for BG1 rows, whatever its slot, charges or
 flags. A holder this game lacks, or one without the item, has no copy to remove.
 Where a reward's route already hands over the creature's own copy
-(``mode2_rewards.TRANSFER_SPECS``), that copy is not named twice.
+(``mode2_rewards.TRANSFER_SPECS``), that copy is not named twice, also for a
+preset's row of that route (``original_catalog.mode2_route_source``).
 
 The runtime removes only rows it knows, under the names reviewed for them
 (``reviewed``): as authored and, for a BG1 row, as EET names them in Chriz Item
@@ -103,29 +104,33 @@ def holdings(sources: dict[str, dict]) -> dict[tuple[str, str], list[dict]]:
     return result
 
 
-def _route_copies(identity: str, game: str, names: EetNames | None) -> set[tuple[str, str]]:
-    """(creature, item) of the copies the reward's own route already guards, as
-    the game names them."""
-    spec = REWARDS.get(SOURCE_REWARDS.get(identity, ""), {})
+def _route_copies(route: str | None, game: str, names: EetNames | None) -> set[tuple[str, str]]:
+    """(creature, item) of the copies that the reward route <route> already
+    hands over, as the game names them."""
+    spec = REWARDS.get(SOURCE_REWARDS.get(route, ""), {})
     result = set()
     for name in spec.get("required_transfers", ()):
         transfer = transfer_spec(name, game=game, names=names)
-        if identity in transfer["authored_source_ids"]:
+        if route in transfer["authored_source_ids"]:
             result.add((transfer["source_resource"], transfer["item"]))
     return result
 
 
 def expected_copies(identity: str, campaign: str, ident: str, item: str, index: dict,
                     held: dict[tuple[str, str], list[dict]], game: str,
-                    names: EetNames | None) -> list[dict]:
+                    names: EetNames | None, *, route: str | None) -> list[dict]:
     """The copies of <item> that move with source <identity> of table row <ident>.
 
     A row names a copy of the same item; its holder must be in the game and
     hold the item, or be a file the scan could not read (the export then
-    leaves the reward out, since its copy cannot be found).
+    leaves the reward out, since its copy cannot be found). <route> is the
+    extended reward route the source is, as the export finds it for a source
+    registration (original_catalog.mode2_route_source of its authored row: its
+    own row, or a preset's row of it); the copies that route hands over are
+    not named again.
     """
     result = []
-    covered = _route_copies(identity, game, names)
+    covered = _route_copies(route, game, names)
     for line, entry in sorted(table(campaign).items()):
         if entry["ident"] != ident or convert_resource(entry["item"], "itm", campaign, game, names) != item:
             continue

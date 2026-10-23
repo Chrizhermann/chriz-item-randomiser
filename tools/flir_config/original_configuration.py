@@ -289,7 +289,9 @@ def _build(catalog: dict, world: dict, template_id: str, exclude: dict[str, str]
             registration, physical_id, replacement = choose(row)
             # Item Randomiser's second copies of this reward, removed when it moves.
             copies = expected_copies(registration["id"] if registration is not None else physical_id,
-                                     row["campaign"], row["ident"], row["item_resref"], index, held, game, names)
+                                     row["campaign"], row["ident"], row["item_resref"], index, held, game, names,
+                                     route=mode2_route_source(registration.get("authored"))
+                                     if registration is not None else None)
             if any(copy.get("replacement", row["item_resref"]) not in catalog_items for copy in copies):
                 raise _NotUsable("replacement-item-absent")
             if not all(reviewed(copy) for copy in copies):

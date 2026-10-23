@@ -538,13 +538,17 @@ fn build_from(
             }
         };
         // Item Randomiser's second copies of this reward, removed when it moves.
-        let identity = match &choice {
-            Choice::Registration(registration) => crate::json::py_str(registration.get("id").unwrap_or(&Value::Null)),
-            Choice::Physical(identity, _) => identity.clone(),
+        let (identity, route) = match &choice {
+            Choice::Registration(registration) => (
+                crate::json::py_str(registration.get("id").unwrap_or(&Value::Null)),
+                crate::original_catalog::mode2_route_source(registration.get("authored").unwrap_or(&Value::Null))?,
+            ),
+            Choice::Physical(identity, _) => (identity.clone(), None),
         };
         let item = s(row, "item_resref");
+        let (campaign, ident) = (s(row, "campaign"), s(row, "ident"));
         let copies =
-            expected_copies(&identity, s(row, "campaign"), s(row, "ident"), item, &index, &held, game, names.as_ref())?;
+            expected_copies(&identity, campaign, ident, item, &index, &held, game, names.as_ref(), route.as_deref())?;
         if copies.iter().any(|copy| !catalog_items.contains(copy.get("replacement").and_then(Value::as_str).unwrap_or(item))) {
             leave_out(&mut not_used, row, "reward", &Value::from("replacement-item-absent"))?;
             continue;

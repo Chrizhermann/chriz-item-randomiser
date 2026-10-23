@@ -22,6 +22,7 @@ from .original_options import is_spell_shield_row, spell_shield_spec
 from .cursed_disguises import cursed_disguise_spec, validate_cursed_disguise_spec
 from .duplicates import expected_copies, holdings
 from .game_names import eet_names
+from .original_catalog import mode2_route_source
 from .platform import preset_game
 from .original_registrations import (SOURCE_ADAPTER as ORIGINAL_SOURCE_ADAPTER,
                                      TARGET_ADAPTER as ORIGINAL_TARGET_ADAPTER,
@@ -1011,7 +1012,9 @@ def _bound_copies(plan: dict, world: dict, indexes: dict, catalog_items: dict, s
         if not isinstance(group, str) or ":" not in group:
             continue
         campaign, ident = group.split(":", 1)
-        found = expected_copies(source["id"], campaign, ident, source["item"], indexes, held, game, names)
+        route = mode2_route_source(source.get("authored")) if selected["kind"] == "registered" else None
+        found = expected_copies(source["id"], campaign, ident, source["item"], indexes, held, game, names,
+                                route=route)
         if found and not any(
                 row["enabled"] and (row["campaign"], row["ident"], row["item_resref"]) == (campaign, ident, source["item"])
                 and source["id"] in (f"original-source:{row['id']}", f"virtual:{row['id']}", *row["source_ids"])

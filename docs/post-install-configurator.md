@@ -431,9 +431,12 @@ ring in Rogue Rebalancing's `RR#010`. When that reward's row moves, the copy goe
 it, as Item Randomiser's installer removes it: the configuration finds every record
 of the item in the holder (EET's names for BG1 rows, any slot, charges or flags) and
 names it in the plan (`duplicates`); a creature keeps the table's replacement
-(`SPER02`, `SPER01`, `BLUN05`). Binding and the campaign accept only the shipped
-rows under their reviewed names, and the export writes each creature and shop as the
-game has it. The source gate removes the copy wherever its holder loads, unless the
+(`SPER02` for the Sahuagin prince, `SPER01` for BG1's `KNIGHTSK`). Tolgerias' second
+ring (`TOLGER.CRE`) thus moves with the ring of `TOLGER2.CRE`. The copies a carried
+reward's route hands over (the creatures above, also for a preset's row of their
+route, such as Boss Loot's Nemphre) are that route's and are not named again.
+Binding and the campaign accept only the shipped rows under their reviewed names, and
+the export writes each creature and shop as the game has it. The source gate removes the copy wherever its holder loads, unless the
 start keeps the reward in place. A holder the game lacks, or one without the item,
 has no copy. The reward is left out with its reason where the holder cannot be read,
 the copies differ ("… holds Item Randomiser's second copy of RING07 in records that

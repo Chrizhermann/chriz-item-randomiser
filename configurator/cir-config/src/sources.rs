@@ -1920,7 +1920,12 @@ fn bound_copies(
             continue;
         };
         let item = source.at("item")?.as_str().unwrap_or("");
-        let found = expected_copies(identity, campaign, ident, item, indexes, &held, game, names.as_ref())?;
+        let route = if selected.get("kind").and_then(Value::as_str) == Some("registered") {
+            crate::original_catalog::mode2_route_source(source.get("authored").unwrap_or(&Value::Null))?
+        } else {
+            None
+        };
+        let found = expected_copies(identity, campaign, ident, item, indexes, &held, game, names.as_ref(), route.as_deref())?;
         let text = |row: &Value, key: &str| row.get(key).and_then(Value::as_str).map(str::to_string);
         if !found.is_empty()
             && !source_rows.values().any(|row| {

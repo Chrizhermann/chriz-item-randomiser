@@ -14,7 +14,8 @@
 //! item in the holder, with EET's names for BG1 rows, whatever its slot,
 //! charges or flags. A holder this game lacks, or one without the item, has no
 //! copy to remove. Where a reward's route already hands over the creature's own
-//! copy (`mode2_rewards::transfer_specs`), that copy is not named twice.
+//! copy (`mode2_rewards::transfer_specs`), that copy is not named twice, also
+//! for a preset's row of that route (`original_catalog::mode2_route_source`).
 //!
 //! The runtime removes only rows it knows, under the names reviewed for them
 //! ([`reviewed`]): as authored and, for a BG1 row, as EET names them in Chriz
@@ -170,11 +171,14 @@ pub fn holdings<'a>(sources: impl IntoIterator<Item = &'a Value>) -> Holdings<'a
     result
 }
 
-/// (creature, item) of the copies the reward's own route already guards, as
-/// the game names them.
-fn route_copies(identity: &str, game: &str, names: Option<&EetNames>) -> Result<HashSet<(String, String)>> {
+/// (creature, item) of the copies that the reward route `route` already hands
+/// over, as the game names them.
+fn route_copies(route: Option<&str>, game: &str, names: Option<&EetNames>) -> Result<HashSet<(String, String)>> {
     let mut result = HashSet::new();
-    let key = source_rewards().get(identity).and_then(Value::as_str).unwrap_or("");
+    let Some(route) = route else {
+        return Ok(result);
+    };
+    let key = source_rewards().get(route).and_then(Value::as_str).unwrap_or("");
     let Some(spec) = rewards().get(key) else {
         return Ok(result);
     };
@@ -183,7 +187,7 @@ fn route_copies(identity: &str, game: &str, names: Option<&EetNames>) -> Result<
         let name = name.as_str().unwrap_or("");
         let transfer = transfer_spec(name, Naming { game: Some(game), names })?;
         let ids = transfer.get("authored_source_ids").and_then(Value::as_list).map(Vec::as_slice).unwrap_or(&[]);
-        if ids.iter().any(|id| id.as_str() == Some(identity)) {
+        if ids.iter().any(|id| id.as_str() == Some(route)) {
             let text = |key: &str| transfer.get(key).and_then(Value::as_str).unwrap_or("").to_string();
             result.insert((text("source_resource"), text("item")));
         }
@@ -195,7 +199,11 @@ fn route_copies(identity: &str, game: &str, names: Option<&EetNames>) -> Result<
 ///
 /// A row names a copy of the same item; its holder must be in the game and
 /// hold the item, or be a file the scan could not read (the export then leaves
-/// the reward out, since its copy cannot be found).
+/// the reward out, since its copy cannot be found). `route` is the extended
+/// reward route the source is, as the export finds it for a source
+/// registration (`original_catalog::mode2_route_source` of its authored row:
+/// its own row, or a preset's row of it); the copies that route hands over are
+/// not named again.
 #[allow(clippy::too_many_arguments)]
 pub fn expected_copies(
     identity: &str,
@@ -206,9 +214,10 @@ pub fn expected_copies(
     held: &Holdings<'_>,
     game: &str,
     names: Option<&EetNames>,
+    route: Option<&str>,
 ) -> Result<Vec<Dict>> {
     let mut result = Vec::new();
-    let covered = route_copies(identity, game, names)?;
+    let covered = route_copies(route, game, names)?;
     for (line, entry) in table(campaign)? {
         if entry.ident != ident || convert_resource(&entry.item, "itm", campaign, game, names)? != item {
             continue;
@@ -296,6 +305,27 @@ mod tests {
         for (copy, known) in cases {
             assert_eq!(reviewed(&value(&copy)).unwrap(), known, "{copy}");
         }
+    }
+
+    #[test]
+    fn a_carried_routes_copy_is_its_routes_also_for_a_presets_row() {
+        // The reference's test of the same name: Nemphre's route hands over the
+        // scroll she carries, for her own row and for Boss Loot's row of it.
+        let route = "original-source:bg1:mode2:item:159";
+        let record = value(r#"{"id": "cre:nemphr/item/0"}"#);
+        let held: Holdings = HashMap::from([(("cre:nemphr".to_string(), "scrl1q".to_string()), vec![&record])]);
+        let index = WorldIndex::default();
+        let copies = |identity: &str, route: Option<&str>| {
+            expected_copies(identity, "bg1", "vs1", "scrl1q", &index, &held, "bgee", None, route).unwrap()
+        };
+        assert!(copies(route, Some(route)).is_empty());
+        assert!(copies("original-source:bg1:boss-loot:mode2:item:339", Some(route)).is_empty());
+        // A source that is no route moves the creature's copy as the table's.
+        let expected = value(
+            r#"{"id": "bg1:duplicate:12", "source_id": "cre:nemphr/item/0", "resource": "cre:nemphr", "item": "scrl1q"}"#,
+        );
+        let found: Vec<Value> = copies("cre:nemphr/item/0", None).into_iter().map(Value::Dict).collect();
+        assert!(Value::List(found).py_eq(&Value::List(vec![expected])));
     }
 
     #[test]

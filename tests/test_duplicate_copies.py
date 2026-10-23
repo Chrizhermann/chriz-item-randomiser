@@ -21,7 +21,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
 from flir_config import campaigns  # noqa: E402
 from flir_config.campaigns import compile_campaign, write_campaign  # noqa: E402
-from flir_config.duplicates import reviewed, table  # noqa: E402
+from flir_config.duplicates import expected_copies, reviewed, table  # noqa: E402
 from flir_config.game_names import _eet_tables  # noqa: E402
 from flir_config.native_export import export_native  # noqa: E402
 from flir_config.original_configuration import (build_original_configuration,  # noqa: E402
@@ -123,6 +123,32 @@ class DuplicateGame:
         native = json.loads((output / "campaign-store" / "revisions" / f"{revision}.native.json")
                             .read_text(encoding="utf-8"))
         return native, output, revision
+
+
+class ExpectedCopyTests(unittest.TestCase):
+    def test_tolgerias_second_ring_moves_with_his_reward(self):
+        # The extended row 40 moves TOLGER2.CRE's ring; his other creature file
+        # keeps a second one (lists/duplicates/bg2.2da:22, ident w1c).
+        held = {("cre:tolger", "ring33"): [{"id": "cre:tolger/item/3"}]}
+        identity = "cre:tolger2/item/3"
+        self.assertEqual(expected_copies(identity, "bg2", "w1c", "ring33", {"unreadable": {}}, held, "eet", None,
+                                         route=None),
+                         [{"id": "bg2:duplicate:22", "source_id": identity, "resource": "cre:tolger",
+                           "item": "ring33"}])
+
+    def test_a_carried_routes_copy_is_its_routes_also_for_a_presets_row(self):
+        # Nemphre carries her scroll, and her route hands that copy over: for
+        # her own row and for Boss Loot's row of it (the route the export finds,
+        # mode2_route_source), lists/duplicates/bg1.2da:12 names no second copy.
+        route = "original-source:bg1:mode2:item:159"
+        game = ("bg1", "vs1", "scrl1q", {"unreadable": {}},
+                {("cre:nemphr", "scrl1q"): [{"id": "cre:nemphr/item/0"}]}, "bgee", None)
+        self.assertEqual(expected_copies(route, *game, route=route), [])
+        self.assertEqual(expected_copies("original-source:bg1:boss-loot:mode2:item:339", *game, route=route), [])
+        # A source that is no route moves the creature's copy as the table's.
+        self.assertEqual(expected_copies("cre:nemphr/item/0", *game, route=None),
+                         [{"id": "bg1:duplicate:12", "source_id": "cre:nemphr/item/0", "resource": "cre:nemphr",
+                           "item": "scrl1q"}])
 
 
 class DuplicateCopyTests(DuplicateGame, unittest.TestCase):
