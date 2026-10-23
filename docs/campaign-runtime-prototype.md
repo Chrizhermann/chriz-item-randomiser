@@ -220,12 +220,19 @@ restore. Proving that the creature's death drop makes the item lootable is a
 separate native check. See [creature transport evidence](native-creature-transport-evidence.md).
 
 The fixture host defers a delivery when target inspection reports current
-unavailability: absent, elsewhere, ambiguous, dead, party-owned, a familiar, a
+unavailability: absent, elsewhere, ambiguous, party-owned, a familiar, a
 full backpack, a busy message queue, or a non-empty pile. Inspection happens
 before the core journals anything. A deferred reward is retried after
 `Host.DEFER_TICKS` game ticks, other rewards continue, and the campaign stays
 running rather than complete. Deferral never places anything elsewhere. Any
 other inspection failure still disables the host.
+
+A creature target that is dead when its reward is due gets it on the ground at
+its corpse, once the corpse is in the visible area: `CreateItem` on the corpse,
+then `DropItem`, bound to the delivery like a container add and confirmed as
+lootable. A dead party member or familiar, or a corpse that holds another item
+of the reward's name, still defers. See
+[corpse ground evidence](native-corpse-ground-evidence.md).
 
 Each command also carries an opaque Lua session table. A receipt must preserve
 that exact reference; it cannot serialize or deep-copy it. Restore/destroy/new

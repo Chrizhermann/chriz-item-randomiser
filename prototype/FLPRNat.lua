@@ -11,6 +11,10 @@ Native.MAX_SETTLE_TICKS = 300
 -- docs/native-creature-transport-evidence.md). A full backpack displaces an
 -- unrelated item to the ground, so creature delivery requires a free one.
 Native.BACKPACK_FIRST, Native.BACKPACK_LAST = 18, 33
+-- CGameAIBase::CreateItem on a sprite that is not in the party stores the item
+-- in the highest empty internal slot from 34 down to 15, synchronously; with
+-- none free it queues a ground pile instead (see the transport evidence).
+Native.CREATE_FIRST, Native.CREATE_LAST = 15, 34
 local FAMILIAR_ALLEGIANCE = 3
 local Adapter = {}
 Adapter.__index = Adapter
@@ -539,19 +543,32 @@ local function creature_conflict(queue, owner_id, resrefs, ignore)
     return false
 end
 
+-- DropItem may reuse any pile near a corpse. Another queued add (a drop, a
+-- death drop) could reach that pile too and stop the campaign after the
+-- drop, so a ground delivery waits until no container add is queued.
+local function container_add(queue)
+    for _, message in ipairs(queue.additions) do
+        if message.form == "container" then return true end
+    end
+    return false
+end
+
 local function addition_at(queue, address)
     for _, message in ipairs(queue.additions) do
         if message.pointer == address then return message end
     end
 end
 
-local function empty_backpack(items)
+local function empty_slots(items, first, last)
     local used, empty = {}, {}
     for _, item in ipairs(items) do used[item.slot] = true end
-    for slot = Native.BACKPACK_FIRST, Native.BACKPACK_LAST do
+    for slot = first, last do
         if not used[slot] then empty[#empty + 1] = slot end
     end
     return empty
+end
+local function empty_backpack(items)
+    return empty_slots(items, Native.BACKPACK_FIRST, Native.BACKPACK_LAST)
 end
 
 -- Every earlier slot must keep its pointer and payload, and exactly one
@@ -750,8 +767,13 @@ function Adapter:inspect_target(id, source_id, unit)
         self.reservations[endpoint.identity] = { kind = "deliver", id = id }
         return { identity = endpoint.identity, target_id = id, accepts = 1 }
     end
-    local owner, reason = self:_resolve(endpoint, "target")
-    if not owner then return nil, reason end
+    local owner, reason, corpse = self:_resolve(endpoint, "target")
+    if not owner then
+        if reason == "TARGET_NOT_ALIVE" and corpse and source then
+            return self:_inspect_ground(endpoint, id, self:_reward(source_id, unit), corpse)
+        end
+        return nil, reason
+    end
     local items = self:_items(owner, endpoint.sprite)
     if source then
         local supported, stack_limit
@@ -775,6 +797,57 @@ function Adapter:inspect_target(id, source_id, unit)
     if endpoint.kind == "ground-pile" and #items ~= 0 then return nil, "TARGET_NOT_EMPTY" end
     self.reservations[endpoint.identity] = { owner = owner, items = items, kind = "deliver", id = id }
     return { identity = endpoint.identity, target_id = id, accepts = 1 }
+end
+
+-- A creature that died before its reward arrived can never hold it (Chris,
+-- 2026-10-22: a reward must not be lost). It goes to the ground where the
+-- corpse lies, while the corpse is in the visible area: CreateItem on the
+-- corpse, then DropItem, which moves it into a pile there (2.7.3.0 lab, see
+-- docs/native-corpse-ground-evidence.md). A dead party member keeps its
+-- inventory and may be raised, so its reward waits, as for a familiar.
+-- DropItem takes an item by name, so the corpse must hold no other copy.
+function Adapter:_inspect_ground(endpoint, id, reward, corpse)
+    local api, object = self.api, corpse.object
+    local portrait = api.EEex_Sprite_GetPortraitIndex(object)
+    local typeAI = object.m_typeAI
+    assert(typeAI and integer(typeAI.m_EnemyAlly, 0, 255), "NATIVE_ALLEGIANCE_INVALID")
+    if portrait ~= -1 or typeAI.m_EnemyAlly == FAMILIAR_ALLEGIANCE then return nil, "TARGET_NOT_ALIVE" end
+    local supported, reason = self:_supported(reward)
+    if not supported then return nil, reason end
+    local items = self:_items(corpse, true)
+    for _, item in ipairs(items) do
+        if item.payload.resref == reward.resref then return nil, "CORPSE_ITEM_AMBIGUOUS" end
+    end
+    local empty = empty_slots(items, Native.CREATE_FIRST, Native.CREATE_LAST)
+    if #empty == 0 then return nil, "TARGET_INVENTORY_FULL" end
+    local queue = self:_queue()
+    if creature_conflict(queue, corpse.id, self.source_resrefs) or container_add(queue) then
+        return nil, "TARGET_QUEUE_BUSY"
+    end
+    self.reservations[endpoint.identity] = { owner = corpse, items = items, kind = "deliver", id = id,
+        ground = true, empty = empty, reward = reward }
+    return { identity = endpoint.identity, target_id = id, accepts = 1, ground = true }
+end
+
+-- The ground pile with this object id in the visible area of the endpoint, or
+-- why there is none. A pile the engine creates for a drop joins the area's
+-- lists only when its message runs.
+function Adapter:_ground_pile(id, endpoint)
+    local api, area = self.api, self.api.EEex_Area_GetVisible()
+    if not area or text(area.m_resref) ~= endpoint.area then return nil, "AREA_UNAVAILABLE" end
+    local listed = false
+    for _, field in ipairs(lists) do
+        assert(area[field], "NATIVE_AREA_LIST_MISSING")
+        api.EEex_Utility_IterateCPtrList(area[field], function(entry)
+            if entry == id then listed = true end
+        end)
+    end
+    if not listed then return nil, "GROUND_PILE_MISSING" end
+    local object = api.EEex_GameObject_Get(id)
+    object = object and api.EEex_GameObject_CastUserType(object)
+    if not object or api.EEex_GameObject_IsSprite(object, true) ~= false or object.m_lstItems == nil or
+        object.m_containerType ~= 4 then return nil, "GROUND_PILE_INVALID" end
+    return { object = object, id = id, pointer = pointer(api, object) }
 end
 
 local function unchanged(before, after, removed)
@@ -835,6 +908,7 @@ function Adapter:execute(command)
         self.pending.complete = true
         return true
     end
+    if kind == "target" and reserved.ground then return self:_execute_ground(command, reserved, endpoint, source.payload) end
     local owner, reason = self:_resolve(endpoint, kind)
     if not owner then return nil, reason end
     if owner.id ~= reserved.owner.id or owner.pointer ~= reserved.owner.pointer then return nil, "OWNER_CHANGED" end
@@ -941,6 +1015,70 @@ function Adapter:execute(command)
     return true
 end
 
+-- The reward of a dead creature target (Adapter:_inspect_ground). CreateItem
+-- stores it in one empty slot of the corpse at once; DropItem then takes that
+-- instance out again and queues one container add into a ground pile at the
+-- corpse, a pile it reuses or creates. Bind that message to this nonce, as
+-- for a container target; later observations find the pile by its id.
+function Adapter:_execute_ground(command, reserved, endpoint, p)
+    local api = self.api
+    local owner, reason, corpse = self:_resolve(endpoint, "target")
+    if owner or reason ~= "TARGET_NOT_ALIVE" or not corpse or corpse.id ~= reserved.owner.id or
+        corpse.pointer ~= reserved.owner.pointer then return nil, "OWNER_CHANGED" end
+    if not same(p, reserved.reward) then return nil, "RESERVATION_MISMATCH" end
+    local before = self:_items(corpse, true)
+    if not unchanged(reserved.items, before) then return nil, "INVENTORY_CHANGED" end
+    local supported, stack_limit; supported, reason, stack_limit = self:_supported(p)
+    if not supported then return nil, reason end
+    local before_queue = self:_queue()
+    if creature_conflict(before_queue, corpse.id, self.source_resrefs) or container_add(before_queue) then
+        return nil, "DELIVERY_QUEUE_NOT_EXCLUSIVE"
+    end
+    local tried = self.attempted[command.session] or {}
+    self.attempted[command.session] = tried; tried[command.nonce] = true
+    local receipt = { session = command.session, kind = command.kind, index = command.index,
+        nonce = command.nonce, revision = command.revision, identity = command.identity,
+        source_id = command.source_id, target_id = command.target_id, payload = payload(p) }
+    self.pending = { receipt = receipt, endpoint = endpoint, kind = "target", owner = corpse,
+        before = before, tick = self.tick, complete = false, ground = true }
+    self.reservations[command.identity] = nil
+    local function unproven()
+        self.last_error = "CREATED_INSTANCE_UNPROVEN"; return nil, self.last_error
+    end
+    -- No item iterator is active here. Pending/attempted are published first;
+    -- an exception must disable this adapter, never cause a blind action retry.
+    api.EEex_Action_ExecuteResponseStringOnAIBaseInstantly(
+        string.format('CreateItem("%s",%d,%d,%d)', p.resref, p.charges[1], p.charges[2], p.charges[3]), corpse.object)
+    local placed = placed_item(before, self:_items(corpse, true), reserved.empty)
+    local created = placed and created_payload(placed.payload, p, stack_limit)
+    local queued_now = self:_queue()
+    for _, message in ipairs(queued_now.additions) do
+        if not before_queue.addresses[message.pointer] then created = nil end
+    end
+    if not created then return unproven() end
+    api.EEex_Action_ExecuteResponseStringOnAIBaseInstantly(string.format('DropItem("%s",[-1.-1])', p.resref),
+        corpse.object)
+    local after_queue, added = self:_queue(), {}
+    for _, message in ipairs(after_queue.additions) do
+        if not before_queue.addresses[message.pointer] then added[#added + 1] = message end
+    end
+    local message = #added == 1 and added[1] or nil
+    -- The message carries the corpse's instance as it was; nothing else in the
+    -- corpse may have changed. No other queued add can reach that pile: none
+    -- was queued before (container_add), and this is the only new one.
+    if not message or not unchanged(before, self:_items(corpse, true)) or message.form ~= "container" or
+        message.slot ~= 32767 or message.target ~= message.source or
+        not same(message.payload, placed.payload) then return unproven() end
+    local pile, missing = self:_ground_pile(message.target, endpoint)
+    if not pile and missing ~= "GROUND_PILE_MISSING" then return unproven() end
+    self:_preserve_message_flags(message, created)
+    self.pending.queued, self.pending.created = message, created
+    self.pending.pile_before = pile and self:_items(pile, false) or {}
+    self.pending.pile_pointer = pile and pile.pointer or nil
+    self.pending.complete = true
+    return true
+end
+
 function Adapter:on_observation_boundary(tick)
     if not integer(tick, 0, 9007199254740991) then return nil, "OBSERVATION_CLOCK_INVALID" end
     if self.tick and tick <= self.tick then return nil, "LATER_GAME_TICK_REQUIRED" end
@@ -968,6 +1106,7 @@ function Adapter:observe(command)
         self.pending = nil
         return receipt
     end
+    if pending.ground then return self:_observe_ground(pending, receipt) end
     local owner, reason, unusable = self:_resolve(pending.endpoint, pending.kind)
     if not owner then
         if reason == "TARGET_NOT_ALIVE" and unusable and unusable.id == pending.owner.id and
@@ -1050,6 +1189,59 @@ function Adapter:observe(command)
         -- engine's responsibility. Only its inventory has gained a reward.
         receipt.created, receipt.nonce_bound_instance, receipt.lootable = 1, 1, 1
     end
+    self.pending = nil
+    return receipt
+end
+
+-- As a container target's queued add: wait for the bound message, then pin the
+-- one new instance in the pile it named, then publish one later tick on.
+function Adapter:_observe_ground(pending, receipt)
+    local queue, queued = self:_queue(), pending.queued
+    local matching
+    for _, message in ipairs(queue.additions) do
+        if conflicts(message, queued.target, receipt.payload) then
+            if not pending.created_pointer and same_message(message, queued) then matching = message
+            else return nil, "DELIVERY_QUEUE_CONFLICT" end
+        end
+    end
+    if not pending.created_pointer and not matching and queue.addresses[queued.pointer] then
+        return nil, "DELIVERY_MESSAGE_REUSED"
+    end
+    -- A new pile joins the area only as the message runs.
+    if matching and not pending.pile_pointer then return nil, "DELIVERY_SETTLING" end
+    local pile, reason = self:_ground_pile(queued.target, pending.endpoint)
+    if not pile then return nil, reason end
+    if pending.pile_pointer and pile.pointer ~= pending.pile_pointer then return nil, "OWNER_CHANGED" end
+    local items = self:_items(pile, false)
+    if matching then
+        if not unchanged(pending.pile_before, items) then return nil, "DELIVERY_EARLY_ITEM" end
+        return nil, "DELIVERY_SETTLING"
+    end
+    if not pending.created_pointer then
+        local placed = placed_item(pending.pile_before, items, {#pending.pile_before + 1})
+        if not placed then return nil, "DELIVERY_MESSAGE_LOST" end
+        local created = pending.created
+        if not same(placed.payload, created) then
+            -- The add copies the item as for a container target and can
+            -- identify a zero-lore item again; restore the source's flags.
+            local found = placed.payload
+            local expected = { resref = found.resref, charges = found.charges,
+                expiration = found.expiration, flags = created.flags }
+            if created.flags % 2 ~= 0 or found.flags ~= created.flags + 1 or
+                not same(expected, created) then return nil, "DELIVERY_PAYLOAD_CHANGED" end
+            self:_preserve_container_flags(pile, placed, created)
+        end
+        pending.created_pointer, pending.pinned_tick, pending.pile_pointer = placed.pointer, self.tick, pile.pointer
+        return nil, "DELIVERY_SETTLING"
+    end
+    if self.tick <= pending.pinned_tick then return nil, "DELIVERY_SETTLING" end
+    local placed = placed_item(pending.pile_before, items, {#pending.pile_before + 1})
+    if not placed or placed.pointer ~= pending.created_pointer or
+        not same(placed.payload, pending.created) then return nil, "CREATED_INSTANCE_CHANGED" end
+    local supported; supported, reason = self:_supported(receipt.payload)
+    if not supported then return nil, reason end
+    -- On the ground where the dead target lies; anyone may pick it up.
+    receipt.created, receipt.nonce_bound_instance, receipt.lootable, receipt.holder = 1, 1, 1, "ground"
     self.pending = nil
     return receipt
 end
@@ -1221,7 +1413,8 @@ function Adapter:diagnostics()
         result.pending = { kind = self.pending.receipt.kind, nonce = self.pending.receipt.nonce,
             complete = self.pending.complete, created_pointer = self.pending.created_pointer,
             created_slot = self.pending.created_slot, queued = self.pending.queued,
-            pinned_tick = self.pending.pinned_tick, empty = self.pending.empty }
+            pinned_tick = self.pending.pinned_tick, empty = self.pending.empty,
+            ground = self.pending.ground, pile_pointer = self.pending.pile_pointer }
     end
     for _, kind in ipairs({ "sources", "targets" }) do
         for id, endpoint in pairs(self[kind]) do
