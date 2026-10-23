@@ -33,6 +33,7 @@ from .original_registrations import (SOURCE_ADAPTER as ORIGINAL_SOURCE_ADAPTER,
 from .templates import POOL_CHOICES, _options as original_options, list_templates
 from .original_options import SPELL_SHIELD_SOURCE, spell_shield_randomized, validate_spell_shield_spec
 from .cursed_disguises import validate_cursed_disguise_spec
+from .duplicates import reviewed, row as duplicate_row
 
 CAMPAIGN_SCHEMA = "flir-campaign-prototype-v1"
 POINTER_SCHEMA = "flir-prototype-next-v1"
@@ -348,10 +349,41 @@ def _validate_randomization(value: object, sources: list[dict], targets: list[di
                                "to guarantee room after keeping originals")
 
 
+def _validate_copies(rows: object, sources: list[dict]) -> None:
+    """Second copies of moved rewards (duplicates.py): each a row of Item
+    Randomiser's tables, holding a copy of a reward source's item."""
+    if not isinstance(rows, list) or not rows:
+        raise ProfileError("Invalid campaign second copies")
+    items, seen = {row["id"]: row["record"]["item"] for row in sources}, []
+    for row in rows:
+        _fields(row, {"id", "source_id", "resource", "item", "resource_sha256"}
+                | ({"replacement"} if isinstance(row, dict) and "replacement" in row else set()), "second copy")
+        found = duplicate_row(row["id"])
+        if found is None or items.get(row["source_id"]) != _resref(row["item"]):
+            raise ProfileError("Campaign second copy names no reward row")
+        _, authored = found
+        _resource(row["resource"], authored["source"].rsplit(".", 1)[1])
+        _hash(row["resource_sha256"], "second copy fingerprint")
+        replacement = row.get("replacement")
+        if replacement is not None:
+            _fields(replacement, {"resref", "resource_sha256"}, "second copy replacement")
+            _hash(replacement["resource_sha256"], "second copy replacement fingerprint")
+            if _resref(replacement["resref"]) == row["item"]:
+                raise ProfileError("Campaign second copy replacement must differ from its item")
+        if (authored["replacement"] == "blank") != (replacement is None):
+            raise ProfileError("Campaign second copy replacement disagrees with its row")
+        if not reviewed(row):
+            raise ProfileError("Campaign second copy disagrees with its row")
+        seen.append((row["source_id"], row["id"]))
+    if seen != sorted(set(seen)):
+        raise ProfileError("Campaign second copies must be unique and sorted")
+
+
 def _validate_campaign(body: dict) -> dict:
     _fields(body, _FIELDS | ({"shop_pricing"} if isinstance(body, dict) and "shop_pricing" in body else set())
             | ({"randomization"} if isinstance(body, dict) and "randomization" in body else set())
-            | (set(body) & {"original_template_id", "original_choices", "original_options", "spell_shield", "cursed_disguises"}
+            | (set(body) & {"original_template_id", "original_choices", "original_options", "spell_shield",
+                            "cursed_disguises", "duplicates"}
                if isinstance(body, dict) else set()), "artifact")
     if body["schema"] != CAMPAIGN_SCHEMA or body["state"] != STATE:
         raise ProfileError("Unsupported campaign prototype schema or state")
@@ -404,6 +436,10 @@ def _validate_campaign(body: dict) -> dict:
     if shield and shield["source_id"] != (SPELL_SHIELD_SOURCE if spell_shield_randomized(
             row["record"].get("authored") for row in body["sources"]) else ""):
         raise ProfileError("Spell Shield source does not match the campaign's rewards")
+    if "duplicates" in body:
+        if not present_original:
+            raise ProfileError("Second copies of rewards need original campaign settings")
+        _validate_copies(body["duplicates"], body["sources"])
     if not present_original and any(
             row["record"].get("adapter_id") in
             (ORIGINAL_SOURCE_ADAPTER, ORIGINAL_TARGET_ADAPTER)
@@ -492,6 +528,8 @@ def compile_campaign(profile: dict, catalog: dict, world: dict, plan: dict, *,
         body["spell_shield"] = deepcopy(bound["plan"]["spell_shield"])
     if "cursed_disguises" in bound["plan"]:
         body["cursed_disguises"] = deepcopy(bound["plan"]["cursed_disguises"])
+    if "duplicates" in bound:
+        body["duplicates"] = deepcopy(bound["duplicates"])
     body["revision"] = _digest(body)
     return _validate_campaign(body)
 

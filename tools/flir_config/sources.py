@@ -20,6 +20,10 @@ from .virtual_sources import ADAPTER_ID as VIRTUAL_ADAPTER_ID
 from .virtual_sources import validate_registration as validate_virtual_registration
 from .original_options import spell_shield_randomized, spell_shield_spec
 from .cursed_disguises import cursed_disguise_spec, validate_cursed_disguise_spec
+from .duplicates import expected_copies, holdings
+from .game_names import eet_names
+from .original_catalog import mode2_route_source
+from .platform import preset_game
 from .original_registrations import (SOURCE_ADAPTER as ORIGINAL_SOURCE_ADAPTER,
                                      TARGET_ADAPTER as ORIGINAL_TARGET_ADAPTER,
                                      SHIPPED_REPLACEMENT,
@@ -39,11 +43,12 @@ PLAN_SCHEMA = "flir-binding-plan-v1"
 # A binding plan's fields; binding and the editor's draft check both use them.
 PLAN_FIELDS = frozenset({"schema", "catalog_fingerprint", "world_fingerprint", "sources", "registrations",
                          "targets"})
-# Creature replacements, randomisation rules, an original preset's settings and
-# the metadata of its options (Spell Shield stock, cursed disguises).
+# Creature replacements, randomisation rules, an original preset's settings, the
+# metadata of its options (Spell Shield stock, cursed disguises) and the second
+# copies of its moved rewards (duplicates.py).
 PLAN_OPTIONAL_FIELDS = frozenset({"replacements", "randomization", "original_template_id", "original_choices",
                                   "original_options", "target_registrations", "spell_shield",
-                                  "cursed_disguises"})
+                                  "cursed_disguises", "duplicates"})
 COVERAGE = "physical-records-and-bcs-dlg-hashes"
 KINDS = ("itm", "cre", "are", "sto", "bcs", "dlg", "spl")
 # The kinds whose records the scan reads. One it cannot read is left out.
@@ -893,6 +898,10 @@ def bind_profile(profile: dict, catalog: dict, world: dict, plan: dict, *,
         raise ProfileError("Unused source registrations must be removed from this binding plan")
     if set(replacements) - selected_ids:
         raise ProfileError("Replacement equipment refers to an unselected source")
+    copies = _bound_copies(plan, world, indexes, catalog_items, source_rows, selected_sources) \
+        if present_original else []
+    if "duplicates" in plan and not present_original:
+        raise ProfileError("Second copies of rewards need original plan metadata")
     original_targets = {}
     for registration in _rows(plan.get("target_registrations", []), "original target registration"):
         if not present_original:
@@ -982,7 +991,54 @@ def bind_profile(profile: dict, catalog: dict, world: dict, plan: dict, *,
               "runtime_requirements": ["campaign-revision-persistence", "exact-source-suppression",
                   "new-game-assignment", "target-instance-resolution", "nonoverlapping-runtime-selectors",
                   "verified-lootable-delivery"]}
+    if copies:
+        result["duplicates"] = copies
     result["fingerprint"] = _digest(result)
+    return result
+
+
+def _bound_copies(plan: dict, world: dict, indexes: dict, catalog_items: dict, source_rows: dict,
+                  selected_sources: list[dict]) -> list[dict]:
+    """The plan's second copies of its moved rewards (duplicates.py), checked
+    against Item Randomiser's tables and the scan, with their fingerprints.
+
+    Each selected source's original row, as the plan's chance groups name it,
+    has exactly the copies the tables and this game give it."""
+    game = preset_game(world, plan["original_template_id"])
+    names = eet_names(world["game_root"]) if game == "eet" else None
+    rules = plan.get("randomization")
+    rules = rules.get("row_filters") if isinstance(rules, dict) else None
+    rules = rules.get("sources") if isinstance(rules, dict) else None
+    held, expected = holdings(indexes["sources"]), []
+    for selected in selected_sources:
+        source = selected["source"]
+        rule = rules.get(source["id"]) if isinstance(rules, dict) else None
+        group = rule.get("group") if isinstance(rule, dict) else None
+        if not isinstance(group, str) or ":" not in group:
+            continue
+        campaign, ident = group.split(":", 1)
+        route = mode2_route_source(source.get("authored")) if selected["kind"] == "registered" else None
+        found = expected_copies(source["id"], campaign, ident, source["item"], indexes, held, game, names,
+                                route=route)
+        if found and not any(
+                row["enabled"] and (row["campaign"], row["ident"], row["item_resref"]) == (campaign, ident, source["item"])
+                and source["id"] in (f"original-source:{row['id']}", f"virtual:{row['id']}", *row["source_ids"])
+                for row in source_rows.values()):
+            raise ProfileError("Second copies of a reward need its original row")
+        expected += found
+    expected.sort(key=lambda copy: (copy["source_id"], copy["id"]))
+    if plan.get("duplicates", []) != expected or plan.get("duplicates") == []:
+        raise ProfileError("Second copies of the moved rewards disagree with Item Randomiser's "
+                           "duplicates tables and the scan")
+    result = []
+    for copy in expected:
+        bound = {**copy, "resource_sha256": indexes["resources"][copy["resource"]]["sha256"]}
+        if "replacement" in copy:
+            item = catalog_items.get(copy["replacement"])
+            if item is None:
+                raise ProfileError(f"Replacement item is absent: {copy['replacement']}")
+            bound["replacement"] = {"resref": copy["replacement"], "resource_sha256": item["sha256"]}
+        result.append(bound)
     return result
 
 

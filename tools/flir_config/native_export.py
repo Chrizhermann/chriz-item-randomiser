@@ -48,6 +48,7 @@ from .game_text import GameTextError, paired, text_files, unpaired
 from .reward_routes import ChangedSinceScan, reward_routes
 from .original_catalog import container_target_spec, mode2_route_source, mode2_route_target
 from .cursed_disguises import validate_cursed_disguise_spec, prepare_cursed_disguises
+from .duplicates import holdings
 
 # next.lua: the revision of each campaign start (read by M_FLPR.lua).
 NEXT_SCHEMA = "flir-next-v2"
@@ -110,6 +111,13 @@ def _compile(manifest: dict, world: dict, index: dict, items: dict,
     required, pristine, selected_items, selected_actors = set(), set(), set(), set()
     selected_owners = Counter(s["record"]["resource"] for s in manifest["sources"]
                               if s["record"]["kind"] in ("cre-template", "store"))
+    # Item Randomiser's second copies of the moved rewards (duplicates.py). The
+    # gate rewrites a creature or shop that holds one as a whole, so a source
+    # in it is rewritten with it.
+    copies = manifest.get("duplicates")
+    if copies is not None:
+        native["duplicates"] = []
+        selected_owners.update(copy["resource"] for copy in copies if not copy["resource"].startswith("are:"))
 
     def readable(resource: str) -> None:
         # A file the scan left out is in the game, but nothing in it is known.
@@ -225,6 +233,8 @@ def _compile(manifest: dict, world: dict, index: dict, items: dict,
             selected_actors.update(actors)
             native["sources"].pop(identity, None)
             native["targets"].pop(identity, None)
+            if "duplicates" in native:
+                native["duplicates"] = [copy for copy in native["duplicates"] if copy["source_id"] != identity]
 
     def compile_source(selected: dict) -> None:
         source, identity = selected["record"], selected["id"]
@@ -508,6 +518,65 @@ def _compile(manifest: dict, world: dict, index: dict, items: dict,
     for selected in manifest["sources"]:
         attempt(selected["id"], compile_inventory_reward, selected)
 
+    # The records the sources move, and the copies a reward route or an
+    # earlier row already removes.
+    moved, claimed = set(), set()
+    for selected in manifest["sources"]:
+        if selected["record"]["kind"] in ("container", "cre-template", "embedded-cre", "store"):
+            moved.add(selected["id"])
+        moved.update(selected["record"].get("physical_source_ids", ()))
+    for endpoint in native["sources"].values():
+        for auxiliary in endpoint.get("auxiliary_creatures", ()):
+            claimed.update(f"{auxiliary['resource']}/item/{record}" for record in auxiliary["record_indices"])
+    held = holdings(index["sources"]) if copies else {}
+
+    def compile_copy(copy: dict) -> None:
+        # Every record of the moved item in the holder, as the scan finds it.
+        identity, holder, item = copy["source_id"], copy["resource"], copy["item"]
+        label, kind, named = _filename(holder), holder.split(":", 1)[0], item.upper()
+        _require(holder not in index["unreadable"],
+                 f"{label} cannot be read, so Item Randomiser's second copy of {named} there cannot be "
+                 f"found: {identity}")
+        _require(index["resources"].get(holder, {}).get("sha256") == copy["resource_sha256"],
+                 f"{label} changed since the scan: {identity}")
+        records = held.get((holder, item), [])
+        _require(bool(records), f"{label} no longer holds Item Randomiser's second copy of {named}: {identity}")
+        fields = ("resref", "expiration", "charges", "flags")
+        stock = ("quantity", "infinite_supply_flag") if kind == "sto" else ()
+        payloads = [{key: row["record"][key] for key in fields + stock} for row in records]
+        _require(all(payload == payloads[0] for payload in payloads),
+                 f"{label} holds Item Randomiser's second copy of {named} in records that differ: {identity}")
+        ids = {row["id"] for row in records}
+        _require(not moved & ids, f"{label}'s {named} moves as a reward of its own, so it cannot also be "
+                                  f"the second copy of another: {identity}")
+        _require(not claimed & ids, f"{label}'s {named} is already the second copy of another reward: {identity}")
+        concerns = set().union(*(row["concerns"] for row in records))
+        # The area loader identifies a container's record by its index (FLPRGat.lua).
+        _require(kind != "are" or not concerns & {"shared-container-record", "unowned-item-record",
+                                                   "dynamic-container-items"},
+                 f"{label} keeps its second copy of {named} outside a container with fixed contents: {identity}")
+        # Removing a creature's record renumbers the slots that name later records.
+        _require(kind != "cre" or "replacement" in copy or not concerns & {DANGLING_INVENTORY, INVALID_INVENTORY},
+                 f"{label} has inventory slots that name no record, so its second copy of {named} cannot "
+                 f"be removed: {identity}")
+        entry = {"id": copy["id"], "source_id": identity, "resource": holder, "resource_sha256": use(holder),
+                 "record_indices": [row["record"]["record_index"] for row in records],
+                 "payload": {key: payloads[0][key] for key in fields}}
+        if stock:
+            entry["stock"] = {key: payloads[0][key] for key in stock}
+        if "replacement" in copy:
+            replacement = copy["replacement"]
+            _require(use("itm:" + replacement["resref"]) == replacement["resource_sha256"],
+                     f"Replacement item changed: {identity}")
+            entry["replacement"] = replacement["resref"]
+        if kind == "are":
+            pristine.add(holder)
+        claimed.update(ids)
+        native["duplicates"].append(entry)
+
+    for copy in copies or ():
+        attempt(copy["source_id"], compile_copy, copy)
+
     def compile_target(selected: dict) -> None:
         target, identity = selected["record"], selected["id"]
         authored = target.get("adapter_id") == "original-target-v1"
@@ -680,7 +749,7 @@ def _compile(manifest: dict, world: dict, index: dict, items: dict,
         attempt(selected["id"], compile_target, selected)
 
     guarded_ids = [s["id"] for s in manifest["sources"] if s["record"]["kind"] != "virtual"]
-    if guarded_ids or shield or "cursed_disguises" in manifest:
+    if guarded_ids or shield or "cursed_disguises" in manifest or native.get("duplicates"):
         native["source_gate"] = {"schema": "flpr-unvisited-fixture-gate-v1", "source_ids": guarded_ids}
     options = manifest.get("original_options", {})
     if options.get("kangaxx"):
@@ -751,7 +820,8 @@ def _gate_areas(native: dict) -> set[str]:
     ids = gate.get("source_ids") or ([gate["source_id"]] if gate.get("source_id") else [])
     return {native["sources"][identity]["area"].upper() for identity in ids
             if native["sources"][identity]["kind"] not in ("guarded-template", "guarded-script", "guarded-store") and
-            native["sources"][identity].get("area")}
+            native["sources"][identity].get("area")} | {
+        copy["resource"][4:].upper() for copy in native.get("duplicates", ()) if copy["resource"].startswith("are:")}
 
 
 def _filename(resource: str) -> str:
@@ -1029,6 +1099,12 @@ def export_native(store: Path, catalog: dict, world: dict, output: Path,
         pending[base + ".native.json"] = canonical_bytes(native)
         pending[base + ".native.lua"] = _render_lua(native)
         lua_values[base + ".native.lua"] = native
+        # The creature or shop of each second copy as the game has it; an
+        # area's is its shared pristine copy.
+        for number, copy in enumerate(native.get("duplicates", ()), 1):
+            kind = copy["resource"].split(":", 1)[0]
+            if kind != "are":
+                pending[f"{base}.duplicate-{number}.original.{kind}"] = resource_bytes[copy["resource"]]
         for source_index, selected_source in enumerate(manifest["sources"], 1):
             source = selected_source["record"]
             compiled_source = compiled[key]["sources"][selected_source["id"]]

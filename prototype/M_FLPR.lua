@@ -122,7 +122,19 @@ local ok, failure = pcall(function()
         end
         local Gate = module("override/FLPRGat.lua", Site)
         local pristine={creatures={},stores={},scripts={},templates={},spell_shield={},cursed={},auxiliary={},
-            extended={}}
+            extended={},duplicates={}}
+        -- An area's shared pristine copy, as the export wrote it.
+        local function pristine_area(area,resource_hash)
+            assert(type(area)=='string' and #area>=1 and #area<=8 and not area:find('[^A-Za-z0-9#_%-]'),
+                'SOURCE_GATE_AREA_INVALID')
+            area=area:upper()
+            if not pristine[area] then
+                local file=assert(io.open(DATA..area..".pristine.are","rb"),"SOURCE_GATE_PRISTINE_MISSING")
+                pristine[area]={bytes=file:read("*a"),resource_sha256=resource_hash}
+                assert(file:close())
+            end
+            assert(pristine[area].resource_sha256==resource_hash,"SOURCE_GATE_RESOURCE_CHANGED")
+        end
         -- One revision's manifest and the copies its checks compare against.
         local function load_revision(revision)
             local guarded = assert(resolve(revision), "SOURCE_GATE_REVISION_UNAVAILABLE")
@@ -230,16 +242,7 @@ local ok, failure = pcall(function()
                     pristine.stores[revision][id]=entry
                 else
                     local area=endpoint.area
-                    assert(type(area)=='string' and #area>=1 and #area<=8 and not area:find('[^A-Za-z0-9#_%-]'),
-                        'SOURCE_GATE_AREA_INVALID')
-                    area=area:upper()
-                    local resource_hash=guarded.fixture.resource_hashes[area..'.ARE']
-                    if not pristine[area] then
-                        local file=assert(io.open(DATA..area..".pristine.are","rb"),"SOURCE_GATE_PRISTINE_MISSING")
-                        pristine[area]={bytes=file:read("*a"),resource_sha256=resource_hash}
-                        assert(file:close())
-                    end
-                    assert(pristine[area].resource_sha256==resource_hash,"SOURCE_GATE_RESOURCE_CHANGED")
+                    pristine_area(area,type(area)=='string' and guarded.fixture.resource_hashes[area:upper()..'.ARE'])
                 end
                 if endpoint.kind=='guarded-creature' then
                     local source_index
@@ -259,6 +262,25 @@ local ok, failure = pcall(function()
                 -- Check every item before this revision's checks can suppress one.
                 local supported,reason=Native.supported(_G,endpoint.payload)
                 assert(supported,reason)
+            end
+            -- Item Randomiser's second copies of the moved rewards: a creature
+            -- or shop as the game has it, an area as its shared pristine copy.
+            local duplicates=guarded.fixture.duplicates
+            assert(duplicates==nil or type(duplicates)=='table','SOURCE_GATE_DUPLICATE_INVALID')
+            for number,copy in ipairs(duplicates or {}) do
+                local kind,name
+                if type(copy)=='table' and type(copy.resource)=='string' then
+                    kind,name=copy.resource:match('^(%a+):([a-z0-9#_%-]+)$')
+                end
+                assert(kind=='are' or kind=='cre' or kind=='sto','SOURCE_GATE_DUPLICATE_INVALID')
+                if kind=='are' then
+                    pristine_area(name,guarded.fixture.resource_hashes[name:upper()..'.ARE'])
+                else
+                    local path=DATA..'campaign-store/revisions/'..revision..'.duplicate-'..number..'.original.'..kind
+                    local file=assert(io.open(path,'rb'),'SOURCE_GATE_DUPLICATE_MISSING')
+                    pristine.duplicates[revision]=pristine.duplicates[revision] or {}
+                    pristine.duplicates[revision][number]=file:read('*a');assert(file:close())
+                end
             end
             return guarded
         end

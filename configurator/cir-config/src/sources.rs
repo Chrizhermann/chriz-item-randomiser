@@ -1398,9 +1398,10 @@ fn string_set(values: &[Value]) -> Option<HashSet<&str>> {
 /// A binding plan's fields; binding and the editor's draft check both use them.
 pub const PLAN_FIELDS: [&str; 6] =
     ["schema", "catalog_fingerprint", "world_fingerprint", "sources", "registrations", "targets"];
-/// Creature replacements, randomisation rules, an original preset's settings
-/// and the metadata of its options (Spell Shield stock, cursed disguises).
-pub const PLAN_OPTIONAL_FIELDS: [&str; 8] = [
+/// Creature replacements, randomisation rules, an original preset's settings,
+/// the metadata of its options (Spell Shield stock, cursed disguises) and the
+/// second copies of its moved rewards (duplicates.rs).
+pub const PLAN_OPTIONAL_FIELDS: [&str; 9] = [
     "replacements",
     "randomization",
     "original_template_id",
@@ -1409,6 +1410,7 @@ pub const PLAN_OPTIONAL_FIELDS: [&str; 8] = [
     "target_registrations",
     "spell_shield",
     "cursed_disguises",
+    "duplicates",
 ];
 const ORIGINAL_PLAN_KEYS: [&str; 4] =
     ["original_template_id", "original_choices", "original_options", "target_registrations"];
@@ -1730,6 +1732,14 @@ pub fn bind_profile(profile: &Value, catalog: &Value, world: &Value, plan: &Valu
     if replacements.keys().any(|identity| !selected_ids.contains(identity)) {
         return Err(Error::profile("Replacement equipment refers to an unselected source"));
     }
+    let copies = if present_original {
+        bound_copies(plan_fields, world, &indexes, &catalog_items, source_rows, &selected_sources)?
+    } else {
+        Vec::new()
+    };
+    if plan_fields.contains_key("duplicates") && !present_original {
+        return Err(Error::profile("Second copies of rewards need original plan metadata"));
+    }
 
     let mut original_targets: Vec<(String, &Value)> = Vec::new();
     let empty_list = Value::List(Vec::new());
@@ -1874,9 +1884,105 @@ pub fn bind_profile(profile: &Value, catalog: &Value, world: &Value, plan: &Valu
         "skipped" => Value::List(skipped), "reward_units" => reward_units.value(),
         "target_capacity" => capacity.value(), "runtime_requirements" => Value::from(RUNTIME_REQUIREMENTS.to_vec()),
     };
+    if !copies.is_empty() {
+        result.insert("duplicates", Value::List(copies));
+    }
     let fingerprint = digest(&Value::Dict(result.clone()))?;
     result.insert("fingerprint", fingerprint);
     Ok(Value::Dict(result))
+}
+
+/// The plan's second copies of its moved rewards (duplicates.rs), checked
+/// against Item Randomiser's tables and the scan, with their fingerprints.
+///
+/// Each selected source's original row, as the plan's chance groups name it,
+/// has exactly the copies the tables and this game give it.
+fn bound_copies(
+    plan: &Dict,
+    world: &Value,
+    indexes: &WorldIndex,
+    catalog_items: &HashMap<&str, &Value>,
+    source_rows: &Dict,
+    selected_sources: &[Value],
+) -> Result<Vec<Value>> {
+    use crate::duplicates::{expected_copies, holdings};
+    let template = plan.get("original_template_id").and_then(Value::as_str).unwrap_or("");
+    let game = crate::platform::preset_game(world, template)?;
+    let names = match game {
+        "eet" => Some(crate::game_names::eet_names(&crate::paths::path_argument(world.at("game_root")?)?)?),
+        _ => None,
+    };
+    let rules = plan
+        .get("randomization")
+        .and_then(Value::as_dict)
+        .and_then(|rules| rules.get("row_filters"))
+        .and_then(Value::as_dict)
+        .and_then(|rules| rules.get("sources"))
+        .and_then(Value::as_dict);
+    let held = holdings(list(world, "sources"));
+    let mut expected: Vec<Dict> = Vec::new();
+    for selected in selected_sources {
+        let source = selected.at("source")?;
+        let identity = source.at("id")?.as_str().unwrap_or("");
+        let rule = rules.and_then(|rules| rules.get(identity)).and_then(Value::as_dict);
+        let Some((campaign, ident)) = rule.and_then(|rule| rule.get("group")).and_then(Value::as_str).and_then(|group| group.split_once(':'))
+        else {
+            continue;
+        };
+        let item = source.at("item")?.as_str().unwrap_or("");
+        let route = if selected.get("kind").and_then(Value::as_str) == Some("registered") {
+            crate::original_catalog::mode2_route_source(source.get("authored").unwrap_or(&Value::Null))?
+        } else {
+            None
+        };
+        let found = expected_copies(identity, campaign, ident, item, indexes, &held, game, names.as_ref(), route.as_deref())?;
+        let text = |row: &Value, key: &str| row.get(key).and_then(Value::as_str).map(str::to_string);
+        if !found.is_empty()
+            && !source_rows.values().any(|row| {
+                let id = crate::json::py_str(row.get("id").unwrap_or(&Value::Null));
+                row.get("enabled").is_some_and(Value::truthy)
+                    && text(row, "campaign").as_deref() == Some(campaign)
+                    && text(row, "ident").as_deref() == Some(ident)
+                    && text(row, "item_resref").as_deref() == Some(item)
+                    && (identity == format!("original-source:{id}")
+                        || identity == format!("virtual:{id}")
+                        || row
+                            .get("source_ids")
+                            .and_then(Value::as_list)
+                            .is_some_and(|ids| ids.iter().any(|known| known.as_str() == Some(identity))))
+            })
+        {
+            return Err(Error::profile("Second copies of a reward need its original row"));
+        }
+        expected.extend(found);
+    }
+    let key = |copy: &Dict| {
+        let text = |key: &str| copy.get(key).and_then(Value::as_str).unwrap_or("").to_string();
+        (text("source_id"), text("id"))
+    };
+    expected.sort_by_key(key);
+    let expected_list = Value::List(expected.iter().cloned().map(Value::Dict).collect());
+    let empty = Value::List(Vec::new());
+    let given = plan.get("duplicates");
+    if !given.unwrap_or(&empty).py_eq(&expected_list) || given.is_some_and(|given| given.py_eq(&empty)) {
+        return Err(Error::profile(
+            "Second copies of the moved rewards disagree with Item Randomiser's duplicates tables and the scan",
+        ));
+    }
+    let mut result = Vec::new();
+    for copy in expected {
+        let resource = copy.get("resource").and_then(Value::as_str).unwrap_or("");
+        let mut bound = copy.clone();
+        bound.insert("resource_sha256", sha_of(world, indexes, resource).cloned().ok_or_else(|| Error::key(resource))?);
+        if let Some(replacement) = copy.get("replacement").and_then(Value::as_str) {
+            let Some(item) = catalog_items.get(replacement) else {
+                return Err(Error::profile(format!("Replacement item is absent: {replacement}")));
+            };
+            bound.insert("replacement", crate::dict! {"resref" => replacement, "resource_sha256" => item.at("sha256")?.clone()});
+        }
+        result.push(Value::Dict(bound));
+    }
+    Ok(result)
 }
 
 pub fn prepare_bound_profile(profile: &Value, catalog: &Value, world: &Value, plan: &Value, store: &Path) -> Result<Value> {

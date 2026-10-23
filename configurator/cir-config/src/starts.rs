@@ -281,6 +281,24 @@ fn without(
             other => return Err(Error::attribute(other.type_name(), "items")),
         }
     }
+    if let Some(rows) = fields.get("duplicates") {
+        // A reward left as the game has it keeps its second copies too.
+        let mut kept = Vec::new();
+        for row in crate::py::iter_value(rows)? {
+            let source = row.at("source_id")?;
+            if matches!(source, Value::List(_) | Value::Dict(_)) {
+                return Err(Error::type_error(format!("unhashable type: '{}'", source.type_name())));
+            }
+            if !contains(sources, source) {
+                kept.push(row);
+            }
+        }
+        if kept.is_empty() {
+            fields.remove("duplicates");
+        } else {
+            fields.insert("duplicates", Value::List(kept));
+        }
+    }
     let kept = keep_rows(fields.get("targets").ok_or_else(|| Error::key("targets"))?, targets)?;
     fields.insert("targets", kept);
     if let Some(rows) = fields.get("target_registrations") {

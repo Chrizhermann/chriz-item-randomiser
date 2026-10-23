@@ -396,6 +396,11 @@ function pruneSourceRules(ids) {
     if (rules?.row_filters) delete rules.row_filters.sources[id];
     if (plan.replacements) delete plan.replacements[id];
   }
+  // A source that no longer moves keeps Item Randomiser's second copies of its item.
+  if (plan.duplicates) {
+    plan.duplicates = plan.duplicates.filter((row) => !ids.includes(row.source_id));
+    if (!plan.duplicates.length) delete plan.duplicates;
+  }
 }
 
 function wholeNumber(value, min, max = Number.MAX_SAFE_INTEGER) {

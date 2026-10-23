@@ -7,6 +7,7 @@
 
 use crate::activation::{EXPORT_FILES, EXPORT_FILES_SCHEMA};
 use crate::campaigns::{read_campaign, refused_lua, render_lua, store_path, write_immutable_replacing};
+use crate::duplicates::{holdings, Holdings};
 use crate::error::{Error, ErrorKind, Result, CHANGED_SINCE_SCAN};
 use crate::game_text::{paired, text_files, unpaired};
 use crate::json::{parse_lenient, py_str, utf8_error_message, Dict, Value};
@@ -220,6 +221,9 @@ struct Compiler<'a> {
     selected_items: BTreeSet<String>,
     selected_actors: HashSet<String>,
     selected_owners: HashMap<String, usize>,
+    /// Item Randomiser's second copies of the moved rewards, when the
+    /// campaign names them.
+    duplicates: Option<Vec<Value>>,
     container_names: HashMap<String, usize>,
     actor_names: HashMap<String, usize>,
     container_items: HashMap<String, usize>,
@@ -354,6 +358,9 @@ impl<'a> Compiler<'a> {
                 self.selected_actors = actors;
                 self.sources.remove(identity);
                 self.targets.remove(identity);
+                if let Some(copies) = &mut self.duplicates {
+                    copies.retain(|copy| copy.get("source_id").and_then(Value::as_str) != Some(identity));
+                }
                 Ok(())
             }
             other => other,
@@ -850,6 +857,108 @@ impl<'a> Compiler<'a> {
         Ok(())
     }
 
+    /// Every record of the moved item in the holder of one of Item
+    /// Randomiser's second copies, as the scan finds it.
+    fn compile_copy(
+        &mut self,
+        copy: &Value,
+        held: &Holdings<'_>,
+        moved: &HashSet<String>,
+        claimed: &mut HashSet<String>,
+    ) -> Result<()> {
+        let (identity, holder, item) = (text(copy, "source_id")?, text(copy, "resource")?, text(copy, "item")?);
+        let (label, kind, named) = (filename(holder), holder.split(':').next().unwrap_or(""), upper(item));
+        require(!self.index.is_unreadable(holder), || {
+            format!(
+                "{label} cannot be read, so Item Randomiser's second copy of {named} there cannot be found: {identity}"
+            )
+        })?;
+        let scanned = self.index.resource(self.world, holder).and_then(|row| row.get("sha256"));
+        let unchanged = scanned.unwrap_or(&Value::Null).py_eq(copy.at("resource_sha256")?);
+        require(unchanged, || format!("{label} changed since the scan: {identity}"))?;
+        let records = held.get(&(holder.to_string(), item.to_string())).map(Vec::as_slice).unwrap_or(&[]);
+        require(!records.is_empty(), || {
+            format!("{label} no longer holds Item Randomiser's second copy of {named}: {identity}")
+        })?;
+        let stock: &[&str] = if kind == "sto" { &["quantity", "infinite_supply_flag"] } else { &[] };
+        let mut payloads = Vec::with_capacity(records.len());
+        for row in records {
+            let record = row.at("record")?;
+            let mut payload = Dict::new();
+            for key in PAYLOAD_FIELDS.iter().chain(stock) {
+                payload.insert(*key, record.at(key)?.clone());
+            }
+            payloads.push(Value::Dict(payload));
+        }
+        require(payloads.iter().all(|payload| payload.py_eq(&payloads[0])), || {
+            format!("{label} holds Item Randomiser's second copy of {named} in records that differ: {identity}")
+        })?;
+        let mut ids = HashSet::new();
+        for row in records {
+            ids.insert(text(row, "id")?.to_string());
+        }
+        require(ids.is_disjoint(moved), || {
+            format!("{label}'s {named} moves as a reward of its own, so it cannot also be the second copy of another: {identity}")
+        })?;
+        require(ids.is_disjoint(claimed), || {
+            format!("{label}'s {named} is already the second copy of another reward: {identity}")
+        })?;
+        let mut concerns = HashSet::new();
+        for row in records {
+            concerns.extend(list(row.at("concerns")?).iter().filter_map(Value::as_str));
+        }
+        let concerned = |names: &[&str]| names.iter().any(|name| concerns.contains(name));
+        // The area loader identifies a container's record by its index (FLPRGat.lua).
+        require(
+            kind != "are" || !concerned(&["shared-container-record", "unowned-item-record", "dynamic-container-items"]),
+            || format!("{label} keeps its second copy of {named} outside a container with fixed contents: {identity}"),
+        )?;
+        // Removing a creature's record renumbers the slots that name later records.
+        require(
+            kind != "cre" || copy.get("replacement").is_some() || !concerned(&[DANGLING_INVENTORY, INVALID_INVENTORY]),
+            || {
+                format!(
+                    "{label} has inventory slots that name no record, so its second copy of {named} cannot be \
+                     removed: {identity}"
+                )
+            },
+        )?;
+        let resource_sha256 = self.use_resource(holder)?;
+        let mut indices = Vec::with_capacity(records.len());
+        for row in records {
+            indices.push(row.at("record")?.at("record_index")?.clone());
+        }
+        let first = payloads.swap_remove(0);
+        let field = |key: &str| first.get(key).cloned().unwrap_or(Value::Null);
+        let mut payload = Dict::new();
+        for key in PAYLOAD_FIELDS {
+            payload.insert(key, field(key));
+        }
+        let mut entry = crate::dict! {
+            "id" => copy.at("id")?.clone(), "source_id" => identity, "resource" => holder,
+            "resource_sha256" => resource_sha256, "record_indices" => Value::List(indices), "payload" => payload,
+        };
+        if !stock.is_empty() {
+            let mut fields = Dict::new();
+            for key in stock {
+                fields.insert(*key, field(key));
+            }
+            entry.insert("stock", fields);
+        }
+        if let Some(replacement) = copy.get("replacement") {
+            let resref = replacement.at("resref")?;
+            let digest = self.use_resource(&format!("itm:{}", py_str(resref)))?;
+            require(digest.py_eq(replacement.at("resource_sha256")?), || format!("Replacement item changed: {identity}"))?;
+            entry.insert("replacement", resref.clone());
+        }
+        if kind == "are" {
+            self.pristine.insert(holder.to_string());
+        }
+        claimed.extend(ids);
+        self.duplicates.as_mut().expect("compiled only when the campaign names copies").push(Value::Dict(entry));
+        Ok(())
+    }
+
     fn compile_target(&mut self, selected: &'a Value) -> Result<()> {
         let mut target = selected.at("record")?;
         let identity = text(selected, "id")?;
@@ -1200,6 +1309,16 @@ pub fn compile(
             *selected_owners.entry(text(record, "resource")?.to_string()).or_insert(0) += 1;
         }
     }
+    // Item Randomiser's second copies of the moved rewards (duplicates.rs). The
+    // gate rewrites a creature or shop that holds one as a whole, so a source
+    // in it is rewritten with it.
+    let copies = manifest.get("duplicates").filter(|copies| !copies.is_null());
+    for copy in copies.map(list).unwrap_or(&[]) {
+        let resource = text(copy, "resource")?;
+        if !resource.starts_with("are:") {
+            *selected_owners.entry(resource.to_string()).or_insert(0) += 1;
+        }
+    }
     let shield = manifest.get("spell_shield").filter(|shield| !shield.is_null());
     let mut compiler = Compiler {
         world,
@@ -1218,6 +1337,7 @@ pub fn compile(
         selected_items: BTreeSet::new(),
         selected_actors: HashSet::new(),
         selected_owners,
+        duplicates: copies.map(|_| Vec::new()),
         container_names: HashMap::new(),
         actor_names: HashMap::new(),
         container_items: HashMap::new(),
@@ -1338,6 +1458,31 @@ pub fn compile(
         let identity = text(selected, "id")?;
         compiler.attempt(&mut problems, identity, |compiler| compiler.compile_inventory_reward(selected))?;
     }
+
+    // The records the sources move, and the copies a reward route or an
+    // earlier row already removes.
+    let (mut moved, mut claimed) = (HashSet::new(), HashSet::new());
+    for selected in manifest_sources {
+        let record = selected.at("record")?;
+        if matches!(record.at("kind")?.as_str(), Some("container" | "cre-template" | "embedded-cre" | "store")) {
+            moved.insert(text(selected, "id")?.to_string());
+        }
+        moved.extend(record.get("physical_source_ids").map(list).unwrap_or(&[]).iter().filter_map(Value::as_str).map(str::to_string));
+    }
+    for endpoint in compiler.sources.values() {
+        for auxiliary in endpoint.get("auxiliary_creatures").map(list).unwrap_or(&[]) {
+            let resource = py_str(auxiliary.at("resource")?);
+            for record in list(auxiliary.at("record_indices")?) {
+                claimed.insert(format!("{resource}/item/{}", py_str(record)));
+            }
+        }
+    }
+    let held = if copies.is_some_and(Value::truthy) { holdings(rows(world, "sources")) } else { Holdings::new() };
+    for copy in copies.map(list).unwrap_or(&[]) {
+        let identity = text(copy, "source_id")?;
+        compiler.attempt(&mut problems, identity, |compiler| compiler.compile_copy(copy, &held, &moved, &mut claimed))?;
+    }
+
     for selected in manifest_targets {
         let identity = text(selected, "id")?;
         compiler.attempt(&mut problems, identity, |compiler| compiler.compile_target(selected))?;
@@ -1351,7 +1496,8 @@ pub fn compile(
     }
     let source_gate = !guarded_ids.is_empty()
         || compiler.shield_truthy()
-        || manifest.get("cursed_disguises").is_some();
+        || manifest.get("cursed_disguises").is_some()
+        || compiler.duplicates.as_ref().is_some_and(|copies| !copies.is_empty());
     let options = manifest.get("original_options");
     let option = |name: &str| options.and_then(|options| options.get(name)).is_some_and(Value::truthy);
     if option("kangaxx") {
@@ -1370,6 +1516,9 @@ pub fn compile(
     if let Some(pricing) = shop_pricing {
         native.insert("shop_pricing", pricing);
         native.insert("shop_prices", shop_prices);
+    }
+    if let Some(copies) = compiler.duplicates {
+        native.insert("duplicates", Value::List(copies));
     }
     if let Some(shield) = shield {
         native.insert("spell_shield", shield.clone());
@@ -1513,6 +1662,11 @@ fn gate_areas(native: &Value) -> Result<BTreeSet<String>> {
         }
         if let Some(area) = source.get("area").filter(|area| area.truthy()) {
             areas.insert(upper(&py_str(area)));
+        }
+    }
+    for copy in native.get("duplicates").map(list).unwrap_or(&[]) {
+        if let Some(name) = text(copy, "resource")?.strip_prefix("are:") {
+            areas.insert(upper(name));
         }
     }
     Ok(areas)
@@ -2112,6 +2266,15 @@ pub fn export_native(
         pending.insert(format!("{base}.native.json"), canonical_bytes(native)?);
         pending.insert(format!("{base}.native.lua"), render_lua(native)?);
         lua_values.insert(format!("{base}.native.lua"), (key.clone(), true));
+        // The creature or shop of each second copy as the game has it; an
+        // area's is its shared pristine copy.
+        for (number, copy) in native.get("duplicates").map(list).unwrap_or(&[]).iter().enumerate() {
+            let resource = text(copy, "resource")?;
+            let kind = resource.split(':').next().unwrap_or("");
+            if kind != "are" {
+                pending.insert(format!("{base}.duplicate-{}.original.{kind}", number + 1), bytes_of(resource)?.clone());
+            }
+        }
         let compiled_sources = native.at("sources")?;
         for (position, selected_source) in list(manifest.at("sources")?).iter().enumerate() {
             let source = selected_source.at("record")?;

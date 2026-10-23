@@ -24,6 +24,18 @@ below. General source support and normal installer integration remain unfinished
   points and a pristine copy per area. Several saved revisions can coexist;
   each uses its own source indexes and protection state. The pinned BG2EE
   executable remains a prototype limit.
+- Item Randomiser's second copies of moved rewards (the revision's `duplicates`,
+  see [post-install configurator](post-install-configurator.md)) belong to their
+  source and have a policy kind of their own: the gate removes a copy wherever
+  its holder loads while the source is in any phase but kept; a kept source
+  keeps it. A creature or shop holding one is rewritten as a whole from its
+  exported original (`<revision>.duplicate-<n>.original.cre|sto`) together with
+  any source in it, and a shop keeps the stock a saved game restored; an area's
+  container item is skipped once per load of the pristine area. Each copy is
+  checked against the reviewed table rows and its holder's bytes. New Game
+  enrols the copies without an event row. New Game and loading check every
+  copy's state; each later host step checks at most four in turn
+  (`Gate.COPY_CHECKS`).
 - The guard compares the complete authored ARE input and ties the result to the
   same area-load invocation and constructor inputs. Saved area records can move;
   matching an item name or original index alone would delete a returned copy.

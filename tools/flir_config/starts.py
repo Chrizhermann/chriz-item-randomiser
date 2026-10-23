@@ -96,6 +96,11 @@ def _without(profile: dict, plan: dict, catalog: dict, sources: set, targets: se
     if "replacements" in plan:
         plan["replacements"] = {key: value for key, value in plan["replacements"].items()
                                 if key not in sources}
+    if "duplicates" in plan:
+        # A reward left as the game has it keeps its second copies too.
+        plan["duplicates"] = [row for row in plan["duplicates"] if row["source_id"] not in sources]
+        if not plan["duplicates"]:
+            del plan["duplicates"]
     plan["targets"] = [row for row in plan["targets"] if row["id"] not in targets]
     if "target_registrations" in plan:
         plan["target_registrations"] = [row for row in plan["target_registrations"]
