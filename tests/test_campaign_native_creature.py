@@ -284,6 +284,8 @@ function cases.absent_or_elsewhere_target_is_deferred_without_reservation(N)
     f.boundary(); x, e = a:execute(f.command(1)); fail(x, e, "RESERVATION_MISMATCH")
     assert(#f.calls == 0 and #f.queue == 0)
 end
+-- Without a reward to place; with one, a dead creature's reward goes to the
+-- ground at its corpse (the ground cases below).
 function cases.dead_party_or_familiar_creatures_never_receive(N)
     for _, variant in ipairs({"dead", "party", "familiar"}) do
         local f = setup(N)
@@ -812,6 +814,286 @@ function cases.quest_target_requires_event_then_delivers_to_party_portrait_zero(
     local result; result,reason=f.adapter:execute(command)
     fail(result,reason,'ALREADY_ATTEMPTED')
     assert(#f.calls==1 and #f.queue==0)
+end
+
+-- The ground at a dead target's corpse, as the 2.7.3.0 lab showed it
+-- (docs/native-corpse-ground-evidence.md): CreateItem on a sprite outside the
+-- party fills the highest empty slot from 34 down to 15 at once. DropItem takes
+-- the first item of that name out and queues one container add (subtype 12,
+-- slot 32767, target and source the pile) into a type-4 pile at the corpse: a
+-- listed pile there, or a new one that joins the area as its message runs.
+local function ground_world(N)
+    local f = setup(N)
+    f.creature.alive = false
+    f.creature.m_pos = {x=500, y=600}
+    f.next_object = 50
+    local function copy_item(value, address)
+        local result = f.item(value.cResRef:get(), address, value.m_flags)
+        result.m_useCount1, result.m_useCount2, result.m_useCount3 =
+            value.m_useCount1, value.m_useCount2, value.m_useCount3
+        return result
+    end
+    f.copy_item = copy_item
+    local function listed(id)
+        for _, field in ipairs({"m_lVertSort", "m_lVertSortBack", "m_lVertSortFlight", "m_lVertSortUnder"}) do
+            for _, entry in ipairs(f.area[field]) do if entry == id then return true end end
+        end
+    end
+    function f.pile_at(x, y, items)
+        f.next_object = f.next_object + 1
+        local pile = {address=7000 + f.next_object, sprite=false, m_containerType=4, m_pos={x=x, y=y},
+            m_lstItems=items or {}, m_scriptName={get=function() return "" end}}
+        f.objects[f.next_object] = pile
+        return f.next_object, pile
+    end
+    f.api.EEex_Action_ExecuteResponseStringOnAIBaseInstantly = function(action, o)
+        f.calls[#f.calls + 1] = action
+        local ref, c1, c2, c3 = action:match('^CreateItem%("([^"]+)",(%d+),(%d+),(%d+)%)$')
+        if ref then
+            if f.create_variant == "none" then return end
+            for slot = 34, 15, -1 do
+                if not o.slots[slot] then
+                    f.next_address = f.next_address + 1
+                    local made = f.item(ref:upper(), f.next_address)
+                    made.m_useCount1, made.m_useCount2, made.m_useCount3 = tonumber(c1), tonumber(c2), tonumber(c3)
+                    o.slots[slot] = made
+                    if f.create_variant == "queues" then f.queue[#f.queue + 1] = f.message(77, "OTHER", 12, 77) end
+                    return
+                end
+            end
+            error("fake corpse has no free slot")
+        end
+        ref = action:match('^DropItem%("([^"]+)",%[%-1%.%-1%]%)$')
+        assert(ref, "unexpected action " .. action)
+        if f.drop_variant == "kept" then return end
+        local taken
+        for slot = 0, 38 do
+            local value = o.slots[slot]
+            if value and value.cResRef:get():lower() == (f.drop_variant == "other" and "other" or ref) then
+                taken = value
+                if f.drop_variant ~= "stays" then o.slots[slot] = nil end
+                break
+            end
+        end
+        if f.drop_variant == "both" then o.slots[21] = nil end
+        assert(taken, "fake DropItem found nothing")
+        local id
+        for candidate, object in pairs(f.objects) do
+            if not object.sprite and object.m_containerType == 4 and listed(candidate) and
+                math.abs(object.m_pos.x - o.m_pos.x) <= 16 and math.abs(object.m_pos.y - o.m_pos.y) <= 16 then
+                id = candidate
+            end
+        end
+        id = id or f.pile_at(o.m_pos.x, o.m_pos.y - 5)
+        local message = f.message(id, ref:upper(), 12, id)
+        message.m_item = copy_item(taken, f.next_address + 5000)
+        if f.drop_variant == "self" then message.m_targetId, message.m_sourceId = f.ids[o], f.ids[o]
+        elseif f.drop_variant == "slot" then message.m_slotNum = 0
+        elseif f.drop_variant == "payload" then message.m_item.m_useCount1 = 7 end
+        f.queue[#f.queue + 1] = message
+        if f.drop_variant == "extra" then f.queue[#f.queue + 1] = f.message(id, "OTHER", 12, id) end
+    end
+    -- One handler update: a container add appends a heap copy to its pile,
+    -- which joins the area's lists if it is new.
+    function f.update()
+        while #f.queue > 0 do
+            local message = table.remove(f.queue, 1)
+            local target = f.objects[message.m_targetId]
+            if message.virtual_GetMsgSubType() == 12 and target and not target.sprite then
+                f.next_address = f.next_address + 1
+                target.m_lstItems[#target.m_lstItems + 1] = copy_item(message.m_item, f.next_address)
+                if not listed(message.m_targetId) then
+                    f.area.m_lVertSortBack[#f.area.m_lVertSortBack + 1] = message.m_targetId
+                end
+            end
+        end
+    end
+    return f
+end
+local function ground_start(f, index)
+    local witness = assert(f.adapter:inspect_target(f.target_id, f.source_ids[index], index))
+    assert(witness.ground == true and witness.accepts == 1 and witness.target_id == f.target_id)
+    f.boundary()
+    local command = f.command(index)
+    assert(f.adapter:execute(command))
+    return command
+end
+local function corpse_as_before(f)
+    unrelated_intact(f)
+    local count = 0
+    for _ in pairs(f.creature.slots) do count = count + 1 end
+    assert(count == 2, "the corpse kept a reward")
+end
+function cases.dead_target_reward_goes_to_a_new_pile_at_its_corpse(N)
+    local f = ground_world(N); local a = f.adapter
+    local command = ground_start(f, 1)
+    assert(#f.calls == 2 and f.calls[1] == 'CreateItem("flpri1",0,0,0)' and f.calls[2] == 'DropItem("flpri1",[-1.-1])')
+    corpse_as_before(f)
+    assert(#f.queue == 1 and f.queue[1].virtual_GetMsgSubType() == 12)
+    local pile_id = f.queue[1].m_targetId
+    local pile = f.objects[pile_id]
+    assert(pile and #f.area.m_lVertSortBack == 0 and a:diagnostics().pending.ground == true)
+    f.boundary(); local x, e = a:observe(command); fail(x, e, "DELIVERY_SETTLING")
+    f.update(); f.boundary(); x, e = a:observe(command); fail(x, e, "DELIVERY_SETTLING")
+    x, e = a:observe(command); fail(x, e, "DELIVERY_SETTLING")
+    assert(a:diagnostics().pending.pile_pointer == tostring(pile.address))
+    f.boundary(); local receipt = assert(a:observe(command))
+    assert(receipt.created == 1 and receipt.nonce_bound_instance == 1 and receipt.lootable == 1 and
+        receipt.held == nil and receipt.holder == "ground" and receipt.payload.flags == 1)
+    assert(#pile.m_lstItems == 1 and pile.m_lstItems[1].cResRef:get() == "FLPRI1" and
+        pile.m_lstItems[1].m_flags == 1 and f.area.m_lVertSortBack[1] == pile_id)
+    corpse_as_before(f); assert(#f.calls == 2 and a.pending == nil)
+    x, e = a:execute(command); fail(x, e, "ALREADY_ATTEMPTED")
+end
+function cases.ground_reuses_a_listed_pile_and_keeps_its_items(N)
+    local f = ground_world(N); local a = f.adapter
+    local loot = f.item("SW1H01", 880)
+    local pile_id, pile = f.pile_at(503, 597, {loot})
+    f.area.m_lVertSortBack = {pile_id}
+    local command = ground_start(f, 1)
+    assert(f.queue[1].m_targetId == pile_id)
+    f.boundary(); local x, e = a:observe(command); fail(x, e, "DELIVERY_SETTLING")
+    f.update(); f.boundary(); x, e = a:observe(command); fail(x, e, "DELIVERY_SETTLING")
+    f.boundary(); local receipt = assert(a:observe(command))
+    assert(receipt.holder == "ground" and #pile.m_lstItems == 2 and pile.m_lstItems[1] == loot and
+        loot.address == 880 and pile.m_lstItems[2].cResRef:get() == "FLPRI1")
+    corpse_as_before(f)
+end
+function cases.two_rewards_of_one_dead_target_each_bind_their_own_instance(N)
+    local f = ground_world(N); local a = f.adapter
+    f.source2.slots[21] = f.item("FLPRI1", 302)
+    f.fixture.sources[f.source_ids[2]].payload.resref = "flpri1"
+    f.adapter = N.new(f.api, f.fixture); a = f.adapter
+    local first = ground_start(f, 1); f.update(); f.boundary(); a:observe(first); f.boundary()
+    assert(a:observe(first))
+    local second = ground_start(f, 2); f.update(); f.boundary()
+    local x, e = a:observe(second); fail(x, e, "DELIVERY_SETTLING")
+    f.boundary(); assert(a:observe(second))
+    local pile = f.objects[f.area.m_lVertSortBack[1]]
+    assert(#f.area.m_lVertSortBack == 1 and #pile.m_lstItems == 2 and
+        pile.m_lstItems[1].address ~= pile.m_lstItems[2].address)
+    for _, value in ipairs(pile.m_lstItems) do assert(value.cResRef:get() == "FLPRI1") end
+    corpse_as_before(f); assert(#f.calls == 4)
+end
+function cases.ground_keeps_the_sources_identified_and_unstealable_flags(N)
+    for _, selected in ipairs({0, 2}) do
+        local f = ground_world(N)
+        f.fixture.sources[f.source_ids[1]].payload.flags = selected
+        f.adapter = N.new(f.api, f.fixture)
+        local command = ground_start(f, 1)
+        assert(f.queue[1].m_item.m_flags == selected)
+        -- The add copies the item and identifies it again, like a container add.
+        f.update(); local pile = f.objects[f.area.m_lVertSortBack[1]]
+        pile.m_lstItems[1].m_flags = selected + 1
+        f.boundary(); local x, e = f.adapter:observe(command); fail(x, e, "DELIVERY_SETTLING")
+        assert(pile.m_lstItems[1].m_flags == selected)
+        f.boundary(); local receipt = assert(f.adapter:observe(command))
+        assert(receipt.payload.flags == selected and receipt.holder == "ground")
+    end
+end
+function cases.ground_waits_for_a_party_member_familiar_copy_full_corpse_or_busy_queue(N)
+    local wants = {party="TARGET_NOT_ALIVE", familiar="TARGET_NOT_ALIVE", copy="CORPSE_ITEM_AMBIGUOUS",
+        full="TARGET_INVENTORY_FULL", busy="TARGET_QUEUE_BUSY", reward="TARGET_QUEUE_BUSY",
+        pile="TARGET_QUEUE_BUSY", far="TARGET_QUEUE_BUSY",
+        unnamed="TARGET_NOT_ALIVE", area="AREA_UNAVAILABLE", gone="OWNER_MISSING"}
+    for _, variant in ipairs({"party", "familiar", "copy", "full", "busy", "reward", "pile", "far", "unnamed",
+        "area", "gone"}) do
+        local f = ground_world(N)
+        if variant == "party" then f.creature.portrait = 2
+        elseif variant == "familiar" then f.creature.m_typeAI.m_EnemyAlly = 3
+        elseif variant == "copy" then f.creature.slots[22] = f.item("FLPRI1", 820)
+        elseif variant == "full" then
+            for slot = 15, 34 do if not f.creature.slots[slot] then f.creature.slots[slot] = f.item("FILL", 400 + slot) end end
+        elseif variant == "busy" then f.queue[1] = f.message(3, "OTHER", 40)
+        elseif variant == "reward" then f.queue[1] = f.message(77, "FLPRI2", 12)
+        elseif variant == "pile" or variant == "far" then
+            -- A drop or death drop on its way into the pile the drop would reuse, or anywhere.
+            local pile_id = variant == "pile" and f.pile_at(500, 595, {}) or f.pile_at(2000, 2000, {})
+            f.area.m_lVertSortBack = {pile_id}; f.queue[1] = f.message(pile_id, "OTHER", 12, pile_id)
+        elseif variant == "area" then f.area.m_resref = {get=function() return "BG0100" end}
+        elseif variant == "gone" then f.area.m_lVertSort = {1, 2} end
+        local x, e
+        if variant == "unnamed" then x, e = f.adapter:inspect_target(f.target_id)
+        else x, e = f.adapter:inspect_target(f.target_id, f.source_ids[1], 1) end
+        fail(x, e, wants[variant])
+        f.boundary(); x, e = f.adapter:execute(f.command(1)); fail(x, e, "RESERVATION_MISMATCH")
+        assert(#f.calls == 0)
+    end
+    -- Slots outside 15..34 are not where CreateItem puts it.
+    local f = ground_world(N)
+    for slot = 15, 34 do if not f.creature.slots[slot] then f.creature.slots[slot] = f.item("FILL", 400 + slot) end end
+    f.creature.slots[34] = nil; f.creature.slots[35] = f.item("FILL", 435)
+    assert(f.adapter:inspect_target(f.target_id, f.source_ids[1], 1))
+end
+function cases.ground_execute_requires_one_created_instance_and_one_drop_message(N)
+    for _, variant in ipairs({"none", "queues", "kept", "stays", "both", "other", "extra", "self", "slot",
+        "payload"}) do
+        local f = ground_world(N); local a = f.adapter
+        if variant == "none" or variant == "queues" then f.create_variant = variant
+        else f.drop_variant = variant end
+        assert(a:inspect_target(f.target_id, f.source_ids[1], 1)); f.boundary()
+        local command = f.command(1)
+        local x, e = a:execute(command); fail(x, e, "CREATED_INSTANCE_UNPROVEN")
+        local calls = (variant == "none" or variant == "queues") and 1 or 2
+        assert(#f.calls == calls)
+        f.boundary(); x, e = a:observe(command); fail(x, e, "CREATED_INSTANCE_UNPROVEN")
+        x, e = a:execute(command); fail(x, e, "MUTATION_PENDING")
+        assert(#f.calls == calls)
+    end
+end
+function cases.ground_execute_rejects_a_changed_corpse_or_queue(N)
+    local wants = {replaced="OWNER_CHANGED", alive="OWNER_CHANGED", items="INVENTORY_CHANGED",
+        queued="DELIVERY_QUEUE_NOT_EXCLUSIVE", pile="DELIVERY_QUEUE_NOT_EXCLUSIVE"}
+    for _, variant in ipairs({"replaced", "alive", "items", "queued", "pile"}) do
+        local f = ground_world(N); local a = f.adapter
+        assert(a:inspect_target(f.target_id, f.source_ids[1], 1)); f.boundary()
+        if variant == "replaced" then f.creature.address = 999
+        elseif variant == "alive" then f.creature.alive = true
+        elseif variant == "items" then f.creature.slots[23] = f.item("OTHER", 556)
+        elseif variant == "pile" then
+            local pile_id = f.pile_at(500, 595, {})
+            f.area.m_lVertSortBack = {pile_id}; f.queue[1] = f.message(pile_id, "OTHER", 12, pile_id)
+        else f.queue[1] = f.message(3, "OTHER", 40) end
+        local x, e = a:execute(f.command(1)); fail(x, e, wants[variant])
+        assert(#f.calls == 0)
+    end
+end
+function cases.ground_observation_rejects_conflicts_lost_adds_and_changed_piles(N)
+    local wants = {conflict="DELIVERY_QUEUE_CONFLICT", lost="GROUND_PILE_MISSING", two="DELIVERY_MESSAGE_LOST",
+        early="DELIVERY_EARLY_ITEM", removed="CREATED_INSTANCE_CHANGED", area="AREA_UNAVAILABLE",
+        replaced="OWNER_CHANGED", reused="DELIVERY_MESSAGE_REUSED", payload="DELIVERY_PAYLOAD_CHANGED"}
+    for _, variant in ipairs({"conflict", "lost", "two", "early", "removed", "area", "replaced", "reused", "payload"}) do
+        local f = ground_world(N); local a = f.adapter
+        local pile_id, pile = f.pile_at(500, 600, {})
+        if variant == "early" or variant == "replaced" then f.area.m_lVertSortBack = {pile_id} end
+        local command = ground_start(f, 1)
+        local id = f.queue[1].m_targetId
+        if variant == "conflict" then f.queue[2] = f.message(id, "OTHER", 12, id)
+        elseif variant == "lost" then table.remove(f.queue, 1)
+        elseif variant == "two" then
+            f.update(); local target = f.objects[id]
+            target.m_lstItems[2] = f.item("FLPRI1", 1990)
+        elseif variant == "early" then pile.m_lstItems[1] = f.item("OTHER", 1991)
+        elseif variant == "removed" then
+            f.update(); f.boundary(); local x, e = a:observe(command); fail(x, e, "DELIVERY_SETTLING")
+            f.objects[id].m_lstItems = {}
+        elseif variant == "area" then f.update(); f.area.m_resref = {get=function() return "BG0100" end}
+        elseif variant == "replaced" then pile.address = 9999
+        elseif variant == "reused" then
+            local address = f.queue[1].address
+            f.update(); local reused = f.message(55, "OTHER", 40); reused.address = address; f.queue[1] = reused
+        elseif variant == "payload" then f.update(); f.objects[id].m_lstItems[1].m_useCount2 = 3 end
+        f.boundary(); local x, e = a:observe(command); fail(x, e, wants[variant])
+    end
+end
+function cases.stuck_ground_message_times_out_and_never_recovers(N)
+    local f = ground_world(N); local a = f.adapter
+    local command = ground_start(f, 1)
+    assert(a:on_observation_boundary(f.tick + N.MAX_SETTLE_TICKS))
+    local x, e = a:observe(command); fail(x, e, "DELIVERY_SETTLING_TIMEOUT")
+    f.update(); assert(a:on_observation_boundary(f.tick + N.MAX_SETTLE_TICKS + 1))
+    x, e = a:observe(command); fail(x, e, "DELIVERY_SETTLING_TIMEOUT")
+    assert(#f.calls == 2)
 end
 return cases
 '''

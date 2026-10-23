@@ -3,7 +3,8 @@
 local Host = {}
 Host.__index = Host
 -- An unavailable target is retried after this many game ticks (15/second).
--- Deferral never creates anything or substitutes another recipient.
+-- Deferral never creates anything or substitutes another recipient. A dead
+-- creature target's reward goes to the ground at its corpse instead (FLPRNat).
 Host.DEFER_TICKS = 30
 -- Guarded sources whose lease, and whose removal, one step observes.
 Host.LEASE_CHECKS = 16
@@ -13,7 +14,7 @@ Host.REMOVAL_CHECKS = 16
 Host.DEFERRABLE = { AREA_UNAVAILABLE = true, OWNER_MISSING = true, OWNER_AMBIGUOUS = true,
     TARGET_NOT_ALIVE = true, TARGET_PARTY_MEMBER = true, TARGET_FAMILIAR = true,
     TARGET_INVENTORY_FULL = true, TARGET_QUEUE_BUSY = true, TARGET_NOT_EMPTY = true,
-    TARGET_STACK_COLLISION = true, QUEST_NOT_CLAIMED = true }
+    TARGET_STACK_COLLISION = true, QUEST_NOT_CLAIMED = true, CORPSE_ITEM_AMBIGUOUS = true }
 
 function Host.new(deps)
     assert(type(deps) == "table" and deps.core and deps.storage)
