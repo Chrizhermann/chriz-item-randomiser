@@ -32,6 +32,25 @@ that were killed with `Kill(Myself)`. Every action ran instantly on the corpse
 
 This is the container add that CIR's container targets already prove.
 
+## In a running campaign (EET 2.7.3.0 lab, 2026-10-24)
+
+With this change staged over CIR 1.0.2's runtime, in a BG1 campaign of the lab:
+
+1. **A campaign target.** Tarnesh (Friendly Arm Inn) still had one reward due, a
+   scroll. The lab held that delivery in the host's own deferral table, travelled to
+   the area and killed him. His death drop made a pile at his corpse; the corpse kept
+   only his fist. Released, CIR delivered the scroll into that pile, after its seven
+   earlier items, which kept their instances. The reward was confirmed, with the
+   source's flags (unidentified), and the campaign kept running without an error.
+   After saving and loading, the pile and the scroll were still there, the reward
+   still confirmed. The loaded game showed the scroll identified, as it already did
+   the scrolls of his death drop that CIR had given him unidentified.
+2. **A new pile.** CIR's adapter, run by hand with one target on a spawned rat
+   that was killed and had nothing to drop: the drop queued its add into a new pile
+   that was not yet in the area. On the next update the pile was there with the
+   potion, identified again by the add; CIR set the source's flags back, pinned that
+   instance and gave a lootable receipt one update later.
+
 ## How CIR delivers it (`prototype/FLPRNat.lua`)
 
 - **Inspection** (`Adapter:_inspect_ground`). The target's creature is dead, its
@@ -72,4 +91,5 @@ recipient and never put at its original place.
   yet. Its reward still waits.
 - A creature that dies in the one or two ticks between `GiveItemCreate` and its
   receipt stops the campaign (`TARGET_DIED_DURING_DELIVERY`), as before.
-- Checked on EET only so far; BG:EE and BG2:EE use the same engine version.
+- Checked on EET only so far (its BG1 part); BG:EE and BG2:EE run the same engine
+  version.
