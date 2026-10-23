@@ -247,6 +247,17 @@ function cases.unavailable_targets_defer_without_journal_backoff_then_deliver(Co
     assert(#f.events==4 and f.events[4].kind=="deliver")
     f:finish(); assert(#f.events==6 and #f.host:inspect().deferred==0)
 end
+-- A dead target whose corpse still holds a copy of the reward: DropItem could
+-- take the wrong one, so the reward waits like one for an unavailable target.
+function cases.corpse_holding_a_copy_defers_like_an_unavailable_target(Core,Host)
+    local f=setup(Core,Host); assert(f:capture()); f.unavailable="CORPSE_ITEM_AMBIGUOUS"
+    for i=1,8 do f:poll() end
+    assert(f.host.status=="running" and #f.events==3 and f.values.flpr_jkind==0)
+    local deferred=f.host:inspect().deferred
+    assert(#deferred==3 and deferred[1].reason=="CORPSE_ITEM_AMBIGUOUS")
+    f.unavailable=nil; f:poll(f.tick+Host.DEFER_TICKS); f:finish()
+    assert(#f.events==6 and #f.host:inspect().deferred==0)
+end
 function cases.one_unavailable_target_defers_only_its_own_reward(Core,Host)
     local f=setup(Core,Host); assert(f:capture())
     f.unavailable_targets={["are:bg2600/container/5"]="AREA_UNAVAILABLE"}
