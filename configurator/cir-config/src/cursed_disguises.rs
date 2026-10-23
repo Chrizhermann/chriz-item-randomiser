@@ -6,19 +6,21 @@
 //! other campaigns. Every copy of each original item shares that campaign's
 //! choice.
 
-use crate::error::{Error, ErrorKind, Result};
-use crate::game_text::append_texts;
+use crate::error::{Error, Result};
+use crate::game_text::GameText;
 use crate::json::{Dict, Value};
 use crate::original_options::{cursed_disguise_choices_value, patch_cursed_disguise};
 use crate::profiles::is_hex256;
 use crate::py::{digits_value, is_line_start, replace_bytes, rfind_bytes};
-use crate::quest_options::texts;
 use crate::resources::sha256_hex;
+use crate::translations::Line;
 use crate::dict;
 use std::collections::{BTreeMap, BTreeSet};
 
 pub const ALGORITHM: &str = "park-miller-cursed-v1";
 pub const SEED_RANGE: i64 = 2_147_483_646;
+/// Asset files by name, in the reference's order.
+pub type Assets = Vec<(String, Vec<u8>)>;
 
 fn is_space(byte: u8) -> bool {
     matches!(byte, b' ' | b'\t' | b'\n' | b'\r' | b'\x0b' | b'\x0c')
@@ -209,32 +211,30 @@ pub fn cursed_disguise_indices(spec: &Value, seed: &Value) -> Result<Dict> {
     Ok(result)
 }
 
-/// Materialise immutable original and face assets, plus exact authored text.
+/// Materialise immutable original and face assets, plus the authored text.
 ///
 /// Resource keys are lowercase resrefs. The caller prefixes returned filenames
 /// with the revision in its private asset directory, never the game override.
 /// The native fixture retains all faces, including duplicate fallback faces.
-/// Files are returned in the reference's order.
+/// Files are returned in the reference's order. The texts are in the game's
+/// `language` where CIR has all of them, otherwise in English, with their
+/// female wordings in dialogf.tlk.
 pub fn prepare_cursed_disguises(
     spec: &Value,
     resources: &BTreeMap<String, Vec<u8>>,
-    tlk: &[u8],
+    text: &GameText,
     language: &str,
-) -> Result<(Value, Vec<(String, Vec<u8>)>, Vec<u8>)> {
+) -> Result<(Value, Assets, GameText)> {
     validate_cursed_disguise_spec(spec)?;
-    if !["en_us", "en_gb", "english"].contains(&crate::py::casefold(language).as_str()) {
-        return Err(Error::profile("Original cursed-disguise text currently requires English"));
-    }
     let hashes = spec.get("resource_hashes").and_then(Value::as_dict).expect("validated hashes");
     for (name, expected) in hashes.iter() {
         if !resources.get(name).is_some_and(|data| expected.py_eq(&Value::from(sha256_hex(data)))) {
             return Err(Error::profile(format!("Cursed-disguise resource changed; rescan before export: {name}")));
         }
     }
-    // cir.tp2's ALWAYS block loads these EE overrides after the general strings
-    // on both bgee and bg2ee engines (including EET); use their exact CRLF text.
-    let mut strings = texts("languages/english/in-game.tra");
-    strings.extend(texts("languages/bgee/english/in-game.tra"));
+    // cir.tp2's ALWAYS block loads the EE overrides after the general strings
+    // on both bgee and bg2ee engines (including EET), and so does option_lines;
+    // their exact CRLF text.
     let mut ids = BTreeSet::new();
     for row in rows(spec) {
         for face in variants(row) {
@@ -246,11 +246,10 @@ pub fn prepare_cursed_disguises(
         }
     }
     let ids: Vec<i64> = ids.into_iter().collect();
-    let values = ids
-        .iter()
-        .map(|id| strings.get(id).cloned().ok_or_else(|| Error::new(ErrorKind::Key, id.to_string())))
-        .collect::<Result<Vec<String>>>()?;
-    let (tlk, allocated) = append_texts(tlk, &values)?;
+    let wanted: Vec<Line> = ids.iter().map(|id| ("in-game.tra".to_string(), *id)).collect();
+    let found = crate::translations::option_lines(language, &wanted)?;
+    let values: Vec<(String, String)> = wanted.iter().map(|line| found[line].clone()).collect();
+    let (text, allocated) = text.append(&values)?;
     let refs: BTreeMap<i64, i64> = ids.into_iter().zip(allocated.into_iter().map(i64::from)).collect();
     let mut items = Vec::new();
     let mut files = Vec::new();
@@ -273,5 +272,5 @@ pub fn prepare_cursed_disguises(
         }));
     }
     let fixture = Value::Dict(dict! {"algorithm" => ALGORITHM, "items" => items});
-    Ok((fixture, files, tlk))
+    Ok((fixture, files, text))
 }

@@ -15,7 +15,7 @@ from .profiles import (PROFILE_ID, ProfileError, ensure_output_outside_game,
                        new_profile, read_json, search_items, validate_catalog,
                        validate_profile, write_json)
 from .sources import PLAN_FIELDS, PLAN_OPTIONAL_FIELDS, Scans, new_binding_plan, validate_world
-from .prepared import applied, left_out
+from .prepared import applied
 from .scripted_sources import blpool_registration
 from .platform import area_part, game_platform, preset_campaigns, recommended_campaign
 from .templates import list_templates, recommended_preset
@@ -205,12 +205,12 @@ class Editor:
         if route == "/api/templates":
             return list_templates(preset_campaigns(self.world))
         if route == "/api/recommended":
+            from .original_configuration import unavailable_options
             preset = recommended_preset(recommended_campaign(self.world))
-            # An option whose change the installer could not make is not offered.
-            preset["unavailable"] = {}
-            if not applied(self.world["game_root"], "flail_heads"):
-                preset["options"]["flail_heads"] = False
-                preset["unavailable"]["flail_heads"] = left_out(self.world["game_root"], "flail_heads")
+            # An option this game cannot apply is not offered; the player is told why.
+            preset["unavailable"] = unavailable_options(self.catalog, self.world)
+            for option in preset["unavailable"]:
+                preset["options"][option] = False
             return preset
         offset = int(params.get("offset", "0"))
         query = params.get("q", "").strip()

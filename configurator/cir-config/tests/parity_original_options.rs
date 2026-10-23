@@ -9,7 +9,7 @@ use cir_config::json::Value;
 use cir_config::original_options::{cursed_disguise_choices, patch_cursed_disguise, patch_spell_shield_stock, tome_variants};
 use cir_config::py::{put_u16, put_u32};
 use cir_config::world_formats::parse_sto;
-use common::builders::{default_itm, item_record, make_itm, make_sto, record, u32_at};
+use common::builders::{default_itm, item_record, make_itm, make_sto, record, u32_at, ALL_DISGUISE_ITEMS};
 
 const SCENARIO: &str = "original_options";
 
@@ -17,13 +17,6 @@ const SCENARIO: &str = "original_options";
 fn matches_the_reference() {
     common::run(SCENARIO);
 }
-
-pub const ALL_DISGUISE_ITEMS: [&str; 35] = [
-    "brac08", "brac06", "brac07", "brac10", "brac09", "brac11", "brac01", "brac02", "brac03", "brac13", "brac14",
-    "brac15", "brac04", "leat06", "leat05", "leat07", "leat08", "plat17", "plat02", "plat11", "plat10", "ring04",
-    "ring23", "ring06", "ring07", "ring22", "ring09", "ring31", "ring08", "sper03", "sper05", "sper02", "sw2h03",
-    "sw2h11", "sw2h02",
-];
 
 fn without(names: &[&str]) -> Vec<&'static str> {
     ALL_DISGUISE_ITEMS.iter().copied().filter(|name| !names.contains(name)).collect()
@@ -135,7 +128,7 @@ fn item_revisions_keeps_plate_and_uses_its_authored_leather_descriptions() {
     assert_eq!(descriptions, [Some(210), Some(210), Some(211)]);
     let error = cursed_disguise_choices(&without(&["brac06"]), "eet", false).unwrap_err();
     assert_eq!(error.kind, ErrorKind::Profile);
-    assert!(error.message.contains("needs brac06"), "{}", error.message);
+    assert!(error.message.contains("need BRAC06.ITM to disguise BRAC08.ITM"), "{}", error.message);
 }
 
 #[test]

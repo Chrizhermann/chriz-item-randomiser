@@ -88,6 +88,12 @@ pub fn is_spell_shield_row(row: &Value) -> bool {
     .all(|(key, value)| row.get(key).unwrap_or(&Value::Null).py_eq(&Value::from(*value)))
 }
 
+/// Whether the scroll's shop row is among these authored rows: the rewards a
+/// configuration finally holds, whatever its tables or pool choices.
+pub fn spell_shield_randomized<'a>(rows: impl IntoIterator<Item = &'a Value>) -> bool {
+    rows.into_iter().any(is_spell_shield_row)
+}
+
 /// `value[key]` with Python's KeyError and TypeError messages.
 fn item<'a>(value: &'a Value, key: &str) -> Result<&'a Value> {
     match value {
@@ -148,7 +154,8 @@ fn is_anchor(value: &Value) -> Result<bool> {
 /// Existing payload, supply flags and quantities above three remain exact.
 /// An absent row uses ADD_STORE_ITEM's authored identified, zero-charge
 /// payload. Source selection remains separate: the shop option also works
-/// without scroll randomisation or the extended item pool.
+/// without scroll randomisation or the extended item pool. `randomized` says
+/// whether the scroll's shop row is one of the configuration's rewards.
 pub fn spell_shield_spec(world: &Value, randomized: bool) -> Result<Value> {
     let store = Value::from("sto:udduer01");
     let mut resource = None;
@@ -159,14 +166,27 @@ pub fn spell_shield_spec(world: &Value, randomized: bool) -> Result<Value> {
         }
     }
     let Some(resource) = resource else {
-        return Err(Error::profile("More Spell Shield scrolls requires UDDUER01.STO"));
+        return Err(Error::profile(
+            "More Spell Shield copies need the shop UDDUER01.STO, which this game does not have",
+        ));
     };
     if let Some(unreadable) = world.get("unreadable") {
         for row in crate::py::iter_value(unreadable)? {
             if item(&row, "id")?.py_eq(&store) {
-                return Err(Error::profile("More Spell Shield scrolls requires UDDUER01.STO, which cannot be read"));
+                return Err(Error::profile("More Spell Shield copies need the shop UDDUER01.STO, which cannot be read"));
             }
         }
+    }
+    let scroll_item = Value::from("itm:scrl8x");
+    let mut has_scroll = false;
+    for row in crate::py::iter_value(item(world, "resources")?)? {
+        if item(&row, "id")?.py_eq(&scroll_item) {
+            has_scroll = true;
+            break;
+        }
+    }
+    if !has_scroll {
+        return Err(Error::profile("More Spell Shield copies need SCRL8X.ITM, which this game does not have"));
     }
     let mut rows = Vec::new();
     for row in crate::py::iter_value(item(world, "sources")?)? {
@@ -384,7 +404,11 @@ pub fn cursed_disguise_choices_value<S: AsRef<str>>(available: &[S], game: &Valu
             let (donor, description) =
                 if !names.contains(donor) && optional.contains(&donor) { fallback } else { (donor, description) };
             if !names.contains(donor) {
-                return Err(Error::profile(format!("Original cursed disguise needs {donor}.itm for {source}")));
+                return Err(Error::profile(format!(
+                    "Cursed disguise items need {}.ITM to disguise {}.ITM, and this game does not have it",
+                    donor.to_ascii_uppercase(),
+                    source.to_ascii_uppercase()
+                )));
             }
             variants.push(Value::Dict(dict! {
                 "donor" => donor, "description_tra" => description,

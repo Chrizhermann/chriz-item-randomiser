@@ -14,9 +14,10 @@ from pathlib import Path
 from .campaigns import OVERFLOW_TARGET_KINDS
 from .game_names import convert_resource, eet_names
 from .original_catalog import NO_ROUTE, UNREADABLE_PLACE_PROBLEMS, mode2_route_source, resolve_template
-from .original_options import is_spell_shield_row, spell_shield_spec, tome_variants
-from .platform import preset_game
-from .templates import optional_mod_prefixes
+from .original_options import is_spell_shield_row, spell_shield_randomized, spell_shield_spec, tome_variants
+from .platform import game_platform, preset_campaigns, preset_game
+from .quest_options import kangaxx_problem
+from .templates import campaign_tables, optional_mod_prefixes
 from .original_registrations import (SHIPPED_REPLACEMENT, is_unreferenced_creature_source,
                                      target_record as original_target_record)
 from .mode2_rewards import source_spec as mode2_source_spec
@@ -116,6 +117,60 @@ def _original_target(row: dict, resource_hash: str) -> dict:
             "authored": {key: row[key] for key in _TARGET_FIELDS}}
 
 
+def _kangaxx_problem(catalog: dict, world: dict, scans: Scans | None = None) -> str | None:
+    """Why this game cannot have the Kangaxx option, or None; reads the quest
+    files that are no reviewed original, once for the calls on ``scans``."""
+    def read(resources: list[str]) -> dict[str, bytes]:
+        with GameResources(Path(catalog["game_root"]),
+                           {kind: RESOURCE_TYPES[kind] for kind in ("dlg", "bcs")}) as reader:
+            return {resource: reader.read(*resource.split(":")) for resource in resources}
+
+    found = {} if scans is None else scans.option_problems
+    if "kangaxx" not in found:
+        found["kangaxx"] = kangaxx_problem({row["id"]: row["sha256"] for row in world["resources"]}, read)
+    return found["kangaxx"]
+
+
+def _cursed_disguises(catalog: dict, game: str, item_hashes: dict[str, str]) -> dict:
+    """Component 570's metadata for this game's items."""
+    log = Path(catalog["game_root"]) / "WeiDU.log"
+    return cursed_disguise_spec(item_hashes, game=game,
+                                item_revisions=item_revisions_installed(log.read_bytes() if log.exists() else b""))
+
+
+def unavailable_options(catalog: dict, world: dict) -> dict[str, str]:
+    """The original options this game cannot apply, each with the reason the
+    player is shown; the editor does not offer them.
+
+    A preset that asks for one anyway is refused with its reason, except for
+    the two that would change nothing here: the tome variant without Baldur's
+    Gate's lists, and cursed disguises without a cursed item.
+    """
+    game_root = world["game_root"]
+    game = game_platform(world)
+    reasons = {}
+    problem = _kangaxx_problem(catalog, world)
+    if problem:
+        reasons["kangaxx"] = problem
+    if not applied(game_root, "flail_heads"):
+        reasons["flail_heads"] = left_out(game_root, "flail_heads")
+    if not any("bg1" in campaign_tables(campaign) for campaign in preset_campaigns(world)):
+        reasons["totsc_tome"] = ("The ToTSC tome variant changes a reward of Baldur's Gate's lists, "
+                                 "which no preset for this game uses")
+    try:
+        spell_shield_spec(world, randomized=False)
+    except ProfileError as exc:
+        reasons["more_spell_shield"] = str(exc)
+    try:
+        if not _cursed_disguises(catalog, game,
+                                 {item["resref"]: item["sha256"] for item in catalog["items"]})["choices"]:
+            reasons["cursed_disguise"] = ("Cursed disguise items need one of the cursed items they disguise, "
+                                          "which this game does not have")
+    except ProfileError as exc:
+        reasons["cursed_disguise"] = str(exc)
+    return reasons
+
+
 def build_original_configuration(catalog: dict, world: dict, template_id: str, *,
                                  items: str | None = None, targets: str | None = None,
                                  options: dict | None = None,
@@ -154,6 +209,10 @@ def _build(catalog: dict, world: dict, template_id: str, exclude: dict[str, str]
     if draft["options"].get("flail_heads") and not applied(world["game_root"], "flail_heads"):
         raise ProfileError("The flail heads option needs Glaicus's conversation as Chriz Item Randomiser "
                            "prepares it: " + left_out(world["game_root"], "flail_heads"))
+    if draft["options"].get("kangaxx"):
+        problem = _kangaxx_problem(catalog, world, scans)
+        if problem:
+            raise ProfileError(problem)
     # A reward whose script or conversation the installer could not prepare
     # stays as installed: its rows are left out, and the player is told why.
     prepared = applied_changes(world["game_root"])
@@ -167,8 +226,9 @@ def _build(catalog: dict, world: dict, template_id: str, exclude: dict[str, str]
                 unprepared[change].append(row["id"])
             elif row["enabled"]:
                 enabled.append(row)
-    shield = (spell_shield_spec(world, randomized=any(is_spell_shield_row(row) for row in enabled_sources))
-              if draft["options"].get("more_spell_shield") else None)
+    # The shop's extra copies; whether the scroll's row is randomised too
+    # follows from the rewards finally chosen, below.
+    stock = spell_shield_spec(world, randomized=False) if draft["options"].get("more_spell_shield") else None
     not_used = []
 
     def leave_out(row: dict, kind: str, reason: str) -> None:
@@ -183,9 +243,7 @@ def _build(catalog: dict, world: dict, template_id: str, exclude: dict[str, str]
         if row["id"] in exclude:
             leave_out(row, "reward", exclude[row["id"]])
             continue
-        if shield and is_spell_shield_row(row):
-            if row["item_resref"] not in catalog_items:
-                raise ProfileError("More Spell Shield scrolls requires SCRL8X.ITM")
+        if stock and is_spell_shield_row(row):
             candidates.append(row)
             continue
         if row["binding_problem"] == NO_ROUTE:
@@ -222,10 +280,15 @@ def _build(catalog: dict, world: dict, template_id: str, exclude: dict[str, str]
     def choose(row: dict) -> tuple[dict | None, str | None, str | None]:
         """Return (registration, physical source id, replacement) for one reward row."""
         item, resource = row["item_resref"], row["source_resource"]
-        if shield and is_spell_shield_row(row):
-            registration = _original_source(row, shield["resource_sha256"], shield["payload"],
-                                            [shield["original_source_id"]] if shield["original_source_id"] else [])
-            registration["copies"] = shield["quantity"]
+        if stock and is_spell_shield_row(row):
+            # The option changes the shop's first SCRL8X row; with another
+            # one, which row the lists move is ambiguous.
+            if sum(source["resource"] == stock["resource"] and source["item"] == item
+                   for source in physical.values()) > 1:
+                raise _NotUsable("ambiguous-source-records")
+            registration = _original_source(row, stock["resource_sha256"], stock["payload"],
+                                            [stock["original_source_id"]] if stock["original_source_id"] else [])
+            registration["copies"] = stock["quantity"]
             return registration, None, None
         if row["adapter"] == "virtual":
             return virtual_registration(item, row["id"], 1, catalog_items[item]["sha256"],
@@ -318,13 +381,12 @@ def _build(catalog: dict, world: dict, template_id: str, exclude: dict[str, str]
     plan["original_template_id"] = template_id
     plan["original_choices"] = draft["choices"].copy()
     plan["original_options"] = draft["options"].copy()
-    if shield is not None:
-        plan["spell_shield"] = shield
+    if stock is not None:
+        plan["spell_shield"] = spell_shield_spec(world, randomized=spell_shield_randomized(
+            row for row, *_ in chosen))
     if draft["options"].get("cursed_disguise"):
-        log = Path(catalog["game_root"]) / "WeiDU.log"
-        plan["cursed_disguises"] = cursed_disguise_spec(
-            {name: item["sha256"] for name, item in catalog_items.items()}, game=game,
-            item_revisions=item_revisions_installed(log.read_bytes() if log.exists() else b""))
+        plan["cursed_disguises"] = _cursed_disguises(
+            catalog, game, {name: item["sha256"] for name, item in catalog_items.items()})
     plan["target_registrations"] = []
     randomization = {"sources": {}, "targets": {},
                      "row_filters": {"sources": {}, "targets": {}},

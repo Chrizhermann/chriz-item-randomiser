@@ -9,6 +9,8 @@ import unittest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
 from flir_config.cursed_disguises import (cursed_disguise_indices, cursed_disguise_spec,
     item_revisions_installed, prepare_cursed_disguises, validate_cursed_disguise_spec)
+from flir_config import translations
+from flir_config.game_text import GameText
 from flir_config.profiles import ProfileError
 from flir_config.quest_options import _texts
 from flir_config.resources import _Tlk
@@ -62,10 +64,11 @@ class CursedDisguiseTests(unittest.TestCase):
     def test_assets_copy_only_original_owned_bytes_and_exact_ee_text(self):
         data = resources()
         spec = spec_for(data)
-        fixture, files, tlk = prepare_cursed_disguises(spec, data, make_tlk(["Existing text"]))
+        fixture, files, text = prepare_cursed_disguises(spec, data, GameText(make_tlk(["Existing text"])))
         self.assertEqual(len(files), 41)  # eight originals plus 33 die faces
         self.assertEqual(fixture["algorithm"], "park-miller-cursed-v1")
-        strings = _Tlk(tlk)
+        self.assertIsNone(text.female)
+        strings = _Tlk(text.male)
         authored = _texts("languages/bgee/english/in-game.tra")
         self.assertEqual(strings.text(0, set()), "Existing text")
         for row, item in zip(spec["choices"], fixture["items"]):
@@ -91,7 +94,27 @@ class CursedDisguiseTests(unittest.TestCase):
                     struct.pack_into("<I", expected, 0xAE, 3)
                 self.assertEqual(variant, bytes(expected))
         # Re-export reuses old text references, keeping prior saved revisions valid.
-        self.assertEqual(prepare_cursed_disguises(spec, data, tlk), (fixture, files, tlk))
+        self.assertEqual(prepare_cursed_disguises(spec, data, text), (fixture, files, text))
+
+    def test_descriptions_are_the_games_language_or_english(self):
+        """German and Polish games get their own descriptions, in dialog.tlk and
+        dialogf.tlk alike; any other language gets the English ones."""
+        data = resources()
+        spec = spec_for(data)
+        ring = next(row for row in spec["choices"] if row["source"] == "ring04")
+        for language, own in (("de_DE", "de_DE"), ("pl_PL", "pl_PL"), ("es_ES", "en_US"), ("default", "en_US")):
+            with self.subTest(language=language):
+                _, files, text = prepare_cursed_disguises(
+                    spec, data, GameText(make_tlk(["old"]), make_tlk(["old (f)"])), language=language)
+                male, female = _Tlk(text.male), _Tlk(text.female)
+                self.assertEqual(male.count, female.count)
+                expected = translations.texts(own, "in-game.tra")
+                for number, face in enumerate(ring["variants"], 1):
+                    ref = struct.unpack_from("<I", files[f"ring04.{number}.itm"], 0x54)[0]
+                    self.assertEqual((male.text(ref, set()), female.text(ref, set())),
+                                     expected[face["description_tra"]])
+        german = translations.texts("de_DE", "in-game.tra")[216][0]
+        self.assertTrue(german.startswith("Ring der Tollpatschigkeit: Des Narren Torheit\r\n"), german)
 
     def test_item_revisions_component_zero_selects_exact_original_compatibility(self):
         self.assertTrue(item_revisions_installed(b'// ignored\n~ITEM_REV/ITEM_REV.TP2~ #2 #0 // core\n'))
@@ -101,7 +124,7 @@ class CursedDisguiseTests(unittest.TestCase):
             self.assertFalse(item_revisions_installed(log))
         data = resources()
         spec = spec_for(data, item_revisions=True)
-        fixture, files, tlk = prepare_cursed_disguises(spec, data, make_tlk([]))
+        fixture, files, _ = prepare_cursed_disguises(spec, data, GameText(make_tlk([])))
         self.assertNotIn("plat17", [row["resref"] for row in fixture["items"]])
         self.assertFalse(any(key.startswith("plat17.") for key in files))
         leather = next(row for row in spec["choices"] if row["source"] == "leat06")
@@ -128,7 +151,7 @@ class CursedDisguiseTests(unittest.TestCase):
         spec = spec_for(data)
         data["brac06"] += b"different mod data"
         with self.assertRaisesRegex(ProfileError, "resource changed.*brac06"):
-            prepare_cursed_disguises(spec, data, make_tlk([]))
+            prepare_cursed_disguises(spec, data, GameText(make_tlk([])))
 
 
 if __name__ == "__main__":

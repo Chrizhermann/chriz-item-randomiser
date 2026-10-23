@@ -106,7 +106,8 @@ def track_patches() -> None:
 
 def register_pin_tables() -> None:
     from flir_config import mode2_rewards, quest_options
-    for name, table in (("quest_options.ORIGINAL_HASHES", quest_options.ORIGINAL_HASHES),):
+    for name, table in (("quest_options.ORIGINAL_HASHES", quest_options.ORIGINAL_HASHES),
+                        ("quest_options.BG2EE_HASHES", quest_options.BG2EE_HASHES)):
         PIN_TABLES[id(table)] = name
         PIN_STARTUP[name] = dict(table)
     for name, table in (("mode2_rewards.REWARDS", mode2_rewards.REWARDS),
