@@ -22,7 +22,8 @@ game text, so an earlier game text file is the first "strings" entries of the
 one Apply wrote; no copy is kept of it.
 
 A record that cannot be read is not used: the scans then read every file as
-it is, and the next Apply starts a new record.
+it is, Apply's included, and the next Apply that writes outside CIR's folder
+starts a new record, which takes each file it replaces as it is.
 """
 from __future__ import annotations
 

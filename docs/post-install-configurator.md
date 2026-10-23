@@ -318,7 +318,14 @@ reading the game's files as they are and recognise CIR's own patches there, so
 applying the extended pools again on a game whose `SAFANJ.DLG` already is Safana's
 route copy offers and exports her route as before. When Apply replaces a file that
 still holds its last bytes, the record keeps the earlier file; any other file it
-replaces becomes the earlier file, since the scan read that one. Apply refuses an
+replaces becomes the earlier file, since the scan read that one. After a record that
+could not be read, the scans read Apply's own earlier files as the game's; the first
+Apply that writes outside `randomiser-campaigns/` then starts a new record, which
+takes each file it replaces as it is, Apply's earlier ones included, so the scan the
+configurations were made with stays (an Apply that writes nothing new there leaves
+the unreadable record unused). The export finds the installer's version of the book in the book Apply wrote, with or
+without a record, and keeps it in `PPBOOK.installed.bcs` for the runtime. Apply
+refuses an
 export that would replace the record or a copy, and game text that is no longer
 readable, which changed since the export. Since applying leaves the scan as it was,
 a later Apply compiles the revisions that saved games keep against the scan they were
