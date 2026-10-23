@@ -119,9 +119,8 @@ def _without(profile: dict, plan: dict, catalog: dict, sources: set, targets: se
                                        if entry["id"] not in targets]
     shield = plan.get("spell_shield")
     if shield and shield["source_id"] in sources:
-        # Without its randomised source the start keeps the shop as installed.
-        plan["original_options"] = {**plan["original_options"], "more_spell_shield": False}
-        del plan["spell_shield"]
+        # Without the randomised scroll the shop keeps it, with the extra copies.
+        plan["spell_shield"] = {**shield, "source_id": ""}
     if items:
         profile = edit_profile(profile, catalog, exclude=items)
     return profile, plan

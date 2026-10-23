@@ -634,21 +634,7 @@ fn validate_campaign(body: &Value) -> Result<()> {
     let shield = campaign.get("spell_shield");
     let option = |name: &str| -> Option<&Value> { campaign.get("original_options").and_then(|options| options.get(name)) };
     if present_original && option("more_spell_shield").is_some_and(Value::truthy) {
-        let shield_value = shield.unwrap_or(&Value::Null);
-        crate::original_options::validate_spell_shield_spec(shield_value)?;
-        // The scroll's row is in BG2's extended table: only a preset reading
-        // it randomises the stock.
-        let randomized = option("scrolls").is_some_and(Value::truthy)
-            && field("original_choices").get("items").and_then(Value::as_str) == Some("extended")
-            && field("original_template_id")
-                .as_str()
-                .map(crate::templates::template_tables)
-                .transpose()?
-                .is_some_and(|tables| tables.contains(&"bg2"));
-        let expected = if randomized { crate::original_options::SPELL_SHIELD_SOURCE } else { "" };
-        if shield_value.at("source_id")?.as_str() != Some(expected) {
-            return Err(Error::profile("Spell Shield source does not match original item pool choices"));
-        }
+        crate::original_options::validate_spell_shield_spec(shield.unwrap_or(&Value::Null))?;
     } else if campaign.contains_key("spell_shield") {
         return Err(Error::profile("Spell Shield stock requires its original option"));
     }
@@ -679,10 +665,14 @@ fn validate_campaign(body: &Value) -> Result<()> {
     }
     let sources = field("sources").as_list().expect("checked");
     let targets = field("targets").as_list().expect("checked");
+    // The scroll's shop row is randomised exactly when it is one of the rewards.
     if let Some(shield) = shield.filter(|shield| shield.truthy()) {
-        let source_id = shield.at("source_id")?;
-        if source_id.truthy() && sources.iter().filter(|row| row.get("id").is_some_and(|id| id.py_eq(source_id))).count() != 1 {
-            return Err(Error::profile("Spell Shield option source is missing"));
+        let randomized = crate::original_options::spell_shield_randomized(
+            sources.iter().map(|row| row.at("record").ok().and_then(|record| record.get("authored")).unwrap_or(&Value::Null)),
+        );
+        let expected = if randomized { crate::original_options::SPELL_SHIELD_SOURCE } else { "" };
+        if !shield.at("source_id")?.py_eq(&Value::from(expected)) {
+            return Err(Error::profile("Spell Shield source does not match the campaign's rewards"));
         }
     }
     if let Some(copies) = campaign.get("duplicates") {

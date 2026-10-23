@@ -17,6 +17,7 @@ from unicorn import Uc, UC_ARCH_X86, UC_MODE_64
 from unicorn.x86_const import *
 from flir_config.campaigns import _render_lua
 from flir_config.cursed_disguises import cursed_disguise_indices, prepare_cursed_disguises
+from flir_config.game_text import GameText
 from test_cursed_disguises import resources, spec_for
 from test_postinstall_resources import make_tlk
 from test_campaign_gate_bridge import CASES, CORE, GATE, POLICY, BUILD
@@ -35,7 +36,7 @@ SMALL = BASE + 0x4000000
 def fixture(runtime=LuaJIT, *, gate=False, second=False):
     data = resources()
     spec = spec_for(data)
-    native, files, tlk = prepare_cursed_disguises(spec, data, make_tlk([]))
+    native, files, text = prepare_cursed_disguises(spec, data, GameText(make_tlk([])))
     revision = "a" * 64
     bundle = {"manifest": {"revision": revision, "original_options": {"cursed_disguise": True},
                            "cursed_disguises": spec},
@@ -53,7 +54,7 @@ def fixture(runtime=LuaJIT, *, gate=False, second=False):
     bundles, entries = [b], {revision: entry}
     if second:
         other_spec = spec_for(data, item_revisions=True)
-        other_native, other_files, _ = prepare_cursed_disguises(other_spec, data, tlk)
+        other_native, other_files, _ = prepare_cursed_disguises(other_spec, data, text)
         other = deepcopy(bundle)
         other["manifest"].update(revision="b" * 64, cursed_disguises=other_spec)
         other["fixture"].update(revision="b" * 64, cursed_disguises=other_native)

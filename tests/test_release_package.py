@@ -563,6 +563,10 @@ class RepositoryPackageTests(unittest.TestCase):
                   for preset, spec in PRESETS.items() for campaign in spec["campaigns"]
                   for kind in ("items", "locations") for family in ("base", "mode2")}
         named |= {"lib/fl#bg1pal.tpa", "copy/flbhcryp.itm", "languages/english/ppdjinn.tra"}
+        # Kangaxx's texts are read by name in the game's language (translations.texts),
+        # English where it has no translation; the languages folder is published whole.
+        from flir_config.quest_options import KANGAXX_LINES
+        named |= {f"languages/english/{file}" for file, _ in KANGAXX_LINES}
         self.assertTrue({"copy/ward.itm", "copy/flrward1.bam", "languages/english/hlskull.tra",
                          "lists/endpoints/fallbacks.2da"} <= named)
         self.assertEqual(sorted(named - self.selected), [])

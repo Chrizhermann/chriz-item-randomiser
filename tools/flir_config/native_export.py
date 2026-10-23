@@ -25,12 +25,13 @@ from .scripted_sources import (ADAPTER_ID, ITEM, PAYLOAD, RESOURCE, SELECTOR, SO
                                campaign_record)
 from .quest_rewards import QUESTS, quest_spec
 from .prepared import QUEST_CHANGES, applied, require_installed
-from .quest_options import (prepare_quest_options, patch_kangaxx_journal,
+from .quest_options import (KANGAXX_RESOURCES, prepare_quest_options, patch_kangaxx_journal,
                             original_dialogue, original_crypt)
 from .spell_rewards import (SPELL, PAYLOAD as KEY_PAYLOAD, patch_key_spell,
                             ORIGINAL_SHA256 as KEY_ORIGINAL_HASH,
                             PATCHED_SHA256 as KEY_PATCHED_HASH)
-from .original_options import SPELL_SHIELD_SOURCE, spell_shield_spec, patch_spell_shield_stock
+from .original_options import (SPELL_SHIELD_SOURCE, spell_shield_randomized, spell_shield_spec,
+                               patch_spell_shield_stock)
 from .mode2_rewards import (SOURCE_REWARDS as MODE2_SOURCES, TARGET_REWARDS as MODE2_TARGETS,
                             RESOURCE_REWARDS as MODE2_RESOURCES, source_spec as mode2_source_spec,
                             target_spec as mode2_target_spec, patch_reward as patch_mode2_reward,
@@ -182,8 +183,8 @@ def _compile(manifest: dict, world: dict, index: dict, items: dict,
 
     shield = manifest.get("spell_shield")
     if shield is not None:
-        _require(shield == spell_shield_spec(world, randomized=bool(shield["source_id"])),
-                 "Spell Shield stock differs from the scan")
+        randomized = spell_shield_randomized(source["record"].get("authored") for source in manifest["sources"])
+        _require(shield == spell_shield_spec(world, randomized=randomized), "Spell Shield stock differs from the scan")
         native["spell_shield"] = deepcopy(shield)
         use(shield["resource"])
     if "cursed_disguises" in manifest:
@@ -752,7 +753,7 @@ def _compile(manifest: dict, world: dict, index: dict, items: dict,
         native["source_gate"] = {"schema": "flpr-unvisited-fixture-gate-v1", "source_ids": guarded_ids}
     options = manifest.get("original_options", {})
     if options.get("kangaxx"):
-        for resource in ("dlg:hlskull", "bcs:crypt526", "bcs:crypt202"):
+        for resource in KANGAXX_RESOURCES:
             use(resource)
     if options.get("flail_heads"):
         use("dlg:kpglai01")
@@ -987,10 +988,9 @@ def export_native(store: Path, catalog: dict, world: dict, output: Path,
         except GameTextError:
             raise ProfileError("Game text changed since export; rescan into a fresh export directory") from None
         _require(journal is not None, "The game has no BGEE.LUA journal table")
-        patches, tlk = prepare_quest_options(
+        patches, text = prepare_quest_options(
             {resource[4:] + "." + resource[:3]: data for resource, data in resource_bytes.items()},
-            text.male, kangaxx=kangaxx, language=language)
-        text = paired(tlk, text.female)
+            text, kangaxx=kangaxx, language=language)
         if kangaxx:
             journal = patch_kangaxx_journal(journal, patches["hlskull.dlg"])
         if text_rewards:
@@ -1001,10 +1001,9 @@ def export_native(store: Path, catalog: dict, world: dict, output: Path,
         for revision, manifest in sorted(manifests.items()):
             if "cursed_disguises" not in manifest:
                 continue
-            fixture, assets, tlk = prepare_cursed_disguises(manifest["cursed_disguises"],
+            fixture, assets, text = prepare_cursed_disguises(manifest["cursed_disguises"],
                 {name[4:]: data for name, data in resource_bytes.items() if name.startswith("itm:")},
-                text.male, language=language)
-            text = paired(tlk, text.female)
+                text, language=language)
             compiled[revision]["cursed_disguises"] = fixture
             for name, data in assets.items():
                 pending[f"campaign-store/revisions/{revision}.cursed/{name}"] = data

@@ -541,12 +541,11 @@ impl Editor {
             }
             "/api/recommended" => {
                 let mut preset = crate::templates::recommended_preset(crate::platform::recommended_campaign(&self.world)?)?;
-                // An option whose change the installer could not make is not offered.
-                let mut unavailable = Dict::new();
-                let game_root = self.world.at("game_root")?.as_str().unwrap_or("").to_string();
-                if !crate::prepared::applied(&game_root, "flail_heads")? {
-                    preset.get_mut("options").and_then(Value::as_dict_mut).unwrap().insert("flail_heads", false);
-                    unavailable.insert("flail_heads", crate::prepared::left_out(&game_root, "flail_heads")?);
+                // An option this game cannot apply is not offered; the player is told why.
+                let unavailable = crate::original_configuration::unavailable_options(&self.catalog, &self.world)?;
+                let options = preset.get_mut("options").and_then(Value::as_dict_mut).unwrap();
+                for option in unavailable.keys() {
+                    options.insert(option, false);
                 }
                 preset.insert("unavailable", unavailable);
                 return Ok(Value::Dict(preset));

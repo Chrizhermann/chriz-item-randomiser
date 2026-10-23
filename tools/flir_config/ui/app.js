@@ -961,6 +961,15 @@ async function perform(action, busyMessage) {
 // The preset dialog covers the page's status line, so it shows its own progress
 // and stays open until the draft is built.
 let presetTimer = null;
+// The preset dialog's box for each original option.
+function presetOptionBoxes() {
+  return {
+    scrolls: ui.presetScrolls, kangaxx: ui.presetKangaxx, flail_heads: ui.presetFlailHeads,
+    totsc_tome: ui.presetTotscTome, more_spell_shield: ui.presetMoreSpellShield,
+    cursed_disguise: ui.presetCursedDisguise
+  };
+}
+
 function setPresetBusy(value) {
   ui.presetFields.disabled = value;
   ui.presetForm.setAttribute("aria-busy", String(value));
@@ -1062,9 +1071,9 @@ ui.presetButton.addEventListener("click", () => {
     ui.presetLossPercent.value = String(preset.options.loss_percent);
     ui.presetLossPercent.disabled = preset.options.loss_mode !== "some";
     ui.presetUnrandomizedPercent.value = String(preset.options.unrandomized_percent);
-    // Options whose game change the installer could not make at install.
+    // Options this game cannot apply are not offered; the note says why.
     const unavailable = preset.unavailable || {};
-    ui.presetFlailHeads.disabled = "flail_heads" in unavailable;
+    for (const [option, box] of Object.entries(presetOptionBoxes())) box.disabled = option in unavailable;
     ui.presetNote.textContent = Object.values(unavailable).map((reason) => reason + ".").join(" ");
     ui.presetNote.hidden = !ui.presetNote.textContent;
     ui.presetError.hidden = true;

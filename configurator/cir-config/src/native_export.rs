@@ -1352,7 +1352,12 @@ pub fn compile(
         notes: Vec::new(),
     };
     if let Some(shield) = shield {
-        let expected = original_options::spell_shield_spec(world, shield.at("source_id")?.truthy())?;
+        let randomized = original_options::spell_shield_randomized(
+            manifest_sources
+                .iter()
+                .map(|source| source.at("record").ok().and_then(|record| record.get("authored")).unwrap_or(&Value::Null)),
+        );
+        let expected = original_options::spell_shield_spec(world, randomized)?;
         require(shield.py_eq(&expected), || "Spell Shield stock differs from the scan".into())?;
         compiler.use_value(shield.at("resource")?)?;
     }
@@ -1496,7 +1501,7 @@ pub fn compile(
     let options = manifest.get("original_options");
     let option = |name: &str| options.and_then(|options| options.get(name)).is_some_and(Value::truthy);
     if option("kangaxx") {
-        for resource in ["dlg:hlskull", "bcs:crypt526", "bcs:crypt202"] {
+        for resource in quest_options::KANGAXX_RESOURCES {
             compiler.use_resource(resource)?;
         }
     }
@@ -2070,8 +2075,8 @@ pub fn export_native(
             .iter()
             .map(|(resource, data)| (format!("{}.{}", tail(resource, 4), resource.get(..3).unwrap_or("")), data.clone()))
             .collect();
-        let (patches, updated) = quest_options::prepare_quest_options(&named, &game_text.male, kangaxx, language)?;
-        game_text = paired(updated, game_text.female)?;
+        let (patches, updated) = quest_options::prepare_quest_options(&named, &game_text, kangaxx, language)?;
+        game_text = updated;
         if kangaxx {
             let dialogue = patches
                 .iter()
@@ -2102,9 +2107,8 @@ pub fn export_native(
                 .filter(|(name, _)| name.starts_with("itm:"))
                 .map(|(name, data)| (tail(name, 4).to_string(), data.clone()))
                 .collect();
-            let (fixture, assets, updated) =
-                cursed_disguises::prepare_cursed_disguises(spec, &itms, &game_text.male, language)?;
-            game_text = paired(updated, game_text.female)?;
+            let (fixture, assets, updated) = cursed_disguises::prepare_cursed_disguises(spec, &itms, &game_text, language)?;
+            game_text = updated;
             if let Some(native) = compiled.get_mut(revision).and_then(Value::as_dict_mut) {
                 native.insert("cursed_disguises", fixture);
             }

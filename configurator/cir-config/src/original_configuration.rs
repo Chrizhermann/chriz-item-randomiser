@@ -8,7 +8,7 @@
 
 use crate::campaigns::{compile_campaign, OVERFLOW_TARGET_KINDS};
 use crate::duplicates::{expected_copies, holdings, reviewed};
-use crate::error::{Error, Result};
+use crate::error::{Error, ErrorKind, Result};
 use crate::game_names::{convert_resource, eet_names, EetNames};
 use crate::json::{Dict, Value};
 use crate::original_catalog::{resolve_template, NO_ROUTE, UNREADABLE_PLACE_PROBLEMS};
@@ -18,7 +18,7 @@ use crate::original_registrations::{
 };
 use crate::prepared::{applied, applied_changes, left_out, quest_change};
 use crate::profiles::{edit_profile, new_profile, validate_catalog, ItemIndex, ProfileEdit};
-use crate::resources::{sha256_hex, GameResources, ITM_TYPE};
+use crate::resources::{resource_type, sha256_hex, GameResources, ITM_TYPE};
 use crate::sources::{new_binding_plan, unreadable_notes, validate_world, Scans, WorldIndex, UNUSABLE_SOURCE};
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
@@ -182,6 +182,16 @@ fn choose(row: &Value, context: &Context<'_>) -> Result<std::result::Result<Choi
     let adapter = row.get("adapter").and_then(Value::as_str);
     let physical = &context.physical;
     if let Some(shield) = context.shield.filter(|_| crate::original_options::is_spell_shield_row(row)) {
+        // The option changes the shop's first SCRL8X row; with another one,
+        // which row the lists move is ambiguous.
+        let store = shield.at("resource")?;
+        let mut rows = 0;
+        for source in context.world.at("sources")?.as_list().into_iter().flatten() {
+            rows += (source.at("resource")?.py_eq(store) && source.at("item")?.py_eq(&Value::from(item))) as usize;
+        }
+        if rows > 1 {
+            return Ok(Err("ambiguous-source-records".into()));
+        }
         let original = shield.at("original_source_id")?;
         let ids = if original.truthy() { vec![crate::json::py_str(original)] } else { Vec::new() };
         let mut registration = original_source(row, shield.at("resource_sha256")?, shield.at("payload")?.clone(), ids, false)?;
@@ -339,6 +349,102 @@ fn counted(rows: &[&Value]) -> String {
         .join(" and ")
 }
 
+/// Why this game cannot have the Kangaxx option, or `None`; reads the quest
+/// files that are no reviewed original, once for the calls on `scans`.
+fn kangaxx_problem(catalog: &Value, world: &Value, scans: Option<&Scans>) -> Result<Option<String>> {
+    if let Some(found) = scans.and_then(|scans| scans.option_problems.borrow().get("kangaxx").cloned()) {
+        return Ok(found);
+    }
+    let problem = read_kangaxx_problem(catalog, world)?;
+    if let Some(scans) = scans {
+        scans.option_problems.borrow_mut().insert("kangaxx", problem.clone());
+    }
+    Ok(problem)
+}
+
+fn read_kangaxx_problem(catalog: &Value, world: &Value) -> Result<Option<String>> {
+    let mut hashes = HashMap::new();
+    for row in world.at("resources")?.as_list().into_iter().flatten() {
+        hashes.insert(crate::json::py_str(row.at("id")?), crate::json::py_str(row.at("sha256")?));
+    }
+    let root = Path::new(catalog.at("game_root")?.as_str().unwrap_or(""));
+    crate::quest_options::kangaxx_problem(
+        |resource| hashes.get(resource).cloned(),
+        |resources| {
+            GameResources::with(root, &[("dlg", resource_type("dlg")), ("bcs", resource_type("bcs"))], |reader| {
+                let mut found = HashMap::new();
+                for resource in resources {
+                    let (kind, name) = resource.split_once(':').expect("kind:name");
+                    found.insert(resource.to_string(), reader.read(kind, name)?);
+                }
+                Ok(found)
+            })
+        },
+    )
+}
+
+/// Component 570's metadata for this game's items.
+fn cursed_disguises(catalog: &Value, game: &str) -> Result<Value> {
+    let mut hashes = Dict::new();
+    for row in catalog.at("items")?.as_list().into_iter().flatten() {
+        hashes.insert(s(row, "resref"), row.at("sha256")?.clone());
+    }
+    let log = Path::new(catalog.at("game_root")?.as_str().unwrap_or("")).join("WeiDU.log");
+    let installed = match crate::paths::exists(&log) {
+        Ok(true) => std::fs::read(&log).map_err(|error| Error::os(&error, &log))?,
+        Ok(false) => Vec::new(),
+        Err(error) => return Err(Error::win(&error, &log)),
+    };
+    let item_revisions = crate::cursed_disguises::item_revisions_installed(&installed);
+    crate::cursed_disguises::cursed_disguise_spec(&hashes, game, item_revisions)
+}
+
+/// The original options this game cannot apply, each with the reason the
+/// player is shown; the editor does not offer them.
+///
+/// A preset that asks for one anyway is refused with its reason, except for
+/// the two that would change nothing here: the tome variant without Baldur's
+/// Gate's lists, and cursed disguises without a cursed item.
+pub fn unavailable_options(catalog: &Value, world: &Value) -> Result<Dict> {
+    let game_root = world.at("game_root")?.as_str().unwrap_or("").to_string();
+    let game = crate::platform::game_platform(world)?;
+    let mut reasons = Dict::new();
+    if let Some(problem) = kangaxx_problem(catalog, world, None)? {
+        reasons.insert("kangaxx", problem);
+    }
+    if !applied(&game_root, "flail_heads")? {
+        reasons.insert("flail_heads", left_out(&game_root, "flail_heads")?);
+    }
+    let mut tables = Vec::new();
+    for campaign in crate::platform::preset_campaigns(world)? {
+        tables.extend(crate::templates::campaign_tables(campaign)?);
+    }
+    if !tables.contains(&"bg1") {
+        reasons.insert(
+            "totsc_tome",
+            "The ToTSC tome variant changes a reward of Baldur's Gate's lists, which no preset for this game uses",
+        );
+    }
+    let profile_error = |error: Error| if error.kind == ErrorKind::Profile { Ok(error.message) } else { Err(error) };
+    if let Err(error) = crate::original_options::spell_shield_spec(world, false) {
+        reasons.insert("more_spell_shield", profile_error(error)?);
+    }
+    match cursed_disguises(catalog, game) {
+        Ok(spec) => {
+            if !spec.at("choices")?.truthy() {
+                reasons.insert(
+                    "cursed_disguise",
+                    "Cursed disguise items need one of the cursed items they disguise, which this game does not have",
+                );
+            }
+        }
+        Err(error) => {
+            reasons.insert("cursed_disguise", profile_error(error)?);
+        }
+    }
+    Ok(reasons)
+}
+
 /// Return a data-only `{profile, plan}` preserving enabled authored rows.
 ///
 /// A row this game cannot use is left out and listed in `not_used` instead of
@@ -411,6 +517,11 @@ fn build_from(
             left_out(&game_root, "flail_heads")?
         )));
     }
+    if option("kangaxx").truthy() {
+        if let Some(problem) = kangaxx_problem(catalog, world, scans)? {
+            return Err(Error::profile(problem));
+        }
+    }
     // A reward whose script or conversation the installer could not prepare
     // stays as installed: its rows are left out, and the player is told why.
     let prepared = applied_changes(&game_root)?;
@@ -435,9 +546,10 @@ fn build_from(
             }
         }
     }
-    let shield = if option("more_spell_shield").truthy() {
-        let randomized = enabled_sources.iter().any(|row| crate::original_options::is_spell_shield_row(row));
-        Some(crate::original_options::spell_shield_spec(world, randomized)?)
+    // The shop's extra copies; whether the scroll's row is randomised too
+    // follows from the rewards finally chosen, below.
+    let stock = if option("more_spell_shield").truthy() {
+        Some(crate::original_options::spell_shield_spec(world, false)?)
     } else {
         None
     };
@@ -460,10 +572,7 @@ fn build_from(
             leave_out(&mut not_used, row, "reward", &Value::from(reason.as_str()))?;
             continue;
         }
-        if shield.as_ref().is_some_and(|shield| shield.truthy()) && crate::original_options::is_spell_shield_row(row) {
-            if !catalog_items.contains(s(row, "item_resref")) {
-                return Err(Error::profile("More Spell Shield scrolls requires SCRL8X.ITM"));
-            }
+        if stock.as_ref().is_some_and(|stock| stock.truthy()) && crate::original_options::is_spell_shield_row(row) {
             candidates.push(row);
             continue;
         }
@@ -522,7 +631,7 @@ fn build_from(
         items: &catalog_items,
         index: &index,
         physical: source_lookup(world),
-        shield: shield.as_ref().filter(|shield| shield.truthy()),
+        shield: stock.as_ref().filter(|stock| stock.truthy()),
         defaults,
     };
 
@@ -618,22 +727,12 @@ fn build_from(
     plan.insert("original_template_id", template_id);
     plan.insert("original_choices", draft.at("choices")?.clone());
     plan.insert("original_options", draft.at("options")?.clone());
-    if let Some(shield) = &shield {
-        plan.insert("spell_shield", shield.clone());
+    if stock.is_some() {
+        let randomized = crate::original_options::spell_shield_randomized(chosen.iter().map(|(row, _, _)| *row));
+        plan.insert("spell_shield", crate::original_options::spell_shield_spec(world, randomized)?);
     }
     if option("cursed_disguise").truthy() {
-        let log = Path::new(catalog.at("game_root")?.as_str().unwrap_or("")).join("WeiDU.log");
-        let installed = match crate::paths::exists(&log) {
-            Ok(true) => std::fs::read(&log).map_err(|error| Error::os(&error, &log))?,
-            Ok(false) => Vec::new(),
-            Err(error) => return Err(Error::win(&error, &log)),
-        };
-        let mut hashes = Dict::new();
-        for row in catalog.at("items")?.as_list().into_iter().flatten() {
-            hashes.insert(s(row, "resref"), row.at("sha256")?.clone());
-        }
-        let item_revisions = crate::cursed_disguises::item_revisions_installed(&installed);
-        plan.insert("cursed_disguises", crate::cursed_disguises::cursed_disguise_spec(&hashes, game, item_revisions)?);
+        plan.insert("cursed_disguises", cursed_disguises(catalog, game)?);
     }
     plan.insert("target_registrations", Value::List(Vec::new()));
     // Filled in place below; the key keeps Python's position before

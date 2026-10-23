@@ -10,27 +10,118 @@
 //! The reviewed hashes are read through [`crate::pins`] as
 //! `quest_options.ORIGINAL_HASHES`.
 
-use crate::error::{Error, Result};
-use crate::game_text::{append_texts, string, table};
+use crate::error::{Error, ErrorKind, Result};
+use crate::game_text::{string, table, GameText};
 use crate::py::{
     ascii_bytes, count_bytes, digits_value, find_bytes, is_line_end, is_line_start, put_u32, replace_bytes, slice, splitn_bytes,
     u32_le,
 };
 use crate::quest_rewards::{blocks, global_guard, newline};
 use crate::resources::sha256_hex;
+use crate::translations::Line;
 use std::collections::{BTreeMap, HashMap};
 
 pub const KANGAXX_GLOBAL: &str = "FLPR_KANGAXX";
+/// Patched or generated files by lowercase filename, in the reference's order.
+pub type Patches = Vec<(String, Vec<u8>)>;
+
+/// Kangaxx's conversation and ward stone texts, in the order they are added to
+/// the game text.
+pub fn kangaxx_lines() -> Vec<Line> {
+    let dialogue = (0..22).map(|key| ("hlskull.tra".to_string(), key));
+    dialogue.chain((1500..1505).map(|key| ("in-game.tra".to_string(), key))).collect()
+}
 pub const ORIGINAL_HASHES: &[(&str, &str)] = &[
     ("hlskull.dlg", "c7ea5cd17d5cffe9368bd980200a05fee7e78eacadf3a6cb41de882df62f56bd"),
     ("crypt526.bcs", "9230a20a9177fe1eef1723fba0e8daa07e949663682a3bddf18e585c0482efe6"),
     ("crypt202.bcs", "ac8fd01b37e902f4484f0cf136def8411be5682aa396ebaabcb1c3723f748aaf"),
 ];
+/// BG2:EE's own HLSKULL.DLG (2.7.3.0); EET installs the one above in
+/// override. It has the same states and transitions; only the texts of its
+/// triggers and actions differ (no final line breaks, IfValidForPartyDialogue,
+/// facing SW), and the patch copies those unchanged.
+pub const BG2EE_HASHES: &[(&str, &str)] =
+    &[("hlskull.dlg", "61f119c7d0bf21b236b169c084e5921f015e365cf39917ba5558e73c4eb8fe6c")];
+/// The quest's files the Kangaxx option changes.
+pub const KANGAXX_RESOURCES: [&str; 3] = ["dlg:hlskull", "bcs:crypt526", "bcs:crypt202"];
 const TRAILER: &[u8] = b"FLPROPT1";
 
 /// `ORIGINAL_HASHES[name]` with any test overrides.
 pub fn original_hash(name: &str) -> Result<String> {
     crate::pins::get("quest_options.ORIGINAL_HASHES", ORIGINAL_HASHES, name).ok_or_else(|| Error::key(name))
+}
+
+/// Whether `digest` is a reviewed original of `name` (`ORIGINAL_HASHES[name]`
+/// or `BG2EE_HASHES.get(name)`, with any test overrides).
+fn reviewed(name: &str, digest: &str) -> Result<bool> {
+    Ok(digest == original_hash(name)?
+        || crate::pins::get("quest_options.BG2EE_HASHES", BG2EE_HASHES, name).is_some_and(|hash| hash == digest))
+}
+
+/// `KANGAXX_RESOURCES`' file names in a sentence: "A", "A and B", "A, B and C".
+fn filenames(resources: &[&str]) -> String {
+    let names: Vec<String> = resources
+        .iter()
+        .map(|resource| {
+            let (kind, name) = resource.split_once(':').expect("kind:name");
+            format!("{}.{}", name.to_ascii_uppercase(), kind.to_ascii_uppercase())
+        })
+        .collect();
+    match names.split_last() {
+        Some((last, [])) => last.clone(),
+        Some((last, rest)) => format!("{} and {last}", rest.join(", ")),
+        None => String::new(),
+    }
+}
+
+/// Why a game cannot have the Kangaxx option, or `None`.
+///
+/// The option changes the quest's files as Baldur's Gate II has them, or as
+/// it changed them before. `hash(identity)` is a game resource's SHA-256, if
+/// the game has it; `read(identities)` returns the bytes of the files that are
+/// no reviewed original, to recognise this option's own change in them. It is
+/// called once at most.
+pub fn kangaxx_problem(
+    hash: impl Fn(&str) -> Option<String>,
+    read: impl FnOnce(&[&str]) -> Result<HashMap<String, Vec<u8>>>,
+) -> Result<Option<String>> {
+    let missing: Vec<&str> = KANGAXX_RESOURCES.into_iter().filter(|resource| hash(resource).is_none()).collect();
+    if !missing.is_empty() {
+        return Ok(Some(format!("Kangaxx items need {}, which this game does not have", filenames(&missing))));
+    }
+    let filename = |resource: &str| {
+        let (kind, name) = resource.split_once(':').expect("kind:name");
+        format!("{name}.{kind}")
+    };
+    let mut unreviewed = Vec::new();
+    for resource in KANGAXX_RESOURCES {
+        if !reviewed(&filename(resource), &hash(resource).expect("present"))? {
+            unreviewed.push(resource);
+        }
+    }
+    let found = if unreviewed.is_empty() { HashMap::new() } else { read(&unreviewed)? };
+    let mut changed = Vec::new();
+    for resource in unreviewed {
+        let data = found.get(resource).ok_or_else(|| Error::key(resource))?;
+        let recovered = if resource.starts_with("dlg:") {
+            original_dialogue(&filename(resource), data)
+        } else {
+            original_crypt(&filename(resource), data)
+        };
+        match recovered {
+            Ok(_) => {}
+            Err(error) if error.kind == ErrorKind::Profile => changed.push(resource),
+            Err(error) => return Err(error),
+        }
+    }
+    if changed.is_empty() {
+        return Ok(None);
+    }
+    let them = if changed.len() == 1 { "it" } else { "them" };
+    Ok(Some(format!(
+        "Kangaxx items need {} as Baldur's Gate II has {them}; another mod changed {them}",
+        filenames(&changed)
+    )))
 }
 
 fn check(data: &[u8], expected: &str, label: &str) -> Result<()> {
@@ -192,8 +283,7 @@ pub fn original_dialogue(name: &str, data: &[u8]) -> Result<Vec<u8>> {
     if name != "hlskull.dlg" {
         return Err(Error::profile("Unsupported original-option dialogue"));
     }
-    let expected = original_hash(name)?;
-    if sha256_hex(data) == expected {
+    if reviewed(name, &sha256_hex(data))? {
         return Ok(data.to_vec());
     }
     if data.len() < 12 || &data[data.len() - 12..data.len() - 4] != TRAILER {
@@ -218,7 +308,10 @@ pub fn original_dialogue(name: &str, data: &[u8]) -> Result<Vec<u8>> {
         return Err(Error::profile("Invalid original-option dialogue recovery references"));
     }
     let original = [header, &data[0x34..size]].concat();
-    check(&original, &expected, name)?;
+    let expected = sha256_hex(&original);
+    if !reviewed(name, &expected)? {
+        return Err(Error::profile(format!("{name} changed; review the original option adapter")));
+    }
     if patch_hlskull_original(&original, &refs, &expected)? != data {
         return Err(Error::profile("Original-option dialogue patch changed"));
     }
@@ -450,7 +543,8 @@ fn patch_hlskull_original(data: &[u8], refs: &BTreeMap<i64, i64>, expected: &str
 /// Patch HLSKULL.DLG (original or our own verified patch) with `refs[0..22]`.
 pub fn patch_hlskull(data: &[u8], refs: &BTreeMap<i64, i64>) -> Result<Vec<u8>> {
     let original = original_dialogue("hlskull.dlg", data)?;
-    patch_hlskull_original(&original, refs, &original_hash("hlskull.dlg")?)
+    let expected = sha256_hex(&original);
+    patch_hlskull_original(&original, refs, &expected)
 }
 
 /// One `re.finditer` match of the createEntry pattern: (start, end,
@@ -752,41 +846,37 @@ pub fn ward_item(refs: &BTreeMap<i64, i64>) -> Result<Vec<u8>> {
     Ok(item)
 }
 
-/// Return selected patched resources and TLK, leaving file writes to caller.
+/// Return selected patched resources and the game text, leaving file writes
+/// to caller.
 ///
 /// Input resource keys are lowercase filenames. Kangaxx needs HLSKULL.DLG and
 /// CRYPT526/CRYPT202.BCS. Generated ward ITM/BAM are included in Kangaxx
-/// output, in the reference's order. The caller sets the campaign flag
+/// output, in the reference's order. Kangaxx's texts are in the game's
+/// `language` where CIR has all of them, otherwise in English, with their
+/// female wordings in dialogf.tlk. The caller sets the campaign flag
 /// explicitly.
 pub fn prepare_quest_options(
     resources: &BTreeMap<String, Vec<u8>>,
-    tlk: &[u8],
+    text: &GameText,
     kangaxx: bool,
     language: &str,
-) -> Result<(Vec<(String, Vec<u8>)>, Vec<u8>)> {
-    // Only Kangaxx's texts are English-only; other game text may be prepared
-    // in the same pass.
-    if kangaxx && !["en_us", "en_gb", "english"].contains(&crate::py::casefold(language).as_str()) {
-        return Err(Error::profile("Original quest options currently require English game text"));
-    }
+) -> Result<(Patches, GameText)> {
     let mut output = Vec::new();
-    let mut tlk = tlk.to_vec();
-    let append = |path: &str, keys: Vec<i64>, tlk: &mut Vec<u8>| -> Result<BTreeMap<i64, i64>> {
-        let texts = texts(path);
-        let values = keys
-            .iter()
-            .map(|key| texts.get(key).cloned().ok_or_else(|| Error::new(crate::error::ErrorKind::Key, key.to_string())))
-            .collect::<Result<Vec<String>>>()?;
-        let (updated, refs) = append_texts(tlk, &values)?;
-        *tlk = updated;
-        Ok(keys.into_iter().zip(refs.into_iter().map(i64::from)).collect())
-    };
+    let mut text = text.clone();
     let resource = |name: &str| -> Result<&Vec<u8>> {
         resources.get(name).ok_or_else(|| Error::profile(format!("Original quest option requires {name}")))
     };
     if kangaxx {
-        let dialogue_refs = append("languages/english/hlskull.tra", (0..22).collect(), &mut tlk)?;
-        let item_refs = append("languages/english/in-game.tra", (1500..1505).collect(), &mut tlk)?;
+        let wanted = kangaxx_lines();
+        let found = crate::translations::option_lines(language, &wanted)?;
+        let values: Vec<(String, String)> = wanted.iter().map(|line| found[line].clone()).collect();
+        let (updated, refs) = text.append(&values)?;
+        text = updated;
+        let (mut dialogue_refs, mut item_refs) = (BTreeMap::new(), BTreeMap::new());
+        for ((file, key), number) in wanted.iter().zip(refs) {
+            let refs = if file == "hlskull.tra" { &mut dialogue_refs } else { &mut item_refs };
+            refs.insert(*key, i64::from(number));
+        }
         output.push(("hlskull.dlg".to_string(), patch_hlskull(resource("hlskull.dlg")?, &dialogue_refs)?));
         for name in ["crypt526.bcs", "crypt202.bcs"] {
             output.push((name.to_string(), patch_crypt(name, resource(name)?, &item_refs)?));
@@ -797,5 +887,5 @@ pub fn prepare_quest_options(
             crate::data::file("copy/flrward1.bam").expect("embedded copy/flrward1.bam").to_vec(),
         ));
     }
-    Ok((output, tlk))
+    Ok((output, text))
 }

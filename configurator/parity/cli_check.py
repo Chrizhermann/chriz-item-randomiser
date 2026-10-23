@@ -27,12 +27,23 @@ from test_postinstall_resources import make_game, make_itm, mark_eet  # noqa: E4
 from test_postinstall_world_formats import item_record, make_are, make_cre, make_sto  # noqa: E402
 
 # The reference runs under the executable's name, so usage and help text
-# (which wrap around the program name) compare exactly.
-PYTHON = [sys.executable, "-c",
-          "import sys; sys.argv[0] = sys.argv[1]; del sys.argv[1]; "
-          f"sys.path.insert(0, {str(ROOT / 'tools')!r}); "
-          "from flir_config.cli import main; raise SystemExit(main())",
-          RUST_CLI.name]
+# (which wrap around the program name) compare exactly. Like the executable
+# built with parity-overrides, it takes the pinned hashes a phase changes from
+# the JSON file CIR_PIN_OVERRIDES names ({"module.TABLE": {key: hash}}).
+REFERENCE = f"""\
+import importlib, json, os, sys
+sys.argv[0] = sys.argv[1]
+del sys.argv[1]
+sys.path.insert(0, {str(ROOT / 'tools')!r})
+if os.environ.get("CIR_PIN_OVERRIDES"):
+    with open(os.environ["CIR_PIN_OVERRIDES"], encoding="utf-8") as stream:
+        for table, entries in json.load(stream).items():
+            module, name = table.rsplit(".", 1)
+            getattr(importlib.import_module("flir_config." + module), name).update(entries)
+from flir_config.cli import main
+raise SystemExit(main())
+"""
+PYTHON = [sys.executable, "-c", REFERENCE, RUST_CLI.name]
 RUST = [str(RUST_CLI)]
 
 

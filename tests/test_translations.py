@@ -8,9 +8,10 @@ from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
-from flir_config import container_rewards, mode2_rewards, translations
+from flir_config import container_rewards, mode2_rewards, original_options, quest_options, translations
 from flir_config.game_text import GameText
 from flir_config.resources import _Tlk
+from test_original_options import ALL_DISGUISE_ITEMS
 from test_postinstall_resources import make_tlk
 
 # Every line a text route or a golem chest shows.
@@ -22,6 +23,14 @@ SHIPPED = ("cs_CZ", "de_DE", "en_US", "es_ES", "fr_FR", "hu_HU", "it_IT", "ja_JP
 # The languages with every reward text; a new translation adds its language
 # (docs/translating-reward-texts.md).
 COMPLETE = ("en_US", "pl_PL", "de_DE")
+# Every line the original options Kangaxx's items and cursed disguises show.
+OPTION_LINES = (*quest_options.KANGAXX_LINES, *sorted({
+    ("in-game.tra", face[key]) for item_revisions in (False, True)
+    for row in original_options.cursed_disguise_choices(ALL_DISGUISE_ITEMS, item_revisions=item_revisions)
+    for face in row["variants"] for key in ("description_tra", "name_tra") if face[key] is not None}))
+# The languages with every text of the original options; the others show the
+# English ones.
+OPTIONS_TRANSLATED = ("en_US", "pl_PL", "de_DE")
 
 
 class ShippedTranslationTests(unittest.TestCase):
@@ -67,6 +76,19 @@ class ShippedTranslationTests(unittest.TestCase):
         golems, golem_refs = container_rewards.prepare_container_texts(text, ("bcs:kpgol01",), "pl_PL")
         ref = golem_refs["bcs:kpgol01"][38758]
         self.assertNotEqual(_Tlk(golems.male).text(ref, set()), _Tlk(golems.female).text(ref, set()))
+
+    def test_option_texts_are_the_games_language_or_english(self):
+        english = translations.lines("en_US", OPTION_LINES)
+        for code in SHIPPED + ("default", "nb_NO"):
+            with self.subTest(language=code):
+                found = translations.option_lines(code, OPTION_LINES)
+                if code in OPTIONS_TRANSLATED:
+                    self.assertEqual(found, translations.lines(code, OPTION_LINES))
+                else:
+                    self.assertEqual(found, english)
+        german = translations.option_lines("de_DE", OPTION_LINES)
+        self.assertEqual(german["in-game.tra", 1503], ("Bannstein", "Bannstein"))
+        self.assertNotEqual(german, english)
 
     def test_a_game_language_without_a_translation(self):
         self.assertEqual(translations.missing("default", LINES),
@@ -122,6 +144,24 @@ class TranslationFileTests(unittest.TestCase):
         self.assertEqual(translations.missing("ja_JP", [("in-game.tra", 101)]),
                          "languages/japanese/in-game.tra is not Shift-JIS (Windows-932) text, which this "
                          "translation file must be")
+
+    def test_an_option_falls_back_to_english_as_a_whole(self):
+        self.write("english/in-game.tra", b"@200 = ~Bracers~\r\n@201 = ~Ring~\r\n")
+        wanted = [("in-game.tra", 200), ("in-game.tra", 201)]
+        english = {("in-game.tra", 200): ("Bracers", "Bracers"), ("in-game.tra", 201): ("Ring", "Ring")}
+        # Czech lacks @201, so the option speaks one language: English.
+        self.write("czech/in-game.tra", "@200 = ~Náramky~\r\n".encode("cp1250"))
+        self.assertEqual(translations.option_lines("cs_CZ", wanted), english)
+        self.write("czech/in-game.tra", "@200 = ~Náramky~\r\n@201 = ~Prsten~ ~Prsten (ž)~\r\n".encode("cp1250"))
+        self.assertEqual(translations.option_lines("cs_CZ", wanted), {
+            ("in-game.tra", 200): ("Náramky", "Náramky"), ("in-game.tra", 201): ("Prsten", "Prsten (ž)")})
+        # A translation file that is not in its code page counts as none.
+        self.write("polish/in-game.tra", b"@200 = ~\x81~\r\n@201 = ~x~\r\n")
+        self.assertEqual(translations.option_lines("pl_PL", wanted), english)
+        self.assertEqual(translations.option_lines("default", wanted), english)
+        # English is the fallback and must have the lines.
+        with self.assertRaisesRegex(translations.MissingTranslation, "English translation has no reward text @202"):
+            translations.option_lines("cs_CZ", [("in-game.tra", 202)])
 
     def test_sources_cover_what_decides_the_texts(self):
         self.assertEqual(translations.sources("cs_CZ"), [self.languages])

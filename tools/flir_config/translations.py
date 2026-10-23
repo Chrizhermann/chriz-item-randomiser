@@ -10,9 +10,12 @@ the general file, so its texts win here too; those files are UTF-8 as written,
 since WeiDU loads them unconverted.
 
 A text may carry a female wording (TRA "~text~ ~female text~"), which goes to
-dialogf.tlk. A text the game's language has no translation for is never
-replaced by the English one: the game shows its text in one language, and a
-route that needs the text is left out with the reason instead.
+dialogf.tlk. A reward text the game's language has no translation for is
+never replaced by the English one: the game shows its text in one language,
+and a route that needs the text is left out with the reason instead. The
+original options' texts (Kangaxx's conversation and ward stone, the cursed
+disguises' descriptions) are English where the game's language has no
+translation of them, so that these options work in every game (option_lines).
 """
 from __future__ import annotations
 
@@ -112,6 +115,26 @@ def lines(code: str, wanted) -> dict[tuple[str, int], tuple[str, str]]:
                                      f"@{number} in {folder}/{file}")
         result[file, number] = loaded[file][number]
     return result
+
+
+def option_lines(code: str, wanted) -> dict[tuple[str, int], tuple[str, str]]:
+    """(text, female wording) of an original option's lines <wanted> in the game language <code>,
+    or the English ones where that language has no translation of all of them.
+
+    One option's texts stay in one language. A translation file that is not in
+    its code page counts as no translation, so the option still works.
+    """
+    wanted = list(wanted)
+    loaded = {}
+    try:
+        for file, _ in wanted:
+            if file not in loaded:
+                loaded[file] = texts(code, file)
+    except MissingTranslation:
+        return lines("en_US", wanted)
+    if not all(number in loaded[file] for file, number in wanted):
+        return lines("en_US", wanted)
+    return {(file, number): loaded[file][number] for file, number in wanted}
 
 
 def missing(code: str, wanted) -> str | None:

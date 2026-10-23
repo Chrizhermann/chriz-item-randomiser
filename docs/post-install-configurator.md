@@ -309,6 +309,26 @@ opens on the recommended default instead: the game's own `-original` preset
 `flail_heads` and `totsc_tome` (Item Randomiser's lists without item loss, plus the
 Flail of Ages heads and the randomised Tales of the Sword Coast tome); every choice
 stays editable.
+An option the game cannot apply is not offered: `/api/recommended` names it in
+`unavailable` with the reason, its box is off and disabled, and the dialog shows the
+reason. Kangaxx's items need `HLSKULL.DLG`, `CRYPT526.BCS` and `CRYPT202.BCS` as
+Baldur's Gate II (EET or BG2:EE) has them or as this option changed them before, the
+flail heads Glaicus's conversation as the installer prepared it, the tome variant a
+preset with Baldur's Gate's lists, the extra Spell Shield copies a readable
+`UDDUER01.STO` and `SCRL8X.ITM`, and cursed disguises one of the cursed items they
+disguise and the item each of them is disguised as. A preset that asks for such an
+option anyway is refused with that reason, except where the option would change
+nothing: the tome variant without Baldur's Gate's lists, and cursed disguises without
+a cursed item. The extra Spell Shield copies stay in the shop either way; the
+scroll's own shop row is randomised too exactly when it is one of the preset's
+rewards, not when the preset fit leaves it out (a scroll the runtime cannot move, or
+a shop with two of them).
+No option depends on the game's language. Kangaxx's conversation and ward stone and
+the cursed disguises' names and descriptions are English, Polish and German, and
+English in any other language; an option a translation has only in part stays English
+as a whole, so its texts never mix two languages. Apply writes them to the game's
+`dialog.tlk` and `dialogF.tlk` like the reward texts, with the female wordings of
+Polish.
 Disabled rows remain visible with `enabled:false`.
 Loss excludes the original Flail/Kangaxx tiers; unrandomized percentage concerns
 items with original sources. These draft choices still need automatic binding to

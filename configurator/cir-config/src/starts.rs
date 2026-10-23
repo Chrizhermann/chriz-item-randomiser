@@ -355,16 +355,10 @@ fn without(
             return Err(Error::type_error(format!("unhashable type: '{}'", source.type_name())));
         }
         if contains(sources, &source) {
-            // Without its randomised source the start keeps the shop as
-            // installed.
-            let mut options = match fields.get("original_options") {
-                Some(Value::Dict(options)) => options.clone(),
-                Some(other) => return Err(Error::type_error(format!("'{}' object is not a mapping", other.type_name()))),
-                None => return Err(Error::key("original_options")),
-            };
-            options.insert("more_spell_shield", false);
-            fields.insert("original_options", Value::Dict(options));
-            fields.remove("spell_shield");
+            // Without the randomised scroll the shop keeps it, with the extra copies.
+            let mut shield = fields.get("spell_shield").and_then(Value::as_dict).cloned().expect("read its source_id");
+            shield.insert("source_id", "");
+            fields.insert("spell_shield", Value::Dict(shield));
         }
     }
     let profile = if items.is_empty() {

@@ -30,8 +30,8 @@ from .original_registrations import (SOURCE_ADAPTER as ORIGINAL_SOURCE_ADAPTER,
                                      source_record as original_source_record,
                                      validate_campaign_source as validate_original_campaign_source,
                                      validate_campaign_target as validate_original_campaign_target)
-from .templates import POOL_CHOICES, _options as original_options, list_templates, template_tables
-from .original_options import SPELL_SHIELD_SOURCE, validate_spell_shield_spec
+from .templates import POOL_CHOICES, _options as original_options, list_templates
+from .original_options import SPELL_SHIELD_SOURCE, spell_shield_randomized, validate_spell_shield_spec
 from .cursed_disguises import validate_cursed_disguise_spec
 from .duplicates import reviewed, row as duplicate_row
 
@@ -411,11 +411,6 @@ def _validate_campaign(body: dict) -> dict:
     shield = body.get("spell_shield")
     if present_original and body["original_options"].get("more_spell_shield"):
         validate_spell_shield_spec(shield)
-        randomized = (body["original_options"]["scrolls"] and
-                      body["original_choices"]["items"] == "extended" and
-                      "bg2" in template_tables(body["original_template_id"]))
-        if shield["source_id"] != (SPELL_SHIELD_SOURCE if randomized else ""):
-            raise ProfileError("Spell Shield source does not match original item pool choices")
     elif "spell_shield" in body:
         raise ProfileError("Spell Shield stock requires its original option")
     if present_original and body["original_options"].get("cursed_disguise"):
@@ -437,8 +432,10 @@ def _validate_campaign(body: dict) -> dict:
         if total > MAX_REWARD_UNITS:
             raise ProfileError(f"Campaign {key} total exceeds prototype limit {MAX_REWARD_UNITS}")
         totals[key] = total
-    if shield and shield["source_id"] and sum(row["id"] == shield["source_id"] for row in body["sources"]) != 1:
-        raise ProfileError("Spell Shield option source is missing")
+    # The scroll's shop row is randomised exactly when it is one of the rewards.
+    if shield and shield["source_id"] != (SPELL_SHIELD_SOURCE if spell_shield_randomized(
+            row["record"].get("authored") for row in body["sources"]) else ""):
+        raise ProfileError("Spell Shield source does not match the campaign's rewards")
     if "duplicates" in body:
         if not present_original:
             raise ProfileError("Second copies of rewards need original campaign settings")
