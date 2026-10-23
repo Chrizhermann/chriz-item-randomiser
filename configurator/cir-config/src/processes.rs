@@ -17,47 +17,82 @@ fn is_game_or_installer(name: &str) -> bool {
         || (name.starts_with("setup-") && name.ends_with(".exe"))
 }
 
+/// PROCESSENTRY32W
+#[cfg(windows)]
+#[repr(C)]
+struct ProcessEntry {
+    size: u32,
+    usage: u32,
+    process: u32,
+    heap: usize,
+    module: u32,
+    threads: u32,
+    parent: u32,
+    priority: i32,
+    flags: u32,
+    name: [u16; 260],
+}
+
+#[cfg(windows)]
+#[link(name = "kernel32")]
+extern "system" {
+    fn CreateToolhelp32Snapshot(flags: u32, process: u32) -> *mut std::ffi::c_void;
+    fn Process32FirstW(snapshot: *mut std::ffi::c_void, entry: *mut ProcessEntry) -> i32;
+    fn Process32NextW(snapshot: *mut std::ffi::c_void, entry: *mut ProcessEntry) -> i32;
+    fn OpenProcess(access: u32, inherit: i32, process: u32) -> *mut std::ffi::c_void;
+    fn QueryFullProcessImageNameW(process: *mut std::ffi::c_void, flags: u32, name: *mut u16, size: *mut u32) -> i32;
+    fn GetExitCodeProcess(process: *mut std::ffi::c_void, code: *mut u32) -> i32;
+    fn CloseHandle(handle: *mut std::ffi::c_void) -> i32;
+}
+
+#[cfg(windows)]
+struct Handle(*mut std::ffi::c_void);
+
+#[cfg(windows)]
+impl Drop for Handle {
+    fn drop(&mut self) {
+        // SAFETY: the handle is open and owned by this value.
+        unsafe { CloseHandle(self.0) };
+    }
+}
+
+/// The executable of a process the snapshot listed, `Some(None)` where
+/// Windows does not tell it; `None` for one that has ended since.
+#[cfg(windows)]
+fn listed_executable(process: u32) -> Option<Option<PathBuf>> {
+    use std::os::windows::ffi::OsStringExt;
+
+    const QUERY_LIMITED_INFORMATION: u32 = 0x1000;
+    const INVALID_PARAMETER: i32 = 87;
+    const STILL_ACTIVE: u32 = 259;
+
+    // SAFETY: no pointers are passed.
+    let handle = unsafe { OpenProcess(QUERY_LIMITED_INFORMATION, 0, process) };
+    if handle.is_null() {
+        // One that has ended, and that no handle keeps, is gone.
+        return (std::io::Error::last_os_error().raw_os_error() != Some(INVALID_PARAMETER)).then_some(None);
+    }
+    let handle = Handle(handle);
+    let mut path = vec![0u16; 32768];
+    let mut size = path.len() as u32;
+    // SAFETY: an open process handle and a buffer of `size` units.
+    let known = unsafe { QueryFullProcessImageNameW(handle.0, 0, path.as_mut_ptr(), &mut size) } != 0;
+    // One that has ended, kept by another program's handle, no longer runs;
+    // Windows may not tell its file then.
+    let mut code = 0u32;
+    // SAFETY: an open process handle and a place for its exit code.
+    if unsafe { GetExitCodeProcess(handle.0, &mut code) } != 0 && code != STILL_ACTIVE {
+        return None;
+    }
+    Some((known && size > 0).then(|| PathBuf::from(std::ffi::OsString::from_wide(&path[..size as usize]))))
+}
+
 /// The executable of each running game, loader, WeiDU or mod installer;
 /// `None` where Windows does not tell it, such as for another user's process.
 #[cfg(windows)]
 pub(crate) fn game_or_installer_executables() -> std::io::Result<Vec<Option<PathBuf>>> {
-    use std::ffi::c_void;
-    use std::os::windows::ffi::OsStringExt;
-
-    /// PROCESSENTRY32W
-    #[repr(C)]
-    struct ProcessEntry {
-        size: u32,
-        usage: u32,
-        process: u32,
-        heap: usize,
-        module: u32,
-        threads: u32,
-        parent: u32,
-        priority: i32,
-        flags: u32,
-        name: [u16; 260],
-    }
-    #[link(name = "kernel32")]
-    extern "system" {
-        fn CreateToolhelp32Snapshot(flags: u32, process: u32) -> *mut c_void;
-        fn Process32FirstW(snapshot: *mut c_void, entry: *mut ProcessEntry) -> i32;
-        fn Process32NextW(snapshot: *mut c_void, entry: *mut ProcessEntry) -> i32;
-        fn OpenProcess(access: u32, inherit: i32, process: u32) -> *mut c_void;
-        fn QueryFullProcessImageNameW(process: *mut c_void, flags: u32, name: *mut u16, size: *mut u32) -> i32;
-        fn CloseHandle(handle: *mut c_void) -> i32;
-    }
-    struct Handle(*mut c_void);
-    impl Drop for Handle {
-        fn drop(&mut self) {
-            // SAFETY: the handle is open and owned by this value.
-            unsafe { CloseHandle(self.0) };
-        }
-    }
     const SNAPSHOT_PROCESSES: u32 = 0x2;
-    const QUERY_LIMITED_INFORMATION: u32 = 0x1000;
     const NO_MORE_FILES: i32 = 18;
-    const INVALID_PARAMETER: i32 = 87;
 
     // SAFETY: no pointers are passed.
     let snapshot = unsafe { CreateToolhelp32Snapshot(SNAPSHOT_PROCESSES, 0) };
@@ -83,22 +118,7 @@ pub(crate) fn game_or_installer_executables() -> std::io::Result<Vec<Option<Path
     while listed {
         let length = entry.name.iter().position(|&unit| unit == 0).unwrap_or(entry.name.len());
         if is_game_or_installer(&String::from_utf16_lossy(&entry.name[..length])) {
-            // SAFETY: no pointers are passed.
-            let process = unsafe { OpenProcess(QUERY_LIMITED_INFORMATION, 0, entry.process) };
-            if !process.is_null() {
-                let process = Handle(process);
-                let mut path = vec![0u16; 32768];
-                let mut size = path.len() as u32;
-                // SAFETY: an open process handle and a buffer of `size` units.
-                let known = unsafe { QueryFullProcessImageNameW(process.0, 0, path.as_mut_ptr(), &mut size) } != 0;
-                executables.push(
-                    (known && size > 0)
-                        .then(|| PathBuf::from(std::ffi::OsString::from_wide(&path[..size as usize]))),
-                );
-            } else if std::io::Error::last_os_error().raw_os_error() != Some(INVALID_PARAMETER) {
-                // One that ended since the snapshot is not listed.
-                executables.push(None);
-            }
+            executables.extend(listed_executable(entry.process));
         }
         // SAFETY: as for Process32FirstW.
         listed = unsafe { Process32NextW(snapshot.0, &mut entry) } != 0;
@@ -208,8 +228,16 @@ mod tests {
         let listed = game_or_installer_executables().unwrap();
         assert!(listed.iter().flatten().any(|path| paths::resolve(path, false).unwrap() == elsewhere), "{listed:?}");
         require_closed(&game).unwrap();
-        let installer = start(&game.join("setup-mod.exe"));
+        let mut installer = start(&game.join("setup-mod.exe"));
         assert_eq!(require_closed(&game).unwrap_err().message, open);
+        let listed = listed_executable(installer.0.id()).map(|path| path.map(|path| paths::resolve(&path, false).unwrap()));
+        assert_eq!(listed, Some(Some(game.join("setup-mod.exe"))));
+        // Listed, then it ends before its file is asked for. The handle this
+        // test holds keeps the ended process, as another program's would; it
+        // does not run, though Windows may no longer tell its file.
+        installer.0.kill().unwrap();
+        installer.0.wait().unwrap();
+        assert_eq!(listed_executable(installer.0.id()), None);
         drop(installer);
         require_closed(&game).unwrap();
     }
