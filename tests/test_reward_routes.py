@@ -533,21 +533,25 @@ class BookScrollTests(RouteGame):
         # book Apply wrote, beside the installer's version (FLPRScript.lua).
         self.assertEqual({path.name: path.read_bytes() for path in (self.output / "campaign-store" / "revisions").iterdir()
                           if path.name.startswith(ring)}, ring_files)
-        # A rescan sees Apply's book; the ring alone again records the
-        # installer's version, and nothing earlier changes.
+        # A rescan reads Apply's book as the installer prepared it
+        # (applied_files.py), so the ring alone again is the ring's revision:
+        # it records the installer's version, and nothing earlier changes.
         self.rescan()
+        self.assertEqual(next(row["sha256"] for row in self.world["resources"] if row["id"] == "bcs:ppbook"),
+                         hashlib.sha256(installed).hexdigest())
         again, again_native = self.applied(self.RING)
+        self.assertEqual(again, ring)
         self.assertNotIn("notes", self.exported)
         self.assertEqual(set(self.staged(again).values()), {installed})
         self.assertEqual(again_native["resource_hashes"]["PPBOOK.BCS"], hashlib.sha256(installed).hexdigest())
         self.assertEqual((overrides / "PPBOOK.BCS").read_bytes(), patched)
-        # When the earlier revisions are kept for another change (their chests'
-        # area), the ring's installer version still meets their need.
+        # When the two earlier revisions are kept for another change (their
+        # chests' area), the ring's installer version still meets their need.
         (self.game / "override" / "ar0100.are").write_bytes(
             make_are([], [("Place2", 0, 0), ("Place3", 0, 0), ("Place4", 0, 0), ("Place5", 0, 0)]))
         self.rescan()
         self.applied(self.RING + self.SCROLLS)
-        self.assertEqual(len(self.exported["notes"]), 3 * 3)
+        self.assertEqual(len(self.exported["notes"]), 2 * 3)
         self.assertTrue(all("keep their settings" in note for note in self.exported["notes"]))
 
     def test_the_scrolls_alone_need_no_prepared_book(self):
