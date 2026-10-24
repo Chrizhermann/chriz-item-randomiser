@@ -106,6 +106,14 @@ PPBOOK_SPLIT = (
     + block((*BOOK_CONDITIONS, '!Global("FLPR_QBOOK","GLOBAL",1)'),
             ('GiveItemCreate("ring09",Player1,1,0,0)', 'SetGlobal("FLBookRead","GLOBAL",1)',
              'SetGlobal("FLPR_EBOOK","GLOBAL",1)')))
+# The book as Apply extends the installer's version with a scroll's route.
+PAGE_CONDITIONS = ('PartyHasItem("FLBOOK")', 'Global("FLBookRead","GLOBAL",1)')
+PPBOOK_ROUTED = (
+    PPBOOK_SPLIT
+    + block((*PAGE_CONDITIONS, 'Global("FLPR_QM2_260","GLOBAL",1)'),
+            ('SetGlobal("FLPR_XM2_260","GLOBAL",1)', 'SetGlobal("FLPR_EM2_260","GLOBAL",1)'))
+    + block((*PAGE_CONDITIONS, '!Global("FLPR_QM2_260","GLOBAL",1)'),
+            ('GiveItemCreate("scrl9b",Player1,1,0,0)', 'SetGlobal("FLPR_EM2_260","GLOBAL",1)')))
 
 # Unshey adds quest entry #5 and erases it when she takes the girdle.
 UNSHEY_JOURNAL = 5
@@ -172,7 +180,7 @@ def glaicus(*, give: str = "blun14c", extra: Sequence[str] = ()) -> str:
 SOURCES = {
     "applied": {"blpool.baf": BLPOOL, "troalt.baf": TROALT, "ppbook.baf": PPBOOK,
                 "xblpool.baf": BLPOOL_SPLIT, "xtroalt.baf": TROALT_SPLIT, "xppbook.baf": PPBOOK_SPLIT,
-                "unshey.d": unshey(), "kpglai01.d": glaicus()},
+                "rppbook.baf": PPBOOK_ROUTED, "unshey.d": unshey(), "kpglai01.d": glaicus()},
     # Each quest file as another mod could leave it; CIR leaves them
     # as they are.
     "left-out": {

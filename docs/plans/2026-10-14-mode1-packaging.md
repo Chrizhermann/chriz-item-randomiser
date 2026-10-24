@@ -225,16 +225,19 @@ and removes every file it created. WeiDU keeps the appended game-text
 strings, unused, as it does for every mod; a re-install finds and reuses them. WeiDU does
 not track folders, so the `randomiser-campaigns` folder it created stays behind empty.
 Uninstall cannot remove what the configurator wrote; see B2. Of Apply's files `BGEE.LUA` and
-`PPBOOK.BCS` are also the installer's: an uninstall restores the game's versions and a
-re-install the installer's, without Apply's journal entries and the book's scroll routes
-until the next Apply; the copies in
+`PPBOOK.BCS` are also the installer's: an uninstall restores the game's versions. A
+re-install writes the installer's `BGEE.LUA`, without Apply's journal entries until the
+next Apply; the copies in
 `randomiser-campaigns/before-apply/` let a player put back the others by hand. Re-installing over the installed component
 and an uninstall and install in one WeiDU run leave the game byte-identical, also with an
 applied `randomiser-campaigns/next.lua`;
 so does WeiDU's temporary uninstall and re-install of CIR behind a reinstalled earlier
-mod. The one exception is a book that Apply extended with the routes of its two scrolls
-(`PPBOOK.BCS`, see B2): a re-install returns it to the installer's version, and a
-configuration that moves a scroll needs Apply again before its games start.
+mod. That includes a book that Apply extended with the routes of its two scrolls
+(`PPBOOK.BCS`, see B2): when a re-install prepares exactly the version Apply extended, it
+puts Apply's back (2026-10-24, issue #20). A book prepared otherwise, by another version
+of CIR or after an earlier mod changed it, stays as the installer prepared it, with a
+note: the saved games of a configuration that moves a scroll then stop when they are
+loaded.
 
 ## Campaign starts
 

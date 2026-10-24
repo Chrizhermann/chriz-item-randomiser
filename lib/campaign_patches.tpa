@@ -200,6 +200,12 @@ BEGIN
 END
 
 // Checks one quest script, then splits it if it can; sets flir_cp_result.
+// Apply may extend the split script with reward routes. It keeps the version
+// it extended and its own in randomiser-campaigns, and saved games of its
+// revisions need its own. An uninstall, and so every re-install, puts back the
+// game's file: when this install prepares exactly the version Apply extended,
+// Apply's own is still valid and goes back too. Any other version stays as
+// prepared, and those saved games stop when they are loaded.
 DEFINE_ACTION_FUNCTION flir_cp_split_script
   STR_VAR
     script = ~~
@@ -213,6 +219,23 @@ DEFINE_ACTION_FUNCTION flir_cp_split_script
     flir_cp_result
 BEGIN
   OUTER_SPRINT flir_cp_result ~absent~
+  OUTER_SPRINT flir_cp_name ~%script%~
+  ACTION_TO_UPPER flir_cp_name
+  OUTER_SPRINT flir_cp_base ~randomiser-campaigns/%flir_cp_name%.installed.bcs~
+  OUTER_SPRINT flir_cp_own ~randomiser-campaigns/%flir_cp_name%.applied.bcs~
+  OUTER_SET flir_cp_versions = FILE_EXISTS ~%flir_cp_base%~ AND FILE_EXISTS ~%flir_cp_own%~
+  OUTER_SET flir_cp_size = 0 - 1
+  OUTER_SET flir_cp_same = 0
+  ACTION_IF flir_cp_versions BEGIN
+    // Compared with the split in the buffer that writes it: a COPY of the
+    // script's override path after the check below gets that check's
+    // decompiled buffer from WeiDU, not the file.
+    COPY - ~%flir_cp_base%~ ~override~
+      SET flir_cp_size = SOURCE_SIZE
+      FOR (flir_cp_at = 0; flir_cp_at < SOURCE_SIZE; flir_cp_at += 1) BEGIN
+        READ_BYTE flir_cp_at $flir_cp_byte(~%flir_cp_at%~)
+      END
+  END
   ACTION_IF FILE_EXISTS_IN_GAME ~%script%.bcs~ BEGIN
     COPY_EXISTING - ~%script%.bcs~ ~override~
       DECOMPILE_BCS_TO_BAF
@@ -225,6 +248,20 @@ BEGIN
             consumed = EVAL ~%consumed%~ event = EVAL ~%event%~ swap_from = EVAL ~%swap_from%~
             swap_to = EVAL ~%swap_to%~ RET flir_cp_result END
         END
+        PATCH_IF flir_cp_versions AND BUFFER_LENGTH = flir_cp_size BEGIN
+          SET flir_cp_same = 1
+          FOR (flir_cp_at = 0; flir_cp_same AND flir_cp_at < BUFFER_LENGTH; flir_cp_at += 1) BEGIN
+            READ_BYTE flir_cp_at flir_cp_value
+            SET flir_cp_same = (flir_cp_value = $flir_cp_byte(~%flir_cp_at%~))
+          END
+        END
+    END
+  END
+  ACTION_IF flir_cp_versions AND ~%flir_cp_result%~ STRING_EQUAL ~applied~ BEGIN
+    ACTION_IF flir_cp_same BEGIN
+      COPY ~%flir_cp_own%~ ~override/%script%.bcs~
+    END ELSE BEGIN
+      PRINT @101529
     END
   END
 END
