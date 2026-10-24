@@ -128,9 +128,13 @@ in any other language these options show the English texts, so they work in ever
 game; a translation of all of an option's lines shows it in that language instead. An
 option whose lines a translation has only in part stays English, so that its texts
 never mix two languages. The English files are the template: translate each text,
-keep the `@` numbers and the line breaks of the descriptions' lists, and add female
-wordings as above. To check them, add the language to `OPTIONS_TRANSLATED` in
-`tests/test_translations.py`.
+keep the `@` numbers, and add female wordings as above. A cursed item's description
+is best made from the game's own description of that item in your language (its
+`dialog.tlk`): add only what Item Randomiser changes, the item it is disguised as and a
+heading where the English has one, and use the game's item names. The German texts
+are made this way (BG2:EE's `dialog.tlk`); only @210 and @211, Item Revisions'
+descriptions, are translated from English. To check them, add the language to
+`OPTIONS_TRANSLATED` in `tests/test_translations.py`.
 
 ## Checking a translation
 

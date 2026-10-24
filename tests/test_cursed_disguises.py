@@ -114,7 +114,7 @@ class CursedDisguiseTests(unittest.TestCase):
                     self.assertEqual((male.text(ref, set()), female.text(ref, set())),
                                      expected[face["description_tra"]])
         german = translations.texts("de_DE", "in-game.tra")[216][0]
-        self.assertTrue(german.startswith("Ring der Tollpatschigkeit: Des Narren Torheit\r\n"), german)
+        self.assertTrue(german.startswith("Ungeschicklichkeitsring: Die Torheit des Narren\r\n"), german)
 
     def test_item_revisions_component_zero_selects_exact_original_compatibility(self):
         self.assertTrue(item_revisions_installed(b'// ignored\n~ITEM_REV/ITEM_REV.TP2~ #2 #0 // core\n'))
