@@ -200,7 +200,11 @@ the dialog-wait message stayed queued.
 
 Since then the adapter marks a queued 67/40 as inert. Every other message
 addressed to the target still blocks it, before the action, after it and while
-observing.
+observing. With that change the lab loaded a save made while the king's reward
+was waiting: before the first check after loading, HALB09B was in Player1's
+first free backpack slot with the source's flags 0 and the delivery was
+confirmed, while a dialog-wait message for Player1 stayed queued. After a QA
+save and reload it was there exactly once and nothing was delivered again.
 
 ## Still unproven
 
