@@ -107,7 +107,9 @@ templates and appears to rely on route exclusivity; no explicit cross-carrier
 retirement flag was found in the original rules. Those routes need review before
 adding a new retirement rule. They are not covered by the single-carrier transfer
 above. SAHTREAS also removes and re-grants its
-reward on a quest branch, so the simple container loot latch is insufficient.
+reward on a quest branch, so the simple container loot latch is insufficient. The
+treasury route now gates those destroys and has the king's reward reply hand the
+treasury's reward to his payee ([configurator](post-install-configurator.md)).
 These remain implementation work, as does original automatic equipment placement.
 GORLUM's LUM3 clue also remains: reuse the existing campaign item-view hook to
 select the original reward-specific description (or @1099 fallback), changing

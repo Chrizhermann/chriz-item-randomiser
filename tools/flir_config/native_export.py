@@ -37,7 +37,7 @@ from .mode2_rewards import (SOURCE_REWARDS as MODE2_SOURCES, TARGET_REWARDS as M
                             target_spec as mode2_target_spec, patch_reward as patch_mode2_reward,
                             prepare_reward_texts, own_patch as own_mode2_patch, journal_lua as mode2_journal_lua,
                             TEXT_REFS as MODE2_TEXT_REFS, transfer_spec as mode2_transfer_spec, unpatched_script)
-from .mode2_rewards import PHYSICAL_SOURCE_REWARDS, REWARDS as MODE2_REWARDS
+from .mode2_rewards import DESTROY_GATES, PHYSICAL_SOURCE_REWARDS, REWARDS as MODE2_REWARDS
 from .container_rewards import (RESOURCE_TARGETS as CONTAINER_RESOURCES,
                                 TEXT_RESOURCES as CONTAINER_TEXT_RESOURCES, container_error,
                                 patch_container_resource, own_patch as own_container_patch,
@@ -140,6 +140,12 @@ def _compile(manifest: dict, world: dict, index: dict, items: dict,
         use(resource)
         if routed is not None:
             routed.add(resource)
+
+    def route_resources(spec: dict) -> list[str]:
+        # The resources a route patches in this game: a script that would
+        # destroy its item needs no gate where the game has none.
+        return [resource for resource in spec["resources"]
+                if resource not in DESTROY_GATES or resource in index["resources"]]
 
     def use_quest(resource: str) -> None:
         # The quest script as the installer prepared it (or as Apply extended it).
@@ -353,9 +359,10 @@ def _compile(manifest: dict, world: dict, index: dict, items: dict,
                 native["sources"][identity].setdefault("auxiliary_creatures", []).append(auxiliary)
             # All alternate quest routes share the same saved selection flag.
             # Their actual bytes are reviewed by patch_mode2_reward at export.
-            if len(spec["resources"]) > 1:
-                native["sources"][identity]["resources"] = list(spec["resources"])
-            for resource in spec["resources"]:
+            resources = route_resources(spec)
+            if len(resources) > 1:
+                native["sources"][identity]["resources"] = resources
+            for resource in resources:
                 use_route(resource)
             use("itm:" + source["item"])
             return
@@ -516,7 +523,7 @@ def _compile(manifest: dict, world: dict, index: dict, items: dict,
                  f"{reward['quest'].upper()}.DLG could stand for: {selected['id']}")
         require_route(name)
         native["sources"][selected["id"]]["reward_selected_global"] = reward["selected_global"]
-        for resource in reward["resources"]:
+        for resource in route_resources(reward):
             use_route(resource)
 
     for selected in manifest["sources"]:
@@ -606,7 +613,7 @@ def _compile(manifest: dict, world: dict, index: dict, items: dict,
                          creature["selector"]["script_name"].lower() == placement["script_name"].lower() and
                          not {DANGLING_INVENTORY, INVALID_INVENTORY, UNRESOLVED_STORAGE}.intersection(creature["concerns"]),
                          f"Original reward recipient changed: {identity}")
-                for resource in reward["resources"]:
+                for resource in route_resources(reward):
                     use_route(resource)
                 for resource in (placement["creature_resource"], "are:" + placement["area"].lower()):
                     use(resource)
@@ -645,9 +652,37 @@ def _compile(manifest: dict, world: dict, index: dict, items: dict,
             if target["kind"] == "scripted-target":
                 if route is not None:
                     spec = mode2_target_spec(route, **naming())
-                    for resource in spec["resources"]:
+                    for resource in route_resources(spec):
                         use_route(resource)
-                    if spec["recipient_local"] is None:
+                    if spec.get("handover"):
+                        # The Sahuagin treasury: the one container of its area
+                        # whose script it is, wherever a mod moved or renamed it.
+                        handover = spec["handover"]
+                        area = "are:" + handover["area"]
+                        use(area)
+                        found = [row for row in index["targets"].values() if row["resource"] == area and
+                                 row["kind"] == "container" and row["selector"]["trap_script"] == handover["script"]]
+                        _require(len(found) == 1, f"{area[4:].upper()}.ARE needs one container with the script "
+                                                  f"{handover['script'].upper()}, the treasury: {identity}")
+                        selection = found[0]["selector"]
+                        name = _name(selection["name"], identity)
+                        _require(not selection["dynamic_item_table"] and
+                                 container_names[area, name.lower(), selection["x"], selection["y"],
+                                                 selection["type"]] == 1,
+                                 f"Native target needs a unique static container name: {identity}")
+                        _require(0 <= selection["x"] <= 32767 and 0 <= selection["y"] <= 32767,
+                                 f"Native container coordinates are unsupported: {identity}")
+                        native["targets"][identity] = {
+                            "kind": "container", "area": _area(area), "script_name": name,
+                            "x": selection["x"], "y": selection["y"], "container_type": selection["type"],
+                            "handover": {"event_global": spec["event_global"],
+                                         "recipient_local": spec["recipient_local"]},
+                            "reward_resource": spec["resource"],
+                            "identity": _digest({"target": selected, "container": found[0]})}
+                        if "original-target:" + route != identity:
+                            # A preset's row: the reward reply names the route's own row.
+                            native["targets"][identity]["route_target"] = "original-target:" + route
+                    elif spec["recipient_local"] is None:
                         readable(spec["recipient"].split("/", 1)[0])
                         physical = index["targets"].get(spec["recipient"])
                         _require(physical is not None and physical["kind"] == "container" and

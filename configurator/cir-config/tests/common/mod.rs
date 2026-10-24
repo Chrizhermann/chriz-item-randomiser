@@ -581,6 +581,14 @@ fn call(name: &str, args: &Args) -> Result<Value> {
                 args.value("specs").as_list().expect("specs").iter().map(|spec| spec.as_dict().expect("spec").clone()).collect();
             recovered(mode2_rewards::script_original(&args.bytes("data"), &specs)?)
         }
+        "mode2_rewards._patch_destroys" => {
+            let specs: Vec<Dict> =
+                args.value("specs").as_list().expect("specs").iter().map(|spec| spec.as_dict().expect("spec").clone()).collect();
+            let mut reasons = Dict::new();
+            let result = mode2_rewards::patch_destroys(&args.bytes("data"), &specs, Some(&mut reasons))?;
+            Value::List(vec![bytes_value(&result), Value::Dict(reasons)])
+        }
+        "mode2_rewards._handover" => bytes_value(&mode2_rewards::handover(&args.dict("spec"))?),
         "mode2_rewards.unpatched_script" => bytes_value(&mode2_rewards::unpatched_script(
             &args.str("resource"),
             &args.bytes("data"),

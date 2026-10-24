@@ -314,6 +314,20 @@ impl<'a> Compiler<'a> {
         Ok(())
     }
 
+    /// `route_resources`: the resources a route patches in this game. A
+    /// script that would destroy its item needs no gate where the game has
+    /// none.
+    fn route_resources(&self, resources: &Value) -> Vec<Value> {
+        list(resources)
+            .iter()
+            .filter(|resource| {
+                let resource = resource.as_str().unwrap_or("");
+                !mode2_rewards::destroy_gate(resource) || self.index.resources.contains(resource)
+            })
+            .cloned()
+            .collect()
+    }
+
     /// `use_quest`: the quest script as the installer prepared it (or as
     /// Apply extended it).
     fn use_quest(&mut self, resource: &str) -> Result<()> {
@@ -586,12 +600,12 @@ impl<'a> Compiler<'a> {
             }
             // All alternate quest routes share the same saved selection flag.
             // Their actual bytes are reviewed by patch_reward at export.
-            let resources = list(entry(&spec, "resources")?);
+            let resources = self.route_resources(entry(&spec, "resources")?);
             if resources.len() > 1 {
                 let endpoint = self.sources.get_mut(identity).and_then(Value::as_dict_mut).expect("inserted above");
-                endpoint.insert("resources", Value::List(resources.to_vec()));
+                endpoint.insert("resources", Value::List(resources.clone()));
             }
-            for resource in resources {
+            for resource in &resources {
                 self.use_route(resource.as_str().unwrap_or(""))?;
             }
             self.use_resource(&item_resource)?;
@@ -854,7 +868,7 @@ impl<'a> Compiler<'a> {
             .and_then(Value::as_dict_mut)
             .ok_or_else(|| Error::key(identity))?;
         endpoint.insert("reward_selected_global", reward.at("selected_global")?.clone());
-        for resource in list(reward.at("resources")?) {
+        for resource in self.route_resources(reward.at("resources")?) {
             self.use_route(resource.as_str().unwrap_or(""))?;
         }
         Ok(())
@@ -1007,8 +1021,8 @@ impl<'a> Compiler<'a> {
                     None => false,
                 };
                 require(ok, || format!("Original reward recipient changed: {identity}"))?;
-                for resource in list(entry(reward, "resources")?) {
-                    self.use_route(&py_str(resource))?;
+                for resource in self.route_resources(entry(reward, "resources")?) {
+                    self.use_route(&py_str(&resource))?;
                 }
                 for resource in [creature_resource.to_string(), format!("are:{}", lower(placement_area))] {
                     self.use_resource(&resource)?;
@@ -1068,10 +1082,62 @@ impl<'a> Compiler<'a> {
             if target_kind == "scripted-target" {
                 if let Some(id) = route_target.as_deref() {
                     let spec = mode2_rewards::target_spec(id, self.routes()?.naming())?;
-                    for resource in list(entry(&spec, "resources")?) {
+                    for resource in self.route_resources(entry(&spec, "resources")?) {
                         self.use_route(resource.as_str().unwrap_or(""))?;
                     }
-                    if entry(&spec, "recipient_local")?.is_null() {
+                    if spec.get("handover").is_some_and(Value::truthy) {
+                        // The Sahuagin treasury: the one container of its area
+                        // whose script it is, wherever a mod moved or renamed it.
+                        let handover = entry(&spec, "handover")?;
+                        let area_resource = format!("are:{}", text(handover, "area")?);
+                        self.use_resource(&area_resource)?;
+                        let script = handover.at("script")?;
+                        let mut found = Vec::new();
+                        for row in rows(self.world, "targets") {
+                            if row.at("resource")?.as_str() == Some(area_resource.as_str())
+                                && row.at("kind")?.as_str() == Some("container")
+                                && row.at("selector")?.at("trap_script")?.py_eq(script)
+                            {
+                                found.push(row);
+                            }
+                        }
+                        require(found.len() == 1, || {
+                            format!(
+                                "{}.ARE needs one container with the script {}, the treasury: {identity}",
+                                upper(tail(&area_resource, 4)),
+                                upper(script.as_str().unwrap_or(""))
+                            )
+                        })?;
+                        let treasury = found[0];
+                        let selection = treasury.at("selector")?;
+                        let name = script_name(Some(selection.at("name")?), identity)?;
+                        let unique = !selection.at("dynamic_item_table")?.truthy()
+                            && Self::count(
+                                &self.container_names,
+                                &self.container_key(treasury.get("resource"), &lower(&name), selection)?,
+                            ) == 1;
+                        require(unique, || format!("Native target needs a unique static container name: {identity}"))?;
+                        let (x, y) = (selection.at("x")?, selection.at("y")?);
+                        require(in_coordinates(x) && in_coordinates(y), || {
+                            format!("Native container coordinates are unsupported: {identity}")
+                        })?;
+                        let mut endpoint = crate::dict! {
+                            "kind" => "container", "area" => area(treasury.at("resource")?)?, "script_name" => name,
+                            "x" => x.clone(), "y" => y.clone(), "container_type" => selection.at("type")?.clone(),
+                            "handover" => crate::dict! {
+                                "event_global" => entry(&spec, "event_global")?.clone(),
+                                "recipient_local" => entry(&spec, "recipient_local")?.clone(),
+                            },
+                            "reward_resource" => entry(&spec, "resource")?.clone(),
+                            "identity" => identity_of(crate::dict! {"target" => selected.clone(), "container" => treasury.clone()})?,
+                        };
+                        let route = format!("original-target:{id}");
+                        if route != identity {
+                            // A preset's row: the reward reply names the route's own row.
+                            endpoint.insert("route_target", route);
+                        }
+                        self.targets.insert(identity, endpoint);
+                    } else if entry(&spec, "recipient_local")?.is_null() {
                         let recipient = entry(&spec, "recipient")?.as_str().unwrap_or("");
                         self.readable(recipient.split('/').next().unwrap_or(""))?;
                         let physical =

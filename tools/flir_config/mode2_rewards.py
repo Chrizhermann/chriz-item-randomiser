@@ -178,10 +178,22 @@ REWARDS["udlesa"].update(
 # The Sahuagin treasury's rod (row7, whose row names sahkng01.dlg and
 # sahtreas.bcs) is an ordinary container source, but the king's reward reply
 # creates another one (SAHTREAS.BCS then destroys the treasury's). As with
-# UDLESA's sword, the reply follows the source's kept/relocated decision;
-# without a target, its selected copy only drops the grant.
-_alias("sahrod", "rods02", 7, None, "SAHROD", {"sahkng01": ((81, 0),)})
-REWARDS["sahrod"].update(source_ids=(), authored_source_ids=("original-source:bg2:mode2:item:7",))
+# UDLESA's sword, the reply follows the source's kept/relocated decision.
+# The rod's place (row 6, Item Randomiser's sahtreas.fl) is the treasury, the
+# AR2300 container whose script is SAHTREAS: its reward lies there until the
+# king's reward reply hands it to the one he pays (_handover), and goes to
+# that payee once he has paid. On the prince's side it stays to be looted.
+_alias("sahrod", "rods02", 7, 6, "SAHROD", {"sahkng01": ((81, 0),)})
+REWARDS["sahrod"].update(source_ids=(), authored_source_ids=("original-source:bg2:mode2:item:7",),
+                         handover={"area": "ar2300", "script": "sahtreas"})
+# Once the king has paid, SAHTREAS.BCS destroys the items his reply gives
+# (DestroyItem), the treasury's rod among them. A reward that moved there
+# under such a name must stay: each destroy runs only while its route's grant
+# is the original one (_patch_destroys). A game without the script needs no
+# gate.
+DESTROY_GATES = {"bcs:sahtreas": ("sahkng01", "sahrod")}
+for _key in DESTROY_GATES["bcs:sahtreas"]:
+    REWARDS[_key]["resources"] = ("dlg:sahkng01", "bcs:sahtreas")
 # The two scrolls that the book of Lavok's sphere (PPBOOK.BCS, AR1513) gives
 # with its ring on the last page (Item Randomiser's rows 260 and 262). The
 # book's places are the ring's quest (the installer splits that page for the
@@ -204,6 +216,7 @@ for _name, _row in REWARDS.items():
     for _resource in _row.get("dialogues", {_row["resource"].split(":")[1]: ()}):
         _kind = _row["resource"].split(":")[0]
         RESOURCE_REWARDS.setdefault(_kind + ":" + _resource, []).append(_name)
+RESOURCE_REWARDS.update(DESTROY_GATES)
 RESOURCE_REWARDS = {resource: tuple(names) for resource, names in RESOURCE_REWARDS.items()}
 SOURCE_REWARDS = {identity: name for name, spec in REWARDS.items() for identity in spec["source_ids"]}
 TARGET_REWARDS = {identity: name for name, spec in REWARDS.items() for identity in spec["target_ids"]}
@@ -279,6 +292,8 @@ def _in_game(spec: dict, game: str | None, names: EetNames | None) -> dict:
     if placement:
         placement["area"] = name(placement["area"], "are")
         placement["creature_resource"] = "cre:" + name(placement["creature_resource"][4:], "cre")
+    if spec.get("handover"):
+        spec["handover"]["area"] = name(spec["handover"]["area"], "are")
     return spec
 
 
@@ -415,6 +430,20 @@ def _callback(spec: dict, numeric: bool) -> bytes:
         return f'EEex_LuaAction("return(FLPR_Transfer(EEex_LuaAction_Object,{match[2]}{campaign}))")'.encode()
     return ('EEex_LuaAction("return FLPR_Transfer(EEex_LuaAction_Object,'
             f'[[original-target:{target[0]}]])")').encode()
+
+
+def _handover(spec: dict) -> bytes:
+    """The condition by which a reward reply hands its place's treasury to the
+    payee (M_FLPR's FLPR_Handover). It is true whatever happens there, so the
+    reply always shows; without CIR's runtime it does nothing."""
+    target = spec["target_ids"]
+    match = re.fullmatch(r"(bg[12]):mode2:target:([1-9][0-9]*)", target[0]) if len(target) == 1 else None
+    if match is None:
+        raise ProfileError("The treasury's place changed")
+    # The dialogue parser strips spaces and colons, as in _callback.
+    campaign = ",1" if match[1] == "bg1" else ""
+    return (f'EEex_LuaTrigger("return(FLPR_Handover==nil)or(FLPR_Handover('
+            f'EEex_LuaTrigger_Object,{match[2]}{campaign}))")\r\n').encode()
 
 
 def _gives_item(text: bytes, call, item: str) -> bool:
@@ -600,6 +629,12 @@ def _patch_dialogue(data: bytes, specs: tuple[dict, ...], *, action_refs=None,
                     else:
                         changed = _mark(spec, argument(text, call, 1)) + replacement + b"\r\n" + _event(spec)
                     edits.append((call.start, call.end, changed))
+                # After the campaign guards, which the recovery reads from the
+                # end (_guard_calls). Every variant pays, so each hands over;
+                # a second call finds nothing left in the treasury.
+                for spec in relevant:
+                    if spec.get("handover"):
+                        condition = joined(condition, _handover(spec))
                 if any(choices) and action_refs:
                     edits += _display_edits(text, action_refs, shown)
                 dialogue.triggers.append(condition)
@@ -896,8 +931,18 @@ def _unpatched_dialogue(dialogue: _Dialogue, specs: tuple[dict, ...], resource: 
             flags, _, _, trigger_id, action_id = struct.unpack_from("<5I", row)
             trigger = _string(dialogue.triggers, trigger_id, label) if flags & 2 else b""
             action = _string(dialogue.actions, action_id, label) if flags & 4 else b""
+            # The handover conditions follow the guards of their routes.
+            handed = []
+            while flags & 2:
+                tail = next((_handover(spec) for spec in routes.values() if spec.get("handover") and
+                             trigger.endswith(_handover(spec))), None)
+                if tail is None:
+                    break
+                trigger = trigger[:-len(tail)]
+                handed.insert(0, tail)
             guards = (_guard_calls(trigger, routes) or []) if flags & 2 else []
-            if any(selected for _, _, selected in guards) or at + 2 ** len(guards) > len(rows):
+            if (any(selected for _, _, selected in guards) or at + 2 ** len(guards) > len(rows) or
+                    handed != [_handover(spec) for _, spec, _ in guards if spec.get("handover")]):
                 raise _changed_patch(resource)
             at += 2 ** len(guards)
             if guards:
@@ -1110,6 +1155,83 @@ def _unpatched_script(data: bytes, spec: dict, newline: bytes, selected: bytes,
     return script.prefix + b"".join(restored) + script.suffix, numbers
 
 
+def _no_action(newline: bytes) -> bytes:
+    obj = b'0 0 0 0 0 0 0 0 0 0 0 0 ""OB' + newline
+    return b"AC" + newline + b"0OB" + newline + obj + (b"OB" + newline + obj) * 2 + b'0 0 0 0 0"" "" AC' + newline
+
+
+def _gate_destroys(data: bytes, spec: dict) -> bytes:
+    """Gate the route's DestroyItem of its item: a block that destroys it
+    (itself or through ActionOverride(), where the moved reward may be too)
+    becomes two, the original while the route's grant is unchanged and one
+    with NoAction() instead of each of those destroys while it is moved.
+    Conditions may test the item; any other action with it could take a
+    moved reward, so the route cannot be used."""
+    label = _label(spec["resource"])
+    item = spec["item"].encode("ascii").lower()
+    with naming(label):
+        script = script_blocks(data)
+        newline, blocks = script.newline, list(script.blocks)
+        for index, block in enumerate(script.blocks):
+            if not _names(block, spec["item"]):
+                continue
+            head, conditions, responses = block_parts(block, newline)
+            using = [action for action in block_actions(responses, newline)
+                     if item in (text.lower() for text in action.strings)]
+            if any(action.opcode != 169 or action.strings[0].lower() != item for action in using):
+                raise ProfileError(f"{label} block {index} uses {spec['item'].upper()} in an action other "
+                                   "than DestroyItem(), which the route cannot gate")
+            if not using:
+                continue
+            blocks[index] = b"".join(
+                head + b"CO" + newline + conditions + _global_guard(spec["selected_global"], selected, newline) +
+                b"CO" + newline + _edited(responses, [(action.start, action.end, _no_action(newline))
+                                                     for action in using] if selected else [])
+                for selected in (False, True))
+    return script.prefix + b"".join(blocks) + script.suffix
+
+
+def _patch_destroys(data: bytes, specs: tuple[dict, ...], *, reasons: dict[str, str] | None = None) -> bytes:
+    """Gate each route's DestroyItem of its item (DESTROY_GATES), one route
+    after the other; everything else stays as found. A route whose destroys
+    cannot be gated keeps its blocks as they are; its reason goes to
+    <reasons>. With no route gateable, nothing is prepared."""
+    failures = {}
+    for spec in specs:
+        try:
+            data = _gate_destroys(data, spec)
+        except ProfileError as exc:
+            failures[spec["route"]] = str(exc)
+    if reasons is not None:
+        reasons.update(failures)
+    if len(failures) == len(specs):
+        raise ProfileError(failures[specs[0]["route"]])
+    return data
+
+
+def _destroys_original(data: bytes, specs: tuple[dict, ...]) -> tuple[bytes, bool]:
+    """The script our destroy gates were made from, and whether <data> carries
+    them; patching the result again must give <data> exactly."""
+    resource = specs[0]["resource"]
+    patched = [spec for spec in specs if b'"GLOBAL' + spec["selected_global"].encode() + b'"' in data]
+    if not patched:
+        return data, False
+    original = data
+    try:
+        with naming(_label(resource)):
+            for spec in reversed(patched):
+                script = script_blocks(original)
+                selected, unselected = (_global_guard(spec["selected_global"], choice, script.newline)
+                                        for choice in (True, False))
+                original = script.prefix + b"".join(block.replace(unselected, b"", 1) for block in script.blocks
+                                                    if selected not in block) + script.suffix
+        if _patch_destroys(original, specs) == data:
+            return original, True
+    except ProfileError:
+        pass
+    raise _changed_patch(resource)
+
+
 _Examined = namedtuple("_Examined", "original own refs")
 
 
@@ -1117,6 +1239,9 @@ def _examine(resource: str, data: bytes, *, game=None, names=None) -> _Examined:
     """The unpatched resource (exact, or as the engine reads it), and our patch's text refs."""
     if not isinstance(data, bytes):
         raise ProfileError("Unsupported reward resource bytes")
+    if resource in DESTROY_GATES:
+        original, own = _destroys_original(data, resource_specs(resource, game=game, names=names))
+        return _Examined(original, own, None)
     if resource.startswith("bcs:"):
         original, ref, own = _script_original(data, resource_specs(resource, game=game, names=names))
         return _Examined(original, own, ref)
@@ -1246,7 +1371,9 @@ def route_reasons(resource: str, data: bytes, *, game: str | None = None,
     reasons: dict[str, str] = {}
     try:
         examined = _examine(resource, data, game=game, names=names)
-        if resource.startswith("bcs:"):
+        if resource in DESTROY_GATES:
+            _patch_destroys(examined.original, specs, reasons=reasons)
+        elif resource.startswith("bcs:"):
             _patch_scripts(examined.original, specs, 0, reasons=reasons)
         elif resource in TEXT_REFS:
             _patch_text_dialogue(examined.original, resource, {old: old for old in text_refs(resource, game)},
@@ -1295,6 +1422,8 @@ def patch_reward(resource: str, data: bytes, *, refs: dict[int, int] | None = No
     resource = _resource_key(resource)
     examined = _examine(resource, data, game=game, names=names)
     specs = resource_specs(resource, game=game, names=names)
+    if resource in DESTROY_GATES:
+        return _patch_destroys(examined.original, specs)
     if resource.startswith("bcs:"):
         if refs is not None:
             if resource not in TEXT_REFS or set(refs) != set(text_refs(resource, game)):

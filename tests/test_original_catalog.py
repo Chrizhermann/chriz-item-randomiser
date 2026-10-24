@@ -320,19 +320,53 @@ class OriginalCatalogTests(unittest.TestCase):
                              _target("are:ar1103/container/0", "are:ar1103", "container", "jugjer01")]}
         result = resolve_template({"items": []}, world, "bg2-original", items="extended", targets="extended")
         rows = {row["id"]: row for row in result["targets"]}
-        for line in (6, 25, 37, 49, 50, 59, 60):
+        for line in (25, 37, 49, 50, 59, 60):
             row = rows[f"bg2:mode2:target:{line}"]
             with self.subTest(target=row["target"], area=row["area"]):
                 self.assertEqual((row["target_ids"], row["container_name"], row["binding_problem"]),
                                  ([], None, "route-not-supported"))
         # The quest places CIR has a route for keep theirs, a handler's place too
-        # (the Sahuagin king's and Jermien's rewards; this game lacks their conversations).
+        # (the Sahuagin treasury's and king's and Jermien's rewards; this game
+        # lacks their conversations).
         self.assertEqual(rows["bg2:base:target:47"]["binding_problem"], "legacy-target-requires-adapter")
         self.assertEqual(rows["bg2:mode2:target:17"]["binding_problem"], "legacy-target-requires-adapter")
-        for line, dialogue in ((58, "dlg:sahkng01"), (31, "dlg:jugjer01")):
+        for line, dialogue in ((6, "dlg:sahkng01"), (58, "dlg:sahkng01"), (31, "dlg:jugjer01")):
             row = rows[f"bg2:mode2:target:{line}"]
             self.assertEqual((row["area_resource"], row["target_ids"], row["container_name"], row["binding_problem"]),
                              (dialogue, [], None, "target-resource-absent"))
+
+    def test_the_treasurys_place_needs_the_kings_reply_and_one_treasury(self):
+        """Row 6's reward waits in the AR2300 container whose script is
+        SAHTREAS until the king's reward reply hands it over."""
+        def treasury(identity, name, script="sahtreas"):
+            target = _target(identity, "are:ar2300", "container", name)
+            target["selector"]["trap_script"] = script
+            return target
+
+        def place(resources, targets, unreadable=()):
+            world = {"resources": [{"id": name} for name in resources], "sources": [], "targets": targets,
+                     "unreadable": [{"id": name} for name in unreadable]}
+            result = resolve_template({"items": []}, world, "bg2-original", items="extended", targets="extended")
+            row = next(row for row in result["targets"] if row["id"] == "bg2:mode2:target:6")
+            return row["area_resource"], row["target_ids"], row["container_name"], row["binding_problem"]
+
+        king = ("dlg:sahkng01", "are:ar2300")
+        hoard = treasury("are:ar2300/container/7", "Hoard")
+        chest = treasury("are:ar2300/container/1", "Treasury", "impches3")
+        routed = ("dlg:sahkng01", [], None, "legacy-target-requires-adapter")
+        # Wherever a mod moved or renamed it; SAHTREAS itself may be absent.
+        for resources in (king, king + ("bcs:sahtreas",)):
+            with self.subTest(resources=resources):
+                self.assertEqual(place(resources, [chest, hoard]), routed)
+        absent = ("dlg:sahkng01", [], None, "target-resource-absent")
+        self.assertEqual(place(("are:ar2300",), [hoard]), absent)
+        self.assertEqual(place(("dlg:sahkng01",), []), absent)
+        self.assertEqual(place(king, [hoard], unreadable=("are:ar2300",)),
+                         ("dlg:sahkng01", [], None, "area-resource-unreadable"))
+        # No treasury, or two that it could be.
+        for targets in ([chest], [hoard, treasury("are:ar2300/container/8", "Treasury")]):
+            with self.subTest(targets=len(targets)):
+                self.assertEqual(place(king, targets), ("dlg:sahkng01", [], None, "treasure-container-not-found"))
 
     def test_quest_rewards_with_a_cir_route_are_bound_to_it(self):
         catalog = {"items": [{"resref": name} for name in ("shld26", "blun23", "blun12", "ring41", "brac19",
@@ -370,7 +404,7 @@ class OriginalCatalogTests(unittest.TestCase):
             waiting |= {row["id"] for row in result["items"] + result["targets"]
                         if row["binding_problem"] == "route-not-supported"}
         # Places that Item Randomiser's own quest handlers name.
-        self.assertEqual(waiting, {f"bg2:mode2:target:{line}" for line in (6, 25, 37, 49, 50, 59, 60, 89, 215, 252)})
+        self.assertEqual(waiting, {f"bg2:mode2:target:{line}" for line in (25, 37, 49, 50, 59, 60, 89, 215, 252)})
 
     def test_a_presets_rows_of_an_original_reward_route_are_that_route(self):
         from flir_config.original_catalog import mode2_route_source, mode2_route_target

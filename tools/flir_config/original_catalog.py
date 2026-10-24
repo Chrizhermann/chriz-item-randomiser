@@ -11,7 +11,7 @@ from collections import defaultdict
 import re
 
 from .game_names import EetNames, convert_resource, eet_names
-from .mode2_rewards import SOURCE_REWARDS, TARGET_REWARDS, target_spec
+from .mode2_rewards import DESTROY_GATES, SOURCE_REWARDS, TARGET_REWARDS, target_spec
 from .container_rewards import (TARGETS as CONTAINER_TARGETS, target_spec as container_spec,
                                 treasure_area, treasure_container)
 from .profiles import ProfileError
@@ -387,9 +387,20 @@ def _resolve_target(row: dict, resources: set[str], unreadable: set[str],
     reward = mode2_alias_spec(row, game, names)
     if reward is not None:
         row["area_resource"] = reward["resource"]
-        row["binding_problem"] = ("legacy-target-requires-adapter"
-                                  if all(resource in resources for resource in reward["resources"])
-                                  else "target-resource-absent")
+        # A script that would destroy the reward needs no gate where it is absent.
+        needed = [resource for resource in reward["resources"] if resource not in DESTROY_GATES]
+        handover, treasuries = reward.get("handover"), []
+        if handover:
+            # The reward waits in the one container of its area whose script
+            # it is (the Sahuagin treasury), wherever a mod moved or renamed it.
+            area = "are:" + handover["area"]
+            needed.append(area)
+            treasuries = [target for target in targets_by_resource.get(area, []) if target["kind"] == "container"
+                          and target["selector"].get("trap_script") == handover["script"]]
+        row["binding_problem"] = ("target-resource-absent" if any(resource not in resources for resource in needed)
+                                  else "area-resource-unreadable" if handover and area in unreadable
+                                  else "treasure-container-not-found" if handover and len(treasuries) != 1
+                                  else "legacy-target-requires-adapter")
         return
     if row["target"].endswith(".fl"):
         # One of Item Randomiser's own quest handlers (its lib/weidu_action.tpa)

@@ -44,6 +44,7 @@ from flir_config import creature_inventory, game_text, group_recipients, store_i
 from flir_config.game_text import GameText, GameTextError  # noqa: E402
 from flir_config.profiles import ProfileError  # noqa: E402
 from flir_config.resources import ScanError  # noqa: E402
+from flir_config.script_text import script_blocks  # noqa: E402
 from flir_config.world_formats import parse_sto  # noqa: E402
 
 import test_container_rewards as container_tests  # noqa: E402
@@ -433,6 +434,7 @@ def mode2_inputs() -> dict:
     originals["bcs:asysta01"] = mode2_tests.script_fixture("asysta01")
     originals["bcs:ddwell"] = mode2_tests.script_fixture("ddwell")
     originals["bcs:ppbook"] = mode2_tests.book_fixture()
+    originals["bcs:sahtreas"] = mode2_tests.treasury_fixture()
     return originals
 
 
@@ -546,6 +548,108 @@ def book_cases(s: Scenario) -> None:
     unpatched_case(s, "unknown", "bcs:nothing", installed)
 
 
+def patch_destroys_case(s: Scenario, label: str, data: bytes) -> None:
+    """_patch_destroys's result and the reasons of the routes it left out."""
+    specs = mode2_rewards.resource_specs("bcs:sahtreas")
+
+    def run():
+        reasons = {}
+        return mode2_rewards._patch_destroys(data, specs, reasons=reasons), reasons
+    s.case(f"patch_destroys {label}", "mode2_rewards._patch_destroys", {"data": data, "specs": list(specs)}, run)
+
+
+def treasury_cases(s: Scenario) -> None:
+    """test_each_reply_that_pays_with_the_rod_hands_the_treasury_over_after_its_guards,
+    test_the_treasury_destroys_the_kings_items_only_while_his_grants_are_unchanged and
+    test_a_treasury_that_could_take_a_moved_reward_otherwise_leaves_its_route_out."""
+    specs = mode2_rewards.resource_specs("dlg:sahkng01")
+    rod = next(spec for spec in specs if spec["route"] == "sahrod")
+    line = mode2_tests.handover_line(rod)
+    original = mode2_tests.dialogue_fixture(specs)
+    result = mode2_rewards.patch_reward("dlg:sahkng01", original)
+    first = next(index for index, text in enumerate(quest_options._Dialogue(result, "sahkng01").triggers)
+                 if line in text)
+    for label, change in (("missing", lambda text: text.replace(line, b"")), ("twice", lambda text: text + line),
+                          ("another place", lambda text: text.replace(b",6))", b",7))")),
+                          ("before the guards", lambda text: line + text.replace(line, b""))):
+        dialogue = quest_options._Dialogue(result, "sahkng01")
+        dialogue.triggers[first] = change(dialogue.triggers[first])
+        reward_checks(s, f"sahkng01 handover {label}", "dlg:sahkng01", dialogue.render())
+    # A king who pays with the rod in another reply than with the bracer.
+    king = quest_options._Dialogue(original, "sahkng01")
+    king.actions = [text.replace(b'GiveItemCreate("rods02",LastTalkedToBy,0,0,0)\r\r\n', b"") for text in king.actions]
+    split = mode2_tests.with_actions(king.render(), "sahkng01",
+                                     {(80, 0): b'GiveItemCreate("rods02",LastTalkedToBy,0,0,0)\r\n'})
+    reward_checks(s, "sahkng01 split", "dlg:sahkng01", split)
+    reward_checks(s, "sahkng01 split result", "dlg:sahkng01", patched(s, "sahkng01 split", "dlg:sahkng01", split))
+    # Only the route's own row of Item Randomiser's table is its place.
+    for label, targets in (("own", rod["target_ids"]), ("none", ()),
+                           ("two", ("bg2:mode2:target:6", "bg2:mode2:target:58")), ("base", ("bg2:base:target:6",)),
+                           ("bg1", ("bg1:mode2:target:6",)), ("unnumbered", ("bg2:mode2:target:x",))):
+        spec = dict(rod, target_ids=targets)
+        s.case(f"handover {label}", "mode2_rewards._handover", {"spec": spec},
+               lambda spec=spec: mode2_rewards._handover(spec))
+    # SAHTREAS.BCS with other mods' blocks, other layouts, and actions the
+    # route cannot gate.
+    action, trigger, book_block = mode2_tests.action, mode2_tests.trigger, mode2_tests.book_block
+    treasury, paid = mode2_tests.treasury_fixture, mode2_tests.KING_PAID
+    other = book_block([trigger(16399, 1, "GLOBALOtherMod")], action(30, 2, "GLOBALOtherMod"))
+    testing = book_block([trigger(16481, 0, "RODS02")], action(30, 3, "GLOBALOtherMod"))
+    king_block = book_block([paid], mode2_tests.KING_DESTROYS)
+    variants = (
+        ("installed", treasury()), ("mixed", treasury(other, king_block, testing)),
+        ("mixed crlf", crlf(treasury(other, king_block, testing))),
+        ("lowercase", treasury(book_block([paid], action(169, text="rods02") + action(169, text="brac19")))),
+        ("other actor", treasury(book_block([paid], action(169, text="BRAC19", actor=21) +
+                                            action(30, 1, "GLOBALOtherMod")))),
+        ("alternatives", treasury(mode2_tests.alternatives(action(169, text="RODS02"), action(169, text="RODS02") +
+                                                           action(30, 1, "GLOBALOtherMod"),
+                                                           condition="GLOBALsahkngjob"))),
+        ("two blocks", treasury(book_block([paid], action(169, text="RODS02")),
+                                book_block([trigger(16399, 3, "GLOBALsahkngjob")], action(169, text="BRAC19")))),
+        ("rod only", treasury(book_block([paid], action(169, text="RODS02")))),
+        ("plain", treasury(other, testing)),
+        ("giving", treasury(book_block([paid], mode2_tests.KING_DESTROYS + action(15, text="RODS02", target=21)))),
+        ("both given", treasury(book_block([paid], action(15, text="RODS02", target=21) +
+                                           action(15, text="BRAC19", target=21)))),
+        ("created", treasury(book_block([paid], mode2_tests.KING_DESTROYS + action(82, text="BRAC19")))),
+        ("second string", treasury(book_block([paid], mode2_tests.KING_DESTROYS +
+                                              action(363, text="shop01", second="rods02")))),
+        ("unreadable", treasury().replace(b"169OB", b"169XX", 1)),
+        ("no blocks", b"SC\nSC\n"), ("no header", b"XX\nSC\n"), ("empty", b""))
+    for label, data in variants:
+        result = patched(s, f"sahtreas {label}", "bcs:sahtreas", data)
+        reward_checks(s, f"sahtreas {label}", "bcs:sahtreas", data)
+        unpatched_case(s, f"sahtreas {label}", "bcs:sahtreas", data)
+        patch_destroys_case(s, label, data)
+        if result is None or result == data:
+            continue
+        reward_checks(s, f"sahtreas {label} result", "bcs:sahtreas", result)
+        unpatched_case(s, f"sahtreas {label} result", "SAHTREAS.BCS", result)
+        patch_destroys_case(s, f"{label} result", result)
+    for game in ("eet", "eet copy", "bgt"):
+        reward_checks(s, f"sahtreas {game}", "bcs:sahtreas", treasury(), NAMINGS[game])
+    # Our patch changed: a block dropped, a destroy back, a guard turned or
+    # one route's gates taken out.
+    result = mode2_rewards.patch_reward("bcs:sahtreas", treasury())
+    blocks = list(script_blocks(result).blocks)
+    no_action = mode2_tests.NO_ACTION.encode()
+    for label, changed in (
+            ("dropped", treasury(*(block.decode() for block in blocks[:3]))),
+            ("destroy back", result.replace(no_action, action(169, text="RODS02").encode(), 1)),
+            ("turned", result.replace(mode2_tests.route_guard("FLPR_QM2_7", False).encode(),
+                                      mode2_tests.route_guard("FLPR_QM2_7", True).encode(), 1)),
+            ("bracer ungated", treasury(king_block.replace("CO\nRS", mode2_tests.route_guard("FLPR_QM2_7", False) +
+                                                           "CO\nRS"),
+                                        king_block.replace("CO\nRS", mode2_tests.route_guard("FLPR_QM2_7", True) +
+                                                           "CO\nRS").replace(action(169, text="RODS02"),
+                                                                             mode2_tests.NO_ACTION))),
+            ("swapped", treasury(*(block.decode() for block in (blocks[1], blocks[0], *blocks[2:])))),
+            ("crlf mixed", result.replace(b"\n", b"\r\n", 3))):
+        reward_checks(s, f"sahtreas {label}", "bcs:sahtreas", changed)
+        unpatched_case(s, f"sahtreas {label}", "bcs:sahtreas", changed)
+
+
 def registry_cases(s: Scenario) -> None:
     for table in ("REWARDS", "DIRECT_REWARDS", "TRANSFER_SPECS", "RESOURCE_REWARDS",
                   "SOURCE_REWARDS", "TARGET_REWARDS", "TEXT_REFS", "ACTION_TEXT_REFS", "ADAPTER_ID"):
@@ -585,7 +689,7 @@ def registry_cases(s: Scenario) -> None:
         for name in mode2_rewards.TRANSFER_SPECS:
             s.case(f"transfer_spec {name} {game}", "mode2_rewards.transfer_spec", {"name": name, **naming_args(naming)},
                    lambda name=name, naming=naming: mode2_rewards.transfer_spec(name, **naming))
-        for resource in ("dlg:varci", "dlg:trgeni01", "bcs:asysta01"):
+        for resource in ("dlg:varci", "dlg:trgeni01", "bcs:asysta01", "dlg:sahkng01", "bcs:sahtreas"):
             s.case(f"resource_specs {resource} {game}", "mode2_rewards.resource_specs",
                    {"resource": resource, **naming_args(naming)},
                    lambda resource=resource, naming=naming: mode2_rewards.resource_specs(resource, **naming))
@@ -1013,6 +1117,7 @@ def mode2_scenario() -> Scenario:
     text_route_cases(s, originals, allocated)
     ddwell_cases(s, originals["bcs:ddwell"], results["bcs:ddwell"])
     book_cases(s)
+    treasury_cases(s)
     reason_cases(s)
     layout_cases(s)
     aran_cases(s)

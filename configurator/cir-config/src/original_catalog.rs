@@ -624,11 +624,51 @@ fn resolve_target(row: &mut Dict, scan: &Scan<'_>, endpoints: &HashMap<String, E
     let naming = crate::mode2_rewards::Naming { game: Some(scan.game), names: scan.names };
     if let Some(reward) = mode2_alias_spec(&snapshot, naming)? {
         row.insert("area_resource", reward.get("resource").cloned().unwrap_or(Value::Null));
-        let present = reward
+        // A script that would destroy the reward needs no gate where it is absent.
+        let mut needed: Vec<String> = reward
             .get("resources")
             .and_then(Value::as_list)
-            .is_none_or(|resources| resources.iter().all(|resource| scan.resources.contains(text_of(Some(resource)))));
-        row.insert("binding_problem", if present { "legacy-target-requires-adapter" } else { "target-resource-absent" });
+            .map(|resources| {
+                resources
+                    .iter()
+                    .map(|resource| text_of(Some(resource)).to_string())
+                    .filter(|resource| !crate::mode2_rewards::destroy_gate(resource))
+                    .collect()
+            })
+            .unwrap_or_default();
+        let handover = reward.get("handover").filter(|handover| handover.truthy());
+        let mut treasuries = 0;
+        let mut treasury_area = String::new();
+        if let Some(handover) = handover {
+            // The reward waits in the one container of its area whose script
+            // it is (the Sahuagin treasury), wherever a mod moved or renamed it.
+            treasury_area = format!("are:{}", text_of(handover.get("area")));
+            needed.push(treasury_area.clone());
+            let script = handover.get("script");
+            treasuries = scan
+                .targets_by_resource
+                .get(treasury_area.as_str())
+                .into_iter()
+                .flatten()
+                .filter(|target| {
+                    is_kind(target, "container")
+                        && selector_of(target)
+                            .and_then(|selector| selector.get("trap_script"))
+                            .zip(script)
+                            .is_some_and(|(found, wanted)| found.py_eq(wanted))
+                })
+                .count();
+        }
+        let problem = if needed.iter().any(|resource| !scan.resources.contains(resource.as_str())) {
+            "target-resource-absent"
+        } else if handover.is_some() && scan.unreadable.contains(treasury_area.as_str()) {
+            "area-resource-unreadable"
+        } else if handover.is_some() && treasuries != 1 {
+            "treasure-container-not-found"
+        } else {
+            "legacy-target-requires-adapter"
+        };
+        row.insert("binding_problem", problem);
         return Ok(());
     }
     if str_field(row, "target")?.ends_with(".fl") {

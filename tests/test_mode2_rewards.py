@@ -23,7 +23,7 @@ from flir_config.profiles import ProfileError
 from flir_config.quest_options import _Dialogue
 from flir_config.quest_rewards import _blocks, _global_guard
 from flir_config.resources import _Tlk
-from flir_config.script_text import script_blocks
+from flir_config.script_text import block_actions, block_parts, script_blocks
 from test_postinstall_resources import make_tlk
 
 # The reviewed EET resources and their exact patches (text routes with their
@@ -80,7 +80,10 @@ REVIEWED_EET = {
     "dlg:riftg03": ("4bb8a0866e3470ae558c108160ebef18c33de9f14ad3181ccf33ebd0d5e4912a",
                     "34e7c5e57d9e69394b40ce09f4c5cd5a5e6249d871b676c82bafbd3d707f3ff5"),
     "dlg:sahkng01": ("c76c8624052f7e179d42157e4081ddfcdbb101d2f00b819008bc99f5660785c1",
-                     "e4489ed5a331b4ad81ca9cb8dbe3234e30651cef572245c8f389e7a1e1b56b5f"),
+                     "9a7109aa36361ce3e57183e08b735993dbb946584d4b79d50dd5cc641050c70f"),
+    # The treasury's destroys of the king's two reward items, gated.
+    "bcs:sahtreas": ("a3e4e14c6e0e3ea5d3c193cb30808aabb4c320f6b9e4dbbe3fadf99deee40751",
+                     "07f76c023620896b09a222f5ae2c7251ffd2b07c8ec18643ab65b7cadf8cbe9b"),
     "dlg:scsain": ("c2a43b0d67eca9b531aa591463f74d5333225a95f0be87f8d03ed1cf91f8dafe",
                    "efbc5faa5490e6f89b6ca54a30a02ba74871353e19f7c8f640439974c175caca"),
     "dlg:sctelwyn": ("d5dd048c43e16ba937ff583eef8f5966e549fb0c4e3f92679883d35fcdda1759",
@@ -129,6 +132,13 @@ def grant_in(actions, spec):
 def guarded(prior, guard):
     """A reply condition with a guard line added, as the adapter joins it."""
     return prior + (b"\r\n" if prior and not prior[-1:].isspace() else b"") + guard
+
+
+def handover_line(spec):
+    """The reward reply's condition by which its place's treasury goes to the payee."""
+    campaign, _, number = spec["target_ids"][0].partition(":mode2:target:")
+    return (f'EEex_LuaTrigger("return(FLPR_Handover==nil)or(FLPR_Handover(EEex_LuaTrigger_Object,'
+            f'{number}{",1" if campaign == "bg1" else ""}))")\r\n').encode()
 
 
 TRGENI_DEPARTURE = (b'EEex_LuaAction("EEex_Action_QueueResponseStringOnAIBase('
@@ -276,6 +286,23 @@ def book_fixture(installed=True):
     else:
         pages = book_block([clicked, page], turn + ring + BOOK_GIFTS)
     return ('SC\n' + earlier + pages + 'SC\n').encode()
+
+
+# Once the king has paid (sahkngjob 2), SAHTREAS.BCS destroys the items his
+# reward reply gives, the treasury's rod among them.
+KING_PAID = trigger(16399, 2, "GLOBALsahkngjob")
+KING_DESTROYS = action(169, text="RODS02") + action(169, text="BRAC19")
+NO_ACTION = action(0)
+
+
+def treasury_fixture(*blocks):
+    """SAHTREAS.BCS as the game has it, or with these blocks."""
+    return ('SC\n' + "".join(blocks or (book_block([KING_PAID], KING_DESTROYS),)) + 'SC\n').encode()
+
+
+def route_guard(flag, selected):
+    """The guard of a route's selected flag, as compiled."""
+    return trigger(16399, 1, "GLOBAL" + flag, negate=0 if selected else 1)
 
 
 class Mode2RewardTests(unittest.TestCase):
@@ -733,6 +760,10 @@ class Mode2RewardTests(unittest.TestCase):
                             restored = restored.replace(consumed, grant, 1)
                         else:
                             self.assertIn(grant, restored)
+                    # A treasury's handover follows the guards, in every variant.
+                    for spec in specs:
+                        if spec.get("handover"):
+                            condition = guarded(condition, handover_line(spec))
                     self.assertEqual(after.triggers[struct.unpack_from("<I", branch, 12)[0]], condition)
                     self.assertEqual(restored, original_actions)
             self.assertEqual(cursor, len(new))
@@ -743,11 +774,18 @@ class Mode2RewardTests(unittest.TestCase):
 
     def test_the_sahuagin_kings_reply_gates_the_bracer_and_the_treasury_rod_apart(self):
         # The rod is the treasury's container reward; the reply that creates
-        # another one follows its selected flag and sends no item anywhere.
+        # another one follows its selected flag. The rod's place is the
+        # treasury, whose reward the reply hands to the one the king pays.
         rod = rewards.REWARDS["sahrod"]
         self.assertEqual((rod["item"], rod["source_ids"], rod["target_ids"], rod["authored_source_ids"]),
-                         ("rods02", (), (), ("original-source:bg2:mode2:item:7",)))
+                         ("rods02", (), ("bg2:mode2:target:6",), ("original-source:bg2:mode2:item:7",)))
         self.assertEqual((rod["selected_global"], rod["consumed_global"]), ("FLPR_QM2_7", "FLPR_XM2_7"))
+        self.assertEqual(rod["handover"], {"area": "ar2300", "script": "sahtreas"})
+        self.assertEqual(handover_line(rod), b'EEex_LuaTrigger("return(FLPR_Handover==nil)or(FLPR_Handover('
+                                             b'EEex_LuaTrigger_Object,6))")\r\n')
+        for key in ("sahkng01", "sahrod"):
+            self.assertEqual(rewards.REWARDS[key]["resources"], ("dlg:sahkng01", "bcs:sahtreas"))
+        self.assertEqual(rewards.TARGET_REWARDS["bg2:mode2:target:6"], "sahrod")
         self.assertEqual(rewards.PHYSICAL_SOURCE_REWARDS, {("cre:udlesa", "cre-template", "sw1h39"): "udlesa",
                                                            ("are:ar2300", "container", "rods02"): "sahrod"})
         self.assertNotIn("original-source:bg2:mode2:item:7", rewards.SOURCE_REWARDS)
@@ -758,8 +796,9 @@ class Mode2RewardTests(unittest.TestCase):
         self.check_pair("sahkng01", original, result)
         for data in (original, result):
             self.assertTrue(rewards.gives_reward("dlg:sahkng01", data, "sahrod"))
-        # Another mod's king gives no rod: the bracer's route stays, and the
-        # rod needs no route at all.
+        # Another mod's king gives no rod: the bracer's route stays and the
+        # rod needs no route; the rod's place, whose reward no reply would
+        # hand over, cannot be used (route_reasons).
         dialogue = _Dialogue(original, "sahkng01")
         dialogue.actions = [text.replace(b'GiveItemCreate("rods02",LastTalkedToBy,0,0,0)\r\r\n', b"")
                             for text in dialogue.actions]
@@ -767,8 +806,9 @@ class Mode2RewardTests(unittest.TestCase):
         self.assertFalse(rewards.gives_reward("dlg:sahkng01", without, "sahrod"))
         self.assertEqual(rewards.route_reasons("dlg:sahkng01", without),
                          {"sahrod": "SAHKNG01.DLG has no reply that gives RODS02"})
-        self.assertNotIn(b"FLPR_QM2_7", b"".join(_Dialogue(rewards.patch_reward("dlg:sahkng01", without),
-                                                           "sahkng01").triggers))
+        patched = rewards.patch_reward("dlg:sahkng01", without)
+        self.assertNotIn(b"FLPR_QM2_7", b"".join(_Dialogue(patched, "sahkng01").triggers))
+        self.assertNotIn(b"FLPR_Handover", patched)
         # One that only takes or tests the rod gives none either; one that
         # gives it another way does, and the route says why it cannot gate it.
         taking = with_actions(without, "sahkng01", {(80, 0): b'TakePartyItem("RODS02")\r\n'})
@@ -786,6 +826,159 @@ class Mode2RewardTests(unittest.TestCase):
                 self.assertEqual(rewards.route_reasons("dlg:sahkng01", other)["sahrod"], reason)
         with self.assertRaisesRegex(ProfileError, "Unsupported extended reward route in SAHKNG01.DLG: aran"):
             rewards.gives_reward("dlg:sahkng01", original, "aran")
+
+    def test_each_reply_that_pays_with_the_rod_hands_the_treasury_over_after_its_guards(self):
+        specs = rewards.resource_specs("dlg:sahkng01")
+        rod = next(spec for spec in specs if spec["route"] == "sahrod")
+        line = handover_line(rod)
+        original = dialogue_fixture(specs)
+        result = rewards.patch_reward("dlg:sahkng01", original)
+        # The recovery reads as the original does.
+        self.assertEqual(rewards._logical(rewards._examine("dlg:sahkng01", result).original, "dlg:sahkng01"),
+                         rewards._logical(original, "dlg:sahkng01"))
+        handed = [index for index, text in enumerate(_Dialogue(result, "sahkng01").triggers) if line in text]
+        self.assertEqual(len(handed), 4)
+        # A missing, repeated, moved or other handover is a changed copy of the patch.
+        first = handed[0]
+        for label, change in (("missing", lambda text: text.replace(line, b"")),
+                              ("twice", lambda text: text + line),
+                              ("another place", lambda text: text.replace(b",6))", b",7))")),
+                              ("before the guards", lambda text: line + text.replace(line, b""))):
+            with self.subTest(label):
+                dialogue = _Dialogue(result, "sahkng01")
+                dialogue.triggers[first] = change(dialogue.triggers[first])
+                tampered = dialogue.render()
+                with self.assertRaisesRegex(ProfileError, "carries a changed copy of the reward route's own patch"):
+                    rewards.patch_reward("dlg:sahkng01", tampered)
+                self.assertEqual(set(rewards.route_reasons("dlg:sahkng01", tampered)), {"sahkng01", "sahrod"})
+        # A mod whose king pays with the rod in another reply: that reply hands
+        # the treasury over, the bracer's does not.
+        dialogue = _Dialogue(original, "sahkng01")
+        dialogue.actions = [text.replace(b'GiveItemCreate("rods02",LastTalkedToBy,0,0,0)\r\r\n', b"")
+                            for text in dialogue.actions]
+        split = with_actions(dialogue.render(), "sahkng01",
+                             {(80, 0): b'GiveItemCreate("rods02",LastTalkedToBy,0,0,0)\r\n'})
+        self.assertEqual(rewards.route_reasons("dlg:sahkng01", split), {})
+        patched = _Dialogue(self.synthetic_patch("sahkng01", split), "sahkng01")
+        for state, hands in ((80, True), (81, False)):
+            rows = outgoing(patched, state)
+            self.assertEqual(len(rows), 2)
+            for row in rows:
+                trigger_id = struct.unpack_from("<I", row, 12)[0]
+                self.assertEqual(patched.triggers[trigger_id].endswith(line), hands)
+        # Only the route's own row of Item Randomiser's table is its place; a
+        # BG1 row would name its campaign.
+        for targets in ((), ("bg2:mode2:target:6", "bg2:mode2:target:58"), ("bg2:base:target:6",)):
+            with self.subTest(targets=targets):
+                with self.assertRaisesRegex(ProfileError, "The treasury's place changed"):
+                    rewards._handover(dict(rod, target_ids=targets))
+        bg1 = dict(rod, target_ids=("bg1:mode2:target:6",))
+        self.assertEqual(rewards._handover(bg1), handover_line(bg1))
+        self.assertIn(b"(EEex_LuaTrigger_Object,6,1))", handover_line(bg1))
+
+    def check_destroys(self, original, result, specs):
+        """Each block that destroys routes' items becomes one block per
+        combination of those routes' flags, in route order; where a route is
+        selected, NoAction() stands in for each of its item's destroys."""
+        before, after = script_blocks(original), script_blocks(result)
+        newline = before.newline
+        self.assertEqual((after.newline, after.prefix, after.suffix), (newline, before.prefix, before.suffix))
+        expected = []
+        for block in before.blocks:
+            head, conditions, responses = block_parts(block, newline)
+            actions = block_actions(responses, newline)
+            destroys = {spec["route"]: [action for action in actions if action.opcode == 169 and
+                                        action.strings[0].lower() == spec["item"].encode()] for spec in specs}
+            gating = [spec for spec in specs if destroys[spec["route"]]]
+            for choice in product((False, True), repeat=len(gating)):
+                edits = sorted((action.start, action.end) for spec, selected in zip(gating, choice) if selected
+                               for action in destroys[spec["route"]])
+                changed, at = b"", 0
+                for start, end in edits:
+                    changed += responses[at:start] + NO_ACTION.replace("\n", newline.decode()).encode()
+                    at = end
+                expected.append(head + b"CO" + newline + conditions +
+                                b"".join(_global_guard(spec["selected_global"], selected, newline)
+                                         for spec, selected in zip(gating, choice)) +
+                                b"CO" + newline + changed + responses[at:])
+        self.assertEqual(list(after.blocks), expected)
+
+    def test_the_treasury_destroys_the_kings_items_only_while_his_grants_are_unchanged(self):
+        specs = rewards.resource_specs("bcs:sahtreas")
+        self.assertEqual([(spec["route"], spec["item"], spec["selected_global"]) for spec in specs],
+                         [("sahkng01", "brac19", "FLPR_QM2_57"), ("sahrod", "rods02", "FLPR_QM2_7")])
+        self.assertEqual(rewards.DESTROY_GATES, {"bcs:sahtreas": ("sahkng01", "sahrod")})
+        # Another mod's block, and one that only tests the rod, stay as found.
+        other = book_block([trigger(16399, 1, "GLOBALOtherMod")], action(30, 2, "GLOBALOtherMod"))
+        testing = book_block([trigger(16481, 0, "RODS02")], action(30, 3, "GLOBALOtherMod"))
+        original = treasury_fixture(other, book_block([KING_PAID], KING_DESTROYS), testing)
+        gated = "".join(book_block([KING_PAID, route_guard("FLPR_QM2_57", bracer), route_guard("FLPR_QM2_7", rod)],
+                                   (NO_ACTION if rod else action(169, text="RODS02")) +
+                                   (NO_ACTION if bracer else action(169, text="BRAC19")))
+                        for bracer in (False, True) for rod in (False, True))
+        result = self.synthetic_patch("sahtreas", original)
+        self.assertEqual(result, ('SC\n' + other + gated + testing + 'SC\n').encode())
+        self.check_destroys(original, result, specs)
+        self.assertEqual(rewards._examine("bcs:sahtreas", result).original, original)
+        # In CRLF lines too.
+        self.assertEqual(self.synthetic_patch("sahtreas", original.replace(b"\n", b"\r\n")),
+                         result.replace(b"\n", b"\r\n"))
+        # By meaning: a lowercase name, a destroy through ActionOverride(), one
+        # in each alternative response and one in another block are gated alike.
+        for label, blocks in (
+                ("lowercase", (book_block([KING_PAID], action(169, text="rods02") + action(169, text="brac19")),)),
+                ("other actor", (book_block([KING_PAID], action(169, text="BRAC19", actor=21) +
+                                            action(30, 1, "GLOBALOtherMod")),)),
+                ("alternatives", (alternatives(action(169, text="RODS02"), action(169, text="RODS02") +
+                                               action(30, 1, "GLOBALOtherMod"), condition="GLOBALsahkngjob"),)),
+                ("two blocks", (book_block([KING_PAID], action(169, text="RODS02")),
+                                book_block([trigger(16399, 3, "GLOBALsahkngjob")], action(169, text="BRAC19"))))):
+            with self.subTest(label):
+                variant = treasury_fixture(*blocks)
+                self.check_destroys(variant, self.synthetic_patch("sahtreas", variant), specs)
+        # A script that destroys neither item needs no gate.
+        plain = treasury_fixture(other, testing)
+        self.assertEqual(rewards.patch_reward("bcs:sahtreas", plain), plain)
+        self.assertFalse(rewards.own_patch("bcs:sahtreas", plain))
+        self.assertEqual(rewards.route_reasons("bcs:sahtreas", plain), {})
+
+    def test_a_treasury_that_could_take_a_moved_reward_otherwise_leaves_its_route_out(self):
+        reason = ("SAHTREAS.BCS block 0 uses RODS02 in an action other than DestroyItem(), "
+                  "which the route cannot gate")
+        # GiveItem() from the treasury: the rod's route stays out, the bracer's is gated.
+        giving = treasury_fixture(book_block([KING_PAID], KING_DESTROYS + action(15, text="RODS02", target=21)))
+        self.assertEqual(rewards.route_reasons("bcs:sahtreas", giving), {"sahrod": reason})
+        result = rewards.patch_reward("bcs:sahtreas", giving)
+        self.assertEqual(result, treasury_fixture(*(
+            book_block([KING_PAID, route_guard("FLPR_QM2_57", bracer)],
+                       action(169, text="RODS02") + (NO_ACTION if bracer else action(169, text="BRAC19")) +
+                       action(15, text="RODS02", target=21)) for bracer in (False, True))))
+        self.assertTrue(rewards.own_patch("bcs:sahtreas", result))
+        self.assertEqual(rewards.patch_reward("bcs:sahtreas", result), result)
+        self.assertEqual(rewards.route_reasons("bcs:sahtreas", result), {"sahrod": reason})
+        # Both items so used, or a script that cannot be read: neither route.
+        both = treasury_fixture(book_block([KING_PAID], action(15, text="RODS02", target=21) +
+                                           action(15, text="BRAC19", target=21)))
+        self.assertEqual(rewards.route_reasons("bcs:sahtreas", both),
+                         {"sahrod": reason, "sahkng01": reason.replace("RODS02", "BRAC19")})
+        with self.assertRaisesRegex(ProfileError, "BRAC19 in an action other than DestroyItem"):
+            rewards.patch_reward("bcs:sahtreas", both)
+        unreadable = treasury_fixture().replace(b"169OB", b"169XX", 1)
+        reasons = rewards.route_reasons("bcs:sahtreas", unreadable)
+        self.assertEqual(set(reasons), {"sahkng01", "sahrod"})
+        self.assertIn("SAHTREAS.BCS", reasons["sahrod"])
+        # Our patch changed: a block dropped, a destroy back, a guard turned.
+        result = rewards.patch_reward("bcs:sahtreas", treasury_fixture())
+        blocks = list(script_blocks(result).blocks)
+        for label, changed in (
+                ("dropped", treasury_fixture(*(block.decode() for block in blocks[:3]))),
+                ("destroy back", result.replace(NO_ACTION.encode(), action(169, text="RODS02").encode(), 1)),
+                ("turned", result.replace(route_guard("FLPR_QM2_7", False).encode(),
+                                          route_guard("FLPR_QM2_7", True).encode(), 1))):
+            with self.subTest(label):
+                with self.assertRaisesRegex(ProfileError, "SAHTREAS.BCS carries a changed copy"):
+                    rewards.own_patch("bcs:sahtreas", changed)
+                self.assertEqual(set(rewards.route_reasons("bcs:sahtreas", changed)), {"sahkng01", "sahrod"})
 
     def test_aran_route_left_out_alone_keeps_the_other_route(self):
         specs = rewards.resource_specs("dlg:aran")
@@ -1284,6 +1477,9 @@ class Mode2RewardTests(unittest.TestCase):
                             entry = struct.unpack_from("<I", state, 12)[0]
                             self.assertIn(b"NumTimesTalkedTo(0)", dlg.state_triggers[entry])
                         self.assertIn(b'ReallyForceSpell(Myself,DRYAD_TELEPORT)', b"".join(dlg.actions))
+                elif resource in rewards.DESTROY_GATES:
+                    self.check_destroys(original, result, rewards.resource_specs(resource, **EET))
+                    self.assertEqual(len(script_blocks(result).blocks), 4)
                 elif kind == "bcs":
                     self.assertEqual(rewards._script_original(result, rewards.resource_specs(resource, **EET))[0],
                                      original)

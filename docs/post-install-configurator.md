@@ -458,8 +458,8 @@ quest rewards and places that Item Randomiser handled with its own conversation 
 script patches (the `.fl` places of its `mode2` tables, and rewards that a conversation
 or script gives) for which CIR has no route yet. Their reason is
 `route-not-supported`. In the original tables these are the places of the Sahuagin
-treasury, the Sahuagin prince, the king or the prince, the trolls of the Spellhold
-painting, Tolgerias, TorGal and a vampire or shadow thief of chapter 3 (BG2).
+prince, the king or the prince, the trolls of the Spellhold painting, Tolgerias,
+TorGal and a vampire or shadow thief of chapter 3 (BG2).
 `tests/test_original_catalog.py` lists them; a route for one of them takes its rows off
 that list.
 
@@ -490,6 +490,27 @@ does for her sword: where the plan moves the rod, the king no longer creates one
 game without that dialogue, or whose king gives no rod, needs no link. Where the
 reply gives the rod in a way CIR cannot gate, or AR2300 holds a second rod that the
 reply could stand for, the rod's row is left out with its reason.
+
+The treasury itself is a place (row 6 of the extended tables, Item Randomiser's
+`sahtreas.fl`): the one AR2300 container whose script is `SAHTREAS`, found in the scan
+wherever the game keeps it. Its reward lies there until the king pays. The scene after
+his reward reply takes the party away for good, so the reply hands the treasury's
+reward over when the game shows it (a condition of that reply, `FLPR_Handover`, which
+is always true, so the king can always pay): to the party member he talks to, else
+the first living one, or to the next member with room in the backpack; with no room
+anywhere it lands at the payee's feet. A reward the party took from the treasury
+already stays taken. A reward that has not reached the treasury yet goes to that
+party member instead. On the prince's side the king never pays, and the reward stays
+in the treasury to be looted. Once the king has paid, `SAHTREAS.BCS` destroys the
+items his reply gives; each of those destroys runs only while that item's row leaves
+the original where it is (`FLPR_QM2_7` for the rod, `FLPR_QM2_57` for the bracer), so a
+reward of the same name that moved into the treasury stays. A game without that
+script needs no gate. The treasury's place is left out with its reason when the king
+gives no rod ("SAHKNG01.DLG has no reply that gives RODS02") or AR2300 has no such
+container or more than one. Where the script uses one of the king's items in another
+way than `DestroyItem` ("SAHTREAS.BCS block 0 uses RODS02 in an action other than
+DestroyItem(), which the route cannot gate"), that item's rows are left out (for the
+rod, with the treasury's place); a script that cannot be read leaves out both.
 
 The book of Lavok's sphere (`PPBOOK.BCS`, AR1513) gives two scrolls with the ring on
 its last page (rows 260 and 262 of the extended tables, beside the ring's row 109).

@@ -182,9 +182,11 @@ impl RewardRoutes {
                     reasons.insert((resource.clone(), key.to_string()), str_value(reason));
                 }
                 // Routes that follow a physical source (Lesa's sword, the
-                // treasury's rod): needed where their dialogue gives the item at all.
+                // treasury's rod): needed where their dialogue gives the item
+                // at all. Only a dialogue gives such a reward (gives_reward).
                 let links: BTreeSet<&str> = mode2_rewards::PHYSICAL_SOURCE_REWARDS.iter().map(|row| row.3).collect();
-                for key in resource_rewards(resource).into_iter().filter(|key| links.contains(key.as_str())) {
+                let dialogue = resource.starts_with("dlg:");
+                for key in resource_rewards(resource).into_iter().filter(|key| dialogue && links.contains(key.as_str())) {
                     let gives = match mode2_rewards::gives_reward(resource, &data, &key, naming) {
                         Ok(gives) => gives,
                         // Its route's reasons say why it cannot be read.

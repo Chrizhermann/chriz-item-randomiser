@@ -112,7 +112,9 @@ class RewardRoutes:
                     continue
                 for key, reason in adapter.route_reasons(resource, data, **named).items():
                     self.reasons[resource, key] = reason
-                for key in sorted(_LINKS.intersection(mode2_rewards.RESOURCE_REWARDS.get(resource, ()))):
+                # Only a dialogue gives such a reward (gives_reward).
+                for key in sorted(_LINKS.intersection(mode2_rewards.RESOURCE_REWARDS.get(resource, ()))
+                                  if kind == "dlg" else ()):
                     try:
                         gives = mode2_rewards.gives_reward(resource, data, key, **naming)
                     except ProfileError:
