@@ -12,125 +12,137 @@
 @116 = ~Ich gebe Euch diesen gesegneten Gegenstand, auf dass Ihr über alle Feinde siegt, die Euch begegnen mögen. Ihr habt Lathander gut gedient. Geht in Frieden.~
 @117 = ~Außerdem habt Ihr Euch einen Segen in Gestalt dieses Gegenstands verdient. Mit ihm werdet Ihr dem Sturmfürsten umso besser dienen.~
 // The configurator's option "Cursed disguise item": the descriptions of the cursed
-// items, each disguised as the item named in the comment above it, translated from
-// languages/bgee/english/in-game.tra (the Enhanced Editions' wording).
+// items, each disguised as the item named in the comment above it. Each is the German
+// game's own description of the cursed item (BG2:EE dialog.tlk), with the disguise
+// that languages/bgee/english/in-game.tra adds to the English one, and the item names
+// of the German game. @210 and @211 (with Item Revisions) are translated from English.
 
 // Gauntlets of Ogre Power
-@200 = ~Handschuhe der Ungeschicklichkeit: Elanders Handschuhe des Fehlgriffs
-In schelmischer Absicht machte sich der ungestüme Elander daran, diese verfluchten Handschuhe anzufertigen, um einen Rivalen auszustechen. Doch seine Bosheit wurde ihm selbst zum Verhängnis: Er hatte die Handschuhe so gefertigt, dass sie wie ein Paar Handschuhe der Ogerkraft aussahen, und hielt sie schließlich selbst für ein echtes Paar.
+@200 = ~Ungeschicklichkeitshandschuhe: Elanders Handschuhe der Verwechslung
 
-WERTE:
+Mit bösen Hintergedanken stellte der ungestüme Elander diese Handschuhe her, um einen Rivalen zu überwinden. Seine Bösartigkeit rächte sich dabei jedoch an ihm selbst, als er diese Handschuhe so fertigte, dass sie wie Ogerkrafthandschuhe aussahen, und sie dann selbst für ein echtes Paar hielt.
 
-Fähigkeiten beim Tragen:
-– ETW0: -10
-– Geschicklichkeit: -2
-– Kann nur mit dem Zauber »Fluch brechen« abgelegt werden
+EIGENSCHAFTEN:
+
+Kann nur durch „Fluch brechen“ wieder abgenommen werden.
+
+Geschicklichkeit: -2
+ETW0-Malus: +10
 
 Gewicht: 2~
 
 // Gauntlets of Dexterity
-@201 = ~Handschuhe der Ungeschicklichkeit: Elanders Handschuhe des Fehlgriffs
-In schelmischer Absicht machte sich der ungestüme Elander daran, diese verfluchten Handschuhe anzufertigen, um einen Rivalen auszustechen. Doch seine Bosheit wurde ihm selbst zum Verhängnis: Er hatte die Handschuhe so gefertigt, dass sie wie ein Paar Handschuhe der Geschicklichkeit aussahen, und hielt sie schließlich selbst für ein echtes Paar.
+@201 = ~Ungeschicklichkeitshandschuhe: Elanders Handschuhe der Verwechslung
 
-WERTE:
+Mit bösen Hintergedanken stellte der ungestüme Elander diese Handschuhe her, um einen Rivalen zu überwinden. Seine Bösartigkeit rächte sich dabei jedoch an ihm selbst, als er diese Handschuhe so fertigte, dass sie wie Geschicklichkeitshandschuhe aussahen, und sie dann selbst für ein echtes Paar hielt.
 
-Fähigkeiten beim Tragen:
-– ETW0: -10
-– Geschicklichkeit: -2
-– Kann nur mit dem Zauber »Fluch brechen« abgelegt werden
+EIGENSCHAFTEN:
+
+Kann nur durch „Fluch brechen“ wieder abgenommen werden.
+
+Geschicklichkeit: -2
+ETW0-Malus: +10
 
 Gewicht: 2~
 
 // Gauntlets of Weapon Skill
-@202 = ~Handschuhe der Ungeschicklichkeit: Elanders Handschuhe des Fehlgriffs
-In schelmischer Absicht machte sich der ungestüme Elander daran, diese verfluchten Handschuhe anzufertigen, um einen Rivalen auszustechen. Doch seine Bosheit wurde ihm selbst zum Verhängnis: Er hatte die Handschuhe so gefertigt, dass sie wie ein Paar Handschuhe der Waffenfertigkeit aussahen, und hielt sie schließlich selbst für ein echtes Paar.
+@202 = ~Ungeschicklichkeitshandschuhe: Elanders Handschuhe der Verwechslung
 
-WERTE:
+Mit bösen Hintergedanken stellte der ungestüme Elander diese Handschuhe her, um einen Rivalen zu überwinden. Seine Bösartigkeit rächte sich dabei jedoch an ihm selbst, als er diese Handschuhe so fertigte, dass sie wie Handschuhe der Waffenfertigkeit aussahen, und sie dann selbst für ein echtes Paar hielt.
 
-Fähigkeiten beim Tragen:
-– ETW0: -10
-– Geschicklichkeit: -2
-– Kann nur mit dem Zauber »Fluch brechen« abgelegt werden
+EIGENSCHAFTEN:
+
+Kann nur durch „Fluch brechen“ wieder abgenommen werden.
+
+Geschicklichkeit: -2
+ETW0-Malus: +10
 
 Gewicht: 2~
 
 // Gauntlets of Weapon Expertise
-@203 = ~Handschuhe der Ungeschicklichkeit: Elanders Handschuhe des Fehlgriffs
-In schelmischer Absicht machte sich der ungestüme Elander daran, diese verfluchten Handschuhe anzufertigen, um einen Rivalen auszustechen. Doch seine Bosheit wurde ihm selbst zum Verhängnis: Er hatte die Handschuhe so gefertigt, dass sie wie ein Paar Handschuhe der Waffenmeisterschaft aussahen, und hielt sie schließlich selbst für ein echtes Paar.
+@203 = ~Ungeschicklichkeitshandschuhe: Elanders Handschuhe der Verwechslung
 
-WERTE:
+Mit bösen Hintergedanken stellte der ungestüme Elander diese Handschuhe her, um einen Rivalen zu überwinden. Seine Bösartigkeit rächte sich dabei jedoch an ihm selbst, als er diese Handschuhe so fertigte, dass sie wie Handschuhe der Waffenkunst aussahen, und sie dann selbst für ein echtes Paar hielt.
 
-Fähigkeiten beim Tragen:
-– ETW0: -10
-– Geschicklichkeit: -2
-– Kann nur mit dem Zauber »Fluch brechen« abgelegt werden
+EIGENSCHAFTEN:
+
+Kann nur durch „Fluch brechen“ wieder abgenommen werden.
+
+Geschicklichkeit: -2
+ETW0-Malus: +10
 
 Gewicht: 2~
 
 // Bracers of Defense
-@205 = ~Armschienen der Fesselung
-Die Armschienen sehen aus wie Armschienen der Verteidigung, doch sobald man sie anlegt, binden sie die Handgelenke ihres Trägers aneinander, sodass es recht schwierig wird, eine Waffe zu führen oder einen Zauber zu wirken. Die Drow bieten diese Armschienen bisweilen als Lohn für geleistete Dienste an. Der Empfänger hält sie für überaus mächtig und legt sie oft an, bevor er sie näher untersucht. In diesem Augenblick finden es die Drow belustigend, einen Hakenschrecken herbeizurufen.
+@205 = ~Armschützer der Fesselung
 
-WERTE:
+Diese Armschützer sehen aus wie Abwehrarmschützer. Wenn man sie allerdings anlegt, fesseln sie die Handgelenke des Trägers auf magische Weise aneinander. Dadurch wird es äußerst schwierig, Waffen zu führen oder Zauber zu wirken. Die Drow verschenken derartige Armschützer manchmal als Belohnung für erwiesene Dienste. Normalerweise glaubt das Opfer, ein mächtiges magisches Utensil erhalten zu haben, und legt die Armschützer an, ohne sie zuvor auf magischem Weg zu identifizieren. Oft treiben die Drow ihr grausames Spielchen auf die Spitze, indem sie einen Hakenschrecken beschwören, sobald das arme Opfer die Armschützer angelegt hat.
 
-Fähigkeiten beim Tragen:
-– Zauberfehlschlag: 75%
-– Kann nur mit dem Zauber »Fluch brechen« abgelegt werden
+EIGENSCHAFTEN:
 
-ETW0: -5
-Schaden: -5
+Kann nur durch „Fluch brechen“ wieder abgenommen werden.
+
+ETW0-Malus: +5
+Schadensmalus: -5
+Zauber scheitern zu 75 %
 
 Gewicht: 1~
 
 // Bracers of Archery
-@206 = ~Armschienen der Fesselung
-Die Armschienen sehen aus wie Armschienen des Bogenschießens, doch sobald man sie anlegt, binden sie die Handgelenke ihres Trägers aneinander, sodass es recht schwierig wird, eine Waffe zu führen oder einen Zauber zu wirken. Die Drow bieten diese Armschienen bisweilen als Lohn für geleistete Dienste an. Der Empfänger hält sie für überaus mächtig und legt sie oft an, bevor er sie näher untersucht. In diesem Augenblick finden es die Drow belustigend, einen Hakenschrecken herbeizurufen.
+@206 = ~Armschützer der Fesselung
 
-WERTE:
+Diese Armschützer sehen aus wie Armbänder der Bogenschützen. Wenn man sie allerdings anlegt, fesseln sie die Handgelenke des Trägers auf magische Weise aneinander. Dadurch wird es äußerst schwierig, Waffen zu führen oder Zauber zu wirken. Die Drow verschenken derartige Armschützer manchmal als Belohnung für erwiesene Dienste. Normalerweise glaubt das Opfer, ein mächtiges magisches Utensil erhalten zu haben, und legt die Armschützer an, ohne sie zuvor auf magischem Weg zu identifizieren. Oft treiben die Drow ihr grausames Spielchen auf die Spitze, indem sie einen Hakenschrecken beschwören, sobald das arme Opfer die Armschützer angelegt hat.
 
-Fähigkeiten beim Tragen:
-– Zauberfehlschlag: 75%
-– Kann nur mit dem Zauber »Fluch brechen« abgelegt werden
+EIGENSCHAFTEN:
 
-ETW0: -5
-Schaden: -5
+Kann nur durch „Fluch brechen“ wieder abgenommen werden.
+
+ETW0-Malus: +5
+Schadensmalus: -5
+Zauber scheitern zu 75 %
 
 Gewicht: 1~
 
 // Studded Leather Armor +1 and +2 (the game's own description)
-@208 = ~Rüstung der Geschossanziehung
-Diese seltsam aussehende beschlagene Lederrüstung lässt sich, einmal angelegt, nur durch das Eingreifen eines Priesters wieder ablegen. Sie verbessert zwar den Schutz gegen alle Nahkampfwaffen, wird aber selbst zum Ziel von Geschossen und mit ihr auch ihr Träger. Die Wahl ist einfach: tödliche Pfeile oder tödliche Schwerter.
+@208 = ~Lederwams der Geschossanziehung
 
-WERTE:
+Die seltsam aussehende Rüstung aus beschlagenem Leder kann, einmal angezogen, ohne die Hilfe eines Magiers oder Klerikers nicht wieder ausgezogen werden. Während die Rüstung erhöhten Schutz gegen Nahkampfwaffen bietet, wird sie und damit auch ihr Träger zum Ziel für Geschosswaffen. Der Besitzer kann es sich also aussuchen: entweder tödliche Pfeile oder tödliche Schwerter.
 
-Fähigkeiten beim Tragen:
-– Kann nur mit dem Zauber »Fluch brechen« abgelegt werden
+EIGENSCHAFTEN:
 
-Rüstungsklasse: 5 (3 gegen Hiebwaffen, 4 gegen Stichwaffen, 15 gegen Geschosse)
-Benötigt:
- 6 Stärke
+Kann nur durch „Fluch brechen“ wieder abgenommen werden.
+
+Rüstungsklasse: 5
+RK-Bonus:
+ -1 gg. Stichwaffen
+ -2 gg. Klingenwaffen
+RK-Malus: +10 gg. Geschosswaffen
+Mindeststärke: 6
 
 Gewicht: 8~
 
 // Shadow Armor
-@209 = ~Rüstung der Geschossanziehung
-Diese seltsam aussehende beschlagene Lederrüstung, die einer Schattenrüstung nachempfunden ist, lässt sich, einmal angelegt, nur durch das Eingreifen eines Priesters wieder ablegen. Sie verbessert zwar den Schutz gegen alle Nahkampfwaffen, wird aber selbst zum Ziel von Geschossen und mit ihr auch ihr Träger. Die Wahl ist einfach: tödliche Pfeile oder tödliche Schwerter.
+@209 = ~Lederwams der Geschossanziehung
 
-WERTE:
+Die seltsam aussehende Rüstung aus beschlagenem Leder, die einer Schattenrüstung nachempfunden ist, kann, einmal angezogen, ohne die Hilfe eines Magiers oder Klerikers nicht wieder ausgezogen werden. Während die Rüstung erhöhten Schutz gegen Nahkampfwaffen bietet, wird sie und damit auch ihr Träger zum Ziel für Geschosswaffen. Der Besitzer kann es sich also aussuchen: entweder tödliche Pfeile oder tödliche Schwerter.
 
-Fähigkeiten beim Tragen:
-– Kann nur mit dem Zauber »Fluch brechen« abgelegt werden
+EIGENSCHAFTEN:
 
-Rüstungsklasse: 5 (3 gegen Hiebwaffen, 4 gegen Stichwaffen, 15 gegen Geschosse)
-Benötigt:
- 6 Stärke
+Kann nur durch „Fluch brechen“ wieder abgenommen werden.
+
+Rüstungsklasse: 5
+RK-Bonus:
+ -1 gg. Stichwaffen
+ -2 gg. Klingenwaffen
+RK-Malus: +10 gg. Geschosswaffen
+Mindeststärke: 6
 
 Gewicht: 8~
 
 // Studded Leather Armor +1 and +2, with Item Revisions
-@210 = ~Diese Rüstung sieht aus wie eine magische beschlagene Lederrüstung, ist in Wahrheit aber eine verfluchte beschlagene Lederrüstung der Geschossanziehung. Einmal angelegt, lässt sie sich nur mit dem Zauber »Fluch brechen« wieder ablegen. Sie verbessert zwar den Schutz gegen alle Nahkampfwaffen, wird aber selbst zum Ziel von Geschossen und mit ihr auch ihr Träger. Die Wahl ist einfach: tödliche Pfeile oder tödliche Schwerter.
+@210 = ~Diese Rüstung sieht aus wie ein magisches beschlagenes Lederwams, ist in Wahrheit aber ein verfluchtes Lederwams der Geschossanziehung. Einmal angelegt, lässt sie sich nur durch „Fluch brechen“ wieder ablegen. Sie verbessert zwar den Schutz gegen alle Nahkampfwaffen, wird aber selbst zum Ziel von Geschossen und mit ihr auch ihr Träger. Die Wahl ist einfach: tödliche Pfeile oder tödliche Schwerter.
 
-WERTE:
+EIGENSCHAFTEN:
 
 *VERFLUCHT*
 
@@ -139,7 +151,7 @@ Fähigkeiten beim Tragen:
 
 Rüstungsklasse: 5
 Gewicht: 20
-Benötigt: 6 Stärke
+Mindeststärke: 6
 Nicht verwendbar von:
  Magier
  Kensai
@@ -148,9 +160,9 @@ Nicht verwendbar von:
  Gestaltwandler~
 
 // Shadow Armor, with Item Revisions
-@211 = ~Diese Rüstung wurde so gefertigt, dass sie wie eine Schattenrüstung aussieht, ist in Wahrheit aber eine verfluchte beschlagene Lederrüstung der Geschossanziehung. Einmal angelegt, lässt sie sich nur mit dem Zauber »Fluch brechen« wieder ablegen. Sie verbessert zwar den Schutz gegen alle Nahkampfwaffen, wird aber selbst zum Ziel von Geschossen und mit ihr auch ihr Träger. Die Wahl ist einfach: tödliche Pfeile oder tödliche Schwerter.
+@211 = ~Diese Rüstung wurde so gefertigt, dass sie wie eine Schattenrüstung aussieht, ist in Wahrheit aber ein verfluchtes Lederwams der Geschossanziehung. Einmal angelegt, lässt sie sich nur durch „Fluch brechen“ wieder ablegen. Sie verbessert zwar den Schutz gegen alle Nahkampfwaffen, wird aber selbst zum Ziel von Geschossen und mit ihr auch ihr Träger. Die Wahl ist einfach: tödliche Pfeile oder tödliche Schwerter.
 
-WERTE:
+EIGENSCHAFTEN:
 
 *VERFLUCHT*
 
@@ -159,7 +171,7 @@ Fähigkeiten beim Tragen:
 
 Rüstungsklasse: 5
 Gewicht: 20
-Benötigt: 6 Stärke
+Mindeststärke: 6
 Nicht verwendbar von:
  Magier
  Kensai
@@ -171,152 +183,165 @@ Nicht verwendbar von:
 @212 = ~T'rachies Plattenpanzer~
 
 // Plate Mail and Full Plate Mail (the game's own description)
-@213 = ~In seinen späten Jahren begehrte Baron T'rachie die Frau des einfachen Fußsoldaten Libol. Statt offen um sie zu werben und einen Skandal heraufzubeschwören, schuf er diese Rüstung. Er schenkte sie dem Soldaten. Der Fluch der Rüstung machte Libol krank und entstellte ihn grässlich, und seine Frau floh voller Abscheu vor ihm. Libol, in der Rüstung gefangen, aber nicht sicher, ob T'rachie ihn verraten hatte, bat darum, für einen gefährlichen Einsatz gegen plündernde Oger in die Ödlande geschickt zu werden. Er kehrte nie zurück, und Baron T'rachie konnte nun ungehindert um Libols Witwe werben. Diese Rüstung ist verflucht, und nur mächtige Magie kann sie entfernen.
+@213 = ~In hohem Alter begehrte Baron T'rachie die Frau des unbedeutenden Soldaten Libol. Statt sie öffentlich zu umwerben und so einen Skandal zu riskieren, erschuf er diese Rüstung. Er überreichte sie dem Soldaten als Geschenk. Die verfluchte Rüstung schwächte Libol und entstellte ihn aufs Fürchterlichste. Angewidert verließ ihn seine Frau. Libol war in der Rüstung gefangen. Er konnte dem Baron seinen Verrat nicht nachweisen und bat, in die Einöde geschickt zu werden, um dort gegen plündernde Oger zu kämpfen. Er kehrte nie zurück, und Baron T'rachie konnte ungestört der Witwe Libol nachstellen. Die Rüstung ist verflucht und man braucht mächtige Magie, um sie wieder abzulegen.
 
-WERTE:
+EIGENSCHAFTEN:
 
-Fähigkeiten beim Tragen:
-– Konstitution: -2
-– Charisma: -5
-– Kann nur mit dem Zauber »Fluch brechen« abgelegt werden
+Kann nur durch „Fluch brechen“ wieder abgenommen werden.
 
-Rüstungsklasse: -2 (-5 gegen Hiebwaffen)
-Benötigt:
- 12 Stärke
+Konstitution: -2
+Charisma: -5
+
+Rüstungsklasse: -2
+RK-Bonus: -3 gg. Klingenwaffen
+Mindeststärke: 12
 
 Gewicht: 35~
 
 // Delver's Plate
-@214 = ~In seinen späten Jahren begehrte Baron T'rachie die Frau des einfachen Fußsoldaten Libol. Statt offen um sie zu werben und einen Skandal heraufzubeschwören, schuf er diese Rüstung, die dem berühmten Plattenpanzer nachempfunden war, den man als Delvers Plattenpanzer kennt. Er schenkte sie dem Soldaten. Der Fluch der Rüstung machte Libol krank und entstellte ihn grässlich, und seine Frau floh voller Abscheu vor ihm. Libol, in der Rüstung gefangen, aber nicht sicher, ob T'rachie ihn verraten hatte, bat darum, für einen gefährlichen Einsatz gegen plündernde Oger in die Ödlande geschickt zu werden. Er kehrte nie zurück, und Baron T'rachie konnte nun ungehindert um Libols Witwe werben. Diese Rüstung ist verflucht, und nur mächtige Magie kann sie entfernen.
+@214 = ~In hohem Alter begehrte Baron T'rachie die Frau des unbedeutenden Soldaten Libol. Statt sie öffentlich zu umwerben und so einen Skandal zu riskieren, erschuf er diese Rüstung, die dem berühmten Plattenpanzer nachempfunden war, den man als Delvers Plattenpanzer kennt. Er überreichte sie dem Soldaten als Geschenk. Die verfluchte Rüstung schwächte Libol und entstellte ihn aufs Fürchterlichste. Angewidert verließ ihn seine Frau. Libol war in der Rüstung gefangen. Er konnte dem Baron seinen Verrat nicht nachweisen und bat, in die Einöde geschickt zu werden, um dort gegen plündernde Oger zu kämpfen. Er kehrte nie zurück, und Baron T'rachie konnte ungestört der Witwe Libol nachstellen. Die Rüstung ist verflucht und man braucht mächtige Magie, um sie wieder abzulegen.
 
-WERTE:
+EIGENSCHAFTEN:
 
-Fähigkeiten beim Tragen:
-– Konstitution: -2
-– Charisma: -5
-– Kann nur mit dem Zauber »Fluch brechen« abgelegt werden
+Kann nur durch „Fluch brechen“ wieder abgenommen werden.
 
-Rüstungsklasse: -2 (-5 gegen Hiebwaffen)
-Benötigt:
- 12 Stärke
+Konstitution: -2
+Charisma: -5
+
+Rüstungsklasse: -2
+RK-Bonus: -3 gg. Klingenwaffen
+Mindeststärke: 12
 
 Gewicht: 35~
 
 // Ring of Protection
-@216 = ~Ring der Tollpatschigkeit: Des Narren Torheit
-Der berüchtigtste Besitzer dieses Rings, der wie ein Ring des Schutzes aussieht, verdiente mit dessen Fluch ein ansehnliches Auskommen. Gregoria der Tor, ein Spaßmacher von Beruf, tauschte mit seiner unvergleichlichen Fingerfertigkeit diesen Ring gegen den Ring eines Ahnungslosen aus seinem Publikum aus. Den Rest seiner Vorstellung verbrachte er damit, den plötzlich tollpatschigen Unglücksraben zu verspotten, sehr zur Freude von dessen Gefährten. Entfernt wurde der Ring (auf eine Weise, die nur der gerissene Spaßmacher kannte) erst, wenn der Gefoppte versprochen hatte, sich für die erlittene Behandlung nicht zu rächen, und doch musste sich Gregoria oft eilig davonmachen. Seine letzte bekannte Vorstellung soll er vor einem übellaunigen Magier in der Zhentilfeste gegeben haben: eine Vorstellung, nach der er nicht schnell genug floh.
+@216 = ~Ungeschicklichkeitsring: Die Torheit des Narren
 
-WERTE:
+Dieser Ring wurde so gefertigt, dass er wie ein Schutzring aussieht. Sein bekanntester Besitzer verdiente seinen Lebensunterhalt damit, dass er dessen verwunschene Natur ausnutzte. Der Narr Gregoria setzte seine unvergleichliche Fingerfertigkeit ein, um diesen Ring mit dem einer als Zielscheibe des Spotts ausersehenen Person im Publikum zu vertauschen. Die restliche Darbietung bestand darin, die jetzt plötzlich völlig ungeschickte und tolpatschige Person zur Freude des restlichen Publikums zu verspotten. Der Ring wurde nur entfernt (mit einer Methode, die nur dem listigen Narren bekannt war), wenn das Opfer versprach, keine Vergeltung für die ihm widerfahrene Behandlung zu üben. Gregoria musste sich allerdings oft hastig zurückziehen. Seine letzte bekannte Darbietung hatte Gerüchten zufolge einen schlecht gelaunten Magier der Zentilfeste zum Opfer; eine Darbietung, bei der er sich nicht schnell genug zurückzog.
 
-Fähigkeiten beim Tragen:
-– Geschicklichkeit: -50%
-– Schleichen: -50%
-– 75% Chance auf Zauberfehlschlag
-– Kann nur mit dem Zauber »Fluch brechen« abgelegt werden
+EIGENSCHAFTEN:
+
+Kann nur durch „Fluch brechen“ wieder abgenommen werden.
+
+Geschicklichkeit: um 50 % reduziert
+Schleichen: um 50 % reduziert
+Zauber scheitern zu 75 %
 
 Gewicht: 0~
 
 // Ring of Free Action
-@217 = ~Ring der Tollpatschigkeit: Des Narren Torheit
-Der berüchtigtste Besitzer dieses Rings, der wie ein Ring der Bewegungsfreiheit aussieht, verdiente mit dessen Fluch ein ansehnliches Auskommen. Gregoria der Tor, ein Spaßmacher von Beruf, tauschte mit seiner unvergleichlichen Fingerfertigkeit diesen Ring gegen den Ring eines Ahnungslosen aus seinem Publikum aus. Den Rest seiner Vorstellung verbrachte er damit, den plötzlich tollpatschigen Unglücksraben zu verspotten, sehr zur Freude von dessen Gefährten. Entfernt wurde der Ring (auf eine Weise, die nur der gerissene Spaßmacher kannte) erst, wenn der Gefoppte versprochen hatte, sich für die erlittene Behandlung nicht zu rächen, und doch musste sich Gregoria oft eilig davonmachen. Seine letzte bekannte Vorstellung soll er vor einem übellaunigen Magier in der Zhentilfeste gegeben haben: eine Vorstellung, nach der er nicht schnell genug floh.
+@217 = ~Ungeschicklichkeitsring: Die Torheit des Narren
 
-WERTE:
+Dieser Ring wurde so gefertigt, dass er wie ein Ring der Handlungsfreiheit aussieht. Sein bekanntester Besitzer verdiente seinen Lebensunterhalt damit, dass er dessen verwunschene Natur ausnutzte. Der Narr Gregoria setzte seine unvergleichliche Fingerfertigkeit ein, um diesen Ring mit dem einer als Zielscheibe des Spotts ausersehenen Person im Publikum zu vertauschen. Die restliche Darbietung bestand darin, die jetzt plötzlich völlig ungeschickte und tolpatschige Person zur Freude des restlichen Publikums zu verspotten. Der Ring wurde nur entfernt (mit einer Methode, die nur dem listigen Narren bekannt war), wenn das Opfer versprach, keine Vergeltung für die ihm widerfahrene Behandlung zu üben. Gregoria musste sich allerdings oft hastig zurückziehen. Seine letzte bekannte Darbietung hatte Gerüchten zufolge einen schlecht gelaunten Magier der Zentilfeste zum Opfer; eine Darbietung, bei der er sich nicht schnell genug zurückzog.
 
-Fähigkeiten beim Tragen:
-– Geschicklichkeit: -50%
-– Schleichen: -50%
-– 75% Chance auf Zauberfehlschlag
-– Kann nur mit dem Zauber »Fluch brechen« abgelegt werden
+EIGENSCHAFTEN:
+
+Kann nur durch „Fluch brechen“ wieder abgenommen werden.
+
+Geschicklichkeit: um 50 % reduziert
+Schleichen: um 50 % reduziert
+Zauber scheitern zu 75 %
 
 Gewicht: 0~
 
 // Ring of Holiness
-@218 = ~Ring der Tollpatschigkeit: Des Narren Torheit
-Der berüchtigtste Besitzer dieses Rings, der wie ein Ring der Heiligkeit aussieht, verdiente mit dessen Fluch ein ansehnliches Auskommen. Gregoria der Tor, ein Spaßmacher von Beruf, tauschte mit seiner unvergleichlichen Fingerfertigkeit diesen Ring gegen den Ring eines Ahnungslosen aus seinem Publikum aus. Den Rest seiner Vorstellung verbrachte er damit, den plötzlich tollpatschigen Unglücksraben zu verspotten, sehr zur Freude von dessen Gefährten. Entfernt wurde der Ring (auf eine Weise, die nur der gerissene Spaßmacher kannte) erst, wenn der Gefoppte versprochen hatte, sich für die erlittene Behandlung nicht zu rächen, und doch musste sich Gregoria oft eilig davonmachen. Seine letzte bekannte Vorstellung soll er vor einem übellaunigen Magier in der Zhentilfeste gegeben haben: eine Vorstellung, nach der er nicht schnell genug floh.
+@218 = ~Ungeschicklichkeitsring: Die Torheit des Narren
 
-WERTE:
+Dieser Ring wurde so gefertigt, dass er wie ein Heiligkeitsring aussieht. Sein bekanntester Besitzer verdiente seinen Lebensunterhalt damit, dass er dessen verwunschene Natur ausnutzte. Der Narr Gregoria setzte seine unvergleichliche Fingerfertigkeit ein, um diesen Ring mit dem einer als Zielscheibe des Spotts ausersehenen Person im Publikum zu vertauschen. Die restliche Darbietung bestand darin, die jetzt plötzlich völlig ungeschickte und tolpatschige Person zur Freude des restlichen Publikums zu verspotten. Der Ring wurde nur entfernt (mit einer Methode, die nur dem listigen Narren bekannt war), wenn das Opfer versprach, keine Vergeltung für die ihm widerfahrene Behandlung zu üben. Gregoria musste sich allerdings oft hastig zurückziehen. Seine letzte bekannte Darbietung hatte Gerüchten zufolge einen schlecht gelaunten Magier der Zentilfeste zum Opfer; eine Darbietung, bei der er sich nicht schnell genug zurückzog.
 
-Fähigkeiten beim Tragen:
-– Geschicklichkeit: -50%
-– Schleichen: -50%
-– 75% Chance auf Zauberfehlschlag
-– Kann nur mit dem Zauber »Fluch brechen« abgelegt werden
+EIGENSCHAFTEN:
+
+Kann nur durch „Fluch brechen“ wieder abgenommen werden.
+
+Geschicklichkeit: um 50 % reduziert
+Schleichen: um 50 % reduziert
+Zauber scheitern zu 75 %
 
 Gewicht: 0~
 
 // Ring of Regeneration
-@219 = ~Ring der Tollpatschigkeit: Des Narren Torheit
-Der berüchtigtste Besitzer dieses Rings, der wie ein Ring der Regeneration aussieht, verdiente mit dessen Fluch ein ansehnliches Auskommen. Gregoria der Tor, ein Spaßmacher von Beruf, tauschte mit seiner unvergleichlichen Fingerfertigkeit diesen Ring gegen den Ring eines Ahnungslosen aus seinem Publikum aus. Den Rest seiner Vorstellung verbrachte er damit, den plötzlich tollpatschigen Unglücksraben zu verspotten, sehr zur Freude von dessen Gefährten. Entfernt wurde der Ring (auf eine Weise, die nur der gerissene Spaßmacher kannte) erst, wenn der Gefoppte versprochen hatte, sich für die erlittene Behandlung nicht zu rächen, und doch musste sich Gregoria oft eilig davonmachen. Seine letzte bekannte Vorstellung soll er vor einem übellaunigen Magier in der Zhentilfeste gegeben haben: eine Vorstellung, nach der er nicht schnell genug floh.
+@219 = ~Ungeschicklichkeitsring: Die Torheit des Narren
 
-WERTE:
+Dieser Ring wurde so gefertigt, dass er wie ein Regenerationsring aussieht. Sein bekanntester Besitzer verdiente seinen Lebensunterhalt damit, dass er dessen verwunschene Natur ausnutzte. Der Narr Gregoria setzte seine unvergleichliche Fingerfertigkeit ein, um diesen Ring mit dem einer als Zielscheibe des Spotts ausersehenen Person im Publikum zu vertauschen. Die restliche Darbietung bestand darin, die jetzt plötzlich völlig ungeschickte und tolpatschige Person zur Freude des restlichen Publikums zu verspotten. Der Ring wurde nur entfernt (mit einer Methode, die nur dem listigen Narren bekannt war), wenn das Opfer versprach, keine Vergeltung für die ihm widerfahrene Behandlung zu üben. Gregoria musste sich allerdings oft hastig zurückziehen. Seine letzte bekannte Darbietung hatte Gerüchten zufolge einen schlecht gelaunten Magier der Zentilfeste zum Opfer; eine Darbietung, bei der er sich nicht schnell genug zurückzog.
 
-Fähigkeiten beim Tragen:
-– Geschicklichkeit: -50%
-– Schleichen: -50%
-– 75% Chance auf Zauberfehlschlag
-– Kann nur mit dem Zauber »Fluch brechen« abgelegt werden
+EIGENSCHAFTEN:
+
+Kann nur durch „Fluch brechen“ wieder abgenommen werden.
+
+Geschicklichkeit: um 50 % reduziert
+Schleichen: um 50 % reduziert
+Zauber scheitern zu 75 %
 
 Gewicht: 0~
 
 // Ring of Wizardry
-@220 = ~Ring der Tollpatschigkeit: Des Narren Torheit
-Der berüchtigtste Besitzer dieses Rings, der wie einer der berühmten Ringe der Zauberkunst aussieht, verdiente mit dessen Fluch ein ansehnliches Auskommen. Gregoria der Tor, ein Spaßmacher von Beruf, tauschte mit seiner unvergleichlichen Fingerfertigkeit diesen Ring gegen den Ring eines Ahnungslosen aus seinem Publikum aus. Den Rest seiner Vorstellung verbrachte er damit, den plötzlich tollpatschigen Unglücksraben zu verspotten, sehr zur Freude von dessen Gefährten. Entfernt wurde der Ring (auf eine Weise, die nur der gerissene Spaßmacher kannte) erst, wenn der Gefoppte versprochen hatte, sich für die erlittene Behandlung nicht zu rächen, und doch musste sich Gregoria oft eilig davonmachen. Seine letzte bekannte Vorstellung soll er vor einem übellaunigen Magier in der Zhentilfeste gegeben haben: eine Vorstellung, nach der er nicht schnell genug floh.
+@220 = ~Ungeschicklichkeitsring: Die Torheit des Narren
 
-WERTE:
+Dieser Ring wurde so gefertigt, dass er wie einer der berühmten Magierringe aussieht. Sein bekanntester Besitzer verdiente seinen Lebensunterhalt damit, dass er dessen verwunschene Natur ausnutzte. Der Narr Gregoria setzte seine unvergleichliche Fingerfertigkeit ein, um diesen Ring mit dem einer als Zielscheibe des Spotts ausersehenen Person im Publikum zu vertauschen. Die restliche Darbietung bestand darin, die jetzt plötzlich völlig ungeschickte und tolpatschige Person zur Freude des restlichen Publikums zu verspotten. Der Ring wurde nur entfernt (mit einer Methode, die nur dem listigen Narren bekannt war), wenn das Opfer versprach, keine Vergeltung für die ihm widerfahrene Behandlung zu üben. Gregoria musste sich allerdings oft hastig zurückziehen. Seine letzte bekannte Darbietung hatte Gerüchten zufolge einen schlecht gelaunten Magier der Zentilfeste zum Opfer; eine Darbietung, bei der er sich nicht schnell genug zurückzog.
 
-Fähigkeiten beim Tragen:
-– Geschicklichkeit: -50%
-– Schleichen: -50%
-– 75% Chance auf Zauberfehlschlag
-– Kann nur mit dem Zauber »Fluch brechen« abgelegt werden
+EIGENSCHAFTEN:
+
+Kann nur durch „Fluch brechen“ wieder abgenommen werden.
+
+Geschicklichkeit: um 50 % reduziert
+Schleichen: um 50 % reduziert
+Zauber scheitern zu 75 %
 
 Gewicht: 0~
 
 // Ring of Protection
-@222 = ~Ring der Torheit: Zuchtmeister
-Dieser Ring, der schon so manchem leichtsinnigen Magier zum Verhängnis wurde, sollte eigentlich Demut lehren. Hergat Norin, ein großer Zauberer aus Narfell, gab den Zuchtmeister, der wie ein Ring des Schutzes aussehen sollte, seinen begabtesten und eitelsten Schülern. In ihrer blinden Überheblichkeit hielten sie den Ring für eine Belohnung ihrer »offensichtlichen Genialität« und nicht für die Strafe eines missbilligenden Lehrers.
+@222 = ~Tölpelring: Züchtiger
 
-WERTE:
+Oft der Fluch des unvorsichtigen Magiers, wurde dieser Ring zur Förderung der Bescheidenheit verwendet. Hergat Norin, ein großer Zauberer von Narfell, übergab den Züchtiger, der wie ein Schutzring aussehen sollte, seinen talentiertesten und egozentrischsten Schülern. Wegen ihrer blinden Arroganz hielten sie den Ring für eine Belohnung ihrer „offensichtlichen Genialität“ und nicht für die Bestrafung eines missbilligenden Lehrers.
 
-Fähigkeiten beim Tragen:
-– Intelligenz und Weisheit werden auf 3 gesetzt
-– Kann nur mit dem Zauber »Fluch brechen« abgelegt werden
+EIGENSCHAFTEN:
+
+Kann nur durch „Fluch brechen“ wieder abgenommen werden.
+
+Intelligenz: auf 3 gesetzt
+Weisheit: auf 3 gesetzt
 
 Gewicht: 0~
 
 // Ring of Free Action
-@223 = ~Ring der Torheit: Zuchtmeister
-Dieser Ring, der schon so manchem leichtsinnigen Magier zum Verhängnis wurde, sollte eigentlich Demut lehren. Hergat Norin, ein großer Zauberer aus Narfell, gab den Zuchtmeister, der wie ein Ring der Bewegungsfreiheit aussehen sollte, seinen begabtesten und eitelsten Schülern. In ihrer blinden Überheblichkeit hielten sie den Ring für eine Belohnung ihrer »offensichtlichen Genialität« und nicht für die Strafe eines missbilligenden Lehrers.
+@223 = ~Tölpelring: Züchtiger
 
-WERTE:
+Oft der Fluch des unvorsichtigen Magiers, wurde dieser Ring zur Förderung der Bescheidenheit verwendet. Hergat Norin, ein großer Zauberer von Narfell, übergab den Züchtiger, der wie ein Ring der Handlungsfreiheit aussehen sollte, seinen talentiertesten und egozentrischsten Schülern. Wegen ihrer blinden Arroganz hielten sie den Ring für eine Belohnung ihrer „offensichtlichen Genialität“ und nicht für die Bestrafung eines missbilligenden Lehrers.
 
-Fähigkeiten beim Tragen:
-– Intelligenz und Weisheit werden auf 3 gesetzt
-– Kann nur mit dem Zauber »Fluch brechen« abgelegt werden
+EIGENSCHAFTEN:
+
+Kann nur durch „Fluch brechen“ wieder abgenommen werden.
+
+Intelligenz: auf 3 gesetzt
+Weisheit: auf 3 gesetzt
 
 Gewicht: 0~
 
 // Ring of Regeneration
-@224 = ~Ring der Torheit: Zuchtmeister
-Dieser Ring, der schon so manchem leichtsinnigen Magier zum Verhängnis wurde, sollte eigentlich Demut lehren. Hergat Norin, ein großer Zauberer aus Narfell, gab den Zuchtmeister, der wie ein Ring der Regeneration aussehen sollte, seinen begabtesten und eitelsten Schülern. In ihrer blinden Überheblichkeit hielten sie den Ring für eine Belohnung ihrer »offensichtlichen Genialität« und nicht für die Strafe eines missbilligenden Lehrers.
+@224 = ~Tölpelring: Züchtiger
 
-WERTE:
+Oft der Fluch des unvorsichtigen Magiers, wurde dieser Ring zur Förderung der Bescheidenheit verwendet. Hergat Norin, ein großer Zauberer von Narfell, übergab den Züchtiger, der wie ein Regenerationsring aussehen sollte, seinen talentiertesten und egozentrischsten Schülern. Wegen ihrer blinden Arroganz hielten sie den Ring für eine Belohnung ihrer „offensichtlichen Genialität“ und nicht für die Bestrafung eines missbilligenden Lehrers.
 
-Fähigkeiten beim Tragen:
-– Intelligenz und Weisheit werden auf 3 gesetzt
-– Kann nur mit dem Zauber »Fluch brechen« abgelegt werden
+EIGENSCHAFTEN:
+
+Kann nur durch „Fluch brechen“ wieder abgenommen werden.
+
+Intelligenz: auf 3 gesetzt
+Weisheit: auf 3 gesetzt
 
 Gewicht: 0~
 
 // Ring of Wizardry
-@225 = ~Ring der Torheit: Zuchtmeister
-Dieser Ring, der schon so manchem leichtsinnigen Magier zum Verhängnis wurde, sollte eigentlich Demut lehren. Hergat Norin, ein großer Zauberer aus Narfell, gab den Zuchtmeister, der wie einer der berühmten Ringe der Zauberkunst aussehen sollte, seinen begabtesten und eitelsten Schülern. In ihrer blinden Überheblichkeit hielten sie den Ring für eine Belohnung ihrer »offensichtlichen Genialität« und nicht für die Strafe eines missbilligenden Lehrers.
+@225 = ~Tölpelring: Züchtiger
 
-WERTE:
+Oft der Fluch des unvorsichtigen Magiers, wurde dieser Ring zur Förderung der Bescheidenheit verwendet. Hergat Norin, ein großer Zauberer von Narfell, übergab den Züchtiger, der wie einer der berühmten Magierringe aussehen sollte, seinen talentiertesten und egozentrischsten Schülern. Wegen ihrer blinden Arroganz hielten sie den Ring für eine Belohnung ihrer „offensichtlichen Genialität“ und nicht für die Bestrafung eines missbilligenden Lehrers.
 
-Fähigkeiten beim Tragen:
-– Intelligenz und Weisheit werden auf 3 gesetzt
-– Kann nur mit dem Zauber »Fluch brechen« abgelegt werden
+EIGENSCHAFTEN:
+
+Kann nur durch „Fluch brechen“ wieder abgenommen werden.
+
+Intelligenz: auf 3 gesetzt
+Weisheit: auf 3 gesetzt
 
 Gewicht: 0~
 
@@ -341,6 +366,6 @@ Gewicht: 0~
 // the ward stone that opens them.
 @1500 = ~In der Kammer liegt eine spürbare Aura aus uralter Zeit, Bosheit und Magie, die sich um den Sarkophag am stärksten zu verdichten scheint. Der Deckel des Sarkophags trägt eine kreisrunde Vertiefung und scheint sich nicht im Geringsten bewegen zu lassen.~
 @1501 = ~Ihr setzt den Bannstein in die kreisrunde Vertiefung des Deckels ein und spürt, wie sich die Energien verschieben, die die Kammer durchdringen. Das Gefühl uralter Bosheit scheint stärker zu werden. Der Deckel des Sarkophags sieht nun so aus, als ließe er sich abnehmen.~
-@1502 = ~Am Rand dieses runden Bannsteins stehen vier Symbole, je eines für jede Himmelsrichtung, die sich als »Körper«, »Gefängnis«, »Böses« und »Unendlichkeit« deuten ließen. Der Bannstein scheint entfernt netherischen Ursprungs zu sein.~
+@1502 = ~Am Rand dieses runden Bannsteins stehen vier Symbole, je eines für jede Himmelsrichtung, die sich als „Körper“, „Gefängnis“, „Böses“ und „Unendlichkeit“ deuten ließen. Der Bannstein scheint entfernt netherischen Ursprungs zu sein.~
 @1503 = ~Bannstein~
 @1504 = ~Dieser runde Stein ist flach und poliert. Eine Seite trägt am Rand vier Symbole, je eines für jede Himmelsrichtung.~

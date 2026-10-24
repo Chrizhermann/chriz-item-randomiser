@@ -194,7 +194,7 @@ fn descriptions_are_the_games_language_or_english() {
         }
     }
     let german = &translations::texts("de_DE", "in-game.tra").unwrap()[&216].0;
-    assert!(german.starts_with("Ring der Tollpatschigkeit: Des Narren Torheit\r\n"), "{german}");
+    assert!(german.starts_with("Ungeschicklichkeitsring: Die Torheit des Narren\r\n"), "{german}");
 }
 
 #[test]
