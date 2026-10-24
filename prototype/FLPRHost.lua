@@ -210,6 +210,8 @@ function Host:_step(tick)
         require_result(observed,monitor)
         self.container_latch_monitor=monitor==true
     end
+    -- The Sahuagin treasury's rewards the king's reply could not hand over yet.
+    if self.native.retry_handovers then require_result(self.native:retry_handovers(assignments,self.deps.core.PHASE)) end
     if self.guard_pending then
         for _, request in ipairs(self.guard_pending) do
             local receipt, reason = self.guard:observe_guard(request)
@@ -305,7 +307,8 @@ end
 
 function Host:poll()
     if self.status == "disabled" or self.status == "inactive" or
-        (self.status == "complete" and not self.guard_monitor and not self.container_latch_monitor) then return end
+        (self.status == "complete" and not self.guard_monitor and not self.container_latch_monitor and
+         not (self.native and self.native.owes_handover and self.native:owes_handover())) then return end
     local ok, failure = pcall(function()
         if not self.deps.world() then return end
         local tick = self.deps.tick()
