@@ -140,7 +140,8 @@ container adapter:
   (`m_typeAI.m_EnemyAlly ~= 3`), and must have the same object id and pointer at
   inspection, execution and observation.
 - Preflight before the core journals anything: at least one empty backpack slot
-  (18–33), and no queued message addressed to the target. The full-backpack
+  (18–33), and no queued message addressed to the target other than a
+  `CMessageSetDialogWait` ([below](#dialog-wait-messages-2026-10-24)). The full-backpack
   displacement would otherwise change unrelated inventory, and a queued producer
   could take the free slot first. Also no queued item-add message of either type
   carrying the fixture resource.
@@ -158,6 +159,52 @@ container adapter:
 - A placed item on a living creature is **held**, not proven lootable. Death-drop
   lootability, including whether the exact pointer moves into a ground pile, needs
   native evidence before a receipt may claim it.
+
+## Dialog-wait messages (2026-10-24)
+
+The rule above first counted *every* message addressed to the target. In the
+BG2:EE 2.7.3.0 lab the Sahuagin king's reward for Player1 (a quest route, so a
+party recipient) therefore never arrived: all 68 checks at the host's retries,
+two seconds apart, refused it with `TARGET_QUEUE_BUSY`, and each found exactly
+one queued message, type 67/subtype 40 from Player1 to itself. Read from the
+console at other moments, the queue held the same message for Player1 or for
+Imoen. The checks after `GiveItemCreate` and while observing used the same rule
+and would have stopped CIR had the delivery started.
+
+Static evidence, with names from each 2.7.3.0 lab's
+`EEex_scripts/profiler/function_names.db`:
+
+- Type 67/subtype 40 is `CMessageSetDialogWait` (vtable `0x1405912D8`).
+  Its `Run` (`0x140214B80`) resolves the target with `CGameObjectArray::GetDeny`,
+  requires object type `0x31`, copies the message's `+0x10` and `+0x14` into the
+  sprite's `+0x4CAC` and `+0x4CB0`, and returns. It touches no inventory and
+  sends no other message.
+- `CGameSprite::ProcessAI` (`+0x1139`, `+0x116A`) builds one for every sprite
+  that has a portrait number (`CInfGame::GetCharacterPortraitNum` ≠ −1), with
+  source and target that sprite, and queues it with `AddMessage` on each of its
+  AI updates. It skips this only while `CInfGame` `+0x7978` is `0x502` and the
+  sprite's `+0x4CAC` is at least 2. `CGameSprite::OnActionButton` and
+  `CGameDialogReply::Pick` also build it.
+- The same `Run` code, with the same offsets, is in BG:EE 2.7.3.0
+  (`Baldur.exe` SHA-256 `187f89e1…`), BG2:EE and EET 2.7.3.0 (`b51093a4…`, the
+  same addresses), BG:EE 2.6.6.0 (`9634c3e6…`) and BG2:EE 2.6.6.0
+  (`fc821a48…`, the fixture binary above; vtable `0x140590298`, `Run`
+  `0x140214920`). For 2.6.6.0, without a names file, the class was found as the
+  type-67 vtable whose `GetMsgSubType` returns 40. The 2.6.6 container test
+  above also saw one such message before its action.
+
+Live, in the same lab: `GiveItemCreate` on Player1 queued exactly one new
+67/2 (`CMessageAddItem`, source and target Player1) and one new 67/16
+(`CMessageDisplayText`, source and target 0: the "party gains item" feedback);
+the dialog-wait message stayed queued.
+
+Since then the adapter marks a queued 67/40 as inert. Every other message
+addressed to the target still blocks it, before the action, after it and while
+observing. With that change the lab loaded a save made while the king's reward
+was waiting: before the first check after loading, HALB09B was in Player1's
+first free backpack slot with the source's flags 0 and the delivery was
+confirmed, while a dialog-wait message for Player1 stayed queued. After a QA
+save and reload it was there exactly once and nothing was delivered again.
 
 ## Still unproven
 

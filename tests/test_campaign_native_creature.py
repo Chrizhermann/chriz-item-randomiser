@@ -319,15 +319,26 @@ end
 function cases.queued_message_for_target_or_fixture_item_blocks_inspection(N)
     for _, variant in ipairs({"any-to-target", "container-fixture", "creature-fixture"}) do
         local f = setup(N)
-        if variant == "any-to-target" then f.queue[1] = f.message(3, "OTHER", 40)
+        if variant == "any-to-target" then f.queue[1] = f.message(3, "OTHER", 34)
         elseif variant == "container-fixture" then f.queue[1] = f.message(77, "FLPRI2", 12)
         else f.queue[1] = f.message(78, "FLPRI1", 2) end
         local x, e = f.adapter:inspect_target(f.target_id); fail(x, e, "TARGET_QUEUE_BUSY")
         assert(#f.calls == 0)
     end
 end
+-- CMessageSetDialogWait (67/40) only sets two dialog-wait fields of its target.
+function cases.dialog_wait_for_creature_target_never_blocks_its_delivery(N)
+    local f = setup(N); f.queue[1] = f.message(3, "OTHER", 40)
+    local command = f.start(1)
+    f.update(); f.queue[1] = f.message(3, "OTHER", 40); f.boundary()
+    local x, e = f.adapter:observe(command); fail(x, e, "DELIVERY_SETTLING")
+    f.boundary(); local receipt = assert(f.adapter:observe(command))
+    assert(receipt.holder == "creature" and receipt.slot == 18 and #f.calls == 1)
+    for _, kind in ipairs(f.casts) do assert(kind == "CMessageAddItem") end
+    unrelated_intact(f)
+end
 function cases.unrelated_queue_traffic_is_neither_cast_nor_blocking(N)
-    local f = setup(N); f.queue[1] = f.message(77, "OTHER", 40); f.queue[2] = f.message(78, "OTHER", 2)
+    local f = setup(N); f.queue[1] = f.message(77, "OTHER", 34); f.queue[2] = f.message(78, "OTHER", 2)
     local command = f.start(1)
     for _, kind in ipairs(f.casts) do assert(kind == "CMessageAddItem") end
     -- Inspect and before-execute cast the unrelated subtype-2 message; the
@@ -396,7 +407,7 @@ function cases.competing_or_changed_messages_stop_observation(N)
     for _, variant in ipairs({"to-target", "fixture-item", "changed"}) do
         local f = setup(N); local a = f.adapter
         local command = f.start(1)
-        if variant == "to-target" then f.queue[2] = f.message(3, "OTHER", 40)
+        if variant == "to-target" then f.queue[2] = f.message(3, "OTHER", 34)
         elseif variant == "fixture-item" then f.queue[2] = f.message(77, "FLPRI2", 12)
         else f.queue[1].m_item.m_flags = 0 end
         f.boundary(); local x, e = a:observe(command); fail(x, e, "DELIVERY_QUEUE_CONFLICT")
@@ -568,14 +579,15 @@ function cases.held_binding_rejects_changed_owner_slot_item_payload_or_duplicate
     end
 end
 function cases.held_binding_rejects_conflicting_queue_and_allows_unrelated_messages(N)
-    for _, variant in ipairs({"owner", "fixture-creature", "fixture-container", "unrelated"}) do
+    for _, variant in ipairs({"owner", "fixture-creature", "fixture-container", "unrelated", "dialog-wait"}) do
         local f = setup(N); local request = complete_held(f, 1)
-        if variant == "owner" then f.queue[1] = f.message(3, "OTHER", 40)
+        if variant == "owner" then f.queue[1] = f.message(3, "OTHER", 34)
         elseif variant == "fixture-creature" then f.queue[1] = f.message(90, "FLPRI1", 2)
         elseif variant == "fixture-container" then f.queue[1] = f.message(90, "FLPRI2", 12)
+        elseif variant == "dialog-wait" then f.queue[1] = f.message(3, "OTHER", 40)
         else f.queue[1] = f.message(90, "OTHER", 40) end
         local x, e = read_only(f, function() return f.adapter:held_binding(request) end)
-        if variant == "unrelated" then assert(x) else fail(x, e, "HELD_QUEUE_CONFLICT") end
+        if variant == "unrelated" or variant == "dialog-wait" then assert(x) else fail(x, e, "HELD_QUEUE_CONFLICT") end
     end
 end
 function cases.verify_held_drop_accepts_exact_dead_owner_and_unique_ground_heap_copy_without_writes(N)
@@ -694,7 +706,7 @@ end
 function cases.verify_held_drop_rejects_container_or_fixture_queue_conflicts(N)
     for _, variant in ipairs({"container", "fixture-creature", "fixture-container"}) do
         local f, request, candidate = dropped(N)
-        if variant == "container" then f.queue[1] = f.message(4, "OTHER", 40)
+        if variant == "container" then f.queue[1] = f.message(4, "OTHER", 34)
         elseif variant == "fixture-creature" then f.queue[1] = f.message(90, "FLPRI1", 2)
         else f.queue[1] = f.message(90, "FLPRI2", 12) end
         local x, e = read_only(f, function() return f.adapter:verify_held_drop(request, candidate) end)
@@ -814,6 +826,38 @@ function cases.quest_target_requires_event_then_delivers_to_party_portrait_zero(
     local result; result,reason=f.adapter:execute(command)
     fail(result,reason,'ALREADY_ATTEMPTED')
     assert(#f.calls==1 and #f.queue==0)
+end
+-- CGameSprite::ProcessAI queues a CMessageSetDialogWait (67/40) from every party
+-- member to itself on each AI update, so one is nearly always queued for the
+-- recipient (2.7.3.0 lab). Counting it as a conflict held every party reward back.
+function cases.party_reward_arrives_while_members_queue_dialog_waits(N)
+    local f = setup(N)
+    f.creature.portrait = 0; f.creature.m_id = 3
+    local companion = f.sprite(204, "IMOEN2", {}); companion.portrait = 1
+    f.objects[4] = companion; f.ids[companion] = 4; f.area.m_lVertSort = {1, 2, 3, 4}
+    local function waits()
+        f.queue[#f.queue + 1] = f.message(3, "OTHER", 40)
+        f.queue[#f.queue + 1] = f.message(4, "OTHER", 40)
+    end
+    local update = f.update
+    f.update = function() update(); waits() end
+    f.api.EEex_GameState_GetGlobalInt = function(name) assert(name == "FLPR_EPOOL"); return 1 end
+    f.api.EEex_Sprite_GetInPortrait = function(index) assert(index == 0); return f.creature end
+    f.fixture.targets[f.target_id] = {kind="quest", area="BG2600", identity=string.rep("c", 64),
+        event_global="FLPR_EPOOL"}
+    f.adapter = N.new(f.api, f.fixture)
+    waits()
+    assert(f.adapter:inspect_target(f.target_id, f.source_ids[1], 1))
+    f.boundary()
+    local command = f.command(1)
+    assert(f.adapter:execute(command))
+    assert(#f.queue == 3 and f.queue[3].virtual_GetMsgSubType() == 2 and f.queue[3].m_targetId == 3)
+    f.update(); f.boundary()
+    local receipt, reason = f.adapter:observe(command); fail(receipt, reason, "DELIVERY_SETTLING")
+    f.boundary(); receipt = assert(f.adapter:observe(command))
+    assert(receipt.holder == "party" and receipt.slot == 18 and #f.calls == 1)
+    assert(f.creature.slots[18].cResRef:get() == "FLPRI1" and next(companion.slots) == nil)
+    unrelated_intact(f)
 end
 
 -- The ground at a dead target's corpse, as the 2.7.3.0 lab showed it
@@ -1004,7 +1048,7 @@ function cases.ground_waits_for_a_party_member_familiar_copy_full_corpse_or_busy
         elseif variant == "copy" then f.creature.slots[22] = f.item("FLPRI1", 820)
         elseif variant == "full" then
             for slot = 15, 34 do if not f.creature.slots[slot] then f.creature.slots[slot] = f.item("FILL", 400 + slot) end end
-        elseif variant == "busy" then f.queue[1] = f.message(3, "OTHER", 40)
+        elseif variant == "busy" then f.queue[1] = f.message(3, "OTHER", 34)
         elseif variant == "reward" then f.queue[1] = f.message(77, "FLPRI2", 12)
         elseif variant == "pile" or variant == "far" then
             -- A drop or death drop on its way into the pile the drop would reuse, or anywhere.
@@ -1053,7 +1097,7 @@ function cases.ground_execute_rejects_a_changed_corpse_or_queue(N)
         elseif variant == "pile" then
             local pile_id = f.pile_at(500, 595, {})
             f.area.m_lVertSortBack = {pile_id}; f.queue[1] = f.message(pile_id, "OTHER", 12, pile_id)
-        else f.queue[1] = f.message(3, "OTHER", 40) end
+        else f.queue[1] = f.message(3, "OTHER", 34) end
         local x, e = a:execute(f.command(1)); fail(x, e, wants[variant])
         assert(#f.calls == 0)
     end
