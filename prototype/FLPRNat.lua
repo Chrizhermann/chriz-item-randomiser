@@ -450,8 +450,9 @@ function Adapter:_queue()
     local chitin = globals and globals.g_pBaldurChitin
     local handler = chitin and chitin.m_cMessageHandler
     assert(handler and handler.m_messageList, "NATIVE_MESSAGE_QUEUE_MISSING")
-    -- addresses maps every live message pointer to its base-class target id.
-    local result = { addresses = {}, additions = {} }
+    -- addresses maps every live message pointer to its base-class target id;
+    -- inert marks the messages that cannot change their target (see below).
+    local result = { addresses = {}, additions = {}, inert = {} }
     self.api.EEex_Utility_IterateCPtrList(handler.m_messageList, function(message)
         local address = pointer(self.api, message)
         assert(not result.addresses[address], "NATIVE_DUPLICATE_MESSAGE_POINTER")
@@ -461,7 +462,13 @@ function Adapter:_queue()
         -- BG:EE and BG2:EE 2.6.6.0 and 2.7.3.0 (each class's GetMsgType/GetMsgSubType).
         -- Never cast an unrelated base message to a larger item-message type.
         local subtype = message:virtual_GetMsgType() == 67 and message:virtual_GetMsgSubType() or nil
-        if subtype == 12 then
+        if subtype == 40 then
+            -- CMessageSetDialogWait. Its Run only sets two dialog-wait fields of
+            -- the target sprite. Every party member queues one to itself on each
+            -- of its AI updates, so one is nearly always queued for some member
+            -- (docs/native-creature-transport-evidence.md).
+            result.inert[address] = true
+        elseif subtype == 12 then
             assert(message:virtual_GetCommType() == 1, "NATIVE_MESSAGE_COMM_UNSUPPORTED")
             local typed = self.api.EEex_CastUD(message, "CMessageContainerAddItem")
             assert(typed and integer(message.m_targetId, 0, 2147483647) and
@@ -533,12 +540,12 @@ local function same_message(first, second)
         same(first.payload, second.payload)
 end
 
--- A creature target is exclusive only if no queued message of any type is
--- addressed to it and no queued item message carries a fixture resource.
--- `ignore` excludes the operation's own bound message pointer.
+-- A creature target is exclusive only if no queued message of any type but an
+-- inert one is addressed to it and no queued item message carries a fixture
+-- resource. `ignore` excludes the operation's own bound message pointer.
 local function creature_conflict(queue, owner_id, resrefs, ignore)
     for address, target in pairs(queue.addresses) do
-        if address ~= ignore and target == owner_id then return true end
+        if address ~= ignore and target == owner_id and not queue.inert[address] then return true end
     end
     for _, message in ipairs(queue.additions) do
         if message.pointer ~= ignore and resrefs[message.payload.resref] then return true end
