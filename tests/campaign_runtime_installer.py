@@ -743,6 +743,78 @@ class Suite:
                    and after.get(CAMPAIGN_DATA + "/applied-files.json") == record
                    and after.get(CAMPAIGN_DATA + "/before-apply/override/bgee.lua") == journal)
 
+    def extended_book(self, compiled: Mapping[str, bytes], message: Mapping[int, str]) -> None:
+        """Apply's version of the book across every way CIR is installed again.
+
+        Apply extends the book of Lavok's sphere (PPBOOK.BCS), which the
+        installer prepares, with its scrolls' routes, and keeps the installer's
+        version it extended and its own in randomiser-campaigns. Saved games of
+        those revisions need its own. Each re-install, also the one WeiDU makes
+        behind a re-installed earlier mod, first puts back the game's book; when
+        it then prepares exactly the version Apply extended, Apply's goes back
+        too. A book prepared otherwise stays as prepared, and the player is told.
+        """
+        name = "ExtendedBook"
+        earlier = "earlier/earlier.tp2"
+        split, routed = compiled["xppbook.bcs"], compiled["rppbook.bcs"]
+        game = self.game(tlk=fixtures.text_tlk(), files={earlier: EARLIER_TP2},
+                         biff=[("BLPOOL", "BCS", compiled["blpool.bcs"]), ("UNSHEY", "DLG", compiled["unshey.dlg"]),
+                               ("BGEE", "LUA", fixtures.quest_table(fixtures.UNSHEY_JOURNAL))],
+                         override={**fixtures.ids_files(), "TROALT.BCS": compiled["troalt.bcs"],
+                                   "PPBOOK.BCS": compiled["ppbook.bcs"], "KPGLAI01.DLG": compiled["kpglai01.dlg"],
+                                   "UNRELATED.ITM": make_itm()})
+        before = game.data()
+        self.check(f"{name}_EarlierModInstalls", installed(game.run("--force-install-list", "10", tp2=earlier)))
+        result = game.install()
+        self.check(f"{name}_Installs", installed(result) and game.active(COMPONENT), result)
+        self.check(f"{name}_InstallerSplitsTheBook", game.data().get("override/ppbook.bcs") == split)
+        installed_scans = scan_game(game.root, language="en_us")
+        export = {"next.lua": b"return {}\n", "source-gate.lua": b"return {}\n",
+                  "resource-overrides/PPBOOK.BCS": routed, "PPBOOK.installed.bcs": split, "PPBOOK.applied.bcs": routed}
+        output = self.scratch / f"{name}-export"
+        for relative, data in export.items():
+            write_bytes(output / relative, data)
+        write_bytes(output / EXPORT_FILES, canonical_bytes({"schema": EXPORT_FILES_SCHEMA, "files": sorted(export)}))
+        deploy_export(game.root, output)
+        applied = game.data()
+        record = applied.get(CAMPAIGN_DATA + "/applied-files.json")
+        self.check(f"{name}_ApplyWritesItsBook",
+                   applied.get("override/ppbook.bcs") == routed and record is not None
+                   and applied.get(CAMPAIGN_DATA + "/before-apply/override/ppbook.bcs") == split)
+        self.check(f"{name}_ScansAfterApplyAsInstalled",
+                   canonical_bytes(scan_game(game.root, language="en_us")) == canonical_bytes(installed_scans))
+        # Whether each way of installing again left the game as Apply left it.
+        restored = {}
+        result = game.install()
+        restored["ReinstallOverInstall"] = installed(result) and game.data() == applied
+        result = game.run("--force-uninstall-list", str(COMPONENT), "--force-install-list", str(COMPONENT))
+        restored["UninstallAndInstallInOneRun"] = installed(result) and game.data() == applied
+        result = game.run("--force-uninstall-list", "10", "--force-install-list", "10", tp2=earlier)
+        restored["BehindReinstalledEarlierMod"] = (installed(result) and game.data() == applied
+                                                    and game.entries(COMPONENT) == 1)
+        result = game.uninstall()
+        after = game.data()
+        self.check(f"{name}_UninstallPutsBackTheGamesBook",
+                   uninstalled(result) and after.get("override/ppbook.bcs") == before["override/ppbook.bcs"]
+                   and {key: after.get(key) for key in applied if key.startswith(CAMPAIGN_DATA + "/")}
+                   == {key: data for key, data in applied.items() if key.startswith(CAMPAIGN_DATA + "/")}, result)
+        result = game.install()
+        restored["InstallAfterUninstall"] = installed(result) and game.data() == applied
+        for way, condition in restored.items():
+            self.check(f"{name}_{way}PutsBackApplysBook", condition)
+        self.check(f"{name}_PutsItBackSilently", message[101529].split("%")[0] not in result.output, result)
+        # Apply extended a book prepared otherwise (another version of this
+        # randomiser, or an earlier mod that changed the book since).
+        other = split.replace(b"FLBookRead", b"FLBookSeen")
+        (game.root / CAMPAIGN_DATA / "PPBOOK.installed.bcs").write_bytes(other)
+        kept = {**applied, CAMPAIGN_DATA + "/ppbook.installed.bcs": other}
+        result = game.install()
+        after = game.data()
+        self.check(f"{name}_OtherPreparedBookStaysAsPrepared",
+                   installed(result) and after == {**kept, "override/ppbook.bcs": split}, result)
+        self.check(f"{name}_OtherPreparedBookTellsThePlayer",
+                   message[101529].replace("%flir_cp_name%", "PPBOOK") in result.output, result)
+
     def left_out(self, name: str, compiled: Mapping[str, bytes], statuses: Mapping[str, str],
                  *, archived: bool) -> None:
         """Files the installer cannot change unambiguously stay as installed, with a note."""
@@ -1025,6 +1097,7 @@ def run_suite(args: argparse.Namespace) -> int:
     compiled = compile_fixtures(scratch, weidu, {**fixtures.SOURCES, **tweaks.sources(mod)})
     suite.quest_changes(compiled["applied"])
     suite.applied_files(compiled["applied"])
+    suite.extended_book(compiled["applied"], message)
     suite.left_out("QuestFilesLeftOut", compiled["left-out"], {
         "quest_pool": "grant-ambiguous", "quest_altar": "grant-missing", "quest_book": "prepared-elsewhere",
         "unshey": "item-missing", "flail_heads": "dialogue-unrecognised", "totsc_tome": "applied"},

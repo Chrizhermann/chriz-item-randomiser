@@ -28,6 +28,7 @@
 @101526=~it no longer takes the quest item~
 @101527=~its journal entries have an unexpected form~
 @101528=~the conversation has an unexpected form~
+@101529=~Note: Chriz Item Randomiser now prepares %flir_cp_name%.BCS differently than when its configurator last applied a configuration, so the version the configurator wrote was not put back. Saved adventures whose rewards depend on it stop working when they are loaded.~
 
 @109000=~Cespenar can forge SoA items~
 @109001=~Note: Cespenar already has a recipe that uses Red Dragon scales in this game, so this component adds none for them.~

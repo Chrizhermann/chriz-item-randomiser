@@ -338,12 +338,18 @@ WeiDU does not track these files. Uninstalling CIR restores only the files its
 installer changed. Two of Apply's files are also the installer's: `BGEE.LUA`, where
 the installer files Unshey's journal entry, and the book of Lavok's sphere
 (`PPBOOK.BCS`), which the installer prepares for the ring's quest and Apply extends
-with its scrolls' routes. An uninstall puts back the game's own versions and a
-re-install the installer's, without what Apply added (its journal entries, the
-scrolls' routes) until the next Apply writes them again. A file that holds the
-installer's version is read as it is, as the scans read it before Apply, and the next
-Apply records it as the earlier file; the scans do not read `BGEE.LUA`. Apply's other
-files, the strings it
+with its scrolls' routes. An uninstall puts back the game's own versions. A re-install
+writes the installer's `BGEE.LUA`, without Apply's journal entries until the next
+Apply writes them again; the scans do not read it. For the book, Apply keeps the
+installer's version it extended and its own in `randomiser-campaigns/`
+(`PPBOOK.installed.bcs`, `PPBOOK.applied.bcs`), and saved games of revisions with the
+scrolls' routes need its own. A re-install that prepares exactly the version Apply
+extended puts Apply's back, so the record holds again and those games keep working;
+that includes the re-install WeiDU makes behind a re-installed earlier mod. A book
+prepared otherwise (by another version of CIR, or after an earlier mod changed it)
+stays as the installer prepared it, and the installer says so: those saved games stop
+when they are loaded, and the scans read the book as it is. Apply's other files, the
+strings it
 appended (WeiDU keeps appended strings) and `randomiser-campaigns/` stay as they were
 after an uninstall (decision B2 in [the packaging plan](plans/2026-10-14-mode1-packaging.md));
 `before-apply/` holds the files to put back by hand. A re-install that leaves the
@@ -497,8 +503,10 @@ installer prepared it. A revision that moves only the ring records the installer
 book, and Apply keeps that version and the one it wrote side by side
 (`randomiser-campaigns/PPBOOK.installed.bcs` and `PPBOOK.applied.bcs`): the runtime
 accepts the book Apply wrote for that revision's saves when both still match. A
-re-install of CIR returns the book to the installer's version; a configuration that
-moves a scroll then needs Apply again before its games start.
+re-install of CIR that prepares exactly the book Apply extended puts Apply's back; one
+that prepares another book leaves it, with a note, and the saves of a configuration
+that moves a scroll then stop when they are loaded (see [Apply's own
+files](#applys-own-files)).
 
 Rewards an NPC carries: the genie in Trademeet (`TRGENI01`), Captain Dennis
 (`LOUTCAPT`), the Amkethran priest (`AMCLER01`), the sage Jermien (`JUGJER01`, whose
