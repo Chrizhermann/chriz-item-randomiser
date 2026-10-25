@@ -639,6 +639,32 @@ its handler looks for them ..."), or where the script of one of those areas cann
 read; without AR0801 they are left out with `area-resource-absent`. Apply changes none of
 these files.
 
+Adalon's place (row 72 of BG2's base table) is the silver dragon herself (UDSILVER in
+AR2102). Item Randomiser gives its item to UDSILVER.CRE, who is not meant to die: once
+the party brings back her eggs, her reply takes them (`TakePartyItem("misc9t")`) and
+pays with her crossbow (the egg deal's route, row 44 of the extended tables); she then
+takes the party to AR2402 (CUT44C.BCS) and leaves there with what she carries
+(UDSILVER.DLG state 57 removes her). Here she carries the place's reward, as the
+prince does, so killing her gets it too, and each reply of her conversation that takes
+the eggs hands it to the one she talks to first (`FLPR_Transfer`, before the reply's
+other actions; both variants of the egg deal's gated reply). Without the eggs she
+keeps it. Those replies are found by meaning: each that takes MISC9T from the party
+(`TakePartyItem`, `TakePartyItemAll`, `TakePartyItemNum`, `TakePartyItemRange` or
+`TakeItemReplace`), also through `ActionOverride`, in any letter case and spacing. The
+place is left out with its reason where no reply takes the eggs ("UDSILVER.DLG has no
+reply that takes MISC9T"), where a reply names them in actions that cannot be read,
+where UDSILVER.CRE is missing or has another script name ("Original reward recipient
+changed"), or where a reply of another conversation reached from hers, such as a party
+member's interjection, takes them too ("... also takes MISC9T, which ends the job of
+UDSILVER.DLG's speaker, but there it would not hand over the reward it carries"). The
+egg deal's own route stays as it is either way.
+
+CIR 1.0.2 patched UDSILVER.DLG for the egg deal only. A patch of an earlier version
+with some of a dialogue's routes of today is still CIR's own: the scans and the check
+read the dialogue from it as it was, and Apply patches it again with every route. A
+changed copy of it is left out as any other. A revision exported with CIR 1.0.2 keeps
+her place as a plain creature, and her reply hands that reward over too.
+
 The book of Lavok's sphere (`PPBOOK.BCS`, AR1513) gives two scrolls with the ring on
 its last page (rows 260 and 262 of the extended tables, beside the ring's row 109).
 Each scroll has a route of its own, which only drops its grant where its row moves the

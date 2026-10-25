@@ -767,7 +767,11 @@ function Adapter:transfer_inventory_reward(speaker, target_id, assignments, phas
     target_id=self.route_targets[target_id] or target_id
     local endpoint=self.targets[target_id]
     if not endpoint then return -1 end -- Target excluded from this campaign.
-    assert(endpoint.inventory_reward, 'NATIVE_INVENTORY_REWARD_INVALID')
+    -- A revision exported before its place had this route (Adalon's place in
+    -- CIR 1.0.2) has a plain creature there, whose rewards are in the same
+    -- backpack: the reply hands them over too.
+    assert(endpoint.inventory_reward or endpoint.kind=='creature' and endpoint.quest_event==nil and
+        not endpoint.corpse_only and endpoint.handover==nil, 'NATIVE_INVENTORY_REWARD_INVALID')
     local rewards={}
     for _,assignment in ipairs(assignments) do
         if assignment.target_id==target_id then

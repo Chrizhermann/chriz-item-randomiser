@@ -200,6 +200,9 @@ pub fn dialogue_fixture(specs: &[Dict]) -> Vec<u8> {
                         // A reply that ends the speaker's job and gives nothing.
                         let job = grant_spec.get("job_end").and_then(Value::as_list).unwrap();
                         action += &format!("SetGlobal(\"{}\",\"GLOBAL\",{})\r\r\n", str_value(&job[0]), str_value(&job[1]));
+                    } else if branches(grant_spec).contains(&(state, ordinal)) && grant_spec.get("job_taken").is_some_and(Value::truthy) {
+                        // A reply that takes what the speaker asked for.
+                        action += &format!("TakePartyItem(\"{}\")\r\r\n", text(grant_spec, "job_taken"));
                     } else if branches(grant_spec).contains(&(state, ordinal)) {
                         let charges: Vec<String> = grant_spec
                             .get("payload")
@@ -611,6 +614,75 @@ pub fn check_job_end(original: &[u8], result: &[u8]) -> BTreeSet<(usize, usize)>
         }
     }
     handed
+}
+
+/// The transfer by which Adalon hands over what she carries for her place
+/// (row 72 of BG2's base table).
+pub const ADALON_TRANSFER: &[u8] = b"EEex_LuaAction(\"return(FLPR_Transfer(EEex_LuaAction_Object,72,2,1))\")\r\n";
+
+/// One reply as the engine reads it: flags, text, journal, trigger, actions,
+/// next dialogue and state.
+pub type LogicalRow = (u32, u32, u32, Option<Vec<u8>>, Option<Vec<u8>>, Vec<u8>, u32);
+
+/// `_logical(data, resource)`: a dialogue's content as the engine reads it,
+/// without its table layout. Its signature and flags, and each state's text,
+/// condition and replies.
+#[allow(clippy::type_complexity)]
+pub fn logical(data: &[u8], name: &str) -> (Vec<u8>, Vec<u8>, Vec<(u32, Option<Vec<u8>>, Vec<LogicalRow>)>) {
+    let dialogue = Dialogue::new(data, name).unwrap();
+    let mut states = Vec::new();
+    for (index, state) in dialogue.states.iter().enumerate() {
+        let entry = u32_at(state, 12);
+        let condition = (entry != u32::MAX).then(|| dialogue.state_triggers[entry as usize].clone());
+        let rows = outgoing(&dialogue, index)
+            .iter()
+            .map(|row| {
+                let flags = u32_at(row, 0);
+                let trigger = (flags & 2 != 0).then(|| dialogue.triggers[u32_at(row, 12) as usize].clone());
+                let actions = (flags & 4 != 0).then(|| dialogue.actions[u32_at(row, 16) as usize].clone());
+                (flags, u32_at(row, 4), u32_at(row, 8), trigger, actions, row[20..28].to_vec(), u32_at(row, 28))
+            })
+            .collect();
+        states.push((u32_at(state, 0), condition, rows));
+    }
+    (data[..8].to_vec(), data[48..52].to_vec(), states)
+}
+
+/// Replies of a dialogue by (state, ordinal).
+pub type ReplySet = BTreeSet<(usize, usize)>;
+
+/// `check_eggs(original, result, branches)`: Adalon's dialogue as her routes
+/// patch it. Her crossbow's reply (row 44) is gated as check_dialogue checks
+/// it; each reply that takes her eggs hands over what she carries for her
+/// place (row 72) before its own actions, both variants of a gated one; her
+/// departures after them wait for it; nothing else changes. Returns the
+/// replies that hand over and those whose departure waits.
+pub fn check_eggs(original: &[u8], result: &[u8], gated: Option<&[(usize, usize)]>) -> (ReplySet, ReplySet) {
+    let crossbow = patch_dialogue(original, &specs("dlg:udsilver")[..1], &[], true, true, None).unwrap();
+    check_dialogue("udsilver", original, &crossbow, None, gated, Naming::default());
+    let (expected, found) = (logical(&crossbow, "udsilver"), logical(result, "udsilver"));
+    assert_eq!((&found.0, &found.1, found.2.len()), (&expected.0, &expected.1, expected.2.len()));
+    let (mut handed, mut waiting) = (BTreeSet::new(), BTreeSet::new());
+    for (index, (want, got)) in expected.2.iter().zip(&found.2).enumerate() {
+        assert_eq!((got.0, &got.1, got.2.len()), (want.0, &want.1, want.2.len()));
+        for (ordinal, (row, new)) in want.2.iter().zip(&got.2).enumerate() {
+            assert_eq!((new.0, new.1, new.2, &new.3, &new.5, new.6), (row.0, row.1, row.2, &row.3, &row.5, row.6));
+            let mut actions = new.4.clone();
+            if let Some(changed) = actions.as_mut() {
+                if changed.starts_with(ADALON_TRANSFER) {
+                    handed.insert((index, ordinal));
+                    changed.drain(..ADALON_TRANSFER.len());
+                }
+                if contains(changed, TRGENI_DEPARTURE) {
+                    waiting.insert((index, ordinal));
+                    *changed = replace(changed, TRGENI_DEPARTURE, b"DestroySelf()", None);
+                }
+                assert!(!contains(changed, b"FLPR_Transfer"), "{index} {ordinal}");
+            }
+            assert_eq!(actions, row.4, "{index} {ordinal}");
+        }
+    }
+    (handed, waiting)
 }
 
 /// `check_pair(name, original, result)`: two routes whose grants share every

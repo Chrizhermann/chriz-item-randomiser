@@ -19,10 +19,11 @@ dialogue that CIR changes for something else. Another route's own grants of
 the same item (the sculptors' mace of the temple messengers) stay that
 route's.
 
-A route without a grant of its own (the Sahuagin prince's) hands over what
-its speaker carries in the replies that end his job. A reply there that ends
-that job too, a copy or not, would end it without the hand-over, and the
-reward would stay with him: the route is left out with that reason.
+A route without a grant of its own (the Sahuagin prince's, Adalon's) hands
+over what its speaker carries in the replies that end its job. A reply there
+that ends that job too, a copy or not, would end it without the hand-over,
+and the reward would stay with the speaker: the route is left out with that
+reason.
 
 Container quests are not followed: their dialogues test the treasure in the
 conditions of their states, which interjections do not copy.
@@ -166,7 +167,7 @@ class RewardCopies:
             spec = next(spec for spec in mode2_rewards.resource_specs(resource, **self._naming)
                         if spec["route"] == key)
             try:
-                if spec.get("job_end"):
+                if mode2_rewards._job(spec):
                     grants = mode2_rewards._job_replies(dialogue, spec, _label(resource))
                 else:
                     grants = mode2_rewards._dialogue_grants(dialogue, spec, _label(resource))
@@ -222,7 +223,7 @@ class RewardCopies:
                     reason = reason or f"{where} has a reply whose actions are outside its tables"
                     continue
                 text = dialogue.actions[action]
-                if not (spec["job_end"][0].encode() in text.lower() if spec.get("job_end") else
+                if not (mode2_rewards._mentions_job(text, spec) if mode2_rewards._job(spec) else
                         mode2_rewards._names(text, spec["item"])):
                     continue
                 try:
@@ -252,14 +253,13 @@ class RewardCopies:
         """
         spec = self._specs[key]
         where = f"{_label(resource)} state {index}"
-        if spec.get("job_end"):
+        if mode2_rewards._job(spec):
             # Whoever's reply ends the job, the speaker who carries the reward
             # does not hand it over there.
-            job, value = spec["job_end"]
-            if mode2_rewards._reply_ends_job(text, spec["job_end"], where):
+            if mode2_rewards._reply_ends_job(text, spec, where):
                 origins = ", ".join(sorted({_label(origin) for origin in texts.values()}))
-                raise ProfileError(f"{where} also sets {job} to {value}, which ends the job of {origins}'s "
-                                   "speaker, but there it would not hand over the reward it carries")
+                raise ProfileError(f"{where} also {mode2_rewards._job_text(spec)}, which ends the job of "
+                                   f"{origins}'s speaker, but there it would not hand over the reward it carries")
             return False
         shown = spec["item"].upper()
         if text in texts:

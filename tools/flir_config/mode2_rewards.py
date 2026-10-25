@@ -257,6 +257,23 @@ REWARDS["sahpr2"] = {
 # throne from its own file. So here the prince carries this place's reward
 # too, and the replies that end his job hand it over after row 59's.
 REWARDS["sahpr2b"] = dict(deepcopy(REWARDS["sahpr2"]), target_ids=("bg2:mode2:target:60",))
+# Adalon's place (row 72 of the base table): Item Randomiser gives its item to
+# UDSILVER.CRE, the silver dragon in her lair (AR2102), who is not meant to
+# die. Once the party brings back her eggs, her reply takes them
+# (TakePartyItem("misc9t")) and pays; she then takes the party to AR2402
+# (CUT44C.BCS) and destroys herself there with what she carries (state 57,
+# once DRAGSILV.BCS sets udDrowPlot to 99). Here she carries the place's
+# reward, and each reply of her dialogue that takes the eggs hands it to the
+# one she talks to, before its own actions (_job_replies). Killed, she drops
+# it; without her eggs she keeps it.
+REWARDS["adalon"] = {
+    "quest": "udsilver", "resource": "dlg:udsilver", "item": None, "campaign": "bg2",
+    "source_ids": (), "authored_source_ids": (), "target_ids": ("bg2:base:target:72",),
+    "selected_global": None, "consumed_global": None, "event_global": None, "recipient_local": None,
+    "recipient": "LastTalkedToBy", "branches": ((41, 0),), "payload": None, "grant_kind": "transfer",
+    "job_taken": "misc9t",
+    "inventory_target": {"area": "ar2102", "creature_resource": "cre:udsilver", "script_name": "udsilver"},
+}
 # Physical sources whose reward dialogue also gives their item, by (owner
 # resource, kind, item) as the catalog binds the original row: the creature's
 # or the area's container record of the item. A game whose dialogue gives
@@ -485,14 +502,18 @@ def _mark(spec: dict, recipient: bytes) -> bytes:
 
 def _callback(spec: dict, numeric: bool) -> bytes:
     target = spec["target_ids"]
-    match = re.fullmatch(r"(bg[12]):mode2:target:([1-9][0-9]*)", target[0]) if len(target) == 1 else None
+    match = (re.fullmatch(r"(bg[12]):(mode2|base):target:([1-9][0-9]*)", target[0])
+             if len(target) == 1 else None)
     if match is None:
         raise ProfileError("The carried reward's transfer target changed")
     # The dialogue parser strips spaces and colons even inside Lua strings.
-    # Parenthesize return; pass the row, and a BG1 row's campaign (1).
+    # Parenthesize return; pass the row, and a BG1 row's campaign (1); a row
+    # of the base table passes its campaign (1 or 2) and its table (1) too.
     if numeric:
         campaign = ",1" if match[1] == "bg1" else ""
-        return f'EEex_LuaAction("return(FLPR_Transfer(EEex_LuaAction_Object,{match[2]}{campaign}))")'.encode()
+        if match[2] == "base":
+            campaign = f",{match[1][2]},1"
+        return f'EEex_LuaAction("return(FLPR_Transfer(EEex_LuaAction_Object,{match[3]}{campaign}))")'.encode()
     return ('EEex_LuaAction("return FLPR_Transfer(EEex_LuaAction_Object,'
             f'[[original-target:{target[0]}]])")').encode()
 
@@ -556,25 +577,73 @@ def _ends_job(text: bytes, call, job: tuple[str, int], where: str) -> bool | Non
     return None if found is None else found == value
 
 
-def _reply_ends_job(text: bytes, job: tuple[str, int], where: str) -> bool:
-    """Whether a reply's actions end the job (_ends_job of each call); a
-    ProfileError where they cannot be read."""
+# The engine's actions that take an item from the party (ACTION.IDS of the
+# 2.7 games), by name: the argument that names the item they take.
+_TAKING = {"takepartyitem": 0, "takepartyitemall": 0, "takepartyitemnum": 0, "takepartyitemrange": 0,
+           "takeitemreplace": 1}
+
+
+def _job(spec: dict) -> bool:
+    """Whether a route has no grant of its own: its speaker hands over the
+    reward it carries where its job ends, a global set to a value
+    ("job_end") or the item it asked for taken from the party ("job_taken")."""
+    return bool(spec.get("job_end") or spec.get("job_taken"))
+
+
+def _job_text(spec: dict) -> str:
+    """How a reply ends the job of a route without a grant, in words."""
+    if spec.get("job_end"):
+        return "sets {} to {}".format(*spec["job_end"])
+    return f"takes {spec['job_taken'].upper()}"
+
+
+def _mentions_job(text: bytes, spec: dict) -> bool:
+    """Whether actions name what ends the job of a route without a grant."""
+    if spec.get("job_end"):
+        return spec["job_end"][0].encode() in text.lower()
+    return _names(text, spec["job_taken"])
+
+
+def _takes(text: bytes, call, item: str) -> bool | None:
+    """Whether a dialogue action takes the item from the party (_TAKING),
+    also through ActionOverride. None when it cannot be read."""
+    if named(call, "ActionOverride") and len(call.args) == 2:
+        inner = calls(text, *call.args[1])
+        if inner is None:
+            return None
+        found = [_takes(text, nested, item) for nested in inner]
+        return None if None in found else any(found)
+    index = _TAKING.get(call.name.decode("ascii").lower())
+    if index is None:
+        return False
+    taken = string_argument(text, call, index)
+    return None if taken is None else taken.lower() == item.encode()
+
+
+def _reply_ends_job(text: bytes, spec: dict, where: str) -> bool:
+    """Whether a reply's actions end the job of a route without a grant
+    (_ends_job or _takes of each call); a ProfileError where they cannot be
+    read."""
     found = calls(text)
-    ends = None if found is None else [_ends_job(text, call, job, where) for call in found]
+    if spec.get("job_end"):
+        shown = spec["job_end"][0]
+        ends = None if found is None else [_ends_job(text, call, spec["job_end"], where) for call in found]
+    else:
+        shown = spec["job_taken"].upper()
+        ends = None if found is None else [_takes(text, call, spec["job_taken"]) for call in found]
     if ends is None or None in ends:
-        raise ProfileError(f"{where} names {job[0]} in actions that cannot be read")
+        raise ProfileError(f"{where} names {shown} in actions that cannot be read")
     return any(ends)
 
 
 def _job_replies(dialogue: _Dialogue, spec: dict, label: str) -> set[tuple[int, int]]:
-    """Every reply that ends the job of a route without a grant (its "job_end"
-    global and value), where the speaker hands over the reward it carries.
+    """Every reply that ends the job of a route without a grant (_job), where
+    the speaker hands over the reward it carries.
 
-    A reply that names the global in actions that cannot be read cannot be
-    told apart, nor one that changes it another way (_ends_job), and a
-    dialogue with no such reply has nothing to hand over.
+    A reply that names the job's global or item in actions that cannot be
+    read cannot be told apart, nor one that changes the global another way
+    (_ends_job), and a dialogue with no such reply has nothing to hand over.
     """
-    name, value = spec["job_end"]
     replies = set()
     for state_index, state in enumerate(dialogue.states):
         first, count = _outgoing(dialogue, state, label)
@@ -583,12 +652,12 @@ def _job_replies(dialogue: _Dialogue, spec: dict, label: str) -> set[tuple[int, 
             if not flags & 4:
                 continue
             text = _string(dialogue.actions, action_id, label)
-            if name.encode() not in text.lower():
+            if not _mentions_job(text, spec):
                 continue
-            if _reply_ends_job(text, spec["job_end"], f"{label} state {state_index}"):
+            if _reply_ends_job(text, spec, f"{label} state {state_index}"):
                 replies.add((state_index, ordinal))
     if not replies:
-        raise ProfileError(f"{label} has no reply that sets {name} to {value}")
+        raise ProfileError(f"{label} has no reply that {_job_text(spec)}")
     return replies
 
 
@@ -703,7 +772,7 @@ def _patch_dialogue(data: bytes, specs: tuple[dict, ...], *, action_refs=None,
                     shown: set[int] | None = None) -> bytes:
     """Gate every reply that gives a route's item, for each recognised route.
 
-    A route without a grant of its own (job_end) instead hands over what its
+    A route without a grant of its own (_job) instead hands over what its
     speaker carries in each reply that ends its job (_job_replies).
     A route whose grant is not recognised keeps its replies as they are; its
     reason goes to <reasons>. With no route recognised, nothing is prepared.
@@ -718,7 +787,7 @@ def _patch_dialogue(data: bytes, specs: tuple[dict, ...], *, action_refs=None,
     grants, added, failures = {}, {}, {}
     for spec in specs:
         try:
-            if spec.get("job_end"):
+            if _job(spec):
                 added[spec["route"]] = _job_replies(dialogue, spec, label)
             else:
                 grants[spec["route"]] = _dialogue_grants(dialogue, spec, label,
@@ -954,8 +1023,14 @@ def _markers(specs: tuple[dict, ...]) -> list[bytes]:
     names = {spec[key] for spec in specs for key in
              ("selected_global", "consumed_global", "event_global", "recipient_local") if spec[key]}
     # A route without a grant leaves only its transfer, whatever row it names.
-    transfers = [_TRANSFER] if any(spec.get("job_end") for spec in specs) else []
+    transfers = [_TRANSFER] if any(_job(spec) for spec in specs) else []
     return [b'"' + name.encode("ascii") + b'"' for name in sorted(names)] + [_DEPARTURE] + transfers
+
+
+def _route_marker(spec: dict) -> bytes:
+    """What each reply that one route's patch changes carries: its guard's
+    flag, or the transfer of a route without a grant."""
+    return _callback(spec, True) if _job(spec) else b'"' + spec["selected_global"].encode("ascii") + b'"'
 
 
 def _carries_patch(dialogue: _Dialogue, specs: tuple[dict, ...]) -> bool:
@@ -1055,31 +1130,42 @@ def _logical(data: bytes, resource: str) -> tuple:
     return data[:8], data[48:52], tuple(states)
 
 
-def _static_original(data: bytes, resource: str, *, game=None, names=None) -> bytes | None:
+def _static_original(data: bytes, resource: str, *, game=None, names=None) -> tuple[bytes, bool] | None:
     """Undo this adapter's patch of a dialogue without a trailer; None if unpatched.
 
-    The result reads as the original did. Patching it again must give the same
-    dialogue as <data>, or <data> is not exactly this adapter's patch.
+    The result reads as the original did, and tells whether <data> is the
+    patch of every route there. An earlier version's patch has fewer routes
+    where the dialogue had fewer then (CIR 1.0.2 patched UDSILVER.DLG before
+    Adalon's place had its route). Patching the original again, with every
+    route or with those whose changes <data> carries (_route_marker), must
+    give the same dialogue as <data>, or <data> is not exactly this
+    adapter's patch.
     """
     specs = resource_specs(resource, game=game, names=names)
     dialogue = _read_dialogue(data, resource)
     if not _carries_patch(dialogue, specs):
         return None
+    texts = dialogue.triggers + dialogue.actions
+    present = tuple(spec for spec in specs if any(_route_marker(spec) in text for text in texts))
     try:
         original = _unpatched_dialogue(dialogue, specs, resource)
-        same = _logical(_patch_dialogue(original, specs), resource) == _logical(data, resource)
+        found = _logical(data, resource)
     except ProfileError:
         raise _changed_patch(resource) from None
-    if not same:
-        raise _changed_patch(resource)
-    return original
+    for routes in (specs, present):
+        try:
+            if routes and _logical(_patch_dialogue(original, routes), resource) == found:
+                return original, routes is specs
+        except ProfileError:
+            pass
+    raise _changed_patch(resource)
 
 
 def _unpatched_dialogue(dialogue: _Dialogue, specs: tuple[dict, ...], resource: str) -> bytes:
     label = _label(resource)
     routes = {spec["selected_global"].encode(): spec for spec in specs if spec["selected_global"]}
     # The transfers of the routes without a grant, in front of a reply's actions.
-    transfers = [_callback(spec, True) + b"\r\n" for spec in specs if spec.get("job_end")]
+    transfers = [_callback(spec, True) + b"\r\n" for spec in specs if _job(spec)]
     for state in dialogue.states:
         first, count = _outgoing(dialogue, state, label)
         rows, restored, at = dialogue.transitions[first:first + count], [], 0
@@ -1405,24 +1491,28 @@ def _destroys_original(data: bytes, specs: tuple[dict, ...]) -> tuple[bytes, boo
     raise _changed_patch(resource)
 
 
-_Examined = namedtuple("_Examined", "original own refs")
+_Examined = namedtuple("_Examined", "original own refs current")
 
 
 def _examine(resource: str, data: bytes, *, game=None, names=None) -> _Examined:
-    """The unpatched resource (exact, or as the engine reads it), and our patch's text refs."""
+    """The unpatched resource (exact, or as the engine reads it), whether
+    <data> is our patch, its text refs, and whether it is the patch of every
+    route there (_static_original: or an earlier version's)."""
     if not isinstance(data, bytes):
         raise ProfileError("Unsupported reward resource bytes")
     if resource in DESTROY_GATES:
         original, own = _destroys_original(data, resource_specs(resource, game=game, names=names))
-        return _Examined(original, own, None)
+        return _Examined(original, own, None, own)
     if resource.startswith("bcs:"):
         original, ref, own = _script_original(data, resource_specs(resource, game=game, names=names))
-        return _Examined(original, own, ref)
+        return _Examined(original, own, ref, own)
     if resource in TEXT_REFS:
         recovered = _text_original(data, resource, game=game, names=names)
-        return _Examined(data, False, None) if recovered is None else _Examined(recovered[0], True, recovered[1])
-    original = _static_original(data, resource, game=game, names=names)
-    return _Examined(data, False, None) if original is None else _Examined(original, True, None)
+        return (_Examined(data, False, None, False) if recovered is None else
+                _Examined(recovered[0], True, recovered[1], True))
+    recovered = _static_original(data, resource, game=game, names=names)
+    return (_Examined(data, False, None, False) if recovered is None else
+            _Examined(recovered[0], True, None, recovered[1]))
 
 
 def prepare_ddwell_text(text: GameText, language: str = "en_us") -> tuple[GameText, int]:
@@ -1520,7 +1610,8 @@ def _resource_key(resource: str) -> str:
 
 
 def own_patch(resource: str, data: bytes, *, game: str | None = None, names: EetNames | None = None) -> bool:
-    """Whether the bytes are this adapter's own patch, verified exactly.
+    """Whether the bytes are this adapter's own patch, verified exactly; also
+    an earlier version's, which patch_reward makes again from the original.
 
     False for an unpatched resource; raises for a changed copy of our patch.
     """
@@ -1633,6 +1724,6 @@ def patch_reward(resource: str, data: bytes, *, refs: dict[int, int] | None = No
     if resource in TEXT_REFS:
         return _patch_text_dialogue(examined.original, resource, examined.refs if refs is None else refs,
                                     game=game, names=names)
-    if examined.own:
+    if examined.current:
         return data
-    return _patch_dialogue(data, specs)
+    return _patch_dialogue(examined.original, specs)

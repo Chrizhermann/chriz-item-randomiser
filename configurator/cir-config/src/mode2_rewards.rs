@@ -560,6 +560,37 @@ fn build_registry() -> Registry {
     let mut prince = rewards.get("sahpr2").cloned().expect("sahpr2");
     prince.as_dict_mut().expect("reward row").insert("target_ids", list!["bg2:mode2:target:60"]);
     rewards.insert("sahpr2b", prince);
+    // Adalon's place (row 72 of the base table): Item Randomiser gives its
+    // item to UDSILVER.CRE, the silver dragon in her lair (AR2102), who is not
+    // meant to die. Once the party brings back her eggs, her reply takes them
+    // (TakePartyItem("misc9t")) and pays; she then takes the party to AR2402
+    // (CUT44C.BCS) and destroys herself there with what she carries (state
+    // 57, once DRAGSILV.BCS sets udDrowPlot to 99). Here she carries the
+    // place's reward, and each reply of her dialogue that takes the eggs
+    // hands it to the one she talks to, before its own actions
+    // ([`job_replies`]). Killed, she drops it; without her eggs she keeps it.
+    rewards.insert(
+        "adalon",
+        dict! {
+            "quest" => "udsilver",
+            "resource" => "dlg:udsilver",
+            "item" => Value::Null,
+            "campaign" => "bg2",
+            "source_ids" => Value::List(Vec::new()),
+            "authored_source_ids" => Value::List(Vec::new()),
+            "target_ids" => list!["bg2:base:target:72"],
+            "selected_global" => Value::Null,
+            "consumed_global" => Value::Null,
+            "event_global" => Value::Null,
+            "recipient_local" => Value::Null,
+            "recipient" => talker,
+            "branches" => pairs(&[(41, 0)]),
+            "payload" => Value::Null,
+            "grant_kind" => "transfer",
+            "job_taken" => "misc9t",
+            "inventory_target" => dict! {"area" => "ar2102", "creature_resource" => "cre:udsilver", "script_name" => "udsilver"},
+        },
+    );
     for row in rewards.values_mut() {
         let row = row.as_dict_mut().expect("reward row");
         let resource = row.get("resource").cloned().expect("resource");
@@ -922,44 +953,54 @@ fn mark(spec: &Dict, recipient: &[u8]) -> Result<Vec<u8>> {
     Ok([b"ActionOverride(" as &[u8], recipient, local.as_bytes()].concat())
 }
 
-/// `re.fullmatch(r"(bg[12]):mode2:target:([1-9][0-9]*)", target)`: the
-/// campaign and the row.
-fn numeric_target_row(target: &str) -> Option<(&str, &str)> {
-    let (campaign, row) = target.split_once(":mode2:target:")?;
+/// `re.fullmatch(r"(bg[12]):(mode2|base):target:([1-9][0-9]*)", target)`,
+/// with one of these tables: the campaign, the table and the row.
+fn numeric_target_row<'a>(target: &'a str, tables: &[&str]) -> Option<(&'a str, &'a str, &'a str)> {
+    let (campaign, rest) = target.split_once(':')?;
+    let (table, row) = rest.split_once(":target:")?;
     let bytes = row.as_bytes();
     (matches!(campaign, "bg1" | "bg2")
+        && tables.contains(&table)
         && !bytes.is_empty()
         && (b'1'..=b'9').contains(&bytes[0])
         && bytes[1..].iter().all(u8::is_ascii_digit))
-    .then_some((campaign, row))
+    .then_some((campaign, table, row))
 }
 
-/// The campaign and row of the route's only place (`target[0] if
-/// len(target) == 1`) when it is a numbered row of the extended table.
-fn only_target(spec: &Dict) -> Result<Option<(String, String)>> {
+/// The campaign, table and row of the route's only place (`target[0] if
+/// len(target) == 1`) when it is a numbered row of one of these tables.
+fn only_target(spec: &Dict, tables: &[&str]) -> Result<Option<(String, String, String)>> {
     let target = field(spec, "target_ids")?;
     if py_len(target)? != 1 {
         return Ok(None);
     }
     match first_item(target)? {
-        Value::Str(target) => Ok(numeric_target_row(&target).map(|(campaign, row)| (campaign.to_string(), row.to_string()))),
+        Value::Str(target) => Ok(numeric_target_row(&target, tables)
+            .map(|(campaign, table, row)| (campaign.to_string(), table.to_string(), row.to_string()))),
         other => Err(Error::type_error(format!("expected string or bytes-like object, got '{}'", other.type_name()))),
     }
 }
 
 /// The blocking Lua callback that hands a carried reward over.
 fn callback(spec: &Dict, numeric: bool) -> Result<Vec<u8>> {
-    let Some((campaign, row)) = only_target(spec)? else {
+    let Some((campaign, table, row)) = only_target(spec, &["mode2", "base"])? else {
         return Err(profile("The carried reward's transfer target changed"));
     };
     // The dialogue parser strips spaces and colons even inside Lua strings.
-    // Parenthesize return; pass the row, and a BG1 row's campaign (1).
+    // Parenthesize return; pass the row, and a BG1 row's campaign (1); a row
+    // of the base table passes its campaign (1 or 2) and its table (1) too.
     Ok(if numeric {
-        let campaign = if campaign == "bg1" { ",1" } else { "" };
+        let campaign = match (campaign.as_str(), table.as_str()) {
+            (campaign, "base") => format!(",{},1", &campaign[2..]),
+            ("bg1", _) => ",1".to_string(),
+            _ => String::new(),
+        };
         format!("EEex_LuaAction(\"return(FLPR_Transfer(EEex_LuaAction_Object,{row}{campaign}))\")")
     } else {
         // The only target, which numeric_target_row matched whole.
-        format!("EEex_LuaAction(\"return FLPR_Transfer(EEex_LuaAction_Object,[[original-target:{campaign}:mode2:target:{row}]])\")")
+        format!(
+            "EEex_LuaAction(\"return FLPR_Transfer(EEex_LuaAction_Object,[[original-target:{campaign}:{table}:target:{row}]])\")"
+        )
     }
     .into_bytes())
 }
@@ -968,7 +1009,7 @@ fn callback(spec: &Dict, numeric: bool) -> Result<Vec<u8>> {
 /// payee (M_FLPR's FLPR_Handover, `_handover`). It is true whatever happens
 /// there, so the reply always shows; without CIR's runtime it does nothing.
 pub fn handover(spec: &Dict) -> Result<Vec<u8>> {
-    let Some((campaign, row)) = only_target(spec)? else {
+    let Some((campaign, _, row)) = only_target(spec, &["mode2"])? else {
         return Err(profile("The treasury's place changed"));
     };
     // The dialogue parser strips spaces and colons, as in callback.
@@ -1012,7 +1053,7 @@ pub(crate) fn gives(text: &[u8], call: &Call, item: &str) -> bool {
 
 /// The global and value that end the job of a route without a grant
 /// (`spec["job_end"]`).
-pub(crate) fn job_end(spec: &Dict) -> Result<(String, i64)> {
+fn job_end(spec: &Dict) -> Result<(String, i64)> {
     match field(spec, "job_end")? {
         Value::List(job) => match &job[..] {
             [Value::Str(name), value] => match value.as_int() {
@@ -1025,22 +1066,66 @@ pub(crate) fn job_end(spec: &Dict) -> Result<(String, i64)> {
     }
 }
 
+/// The engine's actions that take an item from the party (ACTION.IDS of the
+/// 2.7 games), by name: the argument that names the item they take.
+const TAKING: &[(&str, usize)] = &[
+    ("TakePartyItem", 0),
+    ("TakePartyItemAll", 0),
+    ("TakePartyItemNum", 0),
+    ("TakePartyItemRange", 0),
+    ("TakeItemReplace", 1),
+];
+
+/// Where the job of a route without a grant ends ([`ends_a_job`]): its
+/// global set to a value ("job_end"), or the item its speaker asked for taken
+/// from the party ("job_taken").
+pub(crate) enum Job {
+    End(String, i64),
+    Taken(String),
+}
+
+/// The job of a route without a grant.
+pub(crate) fn job(spec: &Dict) -> Result<Job> {
+    if spec.get("job_end").is_some_and(Value::truthy) {
+        let (name, value) = job_end(spec)?;
+        return Ok(Job::End(name, value));
+    }
+    Ok(Job::Taken(text_field(spec, "job_taken", "encode")?.to_string()))
+}
+
+impl Job {
+    /// How a reply ends the job, in words (`_job_text`).
+    pub(crate) fn text(&self) -> String {
+        match self {
+            Job::End(name, value) => format!("sets {name} to {value}"),
+            Job::Taken(item) => format!("takes {}", upper(item)),
+        }
+    }
+
+    /// Whether actions name what ends the job (`_mentions_job`).
+    pub(crate) fn mentioned(&self, text: &[u8]) -> bool {
+        match self {
+            Job::End(name, _) => find_bytes(&text.to_ascii_lowercase(), name.as_bytes(), 0).is_some(),
+            Job::Taken(item) => names(text, item),
+        }
+    }
+}
+
 /// Whether a dialogue action ends the job: sets its global to the job's
 /// value (`SetGlobal(name,"GLOBAL",value)`), also through ActionOverride.
 /// None when it cannot be read (`_ends_job`).
 ///
 /// Any other action that writes the global (IncrementGlobal and the like)
 /// could end the job too, unseen: the route cannot follow it.
-pub(crate) fn ends_job(text: &[u8], call: &Call, job: &(String, i64), place: &str) -> Result<Option<bool>> {
+fn ends_job(text: &[u8], call: &Call, name: &str, value: i64, place: &str) -> Result<Option<bool>> {
     if named(call, &["ActionOverride"]) && call.args.len() == 2 {
         let Some(inner) = calls_in(text, call.args[1]) else { return Ok(None) };
         let mut found = Vec::new();
         for nested in &inner {
-            found.push(ends_job(text, nested, job, place)?);
+            found.push(ends_job(text, nested, name, value, place)?);
         }
         return Ok(if found.contains(&None) { None } else { Some(found.contains(&Some(true))) });
     }
-    let (name, value) = job;
     let names_job = |index: usize| string_argument(text, call, index).unwrap_or(b"").to_ascii_lowercase() == name.as_bytes();
     // The scope after each argument that names the global: the job is GLOBAL.
     let scopes: Vec<Option<&[u8]>> =
@@ -1060,17 +1145,39 @@ pub(crate) fn ends_job(text: &[u8], call: &Call, job: &(String, i64), place: &st
     if call.args.len() != 3 || scopes.len() != 1 || !names_job(0) {
         return Ok(None);
     }
-    Ok(integer_argument(text, call, 2, None).map(|found| found == *value))
+    Ok(integer_argument(text, call, 2, None).map(|found| found == value))
 }
 
-/// Whether a reply's actions end the job ([`ends_job`] of each call); an
-/// error where they cannot be read (`_reply_ends_job`).
-pub(crate) fn reply_ends_job(text: &[u8], job: &(String, i64), place: &str) -> Result<bool> {
-    let unreadable = || profile(format!("{place} names {} in actions that cannot be read", job.0));
+/// Whether a dialogue action takes the item from the party ([`TAKING`]),
+/// also through ActionOverride. None when it cannot be read (`_takes`).
+fn takes(text: &[u8], call: &Call, item: &str) -> Option<bool> {
+    if named(call, &["ActionOverride"]) && call.args.len() == 2 {
+        let inner = calls_in(text, call.args[1])?;
+        let found: Vec<Option<bool>> = inner.iter().map(|nested| takes(text, nested, item)).collect();
+        return if found.contains(&None) { None } else { Some(found.contains(&Some(true))) };
+    }
+    let Some(&(_, index)) = TAKING.iter().find(|(name, _)| call.name.eq_ignore_ascii_case(name.as_bytes())) else {
+        return Some(false);
+    };
+    string_argument(text, call, index).map(|taken| taken.to_ascii_lowercase() == item.as_bytes())
+}
+
+/// Whether a reply's actions end the job of a route without a grant
+/// ([`ends_job`] or [`takes`] of each call); an error where they cannot be
+/// read (`_reply_ends_job`).
+pub(crate) fn reply_ends_job(text: &[u8], job: &Job, place: &str) -> Result<bool> {
+    let shown = match job {
+        Job::End(name, _) => name.clone(),
+        Job::Taken(item) => upper(item),
+    };
+    let unreadable = || profile(format!("{place} names {shown} in actions that cannot be read"));
     let found = calls(text).ok_or_else(unreadable)?;
     let mut ends = Vec::new();
     for call in &found {
-        ends.push(ends_job(text, call, job, place)?);
+        ends.push(match job {
+            Job::End(name, value) => ends_job(text, call, name, *value, place)?,
+            Job::Taken(item) => takes(text, call, item),
+        });
     }
     if ends.contains(&None) {
         return Err(unreadable());
@@ -1078,15 +1185,14 @@ pub(crate) fn reply_ends_job(text: &[u8], job: &(String, i64), place: &str) -> R
     Ok(ends.contains(&Some(true)))
 }
 
-/// Every reply that ends the job of a route without a grant (its "job_end"
-/// global and value), where the speaker hands over the reward it carries
-/// (`_job_replies`).
+/// Every reply that ends the job of a route without a grant ([`job`]), where
+/// the speaker hands over the reward it carries (`_job_replies`).
 ///
-/// A reply that names the global in actions that cannot be read cannot be
-/// told apart, nor one that changes it another way ([`ends_job`]), and a
-/// dialogue with no such reply has nothing to hand over.
+/// A reply that names the job's global or item in actions that cannot be
+/// read cannot be told apart, nor one that changes the global another way
+/// ([`ends_job`]), and a dialogue with no such reply has nothing to hand over.
 pub(crate) fn job_replies(dialogue: &Dialogue, spec: &Dict, label: &str) -> Result<BTreeSet<(usize, usize)>> {
-    let job = job_end(spec)?;
+    let job = job(spec)?;
     let mut replies = BTreeSet::new();
     for (state_index, state) in dialogue.states.iter().enumerate() {
         let (first, count) = outgoing(dialogue, state, label)?;
@@ -1096,7 +1202,7 @@ pub(crate) fn job_replies(dialogue: &Dialogue, spec: &Dict, label: &str) -> Resu
                 continue;
             }
             let text = string(&dialogue.actions, u32_le(row, 16), label)?;
-            if find_bytes(&text.to_ascii_lowercase(), job.0.as_bytes(), 0).is_none() {
+            if !job.mentioned(&text) {
                 continue;
             }
             if reply_ends_job(&text, &job, &format!("{label} state {state_index}"))? {
@@ -1105,15 +1211,15 @@ pub(crate) fn job_replies(dialogue: &Dialogue, spec: &Dict, label: &str) -> Resu
         }
     }
     if replies.is_empty() {
-        return Err(profile(format!("{label} has no reply that sets {} to {}", job.0, job.1)));
+        return Err(profile(format!("{label} has no reply that {}", job.text())));
     }
     Ok(replies)
 }
 
-/// Whether a route has no grant of its own, but hands over at its job's end
-/// (`spec.get("job_end")`).
+/// Whether a route has no grant of its own: its speaker hands over the
+/// reward it carries where its job ends ([`Job`]) (`_job`).
 pub(crate) fn ends_a_job(spec: &Dict) -> bool {
-    spec.get("job_end").is_some_and(Value::truthy)
+    spec.get("job_end").is_some_and(Value::truthy) || spec.get("job_taken").is_some_and(Value::truthy)
 }
 
 /// Every reply that gives the route's item, with the call that gives it.
@@ -1270,8 +1376,8 @@ fn following(dialogue: &Dialogue, rows: &[Vec<u8>], label: &str) -> Result<Vec<u
 /// Gate every reply that gives a route's item, for each recognised route
 /// (`_patch_dialogue`).
 ///
-/// A route without a grant of its own (job_end) instead hands over what its
-/// speaker carries in each reply that ends its job ([`job_replies`]).
+/// A route without a grant of its own ([`ends_a_job`]) instead hands over
+/// what its speaker carries in each reply that ends its job ([`job_replies`]).
 /// A route whose grant is not recognised keeps its replies as they are; its
 /// reason goes to `reasons` (route to text). With no route recognised,
 /// nothing is prepared. `action_refs` maps displayed original strrefs to the
@@ -1728,6 +1834,15 @@ fn markers(specs: &[Dict]) -> Result<Vec<Vec<u8>>> {
     Ok(markers)
 }
 
+/// What each reply that one route's patch changes carries: its guard's flag,
+/// or the transfer of a route without a grant (`_route_marker`).
+fn route_marker(spec: &Dict) -> Result<Vec<u8>> {
+    if ends_a_job(spec) {
+        return callback(spec, true);
+    }
+    Ok(format!("\"{}\"", text_field(spec, "selected_global", "encode")?).into_bytes())
+}
+
 pub(crate) fn carries_patch(dialogue: &Dialogue, specs: &[Dict]) -> Result<bool> {
     let markers = markers(specs)?;
     Ok(dialogue
@@ -1918,24 +2033,44 @@ pub(crate) fn logical(data: &[u8], resource: &str) -> Result<Logical> {
 /// Undo this adapter's patch of a dialogue without a trailer
 /// (`_static_original`); None if unpatched.
 ///
-/// The result reads as the original did. Patching it again must give the
-/// same dialogue as `data`, or `data` is not exactly this adapter's patch.
-fn static_original(data: &[u8], resource: &str, naming: Naming<'_>) -> Result<Option<Vec<u8>>> {
+/// The result reads as the original did, and tells whether `data` is the
+/// patch of every route there. An earlier version's patch has fewer routes
+/// where the dialogue had fewer then (CIR 1.0.2 patched UDSILVER.DLG before
+/// Adalon's place had its route). Patching the original again, with every
+/// route or with those whose changes `data` carries ([`route_marker`]), must
+/// give the same dialogue as `data`, or `data` is not exactly this adapter's
+/// patch.
+fn static_original(data: &[u8], resource: &str, naming: Naming<'_>) -> Result<Option<(Vec<u8>, bool)>> {
     let specs = resource_specs(resource, naming)?;
     let dialogue = read_dialogue(data, resource)?;
     if !carries_patch(&dialogue, &specs)? {
         return Ok(None);
     }
-    let attempt = unpatched_dialogue(dialogue, &specs, resource).and_then(|original| {
-        let same = logical(&patch_dialogue(&original, &specs, &[], true, true, None)?, resource)? == logical(data, resource)?;
-        Ok((original, same))
-    });
-    match attempt {
-        Ok((original, true)) => Ok(Some(original)),
-        Ok((_, false)) => Err(changed_patch(resource)),
-        Err(error) if error.kind == ErrorKind::Profile => Err(changed_patch(resource)),
-        Err(error) => Err(error),
+    let mut present = Vec::new();
+    for spec in &specs {
+        let marker = route_marker(spec)?;
+        if dialogue.triggers.iter().chain(&dialogue.actions).any(|text| find_bytes(text, &marker, 0).is_some()) {
+            present.push(spec.clone());
+        }
     }
+    let attempt = unpatched_dialogue(dialogue, &specs, resource).and_then(|original| Ok((original, logical(data, resource)?)));
+    let (original, found) = match attempt {
+        Ok(attempt) => attempt,
+        Err(error) if error.kind == ErrorKind::Profile => return Err(changed_patch(resource)),
+        Err(error) => return Err(error),
+    };
+    for (routes, complete) in [(&specs, true), (&present, false)] {
+        if routes.is_empty() {
+            continue;
+        }
+        match patch_dialogue(&original, routes, &[], true, true, None).and_then(|patched| logical(&patched, resource)) {
+            Ok(patched) if patched == found => return Ok(Some((original, complete))),
+            Ok(_) => {}
+            Err(error) if error.kind == ErrorKind::Profile => {}
+            Err(error) => return Err(error),
+        }
+    }
+    Err(changed_patch(resource))
 }
 
 /// The handover condition of one of these routes that `trigger` ends with.
@@ -2470,10 +2605,13 @@ fn destroys_original(data: &[u8], specs: &[Dict]) -> Result<(Vec<u8>, bool)> {
 }
 
 /// The unpatched resource (exact, or as the engine reads it), whether the
-/// bytes are our patch, and our patch's text refs (`_examine`).
+/// bytes are our patch, our patch's text refs, and whether it is the patch
+/// of every route there ([`static_original`]: or an earlier version's)
+/// (`_examine`).
 pub(crate) struct Examined {
     pub(crate) original: Vec<u8>,
     own: bool,
+    current: bool,
     script_ref: Option<i64>,
     text_refs: Option<BTreeMap<i64, i64>>,
 }
@@ -2481,22 +2619,22 @@ pub(crate) struct Examined {
 pub(crate) fn examine(resource: &str, data: &[u8], naming: Naming<'_>) -> Result<Examined> {
     if destroy_gate(resource) {
         let (original, own) = destroys_original(data, &resource_specs(resource, naming)?)?;
-        return Ok(Examined { original, own, script_ref: None, text_refs: None });
+        return Ok(Examined { original, own, current: own, script_ref: None, text_refs: None });
     }
     if resource.starts_with("bcs:") {
         let (original, script_ref, own) = script_original(data, &resource_specs(resource, naming)?)?;
-        return Ok(Examined { original, own, script_ref, text_refs: None });
+        return Ok(Examined { original, own, current: own, script_ref, text_refs: None });
     }
-    let unpatched = || Examined { original: data.to_vec(), own: false, script_ref: None, text_refs: None };
+    let unpatched = || Examined { original: data.to_vec(), own: false, current: false, script_ref: None, text_refs: None };
     if text_refs(resource).is_some() {
         return Ok(match text_original(data, resource, naming)? {
             None => unpatched(),
-            Some((original, refs)) => Examined { original, own: true, script_ref: None, text_refs: Some(refs) },
+            Some((original, refs)) => Examined { original, own: true, current: true, script_ref: None, text_refs: Some(refs) },
         });
     }
     Ok(match static_original(data, resource, naming)? {
         None => unpatched(),
-        Some(original) => Examined { original, own: true, script_ref: None, text_refs: None },
+        Some((original, current)) => Examined { original, own: true, current, script_ref: None, text_refs: None },
     })
 }
 
@@ -2690,7 +2828,8 @@ fn resource_key(resource: &str) -> Result<String> {
     Ok(candidates[0].to_string())
 }
 
-/// Whether the bytes are this adapter's own patch, verified exactly.
+/// Whether the bytes are this adapter's own patch, verified exactly; also an
+/// earlier version's, which [`patch_reward`] makes again from the original.
 ///
 /// False for an unpatched resource; raises for a changed copy of our patch.
 pub fn own_patch(resource: &str, data: &[u8], naming: Naming<'_>) -> Result<bool> {
@@ -2849,8 +2988,8 @@ pub fn patch_reward(
     if text_refs(&resource).is_some() {
         return patch_text_dialogue(&examined.original, &resource, refs.or(examined.text_refs.as_ref()), true, true, naming);
     }
-    if examined.own {
+    if examined.current {
         return Ok(data.to_vec());
     }
-    patch_dialogue(data, &specs, &[], true, true, None)
+    patch_dialogue(&examined.original, &specs, &[], true, true, None)
 }

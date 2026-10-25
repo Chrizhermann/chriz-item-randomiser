@@ -155,6 +155,43 @@ class RewardCopyTests(unittest.TestCase):
         # The other routes find their copies as before; the prince's job is not theirs.
         self.assertEqual(analyse({"sahpr2": original}).reasons, {})
 
+    def test_a_reply_elsewhere_that_takes_adalons_eggs_leaves_her_place_out(self):
+        # Her place's route hands over what she carries where she takes her
+        # eggs. A copy of that reply in an interjection, or another reply
+        # there that takes them, would take them without her handing over.
+        # Her crossbow's route gates its copy there as usual.
+        self.assertNotIn("adalon", reward_copies._GATED)
+        original = dialogue_fixture(rewards.resource_specs("dlg:udsilver"))
+        route, npc, state = interject(original, "udsilver", 41, "xnpcj")
+        found = analyse({"udsilver": route, "xnpcj": npc})
+        self.assertEqual((found.copies, found.changed), ({"udsilver": {"dlg:xnpcj": {state: {0}}}}, set()))
+        self.assertEqual(found.checked("adalon"), {"dlg:xnpcj"})
+        reason = (f"XNPCJ.DLG state {state} also takes MISC9T, which ends the job of UDSILVER.DLG's "
+                  "speaker, but there it would not hand over the reward it carries")
+        self.assertEqual(found.reasons, {"adalon": reason})
+        self.assertEqual(sorted(found.patches(["udsilver"])), ["dlg:xnpcj"])
+        self.assertEqual(found.patches(["adalon"]), {})
+        # In her own dialogue both routes are unchanged.
+        self.assertEqual(rewards.route_reasons("dlg:udsilver", route), {})
+        npc_dialogue = _Dialogue(npc, "xnpcj")
+        for actions, reason in (
+                (b'ActionOverride("udsilver",TakePartyItem("MISC9T"))\r\n', "also takes MISC9T"),
+                (b'TakeItemReplace("misc9u","misc9t",Player1)\r\n', "also takes MISC9T"),
+                (b'GiveItemCreate("misc9t",Player1,0,0,0)\r\n', None),
+                (b'TakePartyItem("misc9t"\r\n', "names MISC9T in actions that cannot be read")):
+            with self.subTest(actions=actions):
+                changed = _Dialogue(npc, "xnpcj")
+                for row in outgoing(npc_dialogue, state):
+                    changed.actions[struct.unpack_from("<I", row, 16)[0]] = actions
+                found = analyse({"udsilver": route, "xnpcj": changed.render()})
+                self.assertEqual(found.copies, {})
+                if reason is None:
+                    self.assertEqual(found.reasons, {})
+                else:
+                    self.assertEqual(sorted(found.reasons), ["adalon"])
+                    self.assertIn(reason, found.reasons["adalon"])
+        self.assertEqual(analyse({"udsilver": original}).reasons, {})
+
     def test_interject_copy_trans2_keeps_the_grant_in_the_route_dialogue(self):
         spec, original = self.ogre()
         route, npc, state = interject(original, "uhogre01", 22, "xnpcj", copy_actions=False)

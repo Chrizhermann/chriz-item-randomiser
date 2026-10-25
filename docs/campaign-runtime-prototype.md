@@ -246,6 +246,16 @@ king's own place, whichever of the two kings the area has, and Tolgerias's, who
 pays in his house while TOLGER2 fights in the planar sphere
 ([configurator](post-install-configurator.md)).
 
+A creature target with `inventory_reward` carries its reward in its backpack
+until its reward reply hands it over: the reply's `FLPR_Transfer` (with the
+place's row, and for a row of the base table its campaign and table) moves it
+to the one the creature talks to, and the dialogue waits until that one holds
+it. These are the carried rewards' places, the Sahuagin prince's and Adalon's.
+A revision exported before its place had that route (Adalon's in CIR 1.0.2) has
+a plain creature target there, whose reward is in the same backpack, so the
+reply hands it over too; any other kind of target there stops the host
+(`NATIVE_INVENTORY_REWARD_INVALID`).
+
 A `first-of` target is a list of groups of creatures, each a creature target of
 its own area under the place's identity; a group may be `corpse_only`. For each
 reward a group with `eligible` candidates gives one member, drawn from the

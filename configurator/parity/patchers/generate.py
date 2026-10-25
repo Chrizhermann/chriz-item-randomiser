@@ -625,6 +625,77 @@ def prince_cases(s: Scenario) -> None:
         patch_dialogue_case(s, f"sahpr2 target {label}", mode2_tests.dialogue_fixture(specs), (spec,))
 
 
+def adalon_cases(s: Scenario) -> None:
+    """test_adalon_hands_over_what_she_carries_when_she_takes_her_eggs and
+    test_an_earlier_versions_patch_of_adalons_dialogue_is_made_again_with_her_route."""
+    specs = mode2_rewards.resource_specs("dlg:udsilver")
+    transfer = mode2_tests.ADALON_TRANSFER
+    fixture = mode2_tests.dialogue_fixture(specs)
+    for beamdog in (True, False):
+        layout = "beamdog" if beamdog else "weidu"
+        original = mode2_tests.layout_dialogue("udsilver", mode2_tests.ADALON_STATES, beamdog=beamdog)
+        reward_checks(s, f"udsilver {layout}", "dlg:udsilver", original)
+        result = patched(s, f"udsilver {layout}", "dlg:udsilver", original)
+        reward_checks(s, f"udsilver {layout} result", "dlg:udsilver", result)
+        for departure in (True, False):
+            patch_dialogue_case(s, f"udsilver {layout} departure {departure}", original, specs,
+                                defer_departure=departure)
+        patch_dialogue_case(s, f"udsilver {layout} string target", original, specs, numeric_target=False)
+        after = quest_options._Dialogue(result, "udsilver")
+        job = struct.unpack_from("<I", mode2_tests.outgoing(after, 2)[0], 16)[0]
+        other = struct.unpack_from("<I", mode2_tests.outgoing(after, 0)[0], 16)[0]
+        rest = after.actions[job][len(transfer):]
+        for label, changes in (
+                ("another place", {job: after.actions[job].replace(b",72,2,1))", b",73,2,1))")}),
+                ("another table", {job: after.actions[job].replace(b",72,2,1))", b",72))")}),
+                ("other reply", {job: rest, other: transfer + after.actions[other]}),
+                ("behind", {job: rest + b"\r\n" + transfer}),
+                ("twice", {job: transfer + after.actions[job]}),
+                ("gone", {job: rest})):
+            tampered_dialogue = quest_options._Dialogue(result, "udsilver")
+            for index, changed in changes.items():
+                tampered_dialogue.actions[index] = changed
+            reward_checks(s, f"udsilver {layout} {label}", "dlg:udsilver", tampered_dialogue.render())
+    # An earlier version's patch, with one of her two routes: patched again
+    # from the original; a changed copy of it is not ours.
+    for name, original in (("fixture", fixture),
+                           ("beamdog", mode2_tests.layout_dialogue("udsilver", mode2_tests.ADALON_STATES)),
+                           ("weidu", mode2_tests.layout_dialogue("udsilver", mode2_tests.ADALON_STATES,
+                                                                 beamdog=False))):
+        for label, routes in (("crossbow", specs[:1]), ("place", specs[1:])):
+            earlier = mode2_rewards._patch_dialogue(original, routes)
+            reward_checks(s, f"udsilver {name} earlier {label}", "dlg:udsilver", earlier)
+            reward_checks(s, f"udsilver {name} earlier {label} again", "dlg:udsilver",
+                          mode2_rewards.patch_reward("dlg:udsilver", earlier))
+        earlier = mode2_rewards._patch_dialogue(original, specs[:1])
+        reward_checks(s, f"udsilver {name} earlier tampered", "dlg:udsilver",
+                      earlier.replace(b'"FLPR_EA_EGGDEALIO","GLOBAL",1)', b'"FLPR_EA_EGGDEALIO","GLOBAL",2)', 1))
+    # No reply takes her eggs, or one names them unreadably; her crossbow's
+    # route cannot be prepared.
+    for label, changed in (
+            ("other item", {2: [("", 'TakePartyItem("misc9x")', 3), ("", "NoAction()", None)]}),
+            ("no eggs taken", {1: [("", 'GiveItemCreate("xbow10",LastTalkedToBy,1,1,1)', 2)],
+                               2: [("", 'TakePartyItem("misc9x")', 3), ("", "NoAction()", None)]}),
+            ("unreadable", {2: [("", 'TakePartyItem("misc9t"', 3), ("", "NoAction()", None)]}),
+            ("override unreadable", {2: [("", 'ActionOverride(Player1,TakePartyItem("misc9t")', 3),
+                                         ("", "NoAction()", None)]}),
+            ("unquoted", {2: [("", 'TakePartyItem(misc9t)', 3), ("", "NoAction()", None)]}),
+            ("no crossbow", {1: [("", 'TakePartyItem("misc9t")', 2)]})):
+        variant = [changed.get(index, replies) for index, replies in enumerate(mode2_tests.ADALON_STATES)]
+        data = mode2_tests.layout_dialogue("udsilver", variant)
+        reward_checks(s, f"udsilver {label}", "dlg:udsilver", data)
+        result = patched(s, f"udsilver {label}", "dlg:udsilver", data)
+        reward_checks(s, f"udsilver {label} result", "dlg:udsilver", result)
+    # Only one numbered row of the base or extended table is her place.
+    for label, targets in (("none", ()), ("two", ("bg2:base:target:72", "bg2:base:target:73")),
+                           ("extended", ("bg2:mode2:target:72",)), ("bg1", ("bg1:base:target:72",)),
+                           ("other table", ("bg2:other:target:72",)), ("zero", ("bg2:base:target:072",)),
+                           ("no row", ("bg2:base:target:",)), ("bg3", ("bg3:base:target:72",))):
+        spec = dict(specs[1], target_ids=targets)
+        patch_dialogue_case(s, f"udsilver target {label}", fixture, (spec,))
+        patch_dialogue_case(s, f"udsilver target {label} string", fixture, (spec,), numeric_target=False)
+
+
 def treasury_cases(s: Scenario) -> None:
     """test_each_reply_that_pays_with_the_rod_hands_the_treasury_over_after_its_guards,
     test_the_treasury_destroys_the_kings_items_only_while_his_grants_are_unchanged and
@@ -1251,6 +1322,7 @@ def mode2_scenario() -> Scenario:
     treasury_cases(s)
     tolgerias_cases(s)
     prince_cases(s)
+    adalon_cases(s)
     reason_cases(s)
     layout_cases(s)
     aran_cases(s)
@@ -1656,6 +1728,22 @@ def copies_scenario() -> Scenario:
         copies_case(s, f"prince {label}", {"sahpr2": prince_route, "xnpcj": changed_reply(
             prince_npc, "xnpcj", prince_state, lambda text, actions=actions: actions)}, routes=(("sahpr2",),))
     copies_case(s, "prince alone", {"sahpr2": prince}, routes=(("sahpr2",),))
+    # test_a_reply_elsewhere_that_takes_adalons_eggs_leaves_her_place_out: a
+    # reply of another dialogue that takes her eggs, or names them unreadably.
+    silver = mode2_tests.dialogue_fixture(mode2_rewards.resource_specs("dlg:udsilver"))
+    silver_route, silver_npc, silver_state = interject(silver, "udsilver", 41, "xnpcj")
+    copies_case(s, "adalon", {"udsilver": silver_route, "xnpcj": silver_npc},
+                routes=(("udsilver",), ("adalon",), ("udsilver", "adalon"), ()))
+    for label, actions in (("override", b'ActionOverride("udsilver",TakePartyItem("MISC9T"))\r\n'),
+                           ("replaced", b'TakeItemReplace("misc9u","misc9t",Player1)\r\n'),
+                           ("given", b'GiveItemCreate("misc9t",Player1,0,0,0)\r\n'),
+                           ("unreadable", b'TakePartyItem("misc9t"\r\n'),
+                           ("all", b'TakePartyItemAll("Misc9T")\r\n'),
+                           ("other item", b'TakePartyItem("misc9x")\r\nDisplayStringHead(Myself,1)\r\n')):
+        copies_case(s, f"adalon {label}", {"udsilver": silver_route, "xnpcj": changed_reply(
+            silver_npc, "xnpcj", silver_state, lambda text, actions=actions: actions)},
+            routes=(("udsilver",), ("adalon",)))
+    copies_case(s, "adalon alone", {"udsilver": silver}, routes=(("udsilver", "adalon"),))
     genie = mode2_rewards.resource_specs("dlg:trgeni01")[0]
     genie_route, genie_npc, _ = interject(mode2_tests.dialogue_fixture(genie), "trgeni01", 35, "xnpcj")
     copies_case(s, "carried", {"trgeni01": genie_route, "xnpcj": genie_npc}, routes=(("trgeni01",),))
@@ -1972,13 +2060,19 @@ def reward_route_rows_scenario() -> Scenario:
     calls = {"items": "mode2_route_source", "targets": "mode2_route_target"}
     keys = {"items": ("id", "campaign", "source", "source_ref"),
             "targets": ("id", "campaign", "target", "area", "source_ref")}
-    rows = {}
+    rows, places = {}, set()
     for template in ("eet-original", "eet-boss-loot"):
         draft = templates.build_template(template, items="extended", targets="extended", options=options)
         for kind in calls:
             standard = [row for row in draft[kind] if row.get("family") != "mode2"]
             rows.update(((kind, row["id"]), row) for row in draft[kind] if row.get("family") == "mode2")
             rows.update(((kind, row["id"]), row) for row in standard[:3])
+            # The base table's rows that are a route's own (Adalon's place),
+            # and a preset's rows at the same place.
+            places.update((kind, row.get("target"), row.get("area")) for row in standard
+                          if row["id"] in mode2_rewards.TARGET_REWARDS or row["id"] in mode2_rewards.SOURCE_REWARDS)
+            rows.update(((kind, row["id"]), row) for row in standard
+                        if (kind, row.get("target"), row.get("area")) in places)
 
     def check(kind: str, label: str, row) -> None:
         call = calls[kind]

@@ -1,4 +1,5 @@
 """Dialogue transfers reuse delivered NPC inventory, including after loading."""
+from itertools import product
 from pathlib import Path
 import unittest
 
@@ -11,9 +12,12 @@ ROOT = Path(__file__).resolve().parents[1]
 NATIVE = (ROOT / "prototype/FLPRNat.lua").read_text(encoding="utf-8")
 CORE = (ROOT / "prototype/FLPRCore.lua").read_text(encoding="utf-8")
 SCENARIO = r'''
-return function(N,Core)
+return function(N,Core,plain)
     local f=setup(N)
-    f.fixture.targets[f.target_id].inventory_reward=true
+    -- An inventory route's place; a revision exported before its place had
+    -- the route has a plain creature there (Adalon's place in CIR 1.0.2),
+    -- whose reply hands over the same.
+    f.fixture.targets[f.target_id].inventory_reward=not plain or nil
     f.adapter=N.new(f.api,f.fixture)
     local assignments={}
     for n,id in ipairs(f.source_ids) do
@@ -57,6 +61,17 @@ return function(N,Core)
     assignments[2]=nil
     assert(transfer()==-1 and #party==2 and party[2].address==501 and calls[#calls]=='book04')
     unrelated_intact(f)
+    -- Only a creature keeps its place's rewards in its backpack: without the
+    -- route, a quest's place, one that receives only at a corpse or from a
+    -- payment, or any other kind, stops the campaign.
+    for _,change in ipairs({{quest_event='FLPR_EM2_72'},{corpse_only=true},{handover={}},{kind='container'}}) do
+        local adapter=N.new(f.api,f.fixture)
+        adapter.targets[f.target_id].inventory_reward=nil
+        for key,value in pairs(change) do adapter.targets[f.target_id][key]=value end
+        local ok,err=pcall(adapter.transfer_inventory_reward,adapter,f.creature,f.target_id,assignments,Core.PHASE)
+        assert(not ok and tostring(err):find('NATIVE_INVENTORY_REWARD_INVALID',1,true),tostring(err))
+        adapter:destroy()
+    end
 end
 '''
 
@@ -128,11 +143,11 @@ end
 
 class InventoryRewardRuntimeTests(unittest.TestCase):
     def test_wait_transfer_and_reload(self):
-        for runtime in (Lua51, Lua53, LuaJIT):
+        for runtime, plain in product((Lua51, Lua53, LuaJIT), (False, True)):
             lua = runtime(unpack_returned_tuples=True)
-            with self.subTest(runtime=runtime.__module__):
+            with self.subTest(runtime=runtime.__module__, plain=plain):
                 lua.execute(FIXTURE.rsplit("return cases", 1)[0] + SCENARIO)(
-                    lua.execute(NATIVE), lua.execute(CORE))
+                    lua.execute(NATIVE), lua.execute(CORE), plain)
 
     def test_a_presets_rows_stand_for_the_rows_of_their_route(self):
         for runtime in (Lua51, Lua53, LuaJIT):
@@ -163,6 +178,12 @@ class InventoryRewardRuntimeTests(unittest.TestCase):
             -- A BG1 row passes its campaign (1).
             expected='original-target:bg1:mode2:target:16'
             assert(FLPR_Transfer(speaker,16,1)==-1)
+            -- A row of the base table passes its campaign and its table (1),
+            -- as Adalon's place does.
+            expected='original-target:bg2:base:target:72'
+            assert(FLPR_Transfer(speaker,72,2,1)==-1)
+            expected='original-target:bg1:base:target:5'
+            assert(FLPR_Transfer(speaker,5,1,1)==-1)
         ''')
 
 
