@@ -558,6 +558,12 @@ def patch_destroys_case(s: Scenario, label: str, data: bytes) -> None:
     s.case(f"patch_destroys {label}", "mode2_rewards._patch_destroys", {"data": data, "specs": list(specs)}, run)
 
 
+def destroyed_case(s: Scenario, label: str, data: bytes) -> None:
+    """The items the treasury's script destroys by name (destroyed_items)."""
+    s.case(f"destroyed_items {label}", "mode2_rewards.destroyed_items", {"resource": "bcs:sahtreas", "data": data},
+           lambda: mode2_rewards.destroyed_items("bcs:sahtreas", data))
+
+
 def treasury_cases(s: Scenario) -> None:
     """test_each_reply_that_pays_with_the_rod_hands_the_treasury_over_after_its_guards,
     test_the_treasury_destroys_the_kings_items_only_while_his_grants_are_unchanged and
@@ -608,6 +614,8 @@ def treasury_cases(s: Scenario) -> None:
         ("two blocks", treasury(book_block([paid], action(169, text="RODS02")),
                                 book_block([trigger(16399, 3, "GLOBALsahkngjob")], action(169, text="BRAC19")))),
         ("rod only", treasury(book_block([paid], action(169, text="RODS02")))),
+        ("another destroy", treasury(king_block, book_block([trigger(16399, 1, "GLOBALOtherMod")],
+                                                            action(169, text="Sw1h01", actor=21)))),
         ("plain", treasury(other, testing)),
         ("giving", treasury(book_block([paid], mode2_tests.KING_DESTROYS + action(15, text="RODS02", target=21)))),
         ("both given", treasury(book_block([paid], action(15, text="RODS02", target=21) +
@@ -622,11 +630,13 @@ def treasury_cases(s: Scenario) -> None:
         reward_checks(s, f"sahtreas {label}", "bcs:sahtreas", data)
         unpatched_case(s, f"sahtreas {label}", "bcs:sahtreas", data)
         patch_destroys_case(s, label, data)
+        destroyed_case(s, label, data)
         if result is None or result == data:
             continue
         reward_checks(s, f"sahtreas {label} result", "bcs:sahtreas", result)
         unpatched_case(s, f"sahtreas {label} result", "SAHTREAS.BCS", result)
         patch_destroys_case(s, f"{label} result", result)
+        destroyed_case(s, f"{label} result", result)
     for game in ("eet", "eet copy", "bgt"):
         reward_checks(s, f"sahtreas {game}", "bcs:sahtreas", treasury(), NAMINGS[game])
     # Our patch changed: a block dropped, a destroy back, a guard turned or

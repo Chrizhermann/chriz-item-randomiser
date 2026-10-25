@@ -501,16 +501,29 @@ the first living one, or to the next member with room in the backpack; with no r
 anywhere it lands at the payee's feet. A reward the party took from the treasury
 already stays taken. A reward that has not reached the treasury yet goes to that
 party member instead. On the prince's side the king never pays, and the reward stays
-in the treasury to be looted. Once the king has paid, `SAHTREAS.BCS` destroys the
-items his reply gives; each of those destroys runs only while that item's row leaves
-the original where it is (`FLPR_QM2_7` for the rod, `FLPR_QM2_57` for the bracer), so a
-reward of the same name that moved into the treasury stays. A game without that
-script needs no gate. The treasury's place is left out with its reason when the king
-gives no rod ("SAHKNG01.DLG has no reply that gives RODS02") or AR2300 has no such
-container or more than one. Where the script uses one of the king's items in another
-way than `DestroyItem` ("SAHTREAS.BCS block 0 uses RODS02 in an action other than
-DestroyItem(), which the route cannot gate"), that item's rows are left out (for the
-rod, with the treasury's place); a script that cannot be read leaves out both.
+in the treasury to be looted. Once the king's job is done (`sahkngjob` 2, which he
+sets just before his reward reply), `SAHTREAS.BCS` destroys the items that reply
+gives. It runs with every AI update of the treasury, trapped or not (2.7.3.0: the
+container's constructor sets its script, and its AI update ends in the engine's script
+processing). Each of those destroys runs only while that item's row leaves the original
+where it is (`FLPR_QM2_7` for the rod, `FLPR_QM2_57` for the bracer), so the rod or the
+bracer that moved into the treasury stays. A game without that script needs no gate.
+The treasury's place is left out with its reason when the king gives no rod
+("SAHKNG01.DLG has no reply that gives RODS02") or AR2300 has no such container or more
+than one. Where the script uses one of the king's items in another way than
+`DestroyItem` ("SAHTREAS.BCS block 0 uses RODS02 in an action other than DestroyItem(),
+which the route cannot gate"), that item's rows are left out (for the rod, with the
+treasury's place); a script that cannot be read leaves out both. The place is left out
+too where a reward of its tier (the only ones a campaign can put there) could be lost
+there: one with the name of an item the script destroys, other than the rod's and the
+bracer's own rows (another mod's rod, or an item another mod's block destroys:
+"SAHTREAS.BCS destroys every RODS02 in the treasury, and the reward ... can be one"), or
+one that the king's handover could not tell apart from another item of its name with
+other charges, flags or expiration: one lying in the treasury ("The treasury holds
+another ..."), or another reward that can lie there too, through another place in the
+same container (as the base row 316 of the scroll tier) or, with overflow, through the
+treasury's own place ("The reward ... can lie in the treasury as another ..."). No such
+reward is in the unmodded games.
 
 The book of Lavok's sphere (`PPBOOK.BCS`, AR1513) gives two scrolls with the ring on
 its last page (rows 260 and 262 of the extended tables, beside the ring's row 109).

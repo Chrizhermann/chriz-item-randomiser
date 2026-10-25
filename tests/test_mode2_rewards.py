@@ -288,8 +288,8 @@ def book_fixture(installed=True):
     return ('SC\n' + earlier + pages + 'SC\n').encode()
 
 
-# Once the king has paid (sahkngjob 2), SAHTREAS.BCS destroys the items his
-# reward reply gives, the treasury's rod among them.
+# Once the king's job is done (sahkngjob 2, just before he pays), SAHTREAS.BCS
+# destroys the items his reward reply gives, the treasury's rod among them.
 KING_PAID = trigger(16399, 2, "GLOBALsahkngjob")
 KING_DESTROYS = action(169, text="RODS02") + action(169, text="BRAC19")
 NO_ACTION = action(0)
@@ -941,6 +941,29 @@ class Mode2RewardTests(unittest.TestCase):
         self.assertEqual(rewards.patch_reward("bcs:sahtreas", plain), plain)
         self.assertFalse(rewards.own_patch("bcs:sahtreas", plain))
         self.assertEqual(rewards.route_reasons("bcs:sahtreas", plain), {})
+
+    def test_the_treasurys_destroyed_items_are_read_by_meaning(self):
+        # The treasury's script runs with every AI update of its container,
+        # so any reward of a name it destroys could be destroyed there.
+        self.assertEqual(rewards.destroyed_items("bcs:sahtreas", treasury_fixture()), {"rods02", "brac19"})
+        patched = rewards.patch_reward("bcs:sahtreas", treasury_fixture())
+        self.assertEqual(rewards.destroyed_items("SAHTREAS.BCS", patched), {"rods02", "brac19"})
+        other = book_block([trigger(16399, 1, "GLOBALOtherMod")],
+                           action(169, text="Sw1h01", actor=21) + action(30, 2, "GLOBALOtherMod"))
+        for label, script, expected in (
+                ("another mod's destroy", treasury_fixture(book_block([KING_PAID], KING_DESTROYS), other),
+                 {"rods02", "brac19", "sw1h01"}),
+                ("crlf", treasury_fixture(other).replace(b"\n", b"\r\n"), {"sw1h01"}),
+                ("alternatives", treasury_fixture(alternatives(action(169, text="RODS02"), action(30, 1, "GLOBALX"),
+                                                               condition="GLOBALsahkngjob")), {"rods02"}),
+                ("tests only", treasury_fixture(book_block([trigger(16481, 0, "RODS02")], action(30, 3, "GLOBALX"))),
+                 set()),
+                ("no blocks", b"SC\nSC\n", set())):
+            with self.subTest(label):
+                self.assertEqual(rewards.destroyed_items("bcs:sahtreas", script), expected)
+        unreadable = treasury_fixture().replace(b"169OB", b"169XX", 1)
+        with self.assertRaisesRegex(ProfileError, "SAHTREAS.BCS cannot be read as a compiled script"):
+            rewards.destroyed_items("bcs:sahtreas", unreadable)
 
     def test_a_treasury_that_could_take_a_moved_reward_otherwise_leaves_its_route_out(self):
         reason = ("SAHTREAS.BCS block 0 uses RODS02 in an action other than DestroyItem(), "

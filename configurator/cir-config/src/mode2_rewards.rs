@@ -38,7 +38,7 @@ use crate::error::{Error, ErrorKind, Result};
 use crate::game_names::{convert_resource, EetNames};
 use crate::game_text::GameText;
 use crate::json::{Dict, Value};
-use crate::py::{count_bytes, find_bytes, put_u32, replace_bytes, rfind_bytes, str_value, u32_le, upper};
+use crate::py::{count_bytes, find_bytes, latin1, put_u32, replace_bytes, rfind_bytes, str_value, u32_le, upper};
 use crate::quest_options::{pad, Dialogue};
 use crate::translations::Line;
 use crate::quest_rewards::{global_action, global_guard};
@@ -451,11 +451,12 @@ fn build_registry() -> Registry {
         row.insert("authored_source_ids", list!["original-source:bg2:mode2:item:7"]);
         row.insert("handover", dict! {"area" => "ar2300", "script" => "sahtreas"});
     }
-    // Once the king has paid, SAHTREAS.BCS destroys the items his reply gives
-    // (DestroyItem), the treasury's rod among them. A reward that moved there
-    // under such a name must stay: each destroy runs only while its route's
-    // grant is the original one ([`patch_destroys`]). A game without the
-    // script needs no gate.
+    // Once the king's job is done (sahkngjob 2, which he sets just before his
+    // reward reply), SAHTREAS.BCS destroys the items that reply gives
+    // (DestroyItem), the treasury's rod among them, with every AI update of
+    // the treasury. A reward that moved there under such a name must stay:
+    // each destroy runs only while its route's grant is the original one
+    // ([`patch_destroys`]). A game without the script needs no gate.
     for (_, keys) in DESTROY_GATES {
         for key in *keys {
             row_mut(&mut rewards, key).insert("resources", list!["dlg:sahkng01", "bcs:sahtreas"]);
@@ -2473,6 +2474,31 @@ pub fn gives_reward(resource: &str, data: &[u8], key: &str, naming: Naming<'_>) 
         }
     }
     Ok(false)
+}
+
+/// The items the script `resource` destroys by name (`destroyed_items`):
+/// each DestroyItem(), also through ActionOverride(), in any block and letter
+/// case.
+///
+/// The Sahuagin treasury's script runs with every AI update of its container,
+/// trapped or not (2.7.3.0: CGameContainer's constructor sets its script,
+/// AIUpdate ends in ProcessAI), so a reward of such a name could be destroyed
+/// there (native_export).
+pub fn destroyed_items(resource: &str, data: &[u8]) -> Result<BTreeSet<String>> {
+    let resource = resource_key(resource)?;
+    naming(&label(&resource), || {
+        let script = script_blocks(data)?;
+        let mut found = BTreeSet::new();
+        for block in &script.blocks {
+            let (_, _, responses) = block_parts(block, script.newline)?;
+            for action in block_actions(&responses, script.newline)? {
+                if action.opcode == 169 {
+                    found.insert(latin1(&action.strings[0].to_ascii_lowercase()));
+                }
+            }
+        }
+        Ok(found)
+    })
 }
 
 /// Patch a resource or re-export our own patch; text routes need refs on

@@ -73,6 +73,8 @@ class RewardRoutes:
         self.changed: set[str] = set()
         self.reasons: dict[tuple[str, str], str] = {}
         self.giving: set[str] = set()
+        # The items each destroying script (DESTROY_GATES) destroys by name, or why it cannot be read.
+        self._destroyed: dict[str, frozenset[str] | str] = {}
         self._files: dict[Path, tuple] = {}
         male, female = game_text.text_files(game_root, language)
         for path in [male.parent, male, *([female] if female else []), *translations.sources(language)]:
@@ -112,6 +114,11 @@ class RewardRoutes:
                     continue
                 for key, reason in adapter.route_reasons(resource, data, **named).items():
                     self.reasons[resource, key] = reason
+                if resource in mode2_rewards.DESTROY_GATES:
+                    try:
+                        self._destroyed[resource] = mode2_rewards.destroyed_items(resource, data)
+                    except ProfileError as exc:
+                        self._destroyed[resource] = str(exc)
                 # Only a dialogue gives such a reward (gives_reward).
                 for key in sorted(_LINKS.intersection(mode2_rewards.RESOURCE_REWARDS.get(resource, ()))
                                   if kind == "dlg" else ()):
@@ -181,6 +188,15 @@ class RewardRoutes:
             raise ProfileError(prefix + reason)
         self._texts(tuple(line for resource in spec["resources"] if resource in mode2_rewards.TEXT_REFS
                           for line in mode2_rewards.text_lines(resource)), prefix)
+
+    def destroyed(self, resource: str) -> frozenset[str]:
+        """The items the script <resource> (one of DESTROY_GATES) destroys by
+        name (mode2_rewards.destroyed_items); none in a game without it."""
+        self._unchanged([resource])
+        found = self._destroyed.get(resource, frozenset())
+        if isinstance(found, str):
+            raise ProfileError(found)
+        return found
 
     def gives(self, key: str) -> bool:
         """Whether a dialogue of the route <key> (one of _LINKS) gives its item at

@@ -186,11 +186,12 @@ REWARDS["udlesa"].update(
 _alias("sahrod", "rods02", 7, 6, "SAHROD", {"sahkng01": ((81, 0),)})
 REWARDS["sahrod"].update(source_ids=(), authored_source_ids=("original-source:bg2:mode2:item:7",),
                          handover={"area": "ar2300", "script": "sahtreas"})
-# Once the king has paid, SAHTREAS.BCS destroys the items his reply gives
-# (DestroyItem), the treasury's rod among them. A reward that moved there
-# under such a name must stay: each destroy runs only while its route's grant
-# is the original one (_patch_destroys). A game without the script needs no
-# gate.
+# Once the king's job is done (sahkngjob 2, which he sets just before his
+# reward reply), SAHTREAS.BCS destroys the items that reply gives
+# (DestroyItem), the treasury's rod among them, with every AI update of the
+# treasury. A reward that moved there under such a name must stay: each
+# destroy runs only while its route's grant is the original one
+# (_patch_destroys). A game without the script needs no gate.
 DESTROY_GATES = {"bcs:sahtreas": ("sahkng01", "sahrod")}
 for _key in DESTROY_GATES["bcs:sahtreas"]:
     REWARDS[_key]["resources"] = ("dlg:sahkng01", "bcs:sahtreas")
@@ -1414,6 +1415,26 @@ def gives_reward(resource: str, data: bytes, key: str, *, game: str | None = Non
             if found is None or any(_gives(text, call, item) for call in found):
                 return True
     return False
+
+
+def destroyed_items(resource: str, data: bytes) -> frozenset[str]:
+    """The items the script <resource> destroys by name: each DestroyItem(),
+    also through ActionOverride(), in any block and letter case.
+
+    The Sahuagin treasury's script runs with every AI update of its
+    container, trapped or not (2.7.3.0: CGameContainer's constructor sets its
+    script, AIUpdate ends in ProcessAI), so a reward of such a name could be
+    destroyed there (native_export).
+    """
+    resource = _resource_key(resource)
+    with naming(_label(resource)):
+        script = script_blocks(data)
+        found = set()
+        for block in script.blocks:
+            responses = block_parts(block, script.newline)[2]
+            found.update(action.strings[0].lower().decode("latin-1")
+                         for action in block_actions(responses, script.newline) if action.opcode == 169)
+    return frozenset(found)
 
 
 def patch_reward(resource: str, data: bytes, *, refs: dict[int, int] | None = None,

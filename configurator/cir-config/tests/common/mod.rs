@@ -589,6 +589,9 @@ fn call(name: &str, args: &Args) -> Result<Value> {
             Value::List(vec![bytes_value(&result), Value::Dict(reasons)])
         }
         "mode2_rewards._handover" => bytes_value(&mode2_rewards::handover(&args.dict("spec"))?),
+        "mode2_rewards.destroyed_items" => Value::List(
+            mode2_rewards::destroyed_items(&args.str("resource"), &args.bytes("data"))?.into_iter().map(Value::Str).collect(),
+        ),
         "mode2_rewards.unpatched_script" => bytes_value(&mode2_rewards::unpatched_script(
             &args.str("resource"),
             &args.bytes("data"),

@@ -356,7 +356,7 @@ pub fn book_fixture(installed: bool) -> Vec<u8> {
     format!("SC\n{earlier}{pages}SC\n").into_bytes()
 }
 
-/// `KING_PAID`: the king has paid (sahkngjob 2).
+/// `KING_PAID`: the king's job is done (sahkngjob 2), just before he pays.
 pub fn king_paid() -> String {
     trigger(16399, 2, "GLOBALsahkngjob", 0)
 }
