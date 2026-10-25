@@ -634,6 +634,10 @@ function cases.unstealable_scroll_stack_uses_one_bound_creature_message(N)
     local inventory={}
     f.target.m_equipment={m_items={get=function(_,slot) return inventory[slot] end}}
     f.api.EEex_Sprite_GetPortraitIndex=function() return -1 end
+    -- A creature that died without a body (FLPRNat's death variables, the party).
+    f.api.EEex_GameState_GetGlobalInt=function() return 0 end
+    f.api.EEex_Sprite_GetInPortrait=function() end
+    f.api.EEex_Sprite_GetName=function() end
     f.api.EEex_CastUD=function(object,kind) assert(kind=="CMessageAddItem"); return object end
     f.api.EEex_Action_ExecuteResponseStringOnAIBaseInstantly=function(action,owner)
         assert(owner==f.target)
@@ -667,6 +671,10 @@ local function creature_reward(N,f,reward,stack,created,flags)
     local inventory={}
     f.target.m_equipment={m_items={get=function(_,slot) return inventory[slot] end}}
     f.api.EEex_Sprite_GetPortraitIndex=function() return -1 end
+    -- A creature that died without a body (FLPRNat's death variables, the party).
+    f.api.EEex_GameState_GetGlobalInt=function() return 0 end
+    f.api.EEex_Sprite_GetInPortrait=function() end
+    f.api.EEex_Sprite_GetName=function() end
     f.api.EEex_CastUD=function(object,kind) assert(kind=="CMessageAddItem"); return object end
     f.api.EEex_Action_ExecuteResponseStringOnAIBaseInstantly=function(action,owner)
         f.calls[#f.calls+1]=action

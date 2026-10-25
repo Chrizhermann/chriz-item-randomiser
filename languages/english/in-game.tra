@@ -750,5 +750,8 @@ Medium green triangle marks the spot. - Lum" //failsafe
 @1704=~Start without randomiser~
 @1705=~Chriz Item Randomiser: this adventure's items are randomised.~
 @1706=~Chriz Item Randomiser stopped working in this adventure. Items it has not placed yet may be missing. Details: randomiser-campaigns\last-error.txt~
+// A reward whose creature died without leaving a body falls at a party member's feet. The runtime puts in the
+// item's name for {item} and the party member's for {member}; keep both as they are.
+@1707=~{item} falls to the ground at {member}'s feet. Whoever carried it left no body behind.~
 
 

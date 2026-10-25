@@ -4,7 +4,9 @@ local Host = {}
 Host.__index = Host
 -- An unavailable target is retried after this many game ticks (15/second).
 -- Deferral never creates anything or substitutes another recipient. A dead
--- creature target's reward goes to the ground at its corpse instead (FLPRNat).
+-- creature target's reward goes to the ground at its corpse instead, or at a
+-- party member's feet where it left no body (FLPRNat); deps.notice tells the
+-- player of the latter.
 Host.DEFER_TICKS = 30
 -- Guarded sources whose lease, and whose removal, one step observes.
 Host.LEASE_CHECKS = 16
@@ -15,7 +17,7 @@ Host.DEFERRABLE = { AREA_UNAVAILABLE = true, OWNER_MISSING = true, OWNER_AMBIGUO
     TARGET_NOT_ALIVE = true, TARGET_PARTY_MEMBER = true, TARGET_FAMILIAR = true,
     TARGET_INVENTORY_FULL = true, TARGET_QUEUE_BUSY = true, TARGET_NOT_EMPTY = true,
     TARGET_STACK_COLLISION = true, QUEST_NOT_CLAIMED = true, CORPSE_ITEM_AMBIGUOUS = true,
-    TARGET_ALIVE = true }
+    TARGET_ALIVE = true, PARTY_ITEM_AMBIGUOUS = true }
 
 function Host.new(deps)
     assert(type(deps) == "table" and deps.core and deps.storage)
@@ -204,6 +206,7 @@ function Host:_step(tick)
         require_result(receipt, reason)
         require_result(self.controller:observe(receipt))
         self.pending = nil
+        if receipt.notice and self.deps.notice then self.deps.notice(receipt.notice) end
         return
     end
     if self.native.observe_container_latches then

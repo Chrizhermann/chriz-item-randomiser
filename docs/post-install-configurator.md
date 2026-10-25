@@ -614,11 +614,13 @@ by its RR#ARAN2.CRE, RR#BOOTR, RR#HAZ or ARKANISG) at his corpse; or Aran (ARAN0
 RR#ARAN2) at his corpse. Each is drawn among those who can use the reward, else among
 all, as Item Randomiser draws them. So on Aran's side the vampire carries the reward
 and drops it when killed, and on Bodhi's side it lies at the corpse of whichever of the
-thief and Aran dies first. Alive, the thieves and Aran never take it: on Aran's side
-they are the party's allies, and Rogue Rebalancing removes the living thieves once Aran
-is dead. Bodhi's side must kill Aran (BODHI.DLG asks for `Dead("aran")`). Nothing is
-given twice, so no second copy needs destroying, as Item Randomiser's script for the
-Alternatives mod does.
+thief and Aran dies first. A vampire killed before the reward reached it leaves no
+body, since a mist replaces it. The reward then falls at a party member's feet, and a
+message names it ([campaign runtime](campaign-runtime-prototype.md)). Alive, the
+thieves and Aran never take it: on Aran's side they are the party's allies, and Rogue
+Rebalancing removes the living thieves once Aran is dead. Bodhi's side must kill Aran
+(BODHI.DLG asks for `Dead("aran")`). Nothing is given twice, so no second copy needs
+destroying, as Item Randomiser's script for the Alternatives mod does.
 
 Two of Item Randomiser's creatures are not among them: Tanova (BODTAN), whose vampire
 script (VAMPIR01.BCS of the unmodded game) replaces her with a bat once her hit points

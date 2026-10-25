@@ -38,7 +38,7 @@ local function setup(N)
     f.ids = {[f.source1]=1, [f.source2]=2, [f.creature]=3}
     f.area = {m_resref=str("BG2600"), m_lVertSort={1, 2, 3}, m_lVertSortBack={},
         m_lVertSortFlight={}, m_lVertSortUnder={}}
-    f.header = {maxStackable=1, itemFlags=12}
+    f.header = {maxStackable=1, itemFlags=12, genericName=7100, identifiedName=7101}
     local api = {}
     api.EngineGlobals = {g_pBaldurChitin={m_cMessageHandler={m_messageList=f.queue}}}
     api.EEex_CastUD = function(object, kind) f.casts[#f.casts + 1] = kind; return object end
@@ -47,6 +47,12 @@ local function setup(N)
     api.EEex_GameObject_CastUserType = function(o) return o end
     api.EEex_GameObject_IsSprite = function(o, dead) return o.sprite and (dead or o.alive) or false end
     api.EEex_Sprite_GetPortraitIndex = function(o) return o.portrait end
+    -- GLOBAL variables by name in any letter case, as the engine finds them
+    -- (the death variables SPRITE_IS_DEAD<script name>), and the party.
+    f.globals = {}
+    api.EEex_GameState_GetGlobalInt = function(name) return f.globals[name:upper()] or 0 end
+    api.EEex_Sprite_GetInPortrait = function() return nil end
+    api.EEex_Sprite_GetName = function(o) return o.name end
     api.EEex_Utility_IterateCPtrList = function(list, fn) for _, entry in ipairs(list) do fn(entry) end end
     api.EEex_UDToPtr = function(o) return o.address end
     api.EEex_Resource_Demand = function(ref, ext) assert(ext == "ITM"); return f.header end
@@ -862,10 +868,12 @@ end
 
 -- The ground at a dead target's corpse, as the 2.7.3.0 lab showed it
 -- (docs/native-corpse-ground-evidence.md): CreateItem on a sprite outside the
--- party fills the highest empty slot from 34 down to 15 at once. DropItem takes
--- the first item of that name out and queues one container add (subtype 12,
--- slot 32767, target and source the pile) into a type-4 pile at the corpse: a
--- listed pile there, or a new one that joins the area as its message runs.
+-- party fills the highest empty slot from 34 down to 15 at once, on a party
+-- member the first empty backpack slot (docs/native-creature-transport-evidence.md).
+-- DropItem takes the first item of that name out and queues one container add
+-- (subtype 12, slot 32767, target and source the pile) into a type-4 pile at
+-- the sprite: a listed pile there, or a new one that joins the area as its
+-- message runs.
 local function ground_world(N)
     local f = setup(N)
     f.creature.alive = false
@@ -895,7 +903,9 @@ local function ground_world(N)
         local ref, c1, c2, c3 = action:match('^CreateItem%("([^"]+)",(%d+),(%d+),(%d+)%)$')
         if ref then
             if f.create_variant == "none" then return end
-            for slot = 34, 15, -1 do
+            local first, last, step = 34, 15, -1
+            if o.portrait ~= -1 then first, last, step = 18, 33, 1 end
+            for slot = first, last, step do
                 if not o.slots[slot] then
                     f.next_address = f.next_address + 1
                     local made = f.item(ref:upper(), f.next_address)
@@ -983,7 +993,7 @@ function cases.dead_target_reward_goes_to_a_new_pile_at_its_corpse(N)
     assert(a:diagnostics().pending.pile_pointer == tostring(pile.address))
     f.boundary(); local receipt = assert(a:observe(command))
     assert(receipt.created == 1 and receipt.nonce_bound_instance == 1 and receipt.lootable == 1 and
-        receipt.held == nil and receipt.holder == "ground" and receipt.payload.flags == 1)
+        receipt.held == nil and receipt.holder == "ground" and receipt.payload.flags == 1 and receipt.notice == nil)
     assert(#pile.m_lstItems == 1 and pile.m_lstItems[1].cResRef:get() == "FLPRI1" and
         pile.m_lstItems[1].m_flags == 1 and f.area.m_lVertSortBack[1] == pile_id)
     corpse_as_before(f); assert(#f.calls == 2 and a.pending == nil)
@@ -1138,6 +1148,198 @@ function cases.stuck_ground_message_times_out_and_never_recovers(N)
     f.update(); assert(a:on_observation_boundary(f.tick + N.MAX_SETTLE_TICKS + 1))
     x, e = a:observe(command); fail(x, e, "DELIVERY_SETTLING_TIMEOUT")
     assert(#f.calls == 2)
+end
+
+-- A creature target that died and left no body (Adapter:_inspect_party_ground):
+-- no sprite of its script name in its area any more, its death counted in
+-- SPRITE_IS_DEAD<script name>, and the party there. Kara (portrait 0) and
+-- Minsc (portrait 1) stand in the area with empty backpacks.
+local function vanish_world(N)
+    local f = ground_world(N)
+    f.area.m_lVertSort = {1, 2}
+    f.globals.SPRITE_IS_DEADFLPRC1 = 1
+    f.party = {}
+    f.api.EEex_Sprite_GetInPortrait = function(index) return f.party[index] end
+    function f.member(portrait, id, name)
+        local o = f.sprite(800 + id, name:upper(), {})
+        o.portrait, o.m_id, o.name, o.m_pos = portrait, id, name, {x=300 + 40 * portrait, y=400}
+        f.objects[id], f.ids[o], f.party[portrait] = o, id, o
+        f.area.m_lVertSort[#f.area.m_lVertSort + 1] = id
+        return o
+    end
+    f.kara, f.minsc = f.member(0, 8, "Kara"), f.member(1, 9, "Minsc")
+    return f
+end
+local function vanish_start(f, index)
+    local witness = assert(f.adapter:inspect_target(f.target_id, f.source_ids[index], index))
+    assert(witness.ground == true and witness.accepts == 1 and witness.target_id == f.target_id)
+    f.boundary()
+    local command = f.command(index)
+    assert(f.adapter:execute(command))
+    return command
+end
+local function vanish_receipt(f, command)
+    f.update(); f.boundary()
+    local x, e = f.adapter:observe(command); fail(x, e, "DELIVERY_SETTLING")
+    f.boundary(); return assert(f.adapter:observe(command))
+end
+function cases.vanished_target_reward_falls_at_the_first_party_members_feet(N)
+    local f = vanish_world(N); local a = f.adapter
+    local command = vanish_start(f, 1)
+    assert(#f.calls == 2 and f.calls[1] == 'CreateItem("flpri1",0,0,0)' and f.calls[2] == 'DropItem("flpri1",[-1.-1])')
+    -- Kara has dropped it at once; Minsc is untouched.
+    assert(next(f.kara.slots) == nil and next(f.minsc.slots) == nil)
+    assert(#f.queue == 1 and f.queue[1].virtual_GetMsgSubType() == 12)
+    local pile_id = f.queue[1].m_targetId
+    local pile = f.objects[pile_id]
+    assert(pile.m_pos.x == f.kara.m_pos.x and a:diagnostics().pending.notice.member == "Kara")
+    f.boundary(); local x, e = a:observe(command); fail(x, e, "DELIVERY_SETTLING")
+    local receipt = vanish_receipt(f, command)
+    assert(receipt.created == 1 and receipt.nonce_bound_instance == 1 and receipt.lootable == 1 and
+        receipt.held == nil and receipt.holder == "ground")
+    assert(#pile.m_lstItems == 1 and pile.m_lstItems[1].cResRef:get() == "FLPRI1" and
+        pile.m_lstItems[1].m_flags == 1 and f.area.m_lVertSortBack[1] == pile_id)
+    -- The player is told the item's name (identified, flags 1) and Kara's.
+    assert(receipt.notice.item == 7101 and receipt.notice.resref == "flpri1" and receipt.notice.member == "Kara")
+    unrelated_intact(f); assert(#f.calls == 2 and a.pending == nil)
+    x, e = a:execute(command); fail(x, e, "ALREADY_ATTEMPTED")
+end
+function cases.vanish_notice_names_the_reward_as_the_player_sees_it(N)
+    for _, variant in ipairs({"unidentified", "unnamed", "nameless"}) do
+        local f = vanish_world(N)
+        if variant == "unidentified" then f.fixture.sources[f.source_ids[1]].payload.flags = 0
+        elseif variant == "unnamed" then f.header.identifiedName, f.header.genericName = 4294967295, 0
+        else f.kara.name = nil end
+        f.adapter = N.new(f.api, f.fixture)
+        local notice = vanish_receipt(f, vanish_start(f, 1)).notice
+        if variant == "unidentified" then assert(notice.item == 7100 and notice.member == "Kara")
+        elseif variant == "unnamed" then assert(notice.item == nil and notice.resref == "flpri1")
+        else assert(notice.member == nil and notice.item == 7101) end
+    end
+end
+function cases.vanish_drop_takes_the_first_member_who_can_drop_it(N)
+    for _, variant in ipairs({"dead", "elsewhere", "copy", "equipped", "full", "busy"}) do
+        local f = vanish_world(N)
+        if variant == "dead" then f.kara.alive = false
+        elseif variant == "elsewhere" then f.area.m_lVertSort = {1, 2, 9}
+        elseif variant == "copy" then f.kara.slots[25] = f.item("FLPRI1", 830)
+        elseif variant == "equipped" then f.kara.slots[1] = f.item("FLPRI1", 831)
+        elseif variant == "full" then for slot = 18, 33 do f.kara.slots[slot] = f.item("FILL", 600 + slot) end
+        else f.queue[1] = f.message(8, "OTHER", 34) end
+        local kept = clone(f.kara.slots)
+        local command = vanish_start(f, 1)
+        assert(vanish_receipt(f, command).notice.member == "Minsc" and next(f.minsc.slots) == nil, variant)
+        equal_tree(f.kara.slots, kept)
+    end
+end
+function cases.vanish_drop_waits_while_no_member_can_or_the_target_is_not_gone(N)
+    local wants = {full="TARGET_INVENTORY_FULL", copy="PARTY_ITEM_AMBIGUOUS", busy="TARGET_QUEUE_BUSY",
+        pile="TARGET_QUEUE_BUSY", nobody="OWNER_MISSING", alive="OWNER_MISSING", sourceless="OWNER_MISSING",
+        area="AREA_UNAVAILABLE", unsupported="ITEM_NOT_VISIBLE_DROPPABLE"}
+    for _, variant in ipairs({"full", "copy", "busy", "pile", "nobody", "alive", "sourceless", "area", "unsupported"}) do
+        local f = vanish_world(N)
+        for _, member in ipairs({f.kara, f.minsc}) do
+            if variant == "full" then
+                for slot = 18, 33 do member.slots[slot] = f.item("FILL", 100 * member.m_id + slot) end
+            elseif variant == "copy" then member.slots[30] = f.item("FLPRI1", 830 + member.m_id)
+            elseif variant == "busy" then f.queue[#f.queue + 1] = f.message(member.m_id, "OTHER", 34) end
+        end
+        if variant == "pile" then
+            -- A drop or death drop on its way into a pile, anywhere.
+            local pile_id = f.pile_at(2000, 2000, {})
+            f.area.m_lVertSortBack = {pile_id}; f.queue[1] = f.message(pile_id, "OTHER", 12, pile_id)
+        elseif variant == "nobody" then f.area.m_lVertSort = {1, 2}
+        -- Not counted dead: not there yet, or gone alive (DestroySelf, EscapeArea).
+        elseif variant == "alive" then f.globals.SPRITE_IS_DEADFLPRC1 = nil
+        elseif variant == "area" then f.area.m_resref = {get=function() return "BG0100" end}
+        elseif variant == "unsupported" then f.header.itemFlags = 4 end
+        local x, e
+        if variant == "sourceless" then x, e = f.adapter:inspect_target(f.target_id)
+        else x, e = f.adapter:inspect_target(f.target_id, f.source_ids[1], 1) end
+        fail(x, e, wants[variant])
+        f.boundary(); x, e = f.adapter:execute(f.command(1)); fail(x, e, "RESERVATION_MISMATCH")
+        assert(#f.calls == 0, variant)
+    end
+    -- It waits with the reason of the first member in portrait order.
+    local f = vanish_world(N)
+    for slot = 18, 33 do f.kara.slots[slot] = f.item("FILL", 600 + slot) end
+    f.minsc.slots[30] = f.item("FLPRI1", 839)
+    local x, e = f.adapter:inspect_target(f.target_id, f.source_ids[1], 1); fail(x, e, "TARGET_INVENTORY_FULL")
+end
+function cases.vanish_reads_the_death_variable_of_the_targets_script_name(N)
+    for _, name in ipairs({"FLPRC1", "LONGVAMPIRENAME12345"}) do
+        local f = vanish_world(N)
+        f.fixture.targets[f.target_id].script_name = name
+        f.adapter = N.new(f.api, f.fixture)
+        local read, seen = f.api.EEex_GameState_GetGlobalInt, {}
+        f.api.EEex_GameState_GetGlobalInt = function(variable) seen[#seen + 1] = variable; return read(variable) end
+        -- The variable holds the first 32 characters, as the engine stores it.
+        local variable = ("SPRITE_IS_DEAD" .. name:lower()):sub(1, 32)
+        f.globals.SPRITE_IS_DEADFLPRC1 = nil
+        local x, e = f.adapter:inspect_target(f.target_id, f.source_ids[1], 1); fail(x, e, "OWNER_MISSING")
+        assert(seen[#seen] == variable and #variable == math.min(32, 14 + #name), seen[#seen])
+        f.globals[variable:upper()] = 2
+        assert(f.adapter:inspect_target(f.target_id, f.source_ids[1], 1).ground == true)
+    end
+end
+function cases.vanish_execute_rejects_a_changed_target_member_or_queue(N)
+    local wants = {back="OWNER_CHANGED", corpse="OWNER_CHANGED", uncounted="OWNER_CHANGED", left="OWNER_CHANGED",
+        died="OWNER_CHANGED", replaced="OWNER_CHANGED", swapped="OWNER_CHANGED", readdressed="OWNER_CHANGED",
+        items="INVENTORY_CHANGED", queued="DELIVERY_QUEUE_NOT_EXCLUSIVE", pile="DELIVERY_QUEUE_NOT_EXCLUSIVE"}
+    for _, variant in ipairs({"back", "corpse", "uncounted", "left", "died", "replaced", "swapped", "readdressed",
+        "items", "queued", "pile"}) do
+        local f = vanish_world(N); local a = f.adapter
+        assert(a:inspect_target(f.target_id, f.source_ids[1], 1)); f.boundary()
+        if variant == "back" then f.creature.alive = true; f.area.m_lVertSort[#f.area.m_lVertSort + 1] = 3
+        elseif variant == "corpse" then f.area.m_lVertSort[#f.area.m_lVertSort + 1] = 3
+        elseif variant == "uncounted" then f.globals.SPRITE_IS_DEADFLPRC1 = 0
+        elseif variant == "left" then f.area.m_lVertSort = {1, 2, 9}
+        elseif variant == "died" then f.kara.alive = false
+        elseif variant == "replaced" then f.kara.address = 999
+        elseif variant == "swapped" then f.party[0] = f.minsc
+        elseif variant == "readdressed" then
+            -- Another sprite where Kara's was, under a new object id.
+            local other = f.member(0, 10, "Imoen"); other.address = f.kara.address
+        elseif variant == "items" then f.kara.slots[20] = f.item("OTHER", 557)
+        elseif variant == "pile" then
+            local pile_id = f.pile_at(300, 395, {})
+            f.area.m_lVertSortBack = {pile_id}; f.queue[1] = f.message(pile_id, "OTHER", 12, pile_id)
+        else f.queue[1] = f.message(8, "OTHER", 34) end
+        local x, e = a:execute(f.command(1)); fail(x, e, wants[variant])
+        assert(#f.calls == 0, variant)
+    end
+end
+function cases.vanish_execute_requires_one_created_instance_and_one_drop_message(N)
+    for _, variant in ipairs({"none", "queues", "kept", "stays", "other", "extra", "slot", "payload"}) do
+        local f = vanish_world(N); local a = f.adapter
+        if variant == "none" or variant == "queues" then f.create_variant = variant
+        else f.drop_variant = variant end
+        if variant == "other" then f.kara.slots[1] = f.item("OTHER", 832) end
+        assert(a:inspect_target(f.target_id, f.source_ids[1], 1)); f.boundary()
+        local command = f.command(1)
+        local x, e = a:execute(command); fail(x, e, "CREATED_INSTANCE_UNPROVEN")
+        local calls = (variant == "none" or variant == "queues") and 1 or 2
+        assert(#f.calls == calls, variant)
+        f.boundary(); x, e = a:observe(command); fail(x, e, "CREATED_INSTANCE_UNPROVEN")
+        x, e = a:execute(command); fail(x, e, "MUTATION_PENDING")
+    end
+end
+function cases.vanish_serves_creature_targets_only(N)
+    -- A quest target's recipient is a party member: none there is no death.
+    local f = vanish_world(N)
+    f.fixture.targets[f.target_id] = {kind="quest", area="BG2600", identity=string.rep("c", 64),
+        event_global="FLPR_EPOOL"}
+    f.globals.FLPR_EPOOL, f.party[0] = 1, nil
+    f.adapter = N.new(f.api, f.fixture)
+    local x, e = f.adapter:inspect_target(f.target_id, f.source_ids[1], 1); fail(x, e, "OWNER_MISSING")
+    assert(#f.calls == 0 and next(f.adapter.reservations) == nil)
+    -- A container that is gone never died, whatever its name.
+    f = vanish_world(N)
+    f.fixture.targets[f.target_id] = {kind="container", area="BG2600", script_name="FLPRC1", x=500, y=600,
+        container_type=4, identity=string.rep("c", 64)}
+    f.adapter = N.new(f.api, f.fixture)
+    x, e = f.adapter:inspect_target(f.target_id, f.source_ids[1], 1); fail(x, e, "OWNER_MISSING")
+    assert(#f.calls == 0 and next(f.adapter.reservations) == nil)
 end
 return cases
 '''

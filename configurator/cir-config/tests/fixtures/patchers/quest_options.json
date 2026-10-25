@@ -1324,7 +1324,8 @@
     "1703": "Chriz Item Randomiser could not randomise this adventure. Details: randomiser-campaigns\\last-error.txt",
     "1704": "Start without randomiser",
     "1705": "Chriz Item Randomiser: this adventure's items are randomised.",
-    "1706": "Chriz Item Randomiser stopped working in this adventure. Items it has not placed yet may be missing. Details: randomiser-campaigns\\last-error.txt"
+    "1706": "Chriz Item Randomiser stopped working in this adventure. Items it has not placed yet may be missing. Details: randomiser-campaigns\\last-error.txt",
+    "1707": "{item} falls to the ground at {member}'s feet. Whoever carried it left no body behind."
    }
   },
   {
