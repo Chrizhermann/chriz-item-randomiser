@@ -19,6 +19,11 @@ dialogue that CIR changes for something else. Another route's own grants of
 the same item (the sculptors' mace of the temple messengers) stay that
 route's.
 
+A route without a grant of its own (the Sahuagin prince's) hands over what
+its speaker carries in the replies that end his job. A reply there that ends
+that job too, a copy or not, would end it without the hand-over, and the
+reward would stay with him: the route is left out with that reason.
+
 Container quests are not followed: their dialogues test the treasure in the
 conditions of their states, which interjections do not copy.
 
@@ -48,6 +53,8 @@ _OTHER = frozenset(("dlg:hlskull", "dlg:unshey", "dlg:kpglai01"))
 # The routes whose rewards dialogues give, with their dialogues.
 _ROUTES = {key: tuple("dlg:" + name for name in spec.get("dialogues", {spec["quest"]: ()}))
            for key, spec in mode2_rewards.REWARDS.items() if spec["resource"].startswith("dlg:")}
+# The routes that gate their copies; one without a grant has none (see above).
+_GATED = tuple(sorted(key for key in _ROUTES if mode2_rewards.REWARDS[key]["selected_global"]))
 
 
 def _label(resource: str) -> str:
@@ -64,7 +71,7 @@ def copy_spec(key: str, resource: str, *, game: str | None = None, names: EetNam
 def _present(dialogue: _Dialogue) -> list[str]:
     """The routes whose gates our copy patch put into a dialogue."""
     triggers, actions = b"".join(dialogue.triggers), b"".join(dialogue.actions)
-    return [key for key in sorted(_ROUTES)
+    return [key for key in _GATED
             if f'Global("{mode2_rewards.REWARDS[key]["selected_global"]}","GLOBAL",1)'.encode() in triggers and
             mode2_rewards._event(mode2_rewards.REWARDS[key]) in actions]
 
@@ -130,7 +137,7 @@ class RewardCopies:
     def _unpatched(self, resource: str, data: bytes) -> bytes:
         """A dialogue without our copy patch; its routes are checked later."""
         dialogue = mode2_rewards._read_dialogue(data, resource)
-        specs = tuple(copy_spec(key, resource, **self._naming) for key in sorted(_ROUTES))
+        specs = tuple(copy_spec(key, resource, **self._naming) for key in _GATED)
         if not mode2_rewards._carries_patch(dialogue, specs):
             return data
         present = _present(dialogue)
@@ -159,7 +166,10 @@ class RewardCopies:
             spec = next(spec for spec in mode2_rewards.resource_specs(resource, **self._naming)
                         if spec["route"] == key)
             try:
-                grants = mode2_rewards._dialogue_grants(dialogue, spec, _label(resource))
+                if spec.get("job_end"):
+                    grants = mode2_rewards._job_replies(dialogue, spec, _label(resource))
+                else:
+                    grants = mode2_rewards._dialogue_grants(dialogue, spec, _label(resource))
             except ProfileError:
                 return None
             for state, ordinal in grants:
@@ -212,7 +222,8 @@ class RewardCopies:
                     reason = reason or f"{where} has a reply whose actions are outside its tables"
                     continue
                 text = dialogue.actions[action]
-                if not mode2_rewards._names(text, spec["item"]):
+                if not (spec["job_end"][0].encode() in text.lower() if spec.get("job_end") else
+                        mode2_rewards._names(text, spec["item"])):
                     continue
                 try:
                     if self._copy(key, resource, dialogue, index, ordinal, text, texts):
@@ -241,6 +252,15 @@ class RewardCopies:
         """
         spec = self._specs[key]
         where = f"{_label(resource)} state {index}"
+        if spec.get("job_end"):
+            # Whoever's reply ends the job, the speaker who carries the reward
+            # does not hand it over there.
+            job, value = spec["job_end"]
+            if mode2_rewards._reply_ends_job(text, spec["job_end"], where):
+                origins = ", ".join(sorted({_label(origin) for origin in texts.values()}))
+                raise ProfileError(f"{where} also sets {job} to {value}, which ends the job of {origins}'s "
+                                   "speaker, but there it would not hand over the reward it carries")
+            return False
         shown = spec["item"].upper()
         if text in texts:
             origin = _label(texts[text])

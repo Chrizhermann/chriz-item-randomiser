@@ -106,6 +106,48 @@ class RewardCopyTests(unittest.TestCase):
         # The jump into the interjection gives nothing and stays as it was.
         self.assertEqual(outgoing(_Dialogue(gated, "uhogre01"), 22)[0], outgoing(_Dialogue(route, "uhogre01"), 22)[0])
 
+    def test_a_reply_elsewhere_that_ends_the_princes_job_leaves_his_place_out(self):
+        # His route hands over what he carries where his job ends. A copy of
+        # that reply in an interjection, or another reply there that ends the
+        # job, would end it without him handing over: the reward would stay
+        # with him. One that names the job but does not end it changes nothing.
+        self.assertNotIn("sahpr2", reward_copies._GATED)
+        original = dialogue_fixture(rewards.resource_specs("dlg:sahpr2"))
+        route, npc, state = interject(original, "sahpr2", 5, "xnpcj")
+        found = analyse({"sahpr2": route, "xnpcj": npc})
+        self.assertEqual((found.copies, found.changed, found.checked("sahpr2")), ({}, set(), {"dlg:xnpcj"}))
+        self.assertEqual(found.reasons, {"sahpr2": f"XNPCJ.DLG state {state} also sets villynatyjob to 2, which "
+                                                   "ends the job of SAHPR2.DLG's speaker, but there it would not "
+                                                   "hand over the reward it carries"})
+        self.assertEqual(found.patches(["sahpr2"]), {})
+        # In the prince's own dialogue the route itself is unchanged: only his
+        # reply hands over, the jump into the interjection gives nothing.
+        self.assertEqual(rewards.route_reasons("dlg:sahpr2", route), {})
+        gated = _Dialogue(rewards.patch_reward("dlg:sahpr2", route), "sahpr2")
+        handing = [b"FLPR_Transfer(" in gated.actions[struct.unpack_from("<I", row, 16)[0]]
+                   for row in outgoing(gated, 5)]
+        self.assertEqual(handing, [False, True])
+        npc_dialogue = _Dialogue(npc, "xnpcj")
+        for actions, reason in (
+                (b'ActionOverride("sahpr2",SetGlobal("VILLYNATYJOB","GLOBAL",2))\r\n', "also sets villynatyjob"),
+                (b'SetGlobal("villynatyjob","GLOBAL",3)\r\n', None),
+                (b'IncrementGlobal("villynatyjob","LOCALS",1)\r\n', None),
+                (b'SetGlobal("villynatyjob","GLOBAL",2\r\n', "names villynatyjob in actions that cannot be read"),
+                (b'IncrementGlobal("villynatyjob","GLOBAL",1)\r\n',
+                 "changes villynatyjob with IncrementGlobal(), which the route cannot follow")):
+            with self.subTest(actions=actions):
+                changed = _Dialogue(npc, "xnpcj")
+                for row in outgoing(npc_dialogue, state):
+                    changed.actions[struct.unpack_from("<I", row, 16)[0]] = actions
+                found = analyse({"sahpr2": route, "xnpcj": changed.render()})
+                self.assertEqual(found.copies, {})
+                if reason is None:
+                    self.assertEqual(found.reasons, {})
+                else:
+                    self.assertIn(reason, found.reasons["sahpr2"])
+        # The other routes find their copies as before; the prince's job is not theirs.
+        self.assertEqual(analyse({"sahpr2": original}).reasons, {})
+
     def test_interject_copy_trans2_keeps_the_grant_in_the_route_dialogue(self):
         spec, original = self.ogre()
         route, npc, state = interject(original, "uhogre01", 22, "xnpcj", copy_actions=False)

@@ -2,6 +2,7 @@
 import hashlib
 import json
 from pathlib import Path
+import re
 import struct
 import unittest
 from unittest.mock import patch
@@ -152,6 +153,70 @@ class OriginalOptionExportTests(unittest.TestCase):
             'kind': 'creature', 'area': 'AR1514', 'script_name': 'pptroll1',
             'identity': _digest({'target': manifest['targets'][0]})})
         self.assertIn('PPTROLL1.CRE', native['resource_hashes'])
+
+    def test_the_princes_place_exports_the_prince_and_his_reply_that_hands_it_over(self):
+        """tadpoles2.fl's place (row 59): the Sahuagin prince SAHPR2 in AR2300
+        carries the reward, and his reply that ends his job hands it over."""
+        f = self.fixture()
+        self.dialogue_routes(f, ('dlg:hendak', 'dlg:lehtin'))
+        (f.override / 'sw1h03.itm').write_bytes((f.override / 'synth001.itm').read_bytes())
+        original = dialogue_fixture(mode2_rewards.resource_specs('dlg:sahpr2'))
+        (f.override / 'sahpr2.dlg').write_bytes(original)
+        prince = bytearray(make_cre([]))
+        prince[0x280:0x287] = b'sahpr2\0'
+        (f.override / 'sahpr2.cre').write_bytes(prince)
+        (f.override / 'ar2300.are').write_bytes(make_are([], [], [('Prince', 'SAHPR2')]))
+        f.refresh()
+        configuration = self.mode2_configuration(f, 'bg2:mode2:item:30', 'bg2:mode2:target:59')
+        # The sword is tier 3, the prince's place tier 6: this fixture pairs them without tiers.
+        del configuration['plan']['randomization']
+        revision = write_campaign(configuration['profile'], f.catalog, f.world, configuration['plan'],
+                                  f.store)['revision']
+        manifest = read_campaign(f.store, revision)
+        self.assertEqual([(row['id'], row['record']['kind']) for row in manifest['targets']],
+                         [('original-target:bg2:mode2:target:59', 'creature-target')])
+        before = snapshot(f.game)
+        f.export(revision)
+        self.assertEqual(snapshot(f.game), before)
+        native = json.loads(Path(str(f.output / 'campaign-store/revisions' / revision) + '.native.json').read_text())
+        creature = next(row for row in f.world['targets'] if row['id'] == 'cre:sahpr2')
+        self.assertEqual(native['targets']['original-target:bg2:mode2:target:59'], {
+            'kind': 'creature', 'area': 'AR2300', 'script_name': 'sahpr2', 'inventory_reward': True,
+            'reward_resource': 'dlg:sahpr2', 'identity': _digest({'target': manifest['targets'][0],
+                                                                  'creature': creature})})
+        for name in ('SAHPR2.DLG', 'SAHPR2.CRE', 'AR2300.ARE'):
+            self.assertIn(name, native['resource_hashes'])
+        changed = mode2_rewards.patch_reward('dlg:sahpr2', original)
+        self.assertEqual((f.output / 'resource-overrides/SAHPR2.DLG').read_bytes(), changed)
+        # The reply that ends his job hands over first (row 59).
+        transfer = b'EEex_LuaAction("return(FLPR_Transfer(EEex_LuaAction_Object,59))")\r\n'
+        replies = [_Dialogue(data, 'sahpr2') for data in (original, changed)]
+        plain, patched = (dialogue.actions[struct.unpack_from('<I', dialogue.transitions[
+            struct.unpack_from('<I', dialogue.states[5], 4)[0]], 16)[0]] for dialogue in replies)
+        self.assertEqual(patched, transfer + plain)
+        self.assertEqual(sum(action.count(b'FLPR_Transfer') for action in replies[1].actions), 1)
+        first = snapshot(f.output)
+        f.export(revision)
+        self.assertEqual(snapshot(f.output), first)
+        # A prince with another script name is not the one the runtime finds;
+        # a dialogue in which no reply ends his job cannot hand anything over.
+        for name, data, reason in (
+                ('sahpr2.cre', bytes(prince).replace(b'sahpr2\0', b'sahpr3\0', 1),
+                 'Original reward recipient changed: original-target:bg2:mode2:target:59'),
+                ('sahpr2.dlg', original.replace(b'"villynatyjob","GLOBAL",2', b'"villynatyjob","GLOBAL",3'),
+                 'The extended reward route for SAHPR2 cannot be used: SAHPR2.DLG has no reply that sets '
+                 'villynatyjob to 2')):
+            with self.subTest(changed=name):
+                (f.override / name).write_bytes(data)
+                f.refresh()
+                configuration = self.mode2_configuration(f, 'bg2:mode2:item:30', 'bg2:mode2:target:59')
+                del configuration['plan']['randomization']
+                revision = write_campaign(configuration['profile'], f.catalog, f.world, configuration['plan'],
+                                          f.store)['revision']
+                with self.assertRaisesRegex(ProfileError, re.escape(reason)):
+                    f.export(revision)
+                (f.override / name).write_bytes(bytes(prince) if name.endswith('.cre') else original)
+                f.refresh()
 
     def test_temple_reward_exports_auxiliary_creature_without_another_unit(self):
         # Yarryl's club as the game has it, and as another mod may keep it:

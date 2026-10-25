@@ -27,10 +27,10 @@ use cir_config::quest_rewards::{blocks, global_guard};
 use cir_config::script_text::{block_actions, block_parts, script_blocks};
 use common::builders::{contains, count, index, make_tlk, outgoing, replace, sha, tlk_text, u32_at};
 use common::mode2::{
-    action, action_with, alternatives, block, book_block, book_fixture, book_gifts, branches, check_dialogue, check_pair,
-    check_text_graph, dialogue_fixture, handover_line, king_destroys, king_paid, layout_dialogue, no_action, obj,
+    action, action_with, alternatives, block, book_block, book_fixture, book_gifts, branches, check_dialogue, check_job_end,
+    check_pair, check_text_graph, dialogue_fixture, handover_line, king_destroys, king_paid, layout_dialogue, no_action, obj,
     route_guard, script_fixture, specs, target_number, text, text_variant, treasury_fixture, trigger, well_reward,
-    with_actions, LayoutReply,
+    with_actions, LayoutReply, PRINCE_TRANSFER, TRGENI_DEPARTURE,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
@@ -301,6 +301,9 @@ fn builders_match_the_reference_builders() {
     for (beamdog, label) in [(true, "True"), (false, "False")] {
         assert_eq!(fixture.input(&format!("patch_reward layout {label}"), "data"), layout_dialogue("uhogre01", &ogre_states(), beamdog));
     }
+    for (beamdog, label) in [(true, "beamdog"), (false, "weidu")] {
+        assert_eq!(fixture.input(&format!("patch_reward sahpr2 {label}"), "data"), layout_dialogue("sahpr2", &prince_states(), beamdog));
+    }
     assert_eq!(fixture.input("patch_reward script layout lf", "data"), well_layout());
     assert_eq!(fixture.input("patch_reward script layout crlf", "data"), crlf(well_layout()));
     for (label, changes, _) in ogre_reasons() {
@@ -343,10 +346,14 @@ fn synthetic_patch(name: &str, original: &[u8]) -> Vec<u8> {
 
 #[test]
 fn dialogue_both_campaign_routes_keep_exact_recipient_and_surrounding_actions() {
-    // Two routes of one dialogue have their own tests (check_pair).
+    // Two routes of one dialogue have their own tests (check_pair), so has
+    // the route without a grant (check_job_end).
     for (resource, keys) in resource_rewards().iter() {
         let single = keys.as_list().is_some_and(|keys| keys.len() == 1);
-        if resource.starts_with("dlg:") && single && text_refs(resource).is_none() {
+        let job_end = keys.as_list().is_some_and(|keys| {
+            keys.iter().any(|key| reward(&str_value(key)).get("job_end").is_some_and(Value::truthy))
+        });
+        if resource.starts_with("dlg:") && single && text_refs(resource).is_none() && !job_end {
             let name = &resource[4..];
             let original = dialogue_fixture(&specs(resource));
             check_dialogue(name, &original, &synthetic_patch(name, &original), None, None, Naming::default());
@@ -782,6 +789,135 @@ fn each_reply_that_pays_with_the_rod_hands_the_treasury_over_after_its_guards() 
     bg1.insert("target_ids", list(&["bg1:mode2:target:6"]));
     assert_eq!(handover(&bg1).unwrap(), handover_line(&bg1));
     assert!(contains(&handover_line(&bg1), b"(EEex_LuaTrigger_Object,6,1))"));
+}
+
+/// The game's reward reply beside another mod's: one that ends his job
+/// through ActionOverride in other letter case and spacing, then leaves in
+/// the state after it, and some that name the job but do not end it.
+fn prince_states() -> Vec<Vec<LayoutReply<'static>>> {
+    let game = "AddXPObject(Player1,60500)\nSetGlobal(\"senityilijob\",\"GLOBAL\",2)\n\
+                SetGlobal(\"villynatyjob\",\"GLOBAL\",2)\nRunAwayFrom(\"sahkng01\",15)";
+    vec![
+        vec![
+            ("True()", "SetGlobal(\"villynatyjob\",\"GLOBAL\",1)", Some(1)),
+            ("", "SetGlobal(\"villynatyjob\",\"LOCALS\",2)\nIncrementGlobal(\"VillynatyJob\",\"Locals\",1)", Some(1)),
+            ("", "SetGlobal(\"villynatyjob2\",\"GLOBAL\",2)\nDestroySelf()", None),
+        ],
+        vec![("Global(\"villynatyjob\",\"GLOBAL\",2)", "DisplayStringHead(Myself,1)", None), ("", game, None)],
+        vec![("", "ActionOverride( \"sahpr2\" , SetGlobal( \"VillynatyJob\" , \"global\" , 2 ) )\nDestroySelf()", Some(3))],
+        vec![("", "DestroySelf()", None)],
+    ]
+}
+
+#[test]
+fn the_princes_reward_reply_hands_over_what_he_carries() {
+    // Item Randomiser's tadpoles2.fl gives its reward to SAHPR2.CRE and adds
+    // a GiveItem to the reply that ends his job, which gives nothing in the
+    // games. Here the prince carries the place's reward, and each reply of
+    // his that ends his job hands it to the one he talks to.
+    let spec = target_spec("bg2:mode2:target:59", Naming::default()).unwrap();
+    assert_eq!(target_rewards().get("bg2:mode2:target:59").and_then(Value::as_str), Some("sahpr2"));
+    assert!(resource_rewards().get("dlg:sahpr2").unwrap().py_eq(&list(&["sahpr2"])));
+    assert!(!source_rewards().values().any(|route| route.as_str() == Some("sahpr2")));
+    for key in ["item", "payload", "selected_global", "consumed_global", "event_global", "recipient_local"] {
+        assert!(matches!(spec.get(key), Some(Value::Null)), "{key}");
+    }
+    for key in ["source_ids", "authored_source_ids"] {
+        assert!(spec.get(key).unwrap().py_eq(&list(&[])), "{key}");
+    }
+    assert!(spec.get("job_end").unwrap().py_eq(&cir_config::list!["villynatyjob", 2]));
+    let carrier = cir_config::dict! {"area" => "ar2300", "creature_resource" => "cre:sahpr2", "script_name" => "sahpr2"};
+    assert!(spec.get("inventory_target").unwrap().py_eq(&Value::Dict(carrier)));
+    assert_eq!((text(&spec, "recipient"), text(&spec, "grant_kind")), ("LastTalkedToBy", "transfer"));
+    let names = eet_names();
+    let eet = Naming { game: Some("eet"), names: Some(&names) };
+    assert!(Value::Dict(cir_config::mode2_rewards::reward("sahpr2", eet).unwrap()).py_eq(&Value::Dict(spec.clone())));
+    assert_profile(
+        gives_reward("dlg:sahpr2", &dialogue_fixture(&specs("dlg:sahpr2")), "sahpr2", Naming::default()).unwrap_err(),
+        "Unsupported extended reward route in SAHPR2.DLG: sahpr2",
+    );
+    for beamdog in [true, false] {
+        let original = layout_dialogue("sahpr2", &prince_states(), beamdog);
+        let result = patch_reward("dlg:sahpr2", &original, None, None, Naming::default()).unwrap();
+        assert_eq!(patch_reward("dlg:sahpr2", &result, None, None, Naming::default()).unwrap(), result);
+        assert!(!own_patch("dlg:sahpr2", &original, Naming::default()).unwrap());
+        assert!(own_patch("dlg:sahpr2", &result, Naming::default()).unwrap());
+        assert!(reasons("dlg:sahpr2", &original).is_empty());
+        assert!(reasons("dlg:sahpr2", &result).is_empty());
+        assert_eq!(check_job_end(&original, &result), BTreeSet::from([(1, 1), (2, 0)]));
+        let after = Dialogue::new(&result, "sahpr2").unwrap();
+        let at = |state: usize, ordinal: usize| u32_at(&outgoing(&after, state)[ordinal], 16) as usize;
+        // His departures after the transfer wait for it; the one of a reply
+        // that never hands over stays instant.
+        for (state, ordinal, waits) in [(0, 2, false), (2, 0, true), (3, 0, true)] {
+            assert_eq!(contains(&after.actions[at(state, ordinal)], TRGENI_DEPARTURE), waits, "{beamdog} {state} {ordinal}");
+        }
+        // The transfer as the dialogue parser leaves it, once, in front.
+        let (job, other) = (at(1, 1), at(0, 0));
+        let handing = &after.actions[job];
+        assert!(handing.starts_with(PRINCE_TRANSFER));
+        assert_eq!(count(handing, b"FLPR_Transfer"), 1);
+        // Changed copies of the patch: another place, a transfer moved into
+        // a reply that does not end his job or behind its actions, twice, or
+        // gone from one of the replies.
+        let without = handing[PRINCE_TRANSFER.len()..].to_vec();
+        for (label, changes) in [
+            ("another place", vec![(job, replace(handing, b",59))", b",58))", None))]),
+            ("other reply", vec![(job, without.clone()), (other, [PRINCE_TRANSFER, after.actions[other].as_slice()].concat())]),
+            ("behind", vec![(job, [without.as_slice(), b"\r\n", PRINCE_TRANSFER].concat())]),
+            ("twice", vec![(job, [PRINCE_TRANSFER, handing.as_slice()].concat())]),
+            ("gone", vec![(job, without.clone())]),
+        ] {
+            let mut tampered = Dialogue::new(&result, "sahpr2").unwrap();
+            for (index, text) in changes {
+                tampered.actions[index] = text;
+            }
+            let tampered = tampered.render();
+            assert_profile(
+                patch_reward("dlg:sahpr2", &tampered, None, None, Naming::default()).unwrap_err(),
+                "carries a changed copy of the reward route's own patch",
+            );
+            assert!(reasons("dlg:sahpr2", &tampered)["sahpr2"].contains("changed copy"), "{beamdog} {label}");
+        }
+    }
+    // A dialogue in which no reply ends his job has nothing to hand over;
+    // one whose actions name the job unreadably, or change it another way
+    // that could end it unseen, cannot be told apart.
+    for (changed, reason) in [
+        (
+            vec![(1, vec![("", "SetGlobal(\"villynatyjob\",\"GLOBAL\",3)", None)]), (2, vec![("", "NoAction()", None)])],
+            "SAHPR2.DLG has no reply that sets villynatyjob to 2",
+        ),
+        (
+            vec![(2, vec![("", "SetGlobal(\"villynatyjob\",\"GLOBAL\",2", None)])],
+            "SAHPR2.DLG state 2 names villynatyjob in actions that cannot be read",
+        ),
+        (
+            vec![(2, vec![("", "ActionOverride(\"sahpr2\",SetGlobal(\"villynatyjob\",\"GLOBAL\",2)", None)])],
+            "SAHPR2.DLG state 2 names villynatyjob in actions that cannot be read",
+        ),
+        (
+            vec![(2, vec![("", "SetGlobal(\"villynatyjob\",GLOBAL,2)", None)])],
+            "SAHPR2.DLG state 2 names villynatyjob in actions that cannot be read",
+        ),
+        (
+            vec![(0, vec![("", "IncrementGlobal(\"villynatyjob\",\"GLOBAL\",1)", Some(1))])],
+            "SAHPR2.DLG state 0 changes villynatyjob with IncrementGlobal(), which the route cannot follow",
+        ),
+        (
+            vec![(2, vec![("", "ActionOverride(\"sahpr2\",SetGlobalTimer(\"VILLYNATYJOB\",\"global\",2))", None)])],
+            "SAHPR2.DLG state 2 changes villynatyjob with SetGlobalTimer(), which the route cannot follow",
+        ),
+    ] {
+        let mut variant = prince_states();
+        for (index, replies) in changed {
+            variant[index] = replies;
+        }
+        let data = layout_dialogue("sahpr2", &variant, true);
+        assert_eq!(reasons("dlg:sahpr2", &data), named(&[("sahpr2", reason)]));
+        assert_profile(patch_reward("dlg:sahpr2", &data, None, None, Naming::default()).unwrap_err(), reason);
+        assert!(!own_patch("dlg:sahpr2", &data, Naming::default()).unwrap());
+    }
 }
 
 /// `check_destroys(original, result, specs)`: each block that destroys
@@ -1402,6 +1538,8 @@ const REVIEWED_EET: &[(&str, &str, &str)] = &[
     ("dlg:ppstat01", "7022962710da01f3d66088d8f7c5aa2a7963d7e994ff0d55f61dc5b64c9673ae", "69505c964ee036a6d9b974407e34cbd4ff35f4cebd10373819c5ef2f5d50f73a"),
     ("dlg:riftg03", "4bb8a0866e3470ae558c108160ebef18c33de9f14ad3181ccf33ebd0d5e4912a", "34e7c5e57d9e69394b40ce09f4c5cd5a5e6249d871b676c82bafbd3d707f3ff5"),
     ("dlg:sahkng01", "c76c8624052f7e179d42157e4081ddfcdbb101d2f00b819008bc99f5660785c1", "9a7109aa36361ce3e57183e08b735993dbb946584d4b79d50dd5cc641050c70f"),
+    // The prince hands over what he carries when his job ends (state 5).
+    ("dlg:sahpr2", "b70d79c4264b4dade199d86146da2d44f9db4d445dfbb4eead5b350c3a1c7dcb", "19575a07c412224fa86c7a117b352aea40470e0e8c4494b95f6b6f85a2556244"),
     ("dlg:scsain", "c2a43b0d67eca9b531aa591463f74d5333225a95f0be87f8d03ed1cf91f8dafe", "efbc5faa5490e6f89b6ca54a30a02ba74871353e19f7c8f640439974c175caca"),
     ("dlg:sctelwyn", "d5dd048c43e16ba937ff583eef8f5966e549fb0c4e3f92679883d35fcdda1759", "bcafc54734313b1513100537abb486fd42298c69795d647f525da7e06b5f9c39"),
     ("dlg:scyarryl", "f96880bdabcfe8393d9ad6df502d3d001e2d79913736e480f6cc717f012dd367", "33b842e20c6602bdbd9e62da78ec7d79e402d8cb2006282ce7568257d776698c"),
@@ -1521,6 +1659,8 @@ fn reviewed_eet_resources_when_available_patch_exactly_and_reexport() {
             assert_eq!(script_original(&result, &resource_specs(resource, eet).unwrap()).unwrap().0, original);
         } else if ["aran", "sahkng01"].contains(&name) {
             check_pair(name, &original, &result);
+        } else if name == "sahpr2" {
+            assert_eq!(check_job_end(&original, &result), BTreeSet::from([(5, 0)]));
         } else {
             check_dialogue(name, &original, &result, None, None, eet);
         }

@@ -100,6 +100,8 @@ const TEXT_FIELDS: [(u32, usize); 2] = [(1, 4), (0x10, 8)];
 /// instead.
 pub const DEPARTURE: &[u8] =
     b"EEex_LuaAction(\"EEex_Action_QueueResponseStringOnAIBase([[DestroySelf()]],EEex_LuaAction_Object)\")";
+/// Every carried reward's transfer ([`callback`]) calls this.
+const TRANSFER: &[u8] = b"FLPR_Transfer(EEex_LuaAction_Object,";
 /// The engine's actions that put an item somewhere (ACTION.IDS of the 2.7
 /// games): opcode, name, the dialogue argument and the compiled string that
 /// name the item they give. Other actions that name the reward take, use, show
@@ -474,6 +476,37 @@ fn build_registry() -> Registry {
         row.insert("target_ids", Value::List(Vec::new()));
         rewards.insert(key, row);
     }
+    // The Sahuagin prince's reward (Item Randomiser's tadpoles2.fl, row 59).
+    // Item Randomiser gives it to SAHPR2.CRE and adds a GiveItem to the reply
+    // that ends his job (villynatyjob 2), which gives nothing in the games.
+    // Here he carries the place's reward, and each reply of his dialogue that
+    // ends his job hands it to the one he talks to: the carried rewards'
+    // transfer goes in front of its actions ([`job_replies`]). The route has
+    // no item of its own to gate. A reply of another dialogue that ends his
+    // job too would end it without the hand-over: where one follows from his,
+    // the place is left out ([`crate::reward_copies`]).
+    rewards.insert(
+        "sahpr2",
+        dict! {
+            "quest" => "sahpr2",
+            "resource" => "dlg:sahpr2",
+            "item" => Value::Null,
+            "campaign" => "bg2",
+            "source_ids" => Value::List(Vec::new()),
+            "authored_source_ids" => Value::List(Vec::new()),
+            "target_ids" => list!["bg2:mode2:target:59"],
+            "selected_global" => Value::Null,
+            "consumed_global" => Value::Null,
+            "event_global" => Value::Null,
+            "recipient_local" => Value::Null,
+            "recipient" => talker,
+            "branches" => pairs(&[(5, 0)]),
+            "payload" => Value::Null,
+            "grant_kind" => "transfer",
+            "job_end" => list!["villynatyjob", 2],
+            "inventory_target" => dict! {"area" => "ar2300", "creature_resource" => "cre:sahpr2", "script_name" => "sahpr2"},
+        },
+    );
     for row in rewards.values_mut() {
         let row = row.as_dict_mut().expect("reward row");
         let resource = row.get("resource").cloned().expect("resource");
@@ -577,12 +610,17 @@ fn in_game(mut spec: Dict, naming: Naming<'_>) -> Result<Dict> {
     };
     let campaign = text_field(&spec, "campaign", "lower")?.to_string();
     let name = |resref: &str, kind: &str| convert_resource(resref, kind, &campaign, game, naming.names);
-    let item = Value::from(name(text_field(&spec, "item", "lower")?, "itm")?);
-    spec.insert("item", item.clone());
-    match spec.get_mut("payload").ok_or_else(|| Error::key("payload"))? {
-        Value::Dict(payload) => payload.insert("resref", item),
-        other => return Err(Error::type_error(format!("'{}' object does not support item assignment", other.type_name()))),
-    };
+    // A route without a grant of its own has no item (the prince's).
+    if !matches!(field(&spec, "item")?, Value::Null) {
+        let item = Value::from(name(text_field(&spec, "item", "lower")?, "itm")?);
+        spec.insert("item", item.clone());
+        match spec.get_mut("payload").ok_or_else(|| Error::key("payload"))? {
+            Value::Dict(payload) => payload.insert("resref", item),
+            other => {
+                return Err(Error::type_error(format!("'{}' object does not support item assignment", other.type_name())))
+            }
+        };
+    }
     if spec.get("replacement").is_some_and(Value::truthy) {
         let replacement = name(text_field(&spec, "replacement", "lower")?, "itm")?;
         spec.insert("replacement", replacement);
@@ -895,6 +933,112 @@ pub(crate) fn gives(text: &[u8], call: &Call, item: &str) -> bool {
     gives_item(text, call, item)
 }
 
+/// The global and value that end the job of a route without a grant
+/// (`spec["job_end"]`).
+pub(crate) fn job_end(spec: &Dict) -> Result<(String, i64)> {
+    match field(spec, "job_end")? {
+        Value::List(job) => match &job[..] {
+            [Value::Str(name), value] => match value.as_int() {
+                Some(value) => Ok((name.clone(), value)),
+                None => Err(Error::type_error("The job's value must be an integer")),
+            },
+            _ => Err(Error::value(format!("expected 2 values to unpack, got {}", job.len()))),
+        },
+        other => Err(Error::type_error(format!("cannot unpack non-iterable {} object", other.type_name()))),
+    }
+}
+
+/// Whether a dialogue action ends the job: sets its global to the job's
+/// value (`SetGlobal(name,"GLOBAL",value)`), also through ActionOverride.
+/// None when it cannot be read (`_ends_job`).
+///
+/// Any other action that writes the global (IncrementGlobal and the like)
+/// could end the job too, unseen: the route cannot follow it.
+pub(crate) fn ends_job(text: &[u8], call: &Call, job: &(String, i64), place: &str) -> Result<Option<bool>> {
+    if named(call, &["ActionOverride"]) && call.args.len() == 2 {
+        let Some(inner) = calls_in(text, call.args[1]) else { return Ok(None) };
+        let mut found = Vec::new();
+        for nested in &inner {
+            found.push(ends_job(text, nested, job, place)?);
+        }
+        return Ok(if found.contains(&None) { None } else { Some(found.contains(&Some(true))) });
+    }
+    let (name, value) = job;
+    let names_job = |index: usize| string_argument(text, call, index).unwrap_or(b"").to_ascii_lowercase() == name.as_bytes();
+    // The scope after each argument that names the global: the job is GLOBAL.
+    let scopes: Vec<Option<&[u8]>> =
+        (0..call.args.len()).filter(|&index| names_job(index)).map(|index| string_argument(text, call, index + 1)).collect();
+    if scopes.contains(&None) {
+        return Ok(None);
+    }
+    if !scopes.iter().flatten().any(|scope| scope.eq_ignore_ascii_case(b"GLOBAL")) {
+        return Ok(Some(false));
+    }
+    if !named(call, &["SetGlobal"]) {
+        return Err(profile(format!(
+            "{place} changes {name} with {}(), which the route cannot follow",
+            String::from_utf8_lossy(&call.name)
+        )));
+    }
+    if call.args.len() != 3 || scopes.len() != 1 || !names_job(0) {
+        return Ok(None);
+    }
+    Ok(integer_argument(text, call, 2, None).map(|found| found == *value))
+}
+
+/// Whether a reply's actions end the job ([`ends_job`] of each call); an
+/// error where they cannot be read (`_reply_ends_job`).
+pub(crate) fn reply_ends_job(text: &[u8], job: &(String, i64), place: &str) -> Result<bool> {
+    let unreadable = || profile(format!("{place} names {} in actions that cannot be read", job.0));
+    let found = calls(text).ok_or_else(unreadable)?;
+    let mut ends = Vec::new();
+    for call in &found {
+        ends.push(ends_job(text, call, job, place)?);
+    }
+    if ends.contains(&None) {
+        return Err(unreadable());
+    }
+    Ok(ends.contains(&Some(true)))
+}
+
+/// Every reply that ends the job of a route without a grant (its "job_end"
+/// global and value), where the speaker hands over the reward it carries
+/// (`_job_replies`).
+///
+/// A reply that names the global in actions that cannot be read cannot be
+/// told apart, nor one that changes it another way ([`ends_job`]), and a
+/// dialogue with no such reply has nothing to hand over.
+pub(crate) fn job_replies(dialogue: &Dialogue, spec: &Dict, label: &str) -> Result<BTreeSet<(usize, usize)>> {
+    let job = job_end(spec)?;
+    let mut replies = BTreeSet::new();
+    for (state_index, state) in dialogue.states.iter().enumerate() {
+        let (first, count) = outgoing(dialogue, state, label)?;
+        for ordinal in 0..count {
+            let row = &dialogue.transitions[first + ordinal];
+            if u32_le(row, 0) & 4 == 0 {
+                continue;
+            }
+            let text = string(&dialogue.actions, u32_le(row, 16), label)?;
+            if find_bytes(&text.to_ascii_lowercase(), job.0.as_bytes(), 0).is_none() {
+                continue;
+            }
+            if reply_ends_job(&text, &job, &format!("{label} state {state_index}"))? {
+                replies.insert((state_index, ordinal));
+            }
+        }
+    }
+    if replies.is_empty() {
+        return Err(profile(format!("{label} has no reply that sets {} to {}", job.0, job.1)));
+    }
+    Ok(replies)
+}
+
+/// Whether a route has no grant of its own, but hands over at its job's end
+/// (`spec.get("job_end")`).
+pub(crate) fn ends_a_job(spec: &Dict) -> bool {
+    spec.get("job_end").is_some_and(Value::truthy)
+}
+
 /// Every reply that gives the route's item, with the call that gives it.
 ///
 /// A created reward is given with GiveItemCreate, a carried one with
@@ -1049,6 +1193,8 @@ fn following(dialogue: &Dialogue, rows: &[Vec<u8>], label: &str) -> Result<Vec<u
 /// Gate every reply that gives a route's item, for each recognised route
 /// (`_patch_dialogue`).
 ///
+/// A route without a grant of its own (job_end) instead hands over what its
+/// speaker carries in each reply that ends its job ([`job_replies`]).
 /// A route whose grant is not recognised keeps its replies as they are; its
 /// reason goes to `reasons` (route to text). With no route recognised,
 /// nothing is prepared. `action_refs` maps displayed original strrefs to the
@@ -1090,8 +1236,19 @@ pub fn patch_dialogue_in(
     let mut own_shown = BTreeSet::new();
     let shown = shown.unwrap_or(&mut own_shown);
     let mut grants: HashMap<String, Grants> = HashMap::new();
+    let mut added: HashMap<String, BTreeSet<(usize, usize)>> = HashMap::new();
     let mut failures = Dict::new();
     for spec in specs {
+        if ends_a_job(spec) {
+            match job_replies(&dialogue, spec, &label) {
+                Ok(replies) => {
+                    added.insert(route(spec)?, replies);
+                }
+                Err(error) if error.kind == ErrorKind::Profile => failures.insert(route(spec)?, error.message),
+                Err(error) => return Err(error),
+            }
+            continue;
+        }
         let replies = match only {
             Some(only) => Some(only.get(&route(spec)?).ok_or_else(|| Error::key(&route(spec).unwrap_or_default()))?),
             None => None,
@@ -1110,15 +1267,23 @@ pub fn patch_dialogue_in(
         }
     }
     let mut active: Vec<(&Dict, &Grants)> = Vec::new();
+    let mut adding: Vec<(&Dict, &BTreeSet<(usize, usize)>)> = Vec::new();
     for spec in specs {
         if let Some(found) = grants.get(&route(spec)?) {
             active.push((spec, found));
         }
     }
-    if active.is_empty() {
+    for spec in specs {
+        if let Some(replies) = added.get(&route(spec)?) {
+            adding.push((spec, replies));
+        }
+    }
+    if active.is_empty() && adding.is_empty() {
         return Err(profile(failures.get(&route(first_spec)?).map(str_value).unwrap_or_default()));
     }
-    let carried = defer_departure && active.iter().any(|(spec, _)| spec.get("inventory_target").is_some_and(Value::truthy));
+    let carried = defer_departure &&
+        active.iter().map(|(spec, _)| *spec).chain(adding.iter().map(|(spec, _)| *spec))
+            .any(|spec| spec.get("inventory_target").is_some_and(Value::truthy));
     let mut later = Vec::new();
     if carried {
         let mut granting = Vec::new();
@@ -1128,24 +1293,54 @@ pub fn patch_dialogue_in(
                 granting.push(dialogue.transitions[first + ordinal].clone());
             }
         }
+        for (_, replies) in &adding {
+            for &(state, ordinal) in replies.iter() {
+                let (first, _) = outgoing(&dialogue, &dialogue.states[state], &label)?;
+                granting.push(dialogue.transitions[first + ordinal].clone());
+            }
+        }
         later = following(&dialogue, &granting, &label)?;
     }
     for state_index in 0..dialogue.states.len() {
         let (first, count) = outgoing(&dialogue, &dialogue.states[state_index], &label)?;
         let originals = dialogue.transitions[first..first + count].to_vec();
-        let mut rows = Vec::new();
+        let (mut rows, mut touched) = (Vec::new(), false);
         for (ordinal, original) in originals.into_iter().enumerate() {
             let relevant: Vec<&(&Dict, &Grants)> =
                 active.iter().filter(|(_, found)| found.contains_key(&(state_index, ordinal))).collect();
-            if relevant.is_empty() {
+            let handing: Vec<&Dict> = adding
+                .iter()
+                .filter(|(_, replies)| replies.contains(&(state_index, ordinal)))
+                .map(|(spec, _)| *spec)
+                .collect();
+            if relevant.is_empty() && handing.is_empty() {
                 rows.push(original);
                 continue;
             }
+            touched = true;
             let place = format!("{label} state {state_index}");
             let flags = u32_le(&original, 0);
             let prior = if flags & 2 != 0 { string(&dialogue.triggers, u32_le(&original, 12), &label)? } else { Vec::new() };
             let text = dialogue.actions[u32_le(&original, 16) as usize].clone();
-            let departures = if carried { departure_edits(&text, &place)? } else { Vec::new() };
+            let mut departures = if carried { departure_edits(&text, &place)? } else { Vec::new() };
+            // The transfers of the routes without a grant go in front of the
+            // reply's actions: the speaker hands over before anything else.
+            if !handing.is_empty() {
+                let mut transfers = Vec::new();
+                for spec in &handing {
+                    transfers.extend(callback(spec, numeric_target)?);
+                    transfers.extend_from_slice(b"\r\n");
+                }
+                departures.push((0, 0, transfers));
+            }
+            if relevant.is_empty() {
+                // Nothing to gate: the reply keeps its condition.
+                let mut branch = original.clone();
+                dialogue.actions.push(edited(&text, departures)?);
+                put_u32(&mut branch, 16, dialogue.actions.len() as u32 - 1);
+                rows.push(branch);
+                continue;
+            }
             let n = relevant.len();
             for choice in 0..(1usize << n) {
                 let choices: Vec<bool> = (0..n).map(|index| choice >> (n - 1 - index) & 1 == 1).collect();
@@ -1186,7 +1381,7 @@ pub fn patch_dialogue_in(
                 rows.push(branch);
             }
         }
-        if rows.len() != count {
+        if touched {
             let length = dialogue.transitions.len() as u32;
             put_u32(&mut dialogue.states[state_index], 4, length);
             put_u32(&mut dialogue.states[state_index], 8, rows.len() as u32);
@@ -1449,6 +1644,10 @@ fn markers(specs: &[Dict]) -> Result<Vec<Vec<u8>>> {
     }
     let mut markers: Vec<Vec<u8>> = names.into_iter().map(|name| format!("\"{name}\"").into_bytes()).collect();
     markers.push(DEPARTURE.to_vec());
+    // A route without a grant leaves only its transfer, whatever row it names.
+    if specs.iter().any(ends_a_job) {
+        markers.push(TRANSFER.to_vec());
+    }
     Ok(markers)
 }
 
@@ -1679,7 +1878,14 @@ pub(crate) fn unpatched_dialogue(mut dialogue: Dialogue, specs: &[Dict], resourc
     let label = label(resource);
     let mut routes: Vec<(Vec<u8>, &Dict)> = Vec::new();
     for spec in specs {
-        routes.push((text_field(spec, "selected_global", "encode")?.as_bytes().to_vec(), spec));
+        if field(spec, "selected_global")?.truthy() {
+            routes.push((text_field(spec, "selected_global", "encode")?.as_bytes().to_vec(), spec));
+        }
+    }
+    // The transfers of the routes without a grant, in front of a reply's actions.
+    let mut transfers = Vec::new();
+    for spec in specs.iter().filter(|spec| ends_a_job(spec)) {
+        transfers.push([callback(spec, true)?.as_slice(), b"\r\n"].concat());
     }
     for state_index in 0..dialogue.states.len() {
         let (first, count) = outgoing(&dialogue, &dialogue.states[state_index], &label)?;
@@ -1723,6 +1929,12 @@ pub(crate) fn unpatched_dialogue(mut dialogue: Dialogue, specs: &[Dict], resourc
                     put_u32(&mut row, 12, dialogue.triggers.len() as u32 - 1);
                 } else {
                     put_u32(&mut row, 0, flags & !2);
+                }
+            }
+            for transfer in &transfers {
+                // Every copy: one that stayed would make an original with it.
+                while action.starts_with(transfer) {
+                    action.drain(..transfer.len());
                 }
             }
             action = replace_bytes(&action, DEPARTURE, b"DestroySelf()", None);
@@ -2451,7 +2663,8 @@ pub fn gives_reward(resource: &str, data: &[u8], key: &str, naming: Naming<'_>) 
         }
     }
     let label = label(&resource);
-    if !resource.starts_with("dlg:") || specs.is_empty() {
+    // A route without a grant of its own (the prince's) has no item to give.
+    if !resource.starts_with("dlg:") || specs.is_empty() || matches!(field(&specs[0], "item")?, Value::Null) {
         return Err(profile(format!("Unsupported extended reward route in {label}: {key}")));
     }
     let item = text_field(&specs[0], "item", "encode")?;

@@ -196,7 +196,11 @@ pub fn dialogue_fixture(specs: &[Dict]) -> Vec<u8> {
             if required.contains(&(state, ordinal)) {
                 action += "GiveItemCreate(\"misc42\",Player2,0,0,0)\r\r\n";
                 for grant_spec in specs {
-                    if branches(grant_spec).contains(&(state, ordinal)) {
+                    if branches(grant_spec).contains(&(state, ordinal)) && grant_spec.get("job_end").is_some_and(Value::truthy) {
+                        // A reply that ends the speaker's job and gives nothing.
+                        let job = grant_spec.get("job_end").and_then(Value::as_list).unwrap();
+                        action += &format!("SetGlobal(\"{}\",\"GLOBAL\",{})\r\r\n", str_value(&job[0]), str_value(&job[1]));
+                    } else if branches(grant_spec).contains(&(state, ordinal)) {
                         let charges: Vec<String> = grant_spec
                             .get("payload")
                             .and_then(|payload| payload.get("charges"))
@@ -526,6 +530,43 @@ pub fn check_dialogue(
         }
         assert_eq!(cursor, new.len());
     }
+}
+
+/// The transfer by which the prince hands over what he carries (row 59).
+pub const PRINCE_TRANSFER: &[u8] = b"EEex_LuaAction(\"return(FLPR_Transfer(EEex_LuaAction_Object,59))\")\r\n";
+
+/// `check_job_end(original, result)`: the prince's dialogue as his route
+/// patches it. Each reply that ends his job hands over what he carries before
+/// its own actions, and his departures after it wait for that; nothing else
+/// changes. Returns the replies that hand over.
+pub fn check_job_end(original: &[u8], result: &[u8]) -> BTreeSet<(usize, usize)> {
+    let before = Dialogue::new(original, "sahpr2").unwrap();
+    let after = Dialogue::new(result, "sahpr2").unwrap();
+    assert_eq!(after.state_triggers, before.state_triggers);
+    assert_eq!(after.triggers, before.triggers);
+    assert_eq!(after.actions[..before.actions.len()], before.actions[..]);
+    assert_eq!(after.states.len(), before.states.len());
+    let mut handed = BTreeSet::new();
+    for (state_index, state) in before.states.iter().enumerate() {
+        assert_eq!(after.states[state_index][..4], state[..4]);
+        assert_eq!(after.states[state_index][8..], state[8..]);
+        for (ordinal, (old, new)) in outgoing(&before, state_index).iter().zip(outgoing(&after, state_index)).enumerate() {
+            if &new == old {
+                continue;
+            }
+            assert_eq!((&new[..16], &new[20..]), (&old[..16], &old[20..]));
+            let original_action = &before.actions[u32_at(old, 16) as usize];
+            let mut changed = after.actions[u32_at(&new, 16) as usize].clone();
+            assert!(!splitlines_bytes(&replace(&changed, TRGENI_DEPARTURE, b"", None)).contains(&&b"DestroySelf()"[..]));
+            if changed.starts_with(PRINCE_TRANSFER) {
+                handed.insert((state_index, ordinal));
+                changed.drain(..PRINCE_TRANSFER.len());
+            }
+            assert!(!contains(&changed, b"FLPR_Transfer"));
+            assert_eq!(&replace(&changed, TRGENI_DEPARTURE, b"DestroySelf()", None), original_action);
+        }
+    }
+    handed
 }
 
 /// `check_pair(name, original, result)`: two routes whose grants share every

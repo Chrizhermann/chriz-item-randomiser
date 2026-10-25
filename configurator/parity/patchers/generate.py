@@ -564,6 +564,59 @@ def destroyed_case(s: Scenario, label: str, data: bytes) -> None:
            lambda: mode2_rewards.destroyed_items("bcs:sahtreas", data))
 
 
+def prince_cases(s: Scenario) -> None:
+    """test_the_princes_reward_reply_hands_over_what_he_carries."""
+    game = ('AddXPObject(Player1,60500)\nSetGlobal("senityilijob","GLOBAL",2)\n'
+            'SetGlobal("villynatyjob","GLOBAL",2)\nRunAwayFrom("sahkng01",15)')
+    states = [
+        [("True()", 'SetGlobal("villynatyjob","GLOBAL",1)', 1),
+         ("", 'SetGlobal("villynatyjob","LOCALS",2)\nIncrementGlobal("VillynatyJob","Locals",1)', 1),
+         ("", 'SetGlobal("villynatyjob2","GLOBAL",2)\nDestroySelf()', None)],
+        [('Global("villynatyjob","GLOBAL",2)', 'DisplayStringHead(Myself,1)', None), ("", game, None)],
+        [("", 'ActionOverride( "sahpr2" , SetGlobal( "VillynatyJob" , "global" , 2 ) )\nDestroySelf()', 3)],
+        [("", 'DestroySelf()', None)],
+    ]
+    specs = mode2_rewards.resource_specs("dlg:sahpr2")
+    transfer = b'EEex_LuaAction("return(FLPR_Transfer(EEex_LuaAction_Object,59))")\r\n'
+    for beamdog in (True, False):
+        layout = "beamdog" if beamdog else "weidu"
+        original = mode2_tests.layout_dialogue("sahpr2", states, beamdog=beamdog)
+        reward_checks(s, f"sahpr2 {layout}", "dlg:sahpr2", original)
+        result = patched(s, f"sahpr2 {layout}", "dlg:sahpr2", original)
+        reward_checks(s, f"sahpr2 {layout} result", "dlg:sahpr2", result)
+        for departure in (True, False):
+            patch_dialogue_case(s, f"sahpr2 {layout} departure {departure}", original, specs,
+                                defer_departure=departure)
+        patch_dialogue_case(s, f"sahpr2 {layout} string target", original, specs, numeric_target=False)
+        after = quest_options._Dialogue(result, "sahpr2")
+        job = struct.unpack_from("<I", mode2_tests.outgoing(after, 1)[1], 16)[0]
+        other = struct.unpack_from("<I", mode2_tests.outgoing(after, 0)[0], 16)[0]
+        for label, changes in (
+                ("another place", {job: after.actions[job].replace(b",59))", b",58))")}),
+                ("other reply", {job: after.actions[job][len(transfer):], other: transfer + after.actions[other]}),
+                ("behind", {job: after.actions[job][len(transfer):] + b"\r\n" + transfer}),
+                ("twice", {job: transfer + after.actions[job]}),
+                ("gone", {job: after.actions[job][len(transfer):]})):
+            tampered_dialogue = quest_options._Dialogue(result, "sahpr2")
+            for index, text in changes.items():
+                tampered_dialogue.actions[index] = text
+            reward_checks(s, f"sahpr2 {layout} {label}", "dlg:sahpr2", tampered_dialogue.render())
+    for label, changed in (
+            ("no job end", {1: [("", 'SetGlobal("villynatyjob","GLOBAL",3)', None)], 2: [("", "NoAction()", None)]}),
+            ("unreadable", {2: [("", 'SetGlobal("villynatyjob","GLOBAL",2', None)]}),
+            ("override unreadable", {2: [("", 'ActionOverride("sahpr2",SetGlobal("villynatyjob","GLOBAL",2)', None)]}),
+            ("unquoted scope", {2: [("", 'SetGlobal("villynatyjob",GLOBAL,2)', None)]}),
+            ("incremented", {0: [("", 'IncrementGlobal("villynatyjob","GLOBAL",1)', 1)]}),
+            ("override timer", {2: [("", 'ActionOverride("sahpr2",SetGlobalTimer("VILLYNATYJOB","global",2))', None)]})):
+        variant = [changed.get(index, replies) for index, replies in enumerate(states)]
+        reward_checks(s, f"sahpr2 {label}", "dlg:sahpr2", mode2_tests.layout_dialogue("sahpr2", variant))
+    # Only the route's own row of Item Randomiser's table is its place.
+    for label, targets in (("none", ()), ("two", ("bg2:mode2:target:59", "bg2:mode2:target:58")),
+                           ("base", ("bg2:base:target:59",)), ("bg1", ("bg1:mode2:target:59",))):
+        spec = dict(specs[0], target_ids=targets)
+        patch_dialogue_case(s, f"sahpr2 target {label}", mode2_tests.dialogue_fixture(specs), (spec,))
+
+
 def treasury_cases(s: Scenario) -> None:
     """test_each_reply_that_pays_with_the_rod_hands_the_treasury_over_after_its_guards,
     test_the_treasury_destroys_the_kings_items_only_while_his_grants_are_unchanged and
@@ -1128,6 +1181,7 @@ def mode2_scenario() -> Scenario:
     ddwell_cases(s, originals["bcs:ddwell"], results["bcs:ddwell"])
     book_cases(s)
     treasury_cases(s)
+    prince_cases(s)
     reason_cases(s)
     layout_cases(s)
     aran_cases(s)
@@ -1513,6 +1567,20 @@ def copies_scenario() -> Scenario:
     for name in ("hlskull", "mgkhol01", "samia"):
         changed, other_npc, _ = interject(ogre, "uhogre01", 22, name)
         copies_case(s, f"cir changes {name}", {"uhogre01": changed, name: other_npc})
+    # test_a_reply_elsewhere_that_ends_the_princes_job_leaves_his_place_out:
+    # a reply of another dialogue that ends his job, changes it another way,
+    # or names it unreadably.
+    prince = mode2_tests.dialogue_fixture(mode2_rewards.resource_specs("dlg:sahpr2"))
+    prince_route, prince_npc, prince_state = interject(prince, "sahpr2", 5, "xnpcj")
+    copies_case(s, "prince", {"sahpr2": prince_route, "xnpcj": prince_npc}, routes=(("sahpr2",), ()))
+    for label, actions in (("override", b'ActionOverride("sahpr2",SetGlobal("VILLYNATYJOB","GLOBAL",2))\r\n'),
+                           ("other value", b'SetGlobal("villynatyjob","GLOBAL",3)\r\n'),
+                           ("local", b'IncrementGlobal("villynatyjob","LOCALS",1)\r\n'),
+                           ("unreadable", b'SetGlobal("villynatyjob","GLOBAL",2\r\n'),
+                           ("incremented", b'IncrementGlobal("villynatyjob","GLOBAL",1)\r\n')):
+        copies_case(s, f"prince {label}", {"sahpr2": prince_route, "xnpcj": changed_reply(
+            prince_npc, "xnpcj", prince_state, lambda text, actions=actions: actions)}, routes=(("sahpr2",),))
+    copies_case(s, "prince alone", {"sahpr2": prince}, routes=(("sahpr2",),))
     genie = mode2_rewards.resource_specs("dlg:trgeni01")[0]
     genie_route, genie_npc, _ = interject(mode2_tests.dialogue_fixture(genie), "trgeni01", 35, "xnpcj")
     copies_case(s, "carried", {"trgeni01": genie_route, "xnpcj": genie_npc}, routes=(("trgeni01",),))

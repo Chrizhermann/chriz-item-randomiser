@@ -198,6 +198,10 @@ fn builders_match_the_reference_builders() {
     let genie = dialogue_fixture(std::slice::from_ref(&specs("dlg:trgeni01")[0]));
     let (genie_route, genie_npc, _) = interject(&genie, "trgeni01", 35, "xnpcj", true);
     assert_eq!(recorded("carried"), files(&[("trgeni01", &genie_route), ("xnpcj", &genie_npc)]));
+    let (prince_route, prince_npc, prince_state) = interject(&dialogue_fixture(&specs("dlg:sahpr2")), "sahpr2", 5, "xnpcj", true);
+    assert_eq!(recorded("prince"), files(&[("sahpr2", &prince_route), ("xnpcj", &prince_npc)]));
+    let incremented = changed_reply(&prince_npc, "xnpcj", prince_state, |_| b"IncrementGlobal(\"villynatyjob\",\"GLOBAL\",1)\r\n".to_vec());
+    assert_eq!(recorded("prince incremented"), files(&[("sahpr2", &prince_route), ("xnpcj", &incremented)]));
     let linked = link(&ogre(), "uhogre01", 3, "broken", 0);
     assert_eq!(recorded("broken"), files(&[("uhogre01", &linked), ("broken", &[b"DLG V1.0".as_slice(), &[0; 10]].concat())]));
     let chain_route = link(&ogre(), "uhogre01", 3, "xnpcj", 0);
@@ -322,6 +326,52 @@ fn replies_the_route_cannot_gate_leave_it_out_with_their_reason() {
              for copies of its reward"
         )])
     );
+}
+
+#[test]
+fn a_reply_elsewhere_that_ends_the_princes_job_leaves_his_place_out() {
+    // His route hands over what he carries where his job ends. A copy of
+    // that reply in an interjection, or another reply there that ends the
+    // job, would end it without him handing over: the reward would stay
+    // with him. One that names the job but does not end it changes nothing.
+    let original = dialogue_fixture(&specs("dlg:sahpr2"));
+    let (route, npc, state) = interject(&original, "sahpr2", 5, "xnpcj", true);
+    let found = analyse(&files(&[("sahpr2", &route), ("xnpcj", &npc)]), None);
+    assert!(found.copies.is_empty() && found.changed.is_empty());
+    assert_eq!(found.checked("sahpr2"), BTreeSet::from(["dlg:xnpcj".to_string()]));
+    let reason = format!(
+        "XNPCJ.DLG state {state} also sets villynatyjob to 2, which ends the job of SAHPR2.DLG's speaker, but there \
+         it would not hand over the reward it carries"
+    );
+    assert_eq!(found.reasons, reasons(&[("sahpr2", &reason)]));
+    assert!(found.patches(&["sahpr2"]).unwrap().is_empty());
+    // In the prince's own dialogue the route itself is unchanged: only his
+    // reply hands over, the jump into the interjection gives nothing.
+    assert!(route_reasons("dlg:sahpr2", &route, Naming::default()).unwrap().is_empty());
+    let gated = Dialogue::new(&patch_reward("dlg:sahpr2", &route, None, None, Naming::default()).unwrap(), "sahpr2").unwrap();
+    let handing: Vec<bool> =
+        outgoing(&gated, 5).iter().map(|row| contains(&gated.actions[u32_at(row, 16) as usize], b"FLPR_Transfer(")).collect();
+    assert_eq!(handing, [false, true]);
+    for (actions, reason) in [
+        (b"ActionOverride(\"sahpr2\",SetGlobal(\"VILLYNATYJOB\",\"GLOBAL\",2))\r\n".as_slice(), Some("also sets villynatyjob")),
+        (b"SetGlobal(\"villynatyjob\",\"GLOBAL\",3)\r\n", None),
+        (b"IncrementGlobal(\"villynatyjob\",\"LOCALS\",1)\r\n", None),
+        (b"SetGlobal(\"villynatyjob\",\"GLOBAL\",2\r\n", Some("names villynatyjob in actions that cannot be read")),
+        (
+            b"IncrementGlobal(\"villynatyjob\",\"GLOBAL\",1)\r\n",
+            Some("changes villynatyjob with IncrementGlobal(), which the route cannot follow"),
+        ),
+    ] {
+        let changed = changed_reply(&npc, "xnpcj", state, |_| actions.to_vec());
+        let found = analyse(&files(&[("sahpr2", &route), ("xnpcj", &changed)]), None);
+        assert!(found.copies.is_empty());
+        match reason {
+            None => assert!(found.reasons.is_empty(), "{:?}", found.reasons),
+            Some(reason) => assert!(found.reasons["sahpr2"].contains(reason), "{reason}: {:?}", found.reasons),
+        }
+    }
+    // The other routes find their copies as before; the prince's job is not theirs.
+    assert!(analyse(&files(&[("sahpr2", &original)]), None).reasons.is_empty());
 }
 
 #[test]
