@@ -220,6 +220,14 @@ REWARDS["sahpr2"] = {
     "job_end": ("villynatyjob", 2),
     "inventory_target": {"area": "ar2300", "creature_resource": "cre:sahpr2", "script_name": "sahpr2"},
 }
+# Row 60 (Item Randomiser's tadpoles3.fl, "Sahuagin king or prince"): a coin
+# flip at install gives the item to SAHPR2.CRE or to both kings, SAHKNG01.CRE
+# and SAHKNG02.CRE. The king leaves with what he carries on either side: on
+# his own he pays and escapes (SAHKNG01.DLG state 81), on the prince's he
+# destroys himself once that job begins (SAHKNG01.BCS) and SAHKNG02 takes the
+# throne from its own file. So here the prince carries this place's reward
+# too, and the replies that end his job hand it over after row 59's.
+REWARDS["sahpr2b"] = dict(deepcopy(REWARDS["sahpr2"]), target_ids=("bg2:mode2:target:60",))
 # Physical sources whose reward dialogue also gives their item, by (owner
 # resource, kind, item) as the catalog binds the original row: the creature's
 # or the area's container record of the item. A game whose dialogue gives
@@ -1068,10 +1076,10 @@ def _unpatched_dialogue(dialogue: _Dialogue, specs: tuple[dict, ...], resource: 
                     struct.pack_into("<I", row, 12, len(dialogue.triggers) - 1)
                 else:
                     struct.pack_into("<I", row, 0, flags & ~2)
-            for transfer in transfers:
-                # Every copy: one that stayed would make an original with it.
-                while action.startswith(transfer):
-                    action = action[len(transfer):]
+            # Every copy, in any order: one that stayed would make an original
+            # with it.
+            while transfer := next((t for t in transfers if action.startswith(t)), None):
+                action = action[len(transfer):]
             action = action.replace(_DEPARTURE, b"DestroySelf()")
             if flags & 4 and action != dialogue.actions[action_id]:
                 dialogue.actions.append(action)

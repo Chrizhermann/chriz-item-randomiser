@@ -156,7 +156,8 @@ class OriginalOptionExportTests(unittest.TestCase):
 
     def test_the_princes_place_exports_the_prince_and_his_reply_that_hands_it_over(self):
         """tadpoles2.fl's place (row 59): the Sahuagin prince SAHPR2 in AR2300
-        carries the reward, and his reply that ends his job hands it over."""
+        carries the reward, and his reply that ends his job hands it over,
+        then the one of tadpoles3.fl's place (row 60), his too."""
         f = self.fixture()
         self.dialogue_routes(f, ('dlg:hendak', 'dlg:lehtin'))
         (f.override / 'sw1h03.itm').write_bytes((f.override / 'synth001.itm').read_bytes())
@@ -188,16 +189,33 @@ class OriginalOptionExportTests(unittest.TestCase):
             self.assertIn(name, native['resource_hashes'])
         changed = mode2_rewards.patch_reward('dlg:sahpr2', original)
         self.assertEqual((f.output / 'resource-overrides/SAHPR2.DLG').read_bytes(), changed)
-        # The reply that ends his job hands over first (row 59).
-        transfer = b'EEex_LuaAction("return(FLPR_Transfer(EEex_LuaAction_Object,59))")\r\n'
+        # The reply that ends his job hands over first (row 59, then row 60,
+        # which this campaign leaves empty).
+        transfer = (b'EEex_LuaAction("return(FLPR_Transfer(EEex_LuaAction_Object,59))")\r\n'
+                    b'EEex_LuaAction("return(FLPR_Transfer(EEex_LuaAction_Object,60))")\r\n')
         replies = [_Dialogue(data, 'sahpr2') for data in (original, changed)]
         plain, patched = (dialogue.actions[struct.unpack_from('<I', dialogue.transitions[
             struct.unpack_from('<I', dialogue.states[5], 4)[0]], 16)[0]] for dialogue in replies)
         self.assertEqual(patched, transfer + plain)
-        self.assertEqual(sum(action.count(b'FLPR_Transfer') for action in replies[1].actions), 1)
+        self.assertEqual(sum(action.count(b'FLPR_Transfer') for action in replies[1].actions), 2)
         first = snapshot(f.output)
         f.export(revision)
         self.assertEqual(snapshot(f.output), first)
+        # Row 60's reward is his too, with the same patch.
+        configuration = self.mode2_configuration(f, 'bg2:mode2:item:30', 'bg2:mode2:target:60')
+        del configuration['plan']['randomization']
+        other = write_campaign(configuration['profile'], f.catalog, f.world, configuration['plan'],
+                               f.store)['revision']
+        manifest = read_campaign(f.store, other)
+        self.assertEqual([(row['id'], row['record']['kind']) for row in manifest['targets']],
+                         [('original-target:bg2:mode2:target:60', 'creature-target')])
+        f.export(other)
+        native = json.loads(Path(str(f.output / 'campaign-store/revisions' / other) + '.native.json').read_text())
+        self.assertEqual(native['targets']['original-target:bg2:mode2:target:60'], {
+            'kind': 'creature', 'area': 'AR2300', 'script_name': 'sahpr2', 'inventory_reward': True,
+            'reward_resource': 'dlg:sahpr2', 'identity': _digest({'target': manifest['targets'][0],
+                                                                  'creature': creature})})
+        self.assertEqual((f.output / 'resource-overrides/SAHPR2.DLG').read_bytes(), changed)
         # A prince with another script name is not the one the runtime finds;
         # a dialogue in which no reply ends his job cannot hand anything over.
         for name, data, reason in (

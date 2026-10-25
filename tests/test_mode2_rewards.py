@@ -83,7 +83,7 @@ REVIEWED_EET = {
                      "9a7109aa36361ce3e57183e08b735993dbb946584d4b79d50dd5cc641050c70f"),
     # The prince hands over what he carries when his job ends (state 5).
     "dlg:sahpr2": ("b70d79c4264b4dade199d86146da2d44f9db4d445dfbb4eead5b350c3a1c7dcb",
-                   "19575a07c412224fa86c7a117b352aea40470e0e8c4494b95f6b6f85a2556244"),
+                   "649a5d673c583c8e11bf188c9bed46a73b8bb1ec5dd08eef09c61fc28c8c403a"),
     # The treasury's destroys of the king's two reward items, gated.
     "bcs:sahtreas": ("a3e4e14c6e0e3ea5d3c193cb30808aabb4c320f6b9e4dbbe3fadf99deee40751",
                      "07f76c023620896b09a222f5ae2c7251ffd2b07c8ec18643ab65b7cadf8cbe9b"),
@@ -886,12 +886,14 @@ class Mode2RewardTests(unittest.TestCase):
         self.assertIn(b"(EEex_LuaTrigger_Object,6,1))", handover_line(bg1))
 
     def check_job_end(self, original, result, naming=None):
-        """The prince's dialogue as his route patches it: each reply that ends
-        his job hands over what he carries before its own actions, and his
-        departures after it wait for that; nothing else changes. Returns the
-        replies that hand over."""
-        spec = rewards.resource_specs("dlg:sahpr2", **(naming or {}))[0]
-        transfer = b'EEex_LuaAction("return(FLPR_Transfer(EEex_LuaAction_Object,59))")\r\n'
+        """The prince's dialogue as his routes patch it: each reply that ends
+        his job hands over what he carries for both his places (rows 59 and
+        60, in that order) before its own actions, and his departures after it
+        wait for that; nothing else changes. Returns the replies that hand
+        over."""
+        specs = rewards.resource_specs("dlg:sahpr2", **(naming or {}))
+        transfer = (b'EEex_LuaAction("return(FLPR_Transfer(EEex_LuaAction_Object,59))")\r\n'
+                    b'EEex_LuaAction("return(FLPR_Transfer(EEex_LuaAction_Object,60))")\r\n')
         before, after = _Dialogue(original, "sahpr2"), _Dialogue(result, "sahpr2")
         self.assertEqual(after.state_triggers, before.state_triggers)
         self.assertEqual(after.triggers, before.triggers)
@@ -913,29 +915,34 @@ class Mode2RewardTests(unittest.TestCase):
                     changed = changed[len(transfer):]
                 self.assertNotIn(b"FLPR_Transfer", changed)
                 self.assertEqual(changed.replace(TRGENI_DEPARTURE, b"DestroySelf()"), original_action)
-        self.assertEqual(rewards._callback(spec, True) + b"\r\n", transfer)
+        self.assertEqual(b"".join(rewards._callback(spec, True) + b"\r\n" for spec in specs), transfer)
         return handed
 
     def test_the_princes_reward_reply_hands_over_what_he_carries(self):
         # Item Randomiser's tadpoles2.fl gives its reward to SAHPR2.CRE and
         # adds a GiveItem to the reply that ends his job, which gives nothing
         # in the games. Here the prince carries the place's reward, and each
-        # reply of his that ends his job hands it to the one he talks to.
-        spec = rewards.target_spec("bg2:mode2:target:59")
-        self.assertEqual(rewards.TARGET_REWARDS["bg2:mode2:target:59"], "sahpr2")
-        self.assertEqual(rewards.RESOURCE_REWARDS["dlg:sahpr2"], ("sahpr2",))
-        self.assertNotIn("sahpr2", rewards.SOURCE_REWARDS.values())
-        self.assertEqual((spec["item"], spec["payload"], spec["source_ids"], spec["authored_source_ids"]),
-                         (None, None, (), ()))
-        self.assertEqual([spec[key] for key in ("selected_global", "consumed_global", "event_global",
-                                                "recipient_local")], [None] * 4)
-        self.assertEqual(spec["job_end"], ("villynatyjob", 2))
-        self.assertEqual(spec["inventory_target"],
-                         {"area": "ar2300", "creature_resource": "cre:sahpr2", "script_name": "sahpr2"})
-        self.assertEqual((spec["recipient"], spec["grant_kind"]), ("LastTalkedToBy", "transfer"))
-        self.assertEqual(rewards.reward("sahpr2", **EET), spec)
-        with self.assertRaisesRegex(ProfileError, "Unsupported extended reward route in SAHPR2.DLG: sahpr2"):
-            rewards.gives_reward("dlg:sahpr2", dialogue_fixture(spec), "sahpr2")
+        # reply of his that ends his job hands it to the one he talks to. Row
+        # 60 (tadpoles3.fl, the king or the prince) is his too: the king leaves
+        # with what he carries on either side.
+        self.assertEqual(rewards.RESOURCE_REWARDS["dlg:sahpr2"], ("sahpr2", "sahpr2b"))
+        for key, line in (("sahpr2", 59), ("sahpr2b", 60)):
+            with self.subTest(route=key):
+                spec = rewards.target_spec(f"bg2:mode2:target:{line}")
+                self.assertEqual(rewards.TARGET_REWARDS[f"bg2:mode2:target:{line}"], key)
+                self.assertNotIn(key, rewards.SOURCE_REWARDS.values())
+                self.assertEqual((spec["item"], spec["payload"], spec["source_ids"], spec["authored_source_ids"],
+                                  spec["target_ids"]), (None, None, (), (), (f"bg2:mode2:target:{line}",)))
+                self.assertEqual([spec[key] for key in ("selected_global", "consumed_global", "event_global",
+                                                        "recipient_local")], [None] * 4)
+                self.assertEqual(spec["job_end"], ("villynatyjob", 2))
+                self.assertEqual(spec["inventory_target"],
+                                 {"area": "ar2300", "creature_resource": "cre:sahpr2", "script_name": "sahpr2"})
+                self.assertEqual((spec["recipient"], spec["grant_kind"]), ("LastTalkedToBy", "transfer"))
+                self.assertEqual(rewards.reward(key, **EET), spec)
+                with self.assertRaisesRegex(ProfileError,
+                                            f"Unsupported extended reward route in SAHPR2.DLG: {key}"):
+                    rewards.gives_reward("dlg:sahpr2", dialogue_fixture(spec), key)
         # The game's reward reply beside another mod's: one that ends his job
         # through ActionOverride in other letter case and spacing, then leaves
         # in the state after it, and some that name the job but do not end it.
@@ -968,30 +975,38 @@ class Mode2RewardTests(unittest.TestCase):
                 for state, ordinal, waits in ((0, 2, False), (2, 0, True), (3, 0, True)):
                     actions = after.actions[struct.unpack_from("<I", outgoing(after, state)[ordinal], 16)[0]]
                     self.assertEqual(TRGENI_DEPARTURE in actions, waits)
-                # The transfer as the dialogue parser leaves it, in each Lua.
+                # The transfers as the dialogue parser leaves them, in each Lua.
                 actions = after.actions[struct.unpack_from("<I", outgoing(after, 1)[1], 16)[0]]
                 chunks = re.findall(rb'EEex_LuaAction\("(return[^"\r\n]*)"\)', actions)
-                self.assertEqual(chunks, [b"return(FLPR_Transfer(EEex_LuaAction_Object,59))"])
+                self.assertEqual(chunks, [b"return(FLPR_Transfer(EEex_LuaAction_Object,59))",
+                                          b"return(FLPR_Transfer(EEex_LuaAction_Object,60))"])
                 for runtime in (Lua51, Lua53, LuaJIT):
-                    lua = runtime(unpack_returned_tuples=True)
-                    lua.execute('EEex_LuaAction_Object={};'
-                                'function FLPR_Transfer(actor,target,campaign) '
-                                'assert(actor==EEex_LuaAction_Object);seen={target,campaign};return -1 end')
-                    self.assertEqual(lua.execute(chunks[0].decode()), -1)
-                    self.assertEqual(list(lua.globals().seen.values()), [59])
+                    for chunk, line in zip(chunks, (59, 60)):
+                        lua = runtime(unpack_returned_tuples=True)
+                        lua.execute('EEex_LuaAction_Object={};'
+                                    'function FLPR_Transfer(actor,target,campaign) '
+                                    'assert(actor==EEex_LuaAction_Object);seen={target,campaign};return -1 end')
+                        self.assertEqual(lua.execute(chunk.decode()), -1)
+                        self.assertEqual(list(lua.globals().seen.values()), [line])
                 # Changed copies of the patch: another place, a transfer moved
                 # into a reply that does not end his job or behind its actions,
-                # twice, or gone from one of the replies.
-                transfer = b'EEex_LuaAction("return(FLPR_Transfer(EEex_LuaAction_Object,59))")\r\n'
+                # twice, gone from one of the replies, only one place's, or the
+                # two in the other order.
+                first = b'EEex_LuaAction("return(FLPR_Transfer(EEex_LuaAction_Object,59))")\r\n'
+                second = b'EEex_LuaAction("return(FLPR_Transfer(EEex_LuaAction_Object,60))")\r\n'
+                transfer = first + second
                 job = struct.unpack_from("<I", outgoing(after, 1)[1], 16)[0]
                 other = struct.unpack_from("<I", outgoing(after, 0)[0], 16)[0]
+                rest = after.actions[job][len(transfer):]
                 for label, changes in (
                         ("another place", {job: after.actions[job].replace(b",59))", b",58))")}),
-                        ("other reply", {job: after.actions[job][len(transfer):],
-                                         other: transfer + after.actions[other]}),
-                        ("behind", {job: after.actions[job][len(transfer):] + b"\r\n" + transfer}),
+                        ("other reply", {job: rest, other: transfer + after.actions[other]}),
+                        ("behind", {job: rest + b"\r\n" + transfer}),
                         ("twice", {job: transfer + after.actions[job]}),
-                        ("gone", {job: after.actions[job][len(transfer):]})):
+                        ("gone", {job: rest}),
+                        ("one place", {job: first + rest}),
+                        ("the other place", {job: second + rest}),
+                        ("swapped", {job: second + first + rest})):
                     with self.subTest(beamdog=beamdog, changed=label):
                         tampered = _Dialogue(result, "sahpr2")
                         for index, text in changes.items():
@@ -1000,7 +1015,10 @@ class Mode2RewardTests(unittest.TestCase):
                         with self.assertRaisesRegex(ProfileError,
                                                     "carries a changed copy of the reward route's own patch"):
                             rewards.patch_reward("dlg:sahpr2", tampered)
-                        self.assertIn("changed copy", rewards.route_reasons("dlg:sahpr2", tampered)["sahpr2"])
+                        reasons = rewards.route_reasons("dlg:sahpr2", tampered)
+                        self.assertEqual(sorted(reasons), ["sahpr2", "sahpr2b"])
+                        self.assertIn("changed copy", reasons["sahpr2"])
+                        self.assertEqual(reasons["sahpr2b"], reasons["sahpr2"])
         # A dialogue in which no reply ends his job has nothing to hand over;
         # one whose actions name the job unreadably, or change it another way
         # that could end it unseen, cannot be told apart.
@@ -1020,7 +1038,7 @@ class Mode2RewardTests(unittest.TestCase):
             with self.subTest(reason=reason):
                 variant = [changed.get(index, replies) for index, replies in enumerate(states)]
                 data = layout_dialogue("sahpr2", variant)
-                self.assertEqual(rewards.route_reasons("dlg:sahpr2", data), {"sahpr2": reason})
+                self.assertEqual(rewards.route_reasons("dlg:sahpr2", data), {"sahpr2": reason, "sahpr2b": reason})
                 with self.assertRaisesRegex(ProfileError, re.escape(reason)):
                     rewards.patch_reward("dlg:sahpr2", data)
                 self.assertFalse(rewards.own_patch("dlg:sahpr2", data))
