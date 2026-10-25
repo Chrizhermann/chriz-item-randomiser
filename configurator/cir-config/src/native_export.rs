@@ -12,7 +12,7 @@ use crate::error::{Error, ErrorKind, Result, CHANGED_SINCE_SCAN};
 use crate::game_text::{paired, text_files, unpaired};
 use crate::json::{parse_lenient, py_str, utf8_error_message, Dict, Value};
 use crate::mode2_rewards::Naming;
-use crate::original_catalog::{container_target_spec, mode2_route_source, mode2_route_target};
+use crate::original_catalog::{chapter3_place, container_target_spec, mode2_route_source, mode2_route_target};
 use crate::platform::game_platform;
 use crate::reward_copies::RewardCopies;
 use crate::reward_routes::{reward_routes, RewardRoutes};
@@ -25,8 +25,8 @@ use crate::py::{lower, upper};
 use crate::resources::{resource_type, sha256_hex, GameResources, Tlk};
 use crate::sources::{validate_world, Scans, WorldIndex, DANGLING_INVENTORY, INVALID_INVENTORY, UNRESOLVED_STORAGE};
 use crate::{
-    container_rewards, creature_inventory, cursed_disguises, group_recipients, mode2_rewards, original_options,
-    paths, quest_options, quest_rewards, scripted_sources, spell_rewards, store_inventory,
+    chapter3, container_rewards, creature_inventory, cursed_disguises, group_recipients, mode2_rewards,
+    original_options, paths, quest_options, quest_rewards, scripted_sources, spell_rewards, store_inventory,
 };
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::fs;
@@ -423,6 +423,143 @@ impl<'a> Compiler<'a> {
             }
         }
         Ok(())
+    }
+
+    /// Item Randomiser's chapter 3 places ([`chapter3`]). The runtime finds
+    /// each creature by its script name in its area: it must be once in the
+    /// areas the handler names, as an actor that appears there or as a
+    /// creature the area's own script creates, and the only creature there of
+    /// that name. A creature that is not is left out of its group; without a
+    /// vampire, or without a thief and Aran, so is the place.
+    fn chapter3_endpoint(&mut self, identity: &str, selected: &Value) -> Result<Dict> {
+        let routes = self.routes()?;
+        let (world, index) = (self.world, self.index);
+        // The actors that appear in each of the handler's areas, and the
+        // creatures each area's own script creates, in the areas' order.
+        let mut areas: Vec<(&str, Vec<&'a Value>, BTreeMap<String, usize>)> = Vec::new();
+        for area in chapter3::AREAS {
+            let resource = format!("are:{area}");
+            if !index.resources.contains(&resource) {
+                continue;
+            }
+            self.use_resource(&resource)?;
+            let (script, made) = routes.created(&resource)?;
+            if let Some(script) = script {
+                self.use_resource(&script)?;
+            }
+            let mut placed = Vec::new();
+            for target in rows(world, "targets") {
+                if target.at("resource")?.as_str() == Some(resource.as_str())
+                    && target.at("kind")?.as_str() == Some("actor")
+                    && !target.at("selector")?.at("appearance_schedule")?.py_eq(&Value::Int(0))
+                {
+                    placed.push(target);
+                }
+            }
+            areas.push((area, placed, made));
+        }
+        let name_of = |resource: &str| -> Result<String> {
+            match index.target(world, resource) {
+                Some(creature) => lower_name(creature.at("selector")?.get("script_name")),
+                None => Ok(String::new()),
+            }
+        };
+        // Where the runtime finds the creature `name`, and by which name.
+        let find = |name: &str| -> Result<Option<(String, String)>> {
+            let resource = format!("cre:{name}");
+            let creature = index.target(world, &resource);
+            let Some(creature) = creature.filter(|_| index.resources.contains(&resource) && !index.is_unreadable(&resource))
+            else {
+                return Ok(None);
+            };
+            if has_inventory_problem(creature)? {
+                return Ok(None);
+            }
+            let script_name = creature.at("selector")?.get("script_name").and_then(Value::as_str).unwrap_or("");
+            let count = script_name.chars().count();
+            if !(1..=32).contains(&count) || !script_name.chars().all(|character| (' '..='~').contains(&character)) {
+                return Ok(None);
+            }
+            let mut seen = Vec::new();
+            for (area, placed, _) in &areas {
+                for target in placed {
+                    let template = target.at("selector")?.get("template_resource");
+                    if template.and_then(Value::as_str) == Some(resource.as_str()) {
+                        seen.push(*area);
+                    }
+                }
+            }
+            for (area, _, made) in &areas {
+                for _ in 0..made.get(name).copied().unwrap_or(0) {
+                    seen.push(*area);
+                }
+            }
+            let &[area] = seen.as_slice() else {
+                return Ok(None);
+            };
+            // Every creature of its area by that name: actors and created ones.
+            let (_, placed, made) = areas.iter().find(|(other, _, _)| *other == area).expect("seen there");
+            let wanted = lower(script_name);
+            let mut same = 0;
+            for target in placed {
+                if lower_name(actor_name(world, index, target))? == wanted {
+                    same += 1;
+                }
+            }
+            for (made_name, count) in made {
+                if name_of(&format!("cre:{made_name}"))? == wanted {
+                    same += count;
+                }
+            }
+            Ok((same == 1).then(|| (area.to_string(), script_name.to_string())))
+        };
+        let mut groups = Vec::new();
+        let mut drawn = Vec::new();
+        for group in chapter3::groups(|resource| index.resources.contains(resource)) {
+            let mut members = Vec::new();
+            for &name in group.names {
+                if let Some((area, script_name)) = find(name)? {
+                    self.use_resource(&format!("cre:{name}"))?;
+                    members.push(Value::Dict(crate::dict! {
+                        "resref" => name, "script_name" => script_name, "area" => upper(&area),
+                    }));
+                }
+            }
+            if !members.is_empty() {
+                if group.drawn {
+                    drawn.push(groups.len());
+                }
+                groups.push(Value::Dict(crate::dict! {
+                    "members" => Value::List(members), "corpse_only" => group.corpse_only,
+                }));
+            }
+        }
+        let mut first = BTreeSet::new();
+        if let Some(group) = groups.first() {
+            for member in list(group.at("members")?) {
+                first.insert(text(member, "resref")?.to_string());
+            }
+        }
+        require(chapter3::VAMPIRES.iter().any(|name| first.contains(*name)), || {
+            format!(
+                "Item Randomiser's chapter 3 place needs one of Bodhi's vampires ({}) in AR0801, once and with a \
+                 script name of its own there: {identity}",
+                chapter3::VAMPIRES.iter().map(|name| upper(name)).collect::<Vec<_>>().join(", ")
+            )
+        })?;
+        require(groups.len() > 1, || {
+            format!(
+                "Item Randomiser's chapter 3 place needs one of Aran's thieves or Aran himself where its handler \
+                 looks for them, once and with a script name of their own there: {identity}"
+            )
+        })?;
+        let endpoint_identity =
+            identity_of(crate::dict! {"target" => selected.clone(), "groups" => Value::List(groups.clone())})?;
+        for position in drawn {
+            // One drawn per reward, among those who can use it (export_native).
+            groups[position].as_dict_mut().expect("a group").insert("eligible", Dict::new());
+        }
+        Ok(crate::dict! {"kind" => "first-of", "groups" => Value::List(groups), "identity" => endpoint_identity})
     }
 
     fn scanned_hash(&self, resource: &str) -> Result<&'a Value> {
@@ -1189,6 +1326,11 @@ impl<'a> Compiler<'a> {
                     // A preset's row: the reward reply names the route's own row.
                     endpoint.insert("route_target", route);
                 }
+                self.targets.insert(identity, endpoint);
+                return Ok(());
+            }
+            if chapter3_place(selector)? {
+                let endpoint = self.chapter3_endpoint(identity, selected)?;
                 self.targets.insert(identity, endpoint);
                 return Ok(());
             }
@@ -2491,14 +2633,7 @@ pub fn export_native(
                     pending.insert("resource-overrides/SPIN621.SPL", spell_rewards::patch_key_spell(bytes_of(&resource)?)?);
                 }
             }
-            if endpoint_kind == "group" {
-                let members: Vec<Value> = list(entry(endpoint, "members")?).to_vec();
-                let mut creatures: BTreeMap<String, &[u8]> = BTreeMap::new();
-                for member in &members {
-                    let resref = py_str(member.at("resref")?);
-                    let data = bytes_of(&format!("cre:{resref}"))?;
-                    creatures.insert(resref, data.as_slice());
-                }
+            if endpoint_kind == "group" || endpoint_kind == "first-of" {
                 let mut reward_items: BTreeSet<String> = BTreeSet::new();
                 for selected in list(manifest.at("sources")?) {
                     reward_items.insert(py_str(selected.at("record")?.at("item")?));
@@ -2510,18 +2645,41 @@ pub fn export_native(
                 for rule in rules.into_iter().flat_map(Dict::values) {
                     reward_items.extend(rule.get("reward_variants").map(list).unwrap_or(&[]).iter().map(py_str));
                 }
-                let mut eligible = Dict::new();
-                for item in &reward_items {
-                    let preferred = group_recipients::preferred_members(bytes_of(&format!("itm:{item}"))?, &creatures);
-                    let mut numbers = Vec::new();
-                    for (number, member) in members.iter().enumerate() {
-                        if preferred.contains(&py_str(member.at("resref")?)) {
-                            numbers.push(Value::from(number + 1));
+                let fill = |group: &mut Dict| -> Result<()> {
+                    let members: Vec<Value> = list(entry(group, "members")?).to_vec();
+                    let mut creatures: BTreeMap<String, &[u8]> = BTreeMap::new();
+                    for member in &members {
+                        let resref = py_str(member.at("resref")?);
+                        let data = bytes_of(&format!("cre:{resref}"))?;
+                        creatures.insert(resref, data.as_slice());
+                    }
+                    let mut eligible = Dict::new();
+                    for item in &reward_items {
+                        let preferred =
+                            group_recipients::preferred_members(bytes_of(&format!("itm:{item}"))?, &creatures);
+                        let mut numbers = Vec::new();
+                        for (number, member) in members.iter().enumerate() {
+                            if preferred.contains(&py_str(member.at("resref")?)) {
+                                numbers.push(Value::from(number + 1));
+                            }
+                        }
+                        eligible.insert(item.as_str(), Value::List(numbers));
+                    }
+                    group.insert("eligible", eligible);
+                    Ok(())
+                };
+                if endpoint_kind == "group" {
+                    fill(endpoint)?;
+                } else {
+                    // A first-of place draws one creature per reward in each
+                    // of its drawn groups (those with "eligible").
+                    let groups = endpoint.get_mut("groups").and_then(Value::as_list_mut).ok_or_else(|| Error::key("groups"))?;
+                    for group in groups.iter_mut().filter_map(Value::as_dict_mut) {
+                        if group.contains_key("eligible") {
+                            fill(group)?;
                         }
                     }
-                    eligible.insert(item.as_str(), Value::List(numbers));
                 }
-                endpoint.insert("eligible", eligible);
             }
         }
         let native = &compiled[key];

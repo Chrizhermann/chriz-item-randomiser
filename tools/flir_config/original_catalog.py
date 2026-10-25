@@ -10,6 +10,7 @@ from __future__ import annotations
 from collections import defaultdict
 import re
 
+from . import chapter3
 from .game_names import EetNames, convert_resource, eet_names
 from .mode2_rewards import DESTROY_GATES, SOURCE_REWARDS, TARGET_REWARDS, target_spec
 from .container_rewards import (TARGETS as CONTAINER_TARGETS, target_spec as container_spec,
@@ -103,6 +104,13 @@ def _authored_mode2_target(row: dict) -> bool:
     if campaign not in ("bg1", "bg2"):
         return False
     return _table_place(row, f"lists/locations/mode2/{campaign}.2da", f"{campaign}:mode2")
+
+
+def chapter3_place(row: dict) -> bool:
+    """Whether <row> is one of the chapter 3 places of the original extended
+    BG2 table (chapter3.py)."""
+    return (isinstance(row, dict) and row.get("campaign") == "bg2" and row.get("target") == chapter3.TARGET
+            and row.get("area") == "blank" and isinstance(row.get("id"), str) and _authored_mode2_target(row))
 
 
 def _preset_mode2_place(row: dict) -> str | None:
@@ -417,6 +425,16 @@ def _resolve_target(row: dict, resources: set[str], unreadable: set[str],
                                   else "area-resource-unreadable" if handover and area in unreadable
                                   else "treasure-container-not-found" if handover and len(treasuries) != 1
                                   else "legacy-target-requires-adapter")
+        return
+    if chapter3_place(row):
+        # Item Randomiser's chapter 3 places: the first of their vampires and
+        # thieves who can take the reward does (chapter3.py), each found and
+        # checked by native_export. The place is the vampires' area.
+        row["area_resource"] = "are:" + chapter3.AREA
+        row["members"] = chapter3.candidates(resources)
+        row["binding_problem"] = ("area-resource-absent" if row["area_resource"] not in resources else
+                                  "area-resource-unreadable" if row["area_resource"] in unreadable else
+                                  "group-requires-runtime-selection")
         return
     creature = creature_versions_place(row)
     if row["target"].endswith(".fl") and creature is None:

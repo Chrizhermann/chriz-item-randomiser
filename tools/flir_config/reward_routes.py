@@ -27,10 +27,11 @@ BG1's): `game` and `names` say how, for the export too.
 """
 from __future__ import annotations
 
+from collections import Counter
 import hashlib
 from pathlib import Path
 
-from . import container_rewards, game_text, mode2_rewards, translations
+from . import chapter3, container_rewards, game_text, mode2_rewards, translations
 from .game_names import eet_names
 from .platform import game_platform
 from .profiles import ProfileError
@@ -82,8 +83,12 @@ class RewardRoutes:
         # Why an appended text could not have the same number in dialogf.tlk.
         self.unpaired = game_text.unpaired(male, female)
         self._translated: dict[tuple, str | None] = {}
-        with GameResources(game_root, {kind: RESOURCE_TYPES[kind] for kind in ("bcs", "dlg", "lua")}) as reader:
-            present = {kind: set(reader.names(kind)) for kind in ("bcs", "dlg", "lua")}
+        # The creatures each chapter 3 area's own script creates (chapter3.created),
+        # or why it cannot be read; and that script.
+        self._created: dict[str, Counter | str] = {}
+        self._area_scripts: dict[str, str] = {}
+        with GameResources(game_root, {kind: RESOURCE_TYPES[kind] for kind in ("bcs", "dlg", "lua", "are")}) as reader:
+            present = {kind: set(reader.names(kind)) for kind in ("bcs", "dlg", "lua", "are")}
 
             def read(kind: str, name: str) -> bytes | None:
                 if name not in present[kind]:
@@ -128,6 +133,28 @@ class RewardRoutes:
                         gives = True  # Its route's reasons say why it cannot be read.
                     if gives:
                         self.giving.add(key)
+            for area in chapter3.AREAS:
+                resource = "are:" + area
+                if resource not in scanned:
+                    continue
+                data = read("are", area)
+                if data is None or hashlib.sha256(data).hexdigest() != scanned[resource]:
+                    self.changed.add(resource)
+                    continue
+                name = chapter3.area_script(data)
+                script = f"bcs:{name}"
+                if name is None or (name not in present["bcs"] and script not in scanned):
+                    self._created[resource] = Counter()
+                    continue
+                self._area_scripts[resource] = script
+                source = read("bcs", name)
+                if source is None or hashlib.sha256(source).hexdigest() != scanned.get(script):
+                    self.changed.add(script)
+                    continue
+                try:
+                    self._created[resource] = chapter3.created(source, f"{name.upper()}.BCS")
+                except ProfileError as exc:
+                    self._created[resource] = str(exc)
             self.copies = RewardCopies(lambda name: read("dlg", name), scanned, **naming)
         self.changed |= self.copies.changed
 
@@ -197,6 +224,17 @@ class RewardRoutes:
         if isinstance(found, str):
             raise ProfileError(found)
         return found
+
+    def created(self, area: str) -> tuple[str | None, Counter]:
+        """The own script of the chapter 3 area <area> (an ARE resource of
+        chapter3.AREAS) and the creatures it creates (chapter3.created); none
+        without a script."""
+        script = self._area_scripts.get(area)
+        self._unchanged([area, *([script] if script else [])])
+        found = self._created.get(area, Counter())
+        if isinstance(found, str):
+            raise ProfileError(found)
+        return script, found
 
     def gives(self, key: str) -> bool:
         """Whether a dialogue of the route <key> (one of _LINKS) gives its item at

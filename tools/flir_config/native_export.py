@@ -47,7 +47,8 @@ from .platform import game_platform
 from .reward_copies import RewardCopies
 from .game_text import GameTextError, paired, text_files, unpaired
 from .reward_routes import ChangedSinceScan, reward_routes
-from .original_catalog import container_target_spec, mode2_route_source, mode2_route_target
+from . import chapter3
+from .original_catalog import chapter3_place, container_target_spec, mode2_route_source, mode2_route_target
 from .cursed_disguises import validate_cursed_disguise_spec, prepare_cursed_disguises
 from .duplicates import holdings
 
@@ -295,6 +296,77 @@ def _compile(manifest: dict, world: dict, index: dict, items: dict,
     for target in index["targets"].values():
         if target["kind"] == "actor":
             template_actors[target["selector"].get("template_resource")].append(target)
+
+    def chapter3_endpoint(identity: str, selected: dict) -> dict:
+        # Item Randomiser's chapter 3 places (chapter3.py). The runtime finds
+        # each creature by its script name in its area: it must be once in
+        # the areas the handler names, as an actor that appears there or as a
+        # creature the area's own script creates, and the only creature there
+        # of that name. A creature that is not is left out of its group;
+        # without a vampire, or without a thief and Aran, so is the place.
+        if not routes:
+            routes.append(reward_routes(catalog, world))
+        placed, made = {}, {}
+        for area in chapter3.AREAS:
+            resource = "are:" + area
+            if resource not in index["resources"]:
+                continue
+            use(resource)
+            script, made[area] = routes[0].created(resource)
+            if script is not None:
+                use(script)
+            placed[area] = [target for target in index["targets"].values() if target["resource"] == resource and
+                            target["kind"] == "actor" and target["selector"]["appearance_schedule"] != 0]
+
+        def name_of(resource: str) -> str:
+            creature = index["targets"].get(resource)
+            return (creature["selector"].get("script_name") or "").lower() if creature else ""
+
+        def find(name: str) -> tuple[str, str] | None:
+            resource = "cre:" + name
+            creature = index["targets"].get(resource)
+            if (resource not in index["resources"] or resource in index["unreadable"] or creature is None or
+                    {DANGLING_INVENTORY, INVALID_INVENTORY, UNRESOLVED_STORAGE}.intersection(creature["concerns"])):
+                return None
+            script_name = creature["selector"].get("script_name") or ""
+            if not (1 <= len(script_name) <= 32 and all(32 <= ord(c) < 127 for c in script_name)):
+                return None
+            seen = [(area, target) for area, targets in placed.items() for target in targets
+                    if target["selector"].get("template_resource") == resource]
+            seen += [(area, None) for area, counts in made.items() for _ in range(counts[name])]
+            if len(seen) != 1:
+                return None
+            area = seen[0][0]
+            # Every creature of its area by that name: actors and created ones.
+            same = sum((actor_name(target) or "").lower() == script_name.lower() for target in placed[area])
+            same += sum(count for made_name, count in made[area].items()
+                        if name_of("cre:" + made_name) == script_name.lower())
+            return (area, script_name) if same == 1 else None
+
+        groups, drawn_groups = [], []
+        for names, corpse_only, drawn in chapter3.groups(index["resources"]):
+            members = []
+            for name in names:
+                found = find(name)
+                if found is not None:
+                    use("cre:" + name)
+                    members.append({"resref": name, "script_name": found[1], "area": found[0].upper()})
+            if members:
+                groups.append({"members": members, "corpse_only": corpse_only})
+                if drawn:
+                    drawn_groups.append(groups[-1])
+        first = {member["resref"] for member in groups[0]["members"]} if groups else set()
+        _require(bool(first & set(chapter3.VAMPIRES)),
+                 f"Item Randomiser's chapter 3 place needs one of Bodhi's vampires "
+                 f"({', '.join(name.upper() for name in chapter3.VAMPIRES)}) in AR0801, once and with a "
+                 f"script name of its own there: {identity}")
+        _require(len(groups) > 1,
+                 f"Item Randomiser's chapter 3 place needs one of Aran's thieves or Aran himself where its "
+                 f"handler looks for them, once and with a script name of their own there: {identity}")
+        endpoint = {"kind": "first-of", "groups": groups, "identity": _digest({"target": selected, "groups": groups})}
+        for group in drawn_groups:
+            group["eligible"] = {}  # One drawn per reward, among those who can use it (export_native).
+        return endpoint
 
     def attempt(identity: str, step, *args) -> None:
         # With ``problems``, a row the runtime cannot use is recorded and left
@@ -704,6 +776,9 @@ def _compile(manifest: dict, world: dict, index: dict, items: dict,
                 if "original-target:" + route != identity:
                     # A preset's row: the reward reply names the route's own row.
                     native["targets"][identity]["route_target"] = "original-target:" + route
+                return
+            if chapter3_place(selector):
+                native["targets"][identity] = chapter3_endpoint(identity, selected)
                 return
             if target["kind"] in ("group", "creature-target"):
                 resources = selector["members"] if target["kind"] == "group" else [selector["creature_resource"]]
@@ -1230,18 +1305,22 @@ def export_native(store: Path, catalog: dict, world: dict, output: Path,
                     pass  # The original grant has just been staged above.
                 elif resource == SPELL["resource"]:
                     pending["resource-overrides/SPIN621.SPL"] = patch_key_spell(resource_bytes[resource])
-            if endpoint["kind"] == "group":
+            if endpoint["kind"] in ("group", "first-of"):
                 from .group_recipients import preferred_members
-                creatures = {member["resref"]: resource_bytes["cre:" + member["resref"]]
-                             for member in endpoint["members"]}
-                endpoint["eligible"] = {}
                 reward_items = {s["record"]["item"] for s in manifest["sources"]}
                 for rule in manifest.get("randomization", {}).get("sources", {}).values():
                     reward_items.update(rule.get("reward_variants", []))
-                for item in sorted(reward_items):
-                    preferred = preferred_members(resource_bytes["itm:" + item], creatures)
-                    endpoint["eligible"][item] = [n for n, member in enumerate(endpoint["members"], 1)
-                                                 if member["resref"] in preferred]
+                # A first-of place draws one creature per reward in each of
+                # its drawn groups (those with "eligible").
+                for group in ([endpoint] if endpoint["kind"] == "group" else
+                              [group for group in endpoint["groups"] if "eligible" in group]):
+                    creatures = {member["resref"]: resource_bytes["cre:" + member["resref"]]
+                                 for member in group["members"]}
+                    group["eligible"] = {}
+                    for item in sorted(reward_items):
+                        preferred = preferred_members(resource_bytes["itm:" + item], creatures)
+                        group["eligible"][item] = [n for n, member in enumerate(group["members"], 1)
+                                                   if member["resref"] in preferred]
         base = "campaign-store/revisions/" + key
         pending[base + ".native.json"] = canonical_bytes(native)
         pending[base + ".native.lua"] = _render_lua(native)

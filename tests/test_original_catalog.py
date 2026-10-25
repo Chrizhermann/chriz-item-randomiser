@@ -311,7 +311,7 @@ class OriginalCatalogTests(unittest.TestCase):
                 self.assertEqual(row["target_ids"], [actor["id"] for actor in actors])
                 self.assertEqual(row["binding_problem"], problem)
 
-    def test_quest_places_without_a_cir_route_are_named_not_taken_for_containers(self):
+    def test_quest_places_are_named_not_taken_for_containers(self):
         world = {"resources": [{"id": name} for name in ("are:ar1103", "are:ar2300", "are:ar1514",
                                                          "are:ar0801", "are:ar1100", "dlg:uhogre01")],
                  "sources": [],
@@ -320,11 +320,15 @@ class OriginalCatalogTests(unittest.TestCase):
                              _target("are:ar1103/container/0", "are:ar1103", "container", "jugjer01")]}
         result = resolve_template({"items": []}, world, "bg2-original", items="extended", targets="extended")
         rows = {row["id"]: row for row in result["targets"]}
+        # Item Randomiser's chapter 3 places are its vampires and thieves
+        # (chapter3.py), whom the export finds; this game lacks their files.
         for line in (25, 49):
             row = rows[f"bg2:mode2:target:{line}"]
             with self.subTest(target=row["target"], area=row["area"]):
-                self.assertEqual((row["target_ids"], row["container_name"], row["binding_problem"]),
-                                 ([], None, "route-not-supported"))
+                self.assertEqual((row["area_resource"], row["target_ids"], row["container_name"],
+                                  row["binding_problem"]),
+                                 ("are:ar0801", [], None, "group-requires-runtime-selection"))
+                self.assertEqual(row["members"][:3], ["cre:lassal02", "cre:bodvam01", "cre:bodvam02"])
         # The painting troll's place is the troll, whom this game lacks.
         row = rows["bg2:mode2:target:37"]
         self.assertEqual((row["target_ids"], row["container_name"], row["creature_resource"], row["binding_problem"]),
@@ -413,9 +417,9 @@ class OriginalCatalogTests(unittest.TestCase):
         self.assertEqual((row["adapter"], row["available"], row["binding_problem"], row["availability_reason"]),
                          ("scripted", False, "item-definition-absent", "item-definition-absent"))
 
-    def test_only_these_list_rows_wait_for_a_cir_route(self):
-        """The rows CIR leaves out in every game because it cannot change their
-        quest yet. A new route takes its rows off this list."""
+    def test_no_list_row_waits_for_a_cir_route(self):
+        """No row is left out in every game because CIR cannot change its quest
+        yet: a row of a handler without a route would show here."""
         from flir_config.templates import list_templates
 
         options = dict.fromkeys(("scrolls", "kangaxx", "flail_heads", "totsc_tome",
@@ -427,8 +431,8 @@ class OriginalCatalogTests(unittest.TestCase):
                                       targets="extended", options=options)
             waiting |= {row["id"] for row in result["items"] + result["targets"]
                         if row["binding_problem"] == "route-not-supported"}
-        # Places that Item Randomiser's own quest handlers name.
-        self.assertEqual(waiting, {f"bg2:mode2:target:{line}" for line in (25, 49, 215, 252)})
+        # Every place that Item Randomiser's own quest handlers name has one.
+        self.assertEqual(waiting, set())
 
     def test_a_troll_in_several_versions_is_the_place_of_the_one_in_the_area(self):
         """Item Randomiser's pptroll.fl and torgal.fl give the item to each

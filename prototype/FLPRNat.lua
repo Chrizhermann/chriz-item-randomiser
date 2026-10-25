@@ -110,6 +110,7 @@ function Native.new(api, fixture, seed, reward_payload)
             local virtual_source = kind == "sources" and endpoint.kind == "virtual"
             local store_target = kind == "targets" and endpoint.kind == "store"
             local group_target = kind == "targets" and endpoint.kind == "group"
+            local first_target = kind == "targets" and endpoint.kind == "first-of"
             local quest_target = kind == "targets" and endpoint.kind == "quest"
             if quest_target then
                 local spell=endpoint.recipient_local=='FLPR_RKEY' and endpoint.event_global=='FLPR_EKEY'
@@ -137,6 +138,19 @@ function Native.new(api, fixture, seed, reward_payload)
                 for _,member in ipairs(endpoint.members) do
                     assert(resref(member.resref) and type(member.script_name)=='string' and #member.script_name>0,
                         'NATIVE_GROUP_MEMBER_INVALID')
+                end
+            elseif first_target then
+                assert(integer(seed,1,2147483646) and type(endpoint.groups)=='table' and #endpoint.groups>0,
+                    'NATIVE_FIRST_OF_INVALID')
+                for _,group in ipairs(endpoint.groups) do
+                    assert(type(group)=='table' and type(group.members)=='table' and #group.members>0 and
+                        type(group.corpse_only)=='boolean' and (group.eligible==nil or type(group.eligible)=='table'),
+                        'NATIVE_FIRST_OF_INVALID')
+                    for _,member in ipairs(group.members) do
+                        assert(type(member)=='table' and resref(member.resref) and resref(member.area) and
+                            type(member.script_name)=='string' and #member.script_name>0,
+                            'NATIVE_FIRST_OF_MEMBER_INVALID')
+                    end
                 end
             elseif virtual_source then
                 assert(endpoint.area == nil and endpoint.script_name == nil, "NATIVE_VIRTUAL_SOURCE_INVALID")
@@ -190,6 +204,32 @@ function Native.new(api, fixture, seed, reward_payload)
                         copy.eligible[item][n]=index
                     end
                 end
+            elseif first_target then
+                -- Each member is a creature endpoint of its own area, under
+                -- the place's identity; a group with candidates gives one of
+                -- them per reward (Adapter:_first_of).
+                copy.groups={}
+                for g,group in ipairs(endpoint.groups) do
+                    local members,eligible={},nil
+                    for n,member in ipairs(group.members) do
+                        members[n]={kind='creature',sprite=true,area=resref(member.area),
+                            script_name=member.script_name:lower(),identity=endpoint.identity,
+                            corpse_only=group.corpse_only or nil}
+                    end
+                    if group.eligible then
+                        eligible={}
+                        for item,candidates in pairs(group.eligible) do
+                            assert(resref(item) and type(candidates)=='table' and #candidates>0,
+                                'NATIVE_FIRST_OF_CANDIDATES_INVALID')
+                            eligible[item]={}
+                            for n,index in ipairs(candidates) do
+                                assert(integer(index,1,#members),'NATIVE_FIRST_OF_CANDIDATES_INVALID')
+                                eligible[item][n]=index
+                            end
+                        end
+                    end
+                    copy.groups[g]={members=members,eligible=eligible}
+                end
             elseif virtual_source then
                 -- Explicit additional stock has only a payload, never an owner.
             elseif template_source then
@@ -224,9 +264,10 @@ function Native.new(api, fixture, seed, reward_payload)
             else
                 -- The accepted fixture predates this field; absent means a ground pile.
                 copy.kind = quest_target and 'creature' or (endpoint.kind == nil and "ground-pile" or endpoint.kind)
-                assert(copy.kind == "ground-pile" or copy.kind == "container" or copy.kind == "creature" or copy.kind == "group" or copy.kind == "store",
+                assert(copy.kind == "ground-pile" or copy.kind == "container" or copy.kind == "creature" or
+                    copy.kind == "group" or copy.kind == "first-of" or copy.kind == "store",
                     "NATIVE_TARGET_KIND_UNSUPPORTED")
-                if copy.kind == "creature" or copy.kind == "group" then
+                if copy.kind == "creature" or copy.kind == "group" or copy.kind == "first-of" then
                     assert(endpoint.x == nil and endpoint.y == nil, "NATIVE_POSITION_INVALID")
                     copy.sprite, creatures = true, true
                 elseif copy.kind == "ground-pile" or copy.kind == "container" then
@@ -923,6 +964,28 @@ function Adapter:_target(id, source_id, unit)
         identity=endpoint.identity}
 end
 
+-- Item Randomiser's chapter 3 places (chapter3.py) give their item to one of
+-- Bodhi's vampires and one of Aran's thieves; the party meets one side only.
+-- The creatures that may take this reward, in order: from each group with
+-- candidates the one drawn for the reward, as a group target draws it, from
+-- the others every member. The first of them who can take it does.
+function Adapter:_first_of(endpoint, source_id, unit)
+    if not self.sources[source_id] or not integer(unit,1,4096) then return nil end
+    local resref=self:_reward(source_id, unit).resref
+    local draw=((self.seed+unit*48271)%2147483647*16807)%2147483647
+    local members={}
+    for _,group in ipairs(endpoint.groups) do
+        if group.eligible then
+            local choices=group.eligible[resref]
+            if not choices then return nil end
+            members[#members+1]=group.members[choices[draw%#choices+1]]
+        else
+            for _,member in ipairs(group.members) do members[#members+1]=member end
+        end
+    end
+    return members
+end
+
 -- The original flrkeep/flrsamia/flrsafan scripts latch !Contains(reward),
 -- not party ownership. A frozen confirmed delivery is the prerequisite for
 -- observing that absence; an unloaded or unresolved container proves nothing.
@@ -984,6 +1047,24 @@ function Adapter:inspect_target(id, source_id, unit)
         self.reservations[endpoint.identity] = { kind = "deliver", id = id }
         return { identity = endpoint.identity, target_id = id, accepts = 1 }
     end
+    if endpoint.kind == "first-of" then
+        -- The first creature that can take the reward now takes it; its
+        -- reservation names it for execute. While none can, the reason is
+        -- the first one's in the visible area: each waits there for its own.
+        local members = self:_first_of(endpoint, source_id, unit)
+        if not members then return nil, "TARGET_UNKNOWN" end
+        local area, waiting = self.api.EEex_Area_GetVisible(), nil
+        for _, member in ipairs(members) do
+            local witness, reason = self:_inspect(member, id, source, source_id, unit)
+            if witness then return witness end
+            if not waiting and area and text(area.m_resref) == member.area then waiting = reason end
+        end
+        return nil, waiting or "AREA_UNAVAILABLE"
+    end
+    return self:_inspect(endpoint, id, source, source_id, unit)
+end
+
+function Adapter:_inspect(endpoint, id, source, source_id, unit)
     local owner, reason, corpse = self:_resolve(endpoint, "target")
     if not owner then
         if reason == "TARGET_NOT_ALIVE" and corpse and source then
@@ -1010,11 +1091,13 @@ function Adapter:inspect_target(id, source_id, unit)
         local empty = empty_backpack(items)
         if #empty == 0 then return nil, "TARGET_INVENTORY_FULL" end
         if creature_conflict(self:_queue(), owner.id, self.source_resrefs) then return nil, "TARGET_QUEUE_BUSY" end
-        self.reservations[endpoint.identity] = { owner = owner, items = items, kind = "deliver", id = id, empty = empty }
+        self.reservations[endpoint.identity] = { owner = owner, items = items, kind = "deliver", id = id, empty = empty,
+            endpoint = endpoint }
         return { identity = endpoint.identity, target_id = id, accepts = 1 }
     end
     if endpoint.kind == "ground-pile" and #items ~= 0 then return nil, "TARGET_NOT_EMPTY" end
-    self.reservations[endpoint.identity] = { owner = owner, items = items, kind = "deliver", id = id }
+    self.reservations[endpoint.identity] = { owner = owner, items = items, kind = "deliver", id = id,
+        endpoint = endpoint }
     return { identity = endpoint.identity, target_id = id, accepts = 1 }
 end
 
@@ -1044,7 +1127,7 @@ function Adapter:_inspect_ground(endpoint, id, reward, corpse)
         return nil, "TARGET_QUEUE_BUSY"
     end
     self.reservations[endpoint.identity] = { owner = corpse, items = items, kind = "deliver", id = id,
-        ground = true, empty = empty, reward = reward }
+        ground = true, empty = empty, reward = reward, endpoint = endpoint }
     return { identity = endpoint.identity, target_id = id, accepts = 1, ground = true }
 end
 
@@ -1110,6 +1193,13 @@ function Adapter:execute(command)
     local endpoint = kind == "source" and source or self:_target(command.target_id, command.source_id, command.index)
     if not endpoint or endpoint.identity ~= command.identity or
         reserved.id ~= (kind == "source" and command.source_id or command.target_id) then return nil, "RESERVATION_MISMATCH" end
+    -- A place of several creatures: the one that inspect_target reserved.
+    if kind == "target" and endpoint.kind == "first-of" then
+        endpoint = reserved.endpoint
+        if not endpoint or endpoint.identity ~= command.identity or endpoint.kind ~= "creature" then
+            return nil, "RESERVATION_MISMATCH"
+        end
+    end
     if kind == "target" and endpoint.kind == "store" then
         tried = tried or {}; self.attempted[command.session] = tried; tried[command.nonce] = true
         local receipt = { session = command.session, kind = command.kind, index = command.index,
@@ -1653,6 +1743,17 @@ function Adapter:diagnostics()
                     record_index = endpoint.record_index, quantity = endpoint.quantity }
             elseif endpoint.kind == "store" then
                 result[kind][id] = { store = endpoint.store, identity = endpoint.identity }
+            elseif endpoint.kind == "first-of" then
+                local members = {}
+                for _, group in ipairs(endpoint.groups) do
+                    for _, member in ipairs(group.members) do
+                        local owner, reason, unusable = self:_resolve(member, "target")
+                        local seen = owner or unusable
+                        members[#members + 1] = { area = member.area, script_name = member.script_name,
+                            object_id = seen and seen.id, pointer = seen and seen.pointer, unavailable = reason }
+                    end
+                end
+                result[kind][id] = { members = members }
             else
                 local label = kind == "sources" and "source" or "target"
                 local owner, reason, unusable = self:_resolve(endpoint, label)

@@ -181,6 +181,14 @@ fn authored_mode2_target(row: &Value) -> Result<bool> {
     table_place(row, campaign, &relative, &format!("{campaign}:mode2"), mode2_locations(campaign)?)
 }
 
+/// Whether `row` is one of the chapter 3 places of the original extended BG2
+/// table ([`crate::chapter3`]).
+pub fn chapter3_place(row: &Value) -> Result<bool> {
+    let place = has_values(row, &[("campaign", "bg2"), ("target", crate::chapter3::TARGET), ("area", "blank")])
+        && row.get("id").and_then(Value::as_str).is_some();
+    Ok(place && authored_mode2_target(row)?)
+}
+
 /// The original extended row of the place a preset's `.fl` row names: the
 /// one row of the original table with its target and area, as a preset's
 /// standard places take the endpoint of the same place (templates'
@@ -687,6 +695,23 @@ fn resolve_target(row: &mut Dict, scan: &Scan<'_>, endpoints: &HashMap<String, E
             "treasure-container-not-found"
         } else {
             "legacy-target-requires-adapter"
+        };
+        row.insert("binding_problem", problem);
+        return Ok(());
+    }
+    if chapter3_place(&snapshot)? {
+        // Item Randomiser's chapter 3 places: the first of their vampires and
+        // thieves who can take the reward does (chapter3.rs), each found and
+        // checked by native_export. The place is the vampires' area.
+        let area_resource = format!("are:{}", crate::chapter3::AREA);
+        row.insert("area_resource", area_resource.as_str());
+        row.insert("members", Value::from(crate::chapter3::candidates(|resource| scan.resources.contains(resource))));
+        let problem = if !scan.resources.contains(area_resource.as_str()) {
+            "area-resource-absent"
+        } else if scan.unreadable.contains(area_resource.as_str()) {
+            "area-resource-unreadable"
+        } else {
+            "group-requires-runtime-selection"
         };
         row.insert("binding_problem", problem);
         return Ok(());

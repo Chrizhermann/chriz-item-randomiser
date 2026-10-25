@@ -5,8 +5,8 @@ use crate::error::{Error, Result};
 use crate::json::{Dict, Value};
 use crate::mode2_rewards::Naming;
 use crate::original_catalog::{
-    container_target_spec, creature_versions_place, is_spin621_source, is_spin621_target, mode2_alias_spec,
-    resolve_template,
+    chapter3_place, container_target_spec, creature_versions_place, is_spin621_source, is_spin621_target,
+    mode2_alias_spec, resolve_template,
 };
 use crate::original_options::{is_spell_shield_row, validate_spell_shield_spec};
 use crate::profiles::value_is_hex256;
@@ -446,6 +446,10 @@ pub fn target_kind(authored: &Value) -> Result<String> {
     if creature_versions_place(authored).is_some() {
         // The first version of the creature (original_catalog::CREATURE_VERSIONS).
         return Ok("creature-target".into());
+    }
+    if chapter3_place(authored)? {
+        // Its vampires and thieves (chapter3.rs), one of whom takes each reward.
+        return Ok("group".into());
     }
     let kind = match authored.at("endpoint_kind")? {
         Value::Null => {
