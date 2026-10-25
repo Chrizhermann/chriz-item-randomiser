@@ -18,7 +18,7 @@ from flir_config.game_text import GameText
 from flir_config.campaigns import read_campaign, write_campaign
 from flir_config.original_catalog import resolve_template
 from flir_config.original_configuration import build_original_configuration
-from flir_config.profiles import ProfileError, edit_profile, new_profile
+from flir_config.profiles import ProfileError, _digest, edit_profile, new_profile
 from flir_config.quest_options import _Dialogue
 from flir_config.quest_rewards import _blocks, _newline
 from flir_config.resources import _Tlk, scan_game
@@ -125,6 +125,33 @@ class OriginalOptionExportTests(unittest.TestCase):
                          [('original-source:bg2:mode2:item:12', 1)])
         self.assertEqual(sum(row['capacity'] for row in manifest['targets']), 1)
         return f, revision, changed
+
+    def test_a_trolls_place_exports_the_troll_that_stands_in_its_area(self):
+        """pptroll.fl's place (row 37): the painting troll PPTROLL1 in AR1514,
+        as a creature place (original_catalog.CREATURE_VERSIONS)."""
+        f = self.fixture()
+        self.dialogue_routes(f, ('dlg:hendak', 'dlg:lehtin'))
+        (f.override / 'sw1h03.itm').write_bytes((f.override / 'synth001.itm').read_bytes())
+        troll = bytearray(make_cre([]))
+        troll[0x280:0x289] = b'pptroll1\0'
+        (f.override / 'pptroll1.cre').write_bytes(troll)
+        (f.override / 'ar1514.are').write_bytes(make_are([], [], [('Troll', 'PPTROLL1')]))
+        f.refresh()
+        # The sword of the Copper Coronet's quest and the troll are both tier 3.
+        configuration = self.mode2_configuration(f, 'bg2:mode2:item:30', 'bg2:mode2:target:37')
+        revision = write_campaign(configuration['profile'], f.catalog, f.world, configuration['plan'],
+                                  f.store)['revision']
+        manifest = read_campaign(f.store, revision)
+        self.assertEqual([(row['id'], row['record']['kind']) for row in manifest['targets']],
+                         [('original-target:bg2:mode2:target:37', 'creature-target')])
+        before = snapshot(f.game)
+        f.export(revision)
+        self.assertEqual(snapshot(f.game), before)
+        native = json.loads(Path(str(f.output / 'campaign-store/revisions' / revision) + '.native.json').read_text())
+        self.assertEqual(native['targets']['original-target:bg2:mode2:target:37'], {
+            'kind': 'creature', 'area': 'AR1514', 'script_name': 'pptroll1',
+            'identity': _digest({'target': manifest['targets'][0]})})
+        self.assertIn('PPTROLL1.CRE', native['resource_hashes'])
 
     def test_temple_reward_exports_auxiliary_creature_without_another_unit(self):
         # Yarryl's club as the game has it, and as another mod may keep it:

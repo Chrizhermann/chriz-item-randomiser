@@ -7,7 +7,7 @@ import hashlib
 import json
 from pathlib import Path
 
-from .original_catalog import (is_spin621_source, is_spin621_target,
+from .original_catalog import (is_spin621_source, is_spin621_target, creature_versions_place,
                                mode2_alias_spec, container_target_spec, resolve_template)
 from .original_options import is_spell_shield_row, validate_spell_shield_spec
 from .platform import preset_game
@@ -222,6 +222,9 @@ def target_kind(authored: dict) -> str:
         return "creature-target"
     if is_spin621_target(authored) or reward is not None:
         return "scripted-target"
+    if creature_versions_place(authored) is not None:
+        # The first version of the creature (original_catalog.CREATURE_VERSIONS).
+        return "creature-target"
     kind = authored["endpoint_kind"]
     if kind is None:
         raw = authored["target"]
