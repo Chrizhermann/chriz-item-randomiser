@@ -33,6 +33,8 @@ from tests.test_postinstall_blpool_script import write_registry
 from test_postinstall_resources import make_itm
 from tests.test_postinstall_world_formats import make_are, make_cre, make_sto, item_record
 from sod_table_fixtures import sod_tables
+from flir_config.original_configuration import fit_special_places
+from test_special_places import LABELS, OGRE, WELL, SpecialPlaceGame
 
 
 @contextmanager
@@ -505,6 +507,8 @@ class EditorTests(unittest.TestCase):
         self.assertEqual([r["kind_label"] for r in containers], ["Container", "Container"])
         shop = e.get("/api/targets", {"q": "merchant", "kind": "store"})["records"][0]
         self.assertEqual(shop["kind_label"], "Shop")
+        # This game has none of Item Randomiser's special places.
+        self.assertEqual(e.get("/api/targets", {"kind": "special"})["total"], 0)
         draft = deepcopy(e.draft)
         draft["plan"]["targets"] = [{"id": containers[1]["id"], "capacity": 1, "optional": False}]
         self.assertEqual(e.post("/api/save", draft)["targets"][0]["kind_label"], "Container")
@@ -554,6 +558,76 @@ class EditorTests(unittest.TestCase):
         shop = next(row for row in records if row["kind"] == "store")
         self.assertEqual(shop["quantity"], 3)
         self.assertEqual(next(row for row in records if row["kind"] == "container")["quantity"], 1)
+
+
+class SpecialPlaceEditorTests(SpecialPlaceGame):
+    """The recipient search finds the special places this game can deliver
+    (test_special_places), and any draft can give them rewards."""
+
+    def editor(self) -> Editor:
+        return Editor(self.catalog, self.world, self.root / "workspace")
+
+    def test_the_search_lists_and_finds_the_special_places_with_their_labels(self):
+        self.build("bg2ee")
+        with self.tables():
+            offered = {row["id"]: row for row in fit_special_places(self.catalog, self.world)}
+            editor = self.editor()
+            with patch("flir_config.original_configuration.fit_special_places",
+                       wraps=fit_special_places) as fit:
+                listed = editor.get("/api/targets", {"kind": "special"})
+                found = editor.get("/api/targets", {"q": "well", "kind": "all"})
+                self.assertEqual(fit.call_count, 1)  # Found once, for every search.
+        self.assertEqual((listed["total"], [row["id"] for row in listed["records"]]), (2, [OGRE, WELL]))
+        for row in listed["records"]:
+            self.assertEqual(row, {"id": row["id"], **LABELS[row["id"]], "kind": "special",
+                                   "kind_label": "Special place", "parts": ["soa"],
+                                   "tier": {OGRE: "bg2:2", WELL: "bg2:3"}[row["id"]],
+                                   "registration": offered[row["id"]]})
+        self.assertEqual([row["id"] for row in found["records"]], [WELL])
+        self.assertNotIn("notice", found)
+        # The other kinds, and a search without words, find none of them.
+        self.assertEqual(editor.get("/api/targets", {"q": "madulf", "kind": "creature"})["total"], 0)
+        self.assertEqual(editor.get("/api/targets", {"kind": "all"})["total"], 0)
+        self.assertEqual(editor.get("/api/targets", {"q": "umar hills"})["records"][0]["id"], OGRE)
+
+    def test_a_presets_special_places_show_their_labels(self):
+        self.build("bg2ee")
+        with self.tables():
+            state = self.editor().post("/api/template", {"id": self.template, "items": "extended",
+                                                         "targets": "extended"})
+        targets = {row["id"]: row for row in state["targets"]}
+        for identity in (OGRE, WELL):
+            self.assertEqual({key: targets[identity][key] for key in ("label", "note", "place", "kind", "kind_label")},
+                             {**LABELS[identity], "kind": "special", "kind_label": "Special place"})
+        self.assertEqual(targets["original-target:bg2:base:target:9002"]["kind_label"], "Original recipient")
+
+    def test_a_new_draft_gives_a_special_place_a_reward(self):
+        self.build("bg2ee")
+        with self.tables():
+            editor = self.editor()
+            ogre = editor.get("/api/targets", {"kind": "special"})["records"][0]
+            draft = editor.post("/api/new", {"name": "Own places"})
+            profile, plan = self.own_configuration(ogre["registration"])
+            draft = {"profile": {**profile, "id": draft["profile"]["id"]}, "plan": plan}
+            result = editor.post("/api/validate", draft)
+            self.assertTrue(result["runtime_supported"], result)
+            saved = editor.post("/api/save", draft)
+        target = next(row for row in saved["targets"] if row["id"] == OGRE)
+        self.assertEqual({key: target[key] for key in ("label", "kind", "place", "parts", "capacity")},
+                         {"label": LABELS[OGRE]["label"], "kind": "special", "place": LABELS[OGRE]["place"],
+                          "parts": ["soa"], "capacity": 1})
+
+    def test_special_places_that_cannot_be_listed_leave_the_other_recipients(self):
+        self.build("bg2ee")
+        editor = self.editor()
+        with patch("flir_config.original_configuration.fit_special_places",
+                   side_effect=ProfileError("The lists could not be fitted")):
+            with self.assertRaisesRegex(ProfileError, "^Special places cannot be listed for this game: "
+                                                      "The lists could not be fitted$"):
+                editor.get("/api/targets", {"kind": "special"})
+            found = editor.get("/api/targets", {"q": "place2"})
+        self.assertEqual([row["kind"] for row in found["records"]], ["container"])
+        self.assertEqual(found["notice"], "Special places cannot be listed for this game: The lists could not be fitted")
 
 
 if __name__ == "__main__":

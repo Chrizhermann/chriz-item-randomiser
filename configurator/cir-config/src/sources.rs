@@ -1416,8 +1416,7 @@ pub const PLAN_OPTIONAL_FIELDS: [&str; 9] = [
     "cursed_disguises",
     "duplicates",
 ];
-const ORIGINAL_PLAN_KEYS: [&str; 4] =
-    ["original_template_id", "original_choices", "original_options", "target_registrations"];
+const ORIGINAL_PLAN_KEYS: [&str; 3] = ["original_template_id", "original_choices", "original_options"];
 pub const RUNTIME_REQUIREMENTS: [&str; 6] = [
     "campaign-revision-persistence",
     "exact-source-suppression",
@@ -1464,11 +1463,15 @@ pub fn bind_profile(profile: &Value, catalog: &Value, world: &Value, plan: &Valu
     {
         return Err(Error::profile("Binding plan is stale or unsupported; review against the current scans"));
     }
-    let present_original = ORIGINAL_PLAN_KEYS.iter().filter(|key| plan_fields.contains_key(key)).count();
-    if present_original != 0 && present_original != ORIGINAL_PLAN_KEYS.len() {
+    // A preset's plan has all of its metadata and its original recipients;
+    // any plan may have special places (special_places) as original recipients.
+    let present_original = ORIGINAL_PLAN_KEYS.iter().any(|key| plan_fields.contains_key(key));
+    if present_original
+        && !(ORIGINAL_PLAN_KEYS.iter().all(|key| plan_fields.contains_key(key))
+            && plan_fields.contains_key("target_registrations"))
+    {
         return Err(Error::profile("Original plan metadata is incomplete"));
     }
-    let present_original = present_original != 0;
     let tables = if present_original {
         Some(original::table_rows(catalog, world, plan, scans.map(|scans| &scans.tables))?)
     } else {
@@ -1747,11 +1750,28 @@ pub fn bind_profile(profile: &Value, catalog: &Value, world: &Value, plan: &Valu
 
     let mut original_targets: Vec<(String, &Value)> = Vec::new();
     let empty_list = Value::List(Vec::new());
+    let mut special: Option<std::rc::Rc<original::Tables>> = None;
     for registration in rows(Some(plan_fields.get("target_registrations").unwrap_or(&empty_list)), "original target registration")? {
-        if !present_original {
-            return Err(Error::profile("Original target needs original plan metadata"));
+        let selector = registration.get("selector").and_then(Value::as_str);
+        let own = match selector.and_then(|selector| target_rows.get(selector)) {
+            Some(row) => row.at("enabled")?.truthy(),
+            None => false,
+        };
+        let mut rows_of = target_rows;
+        if !own {
+            // A special place, which any plan may use, also where the preset's
+            // options leave its row out.
+            if special.is_none() {
+                special = Some(original::special_rows(catalog, world, scans.map(|scans| &scans.tables))?);
+            }
+            let special_rows = &special.as_ref().expect("resolved").targets;
+            if selector.is_some_and(|selector| special_rows.contains_key(selector)) {
+                rows_of = special_rows;
+            } else if !present_original {
+                return Err(Error::profile("Original target needs original plan metadata"));
+            }
         }
-        original::validate_target_registration(registration, target_rows)?;
+        original::validate_target_registration(registration, rows_of)?;
         let identity = crate::json::py_str(registration.at("id")?);
         if original_targets.iter().any(|(known, _)| *known == identity) {
             return Err(Error::profile("Duplicate original target registration"));

@@ -550,6 +550,25 @@ input::placeholder {
   border-left-color: var(--brass);
 }
 
+/* Item Randomiser's special places: quest rewards, carriers, guarded treasures. */
+.special-badge {
+  display: inline-block;
+  border: 1px solid var(--brass);
+  border-radius: 3px;
+  background: #f5ecd9;
+  color: #6f5224;
+  font-size: .74rem;
+  font-weight: 600;
+  line-height: 1.5;
+  padding: 0 6px;
+  vertical-align: 1px;
+  white-space: nowrap;
+}
+
+.special-note {
+  color: var(--ink);
+}
+
 .chosen-row summary {
   list-style: none;
   display: flex;

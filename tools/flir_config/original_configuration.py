@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 from collections import defaultdict
+from copy import deepcopy
 from pathlib import Path
 
 from .campaigns import OVERFLOW_TARGET_KINDS
@@ -28,6 +29,7 @@ from .profiles import ProfileError, edit_profile, new_profile, validate_catalog
 from .resources import GameResources, RESOURCE_TYPES
 from .scripted_sources import blpool_registration
 from .sources import Scans, UNUSABLE_SOURCE, new_binding_plan, unreadable_notes, validate_world
+from .special_places import place as special_place, templates as special_templates
 from .virtual_sources import virtual_registration
 
 _SOURCE_FIELDS = ("id", "source_ref", "campaign", "family", "source", "ident",
@@ -551,11 +553,7 @@ def fit_original_configuration(catalog: dict, world: dict, template_id: str, *,
     The rounds share the validated catalogues (``scans``, if the caller has
     them), the resolved tables and the item charges they read.
     """
-    from .campaigns import compile_campaign
-    from .native_export import _compile
-
     scans = Scans(catalog, world) if scans is None else scans
-    catalog_items, index = scans.indexes(catalog, world)
     drafts: list[dict] = []
 
     def resolve(game: str, names) -> dict:
@@ -565,6 +563,55 @@ def fit_original_configuration(catalog: dict, world: dict, template_id: str, *,
                                            targets=targets, options=options, names=names))
         return drafts[0]
 
+    return _fit(catalog, world, template_id, scans, resolve)
+
+
+def fit_special_places(catalog: dict, world: dict, *, scans: Scans | None = None) -> list[dict]:
+    """The special places (special_places.place) this game can deliver, one
+    target registration of each, as a preset's fit builds and checks them.
+
+    Item Randomiser's lists of each preset campaign whose tables hold them
+    (special_places.templates) are fitted with the standard rewards and the
+    places of the extended pools, every special place among them also where
+    an option brings it: a place's option concerns the rewards its tier takes,
+    not how it delivers them. The ordinary places take what a special place
+    cannot (a tier's rewards need a place that can hold any number). A place
+    the runtime check or the game cannot use is left out, as the fit leaves it
+    out. Of the rows of one place (a group's, the chapter 3 places) the first
+    is kept: a custom configuration gives it more reward slots instead. Lists
+    with none of their special places in the game's areas need no fit.
+    """
+    scans = Scans(catalog, world) if scans is None else scans
+    index = scans.indexes(catalog, world)[1]
+    found: dict[str, tuple] = {}
+    for template_id in special_templates(world):
+        game = preset_game(world, template_id)
+        draft = deepcopy(resolve_template(catalog, world, template_id, game=game, items="standard",
+                                          targets="extended",
+                                          names=eet_names(world["game_root"]) if game == "eet" else None))
+        special = [row for row in draft["targets"] if special_place(row) is not None]
+        if not any(row["area_resource"] in index["resources"] for row in special):
+            continue
+        for row in special:
+            row["enabled"] = True
+        fitted = _fit(catalog, world, template_id, scans, lambda game, names, draft=draft: draft)
+        for registration in fitted["plan"]["target_registrations"]:
+            key = special_place(registration["authored"])
+            if key is None:
+                continue
+            authored = registration["authored"]
+            order = (authored["campaign"], authored["family"], int(authored["id"].rsplit(":", 1)[1]))
+            if key not in found or order < found[key][0]:
+                found[key] = (order, registration)
+    return [registration for _, registration in sorted(found.values(), key=lambda entry: entry[0])]
+
+
+def _fit(catalog: dict, world: dict, template_id: str, scans: Scans, resolve) -> dict:
+    """fit_original_configuration with the draft from ``resolve(game, names)``."""
+    from .campaigns import compile_campaign
+    from .native_export import _compile
+
+    catalog_items, index = scans.indexes(catalog, world)
     item_defaults: dict[str, list[int]] = {}
     exclude: dict[str, str] = {}
     for _ in range(_FIT_ROUNDS):

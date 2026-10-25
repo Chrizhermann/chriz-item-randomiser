@@ -981,6 +981,124 @@ pub fn fit_original_configuration_from(
     fit_from(catalog, world, template_id, scans, &|_, _, _| Ok(draft.clone()))
 }
 
+/// The special places (`special_places::place`) this game can deliver, one
+/// target registration of each, as a preset's fit builds and checks them.
+///
+/// Item Randomiser's lists of each preset campaign whose tables hold them
+/// (`special_places::templates`) are fitted with the standard rewards and the
+/// places of the extended pools, every special place among them also where
+/// an option brings it: a place's option concerns the rewards its tier takes,
+/// not how it delivers them. The ordinary places take what a special place
+/// cannot (a tier's rewards need a place that can hold any number). A place
+/// the runtime check or the game cannot use is left out, as the fit leaves it
+/// out. Of the rows of one place (a group's, the chapter 3 places) the first
+/// is kept: a custom configuration gives it more reward slots instead. Lists
+/// with none of their special places in the game's areas need no fit.
+pub fn fit_special_places(catalog: &Value, world: &Value, scans: Option<&Scans>) -> Result<Vec<Value>> {
+    special_places_from(catalog, world, scans, &|template_id, game| {
+        resolve_template(
+            catalog,
+            world,
+            template_id,
+            game,
+            Some(&Value::from("standard")),
+            Some(&Value::from("extended")),
+            None,
+            None,
+        )
+    })
+}
+
+/// `fit_special_places` over an already resolved draft for every list.
+pub fn fit_special_places_from(
+    catalog: &Value,
+    world: &Value,
+    draft: &Value,
+    scans: Option<&Scans>,
+) -> Result<Vec<Value>> {
+    special_places_from(catalog, world, scans, &|_, _| Ok(draft.clone()))
+}
+
+fn special_places_from(
+    catalog: &Value,
+    world: &Value,
+    scans: Option<&Scans>,
+    resolve: &dyn Fn(&str, &str) -> Result<Value>,
+) -> Result<Vec<Value>> {
+    use crate::special_places::{place, templates};
+    let validated;
+    let own;
+    let scans = match scans {
+        Some(scans) => scans,
+        None => {
+            let items = validate_catalog(catalog)?;
+            validated = (items, validate_world(world, catalog)?);
+            own = Scans::new(catalog, world, &validated.0, &validated.1);
+            &own
+        }
+    };
+    let index = scans.indexes(catalog, world)?.1;
+    // Each place's first row by (campaign, family, line), in the order the
+    // places were found.
+    let mut found: Vec<((String, String, i64), Value)> = Vec::new();
+    let mut positions: HashMap<String, usize> = HashMap::new();
+    for template_id in templates(world)? {
+        let game = crate::platform::preset_game(world, &template_id)?;
+        let mut draft = resolve(&template_id, game)?;
+        let Some(rows) = draft.at_mut("targets")?.as_list_mut() else {
+            continue;
+        };
+        let mut special = Vec::new();
+        for (position, row) in rows.iter().enumerate() {
+            if place(row)?.is_some() {
+                special.push(position);
+            }
+        }
+        let mut here = false;
+        for position in &special {
+            let resource = rows[*position].at("area_resource")?;
+            if resource.as_str().is_some_and(|resource| index.resources.contains(resource)) {
+                here = true;
+                break;
+            }
+        }
+        if !here {
+            continue;
+        }
+        for position in special {
+            if let Some(row) = rows[position].as_dict_mut() {
+                row.insert("enabled", true);
+            }
+        }
+        let template = Value::from(template_id.as_str());
+        let fitted = fit_from(catalog, world, &template, Some(scans), &|_, _, _| Ok(draft.clone()))?;
+        for registration in fitted.at("plan")?.at("target_registrations")?.as_list().into_iter().flatten() {
+            let authored = registration.at("authored")?;
+            let Some(key) = place(authored)? else {
+                continue;
+            };
+            let identity = crate::json::py_str(authored.at("id")?);
+            let line =
+                identity.rsplit_once(':').map(|(_, line)| line).ok_or_else(|| Error::value("list index out of range"))?;
+            let order = (
+                crate::json::py_str(authored.at("campaign")?),
+                crate::json::py_str(authored.at("family")?),
+                crate::py::int_saturating(line).map_err(Error::value)?,
+            );
+            match positions.get(&key) {
+                Some(&position) if found[position].0 <= order => {}
+                Some(&position) => found[position] = (order, registration.clone()),
+                None => {
+                    positions.insert(key, found.len());
+                    found.push((order, registration.clone()));
+                }
+            }
+        }
+    }
+    found.sort_by(|a, b| a.0.cmp(&b.0));
+    Ok(found.into_iter().map(|(_, registration)| registration).collect())
+}
+
 /// How `fit_from` gets a draft: `resolve_template` for (template id, game,
 /// names), or the draft a test patched in.
 type Resolve<'a> = dyn Fn(&str, &str, Option<&EetNames>) -> Result<Value> + 'a;

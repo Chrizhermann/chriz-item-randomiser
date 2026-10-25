@@ -9,6 +9,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 from uuid import uuid4
 
+from . import special_places
 from .campaigns import compile_campaign, write_campaign
 from .native_export import _compile as compile_native
 from .profiles import (PROFILE_ID, ProfileError, ensure_output_outside_game,
@@ -47,12 +48,20 @@ class Editor:
         except ProfileError:
             # No preset is for this game; its area names do not tell the parts.
             self.platform = None
-        # The parts of the game each creature template is placed in.
+        # The parts of the game each creature template is placed in, and the
+        # names its actors have in each area.
         self.template_parts = defaultdict(set)
+        self.actor_names = defaultdict(list)
         for row in world["targets"]:
             template = row["selector"].get("template_resource") if row["kind"] == "actor" else None
             if isinstance(template, str):
                 self.template_parts[template] |= self.area_parts(row["resource"])
+                name = row["selector"].get("name")
+                if isinstance(name, str) and name and name not in self.actor_names[row["resource"], template]:
+                    self.actor_names[row["resource"], template].append(name)
+        # The special places this game can deliver, as search records, or why
+        # they cannot be listed; found on the first search for them.
+        self.special: list[tuple[str, dict]] | ProfileError | None = None
         if (profile is None) != (plan is None):
             raise ProfileError("Supply both an initial profile and its binding plan")
         applied = self.workspace / "prepared/last-applied.json"
@@ -162,6 +171,52 @@ class Editor:
         names.extend(f"{part} {PART_NAMES[part]}" for part in self.parts(row["resource"]))
         return " ".join(names).casefold()
 
+    def member_names(self, area: str, member: str) -> list[str]:
+        """The names a group's member has in its area: its actors' there."""
+        return self.actor_names.get((area, member), [])
+
+    def special_parts(self, authored: dict) -> list[str]:
+        """The parts of the game a special place is in, in game order."""
+        parts = special_places.table_parts(authored)
+        if parts:
+            return [part for part in PART_NAMES if part in parts]
+        return self.parts(special_places.area(authored))
+
+    def special_label(self, identity: str, authored: object) -> dict | None:
+        """A special place's recipient record (special_places.describe), or None."""
+        described = special_places.describe(authored, self.member_names) if isinstance(authored, dict) else None
+        if described is None:
+            return None
+        return {"id": identity, "label": described["label"], "kind": special_places.KIND,
+                "kind_label": special_places.KIND_LABEL, "note": described["note"],
+                "place": described["place"], "parts": self.special_parts(authored)}
+
+    def special_places(self) -> list[tuple[str, dict]]:
+        """The special places this game can deliver (fit_special_places): the
+        words a search finds each by and its recipient search record, with the
+        registration a draft adds and the tier of its row; found once, on the
+        first search for them."""
+        if self.special is None:
+            from .original_configuration import fit_special_places
+            try:
+                registrations = fit_special_places(self.catalog, self.world, scans=self.scans())
+            except ProfileError as exc:
+                self.special = exc
+            else:
+                self.special = []
+                for registration in registrations:
+                    authored = registration["authored"]
+                    record = self.special_label(registration["id"], authored)
+                    record["tier"] = f"{authored['campaign']}:{authored['tier']}"
+                    record["registration"] = registration
+                    words = [record["id"], record["label"], record["note"], record["kind_label"],
+                             str(authored["target"]), special_places.area(authored) or ""]
+                    words.extend(f"{part} {PART_NAMES[part]}" for part in record["parts"])
+                    self.special.append((" ".join(words).casefold(), record))
+        if isinstance(self.special, ProfileError):
+            raise ProfileError(f"Special places cannot be listed for this game: {self.special}")
+        return self.special
+
     def state(self) -> dict:
         saved = []
         for path in sorted(self.workspace.glob("*.json")):
@@ -173,8 +228,11 @@ class Editor:
             row = self.index["targets"].get(choice["id"])
             registration = authored_targets.get(choice["id"], {})
             authored = registration.get("authored", {})
+            special = self.special_label(choice["id"], authored) if not row else None
             if row:
                 label = self.target(row)
+            elif special:
+                label = special
             elif authored:
                 name = authored.get("target") or authored.get("endpoint_id") or choice["id"]
                 area = authored.get("area_resource") or authored.get("area") or ""
@@ -245,17 +303,31 @@ class Editor:
             return page
         if route == "/api/targets":
             kinds = {"all": set(KIND_LABELS), "creature": {"actor", "cre-template"},
-                     "container": {"container"}, "store": {"store"}}
+                     "container": {"container"}, "store": {"store"}, special_places.KIND: set()}
             kind = params.get("kind", "all")
             if kind not in kinds:
                 raise ProfileError("Unknown recipient type")
-            if not query:
+            # Every special place is listed without words; the scan's
+            # recipients are too many for that.
+            if not query and kind != special_places.KIND:
                 return self.page([], 0)
             terms = query.casefold().split()
-            rows = [row for row in self.world["targets"] if row["kind"] in kinds[kind] and
-                    all(term in self.search_text(row) for term in terms)]
+            rows, notice = [], None
+            if kind in ("all", special_places.KIND):
+                try:
+                    rows = [record for text, record in self.special_places() if all(term in text for term in terms)]
+                except ProfileError as exc:
+                    if kind == special_places.KIND:
+                        raise
+                    # The scan's recipients are still found; the search says why these are not.
+                    notice = str(exc)
+            rows += [row for row in self.world["targets"] if row["kind"] in kinds[kind] and
+                     all(term in self.search_text(row) for term in terms)]
             page = self.page(rows, offset)
-            page["records"] = [self.target(row) for row in page["records"]]
+            page["records"] = [row if row["kind"] == special_places.KIND else self.target(row)
+                               for row in page["records"]]
+            if notice is not None:
+                page["notice"] = notice
             return page
         raise ProfileError("Unknown editor request")
 

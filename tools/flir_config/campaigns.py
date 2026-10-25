@@ -30,6 +30,7 @@ from .original_registrations import (SOURCE_ADAPTER as ORIGINAL_SOURCE_ADAPTER,
                                      source_record as original_source_record,
                                      validate_campaign_source as validate_original_campaign_source,
                                      validate_campaign_target as validate_original_campaign_target)
+from .special_places import place as special_place
 from .templates import POOL_CHOICES, _options as original_options, list_templates
 from .original_options import SPELL_SHIELD_SOURCE, spell_shield_randomized, validate_spell_shield_spec
 from .cursed_disguises import validate_cursed_disguise_spec
@@ -440,10 +441,14 @@ def _validate_campaign(body: dict) -> dict:
         if not present_original:
             raise ProfileError("Second copies of rewards need original campaign settings")
         _validate_copies(body["duplicates"], body["sources"])
-    if not present_original and any(
-            row["record"].get("adapter_id") in
-            (ORIGINAL_SOURCE_ADAPTER, ORIGINAL_TARGET_ADAPTER)
-            for row in body["sources"] + body["targets"]):
+    # Any campaign may give rewards to Item Randomiser's special places
+    # (bind_profile); its other authored records come with a preset.
+    if not present_original and (
+            any(row["record"].get("adapter_id") in (ORIGINAL_SOURCE_ADAPTER, ORIGINAL_TARGET_ADAPTER)
+                for row in body["sources"]) or
+            any(row["record"].get("adapter_id") == ORIGINAL_SOURCE_ADAPTER or
+                (row["record"].get("adapter_id") == ORIGINAL_TARGET_ADAPTER and
+                 special_place(row["record"]["selector"]) is None) for row in body["targets"])):
         raise ProfileError("Authored records need original campaign settings")
     if "randomization" in body:
         _validate_randomization(body["randomization"], body["sources"], body["targets"])

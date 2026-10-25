@@ -244,6 +244,8 @@ struct Compiler<'a> {
     randomization: Option<&'a Value>,
     /// The Sahuagin treasury's place: its container and script (`require_treasury_names`).
     treasuries: Vec<(String, &'a Value, Value)>,
+    /// The row of each special place that can have only one (`special_places::unique`).
+    unique_places: HashMap<String, String>,
     /// Whether the revision was exported before and belongs to running saves.
     stored: bool,
     revision: String,
@@ -1278,6 +1280,13 @@ impl<'a> Compiler<'a> {
         require(ok, || format!("Selected target differs from the scan: {identity}"))?;
         if authored {
             let selector = target.at("selector")?;
+            // Its game patches and the runtime name one row of such a place (a
+            // preset's row there stands for the route's own).
+            let place = crate::special_places::place(selector)?.unwrap_or_default();
+            let other = self.unique_places.get(&place).map_or(identity, String::as_str);
+            require(other == identity, || {
+                format!("Original recipient is the same place as {other}; keep one of them: {identity}")
+            })?;
             self.use_resource(text(target, "resource")?)?;
             let reward = match route_target.as_deref() {
                 Some(id) => Some(mode2_rewards::target_spec(id, self.routes()?.naming())?),
@@ -1744,6 +1753,7 @@ pub fn compile(
         manifest_targets,
         randomization: manifest.get("randomization"),
         treasuries: Vec::new(),
+        unique_places: HashMap::new(),
         stored,
         revision: py_str(&revision),
         notes: Vec::new(),
@@ -1883,6 +1893,14 @@ pub fn compile(
     for selected in manifest_targets {
         let identity = text(selected, "id")?;
         compiler.attempt(&mut problems, identity, |compiler| compiler.compile_target(selected))?;
+        let record = selected.at("record")?;
+        if record.get("adapter_id").and_then(Value::as_str) == Some("original-target-v1") {
+            if let Some(place) = crate::special_places::place(record.at("selector")?)? {
+                if crate::special_places::unique(&place) && compiler.targets.contains_key(identity) {
+                    compiler.unique_places.insert(place, identity.to_string());
+                }
+            }
+        }
     }
     // The treasury's rewards, once every place in its container is known.
     for (identity, treasury, script) in std::mem::take(&mut compiler.treasuries) {

@@ -12,6 +12,7 @@ from .original_catalog import (is_spin621_source, is_spin621_target, chapter3_pl
 from .original_options import is_spell_shield_row, validate_spell_shield_spec
 from .platform import preset_game
 from .profiles import HEX256, ProfileError
+from .special_places import place as special_place, templates as special_templates
 from .templates import POOL_CHOICES, list_templates
 
 SOURCE_ADAPTER = "original-source-v1"
@@ -106,6 +107,28 @@ def table_rows(catalog: dict, world: dict, plan: dict, *, memo: dict | None = No
     if tables[0] != choices or tables[1] != options:
         raise ProfileError("Original pool choices or options changed")
     return tables[2], tables[3]
+
+
+def special_rows(catalog: dict, world: dict, *, memo: dict | None = None) -> dict:
+    """The rows of the game's special places (special_places.place) by
+    identity, from Item Randomiser's lists that hold them, enabled: any
+    configuration may give them rewards, also one that is no preset, whatever
+    option a preset needs for them.
+
+    ``memo`` (Scans.tables) keeps them for these scans; they are shared and
+    must not be changed."""
+    rows = memo.get("special") if memo is not None else None
+    if rows is None:
+        rows = {}
+        for template_id in special_templates(world):
+            draft = resolve_template(catalog, world, template_id, game=preset_game(world, template_id),
+                                     items="standard", targets="extended")
+            for row in draft["targets"]:
+                if special_place(row) is not None:
+                    rows.setdefault(row["id"], {**row, "enabled": True})
+        if memo is not None:
+            memo["special"] = rows
+    return rows
 
 
 def is_unreferenced_creature_source(row: dict, physical: dict[str, dict]) -> bool:

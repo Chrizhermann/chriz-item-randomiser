@@ -265,6 +265,24 @@ function partNames(parts) {
   return (parts || []).map((part) => PART_NAMES[part] || part).join(", ");
 }
 
+// A recipient's name, marked when it is one of Item Randomiser's special places.
+function recipientName(text, record) {
+  const name = node("div", "record-name", text);
+  if (record.kind === "special") name.append(" ", node("span", "special-badge", record.kind_label || "Special place"));
+  return name;
+}
+
+// A recipient's kind for its detail line, which the special places' mark already shows.
+function recipientKind(record) {
+  return record.kind === "special" ? "" : record.kind_label || record.kind || "";
+}
+
+// A special place is chosen also as another row there (Boss Loot's Aldeth).
+function targetChosen(row) {
+  return plan.targets.some((target) => target.id === row.id
+    || (row.place && getTarget(target.id).place === row.place));
+}
+
 // One chip per game part and tier of [parts, tier] pairs (a chosen record, or a
 // reward slot), with how many pairs it stands for. A record whose place does not
 // tell its part takes the part of its tier's table.
@@ -360,7 +378,8 @@ function updateFilterOptions(chips) {
   ui.tierFilter.value = tier;
 }
 
-function chooseTier(prompt) {
+// <suggested> is chosen first when the preset has it (a special place's own tier).
+function chooseTier(prompt, suggested = "") {
   const tiers = namedTiers();
   if (!tiers.length) {
     setStatus("This preset has no existing tier to choose. Check its original pool settings.", true);
@@ -369,7 +388,7 @@ function chooseTier(prompt) {
   ui.tierPrompt.textContent = prompt;
   ui.tierSelect.replaceChildren(new Option("Choose a tier", ""));
   for (const tier of tiers) ui.tierSelect.add(new Option(tier, tier));
-  ui.tierSelect.value = "";
+  ui.tierSelect.value = tiers.includes(suggested) ? suggested : "";
   ui.tierDialog.returnValue = "";
   return new Promise((resolve) => {
     ui.tierDialog.addEventListener("close", () => {
@@ -510,8 +529,9 @@ function renderSelected() {
     const row = node("div", "chosen-row");
     const heading = node("div", "result-row");
     const main = node("div", "result-main");
-    main.append(node("div", "record-name", data.label || target.id),
-      node("div", "record-detail", `${target.id}${data.kind_label || data.kind ? ` · ${data.kind_label || data.kind}` : ""}`));
+    main.append(recipientName(data.label || target.id, data),
+      node("div", "record-detail", [target.id, recipientKind(data)].filter(Boolean).join(" · ")));
+    if (data.kind === "special" && data.note) main.append(node("div", "record-detail special-note", data.note));
     if (chips.length) main.append(chipList(chips, true));
     const remove = node("button", "text-button remove", "Remove");
     remove.type = "button";
@@ -775,16 +795,21 @@ function removeItem(item) {
 }
 
 async function addTarget(row) {
-  if (plan.targets.some((entry) => entry.id === row.id)) return;
+  if (targetChosen(row)) return;
   const rules = tierRules();
   if (rules) {
     setBusy(true);
     let tier;
-    try { tier = await chooseTier(`Choose the tier for new recipient ${row.label || row.id}.`); }
+    try { tier = await chooseTier(`Choose the tier for new recipient ${row.label || row.id}.`, row.tier); }
     finally { setBusy(false); }
     if (!tier) return;
     rules.targets[row.id] = [tier];
     if (rules.row_filters) rules.row_filters.targets[row.id] = { chance: 100, group: "" };
+  }
+  if (row.registration) {
+    // A special place: its row of Item Randomiser's lists, as this game delivers it.
+    plan.target_registrations = [...(plan.target_registrations || []), structuredClone(row.registration)]
+      .sort((a, b) => a.id.localeCompare(b.id));
   }
   plan.targets.push({ id: row.id, capacity: 1, optional: false });
   plan.targets.sort((a, b) => a.id.localeCompare(b.id));
@@ -804,6 +829,8 @@ function removeTarget(id) {
   plan.targets = plan.targets.filter((row) => row.id !== id);
   if (plan.target_registrations) {
     plan.target_registrations = plan.target_registrations.filter((row) => row.id !== id);
+    // A draft that is no preset has original recipients only for its special places.
+    if (!plan.target_registrations.length && !("original_template_id" in plan)) delete plan.target_registrations;
   }
   targetInputDrafts.delete(id);
   changed();
@@ -815,6 +842,14 @@ function selectedRecipientKinds() {
   return [...ui.recipientFilterRow.querySelectorAll("input:checked")].map((input) => input.value);
 }
 
+// Whether a tab has something to search: words, or, with only the special
+// places chosen, all of them (they are few).
+function searchable(tab) {
+  if (searches[tab].query.trim()) return true;
+  const kinds = tab === "enemies" ? selectedRecipientKinds() : [];
+  return kinds.length === 1 && kinds[0] === "special";
+}
+
 function renderResults() {
   const search = searches[activeTab];
   ui.libraryResults.replaceChildren();
@@ -824,12 +859,16 @@ function renderResults() {
     ui.moreResults.hidden = true;
     return;
   }
-  if (!search.query.trim()) {
-    ui.searchSummary.textContent = activeTab === "items" ? "Search to browse the scanned items." : "Search creatures, containers and shops in the world scan.";
+  if (!searchable(activeTab)) {
+    ui.searchSummary.textContent = activeTab === "items" ? "Search to browse the scanned items."
+      : "Search creatures, containers, shops and special places. With only Special places chosen, all of them are listed.";
     return;
   }
   if (search.loading && !search.records.length) ui.searchSummary.textContent = "Searching the scan…";
-  else if (search.searched) ui.searchSummary.textContent = `${search.total.toLocaleString()} ${activeTab === "items" ? "items" : "recipients"} found`;
+  else if (search.searched) {
+    ui.searchSummary.textContent = `${search.total.toLocaleString()} ${activeTab === "items" ? "items" : "recipients"} found`
+      + (search.notice ? `. ${sentence(search.notice)}` : "");
+  }
   if (search.searched && !search.records.length) {
     ui.libraryResults.append(node("p", "empty", "No matches. Try a different name or resource ID."));
     return;
@@ -837,13 +876,13 @@ function renderResults() {
   for (const row of search.records) {
     const isItem = activeTab === "items";
     const id = isItem ? row.resref : row.id;
-    const chosen = isItem ? profile.items.includes(id) : plan.targets.some((target) => target.id === id);
+    const chosen = isItem ? profile.items.includes(id) : targetChosen(row);
     const result = node("div", "result-row");
     const main = node("div", "result-main");
-    const kind = isItem ? itemType(row.category) : [row.kind_label || row.kind, partNames(row.parts)].filter(Boolean).join(" · ");
-    main.append(node("div", "record-name", isItem ? row.name || id : row.label || id),
+    const kind = isItem ? itemType(row.category) : [recipientKind(row), partNames(row.parts)].filter(Boolean).join(" · ");
+    main.append(isItem ? node("div", "record-name", row.name || id) : recipientName(row.label || id, row),
       node("div", "record-detail", `${id}${kind ? ` · ${kind}` : ""}`));
-    if (row.note) main.append(node("div", "record-detail", row.note));
+    if (row.note) main.append(node("div", row.kind === "special" ? "record-detail special-note" : "record-detail", row.note));
     const button = node("button", "button secondary", chosen ? "Added" : "Add");
     button.type = "button";
     button.disabled = chosen;
@@ -857,7 +896,7 @@ function renderResults() {
 async function searchPage(tab, append = false) {
   const search = searches[tab];
   const query = search.query.trim();
-  if (!query) return;
+  if (!searchable(tab)) return;
   const kinds = tab === "enemies" ? selectedRecipientKinds() : [];
   if (tab === "enemies" && !kinds.length) return;
   if (append && (search.next === null || search.loading)) return;
@@ -877,18 +916,21 @@ async function searchPage(tab, append = false) {
     } else {
       // Each kind has its own complete search page, so mixed filters retain
       // accurate totals and cannot hide matches behind excluded result types.
-      const pages = await Promise.all((kinds.length === 3 ? ["all"] : kinds)
+      const every = kinds.length === ui.recipientFilterRow.querySelectorAll("input").length;
+      const pages = await Promise.all((every ? ["all"] : kinds)
         .map((kind) => request(`/api/targets?${params}&kind=${kind}`)));
       result = {
         records: pages.flatMap((page) => page.records),
         total: pages.reduce((total, page) => total + page.total, 0),
-        next_offset: pages.find((page) => page.next_offset !== null)?.next_offset ?? null
+        next_offset: pages.find((page) => page.next_offset !== null)?.next_offset ?? null,
+        notice: pages.map((page) => page.notice).find(Boolean) || ""
       };
     }
     if (search.sequence !== sequence || search.query.trim() !== query) return;
     search.records = append ? [...search.records, ...(result.items || result.records || [])] : (result.items || result.records || []);
     search.total = result.total;
     search.next = result.next_offset;
+    search.notice = result.notice || "";
     search.searched = true;
   } catch (error) {
     if (search.sequence !== sequence) return;
@@ -911,7 +953,7 @@ function setTab(tab) {
   ui.librarySearch.placeholder = tab === "items" ? "Enter an item name or ID" : "Enter a name, area, game part or ID";
   ui.librarySearch.value = searches[tab].query;
   renderResults();
-  if (searches[tab].query.trim() && !searches[tab].searched && !searches[tab].loading) searchPage(tab);
+  if (searchable(tab) && !searches[tab].searched && !searches[tab].loading) searchPage(tab);
 }
 
 function localInputValid() {
@@ -993,7 +1035,7 @@ ui.librarySearch.addEventListener("input", () => {
   search.sequence += 1;
   clearTimeout(searchTimer);
   renderResults();
-  if (search.query.trim()) {
+  if (searchable(activeTab)) {
     const tab = activeTab;
     searchTimer = setTimeout(() => searchPage(tab), 240);
   }
@@ -1010,7 +1052,7 @@ ui.recipientFilterRow.addEventListener("change", () => {
   search.searched = false;
   search.sequence += 1;
   if (activeTab === "enemies") renderResults();
-  if (search.query.trim()) searchPage("enemies");
+  if (searchable("enemies")) searchPage("enemies");
 });
 ui.moreResults.addEventListener("click", () => searchPage(activeTab, true));
 ui.selectionFilter.addEventListener("input", () => {

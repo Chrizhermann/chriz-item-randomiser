@@ -2,9 +2,9 @@
 
 Runs the Python test suite (tests/test_*.py) with the reference implementation
 as usual. Every call the tests make to the configurator library -- game and
-world scans, preset drafts and fitting with left-out rows, the reward routes
-of table rows, binding, campaign compile and publish, native export -- is
-also run by the Rust port on the same
+world scans, preset drafts and fitting with left-out rows, the special places
+a game can deliver, the reward routes of table rows, binding, campaign compile
+and publish, native export -- is also run by the Rust port on the same
 inputs and the same folder state. Results, errors and written files must match
 exactly; the synthetic games are the ones the reference tests build.
 
@@ -170,7 +170,7 @@ def classify(call: str):
                 campaigns_patched = True
                 continue
             if module == "flir_config.original_configuration" and attribute == "resolve_template":
-                if call in ("build_original_configuration", "fit_original_configuration"):
+                if call in ("build_original_configuration", "fit_original_configuration", "fit_special_places"):
                     resolve = getattr(target, attribute)
                 continue
             if module == "flir_config.original_registrations" and attribute == "resolve_template":
@@ -253,6 +253,9 @@ def mocked_draft(resolve, values: dict):
     effect = resolve.side_effect
     if effect is None:
         draft = resolve.return_value
+    elif "template_id" not in values:
+        # fit_special_places resolves one draft for each list.
+        return None, "resolve_template has a side effect for several lists"
     elif callable(effect) and not isinstance(effect, type):
         draft = effect(values["catalog"], values["world"], values["template_id"], items=values.get("items"),
                        targets=values.get("targets"), options=values.get("options"))
@@ -342,6 +345,9 @@ SPECS = {
             catalog=file(v["catalog"]), world=file(v["world"]), template_id=v["template_id"],
             items=v["items"], targets=v["targets"], options=v["options"],
             draft=None if d is None else file(d))),
+    ("flir_config.original_configuration", "fit_special_places"): Spec(
+        "fit_special_places", lambda v, d: present(
+            catalog=file(v["catalog"]), world=file(v["world"]), draft=None if d is None else file(d))),
     ("flir_config.sources", "new_binding_plan"): Spec(
         "new_binding_plan", lambda v, d: {"profile": file(v["profile"]), "catalog": file(v["catalog"]),
                                           "world": file(v["world"])}),
