@@ -561,6 +561,20 @@ prince carries this place's reward as well, and each reply that ends his job han
 over row 59's reward first, then row 60's. Both places are left out together, for the
 reasons above.
 
+Row 58 (Item Randomiser's `tadpoles1.fl`) is the king's own place: his reward reply
+gives it to the one he pays, like any quest reward. Item Randomiser also gives the
+item to both kings, SAHKNG01.CRE and SAHKNG02.CRE, because on the prince's side that
+reply never comes: there the party kills the king who took the throne for the prince,
+and takes the item from him. Here the place's reward waits until the king pays or
+dies: it goes to the one he pays, or it lies on the ground at the corpse of whichever
+king died, as for any creature that died before its reward arrived. Both kings are
+named `sahkng01`, so whichever one the area has is the place. While he lives the
+reward waits, since he may still pay, or destroy himself when the prince's job begins
+(SAHKNG01.BCS), and then the other king comes. The place is left out with its reason
+where a king's file is missing ("Required reward resource is absent: cre:sahkng02") or
+has another script name ("Original reward recipient changed"): on the prince's side
+the reward could then never arrive.
+
 The book of Lavok's sphere (`PPBOOK.BCS`, AR1513) gives two scrolls with the ring on
 its last page (rows 260 and 262 of the extended tables, beside the ring's row 109).
 Each scroll has a route of its own, which only drops its grant where its row moves the

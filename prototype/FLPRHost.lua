@@ -14,7 +14,8 @@ Host.REMOVAL_CHECKS = 16
 Host.DEFERRABLE = { AREA_UNAVAILABLE = true, OWNER_MISSING = true, OWNER_AMBIGUOUS = true,
     TARGET_NOT_ALIVE = true, TARGET_PARTY_MEMBER = true, TARGET_FAMILIAR = true,
     TARGET_INVENTORY_FULL = true, TARGET_QUEUE_BUSY = true, TARGET_NOT_EMPTY = true,
-    TARGET_STACK_COLLISION = true, QUEST_NOT_CLAIMED = true, CORPSE_ITEM_AMBIGUOUS = true }
+    TARGET_STACK_COLLISION = true, QUEST_NOT_CLAIMED = true, CORPSE_ITEM_AMBIGUOUS = true,
+    TARGET_ALIVE = true }
 
 function Host.new(deps)
     assert(type(deps) == "table" and deps.core and deps.storage)

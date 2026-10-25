@@ -101,12 +101,13 @@ Latest live evidence (2026-09-29/30), under ignored
   interaction remains unverified. The game was closed normally, 39 temporary
   files and three ward-support files restored, and the shared lock released.
 
-TOLGER and the two Sahuagin king templates need their original alternate-carrier
-behavior preserved. The original installer puts the same assignment on both
-templates and appears to rely on route exclusivity; no explicit cross-carrier
-retirement flag was found in the original rules. Those routes need review before
-adding a new retirement rule. They are not covered by the single-carrier transfer
-above. SAHTREAS also removes and re-grants its
+TOLGER needs its original alternate-carrier behavior preserved. The original
+installer puts the same assignment on both templates and appears to rely on
+route exclusivity; no explicit cross-carrier retirement flag was found in the
+original rules. That route needs review before adding a new retirement rule. It
+is not covered by the single-carrier transfer above. The two Sahuagin king
+templates' places have routes now: the prince carries row 60's reward, and row
+58's waits for the king's payment or his corpse (`corpse_only`, above). SAHTREAS also removes and re-grants its
 reward on a quest branch, so the simple container loot latch is insufficient. The
 treasury route now gates those destroys and has the king's reward reply hand the
 treasury's reward to his payee ([configurator](post-install-configurator.md)).
@@ -235,6 +236,13 @@ then `DropItem`, bound to the delivery like a container add and confirmed as
 lootable. A dead party member or familiar, or a corpse that holds another item
 of the reward's name, still defers. See
 [corpse ground evidence](native-corpse-ground-evidence.md).
+
+A creature target marked `corpse_only` receives only that way: while it lives,
+inspection reports `TARGET_ALIVE` and the reward waits. Such a target always has
+a `handover`: once its reward reply has set the event, the reward goes to the
+payee the reply marked instead, alive or dead the creature. This is the Sahuagin
+king's own place, whichever of the two kings the area has
+([configurator](post-install-configurator.md)).
 
 Each command also carries an opaque Lua session table. A receipt must preserve
 that exact reference; it cannot serialize or deep-copy it. Restore/destroy/new

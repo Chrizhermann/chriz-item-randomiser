@@ -38,7 +38,7 @@ from test_mode2_rewards import (BOOK_GIFTS, KING_DESTROYS, KING_PAID, action, bl
                                 with_actions)
 from test_original_configuration import target_row
 from test_postinstall_resources import make_game, make_itm, make_tlk, mark_eet, snapshot
-from test_postinstall_world_formats import item_record, make_are
+from test_postinstall_world_formats import item_record, make_are, make_cre
 from test_reward_copies import interject
 
 # Three routes of Item Randomiser's extended lists: the ogre's shield (a
@@ -355,6 +355,13 @@ class ContainerQuestTests(RouteGame):
 ROD_GRANT = b'GiveItemCreate("rods02",LastTalkedToBy,0,0,0)\r\r\n'
 
 
+def named_cre(script_name: str) -> bytes:
+    """A creature without items that the runtime finds by <script_name>."""
+    data = bytearray(make_cre([]))
+    data[0x280:0x2A0] = script_name.encode("ascii").ljust(32, b"\0")
+    return bytes(data)
+
+
 def king_dialogue(rod: bytes = ROD_GRANT) -> bytes:
     """SAHKNG01 whose reward reply gives the bracer and, as <rod> says, the rod."""
     dialogue = _Dialogue(dialogue_fixture(mode2_rewards.resource_specs("dlg:sahkng01")), "sahkng01")
@@ -377,11 +384,13 @@ class TreasuryGame(RouteGame):
         return next(row for row in draft["items"] if row["id"] == self.sources[0])
 
     def build_treasury(self, platform: str, king: bytes | None, *, rods: int = 1) -> None:
-        """AR2300 with the rod in its treasury and in <rods> - 1 other chests."""
+        """AR2300 with the rod in its treasury and in <rods> - 1 other chests,
+        and both kings the area can have, each named sahkng01."""
         area = make_are([chest_item("RODS02")] * rods,
                         [("Treasury", 0, 1)] + [(f"Chest {number}", number, 1) for number in range(1, rods)])
         resources = {"uhogre01.dlg": ogre_dialogue()} | ({} if king is None else {"sahkng01.dlg": king})
-        self.build(platform, resources=resources, extra={"ar2300.are": area})
+        kings = {f"sahkng0{number}.cre": named_cre("sahkng01") for number in (1, 2)}
+        self.build(platform, resources=resources, extra={"ar2300.are": area, **kings})
         visible = (self.game / "override" / "synth001.itm").read_bytes()
         (self.game / "override" / "rods02.itm").write_bytes(visible)
         self.rescan()
@@ -557,6 +566,65 @@ class TreasuryPlaceTests(TreasuryGame):
                     self.assertEqual((self.output / "resource-overrides" / "SAHTREAS.BCS").read_bytes(), treasury)
                 else:
                     self.assertFalse(staged.exists())
+
+    KING_PLACE = "original-target:bg2:mode2:target:58"
+
+    def king_place(self) -> None:
+        """The bracer and the ogre's shield; the king's own place and the ogre's."""
+        self.sources = ("bg2:mode2:item:57", "bg2:mode2:item:14")
+        self.targets = ("bg2:mode2:target:58", "bg2:mode2:target:17")
+        self.places = lambda: [place("bg2:base:target:9002", "6", 0), place("bg2:base:target:9003", "2", 1)]
+
+    def test_the_kings_own_place_waits_for_his_corpse_until_he_pays(self):
+        # tadpoles1.fl: his reward reply pays the place. On the prince's side
+        # that reply never comes and the party kills the king who took the
+        # throne (SAHKNG02.CRE), so until it pays the reward waits for the
+        # death of whichever king the area has, each named sahkng01.
+        self.king_place()
+        for platform in ("bg2ee", "eet"):
+            with self.subTest(platform=platform):
+                self.build_place(platform, script=treasury_fixture())
+                self.visible("brac19")
+                before = snapshot(self.game)
+                fitted = self.fit()
+                self.assertEqual(fitted["not_used"], [])
+                self.assertIn(self.KING_PLACE, {row["id"] for row in fitted["plan"]["target_registrations"]})
+                written = self.apply(fitted)
+                self.assertEqual(snapshot(self.game), before)
+                for revision in written["starts"].values():
+                    native = json.loads((self.output / "campaign-store" / "revisions" /
+                                         f"{revision}.native.json").read_bytes())
+                    endpoint = native["targets"][self.KING_PLACE]
+                    self.assertEqual({key: value for key, value in endpoint.items() if key != "identity"}, {
+                        "kind": "creature", "area": "AR2300", "script_name": "sahkng01", "corpse_only": True,
+                        "handover": {"event_global": "FLPR_EM2_57", "recipient_local": "FLPR_RM2_57"},
+                        "reward_resource": "dlg:sahkng01"})
+                    for name in ("SAHKNG01.CRE", "SAHKNG02.CRE"):
+                        self.assertEqual(native["resource_hashes"][name], hashlib.sha256(
+                            (self.game / "override" / name.lower()).read_bytes()).hexdigest())
+                    self.assertIn("AR2300.ARE", native["resource_hashes"])
+
+    def test_a_king_the_runtime_cannot_find_leaves_his_place_out(self):
+        # A king missing, or by another name, could never hold the reward on
+        # the prince's side: the place is left out, the bracer's route stays.
+        self.king_place()
+        for name, data, reason in (
+                ("sahkng02.cre", None, "Required reward resource is absent: cre:sahkng02"),
+                ("sahkng02.cre", named_cre("sahkng02"), f"Original reward recipient changed: {self.KING_PLACE}"),
+                ("sahkng01.cre", named_cre("sahking"), f"Original reward recipient changed: {self.KING_PLACE}")):
+            with self.subTest(name=name, renamed=data is not None):
+                self.build_place("bg2ee", script=treasury_fixture())
+                if data is None:
+                    (self.game / "override" / name).unlink()
+                else:
+                    (self.game / "override" / name).write_bytes(data)
+                self.visible("brac19")
+                fitted = self.fit()
+                self.assertEqual([(row["id"], row["kind"], row["reason"]) for row in fitted["not_used"]],
+                                 [("bg2:mode2:target:58", "place", reason)])
+                native = self.native(self.apply(fitted))
+                self.assertNotIn(self.KING_PLACE, native["targets"])
+                self.assertEqual(native["sources"]["original-source:bg2:mode2:item:57"]["kind"], "guarded-script")
 
     def test_a_game_without_the_treasurys_script_needs_no_gate(self):
         self.build_place("bg2ee")

@@ -464,6 +464,22 @@ fn build_registry() -> Registry {
             row_mut(&mut rewards, key).insert("resources", list!["dlg:sahkng01", "bcs:sahtreas"]);
         }
     }
+    // The king's own place (row 58, Item Randomiser's tadpoles1.fl) is his
+    // reward reply, which hands its reward to the one he pays. Item
+    // Randomiser also gives the item to SAHKNG01.CRE and SAHKNG02.CRE, the
+    // king who takes the throne on the prince's side, where that reply never
+    // comes: there the party kills the king for the prince. So until the reply
+    // pays, the place's reward waits for the king's death and then lies at his
+    // corpse (`holder`): whichever king the area has, both named sahkng01. A
+    // living king may still pay, or he destroys himself when the prince's job
+    // begins (SAHKNG01.BCS) and the other one comes.
+    row_mut(&mut rewards, "sahkng01").insert(
+        "holder",
+        dict! {
+            "area" => "ar2300", "script_name" => "sahkng01",
+            "creature_resources" => list!["cre:sahkng01", "cre:sahkng02"],
+        },
+    );
     // The two scrolls that the book of Lavok's sphere (PPBOOK.BCS, AR1513)
     // gives with its ring on the last page (Item Randomiser's rows 260 and
     // 262). The book's places are the ring's quest (the installer splits that
@@ -663,6 +679,22 @@ fn in_game(mut spec: Dict, naming: Naming<'_>) -> Result<Dict> {
         let area = name(text_field(&handover, "area", "lower")?, "are")?;
         handover.insert("area", area);
         spec.insert("handover", handover);
+    }
+    if let Some(Value::Dict(holder)) = spec.get("holder").filter(|holder| holder.truthy()) {
+        let mut holder = holder.clone();
+        let area = name(text_field(&holder, "area", "lower")?, "are")?;
+        let resources = match field(&holder, "creature_resources")? {
+            Value::List(resources) => resources.clone(),
+            other => return Err(Error::type_error(format!("'{}' object is not iterable", other.type_name()))),
+        };
+        let mut creatures = Vec::new();
+        for resource in resources {
+            let creature = resource.as_str().unwrap_or("").chars().skip(4).collect::<String>();
+            creatures.push(Value::from(format!("cre:{}", name(&creature, "cre")?)));
+        }
+        holder.insert("area", area);
+        holder.insert("creature_resources", Value::List(creatures));
+        spec.insert("holder", holder);
     }
     Ok(spec)
 }

@@ -776,6 +776,29 @@ def _compile(manifest: dict, world: dict, index: dict, items: dict,
                             "x": selection["x"], "y": selection["y"], "container_type": selection["type"],
                             "claim_global": spec["event_global"], "reward_resource": spec["resource"],
                             "identity": _digest({"target": selected, "container": physical})}
+                    elif spec.get("holder"):
+                        # The Sahuagin king's place: his reward reply pays it;
+                        # until then it waits for his death, at his corpse.
+                        # Each king the area can have must carry the name the
+                        # runtime finds him by.
+                        holder = spec["holder"]
+                        area = "are:" + holder["area"]
+                        use(area)
+                        creatures = []
+                        for resource in holder["creature_resources"]:
+                            use(resource)
+                            creature = index["targets"].get(resource)
+                            _require(creature is not None and
+                                     creature["selector"]["script_name"].lower() == holder["script_name"],
+                                     f"Original reward recipient changed: {identity}")
+                            creatures.append(creature)
+                        native["targets"][identity] = {
+                            "kind": "creature", "area": _area(area),
+                            "script_name": _name(holder["script_name"], identity), "corpse_only": True,
+                            "handover": {"event_global": spec["event_global"],
+                                         "recipient_local": spec["recipient_local"]},
+                            "reward_resource": spec["resource"],
+                            "identity": _digest({"target": selected, "creatures": creatures})}
                     else:
                         native["targets"][identity] = {
                             "kind": "quest", "area": "*", "adapter_id": "mode2-reward-v1",

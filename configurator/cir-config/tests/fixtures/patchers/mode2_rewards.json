@@ -372,7 +372,15 @@
      "resources": [
       "dlg:sahkng01",
       "bcs:sahtreas"
-     ]
+     ],
+     "holder": {
+      "area": "ar2300",
+      "script_name": "sahkng01",
+      "creature_resources": [
+       "cre:sahkng01",
+       "cre:sahkng02"
+      ]
+     }
     },
     "varci": {
      "quest": "varci",
@@ -3033,7 +3041,15 @@
     "resources": [
      "dlg:sahkng01",
      "bcs:sahtreas"
-    ]
+    ],
+    "holder": {
+     "area": "ar2300",
+     "script_name": "sahkng01",
+     "creature_resources": [
+      "cre:sahkng01",
+      "cre:sahkng02"
+     ]
+    }
    }
   },
   {
@@ -4882,7 +4898,15 @@
     "resources": [
      "dlg:sahkng01",
      "bcs:sahtreas"
-    ]
+    ],
+    "holder": {
+     "area": "ar2300",
+     "script_name": "sahkng01",
+     "creature_resources": [
+      "cre:sahkng01",
+      "cre:sahkng02"
+     ]
+    }
    }
   },
   {
@@ -7294,6 +7318,14 @@
       "dlg:sahkng01",
       "bcs:sahtreas"
      ],
+     "holder": {
+      "area": "ar2300",
+      "script_name": "sahkng01",
+      "creature_resources": [
+       "cre:sahkng01",
+       "cre:sahkng02"
+      ]
+     },
      "route": "sahkng01"
     },
     {
@@ -9342,6 +9374,14 @@
       "dlg:sahkng01",
       "bcs:sahtreas"
      ],
+     "holder": {
+      "area": "ar2300",
+      "script_name": "sahkng01",
+      "creature_resources": [
+       "cre:sahkng01",
+       "cre:sahkng02"
+      ]
+     },
      "route": "sahkng01"
     },
     {
@@ -10077,7 +10117,15 @@
     "resources": [
      "dlg:sahkng01",
      "bcs:sahtreas"
-    ]
+    ],
+    "holder": {
+     "area": "ar2300",
+     "script_name": "sahkng01",
+     "creature_resources": [
+      "cre:sahkng01",
+      "cre:sahkng02"
+     ]
+    }
    }
   },
   {
@@ -12359,7 +12407,15 @@
     "resources": [
      "dlg:sahkng01",
      "bcs:sahtreas"
-    ]
+    ],
+    "holder": {
+     "area": "ar2300",
+     "script_name": "sahkng01",
+     "creature_resources": [
+      "cre:sahkng01",
+      "cre:sahkng02"
+     ]
+    }
    }
   },
   {
@@ -15607,6 +15663,14 @@
       "dlg:sahkng01",
       "bcs:sahtreas"
      ],
+     "holder": {
+      "area": "ar2300",
+      "script_name": "sahkng01",
+      "creature_resources": [
+       "cre:sahkng01",
+       "cre:sahkng02"
+      ]
+     },
      "route": "sahkng01"
     },
     {
@@ -15720,6 +15784,14 @@
       "dlg:sahkng01",
       "bcs:sahtreas"
      ],
+     "holder": {
+      "area": "ar2300",
+      "script_name": "sahkng01",
+      "creature_resources": [
+       "cre:sahkng01",
+       "cre:sahkng02"
+      ]
+     },
      "route": "sahkng01"
     },
     {
@@ -16239,7 +16311,15 @@
     "resources": [
      "dlg:sahkng01",
      "bcs:sahtreas"
-    ]
+    ],
+    "holder": {
+     "area": "ar2300",
+     "script_name": "sahkng01",
+     "creature_resources": [
+      "cre:sahkng01",
+      "cre:sahkng02"
+     ]
+    }
    }
   },
   {
@@ -18971,6 +19051,14 @@
       "dlg:sahkng01",
       "bcs:sahtreas"
      ],
+     "holder": {
+      "area": "ar2300",
+      "script_name": "sahkng01",
+      "creature_resources": [
+       "cre:sahkng01",
+       "cre:sahkng02"
+      ]
+     },
      "route": "sahkng01"
     },
     {
@@ -19072,6 +19160,14 @@
       "dlg:sahkng01",
       "bcs:sahtreas"
      ],
+     "holder": {
+      "area": "ar2300",
+      "script_name": "sahkng01",
+      "creature_resources": [
+       "cre:sahkng01",
+       "cre:sahkng02"
+      ]
+     },
      "route": "sahkng01"
     },
     {
@@ -19591,7 +19687,15 @@
     "resources": [
      "dlg:sahkng01",
      "bcs:sahtreas"
-    ]
+    ],
+    "holder": {
+     "area": "ar2300",
+     "script_name": "sahkng01",
+     "creature_resources": [
+      "cre:sahkng01",
+      "cre:sahkng02"
+     ]
+    }
    }
   },
   {
@@ -22323,6 +22427,14 @@
       "dlg:sahkng01",
       "bcs:sahtreas"
      ],
+     "holder": {
+      "area": "ar2300",
+      "script_name": "sahkng01",
+      "creature_resources": [
+       "cre:sahkng01",
+       "cre:sahkng02"
+      ]
+     },
      "route": "sahkng01"
     },
     {
@@ -22424,6 +22536,14 @@
       "dlg:sahkng01",
       "bcs:sahtreas"
      ],
+     "holder": {
+      "area": "ar2300",
+      "script_name": "sahkng01",
+      "creature_resources": [
+       "cre:sahkng01",
+       "cre:sahkng02"
+      ]
+     },
      "route": "sahkng01"
     },
     {
@@ -40769,6 +40889,14 @@
        "dlg:sahkng01",
        "bcs:sahtreas"
       ],
+      "holder": {
+       "area": "ar2300",
+       "script_name": "sahkng01",
+       "creature_resources": [
+        "cre:sahkng01",
+        "cre:sahkng02"
+       ]
+      },
       "route": "sahkng01"
      },
      {
@@ -40879,6 +41007,14 @@
        "dlg:sahkng01",
        "bcs:sahtreas"
       ],
+      "holder": {
+       "area": "ar2300",
+       "script_name": "sahkng01",
+       "creature_resources": [
+        "cre:sahkng01",
+        "cre:sahkng02"
+       ]
+      },
       "route": "sahkng01"
      },
      {
@@ -40989,6 +41125,14 @@
        "dlg:sahkng01",
        "bcs:sahtreas"
       ],
+      "holder": {
+       "area": "ar2300",
+       "script_name": "sahkng01",
+       "creature_resources": [
+        "cre:sahkng01",
+        "cre:sahkng02"
+       ]
+      },
       "route": "sahkng01"
      },
      {
@@ -58608,6 +58752,14 @@
        "dlg:sahkng01",
        "bcs:sahtreas"
       ],
+      "holder": {
+       "area": "ar2300",
+       "script_name": "sahkng01",
+       "creature_resources": [
+        "cre:sahkng01",
+        "cre:sahkng02"
+       ]
+      },
       "route": "sahkng01"
      },
      {
@@ -58784,6 +58936,14 @@
        "dlg:sahkng01",
        "bcs:sahtreas"
       ],
+      "holder": {
+       "area": "ar2300",
+       "script_name": "sahkng01",
+       "creature_resources": [
+        "cre:sahkng01",
+        "cre:sahkng02"
+       ]
+      },
       "route": "sahkng01"
      },
      {
@@ -58976,6 +59136,14 @@
        "dlg:sahkng01",
        "bcs:sahtreas"
       ],
+      "holder": {
+       "area": "ar2300",
+       "script_name": "sahkng01",
+       "creature_resources": [
+        "cre:sahkng01",
+        "cre:sahkng02"
+       ]
+      },
       "route": "sahkng01"
      },
      {
@@ -59152,6 +59320,14 @@
        "dlg:sahkng01",
        "bcs:sahtreas"
       ],
+      "holder": {
+       "area": "ar2300",
+       "script_name": "sahkng01",
+       "creature_resources": [
+        "cre:sahkng01",
+        "cre:sahkng02"
+       ]
+      },
       "route": "sahkng01"
      },
      {
@@ -59344,6 +59520,14 @@
        "dlg:sahkng01",
        "bcs:sahtreas"
       ],
+      "holder": {
+       "area": "ar2300",
+       "script_name": "sahkng01",
+       "creature_resources": [
+        "cre:sahkng01",
+        "cre:sahkng02"
+       ]
+      },
       "route": "sahkng01"
      },
      {
@@ -59520,6 +59704,14 @@
        "dlg:sahkng01",
        "bcs:sahtreas"
       ],
+      "holder": {
+       "area": "ar2300",
+       "script_name": "sahkng01",
+       "creature_resources": [
+        "cre:sahkng01",
+        "cre:sahkng02"
+       ]
+      },
       "route": "sahkng01"
      },
      {
@@ -59712,6 +59904,14 @@
        "dlg:sahkng01",
        "bcs:sahtreas"
       ],
+      "holder": {
+       "area": "ar2300",
+       "script_name": "sahkng01",
+       "creature_resources": [
+        "cre:sahkng01",
+        "cre:sahkng02"
+       ]
+      },
       "route": "sahkng01"
      },
      {
@@ -59888,6 +60088,14 @@
        "dlg:sahkng01",
        "bcs:sahtreas"
       ],
+      "holder": {
+       "area": "ar2300",
+       "script_name": "sahkng01",
+       "creature_resources": [
+        "cre:sahkng01",
+        "cre:sahkng02"
+       ]
+      },
       "route": "sahkng01"
      },
      {
@@ -60080,6 +60288,14 @@
        "dlg:sahkng01",
        "bcs:sahtreas"
       ],
+      "holder": {
+       "area": "ar2300",
+       "script_name": "sahkng01",
+       "creature_resources": [
+        "cre:sahkng01",
+        "cre:sahkng02"
+       ]
+      },
       "route": "sahkng01"
      },
      {
@@ -60255,6 +60471,14 @@
        "dlg:sahkng01",
        "bcs:sahtreas"
       ],
+      "holder": {
+       "area": "ar2300",
+       "script_name": "sahkng01",
+       "creature_resources": [
+        "cre:sahkng01",
+        "cre:sahkng02"
+       ]
+      },
       "route": "sahkng01"
      },
      {
@@ -60446,6 +60670,14 @@
        "dlg:sahkng01",
        "bcs:sahtreas"
       ],
+      "holder": {
+       "area": "ar2300",
+       "script_name": "sahkng01",
+       "creature_resources": [
+        "cre:sahkng01",
+        "cre:sahkng02"
+       ]
+      },
       "route": "sahkng01"
      },
      {
@@ -60621,6 +60853,14 @@
        "dlg:sahkng01",
        "bcs:sahtreas"
       ],
+      "holder": {
+       "area": "ar2300",
+       "script_name": "sahkng01",
+       "creature_resources": [
+        "cre:sahkng01",
+        "cre:sahkng02"
+       ]
+      },
       "route": "sahkng01"
      },
      {
@@ -60812,6 +61052,14 @@
        "dlg:sahkng01",
        "bcs:sahtreas"
       ],
+      "holder": {
+       "area": "ar2300",
+       "script_name": "sahkng01",
+       "creature_resources": [
+        "cre:sahkng01",
+        "cre:sahkng02"
+       ]
+      },
       "route": "sahkng01"
      },
      {
@@ -60988,6 +61236,14 @@
        "dlg:sahkng01",
        "bcs:sahtreas"
       ],
+      "holder": {
+       "area": "ar2300",
+       "script_name": "sahkng01",
+       "creature_resources": [
+        "cre:sahkng01",
+        "cre:sahkng02"
+       ]
+      },
       "route": "sahkng01"
      },
      {
@@ -61180,6 +61436,14 @@
        "dlg:sahkng01",
        "bcs:sahtreas"
       ],
+      "holder": {
+       "area": "ar2300",
+       "script_name": "sahkng01",
+       "creature_resources": [
+        "cre:sahkng01",
+        "cre:sahkng02"
+       ]
+      },
       "route": "sahkng01"
      },
      {
@@ -61355,6 +61619,14 @@
        "dlg:sahkng01",
        "bcs:sahtreas"
       ],
+      "holder": {
+       "area": "ar2300",
+       "script_name": "sahkng01",
+       "creature_resources": [
+        "cre:sahkng01",
+        "cre:sahkng02"
+       ]
+      },
       "route": "sahkng01"
      },
      {
@@ -61546,6 +61818,14 @@
        "dlg:sahkng01",
        "bcs:sahtreas"
       ],
+      "holder": {
+       "area": "ar2300",
+       "script_name": "sahkng01",
+       "creature_resources": [
+        "cre:sahkng01",
+        "cre:sahkng02"
+       ]
+      },
       "route": "sahkng01"
      },
      {
@@ -61723,6 +62003,14 @@
        "dlg:sahkng01",
        "bcs:sahtreas"
       ],
+      "holder": {
+       "area": "ar2300",
+       "script_name": "sahkng01",
+       "creature_resources": [
+        "cre:sahkng01",
+        "cre:sahkng02"
+       ]
+      },
       "route": "sahkng01"
      },
      {
@@ -61916,6 +62204,14 @@
        "dlg:sahkng01",
        "bcs:sahtreas"
       ],
+      "holder": {
+       "area": "ar2300",
+       "script_name": "sahkng01",
+       "creature_resources": [
+        "cre:sahkng01",
+        "cre:sahkng02"
+       ]
+      },
       "route": "sahkng01"
      },
      {
@@ -62107,6 +62403,14 @@
        "dlg:sahkng01",
        "bcs:sahtreas"
       ],
+      "holder": {
+       "area": "ar2300",
+       "script_name": "sahkng01",
+       "creature_resources": [
+        "cre:sahkng01",
+        "cre:sahkng02"
+       ]
+      },
       "route": "sahkng01"
      },
      {
@@ -62287,6 +62591,14 @@
        "dlg:sahkng01",
        "bcs:sahtreas"
       ],
+      "holder": {
+       "area": "ar2300",
+       "script_name": "sahkng01",
+       "creature_resources": [
+        "cre:sahkng01",
+        "cre:sahkng02"
+       ]
+      },
       "route": "sahkng01"
      },
      {
@@ -62486,6 +62798,14 @@
        "dlg:sahkng01",
        "bcs:sahtreas"
       ],
+      "holder": {
+       "area": "ar2300",
+       "script_name": "sahkng01",
+       "creature_resources": [
+        "cre:sahkng01",
+        "cre:sahkng02"
+       ]
+      },
       "route": "sahkng01"
      },
      {
@@ -62675,6 +62995,14 @@
        "dlg:sahkng01",
        "bcs:sahtreas"
       ],
+      "holder": {
+       "area": "ar2300",
+       "script_name": "sahkng01",
+       "creature_resources": [
+        "cre:sahkng01",
+        "cre:sahkng02"
+       ]
+      },
       "route": "sahkng01"
      },
      {
@@ -62855,6 +63183,14 @@
        "dlg:sahkng01",
        "bcs:sahtreas"
       ],
+      "holder": {
+       "area": "ar2300",
+       "script_name": "sahkng01",
+       "creature_resources": [
+        "cre:sahkng01",
+        "cre:sahkng02"
+       ]
+      },
       "route": "sahkng01"
      },
      {
@@ -63051,6 +63387,14 @@
        "dlg:sahkng01",
        "bcs:sahtreas"
       ],
+      "holder": {
+       "area": "ar2300",
+       "script_name": "sahkng01",
+       "creature_resources": [
+        "cre:sahkng01",
+        "cre:sahkng02"
+       ]
+      },
       "route": "sahkng01"
      },
      {
@@ -63231,6 +63575,14 @@
        "dlg:sahkng01",
        "bcs:sahtreas"
       ],
+      "holder": {
+       "area": "ar2300",
+       "script_name": "sahkng01",
+       "creature_resources": [
+        "cre:sahkng01",
+        "cre:sahkng02"
+       ]
+      },
       "route": "sahkng01"
      },
      {
@@ -63430,6 +63782,14 @@
        "dlg:sahkng01",
        "bcs:sahtreas"
       ],
+      "holder": {
+       "area": "ar2300",
+       "script_name": "sahkng01",
+       "creature_resources": [
+        "cre:sahkng01",
+        "cre:sahkng02"
+       ]
+      },
       "route": "sahkng01"
      },
      {
@@ -63620,6 +63980,14 @@
        "dlg:sahkng01",
        "bcs:sahtreas"
       ],
+      "holder": {
+       "area": "ar2300",
+       "script_name": "sahkng01",
+       "creature_resources": [
+        "cre:sahkng01",
+        "cre:sahkng02"
+       ]
+      },
       "route": "sahkng01"
      },
      {
@@ -63814,6 +64182,14 @@
        "dlg:sahkng01",
        "bcs:sahtreas"
       ],
+      "holder": {
+       "area": "ar2300",
+       "script_name": "sahkng01",
+       "creature_resources": [
+        "cre:sahkng01",
+        "cre:sahkng02"
+       ]
+      },
       "route": "sahkng01"
      },
      {
@@ -64009,6 +64385,14 @@
        "dlg:sahkng01",
        "bcs:sahtreas"
       ],
+      "holder": {
+       "area": "ar2300",
+       "script_name": "sahkng01",
+       "creature_resources": [
+        "cre:sahkng01",
+        "cre:sahkng02"
+       ]
+      },
       "route": "sahkng01"
      },
      {
