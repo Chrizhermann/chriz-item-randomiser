@@ -435,6 +435,7 @@ def mode2_inputs() -> dict:
     originals["bcs:ddwell"] = mode2_tests.script_fixture("ddwell")
     originals["bcs:ppbook"] = mode2_tests.book_fixture()
     originals["bcs:sahtreas"] = mode2_tests.treasury_fixture()
+    originals["bcs:tolger"] = mode2_tests.tolgerias_fixture()
     return originals
 
 
@@ -548,9 +549,9 @@ def book_cases(s: Scenario) -> None:
     unpatched_case(s, "unknown", "bcs:nothing", installed)
 
 
-def patch_destroys_case(s: Scenario, label: str, data: bytes) -> None:
+def patch_destroys_case(s: Scenario, label: str, data: bytes, resource: str = "bcs:sahtreas") -> None:
     """_patch_destroys's result and the reasons of the routes it left out."""
-    specs = mode2_rewards.resource_specs("bcs:sahtreas")
+    specs = mode2_rewards.resource_specs(resource)
 
     def run():
         reasons = {}
@@ -558,10 +559,10 @@ def patch_destroys_case(s: Scenario, label: str, data: bytes) -> None:
     s.case(f"patch_destroys {label}", "mode2_rewards._patch_destroys", {"data": data, "specs": list(specs)}, run)
 
 
-def destroyed_case(s: Scenario, label: str, data: bytes) -> None:
-    """The items the treasury's script destroys by name (destroyed_items)."""
-    s.case(f"destroyed_items {label}", "mode2_rewards.destroyed_items", {"resource": "bcs:sahtreas", "data": data},
-           lambda: mode2_rewards.destroyed_items("bcs:sahtreas", data))
+def destroyed_case(s: Scenario, label: str, data: bytes, resource: str = "bcs:sahtreas") -> None:
+    """The items a script destroys by name (destroyed_items)."""
+    s.case(f"destroyed_items {label}", "mode2_rewards.destroyed_items", {"resource": resource, "data": data},
+           lambda: mode2_rewards.destroyed_items(resource, data))
 
 
 def prince_cases(s: Scenario) -> None:
@@ -720,6 +721,65 @@ def treasury_cases(s: Scenario) -> None:
         unpatched_case(s, f"sahtreas {label}", "bcs:sahtreas", changed)
 
 
+def tolgerias_cases(s: Scenario) -> None:
+    """test_tolgerias_destroys_his_ring_only_while_it_is_the_original: TOLGER.BCS
+    with other mods' blocks, other layouts, and blocks the route cannot gate."""
+    action, trigger, book_block = mode2_tests.action, mode2_tests.trigger, mode2_tests.book_block
+    script, has, gone = mode2_tests.tolgerias_fixture, mode2_tests.HAS_RING, mode2_tests.RING_GONE
+    destroy, more = mode2_tests.RING_DESTROYED, action(30, 2, "GLOBALOtherMod")
+    other = book_block([trigger(16399, 1, "GLOBALOtherMod")], more)
+
+    def tested(*responses: str) -> str:
+        """A block that tests the ring, whose responses the engine chooses between."""
+        return "CR\nCO\n" + has + gone + "CO\nRS\n" + "".join(f"RE\n50{text}RE\n" for text in responses) + "RS\nCR\n"
+
+    variants = (
+        ("installed", script()), ("crlf", crlf(script())),
+        ("mixed", script(other, book_block([has, gone], destroy), other)),
+        ("untested", script(book_block([gone], destroy))),
+        ("tested and untested", script(book_block([has, gone], destroy), book_block([gone], destroy))),
+        ("uppercase", script(book_block([trigger(16481, 0, "RING33"), gone], action(169, text="RING33")))),
+        ("other actor", script(book_block([has, gone], action(169, text="ring33", actor=21)))),
+        ("tested twice", script(book_block([has, gone], destroy + destroy))),
+        ("tested alternatives", script(tested(destroy, destroy))),
+        ("tested alternatives more", script(tested(destroy, destroy + more))),
+        ("more", script(book_block([has, gone], destroy + more))),
+        ("more before", script(book_block([has, gone], more + destroy))),
+        ("giving", script(book_block([has, gone], destroy + action(15, text="ring33", target=21)))),
+        ("testing only", script(book_block([has], more))),
+        ("plain", script(book_block([trigger(16465, 0, "TOLGER2")], action(111)))),
+        ("unreadable", script().replace(b"169OB", b"169XX", 1)),
+        ("no blocks", b"SC\nSC\n"), ("empty", b""))
+    for label, data in variants:
+        result = patched(s, f"tolger {label}", "bcs:tolger", data)
+        reward_checks(s, f"tolger {label}", "bcs:tolger", data)
+        unpatched_case(s, f"tolger {label}", "bcs:tolger", data)
+        patch_destroys_case(s, f"tolger {label}", data, "bcs:tolger")
+        destroyed_case(s, f"tolger {label}", data, "bcs:tolger")
+        if result is None or result == data:
+            continue
+        reward_checks(s, f"tolger {label} result", "bcs:tolger", result)
+        unpatched_case(s, f"tolger {label} result", "TOLGER.BCS", result)
+        patch_destroys_case(s, f"tolger {label} result", result, "bcs:tolger")
+        destroyed_case(s, f"tolger {label} result", result, "bcs:tolger")
+    for game in ("eet", "eet copy", "bgt"):
+        reward_checks(s, f"tolger {game}", "bcs:tolger", script(), NAMINGS[game])
+    # Our patch changed: the guard turned or dropped, the treasury's stand-in
+    # added, the blocks swapped.
+    result = mode2_rewards.patch_reward("bcs:tolger", script())
+    first, gated, last = (block.decode() for block in script_blocks(result).blocks)
+    unselected, selected = (mode2_tests.route_guard("FLPR_QM2_40", choice) for choice in (False, True))
+    for label, changed in (
+            ("turned", result.replace(unselected.encode(), selected.encode(), 1)),
+            ("guard dropped", result.replace(unselected.encode(), b"", 1)),
+            ("stand-in", script(first, gated, gated.replace(unselected, selected).replace(destroy, mode2_tests.NO_ACTION),
+                                last)),
+            ("swapped", script(gated, first, last)),
+            ("crlf mixed", result.replace(b"\n", b"\r\n", 3))):
+        reward_checks(s, f"tolger {label}", "bcs:tolger", changed)
+        unpatched_case(s, f"tolger {label}", "bcs:tolger", changed)
+
+
 def registry_cases(s: Scenario) -> None:
     for table in ("REWARDS", "DIRECT_REWARDS", "TRANSFER_SPECS", "RESOURCE_REWARDS",
                   "SOURCE_REWARDS", "TARGET_REWARDS", "TEXT_REFS", "ACTION_TEXT_REFS", "ADAPTER_ID"):
@@ -752,14 +812,15 @@ def registry_cases(s: Scenario) -> None:
             s.case(f"source_spec {identity} {game}", "mode2_rewards.source_spec",
                    {"source_id": identity, **naming_args(naming)},
                    lambda identity=identity, naming=naming: mode2_rewards.source_spec(identity, **naming))
-        for identity in ("bg1:mode2:target:20", "bg2:mode2:target:45"):
+        for identity in ("bg1:mode2:target:20", "bg2:mode2:target:45", "bg2:mode2:target:50"):
             s.case(f"target_spec {identity} {game}", "mode2_rewards.target_spec",
                    {"target_id": identity, **naming_args(naming)},
                    lambda identity=identity, naming=naming: mode2_rewards.target_spec(identity, **naming))
         for name in mode2_rewards.TRANSFER_SPECS:
             s.case(f"transfer_spec {name} {game}", "mode2_rewards.transfer_spec", {"name": name, **naming_args(naming)},
                    lambda name=name, naming=naming: mode2_rewards.transfer_spec(name, **naming))
-        for resource in ("dlg:varci", "dlg:trgeni01", "bcs:asysta01", "dlg:sahkng01", "bcs:sahtreas"):
+        for resource in ("dlg:varci", "dlg:trgeni01", "bcs:asysta01", "dlg:sahkng01", "bcs:sahtreas", "dlg:tolger",
+                         "bcs:tolger"):
             s.case(f"resource_specs {resource} {game}", "mode2_rewards.resource_specs",
                    {"resource": resource, **naming_args(naming)},
                    lambda resource=resource, naming=naming: mode2_rewards.resource_specs(resource, **naming))
@@ -1188,6 +1249,7 @@ def mode2_scenario() -> Scenario:
     ddwell_cases(s, originals["bcs:ddwell"], results["bcs:ddwell"])
     book_cases(s)
     treasury_cases(s)
+    tolgerias_cases(s)
     prince_cases(s)
     reason_cases(s)
     layout_cases(s)
@@ -1197,6 +1259,11 @@ def mode2_scenario() -> Scenario:
     for resource in ("uhogre01.dlg", "UHOGRE01", "override/uhogre01.dlg", "dlg:aran.dlg", "x:y:ddwell", "nothing",
                      "DLG:UHOGRE01", "bcs:uhogre01", "dlg:", ""):
         data = originals["dlg:uhogre01"] if "ogre" in resource or "aran" in resource else originals["bcs:ddwell"]
+        reward_checks(s, f"key {resource}", resource, data)
+    # Tolgerias's dialogue and script share a name: a file names its kind.
+    for resource in ("TOLGER.DLG", "tolger.bcs", "DLG:TOLGER", "tolger", "itm:tolger", "tolger.cre", "tolger.dlg.bak",
+                     "x:dlg:tolger", "bcs:tolger.dlg"):
+        data = originals["bcs:tolger"] if "bcs" in resource.lower() else originals["dlg:tolger"]
         reward_checks(s, f"key {resource}", resource, data)
     return s
 

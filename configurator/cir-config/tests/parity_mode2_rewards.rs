@@ -28,9 +28,10 @@ use cir_config::script_text::{block_actions, block_parts, script_blocks};
 use common::builders::{contains, count, index, make_tlk, outgoing, replace, sha, tlk_text, u32_at};
 use common::mode2::{
     action, action_with, alternatives, block, book_block, book_fixture, book_gifts, branches, check_dialogue, check_job_end,
-    check_pair, check_text_graph, dialogue_fixture, handover_line, king_destroys, king_paid, layout_dialogue, no_action, obj,
-    route_guard, script_fixture, specs, target_number, text, text_variant, treasury_fixture, trigger, well_reward,
-    with_actions, LayoutReply, PRINCE_TRANSFER, PRINCE_TRANSFER_59, PRINCE_TRANSFER_60, TRGENI_DEPARTURE,
+    check_pair, check_text_graph, dialogue_fixture, handover_line, has_ring, king_destroys, king_paid, layout_dialogue,
+    no_action, obj, ring_destroyed, ring_gone, route_guard, script_fixture, specs, target_number, text, text_variant,
+    tolgerias_fixture, treasury_fixture, trigger, well_reward, with_actions, LayoutReply, PRINCE_TRANSFER,
+    PRINCE_TRANSFER_59, PRINCE_TRANSFER_60, TRGENI_DEPARTURE,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
@@ -90,7 +91,45 @@ fn originals() -> Vec<(String, Vec<u8>)> {
     result.push(("bcs:ddwell".into(), script_fixture("ddwell")));
     result.push(("bcs:ppbook".into(), book_fixture(true)));
     result.push(("bcs:sahtreas".into(), treasury_fixture(&[])));
+    result.push(("bcs:tolger".into(), tolgerias_fixture(&[])));
     result
+}
+
+/// The TOLGER.BCS scripts of the generator (`tolgerias_cases`).
+fn tolgerias_variants() -> Vec<(&'static str, Vec<u8>)> {
+    let (has, gone, destroy) = (has_ring(), ring_gone(), ring_destroyed());
+    let more = action(30, 2, "GLOBALOtherMod", 0, 0);
+    let other = book_block(&[trigger(16399, 1, "GLOBALOtherMod", 0)], &more);
+    // A block that tests the ring, whose responses the engine chooses between.
+    let tested = |responses: &[&str]| -> String {
+        let responses: String = responses.iter().map(|text| format!("RE\n50{text}RE\n")).collect();
+        format!("CR\nCO\n{has}{gone}CO\nRS\n{responses}RS\nCR\n")
+    };
+    let both = |actions: String| book_block(&[has.clone(), gone.clone()], &actions);
+    let script = |blocks: &[String]| tolgerias_fixture(blocks);
+    vec![
+        ("installed", script(&[])),
+        ("crlf", crlf(script(&[]))),
+        ("mixed", script(&[other.clone(), both(destroy.clone()), other])),
+        ("untested", script(&[book_block(std::slice::from_ref(&gone), &destroy)])),
+        ("tested and untested", script(&[both(destroy.clone()), book_block(std::slice::from_ref(&gone), &destroy)])),
+        (
+            "uppercase",
+            script(&[book_block(&[trigger(16481, 0, "RING33", 0), gone.clone()], &action(169, 0, "RING33", 0, 0))]),
+        ),
+        ("other actor", script(&[both(action(169, 0, "ring33", 0, 21))])),
+        ("tested twice", script(&[both(destroy.clone() + &destroy)])),
+        ("tested alternatives", script(&[tested(&[&destroy, &destroy])])),
+        ("tested alternatives more", script(&[tested(&[&destroy, &(destroy.clone() + &more)])])),
+        ("more", script(&[both(destroy.clone() + &more)])),
+        ("more before", script(&[both(more.clone() + &destroy)])),
+        ("giving", script(&[both(destroy.clone() + &action(15, 0, "ring33", 21, 0))])),
+        ("testing only", script(&[book_block(std::slice::from_ref(&has), &more)])),
+        ("plain", script(&[book_block(&[trigger(16465, 0, "TOLGER2", 0)], &action(111, 0, "", 0, 0))])),
+        ("unreadable", replace(&script(&[]), b"169OB", b"169XX", Some(1))),
+        ("no blocks", b"SC\nSC\n".to_vec()),
+        ("empty", Vec::new()),
+    ]
 }
 
 /// Another mod's block in SAHTREAS.BCS, and one that only tests the rod.
@@ -318,6 +357,9 @@ fn builders_match_the_reference_builders() {
     assert_eq!(fixture.input("own_patch aran neither", "data"), neither);
     for (label, data) in treasury_variants() {
         assert_eq!(fixture.input(&format!("patch_reward sahtreas {label}"), "data"), data, "{label}");
+    }
+    for (label, data) in tolgerias_variants() {
+        assert_eq!(fixture.input(&format!("patch_reward tolger {label}"), "data"), data, "{label}");
     }
     assert_eq!(fixture.input("patch_reward sahkng01 split", "data"), split_king());
 }
@@ -684,7 +726,11 @@ fn the_sahuagin_kings_reply_gates_the_bracer_and_the_treasury_rod_apart() {
     assert_eq!(target_rewards().get("bg2:mode2:target:6").and_then(Value::as_str), Some("sahrod"));
     assert_eq!(
         PHYSICAL_SOURCE_REWARDS,
-        [("cre:udlesa", "cre-template", "sw1h39", "udlesa"), ("are:ar2300", "container", "rods02", "sahrod")]
+        [
+            ("cre:udlesa", "cre-template", "sw1h39", "udlesa"),
+            ("are:ar2300", "container", "rods02", "sahrod"),
+            ("cre:tolger2", "cre-template", "ring33", "tolger"),
+        ]
     );
     assert_eq!(physical_source_reward("are:ar2300", "container", "rods02"), Some("sahrod"));
     assert_eq!(physical_source_reward("are:ar2300", "container", "brac19"), None);
@@ -934,10 +980,17 @@ fn the_princes_reward_reply_hands_over_what_he_carries() {
     }
 }
 
+/// Whether script text names `item` as a quoted resref, in any letter case.
+fn names_item(text: &[u8], item: &str) -> bool {
+    let quoted = format!("\"{}\"", item.to_ascii_lowercase()).into_bytes();
+    text.to_ascii_lowercase().windows(quoted.len()).any(|window| window == quoted)
+}
+
 /// `check_destroys(original, result, specs)`: each block that destroys
 /// routes' items becomes one block per combination of those routes' flags,
 /// in route order; where a route is selected, NoAction() stands in for each
-/// of its item's destroys.
+/// of its item's destroys. A block whose conditions test a route's item only
+/// runs while that route is not selected.
 fn check_destroys(original: &[u8], result: &[u8], specs: &[Dict]) {
     let (before, after) = (script_blocks(original).unwrap(), script_blocks(result).unwrap());
     let newline = before.newline;
@@ -959,9 +1012,18 @@ fn check_destroys(original: &[u8], result: &[u8], specs: &[Dict]) {
             })
             .collect();
         let gating: Vec<usize> = (0..specs.len()).filter(|route| !destroys[*route].is_empty()).collect();
-        // product((False, True), repeat=len(gating)): the first route varies slowest.
-        for choice in 0..(1usize << gating.len()) {
-            let selected = |at: usize| (choice >> (gating.len() - 1 - at)) & 1 == 1;
+        // product(...) of each route's choices: the first route varies slowest.
+        let mut choices: Vec<Vec<bool>> = vec![Vec::new()];
+        for route in &gating {
+            let options: &[bool] =
+                if names_item(&conditions, text(&specs[*route], "item")) { &[false] } else { &[false, true] };
+            choices = choices
+                .into_iter()
+                .flat_map(|prefix| options.iter().map(move |value| [prefix.clone(), vec![*value]].concat()))
+                .collect();
+        }
+        for choice in choices {
+            let selected = |at: usize| choice[at];
             let mut edits: Vec<(usize, usize)> =
                 (0..gating.len()).filter(|at| selected(*at)).flat_map(|at| destroys[gating[at]].clone()).collect();
             edits.sort_unstable();
@@ -987,8 +1049,8 @@ fn the_treasury_destroys_the_kings_items_only_while_his_grants_are_unchanged() {
     let routes: Vec<(&str, &str, &str)> =
         specs.iter().map(|spec| (text(spec, "route"), text(spec, "item"), text(spec, "selected_global"))).collect();
     assert_eq!(routes, [("sahkng01", "brac19", "FLPR_QM2_57"), ("sahrod", "rods02", "FLPR_QM2_7")]);
-    assert_eq!(DESTROY_GATES, &[("bcs:sahtreas", &["sahkng01", "sahrod"][..])]);
-    assert!(destroy_gate("bcs:sahtreas") && !destroy_gate("bcs:ppbook"));
+    assert_eq!(DESTROY_GATES, &[("bcs:sahtreas", &["sahkng01", "sahrod"][..]), ("bcs:tolger", &["tolger"][..])]);
+    assert!(destroy_gate("bcs:sahtreas") && destroy_gate("bcs:tolger") && !destroy_gate("bcs:ppbook"));
     // Another mod's block, and one that only tests the rod, stay as found.
     let (other, testing) = treasury_neighbours();
     let original = treasury_fixture(&[other.clone(), book_block(&[king_paid()], &king_destroys()), testing.clone()]);
@@ -1072,6 +1134,135 @@ fn a_treasury_that_could_take_a_moved_reward_otherwise_leaves_its_route_out() {
         assert_profile(own_patch("bcs:sahtreas", &changed, Naming::default()).unwrap_err(), "SAHTREAS.BCS carries a changed copy");
         assert_eq!(left_out("bcs:sahtreas", &changed), ["sahkng01", "sahrod"], "{label}");
     }
+}
+
+#[test]
+fn tolgerias_pays_with_his_ring_and_hands_his_place_to_the_one_he_pays() {
+    // Row 50 (Item Randomiser's tolger.fl): Tolgerias's four payments for
+    // Valygar's body give the ring he carries (row 40, TOLGER2's) as UDLESA's
+    // reply gives his sword, and pay the place's reward; until then it waits
+    // for TOLGER2's death in the planar sphere, at his corpse.
+    let spec = target_spec("bg2:mode2:target:50", Naming::default()).unwrap();
+    assert_eq!(physical_source_reward("cre:tolger2", "cre-template", "ring33"), Some("tolger"));
+    assert!(!source_rewards().contains_key("original-source:bg2:mode2:item:40"));
+    assert!(!transfer_specs().contains_key("tolger"));
+    assert!(spec.get("source_ids").unwrap().py_eq(&list(&[])));
+    assert!(spec.get("authored_source_ids").unwrap().py_eq(&list(&["original-source:bg2:mode2:item:40"])));
+    assert_eq!(
+        (text(&spec, "item"), text(&spec, "grant_kind"), text(&spec, "recipient")),
+        ("ring33", "transfer", "LastTalkedToBy")
+    );
+    assert!(spec.get("resources").unwrap().py_eq(&list(&["dlg:tolger", "bcs:tolger"])));
+    assert_eq!(
+        ["selected_global", "consumed_global", "event_global", "recipient_local"].map(|key| text(&spec, key)),
+        ["FLPR_QM2_40", "FLPR_XM2_40", "FLPR_EA_TOLGER", "FLPR_RA_TOLGER"]
+    );
+    let holder = cir_config::dict! {
+        "area" => "ar0412", "script_name" => "tolger2", "creature_resources" => list(&["cre:tolger2"]),
+    };
+    assert!(spec.get("holder").unwrap().py_eq(&Value::Dict(holder)));
+    assert_eq!(branches(&spec), [(37, 0), (37, 1), (37, 2), (44, 0)]);
+    for absent in ["inventory_target", "source_resource", "required_transfers", "replacement", "handover"] {
+        assert!(!spec.contains_key(absent), "{absent}");
+    }
+    assert_eq!(text_refs("dlg:tolger"), Some(&[(18409, 103)][..]));
+    assert_eq!(specs("dlg:tolger").iter().map(|spec| text(spec, "route")).collect::<Vec<_>>(), ["tolger"]);
+    // Each reply keeps his ring transfer while the ring stays, and marks the
+    // one he pays and sets the event either way. Where he pays by force, his
+    // words name the ring (state 44): a moved one shows CIR's text.
+    let mut dialogue = Dialogue::new(&dialogue_fixture(&specs("dlg:tolger")), "tolger").unwrap();
+    put_u32(&mut dialogue.states[44], 0, 18409);
+    let original = dialogue.render();
+    let branched = patch_dialogue(&original, &specs("dlg:tolger"), &[], true, true, None).unwrap();
+    check_dialogue("tolger", &original, &branched, None, None, Naming::default());
+    assert!(!contains(&Dialogue::new(&branched, "tolger").unwrap().actions.concat(), b"FLPR_Transfer("));
+    let refs = BTreeMap::from([(18409, 100001)]);
+    let result = patch_reward("dlg:tolger", &original, Some(&refs), None, Naming::default()).unwrap();
+    let clones = check_text_graph("dlg:tolger", &original, &result, &refs, Naming::default());
+    assert_eq!(clones.keys().copied().collect::<Vec<_>>(), [44]);
+    assert_eq!(text_original(&result, "dlg:tolger", Naming::default()).unwrap(), Some((original.clone(), refs)));
+    for data in [&original, &result] {
+        assert!(gives_reward("dlg:tolger", data, "tolger", Naming::default()).unwrap());
+        assert!(reasons("dlg:tolger", data).is_empty());
+    }
+    // The dialogue and the script share a name: a file names its kind, a
+    // bare name is refused.
+    let script = tolgerias_fixture(&[]);
+    for named in ["TOLGER.DLG", "dlg:tolger", "DLG:TOLGER"] {
+        assert!(!own_patch(named, &original, Naming::default()).unwrap(), "{named}");
+        assert_profile(unpatched_script(named, &original, Naming::default()).unwrap_err(), "TOLGER.DLG is not a reward script");
+    }
+    for named in ["tolger.bcs", "bcs:tolger"] {
+        assert_eq!(unpatched_script(named, &script, Naming::default()).unwrap(), script, "{named}");
+    }
+    for named in ["tolger", "itm:tolger", "tolger.cre"] {
+        assert_profile(
+            own_patch(named, &script, Naming::default()).unwrap_err(),
+            &format!("Unsupported extended reward resource: {named}"),
+        );
+    }
+}
+
+#[test]
+fn tolgerias_destroys_his_ring_only_while_it_is_the_original() {
+    // His class script destroys his ring once the other Tolgerias has lost
+    // his. A moved ring at one of TOLGER2's own places must stay; the block
+    // tests the ring, so a NoAction() stand-in beside a kept reward would run
+    // with every AI update and hold back his later blocks and scripts, his
+    // fighting among them. It runs only while the ring is the original.
+    let specs = specs("bcs:tolger");
+    let routes: Vec<(&str, &str, &str)> =
+        specs.iter().map(|spec| (text(spec, "route"), text(spec, "item"), text(spec, "selected_global"))).collect();
+    assert_eq!(routes, [("tolger", "ring33", "FLPR_QM2_40")]);
+    let original = tolgerias_fixture(&[]);
+    let blocks: Vec<String> =
+        script_blocks(&original).unwrap().blocks.iter().map(|block| String::from_utf8(block.clone()).unwrap()).collect();
+    let gated = book_block(&[has_ring(), ring_gone(), route_guard("FLPR_QM2_40", false)], &ring_destroyed());
+    let result = patch_reward("bcs:tolger", &original, None, None, Naming::default()).unwrap();
+    assert_eq!(result, format!("SC\n{}{gated}{}SC\n", blocks[0], blocks[2]).into_bytes());
+    check_destroys(&original, &result, &specs);
+    assert_eq!(patch_reward("bcs:tolger", &result, None, None, Naming::default()).unwrap(), result);
+    assert!(!own_patch("bcs:tolger", &original, Naming::default()).unwrap());
+    assert!(own_patch("TOLGER.BCS", &result, Naming::default()).unwrap());
+    assert_eq!(unpatched_script("bcs:tolger", &result, Naming::default()).unwrap(), original);
+    for data in [&original, &result] {
+        assert!(reasons("bcs:tolger", data).is_empty());
+        let destroyed = cir_config::mode2_rewards::destroyed_items("TOLGER.BCS", data).unwrap();
+        assert_eq!(destroyed.into_iter().collect::<Vec<_>>(), ["ring33"]);
+    }
+    // In CRLF lines too.
+    assert_eq!(patch_reward("bcs:tolger", &crlf(&original), None, None, Naming::default()).unwrap(), crlf(&result));
+    // A turned guard is a changed copy of the patch.
+    let turned =
+        replace(&result, route_guard("FLPR_QM2_40", false).as_bytes(), route_guard("FLPR_QM2_40", true).as_bytes(), Some(1));
+    assert_profile(own_patch("bcs:tolger", &turned, Naming::default()).unwrap_err(), "TOLGER.BCS carries a changed copy");
+    assert!(reasons("bcs:tolger", &turned)["tolger"].contains("changed copy"));
+    // A destroy whose block does not test the ring keeps a NoAction() in its
+    // place while the ring is moved, as the treasury's do.
+    let untested = tolgerias_fixture(&[book_block(&[ring_gone()], &ring_destroyed())]);
+    let expected: Vec<String> = [false, true]
+        .map(|selected| {
+            let actions = if selected { no_action() } else { ring_destroyed() };
+            book_block(&[ring_gone(), route_guard("FLPR_QM2_40", selected)], &actions)
+        })
+        .to_vec();
+    let patched = patch_reward("bcs:tolger", &untested, None, None, Naming::default()).unwrap();
+    assert_eq!(patched, tolgerias_fixture(&expected));
+    check_destroys(&untested, &patched, &specs);
+    // One that tests it and does more than destroy it cannot be gated: the
+    // rest of the block would not run while the ring is moved.
+    let more = tolgerias_fixture(&[book_block(
+        &[has_ring(), ring_gone()],
+        &(ring_destroyed() + &action(30, 2, "GLOBALOtherMod", 0, 0)),
+    )]);
+    let reason = "TOLGER.BCS block 0 tests RING33 and does more than destroy it, which the route cannot gate";
+    assert_eq!(reasons("bcs:tolger", &more), named(&[("tolger", reason)]));
+    assert_profile(patch_reward("bcs:tolger", &more, None, None, Naming::default()).unwrap_err(), reason);
+    // A script that destroys no ring needs no gate.
+    let plain = tolgerias_fixture(&[book_block(&[trigger(16465, 0, "TOLGER2", 0)], &action(111, 0, "", 0, 0))]);
+    assert_eq!(patch_reward("bcs:tolger", &plain, None, None, Naming::default()).unwrap(), plain);
+    assert!(!own_patch("bcs:tolger", &plain, Naming::default()).unwrap());
+    assert!(reasons("bcs:tolger", &plain).is_empty());
 }
 
 #[test]
@@ -1531,6 +1722,8 @@ const REVIEWED_EET: &[(&str, &str, &str)] = &[
     ("bcs:ppbook", "39b1f5119d8abc96d5158eec54d212475e639516cb35d86de27e7d6e4cbbd515", "e501c882a3fccf42e7cd5643d36c54dd67b5c38f3518d252cf98c453ddf1062a"),
     // The treasury's destroys of the king's two reward items, gated.
     ("bcs:sahtreas", "a3e4e14c6e0e3ea5d3c193cb30808aabb4c320f6b9e4dbbe3fadf99deee40751", "07f76c023620896b09a222f5ae2c7251ffd2b07c8ec18643ab65b7cadf8cbe9b"),
+    // Tolgerias's class script destroys his ring only while it stays.
+    ("bcs:tolger", "47568cd88b700ca0e9ea7baa8f77bfdf5b91cd156b8a7f6a3bb782b2ff3acab1", "40731bac4e558d8bd97209e492887dbec574f0a419d498e59435259dde484f6d"),
     ("dlg:aldeth", "c9c9ec1e62045e24c585040effad5ec9561a404df3b84c8eb971264b1ef242ef", "b6a08cfc2f712b30335ab0eb3534662785b68d8ed77b414e75377c01780d0982"),
     ("dlg:amcler01", "5bac12a183463f6faa912b15e80c45c321cd2189f318c5056cf38b2150a6d79e", "f1a7a795b6b22abf209fd9be5f3357e71ced3e432db3e86e5ee38c9ad88d65e9"),
     ("dlg:ammayor", "d37409df94285e4bdce88bdfdb38382790dca567dc6304744244d9d5504030d6", "d71af3922a33954154f7f2745df7466647465ad3920b6a04548b6a9df73a2e05"),
@@ -1557,6 +1750,7 @@ const REVIEWED_EET: &[(&str, &str, &str)] = &[
     ("dlg:scsain", "c2a43b0d67eca9b531aa591463f74d5333225a95f0be87f8d03ed1cf91f8dafe", "efbc5faa5490e6f89b6ca54a30a02ba74871353e19f7c8f640439974c175caca"),
     ("dlg:sctelwyn", "d5dd048c43e16ba937ff583eef8f5966e549fb0c4e3f92679883d35fcdda1759", "bcafc54734313b1513100537abb486fd42298c69795d647f525da7e06b5f9c39"),
     ("dlg:scyarryl", "f96880bdabcfe8393d9ad6df502d3d001e2d79913736e480f6cc717f012dd367", "33b842e20c6602bdbd9e62da78ec7d79e402d8cb2006282ce7568257d776698c"),
+    ("dlg:tolger", "e1aa9422b767b370e58a600757fafc6906c130bb2f3834d36ab6bae8ec8f8899", "6a3709205dcae236e756883bc3b6ce4ea6c1b4a65eb80ca4e26f398392eae63a"),
     ("dlg:trgeni01", "4220763c55e065bfb2f500aa9d615a1a1e112ae3fc60eee061a3d9f3f59f7549", "5cb6cc95b0461934c198b687b0e6d868576e21f80cbc3050cc72b05216369877"),
     ("dlg:trhmer01", "e5651fc5ef72780fe2ce9bb6ec8c3632665a5279d41cf79244fbef393304752e", "21aac581490c963ecf778f2ffc760bb3c56cce5be72fd637f783e70eccdbdd75"),
     ("dlg:uddemon", "582fbcfecf3e71363dff1aa9bcef4dbc202d28c3af6e66e6a29840b342f1bdfd", "b1976c5f2f0b948ec00f972348b5ef208b0ba127bbc5678297b133747836a042"),
@@ -1616,7 +1810,7 @@ fn reviewed_eet_resources_when_available_patch_exactly_and_reexport() {
             assert_eq!(text_original(&result, resource, eet).unwrap(), Some((original.clone(), refs.clone())));
             let clones = check_text_graph(resource, &original, &result, refs, eet);
             let cloned: Vec<usize> = clones.keys().copied().collect();
-            if ["trgeni01", "amcler01", "jugjer01", "udlesa", "aldeth"].contains(&name) {
+            if ["trgeni01", "amcler01", "jugjer01", "udlesa", "aldeth", "tolger"].contains(&name) {
                 let action_refs = if name == "amcler01" { Some(refs.clone()) } else { None };
                 let ordered: Vec<(i64, i64)> = action_refs.iter().flatten().map(|(old, new)| (*old, *new)).collect();
                 let branched =
@@ -1624,11 +1818,13 @@ fn reviewed_eet_resources_when_available_patch_exactly_and_reexport() {
                 check_dialogue(name, &original, &branched, action_refs.as_ref(), None, eet);
                 // Jermien names his sword when he offers it and when he hands it over;
                 // Aldeth's thanks and the journal entry of his reply name his.
+                // Tolgerias names his ring when he pays for the body by force.
                 let expected: &[usize] = match name {
                     "trgeni01" => &[35],
                     "jugjer01" => &[17, 23],
                     "udlesa" => &[6],
                     "aldeth" => &[27],
+                    "tolger" => &[44],
                     _ => &[],
                 };
                 assert_eq!(cloned, expected, "{resource}");
@@ -1668,7 +1864,10 @@ fn reviewed_eet_resources_when_available_patch_exactly_and_reexport() {
             }
         } else if destroy_gate(resource) {
             check_destroys(&original, &result, &resource_specs(resource, eet).unwrap());
-            assert_eq!(script_blocks(&result).unwrap().blocks.len(), 4);
+            // The treasury's one destroying block in all four combinations; the one of
+            // Tolgerias tests his ring, so it stays one block.
+            let expected = if name == "tolger" { 9 } else { 4 };
+            assert_eq!(script_blocks(&result).unwrap().blocks.len(), expected, "{resource}");
         } else if kind == "bcs" {
             assert_eq!(script_original(&result, &resource_specs(resource, eet).unwrap()).unwrap().0, original);
         } else if ["aran", "sahkng01"].contains(&name) {

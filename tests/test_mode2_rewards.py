@@ -87,6 +87,12 @@ REVIEWED_EET = {
     # The treasury's destroys of the king's two reward items, gated.
     "bcs:sahtreas": ("a3e4e14c6e0e3ea5d3c193cb30808aabb4c320f6b9e4dbbe3fadf99deee40751",
                      "07f76c023620896b09a222f5ae2c7251ffd2b07c8ec18643ab65b7cadf8cbe9b"),
+    # Tolgerias pays with the ring he carries; his class script destroys it
+    # only while it is the original one.
+    "dlg:tolger": ("e1aa9422b767b370e58a600757fafc6906c130bb2f3834d36ab6bae8ec8f8899",
+                   "6a3709205dcae236e756883bc3b6ce4ea6c1b4a65eb80ca4e26f398392eae63a"),
+    "bcs:tolger": ("47568cd88b700ca0e9ea7baa8f77bfdf5b91cd156b8a7f6a3bb782b2ff3acab1",
+                   "40731bac4e558d8bd97209e492887dbec574f0a419d498e59435259dde484f6d"),
     "dlg:scsain": ("c2a43b0d67eca9b531aa591463f74d5333225a95f0be87f8d03ed1cf91f8dafe",
                    "efbc5faa5490e6f89b6ca54a30a02ba74871353e19f7c8f640439974c175caca"),
     "dlg:sctelwyn": ("d5dd048c43e16ba937ff583eef8f5966e549fb0c4e3f92679883d35fcdda1759",
@@ -310,6 +316,22 @@ def treasury_fixture(*blocks):
 def route_guard(flag, selected):
     """The guard of a route's selected flag, as compiled."""
     return trigger(16399, 1, "GLOBAL" + flag, negate=0 if selected else 1)
+
+
+# Tolgerias's class script (TOLGER.BCS), which both TOLGER and TOLGER2 run:
+# the one that has lost his ring marks it gone, and the other then destroys his.
+HAS_RING = trigger(16481, 0, "ring33")
+RING_GONE = trigger(16399, 1, "GLOBALCDRing33Gone")
+RING_DESTROYED = action(169, text="ring33")
+
+
+def tolgerias_fixture(*blocks):
+    """TOLGER.BCS as the game has it, or with these blocks."""
+    return ('SC\n' + "".join(blocks or (
+        book_block([trigger(16481, 0, "ring33", negate=1), trigger(16399, 0, "GLOBALCDRing33Gone")],
+                   action(30, 1, "GLOBALCDRing33Gone")),
+        book_block([HAS_RING, RING_GONE], RING_DESTROYED),
+        book_block([trigger(16465, 0, "TOLGER2")], action(111)))) + 'SC\n').encode()
 
 
 class Mode2RewardTests(unittest.TestCase):
@@ -796,7 +818,8 @@ class Mode2RewardTests(unittest.TestCase):
             self.assertEqual(rewards.REWARDS[key]["resources"], ("dlg:sahkng01", "bcs:sahtreas"))
         self.assertEqual(rewards.TARGET_REWARDS["bg2:mode2:target:6"], "sahrod")
         self.assertEqual(rewards.PHYSICAL_SOURCE_REWARDS, {("cre:udlesa", "cre-template", "sw1h39"): "udlesa",
-                                                           ("are:ar2300", "container", "rods02"): "sahrod"})
+                                                           ("are:ar2300", "container", "rods02"): "sahrod",
+                                                           ("cre:tolger2", "cre-template", "ring33"): "tolger"})
         self.assertNotIn("original-source:bg2:mode2:item:7", rewards.SOURCE_REWARDS)
         specs = rewards.resource_specs("dlg:sahkng01")
         self.assertEqual([spec["route"] for spec in specs], ["sahkng01", "sahrod"])
@@ -1046,7 +1069,9 @@ class Mode2RewardTests(unittest.TestCase):
     def check_destroys(self, original, result, specs):
         """Each block that destroys routes' items becomes one block per
         combination of those routes' flags, in route order; where a route is
-        selected, NoAction() stands in for each of its item's destroys."""
+        selected, NoAction() stands in for each of its item's destroys. A
+        block whose conditions test a route's item only runs while that route
+        is not selected."""
         before, after = script_blocks(original), script_blocks(result)
         newline = before.newline
         self.assertEqual((after.newline, after.prefix, after.suffix), (newline, before.prefix, before.suffix))
@@ -1057,7 +1082,8 @@ class Mode2RewardTests(unittest.TestCase):
             destroys = {spec["route"]: [action for action in actions if action.opcode == 169 and
                                         action.strings[0].lower() == spec["item"].encode()] for spec in specs}
             gating = [spec for spec in specs if destroys[spec["route"]]]
-            for choice in product((False, True), repeat=len(gating)):
+            for choice in product(*(((False,) if rewards._names(conditions, spec["item"]) else (False, True))
+                                    for spec in gating)):
                 edits = sorted((action.start, action.end) for spec, selected in zip(gating, choice) if selected
                                for action in destroys[spec["route"]])
                 changed, at = b"", 0
@@ -1074,7 +1100,7 @@ class Mode2RewardTests(unittest.TestCase):
         specs = rewards.resource_specs("bcs:sahtreas")
         self.assertEqual([(spec["route"], spec["item"], spec["selected_global"]) for spec in specs],
                          [("sahkng01", "brac19", "FLPR_QM2_57"), ("sahrod", "rods02", "FLPR_QM2_7")])
-        self.assertEqual(rewards.DESTROY_GATES, {"bcs:sahtreas": ("sahkng01", "sahrod")})
+        self.assertEqual(rewards.DESTROY_GATES, {"bcs:sahtreas": ("sahkng01", "sahrod"), "bcs:tolger": ("tolger",)})
         # Another mod's block, and one that only tests the rod, stay as found.
         other = book_block([trigger(16399, 1, "GLOBALOtherMod")], action(30, 2, "GLOBALOtherMod"))
         testing = book_block([trigger(16481, 0, "RODS02")], action(30, 3, "GLOBALOtherMod"))
@@ -1169,6 +1195,106 @@ class Mode2RewardTests(unittest.TestCase):
                 with self.assertRaisesRegex(ProfileError, "SAHTREAS.BCS carries a changed copy"):
                     rewards.own_patch("bcs:sahtreas", changed)
                 self.assertEqual(set(rewards.route_reasons("bcs:sahtreas", changed)), {"sahkng01", "sahrod"})
+
+    def test_tolgerias_pays_with_his_ring_and_hands_his_place_to_the_one_he_pays(self):
+        """Row 50 (Item Randomiser's tolger.fl): Tolgerias's four payments for
+        Valygar's body give the ring he carries (row 40, TOLGER2's) as UDLESA's
+        reply gives his sword, and pay the place's reward; until then it waits
+        for TOLGER2's death in the planar sphere, at his corpse."""
+        spec = rewards.target_spec("bg2:mode2:target:50")
+        self.assertEqual(rewards.PHYSICAL_SOURCE_REWARDS[("cre:tolger2", "cre-template", "ring33")], "tolger")
+        self.assertNotIn("original-source:bg2:mode2:item:40", rewards.SOURCE_REWARDS)
+        self.assertNotIn("tolger", rewards.TRANSFER_SPECS)
+        self.assertEqual((spec["source_ids"], spec["authored_source_ids"]),
+                         ((), ("original-source:bg2:mode2:item:40",)))
+        self.assertEqual((spec["item"], spec["grant_kind"], spec["recipient"], spec["resources"]),
+                         ("ring33", "transfer", "LastTalkedToBy", ("dlg:tolger", "bcs:tolger")))
+        self.assertEqual((spec["selected_global"], spec["consumed_global"], spec["event_global"],
+                          spec["recipient_local"]), ("FLPR_QM2_40", "FLPR_XM2_40", "FLPR_EA_TOLGER", "FLPR_RA_TOLGER"))
+        self.assertEqual(spec["holder"], {"area": "ar0412", "script_name": "tolger2",
+                                          "creature_resources": ("cre:tolger2",)})
+        self.assertEqual(spec["branches"], ((37, 0), (37, 1), (37, 2), (44, 0)))
+        for absent in ("inventory_target", "source_resource", "required_transfers", "replacement", "handover"):
+            self.assertNotIn(absent, spec)
+        self.assertEqual(rewards.TEXT_REFS["dlg:tolger"], {18409: 103})
+        self.assertEqual([spec["route"] for spec in rewards.resource_specs("dlg:tolger")], ["tolger"])
+        # Each reply keeps his ring transfer while the ring stays, and marks the
+        # one he pays and sets the event either way. Where he pays by force,
+        # his words name the ring (state 44): a moved one shows CIR's text.
+        dialogue = _Dialogue(dialogue_fixture(rewards.resource_specs("dlg:tolger")), "tolger")
+        struct.pack_into("<I", dialogue.states[44], 0, 18409)
+        original = dialogue.render()
+        branches = rewards._patch_dialogue(original, rewards.resource_specs("dlg:tolger"))
+        self.check_dialogue("tolger", original, branches)
+        self.assertNotIn(b"FLPR_Transfer(", b"".join(_Dialogue(branches, "tolger").actions))
+        refs = {18409: 100001}
+        result = rewards.patch_reward("dlg:tolger", original, refs=refs)
+        self.assertEqual(set(self.check_text_graph("dlg:tolger", original, result, refs)), {44})
+        self.assertEqual(rewards._text_original(result, "dlg:tolger"), (original, refs))
+        for data in (original, result):
+            self.assertTrue(rewards.gives_reward("dlg:tolger", data, "tolger"))
+            self.assertEqual(rewards.route_reasons("dlg:tolger", data), {})
+        # The dialogue and the script share a name: a file names its kind, a
+        # bare name is refused.
+        for named in ("TOLGER.DLG", "dlg:tolger", "DLG:TOLGER"):
+            self.assertEqual(rewards._resource_key(named), "dlg:tolger")
+        for named in ("tolger.bcs", "bcs:tolger"):
+            self.assertEqual(rewards._resource_key(named), "bcs:tolger")
+        for named in ("tolger", "itm:tolger", "tolger.cre"):
+            with self.assertRaisesRegex(ProfileError, f"Unsupported extended reward resource: {named}"):
+                rewards._resource_key(named)
+
+    def test_tolgerias_destroys_his_ring_only_while_it_is_the_original(self):
+        # His class script destroys his ring once the other Tolgerias has lost
+        # his. A moved ring at one of TOLGER2's own places must stay; the block
+        # tests the ring, so a NoAction() stand-in beside a kept reward would
+        # run with every AI update and hold back his later blocks and scripts,
+        # his fighting among them. It runs only while the ring is the original.
+        specs = rewards.resource_specs("bcs:tolger")
+        self.assertEqual([(spec["route"], spec["item"], spec["selected_global"]) for spec in specs],
+                         [("tolger", "ring33", "FLPR_QM2_40")])
+        original = tolgerias_fixture()
+        first, _, last = (block.decode() for block in script_blocks(original).blocks)
+        gated = book_block([HAS_RING, RING_GONE, route_guard("FLPR_QM2_40", False)], RING_DESTROYED)
+        result = rewards.patch_reward("bcs:tolger", original)
+        self.assertEqual(result, ('SC\n' + first + gated + last + 'SC\n').encode())
+        self.check_destroys(original, result, specs)
+        self.assertEqual(rewards.patch_reward("bcs:tolger", result), result)
+        self.assertFalse(rewards.own_patch("bcs:tolger", original))
+        self.assertTrue(rewards.own_patch("TOLGER.BCS", result))
+        self.assertEqual(rewards._examine("bcs:tolger", result).original, original)
+        self.assertEqual(rewards.unpatched_script("bcs:tolger", result), original)
+        for data in (original, result):
+            self.assertEqual(rewards.route_reasons("bcs:tolger", data), {})
+            self.assertEqual(rewards.destroyed_items("TOLGER.BCS", data), {"ring33"})
+        # In CRLF lines too.
+        crlf = original.replace(b"\n", b"\r\n")
+        self.assertEqual(rewards.patch_reward("bcs:tolger", crlf), result.replace(b"\n", b"\r\n"))
+        # A turned guard is a changed copy of the patch.
+        turned = result.replace(route_guard("FLPR_QM2_40", False).encode(),
+                                route_guard("FLPR_QM2_40", True).encode(), 1)
+        with self.assertRaisesRegex(ProfileError, "TOLGER.BCS carries a changed copy"):
+            rewards.own_patch("bcs:tolger", turned)
+        self.assertIn("changed copy", rewards.route_reasons("bcs:tolger", turned)["tolger"])
+        # A destroy whose block does not test the ring keeps a NoAction() in
+        # its place while the ring is moved, as the treasury's do.
+        untested = tolgerias_fixture(book_block([RING_GONE], RING_DESTROYED))
+        self.assertEqual(rewards.patch_reward("bcs:tolger", untested), tolgerias_fixture(*(
+            book_block([RING_GONE, route_guard("FLPR_QM2_40", selected)], NO_ACTION if selected else RING_DESTROYED)
+            for selected in (False, True))))
+        self.check_destroys(untested, rewards.patch_reward("bcs:tolger", untested), specs)
+        # One that tests it and does more than destroy it cannot be gated: the
+        # rest of the block would not run while the ring is moved.
+        more = tolgerias_fixture(book_block([HAS_RING, RING_GONE], RING_DESTROYED + action(30, 2, "GLOBALOtherMod")))
+        reason = "TOLGER.BCS block 0 tests RING33 and does more than destroy it, which the route cannot gate"
+        self.assertEqual(rewards.route_reasons("bcs:tolger", more), {"tolger": reason})
+        with self.assertRaisesRegex(ProfileError, reason):
+            rewards.patch_reward("bcs:tolger", more)
+        # A script that destroys no ring needs no gate.
+        plain = tolgerias_fixture(book_block([trigger(16465, 0, "TOLGER2")], action(111)))
+        self.assertEqual(rewards.patch_reward("bcs:tolger", plain), plain)
+        self.assertFalse(rewards.own_patch("bcs:tolger", plain))
+        self.assertEqual(rewards.route_reasons("bcs:tolger", plain), {})
 
     def test_aran_route_left_out_alone_keeps_the_other_route(self):
         specs = rewards.resource_specs("dlg:aran")
@@ -1632,15 +1758,16 @@ class Mode2RewardTests(unittest.TestCase):
                 if kind == "dlg" and resource in rewards.TEXT_REFS:
                     self.assertEqual(rewards._text_original(result, resource, **EET), (original, allocated[resource]))
                     clones = self.check_text_graph(resource, original, result, allocated[resource], naming=EET)
-                    if name in ("trgeni01", "amcler01", "jugjer01", "udlesa", "aldeth"):
+                    if name in ("trgeni01", "amcler01", "jugjer01", "udlesa", "aldeth", "tolger"):
                         action_refs = allocated[resource] if name == "amcler01" else None
                         branches = rewards._patch_dialogue(original, rewards.resource_specs(resource, **EET),
                                                            action_refs=action_refs)
                         self.check_dialogue(name, original, branches, action_refs, naming=EET)
                         # Jermien names his sword when he offers it and when he hands it over;
                         # Aldeth's thanks and the journal entry of his reply name his.
+                        # Tolgerias names his ring when he pays for the body by force.
                         self.assertEqual(set(clones), {"trgeni01": {35}, "amcler01": set(), "jugjer01": {17, 23},
-                                                       "udlesa": {6}, "aldeth": {27}}[name])
+                                                       "udlesa": {6}, "aldeth": {27}, "tolger": {44}}[name])
                         if name == "aldeth":
                             dlg = _Dialogue(result, name)
                             self.assertEqual(struct.unpack_from("<I", dlg.states[clones[27]])[0],
@@ -1669,7 +1796,9 @@ class Mode2RewardTests(unittest.TestCase):
                         self.assertIn(b'ReallyForceSpell(Myself,DRYAD_TELEPORT)', b"".join(dlg.actions))
                 elif resource in rewards.DESTROY_GATES:
                     self.check_destroys(original, result, rewards.resource_specs(resource, **EET))
-                    self.assertEqual(len(script_blocks(result).blocks), 4)
+                    # The treasury's one destroying block in all four combinations; the one of
+                    # Tolgerias tests his ring, so it stays one block.
+                    self.assertEqual(len(script_blocks(result).blocks), {"sahtreas": 4, "tolger": 9}[name])
                 elif kind == "bcs":
                     self.assertEqual(rewards._script_original(result, rewards.resource_specs(resource, **EET))[0],
                                      original)

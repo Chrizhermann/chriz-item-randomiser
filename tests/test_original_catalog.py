@@ -320,7 +320,7 @@ class OriginalCatalogTests(unittest.TestCase):
                              _target("are:ar1103/container/0", "are:ar1103", "container", "jugjer01")]}
         result = resolve_template({"items": []}, world, "bg2-original", items="extended", targets="extended")
         rows = {row["id"]: row for row in result["targets"]}
-        for line in (25, 49, 50):
+        for line in (25, 49):
             row = rows[f"bg2:mode2:target:{line}"]
             with self.subTest(target=row["target"], area=row["area"]):
                 self.assertEqual((row["target_ids"], row["container_name"], row["binding_problem"]),
@@ -331,11 +331,11 @@ class OriginalCatalogTests(unittest.TestCase):
                          ([], None, "cre:pptroll1", "creature-resource-absent"))
         # The quest places CIR has a route for keep theirs, a handler's place too
         # (the Sahuagin treasury's, king's and prince's, the king's or prince's,
-        # and Jermien's rewards; this game lacks their conversations).
+        # Jermien's and Tolgerias's rewards; this game lacks their conversations).
         self.assertEqual(rows["bg2:base:target:47"]["binding_problem"], "legacy-target-requires-adapter")
         self.assertEqual(rows["bg2:mode2:target:17"]["binding_problem"], "legacy-target-requires-adapter")
         for line, dialogue in ((6, "dlg:sahkng01"), (58, "dlg:sahkng01"), (59, "dlg:sahpr2"),
-                               (60, "dlg:sahpr2"), (31, "dlg:jugjer01")):
+                               (60, "dlg:sahpr2"), (31, "dlg:jugjer01"), (50, "dlg:tolger")):
             row = rows[f"bg2:mode2:target:{line}"]
             self.assertEqual((row["area_resource"], row["target_ids"], row["container_name"], row["binding_problem"]),
                              (dialogue, [], None, "target-resource-absent"))
@@ -428,7 +428,7 @@ class OriginalCatalogTests(unittest.TestCase):
             waiting |= {row["id"] for row in result["items"] + result["targets"]
                         if row["binding_problem"] == "route-not-supported"}
         # Places that Item Randomiser's own quest handlers name.
-        self.assertEqual(waiting, {f"bg2:mode2:target:{line}" for line in (25, 49, 50, 215, 252)})
+        self.assertEqual(waiting, {f"bg2:mode2:target:{line}" for line in (25, 49, 215, 252)})
 
     def test_a_troll_in_several_versions_is_the_place_of_the_one_in_the_area(self):
         """Item Randomiser's pptroll.fl and torgal.fl give the item to each

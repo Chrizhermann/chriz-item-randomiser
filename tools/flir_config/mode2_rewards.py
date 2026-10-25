@@ -205,6 +205,25 @@ for _key in DESTROY_GATES["bcs:sahtreas"]:
 # himself when the prince's job begins (SAHKNG01.BCS) and the other one comes.
 REWARDS["sahkng01"]["holder"] = {"area": "ar2300", "script_name": "sahkng01",
                                  "creature_resources": ("cre:sahkng01", "cre:sahkng02")}
+# Tolgerias's ring (row 40, carried by TOLGER2.CRE) and his place (row 50,
+# Item Randomiser's tolger.fl). He pays for Valygar's body with 500 gold and
+# the ring he carries (TOLGER.DLG, four replies); TOLGER2, an actor of the
+# planar sphere (AR0412), is there on every path and never pays. Item
+# Randomiser gives the place's item to both, and his class script
+# (TOLGER.BCS, both run it) destroys the one copy once the other has gone
+# (GLOBAL CDRing33Gone). Here the reply follows the ring's kept/moved
+# decision, as UDLESA's does, and pays the place's reward to the one he pays;
+# until then it waits for TOLGER2's death, at his corpse (holder). Where
+# Tolgerias dies in his house (AR1002), its script destroys him at once, so
+# he holds nothing.
+_alias("tolger", "ring33", 40, 50, "TOLGER", {"tolger": ((37, 0), (37, 1), (37, 2), (44, 0))})
+REWARDS["tolger"].update(source_ids=(), authored_source_ids=("original-source:bg2:mode2:item:40",),
+                         grant_kind="transfer", holder={"area": "ar0412", "script_name": "tolger2",
+                                 "creature_resources": ("cre:tolger2",)})
+# A moved ring is a reward like any other: one of TOLGER2's own places can get
+# it, and his class script must not destroy it there.
+DESTROY_GATES["bcs:tolger"] = ("tolger",)
+REWARDS["tolger"]["resources"] = ("dlg:tolger", "bcs:tolger")
 # The two scrolls that the book of Lavok's sphere (PPBOOK.BCS, AR1513) gives
 # with its ring on the last page (Item Randomiser's rows 260 and 262). The
 # book's places are the ring's quest (the installer splits that page for the
@@ -243,7 +262,8 @@ REWARDS["sahpr2b"] = dict(deepcopy(REWARDS["sahpr2"]), target_ids=("bg2:mode2:ta
 # or the area's container record of the item. A game whose dialogue gives
 # no such item needs no route (gives_reward).
 PHYSICAL_SOURCE_REWARDS = {("cre:udlesa", "cre-template", "sw1h39"): "udlesa",
-                           ("are:ar2300", "container", "rods02"): "sahrod"}
+                           ("are:ar2300", "container", "rods02"): "sahrod",
+                           ("cre:tolger2", "cre-template", "ring33"): "tolger"}
 for _name, _row in REWARDS.items():
     _row.setdefault("resources", (_row["resource"],))
 RESOURCE_REWARDS = {}
@@ -272,6 +292,8 @@ TEXT_REFS = {
     "dlg:trgeni01": {43514: 110},
     "dlg:amcler01": {74025: 100},
     "dlg:udlesa": {52664: 104},
+    # "Here is a ring in exchange for the body" (Tolgerias's payment).
+    "dlg:tolger": {18409: 103},
     "dlg:jugjer01": {33760: 698, 33777: 699},
     # Aldeth's thanks and the journal entry his reward reply adds.
     "dlg:aldeth": {5740: 1649, 26828: 1650},
@@ -1305,9 +1327,15 @@ def _gate_destroys(data: bytes, spec: dict) -> bytes:
     """Gate the route's DestroyItem of its item: a block that destroys it
     (itself or through ActionOverride(), where the moved reward may be too)
     becomes two, the original while the route's grant is unchanged and one
-    with NoAction() instead of each of those destroys while it is moved.
-    Conditions may test the item; any other action with it could take a
-    moved reward, so the route cannot be used."""
+    with NoAction() instead of each of those destroys while it is moved, so
+    the blocks after it run no more often than before (the Sahuagin
+    treasury's). A block whose conditions test the item ends once it has
+    destroyed it, as Tolgerias's does with his ring; with a moved reward kept
+    it would run on and hold back every later block and script of its owner,
+    his fighting among them. Such a block only runs while the grant is
+    unchanged, so it may do nothing but destroy the item. Conditions may test
+    the item; any other action with it could take a moved reward, so the
+    route cannot be used."""
     label = _label(spec["resource"])
     item = spec["item"].encode("ascii").lower()
     with naming(label):
@@ -1317,18 +1345,22 @@ def _gate_destroys(data: bytes, spec: dict) -> bytes:
             if not _names(block, spec["item"]):
                 continue
             head, conditions, responses = block_parts(block, newline)
-            using = [action for action in block_actions(responses, newline)
-                     if item in (text.lower() for text in action.strings)]
+            actions = block_actions(responses, newline)
+            using = [action for action in actions if item in (text.lower() for text in action.strings)]
             if any(action.opcode != 169 or action.strings[0].lower() != item for action in using):
                 raise ProfileError(f"{label} block {index} uses {spec['item'].upper()} in an action other "
                                    "than DestroyItem(), which the route cannot gate")
             if not using:
                 continue
+            tested = _names(conditions, spec["item"])
+            if tested and len(using) != len(actions):
+                raise ProfileError(f"{label} block {index} tests {spec['item'].upper()} and does more than "
+                                   "destroy it, which the route cannot gate")
             blocks[index] = b"".join(
                 head + b"CO" + newline + conditions + _global_guard(spec["selected_global"], selected, newline) +
                 b"CO" + newline + _edited(responses, [(action.start, action.end, _no_action(newline))
                                                      for action in using] if selected else [])
-                for selected in (False, True))
+                for selected in ((False,) if tested else (False, True)))
     return script.prefix + b"".join(blocks) + script.suffix
 
 
@@ -1475,8 +1507,13 @@ def journal_lua(lua: bytes, texts: dict[str, dict[int, int]], game: str | None =
 
 
 def _resource_key(resource: str) -> str:
-    name = resource.lower().split(":")[-1].split(".")[0]
-    candidates = [key for key in RESOURCE_REWARDS if key.split(":")[1] == name]
+    # By its kind where it names one ("dlg:tolger", "TOLGER.DLG"): Tolgerias's
+    # dialogue and script share a name.
+    kind, _, name = resource.lower().rpartition(":")
+    name, _, extension = name.partition(".")
+    kind = kind or extension
+    candidates = [key for key in RESOURCE_REWARDS
+                  if key.split(":")[1] == name and (not kind or key.split(":")[0] == kind)]
     if len(candidates) != 1:
         raise ProfileError(f"Unsupported extended reward resource: {resource}")
     return candidates[0]

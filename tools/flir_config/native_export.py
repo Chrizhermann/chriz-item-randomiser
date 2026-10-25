@@ -777,10 +777,11 @@ def _compile(manifest: dict, world: dict, index: dict, items: dict,
                             "claim_global": spec["event_global"], "reward_resource": spec["resource"],
                             "identity": _digest({"target": selected, "container": physical})}
                     elif spec.get("holder"):
-                        # The Sahuagin king's place: his reward reply pays it;
-                        # until then it waits for his death, at his corpse.
-                        # Each king the area can have must carry the name the
-                        # runtime finds him by.
+                        # The Sahuagin king's place, Tolgerias's: the reward
+                        # reply pays it; until then it waits for the holder's
+                        # death, at his corpse. Each version of the holder the
+                        # area can have must carry the name the runtime finds
+                        # him by.
                         holder = spec["holder"]
                         area = "are:" + holder["area"]
                         use(area)

@@ -383,6 +383,42 @@ pub fn treasury_fixture(blocks: &[String]) -> Vec<u8> {
     format!("SC\n{blocks}SC\n").into_bytes()
 }
 
+/// `HAS_RING`: Tolgerias's class script (TOLGER.BCS, which both TOLGER and
+/// TOLGER2 run) tests his ring.
+pub fn has_ring() -> String {
+    trigger(16481, 0, "ring33", 0)
+}
+
+/// `RING_GONE`: the other Tolgerias has lost his ring.
+pub fn ring_gone() -> String {
+    trigger(16399, 1, "GLOBALCDRing33Gone", 0)
+}
+
+/// `RING_DESTROYED`.
+pub fn ring_destroyed() -> String {
+    action(169, 0, "ring33", 0, 0)
+}
+
+/// `tolgerias_fixture(*blocks)`: TOLGER.BCS as the game has it, or with these
+/// blocks: the one that has lost his ring marks it gone, and the other then
+/// destroys his.
+pub fn tolgerias_fixture(blocks: &[String]) -> Vec<u8> {
+    let blocks = if blocks.is_empty() {
+        [
+            book_block(
+                &[trigger(16481, 0, "ring33", 1), trigger(16399, 0, "GLOBALCDRing33Gone", 0)],
+                &action(30, 1, "GLOBALCDRing33Gone", 0, 0),
+            ),
+            book_block(&[has_ring(), ring_gone()], &ring_destroyed()),
+            book_block(&[trigger(16465, 0, "TOLGER2", 0)], &action(111, 0, "", 0, 0)),
+        ]
+        .concat()
+    } else {
+        blocks.concat()
+    };
+    format!("SC\n{blocks}SC\n").into_bytes()
+}
+
 /// `route_guard(flag, selected)`: the guard of a route's selected flag, as
 /// compiled.
 pub fn route_guard(flag: &str, selected: bool) -> String {
