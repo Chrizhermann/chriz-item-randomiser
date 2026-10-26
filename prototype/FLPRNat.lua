@@ -6,7 +6,20 @@ local Native = {}
 -- The ordinary transport consumes this message on an engine update. Allow a
 -- conservative 20 game seconds (15 ticks/second), never unlimited settling.
 -- Paused time does not consume this allowance; this is not a wall-clock timer.
+-- A reward found nowhere gets it once more from then, to fall at a party
+-- member's feet (Adapter:_lost_reward).
 Native.MAX_SETTLE_TICKS = 300
+-- A reward that reached a creature as it died lies in the body until the
+-- death drop takes it along. One that came after that drop would stay there
+-- for good; this many game ticks after CIR saw the death, CIR drops it at the
+-- corpse itself (Adapter:_corpse_reward). A reward whose creature is gone from
+-- the game and that is nowhere falls at a party member's feet this many ticks
+-- after CIR saw the creature gone (Adapter:_lost_reward).
+Native.DEATH_DROP_TICKS = 15
+-- CIR looks for a reward its dying creature dropped (Adapter:_find_dropped)
+-- at most once in this many game ticks: each look reads every object of the
+-- area.
+Native.DROP_SCAN_TICKS = 5
 -- An owed treasury handover (Adapter:retry_handovers) is tried again
 -- after this many game ticks.
 Native.HANDOVER_RETRY_TICKS = 30
@@ -112,6 +125,12 @@ local function shown_name(api, item)
         local ref = header and header[field]
         if integer(ref, 1, 2147483646) then return ref end
     end
+end
+-- What the player is told of the reward <p> at a party member's feet
+-- (FLPRHost's notice).
+local function party_notice(api, member, p)
+    local name = api.EEex_Sprite_GetName(member)
+    return { item = shown_name(api, p), resref = p.resref, member = type(name) == "string" and name or nil }
 end
 
 function Native.new(api, fixture, seed, reward_payload)
@@ -462,7 +481,7 @@ function Adapter:_marked(area, name)
     return object
 end
 
-function Adapter:_resolve(endpoint, kind, visible_area)
+function Adapter:_resolve(endpoint, kind, visible_area, dead_recipient)
     local api, area = self.api, visible_area or self.api.EEex_Area_GetVisible()
     if not area or (endpoint.area~='*' and text(area.m_resref) ~= endpoint.area) then return nil, "AREA_UNAVAILABLE" end
     if endpoint.claim_global and api.EEex_GameState_GetGlobalInt(endpoint.claim_global)~=1 then
@@ -482,9 +501,11 @@ function Adapter:_resolve(endpoint, kind, visible_area)
             if not object then return nil,reason end
         else object=api.EEex_Sprite_GetInPortrait(0) end
         if not object then return nil,'OWNER_MISSING' end
+        local found={object=object,id=object.m_id,pointer=pointer(api,object)}
         local reason=self:_creature_state(object,true)
-        if reason then return nil,reason end
-        return {object=object,id=object.m_id,pointer=pointer(api,object)}
+        -- A recipient that died with its reward on its way (Adapter:_delivery_owner).
+        if reason then return nil,reason,dead_recipient and found or nil end
+        return found
     end
     local found, matches, seen, wrong_container = nil, 0, {}, false
     for _, field in ipairs(lists) do
@@ -714,6 +735,74 @@ local function placed_item(before, after, empty)
     if #added == 0 then return nil, "DELIVERY_MESSAGE_LOST" end
     if #added ~= 1 or not free[added[1].slot] then return nil, "DELIVERY_PLACEMENT_UNEXPECTED" end
     return added[1]
+end
+
+-- The one instance of <resref> a creature gained since <before>. Run puts
+-- its item into the first empty backpack slot and nowhere else
+-- (docs/native-creature-transport-evidence.md). The creature goes on
+-- meanwhile: its items may change in a fight, by its own actions or with its
+-- death drop. An item of that name it had (its pointer) is not new where it
+-- moved, nor where it changed in its own slot outside the backpack, by a
+-- charge used, say. One that changed in its own backpack slot is what a
+-- stack merge leaves, where Run makes no new instance: it is no copy of the
+-- reward (reward_copy), so CIR stops rather than guess.
+local function arrived(before, after, resref)
+    local had, found = {}, nil
+    for _, item in ipairs(before) do
+        if item.payload.resref == resref then had[item.pointer] = item end
+    end
+    for _, current in ipairs(after) do
+        if current.payload.resref == resref then
+            local previous = had[current.pointer]
+            local backpack = current.slot >= Native.BACKPACK_FIRST and current.slot <= Native.BACKPACK_LAST
+            if not previous or (backpack and previous.slot == current.slot and
+                not same(previous.payload, current.payload)) then
+                if found or not backpack then return nil, "DELIVERY_PLACEMENT_UNEXPECTED" end
+                found = current
+            end
+        end
+    end
+    if not found then return nil, "DELIVERY_MESSAGE_LOST" end
+    return found
+end
+
+-- The first item of a pile that was not in it before (pointer and payload).
+-- An add appends its item after the pile's items, and the handler runs the
+-- queued messages in order (docs/native-creature-transport-evidence.md): an
+-- add queued after another lands after it. Items taken out are not new.
+local function first_new(before, after)
+    for _, current in ipairs(after) do
+        local old = false
+        for _, previous in ipairs(before) do
+            old = old or (previous.pointer == current.pointer and same(previous.payload, current.payload))
+        end
+        if not old then return current end
+    end
+end
+
+local function item_at(items, slot)
+    for _, item in ipairs(items) do
+        if item.slot == slot then return item end
+    end
+end
+
+-- The item with this pointer, as long as it still has this payload.
+local function holding(items, address, expected)
+    for _, item in ipairs(items) do
+        if item.pointer == address then return same(item.payload, expected) and item or nil end
+    end
+end
+
+-- Whether <found> is the reward <created> as an add left it: true for its
+-- payload, "identified" for that payload identified again. The adds copy
+-- their item with the CItem copy constructor, which can identify a zero-lore
+-- item (AMUL12 on EET 2.7.3); CIR then sets the source's flags back.
+local function reward_copy(found, created)
+    if same(found, created) then return true end
+    local expected = { resref = found.resref, charges = found.charges, expiration = found.expiration,
+        flags = created.flags }
+    return created.flags % 2 == 0 and found.flags == created.flags + 1 and same(expected, created) and
+        "identified" or false
 end
 
 function Native.supported(api, item)
@@ -1182,12 +1271,24 @@ end
 -- into a pile at the member. The receipt names the item and the member for
 -- the player (FLPRHost's notice). While no member can drop it, it waits.
 function Adapter:_inspect_party_ground(endpoint, id, reward)
-    local api = self.api
     local supported, reason = self:_supported(reward)
     if not supported then return nil, reason end
     local queue = self:_queue()
     -- DropItem may reuse a pile near the member, as near a corpse.
     if container_add(queue) then return nil, "TARGET_QUEUE_BUSY" end
+    local member, waiting = self:_dropper(reward, queue)
+    if not member then return nil, waiting end
+    self.reservations[endpoint.identity] = { owner = member.owner, items = member.items, kind = "deliver", id = id,
+        ground = true, portrait = member.portrait, empty = member.empty, reward = reward, endpoint = endpoint }
+    return { identity = endpoint.identity, target_id = id, accepts = 1, ground = true }
+end
+
+-- The first party member in portrait order who can drop <reward> at its
+-- feet: alive in the visible area, with an empty backpack slot, no item of
+-- the reward's name (DropItem takes an item by name) and no message queued.
+-- Else nil and why none can, the first member's reason.
+function Adapter:_dropper(reward, queue)
+    local api = self.api
     local present, waiting = area_ids(api, api.EEex_Area_GetVisible()), nil
     for portrait = 0, 5 do
         local member = api.EEex_Sprite_GetInPortrait(portrait)
@@ -1198,15 +1299,10 @@ function Adapter:_inspect_party_ground(endpoint, id, reward)
                 if item.payload.resref == reward.resref then named = true end
             end
             local empty = empty_backpack(items)
-            -- DropItem takes an item by name, so the member must hold no other copy.
             if named then waiting = waiting or "PARTY_ITEM_AMBIGUOUS"
             elseif #empty == 0 then waiting = waiting or "TARGET_INVENTORY_FULL"
             elseif creature_conflict(queue, owner.id, self.source_resrefs) then waiting = waiting or "TARGET_QUEUE_BUSY"
-            else
-                self.reservations[endpoint.identity] = { owner = owner, items = items, kind = "deliver", id = id,
-                    ground = true, portrait = portrait, empty = empty, reward = reward, endpoint = endpoint }
-                return { identity = endpoint.identity, target_id = id, accepts = 1, ground = true }
-            end
+            else return { owner = owner, items = items, empty = empty, portrait = portrait } end
         end
     end
     return nil, waiting or "OWNER_MISSING"
@@ -1236,7 +1332,10 @@ end
 -- lists only when its message runs.
 function Adapter:_ground_pile(id, endpoint)
     local api, area = self.api, self.api.EEex_Area_GetVisible()
-    if not area or text(area.m_resref) ~= endpoint.area then return nil, "AREA_UNAVAILABLE" end
+    -- A marked recipient may stand in any area (Adapter:_resolve).
+    if not area or (endpoint.area ~= "*" and text(area.m_resref) ~= endpoint.area) then
+        return nil, "AREA_UNAVAILABLE"
+    end
     local listed = false
     for _, field in ipairs(lists) do
         assert(area[field], "NATIVE_AREA_LIST_MISSING")
@@ -1250,6 +1349,34 @@ function Adapter:_ground_pile(id, endpoint)
     if not object or api.EEex_GameObject_IsSprite(object, true) ~= false or object.m_lstItems == nil or
         object.m_containerType ~= 4 then return nil, "GROUND_PILE_INVALID" end
     return { object = object, id = id, pointer = pointer(api, object) }
+end
+
+-- The items of <name> in a ground pile, at their places in it. CIR reads no
+-- other item there: anything of any mod may lie on the ground.
+function Adapter:_pile_items(pile, name)
+    local result, place = {}, 0
+    self.api.EEex_Utility_IterateCPtrList(pile.object.m_lstItems, function(item)
+        place = place + 1
+        if text(item.cResRef) == name then result[#result + 1] = self:_item(item, place) end
+    end)
+    return result
+end
+
+-- Every ground pile of the visible area by its object id, with its items of
+-- <name>.
+function Adapter:_piles(name)
+    local api, piles = self.api, {}
+    for id in pairs(area_ids(api, api.EEex_Area_GetVisible())) do
+        local object = api.EEex_GameObject_Get(id)
+        object = object and api.EEex_GameObject_CastUserType(object)
+        if object and api.EEex_GameObject_IsSprite(object, true) == false and object.m_lstItems ~= nil and
+            object.m_containerType == 4 then
+            local pile = { object = object, id = id, pointer = pointer(api, object) }
+            pile.items = self:_pile_items(pile, name)
+            piles[id] = pile
+        end
+    end
+    return piles
 end
 
 local function unchanged(before, after, removed)
@@ -1395,6 +1522,13 @@ function Adapter:execute(command)
         end
         self:_preserve_message_flags(message, created)
         self.pending.queued, self.pending.empty, self.pending.created = message, reserved.empty, created
+        -- Where the creature's death drop could put the reward, and the area
+        -- it is in (Adapter:_find_dropped). A party member keeps its items
+        -- when it dies, but not where it leaves no body. Plain values only,
+        -- never the piles.
+        local piles = {}
+        for id, pile in pairs(self:_piles(created.resref)) do piles[id] = { pointer = pile.pointer, items = pile.items } end
+        self.pending.piles, self.pending.area = piles, text(self.api.EEex_Area_GetVisible().m_resref)
     else
         local after_queue, added, conflicting = self:_queue(), {}, 0
         for _, message in ipairs(after_queue.additions) do
@@ -1444,11 +1578,7 @@ function Adapter:_execute_ground(command, reserved, endpoint, p)
         return nil, "DELIVERY_QUEUE_NOT_EXCLUSIVE"
     end
     -- What the player is told of a reward at a party member's feet.
-    local notice
-    if reserved.portrait then
-        local member = api.EEex_Sprite_GetName(owner.object)
-        notice = { item = shown_name(api, p), resref = p.resref, member = type(member) == "string" and member or nil }
-    end
+    local notice = reserved.portrait and party_notice(api, owner.object, p) or nil
     local tried = self.attempted[command.session] or {}
     self.attempted[command.session] = tried; tried[command.nonce] = true
     local receipt = { session = command.session, kind = command.kind, index = command.index,
@@ -1457,41 +1587,62 @@ function Adapter:_execute_ground(command, reserved, endpoint, p)
     self.pending = { receipt = receipt, endpoint = endpoint, kind = "target", owner = owner,
         before = before, tick = self.tick, complete = false, ground = true, notice = notice }
     self.reservations[command.identity] = nil
-    local function unproven()
+    -- Pending/attempted are published first; an exception must disable this
+    -- adapter, never cause a blind action retry.
+    local created, message, pile = self:_create_drop(owner, endpoint, before, reserved.empty, p, stack_limit,
+        before_queue)
+    if not created then
         self.last_error = "CREATED_INSTANCE_UNPROVEN"; return nil, self.last_error
     end
-    -- No item iterator is active here. Pending/attempted are published first;
-    -- an exception must disable this adapter, never cause a blind action retry.
-    api.EEex_Action_ExecuteResponseStringOnAIBaseInstantly(
-        string.format('CreateItem("%s",%d,%d,%d)', p.resref, p.charges[1], p.charges[2], p.charges[3]), owner.object)
-    local placed = placed_item(before, self:_items(owner, true), reserved.empty)
-    local created = placed and created_payload(placed.payload, p, stack_limit)
-    local queued_now = self:_queue()
-    for _, message in ipairs(queued_now.additions) do
-        if not before_queue.addresses[message.pointer] then created = nil end
-    end
-    if not created then return unproven() end
-    api.EEex_Action_ExecuteResponseStringOnAIBaseInstantly(string.format('DropItem("%s",[-1.-1])', p.resref),
-        owner.object)
-    local after_queue, added = self:_queue(), {}
-    for _, message in ipairs(after_queue.additions) do
-        if not before_queue.addresses[message.pointer] then added[#added + 1] = message end
-    end
-    local message = #added == 1 and added[1] or nil
-    -- The message carries the sprite's instance as it was; nothing else in the
-    -- sprite may have changed. No other queued add can reach that pile: none
-    -- was queued before (container_add), and this is the only new one.
-    if not message or not unchanged(before, self:_items(owner, true)) or message.form ~= "container" or
-        message.slot ~= 32767 or message.target ~= message.source or
-        not same(message.payload, placed.payload) then return unproven() end
-    local pile, missing = self:_ground_pile(message.target, endpoint)
-    if not pile and missing ~= "GROUND_PILE_MISSING" then return unproven() end
-    self:_preserve_message_flags(message, created)
     self.pending.queued, self.pending.created = message, created
-    self.pending.pile_before = pile and self:_items(pile, false) or {}
+    self.pending.pile_before = pile and self:_pile_items(pile, created.resref) or {}
     self.pending.pile_pointer = pile and pile.pointer or nil
     self.pending.complete = true
     return true
+end
+
+-- CreateItem of the reward <p> on a sprite that stores it in one of its
+-- <empty> slots at once (a corpse, a living party member), then DropItem
+-- (Adapter:_drop). No item iterator is active here, and the caller saw no
+-- container add queued (<before_queue>). Returns the reward as created, the
+-- drop's message and its pile, or nothing if not exactly so.
+function Adapter:_create_drop(owner, endpoint, before, empty, p, stack_limit, before_queue)
+    self.api.EEex_Action_ExecuteResponseStringOnAIBaseInstantly(
+        string.format('CreateItem("%s",%d,%d,%d)', p.resref, p.charges[1], p.charges[2], p.charges[3]), owner.object)
+    local holding_items = self:_items(owner, true)
+    local placed = placed_item(before, holding_items, empty)
+    local created = placed and created_payload(placed.payload, p, stack_limit)
+    for _, message in ipairs(self:_queue().additions) do
+        if not before_queue.addresses[message.pointer] then created = nil end
+    end
+    if not created then return nil end
+    local message, pile = self:_drop(owner, endpoint, holding_items, placed, before_queue)
+    if not message then return nil end
+    self:_preserve_message_flags(message, created)
+    return created, message, pile
+end
+
+-- DropItem on a sprite whose <items> hold the reward's instance <placed>. It
+-- takes that instance out at once and queues one container add into a ground
+-- pile at the sprite, a pile it reuses or creates. The message carries the
+-- instance as it was, and nothing else in the sprite may change. No other
+-- queued add can reach that pile first: the caller saw none queued
+-- (container_add), and this is the only new one. Returns the message and the
+-- pile (nil while a new pile is not listed yet), or nothing if not so.
+function Adapter:_drop(owner, endpoint, items, placed, before_queue)
+    self.api.EEex_Action_ExecuteResponseStringOnAIBaseInstantly(
+        string.format('DropItem("%s",[-1.-1])', placed.payload.resref), owner.object)
+    local added = {}
+    for _, message in ipairs(self:_queue().additions) do
+        if not before_queue.addresses[message.pointer] then added[#added + 1] = message end
+    end
+    local message = #added == 1 and added[1] or nil
+    if not message or not unchanged(items, self:_items(owner, true), placed) or message.form ~= "container" or
+        message.slot ~= 32767 or message.target ~= message.source or
+        not same(message.payload, placed.payload) then return nil end
+    local pile, missing = self:_ground_pile(message.target, endpoint)
+    if not pile and missing ~= "GROUND_PILE_MISSING" then return nil end
+    return message, pile
 end
 
 function Adapter:on_observation_boundary(tick)
@@ -1511,7 +1662,7 @@ function Adapter:observe(command)
     end
     if not pending.complete then return nil, self.last_error or "MUTATION_OUTCOME_UNPROVEN" end
     if not self.tick or self.tick <= pending.tick then return nil, "LATER_GAME_TICK_REQUIRED" end
-    if pending.queued and self.tick - pending.tick >= Native.MAX_SETTLE_TICKS then
+    if pending.queued and self.tick - (pending.lost_tick or pending.tick) >= Native.MAX_SETTLE_TICKS then
         pending.complete = false
         self.last_error = "DELIVERY_SETTLING_TIMEOUT"
         return nil, self.last_error
@@ -1522,23 +1673,13 @@ function Adapter:observe(command)
         return receipt
     end
     if pending.ground then return self:_observe_ground(pending, receipt) end
-    local owner, reason, unusable = self:_resolve(pending.endpoint, pending.kind)
-    if not owner then
-        if reason == "TARGET_NOT_ALIVE" and unusable and unusable.id == pending.owner.id and
-            unusable.pointer == pending.owner.pointer then
-            -- CMessageAddItem::Run has no death check: the item may now be in
-            -- a corpse or in a death drop. Never resume or claim this receipt.
-            pending.complete = false
-            self.last_error = "TARGET_DIED_DURING_DELIVERY"
-            return nil, self.last_error
-        end
-        return nil, reason
+    if pending.kind == "target" and pending.endpoint.kind == "creature" then
+        return self:_observe_creature(pending, receipt)
     end
+    local owner, reason = self:_resolve(pending.endpoint, pending.kind)
+    if not owner then return nil, reason end
     if owner.id ~= pending.owner.id or owner.pointer ~= pending.owner.pointer then return nil, "OWNER_CHANGED" end
     local items = self:_items(owner, pending.endpoint.sprite)
-    if pending.kind == "target" and pending.endpoint.kind == "creature" then
-        return self:_observe_creature(pending, receipt, owner, items)
-    end
     if pending.kind == "source" then
         -- Compare every other slot/pointer/payload, not merely the selected count.
         local removed
@@ -1609,123 +1750,320 @@ function Adapter:observe(command)
 end
 
 -- As a container target's queued add: wait for the bound message, then pin the
--- one new instance in the pile it named, then publish one later tick on.
+-- one new instance in the pile it named, then publish one later tick on. No
+-- add was queued before this one (Adapter:_drop), so its item is the first
+-- new one of its name in the pile; adds queued after it land after it, and
+-- items taken out meanwhile are not the reward. CIR reads only the items of
+-- that name there (Adapter:_pile_items). Once the message has run, the engine
+-- may give its address to another message (in a fight often at once): only
+-- the reward's instance tells then.
 function Adapter:_observe_ground(pending, receipt)
-    local queue, queued = self:_queue(), pending.queued
-    local matching
-    for _, message in ipairs(queue.additions) do
-        if conflicts(message, queued.target, receipt.payload) then
-            if not pending.created_pointer and same_message(message, queued) then matching = message
-            else return nil, "DELIVERY_QUEUE_CONFLICT" end
-        end
-    end
-    if not pending.created_pointer and not matching and queue.addresses[queued.pointer] then
-        return nil, "DELIVERY_MESSAGE_REUSED"
-    end
+    local queued = pending.queued
+    local queue = not pending.created_pointer and self:_queue()
+    local present = queue and queue.addresses[queued.pointer] ~= nil
+    local current = present and addition_at(queue, queued.pointer)
+    local matching = current and same_message(current, queued)
     -- A new pile joins the area only as the message runs.
     if matching and not pending.pile_pointer then return nil, "DELIVERY_SETTLING" end
     local pile, reason = self:_ground_pile(queued.target, pending.endpoint)
-    if not pile then return nil, reason end
+    -- Another message at its address while its pile is not there: it changed.
+    if not pile then return nil, present and not matching and "DELIVERY_QUEUE_CONFLICT" or reason end
     if pending.pile_pointer and pile.pointer ~= pending.pile_pointer then return nil, "OWNER_CHANGED" end
-    local items = self:_items(pile, false)
+    local items = self:_pile_items(pile, pending.created.resref)
     if matching then
-        if not unchanged(pending.pile_before, items) then return nil, "DELIVERY_EARLY_ITEM" end
+        if first_new(pending.pile_before, items) then return nil, "DELIVERY_EARLY_ITEM" end
         return nil, "DELIVERY_SETTLING"
     end
     if not pending.created_pointer then
-        local placed = placed_item(pending.pile_before, items, {#pending.pile_before + 1})
-        if not placed then return nil, "DELIVERY_MESSAGE_LOST" end
-        local created = pending.created
-        if not same(placed.payload, created) then
-            -- The add copies the item as for a container target and can
-            -- identify a zero-lore item again; restore the source's flags.
-            local found = placed.payload
-            local expected = { resref = found.resref, charges = found.charges,
-                expiration = found.expiration, flags = created.flags }
-            if created.flags % 2 ~= 0 or found.flags ~= created.flags + 1 or
-                not same(expected, created) then return nil, "DELIVERY_PAYLOAD_CHANGED" end
-            self:_preserve_container_flags(pile, placed, created)
-        end
+        local placed = first_new(pending.pile_before, items)
+        if not placed then return nil, present and "DELIVERY_QUEUE_CONFLICT" or "DELIVERY_MESSAGE_LOST" end
+        local copy = reward_copy(placed.payload, pending.created)
+        if not copy then return nil, "DELIVERY_PAYLOAD_CHANGED" end
+        -- The add copies the item as for a container target and can identify
+        -- a zero-lore item again; restore the source's flags.
+        if copy == "identified" then self:_preserve_container_flags(pile, placed, pending.created) end
         pending.created_pointer, pending.pinned_tick, pending.pile_pointer = placed.pointer, self.tick, pile.pointer
         return nil, "DELIVERY_SETTLING"
     end
     if self.tick <= pending.pinned_tick then return nil, "DELIVERY_SETTLING" end
-    local placed = placed_item(pending.pile_before, items, {#pending.pile_before + 1})
-    if not placed or placed.pointer ~= pending.created_pointer or
-        not same(placed.payload, pending.created) then return nil, "CREATED_INSTANCE_CHANGED" end
-    local supported; supported, reason = self:_supported(receipt.payload)
+    if not holding(items, pending.created_pointer, pending.created) then return nil, "CREATED_INSTANCE_CHANGED" end
+    return self:_on_ground(pending, receipt)
+end
+
+-- On the ground where the dead target lies, or at a party member's feet;
+-- anyone may pick it up.
+function Adapter:_on_ground(pending, receipt)
+    local supported, reason = self:_supported(receipt.payload)
     if not supported then return nil, reason end
-    -- On the ground where the dead target lies, or at a party member's feet;
-    -- anyone may pick it up.
     receipt.created, receipt.nonce_bound_instance, receipt.lootable, receipt.holder = 1, 1, 1, "ground"
     receipt.notice = pending.notice
     self.pending = nil
     return receipt
 end
 
-function Adapter:_observe_creature(pending, receipt, owner, items)
-    local queue, queued = self:_queue(), pending.queued
-    if creature_conflict(queue, owner.id, self.source_resrefs, queued.pointer) then
-        return nil, "DELIVERY_QUEUE_CONFLICT"
+-- The creature a reward is on its way to, as at its execution: the creature
+-- and "alive", its corpse and "dead". One that is no longer found (no sprite
+-- of its script name in its area, or none marked there and in the party) is
+-- "vanished": it left alive, or it died and left no body, or a script removed
+-- it. CIR then follows its object while that is still the same one
+-- (Adapter:_tracked), else nil. Anything else: nil and why it cannot be told.
+function Adapter:_delivery_owner(pending)
+    local owner, reason, unusable = self:_resolve(pending.endpoint, "target", nil, true)
+    local state = owner and "alive" or "dead"
+    owner = owner or (reason == "TARGET_NOT_ALIVE" and unusable) or nil
+    if owner then
+        if owner.id ~= pending.owner.id or owner.pointer ~= pending.owner.pointer then return nil, "OWNER_CHANGED" end
+        return owner, state
     end
+    if reason == "OWNER_MISSING" then return self:_tracked(pending.owner), "vanished" end
+    return nil, reason
+end
+
+-- The sprite a delivery began with, by its object id, while that id still
+-- gives that same object, wherever it stands now. Its object leaves memory
+-- when it leaves the game, and with its area (Adapter:_find_dropped).
+function Adapter:_tracked(owner)
+    local api = self.api
+    local object = api.EEex_GameObject_Get(owner.id)
+    object = object and api.EEex_GameObject_CastUserType(object)
+    if object and api.EEex_GameObject_IsSprite(object, true) == true and pointer(api, object) == owner.pointer then
+        return { object = object, id = owner.id, pointer = owner.pointer }
+    end
+end
+
+-- A creature target's reward on its way: GiveItemCreate queued one
+-- CMessageAddItem, whose Run copies the item into the first empty backpack
+-- slot, of a corpse too (it has no death check). Until the receipt the
+-- creature goes on: a fight, a scene, its own actions or its death may change
+-- it, and none of that stops CIR. Only the reward's own instance is followed
+-- (arrived). Chris, 2026-10-22: a reward of a dead recipient goes to the
+-- ground, and who gets what stays as it is.
+-- - Alive: the instance is pinned, then held one later tick on.
+-- - Dead with the reward in its body: the death drop takes it along with the
+--   creature's items; one that came after the drop goes to the ground at the
+--   corpse (Adapter:_corpse_reward).
+-- - Dead or gone with the reward out of its body once pinned: the death drop
+--   took it, or it went with its creature. The reward reached its creature and
+--   is held, as the reward of any creature that dies or leaves later.
+-- - Gone, while its object is still there (it left the area alive, say): its
+--   items are read where it is now. CIR runs no action on it.
+-- - Dead or gone and never seen in its body: on the ground (Adapter:_find_dropped).
+--   Where its creature is gone from the game and the reward is nowhere, it
+--   falls at a party member's feet (Adapter:_lost_reward).
+-- A party member keeps its items when it dies (a quest target's recipient).
+function Adapter:_observe_creature(pending, receipt)
+    if pending.found then return self:_observe_found(pending, receipt) end
+    local owner, state = self:_delivery_owner(pending)
+    if not owner and state ~= "vanished" then return nil, state end
+    local api, queue, queued, created = self.api, self:_queue(), pending.queued, pending.created
+    -- Since when its object is gone, and whether the party left the area the
+    -- delivery began in (Adapter:_find_dropped).
+    if not owner then pending.gone_tick = pending.gone_tick or self.tick end
+    local area = api.EEex_Area_GetVisible()
+    if not area or text(area.m_resref) ~= pending.area then pending.left = true end
+    local current = addition_at(queue, queued.pointer)
+    local waiting = not pending.created_pointer and current and same_message(current, queued)
+    -- Another item of the reward's name on its way to the creature would be a
+    -- second instance like it: the reward could not be told apart.
+    for _, message in ipairs(queue.additions) do
+        if (message ~= current or not waiting) and message.target == pending.owner.id and
+            message.payload.resref == created.resref then return nil, "DELIVERY_QUEUE_CONFLICT" end
+    end
+    local items = owner and self:_items(owner, true)
+    -- Once the message has run, the engine may give its address to another
+    -- message (a death drop's adds, say): only the reward's instance tells then.
     local present = queue.addresses[queued.pointer] ~= nil
     if not pending.created_pointer then
-        if present then
-            local current = addition_at(queue, queued.pointer)
-            if not current or not same_message(current, queued) then return nil, "DELIVERY_QUEUE_CONFLICT" end
-            if not unchanged(pending.before, items) then return nil, "DELIVERY_EARLY_ITEM" end
+        if waiting then
+            -- Nothing of the reward's name may arrive before its message runs.
+            if items then
+                local early, why = arrived(pending.before, items, created.resref)
+                if early or why ~= "DELIVERY_MESSAGE_LOST" then return nil, "DELIVERY_EARLY_ITEM" end
+            end
             return nil, "DELIVERY_SETTLING"
         end
-        -- The exact message has been consumed. Its Run heap-copies the item into
-        -- one previously empty backpack slot; pin that actual pointer and slot,
+        -- The exact message has been consumed. Pin the instance its Run made,
         -- then demand another later tick before publishing anything.
-        local placed, failure = placed_item(pending.before, items, pending.empty)
-        if not placed then return nil, failure end
-        local created = pending.created
-        if not same(placed.payload, created) then
+        local placed, failure = nil, "DELIVERY_MESSAGE_LOST"
+        if items then placed, failure = arrived(pending.before, items, created.resref) end
+        if not placed then
+            -- Not in a living creature: lost, or changed where another message
+            -- has its address. Not in a dead one: dropped.
+            if state == "alive" and present and failure == "DELIVERY_MESSAGE_LOST" then
+                return nil, "DELIVERY_QUEUE_CONFLICT"
+            end
+            if state == "alive" or failure ~= "DELIVERY_MESSAGE_LOST" then return nil, failure end
+            return self:_find_dropped(pending, queue, owner)
+        end
+        local copy = reward_copy(placed.payload, created)
+        if not copy then return nil, "DELIVERY_PAYLOAD_CHANGED" end
+        if copy == "identified" then
             -- CMessageAddItem::Run can identify a zero-lore item again while
             -- copying it from the message. Preserve the source's flags on the
             -- one proven new inventory instance, just as on its message.
-            local expected=payload(placed.payload)
-            expected.flags=created.flags
-            if created.flags%2~=0 or placed.payload.flags~=created.flags+1 or
-                not same(expected,created) then return nil,'DELIVERY_PAYLOAD_CHANGED' end
-            local item=owner.object.m_equipment.m_items:get(placed.slot)
-            assert(pointer(self.api,item)==placed.pointer and same(self:_item(item).payload,placed.payload),
-                'CREATED_INSTANCE_CHANGED')
-            item.m_flags=created.flags
-            assert(same(self:_item(item).payload,created),'CREATED_FLAGS_NOT_PRESERVED')
-            placed.payload.flags=created.flags
+            local item = owner.object.m_equipment.m_items:get(placed.slot)
+            assert(pointer(api, item) == placed.pointer and same(self:_item(item).payload, placed.payload),
+                "CREATED_INSTANCE_CHANGED")
+            item.m_flags = created.flags
+            assert(same(self:_item(item).payload, created), "CREATED_FLAGS_NOT_PRESERVED")
         end
         pending.created_pointer, pending.created_slot, pending.pinned_tick = placed.pointer, placed.slot, self.tick
         return nil, "DELIVERY_SETTLING"
     end
-    if present then return nil, "DELIVERY_MESSAGE_REUSED" end
     if self.tick <= pending.pinned_tick then return nil, "DELIVERY_SETTLING" end
-    local placed = placed_item(pending.before, items, pending.empty)
-    if not placed or placed.pointer ~= pending.created_pointer or placed.slot ~= pending.created_slot or
-        not same(placed.payload, pending.created) then return nil, "CREATED_INSTANCE_CHANGED" end
+    local kept = items and item_at(items, pending.created_slot)
+    if kept and kept.pointer ~= pending.created_pointer then kept = nil end
+    if kept and not same(kept.payload, created) then return nil, "CREATED_INSTANCE_CHANGED" end
+    local party = owner and api.EEex_Sprite_GetPortraitIndex(owner.object) ~= -1
+    if (state == "alive" or party) and not kept then return nil, "CREATED_INSTANCE_CHANGED" end
+    if state == "dead" and not party then
+        if kept then return self:_corpse_reward(pending, owner, items, kept, queue) end
+    end
     local supported, reason = self:_supported(receipt.payload)
     if not supported then return nil, reason end
-    -- Held by a living, non-party creature in its backpack. That is not proof
-    -- of lootability: the death drop must be verified separately in the engine.
-    receipt.created, receipt.nonce_bound_instance, receipt.lootable, receipt.held = 1, 1, 0, 1
-    if pending.endpoint.quest_event and self.api.EEex_Sprite_GetPortraitIndex(owner.object)~=-1 then
-        receipt.lootable,receipt.held=1,nil
-        receipt.holder,receipt.slot='party',placed.slot
-        self.pending=nil
+    receipt.created, receipt.nonce_bound_instance, receipt.slot = 1, 1, pending.created_slot
+    if party then
+        receipt.lootable, receipt.holder = 1, "party"
+        self.pending = nil
         return receipt
     end
-    receipt.holder, receipt.slot = "creature", placed.slot
-    -- Session-only provenance. A save reload cannot reconstruct this record
-    -- by finding another item with the same name, address, or payload.
-    self.held[receipt.index] = { session=receipt.session, revision=receipt.revision,
-        nonce=receipt.nonce, source_id=receipt.source_id, target_id=receipt.target_id,
-        owner_id=owner.id, owner_pointer=owner.pointer, item_pointer=placed.pointer,
-        slot=placed.slot, payload=payload(placed.payload), reward=payload(receipt.payload),
-        endpoint=pending.endpoint }
+    -- Held by its creature in its backpack, or dropped with it as it died.
+    -- That is not proof of lootability: the death drop is the engine's.
+    receipt.lootable, receipt.held, receipt.holder = 0, 1, "creature"
+    if state == "alive" then
+        -- Session-only provenance. A save reload cannot reconstruct this record
+        -- by finding another item with the same name, address, or payload.
+        self.held[receipt.index] = { session=receipt.session, revision=receipt.revision,
+            nonce=receipt.nonce, source_id=receipt.source_id, target_id=receipt.target_id,
+            owner_id=owner.id, owner_pointer=owner.pointer, item_pointer=kept.pointer,
+            slot=kept.slot, payload=payload(kept.payload), reward=payload(receipt.payload),
+            endpoint=pending.endpoint }
+    end
     self.pending = nil
     return receipt
+end
+
+-- The reward in the body of its dead creature. The death drop takes it along
+-- with the creature's items, unless the reward came after that drop: then it
+-- would stay in the body for good, where nobody can take it. Once the drop
+-- had time to happen, CIR drops it at the corpse itself, as the reward of a
+-- dead target (Adapter:_execute_ground), and follows it into the pile.
+function Adapter:_corpse_reward(pending, owner, items, kept, queue)
+    pending.dead_tick = pending.dead_tick or self.tick
+    if self.tick - pending.dead_tick < Native.DEATH_DROP_TICKS then return nil, "DELIVERY_SETTLING" end
+    -- DropItem takes the first item of the name, and its pile must get no
+    -- other add first: wait while either could happen.
+    for _, item in ipairs(items) do
+        if item ~= kept and item.payload.resref == kept.payload.resref then return nil, "DELIVERY_SETTLING" end
+    end
+    if container_add(queue) then return nil, "DELIVERY_SETTLING" end
+    local message, pile = self:_drop(owner, pending.endpoint, items, kept, queue)
+    if not message then
+        pending.complete = false
+        self.last_error = "CREATED_INSTANCE_UNPROVEN"
+        return nil, self.last_error
+    end
+    self:_preserve_message_flags(message, pending.created)
+    pending.ground, pending.queued = true, message
+    pending.pile_before = pile and self:_pile_items(pile, pending.created.resref) or {}
+    pending.pile_pointer = pile and pile.pointer or nil
+    pending.created_pointer, pending.created_slot, pending.pinned_tick = nil, nil, nil
+    return nil, "DELIVERY_SETTLING"
+end
+
+-- A reward whose creature died or went before CIR saw it in its body: the
+-- death drop took it, as every item the creature carried, into a ground pile
+-- of the area. It is the one item like it in a pile that was not there when
+-- the delivery began, while none like it is on its way still. An item like it
+-- that the creature carried would fall with it, and the two could not be told
+-- apart. Found, it is pinned and confirmed one later tick on (Adapter:_observe_found).
+-- Only the piles of the area the delivery began in can tell, and only while
+-- the party has not left it: an area's objects leave memory with it, and
+-- come back as other objects.
+-- Where the creature is gone from the game (<owner> nil: its object no longer
+-- exists) and nothing like the reward has come to the ground or is on its way
+-- there for DEATH_DROP_TICKS, the reward is nowhere (Adapter:_lost_reward),
+-- with a settling time of its own. Otherwise it waits, at most until the
+-- settling time is over.
+function Adapter:_find_dropped(pending, queue, owner)
+    local created = pending.created
+    for _, item in ipairs(pending.before) do
+        if reward_copy(item.payload, created) then return nil, "DROPPED_REWARD_AMBIGUOUS" end
+    end
+    for _, message in ipairs(queue.additions) do
+        if message.form == "container" and reward_copy(message.payload, created) then
+            return nil, "DELIVERY_SETTLING"
+        end
+    end
+    if pending.left then return nil, "DELIVERY_SETTLING" end
+    if pending.scan_tick and self.tick - pending.scan_tick < Native.DROP_SCAN_TICKS then
+        return nil, "DELIVERY_SETTLING"
+    end
+    pending.scan_tick = self.tick
+    local found, count = nil, 0
+    for id, pile in pairs(self:_piles(created.resref)) do
+        local old = pending.piles[id]
+        old = old and old.pointer == pile.pointer and old.items or {}
+        for _, item in ipairs(pile.items) do
+            if reward_copy(item.payload, created) and not holding(old, item.pointer, item.payload) then
+                found, count = { pile = pile, item = item }, count + 1
+            end
+        end
+    end
+    if count > 1 then return nil, "DROPPED_REWARD_AMBIGUOUS" end
+    if count == 0 then
+        if owner or self.tick - pending.gone_tick < Native.DEATH_DROP_TICKS then return nil, "DELIVERY_SETTLING" end
+        pending.lost_tick = pending.lost_tick or self.tick
+        return self:_lost_reward(pending, queue)
+    end
+    if reward_copy(found.item.payload, created) == "identified" then
+        self:_preserve_container_flags(found.pile, found.item, created)
+    end
+    pending.found = { id = found.pile.id, pile_pointer = found.pile.pointer, pointer = found.item.pointer }
+    pending.found_tick = self.tick
+    return nil, "DELIVERY_SETTLING"
+end
+
+-- A reward whose creature is gone from the game, and that is nowhere: its
+-- message ran when the creature was gone already, or it went with the
+-- creature. Chris, 2026-10-26: a reward whose carrier left no body falls to
+-- the ground at a party member's feet, with a message. So does this one, as
+-- where the carrier was gone before its delivery began
+-- (Adapter:_inspect_party_ground): CreateItem on the first member who can
+-- drop it, DropItem, then the drop is followed under the delivery's nonce
+-- (Adapter:_observe_ground). It waits while no member can.
+function Adapter:_lost_reward(pending, queue)
+    local p = pending.receipt.payload
+    local supported, reason, stack_limit = self:_supported(p)
+    if not supported then return nil, reason end
+    if container_add(queue) then return nil, "DELIVERY_SETTLING" end
+    local member = self:_dropper(p, queue)
+    if not member then return nil, "DELIVERY_SETTLING" end
+    -- The receipt waits for this one drop; an exception disables the adapter
+    -- and never repeats the action.
+    local created, message, pile = self:_create_drop(member.owner, pending.endpoint, member.items, member.empty,
+        p, stack_limit, queue)
+    if not created then
+        pending.complete = false
+        self.last_error = "CREATED_INSTANCE_UNPROVEN"
+        return nil, self.last_error
+    end
+    pending.ground, pending.queued, pending.created = true, message, created
+    pending.notice = party_notice(self.api, member.owner.object, p)
+    pending.pile_before = pile and self:_pile_items(pile, created.resref) or {}
+    pending.pile_pointer = pile and pile.pointer or nil
+    return nil, "DELIVERY_SETTLING"
+end
+
+function Adapter:_observe_found(pending, receipt)
+    if self.tick <= pending.found_tick then return nil, "DELIVERY_SETTLING" end
+    local pile, reason = self:_ground_pile(pending.found.id, pending.endpoint)
+    if not pile then return nil, reason end
+    if pile.pointer ~= pending.found.pile_pointer or
+        not holding(self:_pile_items(pile, pending.created.resref), pending.found.pointer, pending.created) then
+        return nil, "CREATED_INSTANCE_CHANGED"
+    end
+    return self:_on_ground(pending, receipt)
 end
 
 function Adapter:_held(request)
@@ -1836,7 +2174,9 @@ function Adapter:diagnostics()
             created_slot = self.pending.created_slot, queued = self.pending.queued,
             pinned_tick = self.pending.pinned_tick, empty = self.pending.empty,
             ground = self.pending.ground, pile_pointer = self.pending.pile_pointer,
-            notice = self.pending.notice }
+            notice = self.pending.notice, dead_tick = self.pending.dead_tick, found = self.pending.found,
+            gone_tick = self.pending.gone_tick, left = self.pending.left, scan_tick = self.pending.scan_tick,
+            lost_tick = self.pending.lost_tick }
     end
     for _, kind in ipairs({ "sources", "targets" }) do
         for id, endpoint in pairs(self[kind]) do

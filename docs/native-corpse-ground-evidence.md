@@ -84,13 +84,22 @@ With this change staged over CIR 1.0.2's runtime, in a BG1 campaign of the lab:
   payload. So no other queued add can reach that pile. The pile must be a type-4
   container of the area or not be listed yet. CIR binds the message to the
   delivery's nonce and sets the source's flags (identified, unstealable) on it.
-- **Observation** (`Adapter:_observe_ground`). While the message waits, a pile that
-  was there must keep its items. Once it has run, the pile with the message's target
-  id is in the area, and exactly one new item follows its earlier items, with the
-  reward's payload. Its add can identify a zero-lore item again, so CIR sets the
+- **Observation** (`Adapter:_observe_ground`). CIR reads only the items of the
+  reward's name in that pile: anything of any mod may lie on the ground (since 1.0.3).
+  While the message waits, nothing new of that name may come into a pile that was
+  there. Once it has run, the pile with the message's target id is in the area, and
+  the reward is its first item of that name that was not in it before, with the
+  reward's payload. The handler runs queued messages in order and an
+  add appends its item, so an add queued after the reward's lands after it, and an
+  item taken out of the pile meanwhile is not the reward (since 1.0.3; before, either
+  stopped the campaign). The engine may give a message's address to a new message as
+  soon as it has run, as in the death drops of the
+  [held-drop receipts](held-drop-receipts-20260926.md). Since 1.0.3 such a message
+  no longer stops the campaign either: only the reward's instance counts. Its add can
+  identify a zero-lore item again, so CIR sets the
   source's flags on that one instance, as for a container target. CIR pins that
-  instance and publishes the receipt one game tick later: `lootable = 1`, holder
-  `ground`, so the reward is confirmed.
+  instance and publishes the receipt one game tick later, as long as that instance is
+  still in the pile: `lootable = 1`, holder `ground`, so the reward is confirmed.
 
 Anything unexpected after an action stops the campaign without another attempt, as
 for every other delivery. A dead target's reward is never given to another
@@ -169,11 +178,97 @@ overlooks it.
 The fake-engine tests cover each of these cases (`tests/test_campaign_native_creature.py`,
 `tests/test_chapter3_runtime.py`, `tests/test_campaign_native_host.py`).
 
+## A creature that dies while its reward is on its way (since 1.0.3)
+
+`GiveItemCreate` queues the reward's message, and its `Run` puts the reward into the
+creature on the next handler update. CIR confirms it one game tick after it has seen
+the reward there. Until 1.0.3, CIR stopped for the rest of the adventure when anything
+happened to the creature in these one or two ticks: a message for it
+(`DELIVERY_QUEUE_CONFLICT`), its death (`TARGET_DIED_DURING_DELIVERY`) or another change
+of its items. A fight or a scene easily does that.
+
+Seen in the BG2:EE 2.7.3.0 lab on 2026-10-26, with an adventure started with 1.0.2:
+CIR gave uddoor05 at Adalon's exit (AR2402) its ring04, and Adalon's scene killed it
+one tick later, as the party arrived. CIR stopped with `DELIVERY_QUEUE_CONFLICT`. Nothing
+was lost: its death drop had put the ring into its pile once, among its other items in
+slot order (POTN31, MISC21, SCRL9D, RING04, STAF01). The corpse kept only its fist.
+
+Chris's rule applies (2026-10-22): a reward of a dead recipient goes to the ground, and
+who gets what stays as it is. Since 1.0.3 CIR follows the reward's own instance
+(`Adapter:_observe_creature`): the one new item of the reward's name in a backpack slot
+(see the [transport evidence](native-creature-transport-evidence.md#while-the-reward-is-on-its-way-2026-10-27)).
+Messages for the creature and changes of its other items do not stop the delivery. Nor
+does a new message at the address of the reward's message once that has run: a death
+drop's own adds may get it.
+
+- **Alive.** As before: pinned, then held one tick later.
+- **Dead, the reward out of its body after CIR saw it there.** Its death drop took it
+  along with the creature's other items, as in the lab. The reward reached its creature,
+  so it is held, as the reward of any creature that dies later.
+- **Dead, the reward in its body.** `Run` has no death check, so a message that runs on
+  a corpse puts its item there. The death drop takes it along if it comes later. Where
+  the drop came first, the reward would stay in the body for good, where nobody can take
+  it. CIR waits `DEATH_DROP_TICKS` (15 game ticks, one second) after it saw the death,
+  then drops the reward at the corpse itself, as above (`DropItem`, `Adapter:_drop`).
+  It waits longer while the corpse holds another item of the reward's name, which
+  `DropItem` could take instead, or while any container add is queued.
+- **Gone, its object still there.** A creature that is no longer found where it was
+  (it left the area alive, say) is followed by its object while that is still the same
+  one (`Adapter:_tracked`). CIR reads its items there and runs no action on it.
+- **Dead or gone, and CIR never saw the reward in it.** The message ran and the death
+  drop took the reward between two looks. It must be on the ground: the one new item
+  like it in a pile of the area (`Adapter:_find_dropped`). New means not in that pile
+  when the delivery began; CIR notes every pile of the area then. Like it means its
+  payload, or that payload identified again by the add, which CIR then sets back. While
+  such an item is on its way in a queued add, CIR waits. Found, it is pinned and
+  confirmed one tick later with holder `ground`. CIR reads only the items of the
+  reward's name in the piles, and looks at most once in `DROP_SCAN_TICKS` (5 game
+  ticks): each look reads every object of the area.
+- **Gone from the game, and the reward nowhere.** Its message ran when the creature was
+  gone (`Run` then finds no creature, and the item is lost), or the reward went with it.
+  The creature's object no longer exists, nothing like the reward has come to the
+  ground, and nothing like it is on its way there. `DEATH_DROP_TICKS` after CIR saw the
+  object gone, the reward falls at a party member's feet, with the message of a
+  [creature that left no body](#a-creature-that-left-no-body-since-103)
+  (`Adapter:_lost_reward`), whether or not its death counted.
+  - The member is chosen, and the drop is made and followed, as there.
+  - While no member can drop it, it waits. It has a settling time of its own, from when
+    CIR found it nowhere.
+  - Only the piles of the area the delivery began in can tell where the reward is, and
+    only while the party has not left that area: an area's objects leave memory with it
+    and come back as other objects. After the party left, it waits for the settling
+    time instead.
+- **Gone after CIR saw the reward in it.** Held, as for a corpse.
+- **A party member** (the recipient of a quest target) keeps its items when it dies:
+  its reward is confirmed in its backpack, alive or dead. One that leaves no body (a
+  chunked death, say) is followed as any creature above. So is a quest target's
+  recipient outside the party, one that a reward reply marked. One that died before the
+  delivery began still waits, as before.
+
+What still stops CIR, since it cannot be told apart or followed:
+
+- another item of the reward's name on its way to the creature;
+- a new item of the reward's name outside the backpack, two new ones, or one that a
+  stack merge changed (see the transport evidence);
+- a creature that carried an item just like the reward and died before CIR saw the
+  reward in it, or a second item like it that comes to the ground in the area at the
+  same moment (`DROPPED_REWARD_AMBIGUOUS`);
+- a reward that cannot be found or placed within the settling time
+  (`DELIVERY_SETTLING_TIMEOUT`): one whose creature or corpse is still there without
+  it, one after the party left the area, or a lost one that no party member can drop;
+- a creature target that joins the party or becomes a familiar in those ticks, or a
+  party that leaves a creature target's area then;
+- as for every delivery, a save made while a reward is on its way, once it is loaded
+  (`PENDING_RELOAD_UNPROVEN`). A delivery takes a fraction of a second. One whose
+  creature dies takes about a second, longer while no party member can drop a lost
+  reward.
+
 ## Not covered
 
 - A target removed from the game alive (`OWNER_MISSING`, death not counted), for
   example one that leaves the area for good or destroys itself, cannot be told apart
-  from one that has not appeared yet. Its reward still waits.
+  from one that has not appeared yet. Its reward still waits. While its reward is on
+  its way, such a target is followed as [above](#a-creature-that-dies-while-its-reward-is-on-its-way-since-103).
 - A missing creature whose script name another creature shares (the three Arans
   share `aran`) gets its reward at the party's feet once any of them has died, even
   if the place's own one only appears later. The game's own `Dead()` treats them as
@@ -184,12 +279,20 @@ The fake-engine tests cover each of these cases (`tests/test_campaign_native_cre
   - that the engine counts these vampires' deaths;
   - `CreateItem` and `DropItem` on a living party member;
   - the info popup during a fight.
-- A creature that dies in the one or two ticks between `GiveItemCreate` and its
-  receipt stops the campaign (`TARGET_DIED_DURING_DELIVERY`), as before.
-- A reused pile that changes in the one or two updates after the drop (an item
-  dropped there or taken out right then) stops the campaign: CIR could no longer
-  tell which item is the reward.
+- An item of the reward's name put into a reused pile while the reward's add still
+  waits, other than by a queued add, stops the campaign (`DELIVERY_EARLY_ITEM`): it
+  would come before the reward. So does the reward taken out of the pile within one
+  tick of its arrival, and
+  a new add of the very same item into that pile that gets the address of the reward's
+  add right after it ran: it looks like that add still waiting.
 - A corpse that keeps another item of the reward's name (an undroppable copy, say)
-  makes the reward wait for as long as it keeps it (`CORPSE_ITEM_AMBIGUOUS`).
+  makes the reward wait for as long as it keeps it (`CORPSE_ITEM_AMBIGUOUS`). For a
+  creature that died while its reward was on its way, it stops CIR once the settling
+  time is over.
+- Not yet checked in a 2.7.3.0 lab: when the engine's death drop runs after the death,
+  and so whether `DEATH_DROP_TICKS` lets it take a reward that reached the body.
+- Not yet checked in a 2.7.3.0 lab: a creature that leaves the game while its reward is
+  on its way. Whether its object goes at once (in a chunked death, a party member's
+  too), and whether its death drop's adds are queued within `DEATH_DROP_TICKS` of that.
 - Checked on EET only so far (its BG1 part); BG:EE and BG2:EE run the same engine
   version.
