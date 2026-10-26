@@ -282,6 +282,8 @@ def _compile(manifest: dict, world: dict, index: dict, items: dict,
                               for t in index["targets"].values() if t["kind"] == "container")
     actor_names = Counter((t["resource"], (actor_name(t) or "").lower())
                           for t in index["targets"].values() if t["kind"] == "actor")
+    actor_templates = Counter((t["resource"], (actor_name(t) or "").lower(), t["selector"].get("template_resource"))
+                              for t in index["targets"].values() if t["kind"] == "actor")
     container_items = Counter((s["owner"], s["item"]) for s in index["sources"].values()
                               if s["kind"] == "container")
     physical_items = Counter((s["resource"], s["kind"], s["item"]) for s in index["sources"].values())
@@ -790,7 +792,7 @@ def _compile(manifest: dict, world: dict, index: dict, items: dict,
                 return
             if target["kind"] in ("group", "creature-target"):
                 resources = selector["members"] if target["kind"] == "group" else [selector["creature_resource"]]
-                members = []
+                members, alike = [], False
                 for resource in resources:
                     if resource not in index["resources"] or resource in index["unreadable"]:
                         # Original group tables also filter absent CREs; one the
@@ -800,8 +802,19 @@ def _compile(manifest: dict, world: dict, index: dict, items: dict,
                     _require(not {DANGLING_INVENTORY, INVALID_INVENTORY, UNRESOLVED_STORAGE}.intersection(creature["concerns"]),
                              f"Original recipient has inventory diagnostics: {resource}")
                     name = _name(creature["selector"]["script_name"], identity)
+                    # The runtime finds a recipient by its script name in the area.
+                    # Without a name of its own (the engine's blank, None), or with
+                    # one that another actor there has too, it cannot be told apart
+                    # and would never get its reward (OWNER_AMBIGUOUS).
+                    key = (target["resource"], name.lower())
+                    own = actor_templates[key + (resource,)]
+                    if name.lower() == "none" or own > 1 or actor_names[key] > own:
+                        alike = True
+                        continue
                     use(resource)
                     members.append({"resref": resource[4:], "script_name": name})
+                _require(bool(members) or not alike,
+                         f"Native target needs a unique actor script name in its area: {identity}")
                 _require(bool(members), f"Original recipient has no installed member: {identity}")
                 endpoint = {"kind": "group" if target["kind"] == "group" else "creature",
                             "area": _area(target["resource"]), "identity": _digest({"target": selected})}

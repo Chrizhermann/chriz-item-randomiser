@@ -1,5 +1,6 @@
 """Portable original-table binding checks; no installed game is read."""
 
+from itertools import product
 from pathlib import Path
 import sys
 import unittest
@@ -311,6 +312,89 @@ class OriginalCatalogTests(unittest.TestCase):
                 self.assertEqual(row["target_ids"], [actor["id"] for actor in actors])
                 self.assertEqual(row["binding_problem"], problem)
 
+    def test_a_place_on_a_creature_that_can_go_missing_is_named(self):
+        # Arkushule leaves after the talk (lists/carriers/bg1.2da); Neira stays.
+        for game, prefix in (("bgee", "ar"), ("eet", "bg")):
+            with self.subTest(game=game):
+                arkush, neira = f"are:{prefix}3600", f"are:{prefix}4801"
+                world = {"resources": [{"id": name} for name in (arkush, neira, "cre:arkush", "cre:neira")],
+                         "sources": [],
+                         "targets": [_target(f"{arkush}/actor/0", arkush, "actor", "Arkushule", "cre:arkush"),
+                                     _target(f"{neira}/actor/0", neira, "actor", "Neira", "cre:neira")]}
+                result = resolve_template({"items": []}, world, "bg1-original", game=game)
+                places = {row["target"]: [] for row in result["targets"]}
+                for row in result["targets"]:
+                    places[row["target"]].append((row["target_ids"], row["binding_problem"]))
+                self.assertEqual(places["arkush.cre"], [([f"{arkush}/actor/0"], "creature-can-go-missing")] * 3)
+                self.assertEqual(places["neira.cre"], [([f"{neira}/actor/0"], None)])
+
+    def test_a_group_gives_no_reward_to_members_that_can_go_missing(self):
+        # Necre and Taibela (OBSHAL03, OBSHAL06) can be gone from AR0411's
+        # halflings; in BG1, three of the four red wizards of AR3000 and each
+        # of the four Zhentarim of AR0704 can be.
+        halflings = [f"cre:obshal0{number}" for number in (1, 2, 3, 5, 6, 7)]
+        world = {"resources": [{"id": name} for name in ["are:ar0411", *halflings]], "sources": [], "targets": []}
+        rows = [row for row in resolve_template({"items": []}, world, "bg2-original")["targets"]
+                if row["target"] == "ironpot.flg"]
+        self.assertEqual([row["id"] for row in rows],
+                         [f"bg2:base:target:{line}" for line in (36, 83, 101, 318)])
+        for row in rows:
+            self.assertEqual((row["members"], row["binding_problem"]),
+                             (["cre:obshal01", "cre:obshal02", "cre:obshal05", "cre:obshal07"],
+                              "group-requires-runtime-selection"))
+        creatures = [f"cre:{name}" for name in ("denak", "diana", "brenda", "william", "wheber", "oulam", "niemai")]
+        for game, prefix in (("bgee", "ar"), ("eet", "bg")):
+            with self.subTest(game=game):
+                areas = [f"are:{prefix}3000", f"are:{prefix}0704"]
+                world = {"resources": [{"id": name} for name in areas + creatures], "sources": [], "targets": []}
+                rows = resolve_template({"items": []}, world, "bg1-original", game=game)["targets"]
+                # The fourth red wizard, Lasal, has no file in an EE game: only
+                # members a game has can carry a reward.
+                self.assertEqual({(tuple(row["members"]), row["binding_problem"]) for row in rows
+                                  if row["target"] == "red.flg"},
+                                 {(("cre:lasal",), "creature-can-go-missing")})
+                self.assertEqual([(row["members"], row["binding_problem"]) for row in rows
+                                  if row["target"] == "zhents.flg"],
+                                 [([], "creature-can-go-missing")] * 3)
+                # Without any member's file the group is the export's to judge
+                # ("Original recipient has no installed member").
+                world = {"resources": [{"id": name} for name in areas], "sources": [], "targets": []}
+                rows = resolve_template({"items": []}, world, "bg1-original", game=game)["targets"]
+                self.assertEqual({(row["target"], tuple(row["members"]), row["binding_problem"]) for row in rows
+                                  if row["target"] in ("red.flg", "zhents.flg")},
+                                 {("red.flg", ("cre:lasal",), "group-requires-runtime-selection"),
+                                  ("zhents.flg", (), "group-requires-runtime-selection")})
+
+    def test_every_creature_that_can_go_missing_is_one_of_a_place_in_its_area(self):
+        # lists/carriers names creatures as Item Randomiser's tables do; a row
+        # that no place of a table or preset names would never take effect.
+        from flir_config.templates import PRESETS, ROOT, _table_rows
+
+        for campaign in ("bg1", "bg2"):
+            with self.subTest(campaign=campaign):
+                groups = {}
+                for line in (ROOT / "lists" / "groups" / f"{campaign}.2da").read_text(encoding="utf-8").splitlines():
+                    fields = line.lower().split()
+                    if len(fields) >= 2 and fields[0].endswith(".flg"):
+                        groups.setdefault(fields[0], set()).add(fields[1])
+                tables = [ROOT / "lists" / "locations" / family / f"{campaign}.2da" for family in ("base", "mode2")]
+                tables += [ROOT / "lists" / "presets" / preset / "locations" / family / f"{campaign}.2da"
+                           for preset, spec in PRESETS.items() if campaign in spec["campaigns"]
+                           for family in ("base", "mode2")]
+                creatures = set()
+                for table in tables:
+                    for _, fields in _table_rows(table, 6):
+                        target, area = fields[2].lower(), fields[3].lower()
+                        if target.endswith(".cre"):
+                            creatures.add((area, target[:-4]))
+                        creatures.update((area, member) for member in groups.get(target, ()))
+                rows = [fields for _, fields in _table_rows(ROOT / "lists" / "carriers" / f"{campaign}.2da", 4)]
+                self.assertTrue(rows)
+                self.assertEqual([(fields[0], fields[1]) for fields in rows
+                                  if (fields[0].lower(), fields[1].lower()) not in creatures], [])
+                self.assertEqual({fields[2] for fields in rows} - {"difficulty", "party", "transformed", "story",
+                                                                    "conversation", "reward", "flees"}, set())
+
     def test_quest_places_are_named_not_taken_for_containers(self):
         world = {"resources": [{"id": name} for name in ("are:ar1103", "are:ar2300", "are:ar1514",
                                                          "are:ar0801", "are:ar1100", "dlg:uhogre01")],
@@ -467,6 +551,29 @@ class OriginalCatalogTests(unittest.TestCase):
                             ([], (creature,), [], "area-resource-absent")):
                         row = place(targets, resources)
                         self.assertEqual((row["target_ids"], row["binding_problem"]), (ids, problem))
+
+    def test_adalons_place_is_her_creature_and_the_place_of_her_route(self):
+        """The base table's row 72 binds to UDSILVER in her lair as any
+        creature's place does; it is the place of her route (mode2_rewards:
+        adalon), whose reply hands its reward over when she takes her eggs.
+        It has no .fl handler, so it is no quest place."""
+        from flir_config.original_catalog import mode2_alias_spec, mode2_route_target
+        from flir_config.original_registrations import target_kind
+
+        dragon = _target("are:ar2102/actor/0", "are:ar2102", "actor", "Adalon", "cre:udsilver")
+        world = {"resources": [{"id": name} for name in ("are:ar2102", "cre:udsilver", "dlg:udsilver")],
+                 "sources": [], "targets": [dragon]}
+        for template, pools in product(("bg2-original", "eet-original"), ("standard", "extended")):
+            with self.subTest(template=template, pools=pools):
+                result = resolve_template({"items": []}, world, template, items=pools, targets=pools)
+                row = next(row for row in result["targets"] if row["id"] == "bg2:base:target:72")
+                self.assertEqual((row["target"], row["area"]), ("udsilver.cre", "ar2102"))
+                self.assertEqual((row["area_resource"], row["target_ids"], row["creature_resource"],
+                                  row["binding_problem"]), ("are:ar2102", [dragon["id"]], "cre:udsilver", None))
+                self.assertEqual(target_kind(row), "creature-target")
+                self.assertIsNone(mode2_alias_spec(row))
+                self.assertEqual(mode2_route_target(row), "bg2:base:target:72")
+        self.assertIsNone(mode2_route_target({**row, "id": "bg2:base:target:71"}))
 
     def test_a_presets_rows_of_an_original_reward_route_are_that_route(self):
         from flir_config.original_catalog import mode2_route_source, mode2_route_target

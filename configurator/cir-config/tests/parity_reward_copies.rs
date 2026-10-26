@@ -202,6 +202,11 @@ fn builders_match_the_reference_builders() {
     assert_eq!(recorded("prince"), files(&[("sahpr2", &prince_route), ("xnpcj", &prince_npc)]));
     let incremented = changed_reply(&prince_npc, "xnpcj", prince_state, |_| b"IncrementGlobal(\"villynatyjob\",\"GLOBAL\",1)\r\n".to_vec());
     assert_eq!(recorded("prince incremented"), files(&[("sahpr2", &prince_route), ("xnpcj", &incremented)]));
+    let (silver_route, silver_npc, silver_state) =
+        interject(&dialogue_fixture(&specs("dlg:udsilver")), "udsilver", 41, "xnpcj", true);
+    assert_eq!(recorded("adalon"), files(&[("udsilver", &silver_route), ("xnpcj", &silver_npc)]));
+    let replaced = changed_reply(&silver_npc, "xnpcj", silver_state, |_| b"TakeItemReplace(\"misc9u\",\"misc9t\",Player1)\r\n".to_vec());
+    assert_eq!(recorded("adalon replaced"), files(&[("udsilver", &silver_route), ("xnpcj", &replaced)]));
     let linked = link(&ogre(), "uhogre01", 3, "broken", 0);
     assert_eq!(recorded("broken"), files(&[("uhogre01", &linked), ("broken", &[b"DLG V1.0".as_slice(), &[0; 10]].concat())]));
     let chain_route = link(&ogre(), "uhogre01", 3, "xnpcj", 0);
@@ -380,6 +385,47 @@ fn a_reply_elsewhere_that_ends_the_princes_job_leaves_his_place_out() {
     }
     // The other routes find their copies as before; the prince's job is not theirs.
     assert!(analyse(&files(&[("sahpr2", &original)]), None).reasons.is_empty());
+}
+
+#[test]
+fn a_reply_elsewhere_that_takes_adalons_eggs_leaves_her_place_out() {
+    // Her place's route hands over what she carries where she takes her
+    // eggs. A copy of that reply in an interjection, or another reply there
+    // that takes them, would take them without her handing over. Her
+    // crossbow's route gates its copy there as usual.
+    let original = dialogue_fixture(&specs("dlg:udsilver"));
+    let (route, npc, state) = interject(&original, "udsilver", 41, "xnpcj", true);
+    let found = analyse(&files(&[("udsilver", &route), ("xnpcj", &npc)]), None);
+    assert_eq!(found.copies, copies(&[("udsilver", "dlg:xnpcj", state, &[0])]));
+    assert!(found.changed.is_empty());
+    assert_eq!(found.checked("adalon"), BTreeSet::from(["dlg:xnpcj".to_string()]));
+    let reason = format!(
+        "XNPCJ.DLG state {state} also takes MISC9T, which ends the job of UDSILVER.DLG's speaker, but there it would \
+         not hand over the reward it carries"
+    );
+    assert_eq!(found.reasons, reasons(&[("adalon", &reason)]));
+    assert_eq!(found.patches(&["udsilver"]).unwrap().keys().map(String::as_str).collect::<Vec<_>>(), ["dlg:xnpcj"]);
+    assert!(found.patches(&["adalon"]).unwrap().is_empty());
+    // In her own dialogue both routes are unchanged.
+    assert!(route_reasons("dlg:udsilver", &route, Naming::default()).unwrap().is_empty());
+    for (actions, reason) in [
+        (b"ActionOverride(\"udsilver\",TakePartyItem(\"MISC9T\"))\r\n".as_slice(), Some("also takes MISC9T")),
+        (b"TakeItemReplace(\"misc9u\",\"misc9t\",Player1)\r\n", Some("also takes MISC9T")),
+        (b"GiveItemCreate(\"misc9t\",Player1,0,0,0)\r\n", None),
+        (b"TakePartyItem(\"misc9t\"\r\n", Some("names MISC9T in actions that cannot be read")),
+    ] {
+        let changed = changed_reply(&npc, "xnpcj", state, |_| actions.to_vec());
+        let found = analyse(&files(&[("udsilver", &route), ("xnpcj", &changed)]), None);
+        assert!(found.copies.is_empty());
+        match reason {
+            None => assert!(found.reasons.is_empty(), "{:?}", found.reasons),
+            Some(reason) => {
+                assert_eq!(found.reasons.keys().map(String::as_str).collect::<Vec<_>>(), ["adalon"], "{reason}");
+                assert!(found.reasons["adalon"].contains(reason), "{reason}: {:?}", found.reasons);
+            }
+        }
+    }
+    assert!(analyse(&files(&[("udsilver", &original)]), None).reasons.is_empty());
 }
 
 #[test]

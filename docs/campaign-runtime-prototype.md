@@ -238,6 +238,20 @@ lootable. A dead party member or familiar, or a corpse that holds another item
 of the reward's name, still defers. See
 [corpse ground evidence](native-corpse-ground-evidence.md).
 
+A creature target that died and left no body gets its reward at the feet of a
+party member instead. Its body is gone when no sprite of its script name is in
+the visible area of its own, and the engine has counted its death in
+`SPRITE_IS_DEAD<script name>`. Bodhi's vampires leave none, so the chapter 3
+places need this. The member is the first in portrait order who is alive in that
+area, has an empty backpack slot, holds no item of the reward's name and has no
+message queued. `CreateItem` and `DropItem` run on that member, as at a corpse.
+The receipt carries a notice with the item's name and the member's. The host
+passes it to `deps.notice`, and M_FLPR shows it in the message log and, one at a
+time, in the info popup (in-game.tra @1707). While no member can drop it, the
+reward waits (`TARGET_INVENTORY_FULL`, `PARTY_ITEM_AMBIGUOUS`,
+`TARGET_QUEUE_BUSY`). A missing creature whose death the engine has not counted
+(not there yet, or gone alive) still waits with `OWNER_MISSING`.
+
 A creature target marked `corpse_only` receives only that way: while it lives,
 inspection reports `TARGET_ALIVE` and the reward waits. Such a target always has
 a `handover`: once its reward reply has set the event, the reward goes to the
@@ -245,6 +259,16 @@ payee the reply marked instead, alive or dead the creature. This is the Sahuagin
 king's own place, whichever of the two kings the area has, and Tolgerias's, who
 pays in his house while TOLGER2 fights in the planar sphere
 ([configurator](post-install-configurator.md)).
+
+A creature target with `inventory_reward` carries its reward in its backpack
+until its reward reply hands it over: the reply's `FLPR_Transfer` (with the
+place's row, and for a row of the base table its campaign and table) moves it
+to the one the creature talks to, and the dialogue waits until that one holds
+it. These are the carried rewards' places, the Sahuagin prince's and Adalon's.
+A revision exported before its place had that route (Adalon's in CIR 1.0.2) has
+a plain creature target there, whose reward is in the same backpack, so the
+reply hands it over too; any other kind of target there stops the host
+(`NATIVE_INVENTORY_REWARD_INVALID`).
 
 A `first-of` target is a list of groups of creatures, each a creature target of
 its own area under the place's identity; a group may be `corpse_only`. For each

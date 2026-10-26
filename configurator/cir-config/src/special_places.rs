@@ -148,6 +148,13 @@ const ROUTES: &[(&str, (&str, &str))] = &[
             "He carries it and hands it over when you help him take the throne; otherwise it lies at his corpse.",
         ),
     ),
+    (
+        "adalon",
+        (
+            "Adalon (Underdark)",
+            concat!("She carries it and hands it over when you return her eggs; ", carried!()),
+        ),
+    ),
 ];
 
 /// The golems' stand: picking a treasure up wakes two of them.

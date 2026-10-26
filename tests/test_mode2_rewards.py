@@ -108,7 +108,7 @@ REVIEWED_EET = {
     "dlg:udlesa": ("6c518483372ebe4073986dc2d41e4f7ae73a7bce133aab4289a29ef1be7c7e50",
                    "02e3d2ad97dad0ba3c42c82c11601c0d13373b733d8eafff1bab9799f484a8ab"),
     "dlg:udsilver": ("48f697db47942b74b4530975a5a4a46cac1a0cc850453b2b9d50ab173b01090c",
-                     "593cdf5a0313db7065fb2c1eaafc8efc309485d3b5a654c24b585f397e94917b"),
+                     "93263338ca5b92805b0cba76368d690d254767a74ef5cb4cce7459d32c6dcb50"),
     "dlg:udsvir03": ("5918919ea366eceb27f4096f025cde79c44310a9e57bcd49d123fdbb48352994",
                      "2003095671c146bb3d06b92fcc17df06dc18e5be4ab59a0e5d17bfd6db412e66"),
     "dlg:uhmay01": ("4213656595fdde6afeefee881597ddd62814ba886747bc4d60cfca25a2d852be",
@@ -154,6 +154,23 @@ TRGENI_DEPARTURE = (b'EEex_LuaAction("EEex_Action_QueueResponseStringOnAIBase('
                    b'[[DestroySelf()]],EEex_LuaAction_Object)")')
 
 
+# Adalon's hand-over of her place's reward (row 72 of BG2's base table).
+ADALON_TRANSFER = b'EEex_LuaAction("return(FLPR_Transfer(EEex_LuaAction_Object,72,2,1))")\r\n'
+# Her reward reply beside another mod's: one that takes the eggs through
+# ActionOverride in other letter case and spacing, one that takes them for
+# another item, then a state after them where she leaves; and replies that
+# name the eggs but do not take them from the party.
+ADALON_STATES = [
+    [('PartyHasItem("misc9t")', 'DisplayStringHead(Myself,1)', 1),
+     ("", 'GiveItemCreate("misc9t",Player1,0,0,0)\nDestroyItem("MISC9T")', None),
+     ("", 'TakePartyItem("misc9x")\nDropItem("misc9t",[10.10])', None)],
+    [("", 'TakePartyItem("misc9t")\nGiveItemCreate("xbow10",LastTalkedToBy,1,1,1)', 2)],
+    [("", 'ActionOverride( Player1 , TakePartyItemNum( "MISC9T" , 1 ) )', 3),
+     ("", 'TakeItemReplace("misc9u","misc9t",LastTalkedToBy)', None)],
+    [("", 'DestroySelf()', None)],
+]
+
+
 def trgeni_terminal_actions():
     actions = ['SetGlobal("zahraajob","GLOBAL",2)', 'SetGlobal("geniesgone","GLOBAL",1)',
                'AddexperienceParty(10000)']
@@ -190,6 +207,9 @@ def dialogue_fixture(specs):
                         # A reply that ends the speaker's job and gives nothing.
                         job, value = grant_spec["job_end"]
                         action += f'SetGlobal("{job}","GLOBAL",{value})\r\r\n'
+                    elif (state, ordinal) in grant_spec["branches"] and grant_spec.get("job_taken"):
+                        # A reply that takes what the speaker asked for.
+                        action += f'TakePartyItem("{grant_spec["job_taken"]}")\r\r\n'
                     elif (state, ordinal) in grant_spec["branches"]:
                         charges = ",".join(map(str, grant_spec["payload"]["charges"]))
                         if grant_spec["quest"] == "amcler01":
@@ -429,7 +449,7 @@ class Mode2RewardTests(unittest.TestCase):
         for resource in rewards.RESOURCE_REWARDS:
             if (resource.startswith("dlg:") and len(rewards.RESOURCE_REWARDS[resource]) == 1 and
                     resource not in rewards.TEXT_REFS and
-                    not rewards.REWARDS[rewards.RESOURCE_REWARDS[resource][0]].get("job_end")):
+                    not rewards._job(rewards.REWARDS[rewards.RESOURCE_REWARDS[resource][0]])):
                 name = resource[4:]
                 with self.subTest(resource=name):
                     original = dialogue_fixture(rewards.resource_specs(resource))
@@ -1065,6 +1085,176 @@ class Mode2RewardTests(unittest.TestCase):
                 with self.assertRaisesRegex(ProfileError, re.escape(reason)):
                     rewards.patch_reward("dlg:sahpr2", data)
                 self.assertFalse(rewards.own_patch("dlg:sahpr2", data))
+
+    def check_eggs(self, original, result, branches=None):
+        """Adalon's dialogue as her routes patch it: her crossbow's reply (row
+        44) is gated as check_dialogue checks it; each reply that takes her
+        eggs hands over what she carries for her place (row 72) before its own
+        actions, both variants of a gated one; her departures after them wait
+        for it; nothing else changes. Returns the replies that hand over and
+        those whose departure waits."""
+        crossbow = rewards._patch_dialogue(original, rewards.resource_specs("dlg:udsilver")[:1])
+        self.check_dialogue("udsilver", original, crossbow, branches=branches)
+        expected, found = (rewards._logical(data, "dlg:udsilver") for data in (crossbow, result))
+        self.assertEqual(found[:2], expected[:2])
+        self.assertEqual(len(found[2]), len(expected[2]))
+        handed, waiting = set(), set()
+        for index, (want, got) in enumerate(zip(expected[2], found[2])):
+            self.assertEqual((got[:2], len(got[2])), (want[:2], len(want[2])))
+            for ordinal, (row, new) in enumerate(zip(want[2], got[2])):
+                self.assertEqual(new[:4] + new[5:], row[:4] + row[5:])
+                actions = new[4]
+                if actions is not None and actions.startswith(ADALON_TRANSFER):
+                    handed.add((index, ordinal))
+                    actions = actions[len(ADALON_TRANSFER):]
+                if actions is not None and TRGENI_DEPARTURE in actions:
+                    waiting.add((index, ordinal))
+                    actions = actions.replace(TRGENI_DEPARTURE, b"DestroySelf()")
+                self.assertNotIn(b"FLPR_Transfer", actions or b"")
+                self.assertEqual(actions, row[4])
+        return handed, waiting
+
+    def test_adalon_hands_over_what_she_carries_when_she_takes_her_eggs(self):
+        # Item Randomiser gives the item of her place (row 72 of the base
+        # table) to UDSILVER.CRE, who is not meant to die: once the party
+        # brings back her eggs, she takes them, pays with her crossbow (the
+        # route of row 44) and leaves with what she carries. Here each reply
+        # of hers that takes the eggs hands the place's reward to the one she
+        # talks to, before its own actions.
+        self.assertEqual(rewards.RESOURCE_REWARDS["dlg:udsilver"], ("udsilver", "adalon"))
+        self.assertEqual(rewards.TARGET_REWARDS["bg2:base:target:72"], "adalon")
+        self.assertNotIn("adalon", rewards.SOURCE_REWARDS.values())
+        spec = rewards.target_spec("bg2:base:target:72")
+        self.assertEqual((spec["item"], spec["payload"], spec["source_ids"], spec["authored_source_ids"],
+                          spec["target_ids"], spec["job_taken"]),
+                         (None, None, (), (), ("bg2:base:target:72",), "misc9t"))
+        self.assertNotIn("job_end", spec)
+        self.assertEqual([spec[key] for key in ("selected_global", "consumed_global", "event_global",
+                                                "recipient_local")], [None] * 4)
+        self.assertEqual(spec["inventory_target"],
+                         {"area": "ar2102", "creature_resource": "cre:udsilver", "script_name": "udsilver"})
+        self.assertEqual((spec["recipient"], spec["grant_kind"]), ("LastTalkedToBy", "transfer"))
+        self.assertEqual(rewards.reward("adalon", **EET), spec)
+        self.assertEqual(rewards._callback(spec, True) + b"\r\n", ADALON_TRANSFER)
+        with self.assertRaisesRegex(ProfileError, "Unsupported extended reward route in UDSILVER.DLG: adalon"):
+            rewards.gives_reward("dlg:udsilver", dialogue_fixture(rewards.resource_specs("dlg:udsilver")), "adalon")
+        original = dialogue_fixture(rewards.resource_specs("dlg:udsilver"))
+        result = self.synthetic_patch("udsilver", original)
+        self.assertEqual(self.check_eggs(original, result), ({(41, 0), (41, 1)}, set()))
+        for beamdog in (True, False):
+            with self.subTest(beamdog=beamdog):
+                original = layout_dialogue("udsilver", ADALON_STATES, beamdog=beamdog)
+                result = rewards.patch_reward("dlg:udsilver", original)
+                self.assertEqual(rewards.patch_reward("dlg:udsilver", result), result)
+                self.assertFalse(rewards.own_patch("dlg:udsilver", original))
+                self.assertTrue(rewards.own_patch("dlg:udsilver", result))
+                self.assertTrue(rewards._examine("dlg:udsilver", result).current)
+                self.assertEqual(rewards.route_reasons("dlg:udsilver", original), {})
+                self.assertEqual(rewards.route_reasons("dlg:udsilver", result), {})
+                self.assertEqual(rewards._logical(rewards._examine("dlg:udsilver", result).original, "dlg:udsilver"),
+                                 rewards._logical(original, "dlg:udsilver"))
+                # Her own reward reply (both variants), the other mod's two,
+                # and her departure in the state after them.
+                self.assertEqual(self.check_eggs(original, result, branches=((1, 0),)),
+                                 ({(1, 0), (1, 1), (2, 0), (2, 1)}, {(3, 0)}))
+                # The transfer as the dialogue parser leaves it, in each Lua.
+                after = _Dialogue(result, "udsilver")
+                actions = after.actions[struct.unpack_from("<I", outgoing(after, 2)[1], 16)[0]]
+                chunks = re.findall(rb'EEex_LuaAction\("(return[^"\r\n]*)"\)', actions)
+                self.assertEqual(chunks, [b"return(FLPR_Transfer(EEex_LuaAction_Object,72,2,1))"])
+                for runtime in (Lua51, Lua53, LuaJIT):
+                    lua = runtime(unpack_returned_tuples=True)
+                    lua.execute('EEex_LuaAction_Object={};'
+                                'function FLPR_Transfer(actor,target,campaign,base) '
+                                'assert(actor==EEex_LuaAction_Object);seen={target,campaign,base};return -1 end')
+                    self.assertEqual(lua.execute(chunks[0].decode()), -1)
+                    self.assertEqual(list(lua.globals().seen.values()), [72, 2, 1])
+                # Changed copies of the patch: another place or table, a
+                # transfer moved into a reply that does not take the eggs or
+                # behind its actions, twice, or gone from one of the replies.
+                job = struct.unpack_from("<I", outgoing(after, 2)[0], 16)[0]
+                other = struct.unpack_from("<I", outgoing(after, 0)[0], 16)[0]
+                rest = after.actions[job][len(ADALON_TRANSFER):]
+                for label, changes in (
+                        ("another place", {job: after.actions[job].replace(b",72,2,1))", b",73,2,1))")}),
+                        ("another table", {job: after.actions[job].replace(b",72,2,1))", b",72))")}),
+                        ("other reply", {job: rest, other: ADALON_TRANSFER + after.actions[other]}),
+                        ("behind", {job: rest + b"\r\n" + ADALON_TRANSFER}),
+                        ("twice", {job: ADALON_TRANSFER + after.actions[job]}),
+                        ("gone", {job: rest})):
+                    with self.subTest(beamdog=beamdog, changed=label):
+                        tampered = _Dialogue(result, "udsilver")
+                        for index, text in changes.items():
+                            tampered.actions[index] = text
+                        tampered = tampered.render()
+                        with self.assertRaisesRegex(ProfileError,
+                                                    "carries a changed copy of the reward route's own patch"):
+                            rewards.patch_reward("dlg:udsilver", tampered)
+                        reasons = rewards.route_reasons("dlg:udsilver", tampered)
+                        self.assertEqual(sorted(reasons), ["adalon", "udsilver"])
+                        self.assertIn("changed copy", reasons["adalon"])
+        # A dialogue in which no reply takes her eggs has nothing to hand
+        # over; one whose actions name them unreadably cannot be told apart.
+        # Her crossbow's route stays as it is.
+        for changed, reason in (
+                ({2: [("", 'TakePartyItem("misc9x")', 3), ("", "NoAction()", None)]},
+                 None),
+                ({1: [("", 'GiveItemCreate("xbow10",LastTalkedToBy,1,1,1)', 2)],
+                  2: [("", 'TakePartyItem("misc9x")', 3), ("", "NoAction()", None)]},
+                 "UDSILVER.DLG has no reply that takes MISC9T"),
+                ({2: [("", 'TakePartyItem("misc9t"', 3), ("", "NoAction()", None)]},
+                 "UDSILVER.DLG state 2 names MISC9T in actions that cannot be read"),
+                ({2: [("", 'ActionOverride(Player1,TakePartyItem("misc9t")', 3), ("", "NoAction()", None)]},
+                 "UDSILVER.DLG state 2 names MISC9T in actions that cannot be read")):
+            with self.subTest(reason=reason):
+                variant = [changed.get(index, replies) for index, replies in enumerate(ADALON_STATES)]
+                data = layout_dialogue("udsilver", variant)
+                reasons = rewards.route_reasons("dlg:udsilver", data)
+                self.assertEqual(reasons, {} if reason is None else {"adalon": reason})
+                result = rewards.patch_reward("dlg:udsilver", data)
+                self.assertEqual(b"FLPR_Transfer" in result, reason is None)
+                self.assertTrue(rewards._examine("dlg:udsilver", result).current)
+
+    def test_an_earlier_versions_patch_of_adalons_dialogue_is_made_again_with_her_route(self):
+        # CIR 1.0.2 patched UDSILVER.DLG for her crossbow's route (row 44)
+        # only: her place had no route then. That patch is still ours, so the
+        # scan and Apply read her dialogue from it as it was, and Apply then
+        # patches it with both routes.
+        specs = rewards.resource_specs("dlg:udsilver")
+        for original in (dialogue_fixture(specs), layout_dialogue("udsilver", ADALON_STATES),
+                         layout_dialogue("udsilver", ADALON_STATES, beamdog=False)):
+            with self.subTest(size=len(original)):
+                now = rewards.patch_reward("dlg:udsilver", original)
+                for earlier in (rewards._patch_dialogue(original, specs[:1]),
+                                rewards._patch_dialogue(original, specs[1:])):
+                    examined = rewards._examine("dlg:udsilver", earlier)
+                    self.assertEqual((examined.own, examined.current), (True, False))
+                    self.assertEqual(rewards._logical(examined.original, "dlg:udsilver"),
+                                     rewards._logical(original, "dlg:udsilver"))
+                    self.assertTrue(rewards.own_patch("dlg:udsilver", earlier))
+                    self.assertEqual(rewards.route_reasons("dlg:udsilver", earlier), {})
+                    again = rewards.patch_reward("dlg:udsilver", earlier)
+                    self.assertEqual(rewards._logical(again, "dlg:udsilver"), rewards._logical(now, "dlg:udsilver"))
+                    self.assertTrue(rewards._examine("dlg:udsilver", again).current)
+                    self.assertEqual(rewards.patch_reward("dlg:udsilver", again), again)
+                # A changed copy of the earlier patch is not ours.
+                earlier = rewards._patch_dialogue(original, specs[:1])
+                tampered = earlier.replace(b'"FLPR_EA_EGGDEALIO","GLOBAL",1)', b'"FLPR_EA_EGGDEALIO","GLOBAL",2)', 1)
+                self.assertNotEqual(tampered, earlier)
+                with self.assertRaisesRegex(ProfileError, "carries a changed copy of the reward route's own patch"):
+                    rewards.patch_reward("dlg:udsilver", tampered)
+        # Where her crossbow's route cannot be prepared, the patch of her
+        # place's route alone is the current one.
+        variant = [replies for replies in ADALON_STATES]
+        variant[1] = [("", 'TakePartyItem("misc9t")', 2)]
+        original = layout_dialogue("udsilver", variant)
+        self.assertEqual(sorted(rewards.route_reasons("dlg:udsilver", original)), ["udsilver"])
+        result = rewards.patch_reward("dlg:udsilver", original)
+        self.assertIn(b"FLPR_Transfer", result)
+        self.assertNotIn(b"FLPR_QM2_44", result)
+        examined = rewards._examine("dlg:udsilver", result)
+        self.assertEqual((examined.own, examined.current), (True, True))
+        self.assertEqual(rewards.patch_reward("dlg:udsilver", result), result)
 
     def check_destroys(self, original, result, specs):
         """Each block that destroys routes' items becomes one block per
@@ -1806,6 +1996,9 @@ class Mode2RewardTests(unittest.TestCase):
                     self.check_pair(name, original, result)
                 elif name == "sahpr2":
                     self.assertEqual(self.check_job_end(original, result), {(5, 0)})
+                elif name == "udsilver":
+                    # Her reward reply takes the eggs; she leaves in another conversation.
+                    self.assertEqual(self.check_eggs(original, result), ({(41, 0), (41, 1)}, set()))
                 else:
                     self.check_dialogue(name, original, result, naming=EET)
 

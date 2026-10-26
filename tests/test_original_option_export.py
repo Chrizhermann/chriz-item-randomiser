@@ -236,6 +236,72 @@ class OriginalOptionExportTests(unittest.TestCase):
                 (f.override / name).write_bytes(bytes(prince) if name.endswith('.cre') else original)
                 f.refresh()
 
+    def test_adalons_place_exports_her_and_her_reply_that_hands_it_over(self):
+        """The base table's row 72: the silver dragon UDSILVER in AR2102
+        carries the reward, and her reply that takes her eggs hands it over,
+        whichever way her crossbow's route (row 44) goes."""
+        f = self.fixture()
+        self.dialogue_routes(f, ('dlg:hendak', 'dlg:lehtin'))
+        (f.override / 'sw1h03.itm').write_bytes((f.override / 'synth001.itm').read_bytes())
+        original = dialogue_fixture(mode2_rewards.resource_specs('dlg:udsilver'))
+        (f.override / 'udsilver.dlg').write_bytes(original)
+        dragon = bytearray(make_cre([]))
+        dragon[0x280:0x289] = b'udsilver\0'
+        (f.override / 'udsilver.cre').write_bytes(dragon)
+        (f.override / 'ar2102.are').write_bytes(make_are([], [], [('Adalon', 'UDSILVER')]))
+        f.refresh()
+        configuration = self.mode2_configuration(f, 'bg2:mode2:item:30', 'bg2:base:target:72')
+        # The sword is tier 3, her place tier 5: this fixture pairs them without tiers.
+        del configuration['plan']['randomization']
+        revision = write_campaign(configuration['profile'], f.catalog, f.world, configuration['plan'],
+                                  f.store)['revision']
+        manifest = read_campaign(f.store, revision)
+        self.assertEqual([(row['id'], row['record']['kind']) for row in manifest['targets']],
+                         [('original-target:bg2:base:target:72', 'creature-target')])
+        before = snapshot(f.game)
+        f.export(revision)
+        self.assertEqual(snapshot(f.game), before)
+        native = json.loads(Path(str(f.output / 'campaign-store/revisions' / revision) + '.native.json').read_text())
+        creature = next(row for row in f.world['targets'] if row['id'] == 'cre:udsilver')
+        self.assertEqual(native['targets']['original-target:bg2:base:target:72'], {
+            'kind': 'creature', 'area': 'AR2102', 'script_name': 'udsilver', 'inventory_reward': True,
+            'reward_resource': 'dlg:udsilver', 'identity': _digest({'target': manifest['targets'][0],
+                                                                    'creature': creature})})
+        for name in ('UDSILVER.DLG', 'UDSILVER.CRE', 'AR2102.ARE'):
+            self.assertIn(name, native['resource_hashes'])
+        changed = mode2_rewards.patch_reward('dlg:udsilver', original)
+        self.assertEqual((f.output / 'resource-overrides/UDSILVER.DLG').read_bytes(), changed)
+        # Both variants of her reward reply hand over first.
+        transfer = b'EEex_LuaAction("return(FLPR_Transfer(EEex_LuaAction_Object,72,2,1))")\r\n'
+        patched = _Dialogue(changed, 'udsilver')
+        first, count = struct.unpack_from('<II', patched.states[41], 4)
+        self.assertEqual(count, 2)
+        for row in patched.transitions[first:first + count]:
+            self.assertTrue(patched.actions[struct.unpack_from('<I', row, 16)[0]].startswith(transfer))
+        self.assertEqual(sum(action.count(b'FLPR_Transfer') for action in patched.actions), 2)
+        output = snapshot(f.output)
+        f.export(revision)
+        self.assertEqual(snapshot(f.output), output)
+        # A dragon with another script name is not the one the runtime finds;
+        # a dialogue in which no reply takes her eggs cannot hand anything over.
+        for name, data, reason in (
+                ('udsilver.cre', bytes(dragon).replace(b'udsilver\0', b'udsilvex\0', 1),
+                 'Original reward recipient changed: original-target:bg2:base:target:72'),
+                ('udsilver.dlg', original.replace(b'TakePartyItem("misc9t")', b'TakePartyItem("misc9x")'),
+                 'The extended reward route for ADALON cannot be used: UDSILVER.DLG has no reply that takes '
+                 'MISC9T')):
+            with self.subTest(changed=name):
+                (f.override / name).write_bytes(data)
+                f.refresh()
+                configuration = self.mode2_configuration(f, 'bg2:mode2:item:30', 'bg2:base:target:72')
+                del configuration['plan']['randomization']
+                revision = write_campaign(configuration['profile'], f.catalog, f.world, configuration['plan'],
+                                          f.store)['revision']
+                with self.assertRaisesRegex(ProfileError, re.escape(reason)):
+                    f.export(revision)
+                (f.override / name).write_bytes(bytes(dragon) if name.endswith('.cre') else original)
+                f.refresh()
+
     def test_temple_reward_exports_auxiliary_creature_without_another_unit(self):
         # Yarryl's club as the game has it, and as another mod may keep it:
         # after other items, flagged, carried twice. Without it, there is

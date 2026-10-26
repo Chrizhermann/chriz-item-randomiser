@@ -88,6 +88,7 @@ ROUTES = {
     "sahpr2b": ("Prince Villynaty, king-or-prince place (Sahuagin city)",
                 "He carries it and hands it over when you help him take the throne; "
                 "otherwise it lies at his corpse."),
+    "adalon": ("Adalon (Underdark)", "She carries it and hands it over when you return her eggs; " + _CARRIED),
 }
 # The container quests' places (container_rewards.TARGETS).
 _GOLEMS = "It lies on the golems' stand; picking it up brings two of the golems to life."

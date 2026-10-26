@@ -11,7 +11,7 @@ use crate::duplicates::{expected_copies, holdings, reviewed};
 use crate::error::{Error, ErrorKind, Result};
 use crate::game_names::{convert_resource, eet_names, EetNames};
 use crate::json::{Dict, Value};
-use crate::original_catalog::{resolve_template, NO_ROUTE, UNREADABLE_PLACE_PROBLEMS};
+use crate::original_catalog::{resolve_template, CARRIER_CAN_GO_MISSING, NO_ROUTE, UNREADABLE_PLACE_PROBLEMS};
 use crate::original_registrations::{
     is_unreferenced_creature_source, source_lookup, target_record, SourceLookup, PAYLOAD_FIELDS, SHIPPED_REPLACEMENT,
     SOURCE_FIELDS, TARGET_FIELDS,
@@ -311,10 +311,13 @@ fn absent_mod_note(module: &str, count: usize, catalog_items: &ItemIndex) -> Str
     )
 }
 
-/// What the left-out rows are: those this game cannot use, then those whose
-/// quest CIR cannot change yet, then what becomes of a left-out reward.
+/// What the left-out rows are: those this game cannot use, the places on
+/// creatures that can go missing, those whose quest CIR cannot change yet,
+/// then what becomes of a left-out reward.
 fn not_used_notes(rows: &[Value]) -> Vec<String> {
-    let (waiting, unusable): (Vec<&Value>, Vec<&Value>) = rows.iter().partition(|row| s(row, "reason") == NO_ROUTE);
+    let (waiting, others): (Vec<&Value>, Vec<&Value>) = rows.iter().partition(|row| s(row, "reason") == NO_ROUTE);
+    let (missing, unusable): (Vec<&Value>, Vec<&Value>) =
+        others.into_iter().partition(|row| s(row, "reason") == CARRIER_CAN_GO_MISSING);
     let it_is = |rows: &[&Value]| if rows.len() == 1 { "it is" } else { "they are" };
     let mut notes = Vec::new();
     if !unusable.is_empty() {
@@ -322,6 +325,14 @@ fn not_used_notes(rows: &[Value]) -> Vec<String> {
             "{} from the lists cannot be used in this game, so {} left out",
             counted(&unusable),
             it_is(&unusable)
+        ));
+    }
+    if !missing.is_empty() {
+        notes.push(format!(
+            "{} from the lists {} that may leave, vanish or never appear, so {} left out",
+            counted(&missing),
+            if missing.len() == 1 { "is on a creature" } else { "are on creatures" },
+            it_is(&missing)
         ));
     }
     if !waiting.is_empty() {
@@ -700,7 +711,9 @@ fn build_from(
         } else if !index.resources.contains(s(row, "area_resource")) {
             leave_out(&mut not_used, row, "place", &Value::from("area-resource-absent"))?;
         } else if row.at("binding_problem")?.as_str().is_some_and(|problem| {
-            UNREADABLE_PLACE_PROBLEMS.contains(&problem) || problem == "creature-never-appears"
+            UNREADABLE_PLACE_PROBLEMS.contains(&problem)
+                || problem == "creature-never-appears"
+                || problem == CARRIER_CAN_GO_MISSING
         }) {
             leave_out(&mut not_used, row, "place", row.at("binding_problem")?)?;
         } else {

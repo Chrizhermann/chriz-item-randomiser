@@ -19,13 +19,19 @@ Native.BACKPACK_FIRST, Native.BACKPACK_LAST = 18, 33
 -- none free it queues a ground pile instead (see the transport evidence).
 Native.CREATE_FIRST, Native.CREATE_LAST = 15, 34
 local FAMILIAR_ALLEGIANCE = 3
+-- The engine counts each death of a creature in GLOBAL SPRITE_IS_DEAD<script
+-- name>, the variable Dead() reads; the games' own scripts read it too (BG2:EE
+-- AR0607.BCS: SPRITE_IS_DEADQuayle). A variable name holds 32 characters.
+local DEATH_VARIABLE, VARIABLE_LENGTH = "SPRITE_IS_DEAD", 32
 local Adapter = {}
 Adapter.__index = Adapter
 local lists = { "m_lVertSort", "m_lVertSortBack", "m_lVertSortFlight", "m_lVertSortUnder" }
 local required = { "EEex_Area_GetVisible", "EEex_GameObject_Get", "EEex_GameObject_CastUserType",
     "EEex_GameObject_IsSprite", "EEex_Utility_IterateCPtrList", "EEex_UDToPtr",
     "EEex_Resource_Demand", "EEex_Action_ExecuteResponseStringOnAIBaseInstantly", "EEex_CastUD" }
-local creature_required = { "EEex_Sprite_GetPortraitIndex" }
+-- The last three serve a reward whose creature left no body (Adapter:_inspect_party_ground).
+local creature_required = { "EEex_Sprite_GetPortraitIndex", "EEex_GameState_GetGlobalInt",
+    "EEex_Sprite_GetInPortrait", "EEex_Sprite_GetName" }
 
 local function integer(value, lo, hi)
     return type(value) == "number" and value == math.floor(value) and value >= lo and value <= hi
@@ -88,6 +94,24 @@ local function pointer(api, object)
     local address = api.EEex_UDToPtr(object)
     assert(address ~= nil and address ~= 0, "NATIVE_POINTER_UNAVAILABLE")
     return tostring(address)
+end
+-- The object ids in an area's lists.
+local function area_ids(api, area)
+    local ids = {}
+    for _, field in ipairs(lists) do
+        assert(area[field], "NATIVE_AREA_LIST_MISSING")
+        api.EEex_Utility_IterateCPtrList(area[field], function(id) ids[id] = true end)
+    end
+    return ids
+end
+-- The game text of the name the player sees on an item, by its flags
+-- (identified or not), or nil.
+local function shown_name(api, item)
+    local header = api.EEex_Resource_Demand(item.resref, "ITM")
+    for _, field in ipairs(item.flags % 2 == 1 and { "identifiedName", "genericName" } or { "genericName" }) do
+        local ref = header and header[field]
+        if integer(ref, 1, 2147483646) then return ref end
+    end
 end
 
 function Native.new(api, fixture, seed, reward_payload)
@@ -767,7 +791,11 @@ function Adapter:transfer_inventory_reward(speaker, target_id, assignments, phas
     target_id=self.route_targets[target_id] or target_id
     local endpoint=self.targets[target_id]
     if not endpoint then return -1 end -- Target excluded from this campaign.
-    assert(endpoint.inventory_reward, 'NATIVE_INVENTORY_REWARD_INVALID')
+    -- A revision exported before its place had this route (Adalon's place in
+    -- CIR 1.0.2) has a plain creature there, whose rewards are in the same
+    -- backpack: the reply hands them over too.
+    assert(endpoint.inventory_reward or endpoint.kind=='creature' and endpoint.quest_event==nil and
+        not endpoint.corpse_only and endpoint.handover==nil, 'NATIVE_INVENTORY_REWARD_INVALID')
     local rewards={}
     for _,assignment in ipairs(assignments) do
         if assignment.target_id==target_id then
@@ -1070,6 +1098,9 @@ function Adapter:_inspect(endpoint, id, source, source_id, unit)
         if reason == "TARGET_NOT_ALIVE" and corpse and source then
             return self:_inspect_ground(endpoint, id, self:_reward(source_id, unit), corpse)
         end
+        if reason == "OWNER_MISSING" and source and self:_vanished(endpoint) then
+            return self:_inspect_party_ground(endpoint, id, self:_reward(source_id, unit))
+        end
         return nil, reason
     end
     -- A place that receives only at its creature's corpse waits while it lives.
@@ -1129,6 +1160,75 @@ function Adapter:_inspect_ground(endpoint, id, reward, corpse)
     self.reservations[endpoint.identity] = { owner = corpse, items = items, kind = "deliver", id = id,
         ground = true, empty = empty, reward = reward, endpoint = endpoint }
     return { identity = endpoint.identity, target_id = id, accepts = 1, ground = true }
+end
+
+-- A creature target that died and left no body: no sprite of its script name
+-- in the visible area of its own (Adapter:_resolve), and the engine counted
+-- its death. Bodhi's vampires turn into mist as they die (Die(), then op151
+-- replaces the body); a chunked death leaves no body either.
+function Adapter:_vanished(endpoint)
+    -- A quest target's recipient has no script name of its own.
+    if endpoint.kind ~= "creature" or not endpoint.script_name then return false end
+    local deaths = self.api.EEex_GameState_GetGlobalInt((DEATH_VARIABLE .. endpoint.script_name):sub(1, VARIABLE_LENGTH))
+    return integer(deaths, 1, 2147483647)
+end
+
+-- Such a creature can never hold its reward either. Chris, 2026-10-26:
+-- "Einfach das Item auf dem Boden droppen mit einer Nachricht", so clear that
+-- nobody overlooks it. It falls to the ground at the feet of a party member in
+-- the visible area, the first in portrait order who can drop it, as at a
+-- corpse: CreateItem on a party member stores it in the first empty backpack
+-- slot at once (docs/native-creature-transport-evidence.md), DropItem moves it
+-- into a pile at the member. The receipt names the item and the member for
+-- the player (FLPRHost's notice). While no member can drop it, it waits.
+function Adapter:_inspect_party_ground(endpoint, id, reward)
+    local api = self.api
+    local supported, reason = self:_supported(reward)
+    if not supported then return nil, reason end
+    local queue = self:_queue()
+    -- DropItem may reuse a pile near the member, as near a corpse.
+    if container_add(queue) then return nil, "TARGET_QUEUE_BUSY" end
+    local present, waiting = area_ids(api, api.EEex_Area_GetVisible()), nil
+    for portrait = 0, 5 do
+        local member = api.EEex_Sprite_GetInPortrait(portrait)
+        if member and present[member.m_id] and api.EEex_GameObject_IsSprite(member, false) == true then
+            local owner = { object = member, id = member.m_id, pointer = pointer(api, member) }
+            local items, named = self:_items(owner, true), false
+            for _, item in ipairs(items) do
+                if item.payload.resref == reward.resref then named = true end
+            end
+            local empty = empty_backpack(items)
+            -- DropItem takes an item by name, so the member must hold no other copy.
+            if named then waiting = waiting or "PARTY_ITEM_AMBIGUOUS"
+            elseif #empty == 0 then waiting = waiting or "TARGET_INVENTORY_FULL"
+            elseif creature_conflict(queue, owner.id, self.source_resrefs) then waiting = waiting or "TARGET_QUEUE_BUSY"
+            else
+                self.reservations[endpoint.identity] = { owner = owner, items = items, kind = "deliver", id = id,
+                    ground = true, portrait = portrait, empty = empty, reward = reward, endpoint = endpoint }
+                return { identity = endpoint.identity, target_id = id, accepts = 1, ground = true }
+            end
+        end
+    end
+    return nil, waiting or "OWNER_MISSING"
+end
+
+-- The corpse or party member a ground delivery's reservation names, as long
+-- as it still is: the same corpse, or the same living member in the visible
+-- area while the target's creature is still gone without a body.
+function Adapter:_drop_owner(endpoint, reserved)
+    local api = self.api
+    local owner, reason, corpse = self:_resolve(endpoint, "target")
+    if not reserved.portrait then
+        if owner or reason ~= "TARGET_NOT_ALIVE" or not corpse or corpse.id ~= reserved.owner.id or
+            corpse.pointer ~= reserved.owner.pointer then return nil end
+        return corpse
+    end
+    if owner or reason ~= "OWNER_MISSING" or not self:_vanished(endpoint) then return nil end
+    local member = api.EEex_Sprite_GetInPortrait(reserved.portrait)
+    if not member or member.m_id ~= reserved.owner.id or pointer(api, member) ~= reserved.owner.pointer or
+        api.EEex_GameObject_IsSprite(member, false) ~= true or
+        not area_ids(api, api.EEex_Area_GetVisible())[member.m_id] then return nil end
+    return { object = member, id = member.m_id, pointer = reserved.owner.pointer }
 end
 
 -- The ground pile with this object id in the visible area of the endpoint, or
@@ -1324,32 +1424,38 @@ function Adapter:execute(command)
     return true
 end
 
--- The reward of a dead creature target (Adapter:_inspect_ground). CreateItem
--- stores it in one empty slot of the corpse at once; DropItem then takes that
+-- The reward of a dead creature target, at its corpse (Adapter:_inspect_ground)
+-- or at a party member's feet (Adapter:_inspect_party_ground). CreateItem
+-- stores it in one empty slot of that sprite at once; DropItem then takes that
 -- instance out again and queues one container add into a ground pile at the
--- corpse, a pile it reuses or creates. Bind that message to this nonce, as
+-- sprite, a pile it reuses or creates. Bind that message to this nonce, as
 -- for a container target; later observations find the pile by its id.
 function Adapter:_execute_ground(command, reserved, endpoint, p)
     local api = self.api
-    local owner, reason, corpse = self:_resolve(endpoint, "target")
-    if owner or reason ~= "TARGET_NOT_ALIVE" or not corpse or corpse.id ~= reserved.owner.id or
-        corpse.pointer ~= reserved.owner.pointer then return nil, "OWNER_CHANGED" end
+    local owner = self:_drop_owner(endpoint, reserved)
+    if not owner then return nil, "OWNER_CHANGED" end
     if not same(p, reserved.reward) then return nil, "RESERVATION_MISMATCH" end
-    local before = self:_items(corpse, true)
+    local before = self:_items(owner, true)
     if not unchanged(reserved.items, before) then return nil, "INVENTORY_CHANGED" end
-    local supported, stack_limit; supported, reason, stack_limit = self:_supported(p)
+    local supported, reason, stack_limit = self:_supported(p)
     if not supported then return nil, reason end
     local before_queue = self:_queue()
-    if creature_conflict(before_queue, corpse.id, self.source_resrefs) or container_add(before_queue) then
+    if creature_conflict(before_queue, owner.id, self.source_resrefs) or container_add(before_queue) then
         return nil, "DELIVERY_QUEUE_NOT_EXCLUSIVE"
+    end
+    -- What the player is told of a reward at a party member's feet.
+    local notice
+    if reserved.portrait then
+        local member = api.EEex_Sprite_GetName(owner.object)
+        notice = { item = shown_name(api, p), resref = p.resref, member = type(member) == "string" and member or nil }
     end
     local tried = self.attempted[command.session] or {}
     self.attempted[command.session] = tried; tried[command.nonce] = true
     local receipt = { session = command.session, kind = command.kind, index = command.index,
         nonce = command.nonce, revision = command.revision, identity = command.identity,
         source_id = command.source_id, target_id = command.target_id, payload = payload(p) }
-    self.pending = { receipt = receipt, endpoint = endpoint, kind = "target", owner = corpse,
-        before = before, tick = self.tick, complete = false, ground = true }
+    self.pending = { receipt = receipt, endpoint = endpoint, kind = "target", owner = owner,
+        before = before, tick = self.tick, complete = false, ground = true, notice = notice }
     self.reservations[command.identity] = nil
     local function unproven()
         self.last_error = "CREATED_INSTANCE_UNPROVEN"; return nil, self.last_error
@@ -1357,8 +1463,8 @@ function Adapter:_execute_ground(command, reserved, endpoint, p)
     -- No item iterator is active here. Pending/attempted are published first;
     -- an exception must disable this adapter, never cause a blind action retry.
     api.EEex_Action_ExecuteResponseStringOnAIBaseInstantly(
-        string.format('CreateItem("%s",%d,%d,%d)', p.resref, p.charges[1], p.charges[2], p.charges[3]), corpse.object)
-    local placed = placed_item(before, self:_items(corpse, true), reserved.empty)
+        string.format('CreateItem("%s",%d,%d,%d)', p.resref, p.charges[1], p.charges[2], p.charges[3]), owner.object)
+    local placed = placed_item(before, self:_items(owner, true), reserved.empty)
     local created = placed and created_payload(placed.payload, p, stack_limit)
     local queued_now = self:_queue()
     for _, message in ipairs(queued_now.additions) do
@@ -1366,16 +1472,16 @@ function Adapter:_execute_ground(command, reserved, endpoint, p)
     end
     if not created then return unproven() end
     api.EEex_Action_ExecuteResponseStringOnAIBaseInstantly(string.format('DropItem("%s",[-1.-1])', p.resref),
-        corpse.object)
+        owner.object)
     local after_queue, added = self:_queue(), {}
     for _, message in ipairs(after_queue.additions) do
         if not before_queue.addresses[message.pointer] then added[#added + 1] = message end
     end
     local message = #added == 1 and added[1] or nil
-    -- The message carries the corpse's instance as it was; nothing else in the
-    -- corpse may have changed. No other queued add can reach that pile: none
+    -- The message carries the sprite's instance as it was; nothing else in the
+    -- sprite may have changed. No other queued add can reach that pile: none
     -- was queued before (container_add), and this is the only new one.
-    if not message or not unchanged(before, self:_items(corpse, true)) or message.form ~= "container" or
+    if not message or not unchanged(before, self:_items(owner, true)) or message.form ~= "container" or
         message.slot ~= 32767 or message.target ~= message.source or
         not same(message.payload, placed.payload) then return unproven() end
     local pile, missing = self:_ground_pile(message.target, endpoint)
@@ -1549,8 +1655,10 @@ function Adapter:_observe_ground(pending, receipt)
         not same(placed.payload, pending.created) then return nil, "CREATED_INSTANCE_CHANGED" end
     local supported; supported, reason = self:_supported(receipt.payload)
     if not supported then return nil, reason end
-    -- On the ground where the dead target lies; anyone may pick it up.
+    -- On the ground where the dead target lies, or at a party member's feet;
+    -- anyone may pick it up.
     receipt.created, receipt.nonce_bound_instance, receipt.lootable, receipt.holder = 1, 1, 1, "ground"
+    receipt.notice = pending.notice
     self.pending = nil
     return receipt
 end
@@ -1727,7 +1835,8 @@ function Adapter:diagnostics()
             complete = self.pending.complete, created_pointer = self.pending.created_pointer,
             created_slot = self.pending.created_slot, queued = self.pending.queued,
             pinned_tick = self.pending.pinned_tick, empty = self.pending.empty,
-            ground = self.pending.ground, pile_pointer = self.pending.pile_pointer }
+            ground = self.pending.ground, pile_pointer = self.pending.pile_pointer,
+            notice = self.pending.notice }
     end
     for _, kind in ipairs({ "sources", "targets" }) do
         for id, endpoint in pairs(self[kind]) do

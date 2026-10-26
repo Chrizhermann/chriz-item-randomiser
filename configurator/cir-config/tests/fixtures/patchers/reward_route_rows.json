@@ -40167,6 +40167,35 @@
    "result": null
   },
   {
+   "name": "mode2_route_target bg2:base:target:72",
+   "call": "original_catalog.mode2_route_target",
+   "args": {
+    "row": {
+     "id": "bg2:base:target:72",
+     "campaign": "bg2",
+     "family": "base",
+     "source_ref": "lists/locations/base/bg2.2da:72",
+     "location": "5",
+     "tier": "4",
+     "target": "udsilver.cre",
+     "area": "ar2102",
+     "ident": "x",
+     "chance": 100,
+     "occurrence": 1,
+     "option_gate": null,
+     "enabled": true,
+     "endpoint_id": "ep-bg2-3506ad18bc7b",
+     "endpoint_kind": "creature",
+     "endpoint_source_ref": "lists/endpoints/base/bg2.2da:70",
+     "requires_game_conversion": false,
+     "binding": "unbound",
+     "runtime_support": "needs-binding"
+    }
+   },
+   "independent": true,
+   "result": "bg2:base:target:72"
+  },
+  {
    "name": "mode2_route_target bg2:mode2:target:10",
    "call": "original_catalog.mode2_route_target",
    "args": {

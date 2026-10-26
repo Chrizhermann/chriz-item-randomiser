@@ -27,11 +27,11 @@ use cir_config::quest_rewards::{blocks, global_guard};
 use cir_config::script_text::{block_actions, block_parts, script_blocks};
 use common::builders::{contains, count, index, make_tlk, outgoing, replace, sha, tlk_text, u32_at};
 use common::mode2::{
-    action, action_with, alternatives, block, book_block, book_fixture, book_gifts, branches, check_dialogue, check_job_end,
-    check_pair, check_text_graph, dialogue_fixture, handover_line, has_ring, king_destroys, king_paid, layout_dialogue,
-    no_action, obj, ring_destroyed, ring_gone, route_guard, script_fixture, specs, target_number, text, text_variant,
-    tolgerias_fixture, treasury_fixture, trigger, well_reward, with_actions, LayoutReply, PRINCE_TRANSFER,
-    PRINCE_TRANSFER_59, PRINCE_TRANSFER_60, TRGENI_DEPARTURE,
+    action, action_with, alternatives, block, book_block, book_fixture, book_gifts, branches, check_dialogue, check_eggs,
+    check_job_end, check_pair, check_text_graph, dialogue_fixture, handover_line, has_ring, king_destroys, king_paid,
+    layout_dialogue, logical, no_action, obj, ring_destroyed, ring_gone, route_guard, script_fixture, specs, target_number,
+    text, text_variant, tolgerias_fixture, treasury_fixture, trigger, well_reward, with_actions, LayoutReply,
+    ADALON_TRANSFER, PRINCE_TRANSFER, PRINCE_TRANSFER_59, PRINCE_TRANSFER_60, TRGENI_DEPARTURE,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
@@ -342,6 +342,7 @@ fn builders_match_the_reference_builders() {
     }
     for (beamdog, label) in [(true, "beamdog"), (false, "weidu")] {
         assert_eq!(fixture.input(&format!("patch_reward sahpr2 {label}"), "data"), layout_dialogue("sahpr2", &prince_states(), beamdog));
+        assert_eq!(fixture.input(&format!("patch_reward udsilver {label}"), "data"), layout_dialogue("udsilver", &adalon_states(), beamdog));
     }
     assert_eq!(fixture.input("patch_reward script layout lf", "data"), well_layout());
     assert_eq!(fixture.input("patch_reward script layout crlf", "data"), crlf(well_layout()));
@@ -388,14 +389,17 @@ fn synthetic_patch(name: &str, original: &[u8]) -> Vec<u8> {
 
 #[test]
 fn dialogue_both_campaign_routes_keep_exact_recipient_and_surrounding_actions() {
-    // Two routes of one dialogue have their own tests (check_pair), so has
-    // the route without a grant (check_job_end).
+    // Two routes of one dialogue have their own tests (check_pair), so have
+    // the routes without a grant (check_job_end, check_eggs).
     for (resource, keys) in resource_rewards().iter() {
         let single = keys.as_list().is_some_and(|keys| keys.len() == 1);
-        let job_end = keys.as_list().is_some_and(|keys| {
-            keys.iter().any(|key| reward(&str_value(key)).get("job_end").is_some_and(Value::truthy))
+        let job = keys.as_list().is_some_and(|keys| {
+            keys.iter().any(|key| {
+                let spec = reward(&str_value(key));
+                ["job_end", "job_taken"].iter().any(|field| spec.get(field).is_some_and(Value::truthy))
+            })
         });
-        if resource.starts_with("dlg:") && single && text_refs(resource).is_none() && !job_end {
+        if resource.starts_with("dlg:") && single && text_refs(resource).is_none() && !job {
             let name = &resource[4..];
             let original = dialogue_fixture(&specs(resource));
             check_dialogue(name, &original, &synthetic_patch(name, &original), None, None, Naming::default());
@@ -978,6 +982,181 @@ fn the_princes_reward_reply_hands_over_what_he_carries() {
         assert_profile(patch_reward("dlg:sahpr2", &data, None, None, Naming::default()).unwrap_err(), reason);
         assert!(!own_patch("dlg:sahpr2", &data, Naming::default()).unwrap());
     }
+}
+
+/// Adalon's reward reply beside another mod's: one that takes the eggs
+/// through ActionOverride in other letter case and spacing, one that takes
+/// them for another item, then a state after them where she leaves; and
+/// replies that name the eggs but do not take them from the party.
+fn adalon_states() -> Vec<Vec<LayoutReply<'static>>> {
+    vec![
+        vec![
+            ("PartyHasItem(\"misc9t\")", "DisplayStringHead(Myself,1)", Some(1)),
+            ("", "GiveItemCreate(\"misc9t\",Player1,0,0,0)\nDestroyItem(\"MISC9T\")", None),
+            ("", "TakePartyItem(\"misc9x\")\nDropItem(\"misc9t\",[10.10])", None),
+        ],
+        vec![("", "TakePartyItem(\"misc9t\")\nGiveItemCreate(\"xbow10\",LastTalkedToBy,1,1,1)", Some(2))],
+        vec![
+            ("", "ActionOverride( Player1 , TakePartyItemNum( \"MISC9T\" , 1 ) )", Some(3)),
+            ("", "TakeItemReplace(\"misc9u\",\"misc9t\",LastTalkedToBy)", None),
+        ],
+        vec![("", "DestroySelf()", None)],
+    ]
+}
+
+#[test]
+fn adalon_hands_over_what_she_carries_when_she_takes_her_eggs() {
+    // Item Randomiser gives the item of her place (row 72 of the base
+    // table) to UDSILVER.CRE, who is not meant to die: once the party brings
+    // back her eggs, she takes them, pays with her crossbow (the route of
+    // row 44) and leaves with what she carries. Here each reply of hers that
+    // takes the eggs hands the place's reward to the one she talks to,
+    // before its own actions.
+    assert!(resource_rewards().get("dlg:udsilver").unwrap().py_eq(&list(&["udsilver", "adalon"])));
+    assert_eq!(target_rewards().get("bg2:base:target:72").and_then(Value::as_str), Some("adalon"));
+    assert!(!source_rewards().values().any(|route| route.as_str() == Some("adalon")));
+    let spec = target_spec("bg2:base:target:72", Naming::default()).unwrap();
+    for field in ["item", "payload", "selected_global", "consumed_global", "event_global", "recipient_local"] {
+        assert!(matches!(spec.get(field), Some(Value::Null)), "{field}");
+    }
+    for field in ["source_ids", "authored_source_ids"] {
+        assert!(spec.get(field).unwrap().py_eq(&list(&[])), "{field}");
+    }
+    assert!(spec.get("target_ids").unwrap().py_eq(&list(&["bg2:base:target:72"])));
+    assert_eq!(text(&spec, "job_taken"), "misc9t");
+    assert!(spec.get("job_end").is_none());
+    let carrier = cir_config::dict! {"area" => "ar2102", "creature_resource" => "cre:udsilver", "script_name" => "udsilver"};
+    assert!(spec.get("inventory_target").unwrap().py_eq(&Value::Dict(carrier)));
+    assert_eq!((text(&spec, "recipient"), text(&spec, "grant_kind")), ("LastTalkedToBy", "transfer"));
+    let names = eet_names();
+    let eet = Naming { game: Some("eet"), names: Some(&names) };
+    assert!(Value::Dict(cir_config::mode2_rewards::reward("adalon", eet).unwrap()).py_eq(&Value::Dict(spec.clone())));
+    let original = dialogue_fixture(&specs("dlg:udsilver"));
+    assert_profile(
+        gives_reward("dlg:udsilver", &original, "adalon", Naming::default()).unwrap_err(),
+        "Unsupported extended reward route in UDSILVER.DLG: adalon",
+    );
+    let result = synthetic_patch("udsilver", &original);
+    assert_eq!(check_eggs(&original, &result, None), (BTreeSet::from([(41, 0), (41, 1)]), BTreeSet::new()));
+    for beamdog in [true, false] {
+        let original = layout_dialogue("udsilver", &adalon_states(), beamdog);
+        let result = patch_reward("dlg:udsilver", &original, None, None, Naming::default()).unwrap();
+        assert_eq!(patch_reward("dlg:udsilver", &result, None, None, Naming::default()).unwrap(), result);
+        assert!(!own_patch("dlg:udsilver", &original, Naming::default()).unwrap());
+        assert!(own_patch("dlg:udsilver", &result, Naming::default()).unwrap());
+        assert!(reasons("dlg:udsilver", &original).is_empty());
+        assert!(reasons("dlg:udsilver", &result).is_empty());
+        // Her own reward reply (both variants), the other mod's two, and her
+        // departure in the state after them.
+        assert_eq!(
+            check_eggs(&original, &result, Some(&[(1, 0)])),
+            (BTreeSet::from([(1, 0), (1, 1), (2, 0), (2, 1)]), BTreeSet::from([(3, 0)]))
+        );
+        // The transfer as the dialogue parser leaves it, once, in front.
+        let after = Dialogue::new(&result, "udsilver").unwrap();
+        let at = |state: usize, ordinal: usize| u32_at(&outgoing(&after, state)[ordinal], 16) as usize;
+        let (job, other) = (at(2, 0), at(0, 0));
+        let handing = &after.actions[job];
+        assert!(handing.starts_with(ADALON_TRANSFER));
+        assert_eq!(count(handing, b"EEex_LuaAction("), 1);
+        // Changed copies of the patch: another place or table, a transfer
+        // moved into a reply that does not take the eggs or behind its
+        // actions, twice, or gone from one of the replies.
+        let without = handing[ADALON_TRANSFER.len()..].to_vec();
+        for (label, changes) in [
+            ("another place", vec![(job, replace(handing, b",72,2,1))", b",73,2,1))", None))]),
+            ("another table", vec![(job, replace(handing, b",72,2,1))", b",72))", None))]),
+            ("other reply", vec![(job, without.clone()), (other, [ADALON_TRANSFER, after.actions[other].as_slice()].concat())]),
+            ("behind", vec![(job, [without.as_slice(), b"\r\n", ADALON_TRANSFER].concat())]),
+            ("twice", vec![(job, [ADALON_TRANSFER, handing.as_slice()].concat())]),
+            ("gone", vec![(job, without.clone())]),
+        ] {
+            let mut tampered = Dialogue::new(&result, "udsilver").unwrap();
+            for (index, text) in changes {
+                tampered.actions[index] = text;
+            }
+            let tampered = tampered.render();
+            assert_profile(
+                patch_reward("dlg:udsilver", &tampered, None, None, Naming::default()).unwrap_err(),
+                "carries a changed copy of the reward route's own patch",
+            );
+            let found = reasons("dlg:udsilver", &tampered);
+            assert_eq!(found.keys().map(String::as_str).collect::<Vec<_>>(), ["adalon", "udsilver"], "{beamdog} {label}");
+            assert!(found["adalon"].contains("changed copy"), "{beamdog} {label}");
+        }
+    }
+    // A dialogue in which no reply takes her eggs has nothing to hand over;
+    // one whose actions name them unreadably cannot be told apart. Her
+    // crossbow's route stays as it is.
+    let other_item: Vec<LayoutReply> = vec![("", "TakePartyItem(\"misc9x\")", Some(3)), ("", "NoAction()", None)];
+    for (changed, reason) in [
+        (vec![(2, other_item.clone())], None),
+        (
+            vec![(1, vec![("", "GiveItemCreate(\"xbow10\",LastTalkedToBy,1,1,1)", Some(2))]), (2, other_item.clone())],
+            Some("UDSILVER.DLG has no reply that takes MISC9T"),
+        ),
+        (
+            vec![(2, vec![("", "TakePartyItem(\"misc9t\"", Some(3)), ("", "NoAction()", None)])],
+            Some("UDSILVER.DLG state 2 names MISC9T in actions that cannot be read"),
+        ),
+        (
+            vec![(2, vec![("", "ActionOverride(Player1,TakePartyItem(\"misc9t\")", Some(3)), ("", "NoAction()", None)])],
+            Some("UDSILVER.DLG state 2 names MISC9T in actions that cannot be read"),
+        ),
+    ] {
+        let mut variant = adalon_states();
+        for (index, replies) in changed {
+            variant[index] = replies;
+        }
+        let data = layout_dialogue("udsilver", &variant, true);
+        let expected = reason.map_or_else(BTreeMap::new, |reason| named(&[("adalon", reason)]));
+        assert_eq!(reasons("dlg:udsilver", &data), expected);
+        let result = patch_reward("dlg:udsilver", &data, None, None, Naming::default()).unwrap();
+        assert_eq!(contains(&result, b"FLPR_Transfer"), reason.is_none(), "{reason:?}");
+        // The patch of each route there that can be prepared is the current one.
+        assert_eq!(patch_reward("dlg:udsilver", &result, None, None, Naming::default()).unwrap(), result);
+    }
+}
+
+#[test]
+fn an_earlier_versions_patch_of_adalons_dialogue_is_made_again_with_her_route() {
+    // CIR 1.0.2 patched UDSILVER.DLG for her crossbow's route (row 44) only:
+    // her place had no route then. That patch is still ours, so the scan and
+    // Apply read her dialogue from it as it was, and Apply then patches it
+    // with both routes.
+    let all = specs("dlg:udsilver");
+    let layouts = [true, false].map(|beamdog| layout_dialogue("udsilver", &adalon_states(), beamdog));
+    for original in [dialogue_fixture(&all), layouts[0].clone(), layouts[1].clone()] {
+        let now = patch_reward("dlg:udsilver", &original, None, None, Naming::default()).unwrap();
+        for routes in [&all[..1], &all[1..]] {
+            let earlier = patch_dialogue(&original, routes, &[], true, true, None).unwrap();
+            assert!(own_patch("dlg:udsilver", &earlier, Naming::default()).unwrap());
+            assert!(reasons("dlg:udsilver", &earlier).is_empty());
+            let again = patch_reward("dlg:udsilver", &earlier, None, None, Naming::default()).unwrap();
+            assert_ne!(again, earlier);
+            assert_eq!(logical(&again, "udsilver"), logical(&now, "udsilver"));
+            assert_eq!(patch_reward("dlg:udsilver", &again, None, None, Naming::default()).unwrap(), again);
+        }
+        // A changed copy of the earlier patch is not ours.
+        let earlier = patch_dialogue(&original, &all[..1], &[], true, true, None).unwrap();
+        let tampered = replace(&earlier, b"\"FLPR_EA_EGGDEALIO\",\"GLOBAL\",1)", b"\"FLPR_EA_EGGDEALIO\",\"GLOBAL\",2)", Some(1));
+        assert_ne!(tampered, earlier);
+        assert_profile(
+            patch_reward("dlg:udsilver", &tampered, None, None, Naming::default()).unwrap_err(),
+            "carries a changed copy of the reward route's own patch",
+        );
+    }
+    // Where her crossbow's route cannot be prepared, the patch of her place's
+    // route alone is the current one.
+    let mut variant = adalon_states();
+    variant[1] = vec![("", "TakePartyItem(\"misc9t\")", Some(2))];
+    let original = layout_dialogue("udsilver", &variant, true);
+    assert_eq!(reasons("dlg:udsilver", &original).keys().map(String::as_str).collect::<Vec<_>>(), ["udsilver"]);
+    let result = patch_reward("dlg:udsilver", &original, None, None, Naming::default()).unwrap();
+    assert!(contains(&result, b"FLPR_Transfer"));
+    assert!(!contains(&result, b"FLPR_QM2_44"));
+    assert!(own_patch("dlg:udsilver", &result, Naming::default()).unwrap());
+    assert_eq!(patch_reward("dlg:udsilver", &result, None, None, Naming::default()).unwrap(), result);
 }
 
 /// Whether script text names `item` as a quoted resref, in any letter case.
@@ -1755,7 +1934,7 @@ const REVIEWED_EET: &[(&str, &str, &str)] = &[
     ("dlg:trhmer01", "e5651fc5ef72780fe2ce9bb6ec8c3632665a5279d41cf79244fbef393304752e", "21aac581490c963ecf778f2ffc760bb3c56cce5be72fd637f783e70eccdbdd75"),
     ("dlg:uddemon", "582fbcfecf3e71363dff1aa9bcef4dbc202d28c3af6e66e6a29840b342f1bdfd", "b1976c5f2f0b948ec00f972348b5ef208b0ba127bbc5678297b133747836a042"),
     ("dlg:udlesa", "6c518483372ebe4073986dc2d41e4f7ae73a7bce133aab4289a29ef1be7c7e50", "02e3d2ad97dad0ba3c42c82c11601c0d13373b733d8eafff1bab9799f484a8ab"),
-    ("dlg:udsilver", "48f697db47942b74b4530975a5a4a46cac1a0cc850453b2b9d50ab173b01090c", "593cdf5a0313db7065fb2c1eaafc8efc309485d3b5a654c24b585f397e94917b"),
+    ("dlg:udsilver", "48f697db47942b74b4530975a5a4a46cac1a0cc850453b2b9d50ab173b01090c", "93263338ca5b92805b0cba76368d690d254767a74ef5cb4cce7459d32c6dcb50"),
     ("dlg:udsvir03", "5918919ea366eceb27f4096f025cde79c44310a9e57bcd49d123fdbb48352994", "2003095671c146bb3d06b92fcc17df06dc18e5be4ab59a0e5d17bfd6db412e66"),
     ("dlg:uhmay01", "4213656595fdde6afeefee881597ddd62814ba886747bc4d60cfca25a2d852be", "fddebc84098847bf55786d953b1f400eba8a97250343e8076a174f6e15f3919c"),
     ("dlg:uhogre01", "8706469468f7277542ba0e6d7fcf44b47a15d36c3879f505464e0a119be00b97", "722213d1f53966780ab8bba2e2dbe400e64c14ced6da2ff9f48b43749b629e25"),
@@ -1874,6 +2053,9 @@ fn reviewed_eet_resources_when_available_patch_exactly_and_reexport() {
             check_pair(name, &original, &result);
         } else if name == "sahpr2" {
             assert_eq!(check_job_end(&original, &result), BTreeSet::from([(5, 0)]));
+        } else if name == "udsilver" {
+            // Her reward reply takes the eggs; she leaves in another conversation.
+            assert_eq!(check_eggs(&original, &result, None), (BTreeSet::from([(41, 0), (41, 1)]), BTreeSet::new()));
         } else {
             check_dialogue(name, &original, &result, None, None, eet);
         }
