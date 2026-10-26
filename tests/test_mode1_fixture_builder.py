@@ -57,6 +57,10 @@ return function(Core, Host, Native, manifest, fixture)
     api.EEex_GameObject_CastUserType = function(object) return object end
     api.EEex_GameObject_IsSprite = function(o, dead) return o.sprite and (dead or o.alive) or false end
     api.EEex_Sprite_GetPortraitIndex = function(o) return o.portrait end
+    -- A creature that died without a body (FLPRNat's death variables, the party).
+    api.EEex_GameState_GetGlobalInt = function() return 0 end
+    api.EEex_Sprite_GetInPortrait = function() end
+    api.EEex_Sprite_GetName = function() end
     api.EEex_Utility_IterateCPtrList = function(list, fn) for _, entry in ipairs(list) do fn(entry) end end
     api.EEex_UDToPtr = function(o) return o.address end
     api.EEex_Resource_Demand = function(_, ext) assert(ext == "ITM"); return {maxStackable=1, itemFlags=12} end

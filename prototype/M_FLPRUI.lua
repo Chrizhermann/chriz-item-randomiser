@@ -10,7 +10,7 @@
 -- unrandomised silently.
 local NEXT = "randomiser-campaigns/next.lua"
 
--- English fallbacks (languages/english/in-game.tra @1700-@1706). The installed
+-- English fallbacks (languages/english/in-game.tra @1700-@1707). The installed
 -- M_FLPRTXT.lua maps the same keys to the strings the installer added to the
 -- game text in the language chosen at installation.
 local FALLBACK = {
@@ -25,6 +25,8 @@ local FALLBACK = {
     ready = "Chriz Item Randomiser: this adventure's items are randomised.",
     stopped = "Chriz Item Randomiser stopped working in this adventure. Items it has not placed yet may be "
         .. "missing. Details: randomiser-campaigns\\last-error.txt",
+    -- M_FLPR.lua puts in the item's and the party member's names.
+    vanished = "{item} falls to the ground at {member}'s feet. Whoever carried it left no body behind.",
 }
 
 function FLPRUI_Text(key)
@@ -76,11 +78,15 @@ end
 
 -- Shows a message in the engine's info popup (util.lua's popupInfo), which the
 -- player closes with Done. False when this user interface has no such popup.
-function FLPRUI_Tell(key)
+function FLPRUI_TellText(message)
     if type(popupInfo) ~= "function" or type(uiStrings) ~= "table" then return false end
-    uiStrings.FLPR_INFO = FLPRUI_Text(key)
+    uiStrings.FLPR_INFO = message
     popupInfo("FLPR_INFO")
     return true
+end
+
+function FLPRUI_Tell(key)
+    return FLPRUI_TellText(FLPRUI_Text(key))
 end
 
 -- Runs a start button's call; popups it shows (also the runtime's) get the

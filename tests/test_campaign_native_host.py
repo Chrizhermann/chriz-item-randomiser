@@ -102,6 +102,8 @@ local function setup(Core,Host)
             if command.kind=="suppress" then receipt.removed,receipt.remaining=1,0
             elseif f.held then receipt.created,receipt.nonce_bound_instance,receipt.lootable,receipt.held=1,1,0,1
             else receipt.created,receipt.nonce_bound_instance,receipt.lootable=1,1,1 end
+            -- FLPRNat's notice of a reward at a party member's feet, one per delivery.
+            if command.kind=="deliver" and f.notices then receipt.notice=table.remove(f.notices,1) end
             self.pending=nil; return receipt
         end
         function native:destroy() self.destroyed=true; self.pending=nil end
@@ -316,6 +318,26 @@ function cases.held_receipt_for_non_creature_target_is_quarantined_and_stops(Cor
     assert(f.host:inspect().assignments[1].delivery_phase==Core.PHASE.quarantined)
 end
 
+-- A reward that fell at a party member's feet: the host passes its notice on
+-- once the controller has confirmed that reward, and only then; without
+-- deps.notice the campaign runs as before.
+function cases.notice_of_a_reward_at_the_partys_feet_follows_its_confirmation(Core,Host)
+    local f=setup(Core,Host)
+    local told={}
+    f.deps.notice=function(info)
+        local confirmed=0
+        for _,assignment in ipairs(f.host:inspect().assignments) do
+            if assignment.delivery_phase==Core.PHASE.confirmed then confirmed=confirmed+1 end
+        end
+        told[#told+1]={info=info,confirmed=confirmed,journal=f.values.flpr_jkind}
+    end
+    local notice={item=7101,resref="flpri1",member="Kara"}
+    f.notices={notice}
+    assert(f:capture()); f:finish()
+    assert(#told==1 and told[1].info==notice and told[1].confirmed==1 and told[1].journal==0)
+    f=setup(Core,Host); f.notices={{item=7101,resref="flpri1",member="Kara"}}
+    assert(f:capture()); f:finish()
+end
 local function bootstrap(Core,Host,Globals,text,options)
     options=options or {}
     local f=setup(Core,Host)
@@ -949,6 +971,45 @@ function cases.bootstrap_stopped_message_stays_in_the_log_without_the_engine_pop
     popupInfo=nil; f.values.flpr_state=2
     f.root.Poll(); f.root.Poll()
     assert(#f.shown==1 and f.shown[1]==FLPRUI_Text("stopped") and #f.infos==0)
+end
+-- A reward that fell at a party member's feet (FLPRNat's notice): the message
+-- log names the item and the member at once, and the info popup shows each
+-- message in turn, once the player has closed the one before.
+function cases.bootstrap_tells_the_player_of_each_reward_at_the_partys_feet(Core,Host,Globals,text)
+    local f=bootstrap(Core,Host,Globals,text)
+    Infinity_FetchString=function(ref) return ({[4720]="Cloak of Mirroring"})[ref] end
+    local open=false
+    Infinity_IsMenuOnStack=function(name)
+        if name=="POPUP_INFO" then return open end
+        return name=="WORLD_ACTIONBAR" and f.world
+    end
+    local shown_info=popupInfo
+    popupInfo=function(info) shown_info(info); open=true end
+    -- cdtweaks colours a companion's name; an item without a name shows its resref.
+    f.notices={{item=4720,resref="clck07",member="^0xFF8E23FFMinsc^-"},{resref="sw1h54",member="Kara"}}
+    bootstrap_to_complete(f)
+    local first=FLPRUI_Text("vanished"):gsub("{item}","Cloak of Mirroring"):gsub("{member}","Minsc")
+    local second=FLPRUI_Text("vanished"):gsub("{item}","SW1H54"):gsub("{member}","Kara")
+    assert(first=="Cloak of Mirroring falls to the ground at Minsc's feet. Whoever carried it left no body behind.",
+        first)
+    local logged={}
+    for _,line in ipairs(f.shown) do logged[line]=true end
+    assert(logged[first] and logged[second] and #f.shown==3)
+    assert(#f.infos==1 and f.infos[1]==first)
+    local clock=EngineGlobals.g_pBaldurChitin.m_pObjectGame.m_worldTime
+    clock.m_gameTime=clock.m_gameTime+1; f.root.Poll(); assert(#f.infos==1)
+    open=false; f.root.Poll(); assert(#f.infos==2 and f.infos[2]==second)
+    open=false; f.root.Poll(); f.root.Poll(); assert(#f.infos==2 and f.root.Notices==nil)
+    Infinity_FetchString=nil
+end
+function cases.bootstrap_notice_failure_is_recorded_and_the_campaign_goes_on(Core,Host,Globals,text)
+    local f=bootstrap(Core,Host,Globals,text)
+    Infinity_FetchString=function() error("TLK_UNAVAILABLE",0) end
+    f.notices={{item=4720,resref="clck07",member="Minsc"}}
+    bootstrap_to_complete(f)
+    assert(f.error_file:find("notice: TLK_UNAVAILABLE",1,true),tostring(f.error_file))
+    assert(#f.shown==1 and #f.infos==0 and f.root.Notices==nil)
+    Infinity_FetchString=nil
 end
 function cases.bootstrap_stops_held_capture_when_host_stops_or_world_changes(Core,Host,Globals,text)
     for _, boundary in ipairs({"disabled", "new-game", "destroy"}) do

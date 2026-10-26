@@ -11,7 +11,7 @@
 // randomiser-campaigns/) is not tracked.
 
 // Game-text references for the player messages in M_FLPRUI.lua and M_FLPR.lua
-// (in-game.tra @1700-@1706), so they appear in the language chosen here.
+// (in-game.tra @1700-@1707), so they appear in the language chosen here.
 <<<<<<<< ...cir/fl-inlined/M_FLPRTXT.lua
 -- Written by cir.tp2 when installed: game-text references for the
 -- Chriz Item Randomiser messages in M_FLPRUI.lua.
@@ -23,6 +23,7 @@ FLPR_TEXT = {
     start_plain = %flir_rt_text_start_plain%,
     ready = %flir_rt_text_ready%,
     stopped = %flir_rt_text_stopped%,
+    vanished = %flir_rt_text_vanished%,
 }
 >>>>>>>>
 
@@ -371,6 +372,7 @@ DEFINE_ACTION_MACRO flir_campaign_runtime_install BEGIN
   OUTER_SET flir_rt_text_start_plain = RESOLVE_STR_REF (@1704)
   OUTER_SET flir_rt_text_ready = RESOLVE_STR_REF (@1705)
   OUTER_SET flir_rt_text_stopped = RESOLVE_STR_REF (@1706)
+  OUTER_SET flir_rt_text_vanished = RESOLVE_STR_REF (@1707)
   COPY ~...cir/fl-inlined/M_FLPRTXT.lua~ ~override/M_FLPRTXT.lua~ EVALUATE_BUFFER
 
   ACTION_PHP_EACH flir_rt_hook AS flir_rt_file => flir_rt_listed BEGIN

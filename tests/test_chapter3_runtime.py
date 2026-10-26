@@ -162,6 +162,33 @@ function cases.aran_takes_it_if_he_dies_before_the_thief(N)
     assert(f.adapter:inspect_target(PLACE,f.source_ids[1],1).ground==true and reserved(f).owner.id==4)
 end
 
+-- Aran's side: the drawn vampire dies before the reward reaches it, and the
+-- mist it turns into leaves no body. The thief and Aran live on, so the reward
+-- falls at the feet of the party there (FLPRNat's _inspect_party_ground).
+function cases.a_vampire_gone_into_mist_drops_it_at_the_partys_feet(N)
+    local f=chapter3_world(N);local a=f.adapter
+    local hero=f.sprite(801,'KARA',{})
+    hero.portrait,hero.m_id,hero.name,hero.m_pos=0,8,'Kara',{x=300,y=400}
+    f.objects[8],f.ids[hero]=hero,8
+    f.api.EEex_Sprite_GetInPortrait=function(index) if index==0 then return hero end end
+    f.area.m_lVertSort={1,2,5,8}
+    -- Gone, but not counted dead: it waits, as before the vampires come.
+    local x,e=a:inspect_target(PLACE,f.source_ids[1],1);fail(x,e,'OWNER_MISSING')
+    f.globals.SPRITE_IS_DEADVAMP1=1
+    local witness=assert(a:inspect_target(PLACE,f.source_ids[1],1))
+    assert(witness.ground==true and reserved(f).owner.id==8 and reserved(f).portrait==0 and
+        reserved(f).endpoint.script_name=='vamp1')
+    f.boundary();local command=f.command(1);assert(a:execute(command))
+    assert(#f.calls==2 and f.calls[1]=='CreateItem("flpri1",0,0,0)' and f.calls[2]=='DropItem("flpri1",[-1.-1])')
+    f.boundary();x,e=a:observe(command);fail(x,e,'DELIVERY_SETTLING')
+    f.update();f.boundary();x,e=a:observe(command);fail(x,e,'DELIVERY_SETTLING')
+    f.boundary();local receipt=assert(a:observe(command))
+    assert(receipt.holder=='ground' and receipt.notice.member=='Kara' and receipt.notice.resref=='flpri1')
+    assert(empty(hero) and empty(f.vamp2) and empty(f.thief) and empty(f.aran))
+    local pile=f.objects[f.area.m_lVertSortBack[1]]
+    assert(#pile.m_lstItems==1 and pile.m_lstItems[1].cResRef:get()=='FLPRI1')
+end
+
 function cases.it_waits_with_the_first_reason_in_the_visible_area(N)
     local f=chapter3_world(N);local a=f.adapter
     -- Before the vampires come: the first vampire's absence.
@@ -285,6 +312,7 @@ CASE_NAMES = (
     "each_reward_draws_one_creature_of_each_group",
     "a_thief_takes_it_only_at_his_corpse",
     "aran_takes_it_if_he_dies_before_the_thief",
+    "a_vampire_gone_into_mist_drops_it_at_the_partys_feet",
     "it_waits_with_the_first_reason_in_the_visible_area",
     "execute_delivers_to_the_reserved_creature_only",
     "diagnostics_show_each_creature",

@@ -67,6 +67,27 @@ local function warn_stopped()
     end
 end
 
+-- A reward whose creature left no body lies at a party member's feet
+-- (FLPRNat). The message log tells the player at once and, as a line there is
+-- easily missed in a fight, the info popup too, one message at a time
+-- (root.Poll). The reward is placed already: a failure here is only recorded.
+local function notice(info)
+    local ok, failure = pcall(function()
+        local item = type(info.item) == "number" and Infinity_FetchString(info.item) or nil
+        if type(item) ~= "string" or item == "" then item = tostring(info.resref):upper() end
+        -- cdtweaks colours companions' names with escapes, which a popup shows as text.
+        local member = type(info.member) == "string" and
+            info.member:gsub("%^0x%x%x%x%x%x%x%x%x", ""):gsub("%^%-", "") or ""
+        if member == "" then member = "?" end
+        local line = text("vanished"):gsub("{item}", function() return item end)
+            :gsub("{member}", function() return member end)
+        Infinity_DisplayString(line)
+        root.Notices = root.Notices or {}
+        root.Notices[#root.Notices + 1] = line
+    end)
+    if not ok then record("notice", failure) end
+end
+
 local ok, failure = pcall(function()
     -- Item Randomiser's Mode 1 and Mode 2 remove items when installed and assign
     -- them themselves. cir.tp2 refuses to install after them, but Item
@@ -364,6 +385,7 @@ local ok, failure = pcall(function()
             return area and area.m_resref:get():lower() or nil
         end,
         tick = function() return EngineGlobals.g_pBaldurChitin.m_pObjectGame.m_worldTime.m_gameTime end,
+        notice = notice,
         report = function(status, reason)
             if status == "complete" then
                 storage:set("flpr_done", 1)
@@ -438,6 +460,12 @@ function root.Poll()
     end
     if root.Disabled then warn_stopped()
     elseif root.Host then root.Host:poll() end
+    -- The rewards at the party's feet (notice), one info popup at a time.
+    if root.Notices and Infinity_IsMenuOnStack("WORLD_ACTIONBAR") and not Infinity_IsMenuOnStack("POPUP_INFO") then
+        local line = table.remove(root.Notices, 1)
+        if type(FLPRUI_TellText) ~= "function" or not FLPRUI_TellText(line) then root.Notices = {} end
+        if #root.Notices == 0 then root.Notices = nil end
+    end
     -- Confirms randomisation once, when the captured adventure first reaches the world.
     if root.Announce and root.Host and (root.Host.status == "running" or root.Host.status == "complete") then
         if root.Storage:get(root.Core.G.seed) == root.Announce then Infinity_DisplayString(text("ready")) end
@@ -454,7 +482,7 @@ end
 -- Leaves no trace of an attempted capture, so the engine starts this new
 -- adventure unrandomised.
 local function forget_new_game()
-    root.NewGameIntent, root.Announce, root.Warned = nil, nil, nil
+    root.NewGameIntent, root.Announce, root.Warned, root.Notices = nil, nil, nil, nil
     if root.Held then root.Held:destroy(); root.Held = nil end
     if root.Host then root.Host:destroy() end
     if root.SourceGate then root.SourceGate:reset() end
@@ -589,7 +617,7 @@ function root.Inspect()
 end
 
 root.OnDestroyed = function()
-    root.NewGameIntent, root.Warned = nil, nil
+    root.NewGameIntent, root.Warned, root.Notices = nil, nil, nil
     if root.Held then root.Held:destroy(); root.Held = nil end
     if root.Host then root.Host:destroy() end
 end

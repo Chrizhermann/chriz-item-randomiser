@@ -238,6 +238,20 @@ lootable. A dead party member or familiar, or a corpse that holds another item
 of the reward's name, still defers. See
 [corpse ground evidence](native-corpse-ground-evidence.md).
 
+A creature target that died and left no body gets its reward at the feet of a
+party member instead. Its body is gone when no sprite of its script name is in
+the visible area of its own, and the engine has counted its death in
+`SPRITE_IS_DEAD<script name>`. Bodhi's vampires leave none, so the chapter 3
+places need this. The member is the first in portrait order who is alive in that
+area, has an empty backpack slot, holds no item of the reward's name and has no
+message queued. `CreateItem` and `DropItem` run on that member, as at a corpse.
+The receipt carries a notice with the item's name and the member's. The host
+passes it to `deps.notice`, and M_FLPR shows it in the message log and, one at a
+time, in the info popup (in-game.tra @1707). While no member can drop it, the
+reward waits (`TARGET_INVENTORY_FULL`, `PARTY_ITEM_AMBIGUOUS`,
+`TARGET_QUEUE_BUSY`). A missing creature whose death the engine has not counted
+(not there yet, or gone alive) still waits with `OWNER_MISSING`.
+
 A creature target marked `corpse_only` receives only that way: while it lives,
 inspection reports `TARGET_ALIVE` and the reward waits. Such a target always has
 a `handover`: once its reward reply has set the event, the reward goes to the
