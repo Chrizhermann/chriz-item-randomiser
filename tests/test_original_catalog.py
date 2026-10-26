@@ -1,5 +1,6 @@
 """Portable original-table binding checks; no installed game is read."""
 
+from itertools import product
 from pathlib import Path
 import sys
 import unittest
@@ -467,6 +468,29 @@ class OriginalCatalogTests(unittest.TestCase):
                             ([], (creature,), [], "area-resource-absent")):
                         row = place(targets, resources)
                         self.assertEqual((row["target_ids"], row["binding_problem"]), (ids, problem))
+
+    def test_adalons_place_is_her_creature_and_the_place_of_her_route(self):
+        """The base table's row 72 binds to UDSILVER in her lair as any
+        creature's place does; it is the place of her route (mode2_rewards:
+        adalon), whose reply hands its reward over when she takes her eggs.
+        It has no .fl handler, so it is no quest place."""
+        from flir_config.original_catalog import mode2_alias_spec, mode2_route_target
+        from flir_config.original_registrations import target_kind
+
+        dragon = _target("are:ar2102/actor/0", "are:ar2102", "actor", "Adalon", "cre:udsilver")
+        world = {"resources": [{"id": name} for name in ("are:ar2102", "cre:udsilver", "dlg:udsilver")],
+                 "sources": [], "targets": [dragon]}
+        for template, pools in product(("bg2-original", "eet-original"), ("standard", "extended")):
+            with self.subTest(template=template, pools=pools):
+                result = resolve_template({"items": []}, world, template, items=pools, targets=pools)
+                row = next(row for row in result["targets"] if row["id"] == "bg2:base:target:72")
+                self.assertEqual((row["target"], row["area"]), ("udsilver.cre", "ar2102"))
+                self.assertEqual((row["area_resource"], row["target_ids"], row["creature_resource"],
+                                  row["binding_problem"]), ("are:ar2102", [dragon["id"]], "cre:udsilver", None))
+                self.assertEqual(target_kind(row), "creature-target")
+                self.assertIsNone(mode2_alias_spec(row))
+                self.assertEqual(mode2_route_target(row), "bg2:base:target:72")
+        self.assertIsNone(mode2_route_target({**row, "id": "bg2:base:target:71"}))
 
     def test_a_presets_rows_of_an_original_reward_route_are_that_route(self):
         from flir_config.original_catalog import mode2_route_source, mode2_route_target

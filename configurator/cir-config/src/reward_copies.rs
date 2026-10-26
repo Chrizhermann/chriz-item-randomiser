@@ -21,10 +21,11 @@
 //! own grants of the same item (the sculptors' mace of the temple messengers)
 //! stay that route's.
 //!
-//! A route without a grant of its own (the Sahuagin prince's) hands over what
-//! its speaker carries in the replies that end his job. A reply there that
-//! ends that job too, a copy or not, would end it without the hand-over, and
-//! the reward would stay with him: the route is left out with that reason.
+//! A route without a grant of its own (the Sahuagin prince's, Adalon's) hands
+//! over what its speaker carries in the replies that end its job. A reply
+//! there that ends that job too, a copy or not, would end it without the
+//! hand-over, and the reward would stay with the speaker: the route is left
+//! out with that reason.
 //!
 //! Container quests are not followed: their dialogues test the treasure in
 //! the conditions of their states, which interjections do not copy.
@@ -325,10 +326,10 @@ impl RewardCopies {
 
     fn route(&mut self, read: &mut Reader<'_>, key: &str, limit: usize) -> Result<()> {
         let Some(texts) = self.grants(read, key)? else { return Ok(()) };
-        // A reply concerns the route where it names its item, or the job
-        // global of a route without a grant.
+        // A reply concerns the route where it names its item, or the job's
+        // global or item of a route without a grant.
         let job = if mode2_rewards::ends_a_job(&self.specs[key]) {
-            Some(mode2_rewards::job_end(&self.specs[key])?.0)
+            Some(mode2_rewards::job(&self.specs[key])?)
         } else {
             None
         };
@@ -391,7 +392,7 @@ impl RewardCopies {
                 }
                 let text = &dialogue.actions[action];
                 let concerns = match &job {
-                    Some(job) => find_bytes(&text.to_ascii_lowercase(), job.as_bytes(), 0).is_some(),
+                    Some(job) => job.mentioned(text),
                     None => mode2_rewards::names(text, item),
                 };
                 if !concerns {
@@ -438,13 +439,12 @@ impl RewardCopies {
         if mode2_rewards::ends_a_job(spec) {
             // Whoever's reply ends the job, the speaker who carries the reward
             // does not hand it over there.
-            let job = mode2_rewards::job_end(spec)?;
+            let job = mode2_rewards::job(spec)?;
             if mode2_rewards::reply_ends_job(text, &job, &place)? {
                 let origins: BTreeSet<String> = texts.values().map(|origin| label(origin)).collect();
                 return Err(profile(format!(
-                    "{place} also sets {} to {}, which ends the job of {}'s speaker, but there it would not hand over the reward it carries",
-                    job.0,
-                    job.1,
+                    "{place} also {}, which ends the job of {}'s speaker, but there it would not hand over the reward it carries",
+                    job.text(),
                     origins.into_iter().collect::<Vec<_>>().join(", ")
                 )));
             }
