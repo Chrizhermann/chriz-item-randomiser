@@ -332,26 +332,38 @@ class OriginalCatalogTests(unittest.TestCase):
         # Necre and Taibela (OBSHAL03, OBSHAL06) can be gone from AR0411's
         # halflings; in BG1, three of the four red wizards of AR3000 and each
         # of the four Zhentarim of AR0704 can be.
-        world = {"resources": [{"id": "are:ar0411"}], "sources": [], "targets": []}
-        halflings = [row for row in resolve_template({"items": []}, world, "bg2-original")["targets"]
-                     if row["target"] == "ironpot.flg"]
-        self.assertEqual([row["id"] for row in halflings],
+        halflings = [f"cre:obshal0{number}" for number in (1, 2, 3, 5, 6, 7)]
+        world = {"resources": [{"id": name} for name in ["are:ar0411", *halflings]], "sources": [], "targets": []}
+        rows = [row for row in resolve_template({"items": []}, world, "bg2-original")["targets"]
+                if row["target"] == "ironpot.flg"]
+        self.assertEqual([row["id"] for row in rows],
                          [f"bg2:base:target:{line}" for line in (36, 83, 101, 318)])
-        for row in halflings:
+        for row in rows:
             self.assertEqual((row["members"], row["binding_problem"]),
                              (["cre:obshal01", "cre:obshal02", "cre:obshal05", "cre:obshal07"],
                               "group-requires-runtime-selection"))
+        creatures = [f"cre:{name}" for name in ("denak", "diana", "brenda", "william", "wheber", "oulam", "niemai")]
         for game, prefix in (("bgee", "ar"), ("eet", "bg")):
             with self.subTest(game=game):
-                world = {"resources": [{"id": f"are:{prefix}3000"}, {"id": f"are:{prefix}0704"}],
-                         "sources": [], "targets": []}
+                areas = [f"are:{prefix}3000", f"are:{prefix}0704"]
+                world = {"resources": [{"id": name} for name in areas + creatures], "sources": [], "targets": []}
                 rows = resolve_template({"items": []}, world, "bg1-original", game=game)["targets"]
+                # The fourth red wizard, Lasal, has no file in an EE game: only
+                # members a game has can carry a reward.
                 self.assertEqual({(tuple(row["members"]), row["binding_problem"]) for row in rows
                                   if row["target"] == "red.flg"},
-                                 {(("cre:lasal",), "group-requires-runtime-selection")})
+                                 {(("cre:lasal",), "creature-can-go-missing")})
                 self.assertEqual([(row["members"], row["binding_problem"]) for row in rows
                                   if row["target"] == "zhents.flg"],
                                  [([], "creature-can-go-missing")] * 3)
+                # Without any member's file the group is the export's to judge
+                # ("Original recipient has no installed member").
+                world = {"resources": [{"id": name} for name in areas], "sources": [], "targets": []}
+                rows = resolve_template({"items": []}, world, "bg1-original", game=game)["targets"]
+                self.assertEqual({(row["target"], tuple(row["members"]), row["binding_problem"]) for row in rows
+                                  if row["target"] in ("red.flg", "zhents.flg")},
+                                 {("red.flg", ("cre:lasal",), "group-requires-runtime-selection"),
+                                  ("zhents.flg", (), "group-requires-runtime-selection")})
 
     def test_every_creature_that_can_go_missing_is_one_of_a_place_in_its_area(self):
         # lists/carriers names creatures as Item Randomiser's tables do; a row

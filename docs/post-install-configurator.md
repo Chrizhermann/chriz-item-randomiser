@@ -464,8 +464,9 @@ area and creature file, each with its reason (`difficulty`, `party`, `transforme
 scripts, conversations and spells of EET 2.7.3.0 on 2026-10-26. A place on such a
 creature is left out (`creature-can-go-missing`), and the preset dialog says how many
 ("… are on creatures that may leave, vanish or never appear, so they are left out"). A
-group place gives its rewards to its other members only, and is left out when none is
-left. Not listed are creatures that leave only when they die, whose reward drops as loot
+group place gives its rewards to its other members only, and is left out when none of the
+members the game has is left (the red wizards' group of AR3000 also names Lasal, whom no
+EE game has). Not listed are creatures that leave only when they die, whose reward drops as loot
 (at the party's feet when no body is left). Also not listed, as reviewed and kept, are
 the Iron Throne's leaders (on the chapter 5 path; chapter 7 removes them), Nyalee (she
 comes back) and Gorion (he dies in the prologue). Four creatures reward the party before
@@ -482,7 +483,10 @@ of the area has too, cannot be told apart, and its reward would never arrive
 it alone is left out ("Native target needs a unique actor script name in its area", as
 for an actor place). On EET 2.7.3.0 these are 13 places of `eet-original` and 17 of
 `eet-boss-loot`, among them Lendarn's at Firewine Bridge, and the slaver wizard of the
-slavers' group in AR0405.
+slavers' group in AR0405. Of them, 11 and 14 remain besides the places the carrier table
+leaves out. With the extended pools, the two rules together leave out 96 places of
+`eet-original` (861 of 957 stay) and 129 of `eet-boss-loot` (1025 of 1154 stay), and 25
+groups of each give their rewards to fewer members.
 
 Quest rewards and places that Item Randomiser handled with its own conversation and
 script patches (the `.fl` places of its `mode2` tables, and rewards that a conversation

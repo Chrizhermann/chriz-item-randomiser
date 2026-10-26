@@ -896,9 +896,17 @@ fn resolve_target(
                             .is_some_and(|template| members.iter().any(|member| member == template))
                 })
                 .collect();
+            // Only an installed, readable member can carry a reward
+            // (native_export skips the others): when every one of them can go
+            // missing, the group has no carrier left, whatever members it
+            // names that this game lacks.
+            let installed =
+                |member: &String| scan.resources.contains(member.as_str()) && !scan.unreadable.contains(member.as_str());
+            let carried = all.iter().any(installed);
+            let staying = members.iter().any(installed);
             note_problem(
                 row,
-                if !all.is_empty() && members.is_empty() { CARRIER_CAN_GO_MISSING } else { "group-requires-runtime-selection" },
+                if carried && !staying { CARRIER_CAN_GO_MISSING } else { "group-requires-runtime-selection" },
             );
             matches
         }

@@ -533,8 +533,13 @@ def _resolve_target(row: dict, resources: set[str], unreadable: set[str],
         allowed = set(row["members"])
         matches = [target for target in area_targets if target["kind"] == "actor"
                    and target["selector"].get("template_resource") in allowed]
+        # Only an installed, readable member can carry a reward (native_export
+        # skips the others): when every one of them can go missing, the group
+        # has no carrier left, whatever members it names that this game lacks.
+        installed = {member for member in members if member in resources and member not in unreadable}
         row["binding_problem"] = row["binding_problem"] or (
-            CARRIER_CAN_GO_MISSING if members and not row["members"] else "group-requires-runtime-selection")
+            CARRIER_CAN_GO_MISSING if installed and not installed & allowed
+            else "group-requires-runtime-selection")
     else:
         matches = []
         row["binding_problem"] = row["binding_problem"] or "legacy-target-requires-adapter"
