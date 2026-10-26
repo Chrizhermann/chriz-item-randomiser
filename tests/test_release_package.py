@@ -556,7 +556,7 @@ class RepositoryPackageTests(unittest.TestCase):
         named |= {f"lists/{kind}/{family}/{campaign}.2da" for kind in ("items", "locations")
                   for family in ("base", "mode2") for campaign in ("bg1", "bg2")}
         named |= {f"lists/{kind}/{campaign}.2da"
-                  for kind in ("sources/base", "endpoints/base", "groups", "duplicates")
+                  for kind in ("sources/base", "endpoints/base", "groups", "duplicates", "carriers")
                   for campaign in ("bg1", "bg2")}
         from flir_config.templates import PRESETS
         named |= {f"lists/presets/{preset}/{kind}/{family}/{campaign}.2da"

@@ -1,0 +1,30 @@
+Area   Creature  Reason        Reviewed  Comment
+
+ar0406 beast     story         20261026  Beastmaster: leaves when the slaver quest says so (SlavingJerk)
+ar0411 obshal03  difficulty    20261026  Necre: LOWBYE.BCS destroys her on the easiest difficulty
+ar0411 obshal06  difficulty    20261026  Taibela: LOWBYE.BCS destroys her on the easiest difficulty
+ar0529 neb       story         20261026  Neb: leaves the area in a cutscene
+ar0701 berkref   conversation  20261026  Zorl: as Tarnor
+ar0701 draug     conversation  20261026  Draug Fea: as Tarnor
+ar0701 gaius     conversation  20261026  Gaius: as Tarnor
+ar0701 gall      conversation  20261026  Gallchobhair: as Tarnor
+ar0701 rengaa    conversation  20261026  Rengaard: as Tarnor
+ar0701 tarnor    conversation  20261026  Tarnor: leaves with his gang when the party gives in
+ar0712 sevpat05  flees         20261026  Brennan Risling: flees below half his hit points
+ar0802 nevaziah  story         20261026  Nevaziah: the crypt goes away after a time limit
+ar0907 hlketta   story         20261026  Ketta: leaves when Sion accepts the apology
+ar1202 tazok     story         20261026  Tazok: flees in a talk with Kivan
+ar1515 ppworker  story         20261026  Spellhold worker: removed during the asylum quest
+ar1900 cedruid2  story         20261026  Dalok: removed as the druid grove quest goes
+ar2209 jael03    story         20261026  Ist'tar Jae'llat: leaves once Ust Natha turns hostile
+ar2402 uddoor09  story         20261026  Ust Natha gate guard: leaves after the talk, removed when the city opens
+ar2807 dragblac  conversation  20261026  Nizidramanii'yt: takes the party's gold and goes
+ar3001 gorsta03  party         20261026  statue: AR3001.BCS destroys it on entry for a party under 5 members, under level 14 or with XPGiven above 500000
+ar3001 gorsta04  party         20261026  statue: as gorsta03
+ar3001 gorsta05  party         20261026  statue: as gorsta03
+ar3001 gorsta11  party         20261026  statue: as gorsta03
+ar5203 yaga01    story         20261026  Yaga-Shura: escapes the first fight while invulnerable
+ar5500 amarch01  story         20261026  Captain Erelon: removed during the enclave quest
+ar6004 bazdra03  reward        20261026  Fll'Yissetat: leaves after his trade
+ar6105 senpri01  story         20261026  Diaytha: removed in a cutscene
+ar6107 senill02  story         20261026  Mithykyl: removed in a cutscene

@@ -13,7 +13,8 @@ from pathlib import Path
 
 from .campaigns import OVERFLOW_TARGET_KINDS
 from .game_names import convert_resource, eet_names
-from .original_catalog import NO_ROUTE, UNREADABLE_PLACE_PROBLEMS, mode2_route_source, resolve_template
+from .original_catalog import (CARRIER_CAN_GO_MISSING, NO_ROUTE, UNREADABLE_PLACE_PROBLEMS, mode2_route_source,
+                               resolve_template)
 from .original_options import is_spell_shield_row, spell_shield_randomized, spell_shield_spec, tome_variants
 from .platform import game_platform, preset_campaigns, preset_game
 from .quest_options import kangaxx_problem
@@ -379,7 +380,7 @@ def _build(catalog: dict, world: dict, template_id: str, exclude: dict[str, str]
             leave_out(row, "place", "area-resource-absent")
         elif row["binding_problem"] in UNREADABLE_PLACE_PROBLEMS:
             leave_out(row, "place", row["binding_problem"])
-        elif row["binding_problem"] == "creature-never-appears":
+        elif row["binding_problem"] in ("creature-never-appears", CARRIER_CAN_GO_MISSING):
             leave_out(row, "place", row["binding_problem"])
         else:
             places.append(row)
@@ -485,14 +486,21 @@ def _absent_mod_note(mod: str, count: int, catalog_items) -> str:
 
 
 def _not_used_notes(rows: list[dict]) -> list[str]:
-    """What the left-out rows are: those this game cannot use, then those whose
-    quest CIR cannot change yet, then what becomes of a left-out reward."""
-    unusable = [row for row in rows if row["reason"] != NO_ROUTE]
+    """What the left-out rows are: those this game cannot use, the places on
+    creatures that can go missing, those whose quest CIR cannot change yet, then
+    what becomes of a left-out reward."""
+    unusable = [row for row in rows if row["reason"] not in (NO_ROUTE, CARRIER_CAN_GO_MISSING)]
+    missing = [row for row in rows if row["reason"] == CARRIER_CAN_GO_MISSING]
     waiting = [row for row in rows if row["reason"] == NO_ROUTE]
     notes = []
     if unusable:
         notes.append(f"{_counted(unusable)} from the lists cannot be used in this game, so "
                      + ("it is" if len(unusable) == 1 else "they are") + " left out")
+    if missing:
+        notes.append(f"{_counted(missing)} from the lists "
+                     + ("is on a creature" if len(missing) == 1 else "are on creatures")
+                     + " that may leave, vanish or never appear, so "
+                     + ("it is" if len(missing) == 1 else "they are") + " left out")
     if waiting:
         notes.append(f"{_counted(waiting)} from the lists "
                      + ("belongs to a quest" if len(waiting) == 1 else "belong to quests")

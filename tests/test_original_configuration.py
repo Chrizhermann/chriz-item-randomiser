@@ -296,6 +296,28 @@ class OriginalConfigurationTests(unittest.TestCase):
         self.assertNotIn("original-target:hidden-guard",
                          {row["id"] for row in result["plan"]["target_registrations"]})
 
+    def test_a_place_on_a_creature_that_can_go_missing_is_left_out_and_named(self):
+        for count, note in ((1, "1 place from the lists is on a creature that may leave, vanish or never appear, "
+                                "so it is left out"),
+                            (2, "2 places from the lists are on creatures that may leave, vanish or never appear, "
+                                "so they are left out")):
+            with self.subTest(count=count):
+                draft = self._draft()
+                for index in range(count):
+                    gone = target_row(f"gone-guard-{index}", "x", "24")
+                    gone.update(target="guard.cre", creature_resource="cre:guard", container_name=None,
+                                endpoint_kind=None, binding_problem="creature-can-go-missing")
+                    draft["targets"].append(gone)
+                with patch("flir_config.original_configuration.resolve_template", return_value=draft):
+                    result = build_original_configuration(self.catalog, self.world, "eet-original")
+                self.assertEqual(result["not_used"], [{"id": f"gone-guard-{index}",
+                                                       "row": "lists/locations/base/bg1.2da:1", "kind": "place",
+                                                       "reason": "creature-can-go-missing"}
+                                                      for index in range(count)])
+                self.assertIn(note, result["not_used_notes"])
+                self.assertFalse({row["id"] for row in result["plan"]["target_registrations"]}
+                                 & {f"original-target:gone-guard-{index}" for index in range(count)})
+
     def test_eet_without_its_rename_lists_is_named_and_uses_cirs_copy(self):
         shutil.rmtree(self.root / "EET")
         with patch("flir_config.original_configuration.resolve_template",

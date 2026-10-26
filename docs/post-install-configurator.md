@@ -452,6 +452,42 @@ has no reply that gives BELT02") or an item its creature cannot drop. The draft 
 same runtime check as "Check configuration", which then passes. `/api/template`
 also returns the left-out rows with their table line and reason (`not_used_rows`).
 
+Some creatures that Item Randomiser gives an item to can leave alive, turn into another
+creature or never appear. A conversation sends them away (Arkushule, Tarnor's gang), a
+quest or cutscene removes them (Neb, Nevaziah's crypt), they flee (Brennan Risling below
+half his hit points), the easiest difficulty takes them out (`LOWBYE.BCS` for Necre and
+Taibela), or Watcher's Keep removes four of its statues for a party under five members,
+under level 14 or with `XPGiven` above 500000. A reward there could be lost.
+`lists/carriers/<campaign>.2da` names these creatures as Item Randomiser's tables do, by
+area and creature file, each with its reason (`difficulty`, `party`, `transformed`,
+`story`, `conversation`, `reward`, `flees`). The table comes from a review of the
+scripts, conversations and spells of EET 2.7.3.0 on 2026-10-26. A place on such a
+creature is left out (`creature-can-go-missing`), and the preset dialog says how many
+("… are on creatures that may leave, vanish or never appear, so they are left out"). A
+group place gives its rewards to its other members only, and is left out when none of the
+members the game has is left (the red wizards' group of AR3000 also names Lasal, whom no
+EE game has). Not listed are creatures that leave only when they die, whose reward drops as loot
+(at the party's feet when no body is left). Also not listed, as reviewed and kept, are
+the Iron Throne's leaders (on the chapter 5 path; chapter 7 removes them), Nyalee (she
+comes back) and Gorion (he dies in the prologue). Four creatures reward the party before
+they leave: Degrodel, Bentha, Tamah and Fll'Yissetat. Their reply could hand over the
+place's reward one day; until then their places are left out too. The table is a review
+of the games without other mods. Another mod's change can make a listed creature stay
+(its places are then left out anyway) or make another creature leave, which the table
+does not see.
+
+The runtime finds a place's creature by its script name in the area. A creature
+without a name of its own (the engine's blank, `None`), or with one that another actor
+of the area has too, cannot be told apart, and its reward would never arrive
+(`OWNER_AMBIGUOUS`). The export leaves such a creature out of its group, and a place on
+it alone is left out ("Native target needs a unique actor script name in its area", as
+for an actor place). On EET 2.7.3.0 these are 13 places of `eet-original` and 17 of
+`eet-boss-loot`, among them Lendarn's at Firewine Bridge, and the slaver wizard of the
+slavers' group in AR0405. Of them, 11 and 14 remain besides the places the carrier table
+leaves out. With the extended pools, the two rules together leave out 96 places of
+`eet-original` (861 of 957 stay) and 129 of `eet-boss-loot` (1025 of 1154 stay), and 25
+groups of each give their rewards to fewer members.
+
 Quest rewards and places that Item Randomiser handled with its own conversation and
 script patches (the `.fl` places of its `mode2` tables, and rewards that a conversation
 or script gives) need a route of CIR's. A row for which CIR has none would be left out
