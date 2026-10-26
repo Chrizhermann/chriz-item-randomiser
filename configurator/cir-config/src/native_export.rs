@@ -226,6 +226,8 @@ struct Compiler<'a> {
     duplicates: Option<Vec<Value>>,
     container_names: HashMap<String, usize>,
     actor_names: HashMap<String, usize>,
+    /// The actors of each area by script name and creature file.
+    actor_templates: HashMap<String, usize>,
     container_items: HashMap<String, usize>,
     /// The sources of each item by (resource, kind, item).
     physical_items: HashMap<String, usize>,
@@ -1342,6 +1344,7 @@ impl<'a> Compiler<'a> {
                     vec![selector.at("creature_resource")?]
                 };
                 let mut members = Vec::new();
+                let mut alike = false;
                 for resource in resources {
                     let resource = resource.as_str().unwrap_or("");
                     if !self.index.resources.contains(resource) || self.index.is_unreadable(resource) {
@@ -1354,9 +1357,27 @@ impl<'a> Compiler<'a> {
                         format!("Original recipient has inventory diagnostics: {resource}")
                     })?;
                     let name = script_name(Some(creature.at("selector")?.at("script_name")?), identity)?;
+                    // The runtime finds a recipient by its script name in the area.
+                    // Without a name of its own (the engine's blank, None), or with
+                    // one that another actor there has too, it cannot be told apart
+                    // and would never get its reward (OWNER_AMBIGUOUS).
+                    let lowered = lower(&name);
+                    let place = key_part(target.get("resource"));
+                    let own = Self::count(
+                        &self.actor_templates,
+                        &tuple_key(&[place.clone(), name_part(&lowered), name_part(resource)]),
+                    );
+                    let all = Self::count(&self.actor_names, &tuple_key(&[place, name_part(&lowered)]));
+                    if lowered == "none" || own > 1 || all > own {
+                        alike = true;
+                        continue;
+                    }
                     self.use_resource(resource)?;
                     members.push(Value::Dict(crate::dict! {"resref" => tail(resource, 4), "script_name" => name}));
                 }
+                require(!members.is_empty() || !alike, || {
+                    format!("Native target needs a unique actor script name in its area: {identity}")
+                })?;
                 require(!members.is_empty(), || format!("Original recipient has no installed member: {identity}"))?;
                 let mut endpoint = crate::dict! {
                     "kind" => if target_kind == "group" { "group" } else { "creature" },
@@ -1733,6 +1754,7 @@ pub fn compile(
         duplicates: copies.map(|_| Vec::new()),
         container_names: HashMap::new(),
         actor_names: HashMap::new(),
+        actor_templates: HashMap::new(),
         container_items: HashMap::new(),
         physical_items: HashMap::new(),
         template_records: HashMap::new(),
@@ -1779,6 +1801,12 @@ pub fn compile(
             let name = lower_name(actor_name(world, index, target))?;
             let key = tuple_key(&[key_part(Some(target.at("resource")?)), name_part(&name)]);
             *compiler.actor_names.entry(key).or_insert(0) += 1;
+            let key = tuple_key(&[
+                key_part(Some(target.at("resource")?)),
+                name_part(&name),
+                key_part(target.at("selector")?.get("template_resource")),
+            ]);
+            *compiler.actor_templates.entry(key).or_insert(0) += 1;
         }
     }
     for source in rows(world, "sources") {
