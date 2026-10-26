@@ -356,6 +356,44 @@ pub fn book_fixture(installed: bool) -> Vec<u8> {
     format!("SC\n{earlier}{pages}SC\n").into_bytes()
 }
 
+/// `KING_PAID`: the king's job is done (sahkngjob 2), just before he pays.
+pub fn king_paid() -> String {
+    trigger(16399, 2, "GLOBALsahkngjob", 0)
+}
+
+/// `KING_DESTROYS`: SAHTREAS.BCS destroys the items the king's reward reply
+/// gives, the treasury's rod among them.
+pub fn king_destroys() -> String {
+    action(169, 0, "RODS02", 0, 0) + &action(169, 0, "BRAC19", 0, 0)
+}
+
+/// `NO_ACTION`.
+pub fn no_action() -> String {
+    action(0, 0, "", 0, 0)
+}
+
+/// `treasury_fixture(*blocks)`: SAHTREAS.BCS as the game has it, or with
+/// these blocks.
+pub fn treasury_fixture(blocks: &[String]) -> Vec<u8> {
+    let blocks = if blocks.is_empty() { book_block(&[king_paid()], &king_destroys()) } else { blocks.concat() };
+    format!("SC\n{blocks}SC\n").into_bytes()
+}
+
+/// `route_guard(flag, selected)`: the guard of a route's selected flag, as
+/// compiled.
+pub fn route_guard(flag: &str, selected: bool) -> String {
+    trigger(16399, 1, &format!("GLOBAL{flag}"), if selected { 0 } else { 1 })
+}
+
+/// `handover_line(spec)`: the reward reply's condition by which its place's
+/// treasury goes to the payee.
+pub fn handover_line(spec: &Dict) -> Vec<u8> {
+    let (campaign, number) = target_id(spec).split_once(":mode2:target:").unwrap_or((target_id(spec), ""));
+    let campaign = if campaign == "bg1" { ",1" } else { "" };
+    format!("EEex_LuaTrigger(\"return(FLPR_Handover==nil)or(FLPR_Handover(EEex_LuaTrigger_Object,{number}{campaign}))\")\r\n")
+        .into_bytes()
+}
+
 /// The text-route fixture of test_text_variants_preserve_original_routes...
 pub fn text_variant(resource: &str) -> Vec<u8> {
     let name = resource.split(':').nth(1).unwrap();
@@ -542,6 +580,12 @@ pub fn check_pair(name: &str, original: &[u8], result: &[u8]) {
                         restored = replace(&restored, &consumed, &grant, Some(1));
                     } else {
                         assert!(contains(&restored, &grant));
+                    }
+                }
+                // A treasury's handover follows the guards, in every variant.
+                for spec in &specs {
+                    if spec.get("handover").is_some_and(Value::truthy) {
+                        condition = guarded(&condition, &handover_line(spec));
                     }
                 }
                 assert_eq!(after.triggers[u32_at(branch, 12) as usize], condition);

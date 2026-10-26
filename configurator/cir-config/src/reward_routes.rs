@@ -58,6 +58,9 @@ pub struct RewardRoutes {
     /// The routes of [`mode2_rewards::PHYSICAL_SOURCE_REWARDS`] whose
     /// dialogue gives their item at all, or may.
     giving: BTreeSet<String>,
+    /// The items each destroying script ([`mode2_rewards::DESTROY_GATES`])
+    /// destroys by name, or why it cannot be read.
+    destroyed: HashMap<String, std::result::Result<BTreeSet<String>, String>>,
     /// The files the resources were read from, with their identities then.
     files: Vec<(PathBuf, FileIdentity)>,
     /// The copies of the quest routes' reward replies in other dialogues.
@@ -114,6 +117,7 @@ impl RewardRoutes {
         let mut changed = BTreeSet::new();
         let mut reasons = HashMap::new();
         let mut giving = BTreeSet::new();
+        let mut destroyed = HashMap::new();
         let mut files: Vec<(PathBuf, FileIdentity)> = Vec::new();
         let mut known: HashSet<PathBuf> = HashSet::new();
         let (male, female) = game_text::text_files(game_root, language)?;
@@ -181,10 +185,20 @@ impl RewardRoutes {
                 for (key, reason) in found.iter() {
                     reasons.insert((resource.clone(), key.to_string()), str_value(reason));
                 }
+                if mode2_rewards::destroy_gate(resource) {
+                    let items = match mode2_rewards::destroyed_items(resource, &data) {
+                        Ok(items) => Ok(items),
+                        Err(error) if error.kind == ErrorKind::Profile => Err(error.message),
+                        Err(error) => return Err(error),
+                    };
+                    destroyed.insert(resource.clone(), items);
+                }
                 // Routes that follow a physical source (Lesa's sword, the
-                // treasury's rod): needed where their dialogue gives the item at all.
+                // treasury's rod): needed where their dialogue gives the item
+                // at all. Only a dialogue gives such a reward (gives_reward).
                 let links: BTreeSet<&str> = mode2_rewards::PHYSICAL_SOURCE_REWARDS.iter().map(|row| row.3).collect();
-                for key in resource_rewards(resource).into_iter().filter(|key| links.contains(key.as_str())) {
+                let dialogue = resource.starts_with("dlg:");
+                for key in resource_rewards(resource).into_iter().filter(|key| dialogue && links.contains(key.as_str())) {
                     let gives = match mode2_rewards::gives_reward(resource, &data, &key, naming) {
                         Ok(gives) => gives,
                         // Its route's reasons say why it cannot be read.
@@ -210,6 +224,7 @@ impl RewardRoutes {
             changed,
             reasons,
             giving,
+            destroyed,
             files,
             copies,
         })
@@ -327,6 +342,18 @@ impl RewardRoutes {
             }
         }
         self.texts(lines, &prefix)
+    }
+
+    /// The items the script `resource` (one of
+    /// [`mode2_rewards::DESTROY_GATES`]) destroys by name
+    /// ([`mode2_rewards::destroyed_items`]); none in a game without it.
+    pub fn destroyed(&self, resource: &str) -> Result<BTreeSet<String>> {
+        self.unchanged(&[resource.to_string()])?;
+        match self.destroyed.get(resource) {
+            None => Ok(BTreeSet::new()),
+            Some(Ok(items)) => Ok(items.clone()),
+            Some(Err(reason)) => Err(Error::profile(reason.clone())),
+        }
     }
 
     /// Whether a dialogue of the route `key` (one of

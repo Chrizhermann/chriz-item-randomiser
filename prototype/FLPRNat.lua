@@ -7,6 +7,9 @@ local Native = {}
 -- conservative 20 game seconds (15 ticks/second), never unlimited settling.
 -- Paused time does not consume this allowance; this is not a wall-clock timer.
 Native.MAX_SETTLE_TICKS = 300
+-- An owed treasury handover (Adapter:retry_handovers) is tried again
+-- after this many game ticks.
+Native.HANDOVER_RETRY_TICKS = 30
 -- CMessageAddItem::Run scans these internal backpack slots (see
 -- docs/native-creature-transport-evidence.md). A full backpack displaces an
 -- unrelated item to the ground, so creature delivery requires a free one.
@@ -92,7 +95,8 @@ function Native.new(api, fixture, seed, reward_payload)
     for _, name in ipairs(required) do assert(type(api[name]) == "function", name .. "_MISSING") end
     local self = setmetatable({ api = api, sources = {}, targets = {}, reservations = {},
         attempted = {}, tick = nil, pending = nil, last_error = nil, source_resrefs = {}, held = {},
-        seed=seed, reward_payload=reward_payload, container_latched={}, route_targets={} }, Adapter)
+        seed=seed, reward_payload=reward_payload, container_latched={}, route_targets={},
+        owed_handovers={} }, Adapter)
     local identities, source_resrefs, creatures, guarded_ids, routes = {}, self.source_resrefs, false, {}, {}
     local guarded_count = 0
     for _, kind in ipairs({ "sources", "targets" }) do
@@ -255,6 +259,28 @@ function Native.new(api, fixture, seed, reward_payload)
                 copy.loot_latch={activation_global=latch.activation_global,
                     latch_global=latch.latch_global,latch_scope=latch.latch_scope}
             end
+            -- The Sahuagin treasury's place (Item Randomiser's sahtreas.fl): the
+            -- king's reward reply hands its rewards to the payee
+            -- (hand_over_container_reward); after that reply a reward not
+            -- placed yet goes to the payee instead (Adapter:_target).
+            if endpoint.handover ~= nil then
+                local handover=endpoint.handover
+                assert(kind=='targets' and copy.kind=='container' and type(handover)=='table' and
+                    type(handover.event_global)=='string' and #handover.event_global<=32 and
+                    handover.event_global:match('^FLPR_E[A-Z0-9_]+$') and
+                    type(handover.recipient_local)=='string' and
+                    handover.recipient_local:match('^FLPR_R[A-Z0-9_]+$') and
+                    handover.recipient_local:sub(7)==handover.event_global:sub(7) and
+                    copy.claim_global==nil and copy.loot_latch==nil,'NATIVE_HANDOVER_INVALID')
+                for _,name in ipairs({'EEex_GameState_GetGlobalInt','EEex_Sprite_GetLocalInt',
+                    'EEex_Sprite_GetInPortrait','EEex_Object_EvalStringAsAIBase'}) do
+                    assert(type(api[name])=='function','NATIVE_HANDOVER_API_MISSING')
+                end
+                copy.handover={event_global=handover.event_global,recipient_local=handover.recipient_local}
+                copy.paid={kind='creature',sprite=true,area='*',quest_event=handover.event_global,
+                    recipient_local=handover.recipient_local,spell_event=false,identity=copy.identity}
+                creatures=true
+            end
             -- A preset's row of an extended reward route names the route's own
             -- row of the same campaign, which this fixture has no endpoint of;
             -- each route has one row. FLPRScript and FLPRGat take the source's
@@ -268,7 +294,7 @@ function Native.new(api, fixture, seed, reward_payload)
                 assert(campaign and type(route)=='string' and
                     route:match(prefix..campaign..':mode2:'..unit..':[0-9]+$') and
                     not routes[route] and fixture[kind][route]==nil and
-                    (kind=='targets' and copy.inventory_reward or
+                    (kind=='targets' and (copy.inventory_reward or copy.handover) or
                      kind=='sources' and script_source and endpoint.adapter_id=='mode2-reward-v1'),
                     'NATIVE_ROUTE_INVALID')
                 routes[route]=id
@@ -333,6 +359,33 @@ function Adapter:_creature_state(object, party_reward)
     return nil
 end
 
+-- The one sprite, dead or alive, in the visible area or the party whose
+-- LOCALS <name> is 1: the recipient a reward reply marked.
+function Adapter:_marked(area, name)
+    local api,matches,seen,object=self.api,0,{},nil
+    local function scan(candidate)
+        if not candidate then return end
+        candidate=api.EEex_GameObject_CastUserType(candidate)
+        if not candidate or api.EEex_GameObject_IsSprite(candidate,true)~=true then return end
+        local address=pointer(api,candidate)
+        if seen[address] then return end
+        seen[address]=true
+        if api.EEex_Sprite_GetLocalInt(candidate,name)==1 then
+            matches,object=matches+1,candidate
+        end
+    end
+    for _,field in ipairs(lists) do
+        assert(area[field],'NATIVE_AREA_LIST_MISSING')
+        api.EEex_Utility_IterateCPtrList(area[field],function(id)
+            assert(integer(id,0,2147483647),'NATIVE_OBJECT_ID_INVALID')
+            scan(api.EEex_GameObject_Get(id))
+        end)
+    end
+    for index=0,5 do scan(api.EEex_Sprite_GetInPortrait(index)) end
+    if matches~=1 then return nil,matches==0 and 'OWNER_MISSING' or 'OWNER_AMBIGUOUS' end
+    return object
+end
+
 function Adapter:_resolve(endpoint, kind, visible_area)
     local api, area = self.api, visible_area or self.api.EEex_Area_GetVisible()
     if not area or (endpoint.area~='*' and text(area.m_resref) ~= endpoint.area) then return nil, "AREA_UNAVAILABLE" end
@@ -348,27 +401,9 @@ function Adapter:_resolve(endpoint, kind, visible_area)
         if api.EEex_GameState_GetGlobalInt(endpoint.quest_event)~=1 then return nil,'QUEST_NOT_CLAIMED' end
         local object
         if endpoint.recipient_local then
-            local matches,seen=0,{}
-            local function scan(candidate)
-                if not candidate then return end
-                candidate=api.EEex_GameObject_CastUserType(candidate)
-                if not candidate or api.EEex_GameObject_IsSprite(candidate,true)~=true then return end
-                local address=pointer(api,candidate)
-                if seen[address] then return end
-                seen[address]=true
-                if api.EEex_Sprite_GetLocalInt(candidate,endpoint.recipient_local)==1 then
-                    matches,object=matches+1,candidate
-                end
-            end
-            for _,field in ipairs(lists) do
-                assert(area[field],'NATIVE_AREA_LIST_MISSING')
-                api.EEex_Utility_IterateCPtrList(area[field],function(id)
-                    assert(integer(id,0,2147483647),'NATIVE_OBJECT_ID_INVALID')
-                    scan(api.EEex_GameObject_Get(id))
-                end)
-            end
-            for index=0,5 do scan(api.EEex_Sprite_GetInPortrait(index)) end
-            if matches~=1 then return nil,matches==0 and 'OWNER_MISSING' or 'OWNER_AMBIGUOUS' end
+            local reason
+            object,reason=self:_marked(area,endpoint.recipient_local)
+            if not object then return nil,reason end
         else object=api.EEex_Sprite_GetInPortrait(0) end
         if not object then return nil,'OWNER_MISSING' end
         local reason=self:_creature_state(object,true)
@@ -703,8 +738,167 @@ function Adapter:transfer_inventory_reward(speaker, target_id, assignments, phas
     return -1
 end
 
+-- Every item but <removed> is still there, once and as it was; nothing new.
+local function without(before, after, removed)
+    if #after ~= #before - 1 then return false end
+    for _, old in ipairs(before) do
+        local found = 0
+        for _, current in ipairs(after) do
+            if current.pointer == old.pointer then
+                if not same(current.payload, old.payload) then return false end
+                found = found + 1
+            end
+        end
+        if found ~= (old == removed and 0 or 1) then return false end
+    end
+    return true
+end
+
+-- The Sahuagin king pays "a few surfacer trinkets from my treasury": the
+-- rewards of the treasury's place. The condition of his reward reply calls
+-- this when the game shows that reply, so it runs at once: the scene after
+-- the reply clears every queued action and takes the party away for good.
+-- The payee is the one he talks to (LastTalkedToBy), else the first living
+-- party member, marked so that a reward not placed yet follows the payment
+-- to the payee (Adapter:_target). Each reward still in the treasury goes to
+-- the payee, or to the first party member after it with room: a new copy is
+-- queued with the source's flags (GiveItemCreate, which drops it at a full
+-- backpack's feet), then DestroyItem takes one equal copy out of the
+-- treasury. A reward the party took already stays taken, never a second
+-- copy. What the reply cannot hand over yet is owed (retry_handovers).
+-- Returns how many rewards went to the party, why not all could, and
+-- whether the rest is owed.
+function Adapter:hand_over_container_reward(speaker, target_id, assignments, phases)
+    target_id=self.route_targets[target_id] or target_id
+    local endpoint=self.targets[target_id]
+    if not endpoint then return 0 end -- Place excluded from this campaign.
+    assert(endpoint.handover,'NATIVE_HANDOVER_INVALID')
+    local api,mark=self.api,endpoint.handover.recipient_local
+    local talked=api.EEex_Object_EvalStringAsAIBase('LastTalkedToBy',speaker)
+    local payee=talked and api.EEex_GameObject_CastUserType(talked)
+    if payee and self:_creature_state(payee,true) then payee=nil end
+    for index=0,5 do
+        local member=not payee and api.EEex_Sprite_GetInPortrait(index)
+        if member and not self:_creature_state(member,true) then payee=member end
+    end
+    if not payee then return 0,'HANDOVER_PAYEE_MISSING' end
+    -- The reply marks the payee too, but through an action of another actor
+    -- that the scene after it may clear.
+    api.EEex_Action_ExecuteResponseStringOnAIBaseInstantly('SetGlobal("'..mark..'","LOCALS",1)',payee)
+    assert(api.EEex_Sprite_GetLocalInt(payee,mark)==1,'NATIVE_HANDOVER_MARK_FAILED')
+    return self:_hand_over(target_id,endpoint,payee,assignments,phases)
+end
+
+-- A handover the reply could not finish, while another mutation was still to
+-- be observed (perhaps a reward on its way into the treasury) or the treasury
+-- could not be found: retried on the host's steps, at once when nothing is
+-- pending and then every HANDOVER_RETRY_TICKS, to the payee the reply marked,
+-- while the treasury's area is loaded. Session only, as the reply's moment is.
+function Adapter:retry_handovers(assignments, phases)
+    if next(self.owed_handovers)==nil or self.pending or not self.tick or
+        self.tick<(self.handover_retry or 0) then return true end
+    self.handover_retry=self.tick+Native.HANDOVER_RETRY_TICKS
+    local area=self.api.EEex_Area_GetVisible()
+    for target_id in pairs(self.owed_handovers) do
+        local endpoint=self.targets[target_id]
+        if area and text(area.m_resref)==endpoint.area then
+            local payee=self:_marked(area,endpoint.handover.recipient_local)
+            if payee and not self:_creature_state(payee,true) then
+                self:_hand_over(target_id,endpoint,payee,assignments,phases)
+            end
+        end
+    end
+    return true
+end
+
+function Adapter:owes_handover() return next(self.owed_handovers)~=nil end
+
+function Adapter:_hand_over(target_id, endpoint, payee, assignments, phases)
+    local api=self.api
+    -- A mutation still to be observed could take these changes for its own.
+    if self.pending then
+        self.owed_handovers[target_id]=true
+        return 0,'HANDOVER_MUTATION_PENDING',true
+    end
+    local due={}
+    for _,assignment in ipairs(assignments) do
+        if assignment.target_id==target_id and assignment.delivery_phase==phases.confirmed then
+            due[#due+1]=assert(self:_reward(assignment.source_id,assignment.unit),'NATIVE_HANDOVER_REWARD_MISSING')
+        end
+    end
+    local owner,reason
+    if #due>0 then
+        owner,reason=self:_resolve(endpoint,'target')
+        if not owner then
+            self.owed_handovers[target_id]=true
+            return 0,reason,true
+        end
+    end
+    self.owed_handovers[target_id]=nil
+    -- The payee first, then the rest of the party, each with its free
+    -- backpack slots less the item messages already queued for it.
+    local party,seen={payee},{[pointer(api,payee)]=true}
+    for index=0,5 do
+        local member=api.EEex_Sprite_GetInPortrait(index)
+        if member and not seen[pointer(api,member)] and not self:_creature_state(member,true) then
+            party[#party+1],seen[pointer(api,member)]=member,true
+        end
+    end
+    local count,ambiguous=0,false
+    for _,reward in ipairs(due) do
+        local items,present,equal=self:_items(owner,false),0,true
+        for _,item in ipairs(items) do
+            if item.payload.resref==reward.resref then
+                present,equal=present+1,equal and same(item.payload,reward)
+            end
+        end
+        -- DestroyItem takes an item by its name: every treasury item of that
+        -- name must be an equal copy of the reward, or it could take another.
+        if present>0 and not equal then ambiguous=true end
+        if present>0 and equal then
+            local supported,why,stack_limit=self:_supported(reward)
+            assert(supported,why)
+            local queue,recipient=self:_queue(),nil
+            for _,member in ipairs(party) do
+                local room=#empty_backpack(self:_items({object=member},true))
+                for _,message in ipairs(queue.additions) do
+                    if message.target==member.m_id then room=room-1 end
+                end
+                if room>0 and not recipient then recipient=member end
+            end
+            recipient=recipient or payee
+            api.EEex_Action_ExecuteResponseStringOnAIBaseInstantly(string.format('GiveItemCreate("%s",Myself,%d,%d,%d)',
+                reward.resref,reward.charges[1],reward.charges[2],reward.charges[3]),recipient)
+            local added={}
+            for _,message in ipairs(self:_queue().additions) do
+                if not queue.addresses[message.pointer] then added[#added+1]=message end
+            end
+            local message=#added==1 and added[1] or nil
+            local created=message and created_payload(message.payload,reward,stack_limit)
+            assert(created and message.form=='creature' and message.target==recipient.m_id and
+                message.source==recipient.m_id,'NATIVE_HANDOVER_CREATION_UNPROVEN')
+            self:_preserve_message_flags(message,created)
+            api.EEex_Action_ExecuteResponseStringOnAIBaseInstantly(
+                string.format('DestroyItem("%s")',reward.resref),owner.object)
+            local after,removed=self:_items(owner,false),nil
+            for _,old in ipairs(items) do
+                local kept=false
+                for _,current in ipairs(after) do kept=kept or current.pointer==old.pointer end
+                if not kept then removed=removed==nil and old or false end
+            end
+            assert(removed and removed.payload.resref==reward.resref and without(items,after,removed),
+                'NATIVE_HANDOVER_REMOVAL_NOT_EXACT')
+            count=count+1
+        end
+    end
+    return count,ambiguous and 'HANDOVER_ITEM_AMBIGUOUS' or nil,false
+end
+
 function Adapter:_target(id, source_id, unit)
     local endpoint=self.targets[id]
+    -- The party leaves the Sahuagin treasury behind once the king has paid.
+    if endpoint and endpoint.handover and
+        self.api.EEex_GameState_GetGlobalInt(endpoint.handover.event_global)==1 then return endpoint.paid end
     if not endpoint or endpoint.kind~='group' then return endpoint end
     local source=self.sources[source_id]
     if not source or not integer(unit,1,4096) then return nil end
@@ -1419,6 +1613,10 @@ function Adapter:diagnostics()
     local result = { tick = self.tick, last_error = self.last_error, sources = {}, targets = {} }
     local area = self.api.EEex_Area_GetVisible()
     result.area = area and text(area.m_resref) or nil
+    for id in pairs(self.owed_handovers) do
+        result.owed_handovers = result.owed_handovers or {}
+        result.owed_handovers[#result.owed_handovers + 1] = id
+    end
     if self.pending then
         result.pending = { kind = self.pending.receipt.kind, nonce = self.pending.receipt.nonce,
             complete = self.pending.complete, created_pointer = self.pending.created_pointer,
@@ -1456,6 +1654,7 @@ end
 function Adapter:destroy()
     self.pending, self.tick, self.last_error = nil, nil, nil
     self.reservations, self.attempted, self.held, self.container_latched = {}, {}, {}, {}
+    self.owed_handovers, self.handover_retry = {}, nil
 end
 
 return Native

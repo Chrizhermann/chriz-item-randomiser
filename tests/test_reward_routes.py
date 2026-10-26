@@ -29,11 +29,13 @@ from flir_config.profiles import ProfileError, validate_catalog
 from flir_config.resources import _Tlk, scan_game
 from flir_config.quest_options import _Dialogue
 from flir_config.reward_routes import ChangedSinceScan, reward_routes
+from flir_config.script_text import script_blocks
 from flir_config.sources import scan_world, validate_world
 from flir_config.starts import write_starts
 from test_container_rewards import dialogue_fixture as container_dialogue, script_fixture
-from test_mode2_rewards import (BOOK_GIFTS, action, block, book_fixture, dialogue_fixture, layout_dialogue,
-                                well_reward, with_actions)
+from test_mode2_rewards import (BOOK_GIFTS, KING_DESTROYS, KING_PAID, action, block, book_block, book_fixture,
+                                dialogue_fixture, layout_dialogue, treasury_fixture, trigger, well_reward,
+                                with_actions)
 from test_original_configuration import target_row
 from test_postinstall_resources import make_game, make_itm, make_tlk, mark_eet, snapshot
 from test_postinstall_world_formats import item_record, make_are
@@ -360,12 +362,11 @@ def king_dialogue(rod: bytes = ROD_GRANT) -> bytes:
     return dialogue.render()
 
 
-class TreasuryRodTests(RouteGame):
-    """The Sahuagin treasury's rod: a container reward of which the king's
-    reward reply creates another one. The ogre's shield keeps a reward in the
-    configuration where the rod is left out."""
+class TreasuryGame(RouteGame):
+    """The Sahuagin treasury's rod and the ogre's shield, which keeps a reward
+    in the configuration where the rod is left out."""
 
-    sources, targets = ("bg2:mode2:item:7", "bg2:mode2:item:14"), ("bg2:mode2:target:17",)
+    sources = ("bg2:mode2:item:7", "bg2:mode2:item:14")
     ROD = "are:ar2300/container/0/item/0"
 
     def places(self) -> list[dict]:
@@ -388,6 +389,13 @@ class TreasuryRodTests(RouteGame):
     def native(self, written: dict) -> dict:
         return json.loads((self.output / "campaign-store" / "revisions" /
                            f"{written['starts'][written['full']]}.native.json").read_bytes())
+
+
+class TreasuryRodTests(TreasuryGame):
+    """The Sahuagin treasury's rod: a container reward of which the king's
+    reward reply creates another one."""
+
+    targets = ("bg2:mode2:target:17",)
 
     def test_a_moved_rod_stops_the_kings_second_one(self):
         for platform, starts in (("bg2ee", {"SOA"}), ("eet", {"BG1", "SOD", "SOA"})):
@@ -414,15 +422,20 @@ class TreasuryRodTests(RouteGame):
                     self.assertEqual(native["resource_hashes"]["SAHKNG01.DLG"], hashlib.sha256(patched).hexdigest())
 
     def test_where_nothing_else_gives_the_rod_it_moves_as_any_container_reward(self):
-        # Another mod's king who gives no rod, and a game without his dialogue.
-        for king in (king_dialogue(b""), None):
-            with self.subTest(dialogue=king is not None):
+        # Another mod's king who gives no rod, also beside the treasury's
+        # script, and a game without his dialogue.
+        for king, script in ((king_dialogue(b""), None), (king_dialogue(b""), treasury_fixture()), (None, None)):
+            with self.subTest(dialogue=king is not None, script=script is not None):
                 self.build_treasury("bg2ee", king)
+                if script is not None:
+                    (self.game / "override" / "sahtreas.bcs").write_bytes(script)
+                    self.rescan()
                 fitted = self.fit()
                 self.assertEqual(fitted["not_used"], [])
                 written = self.apply(fitted)
                 self.assertNotIn("reward_selected_global", self.native(written)["sources"][self.ROD])
-                self.assertFalse((self.output / "resource-overrides" / "SAHKNG01.DLG").exists())
+                for name in ("SAHKNG01.DLG", "SAHTREAS.BCS"):
+                    self.assertFalse((self.output / "resource-overrides" / name).exists())
 
     def test_a_rod_the_king_gives_in_a_way_the_route_cannot_gate_is_left_out(self):
         self.build_treasury("bg2ee", king_dialogue(
@@ -451,6 +464,259 @@ class TreasuryRodTests(RouteGame):
         self.assertEqual([(row["id"], row["kind"], row["reason"]) for row in fitted["not_used"]], [
             ("bg2:mode2:item:7", "reward", "AR2300.ARE holds another RODS02 that the reward of SAHKNG01.DLG "
              f"could stand for: {self.ROD}")])
+
+
+def with_trap_script(area: bytes, index: int, script: str) -> bytes:
+    """The area with another script on its container <index>."""
+    data = bytearray(area)
+    offset = struct.unpack_from("<I", data, 0x70)[0] + index * 0xC0 + 0x48
+    struct.pack_into("<8s", data, offset, script.encode("ascii"))
+    return bytes(data)
+
+
+class TreasuryPlaceTests(TreasuryGame):
+    """The Sahuagin treasury as a place (Item Randomiser's sahtreas.fl): its
+    reward waits in the AR2300 container whose script is SAHTREAS, and the
+    king's reward reply hands it to the one he pays. SAHTREAS.BCS destroys the
+    king's reward items only while his grants are unchanged."""
+
+    targets = ("bg2:mode2:target:6", "bg2:mode2:target:17")
+    PLACE = "original-target:bg2:mode2:target:6"
+
+    def build_place(self, platform: str, *, script: bytes | None = None, trap: str = "SAHTREAS") -> None:
+        self.build_treasury(platform, king_dialogue())
+        area = with_trap_script((self.game / "override" / "ar2300.are").read_bytes(), 0, trap)
+        (self.game / "override" / "ar2300.are").write_bytes(area)
+        if script is not None:
+            (self.game / "override" / "sahtreas.bcs").write_bytes(script)
+        self.rescan()
+
+    def test_the_treasurys_reward_waits_there_until_the_king_pays(self):
+        for platform, starts in (("bg2ee", {"SOA"}), ("eet", {"BG1", "SOD", "SOA"})):
+            with self.subTest(platform=platform):
+                self.build_place(platform, script=treasury_fixture())
+                row = next(row for row in self.draft()["targets"] if row["id"] == "bg2:mode2:target:6")
+                self.assertEqual((row["area_resource"], row["binding_problem"]),
+                                 ("dlg:sahkng01", "legacy-target-requires-adapter"))
+                before = snapshot(self.game)
+                fitted = self.fit()
+                self.assertEqual(fitted["not_used"], [])
+                self.assertIn(self.PLACE, {row["id"] for row in fitted["plan"]["target_registrations"]})
+                written = self.apply(fitted)
+                self.assertEqual(set(written["starts"]), starts)
+                self.assertEqual(snapshot(self.game), before)
+                overrides = self.output / "resource-overrides"
+                king = mode2_rewards.patch_reward("dlg:sahkng01", king_dialogue())
+                self.assertIn(b"FLPR_Handover(EEex_LuaTrigger_Object,6)", king)
+                self.assertEqual((overrides / "SAHKNG01.DLG").read_bytes(), king)
+                treasury = mode2_rewards.patch_reward("bcs:sahtreas", treasury_fixture())
+                self.assertEqual(len(script_blocks(treasury).blocks), 4)
+                self.assertEqual((overrides / "SAHTREAS.BCS").read_bytes(), treasury)
+                area = (self.game / "override" / "ar2300.are").read_bytes()
+                for revision in written["starts"].values():
+                    native = json.loads((self.output / "campaign-store" / "revisions" /
+                                         f"{revision}.native.json").read_bytes())
+                    endpoint = native["targets"][self.PLACE]
+                    self.assertEqual({key: value for key, value in endpoint.items() if key != "identity"}, {
+                        "kind": "container", "area": "AR2300", "script_name": "Treasury",
+                        "x": 111, "y": 222, "container_type": 2,
+                        "handover": {"event_global": "FLPR_EA_SAHROD", "recipient_local": "FLPR_RA_SAHROD"},
+                        "reward_resource": "dlg:sahkng01"})
+                    hashes = native["resource_hashes"]
+                    self.assertEqual((hashes["SAHKNG01.DLG"], hashes["SAHTREAS.BCS"], hashes["AR2300.ARE"]),
+                                     tuple(hashlib.sha256(data).hexdigest() for data in (king, treasury, area)))
+
+    def test_the_kings_bracer_checks_the_treasurys_script_too(self):
+        # The bracer's route gates SAHTREAS as well: the runtime finds both
+        # files as Apply wrote them (FLPRScript.lua), or only the king's
+        # where the game has no such script.
+        self.sources = ("bg2:mode2:item:57", "bg2:mode2:item:14")
+        self.targets = ("bg2:mode2:target:58", "bg2:mode2:target:17")
+        # A chest of the bracer's tier: no reward returns to its own place.
+        self.places = lambda: [place("bg2:base:target:9002", "6", 0), place("bg2:base:target:9003", "2", 1)]
+        for script in (treasury_fixture(), None):
+            with self.subTest(script=script is not None):
+                self.build_place("bg2ee", script=script)
+                visible = (self.game / "override" / "synth001.itm").read_bytes()
+                (self.game / "override" / "brac19.itm").write_bytes(visible)
+                self.rescan()
+                fitted = self.fit()
+                self.assertEqual(fitted["not_used"], [])
+                written = self.apply(fitted)
+                native = self.native(written)
+                bracer = native["sources"]["original-source:bg2:mode2:item:57"]
+                self.assertEqual((bracer["kind"], bracer.get("resources")),
+                                 ("guarded-script", ["dlg:sahkng01", "bcs:sahtreas"] if script else None))
+                revision = written["starts"][written["full"]]
+                number = 1 + [row["id"] for row in read_campaign(self.store, revision)["sources"]].index(
+                    "original-source:bg2:mode2:item:57")
+                staged = self.output / "campaign-store" / "revisions" / f"{revision}.source-{number}.route-2.patched.bcs"
+                if script:
+                    treasury = mode2_rewards.patch_reward("bcs:sahtreas", script)
+                    self.assertEqual(staged.read_bytes(), treasury)
+                    self.assertEqual((self.output / "resource-overrides" / "SAHTREAS.BCS").read_bytes(), treasury)
+                else:
+                    self.assertFalse(staged.exists())
+
+    def test_a_game_without_the_treasurys_script_needs_no_gate(self):
+        self.build_place("bg2ee")
+        fitted = self.fit()
+        self.assertEqual(fitted["not_used"], [])
+        written = self.apply(fitted)
+        self.assertFalse((self.output / "resource-overrides" / "SAHTREAS.BCS").exists())
+        native = self.native(written)
+        self.assertEqual(native["targets"][self.PLACE]["kind"], "container")
+        self.assertNotIn("SAHTREAS.BCS", native["resource_hashes"])
+
+    def test_a_treasury_script_that_could_take_a_moved_rod_leaves_the_rods_route_out(self):
+        giving = treasury_fixture(book_block([KING_PAID], KING_DESTROYS + action(15, text="RODS02", target=21)))
+        self.build_place("bg2ee", script=giving)
+        fitted = self.fit()
+        reason = ("The extended reward route for SAHROD cannot be used: SAHTREAS.BCS block 0 uses RODS02 in an "
+                  "action other than DestroyItem(), which the route cannot gate")
+        self.assertEqual(sorted((row["id"], row["kind"], row["reason"]) for row in fitted["not_used"]),
+                         [("bg2:mode2:item:7", "reward", reason), ("bg2:mode2:target:6", "place", reason)])
+        self.apply(fitted)
+        # The bracer's route is not in this configuration: nothing is gated.
+        self.assertFalse((self.output / "resource-overrides" / "SAHTREAS.BCS").exists())
+
+    FOREIGN = "are:ar0411/container/0/item/0"
+
+    def visible(self, *names: str) -> None:
+        for name in names:
+            shutil.copyfile(self.game / "override" / "synth001.itm", self.game / "override" / f"{name}.itm")
+        self.rescan()
+
+    def with_foreign(self, item: str, record: bytes | None = None, *, tier: str = "1") -> None:
+        """Another mod's hoard in AR0411 with <item> (<record>), a reward of
+        the configuration too, of the treasury's <tier> or another one."""
+        self.with_hoards((item, record, tier))
+
+    def with_hoards(self, *rewards: tuple[str, bytes | None, str]) -> None:
+        """Another mod's hoards in AR0411, one for each (item, record, tier),
+        each a reward of the configuration too (FOREIGN, then are:ar0411/container/1/item/1...)."""
+        (self.game / "override" / "ar0411.are").write_bytes(make_are(
+            [record or chest_item(item.upper()) for item, record, _ in rewards],
+            [(f"Hoard {number}" if number else "Hoard", number, 1) for number in range(len(rewards))]))
+        self.visible(*{item for item, _, _ in rewards})
+
+        def foreign() -> dict:
+            result = RouteGame.draft(self)
+            for number, (item, _, tier) in enumerate(rewards):
+                result["items"].append({**self.rod_row(result), "id": f"bg2:base:item:{9101 + number}",
+                                        "family": "base", "ident": "x", "token": "x", "tier": tier,
+                                        "source": "ar0411.are", "source_ref": f"lists/items/base/bg2.2da:{9101 + number}",
+                                        "source_resource": "are:ar0411",
+                                        "source_ids": [f"are:ar0411/container/{number}/item/{number}"],
+                                        "item_resref": item, "resref": item})
+            return result
+
+        self.draft = foreign
+
+    def left_out(self) -> list[tuple[str, str, str]]:
+        fitted = self.fit()
+        self.apply(fitted)
+        return [(row["id"], row["kind"], row["reason"]) for row in fitted["not_used"]]
+
+    def test_a_reward_the_treasurys_script_would_destroy_leaves_the_place_out(self):
+        # SAHTREAS.BCS runs with every AI update of its container: another
+        # mod's rod or bracer could lie in the treasury while the route of
+        # that name keeps its original destroy.
+        for item in ("rods02", "brac19"):
+            with self.subTest(item=item):
+                self.build_place("bg2ee", script=treasury_fixture())
+                self.with_foreign(item)
+                self.assertEqual(self.left_out(), [
+                    ("bg2:mode2:target:6", "place", f"SAHTREAS.BCS destroys every {item.upper()} in the treasury, "
+                     f"and the reward {self.FOREIGN} can be one: {self.PLACE}")])
+        # A rod of another tier never goes there: both stay in the campaign.
+        self.build_place("bg2ee", script=treasury_fixture())
+        self.with_foreign("rods02", tier="2")
+        fitted = self.fit()
+        self.assertEqual(fitted["not_used"], [])
+        native = self.native(self.apply(fitted))
+        self.assertEqual((native["targets"][self.PLACE]["kind"], native["sources"][self.FOREIGN]["kind"]),
+                         ("container", "guarded-container"))
+        # So does any other item another mod's block destroys, but only once
+        # a reward has its name; a game without the script destroys nothing.
+        other = book_block([trigger(16399, 1, "GLOBALOtherMod")], action(169, text="SW1H01"))
+        for script, foreign, place_kept in ((treasury_fixture(book_block([KING_PAID], KING_DESTROYS), other),
+                                             "sw1h01", False),
+                                            (treasury_fixture(book_block([KING_PAID], KING_DESTROYS), other),
+                                             "misc01", True),
+                                            (None, "rods02", True)):
+            with self.subTest(script=script is not None, foreign=foreign):
+                self.build_place("bg2ee", script=script)
+                self.with_foreign(foreign)
+                self.assertEqual(self.left_out(), [] if place_kept else [
+                    ("bg2:mode2:target:6", "place", f"SAHTREAS.BCS destroys every SW1H01 in the treasury, "
+                     f"and the reward {self.FOREIGN} can be one: {self.PLACE}")])
+
+    def test_the_kings_own_items_may_lie_in_the_treasury(self):
+        # The rod and the bracer as rewards switch their own destroys off.
+        self.sources = ("bg2:mode2:item:7", "bg2:mode2:item:57", "bg2:mode2:item:14")
+        self.targets = ("bg2:mode2:target:6", "bg2:mode2:target:58", "bg2:mode2:target:17")
+        # Chests of the three tiers: no reward returns to its own place.
+        self.places = lambda: [place(f"bg2:base:target:900{number}", tier, number - 2)
+                               for number, tier in ((2, "1"), (3, "2"), (4, "6"))]
+        self.build_place("bg2ee", script=treasury_fixture())
+        (self.game / "override" / "ar0100.are").write_bytes(
+            make_are([], [("Place2", 0, 0), ("Place3", 0, 0), ("Place4", 0, 0)]))
+        self.visible("brac19")
+        fitted = self.fit()
+        self.assertEqual(fitted["not_used"], [])
+        native = self.native(self.apply(fitted))
+        self.assertEqual(native["targets"][self.PLACE]["kind"], "container")
+        self.assertEqual((native["sources"][self.ROD]["reward_selected_global"],
+                          native["sources"]["original-source:bg2:mode2:item:57"]["selected_global"]),
+                         ("FLPR_QM2_7", "FLPR_QM2_57"))
+
+    def test_a_reward_named_as_another_treasury_item_must_equal_it(self):
+        # The king's handover takes the reward by its name: another item of
+        # the treasury with that name must be an equal copy.
+        held = item_record("MISC01", expiration=0, charges=(1, 0, 0), flags=0)
+        for charges, place_kept in (((1, 0, 0), True), ((2, 0, 0), False)):
+            with self.subTest(charges=charges):
+                self.build_place("bg2ee", script=treasury_fixture())
+                area = with_trap_script(make_are([chest_item("RODS02"), held], [("Treasury", 0, 2)]), 0, "SAHTREAS")
+                (self.game / "override" / "ar2300.are").write_bytes(area)
+                self.with_foreign("misc01", item_record("MISC01", expiration=0, charges=charges, flags=0))
+                self.assertEqual(self.left_out(), [] if place_kept else [
+                    ("bg2:mode2:target:6", "place", "The treasury holds another MISC01, which the king's handover "
+                     f"could not tell from the reward {self.FOREIGN}: {self.PLACE}")])
+
+    def test_a_reward_that_can_lie_beside_the_treasurys_one_must_equal_it(self):
+        # Another place in the treasury's container (as Item Randomiser's
+        # base row 316) gets rewards of its tier, and overflow can put several
+        # of the treasury's tier into its place: the king's handover could
+        # not tell an unequal one of the same name from his.
+        def in_treasury(tier: str) -> dict:
+            row = place("bg2:base:target:9004", tier, 0)
+            row.update(area="ar2300", location="ar2300.are", area_resource="are:ar2300",
+                       target_ids=["are:ar2300/container/0"])
+            return row
+
+        second = "are:ar0411/container/1/item/1"
+        reason = (f"The reward {second} can lie in the treasury as another MISC01, which the king's handover "
+                  f"could not tell from the reward {self.FOREIGN}: {self.PLACE}")
+        for tier, beside, charges, place_kept in (("2", True, (2, 0, 0), False), ("2", True, (1, 0, 0), True),
+                                                  ("1", False, (2, 0, 0), False), ("2", False, (2, 0, 0), True)):
+            with self.subTest(tier=tier, beside=beside, charges=charges):
+                self.places = lambda: [*TreasuryGame.places(self), *([in_treasury("2")] if beside else [])]
+                self.build_place("bg2ee", script=treasury_fixture())
+                self.with_hoards(("misc01", item_record("MISC01", expiration=0, charges=(1, 0, 0), flags=0), "1"),
+                                 ("misc01", item_record("MISC01", expiration=0, charges=charges, flags=0), tier))
+                self.assertEqual(self.left_out(), [] if place_kept else [("bg2:mode2:target:6", "place", reason)])
+
+    def test_an_area_without_one_treasury_leaves_its_place_out(self):
+        self.build_place("bg2ee", script=treasury_fixture(), trap="IMPCHES3")
+        row = next(row for row in self.draft()["targets"] if row["id"] == "bg2:mode2:target:6")
+        self.assertEqual(row["binding_problem"], "treasure-container-not-found")
+        fitted = self.fit()
+        self.assertEqual([(row["id"], row["kind"], row["reason"]) for row in fitted["not_used"]], [
+            ("bg2:mode2:target:6", "place",
+             f"AR2300.ARE needs one container with the script SAHTREAS, the treasury: {self.PLACE}")])
+        self.apply(fitted)
 
 
 class BookScrollTests(RouteGame):

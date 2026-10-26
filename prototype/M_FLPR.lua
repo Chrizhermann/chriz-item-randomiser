@@ -398,6 +398,30 @@ local ok, failure = pcall(function()
         end
         return result
     end
+    -- The Sahuagin king's reward reply hands the treasury's rewards to the
+    -- payee in its condition (EEex_LuaTrigger), which must be true whatever
+    -- happens here: otherwise the king could never pay and end his scene.
+    -- A failure stops the campaign instead.
+    function FLPR_Handover(speaker, target_id, campaign)
+        local success,failure=pcall(function()
+            if type(target_id)=='number' then
+                target_id='original-target:'..(campaign==1 and 'bg1' or 'bg2')..':mode2:target:'..tostring(target_id)
+            end
+            if storage:get(Core.G.state)==0 then return end -- Existing non-randomized campaign.
+            local host=root.Host
+            if root.Disabled or not host or not host.native or host.status=='disabled' then return end
+            local count,reason,owed=host.native:hand_over_container_reward(speaker,target_id,
+                assert(host.controller:assignments()),Core.PHASE)
+            root.LastHandover={target_id=target_id,count=count,reason=reason,owed=owed}
+            -- Rewards that stay in the treasury; the host retries what is owed.
+            if reason and not owed then record('handover',reason) end
+        end)
+        if not success then
+            root.Disabled='CAMPAIGN_HANDOVER_FAILED:'..tostring(failure)
+            if root.Host then pcall(root.Host._disable,root.Host,root.Disabled) end
+        end
+        return true
+    end
     root.Disabled = nil
 end)
 if not ok then

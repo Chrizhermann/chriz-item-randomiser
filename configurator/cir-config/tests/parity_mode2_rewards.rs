@@ -15,21 +15,22 @@ use cir_config::game_names::{EetNames, Tables};
 use cir_config::game_text::GameText;
 use cir_config::json::{Dict, Value};
 use cir_config::mode2_rewards::{
-    direct_rewards, game_text_refs, gives_reward, journal_lua, journal_refs, own_patch, patch_dialogue, patch_reward,
-    physical_source_reward, prepare_ddwell_text, prepare_reward_texts, resource_rewards, resource_specs, rewards,
-    route_reasons, script_original, source_rewards, source_spec, target_rewards, target_spec, text_lines, text_original,
-    text_refs, titled, transfer_spec, transfer_specs, unpatched_script, Naming, TextRefs, PHYSICAL_SOURCE_REWARDS,
-    TEXT_REFS,
+    destroy_gate, direct_rewards, game_text_refs, gives_reward, handover, journal_lua, journal_refs, own_patch,
+    patch_dialogue, patch_reward, physical_source_reward, prepare_ddwell_text, prepare_reward_texts, resource_rewards,
+    resource_specs, rewards, route_reasons, script_original, source_rewards, source_spec, target_rewards, target_spec,
+    text_lines, text_original, text_refs, titled, transfer_spec, transfer_specs, unpatched_script, Naming, TextRefs,
+    DESTROY_GATES, PHYSICAL_SOURCE_REWARDS, TEXT_REFS,
 };
 use cir_config::py::{put_u32, str_value};
 use cir_config::quest_options::Dialogue;
 use cir_config::quest_rewards::{blocks, global_guard};
-use cir_config::script_text::script_blocks;
+use cir_config::script_text::{block_actions, block_parts, script_blocks};
 use common::builders::{contains, count, index, make_tlk, outgoing, replace, sha, tlk_text, u32_at};
 use common::mode2::{
-    action, action_with, alternatives, block, book_fixture, book_gifts, branches, check_dialogue, check_pair,
-    check_text_graph, dialogue_fixture, layout_dialogue, obj, script_fixture, specs, target_number, text, text_variant,
-    well_reward, with_actions, LayoutReply,
+    action, action_with, alternatives, block, book_block, book_fixture, book_gifts, branches, check_dialogue, check_pair,
+    check_text_graph, dialogue_fixture, handover_line, king_destroys, king_paid, layout_dialogue, no_action, obj,
+    route_guard, script_fixture, specs, target_number, text, text_variant, treasury_fixture, trigger, well_reward,
+    with_actions, LayoutReply,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
@@ -88,7 +89,66 @@ fn originals() -> Vec<(String, Vec<u8>)> {
     result.push(("bcs:asysta01".into(), script_fixture("asysta01")));
     result.push(("bcs:ddwell".into(), script_fixture("ddwell")));
     result.push(("bcs:ppbook".into(), book_fixture(true)));
+    result.push(("bcs:sahtreas".into(), treasury_fixture(&[])));
     result
+}
+
+/// Another mod's block in SAHTREAS.BCS, and one that only tests the rod.
+fn treasury_neighbours() -> (String, String) {
+    (
+        book_block(&[trigger(16399, 1, "GLOBALOtherMod", 0)], &action(30, 2, "GLOBALOtherMod", 0, 0)),
+        book_block(&[trigger(16481, 0, "RODS02", 0)], &action(30, 3, "GLOBALOtherMod", 0, 0)),
+    )
+}
+
+/// The treasury scripts of the generator (`treasury_cases`).
+fn treasury_variants() -> Vec<(&'static str, Vec<u8>)> {
+    let (other, testing) = treasury_neighbours();
+    let king = book_block(&[king_paid()], &king_destroys());
+    let destroy = |item: &str| action(169, 0, item, 0, 0);
+    let give = |item: &str| action(15, 0, item, 21, 0);
+    let paid = |actions: String| book_block(&[king_paid()], &actions);
+    vec![
+        ("installed", treasury_fixture(&[])),
+        ("mixed", treasury_fixture(&[other.clone(), king.clone(), testing.clone()])),
+        ("mixed crlf", crlf(treasury_fixture(&[other.clone(), king, testing.clone()]))),
+        ("lowercase", treasury_fixture(&[paid(destroy("rods02") + &destroy("brac19"))])),
+        ("other actor", treasury_fixture(&[paid(action(169, 0, "BRAC19", 0, 21) + &action(30, 1, "GLOBALOtherMod", 0, 0))])),
+        (
+            "alternatives",
+            treasury_fixture(&[alternatives(
+                &[&destroy("RODS02"), &(destroy("RODS02") + &action(30, 1, "GLOBALOtherMod", 0, 0))],
+                "GLOBALsahkngjob",
+                50,
+            )]),
+        ),
+        (
+            "two blocks",
+            treasury_fixture(&[
+                paid(destroy("RODS02")),
+                book_block(&[trigger(16399, 3, "GLOBALsahkngjob", 0)], &destroy("BRAC19")),
+            ]),
+        ),
+        ("rod only", treasury_fixture(&[paid(destroy("RODS02"))])),
+        ("plain", treasury_fixture(&[other, testing])),
+        ("giving", treasury_fixture(&[paid(king_destroys() + &give("RODS02"))])),
+        ("both given", treasury_fixture(&[paid(give("RODS02") + &give("BRAC19"))])),
+        ("created", treasury_fixture(&[paid(king_destroys() + &action(82, 0, "BRAC19", 0, 0))])),
+        ("second string", treasury_fixture(&[paid(king_destroys() + &action_with(363, 0, "shop01", 0, 0, "rods02"))])),
+        ("unreadable", replace(&treasury_fixture(&[]), b"169OB", b"169XX", Some(1))),
+        ("no blocks", b"SC\nSC\n".to_vec()),
+        ("no header", b"XX\nSC\n".to_vec()),
+        ("empty", Vec::new()),
+    ]
+}
+
+/// The king of the generator's "sahkng01 split": he pays with the rod in
+/// another reply than with the bracer.
+fn split_king() -> Vec<u8> {
+    let mut dialogue = Dialogue::new(&dialogue_fixture(&specs("dlg:sahkng01")), "sahkng01").unwrap();
+    let grant = b"GiveItemCreate(\"rods02\",LastTalkedToBy,0,0,0)\r\r\n";
+    dialogue.actions = dialogue.actions.iter().map(|text| replace(text, grant, b"", None)).collect();
+    with_actions(&dialogue.render(), "sahkng01", &[((80, 0), b"GiveItemCreate(\"rods02\",LastTalkedToBy,0,0,0)\r\n".as_slice())])
 }
 
 /// The Beamdog-compiled UHOGRE01 of
@@ -253,6 +313,10 @@ fn builders_match_the_reference_builders() {
     let (without, neither) = aran_without();
     assert_eq!(fixture.input("own_patch aran without amul21", "data"), without);
     assert_eq!(fixture.input("own_patch aran neither", "data"), neither);
+    for (label, data) in treasury_variants() {
+        assert_eq!(fixture.input(&format!("patch_reward sahtreas {label}"), "data"), data, "{label}");
+    }
+    assert_eq!(fixture.input("patch_reward sahkng01 split", "data"), split_king());
 }
 
 #[test]
@@ -593,13 +657,24 @@ fn aran_two_grants_have_all_four_independent_campaign_combinations() {
 #[test]
 fn the_sahuagin_kings_reply_gates_the_bracer_and_the_treasury_rod_apart() {
     // The rod is the treasury's container reward; the reply that creates
-    // another one follows its selected flag and sends no item anywhere.
+    // another one follows its selected flag. The rod's place is the
+    // treasury, whose reward the reply hands to the one the king pays.
     let rod = reward("sahrod");
     assert_eq!(text(rod, "item"), "rods02");
     assert!(rod.get("source_ids").unwrap().py_eq(&list(&[])));
-    assert!(rod.get("target_ids").unwrap().py_eq(&list(&[])));
+    assert!(rod.get("target_ids").unwrap().py_eq(&list(&["bg2:mode2:target:6"])));
     assert!(rod.get("authored_source_ids").unwrap().py_eq(&list(&["original-source:bg2:mode2:item:7"])));
     assert_eq!((text(rod, "selected_global"), text(rod, "consumed_global")), ("FLPR_QM2_7", "FLPR_XM2_7"));
+    let treasury = rod.get("handover").and_then(Value::as_dict).unwrap();
+    assert_eq!((text(treasury, "area"), text(treasury, "script")), ("ar2300", "sahtreas"));
+    assert_eq!(
+        handover_line(rod),
+        b"EEex_LuaTrigger(\"return(FLPR_Handover==nil)or(FLPR_Handover(EEex_LuaTrigger_Object,6))\")\r\n"
+    );
+    for key in ["sahkng01", "sahrod"] {
+        assert!(reward(key).get("resources").unwrap().py_eq(&list(&["dlg:sahkng01", "bcs:sahtreas"])), "{key}");
+    }
+    assert_eq!(target_rewards().get("bg2:mode2:target:6").and_then(Value::as_str), Some("sahrod"));
     assert_eq!(
         PHYSICAL_SOURCE_REWARDS,
         [("cre:udlesa", "cre-template", "sw1h39", "udlesa"), ("are:ar2300", "container", "rods02", "sahrod")]
@@ -616,8 +691,9 @@ fn the_sahuagin_kings_reply_gates_the_bracer_and_the_treasury_rod_apart() {
     for data in [&original, &result] {
         assert!(gives_reward("dlg:sahkng01", data, "sahrod", Naming::default()).unwrap());
     }
-    // Another mod's king gives no rod: the bracer's route stays, and the
-    // rod needs no route at all.
+    // Another mod's king gives no rod: the bracer's route stays and the
+    // rod needs no route; the rod's place, whose reward no reply would
+    // hand over, cannot be used (route_reasons).
     let mut dialogue = Dialogue::new(&original, "sahkng01").unwrap();
     let grant = b"GiveItemCreate(\"rods02\",LastTalkedToBy,0,0,0)\r\r\n";
     dialogue.actions = dialogue.actions.iter().map(|text| replace(text, grant, b"", None)).collect();
@@ -626,6 +702,7 @@ fn the_sahuagin_kings_reply_gates_the_bracer_and_the_treasury_rod_apart() {
     assert_eq!(reasons("dlg:sahkng01", &without), named(&[("sahrod", "SAHKNG01.DLG has no reply that gives RODS02")]));
     let patched = patch_reward("dlg:sahkng01", &without, None, None, Naming::default()).unwrap();
     assert!(!contains(&Dialogue::new(&patched, "sahkng01").unwrap().triggers.concat(), b"FLPR_QM2_7"));
+    assert!(!contains(&patched, b"FLPR_Handover"));
     // One that only takes or tests the rod gives none either; one that
     // gives it another way does, and the route says why it cannot gate it.
     let taking = with_actions(&without, "sahkng01", &[((80, 0), b"TakePartyItem(\"RODS02\")\r\n".as_slice())]);
@@ -646,6 +723,205 @@ fn the_sahuagin_kings_reply_gates_the_bracer_and_the_treasury_rod_apart() {
         gives_reward("dlg:sahkng01", &original, "aran", Naming::default()).unwrap_err(),
         "Unsupported extended reward route in SAHKNG01.DLG: aran",
     );
+}
+
+/// The routes left out of these bytes, in route order.
+fn left_out(resource: &str, data: &[u8]) -> Vec<String> {
+    reasons(resource, data).into_keys().collect()
+}
+
+#[test]
+fn each_reply_that_pays_with_the_rod_hands_the_treasury_over_after_its_guards() {
+    let specs = specs("dlg:sahkng01");
+    let rod = specs.iter().find(|spec| text(spec, "route") == "sahrod").unwrap();
+    let line = handover_line(rod);
+    let original = dialogue_fixture(&specs);
+    let result = patch_reward("dlg:sahkng01", &original, None, None, Naming::default()).unwrap();
+    // What the recovery reads patches to the same dialogue again.
+    assert_eq!(patch_reward("dlg:sahkng01", &result, None, None, Naming::default()).unwrap(), result);
+    let triggers = Dialogue::new(&result, "sahkng01").unwrap().triggers;
+    let handed: Vec<usize> = (0..triggers.len()).filter(|at| contains(&triggers[*at], &line)).collect();
+    assert_eq!(handed.len(), 4);
+    // A missing, repeated, moved or other handover is a changed copy of the patch.
+    for label in ["missing", "twice", "another place", "before the guards"] {
+        let mut dialogue = Dialogue::new(&result, "sahkng01").unwrap();
+        let text = &dialogue.triggers[handed[0]];
+        dialogue.triggers[handed[0]] = match label {
+            "missing" => replace(text, &line, b"", None),
+            "twice" => [text.as_slice(), &line].concat(),
+            "another place" => replace(text, b",6))", b",7))", None),
+            _ => [line.as_slice(), &replace(text, &line, b"", None)].concat(),
+        };
+        let tampered = dialogue.render();
+        assert_profile(
+            patch_reward("dlg:sahkng01", &tampered, None, None, Naming::default()).unwrap_err(),
+            "carries a changed copy of the reward route's own patch",
+        );
+        assert_eq!(left_out("dlg:sahkng01", &tampered), ["sahkng01", "sahrod"], "{label}");
+    }
+    // A mod whose king pays with the rod in another reply: that reply hands
+    // the treasury over, the bracer's does not.
+    let split = split_king();
+    assert!(reasons("dlg:sahkng01", &split).is_empty());
+    let patched = Dialogue::new(&synthetic_patch("sahkng01", &split), "sahkng01").unwrap();
+    for (state, hands) in [(80, true), (81, false)] {
+        let rows = outgoing(&patched, state);
+        assert_eq!(rows.len(), 2);
+        for row in rows {
+            assert_eq!(patched.triggers[u32_at(&row, 12) as usize].ends_with(&line), hands, "{state}");
+        }
+    }
+    // Only the route's own row of Item Randomiser's table is its place; a
+    // BG1 row would name its campaign.
+    for targets in [&[][..], &["bg2:mode2:target:6", "bg2:mode2:target:58"], &["bg2:base:target:6"]] {
+        let mut spec = rod.clone();
+        spec.insert("target_ids", list(targets));
+        assert_profile(handover(&spec).unwrap_err(), "The treasury's place changed");
+    }
+    let mut bg1 = rod.clone();
+    bg1.insert("target_ids", list(&["bg1:mode2:target:6"]));
+    assert_eq!(handover(&bg1).unwrap(), handover_line(&bg1));
+    assert!(contains(&handover_line(&bg1), b"(EEex_LuaTrigger_Object,6,1))"));
+}
+
+/// `check_destroys(original, result, specs)`: each block that destroys
+/// routes' items becomes one block per combination of those routes' flags,
+/// in route order; where a route is selected, NoAction() stands in for each
+/// of its item's destroys.
+fn check_destroys(original: &[u8], result: &[u8], specs: &[Dict]) {
+    let (before, after) = (script_blocks(original).unwrap(), script_blocks(result).unwrap());
+    let newline = before.newline;
+    assert_eq!((after.newline, &after.prefix, &after.suffix), (newline, &before.prefix, &before.suffix));
+    let stand_in = replace(no_action().as_bytes(), b"\n", newline, None);
+    let mut expected = Vec::new();
+    for block in &before.blocks {
+        let (head, conditions, responses) = block_parts(block, newline).unwrap();
+        let actions = block_actions(&responses, newline).unwrap();
+        let destroys: Vec<Vec<(usize, usize)>> = specs
+            .iter()
+            .map(|spec| {
+                let item = text(spec, "item").as_bytes();
+                actions
+                    .iter()
+                    .filter(|action| action.opcode == 169 && action.strings[0].to_ascii_lowercase() == item)
+                    .map(|action| (action.start, action.end))
+                    .collect()
+            })
+            .collect();
+        let gating: Vec<usize> = (0..specs.len()).filter(|route| !destroys[*route].is_empty()).collect();
+        // product((False, True), repeat=len(gating)): the first route varies slowest.
+        for choice in 0..(1usize << gating.len()) {
+            let selected = |at: usize| (choice >> (gating.len() - 1 - at)) & 1 == 1;
+            let mut edits: Vec<(usize, usize)> =
+                (0..gating.len()).filter(|at| selected(*at)).flat_map(|at| destroys[gating[at]].clone()).collect();
+            edits.sort_unstable();
+            let (mut changed, mut at) = (Vec::new(), 0);
+            for (start, end) in edits {
+                changed.extend_from_slice(&responses[at..start]);
+                changed.extend_from_slice(&stand_in);
+                at = end;
+            }
+            changed.extend_from_slice(&responses[at..]);
+            let guards: Vec<u8> = (0..gating.len())
+                .flat_map(|at| global_guard(text(&specs[gating[at]], "selected_global"), selected(at), newline).unwrap())
+                .collect();
+            expected.push([head.as_slice(), b"CO", newline, &conditions, &guards, b"CO", newline, &changed].concat());
+        }
+    }
+    assert_eq!(after.blocks, expected);
+}
+
+#[test]
+fn the_treasury_destroys_the_kings_items_only_while_his_grants_are_unchanged() {
+    let specs = specs("bcs:sahtreas");
+    let routes: Vec<(&str, &str, &str)> =
+        specs.iter().map(|spec| (text(spec, "route"), text(spec, "item"), text(spec, "selected_global"))).collect();
+    assert_eq!(routes, [("sahkng01", "brac19", "FLPR_QM2_57"), ("sahrod", "rods02", "FLPR_QM2_7")]);
+    assert_eq!(DESTROY_GATES, &[("bcs:sahtreas", &["sahkng01", "sahrod"][..])]);
+    assert!(destroy_gate("bcs:sahtreas") && !destroy_gate("bcs:ppbook"));
+    // Another mod's block, and one that only tests the rod, stay as found.
+    let (other, testing) = treasury_neighbours();
+    let original = treasury_fixture(&[other.clone(), book_block(&[king_paid()], &king_destroys()), testing.clone()]);
+    let mut gated = String::new();
+    for bracer in [false, true] {
+        for rod in [false, true] {
+            let rod_action = if rod { no_action() } else { action(169, 0, "RODS02", 0, 0) };
+            let bracer_action = if bracer { no_action() } else { action(169, 0, "BRAC19", 0, 0) };
+            gated += &book_block(
+                &[king_paid(), route_guard("FLPR_QM2_57", bracer), route_guard("FLPR_QM2_7", rod)],
+                &(rod_action + &bracer_action),
+            );
+        }
+    }
+    let result = synthetic_patch("sahtreas", &original);
+    assert_eq!(result, format!("SC\n{other}{gated}{testing}SC\n").into_bytes());
+    check_destroys(&original, &result, &specs);
+    assert_eq!(unpatched_script("bcs:sahtreas", &result, Naming::default()).unwrap(), original);
+    // In CRLF lines too.
+    assert_eq!(synthetic_patch("sahtreas", &crlf(&original)), crlf(&result));
+    // By meaning: a lowercase name, a destroy through ActionOverride(), one
+    // in each alternative response and one in another block are gated alike.
+    for (label, data) in treasury_variants() {
+        if ["lowercase", "other actor", "alternatives", "two blocks"].contains(&label) {
+            check_destroys(&data, &synthetic_patch("sahtreas", &data), &specs);
+        }
+    }
+    // A script that destroys neither item needs no gate.
+    let plain = treasury_fixture(&[other, testing]);
+    assert_eq!(patch_reward("bcs:sahtreas", &plain, None, None, Naming::default()).unwrap(), plain);
+    assert!(!own_patch("bcs:sahtreas", &plain, Naming::default()).unwrap());
+    assert!(reasons("bcs:sahtreas", &plain).is_empty());
+}
+
+#[test]
+fn a_treasury_that_could_take_a_moved_reward_otherwise_leaves_its_route_out() {
+    let reason = "SAHTREAS.BCS block 0 uses RODS02 in an action other than DestroyItem(), which the route cannot gate";
+    let give = |item: &str| action(15, 0, item, 21, 0);
+    // GiveItem() from the treasury: the rod's route stays out, the bracer's is gated.
+    let giving = treasury_fixture(&[book_block(&[king_paid()], &(king_destroys() + &give("RODS02")))]);
+    assert_eq!(reasons("bcs:sahtreas", &giving), named(&[("sahrod", reason)]));
+    let result = patch_reward("bcs:sahtreas", &giving, None, None, Naming::default()).unwrap();
+    let expected: Vec<String> = [false, true]
+        .into_iter()
+        .map(|bracer| {
+            let bracer_action = if bracer { no_action() } else { action(169, 0, "BRAC19", 0, 0) };
+            book_block(
+                &[king_paid(), route_guard("FLPR_QM2_57", bracer)],
+                &[action(169, 0, "RODS02", 0, 0), bracer_action, give("RODS02")].concat(),
+            )
+        })
+        .collect();
+    assert_eq!(result, treasury_fixture(&expected));
+    assert!(own_patch("bcs:sahtreas", &result, Naming::default()).unwrap());
+    assert_eq!(patch_reward("bcs:sahtreas", &result, None, None, Naming::default()).unwrap(), result);
+    assert_eq!(reasons("bcs:sahtreas", &result), named(&[("sahrod", reason)]));
+    // Both items so used, or a script that cannot be read: neither route.
+    let both = treasury_fixture(&[book_block(&[king_paid()], &(give("RODS02") + &give("BRAC19")))]);
+    let bracer_reason = reason.replace("RODS02", "BRAC19");
+    assert_eq!(reasons("bcs:sahtreas", &both), named(&[("sahrod", reason), ("sahkng01", &bracer_reason)]));
+    assert_profile(
+        patch_reward("bcs:sahtreas", &both, None, None, Naming::default()).unwrap_err(),
+        "BRAC19 in an action other than DestroyItem",
+    );
+    let unreadable = replace(&treasury_fixture(&[]), b"169OB", b"169XX", Some(1));
+    let found = reasons("bcs:sahtreas", &unreadable);
+    assert_eq!(found.keys().collect::<Vec<_>>(), ["sahkng01", "sahrod"]);
+    assert!(found["sahrod"].contains("SAHTREAS.BCS"));
+    // Our patch changed: a block dropped, a destroy back, a guard turned.
+    let result = patch_reward("bcs:sahtreas", &treasury_fixture(&[]), None, None, Naming::default()).unwrap();
+    let kept: Vec<String> =
+        script_blocks(&result).unwrap().blocks[..3].iter().map(|block| String::from_utf8(block.clone()).unwrap()).collect();
+    for (label, changed) in [
+        ("dropped", treasury_fixture(&kept)),
+        ("destroy back", replace(&result, no_action().as_bytes(), action(169, 0, "RODS02", 0, 0).as_bytes(), Some(1))),
+        (
+            "turned",
+            replace(&result, route_guard("FLPR_QM2_7", false).as_bytes(), route_guard("FLPR_QM2_7", true).as_bytes(), Some(1)),
+        ),
+    ] {
+        assert_profile(own_patch("bcs:sahtreas", &changed, Naming::default()).unwrap_err(), "SAHTREAS.BCS carries a changed copy");
+        assert_eq!(left_out("bcs:sahtreas", &changed), ["sahkng01", "sahrod"], "{label}");
+    }
 }
 
 #[test]
@@ -1103,6 +1379,8 @@ const REVIEWED_EET: &[(&str, &str, &str)] = &[
     // The book as CIR's installer prepares it for the ring's quest; the
     // scrolls' routes gate its two blocks that give them.
     ("bcs:ppbook", "39b1f5119d8abc96d5158eec54d212475e639516cb35d86de27e7d6e4cbbd515", "e501c882a3fccf42e7cd5643d36c54dd67b5c38f3518d252cf98c453ddf1062a"),
+    // The treasury's destroys of the king's two reward items, gated.
+    ("bcs:sahtreas", "a3e4e14c6e0e3ea5d3c193cb30808aabb4c320f6b9e4dbbe3fadf99deee40751", "07f76c023620896b09a222f5ae2c7251ffd2b07c8ec18643ab65b7cadf8cbe9b"),
     ("dlg:aldeth", "c9c9ec1e62045e24c585040effad5ec9561a404df3b84c8eb971264b1ef242ef", "b6a08cfc2f712b30335ab0eb3534662785b68d8ed77b414e75377c01780d0982"),
     ("dlg:amcler01", "5bac12a183463f6faa912b15e80c45c321cd2189f318c5056cf38b2150a6d79e", "f1a7a795b6b22abf209fd9be5f3357e71ced3e432db3e86e5ee38c9ad88d65e9"),
     ("dlg:ammayor", "d37409df94285e4bdce88bdfdb38382790dca567dc6304744244d9d5504030d6", "d71af3922a33954154f7f2745df7466647465ad3920b6a04548b6a9df73a2e05"),
@@ -1123,7 +1401,7 @@ const REVIEWED_EET: &[(&str, &str, &str)] = &[
     ("dlg:ppdjinn", "06c1671065b549921263594db378d7610223cb16b70b7f718b3885b45b32af38", "dae488faf269ff5d144fb33093c777c00f3a539f4778d85fc91bb1af60d750ca"),
     ("dlg:ppstat01", "7022962710da01f3d66088d8f7c5aa2a7963d7e994ff0d55f61dc5b64c9673ae", "69505c964ee036a6d9b974407e34cbd4ff35f4cebd10373819c5ef2f5d50f73a"),
     ("dlg:riftg03", "4bb8a0866e3470ae558c108160ebef18c33de9f14ad3181ccf33ebd0d5e4912a", "34e7c5e57d9e69394b40ce09f4c5cd5a5e6249d871b676c82bafbd3d707f3ff5"),
-    ("dlg:sahkng01", "c76c8624052f7e179d42157e4081ddfcdbb101d2f00b819008bc99f5660785c1", "e4489ed5a331b4ad81ca9cb8dbe3234e30651cef572245c8f389e7a1e1b56b5f"),
+    ("dlg:sahkng01", "c76c8624052f7e179d42157e4081ddfcdbb101d2f00b819008bc99f5660785c1", "9a7109aa36361ce3e57183e08b735993dbb946584d4b79d50dd5cc641050c70f"),
     ("dlg:scsain", "c2a43b0d67eca9b531aa591463f74d5333225a95f0be87f8d03ed1cf91f8dafe", "efbc5faa5490e6f89b6ca54a30a02ba74871353e19f7c8f640439974c175caca"),
     ("dlg:sctelwyn", "d5dd048c43e16ba937ff583eef8f5966e549fb0c4e3f92679883d35fcdda1759", "bcafc54734313b1513100537abb486fd42298c69795d647f525da7e06b5f9c39"),
     ("dlg:scyarryl", "f96880bdabcfe8393d9ad6df502d3d001e2d79913736e480f6cc717f012dd367", "33b842e20c6602bdbd9e62da78ec7d79e402d8cb2006282ce7568257d776698c"),
@@ -1236,6 +1514,9 @@ fn reviewed_eet_resources_when_available_patch_exactly_and_reexport() {
                 }
                 assert!(contains(&dlg.actions.concat(), b"ReallyForceSpell(Myself,DRYAD_TELEPORT)"));
             }
+        } else if destroy_gate(resource) {
+            check_destroys(&original, &result, &resource_specs(resource, eet).unwrap());
+            assert_eq!(script_blocks(&result).unwrap().blocks.len(), 4);
         } else if kind == "bcs" {
             assert_eq!(script_original(&result, &resource_specs(resource, eet).unwrap()).unwrap().0, original);
         } else if ["aran", "sahkng01"].contains(&name) {

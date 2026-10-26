@@ -36,8 +36,9 @@ from .mode2_rewards import (SOURCE_REWARDS as MODE2_SOURCES, TARGET_REWARDS as M
                             RESOURCE_REWARDS as MODE2_RESOURCES, source_spec as mode2_source_spec,
                             target_spec as mode2_target_spec, patch_reward as patch_mode2_reward,
                             prepare_reward_texts, own_patch as own_mode2_patch, journal_lua as mode2_journal_lua,
-                            TEXT_REFS as MODE2_TEXT_REFS, transfer_spec as mode2_transfer_spec, unpatched_script)
-from .mode2_rewards import PHYSICAL_SOURCE_REWARDS, REWARDS as MODE2_REWARDS
+                            TEXT_REFS as MODE2_TEXT_REFS, transfer_spec as mode2_transfer_spec, unpatched_script,
+                            resource_specs as mode2_resource_specs)
+from .mode2_rewards import DESTROY_GATES, PHYSICAL_SOURCE_REWARDS, REWARDS as MODE2_REWARDS
 from .container_rewards import (RESOURCE_TARGETS as CONTAINER_RESOURCES,
                                 TEXT_RESOURCES as CONTAINER_TEXT_RESOURCES, container_error,
                                 patch_container_resource, own_patch as own_container_patch,
@@ -141,6 +142,12 @@ def _compile(manifest: dict, world: dict, index: dict, items: dict,
         if routed is not None:
             routed.add(resource)
 
+    def route_resources(spec: dict) -> list[str]:
+        # The resources a route patches in this game: a script that would
+        # destroy its item needs no gate where the game has none.
+        return [resource for resource in spec["resources"]
+                if resource not in DESTROY_GATES or resource in index["resources"]]
+
     def use_quest(resource: str) -> None:
         # The quest script as the installer prepared it (or as Apply extended it).
         use(resource)
@@ -175,6 +182,81 @@ def _compile(manifest: dict, world: dict, index: dict, items: dict,
         if not routes:
             routes.append(reward_routes(catalog, world))
         return {"game": routes[0].game, "names": routes[0].names}
+
+    def require_treasury_names(identity: str, treasury: dict, script: str) -> None:
+        # The treasury's script runs with every AI update of its container,
+        # trapped or not (2.7.3.0), and destroys the king's reward items by
+        # name once his job is done: a reward of such a name is safe there
+        # only as the source whose move switches that destroy off (_gate_destroys).
+        # The king's handover takes a reward by its name: every other item
+        # that can lie in the treasury under that name, its own or another
+        # reward, must be an equal copy, or it could not tell which one to
+        # take. A randomization puts each reward only into places of its tier
+        # (FLPRCore), with overflow several into one place; without one each
+        # reward has a place of its own. Run once every place is compiled.
+        resource = "bcs:" + script.lower()
+        if not routes:
+            routes.append(reward_routes(catalog, world))
+        destroyed = routes[0].destroyed(resource)
+        gates = {spec["item"].lower(): spec["selected_global"]
+                 for spec in mode2_resource_specs(resource, **naming())} if resource in DESTROY_GATES else {}
+        held = defaultdict(list)
+        for row in index["sources"].values():
+            if row["owner"] == treasury["id"]:
+                held[row["item"]].append(row)
+        randomization = manifest.get("randomization")
+        rules, tiers = (randomization or {}).get("sources", {}), (randomization or {}).get("targets", {})
+
+        def spot(endpoint: dict) -> tuple:
+            return (endpoint["area"], endpoint["script_name"].lower(), endpoint["x"], endpoint["y"],
+                    endpoint["container_type"])
+
+        # The other places in the treasury, and whether its own place takes
+        # several rewards (its capacity, or overflow).
+        beside = [target["id"] for target in manifest["targets"] if target["id"] != identity and
+                  native["targets"].get(target["id"], {}).get("kind") == "container" and
+                  spot(native["targets"][target["id"]]) == spot(native["targets"][identity])]
+        capacity = next(target["capacity"] for target in manifest["targets"] if target["id"] == identity)
+        crowded = capacity > 1 or (randomization or {}).get("overflow") is True
+
+        def takes(target_id: str, source_id: str) -> bool:
+            # Whether the place can get the reward (an unknown tier: it can).
+            slots, tier = tiers.get(target_id), rules.get(source_id, {}).get("tier")
+            return randomization is None or slots is None or tier is None or tier in slots
+
+        def beside_it(source_id: str) -> bool:
+            # Whether the reward can lie in the treasury beside this place's.
+            if randomization is None:
+                return bool(beside) or capacity > 1
+            return any(takes(other, source_id) for other in beside) or (crowded and takes(identity, source_id))
+
+        rewards = []
+        for selected in manifest["sources"]:
+            endpoint = native["sources"].get(selected["id"])
+            if endpoint is not None:  # Else left out in this round.
+                source = selected["record"]
+                rewards.append((selected["id"], source, endpoint,
+                                {source["item"], *rules.get(selected["id"], {}).get("reward_variants", ())},
+                                [source["record"][key] for key in ("charges", "flags", "expiration")]))
+        for source_id, source, endpoint, names, payload in rewards:
+            if not takes(identity, source_id):
+                continue  # Never this place's reward.
+            guard = endpoint.get("reward_selected_global", endpoint.get("selected_global"))
+            for name in sorted(names & destroyed):
+                _require(gates.get(name) is not None and gates[name] == guard,
+                         f"{script.upper()}.BCS destroys every {name.upper()} in the treasury, and the reward "
+                         f"{source_id} can be one: {identity}")
+            own = {source_id, *source.get("physical_source_ids", ())}
+            for name in sorted(names):
+                _require(all([row["record"][key] for key in ("charges", "flags", "expiration")] == payload
+                             for row in held.get(name, ()) if row["id"] not in own),
+                         f"The treasury holds another {name.upper()}, which the king's handover could not tell "
+                         f"from the reward {source_id}: {identity}")
+                for other_id, _, _, other_names, other_payload in rewards:
+                    _require(other_id == source_id or name not in other_names or other_payload == payload or
+                             not beside_it(other_id),
+                             f"The reward {other_id} can lie in the treasury as another {name.upper()}, which the "
+                             f"king's handover could not tell from the reward {source_id}: {identity}")
 
     def actor_name(target: dict) -> str | None:
         selector = target["selector"]
@@ -353,9 +435,10 @@ def _compile(manifest: dict, world: dict, index: dict, items: dict,
                 native["sources"][identity].setdefault("auxiliary_creatures", []).append(auxiliary)
             # All alternate quest routes share the same saved selection flag.
             # Their actual bytes are reviewed by patch_mode2_reward at export.
-            if len(spec["resources"]) > 1:
-                native["sources"][identity]["resources"] = list(spec["resources"])
-            for resource in spec["resources"]:
+            resources = route_resources(spec)
+            if len(resources) > 1:
+                native["sources"][identity]["resources"] = resources
+            for resource in resources:
                 use_route(resource)
             use("itm:" + source["item"])
             return
@@ -516,7 +599,7 @@ def _compile(manifest: dict, world: dict, index: dict, items: dict,
                  f"{reward['quest'].upper()}.DLG could stand for: {selected['id']}")
         require_route(name)
         native["sources"][selected["id"]]["reward_selected_global"] = reward["selected_global"]
-        for resource in reward["resources"]:
+        for resource in route_resources(reward):
             use_route(resource)
 
     for selected in manifest["sources"]:
@@ -581,6 +664,9 @@ def _compile(manifest: dict, world: dict, index: dict, items: dict,
     for copy in copies or ():
         attempt(copy["source_id"], compile_copy, copy)
 
+    # The Sahuagin treasury's place: its container and script (require_treasury_names).
+    treasuries: dict[str, tuple[dict, str]] = {}
+
     def compile_target(selected: dict) -> None:
         target, identity = selected["record"], selected["id"]
         authored = target.get("adapter_id") == "original-target-v1"
@@ -606,7 +692,7 @@ def _compile(manifest: dict, world: dict, index: dict, items: dict,
                          creature["selector"]["script_name"].lower() == placement["script_name"].lower() and
                          not {DANGLING_INVENTORY, INVALID_INVENTORY, UNRESOLVED_STORAGE}.intersection(creature["concerns"]),
                          f"Original reward recipient changed: {identity}")
-                for resource in reward["resources"]:
+                for resource in route_resources(reward):
                     use_route(resource)
                 for resource in (placement["creature_resource"], "are:" + placement["area"].lower()):
                     use(resource)
@@ -645,9 +731,38 @@ def _compile(manifest: dict, world: dict, index: dict, items: dict,
             if target["kind"] == "scripted-target":
                 if route is not None:
                     spec = mode2_target_spec(route, **naming())
-                    for resource in spec["resources"]:
+                    for resource in route_resources(spec):
                         use_route(resource)
-                    if spec["recipient_local"] is None:
+                    if spec.get("handover"):
+                        # The Sahuagin treasury: the one container of its area
+                        # whose script it is, wherever a mod moved or renamed it.
+                        handover = spec["handover"]
+                        area = "are:" + handover["area"]
+                        use(area)
+                        found = [row for row in index["targets"].values() if row["resource"] == area and
+                                 row["kind"] == "container" and row["selector"]["trap_script"] == handover["script"]]
+                        _require(len(found) == 1, f"{area[4:].upper()}.ARE needs one container with the script "
+                                                  f"{handover['script'].upper()}, the treasury: {identity}")
+                        selection = found[0]["selector"]
+                        name = _name(selection["name"], identity)
+                        _require(not selection["dynamic_item_table"] and
+                                 container_names[area, name.lower(), selection["x"], selection["y"],
+                                                 selection["type"]] == 1,
+                                 f"Native target needs a unique static container name: {identity}")
+                        _require(0 <= selection["x"] <= 32767 and 0 <= selection["y"] <= 32767,
+                                 f"Native container coordinates are unsupported: {identity}")
+                        treasuries[identity] = (found[0], handover["script"])
+                        native["targets"][identity] = {
+                            "kind": "container", "area": _area(area), "script_name": name,
+                            "x": selection["x"], "y": selection["y"], "container_type": selection["type"],
+                            "handover": {"event_global": spec["event_global"],
+                                         "recipient_local": spec["recipient_local"]},
+                            "reward_resource": spec["resource"],
+                            "identity": _digest({"target": selected, "container": found[0]})}
+                        if "original-target:" + route != identity:
+                            # A preset's row: the reward reply names the route's own row.
+                            native["targets"][identity]["route_target"] = "original-target:" + route
+                    elif spec["recipient_local"] is None:
                         readable(spec["recipient"].split("/", 1)[0])
                         physical = index["targets"].get(spec["recipient"])
                         _require(physical is not None and physical["kind"] == "container" and
@@ -751,6 +866,10 @@ def _compile(manifest: dict, world: dict, index: dict, items: dict,
 
     for selected in manifest["targets"]:
         attempt(selected["id"], compile_target, selected)
+    # The treasury's rewards, once every place in its container is known.
+    for identity, (treasury, script) in treasuries.items():
+        if identity in native["targets"]:
+            attempt(identity, require_treasury_names, identity, treasury, script)
 
     guarded_ids = [s["id"] for s in manifest["sources"] if s["record"]["kind"] != "virtual"]
     if guarded_ids or shield or "cursed_disguises" in manifest or native.get("duplicates"):

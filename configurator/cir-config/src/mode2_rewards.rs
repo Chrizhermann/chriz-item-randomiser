@@ -38,7 +38,7 @@ use crate::error::{Error, ErrorKind, Result};
 use crate::game_names::{convert_resource, EetNames};
 use crate::game_text::GameText;
 use crate::json::{Dict, Value};
-use crate::py::{count_bytes, find_bytes, put_u32, replace_bytes, rfind_bytes, str_value, u32_le, upper};
+use crate::py::{count_bytes, find_bytes, latin1, put_u32, replace_bytes, rfind_bytes, str_value, u32_le, upper};
 use crate::quest_options::{pad, Dialogue};
 use crate::translations::Line;
 use crate::quest_rewards::{global_action, global_guard};
@@ -439,12 +439,28 @@ fn build_registry() -> Registry {
     // sahtreas.bcs) is an ordinary container source, but the king's reward
     // reply creates another one (SAHTREAS.BCS then destroys the treasury's).
     // As with UDLESA's sword, the reply follows the source's kept/relocated
-    // decision; without a target, its selected copy only drops the grant.
-    alias(&mut rewards, "sahrod", "rods02", 7, None, "SAHROD", &[("sahkng01", vec![(81, 0)])], NO_CHARGES, talker);
+    // decision. The rod's place (row 6, Item Randomiser's sahtreas.fl) is the
+    // treasury, the AR2300 container whose script is SAHTREAS: its reward lies
+    // there until the king's reward reply hands it to the one he pays
+    // ([`handover`]), and goes to that payee once he has paid. On the
+    // prince's side it stays to be looted.
+    alias(&mut rewards, "sahrod", "rods02", 7, Some(6), "SAHROD", &[("sahkng01", vec![(81, 0)])], NO_CHARGES, talker);
     {
         let row = row_mut(&mut rewards, "sahrod");
         row.insert("source_ids", Value::List(Vec::new()));
         row.insert("authored_source_ids", list!["original-source:bg2:mode2:item:7"]);
+        row.insert("handover", dict! {"area" => "ar2300", "script" => "sahtreas"});
+    }
+    // Once the king's job is done (sahkngjob 2, which he sets just before his
+    // reward reply), SAHTREAS.BCS destroys the items that reply gives
+    // (DestroyItem), the treasury's rod among them, with every AI update of
+    // the treasury. A reward that moved there under such a name must stay:
+    // each destroy runs only while its route's grant is the original one
+    // ([`patch_destroys`]). A game without the script needs no gate.
+    for (_, keys) in DESTROY_GATES {
+        for key in *keys {
+            row_mut(&mut rewards, key).insert("resources", list!["dlg:sahkng01", "bcs:sahtreas"]);
+        }
     }
     // The two scrolls that the book of Lavok's sphere (PPBOOK.BCS, AR1513)
     // gives with its ring on the last page (Item Randomiser's rows 260 and
@@ -475,6 +491,9 @@ fn build_registry() -> Registry {
             let entry = resources.setdefault(&format!("{kind}:{dialogue}"), Value::List(Vec::new()));
             entry.as_list_mut().expect("names").push(Value::from(name));
         }
+    }
+    for (resource, keys) in DESTROY_GATES {
+        resources.insert(*resource, Value::List(keys.iter().map(|key| Value::from(*key)).collect()));
     }
     let mut sources = Dict::new();
     let mut targets = Dict::new();
@@ -519,6 +538,15 @@ pub const PHYSICAL_SOURCE_REWARDS: &[(&str, &str, &str, &str)] =
 /// if its reward dialogue gives the item too.
 pub fn physical_source_reward(resource: &str, kind: &str, item: &str) -> Option<&'static str> {
     PHYSICAL_SOURCE_REWARDS.iter().find(|row| (row.0, row.1, row.2) == (resource, kind, item)).map(|row| row.3)
+}
+
+/// `DESTROY_GATES`: scripts that destroy routes' items, with those routes
+/// ([`patch_destroys`]); each is also a resource of its routes.
+pub const DESTROY_GATES: &[(&str, &[&str])] = &[("bcs:sahtreas", &["sahkng01", "sahrod"])];
+
+/// Whether `resource` is one of the [`DESTROY_GATES`].
+pub fn destroy_gate(resource: &str) -> bool {
+    DESTROY_GATES.iter().any(|(gate, _)| *gate == resource)
 }
 
 /// `RESOURCE_REWARDS`: resource to the reward keys that edit it.
@@ -580,6 +608,12 @@ fn in_game(mut spec: Dict, naming: Naming<'_>) -> Result<Dict> {
         placement.insert("area", area);
         placement.insert("creature_resource", creature);
         spec.insert("inventory_target", placement);
+    }
+    if let Some(Value::Dict(handover)) = spec.get("handover").filter(|handover| handover.truthy()) {
+        let mut handover = handover.clone();
+        let area = name(text_field(&handover, "area", "lower")?, "are")?;
+        handover.insert("area", area);
+        spec.insert("handover", handover);
     }
     Ok(spec)
 }
@@ -785,18 +819,22 @@ fn numeric_target_row(target: &str) -> Option<(&str, &str)> {
     .then_some((campaign, row))
 }
 
+/// The campaign and row of the route's only place (`target[0] if
+/// len(target) == 1`) when it is a numbered row of the extended table.
+fn only_target(spec: &Dict) -> Result<Option<(String, String)>> {
+    let target = field(spec, "target_ids")?;
+    if py_len(target)? != 1 {
+        return Ok(None);
+    }
+    match first_item(target)? {
+        Value::Str(target) => Ok(numeric_target_row(&target).map(|(campaign, row)| (campaign.to_string(), row.to_string()))),
+        other => Err(Error::type_error(format!("expected string or bytes-like object, got '{}'", other.type_name()))),
+    }
+}
+
 /// The blocking Lua callback that hands a carried reward over.
 fn callback(spec: &Dict, numeric: bool) -> Result<Vec<u8>> {
-    let target = field(spec, "target_ids")?;
-    let first = if py_len(target)? == 1 { Some(first_item(target)?) } else { None };
-    let row = match &first {
-        Some(Value::Str(target)) => numeric_target_row(target),
-        Some(other) => {
-            return Err(Error::type_error(format!("expected string or bytes-like object, got '{}'", other.type_name())))
-        }
-        None => None,
-    };
-    let Some((campaign, row)) = row else {
+    let Some((campaign, row)) = only_target(spec)? else {
         return Err(profile("The carried reward's transfer target changed"));
     };
     // The dialogue parser strips spaces and colons even inside Lua strings.
@@ -805,12 +843,30 @@ fn callback(spec: &Dict, numeric: bool) -> Result<Vec<u8>> {
         let campaign = if campaign == "bg1" { ",1" } else { "" };
         format!("EEex_LuaAction(\"return(FLPR_Transfer(EEex_LuaAction_Object,{row}{campaign}))\")")
     } else {
-        format!(
-            "EEex_LuaAction(\"return FLPR_Transfer(EEex_LuaAction_Object,[[original-target:{}]])\")",
-            str_value(first.as_ref().expect("target"))
-        )
+        // The only target, which numeric_target_row matched whole.
+        format!("EEex_LuaAction(\"return FLPR_Transfer(EEex_LuaAction_Object,[[original-target:{campaign}:mode2:target:{row}]])\")")
     }
     .into_bytes())
+}
+
+/// The condition by which a reward reply hands its place's treasury to the
+/// payee (M_FLPR's FLPR_Handover, `_handover`). It is true whatever happens
+/// there, so the reply always shows; without CIR's runtime it does nothing.
+pub fn handover(spec: &Dict) -> Result<Vec<u8>> {
+    let Some((campaign, row)) = only_target(spec)? else {
+        return Err(profile("The treasury's place changed"));
+    };
+    // The dialogue parser strips spaces and colons, as in callback.
+    let campaign = if campaign == "bg1" { ",1" } else { "" };
+    Ok(format!(
+        "EEex_LuaTrigger(\"return(FLPR_Handover==nil)or(FLPR_Handover(EEex_LuaTrigger_Object,{row}{campaign}))\")\r\n"
+    )
+    .into_bytes())
+}
+
+/// Whether the route hands its place's treasury over (`spec.get("handover")`).
+fn hands_over(spec: &Dict) -> bool {
+    spec.get("handover").is_some_and(Value::truthy)
 }
 
 /// The replies that give a route's item, by (state, ordinal), with the call
@@ -1109,6 +1165,14 @@ pub fn patch_dialogue_in(
                         [mark(spec, recipient)?.as_slice(), &replacement, b"\r\n", &event(spec)?].concat()
                     };
                     edits.push((call.start, call.end, changed));
+                }
+                // After the campaign guards, which the recovery reads from the
+                // end (guard_calls). Every variant pays, so each hands over;
+                // a second call finds nothing left in the treasury.
+                for (spec, _) in relevant.iter().copied() {
+                    if hands_over(spec) {
+                        condition = joined(&condition, &handover(spec)?);
+                    }
                 }
                 if choices.contains(&true) && !action_refs.is_empty() {
                     edits.extend(display_edits(&text, action_refs, shown));
@@ -1598,6 +1662,19 @@ fn static_original(data: &[u8], resource: &str, naming: Naming<'_>) -> Result<Op
     }
 }
 
+/// The handover condition of one of these routes that `trigger` ends with.
+fn handover_tail(trigger: &[u8], routes: &[(Vec<u8>, &Dict)]) -> Result<Option<Vec<u8>>> {
+    for (_, spec) in routes {
+        if hands_over(spec) {
+            let line = handover(spec)?;
+            if trigger.ends_with(&line) {
+                return Ok(Some(line));
+            }
+        }
+    }
+    Ok(None)
+}
+
 pub(crate) fn unpatched_dialogue(mut dialogue: Dialogue, specs: &[Dict], resource: &str) -> Result<Vec<u8>> {
     let label = label(resource);
     let mut routes: Vec<(Vec<u8>, &Dict)> = Vec::new();
@@ -1614,11 +1691,25 @@ pub(crate) fn unpatched_dialogue(mut dialogue: Dialogue, specs: &[Dict], resourc
             // route unselected; it keeps each original grant.
             let mut row = rows[at].clone();
             let (flags, action_id) = (u32_le(&row, 0), u32_le(&row, 16));
-            let trigger = if flags & 2 != 0 { string(&dialogue.triggers, u32_le(&row, 12), &label)? } else { Vec::new() };
+            let mut trigger = if flags & 2 != 0 { string(&dialogue.triggers, u32_le(&row, 12), &label)? } else { Vec::new() };
             let mut action = if flags & 4 != 0 { string(&dialogue.actions, action_id, &label)? } else { Vec::new() };
+            // The handover conditions follow the guards of their routes.
+            let mut handed = Vec::new();
+            if flags & 2 != 0 {
+                while let Some(tail) = handover_tail(&trigger, &routes)? {
+                    trigger.truncate(trigger.len() - tail.len());
+                    handed.insert(0, tail);
+                }
+            }
             let guards = if flags & 2 != 0 { guard_calls(&trigger, &routes).unwrap_or_default() } else { Vec::new() };
             let copies = if guards.len() >= usize::BITS as usize - 1 { usize::MAX } else { 1usize << guards.len() };
-            if guards.iter().any(|(_, _, selected)| *selected) || at.saturating_add(copies) > rows.len() {
+            let mut expected = Vec::new();
+            for (_, spec, _) in &guards {
+                if hands_over(spec) {
+                    expected.push(handover(spec)?);
+                }
+            }
+            if guards.iter().any(|(_, _, selected)| *selected) || at.saturating_add(copies) > rows.len() || handed != expected {
                 return Err(changed_patch(resource));
             }
             at += copies;
@@ -1947,6 +2038,134 @@ fn unpatch_script(
     Ok(([script.prefix, restored.concat(), script.suffix].concat(), numbers))
 }
 
+/// A compiled NoAction() (`_no_action`).
+fn no_action(newline: &[u8]) -> Vec<u8> {
+    let object = [b"0 0 0 0 0 0 0 0 0 0 0 0 \"\"OB" as &[u8], newline].concat();
+    let parameters: &[u8] = b"0 0 0 0 0\"\" \"\" AC";
+    [b"AC" as &[u8], newline, b"0OB", newline, &object, b"OB", newline, &object, b"OB", newline, &object, parameters, newline]
+        .concat()
+}
+
+/// Gate the route's DestroyItem of its item (`_gate_destroys`): a block that
+/// destroys it (itself or through ActionOverride(), where the moved reward
+/// may be too) becomes two, the original while the route's grant is
+/// unchanged and one with NoAction() instead of each of those destroys while
+/// it is moved. Conditions may test the item; any other action with it could
+/// take a moved reward, so the route cannot be used.
+fn gate_destroys(data: &[u8], spec: &Dict) -> Result<Vec<u8>> {
+    let label = label(&text(spec, "resource")?);
+    let item_name = text_field(spec, "item", "encode")?;
+    let item = item_name.to_ascii_lowercase().into_bytes();
+    naming(&label, || {
+        let script = script_blocks(data)?;
+        let newline = script.newline;
+        let mut blocks = script.blocks.clone();
+        for (index, block) in script.blocks.iter().enumerate() {
+            if !names(block, item_name) {
+                continue;
+            }
+            let (head, conditions, responses) = block_parts(block, newline)?;
+            let using: Vec<Action> = block_actions(&responses, newline)?
+                .into_iter()
+                .filter(|action| action.strings.iter().any(|text| text.to_ascii_lowercase() == item))
+                .collect();
+            if using.iter().any(|action| action.opcode != 169 || action.strings[0].to_ascii_lowercase() != item) {
+                return Err(profile(format!(
+                    "{label} block {index} uses {} in an action other than DestroyItem(), which the route cannot gate",
+                    upper(item_name)
+                )));
+            }
+            if using.is_empty() {
+                continue;
+            }
+            let mut variants = Vec::new();
+            for selected in [false, true] {
+                let edits: Vec<Edit> = if selected {
+                    using.iter().map(|action| (action.start, action.end, no_action(newline))).collect()
+                } else {
+                    Vec::new()
+                };
+                let guard = global_guard(text_field(spec, "selected_global", "encode")?, selected, newline)?;
+                variants.extend(
+                    [head.as_slice(), b"CO", newline, &conditions, &guard, b"CO", newline, &edited(&responses, edits)?].concat(),
+                );
+            }
+            blocks[index] = variants;
+        }
+        Ok([script.prefix, blocks.concat(), script.suffix].concat())
+    })
+}
+
+/// Gate each route's DestroyItem of its item ([`DESTROY_GATES`],
+/// `_patch_destroys`), one route after the other; everything else stays as
+/// found. A route whose destroys cannot be gated keeps its blocks as they
+/// are; its reason goes to `reasons`. With no route gateable, nothing is
+/// prepared.
+pub fn patch_destroys(data: &[u8], specs: &[Dict], reasons: Option<&mut Dict>) -> Result<Vec<u8>> {
+    let mut data = data.to_vec();
+    let mut failures = Dict::new();
+    for spec in specs {
+        match gate_destroys(&data, spec) {
+            Ok(patched) => data = patched,
+            Err(error) if error.kind == ErrorKind::Profile => failures.insert(route(spec)?, error.message),
+            Err(error) => return Err(error),
+        }
+    }
+    if let Some(reasons) = reasons {
+        for (key, reason) in failures.iter() {
+            reasons.insert(key, reason.clone());
+        }
+    }
+    if failures.len() == specs.len() {
+        let first = specs.first().ok_or_else(index_error)?;
+        return Err(profile(failures.get(&route(first)?).map(str_value).unwrap_or_default()));
+    }
+    Ok(data)
+}
+
+/// The script our destroy gates were made from, and whether `data` carries
+/// them (`_destroys_original`); patching the result again must give `data`
+/// exactly.
+fn destroys_original(data: &[u8], specs: &[Dict]) -> Result<(Vec<u8>, bool)> {
+    let resource = text(specs.first().ok_or_else(index_error)?, "resource")?;
+    let mut patched = Vec::new();
+    for spec in specs {
+        let flag = text_field(spec, "selected_global", "encode")?;
+        if find_bytes(data, &[b"\"GLOBAL", flag.as_bytes(), b"\""].concat(), 0).is_some() {
+            patched.push(spec);
+        }
+    }
+    if patched.is_empty() {
+        return Ok((data.to_vec(), false));
+    }
+    let attempt = (|| -> Result<(bool, Vec<u8>)> {
+        let mut original = data.to_vec();
+        naming(&label(&resource), || {
+            for spec in patched.iter().rev() {
+                let script = script_blocks(&original)?;
+                let flag = text_field(spec, "selected_global", "encode")?;
+                let (selected, unselected) =
+                    (global_guard(flag, true, script.newline)?, global_guard(flag, false, script.newline)?);
+                let kept: Vec<Vec<u8>> = script
+                    .blocks
+                    .iter()
+                    .filter(|block| find_bytes(block, &selected, 0).is_none())
+                    .map(|block| replace_bytes(block, &unselected, b"", Some(1)))
+                    .collect();
+                original = [script.prefix, kept.concat(), script.suffix].concat();
+            }
+            Ok(())
+        })?;
+        Ok((patch_destroys(&original, specs, None)? == data, original))
+    })();
+    match attempt {
+        Ok((true, original)) => Ok((original, true)),
+        Ok((false, _)) => Err(changed_patch(&resource)),
+        Err(error) if error.kind == ErrorKind::Profile => Err(changed_patch(&resource)),
+        Err(error) => Err(error),
+    }
+}
+
 /// The unpatched resource (exact, or as the engine reads it), whether the
 /// bytes are our patch, and our patch's text refs (`_examine`).
 pub(crate) struct Examined {
@@ -1957,6 +2176,10 @@ pub(crate) struct Examined {
 }
 
 pub(crate) fn examine(resource: &str, data: &[u8], naming: Naming<'_>) -> Result<Examined> {
+    if destroy_gate(resource) {
+        let (original, own) = destroys_original(data, &resource_specs(resource, naming)?)?;
+        return Ok(Examined { original, own, script_ref: None, text_refs: None });
+    }
     if resource.starts_with("bcs:") {
         let (original, script_ref, own) = script_original(data, &resource_specs(resource, naming)?)?;
         return Ok(Examined { original, own, script_ref, text_refs: None });
@@ -2174,7 +2397,9 @@ pub fn unpatched_script(resource: &str, data: &[u8], naming: Naming<'_>) -> Resu
 
 fn prepare_routes(resource: &str, specs: &[Dict], data: &[u8], reasons: &mut Dict, naming: Naming<'_>) -> Result<()> {
     let examined = examine(resource, data, naming)?;
-    if resource.starts_with("bcs:") {
+    if destroy_gate(resource) {
+        patch_destroys(&examined.original, specs, Some(reasons))?;
+    } else if resource.starts_with("bcs:") {
         patch_scripts(&examined.original, specs, Some(0), Some(reasons))?;
     } else if text_refs(resource).is_some() {
         let stand_in: BTreeMap<i64, i64> =
@@ -2251,6 +2476,31 @@ pub fn gives_reward(resource: &str, data: &[u8], key: &str, naming: Naming<'_>) 
     Ok(false)
 }
 
+/// The items the script `resource` destroys by name (`destroyed_items`):
+/// each DestroyItem(), also through ActionOverride(), in any block and letter
+/// case.
+///
+/// The Sahuagin treasury's script runs with every AI update of its container,
+/// trapped or not (2.7.3.0: CGameContainer's constructor sets its script,
+/// AIUpdate ends in ProcessAI), so a reward of such a name could be destroyed
+/// there (native_export).
+pub fn destroyed_items(resource: &str, data: &[u8]) -> Result<BTreeSet<String>> {
+    let resource = resource_key(resource)?;
+    naming(&label(&resource), || {
+        let script = script_blocks(data)?;
+        let mut found = BTreeSet::new();
+        for block in &script.blocks {
+            let (_, _, responses) = block_parts(block, script.newline)?;
+            for action in block_actions(&responses, script.newline)? {
+                if action.opcode == 169 {
+                    found.insert(latin1(&action.strings[0].to_ascii_lowercase()));
+                }
+            }
+        }
+        Ok(found)
+    })
+}
+
 /// Patch a resource or re-export our own patch; text routes need refs on
 /// their first export.
 pub fn patch_reward(
@@ -2263,6 +2513,9 @@ pub fn patch_reward(
     let resource = resource_key(resource)?;
     let examined = examine(&resource, data, naming)?;
     let specs = resource_specs(&resource, naming)?;
+    if destroy_gate(&resource) {
+        return patch_destroys(&examined.original, &specs, None);
+    }
     if resource.starts_with("bcs:") {
         let mut ddwell_ref = ddwell_ref;
         if let Some(refs) = refs {

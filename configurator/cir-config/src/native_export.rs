@@ -238,6 +238,12 @@ struct Compiler<'a> {
     template_actors: HashMap<String, Vec<&'a Value>>,
     /// The reward routes, looked at once per compile.
     routes: Option<Arc<RewardRoutes>>,
+    /// The campaign's sources and targets, and its randomization rules.
+    manifest_sources: &'a [Value],
+    manifest_targets: &'a [Value],
+    randomization: Option<&'a Value>,
+    /// The Sahuagin treasury's place: its container and script (`require_treasury_names`).
+    treasuries: Vec<(String, &'a Value, Value)>,
     /// Whether the revision was exported before and belongs to running saves.
     stored: bool,
     revision: String,
@@ -276,6 +282,149 @@ impl<'a> Compiler<'a> {
         self.routes()?.gives(name)
     }
 
+    /// `require_treasury_names`: the treasury's script runs with every AI
+    /// update of its container, trapped or not (2.7.3.0), and destroys the
+    /// king's reward items by name once his job is done: a reward of such a
+    /// name is safe there only as the source whose move switches that destroy off
+    /// (`gate_destroys`). The king's handover takes a reward by its name: every
+    /// other item that can lie in the treasury under that name, its own or
+    /// another reward, must be an equal copy, or it could not tell which one to
+    /// take. A randomization puts each reward only into places of its tier
+    /// (FLPRCore), with overflow several into one place; without one each
+    /// reward has a place of its own. Run once every place is compiled.
+    fn require_treasury_names(&mut self, identity: &str, treasury: &Value, script: &Value) -> Result<()> {
+        let script = script.as_str().unwrap_or("");
+        let resource = format!("bcs:{}", lower(script));
+        let routes = self.routes()?;
+        let destroyed = routes.destroyed(&resource)?;
+        let mut gates: HashMap<String, Value> = HashMap::new();
+        if mode2_rewards::destroy_gate(&resource) {
+            for spec in mode2_rewards::resource_specs(&resource, routes.naming())? {
+                gates.insert(lower(entry(&spec, "item")?.as_str().unwrap_or("")), entry(&spec, "selected_global")?.clone());
+            }
+        }
+        let treasury_id = treasury.at("id")?;
+        let mut held: HashMap<String, Vec<&Value>> = HashMap::new();
+        for row in rows(self.world, "sources") {
+            if row.at("owner")?.py_eq(treasury_id) {
+                held.entry(py_str(row.at("item")?)).or_default().push(row);
+            }
+        }
+        let payload = |record: &Value| -> Result<Vec<Value>> {
+            ["charges", "flags", "expiration"].iter().map(|key| record.at(key).cloned()).collect()
+        };
+        let equal = |a: &[Value], b: &[Value]| a.len() == b.len() && a.iter().zip(b).all(|(a, b)| a.py_eq(b));
+        let randomization = self.randomization;
+        let rules = randomization.and_then(|randomization| randomization.get("sources"));
+        let tiers = randomization.and_then(|randomization| randomization.get("targets"));
+        let spot = |endpoint: &Value| -> Result<(String, String, Vec<Value>)> {
+            Ok((
+                py_str(endpoint.at("area")?),
+                lower(&py_str(endpoint.at("script_name")?)),
+                vec![endpoint.at("x")?.clone(), endpoint.at("y")?.clone(), endpoint.at("container_type")?.clone()],
+            ))
+        };
+        // The other places in the treasury, and whether its own place takes
+        // several rewards (its capacity, or overflow).
+        let here = spot(self.targets.get(identity).ok_or_else(|| Error::key(identity))?)?;
+        let mut beside = Vec::new();
+        for target in self.manifest_targets {
+            let id = text(target, "id")?;
+            let Some(endpoint) = self.targets.get(id) else { continue };
+            if id != identity && endpoint.get("kind").and_then(Value::as_str) == Some("container") {
+                let there = spot(endpoint)?;
+                if there.0 == here.0 && there.1 == here.1 && equal(&there.2, &here.2) {
+                    beside.push(id);
+                }
+            }
+        }
+        let place = self
+            .manifest_targets
+            .iter()
+            .find(|target| target.get("id").and_then(Value::as_str) == Some(identity))
+            .ok_or_else(|| Error::key(identity))?;
+        let capacity = place.at("capacity")?.as_int().is_some_and(|capacity| capacity > 1);
+        let crowded = capacity
+            || randomization.and_then(|randomization| randomization.get("overflow")).and_then(Value::as_bool)
+                == Some(true);
+        // Whether the place can get the reward (an unknown tier: it can).
+        let takes = |target_id: &str, source_id: &str| {
+            let slots = tiers.and_then(|tiers| tiers.get(target_id)).map(list);
+            let tier = rules.and_then(|rules| rules.get(source_id)).and_then(|rule| rule.get("tier"));
+            match (randomization, slots, tier) {
+                (Some(_), Some(slots), Some(tier)) => slots.iter().any(|slot| slot.py_eq(tier)),
+                _ => true,
+            }
+        };
+        // Whether the reward can lie in the treasury beside this place's.
+        let beside_it = |source_id: &str| {
+            if randomization.is_none() {
+                return !beside.is_empty() || capacity;
+            }
+            beside.iter().any(|other| takes(other, source_id)) || (crowded && takes(identity, source_id))
+        };
+        let mut rewards = Vec::new();
+        for selected in self.manifest_sources {
+            let id = text(selected, "id")?;
+            let Some(endpoint) = self.sources.get(id) else {
+                continue; // Left out in this round.
+            };
+            let source = selected.at("record")?;
+            let mut names = BTreeSet::from([py_str(source.at("item")?)]);
+            if let Some(rule) = rules.and_then(|rules| rules.get(id)) {
+                names.extend(rule.get("reward_variants").map(list).unwrap_or(&[]).iter().map(py_str));
+            }
+            rewards.push((id, source, endpoint, names, payload(source.at("record")?)?));
+        }
+        for (id, source, endpoint, names, expected) in &rewards {
+            if !takes(identity, id) {
+                continue; // Never this place's reward.
+            }
+            let guard = endpoint.get("reward_selected_global").or_else(|| endpoint.get("selected_global"));
+            for name in names.iter().filter(|name| destroyed.contains(*name)) {
+                let gated = matches!((gates.get(name), guard), (Some(gate), Some(guard)) if gate.py_eq(guard));
+                require(gated, || {
+                    format!(
+                        "{}.BCS destroys every {} in the treasury, and the reward {id} can be one: {identity}",
+                        upper(script),
+                        upper(name)
+                    )
+                })?;
+            }
+            let mut own = BTreeSet::from([id.to_string()]);
+            own.extend(source.get("physical_source_ids").map(list).unwrap_or(&[]).iter().map(py_str));
+            for name in names {
+                let mut same = true;
+                for row in held.get(name).map(Vec::as_slice).unwrap_or(&[]) {
+                    if !own.contains(&py_str(row.at("id")?)) {
+                        same = same && equal(&payload(row.at("record")?)?, expected);
+                    }
+                }
+                require(same, || {
+                    format!(
+                        "The treasury holds another {}, which the king's handover could not tell from the reward \
+                         {id}: {identity}",
+                        upper(name)
+                    )
+                })?;
+                for (other, _, _, other_names, other_payload) in &rewards {
+                    let told = other == id
+                        || !other_names.contains(name)
+                        || equal(other_payload, expected)
+                        || !beside_it(other);
+                    require(told, || {
+                        format!(
+                            "The reward {other} can lie in the treasury as another {}, which the king's handover \
+                             could not tell from the reward {id}: {identity}",
+                            upper(name)
+                        )
+                    })?;
+                }
+            }
+        }
+        Ok(())
+    }
+
     fn scanned_hash(&self, resource: &str) -> Result<&'a Value> {
         self.index.resource(self.world, resource).ok_or_else(|| Error::key(resource))?.at("sha256")
     }
@@ -312,6 +461,20 @@ impl<'a> Compiler<'a> {
         self.use_resource(resource)?;
         self.routed.insert(resource.to_string());
         Ok(())
+    }
+
+    /// `route_resources`: the resources a route patches in this game. A
+    /// script that would destroy its item needs no gate where the game has
+    /// none.
+    fn route_resources(&self, resources: &Value) -> Vec<Value> {
+        list(resources)
+            .iter()
+            .filter(|resource| {
+                let resource = resource.as_str().unwrap_or("");
+                !mode2_rewards::destroy_gate(resource) || self.index.resources.contains(resource)
+            })
+            .cloned()
+            .collect()
     }
 
     /// `use_quest`: the quest script as the installer prepared it (or as
@@ -586,12 +749,12 @@ impl<'a> Compiler<'a> {
             }
             // All alternate quest routes share the same saved selection flag.
             // Their actual bytes are reviewed by patch_reward at export.
-            let resources = list(entry(&spec, "resources")?);
+            let resources = self.route_resources(entry(&spec, "resources")?);
             if resources.len() > 1 {
                 let endpoint = self.sources.get_mut(identity).and_then(Value::as_dict_mut).expect("inserted above");
-                endpoint.insert("resources", Value::List(resources.to_vec()));
+                endpoint.insert("resources", Value::List(resources.clone()));
             }
-            for resource in resources {
+            for resource in &resources {
                 self.use_route(resource.as_str().unwrap_or(""))?;
             }
             self.use_resource(&item_resource)?;
@@ -854,7 +1017,7 @@ impl<'a> Compiler<'a> {
             .and_then(Value::as_dict_mut)
             .ok_or_else(|| Error::key(identity))?;
         endpoint.insert("reward_selected_global", reward.at("selected_global")?.clone());
-        for resource in list(reward.at("resources")?) {
+        for resource in self.route_resources(reward.at("resources")?) {
             self.use_route(resource.as_str().unwrap_or(""))?;
         }
         Ok(())
@@ -1007,8 +1170,8 @@ impl<'a> Compiler<'a> {
                     None => false,
                 };
                 require(ok, || format!("Original reward recipient changed: {identity}"))?;
-                for resource in list(entry(reward, "resources")?) {
-                    self.use_route(&py_str(resource))?;
+                for resource in self.route_resources(entry(reward, "resources")?) {
+                    self.use_route(&py_str(&resource))?;
                 }
                 for resource in [creature_resource.to_string(), format!("are:{}", lower(placement_area))] {
                     self.use_resource(&resource)?;
@@ -1068,10 +1231,63 @@ impl<'a> Compiler<'a> {
             if target_kind == "scripted-target" {
                 if let Some(id) = route_target.as_deref() {
                     let spec = mode2_rewards::target_spec(id, self.routes()?.naming())?;
-                    for resource in list(entry(&spec, "resources")?) {
+                    for resource in self.route_resources(entry(&spec, "resources")?) {
                         self.use_route(resource.as_str().unwrap_or(""))?;
                     }
-                    if entry(&spec, "recipient_local")?.is_null() {
+                    if spec.get("handover").is_some_and(Value::truthy) {
+                        // The Sahuagin treasury: the one container of its area
+                        // whose script it is, wherever a mod moved or renamed it.
+                        let handover = entry(&spec, "handover")?;
+                        let area_resource = format!("are:{}", text(handover, "area")?);
+                        self.use_resource(&area_resource)?;
+                        let script = handover.at("script")?;
+                        let mut found = Vec::new();
+                        for row in rows(self.world, "targets") {
+                            if row.at("resource")?.as_str() == Some(area_resource.as_str())
+                                && row.at("kind")?.as_str() == Some("container")
+                                && row.at("selector")?.at("trap_script")?.py_eq(script)
+                            {
+                                found.push(row);
+                            }
+                        }
+                        require(found.len() == 1, || {
+                            format!(
+                                "{}.ARE needs one container with the script {}, the treasury: {identity}",
+                                upper(tail(&area_resource, 4)),
+                                upper(script.as_str().unwrap_or(""))
+                            )
+                        })?;
+                        let treasury = found[0];
+                        let selection = treasury.at("selector")?;
+                        let name = script_name(Some(selection.at("name")?), identity)?;
+                        let unique = !selection.at("dynamic_item_table")?.truthy()
+                            && Self::count(
+                                &self.container_names,
+                                &self.container_key(treasury.get("resource"), &lower(&name), selection)?,
+                            ) == 1;
+                        require(unique, || format!("Native target needs a unique static container name: {identity}"))?;
+                        let (x, y) = (selection.at("x")?, selection.at("y")?);
+                        require(in_coordinates(x) && in_coordinates(y), || {
+                            format!("Native container coordinates are unsupported: {identity}")
+                        })?;
+                        self.treasuries.push((identity.to_string(), treasury, script.clone()));
+                        let mut endpoint = crate::dict! {
+                            "kind" => "container", "area" => area(treasury.at("resource")?)?, "script_name" => name,
+                            "x" => x.clone(), "y" => y.clone(), "container_type" => selection.at("type")?.clone(),
+                            "handover" => crate::dict! {
+                                "event_global" => entry(&spec, "event_global")?.clone(),
+                                "recipient_local" => entry(&spec, "recipient_local")?.clone(),
+                            },
+                            "reward_resource" => entry(&spec, "resource")?.clone(),
+                            "identity" => identity_of(crate::dict! {"target" => selected.clone(), "container" => treasury.clone()})?,
+                        };
+                        let route = format!("original-target:{id}");
+                        if route != identity {
+                            // A preset's row: the reward reply names the route's own row.
+                            endpoint.insert("route_target", route);
+                        }
+                        self.targets.insert(identity, endpoint);
+                    } else if entry(&spec, "recipient_local")?.is_null() {
                         let recipient = entry(&spec, "recipient")?.as_str().unwrap_or("");
                         self.readable(recipient.split('/').next().unwrap_or(""))?;
                         let physical =
@@ -1350,6 +1566,10 @@ pub fn compile(
         owner_items: HashMap::new(),
         template_actors: HashMap::new(),
         routes: None,
+        manifest_sources,
+        manifest_targets,
+        randomization: manifest.get("randomization"),
+        treasuries: Vec::new(),
         stored,
         revision: py_str(&revision),
         notes: Vec::new(),
@@ -1489,6 +1709,14 @@ pub fn compile(
     for selected in manifest_targets {
         let identity = text(selected, "id")?;
         compiler.attempt(&mut problems, identity, |compiler| compiler.compile_target(selected))?;
+    }
+    // The treasury's rewards, once every place in its container is known.
+    for (identity, treasury, script) in std::mem::take(&mut compiler.treasuries) {
+        if compiler.targets.contains_key(&identity) {
+            compiler.attempt(&mut problems, &identity, |compiler| {
+                compiler.require_treasury_names(&identity, treasury, &script)
+            })?;
+        }
     }
 
     let mut guarded_ids = Vec::new();
