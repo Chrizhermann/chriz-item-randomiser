@@ -246,6 +246,17 @@ king's own place, whichever of the two kings the area has, and Tolgerias's, who
 pays in his house while TOLGER2 fights in the planar sphere
 ([configurator](post-install-configurator.md)).
 
+A `first-of` target is a list of groups of creatures, each a creature target of
+its own area under the place's identity; a group may be `corpse_only`. For each
+reward a group with `eligible` candidates gives one member, drawn from the
+campaign seed and the reward's unit as a group target draws its recipient; a
+group without them gives every member in order. Inspection takes the first of
+these creatures that can receive the reward now; while none can, it reports the
+reason of the first one in the visible area (else `AREA_UNAVAILABLE`), so the
+reward waits. Delivery goes to the creature inspection reserved. These are Item
+Randomiser's chapter 3 places: the drawn vampire alive, else the drawn shadow
+thief or Aran at his corpse ([configurator](post-install-configurator.md)).
+
 Each command also carries an opaque Lua session table. A receipt must preserve
 that exact reference; it cannot serialize or deep-copy it. Restore/destroy/new
 capture renew the reference, rejecting callbacks left over from another session

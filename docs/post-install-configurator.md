@@ -452,15 +452,13 @@ has no reply that gives BELT02") or an item its creature cannot drop. The draft 
 same runtime check as "Check configuration", which then passes. `/api/template`
 also returns the left-out rows with their table line and reason (`not_used_rows`).
 
-Some rows of the extended pools are left out in every game, and the preset dialog
-names them apart ("… belong to quests that Chriz Item Randomiser cannot change yet"):
-quest rewards and places that Item Randomiser handled with its own conversation and
+Quest rewards and places that Item Randomiser handled with its own conversation and
 script patches (the `.fl` places of its `mode2` tables, and rewards that a conversation
-or script gives) for which CIR has no route yet. Their reason is
-`route-not-supported`. In the original tables these are the places of a vampire or
-shadow thief of chapter 3 (BG2).
-`tests/test_original_catalog.py` lists them; a route for one of them takes its rows off
-that list.
+or script gives) need a route of CIR's. A row for which CIR has none would be left out
+in every game, and the preset dialog would name it apart ("… belong to quests that
+Chriz Item Randomiser cannot change yet"), with the reason `route-not-supported`. Every
+such row of the original tables has a route; `tests/test_original_catalog.py` checks
+that none waits for one.
 
 Two such places give the item to each version of a troll: `pptroll.fl` (the painting
 troll in Spellhold, AR1514, row 37) and `torgal.fl` (TorGal in AR1301, row 89, with the
@@ -600,6 +598,46 @@ the ring does more than destroy it ("TOLGER.BCS block 0 tests RING33 and does mo
 destroy it, which the route cannot gate"): with a moved ring, the rest of that block
 would never run. His second ring (TOLGER.CRE) moves with the first, as Item
 Randomiser's table of second copies says (below).
+
+Rows 25, 49, 215 and 252 (Item Randomiser's `chapter3.fl`, "a named vampire or shadow
+thief during chapter 3"; 215 and 252 come with the scrolls) are places of the guild
+war. Item Randomiser gives each of their items to two creatures, since the party
+fights one side only: to one of Bodhi's vampires, whom Aran's side fights in her lair
+(AR0801.BCS creates them for Aran's last job), and to one of Aran's shadow thieves,
+whom Bodhi's side fights in his guild house (AR0329; with Rogue Rebalancing in its own
+guild, RR#010) or at the docks (Arkanis Gath, whom AR0300.BCS creates for Bodhi's first
+job). It chooses each among those who can use the item, else among all. Here each place
+has one reward, and it goes to the first of these who can take it: the vampire drawn
+for it (LASSAL02, BODVAM01 or BODVAM02) alive, into its backpack; the thief drawn for
+it (BOOTER02, ARNWAR06 or ARKANISG; with Rogue Rebalancing, which Item Randomiser knows
+by its RR#ARAN2.CRE, RR#BOOTR, RR#HAZ or ARKANISG) at his corpse; or Aran (ARAN02 or
+RR#ARAN2) at his corpse. Each is drawn among those who can use the reward, else among
+all, as Item Randomiser draws them. So on Aran's side the vampire carries the reward
+and drops it when killed, and on Bodhi's side it lies at the corpse of whichever of the
+thief and Aran dies first. Alive, the thieves and Aran never take it: on Aran's side
+they are the party's allies, and Rogue Rebalancing removes the living thieves once Aran
+is dead. Bodhi's side must kill Aran (BODHI.DLG asks for `Dead("aran")`). Nothing is
+given twice, so no second copy needs destroying, as Item Randomiser's script for the
+Alternatives mod does.
+
+Two of Item Randomiser's creatures are not among them: Tanova (BODTAN), whose vampire
+script (VAMPIR01.BCS of the unmodded game) replaces her with a bat once her hit points
+fall below 10, which would take a reward she carries; and Dedral (ARNWAR07, RR#DEDRL),
+of whom AR0329's traps create more (AMBUSH2.BCS, ARNSPW1.BCS), and who leaves in his
+conversation, so that his corpse could not be told from another's.
+
+The runtime finds each creature by its script name in its area. So each must be once in
+the four areas the handler names (AR0801, AR0329, RR#010, AR0300), as an actor that
+appears there or as a creature the area's own script creates, whatever the conditions,
+and the only creature there of its script name; one that is not (another mod's second
+copy, another creature of its script name, one placed for no hour of the day, one
+without a script name) is left out of its group. The places are left out where no
+vampire is left ("Item Randomiser's chapter 3 place needs one of Bodhi's vampires
+(LASSAL02, BODVAM01, BODVAM02) in AR0801, once and with a script name of its own
+there"), or no thief and no Aran ("... needs one of Aran's thieves or Aran himself where
+its handler looks for them ..."), or where the script of one of those areas cannot be
+read; without AR0801 they are left out with `area-resource-absent`. Apply changes none of
+these files.
 
 The book of Lavok's sphere (`PPBOOK.BCS`, AR1513) gives two scrolls with the ring on
 its last page (rows 260 and 262 of the extended tables, beside the ring's row 109).

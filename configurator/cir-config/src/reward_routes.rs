@@ -26,6 +26,7 @@
 //! The routes are recognised as the scanned game names their items (EET
 //! renames BG1's): [`RewardRoutes::naming`] says how, for the export too.
 
+use crate::chapter3;
 use crate::container_rewards;
 use crate::error::{Error, ErrorKind, Result, CHANGED_SINCE_SCAN};
 use crate::game_names::{eet_names, EetNames};
@@ -37,7 +38,7 @@ use crate::py::str_value;
 use crate::resources::{file_identity, resource_type, sha256_hex, FileIdentity, GameResources};
 use crate::reward_copies::RewardCopies;
 use crate::translations::{self, Line};
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
@@ -61,6 +62,11 @@ pub struct RewardRoutes {
     /// The items each destroying script ([`mode2_rewards::DESTROY_GATES`])
     /// destroys by name, or why it cannot be read.
     destroyed: HashMap<String, std::result::Result<BTreeSet<String>, String>>,
+    /// The creatures each chapter 3 area's own script creates
+    /// ([`chapter3::created`]), or why it cannot be read.
+    created: HashMap<String, std::result::Result<BTreeMap<String, usize>, String>>,
+    /// The own script of each chapter 3 area that has one in the game.
+    area_scripts: HashMap<String, String>,
     /// The files the resources were read from, with their identities then.
     files: Vec<(PathBuf, FileIdentity)>,
     /// The copies of the quest routes' reward replies in other dialogues.
@@ -118,6 +124,8 @@ impl RewardRoutes {
         let mut reasons = HashMap::new();
         let mut giving = BTreeSet::new();
         let mut destroyed = HashMap::new();
+        let mut created = HashMap::new();
+        let mut area_scripts = HashMap::new();
         let mut files: Vec<(PathBuf, FileIdentity)> = Vec::new();
         let mut known: HashSet<PathBuf> = HashSet::new();
         let (male, female) = game_text::text_files(game_root, language)?;
@@ -130,10 +138,15 @@ impl RewardRoutes {
             }
         }
         let unpaired = game_text::unpaired(&male, female.as_deref())?;
-        let types = [("bcs", resource_type("bcs")), ("dlg", resource_type("dlg")), ("lua", resource_type("lua"))];
+        let types = [
+            ("bcs", resource_type("bcs")),
+            ("dlg", resource_type("dlg")),
+            ("lua", resource_type("lua")),
+            ("are", resource_type("are")),
+        ];
         let (journal, copies) = GameResources::with(game_root, &types, |reader| {
             let mut present: HashMap<&str, HashSet<String>> = HashMap::new();
-            for kind in ["bcs", "dlg", "lua"] {
+            for kind in ["bcs", "dlg", "lua", "are"] {
                 present.insert(kind, reader.names(kind)?.into_iter().collect());
             }
             for path in reader.lookup_paths()? {
@@ -210,6 +223,36 @@ impl RewardRoutes {
                     }
                 }
             }
+            let hashed = |resource: &str, data: &[u8]| {
+                scanned.get(resource).is_some_and(|hash| hash.py_eq(&Value::from(sha256_hex(data))))
+            };
+            for area in chapter3::AREAS {
+                let resource = format!("are:{area}");
+                if !scanned.contains_key(&resource) {
+                    continue;
+                }
+                let Some(data) = read("are", area)?.filter(|data| hashed(&resource, data)) else {
+                    changed.insert(resource);
+                    continue;
+                };
+                let name = chapter3::area_script(&data);
+                let script = format!("bcs:{}", name.as_deref().unwrap_or("None"));
+                let Some(name) = name.filter(|name| present["bcs"].contains(name) || scanned.contains_key(&script)) else {
+                    created.insert(resource, Ok(BTreeMap::new()));
+                    continue;
+                };
+                area_scripts.insert(resource.clone(), script.clone());
+                let Some(source) = read("bcs", &name)?.filter(|source| hashed(&script, source)) else {
+                    changed.insert(script);
+                    continue;
+                };
+                let found = match chapter3::created(&source, &format!("{}.BCS", crate::py::upper(&name))) {
+                    Ok(found) => Ok(found),
+                    Err(error) if error.kind == ErrorKind::Profile => Err(error.message),
+                    Err(error) => return Err(error),
+                };
+                created.insert(resource, found);
+            }
             let copies = RewardCopies::new(&mut |name| read("dlg", name), &scanned, naming)?;
             Ok((journal, copies))
         })?;
@@ -225,6 +268,8 @@ impl RewardRoutes {
             reasons,
             giving,
             destroyed,
+            created,
+            area_scripts,
             files,
             copies,
         })
@@ -352,6 +397,19 @@ impl RewardRoutes {
         match self.destroyed.get(resource) {
             None => Ok(BTreeSet::new()),
             Some(Ok(items)) => Ok(items.clone()),
+            Some(Err(reason)) => Err(Error::profile(reason.clone())),
+        }
+    }
+
+    /// The own script of the chapter 3 area `area` (an ARE resource of
+    /// [`chapter3::AREAS`]) and the creatures it creates
+    /// ([`chapter3::created`]); none without a script.
+    pub fn created(&self, area: &str) -> Result<(Option<String>, BTreeMap<String, usize>)> {
+        let script = self.area_scripts.get(area).cloned();
+        self.unchanged(&[area.to_string()].into_iter().chain(script.clone()).collect::<Vec<_>>())?;
+        match self.created.get(area) {
+            None => Ok((script, BTreeMap::new())),
+            Some(Ok(found)) => Ok((script, found.clone())),
             Some(Err(reason)) => Err(Error::profile(reason.clone())),
         }
     }

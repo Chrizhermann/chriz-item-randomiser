@@ -31,6 +31,7 @@ pub mod script_text;
 pub mod mode2_rewards;
 pub mod container_rewards;
 pub mod reward_copies;
+pub mod chapter3;
 pub mod reward_routes;
 pub mod duplicates;
 pub mod original_options;
