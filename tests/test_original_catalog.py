@@ -320,11 +320,15 @@ class OriginalCatalogTests(unittest.TestCase):
                              _target("are:ar1103/container/0", "are:ar1103", "container", "jugjer01")]}
         result = resolve_template({"items": []}, world, "bg2-original", items="extended", targets="extended")
         rows = {row["id"]: row for row in result["targets"]}
-        for line in (25, 37, 49, 50, 59, 60):
+        for line in (25, 49, 50, 59, 60):
             row = rows[f"bg2:mode2:target:{line}"]
             with self.subTest(target=row["target"], area=row["area"]):
                 self.assertEqual((row["target_ids"], row["container_name"], row["binding_problem"]),
                                  ([], None, "route-not-supported"))
+        # The painting troll's place is the troll, whom this game lacks.
+        row = rows["bg2:mode2:target:37"]
+        self.assertEqual((row["target_ids"], row["container_name"], row["creature_resource"], row["binding_problem"]),
+                         ([], None, "cre:pptroll1", "creature-resource-absent"))
         # The quest places CIR has a route for keep theirs, a handler's place too
         # (the Sahuagin treasury's and king's and Jermien's rewards; this game
         # lacks their conversations).
@@ -404,7 +408,41 @@ class OriginalCatalogTests(unittest.TestCase):
             waiting |= {row["id"] for row in result["items"] + result["targets"]
                         if row["binding_problem"] == "route-not-supported"}
         # Places that Item Randomiser's own quest handlers name.
-        self.assertEqual(waiting, {f"bg2:mode2:target:{line}" for line in (25, 37, 49, 50, 59, 60, 89, 215, 252)})
+        self.assertEqual(waiting, {f"bg2:mode2:target:{line}" for line in (25, 49, 50, 59, 60, 215, 252)})
+
+    def test_a_troll_in_several_versions_is_the_place_of_the_one_in_the_area(self):
+        """Item Randomiser's pptroll.fl and torgal.fl give the item to each
+        version of the troll; the EE games bring in only the first, which
+        stands in the area (original_catalog.CREATURE_VERSIONS)."""
+        from flir_config.original_registrations import target_kind
+
+        for line, area, first, other in ((37, "are:ar1514", "pptroll1", "pptroll2"),
+                                         (89, "are:ar1301", "torgal", "torgal2")):
+            creature = f"cre:{first}"
+            troll = _target(f"{area}/actor/0", area, "actor", first, creature)
+            fallen = _target(f"{area}/actor/1", area, "actor", first, f"cre:{other}")
+            twice = _target(f"{area}/actor/2", area, "actor", first, creature)
+            for template, game in (("bg2-original", "bg2ee"), ("eet-original", "eet")):
+                def place(targets, resources=(area, creature, f"cre:{other}")):
+                    world = {"resources": [{"id": name} for name in resources], "sources": [], "targets": targets}
+                    result = resolve_template({"items": []}, world, template, game=game, items="extended",
+                                              targets="extended", options={"flail_heads": True})
+                    return next(row for row in result["targets"] if row["id"] == f"bg2:mode2:target:{line}")
+
+                with self.subTest(line=line, template=template):
+                    row = place([troll, fallen])
+                    self.assertEqual((row["area_resource"], row["creature_resource"], row["container_name"],
+                                      row["target_ids"], row["binding_problem"]),
+                                     (area, creature, None, [troll["id"]], None))
+                    self.assertEqual(target_kind(row), "creature-target")
+                    # Only another version in the area, the first twice, or no first.
+                    for targets, resources, ids, problem in (
+                            ([fallen], (area, creature), [], "creature-not-static-in-area"),
+                            ([troll, twice], (area, creature), [troll["id"], twice["id"]], "ambiguous-target-records"),
+                            ([troll], (area, f"cre:{other}"), [troll["id"]], "creature-resource-absent"),
+                            ([], (creature,), [], "area-resource-absent")):
+                        row = place(targets, resources)
+                        self.assertEqual((row["target_ids"], row["binding_problem"]), (ids, problem))
 
     def test_a_presets_rows_of_an_original_reward_route_are_that_route(self):
         from flir_config.original_catalog import mode2_route_source, mode2_route_target

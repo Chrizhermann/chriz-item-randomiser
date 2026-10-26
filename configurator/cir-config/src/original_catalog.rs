@@ -21,10 +21,30 @@ pub const UNREADABLE_PLACE_PROBLEMS: [&str; 3] =
 /// A quest reward or place whose conversation or script CIR cannot change
 /// yet: its row is left out in every game, whatever else the game lacks.
 pub const NO_ROUTE: &str = "route-not-supported";
+/// Item Randomiser's places of one creature in several versions, by campaign,
+/// place and area: its lib/weidu_action.tpa gives the item to each version. The
+/// first stands in the area. The others are the classic game's fallen trolls
+/// (pptroll2, torgal2), whose scripts replace them with a risen one (pptroll1,
+/// torgal3). The EE games create no fallen troll: one sleeps and stays the same
+/// creature (TROLLREG.SPL, CDTORGAL.SPL), and no script, dialogue, spell, item or
+/// area brings in pptroll2 or torgal2. Such a place is the first version's, as a
+/// place Item Randomiser names by its creature file.
+const CREATURE_VERSIONS: [((&str, &str, &str), &str); 2] =
+    [(("bg2", "pptroll.fl", "ar1514"), "pptroll1"), (("bg2", "torgal.fl", "ar1301"), "torgal")];
 
 /// `all(row.get(key) == value ...)` for a dict row.
 fn has_values(row: &Value, expected: &[(&str, &str)]) -> bool {
     row.is_dict() && expected.iter().all(|(key, value)| row.get(key).and_then(Value::as_str) == Some(*value))
+}
+
+/// The creature of a place in several versions (`CREATURE_VERSIONS`), or None.
+pub fn creature_versions_place(row: &Value) -> Option<&'static str> {
+    CREATURE_VERSIONS
+        .iter()
+        .find(|((campaign, target, area), _)| {
+            has_values(row, &[("campaign", campaign), ("target", target), ("area", area)])
+        })
+        .map(|(_, creature)| *creature)
 }
 
 /// Only the authored extended-pool Deck of Many Things item-grant source.
@@ -671,7 +691,9 @@ fn resolve_target(row: &mut Dict, scan: &Scan<'_>, endpoints: &HashMap<String, E
         row.insert("binding_problem", problem);
         return Ok(());
     }
-    if str_field(row, "target")?.ends_with(".fl") {
+    let target = str_field(row, "target")?.to_string();
+    let creature = creature_versions_place(&snapshot);
+    if target.ends_with(".fl") && creature.is_none() {
         // One of Item Randomiser's own quest handlers (its lib/weidu_action.tpa)
         // that the routes above do not cover; it names no container or creature.
         row.insert("binding_problem", NO_ROUTE);
@@ -684,12 +706,12 @@ fn resolve_target(row: &mut Dict, scan: &Scan<'_>, endpoints: &HashMap<String, E
     } else {
         None
     };
-    let raw = str_field(row, "target")?.to_string();
     let mut kind = endpoint.map(|endpoint| endpoint.0.clone());
     let mut identity = match endpoint {
         Some(endpoint) => endpoint.2.clone(),
-        None => raw.split('.').next().unwrap_or("").to_string(),
+        None => target.split('.').next().unwrap_or("").to_string(),
     };
+    let raw = creature.map_or(target, |creature| format!("{creature}.cre"));
     if kind.is_none() {
         kind = Some(
             if raw.ends_with(".cre") {

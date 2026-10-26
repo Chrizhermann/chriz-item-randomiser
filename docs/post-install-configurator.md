@@ -458,10 +458,18 @@ quest rewards and places that Item Randomiser handled with its own conversation 
 script patches (the `.fl` places of its `mode2` tables, and rewards that a conversation
 or script gives) for which CIR has no route yet. Their reason is
 `route-not-supported`. In the original tables these are the places of the Sahuagin
-prince, the king or the prince, the trolls of the Spellhold painting, Tolgerias,
-TorGal and a vampire or shadow thief of chapter 3 (BG2).
-`tests/test_original_catalog.py` lists them; a route for one of them takes its rows off
-that list.
+prince, the king or the prince, Tolgerias and a vampire or shadow thief of chapter 3
+(BG2). `tests/test_original_catalog.py` lists them; a route for one of them takes its
+rows off that list.
+
+Two such places give the item to each version of a troll: `pptroll.fl` (the painting
+troll in Spellhold, AR1514, row 37) and `torgal.fl` (TorGal in AR1301, row 89, with the
+flail heads). The EE games bring in only the first version, which stands in the area
+(PPTROLL1, TORGAL): a fallen troll sleeps and stays the same creature (TROLLREG.SPL,
+CDTORGAL.SPL), and no script, conversation, spell, item or area creates the classic
+game's fallen versions (PPTROLL2, TORGAL2) that turned into the risen ones. These two
+places are the first version's, found and checked like a place Item Randomiser names
+by its creature file (`creature-not-static-in-area`, `ambiguous-target-records`, ...).
 
 BG1's quest routes (Varci's payment, `VARCI.DLG`; Aldeth's sword, `ALDETH.DLG`;
 Nemphre's scroll, `NEMPHR.DLG`) work as BG2's do, with flags of

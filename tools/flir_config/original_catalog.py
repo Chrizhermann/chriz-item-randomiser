@@ -28,6 +28,22 @@ UNREADABLE_PLACE_PROBLEMS = ("area-resource-unreadable", "creature-resource-unre
 # A quest reward or place whose conversation or script CIR cannot change yet:
 # its row is left out in every game, whatever else the game lacks.
 NO_ROUTE = "route-not-supported"
+# Item Randomiser's places of one creature in several versions, by campaign,
+# place and area: its lib/weidu_action.tpa gives the item to each version. The
+# first stands in the area. The others are the classic game's fallen trolls
+# (pptroll2, torgal2), whose scripts replace them with a risen one (pptroll1,
+# torgal3). The EE games create no fallen troll: one sleeps and stays the same
+# creature (TROLLREG.SPL, CDTORGAL.SPL), and no script, dialogue, spell, item or
+# area brings in pptroll2 or torgal2. Such a place is the first version's, as a
+# place Item Randomiser names by its creature file.
+CREATURE_VERSIONS = {("bg2", "pptroll.fl", "ar1514"): "pptroll1", ("bg2", "torgal.fl", "ar1301"): "torgal"}
+
+
+def creature_versions_place(row: dict) -> str | None:
+    """The creature of a place in several versions (CREATURE_VERSIONS), or None."""
+    if not isinstance(row, dict):
+        return None
+    return CREATURE_VERSIONS.get((row.get("campaign"), row.get("target"), row.get("area")))
 
 
 def is_spin621_source(row: dict) -> bool:
@@ -402,7 +418,8 @@ def _resolve_target(row: dict, resources: set[str], unreadable: set[str],
                                   else "treasure-container-not-found" if handover and len(treasuries) != 1
                                   else "legacy-target-requires-adapter")
         return
-    if row["target"].endswith(".fl"):
+    creature = creature_versions_place(row)
+    if row["target"].endswith(".fl") and creature is None:
         # One of Item Randomiser's own quest handlers (its lib/weidu_action.tpa)
         # that the routes above do not cover; it names no container or creature.
         row["binding_problem"] = NO_ROUTE
@@ -410,7 +427,7 @@ def _resolve_target(row: dict, resources: set[str], unreadable: set[str],
     endpoint = endpoints[campaign].get(row["endpoint_id"]) if row["endpoint_id"] else None
     kind = endpoint[0] if endpoint else None
     identity = endpoint[2] if endpoint else row["target"].split(".", 1)[0]
-    raw = row["target"]
+    raw = row["target"] if creature is None else creature + ".cre"
     if kind is None:
         if raw.endswith(".cre"):
             kind = "creature"
