@@ -532,14 +532,22 @@ pub fn check_dialogue(
     }
 }
 
-/// The transfer by which the prince hands over what he carries (row 59).
-pub const PRINCE_TRANSFER: &[u8] = b"EEex_LuaAction(\"return(FLPR_Transfer(EEex_LuaAction_Object,59))\")\r\n";
+/// The transfer by which the prince hands over what he carries for row 59.
+pub const PRINCE_TRANSFER_59: &[u8] = b"EEex_LuaAction(\"return(FLPR_Transfer(EEex_LuaAction_Object,59))\")\r\n";
+/// The one for row 60, which follows it.
+pub const PRINCE_TRANSFER_60: &[u8] = b"EEex_LuaAction(\"return(FLPR_Transfer(EEex_LuaAction_Object,60))\")\r\n";
+/// Both, as a reply that ends his job begins.
+pub const PRINCE_TRANSFER: &[u8] = b"EEex_LuaAction(\"return(FLPR_Transfer(EEex_LuaAction_Object,59))\")\r\n\
+EEex_LuaAction(\"return(FLPR_Transfer(EEex_LuaAction_Object,60))\")\r\n";
 
-/// `check_job_end(original, result)`: the prince's dialogue as his route
-/// patches it. Each reply that ends his job hands over what he carries before
-/// its own actions, and his departures after it wait for that; nothing else
-/// changes. Returns the replies that hand over.
+/// `check_job_end(original, result)`: the prince's dialogue as his routes
+/// patch it. Each reply that ends his job hands over what he carries for both
+/// his places (rows 59 and 60, in that order) before its own actions, and his
+/// departures after it wait for that; nothing else changes. Returns the
+/// replies that hand over.
 pub fn check_job_end(original: &[u8], result: &[u8]) -> BTreeSet<(usize, usize)> {
+    assert_eq!(PRINCE_TRANSFER, [PRINCE_TRANSFER_59, PRINCE_TRANSFER_60].concat());
+    assert_eq!(specs("dlg:sahpr2").iter().map(target_number).collect::<Vec<_>>(), ["59", "60"]);
     let before = Dialogue::new(original, "sahpr2").unwrap();
     let after = Dialogue::new(result, "sahpr2").unwrap();
     assert_eq!(after.state_triggers, before.state_triggers);

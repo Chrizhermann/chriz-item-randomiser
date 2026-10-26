@@ -457,8 +457,8 @@ names them apart ("… belong to quests that Chriz Item Randomiser cannot change
 quest rewards and places that Item Randomiser handled with its own conversation and
 script patches (the `.fl` places of its `mode2` tables, and rewards that a conversation
 or script gives) for which CIR has no route yet. Their reason is
-`route-not-supported`. In the original tables these are the places of the king or the
-Sahuagin prince, Tolgerias and a vampire or shadow thief of chapter 3 (BG2).
+`route-not-supported`. In the original tables these are the places of Tolgerias and a
+vampire or shadow thief of chapter 3 (BG2).
 `tests/test_original_catalog.py` lists them; a route for one of them takes its rows off
 that list.
 
@@ -550,6 +550,16 @@ the job too: he would not hand the reward over there ("... also sets villynatyjo
 which ends the job of SAHPR2.DLG's speaker, but there it would not hand over the reward
 it carries"). On the king's side the prince never pays, and the reward stays with him
 to be looted.
+
+Row 60 (Item Randomiser's `tadpoles3.fl`, "Sahuagin king or prince") is the prince's
+place too. Item Randomiser flips a coin at install: the item goes to SAHPR2.CRE or to
+both kings, SAHKNG01.CRE and SAHKNG02.CRE. The king leaves with what he carries on
+either side: on his own side he pays and leaves the area (SAHKNG01.DLG state 81), and
+on the prince's side he destroys himself once the prince's job begins (SAHKNG01.BCS),
+while SAHKNG02, who then takes the throne, has the items of his own file. So here the
+prince carries this place's reward as well, and each reply that ends his job hands
+over row 59's reward first, then row 60's. Both places are left out together, for the
+reasons above.
 
 The book of Lavok's sphere (`PPBOOK.BCS`, AR1513) gives two scrolls with the ring on
 its last page (rows 260 and 262 of the extended tables, beside the ring's row 109).

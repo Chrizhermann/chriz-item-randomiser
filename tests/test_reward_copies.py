@@ -111,15 +111,20 @@ class RewardCopyTests(unittest.TestCase):
         # that reply in an interjection, or another reply there that ends the
         # job, would end it without him handing over: the reward would stay
         # with him. One that names the job but does not end it changes nothing.
-        self.assertNotIn("sahpr2", reward_copies._GATED)
+        # Both his places (rows 59 and 60) go together.
+        routes = ("sahpr2", "sahpr2b")
+        for key in routes:
+            self.assertNotIn(key, reward_copies._GATED)
         original = dialogue_fixture(rewards.resource_specs("dlg:sahpr2"))
         route, npc, state = interject(original, "sahpr2", 5, "xnpcj")
         found = analyse({"sahpr2": route, "xnpcj": npc})
-        self.assertEqual((found.copies, found.changed, found.checked("sahpr2")), ({}, set(), {"dlg:xnpcj"}))
-        self.assertEqual(found.reasons, {"sahpr2": f"XNPCJ.DLG state {state} also sets villynatyjob to 2, which "
-                                                   "ends the job of SAHPR2.DLG's speaker, but there it would not "
-                                                   "hand over the reward it carries"})
-        self.assertEqual(found.patches(["sahpr2"]), {})
+        self.assertEqual((found.copies, found.changed), ({}, set()))
+        for key in routes:
+            self.assertEqual(found.checked(key), {"dlg:xnpcj"})
+        reason = (f"XNPCJ.DLG state {state} also sets villynatyjob to 2, which ends the job of SAHPR2.DLG's "
+                  "speaker, but there it would not hand over the reward it carries")
+        self.assertEqual(found.reasons, dict.fromkeys(routes, reason))
+        self.assertEqual(found.patches(list(routes)), {})
         # In the prince's own dialogue the route itself is unchanged: only his
         # reply hands over, the jump into the interjection gives nothing.
         self.assertEqual(rewards.route_reasons("dlg:sahpr2", route), {})
@@ -144,7 +149,9 @@ class RewardCopyTests(unittest.TestCase):
                 if reason is None:
                     self.assertEqual(found.reasons, {})
                 else:
+                    self.assertEqual(sorted(found.reasons), list(routes))
                     self.assertIn(reason, found.reasons["sahpr2"])
+                    self.assertEqual(found.reasons["sahpr2b"], found.reasons["sahpr2"])
         # The other routes find their copies as before; the prince's job is not theirs.
         self.assertEqual(analyse({"sahpr2": original}).reasons, {})
 

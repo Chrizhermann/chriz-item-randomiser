@@ -507,6 +507,17 @@ fn build_registry() -> Registry {
             "inventory_target" => dict! {"area" => "ar2300", "creature_resource" => "cre:sahpr2", "script_name" => "sahpr2"},
         },
     );
+    // Row 60 (Item Randomiser's tadpoles3.fl, "Sahuagin king or prince"): a
+    // coin flip at install gives the item to SAHPR2.CRE or to both kings,
+    // SAHKNG01.CRE and SAHKNG02.CRE. The king leaves with what he carries on
+    // either side: on his own he pays and escapes (SAHKNG01.DLG state 81), on
+    // the prince's he destroys himself once that job begins (SAHKNG01.BCS)
+    // and SAHKNG02 takes the throne from its own file. So here the prince
+    // carries this place's reward too, and the replies that end his job hand
+    // it over after row 59's.
+    let mut prince = rewards.get("sahpr2").cloned().expect("sahpr2");
+    prince.as_dict_mut().expect("reward row").insert("target_ids", list!["bg2:mode2:target:60"]);
+    rewards.insert("sahpr2b", prince);
     for row in rewards.values_mut() {
         let row = row.as_dict_mut().expect("reward row");
         let resource = row.get("resource").cloned().expect("resource");
@@ -1931,11 +1942,10 @@ pub(crate) fn unpatched_dialogue(mut dialogue: Dialogue, specs: &[Dict], resourc
                     put_u32(&mut row, 0, flags & !2);
                 }
             }
-            for transfer in &transfers {
-                // Every copy: one that stayed would make an original with it.
-                while action.starts_with(transfer) {
-                    action.drain(..transfer.len());
-                }
+            // Every copy, in any order: one that stayed would make an original
+            // with it.
+            while let Some(transfer) = transfers.iter().find(|transfer| action.starts_with(transfer)) {
+                action.drain(..transfer.len());
             }
             action = replace_bytes(&action, DEPARTURE, b"DestroySelf()", None);
             if flags & 4 != 0 && action != dialogue.actions[action_id as usize] {

@@ -30,7 +30,7 @@ use common::mode2::{
     action, action_with, alternatives, block, book_block, book_fixture, book_gifts, branches, check_dialogue, check_job_end,
     check_pair, check_text_graph, dialogue_fixture, handover_line, king_destroys, king_paid, layout_dialogue, no_action, obj,
     route_guard, script_fixture, specs, target_number, text, text_variant, treasury_fixture, trigger, well_reward,
-    with_actions, LayoutReply, PRINCE_TRANSFER, TRGENI_DEPARTURE,
+    with_actions, LayoutReply, PRINCE_TRANSFER, PRINCE_TRANSFER_59, PRINCE_TRANSFER_60, TRGENI_DEPARTURE,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
@@ -814,28 +814,34 @@ fn the_princes_reward_reply_hands_over_what_he_carries() {
     // Item Randomiser's tadpoles2.fl gives its reward to SAHPR2.CRE and adds
     // a GiveItem to the reply that ends his job, which gives nothing in the
     // games. Here the prince carries the place's reward, and each reply of
-    // his that ends his job hands it to the one he talks to.
-    let spec = target_spec("bg2:mode2:target:59", Naming::default()).unwrap();
-    assert_eq!(target_rewards().get("bg2:mode2:target:59").and_then(Value::as_str), Some("sahpr2"));
-    assert!(resource_rewards().get("dlg:sahpr2").unwrap().py_eq(&list(&["sahpr2"])));
-    assert!(!source_rewards().values().any(|route| route.as_str() == Some("sahpr2")));
-    for key in ["item", "payload", "selected_global", "consumed_global", "event_global", "recipient_local"] {
-        assert!(matches!(spec.get(key), Some(Value::Null)), "{key}");
-    }
-    for key in ["source_ids", "authored_source_ids"] {
-        assert!(spec.get(key).unwrap().py_eq(&list(&[])), "{key}");
-    }
-    assert!(spec.get("job_end").unwrap().py_eq(&cir_config::list!["villynatyjob", 2]));
-    let carrier = cir_config::dict! {"area" => "ar2300", "creature_resource" => "cre:sahpr2", "script_name" => "sahpr2"};
-    assert!(spec.get("inventory_target").unwrap().py_eq(&Value::Dict(carrier)));
-    assert_eq!((text(&spec, "recipient"), text(&spec, "grant_kind")), ("LastTalkedToBy", "transfer"));
+    // his that ends his job hands it to the one he talks to. Row 60
+    // (tadpoles3.fl, the king or the prince) is his too: the king leaves with
+    // what he carries on either side.
+    assert!(resource_rewards().get("dlg:sahpr2").unwrap().py_eq(&list(&["sahpr2", "sahpr2b"])));
     let names = eet_names();
     let eet = Naming { game: Some("eet"), names: Some(&names) };
-    assert!(Value::Dict(cir_config::mode2_rewards::reward("sahpr2", eet).unwrap()).py_eq(&Value::Dict(spec.clone())));
-    assert_profile(
-        gives_reward("dlg:sahpr2", &dialogue_fixture(&specs("dlg:sahpr2")), "sahpr2", Naming::default()).unwrap_err(),
-        "Unsupported extended reward route in SAHPR2.DLG: sahpr2",
-    );
+    for (key, line) in [("sahpr2", 59), ("sahpr2b", 60)] {
+        let target = format!("bg2:mode2:target:{line}");
+        let spec = target_spec(&target, Naming::default()).unwrap();
+        assert_eq!(target_rewards().get(&target).and_then(Value::as_str), Some(key));
+        assert!(!source_rewards().values().any(|route| route.as_str() == Some(key)));
+        for field in ["item", "payload", "selected_global", "consumed_global", "event_global", "recipient_local"] {
+            assert!(matches!(spec.get(field), Some(Value::Null)), "{key} {field}");
+        }
+        for field in ["source_ids", "authored_source_ids"] {
+            assert!(spec.get(field).unwrap().py_eq(&list(&[])), "{key} {field}");
+        }
+        assert!(spec.get("target_ids").unwrap().py_eq(&list(&[target.as_str()])), "{key}");
+        assert!(spec.get("job_end").unwrap().py_eq(&cir_config::list!["villynatyjob", 2]));
+        let carrier = cir_config::dict! {"area" => "ar2300", "creature_resource" => "cre:sahpr2", "script_name" => "sahpr2"};
+        assert!(spec.get("inventory_target").unwrap().py_eq(&Value::Dict(carrier)));
+        assert_eq!((text(&spec, "recipient"), text(&spec, "grant_kind")), ("LastTalkedToBy", "transfer"));
+        assert!(Value::Dict(cir_config::mode2_rewards::reward(key, eet).unwrap()).py_eq(&Value::Dict(spec.clone())));
+        assert_profile(
+            gives_reward("dlg:sahpr2", &dialogue_fixture(&specs("dlg:sahpr2")), key, Naming::default()).unwrap_err(),
+            &format!("Unsupported extended reward route in SAHPR2.DLG: {key}"),
+        );
+    }
     for beamdog in [true, false] {
         let original = layout_dialogue("sahpr2", &prince_states(), beamdog);
         let result = patch_reward("dlg:sahpr2", &original, None, None, Naming::default()).unwrap();
@@ -852,14 +858,16 @@ fn the_princes_reward_reply_hands_over_what_he_carries() {
         for (state, ordinal, waits) in [(0, 2, false), (2, 0, true), (3, 0, true)] {
             assert_eq!(contains(&after.actions[at(state, ordinal)], TRGENI_DEPARTURE), waits, "{beamdog} {state} {ordinal}");
         }
-        // The transfer as the dialogue parser leaves it, once, in front.
+        // The transfers as the dialogue parser leaves them, once each, in
+        // front.
         let (job, other) = (at(1, 1), at(0, 0));
         let handing = &after.actions[job];
         assert!(handing.starts_with(PRINCE_TRANSFER));
-        assert_eq!(count(handing, b"FLPR_Transfer"), 1);
+        assert_eq!(count(handing, b"FLPR_Transfer"), 2);
         // Changed copies of the patch: another place, a transfer moved into
-        // a reply that does not end his job or behind its actions, twice, or
-        // gone from one of the replies.
+        // a reply that does not end his job or behind its actions, twice,
+        // gone from one of the replies, only one place's, or the two in the
+        // other order.
         let without = handing[PRINCE_TRANSFER.len()..].to_vec();
         for (label, changes) in [
             ("another place", vec![(job, replace(handing, b",59))", b",58))", None))]),
@@ -867,6 +875,9 @@ fn the_princes_reward_reply_hands_over_what_he_carries() {
             ("behind", vec![(job, [without.as_slice(), b"\r\n", PRINCE_TRANSFER].concat())]),
             ("twice", vec![(job, [PRINCE_TRANSFER, handing.as_slice()].concat())]),
             ("gone", vec![(job, without.clone())]),
+            ("one place", vec![(job, [PRINCE_TRANSFER_59, without.as_slice()].concat())]),
+            ("the other place", vec![(job, [PRINCE_TRANSFER_60, without.as_slice()].concat())]),
+            ("swapped", vec![(job, [PRINCE_TRANSFER_60, PRINCE_TRANSFER_59, without.as_slice()].concat())]),
         ] {
             let mut tampered = Dialogue::new(&result, "sahpr2").unwrap();
             for (index, text) in changes {
@@ -877,7 +888,10 @@ fn the_princes_reward_reply_hands_over_what_he_carries() {
                 patch_reward("dlg:sahpr2", &tampered, None, None, Naming::default()).unwrap_err(),
                 "carries a changed copy of the reward route's own patch",
             );
-            assert!(reasons("dlg:sahpr2", &tampered)["sahpr2"].contains("changed copy"), "{beamdog} {label}");
+            let found = reasons("dlg:sahpr2", &tampered);
+            assert_eq!(found.keys().map(String::as_str).collect::<Vec<_>>(), ["sahpr2", "sahpr2b"], "{beamdog} {label}");
+            assert!(found["sahpr2"].contains("changed copy"), "{beamdog} {label}");
+            assert_eq!(found["sahpr2b"], found["sahpr2"], "{beamdog} {label}");
         }
     }
     // A dialogue in which no reply ends his job has nothing to hand over;
@@ -914,7 +928,7 @@ fn the_princes_reward_reply_hands_over_what_he_carries() {
             variant[index] = replies;
         }
         let data = layout_dialogue("sahpr2", &variant, true);
-        assert_eq!(reasons("dlg:sahpr2", &data), named(&[("sahpr2", reason)]));
+        assert_eq!(reasons("dlg:sahpr2", &data), named(&[("sahpr2", reason), ("sahpr2b", reason)]));
         assert_profile(patch_reward("dlg:sahpr2", &data, None, None, Naming::default()).unwrap_err(), reason);
         assert!(!own_patch("dlg:sahpr2", &data, Naming::default()).unwrap());
     }
@@ -1539,7 +1553,7 @@ const REVIEWED_EET: &[(&str, &str, &str)] = &[
     ("dlg:riftg03", "4bb8a0866e3470ae558c108160ebef18c33de9f14ad3181ccf33ebd0d5e4912a", "34e7c5e57d9e69394b40ce09f4c5cd5a5e6249d871b676c82bafbd3d707f3ff5"),
     ("dlg:sahkng01", "c76c8624052f7e179d42157e4081ddfcdbb101d2f00b819008bc99f5660785c1", "9a7109aa36361ce3e57183e08b735993dbb946584d4b79d50dd5cc641050c70f"),
     // The prince hands over what he carries when his job ends (state 5).
-    ("dlg:sahpr2", "b70d79c4264b4dade199d86146da2d44f9db4d445dfbb4eead5b350c3a1c7dcb", "19575a07c412224fa86c7a117b352aea40470e0e8c4494b95f6b6f85a2556244"),
+    ("dlg:sahpr2", "b70d79c4264b4dade199d86146da2d44f9db4d445dfbb4eead5b350c3a1c7dcb", "649a5d673c583c8e11bf188c9bed46a73b8bb1ec5dd08eef09c61fc28c8c403a"),
     ("dlg:scsain", "c2a43b0d67eca9b531aa591463f74d5333225a95f0be87f8d03ed1cf91f8dafe", "efbc5faa5490e6f89b6ca54a30a02ba74871353e19f7c8f640439974c175caca"),
     ("dlg:sctelwyn", "d5dd048c43e16ba937ff583eef8f5966e549fb0c4e3f92679883d35fcdda1759", "bcafc54734313b1513100537abb486fd42298c69795d647f525da7e06b5f9c39"),
     ("dlg:scyarryl", "f96880bdabcfe8393d9ad6df502d3d001e2d79913736e480f6cc717f012dd367", "33b842e20c6602bdbd9e62da78ec7d79e402d8cb2006282ce7568257d776698c"),

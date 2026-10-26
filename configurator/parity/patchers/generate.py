@@ -577,7 +577,10 @@ def prince_cases(s: Scenario) -> None:
         [("", 'DestroySelf()', None)],
     ]
     specs = mode2_rewards.resource_specs("dlg:sahpr2")
-    transfer = b'EEex_LuaAction("return(FLPR_Transfer(EEex_LuaAction_Object,59))")\r\n'
+    # His two places, rows 59 and 60, in that order.
+    first = b'EEex_LuaAction("return(FLPR_Transfer(EEex_LuaAction_Object,59))")\r\n'
+    second = b'EEex_LuaAction("return(FLPR_Transfer(EEex_LuaAction_Object,60))")\r\n'
+    transfer = first + second
     for beamdog in (True, False):
         layout = "beamdog" if beamdog else "weidu"
         original = mode2_tests.layout_dialogue("sahpr2", states, beamdog=beamdog)
@@ -591,12 +594,16 @@ def prince_cases(s: Scenario) -> None:
         after = quest_options._Dialogue(result, "sahpr2")
         job = struct.unpack_from("<I", mode2_tests.outgoing(after, 1)[1], 16)[0]
         other = struct.unpack_from("<I", mode2_tests.outgoing(after, 0)[0], 16)[0]
+        rest = after.actions[job][len(transfer):]
         for label, changes in (
                 ("another place", {job: after.actions[job].replace(b",59))", b",58))")}),
-                ("other reply", {job: after.actions[job][len(transfer):], other: transfer + after.actions[other]}),
-                ("behind", {job: after.actions[job][len(transfer):] + b"\r\n" + transfer}),
+                ("other reply", {job: rest, other: transfer + after.actions[other]}),
+                ("behind", {job: rest + b"\r\n" + transfer}),
                 ("twice", {job: transfer + after.actions[job]}),
-                ("gone", {job: after.actions[job][len(transfer):]})):
+                ("gone", {job: rest}),
+                ("one place", {job: first + rest}),
+                ("the other place", {job: second + rest}),
+                ("swapped", {job: second + first + rest})):
             tampered_dialogue = quest_options._Dialogue(result, "sahpr2")
             for index, text in changes.items():
                 tampered_dialogue.actions[index] = text
@@ -1572,7 +1579,8 @@ def copies_scenario() -> Scenario:
     # or names it unreadably.
     prince = mode2_tests.dialogue_fixture(mode2_rewards.resource_specs("dlg:sahpr2"))
     prince_route, prince_npc, prince_state = interject(prince, "sahpr2", 5, "xnpcj")
-    copies_case(s, "prince", {"sahpr2": prince_route, "xnpcj": prince_npc}, routes=(("sahpr2",), ()))
+    copies_case(s, "prince", {"sahpr2": prince_route, "xnpcj": prince_npc},
+                routes=(("sahpr2",), ("sahpr2", "sahpr2b"), ()))
     for label, actions in (("override", b'ActionOverride("sahpr2",SetGlobal("VILLYNATYJOB","GLOBAL",2))\r\n'),
                            ("other value", b'SetGlobal("villynatyjob","GLOBAL",3)\r\n'),
                            ("local", b'IncrementGlobal("villynatyjob","LOCALS",1)\r\n'),

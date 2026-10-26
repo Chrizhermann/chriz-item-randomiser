@@ -334,17 +334,21 @@ fn a_reply_elsewhere_that_ends_the_princes_job_leaves_his_place_out() {
     // that reply in an interjection, or another reply there that ends the
     // job, would end it without him handing over: the reward would stay
     // with him. One that names the job but does not end it changes nothing.
+    // Both his places (rows 59 and 60) go together.
+    let routes = ["sahpr2", "sahpr2b"];
     let original = dialogue_fixture(&specs("dlg:sahpr2"));
     let (route, npc, state) = interject(&original, "sahpr2", 5, "xnpcj", true);
     let found = analyse(&files(&[("sahpr2", &route), ("xnpcj", &npc)]), None);
     assert!(found.copies.is_empty() && found.changed.is_empty());
-    assert_eq!(found.checked("sahpr2"), BTreeSet::from(["dlg:xnpcj".to_string()]));
+    for key in routes {
+        assert_eq!(found.checked(key), BTreeSet::from(["dlg:xnpcj".to_string()]), "{key}");
+    }
     let reason = format!(
         "XNPCJ.DLG state {state} also sets villynatyjob to 2, which ends the job of SAHPR2.DLG's speaker, but there \
          it would not hand over the reward it carries"
     );
-    assert_eq!(found.reasons, reasons(&[("sahpr2", &reason)]));
-    assert!(found.patches(&["sahpr2"]).unwrap().is_empty());
+    assert_eq!(found.reasons, reasons(&[("sahpr2", &reason), ("sahpr2b", &reason)]));
+    assert!(found.patches(&routes).unwrap().is_empty());
     // In the prince's own dialogue the route itself is unchanged: only his
     // reply hands over, the jump into the interjection gives nothing.
     assert!(route_reasons("dlg:sahpr2", &route, Naming::default()).unwrap().is_empty());
@@ -367,7 +371,11 @@ fn a_reply_elsewhere_that_ends_the_princes_job_leaves_his_place_out() {
         assert!(found.copies.is_empty());
         match reason {
             None => assert!(found.reasons.is_empty(), "{:?}", found.reasons),
-            Some(reason) => assert!(found.reasons["sahpr2"].contains(reason), "{reason}: {:?}", found.reasons),
+            Some(reason) => {
+                assert_eq!(found.reasons.keys().map(String::as_str).collect::<Vec<_>>(), routes, "{reason}");
+                assert!(found.reasons["sahpr2"].contains(reason), "{reason}: {:?}", found.reasons);
+                assert_eq!(found.reasons["sahpr2b"], found.reasons["sahpr2"], "{reason}");
+            }
         }
     }
     // The other routes find their copies as before; the prince's job is not theirs.
