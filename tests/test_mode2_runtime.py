@@ -69,6 +69,40 @@ class Mode2RuntimeTests(unittest.TestCase):
                 with self.assertRaisesRegex(Exception, 'CAMPAIGN_SCRIPT_PATCH_CHANGED'):
                     run(*args)
 
+    def test_a_superseding_dialogue_stands_for_the_staged_one(self):
+        # A revision exported with CIR 1.0.2 staged UDSILVER.DLG with her
+        # crossbow's route alone. Where Apply's patch, which has Adalon's route
+        # too, supersedes it for that revision (native_export.py), the game may
+        # hold Apply's version, exactly, and every other dialogue as staged.
+        case = SCRIPT_CASE.replace("legacy and 'blpool-v1' or 'original-quest-v1'",
+                                   "legacy and 'blpool-v1' or 'mode2-reward-v1'")
+        case = case.replace("local bundle=", "endpoint.resources={'dlg:udsilver','dlg:uddemon'}\n    local bundle=")
+        case = case.replace("path=='override/'..resource:sub(5):upper()..'.BCS'",
+                            "(path=='override/UDSILVER.DLG' or path=='override/UDDEMON.DLG')")
+        case = case.replace('return actual end', 'return actual[path] end')
+        case = case.replace("pcall(Script.new,api,bundle,id,expected,extended)",
+                            "pcall(Script.new,api,bundle,id,expected,extended,SUPERSEDED)")
+        self.assertIn("SUPERSEDED", case)
+        for runtime in (Lua51, Lua53, LuaJIT):
+            lua = runtime(unpack_returned_tuples=True)
+            expected = lua.table_from({'dlg:udsilver': 'EARLIER', 'dlg:uddemon': 'DEMON'})
+            actual = lua.table_from({'override/UDSILVER.DLG': 'NEWER', 'override/UDDEMON.DLG': 'DEMON'})
+            run = lua.execute(case)
+            args = (lua.execute(SCRIPT), 'original-source:bg2:mode2:item:44', 'udsilver', 'dlg:udsilver',
+                    'FLPR_QM2_44', 'FLPR_XM2_44', False, expected, actual, False)
+            with self.subTest(runtime=runtime.__module__):
+                lua.globals().SUPERSEDED = lua.table_from({'dlg:udsilver': 'NEWER'})
+                self.assertTrue(run(*args))
+                for superseded in (None, {'dlg:udsilver': 'OTHER'}, {'dlg:uddemon': 'NEWER'}):
+                    lua.globals().SUPERSEDED = superseded and lua.table_from(superseded)
+                    with self.assertRaisesRegex(Exception, 'CAMPAIGN_SCRIPT_PATCH_CHANGED'):
+                        run(*args)
+                # The demon's dialogue was not superseded: it stays as staged.
+                lua.globals().SUPERSEDED = lua.table_from({'dlg:udsilver': 'NEWER'})
+                actual['override/UDDEMON.DLG'] = 'CHANGED'
+                with self.assertRaisesRegex(Exception, 'CAMPAIGN_SCRIPT_PATCH_CHANGED'):
+                    run(*args)
+
     def test_dialogue_source_suppression_and_saved_flags(self):
         case = SCRIPT_CASE.replace("legacy and 'blpool-v1' or 'original-quest-v1'",
                                    "legacy and 'blpool-v1' or 'mode2-reward-v1'")

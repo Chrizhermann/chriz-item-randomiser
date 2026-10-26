@@ -143,7 +143,27 @@ local ok, failure = pcall(function()
         end
         local Gate = module("override/FLPRGat.lua", Site)
         local pristine={creatures={},stores={},scripts={},templates={},spell_shield={},cursed={},auxiliary={},
-            extended={},duplicates={}}
+            extended={},duplicates={},superseded={}}
+        -- The reward dialogues, by revision, whose staged patch Apply's newer
+        -- one supersedes for that revision's saves (native_export.py). Apply
+        -- keeps its version beside them; FLPRScript.lua compares it with the
+        -- game's file.
+        local superseded={}
+        local superseded_config=loadfile(DATA.."superseded.lua")
+        if superseded_config then
+            superseded=superseded_config()
+            assert(type(superseded)=="table","SOURCE_GATE_SUPERSEDED_INVALID")
+            for revision,resources in pairs(superseded) do
+                assert(type(revision)=="string" and type(resources)=="table","SOURCE_GATE_SUPERSEDED_INVALID")
+                local count=0
+                for _ in pairs(resources) do count=count+1 end
+                assert(count==#resources,"SOURCE_GATE_SUPERSEDED_INVALID")
+                for _,resource in ipairs(resources) do
+                    local kind=type(resource)=="string" and resource:match('^(%a+):[a-z0-9_#%-]+$')
+                    assert(kind=='dlg' or kind=='bcs',"SOURCE_GATE_SUPERSEDED_INVALID")
+                end
+            end
+        end
         -- An area's shared pristine copy, as the export wrote it.
         local function pristine_area(area,resource_hash)
             assert(type(area)=='string' and #area>=1 and #area<=8 and not area:find('[^A-Za-z0-9#_%-]'),
@@ -159,6 +179,14 @@ local ok, failure = pcall(function()
         -- One revision's manifest and the copies its checks compare against.
         local function load_revision(revision)
             local guarded = assert(resolve(revision), "SOURCE_GATE_REVISION_UNAVAILABLE")
+            if superseded[revision] then
+                local versions={};pristine.superseded[revision]=versions
+                for _,resource in ipairs(superseded[revision]) do
+                    local kind,name=resource:match('^(%a+):([a-z0-9_#%-]+)$')
+                    local file=assert(io.open(DATA..name:upper()..'.applied.'..kind,'rb'),'SOURCE_GATE_SCRIPT_MISSING')
+                    versions[resource]=file:read('*a');assert(file:close())
+                end
+            end
             if guarded.fixture.cursed_disguises then
                 local assets={};pristine.cursed[revision]=assets
                 for _,item in ipairs(guarded.fixture.cursed_disguises.items) do

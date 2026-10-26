@@ -600,6 +600,15 @@ fn call(name: &str, args: &Args) -> Result<Value> {
         "mode2_rewards.own_patch" => {
             Value::Bool(mode2_rewards::own_patch(&args.str("resource"), &args.bytes("data"), args.named().naming())?)
         }
+        "mode2_rewards.superseding_routes" => match mode2_rewards::superseding_routes(
+            &args.str("resource"),
+            &args.bytes("newer"),
+            &args.bytes("earlier"),
+            args.named().naming(),
+        )? {
+            None => Value::Null,
+            Some(added) => Value::List(added.into_iter().map(Value::Dict).collect()),
+        },
         "mode2_rewards.route_reasons" => {
             Value::Dict(mode2_rewards::route_reasons(&args.str("resource"), &args.bytes("data"), args.named().naming())?)
         }

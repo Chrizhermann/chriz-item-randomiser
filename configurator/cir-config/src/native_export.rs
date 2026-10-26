@@ -2038,9 +2038,12 @@ impl Pending {
     }
 }
 
-/// What the runtime checks at every start and would stop for (the
-/// reference's `_CHECKED`).
-const CHECKED: &str = "the runtime checks it at every start and would stop for every game";
+/// When the runtime checks a kept revision's file and what it would stop
+/// (the reference's `_CHECKED`).
+const CHECKED: &str = "the runtime checks it whenever one of them is loaded and would stop CIR in it";
+/// The reward dialogues, by revision, whose staged patch Apply's newer one
+/// supersedes ([`superseding`]); M_FLPR.lua reads it.
+const SUPERSEDED: &str = "superseded.lua";
 
 /// The native fixture a revision was exported with (`_stored_native`).
 fn stored_native(exported: &Path, key: &str) -> Result<Value> {
@@ -2054,10 +2057,11 @@ fn stored_native(exported: &Path, key: &str) -> Result<Value> {
 /// (resource, staged file, quest) for each file a revision's guarded scripts
 /// need in override (`_staged_scripts`).
 ///
-/// At every start the runtime compares these staged bytes with the game's
-/// override file (FLPRScript.lua). A quest script that the installer
-/// prepared (`quest`) may also be the version Apply extended it to
-/// ([`extended_scripts`]).
+/// When one of the revision's games is loaded, the runtime compares these
+/// staged bytes with the game's override file (FLPRScript.lua). A quest
+/// script that the installer prepared (`quest`) may also be the version
+/// Apply extended it to ([`extended_scripts`]), and a reward dialogue Apply's
+/// patch that supersedes the staged one ([`superseding`]).
 fn staged_scripts(key: &str, manifest: &Value, native: &Value) -> Result<Vec<(String, String, bool)>> {
     let mut result = Vec::new();
     let endpoints = native.at("sources")?;
@@ -2086,12 +2090,107 @@ fn staged_scripts(key: &str, manifest: &Value, native: &Value) -> Result<Vec<(St
     Ok(result)
 }
 
+/// The file that keeps Apply's own version of a guarded script beside a
+/// version that saves need (read by M_FLPR.lua; `_applied_script`): the
+/// reward routes' version of an installer-prepared quest script
+/// ([`extended_scripts`]), or of a reward dialogue whose earlier patch it
+/// supersedes ([`superseding`]).
+fn applied_script(resource: &str) -> String {
+    let (kind, name) = resource.split_once(':').unwrap_or((resource, ""));
+    format!("{}.applied.{kind}", upper(name))
+}
+
 /// The files that keep an installer-prepared quest script and the version
 /// Apply extended it to with reward routes (read by M_FLPR.lua;
 /// `_extended_scripts`).
 fn extended_scripts(resource: &str) -> (String, String) {
-    let name = upper(resource.split(':').nth(1).unwrap_or(""));
-    (format!("{name}.installed.bcs"), format!("{name}.applied.bcs"))
+    (format!("{}.installed.bcs", upper(resource.split(':').nth(1).unwrap_or(""))), applied_script(resource))
+}
+
+/// The campaign flags a compiled revision's endpoints name, wherever they
+/// nest: each value of a key that ends in _global or _local (`_named_flags`).
+fn named_flags(value: &Value) -> BTreeSet<String> {
+    let mut flags = BTreeSet::new();
+    match value {
+        Value::Dict(dict) => {
+            for (key, item) in dict.iter() {
+                if let (true, Some(flag)) = (key.ends_with("_global") || key.ends_with("_local"), item.as_str()) {
+                    flags.insert(flag.to_string());
+                }
+                flags.extend(named_flags(item));
+            }
+        }
+        Value::List(items) => items.iter().for_each(|item| flags.extend(named_flags(item))),
+        _ => {}
+    }
+    flags
+}
+
+/// Whether a reward route that a revision was exported without does nothing
+/// in its saves, where a dialogue's newer patch adds it (`_leaves_alone`).
+///
+/// Its replies' guards and marks read and set the route's own flags, which
+/// only a revision that names them uses. Its other changes call the runtime
+/// with the route's places, which finds that revision's targets there: a
+/// hand-over (FLPR_Transfer) takes a creature's reward from its backpack,
+/// which a revision exported before the place had its route keeps as a plain
+/// creature (FLPRNat.lua), and a treasury's payment (FLPR_Handover) needs the
+/// place's own route. A revision without a target there leaves both alone.
+fn leaves_alone(spec: &Dict, native: &Value) -> Result<bool> {
+    let named = named_flags(native);
+    let flags = ["selected_global", "consumed_global", "event_global", "recipient_local"];
+    if flags.iter().filter_map(|key| spec.get(key).and_then(Value::as_str)).any(|flag| named.contains(flag)) {
+        return Ok(false);
+    }
+    let targets = native.at("targets")?;
+    let targets = targets.as_dict().ok_or_else(|| Error::attribute(targets.type_name(), "items"))?;
+    for identity in list(entry(spec, "target_ids")?) {
+        let target = format!("original-target:{}", py_str(identity));
+        for (key, endpoint) in targets.iter() {
+            if key != target && endpoint.get("route_target").and_then(Value::as_str) != Some(target.as_str()) {
+                continue;
+            }
+            if spec.get("handover").is_some_and(Value::truthy) {
+                return Ok(false);
+            }
+            let absent = |field: &str| endpoint.get(field).is_none_or(Value::is_null);
+            let plain = endpoint.get("kind").and_then(Value::as_str) == Some("creature")
+                && !endpoint.get("corpse_only").is_some_and(Value::truthy)
+                && absent("handover")
+                && absent("event_global");
+            if mode2_rewards::transfers(spec) && !(endpoint.get("inventory_reward").is_some_and(Value::truthy) || plain) {
+                return Ok(false);
+            }
+        }
+    }
+    Ok(true)
+}
+
+/// The reward dialogue as Apply leaves it, where it is this adapter's patch
+/// of it now and supersedes the earlier one that a kept revision staged
+/// ([`mode2_rewards::superseding_routes`]), and each route it adds leaves
+/// that revision's saves alone ([`leaves_alone`]): those saves can then read
+/// it instead. None otherwise (`_superseding`).
+fn superseding(
+    resource: &str,
+    installed: Option<&Vec<u8>>,
+    staged: &[u8],
+    native: &Value,
+    naming: Naming<'_>,
+) -> Result<Option<Vec<u8>>> {
+    let Some(installed) = installed else { return Ok(None) };
+    if installed.as_slice() == staged || !mode2_rewards::resource_rewards().contains_key(resource) {
+        return Ok(None);
+    }
+    let Some(added) = mode2_rewards::superseding_routes(resource, installed, staged, naming)? else {
+        return Ok(None);
+    };
+    for spec in &added {
+        if !leaves_alone(spec, native)? {
+            return Ok(None);
+        }
+    }
+    Ok(Some(installed.clone()))
 }
 
 /// The areas whose shared pristine copy the runtime compares with a
@@ -2229,11 +2328,13 @@ pub const NEXT_SCHEMA: &str = "flir-next-v2";
 /// running saves; its files never change. When the game changed so that one
 /// of its rows can no longer be prepared, or its files would now differ, it
 /// keeps the files it was exported with and the result's "notes" say so; the
-/// other revisions are exported as usual. The runtime checks every listed
-/// revision at each start, so a kept revision whose guarded script or
-/// guarded area changed in the game stops the export instead. A selected
-/// revision must be prepared completely. `scans` holds the catalogues
-/// already validated.
+/// other revisions are exported as usual. The runtime checks a listed
+/// revision whenever one of its games is loaded, so a kept revision whose
+/// guarded script or guarded area changed in the game stops the export
+/// instead; where Apply's newer patch of a reward dialogue supersedes the one
+/// it staged, its saves read Apply's (`superseded.lua`). A selected revision
+/// must be prepared completely. `scans` holds the catalogues already
+/// validated.
 #[allow(clippy::too_many_arguments)]
 pub fn export_native(
     store: &Path,
@@ -2873,21 +2974,28 @@ pub fn export_native(
             short(&key)
         ));
     }
-    // At every start the runtime checks each listed revision: the staged
-    // bytes of its guarded scripts against the game's override files, and the
-    // area each guarded area source recorded against the shared pristine
-    // copy. A kept revision that would fail there stops the runtime for
-    // every game.
+    // When one of its games is loaded, the runtime checks a revision: the
+    // staged bytes of its guarded scripts against the game's override files,
+    // and the area each guarded area source recorded against the shared
+    // pristine copy. A kept revision that would fail there would stop CIR in
+    // each of its games, so Apply refuses instead.
+    // Where Apply's newer patch of a reward dialogue supersedes the one a kept
+    // revision staged, its saves read Apply's ([`superseding`]): it lists
+    // them, by revision, and keeps that version beside them
+    // ([`applied_script`]).
     /// A file as the game has it, as Apply would leave it, as the revision
-    /// needs it, and the installer's and Apply's versions that also meet a
-    /// quest script's need.
+    /// needs it, the installer's and Apply's versions that also meet a quest
+    /// script's need, and Apply's patch of a reward dialogue that supersedes
+    /// the staged one, with that dialogue.
     struct Needed {
         name: String,
         current: Held,
         installed: Held,
         expected: Held,
         extended: (Held, Held),
+        newer: Option<(String, Vec<u8>)>,
     }
+    let mut superseded: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
     for key in &kept {
         let before = stored_native(&exported, key)?;
         let mut needed: Vec<Needed> = Vec::new();
@@ -2902,12 +3010,14 @@ pub fn export_native(
             } else {
                 (Held::Absent, Held::Absent)
             };
+            let newer = if quest { None } else { superseding(&resource, installed, &expected, &before, naming)? };
             needed.push(Needed {
                 name,
                 current: Held::from_bytes(current),
                 installed: Held::from_bytes(installed),
                 expected: Held::Bytes(expected),
                 extended,
+                newer: newer.map(|newer| (resource, newer)),
             });
         }
         for area in gate_areas(&before)? {
@@ -2932,12 +3042,14 @@ pub fn export_native(
                 installed: digest(),
                 expected,
                 extended: (Held::Absent, Held::Absent),
+                newer: None,
             });
         }
-        for Needed { name, current, installed, expected, extended: (base, extended) } in needed {
+        for Needed { name, current, installed, expected, extended: (base, extended), newer } in needed {
             let meets = |version: &Held| {
                 version.same(&expected)
                     || (!matches!(base, Held::Absent) && base.same(&expected) && version.same(&extended))
+                    || matches!((version, &newer), (Held::Bytes(data), Some((_, newer))) if data == newer)
             };
             let change = if !meets(&current) {
                 format!("it changed in the game since then; {CHECKED}. Restore {name} before applying")
@@ -2947,7 +3059,21 @@ pub fn export_native(
             require(meets(&installed), || {
                 format!("Saved games of revision {} need {name} as it was when they were exported, but {change}", short(key))
             })?;
+            if let Some((resource, newer)) = newer {
+                superseded.entry(key.clone()).or_default().insert(resource.clone());
+                pending.insert(applied_script(&resource), newer);
+            }
         }
+    }
+    // Only then: one that an earlier Apply left in the game names only
+    // revisions whose saves it checked, and the runtime still compares the
+    // game's file with the version kept beside it.
+    if !superseded.is_empty() {
+        let mut index = Dict::new();
+        for (key, resources) in &superseded {
+            index.insert(key.clone(), Value::List(resources.iter().cloned().map(Value::Str).collect()));
+        }
+        pending.insert(SUPERSEDED, render_lua(&Value::Dict(index))?);
     }
 
     for (relative, data) in &pending.entries {
@@ -3030,4 +3156,89 @@ pub fn export_native(
         Some(sorted) => result.insert("starts", sorted),
     };
     Ok(Value::Dict(result))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn route(resource: &str, name: &str) -> Dict {
+        mode2_rewards::resource_specs(resource, Naming::default())
+            .expect("specs")
+            .into_iter()
+            .find(|spec| spec.get("route").and_then(Value::as_str) == Some(name))
+            .expect(name)
+    }
+
+    fn with(base: &Dict, extra: &[(&str, Value)]) -> Value {
+        let mut target = base.clone();
+        for (key, item) in extra {
+            target.insert(*key, item.clone());
+        }
+        Value::Dict(target)
+    }
+
+    fn native(targets: Vec<(String, Value)>, sources: Vec<(String, Value)>) -> Value {
+        let table = |rows: Vec<(String, Value)>| {
+            let mut table = Dict::new();
+            for (key, row) in rows {
+                table.insert(key, row);
+            }
+            Value::Dict(table)
+        };
+        Value::Dict(crate::dict! {"targets" => table(targets), "sources" => table(sources)})
+    }
+
+    /// The reference's
+    /// `test_a_route_a_revision_was_exported_without_leaves_its_saves_alone`:
+    /// only then do its saves read a newer patch that adds the route.
+    #[test]
+    fn a_route_a_revision_was_exported_without_leaves_its_saves_alone() {
+        let (adalon, crossbow, treasury) =
+            (route("dlg:udsilver", "adalon"), route("dlg:udsilver", "udsilver"), route("dlg:sahkng01", "sahrod"));
+        let place = "original-target:bg2:base:target:72".to_string();
+        let creature =
+            crate::dict! {"kind" => "creature", "area" => "AR2102", "script_name" => "udsilver", "identity" => "a".repeat(64)};
+        let alone = |spec: &Dict, native: &Value| leaves_alone(spec, native).expect("leaves_alone");
+        // Her reply hands over what she carries: none there, a plain creature
+        // (CIR 1.0.2's place) or her place's own carried reward.
+        let carried =
+            with(&creature, &[("inventory_reward", Value::Bool(true)), ("reward_resource", Value::from("dlg:udsilver"))]);
+        for targets in [vec![], vec![(place.clone(), Value::Dict(creature.clone()))], vec![(place.clone(), carried)]] {
+            assert!(alone(&adalon, &native(targets, vec![])));
+        }
+        // Not a target it cannot take from, also where a preset's row stands
+        // for her place.
+        let handover = Value::Dict(crate::dict! {"event_global" => "FLPR_EM2_72", "recipient_local" => "FLPR_RM2_72"});
+        for extra in [
+            ("corpse_only", Value::Bool(true)),
+            ("kind", Value::from("container")),
+            ("event_global", Value::from("FLPR_EM2_72")),
+            ("handover", handover),
+        ] {
+            let targets = vec![(place.clone(), with(&creature, &[extra.clone()]))];
+            assert!(!alone(&adalon, &native(targets, vec![])), "{}", extra.0);
+        }
+        let standing = with(&creature, &[("corpse_only", Value::Bool(true)), ("route_target", Value::from(place.as_str()))]);
+        assert!(!alone(&adalon, &native(vec![("original-target:bg2:other:mode2:target:9".into(), standing)], vec![])));
+        // A route's flags: only a revision that names them uses them,
+        // wherever its endpoints name them.
+        assert!(alone(&crossbow, &native(vec![(place.clone(), Value::Dict(creature.clone()))], vec![])));
+        let flag = |key: &str| crossbow.get(key).cloned().expect(key);
+        let source = crate::dict! {"kind" => "guarded-script", "selected_global" => flag("selected_global")};
+        let container =
+            crate::dict! {"kind" => "container", "handover" => Value::Dict(crate::dict! {"event_global" => flag("event_global")})};
+        for named in [
+            native(vec![], vec![("original-source:bg2:mode2:item:44".into(), Value::Dict(source))]),
+            native(vec![("original-target:bg2:mode2:target:66".into(), Value::Dict(container))], vec![]),
+        ] {
+            assert!(!alone(&crossbow, &named));
+        }
+        // A treasury's payment needs its place's own route.
+        assert!(alone(&treasury, &native(vec![], vec![])));
+        let row = treasury.get("target_ids").and_then(Value::as_list).and_then(|ids| ids.first()).and_then(Value::as_str);
+        let target = crate::dict! {"kind" => "container", "area" => "AR2300"};
+        let targets = vec![(format!("original-target:{}", row.expect("its place")), Value::Dict(target))];
+        assert!(!alone(&treasury, &native(targets, vec![])));
+    }
 }

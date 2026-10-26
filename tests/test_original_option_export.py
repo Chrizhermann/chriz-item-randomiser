@@ -13,13 +13,13 @@ from test_cursed_disguises import resources as cursed_resources, spec_for
 from test_mode2_rewards import dialogue_fixture
 from test_postinstall_world_formats import item_record, make_are, make_cre
 from test_postinstall_resources import snapshot, write_eet_names
-from flir_config import container_rewards, mode2_rewards, translations
+from flir_config import container_rewards, mode2_rewards, native_export, translations
 from flir_config.game_names import _eet_tables, eet_names
 from flir_config.game_text import GameText
-from flir_config.campaigns import read_campaign, write_campaign
+from flir_config.campaigns import _render_lua, read_campaign, write_campaign
 from flir_config.original_catalog import resolve_template
 from flir_config.original_configuration import build_original_configuration
-from flir_config.profiles import ProfileError, _digest, edit_profile, new_profile
+from flir_config.profiles import ProfileError, _digest, canonical_bytes, edit_profile, new_profile
 from flir_config.quest_options import _Dialogue
 from flir_config.quest_rewards import _blocks, _newline
 from flir_config.resources import _Tlk, scan_game
@@ -301,6 +301,129 @@ class OriginalOptionExportTests(unittest.TestCase):
                     f.export(revision)
                 (f.override / name).write_bytes(bytes(dragon) if name.endswith('.cre') else original)
                 f.refresh()
+
+    def test_a_revision_exported_before_adalons_route_reads_her_newer_dialogue(self):
+        """CIR 1.0.2 patched UDSILVER.DLG for her crossbow's route (row 44)
+        alone and kept her place (row 72) as a plain creature. Its saves read
+        the dialogue that Apply patches now with her route too: the newer
+        patch supersedes the earlier one, and her reply hands that creature's
+        reward over (FLPRNat.lua). Apply lists the revision in superseded.lua
+        and keeps its version beside it."""
+        f = self.fixture()
+        patches = self.dialogue_routes(f, ('dlg:udsilver', 'dlg:uddemon'))
+        (f.override / 'xbow10.itm').write_bytes((f.override / 'synth001.itm').read_bytes())
+        original = (f.override / 'udsilver.dlg').read_bytes()
+        dragon = bytearray(make_cre([]))
+        dragon[0x280:0x289] = b'udsilver\0'
+        (f.override / 'udsilver.cre').write_bytes(dragon)
+        (f.override / 'ar2102.are').write_bytes(make_are([], [], [('Adalon', 'UDSILVER')]))
+        f.refresh()
+        place = 'original-target:bg2:base:target:72'
+
+        def revision():
+            configuration = self.mode2_configuration(f, 'bg2:mode2:item:44', 'bg2:base:target:72')
+            # The crossbow is tier 6, her place tier 5: this fixture pairs them without tiers.
+            del configuration['plan']['randomization']
+            return write_campaign(configuration['profile'], f.catalog, f.world, configuration['plan'],
+                                  f.store)['revision']
+
+        # The revision as CIR 1.0.2 exported it, and its Apply's dialogues.
+        earlier = revision()
+        f.export(earlier)
+        specs = mode2_rewards.resource_specs('dlg:udsilver')
+        staged = mode2_rewards._patch_dialogue(original, tuple(spec for spec in specs if spec['route'] == 'udsilver'))
+        self.assertNotEqual(staged, patches['dlg:udsilver'])
+        base = f.output / 'campaign-store/revisions' / earlier
+        names = {Path(str(base) + '.source-1.patched.dlg'), Path(str(base) + '.source-1.route-1.patched.dlg')}
+        for path in names:
+            self.assertEqual(path.read_bytes(), patches['dlg:udsilver'])
+            path.write_bytes(staged)
+        native = json.loads(Path(str(base) + '.native.json').read_text())
+        for key in ('inventory_reward', 'reward_resource'):
+            del native['targets'][place][key]
+        native['resource_hashes']['UDSILVER.DLG'] = hashlib.sha256(staged).hexdigest()
+
+        def stage(target):
+            native['targets'][place] = target
+            Path(str(base) + '.native.json').write_bytes(canonical_bytes(native))
+            Path(str(base) + '.native.lua').write_bytes(_render_lua(native))
+        plain = dict(native['targets'][place])
+        self.assertEqual(sorted(plain), ['area', 'identity', 'kind', 'script_name'])
+        stage(plain)
+        (f.override / 'udsilver.dlg').write_bytes(staged)
+        (f.override / 'uddemon.dlg').write_bytes(patches['dlg:uddemon'])
+        f.refresh()
+        kept = {path.name: path.read_bytes() for path in base.parent.iterdir() if path.name.startswith(earlier)}
+        # Apply now.
+        later = revision()
+        self.assertNotEqual(later, earlier)
+        result = f.export(later)
+        self.assertIn(f'Saved games of revision {earlier[:12]} keep the settings exported earlier', ' '.join(
+            result['notes']))
+        # Apply patches the game's dialogue again, read back to its original:
+        # her dialogue with both routes, as a fresh patch of it reads.
+        newer = mode2_rewards.patch_reward('dlg:udsilver', staged)
+        self.assertEqual(mode2_rewards._logical(newer, 'dlg:udsilver'),
+                         mode2_rewards._logical(patches['dlg:udsilver'], 'dlg:udsilver'))
+        self.assertEqual((f.output / 'resource-overrides/UDSILVER.DLG').read_bytes(), newer)
+        self.assertEqual((f.output / 'UDSILVER.applied.dlg').read_bytes(), newer)
+        self.assertEqual((f.output / 'superseded.lua').read_bytes(), _render_lua({earlier: ['dlg:udsilver']}))
+        listed = json.loads((f.output / 'export-files.json').read_text())['files']
+        self.assertTrue({'UDSILVER.applied.dlg', 'superseded.lua'} <= set(listed))
+        self.assertFalse((f.output / 'UDDEMON.applied.dlg').exists())
+        self.assertEqual({path.name: path.read_bytes() for path in base.parent.iterdir()
+                          if path.name.startswith(earlier)}, kept)
+        # A target there that her reply could not hand over from keeps Apply's
+        # refusal: the runtime would stop in those saves.
+        for target in ({**plain, 'corpse_only': True}, {**plain, 'kind': 'container'}):
+            with self.subTest(target=target):
+                stage(target)
+                with self.assertRaisesRegex(ProfileError, re.escape(
+                        f'Saved games of revision {earlier[:12]} need UDSILVER.DLG as it was when they were '
+                        'exported, but Apply would now replace it with another version; the runtime checks it '
+                        'whenever one of them is loaded and would stop CIR in it')):
+                    f.export(later)
+        # Nor does a changed copy of the earlier patch supersede.
+        stage(plain)
+        for path in names:
+            path.write_bytes(staged.replace(b'"FLPR_EA_EGGDEALIO","GLOBAL",1)', b'"FLPR_EA_EGGDEALIO","GLOBAL",2)', 1))
+        with self.assertRaisesRegex(ProfileError, f'Saved games of revision {earlier[:12]} need UDSILVER.DLG'):
+            f.export(later)
+
+    def test_a_route_a_revision_was_exported_without_leaves_its_saves_alone(self):
+        """Only then do its saves read a newer patch that adds the route."""
+        specs = {spec['route']: spec for resource in ('dlg:udsilver', 'dlg:sahkng01')
+                 for spec in mode2_rewards.resource_specs(resource)}
+        adalon, crossbow, treasury = specs['adalon'], specs['udsilver'], specs['sahrod']
+        place = 'original-target:bg2:base:target:72'
+        creature = {'kind': 'creature', 'area': 'AR2102', 'script_name': 'udsilver', 'identity': 'a' * 64}
+
+        def native(targets=None, sources=None):
+            return {'targets': targets or {}, 'sources': sources or {}}
+        # Her reply hands over what she carries: none there, a plain creature
+        # (CIR 1.0.2's place) or her place's own carried reward.
+        for targets in ({}, {place: creature},
+                        {place: {**creature, 'inventory_reward': True, 'reward_resource': 'dlg:udsilver'}}):
+            self.assertTrue(native_export._leaves_alone(adalon, native(targets)))
+        # Not a target it cannot take from, also where a preset's row stands for her place.
+        for target in ({**creature, 'corpse_only': True}, {**creature, 'kind': 'container'},
+                       {**creature, 'event_global': 'FLPR_EM2_72'},
+                       {**creature, 'handover': {'event_global': 'FLPR_EM2_72', 'recipient_local': 'FLPR_RM2_72'}}):
+            self.assertFalse(native_export._leaves_alone(adalon, native({place: target})))
+        self.assertFalse(native_export._leaves_alone(adalon, native(
+            {'original-target:bg2:other:mode2:target:9': {**creature, 'corpse_only': True, 'route_target': place}})))
+        # A route's flags: only a revision that names them uses them, wherever
+        # its endpoints name them.
+        self.assertTrue(native_export._leaves_alone(crossbow, native({place: creature})))
+        for named in (native(sources={'original-source:bg2:mode2:item:44': {
+                          'kind': 'guarded-script', 'selected_global': crossbow['selected_global']}}),
+                      native({'original-target:bg2:mode2:target:66': {
+                          'kind': 'container', 'handover': {'event_global': crossbow['event_global']}}})):
+            self.assertFalse(native_export._leaves_alone(crossbow, named))
+        # A treasury's payment needs its place's own route.
+        self.assertTrue(native_export._leaves_alone(treasury, native()))
+        self.assertFalse(native_export._leaves_alone(treasury, native(
+            {'original-target:' + treasury['target_ids'][0]: {'kind': 'container', 'area': 'AR2300'}})))
 
     def test_temple_reward_exports_auxiliary_creature_without_another_unit(self):
         # Yarryl's club as the game has it, and as another mod may keep it:

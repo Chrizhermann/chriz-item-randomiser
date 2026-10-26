@@ -17,8 +17,9 @@ use cir_config::json::{Dict, Value};
 use cir_config::mode2_rewards::{
     destroy_gate, direct_rewards, game_text_refs, gives_reward, handover, journal_lua, journal_refs, own_patch,
     patch_dialogue, patch_reward, physical_source_reward, prepare_ddwell_text, prepare_reward_texts, resource_rewards,
-    resource_specs, rewards, route_reasons, script_original, source_rewards, source_spec, target_rewards, target_spec,
-    text_lines, text_original, text_refs, titled, transfer_spec, transfer_specs, unpatched_script, Naming, TextRefs,
+    resource_specs, rewards, route_reasons, script_original, source_rewards, source_spec, superseding_routes,
+    target_rewards, target_spec, text_lines, text_original, text_refs, titled, transfer_spec, transfer_specs,
+    unpatched_script, Naming, TextRefs,
     DESTROY_GATES, PHYSICAL_SOURCE_REWARDS, TEXT_REFS,
 };
 use cir_config::py::{put_u32, str_value};
@@ -1157,6 +1158,47 @@ fn an_earlier_versions_patch_of_adalons_dialogue_is_made_again_with_her_route() 
     assert!(!contains(&result, b"FLPR_QM2_44"));
     assert!(own_patch("dlg:udsilver", &result, Naming::default()).unwrap());
     assert_eq!(patch_reward("dlg:udsilver", &result, None, None, Naming::default()).unwrap(), result);
+}
+
+#[test]
+fn a_newer_patch_of_adalons_dialogue_supersedes_the_earlier_one() {
+    // Saves of a revision that CIR 1.0.2 exported with her crossbow's route
+    // alone can read the dialogue that has her route too: each route of the
+    // earlier patch changes the same replies alike in the newer one.
+    let all = specs("dlg:udsilver");
+    let crossbow = &all[..1];
+    assert_eq!(text(&crossbow[0], "route"), "udsilver");
+    let supersedes = |newer: &[u8], earlier: &[u8]| {
+        superseding_routes("dlg:udsilver", newer, earlier, Naming::default())
+            .unwrap()
+            .map(|added| added.iter().map(|spec| text(spec, "route").to_string()).collect::<Vec<_>>())
+    };
+    let layouts = [true, false].map(|beamdog| layout_dialogue("udsilver", &adalon_states(), beamdog));
+    for original in [dialogue_fixture(&all), layouts[0].clone(), layouts[1].clone()] {
+        let earlier = patch_dialogue(&original, crossbow, &[], true, true, None).unwrap();
+        let now = patch_reward("dlg:udsilver", &original, None, None, Naming::default()).unwrap();
+        for newer in [now.clone(), patch_reward("dlg:udsilver", &earlier, None, None, Naming::default()).unwrap()] {
+            assert_eq!(supersedes(&newer, &earlier), Some(vec!["adalon".to_string()]));
+            assert_eq!(supersedes(&newer, &newer), Some(Vec::new()));
+            // Never the other way round: the earlier patch is not Apply's
+            // now, and lacks her route.
+            assert_eq!(supersedes(&earlier, &newer), None);
+        }
+        // A changed copy of the earlier patch is not ours.
+        let tampered = replace(&earlier, b"\"FLPR_EA_EGGDEALIO\",\"GLOBAL\",1)", b"\"FLPR_EA_EGGDEALIO\",\"GLOBAL\",2)", Some(1));
+        assert_ne!(tampered, earlier);
+        assert_eq!(supersedes(&now, &tampered), None);
+    }
+    // Nor does the patch of a dialogue that another mod changed since.
+    let mut changed = adalon_states();
+    changed[3] = vec![("", "SetGlobal(\"OtherMod\",\"GLOBAL\",1)\nDestroySelf()", None)];
+    let earlier = patch_dialogue(&layouts[0], crossbow, &[], true, true, None).unwrap();
+    let newer = patch_reward("dlg:udsilver", &layout_dialogue("udsilver", &changed, true), None, None, Naming::default());
+    assert_eq!(supersedes(&newer.unwrap(), &earlier), None);
+    // A script's, a text route's or a destroy gate's patch carries every route.
+    for resource in ["bcs:ddwell", "dlg:trgeni01", "bcs:sahtreas"] {
+        assert!(superseding_routes(resource, b"", b"", Naming::default()).unwrap().is_none(), "{resource}");
+    }
 }
 
 /// Whether script text names `item` as a quoted resref, in any letter case.
