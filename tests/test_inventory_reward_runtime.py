@@ -186,6 +186,52 @@ class InventoryRewardRuntimeTests(unittest.TestCase):
             assert(FLPR_Transfer(speaker,5,1,1)==-1)
         ''')
 
+    def test_callback_lets_the_reply_go_on_once_cir_stopped(self):
+        # The engine repeats an action that returns NORMAL (0): a speaker held
+        # after CIR stopped would never finish its reply, nor the quest.
+        entry = (ROOT / "prototype/M_FLPR.lua").read_text(encoding="utf-8")
+        callback = "function FLPR_Transfer" + entry.split("function FLPR_Transfer", 1)[1].split("    root.Disabled = nil\n", 1)[0]
+        for runtime in (Lua51, Lua53, LuaJIT):
+            lua = runtime(unpack_returned_tuples=True)
+            with self.subTest(runtime=runtime.__module__):
+                lua.execute(r'''
+                    local Core={G={state='flpr_state'},PHASE={held=4,confirmed=2}}
+                    local storage={get=function(_,key) assert(key=='flpr_state');return 2 end}
+                    local root={}
+                    local calls,failure,disabled=0,nil,nil
+                    local function host(status)
+                        return {status=status,controller={assignments=function() return {} end},
+                            native={transfer_inventory_reward=function()
+                                calls=calls+1
+                                if failure then error(failure,0) end
+                                return 0
+                            end},
+                            _disable=function(self,reason) self.status,disabled='disabled',reason end}
+                    end
+                ''' + callback + r'''
+                    -- Not restored yet after a load: the speaker waits.
+                    root.Host={status='waiting'}
+                    assert(FLPR_Transfer({},59)==0)
+                    -- A delivery still on its way: the speaker waits too.
+                    root.Host=host('running')
+                    assert(FLPR_Transfer({},59)==0 and calls==1)
+                    -- Stopped by the host: the reply goes on without a transfer.
+                    root.Host=host('disabled')
+                    assert(FLPR_Transfer({},59)==-1 and calls==1)
+                    -- Stopped elsewhere (the start, a spell callback, a handover).
+                    root.Host,root.Disabled=host('running'),'CAMPAIGN_HANDOVER_FAILED:x'
+                    assert(FLPR_Transfer({},59)==-1 and calls==1)
+                    root.Disabled,root.Host=nil,nil
+                    root.Disabled='start failed'
+                    assert(FLPR_Transfer({},72,2,1)==-1)
+                    -- A failed transfer stops CIR and lets this reply go on, and the next.
+                    root.Disabled,root.Host,failure=nil,host('running'),'boom'
+                    assert(FLPR_Transfer({},59)==-1 and calls==2)
+                    assert(root.Disabled=='CAMPAIGN_INVENTORY_TRANSFER_FAILED:boom')
+                    assert(disabled==root.Disabled and root.Host.status=='disabled')
+                    assert(FLPR_Transfer({},60)==-1 and calls==2)
+                ''')
+
 
 if __name__ == "__main__":
     unittest.main()

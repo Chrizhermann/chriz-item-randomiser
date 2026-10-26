@@ -398,7 +398,10 @@ local ok, failure = pcall(function()
         end,
     })
     -- EEex_LuaAction's NORMAL return holds the speaker before EscapeArea until
-    -- its randomized inventory is ready. DONE resumes the original dialogue.
+    -- its randomized inventory is ready. DONE resumes the original dialogue,
+    -- also once CIR has stopped in this adventure (@1706): the engine repeats a
+    -- NORMAL action, so the speaker would hold for good and the quest could not
+    -- go on. The reward then stays with the speaker.
     function FLPR_Transfer(speaker, target_id, campaign, base)
         -- Dialogue parsing strips spaces and colons from Lua chunks. Authored
         -- Mode 2 inventory rewards pass their numeric row, a BG1 row its
@@ -410,7 +413,8 @@ local ok, failure = pcall(function()
         end
         if storage:get(Core.G.state)==0 then return -1 end -- Existing non-randomized campaign.
         local host=root.Host
-        if root.Disabled or not host or not host.native or host.status=='disabled' then return 0 end
+        if root.Disabled or host and host.status=='disabled' then return -1 end
+        if not host or not host.native then return 0 end -- Not restored yet after a load.
         local success,result=pcall(function()
             return host.native:transfer_inventory_reward(speaker,target_id,
                 assert(host.controller:assignments()),Core.PHASE)
@@ -418,7 +422,7 @@ local ok, failure = pcall(function()
         if not success then
             root.Disabled='CAMPAIGN_INVENTORY_TRANSFER_FAILED:'..tostring(result)
             host:_disable(root.Disabled)
-            return 0
+            return -1
         end
         return result
     end
