@@ -186,6 +186,34 @@ function cases.guarded_remaining_counts_exact_visible_container_without_mutation
     result=assert(f.adapter:guarded_source_remaining(f.guarded_id,"901","701"))
     assert(result.remaining==1)
 end
+function cases.own_reward_in_a_guarded_source_container_is_not_its_original(N)
+    local f=guarded_world(N)
+    -- The draw gave the place its own item back: the target is the source's chest.
+    f.fixture.sources[f.guarded_id].container_type=1; f.container.m_containerType=1
+    f.fixture.targets[f.target_id]={kind="container",area="FLPRU1",script_name="FLPRU1A",
+        identity=string.rep("b",64),x=1140,y=650,container_type=1}
+    f.adapter=N.new(f.api,f.fixture)
+    -- The gate removed the original as the pristine area loaded.
+    table.remove(f.container.m_lstItems,1)
+    assert(f.adapter:guarded_source_remaining(f.guarded_id,"901","701").remaining==0)
+    f.api.EEex_Resource_Demand=function(ref,ext) assert(ref=="flpri1" and ext=="ITM"); return f.header end
+    f.api.EEex_Action_ExecuteResponseStringOnAIBaseInstantly=function(action,owner)
+        f.calls[#f.calls+1]=action; assert(owner==f.container)
+        owner.m_lstItems[#owner.m_lstItems+1]=f.item("FLPRI1",804,1)
+    end
+    local a=f.adapter; assert(a:inspect_target(f.target_id)); assert(a:on_observation_boundary(1))
+    local command=f.command("deliver"); assert(a:execute(command)); assert(a:on_observation_boundary(2))
+    assert(a:observe(command).created==1)
+    -- The reward of the original's name is CIR's own instance, not the original.
+    assert(a:guarded_source_remaining(f.guarded_id,"901","701").remaining==0)
+    -- Any other item of that name counts, as the original would.
+    f.container.m_lstItems[#f.container.m_lstItems+1]=f.item("FLPRI1",805,1)
+    assert(a:guarded_source_remaining(f.guarded_id,"901","701").remaining==1)
+    -- Only this session knows its rewards (the gate's witness is this session's too).
+    assert(N.new(f.api,f.fixture):guarded_source_remaining(f.guarded_id,"901","701").remaining==2)
+    a:destroy()
+    assert(a:guarded_source_remaining(f.guarded_id,"901","701").remaining==2)
+end
 function cases.guarded_remaining_rejects_unavailable_or_changed_area_before_owner_access(N)
     local f=guarded_world(N)
     local visible=f.api.EEex_Area_GetVisible
