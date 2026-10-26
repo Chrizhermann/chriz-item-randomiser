@@ -49,6 +49,7 @@ from .game_text import GameTextError, paired, text_files, unpaired
 from .reward_routes import ChangedSinceScan, reward_routes
 from . import chapter3
 from .original_catalog import chapter3_place, container_target_spec, mode2_route_source, mode2_route_target
+from .special_places import place as special_place, unique as unique_place
 from .cursed_disguises import validate_cursed_disguise_spec, prepare_cursed_disguises
 from .duplicates import holdings
 
@@ -740,6 +741,8 @@ def _compile(manifest: dict, world: dict, index: dict, items: dict,
 
     # The Sahuagin treasury's place: its container and script (require_treasury_names).
     treasuries: dict[str, tuple[dict, str]] = {}
+    # The row of each special place that can have only one (special_places.unique).
+    unique_places: dict[str, str] = {}
 
     def compile_target(selected: dict) -> None:
         target, identity = selected["record"], selected["id"]
@@ -753,6 +756,11 @@ def _compile(manifest: dict, world: dict, index: dict, items: dict,
                  f"Selected target differs from the scan: {identity}")
         if authored:
             selector = target["selector"]
+            # Its game patches and the runtime name one row of such a place (a
+            # preset's row there stands for the route's own).
+            other = unique_places.get(special_place(selector) or "", identity)
+            _require(other == identity,
+                     f"Original recipient is the same place as {other}; keep one of them: {identity}")
             use(target["resource"])
             reward = mode2_target_spec(route, **naming()) if route is not None else None
             if reward:
@@ -978,6 +986,10 @@ def _compile(manifest: dict, world: dict, index: dict, items: dict,
 
     for selected in manifest["targets"]:
         attempt(selected["id"], compile_target, selected)
+        record = selected["record"]
+        place = special_place(record["selector"]) if record.get("adapter_id") == "original-target-v1" else None
+        if place is not None and unique_place(place) and selected["id"] in native["targets"]:
+            unique_places[place] = selected["id"]
     # The treasury's rewards, once every place in its container is known.
     for identity, (treasury, script) in treasuries.items():
         if identity in native["targets"]:

@@ -44,6 +44,7 @@ pub mod sources;
 pub mod templates;
 pub mod platform;
 pub mod original_catalog;
+pub mod special_places;
 pub mod original_registrations;
 pub mod campaigns;
 pub mod native_export;

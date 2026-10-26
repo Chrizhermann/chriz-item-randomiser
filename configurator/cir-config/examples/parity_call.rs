@@ -185,6 +185,15 @@ fn run(name: &str, args: &Dict) -> Result<Value> {
                 ),
             })
         }
+        "fit_special_places" => {
+            let (catalog, world) = (required(args, "catalog")?, required(args, "world")?);
+            let draft = argument(args, "draft")?;
+            with_scans(args, &catalog, &world, |scans| match &draft {
+                Some(draft) => original_configuration::fit_special_places_from(&catalog, &world, draft, scans),
+                None => original_configuration::fit_special_places(&catalog, &world, scans),
+            })
+            .map(Value::List)
+        }
         "new_binding_plan" => {
             let (catalog, world) = (required(args, "catalog")?, required(args, "world")?);
             let profile = required(args, "profile")?;

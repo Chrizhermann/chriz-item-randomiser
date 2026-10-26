@@ -30,6 +30,7 @@ from .original_registrations import (SOURCE_ADAPTER as ORIGINAL_SOURCE_ADAPTER,
                                      table_rows as original_table_rows,
                                      target_record as original_target_record,
                                      shipped_replacement_hash,
+                                     special_rows as special_target_rows,
                                      validate_source_registration as validate_original_source,
                                      validate_target_registration as validate_original_target)
 
@@ -753,10 +754,11 @@ def bind_profile(profile: dict, catalog: dict, world: dict, plan: dict, *,
     catalog_items = {item["resref"]: item for item in catalog["items"]}
     if plan["schema"] != PLAN_SCHEMA or plan["catalog_fingerprint"] != catalog["fingerprint"] or plan["world_fingerprint"] != world["fingerprint"]:
         raise ProfileError("Binding plan is stale or unsupported; review against the current scans")
-    original_keys = {"original_template_id", "original_choices", "original_options",
-                     "target_registrations"}
-    present_original = set(plan) & original_keys
-    if present_original and present_original != original_keys:
+    # A preset's plan has all of its metadata and its original recipients; any
+    # plan may have special places (special_places) as original recipients.
+    original_keys = {"original_template_id", "original_choices", "original_options"}
+    present_original = bool(set(plan) & original_keys)
+    if present_original and not original_keys | {"target_registrations"} <= set(plan):
         raise ProfileError("Original plan metadata is incomplete")
     source_rows, target_rows = (original_table_rows(catalog, world, plan,
                                                     memo=None if scans is None else scans.tables)
@@ -908,10 +910,21 @@ def bind_profile(profile: dict, catalog: dict, world: dict, plan: dict, *,
     if "duplicates" in plan and not present_original:
         raise ProfileError("Second copies of rewards need original plan metadata")
     original_targets = {}
+    special = None
     for registration in _rows(plan.get("target_registrations", []), "original target registration"):
-        if not present_original:
-            raise ProfileError("Original target needs original plan metadata")
-        validate_original_target(registration, target_rows)
+        rows = target_rows
+        selector = registration.get("selector")
+        row = target_rows.get(selector) if isinstance(selector, str) else None
+        if row is None or not row["enabled"]:
+            # A special place, which any plan may use, also where the preset's
+            # options leave its row out.
+            if special is None:
+                special = special_target_rows(catalog, world, memo=None if scans is None else scans.tables)
+            if isinstance(selector, str) and selector in special:
+                rows = special
+            elif not present_original:
+                raise ProfileError("Original target needs original plan metadata")
+        validate_original_target(registration, rows)
         identity = registration["id"]
         if identity in original_targets:
             raise ProfileError("Duplicate original target registration")

@@ -681,15 +681,30 @@ fn validate_campaign(body: &Value) -> Result<()> {
         }
         validate_copies(copies, sources)?;
     }
-    if !present_original
-        && sources.iter().chain(targets).any(|row| {
-            matches!(
-                row.get("record").and_then(|record| record.get("adapter_id")).and_then(Value::as_str),
-                Some(original::SOURCE_ADAPTER | original::TARGET_ADAPTER)
-            )
-        })
-    {
-        return Err(Error::profile("Authored records need original campaign settings"));
+    // Any campaign may give rewards to Item Randomiser's special places
+    // (bind_profile); its other authored records come with a preset.
+    fn adapter(row: &Value) -> Option<&str> {
+        row.get("record").and_then(|record| record.get("adapter_id")).and_then(Value::as_str)
+    }
+    if !present_original {
+        let mut authored = sources
+            .iter()
+            .any(|row| matches!(adapter(row), Some(original::SOURCE_ADAPTER | original::TARGET_ADAPTER)));
+        for row in targets {
+            if authored {
+                break;
+            }
+            authored = match adapter(row) {
+                Some(original::SOURCE_ADAPTER) => true,
+                Some(original::TARGET_ADAPTER) => {
+                    crate::special_places::place(row.at("record")?.at("selector")?)?.is_none()
+                }
+                _ => false,
+            };
+        }
+        if authored {
+            return Err(Error::profile("Authored records need original campaign settings"));
+        }
     }
     if let Some(randomization) = campaign.get("randomization") {
         validate_randomization(randomization, sources, targets)?;

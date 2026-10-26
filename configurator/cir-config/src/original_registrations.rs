@@ -208,6 +208,55 @@ pub fn table_rows(catalog: &Value, world: &Value, plan: &Value, memo: Option<&Ta
     Ok(tables)
 }
 
+/// The rows of the game's special places (`special_places::place`) by
+/// identity, from Item Randomiser's lists that hold them, enabled: any
+/// configuration may give them rewards, also one that is no preset, whatever
+/// option a preset needs for them (their `targets`; `memo` keeps them for
+/// these scans).
+pub fn special_rows(catalog: &Value, world: &Value, memo: Option<&TableMemo>) -> Result<Rc<Tables>> {
+    // Beside the tables named by JSON lists (table_rows).
+    const KEY: &str = "special";
+    let pinned = crate::pins::registration_draft();
+    // A test's substituted draft is never kept.
+    let memo = memo.filter(|_| pinned.is_none());
+    if let Some(tables) = memo.and_then(|memo| memo.borrow().get(KEY).cloned()) {
+        return Ok(tables);
+    }
+    let mut rows = Dict::new();
+    for template_id in crate::special_places::templates(world)? {
+        let game = crate::platform::preset_game(world, &template_id)?;
+        let draft = match &pinned {
+            Some(draft) => draft.clone(),
+            None => resolve_template(
+                catalog,
+                world,
+                &template_id,
+                game,
+                Some(&Value::from("standard")),
+                Some(&Value::from("extended")),
+                None,
+                None,
+            )?,
+        };
+        for row in draft.at("targets")?.as_list().into_iter().flatten() {
+            if crate::special_places::place(row)?.is_none() {
+                continue;
+            }
+            let identity = crate::json::py_str(row.at("id")?);
+            if !rows.contains_key(&identity) {
+                let mut enabled = row.as_dict().cloned().unwrap_or_default();
+                enabled.insert("enabled", true);
+                rows.insert(identity, Value::Dict(enabled));
+            }
+        }
+    }
+    let tables = Rc::new(Tables { choices: Value::Null, options: Value::Null, sources: Dict::new(), targets: rows });
+    if let Some(memo) = memo {
+        memo.borrow_mut().insert(KEY.into(), Rc::clone(&tables));
+    }
+    Ok(tables)
+}
+
 /// Physical sources by identity.
 pub type SourceLookup<'a> = HashMap<&'a str, &'a Value>;
 

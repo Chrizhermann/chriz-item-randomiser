@@ -10,7 +10,8 @@ sent back are each server's own. Further phases cover CIR's install record
 (read while the editor runs), the scripted quest-pool reward, a preset with
 the options that add their own plan fields (More Spell Shield copies, cursed
 disguises), the options each game's preset offers and refuses, More Spell
-Shield copies where the scroll's own row cannot be randomised, and applying
+Shield copies where the scroll's own row cannot be randomised, Item
+Randomiser's special places as recipients of a configuration, and applying
 configurations to a synthetic test runtime, where each editor runs in turn on
 the same game and the game's files are compared afterwards, the original
 options also in games of other languages.
@@ -41,7 +42,8 @@ from test_cursed_disguises import resources as cursed_resources  # noqa: E402
 from test_postinstall_blpool_script import compiled_blpool, pool_game, pool_plan, write_registry  # noqa: E402
 from test_quest_options import crypt_fixture, dialogue_fixture  # noqa: E402
 from test_postinstall_resources import make_itm, mark_eet  # noqa: E402
-from test_postinstall_world_formats import item_record, make_are, make_sto  # noqa: E402
+from test_postinstall_world_formats import item_record, make_are, make_cre, make_sto  # noqa: E402
+from test_reward_routes import ogre_dialogue, well_script  # noqa: E402
 
 RANDOM_ID = re.compile(r"adventure-[0-9a-f]{12}")
 HEADERS = ("Content-Type", "Content-Length", "Cache-Control")
@@ -153,6 +155,8 @@ def session():
         ("targets shop", get("/api/targets?q=shop&kind=store")),
         ("targets kind", get("/api/targets?q=x&kind=bad")),
         ("targets terms", get("/api/targets?q=TEST%20area")),
+        ("targets special", get("/api/targets?kind=special")),
+        ("targets special words", get("/api/targets?q=chest&kind=special")),
         ("new named", post("/api/new", {"name": "Parity run"})),
         ("new default", post("/api/new", {})),
         ("new empty name", post("/api/new", {"name": ""})),
@@ -478,6 +482,73 @@ def spell_shield_phase(root: Path, label: str, *, scroll_flags: int = 0x4C,
     return concurrent_phase(name, root, catalog, world, steps)
 
 
+def add_special_places(game: Path) -> None:
+    """Three of Item Randomiser's special places of Shadows of Amn: Madulf's
+    reward, the well's and the Iron Pot's group (two of its members placed,
+    with their names), with a shop's ring of Madulf's tier and a chest of
+    that tier for the rewards no special place takes."""
+    override = game / "override"
+    ring = bytearray(make_itm())
+    struct.pack_into("<I", ring, 0x18, 0x4C)
+    (override / "ring28.itm").write_bytes(bytes(ring))
+    (override / "ribald.sto").write_bytes(bytes(make_sto(
+        [(item_record("RING28", expiration=0, charges=(0, 0, 0), flags=1), 1, 0)])))
+    (override / "ar1202.are").write_bytes(make_are([], [("container3", 0, 0)]))
+    (override / "ddwell.bcs").write_bytes(well_script())
+    (override / "ar1100.are").write_bytes(make_are())
+    (override / "uhogre01.dlg").write_bytes(ogre_dialogue())
+    for member in ("obshal01", "obshal02"):
+        (override / f"{member}.cre").write_bytes(make_cre())
+    (override / "ar0411.are").write_bytes(make_are([], [], [("Gorf", "OBSHAL01"), ("Mok", "OBSHAL02")]))
+    (override / "BGEE.LUA").write_bytes(b"quests = {}\n")
+    folder = game / "lang" / "en_US"
+    folder.mkdir(parents=True)
+    (folder / "dialog.tlk").write_bytes((game / "dialog.tlk").read_bytes())
+
+
+def special_phase(root: Path):
+    """The special places: all listed, found by words beside the scan's
+    recipients, a group by its members' names, and Madulf given the shop's
+    ring in a configuration of its own: checked, saved, shown with his
+    label, loaded and prepared."""
+    game = root / "special-game"
+    build(game, "bg2ee", "ar4000")
+    add_special_places(game)
+    catalog, world = scan(game, root / "special-scans", "en_US")
+    ring = next(row["id"] for row in json.loads(world.read_text(encoding="utf-8"))["sources"]
+                if row["item"] == "ring28")
+
+    def get(path):
+        return lambda server, state: server.request("GET", path)
+
+    def own(path):
+        def action(server, state):
+            found = json.loads(server.request("GET", "/api/targets?q=madulf&kind=special")[3])["result"]
+            ogre = found["records"][0]
+            draft = {"profile": copy.deepcopy(state["profile"]), "plan": copy.deepcopy(state["plan"])}
+            draft["profile"].update(id="parity-special", name="Parity special", items=["ring28"])
+            draft["plan"]["sources"] = [{"item": "ring28", "policy": "relocate", "source_ids": [ring],
+                                         "registration_ids": []}]
+            draft["plan"]["target_registrations"] = [ogre["registration"]]
+            draft["plan"]["targets"] = [{"id": ogre["id"], "capacity": 1, "optional": False}]
+            return server.post(path, draft)
+        return action
+
+    steps = [
+        ("special places", get("/api/targets?kind=special")),
+        ("special places by words", get("/api/targets?q=madulf&kind=special")),
+        ("special places beside the scan's recipients", get("/api/targets?q=ar1202")),
+        ("a group by its members' names", get("/api/targets?q=gorf")),
+        ("recipients without words", get("/api/targets?q=")),
+        ("validate", own("/api/validate")),
+        ("save", own("/api/save")),
+        ("state", get("/api/state")),
+        ("load", lambda server, state: server.post("/api/load", {"id": "parity-special"})),
+        ("prepare", own("/api/prepare")),
+    ]
+    return concurrent_phase("special places", root, catalog, world, steps)
+
+
 OPEN_GAME = "Close this game and its installer before applying settings"
 
 
@@ -619,6 +690,7 @@ def main() -> int:
         phases.append(availability_phase(root, "eet", "area", quest_files=True))
         phases += [spell_shield_phase(root, "hidden scroll", scroll_flags=0x44),
                    spell_shield_phase(root, "two scroll rows", scroll_rows=2)]
+        phases.append(special_phase(root))
         phases += [apply_phase(root, platform, area) for platform, area in APPLY_GAMES]
         phases.append(apply_phase(root, "eet", "area", options=True))
         phases += [apply_phase(root, "eet", "area", language=language) for language in OPTION_LANGUAGES]

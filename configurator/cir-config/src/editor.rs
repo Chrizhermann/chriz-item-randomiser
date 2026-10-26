@@ -30,6 +30,11 @@ fn kind_label(kind: &str) -> Result<&'static str> {
 pub const PART_NAMES: [(&str, &str); 5] =
     [("bg1", "BG1"), ("sod", "SoD"), ("soa", "BG2"), ("wk", "Watcher's Keep"), ("tob", "ToB")];
 
+/// The name the editor shows for a part of the game.
+fn part_name(part: &str) -> &'static str {
+    PART_NAMES.iter().find(|(known, _)| *known == part).map_or("", |(_, name)| *name)
+}
+
 /// The part of the game an area resource (`are:` and its name) is in, if
 /// the game is one a preset is for and the name tells it.
 fn area_parts(platform: Option<&str>, resource: &str) -> Option<Part> {
@@ -55,6 +60,11 @@ pub struct Editor {
     platform: Option<&'static str>,
     /// The parts of the game each creature template is placed in.
     template_parts: HashMap<String, HashSet<Part>>,
+    /// The names each creature template's actors have in each area.
+    actor_names: HashMap<(String, String), Vec<String>>,
+    /// The special places this game can deliver, as search records, or why
+    /// they cannot be listed; found on the first search for them.
+    special: Option<std::result::Result<Vec<(String, Value)>, String>>,
     draft: Value,
 }
 
@@ -173,14 +183,23 @@ impl Editor {
             Err(error) => return Err(error),
         };
         let mut template_parts: HashMap<String, HashSet<Part>> = HashMap::new();
+        let mut actor_names: HashMap<(String, String), Vec<String>> = HashMap::new();
         for row in world.at("targets")?.as_list().into_iter().flatten() {
             if row.get("kind").and_then(Value::as_str) != Some("actor") {
                 continue;
             }
             let template = row.get("selector").and_then(|selector| selector.get("template_resource"));
             if let Some(template) = template.and_then(Value::as_str) {
+                let resource = row.get("resource").and_then(Value::as_str).unwrap_or("");
                 let parts = template_parts.entry(template.to_string()).or_default();
-                parts.extend(area_parts(platform, row.get("resource").and_then(Value::as_str).unwrap_or("")));
+                parts.extend(area_parts(platform, resource));
+                let name = row.get("selector").and_then(|selector| selector.get("name")).and_then(Value::as_str);
+                if let Some(name) = name.filter(|name| !name.is_empty()) {
+                    let names = actor_names.entry((resource.to_string(), template.to_string())).or_default();
+                    if !names.iter().any(|known| known == name) {
+                        names.push(name.to_string());
+                    }
+                }
             }
         }
         if profile.is_none() != plan.is_none() {
@@ -196,6 +215,8 @@ impl Editor {
             sources,
             platform,
             template_parts,
+            actor_names,
+            special: None,
             draft: Value::Null,
         };
         let (mut profile, mut plan) = (profile, plan);
@@ -433,10 +454,101 @@ impl Editor {
             }
         }
         for part in self.parts(row.get("resource")) {
-            let name = PART_NAMES.iter().find(|(known, _)| *known == part).map_or("", |(_, name)| *name);
-            names.push(format!("{part} {name}"));
+            names.push(format!("{part} {}", part_name(part)));
         }
         Ok(crate::py::casefold(&names.join(" ")))
+    }
+
+    /// The names a group's member has in its area: its actors' there.
+    fn member_names(&self, area: &str, member: &str) -> Vec<String> {
+        self.actor_names.get(&(area.to_string(), member.to_string())).cloned().unwrap_or_default()
+    }
+
+    /// The parts of the game a special place is in, in game order.
+    fn special_parts(&self, authored: &Value) -> Result<Value> {
+        let parts = crate::special_places::table_parts(authored);
+        if !parts.is_empty() {
+            let shown = PART_NAMES.iter().map(|(part, _)| *part).filter(|part| parts.contains(part));
+            return Ok(Value::List(shown.map(Value::from).collect()));
+        }
+        Ok(self.parts_value(crate::special_places::area(authored)?.map(Value::from).as_ref()))
+    }
+
+    /// A special place's recipient record (`special_places::describe`), or None.
+    fn special_label(&self, identity: &Value, authored: &Value) -> Result<Option<Dict>> {
+        if authored.as_dict().is_none() {
+            return Ok(None);
+        }
+        let names: &crate::special_places::Names<'_> = &|area, member| self.member_names(area, member);
+        let Some(described) = crate::special_places::describe(authored, Some(names))? else {
+            return Ok(None);
+        };
+        Ok(Some(crate::dict! {
+            "id" => identity.clone(), "label" => described.get("label").cloned().unwrap_or(Value::Null),
+            "kind" => crate::special_places::KIND, "kind_label" => crate::special_places::KIND_LABEL,
+            "note" => described.get("note").cloned().unwrap_or(Value::Null),
+            "place" => described.get("place").cloned().unwrap_or(Value::Null),
+            "parts" => self.special_parts(authored)?,
+        }))
+    }
+
+    /// The special places this game can deliver (`fit_special_places`): the
+    /// words a search finds each by and its recipient search record, with the
+    /// registration a draft adds and the tier of its row; found once, on the
+    /// first search for them.
+    fn special_places(&mut self) -> Result<&[(String, Value)]> {
+        if self.special.is_none() {
+            let fitted =
+                crate::original_configuration::fit_special_places(&self.catalog, &self.world, Some(&self.scans()));
+            self.special = Some(match fitted {
+                Ok(registrations) => {
+                    let mut special = Vec::with_capacity(registrations.len());
+                    for registration in registrations {
+                        let authored = field(&registration, "authored")?;
+                        let mut record = self
+                            .special_label(field(&registration, "id")?, authored)?
+                            .ok_or_else(|| Error::type_error("'NoneType' object does not support item assignment"))?;
+                        let tier = format!(
+                            "{}:{}",
+                            crate::json::py_str(field(authored, "campaign")?),
+                            crate::json::py_str(field(authored, "tier")?)
+                        );
+                        record.insert("tier", tier);
+                        record.insert("registration", registration.clone());
+                        let mut words: Vec<Value> = ["id", "label", "note", "kind_label"]
+                            .iter()
+                            .map(|key| record.get(key).cloned().unwrap_or(Value::Null))
+                            .collect();
+                        words.push(Value::from(crate::json::py_str(field(authored, "target")?)));
+                        words.push(Value::from(crate::special_places::area(authored)?.unwrap_or_default()));
+                        for part in record.get("parts").and_then(Value::as_list).into_iter().flatten() {
+                            let part = part.as_str().unwrap_or("");
+                            words.push(Value::from(format!("{part} {}", part_name(part))));
+                        }
+                        let mut texts = Vec::with_capacity(words.len());
+                        for (position, word) in words.iter().enumerate() {
+                            match word.as_str() {
+                                Some(text) => texts.push(text),
+                                None => {
+                                    return Err(Error::type_error(format!(
+                                        "sequence item {position}: expected str instance, {} found",
+                                        word.type_name()
+                                    )))
+                                }
+                            }
+                        }
+                        special.push((crate::py::casefold(&texts.join(" ")), Value::Dict(record)));
+                    }
+                    Ok(special)
+                }
+                Err(error) if error.kind == ErrorKind::Profile => Err(error.message),
+                Err(error) => return Err(error),
+            });
+        }
+        match self.special.as_ref().unwrap() {
+            Ok(special) => Ok(special),
+            Err(message) => Err(Error::profile(format!("Special places cannot be listed for this game: {message}"))),
+        }
     }
 
     fn saved_files(&self) -> Result<Vec<PathBuf>> {
@@ -467,8 +579,11 @@ impl Editor {
                 .and_then(|row| row.get("authored"))
                 .cloned()
                 .unwrap_or(Value::Dict(Dict::new()));
+            let special = if row.is_none() { self.special_label(identity, &authored)? } else { None };
             let mut label = if let Some(row) = row {
                 self.target(row)?.as_dict().cloned().unwrap()
+            } else if let Some(special) = special {
+                special
             } else if authored.truthy() {
                 let pick = |keys: &[&str], fallback: &Value| {
                     keys.iter().filter_map(|key| authored.get(key)).find(|value| value.truthy()).cloned().unwrap_or(fallback.clone())
@@ -629,19 +744,39 @@ impl Editor {
             }
             "/api/targets" => {
                 let kind = params.get("kind").map(String::as_str).unwrap_or("all");
+                let special_kind = crate::special_places::KIND;
                 let kinds: &[&str] = match kind {
                     "all" => &["actor", "cre-template", "embedded-cre", "container", "store"],
                     "creature" => &["actor", "cre-template"],
                     "container" => &["container"],
                     "store" => &["store"],
+                    _ if kind == special_kind => &[],
                     _ => return Err(Error::profile("Unknown recipient type")),
                 };
-                if query.is_empty() {
+                // Every special place is listed without words; the scan's
+                // recipients are too many for that.
+                if query.is_empty() && kind != special_kind {
                     return Ok(Value::Dict(Editor::page(Vec::new(), &Value::Int(0))?));
                 }
                 let folded = crate::py::casefold(&query);
                 let terms = crate::py::split_whitespace(&folded);
                 let mut rows = Vec::new();
+                let mut notice = None;
+                if kind == "all" || kind == special_kind {
+                    match self.special_places() {
+                        Ok(special) => rows.extend(
+                            special
+                                .iter()
+                                .filter(|(text, _)| terms.iter().all(|term| text.contains(term)))
+                                .map(|(_, record)| record.clone()),
+                        ),
+                        Err(error) if error.kind == ErrorKind::Profile && kind != special_kind => {
+                            // The scan's recipients are still found; the search says why these are not.
+                            notice = Some(error.message);
+                        }
+                        Err(error) => return Err(error),
+                    }
+                }
                 for row in self.world.at("targets")?.as_list().into_iter().flatten() {
                     if !kinds.contains(&field(row, "kind")?.as_str().unwrap_or("")) {
                         continue;
@@ -654,10 +789,17 @@ impl Editor {
                 let mut page = Editor::page(rows, &offset)?;
                 let records = page.get("records").and_then(Value::as_list).cloned().unwrap_or_default();
                 let mut shown = Vec::with_capacity(records.len());
-                for row in &records {
-                    shown.push(self.target(row)?);
+                for row in records {
+                    if field(&row, "kind")?.as_str() == Some(special_kind) {
+                        shown.push(row);
+                    } else {
+                        shown.push(self.target(&row)?);
+                    }
                 }
                 page.insert("records", Value::List(shown));
+                if let Some(notice) = notice {
+                    page.insert("notice", notice);
+                }
                 Ok(Value::Dict(page))
             }
             _ => Err(Error::profile("Unknown editor request")),

@@ -706,6 +706,29 @@ class OriginalOptionExportTests(unittest.TestCase):
         self.assertNotIn('route_target', target)
         self.assertEqual((f.output / 'resource-overrides/VARCI.DLG').read_bytes(), changed)
 
+    def test_boss_loots_row_and_varcis_own_row_are_one_place(self):
+        # Boss Loot with Varci's own row added as a special place: the game
+        # patches and the runtime name one row of his route.
+        f = self.fixture()
+        naming = {'game': 'eet', 'names': eet_names(f.game)}
+        named = mode2_rewards.reward('varci', **naming)
+        (f.override / 'varci.dlg').write_bytes(dialogue_fixture(mode2_rewards.resource_specs('dlg:varci', **naming)))
+        (f.override / f"{named['item']}.itm").write_bytes((f.override / 'synth001.itm').read_bytes())
+        f.refresh()
+        configuration = self.mode2_configuration(f, 'bg1:boss-loot:mode2:item:71', 'bg1:boss-loot:mode2:target:71',
+                                                 'eet-boss-loot')
+        own = self.mode2_configuration(f, 'bg1:mode2:item:20', 'bg1:mode2:target:20', 'eet-original')
+        plan = configuration['plan']
+        plan['target_registrations'] += own['plan']['target_registrations']
+        plan['targets'] += own['plan']['targets']
+        # Pairs the rows without tiers, as the route fixtures above do.
+        del plan['randomization']
+        revision = write_campaign(configuration['profile'], f.catalog, f.world, plan, f.store)['revision']
+        with self.assertRaisesRegex(ProfileError, '^Original recipient is the same place as '
+                                    'original-target:bg1:boss-loot:mode2:target:71; keep one of them: '
+                                    'original-target:bg1:mode2:target:20$'):
+            f.export(revision)
+
     def test_a_carried_bg1_reward_this_game_renames_cannot_be_exported(self):
         # The runtime accepts Aldeth's copy only as ALDETH.CRE's SW1H03.
         rows = [item_record('SW1H03X', flags=0, **self.COPY)]
