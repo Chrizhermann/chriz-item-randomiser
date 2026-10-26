@@ -21,6 +21,10 @@ pub const UNREADABLE_PLACE_PROBLEMS: [&str; 3] =
 /// A quest reward or place whose conversation or script CIR cannot change
 /// yet: its row is left out in every game, whatever else the game lacks.
 pub const NO_ROUTE: &str = "route-not-supported";
+/// A place on a creature that can leave alive, turn into another creature or
+/// never appear (lists/carriers, reviewed by hand) could lose its reward: it is
+/// left out, and a group place gives its rewards to its other members only.
+pub const CARRIER_CAN_GO_MISSING: &str = "creature-can-go-missing";
 /// Item Randomiser's places of one creature in several versions, by campaign,
 /// place and area: its lib/weidu_action.tpa gives the item to each version. The
 /// first stands in the area. The others are the classic game's fallen trolls
@@ -370,6 +374,23 @@ fn endpoint_rows(campaign: &str) -> Result<Endpoints> {
     Ok(result)
 }
 
+/// (area, creature) resources of lists/carriers/<campaign>.2da: the creatures
+/// that can go missing (CARRIER_CAN_GO_MISSING); none without the table.
+fn missing_creatures(campaign: &str, game: &str, names: Option<&EetNames>) -> Result<HashSet<(String, String)>> {
+    let relative = format!("lists/carriers/{campaign}.2da");
+    let mut result = HashSet::new();
+    if crate::data::text(&relative).is_none() {
+        return Ok(result);
+    }
+    for (_, fields) in table_rows(&relative, 4)? {
+        result.insert((
+            format!("are:{}", convert_resource(&fields[0], "are", campaign, game, names)?),
+            format!("cre:{}", convert_resource(&fields[1], "cre", campaign, game, names)?),
+        ));
+    }
+    Ok(result)
+}
+
 fn group_members(campaign: &str, group: &str, game: &str, names: Option<&EetNames>) -> Result<Vec<String>> {
     let relative = format!("lists/groups/{campaign}.2da");
     let text = crate::data::text(&relative).ok_or_else(|| {
@@ -589,7 +610,12 @@ fn is_kind(target: &Value, kind: &str) -> bool {
     target.get("kind").and_then(Value::as_str) == Some(kind)
 }
 
-fn resolve_target(row: &mut Dict, scan: &Scan<'_>, endpoints: &HashMap<String, Endpoints>) -> Result<()> {
+fn resolve_target(
+    row: &mut Dict,
+    scan: &Scan<'_>,
+    endpoints: &HashMap<String, Endpoints>,
+    missing: &HashMap<String, HashSet<(String, String)>>,
+) -> Result<()> {
     let campaign = str_field(row, "campaign")?.to_string();
     let area = convert_resource(str_field(row, "area")?, "are", &campaign, scan.game, scan.names)?;
     let area_resource = format!("are:{area}");
@@ -823,6 +849,11 @@ fn resolve_target(row: &mut Dict, scan: &Scan<'_>, endpoints: &HashMap<String, E
                 // (how mods such as SoD Remix take a creature out); a reward
                 // there would be lost.
                 note_problem(row, "creature-never-appears");
+            } else if missing
+                .get(&campaign)
+                .is_some_and(|missing| missing.contains(&(area_resource.clone(), creature.clone())))
+            {
+                note_problem(row, CARRIER_CAN_GO_MISSING);
             }
             matches
         }
@@ -843,7 +874,16 @@ fn resolve_target(row: &mut Dict, scan: &Scan<'_>, endpoints: &HashMap<String, E
             matches
         }
         "group" => {
-            let members = group_members(&campaign, &raw, scan.game, scan.names)?;
+            let all = group_members(&campaign, &raw, scan.game, scan.names)?;
+            let members: Vec<String> = all
+                .iter()
+                .filter(|member| {
+                    !missing
+                        .get(&campaign)
+                        .is_some_and(|missing| missing.contains(&(area_resource.clone(), (*member).clone())))
+                })
+                .cloned()
+                .collect();
             row.insert("members", Value::from(members.clone()));
             let matches = area_targets
                 .iter()
@@ -856,7 +896,10 @@ fn resolve_target(row: &mut Dict, scan: &Scan<'_>, endpoints: &HashMap<String, E
                             .is_some_and(|template| members.iter().any(|member| member == template))
                 })
                 .collect();
-            note_problem(row, "group-requires-runtime-selection");
+            note_problem(
+                row,
+                if !all.is_empty() && members.is_empty() { CARRIER_CAN_GO_MISSING } else { "group-requires-runtime-selection" },
+            );
             matches
         }
         _ => {
@@ -945,13 +988,17 @@ pub fn resolve_template(
     for campaign in &campaigns {
         endpoints.insert(campaign.clone(), endpoint_rows(campaign)?);
     }
+    let mut missing = HashMap::new();
+    for campaign in &campaigns {
+        missing.insert(campaign.clone(), missing_creatures(campaign, game, names)?);
+    }
     for row in draft.at_mut("items")?.as_list_mut().into_iter().flatten() {
         let fields = row.as_dict_mut().ok_or_else(|| Error::type_error("template rows are dicts"))?;
         resolve_source(fields, &scan, &selectors)?;
     }
     for row in draft.at_mut("targets")?.as_list_mut().into_iter().flatten() {
         let fields = row.as_dict_mut().ok_or_else(|| Error::type_error("template rows are dicts"))?;
-        resolve_target(fields, &scan, &endpoints)?;
+        resolve_target(fields, &scan, &endpoints, &missing)?;
     }
     Ok(draft)
 }

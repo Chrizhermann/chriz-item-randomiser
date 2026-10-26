@@ -312,6 +312,77 @@ class OriginalCatalogTests(unittest.TestCase):
                 self.assertEqual(row["target_ids"], [actor["id"] for actor in actors])
                 self.assertEqual(row["binding_problem"], problem)
 
+    def test_a_place_on_a_creature_that_can_go_missing_is_named(self):
+        # Arkushule leaves after the talk (lists/carriers/bg1.2da); Neira stays.
+        for game, prefix in (("bgee", "ar"), ("eet", "bg")):
+            with self.subTest(game=game):
+                arkush, neira = f"are:{prefix}3600", f"are:{prefix}4801"
+                world = {"resources": [{"id": name} for name in (arkush, neira, "cre:arkush", "cre:neira")],
+                         "sources": [],
+                         "targets": [_target(f"{arkush}/actor/0", arkush, "actor", "Arkushule", "cre:arkush"),
+                                     _target(f"{neira}/actor/0", neira, "actor", "Neira", "cre:neira")]}
+                result = resolve_template({"items": []}, world, "bg1-original", game=game)
+                places = {row["target"]: [] for row in result["targets"]}
+                for row in result["targets"]:
+                    places[row["target"]].append((row["target_ids"], row["binding_problem"]))
+                self.assertEqual(places["arkush.cre"], [([f"{arkush}/actor/0"], "creature-can-go-missing")] * 3)
+                self.assertEqual(places["neira.cre"], [([f"{neira}/actor/0"], None)])
+
+    def test_a_group_gives_no_reward_to_members_that_can_go_missing(self):
+        # Necre and Taibela (OBSHAL03, OBSHAL06) can be gone from AR0411's
+        # halflings; in BG1, three of the four red wizards of AR3000 and each
+        # of the four Zhentarim of AR0704 can be.
+        world = {"resources": [{"id": "are:ar0411"}], "sources": [], "targets": []}
+        halflings = [row for row in resolve_template({"items": []}, world, "bg2-original")["targets"]
+                     if row["target"] == "ironpot.flg"]
+        self.assertEqual([row["id"] for row in halflings],
+                         [f"bg2:base:target:{line}" for line in (36, 83, 101, 318)])
+        for row in halflings:
+            self.assertEqual((row["members"], row["binding_problem"]),
+                             (["cre:obshal01", "cre:obshal02", "cre:obshal05", "cre:obshal07"],
+                              "group-requires-runtime-selection"))
+        for game, prefix in (("bgee", "ar"), ("eet", "bg")):
+            with self.subTest(game=game):
+                world = {"resources": [{"id": f"are:{prefix}3000"}, {"id": f"are:{prefix}0704"}],
+                         "sources": [], "targets": []}
+                rows = resolve_template({"items": []}, world, "bg1-original", game=game)["targets"]
+                self.assertEqual({(tuple(row["members"]), row["binding_problem"]) for row in rows
+                                  if row["target"] == "red.flg"},
+                                 {(("cre:lasal",), "group-requires-runtime-selection")})
+                self.assertEqual([(row["members"], row["binding_problem"]) for row in rows
+                                  if row["target"] == "zhents.flg"],
+                                 [([], "creature-can-go-missing")] * 3)
+
+    def test_every_creature_that_can_go_missing_is_one_of_a_place_in_its_area(self):
+        # lists/carriers names creatures as Item Randomiser's tables do; a row
+        # that no place of a table or preset names would never take effect.
+        from flir_config.templates import PRESETS, ROOT, _table_rows
+
+        for campaign in ("bg1", "bg2"):
+            with self.subTest(campaign=campaign):
+                groups = {}
+                for line in (ROOT / "lists" / "groups" / f"{campaign}.2da").read_text(encoding="utf-8").splitlines():
+                    fields = line.lower().split()
+                    if len(fields) >= 2 and fields[0].endswith(".flg"):
+                        groups.setdefault(fields[0], set()).add(fields[1])
+                tables = [ROOT / "lists" / "locations" / family / f"{campaign}.2da" for family in ("base", "mode2")]
+                tables += [ROOT / "lists" / "presets" / preset / "locations" / family / f"{campaign}.2da"
+                           for preset, spec in PRESETS.items() if campaign in spec["campaigns"]
+                           for family in ("base", "mode2")]
+                creatures = set()
+                for table in tables:
+                    for _, fields in _table_rows(table, 6):
+                        target, area = fields[2].lower(), fields[3].lower()
+                        if target.endswith(".cre"):
+                            creatures.add((area, target[:-4]))
+                        creatures.update((area, member) for member in groups.get(target, ()))
+                rows = [fields for _, fields in _table_rows(ROOT / "lists" / "carriers" / f"{campaign}.2da", 4)]
+                self.assertTrue(rows)
+                self.assertEqual([(fields[0], fields[1]) for fields in rows
+                                  if (fields[0].lower(), fields[1].lower()) not in creatures], [])
+                self.assertEqual({fields[2] for fields in rows} - {"difficulty", "party", "transformed", "story",
+                                                                    "conversation", "reward", "flees"}, set())
+
     def test_quest_places_are_named_not_taken_for_containers(self):
         world = {"resources": [{"id": name} for name in ("are:ar1103", "are:ar2300", "are:ar1514",
                                                          "are:ar0801", "are:ar1100", "dlg:uhogre01")],
