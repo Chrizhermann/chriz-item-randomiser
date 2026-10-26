@@ -457,10 +457,10 @@ names them apart ("… belong to quests that Chriz Item Randomiser cannot change
 quest rewards and places that Item Randomiser handled with its own conversation and
 script patches (the `.fl` places of its `mode2` tables, and rewards that a conversation
 or script gives) for which CIR has no route yet. Their reason is
-`route-not-supported`. In the original tables these are the places of the Sahuagin
-prince, the king or the prince, Tolgerias and a vampire or shadow thief of chapter 3
-(BG2). `tests/test_original_catalog.py` lists them; a route for one of them takes its
-rows off that list.
+`route-not-supported`. In the original tables these are the places of the king or the
+Sahuagin prince, Tolgerias and a vampire or shadow thief of chapter 3 (BG2).
+`tests/test_original_catalog.py` lists them; a route for one of them takes its rows off
+that list.
 
 Two such places give the item to each version of a troll: `pptroll.fl` (the painting
 troll in Spellhold, AR1514, row 37) and `torgal.fl` (TorGal in AR1301, row 89, with the
@@ -532,6 +532,24 @@ another ..."), or another reward that can lie there too, through another place i
 same container (as the base row 316 of the scroll tier) or, with overflow, through the
 treasury's own place ("The reward ... can lie in the treasury as another ..."). No such
 reward is in the unmodded games.
+
+The Sahuagin prince is a place too (row 59, Item Randomiser's `tadpoles2.fl`): Item
+Randomiser gives the item to SAHPR2.CRE and to the one he talks to in the reply that
+ends his job (`villynatyjob` 2), which gives nothing in the games. Here the prince
+(SAHPR2 in AR2300) carries the place's reward, as Jermien and the other carried
+rewards do, so killing or robbing him gets it too, and each reply of his conversation
+(SAHPR2.DLG) that ends his job hands it over first (`FLPR_Transfer`, before the reply's
+other actions). Those replies are found by meaning: each that sets `villynatyjob` to 2,
+also through `ActionOverride`, in any letter case and spacing. The place is left out
+with its reason where no reply ends his job ("SAHPR2.DLG has no reply that sets
+villynatyjob to 2"), where a reply names the job in actions that cannot be read, where
+a reply changes the job another way that could end it unseen ("... changes
+villynatyjob with IncrementGlobal(), which the route cannot follow"), or where a reply
+of another conversation reached from his, such as a party member's interjection, ends
+the job too: he would not hand the reward over there ("... also sets villynatyjob to 2,
+which ends the job of SAHPR2.DLG's speaker, but there it would not hand over the reward
+it carries"). On the king's side the prince never pays, and the reward stays with him
+to be looted.
 
 The book of Lavok's sphere (`PPBOOK.BCS`, AR1513) gives two scrolls with the ring on
 its last page (rows 260 and 262 of the extended tables, beside the ring's row 109).

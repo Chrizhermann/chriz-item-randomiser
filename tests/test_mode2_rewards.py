@@ -81,6 +81,9 @@ REVIEWED_EET = {
                     "34e7c5e57d9e69394b40ce09f4c5cd5a5e6249d871b676c82bafbd3d707f3ff5"),
     "dlg:sahkng01": ("c76c8624052f7e179d42157e4081ddfcdbb101d2f00b819008bc99f5660785c1",
                      "9a7109aa36361ce3e57183e08b735993dbb946584d4b79d50dd5cc641050c70f"),
+    # The prince hands over what he carries when his job ends (state 5).
+    "dlg:sahpr2": ("b70d79c4264b4dade199d86146da2d44f9db4d445dfbb4eead5b350c3a1c7dcb",
+                   "19575a07c412224fa86c7a117b352aea40470e0e8c4494b95f6b6f85a2556244"),
     # The treasury's destroys of the king's two reward items, gated.
     "bcs:sahtreas": ("a3e4e14c6e0e3ea5d3c193cb30808aabb4c320f6b9e4dbbe3fadf99deee40751",
                      "07f76c023620896b09a222f5ae2c7251ffd2b07c8ec18643ab65b7cadf8cbe9b"),
@@ -177,7 +180,11 @@ def dialogue_fixture(specs):
             if (state, ordinal) in required:
                 action += 'GiveItemCreate("misc42",Player2,0,0,0)\r\r\n'
                 for grant_spec in specs:
-                    if (state, ordinal) in grant_spec["branches"]:
+                    if (state, ordinal) in grant_spec["branches"] and grant_spec.get("job_end"):
+                        # A reply that ends the speaker's job and gives nothing.
+                        job, value = grant_spec["job_end"]
+                        action += f'SetGlobal("{job}","GLOBAL",{value})\r\r\n'
+                    elif (state, ordinal) in grant_spec["branches"]:
                         charges = ",".join(map(str, grant_spec["payload"]["charges"]))
                         if grant_spec["quest"] == "amcler01":
                             action += 'DisplayStringHead(Myself,74025)\r\r\n'
@@ -395,10 +402,12 @@ class Mode2RewardTests(unittest.TestCase):
             self.assertEqual(cursor, len(new))
 
     def test_dialogue_both_campaign_routes_keep_exact_recipient_and_surrounding_actions(self):
-        # Two routes of one dialogue have their own tests (check_pair).
+        # Two routes of one dialogue have their own tests (check_pair), so has
+        # the route without a grant (check_job_end).
         for resource in rewards.RESOURCE_REWARDS:
             if (resource.startswith("dlg:") and len(rewards.RESOURCE_REWARDS[resource]) == 1 and
-                    resource not in rewards.TEXT_REFS):
+                    resource not in rewards.TEXT_REFS and
+                    not rewards.REWARDS[rewards.RESOURCE_REWARDS[resource][0]].get("job_end")):
                 name = resource[4:]
                 with self.subTest(resource=name):
                     original = dialogue_fixture(rewards.resource_specs(resource))
@@ -875,6 +884,146 @@ class Mode2RewardTests(unittest.TestCase):
         bg1 = dict(rod, target_ids=("bg1:mode2:target:6",))
         self.assertEqual(rewards._handover(bg1), handover_line(bg1))
         self.assertIn(b"(EEex_LuaTrigger_Object,6,1))", handover_line(bg1))
+
+    def check_job_end(self, original, result, naming=None):
+        """The prince's dialogue as his route patches it: each reply that ends
+        his job hands over what he carries before its own actions, and his
+        departures after it wait for that; nothing else changes. Returns the
+        replies that hand over."""
+        spec = rewards.resource_specs("dlg:sahpr2", **(naming or {}))[0]
+        transfer = b'EEex_LuaAction("return(FLPR_Transfer(EEex_LuaAction_Object,59))")\r\n'
+        before, after = _Dialogue(original, "sahpr2"), _Dialogue(result, "sahpr2")
+        self.assertEqual(after.state_triggers, before.state_triggers)
+        self.assertEqual(after.triggers, before.triggers)
+        self.assertEqual(after.actions[:len(before.actions)], before.actions)
+        self.assertEqual(len(after.states), len(before.states))
+        handed = set()
+        for index, state in enumerate(before.states):
+            self.assertEqual(after.states[index][:4], state[:4])
+            self.assertEqual(after.states[index][8:], state[8:])
+            for ordinal, (old, new) in enumerate(zip(outgoing(before, index), outgoing(after, index))):
+                if new == old:
+                    continue
+                self.assertEqual((new[:16], new[20:]), (old[:16], old[20:]))
+                original_action = before.actions[struct.unpack_from("<I", old, 16)[0]]
+                changed = after.actions[struct.unpack_from("<I", new, 16)[0]]
+                self.assertNotIn(b"DestroySelf()", changed.replace(TRGENI_DEPARTURE, b"").splitlines())
+                if changed.startswith(transfer):
+                    handed.add((index, ordinal))
+                    changed = changed[len(transfer):]
+                self.assertNotIn(b"FLPR_Transfer", changed)
+                self.assertEqual(changed.replace(TRGENI_DEPARTURE, b"DestroySelf()"), original_action)
+        self.assertEqual(rewards._callback(spec, True) + b"\r\n", transfer)
+        return handed
+
+    def test_the_princes_reward_reply_hands_over_what_he_carries(self):
+        # Item Randomiser's tadpoles2.fl gives its reward to SAHPR2.CRE and
+        # adds a GiveItem to the reply that ends his job, which gives nothing
+        # in the games. Here the prince carries the place's reward, and each
+        # reply of his that ends his job hands it to the one he talks to.
+        spec = rewards.target_spec("bg2:mode2:target:59")
+        self.assertEqual(rewards.TARGET_REWARDS["bg2:mode2:target:59"], "sahpr2")
+        self.assertEqual(rewards.RESOURCE_REWARDS["dlg:sahpr2"], ("sahpr2",))
+        self.assertNotIn("sahpr2", rewards.SOURCE_REWARDS.values())
+        self.assertEqual((spec["item"], spec["payload"], spec["source_ids"], spec["authored_source_ids"]),
+                         (None, None, (), ()))
+        self.assertEqual([spec[key] for key in ("selected_global", "consumed_global", "event_global",
+                                                "recipient_local")], [None] * 4)
+        self.assertEqual(spec["job_end"], ("villynatyjob", 2))
+        self.assertEqual(spec["inventory_target"],
+                         {"area": "ar2300", "creature_resource": "cre:sahpr2", "script_name": "sahpr2"})
+        self.assertEqual((spec["recipient"], spec["grant_kind"]), ("LastTalkedToBy", "transfer"))
+        self.assertEqual(rewards.reward("sahpr2", **EET), spec)
+        with self.assertRaisesRegex(ProfileError, "Unsupported extended reward route in SAHPR2.DLG: sahpr2"):
+            rewards.gives_reward("dlg:sahpr2", dialogue_fixture(spec), "sahpr2")
+        # The game's reward reply beside another mod's: one that ends his job
+        # through ActionOverride in other letter case and spacing, then leaves
+        # in the state after it, and some that name the job but do not end it.
+        game = ('AddXPObject(Player1,60500)\nSetGlobal("senityilijob","GLOBAL",2)\n'
+                'SetGlobal("villynatyjob","GLOBAL",2)\nRunAwayFrom("sahkng01",15)')
+        states = [
+            [("True()", 'SetGlobal("villynatyjob","GLOBAL",1)', 1),
+             ("", 'SetGlobal("villynatyjob","LOCALS",2)\nIncrementGlobal("VillynatyJob","Locals",1)', 1),
+             ("", 'SetGlobal("villynatyjob2","GLOBAL",2)\nDestroySelf()', None)],
+            [('Global("villynatyjob","GLOBAL",2)', 'DisplayStringHead(Myself,1)', None),
+             ("", game, None)],
+            [("", 'ActionOverride( "sahpr2" , SetGlobal( "VillynatyJob" , "global" , 2 ) )\nDestroySelf()', 3)],
+            [("", 'DestroySelf()', None)],
+        ]
+        for beamdog in (True, False):
+            with self.subTest(beamdog=beamdog):
+                original = layout_dialogue("sahpr2", states, beamdog=beamdog)
+                result = rewards.patch_reward("dlg:sahpr2", original)
+                self.assertEqual(rewards.patch_reward("dlg:sahpr2", result), result)
+                self.assertFalse(rewards.own_patch("dlg:sahpr2", original))
+                self.assertTrue(rewards.own_patch("dlg:sahpr2", result))
+                self.assertEqual(rewards.route_reasons("dlg:sahpr2", original), {})
+                self.assertEqual(rewards.route_reasons("dlg:sahpr2", result), {})
+                self.assertEqual(rewards._logical(rewards._examine("dlg:sahpr2", result).original, "dlg:sahpr2"),
+                                 rewards._logical(original, "dlg:sahpr2"))
+                self.assertEqual(self.check_job_end(original, result), {(1, 1), (2, 0)})
+                after = _Dialogue(result, "sahpr2")
+                # His departures after the transfer wait for it; the one of a
+                # reply that never hands over stays instant.
+                for state, ordinal, waits in ((0, 2, False), (2, 0, True), (3, 0, True)):
+                    actions = after.actions[struct.unpack_from("<I", outgoing(after, state)[ordinal], 16)[0]]
+                    self.assertEqual(TRGENI_DEPARTURE in actions, waits)
+                # The transfer as the dialogue parser leaves it, in each Lua.
+                actions = after.actions[struct.unpack_from("<I", outgoing(after, 1)[1], 16)[0]]
+                chunks = re.findall(rb'EEex_LuaAction\("(return[^"\r\n]*)"\)', actions)
+                self.assertEqual(chunks, [b"return(FLPR_Transfer(EEex_LuaAction_Object,59))"])
+                for runtime in (Lua51, Lua53, LuaJIT):
+                    lua = runtime(unpack_returned_tuples=True)
+                    lua.execute('EEex_LuaAction_Object={};'
+                                'function FLPR_Transfer(actor,target,campaign) '
+                                'assert(actor==EEex_LuaAction_Object);seen={target,campaign};return -1 end')
+                    self.assertEqual(lua.execute(chunks[0].decode()), -1)
+                    self.assertEqual(list(lua.globals().seen.values()), [59])
+                # Changed copies of the patch: another place, a transfer moved
+                # into a reply that does not end his job or behind its actions,
+                # twice, or gone from one of the replies.
+                transfer = b'EEex_LuaAction("return(FLPR_Transfer(EEex_LuaAction_Object,59))")\r\n'
+                job = struct.unpack_from("<I", outgoing(after, 1)[1], 16)[0]
+                other = struct.unpack_from("<I", outgoing(after, 0)[0], 16)[0]
+                for label, changes in (
+                        ("another place", {job: after.actions[job].replace(b",59))", b",58))")}),
+                        ("other reply", {job: after.actions[job][len(transfer):],
+                                         other: transfer + after.actions[other]}),
+                        ("behind", {job: after.actions[job][len(transfer):] + b"\r\n" + transfer}),
+                        ("twice", {job: transfer + after.actions[job]}),
+                        ("gone", {job: after.actions[job][len(transfer):]})):
+                    with self.subTest(beamdog=beamdog, changed=label):
+                        tampered = _Dialogue(result, "sahpr2")
+                        for index, text in changes.items():
+                            tampered.actions[index] = text
+                        tampered = tampered.render()
+                        with self.assertRaisesRegex(ProfileError,
+                                                    "carries a changed copy of the reward route's own patch"):
+                            rewards.patch_reward("dlg:sahpr2", tampered)
+                        self.assertIn("changed copy", rewards.route_reasons("dlg:sahpr2", tampered)["sahpr2"])
+        # A dialogue in which no reply ends his job has nothing to hand over;
+        # one whose actions name the job unreadably, or change it another way
+        # that could end it unseen, cannot be told apart.
+        for changed, reason in (
+                ({1: [("", 'SetGlobal("villynatyjob","GLOBAL",3)', None)], 2: [("", "NoAction()", None)]},
+                 "SAHPR2.DLG has no reply that sets villynatyjob to 2"),
+                ({2: [("", 'SetGlobal("villynatyjob","GLOBAL",2', None)]},
+                 "SAHPR2.DLG state 2 names villynatyjob in actions that cannot be read"),
+                ({2: [("", 'ActionOverride("sahpr2",SetGlobal("villynatyjob","GLOBAL",2)', None)]},
+                 "SAHPR2.DLG state 2 names villynatyjob in actions that cannot be read"),
+                ({2: [("", 'SetGlobal("villynatyjob",GLOBAL,2)', None)]},
+                 "SAHPR2.DLG state 2 names villynatyjob in actions that cannot be read"),
+                ({0: [("", 'IncrementGlobal("villynatyjob","GLOBAL",1)', 1)]},
+                 "SAHPR2.DLG state 0 changes villynatyjob with IncrementGlobal(), which the route cannot follow"),
+                ({2: [("", 'ActionOverride("sahpr2",SetGlobalTimer("VILLYNATYJOB","global",2))', None)]},
+                 "SAHPR2.DLG state 2 changes villynatyjob with SetGlobalTimer(), which the route cannot follow")):
+            with self.subTest(reason=reason):
+                variant = [changed.get(index, replies) for index, replies in enumerate(states)]
+                data = layout_dialogue("sahpr2", variant)
+                self.assertEqual(rewards.route_reasons("dlg:sahpr2", data), {"sahpr2": reason})
+                with self.assertRaisesRegex(ProfileError, re.escape(reason)):
+                    rewards.patch_reward("dlg:sahpr2", data)
+                self.assertFalse(rewards.own_patch("dlg:sahpr2", data))
 
     def check_destroys(self, original, result, specs):
         """Each block that destroys routes' items becomes one block per
@@ -1508,6 +1657,8 @@ class Mode2RewardTests(unittest.TestCase):
                                      original)
                 elif name in ("aran", "sahkng01"):
                     self.check_pair(name, original, result)
+                elif name == "sahpr2":
+                    self.assertEqual(self.check_job_end(original, result), {(5, 0)})
                 else:
                     self.check_dialogue(name, original, result, naming=EET)
 

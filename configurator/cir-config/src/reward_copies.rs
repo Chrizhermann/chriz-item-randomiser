@@ -21,6 +21,11 @@
 //! own grants of the same item (the sculptors' mace of the temple messengers)
 //! stay that route's.
 //!
+//! A route without a grant of its own (the Sahuagin prince's) hands over what
+//! its speaker carries in the replies that end his job. A reply there that
+//! ends that job too, a copy or not, would end it without the hand-over, and
+//! the reward would stay with him: the route is left out with that reason.
+//!
 //! Container quests are not followed: their dialogues test the treasure in
 //! the conditions of their states, which interjections do not copy.
 //!
@@ -68,6 +73,18 @@ fn routes() -> &'static BTreeMap<String, Vec<String>> {
     })
 }
 
+/// `_GATED`: the routes that gate their copies; one without a grant has none
+/// (see above).
+fn gated() -> Result<Vec<&'static String>> {
+    let mut keys = Vec::new();
+    for key in routes().keys() {
+        if reward(key)?.get("selected_global").ok_or_else(|| Error::key("selected_global"))?.truthy() {
+            keys.push(key);
+        }
+    }
+    Ok(keys)
+}
+
 fn reward(key: &str) -> Result<&'static Dict> {
     mode2_rewards::rewards().get(key).and_then(Value::as_dict).ok_or_else(|| Error::key(key))
 }
@@ -101,7 +118,7 @@ pub fn copy_spec(key: &str, resource: &str, naming: Naming<'_>) -> Result<Dict> 
 fn present(dialogue: &Dialogue) -> Result<Vec<String>> {
     let (triggers, actions) = (dialogue.triggers.concat(), dialogue.actions.concat());
     let mut result = Vec::new();
-    for key in routes().keys() {
+    for key in gated()? {
         let spec = reward(key)?;
         let guard = format!("Global(\"{}\",\"GLOBAL\",1)", str_value(spec.get("selected_global").ok_or_else(|| Error::key("selected_global"))?));
         if find_bytes(&triggers, guard.as_bytes(), 0).is_some() && find_bytes(&actions, &mode2_rewards::event(spec)?, 0).is_some() {
@@ -253,7 +270,7 @@ impl RewardCopies {
     /// A dialogue without our copy patch; its routes are checked later.
     fn unpatched(&mut self, resource: &str, data: &[u8]) -> Result<Vec<u8>> {
         let dialogue = mode2_rewards::read_dialogue(data, resource)?;
-        let specs = routes().keys().map(|key| copy_spec(key, resource, self.naming())).collect::<Result<Vec<_>>>()?;
+        let specs = gated()?.into_iter().map(|key| copy_spec(key, resource, self.naming())).collect::<Result<Vec<_>>>()?;
         if !mode2_rewards::carries_patch(&dialogue, &specs)? {
             return Ok(data.to_vec());
         }
@@ -286,12 +303,18 @@ impl RewardCopies {
             let (Some(dialogue), _) = self.load(read, resource)? else { return Ok(None) };
             let specs = mode2_rewards::resource_specs(resource, self.naming())?;
             let spec = specs.iter().find(|spec| spec.get("route").is_some_and(|route| str_value(route) == key)).expect("route spec");
-            let grants = match mode2_rewards::dialogue_grants(&dialogue, spec, &label(resource), None) {
+            let grants = if mode2_rewards::ends_a_job(spec) {
+                mode2_rewards::job_replies(&dialogue, spec, &label(resource))
+            } else {
+                mode2_rewards::dialogue_grants(&dialogue, spec, &label(resource), None)
+                    .map(|grants| grants.into_keys().collect())
+            };
+            let grants = match grants {
                 Ok(grants) => grants,
                 Err(error) if error.kind == ErrorKind::Profile => return Ok(None),
                 Err(error) => return Err(error),
             };
-            for &(state, ordinal) in grants.keys() {
+            for &(state, ordinal) in &grants {
                 let first = u32_le(&dialogue.states[state], 4) as usize;
                 let action = u32_le(&dialogue.transitions[first + ordinal], 16) as usize;
                 texts.entry(dialogue.actions[action].clone()).or_insert_with(|| resource.clone());
@@ -302,7 +325,17 @@ impl RewardCopies {
 
     fn route(&mut self, read: &mut Reader<'_>, key: &str, limit: usize) -> Result<()> {
         let Some(texts) = self.grants(read, key)? else { return Ok(()) };
-        let item = item(&self.specs[key])?.to_string();
+        // A reply concerns the route where it names its item, or the job
+        // global of a route without a grant.
+        let job = if mode2_rewards::ends_a_job(&self.specs[key]) {
+            Some(mode2_rewards::job_end(&self.specs[key])?.0)
+        } else {
+            None
+        };
+        let item = match job {
+            Some(_) => String::new(),
+            None => item(&self.specs[key])?.to_string(),
+        };
         let item = item.as_str();
         let own: BTreeSet<&String> = routes()[key].iter().collect();
         self.visited.entry(key.to_string()).or_default();
@@ -357,7 +390,11 @@ impl RewardCopies {
                     continue;
                 }
                 let text = &dialogue.actions[action];
-                if !mode2_rewards::names(text, item) {
+                let concerns = match &job {
+                    Some(job) => find_bytes(&text.to_ascii_lowercase(), job.as_bytes(), 0).is_some(),
+                    None => mode2_rewards::names(text, item),
+                };
+                if !concerns {
                     continue;
                 }
                 match self.copy(key, &resource, &dialogue, index, ordinal, text, &texts) {
@@ -397,8 +434,23 @@ impl RewardCopies {
         texts: &HashMap<Vec<u8>, String>,
     ) -> Result<bool> {
         let spec = &self.specs[key];
-        let item = item(spec)?;
         let place = format!("{} state {index}", label(resource));
+        if mode2_rewards::ends_a_job(spec) {
+            // Whoever's reply ends the job, the speaker who carries the reward
+            // does not hand it over there.
+            let job = mode2_rewards::job_end(spec)?;
+            if mode2_rewards::reply_ends_job(text, &job, &place)? {
+                let origins: BTreeSet<String> = texts.values().map(|origin| label(origin)).collect();
+                return Err(profile(format!(
+                    "{place} also sets {} to {}, which ends the job of {}'s speaker, but there it would not hand over the reward it carries",
+                    job.0,
+                    job.1,
+                    origins.into_iter().collect::<Vec<_>>().join(", ")
+                )));
+            }
+            return Ok(false);
+        }
+        let item = item(spec)?;
         let shown = upper(item);
         if let Some(origin) = texts.get(text) {
             let origin = label(origin);

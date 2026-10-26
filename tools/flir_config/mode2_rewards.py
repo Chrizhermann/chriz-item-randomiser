@@ -204,6 +204,22 @@ for _key in DESTROY_GATES["bcs:sahtreas"]:
 for _key, _item, _source in (("ppbook", "scrl9b", 260), ("ppbook2", "scrl8z", 262)):
     REWARDS[_key] = _spec("ppbook", "bcs", _item, _source, None, "LastTrigger", (0, 0, 0), (6, 7))
     REWARDS[_key]["target_ids"] = ()
+# The Sahuagin prince's reward (Item Randomiser's tadpoles2.fl, row 59). Item
+# Randomiser gives it to SAHPR2.CRE and adds a GiveItem to the reply that ends
+# his job (villynatyjob 2), which gives nothing in the games. Here he carries
+# the place's reward, and each reply of his dialogue that ends his job hands it
+# to the one he talks to: the carried rewards' transfer goes in front of its
+# actions (_job_replies). The route has no item of its own to gate. A reply of
+# another dialogue that ends his job too would end it without the hand-over:
+# where one follows from his, the place is left out (reward_copies).
+REWARDS["sahpr2"] = {
+    "quest": "sahpr2", "resource": "dlg:sahpr2", "item": None, "campaign": "bg2",
+    "source_ids": (), "authored_source_ids": (), "target_ids": ("bg2:mode2:target:59",),
+    "selected_global": None, "consumed_global": None, "event_global": None, "recipient_local": None,
+    "recipient": "LastTalkedToBy", "branches": ((5, 0),), "payload": None, "grant_kind": "transfer",
+    "job_end": ("villynatyjob", 2),
+    "inventory_target": {"area": "ar2300", "creature_resource": "cre:sahpr2", "script_name": "sahpr2"},
+}
 # Physical sources whose reward dialogue also gives their item, by (owner
 # resource, kind, item) as the catalog binds the original row: the creature's
 # or the area's container record of the item. A game whose dialogue gives
@@ -256,6 +272,8 @@ _TEXT_FIELDS = ((1, 4), (0x10, 8))
 # carried reward is handed over by a queued transfer leaves after it instead.
 _DEPARTURE = (b'EEex_LuaAction("EEex_Action_QueueResponseStringOnAIBase('
               b'[[DestroySelf()]],EEex_LuaAction_Object)")')
+# Every carried reward's transfer (_callback) calls this.
+_TRANSFER = b"FLPR_Transfer(EEex_LuaAction_Object,"
 _EMPTY_OBJECT = re.compile(rb'(?:0 )+""')
 # The engine's actions that put an item somewhere (ACTION.IDS of the 2.7
 # games): opcode -> name, the dialogue argument and the compiled string that
@@ -283,7 +301,8 @@ def _in_game(spec: dict, game: str | None, names: EetNames | None) -> dict:
     def name(resref: str, kind: str) -> str:
         return convert_resource(resref, kind, spec["campaign"], game, names)
 
-    spec["item"] = spec["payload"]["resref"] = name(spec["item"], "itm")
+    if spec["item"] is not None:
+        spec["item"] = spec["payload"]["resref"] = name(spec["item"], "itm")
     if spec.get("replacement"):
         spec["replacement"] = name(spec["replacement"], "itm")
     if spec.get("source_resource"):
@@ -461,6 +480,73 @@ def _gives(text: bytes, call, item: str) -> bool:
     return _gives_item(text, call, item)
 
 
+def _ends_job(text: bytes, call, job: tuple[str, int], where: str) -> bool | None:
+    """Whether a dialogue action ends the job: sets its global to the job's
+    value (SetGlobal(name,"GLOBAL",value)), also through ActionOverride. None
+    when it cannot be read.
+
+    Any other action that writes the global (IncrementGlobal and the like)
+    could end the job too, unseen: the route cannot follow it.
+    """
+    if named(call, "ActionOverride") and len(call.args) == 2:
+        inner = calls(text, *call.args[1])
+        if inner is None:
+            return None
+        found = [_ends_job(text, nested, job, where) for nested in inner]
+        return None if None in found else any(found)
+    name, value = job
+    # The scope after each argument that names the global: the job is GLOBAL.
+    scopes = [string_argument(text, call, index + 1) for index in range(len(call.args))
+              if (string_argument(text, call, index) or b"").lower() == name.encode()]
+    if None in scopes:
+        return None
+    if b"GLOBAL" not in (scope.upper() for scope in scopes):
+        return False
+    if not named(call, "SetGlobal"):
+        raise ProfileError(f"{where} changes {name} with {call.name.decode('ascii')}(), "
+                           "which the route cannot follow")
+    if len(call.args) != 3 or len(scopes) != 1 or (string_argument(text, call, 0) or b"").lower() != name.encode():
+        return None
+    found = integer_argument(text, call, 2)
+    return None if found is None else found == value
+
+
+def _reply_ends_job(text: bytes, job: tuple[str, int], where: str) -> bool:
+    """Whether a reply's actions end the job (_ends_job of each call); a
+    ProfileError where they cannot be read."""
+    found = calls(text)
+    ends = None if found is None else [_ends_job(text, call, job, where) for call in found]
+    if ends is None or None in ends:
+        raise ProfileError(f"{where} names {job[0]} in actions that cannot be read")
+    return any(ends)
+
+
+def _job_replies(dialogue: _Dialogue, spec: dict, label: str) -> set[tuple[int, int]]:
+    """Every reply that ends the job of a route without a grant (its "job_end"
+    global and value), where the speaker hands over the reward it carries.
+
+    A reply that names the global in actions that cannot be read cannot be
+    told apart, nor one that changes it another way (_ends_job), and a
+    dialogue with no such reply has nothing to hand over.
+    """
+    name, value = spec["job_end"]
+    replies = set()
+    for state_index, state in enumerate(dialogue.states):
+        first, count = _outgoing(dialogue, state, label)
+        for ordinal in range(count):
+            flags, _, _, _, action_id = struct.unpack_from("<5I", dialogue.transitions[first + ordinal])
+            if not flags & 4:
+                continue
+            text = _string(dialogue.actions, action_id, label)
+            if name.encode() not in text.lower():
+                continue
+            if _reply_ends_job(text, spec["job_end"], f"{label} state {state_index}"):
+                replies.add((state_index, ordinal))
+    if not replies:
+        raise ProfileError(f"{label} has no reply that sets {name} to {value}")
+    return replies
+
+
 def _dialogue_grants(dialogue: _Dialogue, spec: dict, label: str,
                      only: dict[int, set[int]] | None = None) -> dict[tuple[int, int], object]:
     """Every reply that gives the route's item, with the call that gives it.
@@ -572,6 +658,8 @@ def _patch_dialogue(data: bytes, specs: tuple[dict, ...], *, action_refs=None,
                     shown: set[int] | None = None) -> bytes:
     """Gate every reply that gives a route's item, for each recognised route.
 
+    A route without a grant of its own (job_end) instead hands over what its
+    speaker carries in each reply that ends its job (_job_replies).
     A route whose grant is not recognised keeps its replies as they are; its
     reason goes to <reasons>. With no route recognised, nothing is prepared.
     <only> limits a route to the given replies, as in a dialogue that holds
@@ -582,19 +670,23 @@ def _patch_dialogue(data: bytes, specs: tuple[dict, ...], *, action_refs=None,
     label = _label(resource)
     dialogue = _read_dialogue(data, resource)
     shown = set() if shown is None else shown
-    grants, failures = {}, {}
+    grants, added, failures = {}, {}, {}
     for spec in specs:
         try:
-            grants[spec["route"]] = _dialogue_grants(dialogue, spec, label,
-                                                     None if only is None else only[spec["route"]])
+            if spec.get("job_end"):
+                added[spec["route"]] = _job_replies(dialogue, spec, label)
+            else:
+                grants[spec["route"]] = _dialogue_grants(dialogue, spec, label,
+                                                         None if only is None else only[spec["route"]])
         except ProfileError as exc:
             failures[spec["route"]] = str(exc)
     if reasons is not None:
         reasons.update(failures)
     active = [spec for spec in specs if spec["route"] in grants]
-    if not active:
+    adding = [spec for spec in specs if spec["route"] in added]
+    if not active and not adding:
         raise ProfileError(failures[specs[0]["route"]])
-    carried = defer_departure and any(spec.get("inventory_target") for spec in active)
+    carried = defer_departure and any(spec.get("inventory_target") for spec in active + adding)
     later = []
     if carried:
         granting = []
@@ -602,20 +694,37 @@ def _patch_dialogue(data: bytes, specs: tuple[dict, ...], *, action_refs=None,
             for state, ordinal in grants[spec["route"]]:
                 first, _ = _outgoing(dialogue, dialogue.states[state], label)
                 granting.append(dialogue.transitions[first + ordinal])
+        for spec in adding:
+            for state, ordinal in sorted(added[spec["route"]]):
+                first, _ = _outgoing(dialogue, dialogue.states[state], label)
+                granting.append(dialogue.transitions[first + ordinal])
         later = _following(dialogue, granting, label)
     for state_index, state in enumerate(dialogue.states):
         first, count = _outgoing(dialogue, state, label)
-        rows = []
+        rows, touched = [], False
         for ordinal, original in enumerate(dialogue.transitions[first:first + count]):
             relevant = [spec for spec in active if (state_index, ordinal) in grants[spec["route"]]]
-            if not relevant:
+            handing = [spec for spec in adding if (state_index, ordinal) in added[spec["route"]]]
+            if not relevant and not handing:
                 rows.append(original)
                 continue
+            touched = True
             where = f"{label} state {state_index}"
             flags, _, _, trigger_id, action_id = struct.unpack_from("<5I", original)
             prior = _string(dialogue.triggers, trigger_id, label) if flags & 2 else b""
             text = dialogue.actions[action_id]
             departures = _departure_edits(text, where) if carried else []
+            # The transfers of the routes without a grant go in front of the
+            # reply's actions: the speaker hands over before anything else.
+            if handing:
+                departures.append((0, 0, b"".join(_callback(spec, numeric_target) + b"\r\n" for spec in handing)))
+            if not relevant:
+                # Nothing to gate: the reply keeps its condition.
+                branch = bytearray(original)
+                dialogue.actions.append(_edited(text, departures))
+                struct.pack_into("<I", branch, 16, len(dialogue.actions) - 1)
+                rows.append(branch)
+                continue
             for choices in product((False, True), repeat=len(relevant)):
                 branch = bytearray(original)
                 condition, edits = prior, list(departures)
@@ -643,7 +752,7 @@ def _patch_dialogue(data: bytes, specs: tuple[dict, ...], *, action_refs=None,
                 struct.pack_into("<I", branch, 0, flags | 2)
                 struct.pack_into("<II", branch, 12, len(dialogue.triggers) - 1, len(dialogue.actions) - 1)
                 rows.append(branch)
-        if len(rows) != count:
+        if touched:
             struct.pack_into("<II", state, 4, len(dialogue.transitions), len(rows))
             dialogue.transitions.extend(rows)
     # Keep the speaker until its queued transfer has run. ActionOverride
@@ -799,7 +908,9 @@ def _patch_text_dialogue(data: bytes, resource: str, refs: dict[int, int], *,
 def _markers(specs: tuple[dict, ...]) -> list[bytes]:
     names = {spec[key] for spec in specs for key in
              ("selected_global", "consumed_global", "event_global", "recipient_local") if spec[key]}
-    return [b'"' + name.encode("ascii") + b'"' for name in sorted(names)] + [_DEPARTURE]
+    # A route without a grant leaves only its transfer, whatever row it names.
+    transfers = [_TRANSFER] if any(spec.get("job_end") for spec in specs) else []
+    return [b'"' + name.encode("ascii") + b'"' for name in sorted(names)] + [_DEPARTURE] + transfers
 
 
 def _carries_patch(dialogue: _Dialogue, specs: tuple[dict, ...]) -> bool:
@@ -921,7 +1032,9 @@ def _static_original(data: bytes, resource: str, *, game=None, names=None) -> by
 
 def _unpatched_dialogue(dialogue: _Dialogue, specs: tuple[dict, ...], resource: str) -> bytes:
     label = _label(resource)
-    routes = {spec["selected_global"].encode(): spec for spec in specs}
+    routes = {spec["selected_global"].encode(): spec for spec in specs if spec["selected_global"]}
+    # The transfers of the routes without a grant, in front of a reply's actions.
+    transfers = [_callback(spec, True) + b"\r\n" for spec in specs if spec.get("job_end")]
     for state in dialogue.states:
         first, count = _outgoing(dialogue, state, label)
         rows, restored, at = dialogue.transitions[first:first + count], [], 0
@@ -955,6 +1068,10 @@ def _unpatched_dialogue(dialogue: _Dialogue, specs: tuple[dict, ...], resource: 
                     struct.pack_into("<I", row, 12, len(dialogue.triggers) - 1)
                 else:
                     struct.pack_into("<I", row, 0, flags & ~2)
+            for transfer in transfers:
+                # Every copy: one that stayed would make an original with it.
+                while action.startswith(transfer):
+                    action = action[len(transfer):]
             action = action.replace(_DEPARTURE, b"DestroySelf()")
             if flags & 4 and action != dialogue.actions[action_id]:
                 dialogue.actions.append(action)
@@ -1398,7 +1515,8 @@ def gives_reward(resource: str, data: bytes, key: str, *, game: str | None = Non
     """
     resource = _resource_key(resource)
     specs = [spec for spec in resource_specs(resource, game=game, names=names) if spec["route"] == key]
-    if not resource.startswith("dlg:") or not specs:
+    # A route without a grant of its own (the prince's) has no item to give.
+    if not resource.startswith("dlg:") or not specs or specs[0]["item"] is None:
         raise ProfileError(f"Unsupported extended reward route in {_label(resource)}: {key}")
     item, label = specs[0]["item"], _label(resource)
     dialogue = _read_dialogue(_examine(resource, data, game=game, names=names).original, resource)
