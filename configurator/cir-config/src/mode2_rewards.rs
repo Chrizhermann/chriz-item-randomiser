@@ -1222,6 +1222,13 @@ pub(crate) fn ends_a_job(spec: &Dict) -> bool {
     spec.get("job_end").is_some_and(Value::truthy) || spec.get("job_taken").is_some_and(Value::truthy)
 }
 
+/// Whether a route's patch hands over what its speaker carries
+/// (FLPR_Transfer): a route without a grant ([`ends_a_job`]), or one whose
+/// reward the speaker carries (`inventory_target`; `transfers`).
+pub fn transfers(spec: &Dict) -> bool {
+    ends_a_job(spec) || spec.get("inventory_target").is_some_and(Value::truthy)
+}
+
 /// Every reply that gives the route's item, with the call that gives it.
 ///
 /// A created reward is given with GiveItemCreate, a carried one with
@@ -2834,6 +2841,74 @@ fn resource_key(resource: &str) -> Result<String> {
 /// False for an unpatched resource; raises for a changed copy of our patch.
 pub fn own_patch(resource: &str, data: &[u8], naming: Naming<'_>) -> Result<bool> {
     Ok(examine(&resource_key(resource)?, data, naming)?.own)
+}
+
+/// The routes whose changes the replies of a dialogue carry
+/// ([`route_marker`]), as the engine reads them: a table's unused strings do
+/// not count (`_carried_routes`).
+fn carried_routes(data: &[u8], resource: &str, specs: &[Dict]) -> Result<BTreeSet<String>> {
+    let logical = logical(data, resource)?;
+    let texts: Vec<&Vec<u8>> = logical
+        .states
+        .iter()
+        .flat_map(|(_, _, rows)| rows)
+        .flat_map(|row| [&row.trigger, &row.action])
+        .filter_map(Option::as_ref)
+        .filter(|text| !text.is_empty())
+        .collect();
+    let mut carried = BTreeSet::new();
+    for spec in specs {
+        let marker = route_marker(spec)?;
+        if texts.iter().any(|text| find_bytes(text, &marker, 0).is_some()) {
+            carried.insert(route(spec)?);
+        }
+    }
+    Ok(carried)
+}
+
+/// The routes `newer` adds to `earlier`, where `newer` is this adapter's
+/// patch of a dialogue as [`patch_reward`] makes it now and `earlier` an
+/// earlier version's patch of the same dialogue with some of those routes
+/// ([`static_original`]: CIR 1.0.2's UDSILVER.DLG before Adalon's place had
+/// its route). Both read as patching that dialogue's content with their
+/// routes, so each route `earlier` carries changes the same replies alike in
+/// both (`superseding_routes`).
+///
+/// None where `newer` does not supersede `earlier` so: a script, a text
+/// route's or a destroy gate's resource (their patches carry every route),
+/// either one not exactly this adapter's patch, another original, or a route
+/// of `earlier` that `newer` does not carry.
+pub fn superseding_routes(resource: &str, newer: &[u8], earlier: &[u8], naming: Naming<'_>) -> Result<Option<Vec<Dict>>> {
+    let resource = resource_key(resource)?;
+    if resource.starts_with("bcs:") || text_refs(&resource).is_some() || destroy_gate(&resource) {
+        return Ok(None);
+    }
+    let specs = resource_specs(&resource, naming)?;
+    let originals = static_original(earlier, &resource, naming)
+        .and_then(|before| Ok((before, static_original(newer, &resource, naming)?)));
+    let (before, after) = match originals {
+        Ok(originals) => originals,
+        Err(error) if error.kind == ErrorKind::Profile => return Ok(None),
+        Err(error) => return Err(error),
+    };
+    let (Some((before, _)), Some((after, true))) = (before, after) else {
+        return Ok(None);
+    };
+    if logical(&before, &resource)? != logical(&after, &resource)? {
+        return Ok(None);
+    }
+    let (carried, kept) = (carried_routes(newer, &resource, &specs)?, carried_routes(earlier, &resource, &specs)?);
+    if !kept.is_subset(&carried) {
+        return Ok(None);
+    }
+    let mut added = Vec::new();
+    for spec in specs {
+        let name = route(&spec)?;
+        if carried.contains(&name) && !kept.contains(&name) {
+            added.push(spec);
+        }
+    }
+    Ok(Some(added))
 }
 
 /// The script this adapter's patch was made from, exactly; `data` itself

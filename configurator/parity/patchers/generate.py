@@ -520,6 +520,15 @@ def script_original_case(s: Scenario, label: str, resource: str, data: bytes) ->
            lambda: mode2_rewards._script_original(data, specs))
 
 
+def superseding_case(s: Scenario, label: str, resource: str, newer: bytes, earlier: bytes) -> None:
+    """The routes a newer patch of a dialogue adds to an earlier one (superseding_routes)."""
+    def run():
+        added = mode2_rewards.superseding_routes(resource, newer, earlier)
+        return None if added is None else list(added)
+    s.case(f"superseding_routes {label}", "mode2_rewards.superseding_routes",
+           {"resource": resource, "newer": newer, "earlier": earlier}, run)
+
+
 def unpatched_case(s: Scenario, label: str, resource: str, data: bytes) -> None:
     s.case(f"unpatched_script {label}", "mode2_rewards.unpatched_script", {"resource": resource, "data": data},
            lambda: mode2_rewards.unpatched_script(resource, data))
@@ -658,18 +667,36 @@ def adalon_cases(s: Scenario) -> None:
             reward_checks(s, f"udsilver {layout} {label}", "dlg:udsilver", tampered_dialogue.render())
     # An earlier version's patch, with one of her two routes: patched again
     # from the original; a changed copy of it is not ours.
+    # Apply's patch now supersedes it, never the other way round.
     for name, original in (("fixture", fixture),
                            ("beamdog", mode2_tests.layout_dialogue("udsilver", mode2_tests.ADALON_STATES)),
                            ("weidu", mode2_tests.layout_dialogue("udsilver", mode2_tests.ADALON_STATES,
                                                                  beamdog=False))):
+        now = mode2_rewards.patch_reward("dlg:udsilver", original)
         for label, routes in (("crossbow", specs[:1]), ("place", specs[1:])):
             earlier = mode2_rewards._patch_dialogue(original, routes)
+            again = mode2_rewards.patch_reward("dlg:udsilver", earlier)
             reward_checks(s, f"udsilver {name} earlier {label}", "dlg:udsilver", earlier)
-            reward_checks(s, f"udsilver {name} earlier {label} again", "dlg:udsilver",
-                          mode2_rewards.patch_reward("dlg:udsilver", earlier))
+            reward_checks(s, f"udsilver {name} earlier {label} again", "dlg:udsilver", again)
+            for newer_label, newer in (("now", now), ("again", again)):
+                superseding_case(s, f"udsilver {name} {label} {newer_label}", "dlg:udsilver", newer, earlier)
+                superseding_case(s, f"udsilver {name} {label} {newer_label} reversed", "dlg:udsilver", earlier, newer)
+        superseding_case(s, f"udsilver {name} same", "dlg:udsilver", now, now)
         earlier = mode2_rewards._patch_dialogue(original, specs[:1])
-        reward_checks(s, f"udsilver {name} earlier tampered", "dlg:udsilver",
-                      earlier.replace(b'"FLPR_EA_EGGDEALIO","GLOBAL",1)', b'"FLPR_EA_EGGDEALIO","GLOBAL",2)', 1))
+        tampered = earlier.replace(b'"FLPR_EA_EGGDEALIO","GLOBAL",1)', b'"FLPR_EA_EGGDEALIO","GLOBAL",2)', 1)
+        reward_checks(s, f"udsilver {name} earlier tampered", "dlg:udsilver", tampered)
+        superseding_case(s, f"udsilver {name} tampered", "dlg:udsilver", now, tampered)
+        superseding_case(s, f"udsilver {name} unpatched", "dlg:udsilver", now, original)
+    # Nor does the patch of a dialogue that another mod changed since; a
+    # script's, a text route's or a destroy gate's patch carries every route.
+    changed = [list(replies) for replies in mode2_tests.ADALON_STATES]
+    changed[3] = [("", 'SetGlobal("OtherMod","GLOBAL",1)\nDestroySelf()', None)]
+    superseding_case(s, "udsilver other original", "dlg:udsilver",
+                     mode2_rewards.patch_reward("dlg:udsilver", mode2_tests.layout_dialogue("udsilver", changed)),
+                     mode2_rewards._patch_dialogue(mode2_tests.layout_dialogue("udsilver", mode2_tests.ADALON_STATES),
+                                                   specs[:1]))
+    for resource in ("bcs:ddwell", "dlg:trgeni01", "bcs:sahtreas", "UDSILVER.DLG", "dlg:nothing"):
+        superseding_case(s, f"superseding {resource}", resource, fixture, fixture)
     # No reply takes her eggs, or one names them unreadably; her crossbow's
     # route cannot be prepared.
     for label, changed in (

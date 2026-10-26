@@ -256,13 +256,24 @@ again. Saved games keep the revision they started with, and its files never
 change. When the check now leaves out a route or container quest that an earlier
 revision prepared, or a file that revision uses changed since, Apply keeps that
 revision's files as they were exported and says so in a note, instead of refusing
-the new revision. At every start the runtime checks each revision's patched
-dialogues and scripts against the game's override files, and the areas of its
-guarded sources against their pristine copies; it would stop for every game when
-one of them changed. Apply then refuses and names the file ("Saved games of
-revision … need UHOGRE01.DLG as it was when they were exported, but it changed in
-the game since then; …"); install mods that change such files before the first
-Apply. A container quest's place is the one container in the quest's area that
+the new revision. Whenever one of a revision's games is loaded, the runtime checks
+that revision's patched dialogues and scripts against the game's override files,
+and the areas of its guarded sources against their pristine copies; it would stop
+CIR in that game when one of them changed. Apply then refuses and names the file
+("Saved games of revision … need UHOGRE01.DLG as it was when they were exported,
+but it changed in the game since then; …"); install mods that change such files
+before the first Apply. A newer version of CIR may patch a reward dialogue with
+more routes than an earlier revision was exported with (CIR 1.0.3 adds Adalon's
+place to UDSILVER.DLG, which CIR 1.0.2 patched for her crossbow alone). Where the
+newer patch is CIR's own patch of the same dialogue, carries every route the
+earlier one does, and each route it adds leaves that revision's saves alone, its
+saves read the newer one: the added route's flags are its own, which no endpoint
+of that revision names, and a route that hands over what its speaker carries finds
+there no target, or a plain creature whose reward it can hand over. Apply then keeps
+its version as `<NAME>.applied.dlg` and lists the revision in `superseded.lua`
+(both in randomiser-campaigns), and the runtime accepts that version, exactly, in
+those saves. Otherwise Apply refuses as above ("… but Apply would now replace it
+with another version; …"). A container quest's place is the one container in the quest's area that
 holds the quest's whole treasure (the
 golems' weapons in the De'Arnise Keep cellar `AR1303`, Samia's sword and shield in
 `AR1202`), found in the scan wherever the game keeps it; when no container or more
@@ -701,7 +712,9 @@ CIR 1.0.2 patched UDSILVER.DLG for the egg deal only. A patch of an earlier vers
 with some of a dialogue's routes of today is still CIR's own: the scans and the check
 read the dialogue from it as it was, and Apply patches it again with every route. A
 changed copy of it is left out as any other. A revision exported with CIR 1.0.2 keeps
-her place as a plain creature, and her reply hands that reward over too.
+her place as a plain creature, and her reply hands that reward over too: its saves
+read the dialogue Apply patches now, which supersedes the one they were exported
+with (`superseded.lua`, above).
 
 The book of Lavok's sphere (`PPBOOK.BCS`, AR1513) gives two scrolls with the ring on
 its last page (rows 260 and 262 of the extended tables, beside the ring's row 109).

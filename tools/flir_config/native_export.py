@@ -37,7 +37,7 @@ from .mode2_rewards import (SOURCE_REWARDS as MODE2_SOURCES, TARGET_REWARDS as M
                             target_spec as mode2_target_spec, patch_reward as patch_mode2_reward,
                             prepare_reward_texts, own_patch as own_mode2_patch, journal_lua as mode2_journal_lua,
                             TEXT_REFS as MODE2_TEXT_REFS, transfer_spec as mode2_transfer_spec, unpatched_script,
-                            resource_specs as mode2_resource_specs)
+                            resource_specs as mode2_resource_specs, superseding_routes, transfers as mode2_transfers)
 from .mode2_rewards import DESTROY_GATES, PHYSICAL_SOURCE_REWARDS, REWARDS as MODE2_REWARDS
 from .container_rewards import (RESOURCE_TARGETS as CONTAINER_RESOURCES,
                                 TEXT_RESOURCES as CONTAINER_TEXT_RESOURCES, container_error,
@@ -1023,7 +1023,10 @@ def _export_tlk(installed: bytes, prepared: Path) -> bytes:
     return previous
 
 
-_CHECKED = "the runtime checks it at every start and would stop for every game"
+_CHECKED = "the runtime checks it whenever one of them is loaded and would stop CIR in it"
+# The reward dialogues, by revision, whose staged patch Apply's newer one
+# supersedes (_superseding); M_FLPR.lua reads it.
+SUPERSEDED = "superseded.lua"
 
 
 def _stored_native(exported: Path, key: str) -> dict:
@@ -1033,10 +1036,11 @@ def _stored_native(exported: Path, key: str) -> dict:
 def _staged_scripts(key: str, manifest: dict, native: dict) -> list[tuple[str, str, bool]]:
     """(resource, staged file, quest) for each file a revision's guarded scripts need in override.
 
-    At every start the runtime compares these staged bytes with the game's
-    override file (FLPRScript.lua). A quest script that the installer
-    prepared (<quest>) may also be the version Apply extended it to
-    (_extended_scripts).
+    When one of the revision's games is loaded, the runtime compares these
+    staged bytes with the game's override file (FLPRScript.lua). A quest
+    script that the installer prepared (<quest>) may also be the version
+    Apply extended it to (_extended_scripts), and a reward dialogue Apply's
+    patch that supersedes the staged one (_superseding).
     """
     result = []
     for number, source in enumerate(manifest["sources"], 1):
@@ -1054,11 +1058,75 @@ def _staged_scripts(key: str, manifest: dict, native: dict) -> list[tuple[str, s
     return result
 
 
+def _applied_script(resource: str) -> str:
+    """The file that keeps Apply's own version of a guarded script beside a
+    version that saves need (read by M_FLPR.lua): the reward routes' version
+    of an installer-prepared quest script (_extended_scripts), or of a reward
+    dialogue whose earlier patch it supersedes (_superseding)."""
+    kind, name = resource.split(":")
+    return f"{name.upper()}.applied.{kind}"
+
+
 def _extended_scripts(resource: str) -> tuple[str, str]:
     """The files that keep an installer-prepared quest script and the version
     Apply extended it to with reward routes (read by M_FLPR.lua)."""
-    name = resource.split(":")[1].upper()
-    return f"{name}.installed.bcs", f"{name}.applied.bcs"
+    return f"{resource.split(':')[1].upper()}.installed.bcs", _applied_script(resource)
+
+
+def _named_flags(value) -> set[str]:
+    """The campaign flags a compiled revision's endpoints name, wherever they
+    nest: each value of a key that ends in _global or _local."""
+    if isinstance(value, dict):
+        return {item for key, item in value.items() if key.endswith(("_global", "_local")) and
+                isinstance(item, str)} | set().union(*map(_named_flags, value.values()))
+    if isinstance(value, list):
+        return set().union(*map(_named_flags, value))
+    return set()
+
+
+def _leaves_alone(spec: dict, native: dict) -> bool:
+    """Whether a reward route that a revision was exported without does
+    nothing in its saves, where a dialogue's newer patch adds it.
+
+    Its replies' guards and marks read and set the route's own flags, which
+    only a revision that names them uses. Its other changes call the runtime
+    with the route's places, which finds that revision's targets there: a
+    hand-over (FLPR_Transfer) takes a creature's reward from its backpack,
+    which a revision exported before the place had its route keeps as a
+    plain creature (FLPRNat.lua), and a treasury's payment (FLPR_Handover)
+    needs the place's own route. A revision without a target there leaves
+    both alone.
+    """
+    flags = {spec.get(key) for key in ("selected_global", "consumed_global", "event_global", "recipient_local")}
+    if (flags - {None}) & _named_flags(native):
+        return False
+    for identity in spec["target_ids"]:
+        target = "original-target:" + identity
+        for key, endpoint in native["targets"].items():
+            if key != target and endpoint.get("route_target") != target:
+                continue
+            if spec.get("handover"):
+                return False
+            plain = (endpoint.get("kind") == "creature" and not endpoint.get("corpse_only") and
+                     endpoint.get("handover") is None and endpoint.get("event_global") is None)
+            if mode2_transfers(spec) and not (endpoint.get("inventory_reward") or plain):
+                return False
+    return True
+
+
+def _superseding(resource: str, installed: bytes | None, staged: bytes, native: dict,
+                 naming: dict) -> bytes | None:
+    """The reward dialogue as Apply leaves it, where it is this adapter's
+    patch of it now and supersedes the earlier one that a kept revision
+    staged (mode2_rewards.superseding_routes), and each route it adds leaves
+    that revision's saves alone (_leaves_alone): those saves can then read it
+    instead. None otherwise."""
+    if installed is None or installed == staged or resource not in MODE2_RESOURCES:
+        return None
+    added = superseding_routes(resource, installed, staged, **naming)
+    if added is None or not all(_leaves_alone(spec, native) for spec in added):
+        return None
+    return installed
 
 
 def _gate_areas(native: dict) -> set[str]:
@@ -1090,9 +1158,11 @@ def export_native(store: Path, catalog: dict, world: dict, output: Path,
     running saves; its files never change. When the game changed so that one
     of its rows can no longer be prepared, or its files would now differ, it
     keeps the files it was exported with and the result's "notes" say so; the
-    other revisions are exported as usual. The runtime checks every listed
-    revision at each start, so a kept revision whose guarded script or
-    guarded area changed in the game stops the export instead. A selected
+    other revisions are exported as usual. The runtime checks a listed
+    revision whenever one of its games is loaded, so a kept revision whose
+    guarded script or guarded area changed in the game stops the export
+    instead; where Apply's newer patch of a reward dialogue supersedes the
+    one it staged, its saves read Apply's (superseded.lua). A selected
     revision must be prepared completely. ``scans`` holds the catalogues
     already validated.
     """
@@ -1433,37 +1503,55 @@ def export_native(store: Path, catalog: dict, world: dict, output: Path,
         changed = sorted(name for name in {*hashes[0], *hashes[1]} if hashes[0].get(name) != hashes[1].get(name))
         notes.append(f"Saved games of revision {key[:12]} keep the settings exported earlier, although "
                      f"{', '.join(changed) or 'game files they use'} changed since then")
-    # At every start the runtime checks each listed revision: the staged bytes
-    # of its guarded scripts against the game's override files, and the area
-    # each guarded area source recorded against the shared pristine copy. A
-    # kept revision that would fail there stops the runtime for every game.
+    # When one of its games is loaded, the runtime checks a revision: the
+    # staged bytes of its guarded scripts against the game's override files,
+    # and the area each guarded area source recorded against the shared
+    # pristine copy. A kept revision that would fail there would stop CIR in
+    # each of its games, so Apply refuses instead.
+    # Where Apply's newer patch of a reward dialogue supersedes the one a kept
+    # revision staged, its saves read Apply's (_superseding): it lists them,
+    # by revision, and keeps that version beside them (_applied_script).
+    superseded = {}
     for key in sorted(kept):
         before = _stored_native(exported, key)
         # (file, as the game has it, as Apply would leave it, as the revision
-        # needs it, and the installer's and Apply's versions that also meet a
-        # quest script's need)
+        # needs it, the installer's and Apply's versions that also meet a
+        # quest script's need, and Apply's patch of a reward dialogue that
+        # supersedes the staged one)
         needed = []
         for resource, staged, quest in _staged_scripts(key, manifests[key], before):
             filename = _filename(resource)
             extended = tuple(pending.get(name) for name in _extended_scripts(resource)) if quest else (None, None)
-            needed.append((filename, live.get(resource), pending.get("resource-overrides/" + filename, live.get(resource)),
-                           _store_path(output, Path(staged)).read_bytes(), extended))
+            installed = pending.get("resource-overrides/" + filename, live.get(resource))
+            expected = _store_path(output, Path(staged)).read_bytes()
+            newer = None if quest else _superseding(resource, installed, expected, before, naming)
+            needed.append((filename, live.get(resource), installed, expected, extended, (resource, newer)))
         for area in sorted(_gate_areas(before)):
             # The pristine copy is the game's area as Apply prepares it now.
             copy = pending.get(area + ".pristine.are")
             if copy is None and _store_path(output, Path(area + ".pristine.are")).is_file():
                 copy = _store_path(output, Path(area + ".pristine.are")).read_bytes()
             digest = copy and hashlib.sha256(copy).hexdigest()
-            needed.append((area + ".ARE", digest, digest, before["resource_hashes"].get(area + ".ARE"), (None, None)))
-        for filename, current, installed, expected, (base, extended) in needed:
-            def meets(version, expected=expected, base=base, extended=extended):
-                return version == expected or (base is not None and base == expected and version == extended)
+            needed.append((area + ".ARE", digest, digest, before["resource_hashes"].get(area + ".ARE"), (None, None),
+                           (None, None)))
+        for filename, current, installed, expected, (base, extended), (resource, newer) in needed:
+            def meets(version, expected=expected, base=base, extended=extended, newer=newer):
+                return (version == expected or (base is not None and base == expected and version == extended) or
+                        (newer is not None and version == newer))
             if not meets(current):
                 change = f"it changed in the game since then; {_CHECKED}. Restore {filename} before applying"
             else:
                 change = f"Apply would now replace it with another version; {_CHECKED}"
             _require(meets(installed), f"Saved games of revision {key[:12]} need {filename} as it was when "
                                        f"they were exported, but {change}")
+            if newer is not None:
+                superseded.setdefault(key, set()).add(resource)
+                pending[_applied_script(resource)] = newer
+    # Only then: one that an earlier Apply left in the game names only
+    # revisions whose saves it checked, and the runtime still compares the
+    # game's file with the version kept beside it.
+    if superseded:
+        pending[SUPERSEDED] = _render_lua({key: sorted(resources) for key, resources in sorted(superseded.items())})
     for relative, data in pending.items():
         path = _store_path(output, Path(relative))
         if relative.startswith("campaign-store/"):

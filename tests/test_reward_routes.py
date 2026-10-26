@@ -1241,8 +1241,8 @@ class CopyTests(RouteGame):
         before = snapshot(self.output)
         with self.assertRaisesRegex(ProfileError, f"Saved games of revision {earlier[:12]} need UHOGRE01.DLG as it "
                                     "was when they were exported, but it changed in the game since then; the "
-                                    "runtime checks it at every start and would stop for every game. Restore "
-                                    "UHOGRE01.DLG before applying"):
+                                    "runtime checks it whenever one of them is loaded and would stop CIR in it. "
+                                    "Restore UHOGRE01.DLG before applying"):
             self.apply(fitted)
         self.assertEqual(snapshot(self.output), before)
 

@@ -413,6 +413,17 @@ local function bootstrap(Core,Host,Globals,text,options)
             if options.item_randomiser~=marker then return nil end
             return {close=function() return true end}
         end
+        -- Apply's versions of reward dialogues that supersede staged ones
+        -- (options.applied, by file); one missing there is not in the game.
+        local applied=path:match('^randomiser%-campaigns/([A-Z0-9_#%-]+%.applied%.%a+)$')
+        if applied and options.applied then
+            assert(mode=='rb','UNEXPECTED_APPLIED_FILE_MODE')
+            f.applied_opens=(f.applied_opens or 0)+1
+            local bytes=options.applied[applied]
+            if bytes==nil then return nil end
+            return {read=function(_,form) assert(form=='*a'); return bytes end,
+                close=function() return true end}
+        end
         assert(options.gate and path=='randomiser-campaigns/FLPRU1.pristine.are' and mode=='rb',
             'UNEXPECTED_FIXTURE_FILE_OPEN')
         f.bootstrap_events[#f.bootstrap_events+1]='pristine_open'
@@ -548,6 +559,10 @@ local function bootstrap(Core,Host,Globals,text,options)
             return function() return options.missing_pinned and string.rep("e",64) or
                 f.pinned_revisions or f.manifest.revision end
         end
+        if path=="randomiser-campaigns/superseded.lua" and options.superseded~=nil then
+            f.superseded_reads=(f.superseded_reads or 0)+1
+            return function() return options.superseded end
+        end
         local native_revision=path:match("revisions/([0-9a-f]+)%.native%.lua$")
         if native_revision and f.bundles[native_revision] then
             return function() return f.bundles[native_revision].fixture end
@@ -624,6 +639,41 @@ function cases.bootstrap_two_profiles_share_one_pristine_area_copy(Core,Host,Glo
     assert(f.gate_bundles[2].manifest==second.manifest and f.gate_bundles[2].fixture==second.fixture)
     assert(table.concat(f.bootstrap_events,',')==
         'install,host_new,ensure,pristine_open,pristine_read,pristine_close,ensure')
+end
+-- Where Apply's newer patch of a reward dialogue supersedes the one a revision
+-- staged, that revision's checks get Apply's version, which Apply keeps beside
+-- it (native_export.py); launch reads only the list, and another revision
+-- gets nothing.
+function cases.bootstrap_superseded_dialogues_load_with_their_revision(Core,Host,Globals,text)
+    local first,second=string.rep("a",64),string.rep("e",64)
+    local f=bootstrap(Core,Host,Globals,text,{gate=true,multiple_pinned=true,
+        superseded={[first]={"dlg:udsilver","dlg:uddemon"}},
+        applied={["UDSILVER.applied.dlg"]="SILVER",["UDDEMON.applied.dlg"]="DEMON"}})
+    assert(f.root.Disabled==nil and f.superseded_reads==1 and f.applied_opens==nil)
+    f.gate_deps.load(second)
+    assert(f.applied_opens==nil and f.gate_deps.pristine.superseded[second]==nil)
+    f.gate_deps.load(first)
+    local versions=f.gate_deps.pristine.superseded[first]
+    assert(f.applied_opens==2 and versions["dlg:udsilver"]=="SILVER" and versions["dlg:uddemon"]=="DEMON")
+end
+-- A listed version that is missing stops only the games of its revision.
+function cases.bootstrap_missing_superseding_dialogue_fails_its_revision(Core,Host,Globals,text)
+    local first,second=string.rep("a",64),string.rep("e",64)
+    local f=bootstrap(Core,Host,Globals,text,{gate=true,multiple_pinned=true,
+        superseded={[first]={"dlg:udsilver"}},applied={}})
+    assert(f.root.Disabled==nil)
+    local ok,reason=pcall(f.gate_deps.load,first)
+    assert(not ok and tostring(reason):find("SOURCE_GATE_SCRIPT_MISSING",1,true),tostring(reason))
+    assert(f.gate_deps.load(second))
+end
+-- A list in another shape stops CIR at launch, as a broken source-gate.lua does.
+function cases.bootstrap_superseded_list_must_be_well_formed(Core,Host,Globals,text)
+    for _,listed in ipairs({"dlg:udsilver",{[string.rep("a",64)]="dlg:udsilver"},
+            {[string.rep("a",64)]={"UDSILVER.DLG"}},{[string.rep("a",64)]={"cre:udsilver"}},
+            {[string.rep("a",64)]={[2]="dlg:udsilver"}},{[7]={"dlg:udsilver"}}}) do
+        local f=bootstrap(Core,Host,Globals,text,{gate=true,superseded=listed,allow_disabled=true})
+        assert(tostring(f.root.Disabled):find("SOURCE_GATE_SUPERSEDED_INVALID",1,true),tostring(f.root.Disabled))
+    end
 end
 function cases.bootstrap_opt_in_gate_installs_prepares_once_and_binds_frozen_native(Core,Host,Globals,text)
     local f=bootstrap(Core,Host,Globals,text,{gate=true})

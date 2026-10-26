@@ -1256,6 +1256,39 @@ class Mode2RewardTests(unittest.TestCase):
         self.assertEqual((examined.own, examined.current), (True, True))
         self.assertEqual(rewards.patch_reward("dlg:udsilver", result), result)
 
+    def test_a_newer_patch_of_adalons_dialogue_supersedes_the_earlier_one(self):
+        # Saves of a revision that CIR 1.0.2 exported with her crossbow's route
+        # alone can read the dialogue that has her route too: each route of the
+        # earlier patch changes the same replies alike in the newer one.
+        specs = rewards.resource_specs("dlg:udsilver")
+        crossbow = tuple(spec for spec in specs if spec["route"] == "udsilver")
+        for original in (dialogue_fixture(specs), layout_dialogue("udsilver", ADALON_STATES),
+                         layout_dialogue("udsilver", ADALON_STATES, beamdog=False)):
+            with self.subTest(size=len(original)):
+                earlier = rewards._patch_dialogue(original, crossbow)
+                for newer in (rewards.patch_reward("dlg:udsilver", original),
+                              rewards.patch_reward("dlg:udsilver", earlier)):
+                    added = rewards.superseding_routes("dlg:udsilver", newer, earlier)
+                    self.assertEqual([spec["route"] for spec in added], ["adalon"])
+                    self.assertEqual(rewards.superseding_routes("dlg:udsilver", newer, newer), ())
+                    # Never the other way round: the earlier patch is not
+                    # Apply's now, and lacks her route.
+                    self.assertIsNone(rewards.superseding_routes("dlg:udsilver", earlier, newer))
+                # A changed copy of the earlier patch is not ours.
+                tampered = earlier.replace(b'"FLPR_EA_EGGDEALIO","GLOBAL",1)', b'"FLPR_EA_EGGDEALIO","GLOBAL",2)', 1)
+                self.assertNotEqual(tampered, earlier)
+                self.assertIsNone(rewards.superseding_routes(
+                    "dlg:udsilver", rewards.patch_reward("dlg:udsilver", original), tampered))
+        # Nor does the patch of a dialogue that another mod changed since.
+        changed = [list(replies) for replies in ADALON_STATES]
+        changed[3] = [("", 'SetGlobal("OtherMod","GLOBAL",1)\nDestroySelf()', None)]
+        earlier = rewards._patch_dialogue(layout_dialogue("udsilver", ADALON_STATES), crossbow)
+        self.assertIsNone(rewards.superseding_routes(
+            "dlg:udsilver", rewards.patch_reward("dlg:udsilver", layout_dialogue("udsilver", changed)), earlier))
+        # A script's, a text route's or a destroy gate's patch carries every route.
+        for resource in ("bcs:ddwell", "dlg:trgeni01", "bcs:sahtreas"):
+            self.assertIsNone(rewards.superseding_routes(resource, b"", b""))
+
     def check_destroys(self, original, result, specs):
         """Each block that destroys routes' items becomes one block per
         combination of those routes' flags, in route order; where a route is

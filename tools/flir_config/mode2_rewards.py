@@ -590,6 +590,13 @@ def _job(spec: dict) -> bool:
     return bool(spec.get("job_end") or spec.get("job_taken"))
 
 
+def transfers(spec: dict) -> bool:
+    """Whether a route's patch hands over what its speaker carries
+    (FLPR_Transfer): a route without a grant (_job), or one whose reward
+    the speaker carries (inventory_target)."""
+    return _job(spec) or bool(spec.get("inventory_target"))
+
+
 def _job_text(spec: dict) -> str:
     """How a reply ends the job of a route without a grant, in words."""
     if spec.get("job_end"):
@@ -1616,6 +1623,45 @@ def own_patch(resource: str, data: bytes, *, game: str | None = None, names: Eet
     False for an unpatched resource; raises for a changed copy of our patch.
     """
     return _examine(_resource_key(resource), data, game=game, names=names).own
+
+
+def _carried_routes(data: bytes, resource: str, specs: tuple[dict, ...]) -> set[str]:
+    """The routes whose changes the replies of a dialogue carry (_route_marker),
+    as the engine reads them: a table's unused strings do not count."""
+    texts = [text for _, _, rows in _logical(data, resource)[2] for row in rows for text in row[3:5] if text]
+    return {spec["route"] for spec in specs if any(_route_marker(spec) in text for text in texts)}
+
+
+def superseding_routes(resource: str, newer: bytes, earlier: bytes, *, game: str | None = None,
+                       names: EetNames | None = None) -> tuple[dict, ...] | None:
+    """The routes <newer> adds to <earlier>, where <newer> is this adapter's
+    patch of a dialogue as patch_reward makes it now and <earlier> an earlier
+    version's patch of the same dialogue with some of those routes
+    (_static_original: CIR 1.0.2's UDSILVER.DLG before Adalon's place had its
+    route). Both read as patching that dialogue's content with their routes,
+    so each route <earlier> carries changes the same replies alike in both.
+
+    None where <newer> does not supersede <earlier> so: a script, a text
+    route's or a destroy gate's resource (their patches carry every route),
+    either one not exactly this adapter's patch, another original, or a
+    route of <earlier> that <newer> does not carry.
+    """
+    resource = _resource_key(resource)
+    if resource.startswith("bcs:") or resource in TEXT_REFS or resource in DESTROY_GATES:
+        return None
+    specs = resource_specs(resource, game=game, names=names)
+    try:
+        before = _static_original(earlier, resource, game=game, names=names)
+        after = _static_original(newer, resource, game=game, names=names)
+    except ProfileError:
+        return None
+    if (before is None or after is None or not after[1] or
+            _logical(before[0], resource) != _logical(after[0], resource)):
+        return None
+    carried, kept = _carried_routes(newer, resource, specs), _carried_routes(earlier, resource, specs)
+    if not kept <= carried:
+        return None
+    return tuple(spec for spec in specs if spec["route"] in carried - kept)
 
 
 def unpatched_script(resource: str, data: bytes, *, game: str | None = None,

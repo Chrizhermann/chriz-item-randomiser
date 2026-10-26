@@ -26,8 +26,11 @@ local function read(path)
 end
 -- <extended> holds, by resource, a quest script that CIR's installer prepared
 -- and the version Apply wrote over it with the extended pools' reward routes
--- (M_FLPR.lua reads both from the applied configuration).
-function Script.new(api,bundle,id,expected,extended)
+-- (M_FLPR.lua reads both from the applied configuration). <superseded> holds,
+-- by resource, the reward dialogues that Apply patched with more routes than
+-- this revision was exported with, where Apply found that the newer patch
+-- supersedes the staged one for this revision's saves (native_export.py).
+function Script.new(api,bundle,id,expected,extended,superseded)
     local index,source
     for i,row in ipairs(bundle.manifest.sources) do if row.id==id then index,source=i,row end end
     local endpoint=bundle.fixture.sources[id]
@@ -81,12 +84,15 @@ function Script.new(api,bundle,id,expected,extended)
         -- The game must still hold the bytes this revision was exported with.
         -- An installer-prepared quest also accepts Apply's version of its
         -- script, which keeps the quest's branches and adds the routes' own,
-        -- when the revision was exported with the installer's.
+        -- when the revision was exported with the installer's. A reward
+        -- dialogue also accepts the newer patch that superseded its own.
         local actual=read('override/'..name:upper()..'.'..extension:upper())
         local applied=endpoint.adapter_id=='original-quest-v1' and type(extended)=='table' and
             type(extended[resource])=='table' and extended[resource]
-        assert(actual==bytes or (applied and applied.installed==bytes and applied.applied==actual),
-            'CAMPAIGN_SCRIPT_PATCH_CHANGED')
+        local newer=endpoint.adapter_id=='mode2-reward-v1' and type(superseded)=='table' and
+            type(superseded[resource])=='string' and superseded[resource]
+        assert(actual==bytes or (applied and applied.installed==bytes and applied.applied==actual) or
+            (newer and newer==actual),'CAMPAIGN_SCRIPT_PATCH_CHANGED')
     end
     assert(primary,'CAMPAIGN_SCRIPT_BINDING_INVALID')
     assert(type(api.EEex_GameState_SetGlobalInt)=='function','CAMPAIGN_SCRIPT_GLOBALS_MISSING')
