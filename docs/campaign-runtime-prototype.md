@@ -265,6 +265,11 @@ until its reward reply hands it over: the reply's `FLPR_Transfer` (with the
 place's row, and for a row of the base table its campaign and table) moves it
 to the one the creature talks to, and the dialogue waits until that one holds
 it. These are the carried rewards' places, the Sahuagin prince's and Adalon's.
+The reply waits only while CIR runs or has not restored the adventure yet after
+a load. Once CIR has stopped in the adventure (the player saw in-game.tra @1706),
+the reply goes on at once and the reward stays in the creature's backpack. The
+engine repeats a waiting action, so the creature would otherwise never finish
+its reply, nor its quest.
 A revision exported before its place had that route (Adalon's in CIR 1.0.2) has
 a plain creature target there, whose reward is in the same backpack, so the
 reply hands it over too; any other kind of target there stops the host
