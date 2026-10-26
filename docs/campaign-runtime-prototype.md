@@ -101,11 +101,12 @@ Latest live evidence (2026-09-29/30), under ignored
   interaction remains unverified. The game was closed normally, 39 temporary
   files and three ward-support files restored, and the shared lock released.
 
-TOLGER needs its original alternate-carrier behavior preserved. The original
-installer puts the same assignment on both templates and appears to rely on
-route exclusivity; no explicit cross-carrier retirement flag was found in the
-original rules. That route needs review before adding a new retirement rule. It
-is not covered by the single-carrier transfer above. The two Sahuagin king
+TOLGER's place (row 50) has a route now. The original installer puts the same
+assignment on both of Tolgerias's templates and relies on his class script,
+which destroys the one's copy once the other has lost his (`CDRing33Gone`).
+Here his payment hands the place's reward to his payee, and until then it waits
+for TOLGER2's corpse in the planar sphere (`corpse_only`, above); his ring's
+destroy runs only while the ring stays. The two Sahuagin king
 templates' places have routes now: the prince carries row 60's reward, and row
 58's waits for the king's payment or his corpse (`corpse_only`, above). SAHTREAS also removes and re-grants its
 reward on a quest branch, so the simple container loot latch is insufficient. The
@@ -241,7 +242,8 @@ A creature target marked `corpse_only` receives only that way: while it lives,
 inspection reports `TARGET_ALIVE` and the reward waits. Such a target always has
 a `handover`: once its reward reply has set the event, the reward goes to the
 payee the reply marked instead, alive or dead the creature. This is the Sahuagin
-king's own place, whichever of the two kings the area has
+king's own place, whichever of the two kings the area has, and Tolgerias's, who
+pays in his house while TOLGER2 fights in the planar sphere
 ([configurator](post-install-configurator.md)).
 
 Each command also carries an opaque Lua session table. A receipt must preserve

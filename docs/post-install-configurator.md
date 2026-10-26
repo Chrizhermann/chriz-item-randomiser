@@ -457,8 +457,8 @@ names them apart ("… belong to quests that Chriz Item Randomiser cannot change
 quest rewards and places that Item Randomiser handled with its own conversation and
 script patches (the `.fl` places of its `mode2` tables, and rewards that a conversation
 or script gives) for which CIR has no route yet. Their reason is
-`route-not-supported`. In the original tables these are the places of Tolgerias and a
-vampire or shadow thief of chapter 3 (BG2).
+`route-not-supported`. In the original tables these are the places of a vampire or
+shadow thief of chapter 3 (BG2).
 `tests/test_original_catalog.py` lists them; a route for one of them takes its rows off
 that list.
 
@@ -574,6 +574,32 @@ reward waits, since he may still pay, or destroy himself when the prince's job b
 where a king's file is missing ("Required reward resource is absent: cre:sahkng02") or
 has another script name ("Original reward recipient changed"): on the prince's side
 the reward could then never arrive.
+
+Tolgerias's ring (row 40, `RING33`, which TOLGER2.CRE carries) moves like any
+creature's item, but Tolgerias pays for Valygar's body with the ring he carries
+(TOLGER.DLG, four replies). Where the game's dialogue gives the ring, those replies
+follow the ring's row, as Lesa's conversation does for her sword: where the plan moves
+the ring, he no longer gives one. His place (row 50, Item Randomiser's `tolger.fl`) is
+those replies, which hand its reward to the one he pays. Item Randomiser also gives the
+place's item to both of him, TOLGER.CRE in his house and TOLGER2.CRE, who stands in the
+planar sphere (AR0412) on every path and never pays. So until he pays, the place's
+reward waits for TOLGER2's death and then lies on the ground at his corpse, as the
+Sahuagin king's does. Where the party kills Tolgerias in his house, his area's script
+(AR1002.BCS) removes his body at once, and the reward still waits for TOLGER2. Where he
+pays grudgingly ("You win, fool."), his words name the ring; where the ring moved, CIR
+shows Item Randomiser's line instead ("Here is a trinket in exchange for the body"). His
+class script (TOLGER.BCS, which both run) destroys the ring of the one once the other
+has lost his (`CDRing33Gone`). That destroy runs only while the ring's row leaves it
+where it is (`FLPR_QM2_40`), so a ring that moved to one of TOLGER2's own places stays;
+since the block tests the ring, it stays one block, which never runs while the ring is
+moved. The place is left out with its reason where he pays no ring ("TOLGER.DLG has no
+reply that gives RING33") or TOLGER2.CRE is missing or has another script name
+("Original reward recipient changed"). The ring's row and the place are left out where
+a reply gives it in a way CIR cannot gate, or where a block of the script that tests
+the ring does more than destroy it ("TOLGER.BCS block 0 tests RING33 and does more than
+destroy it, which the route cannot gate"): with a moved ring, the rest of that block
+would never run. His second ring (TOLGER.CRE) moves with the first, as Item
+Randomiser's table of second copies says (below).
 
 The book of Lavok's sphere (`PPBOOK.BCS`, AR1513) gives two scrolls with the ring on
 its last page (rows 260 and 262 of the extended tables, beside the ring's row 109).

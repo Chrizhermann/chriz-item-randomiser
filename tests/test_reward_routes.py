@@ -33,9 +33,9 @@ from flir_config.script_text import script_blocks
 from flir_config.sources import scan_world, validate_world
 from flir_config.starts import write_starts
 from test_container_rewards import dialogue_fixture as container_dialogue, script_fixture
-from test_mode2_rewards import (BOOK_GIFTS, KING_DESTROYS, KING_PAID, action, block, book_block, book_fixture,
-                                dialogue_fixture, layout_dialogue, treasury_fixture, trigger, well_reward,
-                                with_actions)
+from test_mode2_rewards import (BOOK_GIFTS, HAS_RING, KING_DESTROYS, KING_PAID, RING_DESTROYED, RING_GONE, action,
+                                block, book_block, book_fixture, dialogue_fixture, layout_dialogue,
+                                tolgerias_fixture, treasury_fixture, trigger, well_reward, with_actions)
 from test_original_configuration import target_row
 from test_postinstall_resources import make_game, make_itm, make_tlk, mark_eet, snapshot
 from test_postinstall_world_formats import item_record, make_are, make_cre
@@ -355,9 +355,9 @@ class ContainerQuestTests(RouteGame):
 ROD_GRANT = b'GiveItemCreate("rods02",LastTalkedToBy,0,0,0)\r\r\n'
 
 
-def named_cre(script_name: str) -> bytes:
-    """A creature without items that the runtime finds by <script_name>."""
-    data = bytearray(make_cre([]))
+def named_cre(script_name: str, *items: str) -> bytes:
+    """A creature with <items> (none by default) that the runtime finds by <script_name>."""
+    data = bytearray(make_cre([chest_item(item.upper()) for item in items]))
     data[0x280:0x2A0] = script_name.encode("ascii").ljust(32, b"\0")
     return bytes(data)
 
@@ -785,6 +785,164 @@ class TreasuryPlaceTests(TreasuryGame):
             ("bg2:mode2:target:6", "place",
              f"AR2300.ARE needs one container with the script SAHTREAS, the treasury: {self.PLACE}")])
         self.apply(fitted)
+
+
+RING_GRANT = b'GiveItem("ring33",LastTalkedToBy)\r\r\n'
+
+
+def tolgerias_dialogue(ring: bytes = RING_GRANT) -> bytes:
+    """TOLGER whose four payments for Valygar's body give, as <ring> says, the
+    ring he carries; where he pays by force, his words name it (18409)."""
+    dialogue = _Dialogue(dialogue_fixture(mode2_rewards.resource_specs("dlg:tolger")), "tolger")
+    struct.pack_into("<I", dialogue.states[44], 0, 18409)
+    dialogue.actions = [text.replace(RING_GRANT, ring) for text in dialogue.actions]
+    return dialogue.render()
+
+
+class TolgeriasTests(RouteGame):
+    """Tolgerias's ring (row 40, which TOLGER2.CRE carries) and his place (row
+    50, Item Randomiser's tolger.fl), beside the ogre's shield. He pays for
+    Valygar's body with his ring in his house (TOLGER.DLG); TOLGER2 fights in
+    the planar sphere (AR0412). Their class script (TOLGER.BCS) destroys the
+    ring of the one once the other has lost his."""
+
+    sources = ("bg2:mode2:item:40", "bg2:mode2:item:14")
+    targets = ("bg2:mode2:target:50", "bg2:mode2:target:17")
+    RING = "cre:tolger2/item/0"
+    PLACE = "original-target:bg2:mode2:target:50"
+
+    def places(self) -> list[dict]:
+        # Chests of the ring's and the shield's tiers.
+        return [place("bg2:base:target:9002", "4", 0), place("bg2:base:target:9003", "2", 1)]
+
+    def build_tolgerias(self, platform: str, *, dialogue: bytes | None = None, script: bytes | None = None,
+                        creatures: dict[str, bytes] | None = None) -> None:
+        """Both of him, each with his ring (lists/duplicates/bg2.2da:22 names
+        TOLGER.CRE's), and the planar sphere."""
+        resources = {"uhogre01.dlg": ogre_dialogue(),
+                     "tolger.dlg": tolgerias_dialogue() if dialogue is None else dialogue}
+        if script is not None:
+            resources["tolger.bcs"] = script
+        if creatures is None:
+            creatures = {"tolger.cre": named_cre("tolger", "ring33"), "tolger2.cre": named_cre("tolger2", "ring33")}
+        self.build(platform, resources=resources, extra={"ar0412.are": make_are(), **creatures})
+        shutil.copyfile(self.game / "override" / "synth001.itm", self.game / "override" / "ring33.itm")
+        self.rescan()
+
+    def native(self, written: dict, revision: str | None = None) -> dict:
+        return json.loads((self.output / "campaign-store" / "revisions" /
+                           f"{revision or written['starts'][written['full']]}.native.json").read_bytes())
+
+    def left_out(self) -> list[tuple[str, str, str]]:
+        fitted = self.fit()
+        self.apply(fitted)
+        return sorted((row["id"], row["kind"], row["reason"]) for row in fitted["not_used"])
+
+    def test_he_pays_with_his_ring_and_until_then_his_place_waits_for_his_corpse(self):
+        for platform, starts in (("bg2ee", {"SOA"}), ("eet", {"BG1", "SOD", "SOA"})):
+            with self.subTest(platform=platform):
+                self.build_tolgerias(platform, script=tolgerias_fixture())
+                draft = self.draft()
+                ring = next(row for row in draft["items"] if row["id"] == self.sources[0])
+                self.assertEqual((ring["source_ids"], ring["binding_problem"]), ([self.RING], None))
+                row = next(row for row in draft["targets"] if row["id"] == self.targets[0])
+                self.assertEqual((row["area_resource"], row["binding_problem"]),
+                                 ("dlg:tolger", "legacy-target-requires-adapter"))
+                before = snapshot(self.game)
+                fitted = self.fit()
+                self.assertEqual(fitted["not_used"], [])
+                self.assertIn(self.PLACE, {row["id"] for row in fitted["plan"]["target_registrations"]})
+                written = self.apply(fitted)
+                self.assertEqual(set(written["starts"]), starts)
+                self.assertEqual(snapshot(self.game), before)
+                # His payment gives the ring only while it stays; a moved one
+                # shows CIR's words for his.
+                overrides = self.output / "resource-overrides"
+                dialogue = (overrides / "TOLGER.DLG").read_bytes()
+                original, refs = mode2_rewards._text_original(dialogue, "dlg:tolger")
+                self.assertEqual(original, tolgerias_dialogue())
+                self.assertEqual(dialogue, mode2_rewards.patch_reward("dlg:tolger", original, refs=refs))
+                words = translations.lines("en_us", mode2_rewards.text_lines("dlg:tolger"))["in-game.tra", 103]
+                tlk = _Tlk((self.output / "game-overrides/lang/en_US/dialog.tlk").read_bytes())
+                self.assertEqual(tlk.text(refs[18409], set()), words[0])
+                script = mode2_rewards.patch_reward("bcs:tolger", tolgerias_fixture())
+                self.assertEqual((overrides / "TOLGER.BCS").read_bytes(), script)
+                for revision in written["starts"].values():
+                    native = self.native(written, revision)
+                    self.assertEqual(native["sources"][self.RING]["reward_selected_global"], "FLPR_QM2_40")
+                    endpoint = native["targets"][self.PLACE]
+                    self.assertEqual({key: value for key, value in endpoint.items() if key != "identity"}, {
+                        "kind": "creature", "area": "AR0412", "script_name": "tolger2", "corpse_only": True,
+                        "handover": {"event_global": "FLPR_EA_TOLGER", "recipient_local": "FLPR_RA_TOLGER"},
+                        "reward_resource": "dlg:tolger"})
+                    # His second ring moves with the first, as Item Randomiser's table says.
+                    self.assertEqual([(copy["id"], copy["source_id"], copy["resource"])
+                                      for copy in native["duplicates"]],
+                                     [("bg2:duplicate:22", self.RING, "cre:tolger")])
+                    hashes = native["resource_hashes"]
+                    self.assertEqual((hashes["TOLGER.DLG"], hashes["TOLGER.BCS"]),
+                                     tuple(hashlib.sha256(data).hexdigest() for data in (dialogue, script)))
+                    for name in ("TOLGER2.CRE", "AR0412.ARE"):
+                        self.assertEqual(hashes[name], hashlib.sha256(
+                            (self.game / "override" / name.lower()).read_bytes()).hexdigest())
+
+    def test_a_game_without_his_script_needs_no_gate(self):
+        self.build_tolgerias("bg2ee")
+        fitted = self.fit()
+        self.assertEqual(fitted["not_used"], [])
+        native = self.native(self.apply(fitted))
+        self.assertFalse((self.output / "resource-overrides" / "TOLGER.BCS").exists())
+        self.assertNotIn("TOLGER.BCS", native["resource_hashes"])
+        self.assertEqual(native["targets"][self.PLACE]["kind"], "creature")
+        self.assertEqual(native["sources"][self.RING]["reward_selected_global"], "FLPR_QM2_40")
+
+    def test_a_tolgerias_the_runtime_cannot_find_leaves_his_place_out(self):
+        # The reward could never wait for him in the planar sphere: the place
+        # is left out, the ring's route stays.
+        reason = f"Original reward recipient changed: {self.PLACE}"
+        for label, creatures in (
+                ("another name", {"tolger.cre": named_cre("tolger", "ring33"),
+                                  "tolger2.cre": named_cre("tolger3", "ring33")}),
+                ("his house's name", {"tolger.cre": named_cre("tolger", "ring33"),
+                                      "tolger2.cre": named_cre("tolger", "ring33")})):
+            with self.subTest(label):
+                self.build_tolgerias("bg2ee", script=tolgerias_fixture(), creatures=creatures)
+                self.assertEqual(self.left_out(), [("bg2:mode2:target:50", "place", reason)])
+                native = self.native(self.apply(self.fit()))
+                self.assertNotIn(self.PLACE, native["targets"])
+                self.assertEqual(native["sources"][self.RING]["reward_selected_global"], "FLPR_QM2_40")
+
+    def test_without_his_ring_the_route_and_place_are_left_out(self):
+        # Another mod's Tolgerias who pays no ring: the ring moves as any
+        # creature's item, and no reply would pay his place.
+        self.build_tolgerias("bg2ee", dialogue=tolgerias_dialogue(b""), script=tolgerias_fixture())
+        reason = "The extended reward route for TOLGER cannot be used: TOLGER.DLG has no reply that gives RING33"
+        self.assertEqual(self.left_out(), [("bg2:mode2:target:50", "place", reason)])
+        native = self.native(self.apply(self.fit()))
+        self.assertNotIn("reward_selected_global", native["sources"][self.RING])
+        self.assertNotIn(self.PLACE, native["targets"])
+        for name in ("TOLGER.DLG", "TOLGER.BCS"):
+            self.assertFalse((self.output / "resource-overrides" / name).exists())
+        # One that gives it a way the route cannot gate leaves out both.
+        self.build_tolgerias("bg2ee", dialogue=tolgerias_dialogue(b'CreateItem("ring33",0,0,0)\r\r\n'),
+                             script=tolgerias_fixture())
+        reason = ("The extended reward route for TOLGER cannot be used: TOLGER.DLG state 37 also gives RING33 "
+                  "with CreateItem(), which the route cannot gate")
+        self.assertEqual(self.left_out(), [("bg2:mode2:item:40", "reward", reason),
+                                           ("bg2:mode2:target:50", "place", reason)])
+
+    def test_a_script_that_would_hold_back_his_fight_leaves_the_route_out(self):
+        # A block that tests the ring and does more than destroy it cannot
+        # be gated: with a moved ring the rest would not run.
+        more = tolgerias_fixture(book_block([HAS_RING, RING_GONE],
+                                            RING_DESTROYED + action(30, 2, "GLOBALOtherMod")))
+        self.build_tolgerias("bg2ee", script=more)
+        reason = ("The extended reward route for TOLGER cannot be used: TOLGER.BCS block 0 tests RING33 and does "
+                  "more than destroy it, which the route cannot gate")
+        self.assertEqual(self.left_out(), [("bg2:mode2:item:40", "reward", reason),
+                                           ("bg2:mode2:target:50", "place", reason)])
+        for name in ("TOLGER.DLG", "TOLGER.BCS"):
+            self.assertFalse((self.output / "resource-overrides" / name).exists())
 
 
 class BookScrollTests(RouteGame):

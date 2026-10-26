@@ -3,16 +3,17 @@
 **Call for translators.** Chriz Item Randomiser's extended pools move the rewards of
 some Shadows of Amn quests and of Aldeth's quest in Baldur's Gate. Where the quest's own
 text names the reward ("Please, take this ring."), CIR shows Item Randomiser's reworded
-line instead ("Please, accept this gift."). These 24 lines exist in English, Polish
+line instead ("Please, accept this gift."). These 25 lines exist in English, Polish
 (Item Randomiser's own translation) and German. In a game in any other language the
 configurator leaves the quests that show them out of the extended pools, with the
 reason ("Item Randomiser's reward texts have no Spanish translation yet"); the game
-never shows the English line in another language. A translation of the 24 lines below
+never shows the English line in another language. A translation of the 25 lines below
 brings those quests back for that language.
 
 BG:EE shows only Aldeth's two lines (@1649 and @1650), so Hungarian, Japanese and
 Turkish (BG:EE only) need just those two. CIR wrote the German lines and Polish @1650
-itself; Item Randomiser has the others.
+itself, and words Polish @103 with an item where Item Randomiser's named the ring;
+Item Randomiser has the others.
 
 ## Languages
 
@@ -69,6 +70,8 @@ translation for the game language nb_no" until a row is added to `LANGUAGES` in
 @100 = ~Please, accept this gift.~
 // replaces string 38758 (KPGOL01.BCS, KPGOL02.BCS, KPGOL05.BCS, the De'Arnise Keep golems)
 @101 = ~As you pick up the item, two of the golems come to life and attack.~
+// replaces string 18409 (TOLGER.DLG, Tolgerias, a Cowled Wizard)
+@103 = ~You win, fool.  But the Cowled Wizards shall remember this betrayal.  Here is a trinket in exchange for the body.  Now begone from my sight ere I change my mind.~
 // replaces string 52664 (UDLESA.DLG, Lesa in the Underdark)
 @104 = ~I yield. You have proven the better combatant this day. I... I yield the victory.~
 // replaces string 43514 (TRGENI01.DLG, the genie in Trademeet)

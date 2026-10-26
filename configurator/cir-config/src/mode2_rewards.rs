@@ -80,6 +80,8 @@ pub const TEXT_REFS: &[(&str, &[(i64, i64)])] = &[
     ("dlg:trgeni01", &[(43514, 110)]),
     ("dlg:amcler01", &[(74025, 100)]),
     ("dlg:udlesa", &[(52664, 104)]),
+    // "Here is a ring in exchange for the body" (Tolgerias's payment).
+    ("dlg:tolger", &[(18409, 103)]),
     ("dlg:jugjer01", &[(33760, 698), (33777, 699)]),
     // Aldeth's thanks and the journal entry his reward reply adds.
     ("dlg:aldeth", &[(5740, 1649), (26828, 1650)]),
@@ -459,10 +461,8 @@ fn build_registry() -> Registry {
     // the treasury. A reward that moved there under such a name must stay:
     // each destroy runs only while its route's grant is the original one
     // ([`patch_destroys`]). A game without the script needs no gate.
-    for (_, keys) in DESTROY_GATES {
-        for key in *keys {
-            row_mut(&mut rewards, key).insert("resources", list!["dlg:sahkng01", "bcs:sahtreas"]);
-        }
+    for key in destroy_gate_routes("bcs:sahtreas") {
+        row_mut(&mut rewards, key).insert("resources", list!["dlg:sahkng01", "bcs:sahtreas"]);
     }
     // The king's own place (row 58, Item Randomiser's tadpoles1.fl) is his
     // reward reply, which hands its reward to the one he pays. Item
@@ -480,6 +480,32 @@ fn build_registry() -> Registry {
             "creature_resources" => list!["cre:sahkng01", "cre:sahkng02"],
         },
     );
+    // Tolgerias's ring (row 40, carried by TOLGER2.CRE) and his place (row 50,
+    // Item Randomiser's tolger.fl). He pays for Valygar's body with 500 gold
+    // and the ring he carries (TOLGER.DLG, four replies); TOLGER2, an actor of
+    // the planar sphere (AR0412), is there on every path and never pays. Item
+    // Randomiser gives the place's item to both, and his class script
+    // (TOLGER.BCS, both run it) destroys the one copy once the other has gone
+    // (GLOBAL CDRing33Gone). Here the reply follows the ring's kept/moved
+    // decision, as UDLESA's does, and pays the place's reward to the one he
+    // pays; until then it waits for TOLGER2's death, at his corpse (`holder`).
+    // Where Tolgerias dies in his house (AR1002), its script destroys him at
+    // once, so he holds nothing.
+    let payments = vec![(37, 0), (37, 1), (37, 2), (44, 0)];
+    alias(&mut rewards, "tolger", "ring33", 40, Some(50), "TOLGER", &[("tolger", payments)], NO_CHARGES, talker);
+    {
+        let row = row_mut(&mut rewards, "tolger");
+        row.insert("source_ids", Value::List(Vec::new()));
+        row.insert("authored_source_ids", list!["original-source:bg2:mode2:item:40"]);
+        row.insert("grant_kind", "transfer");
+        row.insert(
+            "holder",
+            dict! {"area" => "ar0412", "script_name" => "tolger2", "creature_resources" => list!["cre:tolger2"]},
+        );
+        // A moved ring is a reward like any other: one of TOLGER2's own
+        // places can get it, and his class script must not destroy it there.
+        row.insert("resources", list!["dlg:tolger", "bcs:tolger"]);
+    }
     // The two scrolls that the book of Lavok's sphere (PPBOOK.BCS, AR1513)
     // gives with its ring on the last page (Item Randomiser's rows 260 and
     // 262). The book's places are the ring's quest (the installer splits that
@@ -591,8 +617,11 @@ pub fn transfer_specs() -> &'static Dict {
 /// original row: the creature's or the area's container record of the item.
 /// A game whose dialogue gives no such item needs no route
 /// ([`gives_reward`]). Each entry is (resource, kind, item, route).
-pub const PHYSICAL_SOURCE_REWARDS: &[(&str, &str, &str, &str)] =
-    &[("cre:udlesa", "cre-template", "sw1h39", "udlesa"), ("are:ar2300", "container", "rods02", "sahrod")];
+pub const PHYSICAL_SOURCE_REWARDS: &[(&str, &str, &str, &str)] = &[
+    ("cre:udlesa", "cre-template", "sw1h39", "udlesa"),
+    ("are:ar2300", "container", "rods02", "sahrod"),
+    ("cre:tolger2", "cre-template", "ring33", "tolger"),
+];
 
 /// The route of a physical source of `item` (a `kind` record of `resource`),
 /// if its reward dialogue gives the item too.
@@ -602,11 +631,16 @@ pub fn physical_source_reward(resource: &str, kind: &str, item: &str) -> Option<
 
 /// `DESTROY_GATES`: scripts that destroy routes' items, with those routes
 /// ([`patch_destroys`]); each is also a resource of its routes.
-pub const DESTROY_GATES: &[(&str, &[&str])] = &[("bcs:sahtreas", &["sahkng01", "sahrod"])];
+pub const DESTROY_GATES: &[(&str, &[&str])] = &[("bcs:sahtreas", &["sahkng01", "sahrod"]), ("bcs:tolger", &["tolger"])];
 
 /// Whether `resource` is one of the [`DESTROY_GATES`].
 pub fn destroy_gate(resource: &str) -> bool {
     DESTROY_GATES.iter().any(|(gate, _)| *gate == resource)
+}
+
+/// The routes of one of the [`DESTROY_GATES`].
+fn destroy_gate_routes(resource: &str) -> &'static [&'static str] {
+    DESTROY_GATES.iter().find(|(gate, _)| *gate == resource).map_or(&[], |(_, keys)| *keys)
 }
 
 /// `RESOURCE_REWARDS`: resource to the reward keys that edit it.
@@ -2304,8 +2338,14 @@ fn no_action(newline: &[u8]) -> Vec<u8> {
 /// destroys it (itself or through ActionOverride(), where the moved reward
 /// may be too) becomes two, the original while the route's grant is
 /// unchanged and one with NoAction() instead of each of those destroys while
-/// it is moved. Conditions may test the item; any other action with it could
-/// take a moved reward, so the route cannot be used.
+/// it is moved, so the blocks after it run no more often than before (the
+/// Sahuagin treasury's). A block whose conditions test the item ends once it
+/// has destroyed it, as Tolgerias's does with his ring; with a moved reward
+/// kept it would run on and hold back every later block and script of its
+/// owner, his fighting among them. Such a block only runs while the grant is
+/// unchanged, so it may do nothing but destroy the item. Conditions may test
+/// the item; any other action with it could take a moved reward, so the
+/// route cannot be used.
 fn gate_destroys(data: &[u8], spec: &Dict) -> Result<Vec<u8>> {
     let label = label(&text(spec, "resource")?);
     let item_name = text_field(spec, "item", "encode")?;
@@ -2319,8 +2359,9 @@ fn gate_destroys(data: &[u8], spec: &Dict) -> Result<Vec<u8>> {
                 continue;
             }
             let (head, conditions, responses) = block_parts(block, newline)?;
-            let using: Vec<Action> = block_actions(&responses, newline)?
-                .into_iter()
+            let actions = block_actions(&responses, newline)?;
+            let using: Vec<&Action> = actions
+                .iter()
                 .filter(|action| action.strings.iter().any(|text| text.to_ascii_lowercase() == item))
                 .collect();
             if using.iter().any(|action| action.opcode != 169 || action.strings[0].to_ascii_lowercase() != item) {
@@ -2332,8 +2373,16 @@ fn gate_destroys(data: &[u8], spec: &Dict) -> Result<Vec<u8>> {
             if using.is_empty() {
                 continue;
             }
+            let tested = names(&conditions, item_name);
+            if tested && using.len() != actions.len() {
+                return Err(profile(format!(
+                    "{label} block {index} tests {} and does more than destroy it, which the route cannot gate",
+                    upper(item_name)
+                )));
+            }
+            let choices: &[bool] = if tested { &[false] } else { &[false, true] };
             let mut variants = Vec::new();
-            for selected in [false, true] {
+            for &selected in choices {
                 let edits: Vec<Edit> = if selected {
                     using.iter().map(|action| (action.start, action.end, no_action(newline))).collect()
                 } else {
@@ -2620,12 +2669,21 @@ pub fn journal_lua(lua: &[u8], texts: &TextRefs, game: Option<&str>) -> Result<V
 
 // ---------------------------------------------------------------- routes
 
-/// The registry resource a resource name or file name stands for.
+/// The registry resource a resource name or file name stands for, by its kind
+/// where it names one ("dlg:tolger", "TOLGER.DLG"): Tolgerias's dialogue and
+/// script share a name.
 fn resource_key(resource: &str) -> Result<String> {
     let lowered = crate::py::lower(resource);
-    let last = lowered.rsplit(':').next().unwrap_or("");
-    let name = last.split('.').next().unwrap_or("");
-    let candidates: Vec<&str> = resource_rewards().keys().filter(|key| key.split(':').nth(1) == Some(name)).collect();
+    let (kind, last) = lowered.rsplit_once(':').unwrap_or(("", &lowered));
+    let (name, extension) = last.split_once('.').unwrap_or((last, ""));
+    let kind = if kind.is_empty() { extension } else { kind };
+    let candidates: Vec<&str> = resource_rewards()
+        .keys()
+        .filter(|key| {
+            let (key_kind, key_name) = key.split_once(':').unwrap_or(("", key));
+            key_name == name && (kind.is_empty() || key_kind == kind)
+        })
+        .collect();
     if candidates.len() != 1 {
         return Err(profile(format!("Unsupported extended reward resource: {resource}")));
     }

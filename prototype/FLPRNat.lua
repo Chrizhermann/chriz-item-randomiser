@@ -263,9 +263,11 @@ function Native.new(api, fixture, seed, reward_payload)
             -- king's reward reply hands its rewards to the payee
             -- (hand_over_container_reward); after that reply a reward not
             -- placed yet goes to the payee instead (Adapter:_target). The
-            -- king's own place (tadpoles1.fl) waits for him the same way, but
-            -- as a creature that receives only at his corpse (corpse_only): a
-            -- living king may still pay, or destroy himself on the prince's side.
+            -- king's own place (tadpoles1.fl) and Tolgerias's (tolger.fl) wait
+            -- for their reply the same way, but at a creature that receives only
+            -- at his corpse (corpse_only): a living king may still pay, or destroy
+            -- himself on the prince's side; Tolgerias pays in his house, and
+            -- TOLGER2 fights in the planar sphere.
             if endpoint.corpse_only ~= nil then
                 assert(kind=='targets' and endpoint.kind=='creature' and copy.quest_event==nil and
                     endpoint.corpse_only==true and endpoint.handover~=nil and copy.inventory_reward==nil,
@@ -905,8 +907,9 @@ end
 
 function Adapter:_target(id, source_id, unit)
     local endpoint=self.targets[id]
-    -- Once the Sahuagin king has paid, the rewards of his treasury and his own
-    -- place go to his payee: the party leaves the treasury and him behind.
+    -- Once a reward reply has paid (the Sahuagin king's, Tolgerias's), the
+    -- rewards it hands over go to the payee: the party leaves the treasury and
+    -- the holder behind.
     if endpoint and endpoint.handover and
         self.api.EEex_GameState_GetGlobalInt(endpoint.handover.event_global)==1 then return endpoint.paid end
     if not endpoint or endpoint.kind~='group' then return endpoint end
