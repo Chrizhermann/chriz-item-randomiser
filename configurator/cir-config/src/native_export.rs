@@ -1287,6 +1287,38 @@ impl<'a> Compiler<'a> {
                             endpoint.insert("route_target", route);
                         }
                         self.targets.insert(identity, endpoint);
+                    } else if spec.get("holder").is_some_and(Value::truthy) {
+                        // The Sahuagin king's place: his reward reply pays it;
+                        // until then it waits for his death, at his corpse.
+                        // Each king the area can have must carry the name the
+                        // runtime finds him by.
+                        let holder = entry(&spec, "holder")?;
+                        let area_resource = Value::from(format!("are:{}", text(holder, "area")?));
+                        self.use_value(&area_resource)?;
+                        let mut creatures = Vec::new();
+                        for resource in list(holder.at("creature_resources")?) {
+                            self.use_value(resource)?;
+                            let creature = resource.as_str().and_then(|resource| self.index.target(self.world, resource));
+                            let ok = match creature {
+                                Some(creature) => {
+                                    lower(text(creature.at("selector")?, "script_name")?) == text(holder, "script_name")?
+                                }
+                                None => false,
+                            };
+                            require(ok, || format!("Original reward recipient changed: {identity}"))?;
+                            creatures.push(creature.expect("checked above").clone());
+                        }
+                        let endpoint = crate::dict! {
+                            "kind" => "creature", "area" => area(&area_resource)?,
+                            "script_name" => script_name(Some(holder.at("script_name")?), identity)?, "corpse_only" => true,
+                            "handover" => crate::dict! {
+                                "event_global" => entry(&spec, "event_global")?.clone(),
+                                "recipient_local" => entry(&spec, "recipient_local")?.clone(),
+                            },
+                            "reward_resource" => entry(&spec, "resource")?.clone(),
+                            "identity" => identity_of(crate::dict! {"target" => selected.clone(), "creatures" => Value::List(creatures)})?,
+                        };
+                        self.targets.insert(identity, endpoint);
                     } else if entry(&spec, "recipient_local")?.is_null() {
                         let recipient = entry(&spec, "recipient")?.as_str().unwrap_or("");
                         self.readable(recipient.split('/').next().unwrap_or(""))?;

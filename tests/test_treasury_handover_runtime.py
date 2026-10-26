@@ -4,7 +4,9 @@ Item Randomiser's sahtreas.fl: the new item of place 6 lies in the treasury,
 and the king's reward reply gives it. CIR leaves the reward in the treasury
 until the reply's condition hands it to the payee (FLPRNat
 hand_over_container_reward, M_FLPR FLPR_Handover); a reward not placed yet
-follows the payment to the payee. Fake engine of test_campaign_native_creature.
+follows the payment to the payee. The king's own place (tadpoles1.fl, row 58)
+receives only at his corpse until that payment. Fake engine of
+test_campaign_native_creature.
 """
 from pathlib import Path
 import unittest
@@ -351,10 +353,141 @@ function cases.an_unproven_mark_creation_or_removal_stops_the_campaign(N,Core)
     end
 end
 
+-- The king's own place (Item Randomiser's tadpoles1.fl, row 58): the king
+-- is FLPRC1 of ground_world, alive, before a party member he may pay.
+local KING={kind='creature',area='BG2600',script_name='FLPRC1',corpse_only=true,
+    handover={event_global='FLPR_EM2_57',recipient_local='FLPR_RM2_57'},identity=string.rep('c',64)}
+local function king_world(N)
+    local f=ground_world(N)
+    f.creature.alive=true
+    f.globals={}
+    f.payee=f.sprite(206,'IMOEN2',{});f.payee.m_id=6;f.payee.portrait=0;f.payee.locals={}
+    f.objects[6],f.ids[f.payee]=f.payee,6
+    f.party={[0]=f.payee}
+    f.api.EEex_Sprite_GetInPortrait=function(index) return f.party[index] end
+    f.api.EEex_Sprite_GetLocalInt=function(sprite,key) return sprite.locals and sprite.locals[key] or 0 end
+    f.api.EEex_GameState_GetGlobalInt=function(key) return f.globals[key] or 0 end
+    f.api.EEex_Object_EvalStringAsAIBase=function() error('NO_REPLY_HERE') end
+    local drop,update=f.api.EEex_Action_ExecuteResponseStringOnAIBaseInstantly,f.update
+    f.api.EEex_Action_ExecuteResponseStringOnAIBaseInstantly=function(action,o)
+        local ref=action:match('^GiveItemCreate%("([^"]+)",Myself,0,0,0%)$')
+        if not ref then return drop(action,o) end
+        f.calls[#f.calls+1]=action
+        f.queue[#f.queue+1]=f.message(f.ids[o],ref:upper())
+    end
+    -- A creature item message lands in the first empty backpack slot.
+    function f.update()
+        for _,message in ipairs(f.queue) do
+            local target=f.objects[message.m_targetId]
+            if message.virtual_GetMsgSubType()==2 and target and target.sprite then
+                for slot=18,33 do
+                    if not target.slots[slot] then
+                        f.next_address=f.next_address+1
+                        target.slots[slot]=f.item(message.m_item.cResRef:get(),f.next_address,message.m_item.m_flags)
+                        break
+                    end
+                end
+            end
+        end
+        update()
+    end
+    f.fixture.targets[f.target_id]=clone(KING)
+    f.adapter=N.new(f.api,f.fixture)
+    return f
+end
+
+function cases.the_kings_place_waits_while_he_lives(N,Core,Host)
+    local f=king_world(N)
+    for _,source_id in ipairs({f.source_ids[1],false}) do
+        local x,e=f.adapter:inspect_target(f.target_id,source_id or nil,1);fail(x,e,'TARGET_ALIVE')
+    end
+    assert(#f.calls==0 and #f.queue==0 and next(f.adapter.reservations)==nil)
+    -- Gone (SAHKNG01.BCS destroys him when the prince's job begins), or the
+    -- party elsewhere: it waits for the king who comes, as the host does.
+    f.area.m_lVertSort={1,2}
+    local x,e=f.adapter:inspect_target(f.target_id,f.source_ids[1],1);fail(x,e,'OWNER_MISSING')
+    f.area.m_lVertSort={1,2,3};f.area.m_resref={get=function() return 'BG0100' end}
+    x,e=f.adapter:inspect_target(f.target_id,f.source_ids[1],1);fail(x,e,'AREA_UNAVAILABLE')
+    assert(#f.calls==0 and Host.DEFERRABLE.TARGET_ALIVE==true)
+end
+
+function cases.the_kings_place_lies_at_his_corpse_once_he_is_dead(N)
+    local f=king_world(N);local a=f.adapter
+    f.creature.alive=false
+    local command=ground_start(f,1)
+    assert(#f.calls==2 and f.calls[1]=='CreateItem("flpri1",0,0,0)' and f.calls[2]=='DropItem("flpri1",[-1.-1])')
+    f.boundary();local x,e=a:observe(command);fail(x,e,'DELIVERY_SETTLING')
+    f.update();f.boundary();x,e=a:observe(command);fail(x,e,'DELIVERY_SETTLING')
+    x,e=a:observe(command);fail(x,e,'DELIVERY_SETTLING')
+    f.boundary();local receipt=assert(a:observe(command))
+    assert(receipt.holder=='ground' and #f.payee.slots==0)
+    corpse_as_before(f)
+    -- His corpse beside a living king of the same name: no guess.
+    f=king_world(N);f.creature.alive=false
+    f.objects[7]=f.sprite(207,'FLPRC1',{});f.area.m_lVertSort={1,2,3,7}
+    x,e=f.adapter:inspect_target(f.target_id,f.source_ids[1],1);fail(x,e,'OWNER_AMBIGUOUS')
+    assert(#f.calls==0)
+end
+
+function cases.the_kings_place_goes_to_the_one_he_pays(N)
+    -- His reward reply marks the payee and sets its event: wherever the
+    -- party is then, and though the king may die afterwards.
+    for _,dead in ipairs({false,true}) do
+        local f=king_world(N);local a=f.adapter
+        f.payee.locals.FLPR_RM2_57=1;f.globals.FLPR_EM2_57=1
+        f.creature.alive=not dead;f.area.m_resref={get=function() return 'AR2400' end}
+        local witness=assert(a:inspect_target(f.target_id,f.source_ids[1],1))
+        assert(witness.ground==nil and a.reservations[string.rep('c',64)].owner.id==6)
+        f.boundary()
+        local command=f.command(1)
+        assert(a:execute(command))
+        assert(f.calls[#f.calls]=='GiveItemCreate("flpri1",Myself,0,0,0)' and f.queue[#f.queue].m_targetId==6)
+        f.update();f.boundary()
+        local receipt,reason=a:observe(command);fail(receipt,reason,'DELIVERY_SETTLING')
+        f.boundary();receipt=assert(a:observe(command))
+        assert(receipt.holder=='party' and receipt.slot==18 and f.payee.slots[18].cResRef:get()=='FLPRI1')
+        corpse_as_before(f)
+    end
+    -- Not marked yet: the reward waits; two marked: no guess.
+    local f=king_world(N);f.globals.FLPR_EM2_57=1
+    local x,e=f.adapter:inspect_target(f.target_id,f.source_ids[1],1);fail(x,e,'OWNER_MISSING')
+    f.payee.locals.FLPR_RM2_57=1;f.creature.locals={FLPR_RM2_57=1}
+    x,e=f.adapter:inspect_target(f.target_id,f.source_ids[1],1);fail(x,e,'OWNER_AMBIGUOUS')
+    assert(#f.calls==0)
+end
+
+function cases.the_kings_place_configuration_is_strict(N,Core)
+    local f=king_world(N)
+    local function refused(change,want)
+        local fixture=clone(f.fixture);change(fixture.targets[f.target_id],fixture)
+        local ok,err=pcall(N.new,f.api,fixture,17)
+        assert(not ok and tostring(err):find(want,1,true),tostring(err))
+    end
+    refused(function(t) t.corpse_only=false end,'NATIVE_CORPSE_ONLY_INVALID')
+    refused(function(t) t.corpse_only='yes' end,'NATIVE_CORPSE_ONLY_INVALID')
+    refused(function(t) t.handover=nil end,'NATIVE_CORPSE_ONLY_INVALID')
+    refused(function(t) t.inventory_reward=true end,'NATIVE_CORPSE_ONLY_INVALID')
+    -- Only one creature by its name: no quest's payee, no group member.
+    refused(function(t)
+        t.kind,t.area,t.script_name='quest','*',nil
+        t.adapter_id,t.event_global,t.recipient_local='mode2-reward-v1','FLPR_EM2_58','FLPR_RM2_58'
+    end,'NATIVE_CORPSE_ONLY_INVALID')
+    refused(function(t)
+        t.kind,t.script_name,t.eligible='group',nil,{}
+        t.members={{resref='FLPRC1',script_name='FLPRC1'}}
+    end,'NATIVE_CORPSE_ONLY_INVALID')
+    refused(function(t) t.handover.recipient_local='FLPR_RM2_58' end,'NATIVE_HANDOVER_INVALID')
+    refused(function(_,fixture) fixture.sources[f.source_ids[1]].corpse_only=true end,'NATIVE_CORPSE_ONLY_INVALID')
+    -- Only the treasury's place hands rewards over at the reply.
+    local ok,err=pcall(f.adapter.hand_over_container_reward,f.adapter,f.creature,f.target_id,{},Core.PHASE)
+    assert(not ok and tostring(err):find('NATIVE_HANDOVER_INVALID',1,true) and #f.calls==0)
+end
+
 -- The real host and core: the reward goes into the treasury, then the king
 -- pays while it is still being observed, or with the treasury out of reach.
-local function treasury_host(N,Core,Host)
+local function treasury_host(N,Core,Host,endpoint)
     local f=treasury_world(N,Core)
+    if endpoint then f.fixture.targets[f.target_id]=endpoint end
     f.treasury.m_lstItems={f.item('MISCBI',401,0)}
     f.fixture.sources[f.source_ids[2]]=nil
     f.fixture.sources[f.source_ids[1]].area='AR2300'
@@ -438,6 +571,19 @@ function cases.a_complete_host_steps_on_while_a_handover_is_owed(N,Core,Host)
     assert(f.host.status=='complete' and f.host:inspect().native.owed_handovers==nil)
     retries=f.retries;f.poll();assert(f.retries==retries)
 end
+
+-- The king's own place on the real host: the campaign runs on while he
+-- lives, and his payment brings the reward to the payee.
+function cases.the_host_waits_for_the_king_until_he_pays(N,Core,Host)
+    local king=clone(KING);king.area,king.script_name='AR2300','SAHKNG01'
+    local f=treasury_host(N,Core,Host,king)
+    for _=1,12 do f.poll() end
+    assert(f.host.status~='complete' and f.host.deferred[1].reason=='TARGET_ALIVE' and #f:given()==0)
+    f.payee.locals.FLPR_RM2_57=1;f.globals.FLPR_EM2_57=1
+    for _=1,Host.DEFER_TICKS+12 do f.poll();f.update() end
+    assert(f.host.status=='complete' and f.host.controller:assignments()[1].delivery_phase==Core.PHASE.confirmed)
+    assert(f.payee.slots[18].cResRef:get()=='FLPRI1' and f.member.slots[18]==nil and #f.treasury.m_lstItems==1)
+end
 '''
 
 CASE_NAMES = (
@@ -450,8 +596,13 @@ CASE_NAMES = (
     "a_presets_row_stands_for_the_treasurys_place",
     "handover_configuration_is_strict",
     "an_unproven_mark_creation_or_removal_stops_the_campaign",
+    "the_kings_place_waits_while_he_lives",
+    "the_kings_place_lies_at_his_corpse_once_he_is_dead",
+    "the_kings_place_goes_to_the_one_he_pays",
+    "the_kings_place_configuration_is_strict",
     "the_host_hands_over_what_the_reply_owed",
     "a_complete_host_steps_on_while_a_handover_is_owed",
+    "the_host_waits_for_the_king_until_he_pays",
 )
 
 CALLBACK = r'''

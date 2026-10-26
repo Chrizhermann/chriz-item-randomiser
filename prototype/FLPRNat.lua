@@ -262,10 +262,19 @@ function Native.new(api, fixture, seed, reward_payload)
             -- The Sahuagin treasury's place (Item Randomiser's sahtreas.fl): the
             -- king's reward reply hands its rewards to the payee
             -- (hand_over_container_reward); after that reply a reward not
-            -- placed yet goes to the payee instead (Adapter:_target).
+            -- placed yet goes to the payee instead (Adapter:_target). The
+            -- king's own place (tadpoles1.fl) waits for him the same way, but
+            -- as a creature that receives only at his corpse (corpse_only): a
+            -- living king may still pay, or destroy himself on the prince's side.
+            if endpoint.corpse_only ~= nil then
+                assert(kind=='targets' and endpoint.kind=='creature' and copy.quest_event==nil and
+                    endpoint.corpse_only==true and endpoint.handover~=nil and copy.inventory_reward==nil,
+                    'NATIVE_CORPSE_ONLY_INVALID')
+                copy.corpse_only=true
+            end
             if endpoint.handover ~= nil then
                 local handover=endpoint.handover
-                assert(kind=='targets' and copy.kind=='container' and type(handover)=='table' and
+                assert(kind=='targets' and (copy.kind=='container' or copy.corpse_only) and type(handover)=='table' and
                     type(handover.event_global)=='string' and #handover.event_global<=32 and
                     handover.event_global:match('^FLPR_E[A-Z0-9_]+$') and
                     type(handover.recipient_local)=='string' and
@@ -772,7 +781,7 @@ function Adapter:hand_over_container_reward(speaker, target_id, assignments, pha
     target_id=self.route_targets[target_id] or target_id
     local endpoint=self.targets[target_id]
     if not endpoint then return 0 end -- Place excluded from this campaign.
-    assert(endpoint.handover,'NATIVE_HANDOVER_INVALID')
+    assert(endpoint.handover and endpoint.kind=='container','NATIVE_HANDOVER_INVALID')
     local api,mark=self.api,endpoint.handover.recipient_local
     local talked=api.EEex_Object_EvalStringAsAIBase('LastTalkedToBy',speaker)
     local payee=talked and api.EEex_GameObject_CastUserType(talked)
@@ -896,7 +905,8 @@ end
 
 function Adapter:_target(id, source_id, unit)
     local endpoint=self.targets[id]
-    -- The party leaves the Sahuagin treasury behind once the king has paid.
+    -- Once the Sahuagin king has paid, the rewards of his treasury and his own
+    -- place go to his payee: the party leaves the treasury and him behind.
     if endpoint and endpoint.handover and
         self.api.EEex_GameState_GetGlobalInt(endpoint.handover.event_global)==1 then return endpoint.paid end
     if not endpoint or endpoint.kind~='group' then return endpoint end
@@ -978,6 +988,8 @@ function Adapter:inspect_target(id, source_id, unit)
         end
         return nil, reason
     end
+    -- A place that receives only at its creature's corpse waits while it lives.
+    if endpoint.corpse_only then return nil, "TARGET_ALIVE" end
     local items = self:_items(owner, endpoint.sprite)
     if source then
         local supported, stack_limit

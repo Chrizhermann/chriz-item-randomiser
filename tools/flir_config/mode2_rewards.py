@@ -195,6 +195,16 @@ REWARDS["sahrod"].update(source_ids=(), authored_source_ids=("original-source:bg
 DESTROY_GATES = {"bcs:sahtreas": ("sahkng01", "sahrod")}
 for _key in DESTROY_GATES["bcs:sahtreas"]:
     REWARDS[_key]["resources"] = ("dlg:sahkng01", "bcs:sahtreas")
+# The king's own place (row 58, Item Randomiser's tadpoles1.fl) is his reward
+# reply, which hands its reward to the one he pays. Item Randomiser also gives
+# the item to SAHKNG01.CRE and SAHKNG02.CRE, the king who takes the throne on
+# the prince's side, where that reply never comes: there the party kills the
+# king for the prince. So until the reply pays, the place's reward waits for
+# the king's death and then lies at his corpse (holder): whichever king the
+# area has, both named sahkng01. A living king may still pay, or he destroys
+# himself when the prince's job begins (SAHKNG01.BCS) and the other one comes.
+REWARDS["sahkng01"]["holder"] = {"area": "ar2300", "script_name": "sahkng01",
+                                 "creature_resources": ("cre:sahkng01", "cre:sahkng02")}
 # The two scrolls that the book of Lavok's sphere (PPBOOK.BCS, AR1513) gives
 # with its ring on the last page (Item Randomiser's rows 260 and 262). The
 # book's places are the ring's quest (the installer splits that page for the
@@ -322,6 +332,11 @@ def _in_game(spec: dict, game: str | None, names: EetNames | None) -> dict:
         placement["creature_resource"] = "cre:" + name(placement["creature_resource"][4:], "cre")
     if spec.get("handover"):
         spec["handover"]["area"] = name(spec["handover"]["area"], "are")
+    holder = spec.get("holder")
+    if holder:
+        holder["area"] = name(holder["area"], "are")
+        holder["creature_resources"] = tuple("cre:" + name(resource[4:], "cre")
+                                             for resource in holder["creature_resources"])
     return spec
 
 
