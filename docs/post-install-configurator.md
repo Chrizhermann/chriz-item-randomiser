@@ -264,7 +264,8 @@ CIR in that game when one of them changed. Apply then refuses and names the file
 but it changed in the game since then; …"); install mods that change such files
 before the first Apply. A newer version of CIR may patch a reward dialogue with
 more routes than an earlier revision was exported with (CIR 1.0.3 adds Adalon's
-place to UDSILVER.DLG, which CIR 1.0.2 patched for her crossbow alone). Where the
+place to UDSILVER.DLG, which CIR 1.0.2 patched for her crossbow alone, and marks the
+crossbow's recipient at once there). Where the
 newer patch is CIR's own patch of the same dialogue, carries every route the
 earlier one does, and each route it adds leaves that revision's saves alone, its
 saves read the newer one: the added route's flags are its own, which no endpoint
@@ -708,13 +709,26 @@ member's interjection, takes them too ("... also takes MISC9T, which ends the jo
 UDSILVER.DLG's speaker, but there it would not hand over the reward it carries"). The
 egg deal's own route stays as it is either way.
 
-CIR 1.0.2 patched UDSILVER.DLG for the egg deal only. A patch of an earlier version
-with some of a dialogue's routes of today is still CIR's own: the scans and the check
-read the dialogue from it as it was, and Apply patches it again with every route. A
-changed copy of it is left out as any other. A revision exported with CIR 1.0.2 keeps
-her place as a plain creature, and her reply hands that reward over too: its saves
-read the dialogue Apply patches now, which supersedes the one they were exported
-with (`superseded.lua`, above).
+The egg deal's place (row 66 of the extended tables) gets its reward like any quest
+reward: her reply marks the party member it gives the crossbow to, and the reward
+goes to the one with that mark. Her conversation ends by clearing every queued action
+of the party (UDSILVER.DLG state 46), and with them the mark her reply queued, so in
+CIR 1.0.2 that reward never arrived. Her reply now also marks the one she talks to
+when the game shows it, as the only one with that mark (a condition of both variants
+of that reply, `FLPR_Mark`, which is always true, like the treasury's
+`FLPR_Handover`). Her reply gives the crossbow to that one (`LastTalkedToBy`, in any
+letter case and spacing); where it gives it to another, the egg deal's route is left
+out with its reason ("UDSILVER.DLG state 41 gives XBOW10 to another than the one the
+speaker talks to, whom the route cannot mark at once").
+
+CIR 1.0.2 patched UDSILVER.DLG for the egg deal only, without that mark. A patch of an
+earlier version with some of a dialogue's routes of today, or without the mark, is
+still CIR's own: the scans and the check read the dialogue from it as it was, and
+Apply patches it again with every route. A changed copy of it is left out as any
+other. A revision exported with CIR 1.0.2 keeps her place as a plain creature, and
+her reply hands that reward over too: its saves read the dialogue Apply patches now,
+which supersedes the one they were exported with (`superseded.lua`, above), so the
+egg deal's reward reaches them as well where the deal is still to come.
 
 The book of Lavok's sphere (`PPBOOK.BCS`, AR1513) gives two scrolls with the ring on
 its last page (rows 260 and 262 of the extended tables, beside the ring's row 109).

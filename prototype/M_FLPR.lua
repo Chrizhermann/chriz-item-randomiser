@@ -478,6 +478,25 @@ local ok, failure = pcall(function()
         end
         return true
     end
+    -- Adalon's reward reply marks its recipient (<mark>, the LOCALS of its
+    -- place) in its condition (EEex_LuaTrigger), at once: the end of her talk
+    -- clears every queued action of the party, the reply's own mark among
+    -- them. It must be true whatever happens here, so that she can take the
+    -- eggs. A failure stops the campaign instead.
+    function FLPR_Mark(speaker, mark)
+        local success,failure=pcall(function()
+            if storage:get(Core.G.state)==0 then return end -- Existing non-randomized campaign.
+            local host=root.Host
+            if root.Disabled or not host or not host.native or host.status=='disabled' then return end
+            local reason=host.native:mark_recipient(speaker,mark)
+            if reason then record('mark',reason) end
+        end)
+        if not success then
+            root.Disabled='CAMPAIGN_MARK_FAILED:'..tostring(failure)
+            if root.Host then pcall(root.Host._disable,root.Host,root.Disabled) end
+        end
+        return true
+    end
     root.Disabled = nil
 end)
 if not ok then

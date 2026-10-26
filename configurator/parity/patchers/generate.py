@@ -494,17 +494,17 @@ def reward_checks(s: Scenario, label: str, resource: str, data: bytes, naming=No
 
 
 def patch_dialogue_case(s: Scenario, label: str, data: bytes, specs, action_refs=None, defer_departure=True,
-                        numeric_target=True) -> None:
+                        numeric_target=True, instant_marks=True) -> None:
     """_patch_dialogue's result and the reasons of the routes it left out."""
     def run():
         reasons = {}
         result = mode2_rewards._patch_dialogue(data, tuple(specs), action_refs=action_refs,
                                                defer_departure=defer_departure, numeric_target=numeric_target,
-                                               reasons=reasons)
+                                               reasons=reasons, instant_marks=instant_marks)
         return result, reasons
     s.case(f"patch_dialogue {label}", "mode2_rewards._patch_dialogue",
            {"data": data, "specs": list(specs), "action_refs": action_refs, "defer_departure": defer_departure,
-            "numeric_target": numeric_target}, run)
+            "numeric_target": numeric_target, "instant_marks": instant_marks}, run)
 
 
 def text_original_case(s: Scenario, label: str, resource: str, data: bytes, naming=None) -> None:
@@ -635,7 +635,8 @@ def prince_cases(s: Scenario) -> None:
 
 
 def adalon_cases(s: Scenario) -> None:
-    """test_adalon_hands_over_what_she_carries_when_she_takes_her_eggs and
+    """test_adalon_hands_over_what_she_carries_when_she_takes_her_eggs,
+    test_adalons_reward_reply_marks_the_one_she_talks_to_at_once and
     test_an_earlier_versions_patch_of_adalons_dialogue_is_made_again_with_her_route."""
     specs = mode2_rewards.resource_specs("dlg:udsilver")
     transfer = mode2_tests.ADALON_TRANSFER
@@ -650,6 +651,7 @@ def adalon_cases(s: Scenario) -> None:
             patch_dialogue_case(s, f"udsilver {layout} departure {departure}", original, specs,
                                 defer_departure=departure)
         patch_dialogue_case(s, f"udsilver {layout} string target", original, specs, numeric_target=False)
+        patch_dialogue_case(s, f"udsilver {layout} without marks", original, specs, instant_marks=False)
         after = quest_options._Dialogue(result, "udsilver")
         job = struct.unpack_from("<I", mode2_tests.outgoing(after, 2)[0], 16)[0]
         other = struct.unpack_from("<I", mode2_tests.outgoing(after, 0)[0], 16)[0]
@@ -665,16 +667,45 @@ def adalon_cases(s: Scenario) -> None:
             for index, changed in changes.items():
                 tampered_dialogue.actions[index] = changed
             reward_checks(s, f"udsilver {layout} {label}", "dlg:udsilver", tampered_dialogue.render())
-    # An earlier version's patch, with one of her two routes: patched again
-    # from the original; a changed copy of it is not ours.
-    # Apply's patch now supersedes it, never the other way round.
+    # Her reward reply marks the one she talks to at once: the condition for
+    # her mark and another, a recipient in any letter case and spacing or
+    # another one, and changed copies of the mark.
+    crossbow = specs[0]
+    for label, spec in (("udsilver", crossbow), ("other", dict(crossbow, recipient_local="FLPR_RA_OTHER"))):
+        s.case(f"instant_mark {label}", "mode2_rewards._instant_mark", {"spec": spec},
+               lambda spec=spec: mode2_rewards._instant_mark(spec))
+    for recipient in ("lasttalkedtoby", "LastTalkedToBy(Myself)", "LastTalkedToBy( Myself )", "LastTalkedToBy",
+                      "Player1", "[PC]", "LastSummonerOf(Myself)", "LastTalkedToBy(Player1)"):
+        variant = [list(replies) for replies in mode2_tests.ADALON_STATES]
+        variant[1] = [("", f'TakePartyItem("misc9t")\nGiveItemCreate("xbow10",{recipient},1,1,1)', 2)]
+        data = mode2_tests.layout_dialogue("udsilver", variant)
+        reward_checks(s, f"udsilver recipient {recipient}", "dlg:udsilver", data)
+        result = patched(s, f"udsilver recipient {recipient}", "dlg:udsilver", data)
+        reward_checks(s, f"udsilver recipient {recipient} result", "dlg:udsilver", result)
+        patch_dialogue_case(s, f"udsilver recipient {recipient}", data, specs[:1])
+    line = mode2_tests.mark_line(crossbow)
+    result = mode2_rewards.patch_reward("dlg:udsilver",
+                                        mode2_tests.layout_dialogue("udsilver", mode2_tests.ADALON_STATES))
+    first = struct.unpack_from("<I", mode2_tests.outgoing(quest_options._Dialogue(result, "udsilver"), 1)[0], 12)[0]
+    for label, change in (("another mark", lambda text: text.replace(b"[[FLPR_RA_EGGDEALIO]]", b"[[FLPR_RA_OTHER]]")),
+                          ("before the guard", lambda text: line + text[:-len(line)]),
+                          ("twice", lambda text: text + line), ("gone from one variant", lambda text: text[:-len(line)])):
+        dialogue = quest_options._Dialogue(result, "udsilver")
+        dialogue.triggers[first] = change(dialogue.triggers[first])
+        reward_checks(s, f"udsilver mark {label}", "dlg:udsilver", dialogue.render())
+        superseding_case(s, f"udsilver mark {label}", "dlg:udsilver", result, dialogue.render())
+    # An earlier version's patch, with one of her two routes, or both before
+    # replies marked at once (CIR 1.0.2's has her crossbow's route alone and
+    # no mark): patched again from the original; a changed copy of it is not
+    # ours. Apply's patch now supersedes it, never the other way round.
     for name, original in (("fixture", fixture),
                            ("beamdog", mode2_tests.layout_dialogue("udsilver", mode2_tests.ADALON_STATES)),
                            ("weidu", mode2_tests.layout_dialogue("udsilver", mode2_tests.ADALON_STATES,
                                                                  beamdog=False))):
         now = mode2_rewards.patch_reward("dlg:udsilver", original)
-        for label, routes in (("crossbow", specs[:1]), ("place", specs[1:])):
-            earlier = mode2_rewards._patch_dialogue(original, routes)
+        for label, routes, marks in (("crossbow", specs[:1], True), ("place", specs[1:], True),
+                                     ("crossbow unmarked", specs[:1], False), ("both unmarked", specs, False)):
+            earlier = mode2_rewards._patch_dialogue(original, routes, instant_marks=marks)
             again = mode2_rewards.patch_reward("dlg:udsilver", earlier)
             reward_checks(s, f"udsilver {name} earlier {label}", "dlg:udsilver", earlier)
             reward_checks(s, f"udsilver {name} earlier {label} again", "dlg:udsilver", again)
@@ -682,10 +713,11 @@ def adalon_cases(s: Scenario) -> None:
                 superseding_case(s, f"udsilver {name} {label} {newer_label}", "dlg:udsilver", newer, earlier)
                 superseding_case(s, f"udsilver {name} {label} {newer_label} reversed", "dlg:udsilver", earlier, newer)
         superseding_case(s, f"udsilver {name} same", "dlg:udsilver", now, now)
-        earlier = mode2_rewards._patch_dialogue(original, specs[:1])
-        tampered = earlier.replace(b'"FLPR_EA_EGGDEALIO","GLOBAL",1)', b'"FLPR_EA_EGGDEALIO","GLOBAL",2)', 1)
-        reward_checks(s, f"udsilver {name} earlier tampered", "dlg:udsilver", tampered)
-        superseding_case(s, f"udsilver {name} tampered", "dlg:udsilver", now, tampered)
+        for marks in (True, False):
+            earlier = mode2_rewards._patch_dialogue(original, specs[:1], instant_marks=marks)
+            tampered = earlier.replace(b'"FLPR_EA_EGGDEALIO","GLOBAL",1)', b'"FLPR_EA_EGGDEALIO","GLOBAL",2)', 1)
+            reward_checks(s, f"udsilver {name} earlier tampered {marks}", "dlg:udsilver", tampered)
+            superseding_case(s, f"udsilver {name} tampered {marks}", "dlg:udsilver", now, tampered)
         superseding_case(s, f"udsilver {name} unpatched", "dlg:udsilver", now, original)
     # Nor does the patch of a dialogue that another mod changed since; a
     # script's, a text route's or a destroy gate's patch carries every route.

@@ -15,8 +15,9 @@ use cir_config::game_names::{EetNames, Tables};
 use cir_config::game_text::GameText;
 use cir_config::json::{Dict, Value};
 use cir_config::mode2_rewards::{
-    destroy_gate, direct_rewards, game_text_refs, gives_reward, handover, journal_lua, journal_refs, own_patch,
-    patch_dialogue, patch_reward, physical_source_reward, prepare_ddwell_text, prepare_reward_texts, resource_rewards,
+    destroy_gate, direct_rewards, game_text_refs, gives_reward, handover, instant_mark, journal_lua, journal_refs, own_patch,
+    patch_dialogue, patch_dialogue_in, patch_reward, physical_source_reward, prepare_ddwell_text, prepare_reward_texts,
+    resource_rewards,
     resource_specs, rewards, route_reasons, script_original, source_rewards, source_spec, superseding_routes,
     target_rewards, target_spec, text_lines, text_original, text_refs, titled, transfer_spec, transfer_specs,
     unpatched_script, Naming, TextRefs,
@@ -30,7 +31,8 @@ use common::builders::{contains, count, index, make_tlk, outgoing, replace, sha,
 use common::mode2::{
     action, action_with, alternatives, block, book_block, book_fixture, book_gifts, branches, check_dialogue, check_eggs,
     check_job_end, check_pair, check_text_graph, dialogue_fixture, handover_line, has_ring, king_destroys, king_paid,
-    layout_dialogue, logical, no_action, obj, ring_destroyed, ring_gone, route_guard, script_fixture, specs, target_number,
+    layout_dialogue, logical, mark_line, no_action, obj, ring_destroyed, ring_gone, route_guard, script_fixture, specs,
+    target_number,
     text, text_variant, tolgerias_fixture, treasury_fixture, trigger, well_reward, with_actions, LayoutReply,
     ADALON_TRANSFER, PRINCE_TRANSFER, PRINCE_TRANSFER_59, PRINCE_TRANSFER_60, TRGENI_DEPARTURE,
 };
@@ -1120,17 +1122,115 @@ fn adalon_hands_over_what_she_carries_when_she_takes_her_eggs() {
 }
 
 #[test]
+fn adalons_reward_reply_marks_the_one_she_talks_to_at_once() {
+    // Her talk ends by clearing every queued action of the party (state 46
+    // of UDSILVER.DLG), the mark her reward reply queues for its recipient
+    // among them, so the reward of her place (row 66) never found whom to go
+    // to. Both variants of that reply also mark the one she talks to at once,
+    // in their condition; it is true whatever happens there. No other route
+    // needs that. The Lua half (the condition run on Lua VMs) stays with the
+    // reference.
+    let marking: Vec<String> = rewards()
+        .iter()
+        .filter(|(_, row)| row.as_dict().is_some_and(|row| row.get("instant_mark").is_some_and(Value::truthy)))
+        .map(|(key, _)| key.to_string())
+        .collect();
+    assert_eq!(marking, ["udsilver"]);
+    let spec = reward("udsilver");
+    assert_eq!(instant_mark(spec).unwrap(), mark_line(spec));
+    let line = mark_line(spec);
+    for beamdog in [true, false] {
+        let original = layout_dialogue("udsilver", &adalon_states(), beamdog);
+        let result = patch_reward("dlg:udsilver", &original, None, None, Naming::default()).unwrap();
+        let after = Dialogue::new(&result, "udsilver").unwrap();
+        let mut marked = Vec::new();
+        for index in 0..after.states.len() {
+            for (ordinal, row) in outgoing(&after, index).iter().enumerate() {
+                if u32_at(row, 0) & 2 != 0 && contains(&after.triggers[u32_at(row, 12) as usize], b"FLPR_Mark") {
+                    marked.push((index, ordinal));
+                }
+            }
+        }
+        assert_eq!(marked, [(1, 0), (1, 1)], "{beamdog}");
+        for row in outgoing(&after, 1).iter() {
+            let trigger = &after.triggers[u32_at(row, 12) as usize];
+            assert!(trigger.ends_with(&line));
+            assert_eq!(count(trigger, &line), 1);
+            assert!(contains(trigger, &[b"Global(\"FLPR_QM2_44\",\"GLOBAL\",1)\r\n" as &[u8], &line].concat()));
+        }
+    }
+    // The condition as the dialogue parser leaves it: it strips spaces and
+    // colons, and the chunk has none.
+    let chunk: &[u8] = b"return(FLPR_Mark==nil)or(FLPR_Mark(EEex_LuaTrigger_Object,[[FLPR_RA_EGGDEALIO]]))";
+    assert_eq!(line, [b"EEex_LuaTrigger(\"" as &[u8], chunk, b"\")\r\n"].concat());
+    assert!(!chunk.contains(&b' ') && !chunk.contains(&b':'));
+    // The one she talks to, in any letter case and spacing; a reply that
+    // gives the crossbow to another cannot be marked so, and her crossbow's
+    // route leaves the dialogue alone with its reason.
+    let refused = "UDSILVER.DLG state 1 gives XBOW10 to another than the one the speaker talks to, \
+                   whom the route cannot mark at once";
+    for (recipient, reason) in [
+        ("lasttalkedtoby", None),
+        ("LastTalkedToBy(Myself)", None),
+        ("LastTalkedToBy( Myself )", None),
+        ("Player1", Some(refused)),
+        ("[PC]", Some(refused)),
+        ("LastSummonerOf(Myself)", Some(refused)),
+    ] {
+        let actions = format!("TakePartyItem(\"misc9t\")\nGiveItemCreate(\"xbow10\",{recipient},1,1,1)");
+        let mut variant: Vec<Vec<LayoutReply<'_>>> = adalon_states();
+        variant[1] = vec![("", actions.as_str(), Some(2))];
+        let data = layout_dialogue("udsilver", &variant, true);
+        let expected = reason.map_or_else(BTreeMap::new, |reason| named(&[("udsilver", reason)]));
+        assert_eq!(reasons("dlg:udsilver", &data), expected, "{recipient}");
+        let result = patch_reward("dlg:udsilver", &data, None, None, Naming::default()).unwrap();
+        assert_eq!(count(&result, &line), if reason.is_some() { 0 } else { 2 }, "{recipient}");
+        assert_eq!(contains(&result, b"FLPR_QM2_44"), reason.is_none(), "{recipient}");
+        assert!(contains(&result, b"FLPR_Transfer"), "{recipient}");
+        assert_eq!(patch_reward("dlg:udsilver", &result, None, None, Naming::default()).unwrap(), result);
+    }
+    // Changed copies of the patch: another mark, the mark before the guard,
+    // twice, or gone from one variant.
+    let result =
+        patch_reward("dlg:udsilver", &layout_dialogue("udsilver", &adalon_states(), true), None, None, Naming::default())
+            .unwrap();
+    let after = Dialogue::new(&result, "udsilver").unwrap();
+    let first = u32_at(&outgoing(&after, 1)[0], 12) as usize;
+    let marked = after.triggers[first].clone();
+    let guard = marked[..marked.len() - line.len()].to_vec();
+    for (label, changed) in [
+        ("another mark", replace(&marked, b"[[FLPR_RA_EGGDEALIO]]", b"[[FLPR_RA_OTHER]]", None)),
+        ("before the guard", [line.as_slice(), &guard].concat()),
+        ("twice", [marked.as_slice(), &line].concat()),
+        ("gone from one variant", guard.clone()),
+    ] {
+        let mut tampered = Dialogue::new(&result, "udsilver").unwrap();
+        tampered.triggers[first] = changed;
+        let tampered = tampered.render();
+        assert_profile(
+            patch_reward("dlg:udsilver", &tampered, None, None, Naming::default()).unwrap_err(),
+            "carries a changed copy of the reward route's own patch",
+        );
+        assert!(superseding_routes("dlg:udsilver", &result, &tampered, Naming::default()).unwrap().is_none(), "{label}");
+        let found = reasons("dlg:udsilver", &tampered);
+        assert_eq!(found.keys().map(String::as_str).collect::<Vec<_>>(), ["adalon", "udsilver"], "{label}");
+        assert!(found["udsilver"].contains("changed copy"), "{label}");
+    }
+}
+
+#[test]
 fn an_earlier_versions_patch_of_adalons_dialogue_is_made_again_with_her_route() {
     // CIR 1.0.2 patched UDSILVER.DLG for her crossbow's route (row 44) only:
-    // her place had no route then. That patch is still ours, so the scan and
-    // Apply read her dialogue from it as it was, and Apply then patches it
-    // with both routes.
+    // her place had no route then, and no reply marked its recipient at once.
+    // A build before that mark patched it with both routes. Those patches are
+    // still ours, so the scan and Apply read her dialogue from them as it
+    // was, and Apply then patches it with both routes.
     let all = specs("dlg:udsilver");
     let layouts = [true, false].map(|beamdog| layout_dialogue("udsilver", &adalon_states(), beamdog));
     for original in [dialogue_fixture(&all), layouts[0].clone(), layouts[1].clone()] {
         let now = patch_reward("dlg:udsilver", &original, None, None, Naming::default()).unwrap();
-        for routes in [&all[..1], &all[1..]] {
-            let earlier = patch_dialogue(&original, routes, &[], true, true, None).unwrap();
+        for (routes, marks) in [(&all[..1], false), (&all[..], false), (&all[..1], true), (&all[1..], true)] {
+            let earlier = patch_dialogue_in(&original, routes, &[], true, true, None, None, None, None, marks).unwrap();
             assert!(own_patch("dlg:udsilver", &earlier, Naming::default()).unwrap());
             assert!(reasons("dlg:udsilver", &earlier).is_empty());
             let again = patch_reward("dlg:udsilver", &earlier, None, None, Naming::default()).unwrap();
@@ -1138,14 +1238,17 @@ fn an_earlier_versions_patch_of_adalons_dialogue_is_made_again_with_her_route() 
             assert_eq!(logical(&again, "udsilver"), logical(&now, "udsilver"));
             assert_eq!(patch_reward("dlg:udsilver", &again, None, None, Naming::default()).unwrap(), again);
         }
-        // A changed copy of the earlier patch is not ours.
-        let earlier = patch_dialogue(&original, &all[..1], &[], true, true, None).unwrap();
-        let tampered = replace(&earlier, b"\"FLPR_EA_EGGDEALIO\",\"GLOBAL\",1)", b"\"FLPR_EA_EGGDEALIO\",\"GLOBAL\",2)", Some(1));
-        assert_ne!(tampered, earlier);
-        assert_profile(
-            patch_reward("dlg:udsilver", &tampered, None, None, Naming::default()).unwrap_err(),
-            "carries a changed copy of the reward route's own patch",
-        );
+        // A changed copy of an earlier patch is not ours.
+        for marks in [false, true] {
+            let earlier = patch_dialogue_in(&original, &all[..1], &[], true, true, None, None, None, None, marks).unwrap();
+            let tampered =
+                replace(&earlier, b"\"FLPR_EA_EGGDEALIO\",\"GLOBAL\",1)", b"\"FLPR_EA_EGGDEALIO\",\"GLOBAL\",2)", Some(1));
+            assert_ne!(tampered, earlier);
+            assert_profile(
+                patch_reward("dlg:udsilver", &tampered, None, None, Naming::default()).unwrap_err(),
+                "carries a changed copy of the reward route's own patch",
+            );
+        }
     }
     // Where her crossbow's route cannot be prepared, the patch of her place's
     // route alone is the current one.
@@ -1164,7 +1267,9 @@ fn an_earlier_versions_patch_of_adalons_dialogue_is_made_again_with_her_route() 
 fn a_newer_patch_of_adalons_dialogue_supersedes_the_earlier_one() {
     // Saves of a revision that CIR 1.0.2 exported with her crossbow's route
     // alone can read the dialogue that has her route too: each route of the
-    // earlier patch changes the same replies alike in the newer one.
+    // earlier patch changes the same replies in the newer one, which also
+    // marks the crossbow's recipient at once. So can saves of a build that
+    // patched both routes before that mark: the newer patch adds no route.
     let all = specs("dlg:udsilver");
     let crossbow = &all[..1];
     assert_eq!(text(&crossbow[0], "route"), "udsilver");
@@ -1175,19 +1280,26 @@ fn a_newer_patch_of_adalons_dialogue_supersedes_the_earlier_one() {
     };
     let layouts = [true, false].map(|beamdog| layout_dialogue("udsilver", &adalon_states(), beamdog));
     for original in [dialogue_fixture(&all), layouts[0].clone(), layouts[1].clone()] {
-        let earlier = patch_dialogue(&original, crossbow, &[], true, true, None).unwrap();
         let now = patch_reward("dlg:udsilver", &original, None, None, Naming::default()).unwrap();
-        for newer in [now.clone(), patch_reward("dlg:udsilver", &earlier, None, None, Naming::default()).unwrap()] {
-            assert_eq!(supersedes(&newer, &earlier), Some(vec!["adalon".to_string()]));
-            assert_eq!(supersedes(&newer, &newer), Some(Vec::new()));
-            // Never the other way round: the earlier patch is not Apply's
-            // now, and lacks her route.
-            assert_eq!(supersedes(&earlier, &newer), None);
+        let unmarked = |routes: &[Dict]| patch_dialogue_in(&original, routes, &[], true, true, None, None, None, None, false);
+        for (earlier, routes) in [
+            (unmarked(crossbow).unwrap(), vec!["adalon".to_string()]),
+            (patch_dialogue(&original, crossbow, &[], true, true, None).unwrap(), vec!["adalon".to_string()]),
+            (unmarked(&all).unwrap(), Vec::new()),
+        ] {
+            for newer in [now.clone(), patch_reward("dlg:udsilver", &earlier, None, None, Naming::default()).unwrap()] {
+                assert_eq!(supersedes(&newer, &earlier), Some(routes.clone()));
+                assert_eq!(supersedes(&newer, &newer), Some(Vec::new()));
+                // Never the other way round: the earlier patch is not Apply's
+                // now.
+                assert_eq!(supersedes(&earlier, &newer), None);
+            }
+            // A changed copy of the earlier patch is not ours.
+            let tampered =
+                replace(&earlier, b"\"FLPR_EA_EGGDEALIO\",\"GLOBAL\",1)", b"\"FLPR_EA_EGGDEALIO\",\"GLOBAL\",2)", Some(1));
+            assert_ne!(tampered, earlier);
+            assert_eq!(supersedes(&now, &tampered), None);
         }
-        // A changed copy of the earlier patch is not ours.
-        let tampered = replace(&earlier, b"\"FLPR_EA_EGGDEALIO\",\"GLOBAL\",1)", b"\"FLPR_EA_EGGDEALIO\",\"GLOBAL\",2)", Some(1));
-        assert_ne!(tampered, earlier);
-        assert_eq!(supersedes(&now, &tampered), None);
     }
     // Nor does the patch of a dialogue that another mod changed since.
     let mut changed = adalon_states();
@@ -1976,7 +2088,7 @@ const REVIEWED_EET: &[(&str, &str, &str)] = &[
     ("dlg:trhmer01", "e5651fc5ef72780fe2ce9bb6ec8c3632665a5279d41cf79244fbef393304752e", "21aac581490c963ecf778f2ffc760bb3c56cce5be72fd637f783e70eccdbdd75"),
     ("dlg:uddemon", "582fbcfecf3e71363dff1aa9bcef4dbc202d28c3af6e66e6a29840b342f1bdfd", "b1976c5f2f0b948ec00f972348b5ef208b0ba127bbc5678297b133747836a042"),
     ("dlg:udlesa", "6c518483372ebe4073986dc2d41e4f7ae73a7bce133aab4289a29ef1be7c7e50", "02e3d2ad97dad0ba3c42c82c11601c0d13373b733d8eafff1bab9799f484a8ab"),
-    ("dlg:udsilver", "48f697db47942b74b4530975a5a4a46cac1a0cc850453b2b9d50ab173b01090c", "93263338ca5b92805b0cba76368d690d254767a74ef5cb4cce7459d32c6dcb50"),
+    ("dlg:udsilver", "48f697db47942b74b4530975a5a4a46cac1a0cc850453b2b9d50ab173b01090c", "6c83893b94d07baf21bfa318a128cde4bb74f3f6a00aa8ed0a651b509ff7e7c8"),
     ("dlg:udsvir03", "5918919ea366eceb27f4096f025cde79c44310a9e57bcd49d123fdbb48352994", "2003095671c146bb3d06b92fcc17df06dc18e5be4ab59a0e5d17bfd6db412e66"),
     ("dlg:uhmay01", "4213656595fdde6afeefee881597ddd62814ba886747bc4d60cfca25a2d852be", "fddebc84098847bf55786d953b1f400eba8a97250343e8076a174f6e15f3919c"),
     ("dlg:uhogre01", "8706469468f7277542ba0e6d7fcf44b47a15d36c3879f505464e0a119be00b97", "722213d1f53966780ab8bba2e2dbe400e64c14ced6da2ff9f48b43749b629e25"),

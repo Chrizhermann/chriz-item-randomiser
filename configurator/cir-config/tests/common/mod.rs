@@ -559,13 +559,17 @@ fn call(name: &str, args: &Args) -> Result<Value> {
             let specs: Vec<Dict> =
                 args.value("specs").as_list().expect("specs").iter().map(|spec| spec.as_dict().expect("spec").clone()).collect();
             let mut reasons = Dict::new();
-            let result = mode2_rewards::patch_dialogue(
+            let result = mode2_rewards::patch_dialogue_in(
                 &args.bytes("data"),
                 &specs,
                 &args.ordered_refs("action_refs"),
                 args.bool("defer_departure"),
                 args.bool("numeric_target"),
                 Some(&mut reasons),
+                None,
+                None,
+                None,
+                args.bool("instant_marks"),
             )?;
             Value::List(vec![bytes_value(&result), Value::Dict(reasons)])
         }
@@ -589,6 +593,7 @@ fn call(name: &str, args: &Args) -> Result<Value> {
             Value::List(vec![bytes_value(&result), Value::Dict(reasons)])
         }
         "mode2_rewards._handover" => bytes_value(&mode2_rewards::handover(&args.dict("spec"))?),
+        "mode2_rewards._instant_mark" => bytes_value(&mode2_rewards::instant_mark(&args.dict("spec"))?),
         "mode2_rewards.destroyed_items" => Value::List(
             mode2_rewards::destroyed_items(&args.str("resource"), &args.bytes("data"))?.into_iter().map(Value::Str).collect(),
         ),

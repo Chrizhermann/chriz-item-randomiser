@@ -275,6 +275,16 @@ a plain creature target there, whose reward is in the same backpack, so the
 reply hands it over too; any other kind of target there stops the host
 (`NATIVE_INVENTORY_REWARD_INVALID`).
 
+A quest target's reward goes to the one its reward reply marks: the reply queues
+the route's `LOCALS` mark for the recipient it names. Adalon's conversation
+clears every queued action of the party at its end, and with them that mark, so
+her reward reply also marks its recipient when the game shows it (M_FLPR's
+`FLPR_Mark`, a condition that is always true): the one she talks to, else the
+first living party member, marked at once as the only one with that mark in her
+area. It does nothing while CIR is stopped, or where no quest place of the
+revision has that mark; a mark that cannot be confirmed stops CIR
+(`CAMPAIGN_MARK_FAILED`).
+
 A `first-of` target is a list of groups of creatures, each a creature target of
 its own area under the place's identity; a group may be `corpse_only`. For each
 reward a group with `eligible` candidates gives one member, drawn from the

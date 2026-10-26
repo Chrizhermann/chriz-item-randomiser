@@ -304,11 +304,12 @@ class OriginalOptionExportTests(unittest.TestCase):
 
     def test_a_revision_exported_before_adalons_route_reads_her_newer_dialogue(self):
         """CIR 1.0.2 patched UDSILVER.DLG for her crossbow's route (row 44)
-        alone and kept her place (row 72) as a plain creature. Its saves read
-        the dialogue that Apply patches now with her route too: the newer
-        patch supersedes the earlier one, and her reply hands that creature's
-        reward over (FLPRNat.lua). Apply lists the revision in superseded.lua
-        and keeps its version beside it."""
+        alone, without marking its recipient at once, and kept her place (row
+        72) as a plain creature. Its saves read the dialogue that Apply
+        patches now with her route too: the newer patch supersedes the
+        earlier one, and her reply hands that creature's reward over
+        (FLPRNat.lua). Apply lists the revision in superseded.lua and keeps
+        its version beside it."""
         f = self.fixture()
         patches = self.dialogue_routes(f, ('dlg:udsilver', 'dlg:uddemon'))
         (f.override / 'xbow10.itm').write_bytes((f.override / 'synth001.itm').read_bytes())
@@ -331,7 +332,8 @@ class OriginalOptionExportTests(unittest.TestCase):
         earlier = revision()
         f.export(earlier)
         specs = mode2_rewards.resource_specs('dlg:udsilver')
-        staged = mode2_rewards._patch_dialogue(original, tuple(spec for spec in specs if spec['route'] == 'udsilver'))
+        staged = mode2_rewards._patch_dialogue(original, tuple(spec for spec in specs if spec['route'] == 'udsilver'),
+                                               instant_marks=False)
         self.assertNotEqual(staged, patches['dlg:udsilver'])
         base = f.output / 'campaign-store/revisions' / earlier
         names = {Path(str(base) + '.source-1.patched.dlg'), Path(str(base) + '.source-1.route-1.patched.dlg')}

@@ -108,6 +108,10 @@ _alias("udsilver", "xbow10", 44, 66, "EGGDEALIO", {"udsilver": ((41, 0),)}, char
 _alias("uddemon", "halb06", 65, None, "EGGDEALIO", {"uddemon": ((8, 2),)},
        charges=(0, 3, 0), recipient="Player1")
 REWARDS["udsilver"]["resources"] = REWARDS["uddemon"]["resources"] = ("dlg:udsilver", "dlg:uddemon")
+# The end of Adalon's talk clears every queued action of the party, the mark
+# her reward reply queues for its recipient among them (_mark): that reply
+# marks the one she talks to at once in its condition too (_instant_mark).
+REWARDS["udsilver"]["instant_mark"] = True
 _alias("gortan1", "helm29", 80, 87, "FIENDS", {"gortan1": ((12, 0),), "gorbat1": ((13, 0),)})
 _alias("gorlum2", "blun28", 77, 78, "GORLUM", {"gorlum2": ((16, 0),)}, recipient="Player1")
 _alias("aran", "ring07", 47, 24, "ARAN1", {"aran": tuple((4, n) for n in range(8))})
@@ -532,6 +536,28 @@ def _handover(spec: dict) -> bytes:
             f'EEex_LuaTrigger_Object,{match[2]}{campaign}))")\r\n').encode()
 
 
+def _instant_mark(spec: dict) -> bytes:
+    """The condition by which a reward reply marks its recipient at once, by
+    the name of the route's mark (M_FLPR's FLPR_Mark): the one the speaker
+    talks to. It is true whatever happens there, so the reply always shows;
+    without CIR's runtime it does nothing. The name has no space or colon,
+    which the dialogue parser strips (_callback)."""
+    return (f'EEex_LuaTrigger("return(FLPR_Mark==nil)or(FLPR_Mark('
+            f'EEex_LuaTrigger_Object,[[{spec["recipient_local"]}]]))")\r\n').encode()
+
+
+def _conditions(spec: dict, instant_marks: bool = True) -> list[bytes]:
+    """What a reward reply's condition gets after the guards for this route:
+    a treasury's handover, a mark at once (before 1.0.3 a patch had none)."""
+    return (([_handover(spec)] if spec.get("handover") else []) +
+            ([_instant_mark(spec)] if instant_marks and spec.get("instant_mark") else []))
+
+
+# The recipient of a grant whose route marks at once: the one the speaker
+# talks to, as the runtime finds him (FLPRNat mark_recipient).
+_TALKED_TO = (b"lasttalkedtoby", b"lasttalkedtoby(myself)")
+
+
 def _gives_item(text: bytes, call, item: str) -> bool:
     """Whether a dialogue action puts the item somewhere (see _GIVING)."""
     index = _GIVING_CALLS.get(call.name.decode("ascii").lower())
@@ -720,8 +746,12 @@ def _dialogue_grants(dialogue: _Dialogue, spec: dict, label: str,
             if len(given) > 1:
                 raise ProfileError(f"{where} gives {shown} twice in one reply")
             if given:
-                if not argument(text, given[0], 1):
+                recipient = argument(text, given[0], 1)
+                if not recipient:
                     raise ProfileError(f"{where} gives {shown} without a recipient")
+                if spec.get("instant_mark") and re.sub(rb"\s+", b"", recipient).lower() not in _TALKED_TO:
+                    raise ProfileError(f"{where} gives {shown} to another than the one the speaker "
+                                       "talks to, whom the route cannot mark at once")
                 grants[(state_index, ordinal)] = given[0]
     if not grants:
         raise ProfileError(f"{label} has no reply that gives {shown}")
@@ -776,7 +806,7 @@ def _following(dialogue: _Dialogue, rows: list[bytes], label: str) -> list[int]:
 def _patch_dialogue(data: bytes, specs: tuple[dict, ...], *, action_refs=None,
                     defer_departure=True, numeric_target=True, reasons: dict | None = None,
                     only: dict[str, dict[int, set[int]]] | None = None, resource: str | None = None,
-                    shown: set[int] | None = None) -> bytes:
+                    shown: set[int] | None = None, instant_marks: bool = True) -> bytes:
     """Gate every reply that gives a route's item, for each recognised route.
 
     A route without a grant of its own (_job) instead hands over what its
@@ -785,7 +815,9 @@ def _patch_dialogue(data: bytes, specs: tuple[dict, ...], *, action_refs=None,
     reason goes to <reasons>. With no route recognised, nothing is prepared.
     <only> limits a route to the given replies, as in a dialogue that holds
     copies of its reward replies (<resource> names that dialogue); <shown>
-    collects the strrefs of <action_refs> that a grant shows.
+    collects the strrefs of <action_refs> that a grant shows. Without
+    <instant_marks>, no reply marks its recipient at once (_instant_mark),
+    as no patch did before 1.0.3.
     """
     resource = resource or specs[0]["resource"]
     label = _label(resource)
@@ -862,10 +894,11 @@ def _patch_dialogue(data: bytes, specs: tuple[dict, ...], *, action_refs=None,
                     edits.append((call.start, call.end, changed))
                 # After the campaign guards, which the recovery reads from the
                 # end (_guard_calls). Every variant pays, so each hands over;
-                # a second call finds nothing left in the treasury.
+                # a second call finds nothing left in the treasury. Each marks
+                # at once, too.
                 for spec in relevant:
-                    if spec.get("handover"):
-                        condition = joined(condition, _handover(spec))
+                    for tail in _conditions(spec, instant_marks):
+                        condition = joined(condition, tail)
                 if any(choices) and action_refs:
                     edits += _display_edits(text, action_refs, shown)
                 dialogue.triggers.append(condition)
@@ -1143,9 +1176,10 @@ def _static_original(data: bytes, resource: str, *, game=None, names=None) -> tu
     The result reads as the original did, and tells whether <data> is the
     patch of every route there. An earlier version's patch has fewer routes
     where the dialogue had fewer then (CIR 1.0.2 patched UDSILVER.DLG before
-    Adalon's place had its route). Patching the original again, with every
-    route or with those whose changes <data> carries (_route_marker), must
-    give the same dialogue as <data>, or <data> is not exactly this
+    Adalon's place had its route), and no mark at once (_instant_mark).
+    Patching the original again, with every route or with those whose
+    changes <data> carries (_route_marker), with marks at once or without,
+    must give the same dialogue as <data>, or <data> is not exactly this
     adapter's patch.
     """
     specs = resource_specs(resource, game=game, names=names)
@@ -1159,10 +1193,10 @@ def _static_original(data: bytes, resource: str, *, game=None, names=None) -> tu
         found = _logical(data, resource)
     except ProfileError:
         raise _changed_patch(resource) from None
-    for routes in (specs, present):
+    for routes, marks in product((specs, present), (True, False)):
         try:
-            if routes and _logical(_patch_dialogue(original, routes), resource) == found:
-                return original, routes is specs
+            if routes and _logical(_patch_dialogue(original, routes, instant_marks=marks), resource) == found:
+                return original, routes is specs and marks
         except ProfileError:
             pass
     raise _changed_patch(resource)
@@ -1183,18 +1217,20 @@ def _unpatched_dialogue(dialogue: _Dialogue, specs: tuple[dict, ...], resource: 
             flags, _, _, trigger_id, action_id = struct.unpack_from("<5I", row)
             trigger = _string(dialogue.triggers, trigger_id, label) if flags & 2 else b""
             action = _string(dialogue.actions, action_id, label) if flags & 4 else b""
-            # The handover conditions follow the guards of their routes.
+            # The handover and mark conditions follow the guards of their
+            # routes; an earlier version's patch has no mark (_conditions).
             handed = []
             while flags & 2:
-                tail = next((_handover(spec) for spec in routes.values() if spec.get("handover") and
-                             trigger.endswith(_handover(spec))), None)
+                tail = next((tail for spec in routes.values() for tail in _conditions(spec)
+                             if trigger.endswith(tail)), None)
                 if tail is None:
                     break
                 trigger = trigger[:-len(tail)]
                 handed.insert(0, tail)
             guards = (_guard_calls(trigger, routes) or []) if flags & 2 else []
             if (any(selected for _, _, selected in guards) or at + 2 ** len(guards) > len(rows) or
-                    handed != [_handover(spec) for _, spec, _ in guards if spec.get("handover")]):
+                    all(handed != [tail for _, spec, _ in guards for tail in _conditions(spec, marks)]
+                        for marks in (True, False))):
                 raise _changed_patch(resource)
             at += 2 ** len(guards)
             if guards:
@@ -1639,7 +1675,8 @@ def superseding_routes(resource: str, newer: bytes, earlier: bytes, *, game: str
     version's patch of the same dialogue with some of those routes
     (_static_original: CIR 1.0.2's UDSILVER.DLG before Adalon's place had its
     route). Both read as patching that dialogue's content with their routes,
-    so each route <earlier> carries changes the same replies alike in both.
+    so each route <earlier> carries changes the same replies in both; a patch
+    before 1.0.3 does not mark a recipient at once (_instant_mark).
 
     None where <newer> does not supersede <earlier> so: a script, a text
     route's or a destroy gate's resource (their patches carry every route),

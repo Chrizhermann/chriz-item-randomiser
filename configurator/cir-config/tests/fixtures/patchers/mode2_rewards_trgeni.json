@@ -532,7 +532,8 @@
     ],
     "action_refs": null,
     "defer_departure": true,
-    "numeric_target": true
+    "numeric_target": true,
+    "instant_marks": true
    },
    "independent": true,
    "result": [
@@ -620,7 +621,8 @@
     ],
     "action_refs": null,
     "defer_departure": true,
-    "numeric_target": true
+    "numeric_target": true,
+    "instant_marks": true
    },
    "independent": true,
    "result": [
@@ -708,7 +710,8 @@
     ],
     "action_refs": null,
     "defer_departure": true,
-    "numeric_target": true
+    "numeric_target": true,
+    "instant_marks": true
    },
    "independent": true,
    "result": [
@@ -796,7 +799,8 @@
     ],
     "action_refs": null,
     "defer_departure": true,
-    "numeric_target": true
+    "numeric_target": true,
+    "instant_marks": true
    },
    "independent": true,
    "result": [
