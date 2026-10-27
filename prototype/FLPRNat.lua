@@ -139,7 +139,7 @@ function Native.new(api, fixture, seed, reward_payload)
     local self = setmetatable({ api = api, sources = {}, targets = {}, reservations = {},
         attempted = {}, tick = nil, pending = nil, last_error = nil, source_resrefs = {}, held = {},
         placed = {}, seed=seed, reward_payload=reward_payload, container_latched={}, route_targets={},
-        owed_handovers={} }, Adapter)
+        owed_handovers={}, parked={} }, Adapter)
     local identities, source_resrefs, creatures, guarded_ids, routes = {}, self.source_resrefs, false, {}, {}
     local guarded_count = 0
     for _, kind in ipairs({ "sources", "targets" }) do
@@ -831,6 +831,19 @@ local function settle_counts(value)
     local member = value % 128
     return { held = held, piles = piles, member = member, paid = (value - member) / 128 == 1 }
 end
+-- The holder a reward at this endpoint goes to, as one key: its creature, its
+-- container (places can share one), or the party for a quest recipient, who
+-- may stand anywhere and trades items with the others. A store has none: its
+-- stock row tells (FLPRShop). A group or first-of place names its member first.
+local function holder_key(endpoint)
+    if endpoint.kind == "store" then return nil end
+    if endpoint.area == "*" or endpoint.quest_event then return "party" end
+    assert(endpoint.kind ~= "group" and endpoint.kind ~= "first-of" and type(endpoint.area) == "string" and
+        type(endpoint.script_name) == "string", "NATIVE_HOLDER_UNKNOWN")
+    if endpoint.sprite then return "creature:" .. endpoint.area .. ":" .. endpoint.script_name end
+    return string.format("container:%s:%s:%d:%d:%d", endpoint.area, endpoint.script_name, endpoint.x, endpoint.y,
+        endpoint.container_type or 4)
+end
 -- How many items of <name> are among <items>.
 local function count_named(items, name)
     local count = 0
@@ -1044,8 +1057,9 @@ function Adapter:mark_recipient(speaker, mark)
 end
 
 -- A handover the reply could not finish, while another mutation was still to
--- be observed (perhaps a reward on its way into the treasury) or the treasury
--- could not be found: retried on the host's steps, at once when nothing is
+-- be observed (perhaps a reward on its way into the treasury), a reward of the
+-- same name was parked there, or the treasury could not be found: the rest is
+-- retried on the host's steps, at once when nothing is
 -- pending and then every HANDOVER_RETRY_TICKS, to the payee the reply marked,
 -- while the treasury's area is loaded. Session only, as the reply's moment is.
 function Adapter:retry_handovers(assignments, phases)
@@ -1074,15 +1088,17 @@ function Adapter:_hand_over(target_id, endpoint, payee, assignments, phases)
         self.owed_handovers[target_id]=true
         return 0,'HANDOVER_MUTATION_PENDING',true
     end
-    local due={}
+    local due,waiting={},false
     for _,assignment in ipairs(assignments) do
-        -- A parked reward's settle reads the treasury as it was (settle_parked).
-        if assignment.target_id==target_id and assignment.delivery_phase==phases.parked then
-            self.owed_handovers[target_id]=true
-            return 0,'HANDOVER_REWARD_PARKED',true
-        end
-        if assignment.target_id==target_id and assignment.delivery_phase==phases.confirmed then
-            due[#due+1]=assert(self:_reward(assignment.source_id,assignment.unit),'NATIVE_HANDOVER_REWARD_MISSING')
+        if assignment.target_id==target_id then
+            -- A parked reward of this place follows once it has settled.
+            if assignment.delivery_phase==phases.parked then waiting=true
+            elseif assignment.delivery_phase==phases.confirmed then
+                local reward=assert(self:_reward(assignment.source_id,assignment.unit),'NATIVE_HANDOVER_REWARD_MISSING')
+                -- A reward parked in the treasury, of any place there, counts the
+                -- items of its name (Adapter:set_parked): one of that name stays.
+                if self:_parked_at(endpoint,reward) then waiting=true else due[#due+1]=reward end
+            end
         end
     end
     local owner,reason
@@ -1093,7 +1109,7 @@ function Adapter:_hand_over(target_id, endpoint, payee, assignments, phases)
             return 0,reason,true
         end
     end
-    self.owed_handovers[target_id]=nil
+    self.owed_handovers[target_id]=waiting or nil
     -- The payee first, then the rest of the party, each with its free
     -- backpack slots less the item messages already queued for it.
     local party,seen={payee},{[pointer(api,payee)]=true}
@@ -1150,7 +1166,9 @@ function Adapter:_hand_over(target_id, endpoint, payee, assignments, phases)
             count=count+1
         end
     end
-    return count,ambiguous and 'HANDOVER_ITEM_AMBIGUOUS' or nil,false
+    if ambiguous then return count,'HANDOVER_ITEM_AMBIGUOUS',false end
+    -- The rest follows once its parked one has settled (Adapter:retry_handovers).
+    return count,waiting and 'HANDOVER_REWARD_PARKED' or nil,waiting
 end
 
 function Adapter:_target(id, source_id, unit)
@@ -1252,7 +1270,8 @@ function Adapter:inspect_target(id, source_id, unit)
         local ready, reason = self.api.FLPR.Shop:inspect_target(endpoint)
         if not ready then return nil, reason or "SHOP_TARGET_UNAVAILABLE" end
         self.reservations[endpoint.identity] = { kind = "deliver", id = id }
-        return { identity = endpoint.identity, target_id = id, accepts = 1 }
+        -- No counts: a store's stock row tells (Adapter:settle_parked).
+        return { identity = endpoint.identity, target_id = id, accepts = 1, settle = settle_value(0, 0, 0, false) }
     end
     if endpoint.kind == "first-of" then
         -- The first creature that can take the reward now takes it; its
@@ -1275,6 +1294,7 @@ end
 -- The witness of a reward's target. Its counts before the reward (settle_value)
 -- name the first-of <member> it took and whether it was <paid> to a payee.
 function Adapter:_inspect(endpoint, id, source, source_id, unit, member, paid)
+    if source and self:_parked_at(endpoint, self:_reward(source_id, unit)) then return nil, "TARGET_PARKED" end
     local owner, reason, corpse = self:_resolve(endpoint, "target")
     if not owner then
         if reason == "TARGET_NOT_ALIVE" and corpse and source then
@@ -1305,12 +1325,14 @@ function Adapter:_inspect(endpoint, id, source, source_id, unit, member, paid)
         if #empty == 0 then return nil, "TARGET_INVENTORY_FULL" end
         if creature_conflict(self:_queue(), owner.id, self.source_resrefs) then return nil, "TARGET_QUEUE_BUSY" end
         -- Where its death drop could put the reward (Adapter:execute), and its
-        -- count there. A party recipient keeps its items wherever it dies.
+        -- count there. A party recipient keeps its items wherever it dies; a
+        -- quest recipient outside the party is found only in the visible area,
+        -- where it would die (Adapter:_resolve).
         local piles, count = {}, 0
         for pile_id, pile in pairs(reward and self:_piles(reward.resref) or {}) do
             piles[pile_id], count = { pointer = pile.pointer, items = pile.items }, count + #pile.items
         end
-        if endpoint.area == "*" or endpoint.quest_event then count = 0 end
+        if self.api.EEex_Sprite_GetPortraitIndex(owner.object) ~= -1 then count = 0 end
         self.reservations[endpoint.identity] = { owner = owner, items = items, kind = "deliver", id = id, empty = empty,
             endpoint = endpoint, piles = reward and piles }
         return { identity = endpoint.identity, target_id = id, accepts = 1,
@@ -1698,8 +1720,10 @@ function Adapter:_execute_ground(command, reserved, endpoint, p)
     local receipt = { session = command.session, kind = command.kind, index = command.index,
         nonce = command.nonce, revision = command.revision, identity = command.identity,
         source_id = command.source_id, target_id = command.target_id, payload = payload(p) }
+    -- Its pile is in the visible area (Adapter:_ground_left).
     self.pending = { receipt = receipt, endpoint = endpoint, kind = "target", owner = owner,
-        before = before, tick = self.tick, complete = false, ground = true, notice = notice }
+        before = before, tick = self.tick, complete = false, ground = true, notice = notice,
+        area = text(api.EEex_Area_GetVisible().m_resref) }
     self.reservations[command.identity] = nil
     -- Pending/attempted are published first; an exception must disable this
     -- adapter, never cause a blind action retry.
@@ -1783,7 +1807,7 @@ function Adapter:observe(command)
     end
     -- A reward waits while no area is shown (loading one): nothing can be read.
     if pending.kind == "target" and not self.api.EEex_Area_GetVisible() then return nil, "DELIVERY_SETTLING" end
-    if self:_away(pending.endpoint) then return self:_left(pending, receipt) end
+    if self:_away(pending.endpoint) or self:_ground_left(pending) then return self:_left(pending, receipt) end
     if pending.queued and self.tick - (pending.lost_tick or pending.tick) >= Native.MAX_SETTLE_TICKS then
         pending.complete = false
         self.last_error = "DELIVERY_SETTLING_TIMEOUT"
@@ -1874,6 +1898,15 @@ function Adapter:_away(endpoint)
     if endpoint.area == "*" or endpoint.quest_event then return false end
     local area = self.api.EEex_Area_GetVisible()
     return not area or text(area.m_resref) ~= endpoint.area
+end
+
+-- Whether the party left the area of a reward on its way to the ground, or
+-- found there: its pile is in the area its delivery began in, also where its
+-- quest recipient is followed anywhere.
+function Adapter:_ground_left(pending)
+    if not pending.ground and not pending.found then return false end
+    local area = self.api.EEex_Area_GetVisible()
+    return not area or text(area.m_resref) ~= pending.area
 end
 
 -- The party left the place before the receipt (Adapter:_away). What execute or
@@ -2225,14 +2258,17 @@ end
 -- A parked reward (FLPRCore): did it arrive? Chris, 2026-10-27: CIR remembers
 -- the half handover and checks on the next visit of the place; with one more
 -- item of the reward's name in the creature or container than before, it
--- arrived, else CIR gives it then. Who gets what stays as it is. The counts
--- are read where its delivery began (Adapter:_settle_endpoint): a living
--- creature its items, a dead one its body and the ground piles of its area
--- (its death drop puts its items there), one gone without a body the piles.
--- A quest recipient keeps its items, alive or dead, in any area. Its holder
--- tells the core where it is. Nothing is created, moved or read in another
--- area here; while an item of the reward's name is on its way anywhere, the
--- counts could change and it waits.
+-- arrived, else CIR gives it then. Who gets what stays as it is. So exactly
+-- one more is the reward; none, or several (something else came too), is not.
+-- The counts were read as its delivery began (Adapter:_inspect) and are read
+-- where it began (Adapter:_settle_endpoint): a living creature its items, a
+-- dead one its body and the ground piles of its area (its death drop puts its
+-- items there), one gone without a body the piles, where its death drop put
+-- what it held. A party member keeps its items, alive or dead, in any area.
+-- A store took its reward at once, and its stock row tells (FLPRShop). Its
+-- holder tells the core where it is. Nothing is created, moved or read in
+-- another area here; while an item of the reward's name is on its way
+-- anywhere, the counts could change and it waits.
 function Adapter:settle_parked(request)
     if type(request) ~= "table" or request.kind ~= "settle-parked" or request.mode ~= "observe-only" or
         type(request.session) ~= "table" or not integer(request.index, 1, 4096) or
@@ -2243,18 +2279,22 @@ function Adapter:settle_parked(request)
     if not reward then return nil, "NATIVE_PAYLOAD_UNSUPPORTED" end
     local endpoint = self:_settle_endpoint(request, counts)
     if not endpoint then return nil, "TARGET_UNKNOWN" end
-    if self:_away(endpoint) then return nil, "AREA_UNAVAILABLE" end
-    for _, message in ipairs(self:_queue().additions) do
-        if message.payload.resref == reward.resref then return nil, "TARGET_QUEUE_BUSY" end
-    end
     local receipt = { kind = request.kind, mode = request.mode, index = request.index,
         session = request.session, token = request.token, revision = request.revision,
         source_id = request.source_id, target_id = request.target_id, settle = request.settle,
         payload = reward, arrived = 0 }
+    if endpoint.kind == "store" then
+        if self.api.FLPR.Shop:delivered(request.index) then receipt.arrived, receipt.holder = 1, "store" end
+        return receipt
+    end
+    if self:_away(endpoint) then return nil, "AREA_UNAVAILABLE" end
+    for _, message in ipairs(self:_queue().additions) do
+        if message.payload.resref == reward.resref then return nil, "TARGET_QUEUE_BUSY" end
+    end
     local owner, reason, unusable = self:_resolve(endpoint, "target", nil, true)
     if endpoint.kind ~= "creature" then
         if not owner then return nil, reason end
-        if count_named(self:_items(owner, false), reward.resref) > counts.held then
+        if count_named(self:_items(owner, false), reward.resref) == counts.held + 1 then
             receipt.arrived, receipt.holder = 1, "container"
         end
         return receipt
@@ -2266,16 +2306,18 @@ function Adapter:settle_parked(request)
         local api = self.api
         local party = api.EEex_Sprite_GetPortraitIndex(owner.object) ~= -1
         local body = count_named(self:_items(owner, true), reward.resref)
-        if party or endpoint.quest_event or api.EEex_GameObject_IsSprite(owner.object, false) == true then
-            if body > counts.held then receipt.arrived, receipt.holder = 1, party and "party" or "creature" end
-        elseif body + self:_count_piles(reward.resref) > counts.held + counts.piles then
+        if party or api.EEex_GameObject_IsSprite(owner.object, false) == true then
+            if body == counts.held + 1 then receipt.arrived, receipt.holder = 1, party and "party" or "creature" end
+        elseif body + self:_count_piles(reward.resref) == counts.held + counts.piles + 1 then
             -- In its body where its death drop took nothing after it came.
             receipt.arrived, receipt.holder = 1, body > counts.held and "creature" or "ground"
         end
         return receipt
     end
     if reason == "OWNER_MISSING" and self:_vanished(endpoint) then
-        if self:_count_piles(reward.resref) > counts.piles then receipt.arrived, receipt.holder = 1, "ground" end
+        if self:_count_piles(reward.resref) == counts.held + counts.piles + 1 then
+            receipt.arrived, receipt.holder = 1, "ground"
+        end
         return receipt
     end
     return nil, reason
@@ -2294,6 +2336,28 @@ function Adapter:_settle_endpoint(request, counts)
         return members and members[counts.member]
     end
     return endpoint
+end
+
+-- The holders of the parked rewards (FLPRHost gives their settle requests),
+-- each with its reward's name. Until a reward settles, no other item of its
+-- name goes to its holder, from any place there (Adapter:_inspect), and none
+-- leaves it by a handover (Adapter:_hand_over): its counts would take that one
+-- for the reward. Other names, and other members of its place, go on.
+function Adapter:set_parked(requests)
+    local parked = {}
+    for _, request in ipairs(requests) do
+        local counts, reward = settle_counts(request.settle), payload(request.payload)
+        local endpoint = counts and reward and self:_settle_endpoint(request, counts)
+        local key = endpoint and holder_key(endpoint)
+        if key then parked[key .. "|" .. reward.resref] = true end
+    end
+    self.parked = parked
+    return true
+end
+
+function Adapter:_parked_at(endpoint, reward)
+    local key = reward and holder_key(endpoint)
+    return key ~= nil and self.parked[key .. "|" .. reward.resref] == true
 end
 
 function Adapter:_held(request)

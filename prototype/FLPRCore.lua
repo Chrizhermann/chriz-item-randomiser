@@ -209,11 +209,14 @@ local function validate(manifest)
     return { units = units, slots = slots }
 end
 
-local function creature_target(manifest, shape, slot_index)
+local function target_kind(manifest, shape, slot_index)
     local slot = shape.slots[slot_index]
     local target = slot and manifest.targets[slot.target]
-    return target ~= nil and type(target.record) == "table" and
-        Core.CREATURE_TARGET_KINDS[target.record.kind] == true
+    return target ~= nil and type(target.record) == "table" and target.record.kind or nil
+end
+
+local function creature_target(manifest, shape, slot_index)
+    return Core.CREATURE_TARGET_KINDS[target_kind(manifest, shape, slot_index)] == true
 end
 
 local function guard_source(source)
@@ -563,9 +566,12 @@ function Controller:restore()
         end
         local nonce = self:_get(name("n", index))
         if nonce ~= 0 then
+            -- A parked reward may keep the nonce of a cut write: an observation's
+            -- before its phase (Controller:observe), or a settle's (confirm_parked).
+            -- Its settle replaces or clears it.
             if provenance ~= 1 or not integer(nonce, 2, self:_get(G.sequence)) or held_nonces[nonce] or
                 not creature_target(frozen, shape, expected[index]) or
-                (phase ~= Core.PHASE.held and phase ~= Core.PHASE.confirmed and
+                (phase ~= Core.PHASE.held and phase ~= Core.PHASE.confirmed and phase ~= Core.PHASE.parked and
                     not (phase == Core.PHASE.in_flight and self:_get(G.journal) == 2 and
                         self:_get(G.index) == index and self:_get(G.nonce) == nonce)) then
                 return nil, "HELD_NONCE_INVALID"
@@ -824,12 +830,16 @@ function Controller:_park(index)
     return true
 end
 
--- A host whose reward was on its way when it stopped (FLPRHost:_disable): a
--- save made after that cannot settle it, since the world went on without CIR.
--- Its journal stays unproven, as before parking existed.
+-- A host that stopped (FLPRHost:_disable): a save made after that cannot
+-- settle its rewards, since the world went on without CIR, and anyone may
+-- have taken or moved items at their places meanwhile. The reward on its way
+-- keeps its journal unproven, as before parking existed; a parked one keeps no
+-- counts, which restore refuses. A save made before the stop keeps both.
 function Controller:forfeit_settle()
-    if self:_active() and self:_get(G.journal) == 2 and self:_get(G.settle) ~= 0 then
-        self:_set(G.settle, 0)
+    if not self:_active() then return end
+    if self:_get(G.journal) == 2 and self:_get(G.settle) ~= 0 then self:_set(G.settle, 0) end
+    for index = 1, #self.shape.units do
+        if self:_phase("d", index) == Core.PHASE.parked then self:_set(name("b", index), 0) end
     end
 end
 
@@ -857,8 +867,9 @@ end
 
 -- The adapter tells from the counts whether the parked reward arrived, and
 -- where it is: a creature target holding it is held, as an observed one is;
--- anywhere else it is confirmed. One that did not arrive is pending again,
--- for a new delivery. One checked phase write is the commit.
+-- anywhere else it is confirmed (a store's stock only for a store target).
+-- One that did not arrive is pending again, for a new delivery. One checked
+-- phase write is the commit.
 function Controller:confirm_parked(receipt)
     if not self:_active() then return nil, "INACTIVE" end
     if type(receipt) ~= "table" or not integer(receipt.index, 1, #self.shape.units) then
@@ -879,9 +890,12 @@ function Controller:confirm_parked(receipt)
     local holder = receipt.holder
     if not same_payload(receipt.payload, expected.payload) or (receipt.arrived ~= 0 and receipt.arrived ~= 1) or
         (receipt.arrived == 1 and holder ~= "creature" and holder ~= "party" and holder ~= "ground" and
-         holder ~= "container") then return nil, "PARKED_SETTLE_UNPROVEN" end
-    local creature = creature_target(self.manifest, self.shape, self:_get(name("a", index)))
-    if receipt.arrived == 1 and holder == "creature" and not creature then return nil, "PARKED_SETTLE_UNPROVEN" end
+         holder ~= "container" and holder ~= "store") then return nil, "PARKED_SETTLE_UNPROVEN" end
+    local selected = self:_get(name("a", index))
+    if receipt.arrived == 1 and ((holder == "creature" and not creature_target(self.manifest, self.shape, selected)) or
+        (holder == "store") ~= (target_kind(self.manifest, self.shape, selected) == "store")) then
+        return nil, "PARKED_SETTLE_UNPROVEN"
+    end
     local outcome = receipt.arrived == 0 and Core.PHASE.pending or
         (holder == "creature" and Core.PHASE.held or Core.PHASE.confirmed)
     self.parked_requests[index] = nil
@@ -892,6 +906,9 @@ function Controller:confirm_parked(receipt)
         if not integer(nonce, 2, 2147483647) then return nil, "NONCE_EXHAUSTED" end
         self:_set(G.sequence, nonce)
         self:_set(name("n", index), nonce)
+    elseif self:_get(name("n", index)) ~= 0 then
+        -- The nonce of a cut write (restore): only a held reward keeps one.
+        self:_set(name("n", index), 0)
     end
     self:_set_phase("d", index, outcome)
     self:_set(name("b", index), 0)

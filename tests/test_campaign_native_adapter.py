@@ -1155,6 +1155,23 @@ function cases.store_target_failure_is_not_retried(N)
     x,e=a:observe(command); fail(x,e,"SHOP_WRITE_FAILED")
     assert(calls.deliver==1)
 end
+-- A store takes its reward at once: one parked on its way settles by its stock
+-- row (FLPRShop's delivered), in any area, and reads nothing else.
+function cases.store_reward_parked_on_its_way_settles_by_its_stock_row(N)
+    local f=store_target(N,function() return true end)
+    local delivered={}
+    f.api.FLPR.Shop.delivered=function(_,unit) return delivered[unit]==true end
+    local a=f.adapter
+    local witness=assert(a:inspect_target(f.target_id,f.source_id,1))
+    assert(witness.settle==1)
+    local request={kind="settle-parked",mode="observe-only",index=1,session={},token={},revision=string.rep("c",64),
+        source_id=f.source_id,target_id=f.target_id,settle=witness.settle,payload=f.fixture.sources[f.source_id].payload}
+    local receipt=assert(a:settle_parked(request))
+    assert(receipt.arrived==0 and receipt.holder==nil)
+    delivered[1]=true
+    receipt=assert(a:settle_parked(request))
+    assert(receipt.arrived==1 and receipt.holder=="store" and receipt.token==request.token and #f.calls==0)
+end
 function cases.store_target_requires_service_only_when_declared(N)
     local f=setup(N)
     assert(N.new(f.api,f.fixture))

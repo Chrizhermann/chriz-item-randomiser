@@ -188,8 +188,8 @@ Lua tables for both the adapter's game API and the save store.
 | `on_observation_boundary()` / `observe(receipt)` | Confirmation must come from a later host observation, identify the same transaction and session, and prove the requested outcome. The boundary call itself is not evidence of an engine tick. |
 | `pending_observation()` | After restore, requests fresh inspection of an in-flight transaction. Its `observe-only` result never permits replaying removal or creation. |
 | `park(receipt)` / `park_unproven()` | The pending delivery's observation cannot go on: the party left its place (a receipt with `parked = 1`), or a save made while it was on its way was loaded. It parks with the adapter's counts before it, and its journal closes. A delivery begun without counts, and every source suppression, stay unproven. |
-| `parked_request(index)` / `confirm_parked(receipt)` | An `observe-only` settle of a parked reward on the next visit of its place. It arrived (held by a creature target, else confirmed), or it is pending again for a new delivery. Nothing is replayed. |
-| `forfeit_settle()` | A host that stops with a reward on its way drops that reward's counts, so a save made after that still stops with `PENDING_RELOAD_UNPROVEN`. |
+| `parked_request(index)` / `confirm_parked(receipt)` | An `observe-only` settle of a parked reward on the next visit of its place. It arrived (held by a creature target, in a store's stock only for a store target, else confirmed), or it is pending again for a new delivery. Nothing is replayed. |
+| `forfeit_settle()` | A host that stops drops the counts of the reward on its way and of every parked one. A save made after that stops on loading (`PENDING_RELOAD_UNPROVEN`, `PARKED_EVIDENCE_INVALID`); one made before keeps them. |
 | `destroy()` | Invalidates cached state and pending callback identity when the host proves session destruction. Saved GLOBALs are unchanged. |
 
 Capture stores the complete 256-bit revision as 16 bounded numeric chunks, the
@@ -216,11 +216,21 @@ it to the payee. When the party leaves the place of the reward on its way, or a
 save made then is loaded, the delivery parks: its counts move to `flpr_b<unit>`,
 its phase becomes parked (stored 9) and its journal closes. Each host step tries
 to settle a parked reward before anything else, so a visit settles it before
-anyone there can take or move anything. No other reward goes to that place while
-one of it is parked. The settle reads the place again: one item more of that name
-than before means the reward arrived; otherwise it is pending and delivered
-anew. Who gets what stays the same. A creature target holding it is held, with a
-new nonce (`flpr_n<unit>`) for its held identity.
+anyone there can take or move anything. Until it settles, no other item of its
+name goes to its holder (its creature or container, or the party for a quest
+recipient), from any place there; other names and other holders go on
+(FLPRNat's `set_parked`, which the host updates whenever a reward parks or
+settles). The settle reads the place again: exactly one item more of that name
+than before means the reward arrived. None, or two more (something else of its
+name came too), mean it did not: it is pending and delivered anew. A store took
+its reward at once, and its stock row tells (FLPRShop's `delivered`). Who gets
+what stays the same. A creature target holding it is held, with a new nonce
+(`flpr_n<unit>`) for its held identity, which is published before its phase: a
+write cut there leaves it parked with that nonce, which restore keeps and the
+next settle replaces, or held. A host that stops forfeits the counts
+(`forfeit_settle`). Where CIR never runs for a save (EEex or its files missing,
+or its revision not found), nothing drops them: a save made then still settles
+with the counts from before.
 Host callback boundaries must catch storage/resolver errors and disable this path;
 the core deliberately raises on invalid GLOBAL values or failed writes.
 

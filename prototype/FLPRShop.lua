@@ -58,12 +58,15 @@ function Shop:bind(fixture, controller)
             self.api.EEex_Write32(entry.address+16,assert(fixture.shop_prices[item]))
             local purchased = self.api.EEex_GameState_GetGlobalInt(entry.key)
             assert(purchased==0 or purchased==1, 'SHOP_PURCHASE_STATE_INVALID')
-            self.api.EEex_Write64(entry.address+24,
-                purchased==1 and 2 or (assignment.delivery_phase==2 and 1 or 0))
             -- One-based stock positions survive the STO save/cache path. Zero
             -- retains the first-matching-row behavior of older test saves.
             local stock = self.api.EEex_GameState_GetGlobalInt(entry.stock_key)
             assert(stock >= 0 and stock == math.floor(stock), 'SHOP_STOCK_POSITION_INVALID')
+            -- Only a proven insertion writes a position (deliver), in the same
+            -- step as the reward's journal: a save made before its observation
+            -- has the row too (Shop:delivered).
+            self.api.EEex_Write64(entry.address+24,
+                purchased==1 and 2 or ((assignment.delivery_phase==2 or stock>0) and 1 or 0))
             self.api.EEex_Write64(entry.address+40, stock)
             self.entries[index+1], self.by_unit[entry.unit] = entry, entry
         end
@@ -79,6 +82,13 @@ function Shop:sync_purchases()
         self.api.EEex_GameState_SetGlobalInt(entry.stock_key,
             self.api.EEex_ReadU64(entry.address+40))
     end
+end
+
+-- Whether the store got <unit>'s reward: its row is in stock, or was bought.
+-- A reward saved on its way settles by this (FLPRNat's settle_parked).
+function Shop:delivered(unit)
+    local entry=self.by_unit[unit]
+    return entry~=nil and self.api.EEex_ReadU64(entry.address+24)~=0
 end
 
 function Shop:inspect_target(endpoint)

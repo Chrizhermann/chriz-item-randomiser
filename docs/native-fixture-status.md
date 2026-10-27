@@ -97,7 +97,8 @@ Pending operations on reload deliberately stop with `PENDING_RELOAD_UNPROVEN`;
 this fixture does not claim crash recovery during relocation. Since 1.0.3 a
 delivery on its way parks instead, with its counts before it, and the next visit
 of its place settles it ([campaign runtime](campaign-runtime-prototype.md)); a
-source suppression and a delivery begun by 1.0.2 still stop.
+source suppression, a delivery begun by 1.0.2 and a save made after CIR stopped
+still stop.
 The [next engineering slice](next-native-slice.md) defines creature-drop and
 unvisited-source checks using synthetic content, before owner review of real
 items, destinations, and reward counts.

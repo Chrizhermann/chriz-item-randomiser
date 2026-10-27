@@ -1150,6 +1150,25 @@ function cases.StoppedHostForfeitsTheCountsOfARewardOnItsWay(Core)
     g.controller:destroy(); g.controller:forfeit_settle(); equal(g.writes, before)
 end
 
+-- The world goes on without CIR after a stop: a save made then holds no counts
+-- of a parked reward either, and stops on load, as one on its way does.
+function cases.StoppedHostForfeitsTheCountsOfEveryParkedReward(Core)
+    local f = parked(Core, "actor")
+    f:suppress(2)
+    local witness = f:delivery_witness(2); witness.settle = 99
+    assert(f.controller:begin_delivery(2, witness))
+    f.controller:forfeit_settle()
+    equal(f.values.flpr_b0001, 0); equal(f.values.flpr_jsettle, 0); equal(f.values.flpr_jkind, 2)
+    failed("PARKED_EVIDENCE_INVALID", f:new_controller():restore())
+    -- A save made before the stop keeps them.
+    local g = parked(Core, "actor")
+    local saved = clone(g.values)
+    g.controller:forfeit_settle(); equal(g.values.flpr_b0001, 0)
+    g.values = saved
+    g.controller = g:new_controller(); assert(g.controller:restore())
+    equal(g.controller:assignments()[1].delivery_phase, Core.PHASE.parked); equal(g.values.flpr_b0001, 77)
+end
+
 function cases.ParkedRewardSettlesHeldConfirmedOrPendingAgain(Core)
     -- Arrived in a creature target: held, with an identity of its own.
     local f, operation = parked(Core, "actor")
@@ -1208,10 +1227,17 @@ function cases.ParkedSettleRejectsWrongOrUnprovenReceiptsWithoutWriting(Core)
         failed("PARKED_SETTLE_UNPROVEN", f.controller:confirm_parked(receipt))
         equal(f.writes, before)
     end
-    -- Only a creature target can hold it.
+    -- Only a creature target can hold it, and only a store's stock is a store's.
     local f = parked(Core, "container")
     failed("PARKED_SETTLE_UNPROVEN",
         f.controller:confirm_parked(settle_receipt(assert(f.controller:parked_request(1)), 1, "creature")))
+    failed("PARKED_SETTLE_UNPROVEN",
+        f.controller:confirm_parked(settle_receipt(assert(f.controller:parked_request(1)), 1, "store")))
+    f = parked(Core, "store")
+    failed("PARKED_SETTLE_UNPROVEN",
+        f.controller:confirm_parked(settle_receipt(assert(f.controller:parked_request(1)), 1, "container")))
+    assert(f.controller:confirm_parked(settle_receipt(assert(f.controller:parked_request(1)), 1, "store")))
+    equal(f.controller:assignments()[1].delivery_phase, Core.PHASE.confirmed)
     -- Never while a world mutation is open, never with an old session's request.
     f = parked(Core, "actor")
     local request = assert(f.controller:parked_request(1))
@@ -1226,17 +1252,35 @@ function cases.ParkedSettleRejectsWrongOrUnprovenReceiptsWithoutWriting(Core)
     failed("INACTIVE", f.controller:parked_request(1))
 end
 
-function cases.ParkedRewardNeedsItsCountsAndNoHeldIdentityOnRestore(Core)
+function cases.ParkedRewardNeedsItsCountsAndAValidNonceOnRestore(Core)
     for _, value in ipairs({ 0, -1 }) do
         local f = parked(Core, "actor")
         f.values.flpr_b0001 = value
         failed("PARKED_EVIDENCE_INVALID", f:new_controller():restore())
     end
-    local f = parked(Core, "actor")
-    f.values.flpr_n0001 = f.values.flpr_sequence
-    failed("HELD_NONCE_INVALID", f:new_controller():restore())
+    -- A cut write's nonce (an observation's or a settle's) stays until its
+    -- settle: replaced where it is held, cleared where it is not.
+    for _, outcome in ipairs({ { 1, "creature" }, { 1, "party" }, { 0 } }) do
+        local f, operation = parked(Core, "actor")
+        f.values.flpr_n0001 = operation.nonce
+        f.controller = f:new_controller(); assert(f.controller:restore())
+        assert(f.controller:confirm_parked(settle_receipt(assert(f.controller:parked_request(1)),
+            outcome[1], outcome[2])))
+        equal(f.values.flpr_n0001, outcome[2] == "creature" and operation.nonce + 1 or 0)
+        f.controller = f:new_controller(); assert(f.controller:restore())
+    end
+    -- No other one: beyond the sequence, the first, or on a container target.
+    for _, case in ipairs({
+        { "actor", function(f) return f.values.flpr_sequence + 1 end },
+        { "actor", function() return 1 end },
+        { "container", function(_, operation) return operation.nonce end },
+    }) do
+        local f, operation = parked(Core, case[1])
+        f.values.flpr_n0001 = case[2](f, operation)
+        failed("HELD_NONCE_INVALID", f:new_controller():restore())
+    end
     -- Sources never park.
-    f = parked(Core, "actor")
+    local f = parked(Core, "actor")
     f.values.flpr_s0001 = Core.PHASE.parked + 1
     local ok, reason = pcall(function() return f:new_controller():restore() end)
     assert(not ok and tostring(reason):find("PHASE_MISSING_OR_INVALID", 1, true))
@@ -1262,7 +1306,31 @@ function cases.ParkEveryWriteCutParksAgainOrRestoresParked(Core)
     end
 end
 
-function cases.SettleEveryWriteCutStaysParkedBecomesHeldOrStops(Core)
+-- The host stops on such a cut (FLPRHost:_disable) and forfeits the counts: a
+-- save made after it never parks or settles that reward.
+function cases.ParkWriteCutThenStopNeverSettlesFromALaterSave(Core)
+    for _, when in ipairs({ "fail_before", "fail_after" }) do
+        for cut = 1, 3 do
+            local f, _, receipt = delivery_on_its_way(Core, "actor", 77)
+            f[when] = f.writes + cut
+            assert(not pcall(function() f.controller:park(receipt) end))
+            f[when] = nil
+            f.controller:forfeit_settle()
+            local controller = f:new_controller()
+            local restored, reason = controller:restore()
+            if restored then
+                equal(f.values.flpr_jkind, 2)
+                failed("PENDING_RELOAD_UNPROVEN", controller:park_unproven())
+            else
+                equal(reason, "PARKED_EVIDENCE_INVALID")
+            end
+        end
+    end
+end
+
+-- Its identity is published before its phase: a cut leaves it parked with
+-- that nonce, which restore keeps, or held. Never pending, never stopped.
+function cases.SettleEveryWriteCutStaysParkedOrBecomesHeld(Core)
     for _, when in ipairs({ "fail_before", "fail_after" }) do
         for cut = 1, 4 do
             local f = parked(Core, "actor")
@@ -1270,15 +1338,15 @@ function cases.SettleEveryWriteCutStaysParkedBecomesHeldOrStops(Core)
             f[when] = f.writes + cut
             assert(not pcall(function() f.controller:confirm_parked(receipt) end))
             f[when] = nil
-            local controller = f:new_controller()
-            local restored, reason = controller:restore()
-            if restored then
-                local phase = controller:assignments()[1].delivery_phase
-                assert(phase == Core.PHASE.parked or phase == Core.PHASE.held, tostring(phase))
-            else
-                -- Its identity published before its phase: stopped, never pending.
-                equal(reason, "HELD_NONCE_INVALID")
+            f.controller = f:new_controller(); assert(f.controller:restore())
+            local phase = f.controller:assignments()[1].delivery_phase
+            if phase == Core.PHASE.parked then
+                -- The next visit settles it, with an identity of its own.
+                assert(f.controller:confirm_parked(settle_receipt(assert(f.controller:parked_request(1)), 1, "creature")))
+                phase = f.controller:assignments()[1].delivery_phase
             end
+            equal(phase, Core.PHASE.held); equal(f.values.flpr_n0001, f.values.flpr_sequence)
+            f.controller = f:new_controller(); assert(f.controller:restore())
         end
     end
 end

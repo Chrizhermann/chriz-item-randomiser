@@ -274,6 +274,32 @@ function cases.a_parked_reward_of_the_treasury_owes_the_handover(N,Core)
     f.assignments[1].delivery_phase=f.phases.confirmed
     for _=1,N.HANDOVER_RETRY_TICKS do f.boundary();f:retry() end
     assert(not f.adapter:owes_handover() and #f.calls==3 and #f:given()==1 and #f.treasury.m_lstItems==1)
+    -- One of another name goes at once; the parked one follows its settle.
+    f=treasury_world(N,Core)
+    f.assignments[2]={unit=2,source_id=f.source_ids[2],target_id=f.target_id,delivery_phase=Core.PHASE.parked}
+    count,reason,owed=f:hand_over()
+    assert(count==1 and reason=='HANDOVER_REWARD_PARKED' and owed==true and #f:given()==1)
+    assert(#f.treasury.m_lstItems==1 and f.adapter:owes_handover())
+    f.treasury.m_lstItems[2]=f.item('FLPRI2',403)
+    f.assignments[2].delivery_phase=Core.PHASE.confirmed
+    for _=1,N.HANDOVER_RETRY_TICKS do f.boundary();f:retry() end
+    assert(not f.adapter:owes_handover() and #f:given()==2 and #f.treasury.m_lstItems==1)
+    -- A reward of its name parked in the treasury for another place there (its
+    -- counts include this one): this one stays until that settles.
+    f=treasury_world(N,Core)
+    local beside='original-target:bg2:mode2:target:7'
+    f.fixture.targets[beside]={kind='container',area='AR2300',script_name='Treasury',x=437,y=717,
+        container_type=8,identity=string.rep('e',64)}
+    f:reload()
+    local parked={target_id=beside,source_id=f.source_ids[1],index=2,settle=1+1,payload=f.adapter:_reward(f.source_ids[1],2)}
+    assert(f.adapter:set_parked({parked}))
+    count,reason,owed=f:hand_over()
+    assert(count==0 and reason=='HANDOVER_REWARD_PARKED' and owed==true and #f:given()==0 and #f.treasury.m_lstItems==2)
+    -- Elsewhere, or of another name, it would not wait.
+    parked.payload=f.adapter:_reward(f.source_ids[2],2)
+    assert(f.adapter:set_parked({parked}))
+    for _=1,N.HANDOVER_RETRY_TICKS do f.boundary();f:retry() end
+    assert(not f.adapter:owes_handover() and #f:given()==1 and #f.treasury.m_lstItems==1)
 end
 
 function cases.after_payment_a_reward_not_placed_yet_goes_to_the_payee(N,Core)

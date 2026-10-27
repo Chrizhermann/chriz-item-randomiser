@@ -238,9 +238,11 @@ death drops of the [held-drop receipts](held-drop-receipts-20260926.md); that no
 longer stops CIR (`DELIVERY_MESSAGE_REUSED` before 1.0.3). Where the creature dies,
 the reward follows Chris's rule and goes to the ground; how is described with the
 ground fallbacks. Where the party leaves the area first, the reward parks, and the
-next visit tells whether it arrived
+next visit tells whether it arrived: exactly one item of its name more than before
 ([details](native-corpse-ground-evidence.md#when-the-party-leaves-while-a-reward-is-on-its-way-since-103)).
-A quest reward's recipient is in the party: it is followed into any area.
+A quest reward's recipient is followed into any area. One in the party keeps its
+items wherever it dies; one outside it drops them where it dies, so its counts take
+the ground piles of its area, as a creature target's do.
 
 ## Still unproven
 
