@@ -193,8 +193,11 @@ one tick later, as the party arrived. CIR stopped with `DELIVERY_QUEUE_CONFLICT`
 was lost: its death drop had put the ring into its pile once, among its other items in
 slot order (POTN31, MISC21, SCRL9D, RING04, STAF01). The corpse kept only its fist.
 
-Chris's rule applies (2026-10-22): a reward that cannot arrive needs a fallback that
-always works; that of a dead recipient goes to the ground. Since 1.0.3 CIR follows the
+Chris, 2026-10-22: a reward that cannot arrive needs a fallback that always works ("Am
+besten wäre natürlich immer ein Fallback, der immer funktioniert"). He named the ground
+as one option, unsure how reliable it is, and another recipient otherwise. For a dead
+recipient CIR uses the ground, which the lab proved reliable
+([above](#what-the-game-does-eet-2730-lab-2026-10-24)). Since 1.0.3 CIR follows the
 reward's own instance (`Adapter:_observe_creature`): the one new item of the reward's
 name in a backpack slot
 (see the [transport evidence](native-creature-transport-evidence.md#while-the-reward-is-on-its-way-2026-10-27)).
