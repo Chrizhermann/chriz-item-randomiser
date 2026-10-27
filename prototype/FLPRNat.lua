@@ -435,10 +435,10 @@ function Adapter:_creature_state(object, party_reward)
     return nil
 end
 
--- The one sprite, dead or alive, in the visible area or the party whose
--- LOCALS <name> is 1: the recipient a reward reply marked.
-function Adapter:_marked(area, name)
-    local api,matches,seen,object=self.api,0,{},nil
+-- Every sprite, dead or alive, in the visible area or the party whose
+-- LOCALS <name> is 1.
+function Adapter:_all_marked(area, name)
+    local api,seen,found=self.api,{},{}
     local function scan(candidate)
         if not candidate then return end
         candidate=api.EEex_GameObject_CastUserType(candidate)
@@ -446,9 +446,7 @@ function Adapter:_marked(area, name)
         local address=pointer(api,candidate)
         if seen[address] then return end
         seen[address]=true
-        if api.EEex_Sprite_GetLocalInt(candidate,name)==1 then
-            matches,object=matches+1,candidate
-        end
+        if api.EEex_Sprite_GetLocalInt(candidate,name)==1 then found[#found+1]=candidate end
     end
     for _,field in ipairs(lists) do
         assert(area[field],'NATIVE_AREA_LIST_MISSING')
@@ -458,8 +456,15 @@ function Adapter:_marked(area, name)
         end)
     end
     for index=0,5 do scan(api.EEex_Sprite_GetInPortrait(index)) end
-    if matches~=1 then return nil,matches==0 and 'OWNER_MISSING' or 'OWNER_AMBIGUOUS' end
-    return object
+    return found
+end
+
+-- The one sprite, dead or alive, in the visible area or the party whose
+-- LOCALS <name> is 1: the recipient a reward reply marked.
+function Adapter:_marked(area, name)
+    local found=self:_all_marked(area,name)
+    if #found~=1 then return nil,#found==0 and 'OWNER_MISSING' or 'OWNER_AMBIGUOUS' end
+    return found[1]
 end
 
 function Adapter:_resolve(endpoint, kind, visible_area)
@@ -853,7 +858,17 @@ function Adapter:hand_over_container_reward(speaker, target_id, assignments, pha
     local endpoint=self.targets[target_id]
     if not endpoint then return 0 end -- Place excluded from this campaign.
     assert(endpoint.handover and endpoint.kind=='container','NATIVE_HANDOVER_INVALID')
-    local api,mark=self.api,endpoint.handover.recipient_local
+    local payee=self:_mark_payee(speaker,endpoint.handover.recipient_local,'NATIVE_HANDOVER_MARK_FAILED')
+    if not payee then return 0,'HANDOVER_PAYEE_MISSING' end
+    return self:_hand_over(target_id,endpoint,payee,assignments,phases)
+end
+
+-- The one a reward reply's speaker talks to (LastTalkedToBy), else the first
+-- living party member, marked with the LOCALS <mark> at once: the reply marks
+-- it too, but through an action of another actor that the scene after it may
+-- clear. Nil if there is no one; <failure> if the mark does not hold.
+function Adapter:_mark_payee(speaker, mark, failure)
+    local api=self.api
     local talked=api.EEex_Object_EvalStringAsAIBase('LastTalkedToBy',speaker)
     local payee=talked and api.EEex_GameObject_CastUserType(talked)
     if payee and self:_creature_state(payee,true) then payee=nil end
@@ -861,12 +876,37 @@ function Adapter:hand_over_container_reward(speaker, target_id, assignments, pha
         local member=not payee and api.EEex_Sprite_GetInPortrait(index)
         if member and not self:_creature_state(member,true) then payee=member end
     end
-    if not payee then return 0,'HANDOVER_PAYEE_MISSING' end
-    -- The reply marks the payee too, but through an action of another actor
-    -- that the scene after it may clear.
+    if not payee then return nil end
     api.EEex_Action_ExecuteResponseStringOnAIBaseInstantly('SetGlobal("'..mark..'","LOCALS",1)',payee)
-    assert(api.EEex_Sprite_GetLocalInt(payee,mark)==1,'NATIVE_HANDOVER_MARK_FAILED')
-    return self:_hand_over(target_id,endpoint,payee,assignments,phases)
+    assert(api.EEex_Sprite_GetLocalInt(payee,mark)==1,failure)
+    return payee
+end
+
+-- Adalon takes the eggs: her reward reply marks the one she talks to through
+-- an action of his own, and the end of her talk clears every queued action
+-- of the party before he can take it. The condition of that reply calls this
+-- when the game shows it (M_FLPR's FLPR_Mark) with the mark of the place's
+-- recipient, the same in every preset's row there. The one she talks to is
+-- marked at once (Adapter:_mark_payee), as the only one: another one the
+-- reply was shown to before loses the mark. Nothing happens where no quest
+-- place of this campaign has that mark. Returns why no one could be marked.
+function Adapter:mark_recipient(speaker, mark)
+    assert(type(mark)=='string' and mark:match('^FLPR_R[A-Z0-9_]+$'),'NATIVE_MARK_INVALID')
+    local used=false
+    for _,endpoint in pairs(self.targets) do
+        used=used or (endpoint.quest_event~=nil and not endpoint.spell_event and endpoint.recipient_local==mark)
+    end
+    if not used then return end
+    local payee=self:_mark_payee(speaker,mark,'NATIVE_RECIPIENT_MARK_FAILED')
+    if not payee then return 'MARK_PAYEE_MISSING' end
+    local api,area=self.api,self.api.EEex_Area_GetVisible()
+    local own=pointer(api,payee)
+    for _,other in ipairs(area and self:_all_marked(area,mark) or {}) do
+        if pointer(api,other)~=own then
+            api.EEex_Action_ExecuteResponseStringOnAIBaseInstantly('SetGlobal("'..mark..'","LOCALS",0)',other)
+            assert(api.EEex_Sprite_GetLocalInt(other,mark)==0,'NATIVE_RECIPIENT_MARK_FAILED')
+        end
+    end
 end
 
 -- A handover the reply could not finish, while another mutation was still to

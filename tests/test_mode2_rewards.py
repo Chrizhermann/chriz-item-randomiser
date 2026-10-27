@@ -108,7 +108,7 @@ REVIEWED_EET = {
     "dlg:udlesa": ("6c518483372ebe4073986dc2d41e4f7ae73a7bce133aab4289a29ef1be7c7e50",
                    "02e3d2ad97dad0ba3c42c82c11601c0d13373b733d8eafff1bab9799f484a8ab"),
     "dlg:udsilver": ("48f697db47942b74b4530975a5a4a46cac1a0cc850453b2b9d50ab173b01090c",
-                     "93263338ca5b92805b0cba76368d690d254767a74ef5cb4cce7459d32c6dcb50"),
+                     "6c83893b94d07baf21bfa318a128cde4bb74f3f6a00aa8ed0a651b509ff7e7c8"),
     "dlg:udsvir03": ("5918919ea366eceb27f4096f025cde79c44310a9e57bcd49d123fdbb48352994",
                      "2003095671c146bb3d06b92fcc17df06dc18e5be4ab59a0e5d17bfd6db412e66"),
     "dlg:uhmay01": ("4213656595fdde6afeefee881597ddd62814ba886747bc4d60cfca25a2d852be",
@@ -148,6 +148,12 @@ def handover_line(spec):
     campaign, _, number = spec["target_ids"][0].partition(":mode2:target:")
     return (f'EEex_LuaTrigger("return(FLPR_Handover==nil)or(FLPR_Handover(EEex_LuaTrigger_Object,'
             f'{number}{",1" if campaign == "bg1" else ""}))")\r\n').encode()
+
+
+def mark_line(spec):
+    """The reward reply's condition by which the one the speaker talks to gets the route's mark at once."""
+    return (f'EEex_LuaTrigger("return(FLPR_Mark==nil)or(FLPR_Mark(EEex_LuaTrigger_Object,'
+            f'[[{spec["recipient_local"]}]]))")\r\n').encode()
 
 
 TRGENI_DEPARTURE = (b'EEex_LuaAction("EEex_Action_QueueResponseStringOnAIBase('
@@ -405,8 +411,12 @@ class Mode2RewardTests(unittest.TestCase):
                     self.assertEqual(branch[4:12], transition[4:12])  # Reply and journal.
                     self.assertEqual(branch[20:], transition[20:])  # Link/exit state.
                     trigger_id, action_id = struct.unpack_from("<II", branch, 12)
-                    self.assertEqual(after.triggers[trigger_id], guarded(prior,
-                        f'{"" if selected else "!"}Global("{spec["selected_global"]}","GLOBAL",1)\r\n'.encode()))
+                    condition = guarded(prior,
+                        f'{"" if selected else "!"}Global("{spec["selected_global"]}","GLOBAL",1)\r\n'.encode())
+                    # A mark at once follows the guard, in every variant.
+                    if spec.get("instant_mark"):
+                        condition = guarded(condition, mark_line(spec))
+                    self.assertEqual(after.triggers[trigger_id], condition)
                     changed = after.actions[action_id]
                     if spec.get("inventory_target"):
                         # The target's row, and a BG1 row's campaign (1).
@@ -811,10 +821,13 @@ class Mode2RewardTests(unittest.TestCase):
                             restored = restored.replace(consumed, grant, 1)
                         else:
                             self.assertIn(grant, restored)
-                    # A treasury's handover follows the guards, in every variant.
+                    # A treasury's handover and a mark at once follow the
+                    # guards, in every variant.
                     for spec in specs:
                         if spec.get("handover"):
                             condition = guarded(condition, handover_line(spec))
+                        if spec.get("instant_mark"):
+                            condition = guarded(condition, mark_line(spec))
                     self.assertEqual(after.triggers[struct.unpack_from("<I", branch, 12)[0]], condition)
                     self.assertEqual(restored, original_actions)
             self.assertEqual(cursor, len(new))
@@ -1215,17 +1228,102 @@ class Mode2RewardTests(unittest.TestCase):
                 self.assertEqual(b"FLPR_Transfer" in result, reason is None)
                 self.assertTrue(rewards._examine("dlg:udsilver", result).current)
 
+    def test_adalons_reward_reply_marks_the_one_she_talks_to_at_once(self):
+        # Her talk ends by clearing every queued action of the party (state 46
+        # of UDSILVER.DLG), the mark her reward reply queues for its recipient
+        # among them, so the reward of her place (row 66) never found whom to
+        # go to. Both variants of that reply also mark the one she talks to at
+        # once, in their condition; it is true whatever happens there. No
+        # other route needs that.
+        spec = rewards.REWARDS["udsilver"]
+        self.assertEqual([key for key, other in rewards.REWARDS.items() if other.get("instant_mark")], ["udsilver"])
+        self.assertEqual(rewards._instant_mark(spec), mark_line(spec))
+        line = mark_line(spec)
+        for beamdog in (True, False):
+            with self.subTest(beamdog=beamdog):
+                result = rewards.patch_reward("dlg:udsilver", layout_dialogue("udsilver", ADALON_STATES,
+                                                                              beamdog=beamdog))
+                after = _Dialogue(result, "udsilver")
+                marking = [(index, ordinal) for index in range(len(after.states))
+                           for ordinal, row in enumerate(outgoing(after, index))
+                           if struct.unpack_from("<I", row)[0] & 2 and
+                           b"FLPR_Mark" in after.triggers[struct.unpack_from("<I", row, 12)[0]]]
+                self.assertEqual(marking, [(1, 0), (1, 1)])
+                for row in outgoing(after, 1):
+                    trigger = after.triggers[struct.unpack_from("<I", row, 12)[0]]
+                    self.assertTrue(trigger.endswith(line))
+                    self.assertEqual(trigger.count(line), 1)
+                    self.assertIn(b'Global("FLPR_QM2_44","GLOBAL",1)\r\n' + line, trigger)
+        # The condition as the dialogue parser leaves it (it strips spaces and
+        # colons), in each Lua: true without CIR's runtime and with it.
+        chunks = re.findall(rb'EEex_LuaTrigger\("(return[^"\r\n]*)"\)', line)
+        self.assertEqual(chunks, [b"return(FLPR_Mark==nil)or(FLPR_Mark(EEex_LuaTrigger_Object,"
+                                  b"[[FLPR_RA_EGGDEALIO]]))"])
+        self.assertNotIn(b" ", chunks[0])
+        self.assertNotIn(b":", chunks[0])
+        for runtime in (Lua51, Lua53, LuaJIT):
+            lua = runtime(unpack_returned_tuples=True)
+            self.assertIs(lua.execute(chunks[0].decode()), True)
+            lua.execute('EEex_LuaTrigger_Object={};'
+                        'function FLPR_Mark(speaker,mark) '
+                        'assert(speaker==EEex_LuaTrigger_Object);seen=mark;return true end')
+            self.assertIs(lua.execute(chunks[0].decode()), True)
+            self.assertEqual(lua.globals().seen, "FLPR_RA_EGGDEALIO")
+        # The one she talks to, in any letter case and spacing; a reply that
+        # gives the crossbow to another cannot be marked so, and her crossbow's
+        # route leaves the dialogue alone with its reason.
+        refused = ("UDSILVER.DLG state 1 gives XBOW10 to another than the one the speaker talks to, "
+                   "whom the route cannot mark at once")
+        for recipient, reason in (("lasttalkedtoby", None), ("LastTalkedToBy(Myself)", None),
+                                  ("LastTalkedToBy( Myself )", None), ("Player1", refused), ("[PC]", refused),
+                                  ("LastSummonerOf(Myself)", refused)):
+            with self.subTest(recipient=recipient):
+                variant = [list(replies) for replies in ADALON_STATES]
+                variant[1] = [("", f'TakePartyItem("misc9t")\nGiveItemCreate("xbow10",{recipient},1,1,1)', 2)]
+                data = layout_dialogue("udsilver", variant)
+                self.assertEqual(rewards.route_reasons("dlg:udsilver", data), {} if reason is None else
+                                 {"udsilver": reason})
+                result = rewards.patch_reward("dlg:udsilver", data)
+                self.assertEqual(result.count(line), 0 if reason else 2)
+                self.assertEqual(b"FLPR_QM2_44" in result, reason is None)
+                self.assertIn(b"FLPR_Transfer", result)
+                self.assertTrue(rewards._examine("dlg:udsilver", result).current)
+        # Changed copies of the patch: another mark, the mark before the
+        # guard, twice, or gone from one variant.
+        result = rewards.patch_reward("dlg:udsilver", layout_dialogue("udsilver", ADALON_STATES))
+        after = _Dialogue(result, "udsilver")
+        first = struct.unpack_from("<I", outgoing(after, 1)[0], 12)[0]
+        guard = after.triggers[first][:-len(line)]
+        for label, changed in (
+                ("another mark", after.triggers[first].replace(b"[[FLPR_RA_EGGDEALIO]]", b"[[FLPR_RA_OTHER]]")),
+                ("before the guard", line + guard),
+                ("twice", after.triggers[first] + line),
+                ("gone from one variant", guard)):
+            with self.subTest(changed=label):
+                tampered = _Dialogue(result, "udsilver")
+                tampered.triggers[first] = changed
+                tampered = tampered.render()
+                with self.assertRaisesRegex(ProfileError, "carries a changed copy of the reward route's own patch"):
+                    rewards.patch_reward("dlg:udsilver", tampered)
+                self.assertIsNone(rewards.superseding_routes("dlg:udsilver", result, tampered))
+                reasons = rewards.route_reasons("dlg:udsilver", tampered)
+                self.assertEqual(sorted(reasons), ["adalon", "udsilver"])
+                self.assertIn("changed copy", reasons["udsilver"])
+
     def test_an_earlier_versions_patch_of_adalons_dialogue_is_made_again_with_her_route(self):
         # CIR 1.0.2 patched UDSILVER.DLG for her crossbow's route (row 44)
-        # only: her place had no route then. That patch is still ours, so the
-        # scan and Apply read her dialogue from it as it was, and Apply then
-        # patches it with both routes.
+        # only: her place had no route then, and no reply marked its recipient
+        # at once. A build before that mark patched it with both routes. Those
+        # patches are still ours, so the scan and Apply read her dialogue from
+        # them as it was, and Apply then patches it with both routes.
         specs = rewards.resource_specs("dlg:udsilver")
         for original in (dialogue_fixture(specs), layout_dialogue("udsilver", ADALON_STATES),
                          layout_dialogue("udsilver", ADALON_STATES, beamdog=False)):
             with self.subTest(size=len(original)):
                 now = rewards.patch_reward("dlg:udsilver", original)
-                for earlier in (rewards._patch_dialogue(original, specs[:1]),
+                for earlier in (rewards._patch_dialogue(original, specs[:1], instant_marks=False),
+                                rewards._patch_dialogue(original, specs, instant_marks=False),
+                                rewards._patch_dialogue(original, specs[:1]),
                                 rewards._patch_dialogue(original, specs[1:])):
                     examined = rewards._examine("dlg:udsilver", earlier)
                     self.assertEqual((examined.own, examined.current), (True, False))
@@ -1237,12 +1335,15 @@ class Mode2RewardTests(unittest.TestCase):
                     self.assertEqual(rewards._logical(again, "dlg:udsilver"), rewards._logical(now, "dlg:udsilver"))
                     self.assertTrue(rewards._examine("dlg:udsilver", again).current)
                     self.assertEqual(rewards.patch_reward("dlg:udsilver", again), again)
-                # A changed copy of the earlier patch is not ours.
-                earlier = rewards._patch_dialogue(original, specs[:1])
-                tampered = earlier.replace(b'"FLPR_EA_EGGDEALIO","GLOBAL",1)', b'"FLPR_EA_EGGDEALIO","GLOBAL",2)', 1)
-                self.assertNotEqual(tampered, earlier)
-                with self.assertRaisesRegex(ProfileError, "carries a changed copy of the reward route's own patch"):
-                    rewards.patch_reward("dlg:udsilver", tampered)
+                # A changed copy of an earlier patch is not ours.
+                for marks in (False, True):
+                    earlier = rewards._patch_dialogue(original, specs[:1], instant_marks=marks)
+                    tampered = earlier.replace(b'"FLPR_EA_EGGDEALIO","GLOBAL",1)',
+                                               b'"FLPR_EA_EGGDEALIO","GLOBAL",2)', 1)
+                    self.assertNotEqual(tampered, earlier)
+                    with self.assertRaisesRegex(ProfileError,
+                                                "carries a changed copy of the reward route's own patch"):
+                        rewards.patch_reward("dlg:udsilver", tampered)
         # Where her crossbow's route cannot be prepared, the patch of her
         # place's route alone is the current one.
         variant = [replies for replies in ADALON_STATES]
@@ -1259,26 +1360,32 @@ class Mode2RewardTests(unittest.TestCase):
     def test_a_newer_patch_of_adalons_dialogue_supersedes_the_earlier_one(self):
         # Saves of a revision that CIR 1.0.2 exported with her crossbow's route
         # alone can read the dialogue that has her route too: each route of the
-        # earlier patch changes the same replies alike in the newer one.
+        # earlier patch changes the same replies in the newer one, which also
+        # marks the crossbow's recipient at once. So can saves of a build that
+        # patched both routes before that mark: the newer patch adds no route.
         specs = rewards.resource_specs("dlg:udsilver")
         crossbow = tuple(spec for spec in specs if spec["route"] == "udsilver")
         for original in (dialogue_fixture(specs), layout_dialogue("udsilver", ADALON_STATES),
                          layout_dialogue("udsilver", ADALON_STATES, beamdog=False)):
-            with self.subTest(size=len(original)):
-                earlier = rewards._patch_dialogue(original, crossbow)
-                for newer in (rewards.patch_reward("dlg:udsilver", original),
-                              rewards.patch_reward("dlg:udsilver", earlier)):
-                    added = rewards.superseding_routes("dlg:udsilver", newer, earlier)
-                    self.assertEqual([spec["route"] for spec in added], ["adalon"])
-                    self.assertEqual(rewards.superseding_routes("dlg:udsilver", newer, newer), ())
-                    # Never the other way round: the earlier patch is not
-                    # Apply's now, and lacks her route.
-                    self.assertIsNone(rewards.superseding_routes("dlg:udsilver", earlier, newer))
-                # A changed copy of the earlier patch is not ours.
-                tampered = earlier.replace(b'"FLPR_EA_EGGDEALIO","GLOBAL",1)', b'"FLPR_EA_EGGDEALIO","GLOBAL",2)', 1)
-                self.assertNotEqual(tampered, earlier)
-                self.assertIsNone(rewards.superseding_routes(
-                    "dlg:udsilver", rewards.patch_reward("dlg:udsilver", original), tampered))
+            for earlier, routes in ((rewards._patch_dialogue(original, crossbow, instant_marks=False), ["adalon"]),
+                                    (rewards._patch_dialogue(original, crossbow), ["adalon"]),
+                                    (rewards._patch_dialogue(original, specs, instant_marks=False), [])):
+                with self.subTest(size=len(original), routes=routes, marks=b"FLPR_Mark" in earlier):
+                    for newer in (rewards.patch_reward("dlg:udsilver", original),
+                                  rewards.patch_reward("dlg:udsilver", earlier)):
+                        added = rewards.superseding_routes("dlg:udsilver", newer, earlier)
+                        self.assertIsNotNone(added)
+                        self.assertEqual([spec["route"] for spec in added], routes)
+                        self.assertEqual(rewards.superseding_routes("dlg:udsilver", newer, newer), ())
+                        # Never the other way round: the earlier patch is not
+                        # Apply's now.
+                        self.assertIsNone(rewards.superseding_routes("dlg:udsilver", earlier, newer))
+                    # A changed copy of the earlier patch is not ours.
+                    tampered = earlier.replace(b'"FLPR_EA_EGGDEALIO","GLOBAL",1)',
+                                               b'"FLPR_EA_EGGDEALIO","GLOBAL",2)', 1)
+                    self.assertNotEqual(tampered, earlier)
+                    self.assertIsNone(rewards.superseding_routes(
+                        "dlg:udsilver", rewards.patch_reward("dlg:udsilver", original), tampered))
         # Nor does the patch of a dialogue that another mod changed since.
         changed = [list(replies) for replies in ADALON_STATES]
         changed[3] = [("", 'SetGlobal("OtherMod","GLOBAL",1)\nDestroySelf()', None)]

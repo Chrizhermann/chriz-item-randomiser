@@ -337,6 +337,11 @@ fn build_registry() -> Registry {
     for name in ["udsilver", "uddemon"] {
         row_mut(&mut rewards, name).insert("resources", list!["dlg:udsilver", "dlg:uddemon"]);
     }
+    // The end of Adalon's talk clears every queued action of the party, the
+    // mark her reward reply queues for its recipient among them ([`mark`]):
+    // that reply marks the one she talks to at once in its condition too
+    // ([`instant_mark`]).
+    row_mut(&mut rewards, "udsilver").insert("instant_mark", true);
     alias(
         &mut rewards,
         "gortan1",
@@ -1025,6 +1030,52 @@ fn hands_over(spec: &Dict) -> bool {
     spec.get("handover").is_some_and(Value::truthy)
 }
 
+/// The condition by which a reward reply marks its recipient at once, by the
+/// name of the route's mark (M_FLPR's FLPR_Mark, `_instant_mark`): the one
+/// the speaker talks to. It is true whatever happens there, so the reply
+/// always shows; without CIR's runtime it does nothing. The name has no space
+/// or colon, which the dialogue parser strips (callback).
+pub fn instant_mark(spec: &Dict) -> Result<Vec<u8>> {
+    let mark = text(spec, "recipient_local")?;
+    Ok(format!("EEex_LuaTrigger(\"return(FLPR_Mark==nil)or(FLPR_Mark(EEex_LuaTrigger_Object,[[{mark}]]))\")\r\n")
+        .into_bytes())
+}
+
+/// Whether the route's reward reply marks its recipient at once
+/// (`spec.get("instant_mark")`).
+fn marks_at_once(spec: &Dict) -> bool {
+    spec.get("instant_mark").is_some_and(Value::truthy)
+}
+
+/// What a reward reply's condition gets after the guards for this route
+/// (`_conditions`): a treasury's handover, a mark at once (before 1.0.3 a
+/// patch had none).
+fn conditions(spec: &Dict, instant_marks: bool) -> Result<Vec<Vec<u8>>> {
+    let mut tails = Vec::new();
+    if hands_over(spec) {
+        tails.push(handover(spec)?);
+    }
+    if instant_marks && marks_at_once(spec) {
+        tails.push(instant_mark(spec)?);
+    }
+    Ok(tails)
+}
+
+/// The recipient of a grant whose route marks at once (`_TALKED_TO`): the one
+/// the speaker talks to, as the runtime finds him (FLPRNat mark_recipient).
+const TALKED_TO: [&[u8]; 2] = [b"lasttalkedtoby", b"lasttalkedtoby(myself)"];
+
+/// Whether a grant's recipient names the one the speaker talks to, in any
+/// letter case and spacing (`re.sub(rb"\s+", b"", recipient).lower()`).
+fn names_the_talker(recipient: &[u8]) -> bool {
+    let compact: Vec<u8> = recipient
+        .iter()
+        .filter(|byte| !matches!(byte, b' ' | b'\t' | b'\n' | b'\r' | 0x0b | 0x0c))
+        .map(u8::to_ascii_lowercase)
+        .collect();
+    TALKED_TO.contains(&compact.as_slice())
+}
+
 /// The replies that give a route's item, by (state, ordinal), with the call
 /// that gives it.
 pub type Grants = BTreeMap<(usize, usize), Call>;
@@ -1301,8 +1352,14 @@ pub fn dialogue_grants(dialogue: &Dialogue, spec: &Dict, label: &str, only: Opti
                 return Err(profile(format!("{place} gives {shown} twice in one reply")));
             }
             if let Some(call) = given.into_iter().next() {
-                if argument(&text, &call, 1).is_none_or(<[u8]>::is_empty) {
+                let recipient = argument(&text, &call, 1).unwrap_or(b"");
+                if recipient.is_empty() {
                     return Err(profile(format!("{place} gives {shown} without a recipient")));
+                }
+                if marks_at_once(spec) && !names_the_talker(recipient) {
+                    return Err(profile(format!(
+                        "{place} gives {shown} to another than the one the speaker talks to, whom the route cannot mark at once"
+                    )));
                 }
                 grants.insert((state_index, ordinal), call);
             }
@@ -1397,13 +1454,15 @@ pub fn patch_dialogue(
     numeric_target: bool,
     reasons: Option<&mut Dict>,
 ) -> Result<Vec<u8>> {
-    patch_dialogue_in(data, specs, action_refs, defer_departure, numeric_target, reasons, None, None, None)
+    patch_dialogue_in(data, specs, action_refs, defer_departure, numeric_target, reasons, None, None, None, true)
 }
 
 /// [`patch_dialogue`] with the reference's further keywords: `only` limits
 /// each route to the given replies, as in a dialogue that holds copies of its
 /// reward replies (`resource` names that dialogue); `shown` collects the
-/// strrefs of `action_refs` that a grant shows.
+/// strrefs of `action_refs` that a grant shows. Without `instant_marks`, no
+/// reply marks its recipient at once ([`instant_mark`]), as no patch did
+/// before 1.0.3.
 #[allow(clippy::too_many_arguments)]
 pub fn patch_dialogue_in(
     data: &[u8],
@@ -1415,6 +1474,7 @@ pub fn patch_dialogue_in(
     only: Option<&BTreeMap<String, Replies>>,
     resource: Option<&str>,
     shown: Option<&mut BTreeSet<i64>>,
+    instant_marks: bool,
 ) -> Result<Vec<u8>> {
     let first_spec = specs.first().ok_or_else(index_error)?;
     let resource = match resource {
@@ -1553,10 +1613,11 @@ pub fn patch_dialogue_in(
                 }
                 // After the campaign guards, which the recovery reads from the
                 // end (guard_calls). Every variant pays, so each hands over;
-                // a second call finds nothing left in the treasury.
+                // a second call finds nothing left in the treasury. Each marks
+                // at once, too.
                 for (spec, _) in relevant.iter().copied() {
-                    if hands_over(spec) {
-                        condition = joined(&condition, &handover(spec)?);
+                    for tail in conditions(spec, instant_marks)? {
+                        condition = joined(&condition, &tail);
                     }
                 }
                 if choices.contains(&true) && !action_refs.is_empty() {
@@ -1719,6 +1780,7 @@ pub fn patch_text_dialogue(
         None,
         None,
         Some(&mut shown),
+        true,
     )?;
     let mut dlg = read_dialogue(&patched, resource)?;
     let label = label(resource);
@@ -2043,8 +2105,9 @@ pub(crate) fn logical(data: &[u8], resource: &str) -> Result<Logical> {
 /// The result reads as the original did, and tells whether `data` is the
 /// patch of every route there. An earlier version's patch has fewer routes
 /// where the dialogue had fewer then (CIR 1.0.2 patched UDSILVER.DLG before
-/// Adalon's place had its route). Patching the original again, with every
-/// route or with those whose changes `data` carries ([`route_marker`]), must
+/// Adalon's place had its route), and no mark at once ([`instant_mark`]).
+/// Patching the original again, with every route or with those whose changes
+/// `data` carries ([`route_marker`]), with marks at once or without, must
 /// give the same dialogue as `data`, or `data` is not exactly this adapter's
 /// patch.
 fn static_original(data: &[u8], resource: &str, naming: Naming<'_>) -> Result<Option<(Vec<u8>, bool)>> {
@@ -2070,21 +2133,25 @@ fn static_original(data: &[u8], resource: &str, naming: Naming<'_>) -> Result<Op
         if routes.is_empty() {
             continue;
         }
-        match patch_dialogue(&original, routes, &[], true, true, None).and_then(|patched| logical(&patched, resource)) {
-            Ok(patched) if patched == found => return Ok(Some((original, complete))),
-            Ok(_) => {}
-            Err(error) if error.kind == ErrorKind::Profile => {}
-            Err(error) => return Err(error),
+        for marks in [true, false] {
+            match patch_dialogue_in(&original, routes, &[], true, true, None, None, None, None, marks)
+                .and_then(|patched| logical(&patched, resource))
+            {
+                Ok(patched) if patched == found => return Ok(Some((original, complete && marks))),
+                Ok(_) => {}
+                Err(error) if error.kind == ErrorKind::Profile => {}
+                Err(error) => return Err(error),
+            }
         }
     }
     Err(changed_patch(resource))
 }
 
-/// The handover condition of one of these routes that `trigger` ends with.
-fn handover_tail(trigger: &[u8], routes: &[(Vec<u8>, &Dict)]) -> Result<Option<Vec<u8>>> {
+/// The handover or mark condition of one of these routes that `trigger` ends
+/// with ([`conditions`]).
+fn condition_tail(trigger: &[u8], routes: &[(Vec<u8>, &Dict)]) -> Result<Option<Vec<u8>>> {
     for (_, spec) in routes {
-        if hands_over(spec) {
-            let line = handover(spec)?;
+        for line in conditions(spec, true)? {
             if trigger.ends_with(&line) {
                 return Ok(Some(line));
             }
@@ -2118,23 +2185,27 @@ pub(crate) fn unpatched_dialogue(mut dialogue: Dialogue, specs: &[Dict], resourc
             let (flags, action_id) = (u32_le(&row, 0), u32_le(&row, 16));
             let mut trigger = if flags & 2 != 0 { string(&dialogue.triggers, u32_le(&row, 12), &label)? } else { Vec::new() };
             let mut action = if flags & 4 != 0 { string(&dialogue.actions, action_id, &label)? } else { Vec::new() };
-            // The handover conditions follow the guards of their routes.
+            // The handover and mark conditions follow the guards of their
+            // routes; an earlier version's patch has no mark (conditions).
             let mut handed = Vec::new();
             if flags & 2 != 0 {
-                while let Some(tail) = handover_tail(&trigger, &routes)? {
+                while let Some(tail) = condition_tail(&trigger, &routes)? {
                     trigger.truncate(trigger.len() - tail.len());
                     handed.insert(0, tail);
                 }
             }
             let guards = if flags & 2 != 0 { guard_calls(&trigger, &routes).unwrap_or_default() } else { Vec::new() };
             let copies = if guards.len() >= usize::BITS as usize - 1 { usize::MAX } else { 1usize << guards.len() };
-            let mut expected = Vec::new();
+            let mut expected = [Vec::new(), Vec::new()];
             for (_, spec, _) in &guards {
-                if hands_over(spec) {
-                    expected.push(handover(spec)?);
+                for (tails, marks) in expected.iter_mut().zip([true, false]) {
+                    tails.extend(conditions(spec, marks)?);
                 }
             }
-            if guards.iter().any(|(_, _, selected)| *selected) || at.saturating_add(copies) > rows.len() || handed != expected {
+            if guards.iter().any(|(_, _, selected)| *selected)
+                || at.saturating_add(copies) > rows.len()
+                || expected.iter().all(|tails| handed != *tails)
+            {
                 return Err(changed_patch(resource));
             }
             at += copies;
@@ -2871,8 +2942,9 @@ fn carried_routes(data: &[u8], resource: &str, specs: &[Dict]) -> Result<BTreeSe
 /// earlier version's patch of the same dialogue with some of those routes
 /// ([`static_original`]: CIR 1.0.2's UDSILVER.DLG before Adalon's place had
 /// its route). Both read as patching that dialogue's content with their
-/// routes, so each route `earlier` carries changes the same replies alike in
-/// both (`superseding_routes`).
+/// routes, so each route `earlier` carries changes the same replies in both;
+/// a patch before 1.0.3 does not mark a recipient at once ([`instant_mark`])
+/// (`superseding_routes`).
 ///
 /// None where `newer` does not supersede `earlier` so: a script, a text
 /// route's or a destroy gate's resource (their patches carry every route),

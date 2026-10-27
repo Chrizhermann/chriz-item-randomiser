@@ -567,6 +567,7 @@ impl RewardCopies {
             Some(&only),
             Some(resource),
             None,
+            true,
         )
     }
 

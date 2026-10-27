@@ -437,6 +437,13 @@ pub fn handover_line(spec: &Dict) -> Vec<u8> {
         .into_bytes()
 }
 
+/// `mark_line(spec)`: the reward reply's condition by which the one the
+/// speaker talks to gets the route's mark at once.
+pub fn mark_line(spec: &Dict) -> Vec<u8> {
+    let mark = text(spec, "recipient_local");
+    format!("EEex_LuaTrigger(\"return(FLPR_Mark==nil)or(FLPR_Mark(EEex_LuaTrigger_Object,[[{mark}]]))\")\r\n").into_bytes()
+}
+
 /// The text-route fixture of test_text_variants_preserve_original_routes...
 pub fn text_variant(resource: &str) -> Vec<u8> {
     let name = resource.split(':').nth(1).unwrap();
@@ -518,7 +525,12 @@ pub fn check_dialogue(
                 assert_eq!(branch[4..12], transition[4..12]); // Reply and journal.
                 assert_eq!(branch[20..], transition[20..]); // Link/exit state.
                 let trigger = &after.triggers[u32_at(branch, 12) as usize];
-                assert_eq!(trigger, &guarded(&prior, &guard(text(spec, "selected_global"), selected)));
+                let mut condition = guarded(&prior, &guard(text(spec, "selected_global"), selected));
+                // A mark at once follows the guard, in every variant.
+                if spec.get("instant_mark").is_some_and(Value::truthy) {
+                    condition = guarded(&condition, &mark_line(spec));
+                }
+                assert_eq!(trigger, &condition);
                 let changed = &after.actions[u32_at(branch, 16) as usize];
                 let event: Vec<u8>;
                 let mut restored;
@@ -739,10 +751,14 @@ pub fn check_pair(name: &str, original: &[u8], result: &[u8]) {
                         assert!(contains(&restored, &grant));
                     }
                 }
-                // A treasury's handover follows the guards, in every variant.
+                // A treasury's handover and a mark at once follow the
+                // guards, in every variant.
                 for spec in &specs {
                     if spec.get("handover").is_some_and(Value::truthy) {
                         condition = guarded(&condition, &handover_line(spec));
+                    }
+                    if spec.get("instant_mark").is_some_and(Value::truthy) {
+                        condition = guarded(&condition, &mark_line(spec));
                     }
                 }
                 assert_eq!(after.triggers[u32_at(branch, 12) as usize], condition);
