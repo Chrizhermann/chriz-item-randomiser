@@ -1558,6 +1558,14 @@ function Adapter:_request(request,kind)
         and request.resource_sha256==gate.resource_hash and request.quantity==(gate.binding.quantity or 1) and same_payload(request.payload,gate.binding.payload)
         and type(request.session)=='table' and type(request.token)=='table'
 end
+-- What keeps a removal proof from being made now, which is no evidence that the
+-- original is still there: the witnessed load of the source's area is not the
+-- visible one (another area, or the party left it and it was loaded again), or
+-- the witnessed holder is gone, replaced or doubled. The proof waits, as after
+-- a reload; the source stays protected and no reward waits for it. Only a
+-- holder that still has the original stops CIR (CAMPAIGN_GATE_WORLD_MISMATCH).
+local UNPROVABLE={AREA_UNAVAILABLE=true,AREA_CHANGED=true,OWNER_MISSING=true,OWNER_CHANGED=true,
+    OWNER_AMBIGUOUS=true}
 local function receipt(request)
     local result={}
     for _,key in ipairs({'kind','mode','index','revision','source_id','resource_sha256','quantity',
@@ -1613,7 +1621,7 @@ function Adapter:observe_removal(request)
     end
     local world; world,reason=self.native:guarded_source_remaining(self.gate.binding.id,witness.object_pointer,witness.other_value)
     if not world then
-        if reason=='AREA_UNAVAILABLE' then return nil,'SOURCE_NOT_LOADED' end
+        if UNPROVABLE[reason] then return nil,'SOURCE_NOT_LOADED' end
         return nil,reason
     end
     if world.remaining~=0 or world.area_pointer~=witness.object_pointer or world.owner_pointer~=witness.other_value then
