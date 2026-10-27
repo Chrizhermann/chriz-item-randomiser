@@ -8,7 +8,9 @@ profile or save was changed.
 The later [native acceptance](native-creature-acceptance-20260926.md) verified the
 message binding, transport, final flags, held save/reload and a controlled death
 after delivery. This document retains the earlier static evidence and its original
-limits; automatic death-drop provenance and death during delivery remain open.
+limits; automatic death-drop provenance and death during delivery remain open. A
+death during delivery is handled since 1.0.3
+([below](#while-the-reward-is-on-its-way-2026-10-27)).
 
 ## Sources
 
@@ -199,12 +201,43 @@ Live, in the same lab: `GiveItemCreate` on Player1 queued exactly one new
 the dialog-wait message stayed queued.
 
 Since then the adapter marks a queued 67/40 as inert. Every other message
-addressed to the target still blocks it, before the action, after it and while
-observing. With that change the lab loaded a save made while the king's reward
+addressed to the target still blocks it before the action and right after it.
+Since 1.0.3 such messages no longer stop an observation
+([below](#while-the-reward-is-on-its-way-2026-10-27)). With that change the lab loaded a save made while the king's reward
 was waiting: before the first check after loading, HALB09B was in Player1's
 first free backpack slot with the source's flags 0 and the delivery was
 confirmed, while a dialog-wait message for Player1 stayed queued. After a QA
 save and reload it was there exactly once and nothing was delivered again.
+
+## While the reward is on its way (2026-10-27)
+
+The rules above stopped CIR when anything happened to the creature between
+`GiveItemCreate` and the receipt: any message for it, its death, or a change of any of
+its items. A fight or a scene does that easily. In the BG2:EE 2.7.3.0 lab a scene killed
+the recipient one tick after the reward had arrived, and CIR stopped for the rest of
+the adventure ([details](native-corpse-ground-evidence.md#a-creature-that-dies-while-its-reward-is-on-its-way-since-103)).
+
+Since 1.0.3 the observation follows the reward's own instance (`arrived` in
+`prototype/FLPRNat.lua`): the one item of the reward's name in a backpack slot (18–33)
+with a pointer that no item of that name had when the delivery began. `Run` places its
+item there and nowhere else. The other items may change:
+
+- An item of that name the creature had is not new where it moved, nor where it
+  changed in its own slot outside the backpack, by a charge used in a fight, say.
+- One that changed in its own backpack slot is what a stack merge leaves, where `Run`
+  makes no new instance. It is no copy of the reward, so CIR stops
+  (`DELIVERY_PAYLOAD_CHANGED`) rather than guess.
+- A new item of that name outside the backpack, or two new ones, still stop CIR
+  (`DELIVERY_PLACEMENT_UNEXPECTED`).
+
+A message for the creature no longer blocks the
+observation, but another item message of the reward's name for it does
+(`DELIVERY_QUEUE_CONFLICT`), and so does a change of the bound message. Once that
+message has run, the engine may give its address to a new message at once, as in the
+death drops of the [held-drop receipts](held-drop-receipts-20260926.md); that no
+longer stops CIR (`DELIVERY_MESSAGE_REUSED` before 1.0.3). Where the creature dies,
+the reward follows Chris's rule and goes to the ground; how is described with the
+ground fallbacks.
 
 ## Still unproven
 
@@ -221,5 +254,6 @@ save and reload it was there exactly once and nothing was delivered again.
   held item.
 - Death behavior: a death between queueing and `Run` (corpse placement is
   expected from the code), and the death drop of a held item into lootable
-  ownership, including pickup.
+  ownership, including pickup. Seen once (BG2:EE 2.7.3.0, 2026-10-26): a death one
+  tick after the reward arrived; the death drop put it into the corpse's pile once.
 - Scripted replacement, transformation, and multiplayer are unsupported.

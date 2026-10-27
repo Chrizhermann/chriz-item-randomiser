@@ -378,43 +378,93 @@ function cases.execute_requires_exactly_one_matching_bound_message(N)
         assert(#f.calls == 1)
     end
 end
-function cases.death_before_run_or_before_receipt_never_claims_or_replays(N)
-    for _, stage in ipairs({"queued", "pinned"}) do
-        local f = setup(N); local a = f.adapter
-        local command = f.start(1)
-        if stage == "pinned" then
-            f.update(); f.boundary(); local x, e = a:observe(command); fail(x, e, "DELIVERY_SETTLING")
-        end
-        f.creature.alive = false
-        -- Run has no death check: a queued message would land in the corpse.
-        f.update(); f.boundary()
-        local x, e = a:observe(command); fail(x, e, "TARGET_DIED_DURING_DELIVERY")
-        f.creature.alive = true; f.boundary()
-        x, e = a:observe(command); fail(x, e, "TARGET_DIED_DURING_DELIVERY")
-        x, e = a:execute(command); fail(x, e, "MUTATION_PENDING")
-        assert(#f.calls == 1)
-    end
-end
 function cases.unexpected_placement_is_never_accepted(N)
-    local wants = {displaced="INVENTORY_CHANGED", merged="INVENTORY_CHANGED", quick="DELIVERY_PLACEMENT_UNEXPECTED",
-        two="DELIVERY_PLACEMENT_UNEXPECTED", lost="DELIVERY_MESSAGE_LOST", payload="DELIVERY_PAYLOAD_CHANGED"}
-    for _, variant in ipairs({"displaced", "merged", "quick", "two", "lost", "payload"}) do
+    local wants = {merged="DELIVERY_PAYLOAD_CHANGED", quick="DELIVERY_PLACEMENT_UNEXPECTED",
+        two="DELIVERY_PLACEMENT_UNEXPECTED", lost="DELIVERY_MESSAGE_LOST", payload="DELIVERY_PAYLOAD_CHANGED",
+        unrelated="DELIVERY_MESSAGE_LOST"}
+    for _, variant in ipairs({"merged", "quick", "two", "lost", "payload", "unrelated"}) do
         local f = setup(N); local a = f.adapter
+        -- An item of the reward's name it holds already, merged into instead of a new one.
+        if variant == "merged" then f.creature.slots[22] = f.item("FLPRI1", 313) end
         local command = f.start(1); table.remove(f.queue, 1)
-        if variant == "displaced" then f.creature.slots[21] = f.item("FLPRI1", 778)
-        elseif variant == "merged" then f.creature.slots[21].m_useCount1 = 2
+        if variant == "merged" then f.creature.slots[22].m_useCount1 = 2
         elseif variant == "quick" then f.creature.slots[15] = f.item("FLPRI1", 778)
         elseif variant == "two" then f.creature.slots[18] = f.item("FLPRI1", 778); f.creature.slots[19] = f.item("FLPRI1", 779)
-        elseif variant == "payload" then f.creature.slots[18] = f.item("FLPRI1", 778, 0) end
+        elseif variant == "payload" then f.creature.slots[18] = f.item("FLPRI1", 778, 0)
+        elseif variant == "unrelated" then f.creature.slots[21].m_useCount1 = 2 end
         f.boundary(); local x, e = a:observe(command); fail(x, e, wants[variant])
     end
 end
-function cases.competing_or_changed_messages_stop_observation(N)
-    for _, variant in ipairs({"to-target", "fixture-item", "changed"}) do
+-- The creature's other items may change while its reward is on its way: a
+-- potion it drinks in a fight, an item it is given first, or the one that the
+-- Run of a full backpack puts on the ground to make room for the reward.
+function cases.other_items_may_change_while_a_reward_is_on_its_way(N)
+    for _, variant in ipairs({"drunk", "given", "displaced"}) do
+        local f = setup(N); local a = f.adapter
+        if variant == "drunk" then f.creature.slots[15] = f.item("POTN08", 314) end
+        local command = f.start(1)
+        local slot = 18
+        if variant == "drunk" then f.creature.slots[15] = nil
+        elseif variant == "given" then table.insert(f.queue, 1, f.message(3, "OTHER2", 2)); slot = 19
+        else table.remove(f.queue, 1); f.creature.slots[21] = f.item("FLPRI1", 778); slot = 21 end
+        f.update(); f.boundary()
+        local x, e = a:observe(command); fail(x, e, "DELIVERY_SETTLING")
+        f.boundary(); local receipt = assert(a:observe(command))
+        assert(receipt.holder == "creature" and receipt.held == 1 and receipt.slot == slot, variant)
+        assert(f.creature.slots[slot].cResRef:get() == "FLPRI1" and #f.calls == 1)
+    end
+end
+-- An item of the reward's name the creature had is not the reward where it
+-- moved, or where it changed in its own slot outside the backpack (a charge
+-- used in a fight): the reward is the new one in the backpack.
+function cases.items_of_the_rewards_name_it_had_may_move_or_be_used(N)
+    for _, variant in ipairs({"used", "moved", "packed", "equipped"}) do
+        local f = setup(N); local a = f.adapter
+        local slots = f.creature.slots
+        slots[15] = f.item("FLPRI1", 313); slots[15].m_useCount1 = 3
+        slots[22] = f.item("FLPRI1", 314)
+        local command = f.start(1)
+        -- While the reward is on its way.
+        if variant == "used" then slots[15].m_useCount1 = 2
+        elseif variant == "moved" then slots[16], slots[15] = slots[15], nil
+        elseif variant == "packed" then slots[25], slots[15] = slots[15], nil; slots[25].m_useCount1 = 2
+        else slots[10], slots[22] = slots[22], nil end
+        f.boundary(); local x, e = a:observe(command); fail(x, e, "DELIVERY_SETTLING")
+        -- And as it arrives.
+        f.update()
+        if variant == "used" then slots[15].m_useCount1 = 1
+        elseif variant == "equipped" then slots[11], slots[10] = slots[10], nil end
+        f.boundary(); x, e = a:observe(command); fail(x, e, "DELIVERY_SETTLING")
+        assert(a:diagnostics().pending.created_slot == 18, variant)
+        f.boundary(); local receipt = assert(a:observe(command))
+        assert(receipt.holder == "creature" and receipt.slot == 18 and slots[18].cResRef:get() == "FLPRI1", variant)
+        assert(#f.calls == 1)
+    end
+end
+-- A fight or a scene sends the creature messages; items go elsewhere.
+function cases.messages_for_the_creature_let_its_delivery_go_on(N)
+    for _, variant in ipairs({"to-target", "fixture-item", "other-item"}) do
         local f = setup(N); local a = f.adapter
         local command = f.start(1)
         if variant == "to-target" then f.queue[2] = f.message(3, "OTHER", 34)
         elseif variant == "fixture-item" then f.queue[2] = f.message(77, "FLPRI2", 12)
+        else f.queue[2] = f.message(3, "OTHER", 2) end
+        f.boundary(); local x, e = a:observe(command); fail(x, e, "DELIVERY_SETTLING")
+        -- A hit while the reward is pinned.
+        f.update(); f.queue[1] = f.message(3, "OTHER", 34)
+        f.boundary(); x, e = a:observe(command); fail(x, e, "DELIVERY_SETTLING")
+        f.boundary(); local receipt = assert(a:observe(command))
+        assert(receipt.holder == "creature" and receipt.slot == 18 and f.creature.slots[18].cResRef:get() == "FLPRI1")
+        unrelated_intact(f); assert(#f.calls == 1)
+    end
+end
+-- Another item of the reward's name for the creature would be a second one
+-- like it; a changed message is not the one CIR bound.
+function cases.competing_or_changed_messages_stop_observation(N)
+    for _, variant in ipairs({"same-name", "changed"}) do
+        local f = setup(N); local a = f.adapter
+        local command = f.start(1)
+        if variant == "same-name" then f.queue[2] = f.message(3, "FLPRI1", 2, 78)
         else f.queue[1].m_item.m_flags = 0 end
         f.boundary(); local x, e = a:observe(command); fail(x, e, "DELIVERY_QUEUE_CONFLICT")
     end
@@ -436,12 +486,36 @@ function cases.pinned_instance_must_survive_the_second_observation(N)
         f.boundary(); x, e = a:observe(command); fail(x, e, "CREATED_INSTANCE_CHANGED")
     end
 end
-function cases.reused_message_pointer_after_consumption_is_rejected(N)
-    local f = setup(N); local a = f.adapter
-    local command = f.start(1); local address = f.queue[1].address
-    f.update(); f.boundary(); local x, e = a:observe(command); fail(x, e, "DELIVERY_SETTLING")
-    local reused = f.message(55, "OTHER", 40); reused.address = address; f.queue[1] = reused
-    f.boundary(); x, e = a:observe(command); fail(x, e, "DELIVERY_MESSAGE_REUSED")
+-- Once the reward's message has run, the engine may give its address to
+-- another message at once: the reward's instance tells. Another item message
+-- of the reward's name for the creature still stops CIR, at that address too.
+function cases.reused_message_address_never_stops_a_delivery(N)
+    for _, variant in ipairs({"before", "after", "same-name", "unrun"}) do
+        local f = setup(N); local a = f.adapter
+        local command = f.start(1); local address = f.queue[1].address
+        local function reuse(ref, subtype)
+            local reused = f.message(3, ref, subtype); reused.address = address; f.queue[1] = reused
+        end
+        if variant == "unrun" then
+            -- Its message gone without running, another one at its address.
+            reuse("OTHER", 34); f.boundary()
+            local x, e = a:observe(command); fail(x, e, "DELIVERY_QUEUE_CONFLICT")
+        else
+            f.update()
+            if variant == "before" then reuse("OTHER", 34) end
+            f.boundary(); local x, e = a:observe(command); fail(x, e, "DELIVERY_SETTLING")
+            assert(a:diagnostics().pending.created_slot == 18, variant)
+            if variant == "after" then reuse("OTHER", 34) elseif variant == "same-name" then reuse("FLPRI1", 2) end
+            f.boundary()
+            if variant == "same-name" then
+                x, e = a:observe(command); fail(x, e, "DELIVERY_QUEUE_CONFLICT")
+            else
+                local receipt = assert(a:observe(command))
+                assert(receipt.held == 1 and receipt.holder == "creature" and receipt.slot == 18, variant)
+                unrelated_intact(f)
+            end
+        end
+    end
 end
 function cases.stuck_creature_message_times_out_and_never_recovers(N)
     local f = setup(N); local a = f.adapter
@@ -1113,31 +1187,56 @@ function cases.ground_execute_rejects_a_changed_corpse_or_queue(N)
     end
 end
 function cases.ground_observation_rejects_conflicts_lost_adds_and_changed_piles(N)
-    local wants = {conflict="DELIVERY_QUEUE_CONFLICT", lost="GROUND_PILE_MISSING", two="DELIVERY_MESSAGE_LOST",
+    local wants = {changed="DELIVERY_QUEUE_CONFLICT", lost="GROUND_PILE_MISSING",
         early="DELIVERY_EARLY_ITEM", removed="CREATED_INSTANCE_CHANGED", area="AREA_UNAVAILABLE",
-        replaced="OWNER_CHANGED", reused="DELIVERY_MESSAGE_REUSED", payload="DELIVERY_PAYLOAD_CHANGED"}
-    for _, variant in ipairs({"conflict", "lost", "two", "early", "removed", "area", "replaced", "reused", "payload"}) do
+        replaced="OWNER_CHANGED", unrun="DELIVERY_QUEUE_CONFLICT", payload="DELIVERY_PAYLOAD_CHANGED"}
+    for _, variant in ipairs({"changed", "lost", "early", "removed", "area", "replaced", "unrun", "payload"}) do
         local f = ground_world(N); local a = f.adapter
         local pile_id, pile = f.pile_at(500, 600, {})
         if variant == "early" or variant == "replaced" then f.area.m_lVertSortBack = {pile_id} end
         local command = ground_start(f, 1)
         local id = f.queue[1].m_targetId
-        if variant == "conflict" then f.queue[2] = f.message(id, "OTHER", 12, id)
+        if variant == "changed" then f.queue[1].m_item.m_useCount1 = 4
         elseif variant == "lost" then table.remove(f.queue, 1)
-        elseif variant == "two" then
-            f.update(); local target = f.objects[id]
-            target.m_lstItems[2] = f.item("FLPRI1", 1990)
-        elseif variant == "early" then pile.m_lstItems[1] = f.item("OTHER", 1991)
+        elseif variant == "early" then pile.m_lstItems[1] = f.item("FLPRI1", 1991)
         elseif variant == "removed" then
             f.update(); f.boundary(); local x, e = a:observe(command); fail(x, e, "DELIVERY_SETTLING")
             f.objects[id].m_lstItems = {}
         elseif variant == "area" then f.update(); f.area.m_resref = {get=function() return "BG0100" end}
         elseif variant == "replaced" then pile.address = 9999
-        elseif variant == "reused" then
-            local address = f.queue[1].address
-            f.update(); local reused = f.message(55, "OTHER", 40); reused.address = address; f.queue[1] = reused
+        elseif variant == "unrun" then
+            -- Its add gone without running, another message at its address.
+            local reused = f.message(55, "OTHER", 40); reused.address = f.queue[1].address; f.queue[1] = reused
         elseif variant == "payload" then f.update(); f.objects[id].m_lstItems[1].m_useCount2 = 3 end
         f.boundary(); local x, e = a:observe(command); fail(x, e, wants[variant])
+    end
+end
+-- The handler runs queued adds in order: an add queued after the reward's
+-- lands after it, and items taken out of the pile meanwhile are not it. Once
+-- the add has run, another message may have its address.
+function cases.ground_reward_is_the_first_new_item_of_its_pile(N)
+    for _, variant in ipairs({"later-add", "later-item", "taken", "reused"}) do
+        local f = ground_world(N); local a = f.adapter
+        local pile_id, pile = f.pile_at(503, 597, {f.item("SW1H01", 880)})
+        f.area.m_lVertSortBack = {pile_id}
+        local command = ground_start(f, 1)
+        local address = f.queue[1].address
+        if variant == "later-add" then f.queue[2] = f.message(pile_id, "FLPRI1", 12, pile_id)
+        elseif variant == "taken" then table.remove(pile.m_lstItems, 1) end
+        f.boundary(); local x, e = a:observe(command); fail(x, e, "DELIVERY_SETTLING")
+        f.update()
+        if variant == "later-item" then pile.m_lstItems[#pile.m_lstItems + 1] = f.item("FLPRI1", 1990)
+        elseif variant == "reused" then
+            local reused = f.message(pile_id, "OTHER", 12, pile_id); reused.address = address; f.queue[1] = reused
+        end
+        f.boundary(); x, e = a:observe(command); fail(x, e, "DELIVERY_SETTLING")
+        local reward = pile.m_lstItems[variant == "taken" and 1 or 2]
+        assert(reward.cResRef:get() == "FLPRI1" and a:diagnostics().pending.created_pointer == tostring(reward.address))
+        assert(#pile.m_lstItems == (({taken=1, reused=2})[variant] or 3), variant)
+        -- The add at the reward's former address lands after it.
+        if variant == "reused" then f.update(); assert(#pile.m_lstItems == 3 and pile.m_lstItems[2] == reward) end
+        f.boundary(); local receipt = assert(a:observe(command))
+        assert(receipt.holder == "ground" and receipt.lootable == 1 and #f.calls == 2, variant)
     end
 end
 function cases.stuck_ground_message_times_out_and_never_recovers(N)
@@ -1340,6 +1439,581 @@ function cases.vanish_serves_creature_targets_only(N)
     f.adapter = N.new(f.api, f.fixture)
     x, e = f.adapter:inspect_target(f.target_id, f.source_ids[1], 1); fail(x, e, "OWNER_MISSING")
     assert(#f.calls == 0 and next(f.adapter.reservations) == nil)
+end
+
+-- A creature target that dies while its reward is on its way (BG2:EE 2.7.3.0
+-- lab, 2026-10-26: a scene killed uddoor05 one tick after its ring04 had
+-- arrived, and CIR stopped). Its death drop (CGameSprite::DropInventory) takes
+-- the body's items out at once, in slot order, and queues one container add
+-- for each into a ground pile at the corpse
+-- (docs/native-death-drop-provenance-20260926.md). Run has no death check: a
+-- creature add that runs later puts its item into the corpse.
+local function death_world(N)
+    local f = setup(N)
+    f.creature.m_pos = {x=500, y=600}
+    f.next_object = 50
+    local function listed(id)
+        for _, field in ipairs({"m_lVertSort", "m_lVertSortBack", "m_lVertSortFlight", "m_lVertSortUnder"}) do
+            for _, entry in ipairs(f.area[field]) do if entry == id then return true end end
+        end
+    end
+    local function copy_item(value, address)
+        local result = f.item(value.cResRef:get(), address, value.m_flags)
+        result.m_useCount1, result.m_useCount2, result.m_useCount3 =
+            value.m_useCount1, value.m_useCount2, value.m_useCount3
+        return result
+    end
+    function f.pile_at(x, y, items)
+        f.next_object = f.next_object + 1
+        local pile = {address=7000 + f.next_object, sprite=false, m_containerType=4, m_pos={x=x, y=y},
+            m_lstItems=items or {}, m_scriptName={get=function() return "" end}}
+        f.objects[f.next_object] = pile
+        return f.next_object, pile
+    end
+    -- The pile a drop at a sprite uses: a listed one there, or a new one.
+    local function pile_for(o)
+        for candidate, object in pairs(f.objects) do
+            if not object.sprite and object.m_containerType == 4 and listed(candidate) and
+                math.abs(object.m_pos.x - o.m_pos.x) <= 16 and math.abs(object.m_pos.y - o.m_pos.y) <= 16 then
+                return candidate
+            end
+        end
+        return (f.pile_at(o.m_pos.x, o.m_pos.y - 5))
+    end
+    local function drop(o, slot, id)
+        local value = o.slots[slot]
+        o.slots[slot] = nil
+        local message = f.message(id, value.cResRef:get(), 12, id)
+        message.m_item = copy_item(value, f.next_address + 5000)
+        f.queue[#f.queue + 1] = message
+    end
+    local give = f.api.EEex_Action_ExecuteResponseStringOnAIBaseInstantly
+    f.api.EEex_Action_ExecuteResponseStringOnAIBaseInstantly = function(action, o)
+        local ref = action:match('^DropItem%("([^"]+)",%[%-1%.%-1%]%)$')
+        if not ref then return give(action, o) end
+        f.calls[#f.calls + 1] = action
+        for slot = 0, 38 do
+            local value = o.slots[slot]
+            if value and value.cResRef:get():lower() == ref then return drop(o, slot, pile_for(o)) end
+        end
+        error("fake DropItem found nothing")
+    end
+    -- Its death (or that of sprite <o>), and with <dropping> its death drop;
+    -- an undroppable item (flag 8) stays in the body.
+    function f.die(dropping, o)
+        o = o or f.creature
+        o.alive = false
+        if not dropping then return end
+        local id = pile_for(o)
+        for slot = 0, 38 do
+            local value = o.slots[slot]
+            if value and math.floor(value.m_flags / 8) % 2 == 0 then drop(o, slot, id) end
+        end
+    end
+    -- One handler update, in queue order: a creature add copies its item into
+    -- the first empty backpack slot, of a corpse too; a container add appends
+    -- a copy to its pile, which joins the area's lists if it is new.
+    function f.update()
+        while #f.queue > 0 do
+            local message = table.remove(f.queue, 1)
+            local target = f.objects[message.m_targetId]
+            local subtype = message.virtual_GetMsgSubType()
+            if subtype == 2 and target and target.sprite then
+                for slot = 18, 33 do
+                    if not target.slots[slot] then
+                        f.next_address = f.next_address + 1
+                        target.slots[slot] = copy_item(message.m_item, f.next_address)
+                        break
+                    end
+                end
+            elseif subtype == 12 and target and not target.sprite then
+                f.next_address = f.next_address + 1
+                target.m_lstItems[#target.m_lstItems + 1] = copy_item(message.m_item, f.next_address)
+                if not listed(message.m_targetId) then
+                    f.area.m_lVertSortBack[#f.area.m_lVertSortBack + 1] = message.m_targetId
+                end
+            end
+        end
+    end
+    -- The names in the pile at the corpse, in order, and the pile.
+    function f.pile()
+        local pile = f.objects[f.area.m_lVertSortBack[1]]
+        local names = {}
+        for _, value in ipairs(pile.m_lstItems) do names[#names + 1] = value.cResRef:get() end
+        return table.concat(names, " "), pile
+    end
+    return f
+end
+-- As in the lab: the reward had arrived, then its creature died. The death
+-- drop took it along with the rest; the reward had reached its creature.
+function cases.reward_its_creature_dropped_as_it_died_was_held(N)
+    for _, variant in ipairs({"dropped", "dropping", "hit", "address"}) do
+        local f = death_world(N); local a = f.adapter
+        local command = f.start(1); local address = f.queue[1].address
+        f.update(); f.boundary()
+        local x, e = a:observe(command); fail(x, e, "DELIVERY_SETTLING")
+        f.die(true)
+        -- The death drop's first add got the address of the reward's message.
+        if variant == "address" then f.queue[1].address = address end
+        if variant ~= "dropping" and variant ~= "address" then f.update() end
+        -- A message of the killing blow, still queued for it.
+        if variant == "hit" then f.queue[#f.queue + 1] = f.message(3, "OTHER", 34) end
+        f.boundary(); local receipt = assert(a:observe(command))
+        assert(receipt.created == 1 and receipt.nonce_bound_instance == 1 and receipt.held == 1 and
+            receipt.lootable == 0 and receipt.holder == "creature" and receipt.slot == 18, variant)
+        assert(#f.calls == 1 and a.pending == nil and a.held[command.index] == nil)
+        f.update()
+        assert(f.pile() == "PLAT01 FLPRI1 OTHER" and next(f.creature.slots) == nil)
+        x, e = a:execute(command); fail(x, e, "ALREADY_ATTEMPTED")
+    end
+end
+-- It died before the reward's message ran, which then put the reward into
+-- the corpse; its death drop takes the reward along later.
+function cases.reward_that_reached_a_dying_creature_waits_for_its_death_drop(N)
+    local f = death_world(N); local a = f.adapter
+    local command = f.start(1)
+    f.die(false); f.update(); f.boundary()
+    local x, e = a:observe(command); fail(x, e, "DELIVERY_SETTLING")
+    assert(a:diagnostics().pending.created_slot == 18)
+    for _ = 1, 3 do f.boundary(); x, e = a:observe(command); fail(x, e, "DELIVERY_SETTLING") end
+    assert(a:diagnostics().pending.dead_tick and #f.calls == 1)
+    f.die(true); f.update(); f.boundary()
+    local receipt = assert(a:observe(command))
+    assert(receipt.held == 1 and receipt.holder == "creature" and receipt.slot == 18 and #f.calls == 1)
+    assert(f.pile() == "PLAT01 FLPRI1 OTHER")
+end
+-- Its death drop ran before the reward's message, which then put the reward
+-- into the corpse, where nobody could take it: CIR drops it at the corpse.
+function cases.reward_that_came_after_the_death_drop_goes_to_the_ground_at_the_corpse(N)
+    local f = death_world(N); local a = f.adapter
+    local command = f.start(1)
+    f.die(true); f.update(); f.boundary()
+    local x, e = a:observe(command); fail(x, e, "DELIVERY_SETTLING")
+    assert(f.creature.slots[18].cResRef:get() == "FLPRI1" and f.pile() == "PLAT01 OTHER")
+    local waited = 0
+    repeat
+        waited = waited + 1
+        f.boundary(); x, e = a:observe(command); fail(x, e, "DELIVERY_SETTLING")
+    until #f.calls == 2 or waited > N.DEATH_DROP_TICKS + 1
+    assert(waited == N.DEATH_DROP_TICKS + 1 and f.calls[2] == 'DropItem("flpri1",[-1.-1])')
+    assert(next(f.creature.slots) == nil and a:diagnostics().pending.ground == true)
+    f.update(); f.boundary(); x, e = a:observe(command); fail(x, e, "DELIVERY_SETTLING")
+    f.boundary(); local receipt = assert(a:observe(command))
+    assert(receipt.holder == "ground" and receipt.lootable == 1 and receipt.held == nil and receipt.notice == nil)
+    local names, pile = f.pile()
+    assert(names == "PLAT01 OTHER FLPRI1" and #f.area.m_lVertSortBack == 1 and pile.m_lstItems[3].m_flags == 1)
+    assert(#f.calls == 2 and a.pending == nil)
+    x, e = a:execute(command); fail(x, e, "ALREADY_ATTEMPTED")
+end
+-- The drop waits while the corpse holds another item of the reward's name
+-- (DropItem takes the first) or an add is on its way into some pile.
+function cases.corpse_drop_waits_for_a_single_copy_and_a_quiet_queue(N)
+    for _, variant in ipairs({"copy", "add"}) do
+        local f = death_world(N); local a = f.adapter
+        if variant == "copy" then f.creature.slots[30] = f.item("FLPRI1", 315, 9) end
+        local command = f.start(1)
+        f.die(true); f.update()
+        f.boundary(); local x, e = a:observe(command); fail(x, e, "DELIVERY_SETTLING")
+        for _ = 1, N.DEATH_DROP_TICKS + 3 do
+            if variant == "add" then f.queue[1] = f.message(77, "OTHER", 12, 77) end
+            f.boundary(); x, e = a:observe(command); fail(x, e, "DELIVERY_SETTLING")
+        end
+        assert(#f.calls == 1, variant)
+        if variant == "copy" then f.creature.slots[30] = nil else f.queue[1] = nil end
+        f.boundary(); x, e = a:observe(command); fail(x, e, "DELIVERY_SETTLING")
+        assert(#f.calls == 2 and f.creature.slots[18] == nil, variant)
+    end
+end
+-- Its message ran and it died with its death drop before CIR looked again:
+-- the reward is the one new item like it on the ground.
+function cases.reward_never_seen_in_its_dead_creature_is_found_on_the_ground(N)
+    for _, variant in ipairs({"new", "reused", "old-copy", "in-flight", "address", "identified"}) do
+        local f = death_world(N); local a = f.adapter
+        if variant == "reused" or variant == "old-copy" then
+            local id = f.pile_at(500, 598, {f.item(variant == "reused" and "SW1H01" or "FLPRI1", 880)})
+            f.area.m_lVertSortBack = {id}
+        elseif variant == "identified" then
+            f.fixture.sources[f.source_ids[1]].payload.flags = 0
+            f.adapter = N.new(f.api, f.fixture); a = f.adapter
+        end
+        local command = f.start(1); local address = f.queue[1].address
+        f.update(); f.die(true)
+        -- The reward's own add in the death drop got its message's address.
+        local flight = variant == "in-flight" or variant == "address"
+        if variant == "address" then f.queue[2].address = address end
+        if not flight then f.update() end
+        local names, pile = nil, nil
+        if variant == "identified" then
+            names, pile = f.pile()
+            -- The add identified the zero-lore reward again.
+            assert(pile.m_lstItems[2].m_flags == 0); pile.m_lstItems[2].m_flags = 1
+        end
+        f.boundary(); local x, e = a:observe(command); fail(x, e, "DELIVERY_SETTLING")
+        if flight then
+            assert(a:diagnostics().pending.found == nil)
+            f.update(); f.boundary(); x, e = a:observe(command); fail(x, e, "DELIVERY_SETTLING")
+        end
+        local found = assert(a:diagnostics().pending.found, variant)
+        names, pile = f.pile()
+        local reward = pile.m_lstItems[(variant == "reused" or variant == "old-copy") and 3 or 2]
+        assert(reward.cResRef:get() == "FLPRI1" and found.pointer == tostring(reward.address), variant)
+        assert(reward.m_flags == (variant == "identified" and 0 or 1))
+        f.boundary(); local receipt = assert(a:observe(command))
+        assert(receipt.holder == "ground" and receipt.lootable == 1 and receipt.held == nil and #f.calls == 1, variant)
+        assert(a.pending == nil)
+    end
+end
+function cases.dropped_reward_is_never_guessed(N)
+    -- An item just like it that the creature carried fell with it.
+    local f = death_world(N); local a = f.adapter
+    f.creature.slots[22] = f.item("FLPRI1", 313)
+    local command = f.start(1)
+    f.update(); f.die(true); f.update(); f.boundary()
+    local x, e = a:observe(command); fail(x, e, "DROPPED_REWARD_AMBIGUOUS")
+    -- Another one like it came to the ground elsewhere at the same time.
+    f = death_world(N); a = f.adapter
+    command = f.start(1)
+    f.update(); f.die(true); f.update()
+    local id = f.pile_at(900, 900, {f.item("FLPRI1", 881)})
+    f.area.m_lVertSortBack[#f.area.m_lVertSortBack + 1] = id
+    f.boundary(); x, e = a:observe(command); fail(x, e, "DROPPED_REWARD_AMBIGUOUS")
+    -- Gone without a trace: it waits until the settling time is over.
+    f = death_world(N); a = f.adapter
+    command = f.start(1)
+    f.update(); f.die(true)
+    for index = #f.queue, 1, -1 do
+        if f.queue[index].m_item.cResRef:get() == "FLPRI1" then table.remove(f.queue, index) end
+    end
+    f.update(); f.boundary(); x, e = a:observe(command); fail(x, e, "DELIVERY_SETTLING")
+    assert(a:on_observation_boundary(f.tick + N.MAX_SETTLE_TICKS))
+    x, e = a:observe(command); fail(x, e, "DELIVERY_SETTLING_TIMEOUT")
+    assert(#f.calls == 1)
+end
+-- A creature that died and left no body (its death counted, Adapter:_vanished).
+function cases.reward_of_a_creature_that_died_without_a_body(N)
+    local function vanish(f) f.area.m_lVertSort = {1, 2}; f.globals.SPRITE_IS_DEADFLPRC1 = 1 end
+    -- The reward had arrived: it reached its creature.
+    local f = death_world(N); local a = f.adapter
+    local command = f.start(1)
+    f.update(); f.boundary(); local x, e = a:observe(command); fail(x, e, "DELIVERY_SETTLING")
+    f.die(true); vanish(f); f.update(); f.boundary()
+    local receipt = assert(a:observe(command))
+    assert(receipt.held == 1 and receipt.holder == "creature" and #f.calls == 1)
+    -- Never seen: found where it fell.
+    f = death_world(N); a = f.adapter
+    command = f.start(1)
+    f.update(); f.die(true); vanish(f); f.update(); f.boundary()
+    x, e = a:observe(command); fail(x, e, "DELIVERY_SETTLING")
+    f.boundary(); receipt = assert(a:observe(command))
+    assert(receipt.holder == "ground" and receipt.lootable == 1 and #f.calls == 1)
+    -- Gone from its area alive, its object still there: its items are read
+    -- where it is now. The reward reached it.
+    f = death_world(N); a = f.adapter
+    command = f.start(1)
+    f.update(); f.area.m_lVertSort = {1, 2}; f.boundary()
+    x, e = a:observe(command); fail(x, e, "DELIVERY_SETTLING")
+    f.boundary(); receipt = assert(a:observe(command))
+    assert(receipt.held == 1 and receipt.holder == "creature" and receipt.slot == 18 and #f.calls == 1)
+    assert(a.held[command.index] == nil and f.creature.slots[18].cResRef:get() == "FLPRI1")
+end
+-- A party member keeps its items when it dies (a quest target's recipient).
+function cases.party_recipient_that_dies_keeps_its_reward(N)
+    local f = death_world(N)
+    f.creature.portrait = 0; f.creature.m_id = 3
+    f.api.EEex_GameState_GetGlobalInt = function(name) assert(name == "FLPR_EPOOL"); return 1 end
+    f.api.EEex_Sprite_GetInPortrait = function(index) assert(index == 0); return f.creature end
+    f.fixture.targets[f.target_id] = {kind="quest", area="BG2600", identity=string.rep("c", 64),
+        event_global="FLPR_EPOOL"}
+    f.adapter = N.new(f.api, f.fixture); local a = f.adapter
+    assert(a:inspect_target(f.target_id, f.source_ids[1], 1)); f.boundary()
+    local command = f.command(1); assert(a:execute(command))
+    -- Where it would leave no body, its items would fall.
+    assert(a.pending.piles and next(a.pending.piles) == nil and a.pending.area == "bg2600")
+    f.die(false); f.update(); f.boundary()
+    local x, e = a:observe(command); fail(x, e, "DELIVERY_SETTLING")
+    f.boundary(); local receipt = assert(a:observe(command))
+    assert(receipt.holder == "party" and receipt.lootable == 1 and receipt.held == nil and receipt.slot == 18)
+    assert(#f.calls == 1 and f.creature.slots[18].cResRef:get() == "FLPRI1")
+end
+-- A recipient a reward reply marked, outside the party. Only a delivery on its
+-- way follows it into death: one that died before still waits at inspection.
+function cases.marked_recipient_outside_the_party_that_dies(N)
+    local function marked()
+        local f = death_world(N)
+        f.creature.m_id = 3
+        f.api.EEex_GameState_GetGlobalInt = function(name) assert(name == "FLPR_EPOOL"); return 1 end
+        f.api.EEex_Sprite_GetLocalInt = function(o, name)
+            assert(name == "FLPR_RPOOL"); return o == f.creature and 1 or 0
+        end
+        f.fixture.targets[f.target_id] = {kind="quest", area="*", identity=string.rep("c", 64),
+            adapter_id="mode2-reward-v1", event_global="FLPR_EPOOL", recipient_local="FLPR_RPOOL"}
+        f.adapter = N.new(f.api, f.fixture)
+        return f, f.adapter
+    end
+    local f, a = marked()
+    f.creature.alive = false
+    local x, e = a:inspect_target(f.target_id, f.source_ids[1], 1); fail(x, e, "TARGET_NOT_ALIVE")
+    assert(#f.calls == 0 and a.reservations[string.rep("c", 64)] == nil)
+    -- Its message ran and it died with its death drop before CIR looked again.
+    f, a = marked()
+    assert(a:inspect_target(f.target_id, f.source_ids[1], 1)); f.boundary()
+    local command = f.command(1); assert(a:execute(command))
+    assert(a.pending.piles)
+    f.update(); f.die(true); f.update(); f.boundary()
+    x, e = a:observe(command); fail(x, e, "DELIVERY_SETTLING")
+    assert(a:diagnostics().pending.found)
+    f.boundary(); local receipt = assert(a:observe(command))
+    assert(receipt.holder == "ground" and receipt.lootable == 1 and #f.calls == 1)
+    assert(f.pile() == "PLAT01 FLPRI1 OTHER")
+    -- Its death drop came before its message, which put the reward into the
+    -- body: CIR drops it at the corpse.
+    f, a = marked()
+    assert(a:inspect_target(f.target_id, f.source_ids[1], 1)); f.boundary()
+    command = f.command(1); assert(a:execute(command))
+    f.die(true); f.update()
+    for _ = 1, N.DEATH_DROP_TICKS + 2 do f.boundary(); x, e = a:observe(command); fail(x, e, "DELIVERY_SETTLING") end
+    assert(#f.calls == 2 and a:diagnostics().pending.ground == true)
+    f.update(); f.boundary(); x, e = a:observe(command); fail(x, e, "DELIVERY_SETTLING")
+    f.boundary(); receipt = assert(a:observe(command))
+    assert(receipt.holder == "ground" and receipt.lootable == 1 and f.pile() == "PLAT01 OTHER FLPRI1")
+end
+-- CIR reads only the items of the reward's name in the piles of the area:
+-- anything of any mod may lie on the ground, even under a name CIR would
+-- never write (Adapter:_pile_items).
+function cases.piles_are_read_for_the_rewards_name_only(N)
+    for _, variant in ipairs({"found", "corpse"}) do
+        local f = death_world(N); local a = f.adapter
+        local id, odd = f.pile_at(500, 598, {f.item("BAD NAME", 880), f.item("ODD!$", 881)})
+        f.area.m_lVertSortBack = {id}
+        local command = f.start(1)
+        local x, e
+        if variant == "found" then
+            f.update(); f.die(true); f.update()
+            f.boundary(); x, e = a:observe(command); fail(x, e, "DELIVERY_SETTLING")
+            assert(a:diagnostics().pending.found)
+        else
+            f.die(true); f.update()
+            local waited = 0
+            repeat
+                waited = waited + 1
+                f.boundary(); x, e = a:observe(command); fail(x, e, "DELIVERY_SETTLING")
+            until #f.calls == 2 or waited > N.DEATH_DROP_TICKS + 2
+            assert(#f.calls == 2 and a:diagnostics().pending.ground == true)
+            f.update(); f.boundary(); x, e = a:observe(command); fail(x, e, "DELIVERY_SETTLING")
+        end
+        f.boundary(); local receipt = assert(a:observe(command))
+        assert(receipt.holder == "ground" and receipt.lootable == 1, variant)
+        assert(odd.m_lstItems[1].cResRef:get() == "BAD NAME" and odd.m_lstItems[2].cResRef:get() == "ODD!$")
+    end
+end
+-- CIR looks for a reward its creature dropped at most once in
+-- DROP_SCAN_TICKS game ticks: each look reads the whole area.
+function cases.dropped_reward_is_looked_for_every_few_ticks(N)
+    local f = death_world(N); local a = f.adapter
+    local command = f.start(1)
+    f.update(); f.die(true)
+    for index = #f.queue, 1, -1 do
+        if f.queue[index].m_item.cResRef:get() == "FLPRI1" then table.remove(f.queue, index) end
+    end
+    f.update()
+    local looks = {}
+    for _ = 1, 2 * N.DROP_SCAN_TICKS + 1 do
+        f.boundary(); local x, e = a:observe(command); fail(x, e, "DELIVERY_SETTLING")
+        local tick = a:diagnostics().pending.scan_tick
+        if looks[#looks] ~= tick then looks[#looks + 1] = tick end
+    end
+    assert(#looks == 3 and looks[2] - looks[1] == N.DROP_SCAN_TICKS and looks[3] - looks[2] == N.DROP_SCAN_TICKS)
+    assert(#f.calls == 1)
+end
+-- death_world with the party there: Kara (portrait 0) and Minsc (portrait 1),
+-- with empty backpacks. CreateItem on a party member stores the item in its
+-- first empty backpack slot at once.
+local function lost_world(N)
+    local f = death_world(N)
+    f.party = {}
+    f.api.EEex_Sprite_GetInPortrait = function(index) return f.party[index] end
+    function f.member(portrait, id, name)
+        local o = f.sprite(800 + id, name:upper(), {})
+        o.portrait, o.m_id, o.name, o.m_pos = portrait, id, name, {x=300 + 40 * portrait, y=400}
+        f.objects[id], f.ids[o], f.party[portrait] = o, id, o
+        f.area.m_lVertSort[#f.area.m_lVertSort + 1] = id
+        return o
+    end
+    f.kara, f.minsc = f.member(0, 8, "Kara"), f.member(1, 9, "Minsc")
+    local act = f.api.EEex_Action_ExecuteResponseStringOnAIBaseInstantly
+    f.api.EEex_Action_ExecuteResponseStringOnAIBaseInstantly = function(action, o)
+        local ref, c1, c2, c3 = action:match('^CreateItem%("([^"]+)",(%d+),(%d+),(%d+)%)$')
+        if not ref then return act(action, o) end
+        f.calls[#f.calls + 1] = action
+        assert(o.portrait ~= -1, "fake CreateItem on party members only")
+        for slot = 18, 33 do
+            if not o.slots[slot] then
+                f.next_address = f.next_address + 1
+                local made = f.item(ref:upper(), f.next_address)
+                made.m_useCount1, made.m_useCount2, made.m_useCount3 = tonumber(c1), tonumber(c2), tonumber(c3)
+                o.slots[slot] = made
+                return
+            end
+        end
+        error("fake party member has no free slot")
+    end
+    -- Sprite <o> (the creature) leaves the game: off the area's lists and
+    -- the party, and its object is gone.
+    function f.gone(o)
+        o = o or f.creature
+        local id = f.ids[o]
+        for index = #f.area.m_lVertSort, 1, -1 do
+            if f.area.m_lVertSort[index] == id then table.remove(f.area.m_lVertSort, index) end
+        end
+        if o.portrait ~= -1 then f.party[o.portrait] = nil end
+        f.objects[id] = nil
+    end
+    -- Observes until the reward is dropped at a member's feet.
+    function f.until_dropped(command)
+        for _ = 1, N.DEATH_DROP_TICKS + N.DROP_SCAN_TICKS + 1 do
+            f.boundary(); local x, e = f.adapter:observe(command); fail(x, e, "DELIVERY_SETTLING")
+            if f.adapter.pending.ground then return end
+        end
+        error("the lost reward never fell")
+    end
+    return f
+end
+-- A creature that left the game while its reward was on its way, and the
+-- reward nowhere: its message ran when the creature was gone, or the reward
+-- went with it (removed without a death drop). Chris, 2026-10-26: such a
+-- reward falls at a party member's feet, with a message. Whether its death
+-- counted does not matter: its object is gone.
+function cases.reward_of_a_creature_gone_from_the_game_falls_at_the_partys_feet(N)
+    for _, variant in ipairs({"before-run", "with-it", "uncounted"}) do
+        local f = lost_world(N); local a = f.adapter
+        if variant ~= "uncounted" then f.globals.SPRITE_IS_DEADFLPRC1 = 1 end
+        local command = f.start(1)
+        if variant == "with-it" then f.update(); f.gone()
+        else
+            f.gone(); f.boundary(); local x, e = a:observe(command); fail(x, e, "DELIVERY_SETTLING")
+            f.update()
+        end
+        f.until_dropped(command)
+        assert(f.tick - a.pending.gone_tick >= N.DEATH_DROP_TICKS, variant)
+        assert(f.calls[2] == 'CreateItem("flpri1",0,0,0)' and f.calls[3] == 'DropItem("flpri1",[-1.-1])', variant)
+        assert(next(f.kara.slots) == nil)
+        f.update(); f.boundary(); local x, e = a:observe(command); fail(x, e, "DELIVERY_SETTLING")
+        f.boundary(); local receipt = assert(a:observe(command))
+        assert(receipt.holder == "ground" and receipt.lootable == 1 and receipt.held == nil, variant)
+        assert(receipt.notice.member == "Kara" and receipt.notice.resref == "flpri1" and receipt.notice.item == 7101)
+        local names, pile = f.pile()
+        assert(names == "FLPRI1" and pile.m_pos.x == 300 and #f.calls == 3 and a.pending == nil, variant)
+        x, e = a:execute(command); fail(x, e, "ALREADY_ATTEMPTED")
+    end
+end
+-- It waits while no member can drop it, and while the reward may still come
+-- to the ground: a death drop's add on its way. A creature that left the
+-- game with its death drop has its reward on the ground.
+function cases.lost_reward_waits_for_a_member_or_its_drop(N)
+    -- Kara holds an item of its name, Minsc's backpack is full.
+    local f = lost_world(N); local a = f.adapter
+    f.kara.slots[3] = f.item("FLPRI1", 830)
+    for slot = 18, 33 do f.minsc.slots[slot] = f.item("MISC01", 840 + slot) end
+    local command = f.start(1)
+    f.gone(); f.update()
+    local x, e
+    for _ = 1, N.DEATH_DROP_TICKS + 2 * N.DROP_SCAN_TICKS do
+        f.boundary(); x, e = a:observe(command); fail(x, e, "DELIVERY_SETTLING")
+    end
+    assert(#f.calls == 1 and a:diagnostics().pending.lost_tick)
+    -- Placing it has a settling time of its own.
+    f.tick = a.pending.tick + N.MAX_SETTLE_TICKS; assert(a:on_observation_boundary(f.tick))
+    x, e = a:observe(command); fail(x, e, "DELIVERY_SETTLING")
+    -- Minsc makes room: it falls at his feet.
+    f.minsc.slots[33] = nil
+    f.until_dropped(command)
+    assert(f.calls[2] == 'CreateItem("flpri1",0,0,0)' and f.minsc.slots[33] == nil)
+    f.update(); f.boundary(); x, e = a:observe(command); fail(x, e, "DELIVERY_SETTLING")
+    f.boundary(); local receipt = assert(a:observe(command))
+    assert(receipt.holder == "ground" and receipt.notice.member == "Minsc")
+    -- No member ever can: CIR stops once that time is over too.
+    f = lost_world(N); a = f.adapter
+    for _, member in ipairs({f.kara, f.minsc}) do
+        for slot = 18, 33 do member.slots[slot] = f.item("MISC01", 860 + slot + 20 * member.portrait) end
+    end
+    command = f.start(1)
+    f.gone(); f.update()
+    for _ = 1, N.DEATH_DROP_TICKS + N.DROP_SCAN_TICKS + 1 do
+        f.boundary(); x, e = a:observe(command); fail(x, e, "DELIVERY_SETTLING")
+        if a.pending.lost_tick then break end
+    end
+    f.tick = assert(a.pending.lost_tick) + N.MAX_SETTLE_TICKS; assert(a:on_observation_boundary(f.tick))
+    x, e = a:observe(command); fail(x, e, "DELIVERY_SETTLING_TIMEOUT")
+    assert(#f.calls == 1)
+    -- Its death drop's add carries the reward, then the reward lies on the ground.
+    f = lost_world(N); a = f.adapter
+    command = f.start(1)
+    f.update(); f.die(true); f.gone()
+    for _ = 1, N.DEATH_DROP_TICKS + N.DROP_SCAN_TICKS + 1 do
+        f.boundary(); x, e = a:observe(command); fail(x, e, "DELIVERY_SETTLING")
+    end
+    assert(#f.calls == 1 and a:diagnostics().pending.found == nil)
+    f.update(); f.boundary(); x, e = a:observe(command); fail(x, e, "DELIVERY_SETTLING")
+    assert(a:diagnostics().pending.found)
+    f.boundary(); receipt = assert(a:observe(command))
+    assert(receipt.holder == "ground" and receipt.notice == nil and #f.calls == 1)
+    assert(f.pile() == "PLAT01 FLPRI1 OTHER")
+end
+-- A party member a reward reply marked, gone without a body while its reward
+-- was on its way (chunked, say): its items fell, the reward with them. Or its
+-- message ran after: the reward is nowhere and falls at another member's feet.
+function cases.marked_party_member_that_leaves_no_body(N)
+    local function marked()
+        local f = lost_world(N)
+        f.globals.FLPR_EPOOL = 1
+        f.api.EEex_Sprite_GetLocalInt = function(o, name)
+            assert(name == "FLPR_RPOOL"); return o == f.kara and 1 or 0
+        end
+        f.fixture.targets[f.target_id] = {kind="quest", area="*", identity=string.rep("c", 64),
+            adapter_id="mode2-reward-v1", event_global="FLPR_EPOOL", recipient_local="FLPR_RPOOL"}
+        f.adapter = N.new(f.api, f.fixture)
+        assert(f.adapter:inspect_target(f.target_id, f.source_ids[1], 1)); f.boundary()
+        local command = f.command(1); assert(f.adapter:execute(command))
+        assert(f.queue[1].m_targetId == 8)
+        return f, f.adapter, command
+    end
+    local f, a, command = marked()
+    f.update(); f.die(true, f.kara); f.gone(f.kara)
+    f.boundary(); local x, e = a:observe(command); fail(x, e, "DELIVERY_SETTLING")
+    f.update(); f.boundary(); x, e = a:observe(command); fail(x, e, "DELIVERY_SETTLING")
+    assert(a:diagnostics().pending.found)
+    f.boundary(); local receipt = assert(a:observe(command))
+    assert(receipt.holder == "ground" and receipt.notice == nil and #f.calls == 1 and f.pile() == "FLPRI1")
+    f, a, command = marked()
+    f.die(false, f.kara); f.gone(f.kara); f.update()
+    f.until_dropped(command)
+    f.update(); f.boundary(); x, e = a:observe(command); fail(x, e, "DELIVERY_SETTLING")
+    f.boundary(); receipt = assert(a:observe(command))
+    assert(receipt.holder == "ground" and receipt.notice.member == "Minsc" and #f.calls == 3)
+end
+-- Where the party left the area the delivery began in, its piles there can no
+-- longer tell: an area's objects leave memory with it. Nothing is put at the
+-- party's feet then; CIR waits, at most until the settling time is over.
+function cases.lost_reward_is_never_guessed_after_the_party_left(N)
+    local f = lost_world(N)
+    f.globals.FLPR_EPOOL = 1; f.creature.m_id = 3
+    f.api.EEex_Sprite_GetLocalInt = function(o) return o == f.creature and 1 or 0 end
+    f.fixture.targets[f.target_id] = {kind="quest", area="*", identity=string.rep("c", 64),
+        adapter_id="mode2-reward-v1", event_global="FLPR_EPOOL", recipient_local="FLPR_RPOOL"}
+    f.adapter = N.new(f.api, f.fixture); local a = f.adapter
+    assert(a:inspect_target(f.target_id, f.source_ids[1], 1)); f.boundary()
+    local command = f.command(1); assert(a:execute(command))
+    -- The party went on, and the area it left was unloaded.
+    f.area = {m_resref={get=function() return "BG0100" end}, m_lVertSort={8, 9}, m_lVertSortBack={},
+        m_lVertSortFlight={}, m_lVertSortUnder={}}
+    f.objects[3] = nil; f.update()
+    local x, e
+    for _ = 1, N.DEATH_DROP_TICKS + 2 * N.DROP_SCAN_TICKS do
+        f.boundary(); x, e = a:observe(command); fail(x, e, "DELIVERY_SETTLING")
+    end
+    assert(#f.calls == 1 and a:diagnostics().pending.left == true)
+    assert(a:on_observation_boundary(f.tick + N.MAX_SETTLE_TICKS))
+    x, e = a:observe(command); fail(x, e, "DELIVERY_SETTLING_TIMEOUT")
 end
 return cases
 '''
