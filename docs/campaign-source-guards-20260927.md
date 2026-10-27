@@ -45,6 +45,15 @@ below. General source support and normal installer integration remain unfinished
   demand or mutate the unvisited resource. Payload, owner and quantity checks
   concern player items, not the integrity of the disposable lab.
   Bootstrap checks item delivery eligibility before installing suppression.
+- Removal is corroborated by counting the original's name in its holder.
+  Rewards are delivered before that count, and the holder may get one of that
+  name: the draw can give a place its own item back, and many scrolls share a
+  name (12 of 678 rows of one BG2:EE campaign, 27 October; the kuo-toa
+  prince's BRAC16 stopped CIR on 2.7.3 with `CAMPAIGN_GATE_WORLD_MISMATCH`, as
+  it would have in 1.0.2). The count leaves out each reward instance CIR put
+  into that holder in this session (`Adapter.placed`: creature, container or
+  ground pile). The gate's witness is this session's too, so a reload proves
+  nothing and needs no such record.
 
 ## Native result
 

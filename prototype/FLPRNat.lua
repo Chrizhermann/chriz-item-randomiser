@@ -138,7 +138,7 @@ function Native.new(api, fixture, seed, reward_payload)
     for _, name in ipairs(required) do assert(type(api[name]) == "function", name .. "_MISSING") end
     local self = setmetatable({ api = api, sources = {}, targets = {}, reservations = {},
         attempted = {}, tick = nil, pending = nil, last_error = nil, source_resrefs = {}, held = {},
-        seed=seed, reward_payload=reward_payload, container_latched={}, route_targets={},
+        placed = {}, seed=seed, reward_payload=reward_payload, container_latched={}, route_targets={},
         owed_handovers={} }, Adapter)
     local identities, source_resrefs, creatures, guarded_ids, routes = {}, self.source_resrefs, false, {}, {}
     local guarded_count = 0
@@ -843,8 +843,21 @@ function Adapter:inspect_source(id)
         quantity = 1, payload = payload(endpoint.payload) }
 end
 
+-- A reward instance CIR put into a creature, container or ground pile in
+-- this session, by its holder's object (Adapter.placed). A guarded source's
+-- holder may get a reward of the source's own name: the draw (FLPRCore) can
+-- give a place its own item back, and many scrolls share a name.
+function Adapter:_note_placed(holder, item_pointer)
+    local placed = self.placed[holder.pointer] or {}
+    self.placed[holder.pointer] = placed
+    placed[item_pointer] = holder.id
+end
+
 -- Corroborates a guard event against the exact visible area and owner.
 -- A missing area or owner is never evidence that the guarded item was removed.
+-- The gate's witness exists only in the session whose load of the pristine
+-- area removed the original, so every reward CIR gave that holder since is
+-- in Adapter.placed: those instances are not the original.
 function Adapter:guarded_source_remaining(id, area_pointer, owner_pointer)
     local endpoint = self.sources[id]
     if not endpoint then return nil, "SOURCE_UNKNOWN" end
@@ -861,9 +874,11 @@ function Adapter:guarded_source_remaining(id, area_pointer, owner_pointer)
     local owner, reason = self:_resolve(endpoint, "guard-observe", area)
     if not owner then return nil, reason end
     if owner.pointer ~= owner_pointer then return nil, "OWNER_CHANGED" end
-    local remaining = 0
+    local own, remaining = self.placed[owner.pointer] or {}, 0
     for _, item in ipairs(self:_items(owner, endpoint.sprite)) do
-        if item.payload.resref == endpoint.payload.resref then remaining = remaining + 1 end
+        if item.payload.resref == endpoint.payload.resref and own[item.pointer] ~= owner.id then
+            remaining = remaining + 1
+        end
     end
     return { remaining = remaining, area_pointer = area_pointer, owner_pointer = owner_pointer }
 end
@@ -1784,6 +1799,7 @@ function Adapter:observe(command)
         -- Container access (locks, traps, and normal opening) remains the
         -- engine's responsibility. Only its inventory has gained a reward.
         receipt.created, receipt.nonce_bound_instance, receipt.lootable = 1, 1, 1
+        self:_note_placed(owner, placed.pointer)
     end
     self.pending = nil
     return receipt
@@ -1827,14 +1843,15 @@ function Adapter:_observe_ground(pending, receipt)
     end
     if self.tick <= pending.pinned_tick then return nil, "DELIVERY_SETTLING" end
     if not holding(items, pending.created_pointer, pending.created) then return nil, "CREATED_INSTANCE_CHANGED" end
-    return self:_on_ground(pending, receipt)
+    return self:_on_ground(pending, receipt, pile, pending.created_pointer)
 end
 
 -- On the ground where the dead target lies, or at a party member's feet;
 -- anyone may pick it up.
-function Adapter:_on_ground(pending, receipt)
+function Adapter:_on_ground(pending, receipt, pile, item_pointer)
     local supported, reason = self:_supported(receipt.payload)
     if not supported then return nil, reason end
+    self:_note_placed(pile, item_pointer)
     receipt.created, receipt.nonce_bound_instance, receipt.lootable, receipt.holder = 1, 1, 1, "ground"
     receipt.notice = pending.notice
     self.pending = nil
@@ -1962,6 +1979,7 @@ function Adapter:_observe_creature(pending, receipt)
     local supported, reason = self:_supported(receipt.payload)
     if not supported then return nil, reason end
     receipt.created, receipt.nonce_bound_instance, receipt.slot = 1, 1, pending.created_slot
+    if kept then self:_note_placed(owner, kept.pointer) end
     if party then
         receipt.lootable, receipt.holder = 1, "party"
         self.pending = nil
@@ -2103,7 +2121,7 @@ function Adapter:_observe_found(pending, receipt)
         not holding(self:_pile_items(pile, pending.created.resref), pending.found.pointer, pending.created) then
         return nil, "CREATED_INSTANCE_CHANGED"
     end
-    return self:_on_ground(pending, receipt)
+    return self:_on_ground(pending, receipt, pile, pending.found.pointer)
 end
 
 function Adapter:_held(request)
@@ -2259,7 +2277,7 @@ end
 function Adapter:destroy()
     self.pending, self.tick, self.last_error = nil, nil, nil
     self.reservations, self.attempted, self.held, self.container_latched = {}, {}, {}, {}
-    self.owed_handovers, self.handover_retry = {}, nil
+    self.placed, self.owed_handovers, self.handover_retry = {}, {}, nil
 end
 
 return Native

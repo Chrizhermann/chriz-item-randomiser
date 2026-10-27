@@ -809,6 +809,29 @@ function cases.guarded_creature_observation_uses_inventory_without_destroying_it
     assert(f.adapter:guarded_source_remaining(id,'99','101').remaining==0)
     assert(#f.calls==0 and f.source2.slots[21].cResRef:get()=='FLPRI2')
 end
+function cases.own_reward_in_a_guarded_source_creature_is_not_its_original(N)
+    local f=setup(N)
+    -- FLPRC1 carried a guarded original of the reward's name; the gate removed
+    -- it as the creature's pristine area loaded (the kuo-toa prince's BRAC16).
+    local guarded_id='cre:flprc1/item/3'
+    f.fixture.sources[guarded_id]={kind='guarded-creature',area='BG2600',script_name='FLPRC1',
+        identity=string.rep('9',64),payload={resref='flpri1',charges={0,0,0},expiration=0,flags=1}}
+    f.fixture.source_gate={schema='flpr-unvisited-fixture-gate-v1',source_id=guarded_id}
+    f.area.address=99
+    f.adapter=N.new(f.api,f.fixture)
+    assert(f.adapter:guarded_source_remaining(guarded_id,'99','201').remaining==0)
+    complete_held(f,1)
+    assert(f.creature.slots[18].cResRef:get()=='FLPRI1')
+    -- The reward CIR gave it is not the original.
+    assert(f.adapter:guarded_source_remaining(guarded_id,'99','201').remaining==0)
+    -- Any other item of that name counts, as the original would.
+    f.creature.slots[25]=f.item('FLPRI1',1999)
+    assert(f.adapter:guarded_source_remaining(guarded_id,'99','201').remaining==1)
+    assert(N.new(f.api,f.fixture):guarded_source_remaining(guarded_id,'99','201').remaining==2)
+    f.adapter:destroy()
+    assert(f.adapter:guarded_source_remaining(guarded_id,'99','201').remaining==2)
+    unrelated_intact(f)
+end
 local function group_world(N)
     local f=setup(N)
     f.member2=f.sprite(202,'FLPRC2',{})
