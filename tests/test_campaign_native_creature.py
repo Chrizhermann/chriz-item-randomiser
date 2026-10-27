@@ -2091,6 +2091,9 @@ function cases.unmarked_quest_reward_waits_then_goes_to_the_protagonist(N)
     f.marked = nil; f.boundary(); waits(f)
     for _ = 1, N.RECIPIENT_GRACE_STEPS do f.boundary() end
     a:destroy(); f.boundary(); waits(f)
+    -- No protagonist (no party yet): it waits too, as a deferral.
+    for _ = 1, N.RECIPIENT_GRACE_STEPS do f.boundary() end
+    f.party = {}; waits(f)
 end
 -- Where the party left the area the delivery began in, its piles there can no
 -- longer tell: an area's objects leave memory with it. Nothing is put at the

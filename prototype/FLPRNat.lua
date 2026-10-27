@@ -507,7 +507,9 @@ function Adapter:_recipient(area, name)
         self.unmarked[name]=self.unmarked[name] or self.steps
         if self.steps-self.unmarked[name]<Native.RECIPIENT_GRACE_STEPS then return nil,'OWNER_MISSING' end
     else self.unmarked[name]=nil end
-    return api.EEex_Sprite_GetInPortrait(0)
+    local protagonist=api.EEex_Sprite_GetInPortrait(0)
+    if not protagonist then return nil,'OWNER_MISSING' end
+    return protagonist
 end
 
 -- <observing>: a parked reward (Adapter:settle_parked). Its quest recipient is
