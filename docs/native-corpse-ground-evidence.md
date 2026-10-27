@@ -242,8 +242,10 @@ drop's own adds may get it.
 - **Gone after CIR saw the reward in it.** Held, as for a corpse.
 - **A party member** (the recipient of a quest target) keeps its items when it dies:
   its reward is confirmed in its backpack, alive or dead. One that leaves no body (a
-  chunked death, say) is followed as any creature above. So is a quest target's
-  recipient outside the party, one that a reward reply marked. One that died before the
+  chunked death, say) is followed as any creature above, and so is one that leaves the
+  party while its reward is on its way. Since 1.0.3 a quest reward goes to a party
+  member only: one marked who left the party gives way to the protagonist
+  ([details](campaign-runtime-prototype.md)). A marked member that died before the
   delivery began still waits, as before.
 
 What still stops CIR, since it cannot be told apart or followed:
@@ -300,8 +302,8 @@ it then.
   before is the reward; none, or two more (something else of its name came too),
   mean it did not arrive:
   - a living creature and a party member, alive or dead: in its items;
-  - a dead creature, also a quest recipient outside the party: in its body and the
-    ground piles of its area together; held in its body, else on the ground;
+  - a dead creature: in its body and the ground piles of its area together; held in
+    its body, else on the ground;
   - a creature gone without a body, its death counted: in the ground piles, where
     its death drop also put what it had of that name before;
   - a container: in it;
@@ -309,8 +311,9 @@ it then.
 
   What arrived is held (a creature target) or confirmed. Otherwise it is delivered
   again, where it would have gone: a dead creature's at its corpse, a vanished one's
-  at a party member's feet. A quest recipient is followed into any area, and so is
-  its parked reward.
+  at a party member's feet. A quest recipient is followed into any area, and its
+  parked reward is counted at the recipient that would get it now: the marked party
+  member, else the protagonist (`Adapter:_recipient`).
 - **It waits** while an item message of that name is queued anywhere, while the
   place is not in the visible area, and while its creature is missing alive
   (`OWNER_MISSING`), as a pending delivery does.
@@ -335,8 +338,14 @@ What still stops CIR, or is not covered:
 - no message for a reward at a party member's feet that only the settle finds: it
   cannot tell whose feet;
 - a parked reward whose creature is gone from the game alive waits for it, as a
-  pending one does; so does one whose marked quest recipient outside the party is
-  not in the visible area.
+  pending one does;
+- a parked quest reward whose recipient changed between the start of its delivery
+  and its settle is counted at the new one: its marked member left the party or the
+  game in the ticks the reward was on its way, while the party left the area. Where
+  the reward had reached the old one, the new one gets a second copy; where the new
+  one happened to have one item of its name more than the old one had, the reward
+  counts as arrived. A save made meanwhile and loaded keeps the party as it was, so
+  its settle counts the same recipient.
 
 ## Not covered
 

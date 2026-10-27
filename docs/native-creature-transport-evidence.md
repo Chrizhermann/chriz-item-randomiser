@@ -240,9 +240,11 @@ the reward follows Chris's rule and goes to the ground; how is described with th
 ground fallbacks. Where the party leaves the area first, the reward parks, and the
 next visit tells whether it arrived: exactly one item of its name more than before
 ([details](native-corpse-ground-evidence.md#when-the-party-leaves-while-a-reward-is-on-its-way-since-103)).
-A quest reward's recipient is followed into any area. One in the party keeps its
-items wherever it dies; one outside it drops them where it dies, so its counts take
-the ground piles of its area, as a creature target's do.
+A quest reward's recipient is followed into any area. It is a party member (since
+1.0.3: [the marked one, else the protagonist](campaign-runtime-prototype.md)), who
+keeps its items wherever it dies, so its counts take no ground piles. One that
+leaves the party while its reward is on its way is followed still; it drops its
+items where it dies, as a creature target does.
 
 ## Still unproven
 

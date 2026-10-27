@@ -711,7 +711,8 @@ egg deal's own route stays as it is either way.
 
 The egg deal's place (row 66 of the extended tables) gets its reward like any quest
 reward: her reply marks the party member it gives the crossbow to, and the reward
-goes to the one with that mark. Her conversation ends by clearing every queued action
+goes to the one with that mark (since 1.0.3 the protagonist where that one left the
+party, see [the runtime](campaign-runtime-prototype.md)). Her conversation ends by clearing every queued action
 of the party (UDSILVER.DLG state 46), and with them the mark her reply queued, so in
 CIR 1.0.2 that reward never arrived. Her reply now also marks the one she talks to
 when the game shows it, as the only one with that mark (a condition of both variants
