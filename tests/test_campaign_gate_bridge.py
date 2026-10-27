@@ -612,6 +612,31 @@ function cases.exact_witness_and_world_absence_commit_physical_source(Core,Gate,
     assert(f.values.flpr_s0001==3 and f.values.flpr_jkind==0)
 end
 
+-- A proof that cannot be made now waits, as after a reload: the witnessed area
+-- load is not the visible one, or its holder is gone, replaced or doubled. Any
+-- other refusal still stops CIR, and the proof still confirms once it can run.
+function cases.unprovable_removal_waits_for_the_witnessed_holder(Core,Gate,build,compile)
+    local f=fixture(Core); f:install(Gate,build,compile); f:capture(); f:prepare(); f:adapter()
+    f:bind()
+    local request=assert(f.controller:guarded_source_removal_request(1))
+    f.controller:on_observation_boundary()
+    f:publish_witness()
+    for _,reason in ipairs({'AREA_UNAVAILABLE','AREA_CHANGED','OWNER_MISSING','OWNER_CHANGED','OWNER_AMBIGUOUS'}) do
+        f.world_error=reason
+        local result,why=f.adapter_instance:observe_removal(request)
+        assert(result==nil and why=='SOURCE_NOT_LOADED',reason)
+    end
+    for _,reason in ipairs({'SOURCE_POINTER_INVALID','SOURCE_UNKNOWN','TARGET_NOT_FIXTURE_GROUND_PILE'}) do
+        f.world_error=reason
+        local result,why=f.adapter_instance:observe_removal(request)
+        assert(result==nil and why==reason,reason)
+    end
+    assert(f.values.flpr_s0001==6)
+    f.remaining=0
+    assert(f.controller:confirm_guarded_source_removal(assert(f.adapter_instance:observe_removal(request))))
+    assert(f.values.flpr_s0001==3)
+end
+
 function cases.configured_second_container_uses_its_own_bytes_and_witness(Core,Gate,build,compile)
     local f=fixture(Core)
     local id='are:flprv2/container/1/item/3'

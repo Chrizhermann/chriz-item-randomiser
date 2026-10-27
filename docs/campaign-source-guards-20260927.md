@@ -54,6 +54,20 @@ below. General source support and normal installer integration remain unfinished
   into that holder in this session (`Adapter.placed`: creature, container or
   ground pile). The gate's witness is this session's too, so a reload proves
   nothing and needs no such record.
+- The count needs the holder the gate saw, in the area load it saw: the witness
+  names both. When it cannot be made now, the proof waits (`SOURCE_NOT_LOADED`),
+  as after a reload: the source stays protected and no reward waits for it.
+  That is when the area is not the visible one, when the party left it and it
+  was loaded again (`AREA_CHANGED`), and when the holder is gone, replaced or
+  doubled (`OWNER_MISSING`, `OWNER_CHANGED`, `OWNER_AMBIGUOUS`). Only a holder
+  that still has another item of the original's name stops CIR
+  (`CAMPAIGN_GATE_WORLD_MISMATCH`). Before, each of these stopped CIR, as in
+  1.0.2. The BG2:EE 2.7.3 lab saw both on 27 October: a creature removed by
+  `DestroySelf` before its proof ran (`OWNER_MISSING`), and a party that left an
+  area at once and came back after other areas (`AREA_CHANGED`). A proof runs
+  only in a host step with no reward on its way, and each step proves 16
+  sources in turn (`Host.REMOVAL_CHECKS`). So it can come seconds after the
+  area loaded.
 
 ## Native result
 
