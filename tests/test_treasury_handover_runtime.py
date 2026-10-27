@@ -260,6 +260,22 @@ function cases.a_pending_mutation_or_missing_treasury_owes_the_handover(N,Core)
     assert(not f.adapter:owes_handover())
 end
 
+-- Finding 5: a reward parked on its way into the treasury is settled by
+-- reading the treasury as it was (Adapter:settle_parked). The payment waits
+-- for that, and then hands over what arrived.
+function cases.a_parked_reward_of_the_treasury_owes_the_handover(N,Core)
+    local f=treasury_world(N,Core)
+    f.assignments[1].delivery_phase=f.phases.parked
+    local count,reason,owed=f:hand_over()
+    assert(count==0 and reason=='HANDOVER_REWARD_PARKED' and owed==true)
+    assert(f.payee.locals.FLPR_RA_SAHROD==1 and #f.calls==1 and #f.queue==0 and #f.treasury.m_lstItems==2)
+    f.boundary();f:retry();assert(f.adapter:owes_handover() and #f.calls==1)
+    -- Settled: it arrived in the treasury.
+    f.assignments[1].delivery_phase=f.phases.confirmed
+    for _=1,N.HANDOVER_RETRY_TICKS do f.boundary();f:retry() end
+    assert(not f.adapter:owes_handover() and #f.calls==3 and #f:given()==1 and #f.treasury.m_lstItems==1)
+end
+
 function cases.after_payment_a_reward_not_placed_yet_goes_to_the_payee(N,Core)
     local f=treasury_world(N,Core)
     f.treasury.m_lstItems={f.item('MISCBI',401,0)}
@@ -270,8 +286,10 @@ function cases.after_payment_a_reward_not_placed_yet_goes_to_the_payee(N,Core)
     f.payee.locals.FLPR_RA_SAHROD=1;f.globals.FLPR_EA_SAHROD=1
     -- Wherever the party is then.
     f.area.m_resref=str('AR2400');f.area.m_lVertSortBack={}
-    assert(f.adapter:inspect_target(f.target_id,f.source_ids[1],1))
+    local witness=assert(f.adapter:inspect_target(f.target_id,f.source_ids[1],1))
     assert(f.adapter.reservations[string.rep('c',64)].owner.id==3)
+    -- Its counts keep the payment (FLPRNat's settle_value).
+    assert(witness.settle==1+1024*4096*128)
     f.boundary()
     local command=f.command(1)
     assert(f.adapter:execute(command))
@@ -281,6 +299,9 @@ function cases.after_payment_a_reward_not_placed_yet_goes_to_the_payee(N,Core)
     f.boundary();receipt=assert(f.adapter:observe(command))
     assert(receipt.holder=='party' and receipt.slot==18 and f.payee.slots[18].cResRef:get()=='FLPRI1')
     unrelated_intact(f)
+    -- A save made while it was on its way counts it at the payee, anywhere.
+    receipt=assert(f.adapter:settle_parked(settle_request(f,witness)))
+    assert(receipt.arrived==1 and receipt.holder=='party')
     -- Two marked: no guess.
     f.member.locals.FLPR_RA_SAHROD=1
     local ready;ready,reason=f.adapter:inspect_target(f.target_id,f.source_ids[2],2)
@@ -592,6 +613,7 @@ CASE_NAMES = (
     "the_payee_is_the_one_he_talks_to_else_the_party",
     "a_full_backpack_passes_the_reward_to_a_member_with_room",
     "a_pending_mutation_or_missing_treasury_owes_the_handover",
+    "a_parked_reward_of_the_treasury_owes_the_handover",
     "after_payment_a_reward_not_placed_yet_goes_to_the_payee",
     "a_presets_row_stands_for_the_treasurys_place",
     "handover_configuration_is_strict",

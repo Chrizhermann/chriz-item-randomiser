@@ -236,8 +236,8 @@ drop's own adds may get it.
     CIR found it nowhere.
   - Only the piles of the area the delivery began in can tell where the reward is, and
     only while the party has not left that area: an area's objects leave memory with it
-    and come back as other objects. After the party left, it waits for the settling
-    time instead.
+    and come back as other objects. After the party left, the reward parks
+    ([below](#when-the-party-leaves-while-a-reward-is-on-its-way-since-103)).
 - **Gone after CIR saw the reward in it.** Held, as for a corpse.
 - **A party member** (the recipient of a quest target) keeps its items when it dies:
   its reward is confirmed in its backpack, alive or dead. One that leaves no body (a
@@ -255,13 +255,72 @@ What still stops CIR, since it cannot be told apart or followed:
   same moment (`DROPPED_REWARD_AMBIGUOUS`);
 - a reward that cannot be found or placed within the settling time
   (`DELIVERY_SETTLING_TIMEOUT`): one whose creature or corpse is still there without
-  it, one after the party left the area, or a lost one that no party member can drop;
-- a creature target that joins the party or becomes a familiar in those ticks, or a
-  party that leaves a creature target's area then;
-- as for every delivery, a save made while a reward is on its way, once it is loaded
-  (`PENDING_RELOAD_UNPROVEN`). A delivery takes a fraction of a second. One whose
-  creature dies takes about a second, longer while no party member can drop a lost
-  reward.
+  it, or a lost one that no party member can drop;
+- a creature target that joins the party or becomes a familiar in those ticks.
+
+## When the party leaves while a reward is on its way (since 1.0.3)
+
+Seen twice in the BG2:EE 2.7.3.0 lab on 2026-10-27, with a 1.0.3 candidate whose code
+there was still that of 1.0.2: the party
+arrived in AR0907 and was sent away at once while CIR's reward for hlmafer was on its
+way, and the same in AR0516 with pthral05's. One tick later the area was gone. CIR
+stopped for the rest of the adventure (`AREA_UNAVAILABLE`): the objects of an area
+leave memory with it, so nothing there could be read any more. The reward had arrived
+all the same: pthral05 had no wand12 before and one after, six items then seven. A
+save made while a reward was on its way stopped CIR the same way once it was loaded
+(`PENDING_RELOAD_UNPROVEN`).
+
+Chris's decision (2026-10-27): CIR remembers the half hand-over. On the next visit
+of the place it checks whether the reward arrived, and delivers it otherwise. The
+other rewards go on. Where the creature or the container has one item of that
+name more than before, the reward arrived; otherwise CIR gives it then. Who gets
+what stays the same.
+
+- **What was proven stands.** A reward pinned in its creature is held, one pinned in
+  its container confirmed, one found or pinned on the ground confirmed there, with
+  its message to the player where it lies at a party member's feet
+  (`Adapter:_left`).
+- **Anything else parks** (`Core:park`). The witness of each delivery carries the
+  counts before it (`settle_value`): the items of the reward's name in its creature
+  or container, those in the ground piles of its area (none for a quest recipient,
+  who keeps its items), the first-of member it went to, and whether the reply had
+  paid it to the payee. A save made while a reward was on its way parks it the
+  same way when it is loaded (`Core:park_unproven`).
+- **The next visit settles it** (`Adapter:settle_parked`, `Core:confirm_parked`),
+  before anything else is done there, and no other reward goes to that place before:
+  - a living creature, a party member and a quest recipient: one item of that name
+    more in its items;
+  - a dead creature: one more in its body and the ground piles of its area; held in
+    its body, else on the ground;
+  - a creature gone without a body, its death counted: one more in the ground piles;
+  - a container: one more in it.
+
+  What arrived is held (a creature target) or confirmed. Otherwise it is delivered
+  again, where it would have gone: a dead creature's at its corpse, a vanished one's
+  at a party member's feet. A quest recipient is followed into any area, and so is
+  its parked reward.
+- **It waits** while an item message of that name is queued anywhere, while the
+  place is not in the visible area, and while its creature is missing alive
+  (`OWNER_MISSING`), as a pending delivery does.
+
+What still stops CIR, or is not covered:
+
+- a save made while a source's original was being removed, or while a delivery that
+  CIR 1.0.2 began was on its way (`PENDING_RELOAD_UNPROVEN`): CIR does not repair
+  state of the earlier version (Chris, 2026-10-27);
+- a save made after CIR stopped with a reward on its way: the world went on without
+  CIR, so its counts are dropped (`Core:forfeit_settle`);
+- an item of the reward's name that someone else adds to or takes from that place
+  between the leaving and the next visit makes the counts wrong. One taken looks like
+  a reward that did not arrive, so a second copy comes; one added looks like the
+  reward;
+- a reward whose death drop CIR never saw: if the drop ran before the message and the
+  party left within `DEATH_DROP_TICKS`, the reward stays in the body where nobody can
+  take it, and the settle counts it there as arrived;
+- no message for a reward at a party member's feet that only the settle finds: it
+  cannot tell whose feet;
+- a parked reward whose creature is gone from the game alive waits for it, as a
+  pending one does.
 
 ## Not covered
 

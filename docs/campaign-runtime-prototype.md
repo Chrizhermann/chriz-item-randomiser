@@ -187,6 +187,9 @@ Lua tables for both the adapter's game API and the save store.
 | `begin_delivery(unit, witness)` | Requires confirmed suppression of that unit's original source and an available assigned target. Persists a journal before returning a logical creation command. |
 | `on_observation_boundary()` / `observe(receipt)` | Confirmation must come from a later host observation, identify the same transaction and session, and prove the requested outcome. The boundary call itself is not evidence of an engine tick. |
 | `pending_observation()` | After restore, requests fresh inspection of an in-flight transaction. Its `observe-only` result never permits replaying removal or creation. |
+| `park(receipt)` / `park_unproven()` | The pending delivery's observation cannot go on: the party left its place (a receipt with `parked = 1`), or a save made while it was on its way was loaded. It parks with the adapter's counts before it, and its journal closes. A delivery begun without counts, and every source suppression, stay unproven. |
+| `parked_request(index)` / `confirm_parked(receipt)` | An `observe-only` settle of a parked reward on the next visit of its place. It arrived (held by a creature target, else confirmed), or it is pending again for a new delivery. Nothing is replayed. |
+| `forfeit_settle()` | A host that stops with a reward on its way drops that reward's counts, so a save made after that still stops with `PENDING_RELOAD_UNPROVEN`. |
 | `destroy()` | Invalidates cached state and pending callback identity when the host proves session destruction. Saved GLOBALs are unchanged. |
 
 Capture stores the complete 256-bit revision as 16 bounded numeric chunks, the
@@ -202,6 +205,22 @@ cannot be resumed as a fresh run. Missing phase variables are invalid, not fresh
 attempts. Only one mutation can be in flight. A partial journal disables progress
 rather than guessing whether a command ran. If confirmation committed just before
 journal clearing was interrupted, restore clears the journal without replaying it.
+
+Since 1.0.3 a delivery can park (Chris, 2026-10-27: CIR remembers the half
+hand-over, checks on the next visit whether it arrived, and else delivers it
+again; the other rewards go on). The witness of every delivery carries the
+adapter's counts before it, one GLOBAL value (`flpr_jsettle`, FLPRNat's
+`settle_value`): the items of the reward's name in its holder and in the ground
+piles of its area, the first-of member it went to, and whether a reply had paid
+it to the payee. When the party leaves the place of the reward on its way, or a
+save made then is loaded, the delivery parks: its counts move to `flpr_b<unit>`,
+its phase becomes parked (stored 9) and its journal closes. Each host step tries
+to settle a parked reward before anything else, so a visit settles it before
+anyone there can take or move anything. No other reward goes to that place while
+one of it is parked. The settle reads the place again: one item more of that name
+than before means the reward arrived; otherwise it is pending and delivered
+anew. Who gets what stays the same. A creature target holding it is held, with a
+new nonce (`flpr_n<unit>`) for its held identity.
 Host callback boundaries must catch storage/resolver errors and disable this path;
 the core deliberately raises on invalid GLOBAL values or failed writes.
 

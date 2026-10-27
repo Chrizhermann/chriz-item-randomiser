@@ -39,6 +39,9 @@ end
 
 function Host:_disable(reason)
     self.error, self.status = tostring(reason), "disabled"
+    -- A reward on its way now is never settled from a later save
+    -- (Core:forfeit_settle); a failure here leaves the first one reported.
+    if self.controller then pcall(self.controller.forfeit_settle, self.controller) end
     if self.deps.report then self.deps.report("disabled", self.error) end
 end
 
@@ -126,10 +129,38 @@ function Host:_initialize()
     end
     self.status = "running"
     if deps.storage:get(deps.core.G.journal) ~= 0 then
-        -- No item-pointer provenance survives loading. Do not replay or infer
-        -- ownership from a matching item already present in the world.
-        error("PENDING_RELOAD_UNPROVEN", 0)
+        -- No item-pointer provenance survives loading, and no queued message.
+        -- Nothing is replayed or inferred from a matching item already present:
+        -- a reward on its way parks with its counts before it, and the next
+        -- visit of its place settles it (Host:_settle_parked).
+        require_result(self.controller:park_unproven())
     end
+end
+
+-- Parked rewards (Core.PHASE.parked), settled by an observation of their
+-- place: arrived, or pending for a new delivery. Outside their area this
+-- costs one comparison and is tried on every step, so that a visit settles
+-- them before anyone there can take or move anything (and before any other
+-- reward there begins, see below); so is a queue that is busy for a moment.
+-- Other waits are retried after DEFER_TICKS. Returns true after a settle.
+function Host:_settle_parked(assignments, tick)
+    local parked = self.deps.core.PHASE.parked
+    for _, assignment in ipairs(assignments) do
+        local unit, deferral = assignment.unit, self.deferred[assignment.unit]
+        if assignment.delivery_phase == parked and (not deferral or tick >= deferral.retry) then
+            local request = require_result(self.controller:parked_request(unit))
+            local receipt, reason = self.native:settle_parked(request)
+            if receipt then
+                self.deferred[unit] = nil
+                require_result(self.controller:confirm_parked(receipt))
+                return true
+            end
+            if not Host.DEFERRABLE[reason] then error(reason or "HOST_OPERATION_FAILED", 0) end
+            self.deferred[unit] = { reason = reason, retry = (reason == "AREA_UNAVAILABLE" or
+                reason == "TARGET_QUEUE_BUSY") and tick + 1 or tick + Host.DEFER_TICKS }
+        end
+    end
+    return false
 end
 
 -- Capture is atomic: a failure undoes every GLOBAL written while capturing, so
@@ -204,11 +235,14 @@ function Host:_step(tick)
             return
         end
         require_result(receipt, reason)
-        require_result(self.controller:observe(receipt))
+        -- The party left the place of its target with the reward on its way.
+        if receipt.parked then require_result(self.controller:park(receipt))
+        else require_result(self.controller:observe(receipt)) end
         self.pending = nil
         if receipt.notice and self.deps.notice then self.deps.notice(receipt.notice) end
         return
     end
+    if self:_settle_parked(assignments, tick) then return end
     if self.native.observe_container_latches then
         local observed,monitor=self.native:observe_container_latches(assignments,self.deps.core.PHASE.confirmed)
         require_result(observed,monitor)
@@ -280,13 +314,19 @@ function Host:_step(tick)
             return
         end
     end
-    local phases, waiting = self.deps.core.PHASE, false
+    local phases, waiting, parked = self.deps.core.PHASE, false, {}
+    -- No reward goes to a place while another one of it is parked: the settle
+    -- reads the items of that place as they were (Adapter:settle_parked).
+    for _, assignment in ipairs(assignments) do
+        if assignment.delivery_phase == phases.parked then parked[assignment.target_id], waiting = true, true end
+    end
     for _, assignment in ipairs(assignments) do
         local phase = assignment.delivery_phase
-        if phase ~= phases.confirmed and phase ~= phases.held and phase ~= phases.kept and phase ~= phases.lost then
+        if phase ~= phases.confirmed and phase ~= phases.held and phase ~= phases.kept and phase ~= phases.lost and
+            phase ~= phases.parked then
             assert(phase == phases.pending, "DELIVERY_NOT_READY")
             local deferral = self.deferred[assignment.unit]
-            if not deferral or tick >= deferral.retry then
+            if not parked[assignment.target_id] and (not deferral or tick >= deferral.retry) then
                 local witness, reason = self.native:inspect_target(assignment.target_id, assignment.source_id, assignment.unit)
                 if witness then
                     self.deferred[assignment.unit] = nil

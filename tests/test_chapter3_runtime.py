@@ -260,6 +260,39 @@ function cases.the_place_configuration_is_strict(N)
         'NATIVE_HANDOVER_INVALID')
 end
 
+-- Finding 5 (Chris, 2026-10-27): a reward parked on its way is counted at the
+-- creature it went to, whose place among them its counts keep, never at
+-- whoever would come first on the next visit.
+function cases.a_parked_reward_is_counted_at_the_one_it_went_to(N)
+    local f=chapter3_world(N);local a=f.adapter
+    local witness=assert(a:inspect_target(PLACE,f.source_ids[1],1))
+    -- The first of them, the drawn vampire, with nothing of its name.
+    assert(witness.settle==1+1024*4096*1)
+    f.boundary();local command=f.command(1);assert(a:execute(command))
+    f.enter('BG0100');f.boundary()
+    local receipt=assert(a:observe(command))
+    assert(receipt.parked==1 and a.pending==nil)
+    local request=settle_request(f,witness)
+    local x,e=a:settle_parked(request);fail(x,e,'AREA_UNAVAILABLE')
+    -- Its message ran before its area went.
+    f.update();f.enter('AR0801');f.boundary()
+    receipt=assert(a:settle_parked(request))
+    assert(receipt.arrived==1 and receipt.holder=='creature' and f.vamp1.slots[18])
+    -- The thief at his corpse: counted where he lies, not at the vampire.
+    f=chapter3_world(N);a=f.adapter
+    f.enter('AR0329');f.thief.alive=false
+    witness=assert(a:inspect_target(PLACE,f.source_ids[1],1))
+    assert(witness.ground==true and witness.settle==1+1024*4096*2)
+    f.boundary();command=f.command(1);assert(a:execute(command))
+    f.enter('AR0801');f.boundary()
+    assert(a:observe(command).parked==1)
+    request=settle_request(f,witness)
+    x,e=a:settle_parked(request);fail(x,e,'AREA_UNAVAILABLE')
+    f.update();f.enter('AR0329');f.boundary()
+    receipt=assert(a:settle_parked(request))
+    assert(receipt.arrived==1 and receipt.holder=='ground' and empty(f.vamp1))
+end
+
 -- The real host and core: the place waits while the thief lives, and the
 -- reward lies at his corpse once he is dead.
 function cases.the_host_waits_until_one_of_them_can_take_it(N,Core,Host)
@@ -317,6 +350,7 @@ CASE_NAMES = (
     "execute_delivers_to_the_reserved_creature_only",
     "diagnostics_show_each_creature",
     "the_place_configuration_is_strict",
+    "a_parked_reward_is_counted_at_the_one_it_went_to",
     "the_host_waits_until_one_of_them_can_take_it",
 )
 
