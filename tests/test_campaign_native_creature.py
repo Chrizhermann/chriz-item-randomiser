@@ -1985,10 +1985,10 @@ local function marked_world(N, member)
 end
 -- It leaves the party (the reward on its way stays with it).
 local function leaves_party(f) f.party[2], f.creature.portrait = nil, -1 end
--- Chris, 2026-10-28: a reward whose marked recipient is not in the party (it
--- left) goes to someone else: the protagonist, dead or alive as that one is
--- (Adapter:_recipient). One that leaves the party with its reward on its way
--- is followed into its death, as a creature target is.
+-- A reward whose marked recipient is not in the party (it left) goes to
+-- someone else, as Chris asked on 2026-10-28; CIR picks the protagonist, dead
+-- or alive as that one is (Adapter:_recipient). One that leaves the party
+-- with its reward on its way is followed into its death, as a creature target is.
 function cases.marked_recipient_outside_the_party_that_dies(N)
     for _, alive in ipairs({true, false}) do
         local f, a = marked_world(N)

@@ -79,7 +79,8 @@ local function key_world(N,party)
     return f
 end
 -- The marked party member, not portrait 0. One marked outside the party (it
--- left) is not the one: the protagonist is (Chris, 2026-10-28).
+-- left) is not the one: someone else is, as Chris asked on 2026-10-28, and CIR
+-- picks the protagonist.
 function cases.key_recipient_is_the_marked_party_member_else_the_protagonist(N)
     for _,party in ipairs({true,false}) do
         local f=key_world(N,party)

@@ -729,7 +729,9 @@ Apply patches it again with every route. A changed copy of it is left out as any
 other. A revision exported with CIR 1.0.2 keeps her place as a plain creature, and
 her reply hands that reward over too: its saves read the dialogue Apply patches now,
 which supersedes the one they were exported with (`superseded.lua`, above), so the
-egg deal's reward reaches them as well where the deal is still to come.
+egg deal's reward reaches them as well where the deal is still to come. Where it
+was done under 1.0.2, the reward's mark is gone; it arrives at the protagonist
+after the runtime's wait for a missing mark (approved by Chris, 2026-10-28).
 
 The book of Lavok's sphere (`PPBOOK.BCS`, AR1513) gives two scrolls with the ring on
 its last page (rows 260 and 262 of the extended tables, beside the ring's row 109).

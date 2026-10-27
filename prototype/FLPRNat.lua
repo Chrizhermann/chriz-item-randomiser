@@ -486,12 +486,12 @@ end
 
 -- The recipient a reward reply (or the Key's spell) marked: the party member,
 -- dead or alive, whose LOCALS <name> is 1, the first in portrait order. One
--- that is not in the party (it left, or never was) is not the one. Chris,
--- 2026-10-28: "Gerne jemand anderem geben"; the reward goes to the
--- protagonist then, as an unmarked quest's reward does. Where no one in the
--- visible area or the party has the mark, it may still be on its way: a
--- reply's ActionOverride marks its recipient only once its talk is over. The
--- reward waits then, and goes to the protagonist only after
+-- that is not in the party (it left, or never was) is not the one: someone
+-- else gets the reward, as Chris asked on 2026-10-28 ("Gerne jemand anderem
+-- geben"), and CIR picks the protagonist, as for an unmarked quest's reward.
+-- Where no one in the visible area or the party has the mark, it may still be
+-- on its way: a reply's ActionOverride marks its recipient only once its talk
+-- is over. The reward waits then, and goes to the protagonist only after
 -- RECIPIENT_GRACE_STEPS host steps without a mark, as for one marked who
 -- stays elsewhere, or a mark the game dropped (session only).
 function Adapter:_recipient(area, name)

@@ -310,14 +310,17 @@ A quest target's reward goes to the one its reward reply marks: the reply queues
 the route's `LOCALS` mark for the recipient it names, always a party member.
 Since 1.0.3 the recipient is the party member with that mark, dead or alive, the
 first in portrait order where several have it (`Adapter:_recipient`). One marked
-who is no longer in the party gets nothing: as Chris decided on 2026-10-28
-("Gerne jemand anderem geben"), the reward goes to the protagonist then, as the
-reward of a quest without a mark does. Where no one in the visible area or the
+who is no longer in the party gets nothing. Asked whether such a reward should
+wait for it or go to someone else in the party, Chris answered on 2026-10-28
+"Gerne jemand anderem geben"; CIR gives it to the protagonist then, as it gives
+the reward of a quest without a mark. Where no one in the visible area or the
 party has the mark, it may still be on its way, as the reply's queued mark runs
 only once its talk is over: the reward waits `RECIPIENT_GRACE_STEPS` host steps
 (900, about a minute of play; steps, since resting or travelling moves the game's
 clock by hours in one step), then goes to the protagonist too. That covers one
-marked who stays elsewhere and a mark the game dropped. The wait is session
+marked who stays elsewhere and a mark the game dropped, such as that of Adalon's
+egg reward in adventures of CIR 1.0.2 whose eggs were returned before: it
+arrives at the protagonist too (approved by Chris, 2026-10-28). The wait is session
 only: a loaded game waits anew. A dead marked member waits until raised, as
 before. A reward on its way follows the recipient it began with, wherever it
 goes and whatever happens to the mark (`Adapter:_delivery_owner`); one that

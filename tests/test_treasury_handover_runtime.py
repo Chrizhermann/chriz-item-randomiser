@@ -355,7 +355,8 @@ function cases.after_payment_a_reward_not_placed_yet_goes_to_the_payee(N,Core)
     assert(owner()==6)
     f.payee.locals.FLPR_RA_SAHROD=1
     assert(owner()==3)
-    -- Chris, 2026-10-28: the one marked left the party; the protagonist gets it.
+    -- The one marked left the party: someone else gets it (Chris asked so on
+    -- 2026-10-28), the protagonist.
     f.payee.locals.FLPR_RA_SAHROD=nil;f.party[1],f.member.portrait=nil,-1
     assert(owner()==3)
     -- Not marked yet: the reward waits, RECIPIENT_GRACE_STEPS host steps at most.
