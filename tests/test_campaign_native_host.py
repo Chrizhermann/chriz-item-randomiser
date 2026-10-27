@@ -332,6 +332,18 @@ function cases.held_creature_rewards_complete_and_never_redeliver_after_restore(
     f.host:destroy(); f:poll(1); f:poll(2)
     assert(f.host.status=="complete" and #f.events==6)
 end
+-- A quest reward whose recipient left the party while it was on its way: its
+-- receipt says held (FLPRNat Adapter:_observe_creature), and the campaign goes on.
+function cases.held_quest_rewards_complete_and_never_redeliver_after_restore(Core,Host)
+    local f=setup(Core,Host)
+    for _,target in ipairs(f.manifest.targets) do target.record.kind="scripted-target" end
+    f.held=true; assert(f:capture()); f:finish(); assert(#f.events==6)
+    for _,assignment in ipairs(f.host:inspect().assignments) do
+        assert(assignment.delivery_phase==Core.PHASE.held)
+    end
+    f.host:destroy(); f:poll(1); f:poll(2)
+    assert(f.host.status=="complete" and #f.events==6)
+end
 function cases.held_receipt_for_non_creature_target_is_quarantined_and_stops(Core,Host)
     local f=setup(Core,Host); f.held=true; assert(f:capture())
     for i=1,10 do f:poll() end

@@ -3,7 +3,9 @@
 local Host = {}
 Host.__index = Host
 -- An unavailable target is retried after this many game ticks (15/second).
--- Deferral never creates anything or substitutes another recipient. A dead
+-- Deferral itself never creates anything or picks another recipient; the
+-- adapter's rule may name another one on a later try (a quest reward's, FLPRNat
+-- Adapter:_recipient). A dead
 -- creature target's reward goes to the ground at its corpse instead, or at a
 -- party member's feet where it left no body (FLPRNat); deps.notice tells the
 -- player of the latter.

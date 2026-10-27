@@ -2042,7 +2042,8 @@ function cases.quest_reward_on_its_way_follows_its_recipient(N)
         local x, e = a:observe(command); fail(x, e, "DELIVERY_SETTLING")
         f.boundary(); local receipt = assert(a:observe(command))
         assert(f.creature.slots[18].cResRef:get() == "FLPRI1" and next(f.minsc.slots) == nil, variant)
-        -- Held outside the party, as any item a member has when it leaves.
+        -- Held outside the party, as any item a member has when it leaves; Core
+        -- takes that of a quest reward as held (test_campaign_native_host).
         if variant == "left" then assert(receipt.holder == "creature" and receipt.held == 1, variant)
         else assert(receipt.holder == "party" and receipt.lootable == 1, variant) end
     end

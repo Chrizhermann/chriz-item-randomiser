@@ -2154,7 +2154,8 @@ function Adapter:_observe_creature(pending, receipt)
         return receipt
     end
     -- Held by its creature in its backpack, or dropped with it as it died.
-    -- That is not proof of lootability: the death drop is the engine's.
+    -- That is not proof of lootability: the death drop is the engine's. A quest
+    -- reward's recipient that left the party on its way holds it too.
     receipt.lootable, receipt.held, receipt.holder = 0, 1, "creature"
     if state == "alive" then
         -- Session-only provenance. A save reload cannot reconstruct this record

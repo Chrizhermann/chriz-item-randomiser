@@ -5,8 +5,9 @@ local Core = {}
 Core.SCHEMA = "flir-campaign-prototype-v1"
 Core.MAX_UNITS = 4096
 -- Held means an exact, operation-bound instance was placed on a living
--- creature target. Its later lootability is not claimed; only deliveries
--- can be held, and only for creature-kind targets.
+-- creature: a creature target, or a quest reward's recipient outside the party
+-- (HOLDING_TARGET_KINDS). Its later lootability is not claimed; only deliveries
+-- can be held, and only for those targets.
 -- Protected is source-only: a live pre-access guard is bound to an unvisited
 -- original. It is not evidence that the original has already been removed.
 -- Parked is delivery-only: a reward on its way whose observation could not go
@@ -15,8 +16,12 @@ Core.MAX_UNITS = 4096
 -- place tells whether it arrived (Controller:confirm_parked).
 Core.PHASE = { pending = 0, in_flight = 1, confirmed = 2, quarantined = 3, held = 4, protected = 5,
     kept = 6, lost = 7, parked = 8 }
-Core.CREATURE_TARGET_KINDS = { actor = true, ["cre-template"] = true,
-    ["creature-target"] = true, group = true }
+-- Targets whose reward a creature may hold rather than make lootable: a
+-- creature target's, and a quest reward's (scripted-target) whose recipient
+-- left the party while it was on its way, since its delivery follows the
+-- recipient it began with (FLPRNat Adapter:_delivery_owner).
+Core.HOLDING_TARGET_KINDS = { actor = true, ["cre-template"] = true,
+    ["creature-target"] = true, group = true, ["scripted-target"] = true }
 Core.G = { state = "flpr_state", seed = "flpr_seed", units = "flpr_units",
     sources = "flpr_sources", targets = "flpr_targets", sequence = "flpr_sequence",
     journal = "flpr_jkind", index = "flpr_jindex", nonce = "flpr_jnonce",
@@ -215,8 +220,8 @@ local function target_kind(manifest, shape, slot_index)
     return target ~= nil and type(target.record) == "table" and target.record.kind or nil
 end
 
-local function creature_target(manifest, shape, slot_index)
-    return Core.CREATURE_TARGET_KINDS[target_kind(manifest, shape, slot_index)] == true
+local function holding_target(manifest, shape, slot_index)
+    return Core.HOLDING_TARGET_KINDS[target_kind(manifest, shape, slot_index)] == true
 end
 
 local function guard_source(source)
@@ -557,7 +562,7 @@ function Controller:restore()
             (not disposition and not integer(phase, 0, 4) and phase ~= Core.PHASE.parked) then
             return nil, "ASSIGNMENT_INVALID"
         end
-        if phase == Core.PHASE.held and not creature_target(frozen, shape, expected[index]) then
+        if phase == Core.PHASE.held and not holding_target(frozen, shape, expected[index]) then
             return nil, "ASSIGNMENT_INVALID"
         end
         -- Other units' counts are never read: only a parked unit has them.
@@ -570,7 +575,7 @@ function Controller:restore()
             -- before its phase (Controller:observe), or a settle's (confirm_parked).
             -- Its settle replaces or clears it.
             if provenance ~= 1 or not integer(nonce, 2, self:_get(G.sequence)) or held_nonces[nonce] or
-                not creature_target(frozen, shape, expected[index]) or
+                not holding_target(frozen, shape, expected[index]) or
                 (phase ~= Core.PHASE.held and phase ~= Core.PHASE.confirmed and phase ~= Core.PHASE.parked and
                     not (phase == Core.PHASE.in_flight and self:_get(G.journal) == 2 and
                         self:_get(G.index) == index and self:_get(G.nonce) == nonce)) then
@@ -769,11 +774,11 @@ function Controller:observe(receipt)
     elseif valid and receipt.created == 1 and receipt.nonce_bound_instance == 1 then
         -- The host must prove THIS nonce's new instance, not an old matching
         -- copy or just a count increase. Confirmation also needs lootability;
-        -- a creature target may instead report the instance as held.
+        -- a holding target may instead report the instance as held.
         if receipt.lootable == 1 and receipt.held == nil then
             outcome = Core.PHASE.confirmed
         elseif receipt.lootable == 0 and receipt.held == 1 and
-            creature_target(self.manifest, self.shape, self:_get(name("a", index))) then
+            holding_target(self.manifest, self.shape, self:_get(name("a", index))) then
             outcome = Core.PHASE.held
         end
     end
@@ -866,7 +871,7 @@ function Controller:parked_request(index)
 end
 
 -- The adapter tells from the counts whether the parked reward arrived, and
--- where it is: a creature target holding it is held, as an observed one is;
+-- where it is: one a creature holds (a holding target's) is held, as an observed one is;
 -- anywhere else it is confirmed (a store's stock only for a store target).
 -- One that did not arrive is pending again, for a new delivery. One checked
 -- phase write is the commit.
@@ -892,7 +897,7 @@ function Controller:confirm_parked(receipt)
         (receipt.arrived == 1 and holder ~= "creature" and holder ~= "party" and holder ~= "ground" and
          holder ~= "container" and holder ~= "store") then return nil, "PARKED_SETTLE_UNPROVEN" end
     local selected = self:_get(name("a", index))
-    if receipt.arrived == 1 and ((holder == "creature" and not creature_target(self.manifest, self.shape, selected)) or
+    if receipt.arrived == 1 and ((holder == "creature" and not holding_target(self.manifest, self.shape, selected)) or
         (holder == "store") ~= (target_kind(self.manifest, self.shape, selected) == "store")) then
         return nil, "PARKED_SETTLE_UNPROVEN"
     end

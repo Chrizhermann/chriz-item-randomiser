@@ -127,7 +127,12 @@ function cases.key_recipient_waits_for_its_mark_takes_the_first_and_waits_while_
             fail(ready,reason,'OWNER_MISSING');f.boundary()
             assert(f.adapter:inspect_target(f.target_id,f.source_ids[1],1))
             assert(f.adapter.reservations[string.rep('c',64)].owner.id==1)
-        elseif variant=='dead' then fail(ready,reason,'TARGET_NOT_ALIVE') end
+        elseif variant=='dead' then
+            -- Past the wait too: a marked member is no missing mark.
+            fail(ready,reason,'TARGET_NOT_ALIVE');f.boundary()
+            ready,reason=f.adapter:inspect_target(f.target_id,f.source_ids[1],1)
+            fail(ready,reason,'TARGET_NOT_ALIVE')
+        end
     end
 end
 function cases.key_recipient_local_survives_reload_ids_and_party_reordering(N)

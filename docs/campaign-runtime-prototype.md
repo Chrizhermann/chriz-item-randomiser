@@ -243,7 +243,9 @@ and actual lootability. A matching pre-existing item or an increased count is no
 sufficient. Bad outcome evidence quarantines the transaction without automatic
 replay. Missing targets defer delivery and do not create a fallback pile.
 
-A creature-kind target (`actor` or `cre-template`) may instead report the exact
+A holding target (`Core.HOLDING_TARGET_KINDS`: a creature target, or since 1.0.3
+a quest reward's `scripted-target`, whose recipient may leave the party while the
+reward is on its way) may instead report the exact
 instance as **held**: `created = 1`, `nonce_bound_instance = 1`, `lootable = 0`,
 `held = 1`. The core stores delivery phase 4 (GLOBAL value 5). This counts as
 attempted and is never delivered again, but it is deliberately distinct from
@@ -318,7 +320,8 @@ clock by hours in one step), then goes to the protagonist too. That covers one
 marked who stays elsewhere and a mark the game dropped. The wait is session
 only: a loaded game waits anew. A dead marked member waits until raised, as
 before. A reward on its way follows the recipient it began with, wherever it
-goes and whatever happens to the mark (`Adapter:_delivery_owner`), and a
+goes and whatever happens to the mark (`Adapter:_delivery_owner`); one that
+left the party meanwhile holds it, and the core takes that as held. A
 parked one is counted at the recipient this rule gives when it settles. The
 treasury's payee is chosen the same way. Adalon's conversation
 clears every queued action of the party at its end, and with them that mark, so
