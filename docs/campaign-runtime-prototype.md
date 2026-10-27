@@ -206,9 +206,9 @@ attempts. Only one mutation can be in flight. A partial journal disables progres
 rather than guessing whether a command ran. If confirmation committed just before
 journal clearing was interrupted, restore clears the journal without replaying it.
 
-Since 1.0.3 a delivery can park (Chris, 2026-10-27: CIR remembers the half
-hand-over, checks on the next visit whether it arrived, and else delivers it
-again; the other rewards go on). The witness of every delivery carries the
+Since 1.0.3 a delivery can park (approved by Chris for 1.0.3, 2026-10-27: CIR
+remembers the half hand-over, checks on the next visit whether it arrived, and
+else delivers it again; the other rewards go on). The witness of every delivery carries the
 adapter's counts before it, one GLOBAL value (`flpr_jsettle`, FLPRNat's
 `settle_value`): the items of the reward's name in its holder and in the ground
 piles of its area, the first-of member it went to, and whether a reply had paid
@@ -223,8 +223,8 @@ recipient), from any place there; other names and other holders go on
 settles). The settle reads the place again: exactly one item more of that name
 than before means the reward arrived. None, or two more (something else of its
 name came too), mean it did not: it is pending and delivered anew. A store took
-its reward at once, and its stock row tells (FLPRShop's `delivered`). Who gets
-what stays the same. A creature target holding it is held, with a new nonce
+its reward at once, and its stock row tells (FLPRShop's `delivered`). A
+creature target holding it is held, with a new nonce
 (`flpr_n<unit>`) for its held identity, which is published before its phase: a
 write cut there leaves it parked with that nonce, which restore keeps and the
 next settle replaces, or held. A host that stops forfeits the counts

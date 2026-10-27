@@ -1,8 +1,8 @@
 # Rewards of a dead target: the ground at its corpse (2.7.3.0)
 
-A creature target that dies before its reward arrives can never hold it, and a
-reward must not be lost (Chris, 2026-10-22). Until CIR 1.0.2 such a reward waited
-forever (`TARGET_NOT_ALIVE`). `GiveItemCreate` cannot help: on a corpse it puts the
+A creature target that dies before its reward arrives can never hold it, and such
+a reward needs a fallback that always works (Chris, 2026-10-22). Until CIR 1.0.2 it
+waited forever (`TARGET_NOT_ALIVE`). `GiveItemCreate` cannot help: on a corpse it puts the
 item into the backpack, where nobody can take it. Since 1.0.3 the reward goes to the
 ground where the corpse lies, once the party is in that area. Where the creature left
 no body, it goes to the ground at a party member's feet
@@ -193,9 +193,10 @@ one tick later, as the party arrived. CIR stopped with `DELIVERY_QUEUE_CONFLICT`
 was lost: its death drop had put the ring into its pile once, among its other items in
 slot order (POTN31, MISC21, SCRL9D, RING04, STAF01). The corpse kept only its fist.
 
-Chris's rule applies (2026-10-22): a reward of a dead recipient goes to the ground, and
-who gets what stays as it is. Since 1.0.3 CIR follows the reward's own instance
-(`Adapter:_observe_creature`): the one new item of the reward's name in a backpack slot
+Chris's rule applies (2026-10-22): a reward that cannot arrive needs a fallback that
+always works; that of a dead recipient goes to the ground. Since 1.0.3 CIR follows the
+reward's own instance (`Adapter:_observe_creature`): the one new item of the reward's
+name in a backpack slot
 (see the [transport evidence](native-creature-transport-evidence.md#while-the-reward-is-on-its-way-2026-10-27)).
 Messages for the creature and changes of its other items do not stop the delivery. Nor
 does a new message at the address of the reward's message once that has run: a death
@@ -270,11 +271,11 @@ all the same: pthral05 had no wand12 before and one after, six items then seven.
 save made while a reward was on its way stopped CIR the same way once it was loaded
 (`PENDING_RELOAD_UNPROVEN`).
 
-Chris's decision (2026-10-27): CIR remembers the half hand-over. On the next visit
-of the place it checks whether the reward arrived, and delivers it otherwise. The
-other rewards go on. Where the creature or the container has one item of that
-name more than before, the reward arrived; otherwise CIR gives it then. Who gets
-what stays the same.
+The fix, which Chris approved for 1.0.3 (2026-10-27): CIR remembers the half
+hand-over. On the next visit of the place it checks whether the reward arrived, and
+delivers it otherwise. The other rewards go on. Where the creature or the container
+has one item of that name more than before, the reward arrived; otherwise CIR gives
+it then.
 
 - **What was proven stands.** A reward pinned in its creature is held, one pinned in
   its container confirmed, one found or pinned on the ground confirmed there, with
@@ -296,8 +297,8 @@ what stays the same.
   reward has settled.
 - **The next visit settles it** (`Adapter:settle_parked`, `Core:confirm_parked`),
   before anything else is done there. Exactly one item of that name more than
-  before is the reward, Chris's rule as he gave it; none, or two more (something
-  else of its name came too), mean it did not arrive:
+  before is the reward; none, or two more (something else of its name came too),
+  mean it did not arrive:
   - a living creature and a party member, alive or dead: in its items;
   - a dead creature, also a quest recipient outside the party: in its body and the
     ground piles of its area together; held in its body, else on the ground;

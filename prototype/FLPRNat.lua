@@ -1346,9 +1346,9 @@ function Adapter:_inspect(endpoint, id, source, source_id, unit, member, paid)
 end
 
 -- A creature that died before its reward arrived can never hold it (Chris,
--- 2026-10-22: a reward must not be lost). It goes to the ground where the
--- corpse lies, while the corpse is in the visible area: CreateItem on the
--- corpse, then DropItem, which moves it into a pile there (2.7.3.0 lab, see
+-- 2026-10-22: it needs a fallback that always works). It goes to the ground
+-- where the corpse lies, while the corpse is in the visible area: CreateItem on
+-- the corpse, then DropItem, which moves it into a pile there (2.7.3.0 lab, see
 -- docs/native-corpse-ground-evidence.md). A dead party member keeps its
 -- inventory and may be raised, so its reward waits, as for a familiar.
 -- DropItem takes an item by name, so the corpse must hold no other copy.
@@ -2024,8 +2024,8 @@ end
 -- slot, of a corpse too (it has no death check). Until the receipt the
 -- creature goes on: a fight, a scene, its own actions or its death may change
 -- it, and none of that stops CIR. Only the reward's own instance is followed
--- (arrived). Chris, 2026-10-22: a reward of a dead recipient goes to the
--- ground, and who gets what stays as it is.
+-- (arrived). Chris, 2026-10-22: a reward that cannot arrive needs a fallback
+-- that always works; that of a dead recipient goes to the ground.
 -- - Alive: the instance is pinned, then held one later tick on.
 -- - Dead with the reward in its body: the death drop takes it along with the
 --   creature's items; one that came after the drop goes to the ground at the
@@ -2255,11 +2255,11 @@ function Adapter:_observe_found(pending, receipt)
     return self:_on_ground(pending, receipt, pile, pending.found.pointer)
 end
 
--- A parked reward (FLPRCore): did it arrive? Chris, 2026-10-27: CIR remembers
--- the half handover and checks on the next visit of the place; with one more
--- item of the reward's name in the creature or container than before, it
--- arrived, else CIR gives it then. Who gets what stays as it is. So exactly
--- one more is the reward; none, or several (something else came too), is not.
+-- A parked reward (FLPRCore): did it arrive? As approved for 1.0.3 (Chris,
+-- 2026-10-27), CIR remembers the half handover and checks on the next visit of
+-- the place; with one more item of the reward's name in the creature or
+-- container than before, it arrived, else CIR gives it then. Exactly one more
+-- is the reward; none, or several (something else came too), is not.
 -- The counts were read as its delivery began (Adapter:_inspect) and are read
 -- where it began (Adapter:_settle_endpoint): a living creature its items, a
 -- dead one its body and the ground piles of its area (its death drop puts its
