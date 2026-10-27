@@ -2095,6 +2095,22 @@ function cases.unmarked_quest_reward_waits_then_goes_to_the_protagonist(N)
     -- No protagonist (no party yet): it waits too, as a deferral.
     for _ = 1, N.RECIPIENT_GRACE_STEPS do f.boundary() end
     f.party = {}; waits(f)
+    -- Looking (Adapter:diagnostics) leaves the wait as it was: it begins
+    -- the wait no earlier, and a mark that only it saw, outside the party or
+    -- in it, does not begin it anew.
+    f, a = unmarked()
+    for _ = 1, 10 do f.boundary(); assert(a:diagnostics().targets[f.target_id].unavailable == "OWNER_MISSING") end
+    waits(f)
+    for _ = 1, N.RECIPIENT_GRACE_STEPS - 1 do f.boundary() end
+    waits(f)
+    for _, seen in ipairs({{"creature", 8}, {"minsc", 9}}) do
+        f, a = unmarked()
+        waits(f)
+        for _ = 1, N.RECIPIENT_GRACE_STEPS - 2 do f.boundary() end
+        f.marked = f[seen[1]]; assert(a:diagnostics().targets[f.target_id].object_id == seen[2], seen[1])
+        f.marked = nil; f.boundary(); waits(f)
+        f.boundary(); assert(owner(f) == 8, seen[1])
+    end
 end
 -- Where the party left the area the delivery began in, its piles there can no
 -- longer tell: an area's objects leave memory with it. Nothing is put at the

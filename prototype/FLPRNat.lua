@@ -488,33 +488,37 @@ end
 -- dead or alive, whose LOCALS <name> is 1, the first in portrait order. One
 -- that is not in the party (it left, or never was) is not the one: someone
 -- else gets the reward, as Chris asked on 2026-10-28 ("Gerne jemand anderem
--- geben"), and CIR picks the protagonist, as for an unmarked quest's reward.
+-- geben"), and CIR picks the protagonist, which he approved the same day, as
+-- for an unmarked quest's reward.
 -- Where no one in the visible area or the party has the mark, it may still be
 -- on its way: a reply's ActionOverride marks its recipient only once its talk
 -- is over. The reward waits then, and goes to the protagonist only after
 -- RECIPIENT_GRACE_STEPS host steps without a mark, as for one marked who
--- stays elsewhere, or a mark the game dropped (session only).
-function Adapter:_recipient(area, name)
+-- stays elsewhere, or a mark the game dropped (session only). <peek> only
+-- looks (Adapter:diagnostics): the wait stays as it was.
+function Adapter:_recipient(area, name, peek)
     local api=self.api
     for index=0,5 do
         local member=api.EEex_Sprite_GetInPortrait(index)
         if member and api.EEex_Sprite_GetLocalInt(member,name)==1 then
-            self.unmarked[name]=nil
+            if not peek then self.unmarked[name]=nil end
             return member
         end
     end
     if #self:_all_marked(area,name)==0 then
-        self.unmarked[name]=self.unmarked[name] or self.steps
-        if self.steps-self.unmarked[name]<Native.RECIPIENT_GRACE_STEPS then return nil,'OWNER_MISSING' end
-    else self.unmarked[name]=nil end
+        local since=self.unmarked[name] or self.steps
+        if not peek then self.unmarked[name]=since end
+        if self.steps-since<Native.RECIPIENT_GRACE_STEPS then return nil,'OWNER_MISSING' end
+    elseif not peek then self.unmarked[name]=nil end
     local protagonist=api.EEex_Sprite_GetInPortrait(0)
     if not protagonist then return nil,'OWNER_MISSING' end
     return protagonist
 end
 
 -- <observing>: a parked reward (Adapter:settle_parked). Its quest recipient is
--- followed into any area, and returned where it died.
-function Adapter:_resolve(endpoint, kind, visible_area, observing)
+-- followed into any area, and returned where it died. <peek>: only looking
+-- (Adapter:diagnostics), which leaves a quest reward's wait for its mark as it was.
+function Adapter:_resolve(endpoint, kind, visible_area, observing, peek)
     local api, area = self.api, visible_area or self.api.EEex_Area_GetVisible()
     local anywhere = endpoint.area == '*' or (observing and endpoint.quest_event ~= nil)
     if not area or (not anywhere and text(area.m_resref) ~= endpoint.area) then return nil, "AREA_UNAVAILABLE" end
@@ -531,7 +535,7 @@ function Adapter:_resolve(endpoint, kind, visible_area, observing)
         local object
         if endpoint.recipient_local then
             local reason
-            object,reason=self:_recipient(area,endpoint.recipient_local)
+            object,reason=self:_recipient(area,endpoint.recipient_local,peek)
             if not object then return nil,reason end
         else object=api.EEex_Sprite_GetInPortrait(0) end
         if not object then return nil,'OWNER_MISSING' end
@@ -2528,7 +2532,7 @@ function Adapter:diagnostics()
                 local members = {}
                 for _, group in ipairs(endpoint.groups) do
                     for _, member in ipairs(group.members) do
-                        local owner, reason, unusable = self:_resolve(member, "target")
+                        local owner, reason, unusable = self:_resolve(member, "target", nil, nil, true)
                         local seen = owner or unusable
                         members[#members + 1] = { area = member.area, script_name = member.script_name,
                             object_id = seen and seen.id, pointer = seen and seen.pointer, unavailable = reason }
@@ -2537,7 +2541,7 @@ function Adapter:diagnostics()
                 result[kind][id] = { members = members }
             else
                 local label = kind == "sources" and "source" or "target"
-                local owner, reason, unusable = self:_resolve(endpoint, label)
+                local owner, reason, unusable = self:_resolve(endpoint, label, nil, nil, true)
                 -- A dead or party-owned creature's inventory is evidence, not a target.
                 local seen = owner or unusable
                 result[kind][id] = seen and { object_id = seen.id, pointer = seen.pointer, unavailable = reason,
