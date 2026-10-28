@@ -515,6 +515,17 @@ function Adapter:_recipient(area, name, peek)
     return protagonist
 end
 
+-- Whether a container is the ARE container an endpoint names by its location.
+-- The engine keeps a container with a shape at its ARE location, but moves a
+-- shapeless one (no vertices, as most ground piles) at area load into the
+-- 16x12 search-map cell that holds that location (2.7.3.0).
+local function fixture_container(object, endpoint)
+    local pos = object.m_pos
+    if not pos or object.m_containerType ~= (endpoint.container_type or 4) then return false end
+    return pos.x == endpoint.x and pos.y == endpoint.y or object.m_nPolygon == 0 and
+        math.floor(pos.x / 16) == math.floor(endpoint.x / 16) and math.floor(pos.y / 12) == math.floor(endpoint.y / 12)
+end
+
 -- <observing>: a parked reward (Adapter:settle_parked). Its quest recipient is
 -- followed into any area, and returned where it died. <peek>: only looking
 -- (Adapter:diagnostics), which leaves a quest reward's wait for its mark as it was.
@@ -561,8 +572,7 @@ function Adapter:_resolve(endpoint, kind, visible_area, observing, peek)
             local is_sprite = api.EEex_GameObject_IsSprite(object, true)
             if (endpoint.sprite and is_sprite == true) or
                 (not endpoint.sprite and is_sprite == false and object.m_lstItems ~= nil) then
-                if not endpoint.sprite and (not object.m_pos or object.m_pos.x~=endpoint.x or
-                    object.m_pos.y~=endpoint.y or object.m_containerType~=(endpoint.container_type or 4)) then
+                if not endpoint.sprite and not fixture_container(object, endpoint) then
                     wrong_container=true;return
                 end
                 matches, found = matches + 1, { object = object, id = id, pointer = pointer(api, object) }
@@ -579,8 +589,7 @@ function Adapter:_resolve(endpoint, kind, visible_area, observing, peek)
         local reason = self:_creature_state(found.object)
         -- The unusable owner is returned only for read-only diagnostics.
         if reason then return nil, reason, found end
-    elseif not endpoint.sprite and (found.object.m_containerType ~= (endpoint.container_type or 4) or not found.object.m_pos or
-        found.object.m_pos.x ~= endpoint.x or found.object.m_pos.y ~= endpoint.y) then
+    elseif not endpoint.sprite and not fixture_container(found.object, endpoint) then
         return nil, "TARGET_NOT_FIXTURE_GROUND_PILE"
     end
     return found

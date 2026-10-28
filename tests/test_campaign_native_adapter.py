@@ -588,6 +588,37 @@ function cases.target_must_be_empty_and_exact_ground_pile(N)
     f.target.m_containerType=4; f.target.m_pos.x=200
     x,e=f.adapter:inspect_target(f.target_id); fail(x,e,"TARGET_NOT_FIXTURE_GROUND_PILE")
 end
+-- 2.7.3.0 moves a pile without vertices at area load into the 16x12 search-map cell that holds its
+-- ARE location (here 96,192-112,204 and 1136,648-1152,660), to the cell's left + 7, top + 5.
+function cases.shapeless_ground_pile_resolves_in_its_search_map_cell(N)
+    local f=setup(N); f.target.m_nPolygon=0; f.target.m_pos={x=103,y=197}
+    assert(f.adapter:inspect_target(f.target_id))
+    local g=guarded_world(N); g.container.m_nPolygon=0; g.container.m_pos={x=1143,y=653}
+    assert(g.adapter:guarded_source_remaining(g.guarded_id,"901","701").remaining==1)
+    assert(#f.calls==0 and #g.calls==0)
+end
+function cases.moved_container_must_be_shapeless_and_in_its_cell(N)
+    for _,variant in ipairs({"shaped","unknown","left","right","above","below","type"}) do
+        local f=setup(N); f.target.m_nPolygon=0; f.target.m_pos={x=103,y=197}
+        if variant=="shaped" then f.target.m_nPolygon=4
+        elseif variant=="unknown" then f.target.m_nPolygon=nil
+        elseif variant=="left" then f.target.m_pos.x=95
+        elseif variant=="right" then f.target.m_pos.x=112
+        elseif variant=="above" then f.target.m_pos.y=191
+        elseif variant=="below" then f.target.m_pos.y=204
+        else f.target.m_containerType=1 end
+        local x,e=f.adapter:inspect_target(f.target_id); fail(x,e,"TARGET_NOT_FIXTURE_GROUND_PILE")
+    end
+end
+function cases.shapeless_piles_sharing_name_and_cell_are_ambiguous(N)
+    local f=setup(N); f.target.m_nPolygon=0; f.target.m_pos={x=103,y=197}
+    f.objects[3]={address=103,sprite=false,m_scriptName=f.target.m_scriptName,m_containerType=4,
+        m_nPolygon=0,m_pos={x=103,y=197},m_lstItems={}}
+    f.area.m_lVertSort={1,2,3}
+    local x,e=f.adapter:inspect_target(f.target_id); fail(x,e,"OWNER_AMBIGUOUS")
+    f.objects[3].m_pos={x=119,y=197}
+    assert(f.adapter:inspect_target(f.target_id))
+end
 function cases.new_pointer_must_survive_later_observation(N)
     local f=setup(N); local a=f.adapter; assert(a:inspect_target(f.target_id)); a:on_observation_boundary(1)
     local command=f.command("deliver"); assert(a:execute(command)); f.target.m_lstItems[1]=f.item("FLPRI1",402)

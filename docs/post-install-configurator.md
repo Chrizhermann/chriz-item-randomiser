@@ -283,7 +283,12 @@ left out ("The extended reward container of AX1H13 cannot be used: AR1303 has no
 container that holds AX1H13").
 Destinations can be uniquely named ARE actors, static containers (including
 stocked chests), or shops allowing purchases. Container delivery appends rewards
-without changing existing contents, locks or traps. The current item restrictions remain:
+without changing existing contents, locks or traps. The runtime finds a container by
+its script name, type and location in the area file. The engine keeps a container
+with a shape at that location, but moves a ground pile without one (as in BG1's
+AR3901 or Watcher's Keep's AR3011 and AR3014) at area load into the 16x12 search-map cell that
+holds it (2.7.3.0); the runtime accepts such a pile anywhere in that cell, and no
+other container away from its location. The current item restrictions remain:
 unexpired, visible droppable items. A reward keeps its original's flags (identified,
 unstealable, stolen, and bits another mod set), so Baeloth's stolen items stay stolen;
 an original flagged undroppable (8) is left out, since it would never leave a creature
