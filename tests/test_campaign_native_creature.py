@@ -1211,9 +1211,9 @@ function cases.ground_execute_rejects_a_changed_corpse_or_queue(N)
 end
 function cases.ground_observation_rejects_conflicts_lost_adds_and_changed_piles(N)
     local wants = {changed="DELIVERY_QUEUE_CONFLICT", lost="GROUND_PILE_MISSING",
-        early="DELIVERY_EARLY_ITEM", removed="CREATED_INSTANCE_CHANGED", area="AREA_UNAVAILABLE",
+        early="DELIVERY_EARLY_ITEM", removed="CREATED_INSTANCE_CHANGED",
         replaced="OWNER_CHANGED", unrun="DELIVERY_QUEUE_CONFLICT", payload="DELIVERY_PAYLOAD_CHANGED"}
-    for _, variant in ipairs({"changed", "lost", "early", "removed", "area", "replaced", "unrun", "payload"}) do
+    for _, variant in ipairs({"changed", "lost", "early", "removed", "replaced", "unrun", "payload"}) do
         local f = ground_world(N); local a = f.adapter
         local pile_id, pile = f.pile_at(500, 600, {})
         if variant == "early" or variant == "replaced" then f.area.m_lVertSortBack = {pile_id} end
@@ -1225,7 +1225,6 @@ function cases.ground_observation_rejects_conflicts_lost_adds_and_changed_piles(
         elseif variant == "removed" then
             f.update(); f.boundary(); local x, e = a:observe(command); fail(x, e, "DELIVERY_SETTLING")
             f.objects[id].m_lstItems = {}
-        elseif variant == "area" then f.update(); f.area.m_resref = {get=function() return "BG0100" end}
         elseif variant == "replaced" then pile.address = 9999
         elseif variant == "unrun" then
             -- Its add gone without running, another message at its address.
@@ -2016,8 +2015,9 @@ function cases.marked_party_member_that_leaves_no_body(N)
 end
 -- Where the party left the area the delivery began in, its piles there can no
 -- longer tell: an area's objects leave memory with it. Nothing is put at the
--- party's feet then; CIR waits, at most until the settling time is over.
-function cases.lost_reward_is_never_guessed_after_the_party_left(N)
+-- party's feet then; the reward parks (Adapter:_left), and a later settle
+-- counts its recipient's items.
+function cases.lost_reward_parks_after_the_party_left(N)
     local f = lost_world(N)
     f.globals.FLPR_EPOOL = 1; f.creature.m_id = 3
     f.api.EEex_Sprite_GetLocalInt = function(o) return o == f.creature and 1 or 0 end
@@ -2030,13 +2030,271 @@ function cases.lost_reward_is_never_guessed_after_the_party_left(N)
     f.area = {m_resref={get=function() return "BG0100" end}, m_lVertSort={8, 9}, m_lVertSortBack={},
         m_lVertSortFlight={}, m_lVertSortUnder={}}
     f.objects[3] = nil; f.update()
-    local x, e
-    for _ = 1, N.DEATH_DROP_TICKS + 2 * N.DROP_SCAN_TICKS do
-        f.boundary(); x, e = a:observe(command); fail(x, e, "DELIVERY_SETTLING")
+    f.boundary(); local receipt = assert(a:observe(command))
+    assert(receipt.parked == 1 and receipt.created == nil and receipt.holder == nil)
+    assert(#f.calls == 1 and a.pending == nil)
+end
+-- Chris, 2026-10-27 (finding 5): the party may leave the place while a reward
+-- is on its way. What was proven stands; anything else parks with the counts
+-- before it (the witness's settle), and the next visit settles it.
+local function leave(f) f.area.m_resref = {get=function() return "BG0100" end} end
+local function come_back(f) f.area.m_resref = {get=function() return "BG2600" end} end
+local function witnessed_start(f, index)
+    index = index or 1
+    local witness = assert(f.adapter:inspect_target(f.target_id, f.source_ids[index], index))
+    f.boundary()
+    local command = f.command(index); assert(f.adapter:execute(command))
+    return command, witness
+end
+local function settle_request(f, witness, index)
+    local id = f.source_ids[index or 1]
+    return {kind="settle-parked", mode="observe-only", index=index or 1, session=f.session, token={},
+        revision=string.rep("e", 64), source_id=id, target_id=f.target_id, settle=witness.settle,
+        payload=clone(f.fixture.sources[id].payload)}
+end
+-- Parked with its message still queued, the area left behind.
+local function parked_start(f)
+    local command, witness = witnessed_start(f)
+    leave(f); f.boundary()
+    local receipt = assert(f.adapter:observe(command))
+    assert(receipt.parked == 1 and f.adapter.pending == nil)
+    return command, witness
+end
+function cases.leaving_parks_a_reward_on_its_way_and_keeps_what_was_proven(N)
+    local f = death_world(N); local a = f.adapter
+    local command, witness = witnessed_start(f)
+    -- No item of its name in the creature or on the ground, first-of member none.
+    assert(witness.settle == 1)
+    leave(f); f.boundary()
+    local receipt = assert(read_only(f, function() return a:observe(command) end))
+    assert(receipt.parked == 1 and receipt.created == nil and receipt.lootable == nil and a.pending == nil)
+    assert(#f.calls == 1)
+    -- Pinned in its backpack before the party left: held there.
+    f = death_world(N); a = f.adapter
+    command = witnessed_start(f)
+    f.update(); f.boundary(); local x, e = a:observe(command); fail(x, e, "DELIVERY_SETTLING")
+    leave(f); f.boundary(); receipt = assert(a:observe(command))
+    assert(receipt.held == 1 and receipt.lootable == 0 and receipt.holder == "creature" and receipt.slot == 18 and
+        receipt.parked == nil and a.held[command.index] == nil)
+    -- Found in the pile its death drop made: on the ground.
+    f = death_world(N); a = f.adapter
+    command = witnessed_start(f)
+    f.update(); f.die(true); f.update(); f.boundary()
+    x, e = a:observe(command); fail(x, e, "DELIVERY_SETTLING")
+    assert(a:diagnostics().pending.found)
+    leave(f); f.boundary(); receipt = assert(a:observe(command))
+    assert(receipt.holder == "ground" and receipt.lootable == 1 and receipt.parked == nil)
+    -- No area shown while one loads: it waits.
+    f = death_world(N); a = f.adapter
+    command = witnessed_start(f)
+    f.api.EEex_Area_GetVisible = function() return nil end; f.boundary()
+    x, e = a:observe(command); fail(x, e, "DELIVERY_SETTLING")
+end
+function cases.witness_counts_the_items_of_the_rewards_name_before_it(N)
+    local f = death_world(N)
+    f.creature.slots[19] = f.item("FLPRI1", 551)
+    local id = f.pile_at(500, 598, {f.item("FLPRI1", 552), f.item("OTHER", 553), f.item("FLPRI1", 554)})
+    f.area.m_lVertSortBack = {id}
+    local witness = assert(f.adapter:inspect_target(f.target_id, f.source_ids[1], 1))
+    -- held 1, piles 2
+    assert(witness.settle == 1 + 1 + 1024 * 2)
+    -- Without a reward to place there are no counts.
+    assert(f.adapter:inspect_target(f.target_id).settle == nil)
+end
+function cases.settle_counts_the_creatures_items_on_the_next_visit(N)
+    -- Its message ran after the party left, before its area went: arrived.
+    local f = death_world(N); local a = f.adapter
+    local command, witness = parked_start(f)
+    f.update()
+    local request = settle_request(f, witness)
+    local x, e = a:settle_parked(request); fail(x, e, "AREA_UNAVAILABLE")
+    come_back(f); f.boundary()
+    local receipt = assert(read_only(f, function() return a:settle_parked(request) end))
+    assert(receipt.arrived == 1 and receipt.holder == "creature" and receipt.token == request.token and
+        receipt.session == f.session and receipt.settle == witness.settle and receipt.index == 1 and #f.calls == 1)
+    -- Its message went with its area: not arrived, for a new delivery.
+    f = death_world(N); a = f.adapter
+    command, witness = parked_start(f)
+    table.remove(f.queue, 1); come_back(f); f.boundary()
+    receipt = assert(a:settle_parked(settle_request(f, witness)))
+    assert(receipt.arrived == 0 and receipt.holder == nil)
+    -- An item of its name on its way anywhere could change the counts: it waits.
+    f.queue[1] = f.message(77, "FLPRI1", 12, 77)
+    x, e = a:settle_parked(settle_request(f, witness)); fail(x, e, "TARGET_QUEUE_BUSY")
+    -- One of its name it had before is no arrival.
+    f = death_world(N); a = f.adapter
+    f.creature.slots[19] = f.item("FLPRI1", 551)
+    command, witness = parked_start(f)
+    table.remove(f.queue, 1); come_back(f); f.boundary()
+    assert(a:settle_parked(settle_request(f, witness)).arrived == 0)
+    -- Joined the party since: the party has it.
+    f = death_world(N); a = f.adapter
+    command, witness = parked_start(f)
+    f.update(); f.creature.portrait = 2; come_back(f); f.boundary()
+    receipt = assert(a:settle_parked(settle_request(f, witness)))
+    assert(receipt.arrived == 1 and receipt.holder == "party")
+end
+function cases.settle_finds_a_dead_creatures_reward_in_its_body_or_on_the_ground(N)
+    for _, variant in ipairs({"dropped", "body", "none"}) do
+        local f = death_world(N); local a = f.adapter
+        local _, witness = parked_start(f)
+        if variant == "dropped" then f.update(); f.die(true); f.update()
+        elseif variant == "body" then f.die(true); f.update()
+        else table.remove(f.queue, 1); f.die(true); f.update() end
+        come_back(f); f.boundary()
+        local receipt = assert(read_only(f, function() return a:settle_parked(settle_request(f, witness)) end))
+        if variant == "none" then assert(receipt.arrived == 0 and receipt.holder == nil, variant)
+        else
+            assert(receipt.arrived == 1 and receipt.holder == (variant == "body" and "creature" or "ground"), variant)
+        end
+        assert(#f.calls == 1)
     end
-    assert(#f.calls == 1 and a:diagnostics().pending.left == true)
-    assert(a:on_observation_boundary(f.tick + N.MAX_SETTLE_TICKS))
-    x, e = a:observe(command); fail(x, e, "DELIVERY_SETTLING_TIMEOUT")
+end
+function cases.settle_counts_the_piles_where_its_creature_left_no_body(N)
+    for _, held in ipairs({false, true}) do
+        for _, arrived in ipairs({true, false}) do
+            local f = death_world(N); local a = f.adapter
+            -- One of its name it had before goes to the piles with its death too.
+            if held then f.creature.slots[19] = f.item("FLPRI1", 551) end
+            local _, witness = parked_start(f)
+            if arrived then f.update() else table.remove(f.queue, 1) end
+            f.die(true); f.update()
+            f.area.m_lVertSort = {1, 2}; f.globals.SPRITE_IS_DEADFLPRC1 = 1
+            come_back(f); f.boundary()
+            local receipt = assert(a:settle_parked(settle_request(f, witness)))
+            assert(receipt.arrived == (arrived and 1 or 0) and receipt.holder == (arrived and "ground" or nil))
+        end
+    end
+    -- Gone without its death counted: it waits, as at inspection.
+    local f = death_world(N); local a = f.adapter
+    local _, witness = parked_start(f)
+    table.remove(f.queue, 1); f.area.m_lVertSort = {1, 2}; come_back(f); f.boundary()
+    local x, e = a:settle_parked(settle_request(f, witness)); fail(x, e, "OWNER_MISSING")
+end
+-- A quest reward's recipient is in the party: it is followed into any area
+-- while its reward is on its way, and a parked one is counted wherever it is.
+function cases.quest_recipient_is_followed_into_another_area(N)
+    local f = death_world(N)
+    f.creature.portrait = 0; f.creature.m_id = 3
+    f.api.EEex_GameState_GetGlobalInt = function(name) assert(name == "FLPR_EPOOL"); return 1 end
+    f.api.EEex_Sprite_GetInPortrait = function(index) assert(index == 0); return f.creature end
+    f.fixture.targets[f.target_id] = {kind="quest", area="BG2600", identity=string.rep("c", 64),
+        event_global="FLPR_EPOOL"}
+    f.adapter = N.new(f.api, f.fixture); local a = f.adapter
+    local command, witness = witnessed_start(f)
+    -- A party recipient keeps its items wherever it dies: no ground counts.
+    assert(witness.settle == 1)
+    leave(f); f.update(); f.boundary()
+    local x, e = a:observe(command); fail(x, e, "DELIVERY_SETTLING")
+    f.boundary(); local receipt = assert(a:observe(command))
+    assert(receipt.holder == "party" and receipt.lootable == 1 and receipt.slot == 18 and receipt.parked == nil)
+    -- A save held it on its way: counted in another area.
+    receipt = assert(a:settle_parked(settle_request(f, witness)))
+    assert(receipt.arrived == 1 and receipt.holder == "party")
+    f.creature.alive = false
+    receipt = assert(a:settle_parked(settle_request(f, witness)))
+    assert(receipt.arrived == 1 and receipt.holder == "party")
+    f.creature.slots[18] = nil
+    assert(a:settle_parked(settle_request(f, witness)).arrived == 0)
+end
+-- Chris's rule, as he said it: one more of its name than before is the reward.
+-- Two more are not (something else of its name came too): CIR gives it anew.
+function cases.settle_takes_exactly_one_more_of_its_name_for_the_reward(N)
+    for _, variant in ipairs({"alive", "dead", "gone"}) do
+        local f = death_world(N); local a = f.adapter
+        local _, witness = parked_start(f)
+        f.update()
+        if variant == "alive" then
+            f.creature.slots[25] = f.item("FLPRI1", 777)
+        else
+            f.die(true); f.update()
+            if variant == "gone" then f.area.m_lVertSort = {1, 2}; f.globals.SPRITE_IS_DEADFLPRC1 = 1 end
+            local id = f.pile_at(900, 900, {f.item("FLPRI1", 778)})
+            f.area.m_lVertSortBack[#f.area.m_lVertSortBack + 1] = id
+        end
+        come_back(f); f.boundary()
+        local receipt = assert(a:settle_parked(settle_request(f, witness)))
+        assert(receipt.arrived == 0 and receipt.holder == nil, variant)
+    end
+end
+-- A quest recipient outside the party drops its items where it dies, as a
+-- creature target does: its counts take the ground piles of its area, and a
+-- parked reward is counted in its body and those piles.
+local function marked_world(N)
+    local f = death_world(N)
+    f.creature.m_id = 3; f.globals.FLPR_EPOOL = 1
+    f.api.EEex_Sprite_GetLocalInt = function(o, name) return o == f.creature and name == "FLPR_RPOOL" and 1 or 0 end
+    f.fixture.targets[f.target_id] = {kind="quest", area="*", identity=string.rep("c", 64),
+        adapter_id="mode2-reward-v1", event_global="FLPR_EPOOL", recipient_local="FLPR_RPOOL"}
+    f.adapter = N.new(f.api, f.fixture)
+    return f
+end
+function cases.dead_quest_recipient_outside_the_party_is_counted_with_the_piles(N)
+    for _, arrived in ipairs({true, false}) do
+        local f = marked_world(N); local a = f.adapter
+        f.area.m_lVertSortBack = {(f.pile_at(500, 598, {f.item("FLPRI1", 552)}))}
+        local witness = assert(a:inspect_target(f.target_id, f.source_ids[1], 1))
+        assert(witness.settle == 1 + 1024 * 1)
+        -- Its reward came, or not; then it died and its death drop took it along.
+        if arrived then f.creature.slots[18] = f.item("FLPRI1", 553) end
+        f.die(true); f.update()
+        local receipt = assert(read_only(f, function() return a:settle_parked(settle_request(f, witness)) end))
+        assert(receipt.arrived == (arrived and 1 or 0) and receipt.holder == (arrived and "ground" or nil))
+    end
+end
+-- Its quest recipient is followed into any area, but the pile its death drop
+-- made stays in the area it died in. Once the party has left that area (whose
+-- objects left memory with it), what was found there stands.
+function cases.quest_reward_found_on_the_ground_stands_when_the_party_leaves(N)
+    local f = marked_world(N); local a = f.adapter
+    local command = witnessed_start(f)
+    f.update(); f.die(true); f.update(); f.boundary()
+    local x, e = a:observe(command); fail(x, e, "DELIVERY_SETTLING")
+    assert(a:diagnostics().pending.found)
+    local old = f.area
+    f.area = {m_resref={get=function() return "BG0100" end}, m_lVertSort={}, m_lVertSortBack={},
+        m_lVertSortFlight={}, m_lVertSortUnder={}}
+    for _, field in ipairs({"m_lVertSort", "m_lVertSortBack"}) do
+        for _, id in ipairs(old[field]) do f.objects[id] = nil end
+    end
+    f.boundary()
+    local receipt = assert(read_only(f, function() return a:observe(command) end))
+    assert(receipt.holder == "ground" and receipt.lootable == 1 and receipt.created == 1 and receipt.parked == nil)
+    assert(a.pending == nil and #f.calls == 1)
+end
+-- Chris, 2026-10-27: until a parked reward settles, no other item of its name
+-- goes to its holder, from any of its places (Adapter:set_parked); its counts
+-- would take that one for it. Other names and other holders go on.
+function cases.no_item_of_a_parked_rewards_name_goes_to_its_holder(N)
+    local f = death_world(N)
+    local other = "are:bg2600/actor/41"
+    f.fixture.targets[other] = {kind="creature", area="BG2600", script_name="FLPRC1", identity=string.rep("d", 64)}
+    f.adapter = N.new(f.api, f.fixture); local a = f.adapter
+    local witness = assert(a:inspect_target(f.target_id, f.source_ids[1], 1))
+    assert(a:set_parked({settle_request(f, witness)}))
+    for _, id in ipairs({f.target_id, other}) do
+        local x, e = a:inspect_target(id, f.source_ids[1], 1); fail(x, e, "TARGET_PARKED")
+        assert(a:inspect_target(id, f.source_ids[2], 2))
+        assert(a:inspect_target(id))
+    end
+    assert(a:set_parked({}))
+    assert(a:inspect_target(other, f.source_ids[1], 1))
+    assert(#f.calls == 0)
+end
+function cases.a_parked_reward_blocks_only_its_own_member_of_a_group(N)
+    local f = group_world(N); local a = f.adapter
+    local identity = string.rep("c", 64)
+    local witness = assert(a:inspect_target(f.target_id, f.source_ids[1], 1))
+    local drawn, unit = a.reservations[identity].owner.id, nil
+    -- Another reward of that name, drawn to the other member.
+    for candidate = 2, 32 do
+        assert(a:inspect_target(f.target_id, f.source_ids[1], candidate))
+        if a.reservations[identity].owner.id ~= drawn then unit = candidate; break end
+    end
+    assert(unit, "no reward of that name drawn to the other member")
+    assert(a:set_parked({settle_request(f, witness)}))
+    local x, e = a:inspect_target(f.target_id, f.source_ids[1], 1); fail(x, e, "TARGET_PARKED")
+    assert(a:inspect_target(f.target_id, f.source_ids[1], unit) and a.reservations[identity].owner.id ~= drawn)
 end
 return cases
 '''

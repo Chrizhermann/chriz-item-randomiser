@@ -237,7 +237,12 @@ message has run, the engine may give its address to a new message at once, as in
 death drops of the [held-drop receipts](held-drop-receipts-20260926.md); that no
 longer stops CIR (`DELIVERY_MESSAGE_REUSED` before 1.0.3). Where the creature dies,
 the reward follows Chris's rule and goes to the ground; how is described with the
-ground fallbacks.
+ground fallbacks. Where the party leaves the area first, the reward parks, and the
+next visit tells whether it arrived: exactly one item of its name more than before
+([details](native-corpse-ground-evidence.md#when-the-party-leaves-while-a-reward-is-on-its-way-since-103)).
+A quest reward's recipient is followed into any area. One in the party keeps its
+items wherever it dies; one outside it drops them where it dies, so its counts take
+the ground piles of its area, as a creature target's do.
 
 ## Still unproven
 
@@ -256,4 +261,6 @@ ground fallbacks.
   expected from the code), and the death drop of a held item into lootable
   ownership, including pickup. Seen once (BG2:EE 2.7.3.0, 2026-10-26): a death one
   tick after the reward arrived; the death drop put it into the corpse's pile once.
+- That a party member's object and its items' pointers stay the same through an area
+  transition, which following a quest recipient into another area relies on.
 - Scripted replacement, transformation, and multiplayer are unsupported.

@@ -9,14 +9,18 @@ Core.MAX_UNITS = 4096
 -- can be held, and only for creature-kind targets.
 -- Protected is source-only: a live pre-access guard is bound to an unvisited
 -- original. It is not evidence that the original has already been removed.
+-- Parked is delivery-only: a reward on its way whose observation could not go
+-- on (the party left its place, or a save held it on its way). Its journal
+-- closed with the counts before it (flpr_b<index>); the next visit of its
+-- place tells whether it arrived (Controller:confirm_parked).
 Core.PHASE = { pending = 0, in_flight = 1, confirmed = 2, quarantined = 3, held = 4, protected = 5,
-    kept = 6, lost = 7 }
+    kept = 6, lost = 7, parked = 8 }
 Core.CREATURE_TARGET_KINDS = { actor = true, ["cre-template"] = true,
     ["creature-target"] = true, group = true }
 Core.G = { state = "flpr_state", seed = "flpr_seed", units = "flpr_units",
     sources = "flpr_sources", targets = "flpr_targets", sequence = "flpr_sequence",
     journal = "flpr_jkind", index = "flpr_jindex", nonce = "flpr_jnonce",
-    provenance = "flpr_prov", guard = "flpr_guard" }
+    provenance = "flpr_prov", guard = "flpr_guard", settle = "flpr_jsettle" }
 local G = Core.G
 local Controller = {}
 Controller.__index = Controller
@@ -205,11 +209,14 @@ local function validate(manifest)
     return { units = units, slots = slots }
 end
 
-local function creature_target(manifest, shape, slot_index)
+local function target_kind(manifest, shape, slot_index)
     local slot = shape.slots[slot_index]
     local target = slot and manifest.targets[slot.target]
-    return target ~= nil and type(target.record) == "table" and
-        Core.CREATURE_TARGET_KINDS[target.record.kind] == true
+    return target ~= nil and type(target.record) == "table" and target.record.kind or nil
+end
+
+local function creature_target(manifest, shape, slot_index)
+    return Core.CREATURE_TARGET_KINDS[target_kind(manifest, shape, slot_index)] == true
 end
 
 local function guard_source(source)
@@ -259,7 +266,7 @@ function Core.new(storage, resolve_revision)
         return nil, "ADAPTER_INVALID"
     end
     local controller = setmetatable({ storage = storage, resolve_revision = resolve_revision, session = {},
-        boundary = 0, issued_boundary = 0, held_requests = {},
+        boundary = 0, issued_boundary = 0, held_requests = {}, parked_requests = {},
         source_guards = {}, guard_requests = {}, guard_removal_requests = {} }, Controller)
     controller:_clear_cache()
     return controller
@@ -304,10 +311,10 @@ end
 function Controller:_phase(prefix, index)
     -- EEex returns zero for an absent GLOBAL, which
     -- must never turn a lost delivered/suppressed marker into a fresh attempt.
-    -- Sources have no held phase. Protected sources require the additive
+    -- Sources have no held or parked phase. Protected sources require the additive
     -- guard protocol version; legacy saves retain their old phase meanings.
     local stored = self:_get(name(prefix, index))
-    if not integer(stored, 1, prefix == "d" and 8 or 7) or (prefix == "d" and stored == 6) or
+    if not integer(stored, 1, prefix == "d" and 9 or 7) or (prefix == "d" and stored == 6) or
         (prefix == "s" and (stored == 5 or (stored == 6 and self:_get(G.guard) ~= 1))) then
         error("PHASE_MISSING_OR_INVALID")
     end
@@ -467,7 +474,7 @@ function Controller:capture(manifest, seed, handoff)
     if not assignments then return nil, kept end
     shape.rewards = rewards or {}
     self.session, self.boundary, self.issued_boundary = {}, 0, 0
-    self.held_requests = {}
+    self.held_requests, self.parked_requests = {}, {}
     self:_clear_guards()
     self:_set(G.state, 1) -- incomplete initialization is never resumed/rerolled
     self:_write_hash("r", frozen.revision)
@@ -501,7 +508,7 @@ end
 function Controller:restore()
     self.manifest, self.shape = nil, nil
     self.session = {}
-    self.held_requests = {}
+    self.held_requests, self.parked_requests = {}, {}
     self:_clear_guards()
     self:_clear_cache()
     self.boundary, self.issued_boundary = 0, 0
@@ -546,18 +553,25 @@ function Controller:restore()
         local phase = self:_phase("d", index)
         local disposition = expected[index] == -1 and Core.PHASE.kept or
             (expected[index] == 0 and Core.PHASE.lost or nil)
-        if self:_get(name("a", index)) ~= expected[index] or
-            (disposition and phase ~= disposition) or (not disposition and not integer(phase, 0, 4)) then
+        if self:_get(name("a", index)) ~= expected[index] or (disposition and phase ~= disposition) or
+            (not disposition and not integer(phase, 0, 4) and phase ~= Core.PHASE.parked) then
             return nil, "ASSIGNMENT_INVALID"
         end
         if phase == Core.PHASE.held and not creature_target(frozen, shape, expected[index]) then
             return nil, "ASSIGNMENT_INVALID"
         end
+        -- Other units' counts are never read: only a parked unit has them.
+        if phase == Core.PHASE.parked and not integer(self:_get(name("b", index)), 1, 2147483647) then
+            return nil, "PARKED_EVIDENCE_INVALID"
+        end
         local nonce = self:_get(name("n", index))
         if nonce ~= 0 then
+            -- A parked reward may keep the nonce of a cut write: an observation's
+            -- before its phase (Controller:observe), or a settle's (confirm_parked).
+            -- Its settle replaces or clears it.
             if provenance ~= 1 or not integer(nonce, 2, self:_get(G.sequence)) or held_nonces[nonce] or
                 not creature_target(frozen, shape, expected[index]) or
-                (phase ~= Core.PHASE.held and phase ~= Core.PHASE.confirmed and
+                (phase ~= Core.PHASE.held and phase ~= Core.PHASE.confirmed and phase ~= Core.PHASE.parked and
                     not (phase == Core.PHASE.in_flight and self:_get(G.journal) == 2 and
                         self:_get(G.index) == index and self:_get(G.nonce) == nonce)) then
                 return nil, "HELD_NONCE_INVALID"
@@ -582,10 +596,11 @@ function Controller:restore()
             return nil, "JOURNAL_INVALID"
         end
         local phase = self:_phase(journal == 1 and "s" or "d", index)
-        -- Phase 2 (or held, for deliveries) means the observation was committed
-        -- just before a save cut off journal clearing. Restore only cleans that
-        -- journal; never repeats.
-        if phase ~= 1 and phase ~= 2 and phase ~= 3 and phase ~= Core.PHASE.held then
+        -- Phase 2 (or held or parked, for deliveries) means the observation was
+        -- committed just before a save cut off journal clearing. Restore only
+        -- cleans that journal; never repeats.
+        if phase ~= 1 and phase ~= 2 and phase ~= 3 and phase ~= Core.PHASE.held and
+            not (journal == 2 and phase == Core.PHASE.parked) then
             return nil, "JOURNAL_INVALID"
         end
         if pending_sources + pending_rewards ~= (phase == 1 and 1 or 0) then return nil, "JOURNAL_INVALID" end
@@ -606,7 +621,7 @@ function Controller:destroy()
     -- Called after the real game destruction boundary by a future host adapter.
     self.manifest, self.shape = nil, nil
     self.session = {}
-    self.held_requests = {}
+    self.held_requests, self.parked_requests = {}, {}
     self:_clear_guards()
     self:_clear_cache()
     self.boundary, self.issued_boundary = 0, 0
@@ -678,6 +693,12 @@ function Controller:_begin(kind, index, witness)
         if not slot or witness.target_id ~= self.manifest.targets[slot.target].id or witness.accepts ~= 1 then
             return nil, "TARGET_UNAVAILABLE"
         end
+        -- The adapter's opaque counts at its place before this reward, by which
+        -- a later visit can tell whether it arrived (Controller:park). Absent,
+        -- the delivery cannot be parked.
+        if witness.settle ~= nil and not integer(witness.settle, 1, 2147483647) then
+            return nil, "WITNESS_INVALID"
+        end
     end
     local nonce = self:_get(G.sequence) + 1
     if not integer(nonce, 1, 2147483647) then return nil, "NONCE_EXHAUSTED" end
@@ -685,6 +706,7 @@ function Controller:_begin(kind, index, witness)
     self:_set(G.sequence, nonce)
     self:_set(G.index, index)
     self:_set(G.nonce, nonce)
+    if kind == 2 then self:_set(G.settle, witness.settle or 0) end
     self:_write_hash("w", witness.identity)
     self:_set_phase(prefix, index, 1)
     self:_set(G.journal, kind)
@@ -763,6 +785,133 @@ function Controller:observe(receipt)
     self:_set_phase(kind == 1 and "s" or "d", index, outcome)
     self:_set(G.journal, 0)
     if outcome == Core.PHASE.quarantined then return nil, "MUTATION_QUARANTINED" end
+    return true
+end
+
+-- The pending delivery's observation cannot go on: the party left the place
+-- of its target while the reward was on its way, and the objects there leave
+-- memory with their area (FLPRNat). Nothing is created or repeated. Its counts
+-- before it are kept with it as it parks, and its journal closes, so other
+-- rewards go on; the next visit of its place settles it (Controller:confirm_parked).
+function Controller:park(receipt)
+    if not self:_active() then return nil, "INACTIVE" end
+    if self.boundary <= self.issued_boundary then return nil, "LATER_OBSERVATION_REQUIRED" end
+    local index = self:_get(G.index)
+    if self:_get(G.journal) ~= 2 then return nil, "NO_PENDING_DELIVERY" end
+    if type(receipt) ~= "table" or receipt.parked ~= 1 or receipt.session ~= self.session or
+        receipt.revision ~= self.manifest.revision or receipt.nonce ~= self:_get(G.nonce) or
+        receipt.index ~= index or receipt.kind ~= "deliver" or receipt.identity ~= self:_read_hash("w") then
+        return nil, "RECEIPT_MISMATCH"
+    end
+    return self:_park(index)
+end
+
+-- A save made while a reward was on its way (journal 2) holds neither its
+-- message nor any item pointer: it parks, as for a party that left. Source
+-- suppressions and deliveries begun without counts (CIR 1.0.2) stay unproven.
+function Controller:park_unproven()
+    if not self:_active() then return nil, "INACTIVE" end
+    if self:_get(G.journal) ~= 2 then return nil, "PENDING_RELOAD_UNPROVEN" end
+    local parked, reason = self:_park(self:_get(G.index))
+    if not parked and reason == "PARK_EVIDENCE_MISSING" then return nil, "PENDING_RELOAD_UNPROVEN" end
+    return parked, reason
+end
+
+-- Counts first, then the phase, then the journal: a cut before the phase
+-- leaves the delivery pending in its journal, one after it a journal that
+-- restore cleans. Neither repeats the delivery.
+function Controller:_park(index)
+    local settle = self:_get(G.settle)
+    if not integer(settle, 1, 2147483647) then return nil, "PARK_EVIDENCE_MISSING" end
+    if self:_phase("d", index) ~= Core.PHASE.in_flight then return nil, "JOURNAL_INVALID" end
+    self:_set(name("b", index), settle)
+    self:_set_phase("d", index, Core.PHASE.parked)
+    self:_set(G.journal, 0)
+    return true
+end
+
+-- A host that stopped (FLPRHost:_disable): a save made after that cannot
+-- settle its rewards, since the world went on without CIR, and anyone may
+-- have taken or moved items at their places meanwhile. The reward on its way
+-- keeps its journal unproven, as before parking existed; a parked one keeps no
+-- counts, which restore refuses. A save made before the stop keeps both.
+function Controller:forfeit_settle()
+    if not self:_active() then return end
+    if self:_get(G.journal) == 2 and self:_get(G.settle) ~= 0 then self:_set(G.settle, 0) end
+    for index = 1, #self.shape.units do
+        if self:_phase("d", index) == Core.PHASE.parked then self:_set(name("b", index), 0) end
+    end
+end
+
+-- A parked reward is to be settled by an observation only: the request never
+-- opens a journal, and one request serves a session (restore forgets it).
+function Controller:parked_request(index)
+    if not self:_active() then return nil, "INACTIVE" end
+    if not integer(index, 1, #self.shape.units) then return nil, "INDEX_INVALID" end
+    if self:_phase("d", index) ~= Core.PHASE.parked then return nil, "NOT_PARKED" end
+    local settle = self:_get(name("b", index))
+    if not integer(settle, 1, 2147483647) then return nil, "PARKED_EVIDENCE_INVALID" end
+    local slot = self.shape.slots[self:_get(name("a", index))]
+    if not slot then return nil, "ASSIGNMENT_INVALID" end
+    local pending = self.parked_requests[index]
+    if not pending then
+        pending = { token = {} }
+        self.parked_requests[index] = pending
+    end
+    return { kind = "settle-parked", mode = "observe-only", index = index,
+        session = self.session, token = pending.token, revision = self.manifest.revision,
+        source_id = self.manifest.sources[self.shape.units[index].source].id,
+        target_id = self.manifest.targets[slot.target].id, settle = settle,
+        payload = self:reward_payload(index) }
+end
+
+-- The adapter tells from the counts whether the parked reward arrived, and
+-- where it is: a creature target holding it is held, as an observed one is;
+-- anywhere else it is confirmed (a store's stock only for a store target).
+-- One that did not arrive is pending again, for a new delivery. One checked
+-- phase write is the commit.
+function Controller:confirm_parked(receipt)
+    if not self:_active() then return nil, "INACTIVE" end
+    if type(receipt) ~= "table" or not integer(receipt.index, 1, #self.shape.units) then
+        return nil, "RECEIPT_MISMATCH"
+    end
+    local index, pending = receipt.index, self.parked_requests[receipt.index]
+    if self:_phase("d", index) ~= Core.PHASE.parked then return nil, "NOT_PARKED" end
+    if not pending or receipt.session ~= self.session or receipt.token ~= pending.token then
+        return nil, "RECEIPT_MISMATCH"
+    end
+    -- Avoid interleaving the settle with the creation/suppression journal.
+    if self:_get(G.journal) ~= 0 then return nil, "MUTATION_PENDING" end
+    local expected, reason = self:parked_request(index)
+    if not expected then return nil, reason end
+    for _, field in ipairs({ "kind", "mode", "revision", "source_id", "target_id", "settle" }) do
+        if receipt[field] ~= expected[field] then return nil, "RECEIPT_MISMATCH" end
+    end
+    local holder = receipt.holder
+    if not same_payload(receipt.payload, expected.payload) or (receipt.arrived ~= 0 and receipt.arrived ~= 1) or
+        (receipt.arrived == 1 and holder ~= "creature" and holder ~= "party" and holder ~= "ground" and
+         holder ~= "container" and holder ~= "store") then return nil, "PARKED_SETTLE_UNPROVEN" end
+    local selected = self:_get(name("a", index))
+    if receipt.arrived == 1 and ((holder == "creature" and not creature_target(self.manifest, self.shape, selected)) or
+        (holder == "store") ~= (target_kind(self.manifest, self.shape, selected) == "store")) then
+        return nil, "PARKED_SETTLE_UNPROVEN"
+    end
+    local outcome = receipt.arrived == 0 and Core.PHASE.pending or
+        (holder == "creature" and Core.PHASE.held or Core.PHASE.confirmed)
+    self.parked_requests[index] = nil
+    if outcome == Core.PHASE.held and self:_get(G.provenance) == 1 then
+        -- A held reward keeps an identity of its own (restore); the delivery's
+        -- nonce closed with its journal. This one is new, published first.
+        local nonce = self:_get(G.sequence) + 1
+        if not integer(nonce, 2, 2147483647) then return nil, "NONCE_EXHAUSTED" end
+        self:_set(G.sequence, nonce)
+        self:_set(name("n", index), nonce)
+    elseif self:_get(name("n", index)) ~= 0 then
+        -- The nonce of a cut write (restore): only a held reward keeps one.
+        self:_set(name("n", index), 0)
+    end
+    self:_set_phase("d", index, outcome)
+    self:_set(name("b", index), 0)
     return true
 end
 

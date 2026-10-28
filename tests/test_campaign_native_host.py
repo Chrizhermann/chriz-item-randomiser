@@ -75,11 +75,29 @@ local function setup(Core,Host)
             end
             return nil,"MISSING_SOURCE"
         end
+        -- FLPRNat's holders of the parked rewards (Adapter:set_parked); here a
+        -- place is its own holder.
+        function native:set_parked(requests)
+            self.parked={}
+            for _,request in ipairs(requests) do self.parked[request.target_id]=true end
+            return true
+        end
         function native:inspect_target(id)
             f.target_inspections=(f.target_inspections or 0)+1
+            if self.parked and self.parked[id] then return nil,"TARGET_PARKED" end
             local reason=f.unavailable or (f.unavailable_targets and f.unavailable_targets[id])
             if reason then return nil,reason end
-            return {identity=string.rep("d",64),target_id=id,accepts=1}
+            return {identity=string.rep("d",64),target_id=id,accepts=1,settle=f.settle}
+        end
+        -- FLPRNat's settle of a parked reward: f.settle_result is a reason
+        -- or what the counts told.
+        function native:settle_parked(request)
+            f.settles=(f.settles or 0)+1
+            local result=f.settle_result
+            if type(result)=="string" then return nil,result end
+            local receipt=copy(request); receipt.session,receipt.token=request.session,request.token
+            receipt.arrived,receipt.holder=result.arrived,result.holder
+            return receipt
         end
         function native:on_observation_boundary(tick)
             assert(not self.tick or tick>self.tick,"NATIVE_CLOCK_DID_NOT_ADVANCE")
@@ -99,6 +117,10 @@ local function setup(Core,Host)
                 return nil,"DELIVERY_SETTLING"
             end
             local receipt=copy(command); receipt.session=command.session
+            -- The party left the place with this reward on its way.
+            if command.kind=="deliver" and f.leave then
+                f.leave=nil; receipt.parked=1; self.pending=nil; return receipt
+            end
             if command.kind=="suppress" then receipt.removed,receipt.remaining=1,0
             elseif f.held then receipt.created,receipt.nonce_bound_instance,receipt.lootable,receipt.held=1,1,0,1
             else receipt.created,receipt.nonce_bound_instance,receipt.lootable=1,1,1 end
@@ -337,6 +359,109 @@ function cases.notice_of_a_reward_at_the_partys_feet_follows_its_confirmation(Co
     assert(#told==1 and told[1].info==notice and told[1].confirmed==1 and told[1].journal==0)
     f=setup(Core,Host); f.notices={{item=7101,resref="flpri1",member="Kara"}}
     assert(f:capture()); f:finish()
+end
+
+-- Finding 5 (Chris, 2026-10-27): the party leaves the place while a reward is
+-- on its way. It parks with the counts before it, the other rewards go on, and
+-- the next visit settles it: arrived, or delivered anew.
+local function delivery_parked(f)
+    assert(f:capture())
+    for i=1,8 do f:poll() end
+    assert(#f.events==4 and f.events[4].kind=="deliver" and f.values.flpr_jkind==2)
+    f.leave=true; f:poll()
+end
+function cases.reward_parked_by_leaving_lets_the_others_go_on_and_settles_later(Core,Host)
+    local f=setup(Core,Host); f.settle=5; f.settle_result="AREA_UNAVAILABLE"; delivery_parked(f)
+    assert(f.host.status=="running" and f.values.flpr_jkind==0 and f.values.flpr_b0001==5)
+    assert(f.host:inspect().assignments[1].delivery_phase==Core.PHASE.parked)
+    for i=1,10 do f:poll() end
+    assert(#f.events==6 and f.host.status=="running")
+    for i=5,6 do assert(f.events[i].target~=f.events[4].target) end
+    local deferred=f.host:inspect().deferred
+    assert(#deferred==1 and deferred[1].unit==1 and deferred[1].reason=="AREA_UNAVAILABLE")
+    -- Outside its area it is tried on every step.
+    local settles=f.settles; f:poll(); f:poll(); assert(f.settles==settles+2)
+    f.settle_result={arrived=1,holder="container"}; f:poll()
+    assert(f.host:inspect().assignments[1].delivery_phase==Core.PHASE.confirmed and f.values.flpr_b0001==0)
+    f:finish(); assert(#f.events==6 and #f.host:inspect().deferred==0)
+end
+function cases.parked_reward_that_did_not_arrive_is_delivered_again(Core,Host)
+    local f=setup(Core,Host); f.settle=5; f.settle_result={arrived=0}; delivery_parked(f)
+    f:finish()
+    local again=0
+    for _,event in ipairs(f.events) do
+        if event.kind=="deliver" and event.target==f.events[4].target then again=again+1 end
+    end
+    assert(#f.events==7 and again==2 and f.events[5].nonce>f.events[4].nonce)
+end
+-- The host tells the adapter which rewards are parked as soon as one parks
+-- (Adapter:set_parked); the adapter says which other deliveries wait for it.
+function cases.no_reward_goes_to_a_place_while_another_one_of_it_is_parked(Core,Host)
+    local f=setup(Core,Host)
+    f.manifest.targets={f.manifest.targets[1]}; f.manifest.targets[1].capacity=3
+    f.bundles[f.manifest.revision].fixture=native_fixture(f.manifest)
+    f.settle=5; f.settle_result="AREA_UNAVAILABLE"; delivery_parked(f)
+    local native=f.native_instances[#f.native_instances]
+    assert(native.parked[f.manifest.targets[1].id])
+    for i=1,10 do f:poll() end
+    assert(#f.events==4 and f.host.status=="running" and f.values.flpr_jkind==0)
+    local reasons={}
+    for _,deferral in ipairs(f.host:inspect().deferred) do reasons[deferral.unit]=deferral.reason end
+    assert(reasons[1]=="AREA_UNAVAILABLE" and reasons[2]=="TARGET_PARKED" and reasons[3]=="TARGET_PARKED")
+    f.settle_result={arrived=1,holder="container"}; f:poll()
+    assert(next(native.parked)==nil)
+    f:finish()
+    assert(#f.events==6)
+end
+function cases.parked_reward_waits_for_its_place_like_a_delivery(Core,Host)
+    local f=setup(Core,Host); f.settle=5; f.settle_result="OWNER_MISSING"; delivery_parked(f)
+    f:poll(); assert(f.settles==1)
+    for i=1,6 do f:poll() end
+    assert(f.settles==1 and #f.events==6 and f.host.status=="running")
+    f:poll(f.tick+Host.DEFER_TICKS); assert(f.settles==2)
+    f.settle_result="TARGET_NOT_FIXTURE_GROUND_PILE"; f:poll(f.tick+Host.DEFER_TICKS)
+    assert(f.host.status=="disabled" and f.host.error=="TARGET_NOT_FIXTURE_GROUND_PILE")
+end
+function cases.reward_begun_without_counts_still_stops_when_the_party_leaves(Core,Host)
+    local f=setup(Core,Host); delivery_parked(f)
+    assert(f.host.status=="disabled" and f.host.error=="PARK_EVIDENCE_MISSING" and f.values.flpr_jkind==2)
+end
+function cases.reload_with_a_reward_on_its_way_parks_it(Core,Host)
+    local f=setup(Core,Host); f.settle=5; f.settle_result={arrived=1,holder="container"}; assert(f:capture())
+    for i=1,8 do f:poll() end
+    assert(f.values.flpr_jkind==2 and #f.events==4)
+    f.host:destroy(); f:poll(); f:poll()
+    assert(f.host.status=="running" and f.values.flpr_jkind==0 and f.settles==1)
+    assert(f.host:inspect().assignments[1].delivery_phase==Core.PHASE.confirmed)
+    f:finish(); assert(#f.events==6)
+    -- Begun without counts (a CIR 1.0.2 save): it stops, as before.
+    f=setup(Core,Host); assert(f:capture())
+    for i=1,8 do f:poll() end
+    f.host:destroy(); f:poll(); f:poll()
+    assert(f.host.status=="disabled" and f.host.error=="PENDING_RELOAD_UNPROVEN" and #f.events==4)
+end
+-- Stopped after a reward parked: a later save holds no counts of it and stops
+-- on loading (Core:forfeit_settle); a save made before the stop keeps them.
+function cases.stopped_host_forfeits_the_counts_of_its_parked_rewards(Core,Host)
+    local f=setup(Core,Host); f.settle=5; f.settle_result="AREA_UNAVAILABLE"; delivery_parked(f)
+    local before=copy(f.values)
+    assert(before.flpr_b0001==5)
+    f.fail_observe=true
+    for i=1,6 do f:poll() end
+    assert(f.host.status=="disabled" and f.host.error=="NATIVE_OBSERVATION_FAILED" and f.values.flpr_b0001==0)
+    f.fail_observe=nil; f.host:destroy(); f:poll(); f:poll()
+    assert(f.host.status=="disabled" and f.host.error=="PARKED_EVIDENCE_INVALID")
+    f.values=before; f.host:destroy(); f:poll(); f:poll()
+    assert(f.host.status=="running" and f.values.flpr_b0001==5)
+    assert(f.host:inspect().assignments[1].delivery_phase==Core.PHASE.parked)
+end
+function cases.stopped_host_never_settles_its_reward_on_its_way_from_a_later_save(Core,Host)
+    local f=setup(Core,Host); f.settle=5; assert(f:capture())
+    for i=1,8 do f:poll() end
+    f.fail_observe=true; f:poll()
+    assert(f.host.status=="disabled" and f.values.flpr_jsettle==0 and f.values.flpr_jkind==2)
+    f.fail_observe=nil; f.host:destroy(); f:poll(); f:poll()
+    assert(f.host.status=="disabled" and f.host.error=="PENDING_RELOAD_UNPROVEN" and #f.events==4)
 end
 local function bootstrap(Core,Host,Globals,text,options)
     options=options or {}

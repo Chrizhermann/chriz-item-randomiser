@@ -182,6 +182,29 @@ function cases.deliver_publishes_exact_payload_then_activates_unit(Shop)
         shop.last_delivery.after_count==5)
 end
 
+-- A save made while a store's reward was on its way: deliver wrote its stock
+-- position with the insertion, so the row is in stock after loading, and the
+-- parked reward settles as arrived by it (FLPRNat's settle_parked).
+function cases.reward_saved_on_its_way_to_a_store_is_in_its_stock(Shop)
+    local f=setup();local shop=Shop.install(f.api);shop:bind(f.fixture,f.controller)
+    assert(not shop:delivered(7) and not shop:delivered(8))
+    assert(shop:deliver(f.fixture.targets[f.target_id],f.payload,7) and shop:delivered(7))
+    -- On its way (1), then parked (8).
+    for _,phase in ipairs({1,8}) do
+        f.assignment.delivery_phase=phase
+        shop:bind(f.fixture,f.controller)
+        assert(f.read(shop.by_unit[7].address+24,8)==1 and shop:delivered(7))
+    end
+    -- Never inserted: no position, not in stock.
+    f=setup();f.assignment.delivery_phase=1
+    shop=Shop.install(f.api);shop:bind(f.fixture,f.controller)
+    assert(f.read(shop.by_unit[7].address+24,8)==0 and not shop:delivered(7))
+    -- Bought already.
+    f=setup();f.globals.FLPR_P0007=1;f.assignment.delivery_phase=8
+    shop=Shop.install(f.api);shop:bind(f.fixture,f.controller)
+    assert(shop:delivered(7))
+end
+
 function cases.deliver_identifies_the_shop_row_and_keeps_other_flags(Shop)
     -- Sources are mostly a creature's or a container's unidentified item.
     for source,row in pairs({[0]=1,[1]=1,[2]=3,[3]=3}) do

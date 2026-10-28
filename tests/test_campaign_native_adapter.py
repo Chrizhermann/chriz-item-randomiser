@@ -822,6 +822,84 @@ local function queued(f)
     local a=f.adapter; assert(a:inspect_target(f.target_id)); assert(a:on_observation_boundary(1))
     local command=f.command("deliver"); assert(a:execute(command)); return a,command
 end
+-- Chris, 2026-10-27 (finding 5): the party may leave the place while a reward
+-- is on its way. What execute proved stands; a queued add parks, and the next
+-- visit counts the container's items (Adapter:settle_parked).
+local function leave(f) f.area.m_resref={get=function() return "BG0100" end} end
+local function come_back(f) f.area.m_resref={get=function() return "BG2600" end} end
+function cases.leaving_keeps_a_proven_container_reward_and_parks_a_queued_one(N)
+    local f=setup(N); stocked_container(f,N)
+    f.api.EEex_Action_ExecuteResponseStringOnAIBaseInstantly=function(action,owner)
+        f.calls[#f.calls+1]=action; owner.m_lstItems[3]=f.item("FLPRI1",701)
+    end
+    local a=f.adapter; assert(a:inspect_target(f.target_id,f.source_id,1)); a:on_observation_boundary(1)
+    local command=f.command("deliver"); assert(a:execute(command))
+    leave(f); a:on_observation_boundary(2); local receipt=assert(a:observe(command))
+    assert(receipt.created==1 and receipt.nonce_bound_instance==1 and receipt.lootable==1 and receipt.parked==nil)
+    assert(a.pending==nil and #f.calls==1)
+    f=setup(N); stocked_container(f,N)
+    a,command=queued(f)
+    leave(f); a:on_observation_boundary(2); receipt=assert(a:observe(command))
+    assert(receipt.parked==1 and receipt.created==nil and receipt.lootable==nil and a.pending==nil and #f.calls==1)
+end
+function cases.leaving_after_a_suppression_keeps_its_proven_removal(N)
+    local f=setup(N); local a=f.adapter
+    assert(a:inspect_source(f.source_id)); a:on_observation_boundary(1)
+    local command=f.command("suppress"); assert(a:execute(command))
+    leave(f); a:on_observation_boundary(2); local receipt=assert(a:observe(command))
+    assert(receipt.removed==1 and receipt.remaining==0 and a.pending==nil and #f.calls==1)
+end
+function cases.settle_counts_the_containers_items_on_the_next_visit(N)
+    for _,variant in ipairs({"arrived","lost","busy","away"}) do
+        local f=setup(N); stocked_container(f,N)
+        -- One item of its name was there before.
+        f.target.m_lstItems[3]=f.item("FLPRI1",503)
+        f.api.EEex_Action_ExecuteResponseStringOnAIBaseInstantly=function(action)
+            f.calls[#f.calls+1]=action; f.queue[#f.queue+1]=f.message(601)
+        end
+        local a=f.adapter; local witness=assert(a:inspect_target(f.target_id,f.source_id,1))
+        assert(witness.settle==2,variant)
+        a:on_observation_boundary(1)
+        local command=f.command("deliver"); assert(a:execute(command))
+        leave(f); a:on_observation_boundary(2); assert(a:observe(command).parked==1)
+        f.queue[1]=nil
+        if variant=="arrived" then f.target.m_lstItems[4]=f.item("FLPRI1",701) end
+        if variant~="away" then come_back(f) end
+        if variant=="busy" then f.queue[1]=f.message(602,77,"FLPRI1") end
+        local request={kind="settle-parked",mode="observe-only",index=1,session=command.session,token={},
+            revision=command.revision,source_id=f.source_id,target_id=f.target_id,settle=witness.settle,
+            payload=command.payload}
+        local receipt,reason=a:settle_parked(request)
+        if variant=="busy" then fail(receipt,reason,"TARGET_QUEUE_BUSY")
+        elseif variant=="away" then fail(receipt,reason,"AREA_UNAVAILABLE")
+        else
+            assert(receipt.arrived==(variant=="arrived" and 1 or 0) and
+                receipt.holder==(variant=="arrived" and "container" or nil),variant)
+            assert(receipt.token==request.token and receipt.session==command.session and
+                receipt.settle==witness.settle and receipt.payload.resref=="flpri1")
+        end
+        assert(#f.calls==1 and #f.target.m_lstItems==(variant=="arrived" and 4 or 3))
+    end
+end
+function cases.settle_rejects_malformed_requests_without_reading_the_world(N)
+    local f=setup(N); local a=f.adapter
+    local good={kind="settle-parked",mode="observe-only",index=1,session={},token={},revision=string.rep("c",64),
+        source_id=f.source_id,target_id=f.target_id,settle=1,payload=f.fixture.sources[f.source_id].payload}
+    for field,value in pairs({kind="verify-held-drop",mode="execute-once",index=0,session="old",revision="x"}) do
+        local request={}; for key,entry in pairs(good) do request[key]=entry end
+        request[field]=value
+        local x,e=a:settle_parked(request); fail(x,e,"REQUEST_INVALID")
+    end
+    for _,value in ipairs({0,-1,1073741825,1.5}) do
+        local request={}; for key,entry in pairs(good) do request[key]=entry end
+        request.settle=value
+        local x,e=a:settle_parked(request); fail(x,e,"PARKED_EVIDENCE_INVALID")
+    end
+    local request={}; for key,entry in pairs(good) do request[key]=entry end
+    request.target_id="are:bg2600/container/9"
+    local x,e=a:settle_parked(request); fail(x,e,"TARGET_UNKNOWN")
+    assert(#f.calls==0)
+end
 function cases.queued_delivery_requires_message_consumption_and_two_later_ticks(N)
     local f=setup(N); local a,command=queued(f)
     assert(#f.target.m_lstItems==0 and a:diagnostics().pending.queued.pointer=="601")
@@ -1076,6 +1154,23 @@ function cases.store_target_failure_is_not_retried(N)
     a:on_observation_boundary(2)
     x,e=a:observe(command); fail(x,e,"SHOP_WRITE_FAILED")
     assert(calls.deliver==1)
+end
+-- A store takes its reward at once: one parked on its way settles by its stock
+-- row (FLPRShop's delivered), in any area, and reads nothing else.
+function cases.store_reward_parked_on_its_way_settles_by_its_stock_row(N)
+    local f=store_target(N,function() return true end)
+    local delivered={}
+    f.api.FLPR.Shop.delivered=function(_,unit) return delivered[unit]==true end
+    local a=f.adapter
+    local witness=assert(a:inspect_target(f.target_id,f.source_id,1))
+    assert(witness.settle==1)
+    local request={kind="settle-parked",mode="observe-only",index=1,session={},token={},revision=string.rep("c",64),
+        source_id=f.source_id,target_id=f.target_id,settle=witness.settle,payload=f.fixture.sources[f.source_id].payload}
+    local receipt=assert(a:settle_parked(request))
+    assert(receipt.arrived==0 and receipt.holder==nil)
+    delivered[1]=true
+    receipt=assert(a:settle_parked(request))
+    assert(receipt.arrived==1 and receipt.holder=="store" and receipt.token==request.token and #f.calls==0)
 end
 function cases.store_target_requires_service_only_when_declared(N)
     local f=setup(N)
