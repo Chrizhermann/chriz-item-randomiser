@@ -515,15 +515,28 @@ function Adapter:_recipient(area, name, peek)
     return protagonist
 end
 
--- Whether a container is the ARE container an endpoint names by its location.
--- The engine keeps a container with a shape at its ARE location, but moves a
--- shapeless one (no vertices, as most ground piles) at area load into the
--- 16x12 search-map cell that holds that location (2.7.3.0).
-local function fixture_container(object, endpoint)
-    local pos = object.m_pos
-    if not pos or object.m_containerType ~= (endpoint.container_type or 4) then return false end
-    return pos.x == endpoint.x and pos.y == endpoint.y or object.m_nPolygon == 0 and
-        math.floor(pos.x / 16) == math.floor(endpoint.x / 16) and math.floor(pos.y / 12) == math.floor(endpoint.y / 12)
+-- The container an endpoint names, among the visible area's containers with
+-- its script name. Export takes only a name that one container of the area
+-- file has, so a single one is it, wherever it stands and whatever its type:
+-- the engine moves a pile without a shape at area load (into the 16x12
+-- search-map cell that holds its place, 2.7.3.0), and mods may move or change
+-- one. Only when the game has more (a mod or script added one) does the place
+-- Apply recorded choose: the nearest is it, two equally near are ambiguous.
+local function fixture_container(candidates, endpoint)
+    if #candidates < 2 then return candidates[1] end
+    local best, best_distance, tied
+    for _, candidate in ipairs(candidates) do
+        local pos = candidate.object.m_pos
+        if not pos then return nil end
+        local dx, dy = pos.x - endpoint.x, pos.y - endpoint.y
+        local distance = dx * dx + dy * dy
+        if not best_distance or distance < best_distance then
+            best, best_distance, tied = candidate, distance, false
+        elseif distance == best_distance then
+            tied = true
+        end
+    end
+    if not tied then return best end
 end
 
 -- <observing>: a parked reward (Adapter:settle_parked). Its quest recipient is
@@ -556,7 +569,7 @@ function Adapter:_resolve(endpoint, kind, visible_area, observing, peek)
         if reason then return nil,reason,observing and found or nil end
         return found
     end
-    local found, matches, seen, wrong_container = nil, 0, {}, false
+    local found, matches, seen, containers = nil, 0, {}, {}
     for _, field in ipairs(lists) do
         assert(area[field], "NATIVE_AREA_LIST_MISSING")
         api.EEex_Utility_IterateCPtrList(area[field], function(id)
@@ -570,17 +583,17 @@ function Adapter:_resolve(endpoint, kind, visible_area, observing, peek)
             -- Dead same-named sprites still count, so a corpse and its
             -- replacement can never be mistaken for one continuous owner.
             local is_sprite = api.EEex_GameObject_IsSprite(object, true)
-            if (endpoint.sprite and is_sprite == true) or
-                (not endpoint.sprite and is_sprite == false and object.m_lstItems ~= nil) then
-                if not endpoint.sprite and not fixture_container(object, endpoint) then
-                    wrong_container=true;return
-                end
+            if endpoint.sprite and is_sprite == true then
                 matches, found = matches + 1, { object = object, id = id, pointer = pointer(api, object) }
+            elseif not endpoint.sprite and is_sprite == false and object.m_lstItems ~= nil then
+                containers[#containers + 1] = { object = object, id = id, pointer = pointer(api, object) }
             end
         end)
     end
-    if matches ~= 1 then
-        if matches==0 and wrong_container then return nil,'TARGET_NOT_FIXTURE_GROUND_PILE' end
+    if not endpoint.sprite then
+        found = fixture_container(containers, endpoint)
+        if not found then return nil, #containers == 0 and "OWNER_MISSING" or "OWNER_AMBIGUOUS" end
+    elseif matches ~= 1 then
         return nil, matches == 0 and "OWNER_MISSING" or "OWNER_AMBIGUOUS"
     end
     if kind == "source" and endpoint.sprite then
@@ -589,8 +602,6 @@ function Adapter:_resolve(endpoint, kind, visible_area, observing, peek)
         local reason = self:_creature_state(found.object)
         -- The unusable owner is returned only for read-only diagnostics.
         if reason then return nil, reason, found end
-    elseif not endpoint.sprite and not fixture_container(found.object, endpoint) then
-        return nil, "TARGET_NOT_FIXTURE_GROUND_PILE"
     end
     return found
 end

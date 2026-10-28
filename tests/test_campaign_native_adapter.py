@@ -227,22 +227,31 @@ function cases.guarded_remaining_rejects_unavailable_or_changed_area_before_owne
     x,e=f.adapter:guarded_source_remaining(f.guarded_id,"902","701"); fail(x,e,"AREA_CHANGED")
     assert(f.container.m_lstItems[1].address==801 and #f.calls==0)
 end
-function cases.guarded_remaining_requires_unique_matching_owner_and_geometry(N)
-    for _,variant in ipairs({"missing","duplicate","pointer","x","y","type"}) do
+function cases.guarded_remaining_requires_one_owner_by_name(N)
+    for _,variant in ipairs({"missing","duplicate","pointer"}) do
         local f=guarded_world(N)
         if variant=="missing" then f.area.m_lVertSort={}
         elseif variant=="duplicate" then
             f.objects[4]={address=702,sprite=false,m_scriptName=f.container.m_scriptName,
                 m_containerType=4,m_pos={x=1140,y=650},m_lstItems={}}
             f.area.m_lVertSort={3,4}
-        elseif variant=="x" then f.container.m_pos.x=1141
-        elseif variant=="y" then f.container.m_pos.y=651
-        elseif variant=="type" then f.container.m_containerType=1 end
+        end
         local pointer=variant=="pointer" and "702" or "701"
         local want=(variant=="missing" and "OWNER_MISSING") or
-            (variant=="duplicate" and "OWNER_AMBIGUOUS") or
-            (variant=="pointer" and "OWNER_CHANGED") or "TARGET_NOT_FIXTURE_GROUND_PILE"
+            (variant=="duplicate" and "OWNER_AMBIGUOUS") or "OWNER_CHANGED"
         local x,e=f.adapter:guarded_source_remaining(f.guarded_id,"901",pointer); fail(x,e,want)
+        assert(f.container.m_lstItems[1].address==801 and #f.calls==0)
+    end
+end
+-- The engine moves a pile without a shape at area load (2.7.3.0: into the 16x12 search-map cell
+-- that holds its place, at the cell's left + 7, top + 5), and mods may move or change a container.
+function cases.guarded_owner_is_its_name_wherever_and_whatever_it_is(N)
+    for _,variant in ipairs({"cell","far","type"}) do
+        local f=guarded_world(N)
+        if variant=="cell" then f.container.m_nPolygon=0; f.container.m_pos={x=1143,y=653}
+        elseif variant=="far" then f.container.m_pos={x=40,y=3000}
+        else f.container.m_containerType=1 end
+        assert(f.adapter:guarded_source_remaining(f.guarded_id,"901","701").remaining==1,variant)
         assert(f.container.m_lstItems[1].address==801 and #f.calls==0)
     end
 end
@@ -580,44 +589,37 @@ function cases.stocked_container_rejects_changed_old_item_during_queued_append(N
     a:on_observation_boundary(2); local x,e=a:observe(command); fail(x,e,"DELIVERY_MESSAGE_LOST")
     assert(#f.calls==1)
 end
-function cases.target_must_be_empty_and_exact_ground_pile(N)
+function cases.ground_pile_target_must_be_empty(N)
     local f=setup(N); f.target.m_lstItems[1]=f.item("OTHER",501)
     local x,e=f.adapter:inspect_target(f.target_id); fail(x,e,"TARGET_NOT_EMPTY")
-    f.target.m_lstItems={}; f.target.m_containerType=1
-    x,e=f.adapter:inspect_target(f.target_id); fail(x,e,"TARGET_NOT_FIXTURE_GROUND_PILE")
-    f.target.m_containerType=4; f.target.m_pos.x=200
-    x,e=f.adapter:inspect_target(f.target_id); fail(x,e,"TARGET_NOT_FIXTURE_GROUND_PILE")
 end
--- 2.7.3.0 moves a pile without vertices at area load into the 16x12 search-map cell that holds its
--- ARE location (here 96,192-112,204 and 1136,648-1152,660), to the cell's left + 7, top + 5.
-function cases.shapeless_ground_pile_resolves_in_its_search_map_cell(N)
-    local f=setup(N); f.target.m_nPolygon=0; f.target.m_pos={x=103,y=197}
-    assert(f.adapter:inspect_target(f.target_id))
-    local g=guarded_world(N); g.container.m_nPolygon=0; g.container.m_pos={x=1143,y=653}
-    assert(g.adapter:guarded_source_remaining(g.guarded_id,"901","701").remaining==1)
-    assert(#f.calls==0 and #g.calls==0)
-end
-function cases.moved_container_must_be_shapeless_and_in_its_cell(N)
-    for _,variant in ipairs({"shaped","unknown","left","right","above","below","type"}) do
-        local f=setup(N); f.target.m_nPolygon=0; f.target.m_pos={x=103,y=197}
-        if variant=="shaped" then f.target.m_nPolygon=4
-        elseif variant=="unknown" then f.target.m_nPolygon=nil
-        elseif variant=="left" then f.target.m_pos.x=95
-        elseif variant=="right" then f.target.m_pos.x=112
-        elseif variant=="above" then f.target.m_pos.y=191
-        elseif variant=="below" then f.target.m_pos.y=204
+-- The engine moves a pile without a shape at area load (2.7.3.0: into the 16x12 search-map cell
+-- that holds its place, at the cell's left + 7, top + 5), and mods may move or change a container.
+function cases.target_container_is_its_name_wherever_and_whatever_it_is(N)
+    for _,variant in ipairs({"cell","far","type"}) do
+        local f=setup(N)
+        if variant=="cell" then f.target.m_nPolygon=0; f.target.m_pos={x=103,y=197}
+        elseif variant=="far" then f.target.m_pos={x=2000,y=40}
         else f.target.m_containerType=1 end
-        local x,e=f.adapter:inspect_target(f.target_id); fail(x,e,"TARGET_NOT_FIXTURE_GROUND_PILE")
+        assert(f.adapter:inspect_target(f.target_id),variant)
+        assert(f.adapter:diagnostics().targets[f.target_id].object_id==2 and #f.calls==0)
     end
 end
-function cases.shapeless_piles_sharing_name_and_cell_are_ambiguous(N)
-    local f=setup(N); f.target.m_nPolygon=0; f.target.m_pos={x=103,y=197}
+-- Only a container added under the same name (by a mod or script) makes the recorded place count.
+function cases.same_named_containers_take_the_one_nearest_the_recorded_place(N)
+    local f=setup(N); f.target.m_pos={x=103,y=197}
     f.objects[3]={address=103,sprite=false,m_scriptName=f.target.m_scriptName,m_containerType=4,
-        m_nPolygon=0,m_pos={x=103,y=197},m_lstItems={}}
+        m_pos={x=97,y=203},m_lstItems={}}
     f.area.m_lVertSort={1,2,3}
     local x,e=f.adapter:inspect_target(f.target_id); fail(x,e,"OWNER_AMBIGUOUS")
-    f.objects[3].m_pos={x=119,y=197}
+    f.objects[3].m_pos={x=400,y=200}
     assert(f.adapter:inspect_target(f.target_id))
+    assert(f.adapter:diagnostics().targets[f.target_id].object_id==2)
+    f.objects[3].m_pos=nil
+    x,e=f.adapter:inspect_target(f.target_id); fail(x,e,"OWNER_AMBIGUOUS")
+    f.objects[3].m_pos={x=101,y=201}
+    assert(f.adapter:inspect_target(f.target_id))
+    assert(f.adapter:diagnostics().targets[f.target_id].object_id==3 and #f.calls==0)
 end
 function cases.new_pointer_must_survive_later_observation(N)
     local f=setup(N); local a=f.adapter; assert(a:inspect_target(f.target_id)); a:on_observation_boundary(1)

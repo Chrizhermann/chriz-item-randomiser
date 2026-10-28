@@ -68,19 +68,19 @@ function cases.only_confirmed_active_assignments_can_latch(N,Core)
     assert(f.container.m_lstItems[1].address==401)
 end
 
-function cases.unloaded_missing_ambiguous_or_wrong_container_is_not_empty(N)
+function cases.unloaded_missing_or_ambiguous_container_is_not_empty(N)
     local f=container_world(N);local area=f.area
     f.area=nil;assert(f:observe() and #f.writes==0)
     f.area={m_resref={get=function() return 'AR1303' end}}
     assert(f:observe() and #f.writes==0)
     f.area=area;f.objects[3]=nil;assert(f:observe() and #f.writes==0)
-    f.objects[3]=f.container;f.container.m_pos.x=600
-    assert(f:observe() and #f.writes==0)
-    f.container.m_pos.x=598
+    f.objects[3]=f.container
     local duplicate=clone(f.container);duplicate.address=202
     f.objects[4]=duplicate;area.m_lVertSortBack={4}
     assert(f:observe() and #f.writes==0)
     area.m_lVertSortBack={}
+    -- The one container with its name is it, moved or not.
+    f.container.m_pos.x=600
     assert(not f:observe() and f:latched()==1)
 end
 
@@ -194,7 +194,7 @@ class ContainerRuntimeTests(unittest.TestCase):
     def test_container_observation_and_host_lifecycle(self):
         names = (
             "only_confirmed_active_assignments_can_latch",
-            "unloaded_missing_ambiguous_or_wrong_container_is_not_empty",
+            "unloaded_missing_or_ambiguous_container_is_not_empty",
             "scoped_latches_persist_across_reload_reentry_and_item_return",
             "samia_either_slot_and_selected_reward_variant_suffice",
             "host_keeps_observing_after_completion_and_restores_saved_latch",
