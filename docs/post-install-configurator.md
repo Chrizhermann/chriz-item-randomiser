@@ -711,7 +711,8 @@ egg deal's own route stays as it is either way.
 
 The egg deal's place (row 66 of the extended tables) gets its reward like any quest
 reward: her reply marks the party member it gives the crossbow to, and the reward
-goes to the one with that mark. Her conversation ends by clearing every queued action
+goes to the one with that mark (since 1.0.3 the protagonist where that one left the
+party, see [the runtime](campaign-runtime-prototype.md)). Her conversation ends by clearing every queued action
 of the party (UDSILVER.DLG state 46), and with them the mark her reply queued, so in
 CIR 1.0.2 that reward never arrived. Her reply now also marks the one she talks to
 when the game shows it, as the only one with that mark (a condition of both variants
@@ -728,7 +729,9 @@ Apply patches it again with every route. A changed copy of it is left out as any
 other. A revision exported with CIR 1.0.2 keeps her place as a plain creature, and
 her reply hands that reward over too: its saves read the dialogue Apply patches now,
 which supersedes the one they were exported with (`superseded.lua`, above), so the
-egg deal's reward reaches them as well where the deal is still to come.
+egg deal's reward reaches them as well where the deal is still to come. Where it
+was done under 1.0.2, the reward's mark is gone; it arrives at the protagonist
+after the runtime's wait for a missing mark (approved by Chris, 2026-10-28).
 
 The book of Lavok's sphere (`PPBOOK.BCS`, AR1513) gives two scrolls with the ring on
 its last page (rows 260 and 262 of the extended tables, beside the ring's row 109).

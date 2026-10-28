@@ -243,7 +243,9 @@ and actual lootability. A matching pre-existing item or an increased count is no
 sufficient. Bad outcome evidence quarantines the transaction without automatic
 replay. Missing targets defer delivery and do not create a fallback pile.
 
-A creature-kind target (`actor` or `cre-template`) may instead report the exact
+A holding target (`Core.HOLDING_TARGET_KINDS`: a creature target, or since 1.0.3
+a quest reward's `scripted-target`, whose recipient may leave the party while the
+reward is on its way) may instead report the exact
 instance as **held**: `created = 1`, `nonce_bound_instance = 1`, `lootable = 0`,
 `held = 1`. The core stores delivery phase 4 (GLOBAL value 5). This counts as
 attempted and is never delivered again, but it is deliberately distinct from
@@ -305,12 +307,33 @@ reply hands it over too; any other kind of target there stops the host
 (`NATIVE_INVENTORY_REWARD_INVALID`).
 
 A quest target's reward goes to the one its reward reply marks: the reply queues
-the route's `LOCALS` mark for the recipient it names. Adalon's conversation
+the route's `LOCALS` mark for the recipient it names, always a party member.
+Since 1.0.3 the recipient is the party member with that mark, dead or alive, the
+first in portrait order where several have it (`Adapter:_recipient`). One marked
+who is no longer in the party gets nothing. Asked whether such a reward should
+wait for it or go to someone else in the party, Chris answered on 2026-10-28
+"Gerne jemand anderem geben"; CIR gives it to the protagonist then (approved by
+Chris the same day), as it gives the reward of a quest without a mark. Where no
+one in the visible area or the party has the mark, it may still be on its way,
+as the reply's queued mark runs only once its talk is over: the reward waits
+`RECIPIENT_GRACE_STEPS` host steps (900, about a minute of play; steps, since
+resting or travelling moves the game's clock by hours in one step), then goes to
+the protagonist too. That covers one marked who stays elsewhere and a mark the
+game dropped, such as that of Adalon's egg reward in adventures of CIR 1.0.2
+whose eggs were returned before: it arrives at the protagonist too (approved by
+Chris, 2026-10-28). The wait is session only: a loaded game waits anew. Looking
+at the state (`Adapter:diagnostics`, as `Host:inspect` does) leaves the wait as
+it was. A dead marked member waits until raised, as
+before. A reward on its way follows the recipient it began with, wherever it
+goes and whatever happens to the mark (`Adapter:_delivery_owner`); one that
+left the party meanwhile holds it, and the core takes that as held. A
+parked one is counted at the recipient this rule gives when it settles. The
+treasury's payee is chosen the same way. Adalon's conversation
 clears every queued action of the party at its end, and with them that mark, so
 her reward reply also marks its recipient when the game shows it (M_FLPR's
-`FLPR_Mark`, a condition that is always true): the one she talks to, else the
-first living party member, marked at once as the only one with that mark in her
-area. It does nothing while CIR is stopped, or where no quest place of the
+`FLPR_Mark`, a condition that is always true): the one she talks to where it is
+a living party member, else the first living party member, marked at once as the
+only one with that mark in her area. It does nothing while CIR is stopped, or where no quest place of the
 revision has that mark; a mark that cannot be confirmed stops CIR
 (`CAMPAIGN_MARK_FAILED`).
 

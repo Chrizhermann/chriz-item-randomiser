@@ -794,7 +794,9 @@ local function held_receipt(f, operation)
 end
 
 function cases.CreatureTargetMayHoldExactInstanceWithoutClaimingLootability(Core)
-    for _, kind in ipairs({ "actor", "cre-template" }) do
+    -- A quest reward's (scripted-target) too: its recipient may leave the party
+    -- while it is on its way, and holds it then (FLPRNat Adapter:_observe_creature).
+    for _, kind in ipairs({ "actor", "cre-template", "scripted-target" }) do
         local f = fixture(Core)
         creature_targets(f, kind)
         assert(f:capture()); f:suppress(1)
@@ -1227,7 +1229,7 @@ function cases.ParkedSettleRejectsWrongOrUnprovenReceiptsWithoutWriting(Core)
         failed("PARKED_SETTLE_UNPROVEN", f.controller:confirm_parked(receipt))
         equal(f.writes, before)
     end
-    -- Only a creature target can hold it, and only a store's stock is a store's.
+    -- Only a holding target can hold it, and only a store's stock is a store's.
     local f = parked(Core, "container")
     failed("PARKED_SETTLE_UNPROVEN",
         f.controller:confirm_parked(settle_receipt(assert(f.controller:parked_request(1)), 1, "creature")))
@@ -1238,6 +1240,10 @@ function cases.ParkedSettleRejectsWrongOrUnprovenReceiptsWithoutWriting(Core)
         f.controller:confirm_parked(settle_receipt(assert(f.controller:parked_request(1)), 1, "container")))
     assert(f.controller:confirm_parked(settle_receipt(assert(f.controller:parked_request(1)), 1, "store")))
     equal(f.controller:assignments()[1].delivery_phase, Core.PHASE.confirmed)
+    -- A quest reward's recipient outside the party holds it, as a creature target does.
+    f = parked(Core, "scripted-target")
+    assert(f.controller:confirm_parked(settle_receipt(assert(f.controller:parked_request(1)), 1, "creature")))
+    equal(f.controller:assignments()[1].delivery_phase, Core.PHASE.held)
     -- Never while a world mutation is open, never with an old session's request.
     f = parked(Core, "actor")
     local request = assert(f.controller:parked_request(1))

@@ -78,7 +78,10 @@ local function key_world(N,party)
     f.adapter=N.new(f.api,f.fixture)
     return f
 end
-function cases.key_recipient_is_marked_actor_not_portrait_zero(N)
+-- The marked party member, not portrait 0. One marked outside the party (it
+-- left) is not the one: someone else is, as Chris asked on 2026-10-28, and CIR
+-- picks the protagonist.
+function cases.key_recipient_is_the_marked_party_member_else_the_protagonist(N)
     for _,party in ipairs({true,false}) do
         local f=key_world(N,party)
         local ready,reason=f.adapter:inspect_target(f.target_id,f.source_ids[1],1)
@@ -89,17 +92,21 @@ function cases.key_recipient_is_marked_actor_not_portrait_zero(N)
         assert(f.adapter:inspect_target(f.target_id,f.source_ids[1],1))
         f.boundary();local command=f.command(1)
         assert(f.adapter:execute(command))
-        assert(#f.queue==1 and f.queue[1].m_targetId==3)
+        assert(#f.queue==1 and f.queue[1].m_targetId==(party and 3 or 1))
         f.update();f.boundary()
         local receipt;receipt,reason=f.adapter:observe(command)
         fail(receipt,reason,'DELIVERY_SETTLING')
         f.boundary();receipt=assert(f.adapter:observe(command))
-        if party then assert(receipt.lootable==1 and receipt.holder=='party' and receipt.held==nil)
-        else assert(receipt.lootable==0 and receipt.holder=='creature' and receipt.held==1) end
-        assert(f.creature.slots[18].cResRef:get()=='FLPRI1' and not f.source1.slots[18])
+        assert(receipt.lootable==1 and receipt.holder=='party' and receipt.held==nil)
+        local holder,other=f.creature,f.source1
+        if not party then holder,other=other,holder end
+        assert(holder.slots[18].cResRef:get()=='FLPRI1' and not other.slots[18])
     end
 end
-function cases.key_recipient_marker_missing_duplicate_or_dead_never_falls_back(N)
+-- Not marked yet: it waits RECIPIENT_GRACE_STEPS host steps, then goes to the
+-- protagonist. Two marked: the first in portrait order. A dead marked member
+-- may be raised: it waits.
+function cases.key_recipient_waits_for_its_mark_takes_the_first_and_waits_while_dead(N)
     for _,variant in ipairs({'missing','duplicate','dead','error'}) do
         local f=key_world(N,true);f.claimed=1
         if variant=='missing' then f.creature.locals={}
@@ -107,9 +114,26 @@ function cases.key_recipient_marker_missing_duplicate_or_dead_never_falls_back(N
         elseif variant=='dead' then f.creature.alive=false
         else f.api.FLPR.Spell.last_error='callback failed' end
         local ready,reason=f.adapter:inspect_target(f.target_id,f.source_ids[1],1)
-        local wanted={missing='OWNER_MISSING',duplicate='OWNER_AMBIGUOUS',dead='TARGET_NOT_ALIVE',
-            error='CAMPAIGN_SPELL_CALLBACK_FAILED:callback failed'}
-        fail(ready,reason,wanted[variant]);assert(#f.calls==0 and #f.queue==0)
+        if variant=='duplicate' then
+            assert(ready and f.adapter.reservations[string.rep('c',64)].owner.id==1)
+        else
+            local wanted={missing='OWNER_MISSING',dead='TARGET_NOT_ALIVE',
+                error='CAMPAIGN_SPELL_CALLBACK_FAILED:callback failed'}
+            fail(ready,reason,wanted[variant])
+        end
+        assert(#f.calls==0 and #f.queue==0)
+        for _=1,N.RECIPIENT_GRACE_STEPS-1 do f.boundary() end
+        ready,reason=f.adapter:inspect_target(f.target_id,f.source_ids[1],1)
+        if variant=='missing' then
+            fail(ready,reason,'OWNER_MISSING');f.boundary()
+            assert(f.adapter:inspect_target(f.target_id,f.source_ids[1],1))
+            assert(f.adapter.reservations[string.rep('c',64)].owner.id==1)
+        elseif variant=='dead' then
+            -- Past the wait too: a marked member is no missing mark.
+            fail(ready,reason,'TARGET_NOT_ALIVE');f.boundary()
+            ready,reason=f.adapter:inspect_target(f.target_id,f.source_ids[1],1)
+            fail(ready,reason,'TARGET_NOT_ALIVE')
+        end
     end
 end
 function cases.key_recipient_local_survives_reload_ids_and_party_reordering(N)
@@ -190,8 +214,8 @@ class SpellRuntimeTests(unittest.TestCase):
 
     def test_exact_recipient_routing_and_unavailable_recipient_guards(self):
         fixture = NATIVE_FIXTURE.rsplit("return cases", 1)[0] + NATIVE_CASES + "\nreturn cases"
-        names = ("key_recipient_is_marked_actor_not_portrait_zero",
-                 "key_recipient_marker_missing_duplicate_or_dead_never_falls_back",
+        names = ("key_recipient_is_the_marked_party_member_else_the_protagonist",
+                 "key_recipient_waits_for_its_mark_takes_the_first_and_waits_while_dead",
                  "key_recipient_local_survives_reload_ids_and_party_reordering")
         for runtime in (Lua51, Lua53, LuaJIT):
             for name in names:

@@ -1757,48 +1757,6 @@ function cases.party_recipient_that_dies_keeps_its_reward(N)
     assert(receipt.holder == "party" and receipt.lootable == 1 and receipt.held == nil and receipt.slot == 18)
     assert(#f.calls == 1 and f.creature.slots[18].cResRef:get() == "FLPRI1")
 end
--- A recipient a reward reply marked, outside the party. Only a delivery on its
--- way follows it into death: one that died before still waits at inspection.
-function cases.marked_recipient_outside_the_party_that_dies(N)
-    local function marked()
-        local f = death_world(N)
-        f.creature.m_id = 3
-        f.api.EEex_GameState_GetGlobalInt = function(name) assert(name == "FLPR_EPOOL"); return 1 end
-        f.api.EEex_Sprite_GetLocalInt = function(o, name)
-            assert(name == "FLPR_RPOOL"); return o == f.creature and 1 or 0
-        end
-        f.fixture.targets[f.target_id] = {kind="quest", area="*", identity=string.rep("c", 64),
-            adapter_id="mode2-reward-v1", event_global="FLPR_EPOOL", recipient_local="FLPR_RPOOL"}
-        f.adapter = N.new(f.api, f.fixture)
-        return f, f.adapter
-    end
-    local f, a = marked()
-    f.creature.alive = false
-    local x, e = a:inspect_target(f.target_id, f.source_ids[1], 1); fail(x, e, "TARGET_NOT_ALIVE")
-    assert(#f.calls == 0 and a.reservations[string.rep("c", 64)] == nil)
-    -- Its message ran and it died with its death drop before CIR looked again.
-    f, a = marked()
-    assert(a:inspect_target(f.target_id, f.source_ids[1], 1)); f.boundary()
-    local command = f.command(1); assert(a:execute(command))
-    assert(a.pending.piles)
-    f.update(); f.die(true); f.update(); f.boundary()
-    x, e = a:observe(command); fail(x, e, "DELIVERY_SETTLING")
-    assert(a:diagnostics().pending.found)
-    f.boundary(); local receipt = assert(a:observe(command))
-    assert(receipt.holder == "ground" and receipt.lootable == 1 and #f.calls == 1)
-    assert(f.pile() == "PLAT01 FLPRI1 OTHER")
-    -- Its death drop came before its message, which put the reward into the
-    -- body: CIR drops it at the corpse.
-    f, a = marked()
-    assert(a:inspect_target(f.target_id, f.source_ids[1], 1)); f.boundary()
-    command = f.command(1); assert(a:execute(command))
-    f.die(true); f.update()
-    for _ = 1, N.DEATH_DROP_TICKS + 2 do f.boundary(); x, e = a:observe(command); fail(x, e, "DELIVERY_SETTLING") end
-    assert(#f.calls == 2 and a:diagnostics().pending.ground == true)
-    f.update(); f.boundary(); x, e = a:observe(command); fail(x, e, "DELIVERY_SETTLING")
-    f.boundary(); receipt = assert(a:observe(command))
-    assert(receipt.holder == "ground" and receipt.lootable == 1 and f.pile() == "PLAT01 OTHER FLPRI1")
-end
 -- CIR reads only the items of the reward's name in the piles of the area:
 -- anything of any mod may lie on the ground, even under a name CIR would
 -- never write (Adapter:_pile_items).
@@ -2013,20 +1971,159 @@ function cases.marked_party_member_that_leaves_no_body(N)
     f.boundary(); receipt = assert(a:observe(command))
     assert(receipt.holder == "ground" and receipt.notice.member == "Minsc" and #f.calls == 3)
 end
+-- lost_world with a quest place whose reward reply marked the creature, in the
+-- party (portrait 2) with <member>, else outside it.
+local function marked_world(N, member)
+    local f = lost_world(N)
+    f.creature.m_id = 3; f.globals.FLPR_EPOOL = 1
+    if member then f.creature.portrait = 2; f.party[2] = f.creature end
+    f.api.EEex_Sprite_GetLocalInt = function(o, name) return o == f.creature and name == "FLPR_RPOOL" and 1 or 0 end
+    f.fixture.targets[f.target_id] = {kind="quest", area="*", identity=string.rep("c", 64),
+        adapter_id="mode2-reward-v1", event_global="FLPR_EPOOL", recipient_local="FLPR_RPOOL"}
+    f.adapter = N.new(f.api, f.fixture)
+    return f, f.adapter
+end
+-- It leaves the party (the reward on its way stays with it).
+local function leaves_party(f) f.party[2], f.creature.portrait = nil, -1 end
+-- A reward whose marked recipient is not in the party (it left) goes to
+-- someone else, as Chris asked on 2026-10-28; CIR picks the protagonist, dead
+-- or alive as that one is (Adapter:_recipient). One that leaves the party
+-- with its reward on its way is followed into its death, as a creature target is.
+function cases.marked_recipient_outside_the_party_that_dies(N)
+    for _, alive in ipairs({true, false}) do
+        local f, a = marked_world(N)
+        f.creature.alive = alive
+        assert(a:inspect_target(f.target_id, f.source_ids[1], 1))
+        assert(a.reservations[string.rep("c", 64)].owner.id == 8); f.boundary()
+        local command = f.command(1); assert(a:execute(command))
+        assert(#f.queue == 1 and f.queue[1].m_targetId == 8)
+        f.update(); f.boundary()
+        local x, e = a:observe(command); fail(x, e, "DELIVERY_SETTLING")
+        f.boundary(); local receipt = assert(a:observe(command))
+        assert(receipt.holder == "party" and receipt.lootable == 1 and f.kara.slots[18].cResRef:get() == "FLPRI1")
+        assert(f.creature.slots[18] == nil and #f.calls == 1)
+    end
+    -- Its message ran, then it left the party and died with its death drop
+    -- before CIR looked again.
+    local f, a = marked_world(N, true)
+    assert(a:inspect_target(f.target_id, f.source_ids[1], 1)); f.boundary()
+    local command = f.command(1); assert(a:execute(command))
+    assert(f.queue[1].m_targetId == 3)
+    f.update(); leaves_party(f); f.die(true); f.update(); f.boundary()
+    local x, e = a:observe(command); fail(x, e, "DELIVERY_SETTLING")
+    assert(a:diagnostics().pending.found)
+    f.boundary(); local receipt = assert(a:observe(command))
+    assert(receipt.holder == "ground" and receipt.lootable == 1 and #f.calls == 1)
+    assert(f.pile() == "PLAT01 FLPRI1 OTHER")
+    -- Its death drop came before its message, which put the reward into the
+    -- body: CIR drops it at the corpse.
+    f, a = marked_world(N, true)
+    assert(a:inspect_target(f.target_id, f.source_ids[1], 1)); f.boundary()
+    command = f.command(1); assert(a:execute(command))
+    leaves_party(f); f.die(true); f.update()
+    for _ = 1, N.DEATH_DROP_TICKS + 2 do f.boundary(); x, e = a:observe(command); fail(x, e, "DELIVERY_SETTLING") end
+    assert(#f.calls == 2 and a:diagnostics().pending.ground == true)
+    f.update(); f.boundary(); x, e = a:observe(command); fail(x, e, "DELIVERY_SETTLING")
+    f.boundary(); receipt = assert(a:observe(command))
+    assert(receipt.holder == "ground" and receipt.lootable == 1 and f.pile() == "PLAT01 OTHER FLPRI1")
+end
+-- A reward on its way follows its recipient: neither the party nor the mark
+-- changing meanwhile makes another one the recipient (Adapter:_delivery_owner).
+function cases.quest_reward_on_its_way_follows_its_recipient(N)
+    for _, variant in ipairs({"left", "moved", "gone"}) do
+        local f, a = marked_world(N, true)
+        assert(a:inspect_target(f.target_id, f.source_ids[1], 1)); f.boundary()
+        local command = f.command(1); assert(a:execute(command))
+        if variant == "left" then leaves_party(f)
+        elseif variant == "moved" then
+            f.api.EEex_Sprite_GetLocalInt = function(o) return o == f.minsc and 1 or 0 end
+        else f.api.EEex_Sprite_GetLocalInt = function() return 0 end end
+        f.update(); f.boundary()
+        local x, e = a:observe(command); fail(x, e, "DELIVERY_SETTLING")
+        f.boundary(); local receipt = assert(a:observe(command))
+        assert(f.creature.slots[18].cResRef:get() == "FLPRI1" and next(f.minsc.slots) == nil, variant)
+        -- Held outside the party, as any item a member has when it leaves; Core
+        -- takes that of a quest reward as held (test_campaign_native_host).
+        if variant == "left" then assert(receipt.holder == "creature" and receipt.held == 1, variant)
+        else assert(receipt.holder == "party" and receipt.lootable == 1, variant) end
+    end
+end
+-- No one in the visible area or the party has the mark: a reply's
+-- ActionOverride marks its recipient only once its talk is over. The reward
+-- waits RECIPIENT_GRACE_STEPS host steps, counted in steps, not game time,
+-- then goes to the protagonist; a mark that comes meanwhile names its
+-- recipient. A loaded game (a new adapter) waits anew.
+function cases.unmarked_quest_reward_waits_then_goes_to_the_protagonist(N)
+    local function unmarked()
+        local f = marked_world(N)
+        f.api.EEex_Sprite_GetLocalInt = function(o) return o == f.marked and 1 or 0 end
+        f.adapter = N.new(f.api, f.fixture)
+        return f, f.adapter
+    end
+    local function owner(f)
+        assert(f.adapter:inspect_target(f.target_id, f.source_ids[1], 1))
+        return f.adapter.reservations[string.rep("c", 64)].owner.id
+    end
+    local function waits(f)
+        local x, e = f.adapter:inspect_target(f.target_id, f.source_ids[1], 1); fail(x, e, "OWNER_MISSING")
+    end
+    local f, a = unmarked()
+    waits(f)
+    for _ = 1, N.RECIPIENT_GRACE_STEPS - 1 do f.boundary() end
+    waits(f); f.boundary()
+    assert(owner(f) == 8 and #f.calls == 0)
+    -- Resting moves the game's clock by hours in one step.
+    f, a = unmarked()
+    waits(f); f.tick = f.tick + 100000; assert(a:on_observation_boundary(f.tick)); waits(f)
+    -- A mark that comes names its recipient; once none is seen again, the
+    -- wait begins anew.
+    for _ = 1, N.RECIPIENT_GRACE_STEPS - 2 do f.boundary() end
+    f.marked = f.minsc; assert(owner(f) == 9)
+    f.marked = nil; f.boundary(); waits(f)
+    for _ = 1, N.RECIPIENT_GRACE_STEPS - 1 do f.boundary() end
+    waits(f); f.boundary(); assert(owner(f) == 8)
+    f.adapter = N.new(f.api, f.fixture); waits(f)
+    -- One seen marked outside the party: the protagonist at once; once it is
+    -- out of sight, the wait begins anew. So it does after destroy.
+    f, a = unmarked()
+    waits(f)
+    for _ = 1, N.RECIPIENT_GRACE_STEPS - 1 do f.boundary() end
+    f.marked = f.creature; assert(owner(f) == 8)
+    f.marked = nil; f.boundary(); waits(f)
+    for _ = 1, N.RECIPIENT_GRACE_STEPS do f.boundary() end
+    a:destroy(); f.boundary(); waits(f)
+    -- No protagonist (no party yet): it waits too, as a deferral.
+    for _ = 1, N.RECIPIENT_GRACE_STEPS do f.boundary() end
+    f.party = {}; waits(f)
+    -- Looking (Adapter:diagnostics) leaves the wait as it was: it begins
+    -- the wait no earlier, and a mark that only it saw, outside the party or
+    -- in it, does not begin it anew.
+    f, a = unmarked()
+    for _ = 1, 10 do f.boundary(); assert(a:diagnostics().targets[f.target_id].unavailable == "OWNER_MISSING") end
+    waits(f)
+    for _ = 1, N.RECIPIENT_GRACE_STEPS - 1 do f.boundary() end
+    waits(f)
+    for _, seen in ipairs({{"creature", 8}, {"minsc", 9}}) do
+        f, a = unmarked()
+        waits(f)
+        for _ = 1, N.RECIPIENT_GRACE_STEPS - 2 do f.boundary() end
+        f.marked = f[seen[1]]; assert(a:diagnostics().targets[f.target_id].object_id == seen[2], seen[1])
+        f.marked = nil; f.boundary(); waits(f)
+        f.boundary(); assert(owner(f) == 8, seen[1])
+    end
+end
 -- Where the party left the area the delivery began in, its piles there can no
 -- longer tell: an area's objects leave memory with it. Nothing is put at the
 -- party's feet then; the reward parks (Adapter:_left), and a later settle
--- counts its recipient's items.
+-- counts its recipient's items. Here its recipient left the party with its
+-- reward on its way and stayed behind.
 function cases.lost_reward_parks_after_the_party_left(N)
-    local f = lost_world(N)
-    f.globals.FLPR_EPOOL = 1; f.creature.m_id = 3
-    f.api.EEex_Sprite_GetLocalInt = function(o) return o == f.creature and 1 or 0 end
-    f.fixture.targets[f.target_id] = {kind="quest", area="*", identity=string.rep("c", 64),
-        adapter_id="mode2-reward-v1", event_global="FLPR_EPOOL", recipient_local="FLPR_RPOOL"}
-    f.adapter = N.new(f.api, f.fixture); local a = f.adapter
+    local f, a = marked_world(N, true)
     assert(a:inspect_target(f.target_id, f.source_ids[1], 1)); f.boundary()
     local command = f.command(1); assert(a:execute(command))
+    assert(f.queue[1].m_targetId == 3)
     -- The party went on, and the area it left was unloaded.
+    leaves_party(f)
     f.area = {m_resref={get=function() return "BG0100" end}, m_lVertSort={8, 9}, m_lVertSortBack={},
         m_lVertSortFlight={}, m_lVertSortUnder={}}
     f.objects[3] = nil; f.update()
@@ -2197,8 +2294,9 @@ function cases.quest_recipient_is_followed_into_another_area(N)
     f.creature.slots[18] = nil
     assert(a:settle_parked(settle_request(f, witness)).arrived == 0)
 end
--- Chris's rule, as he said it: one more of its name than before is the reward.
--- Two more are not (something else of its name came too): CIR gives it anew.
+-- As approved for 1.0.3 (Chris, 2026-10-27): one more of its name than before
+-- is the reward. Two more are not (something else of its name came too): CIR
+-- gives it anew.
 function cases.settle_takes_exactly_one_more_of_its_name_for_the_reward(N)
     for _, variant in ipairs({"alive", "dead", "gone"}) do
         local f = death_world(N); local a = f.adapter
@@ -2217,45 +2315,55 @@ function cases.settle_takes_exactly_one_more_of_its_name_for_the_reward(N)
         assert(receipt.arrived == 0 and receipt.holder == nil, variant)
     end
 end
--- A quest recipient outside the party drops its items where it dies, as a
--- creature target does: its counts take the ground piles of its area, and a
--- parked reward is counted in its body and those piles.
-local function marked_world(N)
-    local f = death_world(N)
-    f.creature.m_id = 3; f.globals.FLPR_EPOOL = 1
-    f.api.EEex_Sprite_GetLocalInt = function(o, name) return o == f.creature and name == "FLPR_RPOOL" and 1 or 0 end
-    f.fixture.targets[f.target_id] = {kind="quest", area="*", identity=string.rep("c", 64),
-        adapter_id="mode2-reward-v1", event_global="FLPR_EPOOL", recipient_local="FLPR_RPOOL"}
-    f.adapter = N.new(f.api, f.fixture)
-    return f
-end
-function cases.dead_quest_recipient_outside_the_party_is_counted_with_the_piles(N)
+-- A parked quest reward is counted at the recipient it went to, as at
+-- inspection (Adapter:_recipient): the marked party member, else the
+-- protagonist, never one outside the party (it left), and no ground piles: a
+-- party member keeps its items wherever it dies. Where no one has the mark,
+-- the settle waits as inspection does, then counts the protagonist's items.
+function cases.parked_quest_reward_is_counted_at_its_recipient(N)
     for _, arrived in ipairs({true, false}) do
-        local f = marked_world(N); local a = f.adapter
+        local f, a = marked_world(N)
         f.area.m_lVertSortBack = {(f.pile_at(500, 598, {f.item("FLPRI1", 552)}))}
         local witness = assert(a:inspect_target(f.target_id, f.source_ids[1], 1))
-        assert(witness.settle == 1 + 1024 * 1)
-        -- Its reward came, or not; then it died and its death drop took it along.
-        if arrived then f.creature.slots[18] = f.item("FLPRI1", 553) end
+        assert(witness.settle == 1 and a.reservations[string.rep("c", 64)].owner.id == 8)
+        -- The reward came to Kara, or not; the one that left died and dropped its items.
+        if arrived then f.kara.slots[18] = f.item("FLPRI1", 553) end
         f.die(true); f.update()
         local receipt = assert(read_only(f, function() return a:settle_parked(settle_request(f, witness)) end))
-        assert(receipt.arrived == (arrived and 1 or 0) and receipt.holder == (arrived and "ground" or nil))
+        assert(receipt.arrived == (arrived and 1 or 0) and receipt.holder == (arrived and "party" or nil))
     end
+    local f, a = marked_world(N)
+    f.api.EEex_Sprite_GetLocalInt = function() return 0 end
+    local x, e = a:inspect_target(f.target_id, f.source_ids[1], 1); fail(x, e, "OWNER_MISSING")
+    for _ = 1, N.RECIPIENT_GRACE_STEPS do f.boundary() end
+    local witness = assert(a:inspect_target(f.target_id, f.source_ids[1], 1))
+    f.kara.slots[18] = f.item("FLPRI1", 553)
+    -- A loaded game: the wait begins anew.
+    f.adapter = N.new(f.api, f.fixture); a = f.adapter
+    x, e = a:settle_parked(settle_request(f, witness)); fail(x, e, "OWNER_MISSING")
+    for _ = 1, N.RECIPIENT_GRACE_STEPS do f.boundary() end
+    local receipt = assert(a:settle_parked(settle_request(f, witness)))
+    assert(receipt.arrived == 1 and receipt.holder == "party")
 end
 -- Its quest recipient is followed into any area, but the pile its death drop
--- made stays in the area it died in. Once the party has left that area (whose
--- objects left memory with it), what was found there stands.
+-- made stays in the area it died in. Here it left the party with its reward on
+-- its way and died there. Once the party has left that area (whose objects
+-- left memory with it), what was found there stands.
 function cases.quest_reward_found_on_the_ground_stands_when_the_party_leaves(N)
-    local f = marked_world(N); local a = f.adapter
+    local f, a = marked_world(N, true)
     local command = witnessed_start(f)
-    f.update(); f.die(true); f.update(); f.boundary()
+    assert(f.queue[1].m_targetId == 3)
+    f.update(); leaves_party(f); f.die(true); f.update(); f.boundary()
     local x, e = a:observe(command); fail(x, e, "DELIVERY_SETTLING")
     assert(a:diagnostics().pending.found)
     local old = f.area
-    f.area = {m_resref={get=function() return "BG0100" end}, m_lVertSort={}, m_lVertSortBack={},
+    f.area = {m_resref={get=function() return "BG0100" end}, m_lVertSort={8, 9}, m_lVertSortBack={},
         m_lVertSortFlight={}, m_lVertSortUnder={}}
     for _, field in ipairs({"m_lVertSort", "m_lVertSortBack"}) do
-        for _, id in ipairs(old[field]) do f.objects[id] = nil end
+        for _, id in ipairs(old[field]) do
+            local o = f.objects[id]
+            if not (o and o.portrait and o.portrait ~= -1) then f.objects[id] = nil end
+        end
     end
     f.boundary()
     local receipt = assert(read_only(f, function() return a:observe(command) end))

@@ -23,6 +23,12 @@ Native.DROP_SCAN_TICKS = 5
 -- An owed treasury handover (Adapter:retry_handovers) is tried again
 -- after this many game ticks.
 Native.HANDOVER_RETRY_TICKS = 30
+-- A reward whose marked recipient no one in the visible area or the party
+-- carries waits this many host steps (one a game tick, 60 game seconds), long
+-- enough for a reply's queued mark to run once its talk is over, then goes to
+-- the protagonist (Adapter:_recipient). Steps count, not game time: resting or
+-- travelling moves the clock by hours in one step.
+Native.RECIPIENT_GRACE_STEPS = 900
 -- CMessageAddItem::Run scans these internal backpack slots (see
 -- docs/native-creature-transport-evidence.md). A full backpack displaces an
 -- unrelated item to the ground, so creature delivery requires a free one.
@@ -139,7 +145,7 @@ function Native.new(api, fixture, seed, reward_payload)
     local self = setmetatable({ api = api, sources = {}, targets = {}, reservations = {},
         attempted = {}, tick = nil, pending = nil, last_error = nil, source_resrefs = {}, held = {},
         placed = {}, seed=seed, reward_payload=reward_payload, container_latched={}, route_targets={},
-        owed_handovers={}, parked={} }, Adapter)
+        owed_handovers={}, parked={}, steps=0, unmarked={} }, Adapter)
     local identities, source_resrefs, creatures, guarded_ids, routes = {}, self.source_resrefs, false, {}, {}
     local guarded_count = 0
     for _, kind in ipairs({ "sources", "targets" }) do
@@ -478,18 +484,41 @@ function Adapter:_all_marked(area, name)
     return found
 end
 
--- The one sprite, dead or alive, in the visible area or the party whose
--- LOCALS <name> is 1: the recipient a reward reply marked.
-function Adapter:_marked(area, name)
-    local found=self:_all_marked(area,name)
-    if #found~=1 then return nil,#found==0 and 'OWNER_MISSING' or 'OWNER_AMBIGUOUS' end
-    return found[1]
+-- The recipient a reward reply (or the Key's spell) marked: the party member,
+-- dead or alive, whose LOCALS <name> is 1, the first in portrait order. One
+-- that is not in the party (it left, or never was) is not the one: someone
+-- else gets the reward, as Chris asked on 2026-10-28 ("Gerne jemand anderem
+-- geben"), and CIR picks the protagonist, which he approved the same day, as
+-- for an unmarked quest's reward.
+-- Where no one in the visible area or the party has the mark, it may still be
+-- on its way: a reply's ActionOverride marks its recipient only once its talk
+-- is over. The reward waits then, and goes to the protagonist only after
+-- RECIPIENT_GRACE_STEPS host steps without a mark, as for one marked who
+-- stays elsewhere, or a mark the game dropped (session only). <peek> only
+-- looks (Adapter:diagnostics): the wait stays as it was.
+function Adapter:_recipient(area, name, peek)
+    local api=self.api
+    for index=0,5 do
+        local member=api.EEex_Sprite_GetInPortrait(index)
+        if member and api.EEex_Sprite_GetLocalInt(member,name)==1 then
+            if not peek then self.unmarked[name]=nil end
+            return member
+        end
+    end
+    if #self:_all_marked(area,name)==0 then
+        local since=self.unmarked[name] or self.steps
+        if not peek then self.unmarked[name]=since end
+        if self.steps-since<Native.RECIPIENT_GRACE_STEPS then return nil,'OWNER_MISSING' end
+    elseif not peek then self.unmarked[name]=nil end
+    local protagonist=api.EEex_Sprite_GetInPortrait(0)
+    if not protagonist then return nil,'OWNER_MISSING' end
+    return protagonist
 end
 
--- <observing>: a reward on its way, or parked (Adapter:_delivery_owner,
--- Adapter:settle_parked). Its quest recipient is followed into any area, and
--- returned where it died.
-function Adapter:_resolve(endpoint, kind, visible_area, observing)
+-- <observing>: a parked reward (Adapter:settle_parked). Its quest recipient is
+-- followed into any area, and returned where it died. <peek>: only looking
+-- (Adapter:diagnostics), which leaves a quest reward's wait for its mark as it was.
+function Adapter:_resolve(endpoint, kind, visible_area, observing, peek)
     local api, area = self.api, visible_area or self.api.EEex_Area_GetVisible()
     local anywhere = endpoint.area == '*' or (observing and endpoint.quest_event ~= nil)
     if not area or (not anywhere and text(area.m_resref) ~= endpoint.area) then return nil, "AREA_UNAVAILABLE" end
@@ -506,7 +535,7 @@ function Adapter:_resolve(endpoint, kind, visible_area, observing)
         local object
         if endpoint.recipient_local then
             local reason
-            object,reason=self:_marked(area,endpoint.recipient_local)
+            object,reason=self:_recipient(area,endpoint.recipient_local,peek)
             if not object then return nil,reason end
         else object=api.EEex_Sprite_GetInPortrait(0) end
         if not object then return nil,'OWNER_MISSING' end
@@ -990,9 +1019,10 @@ end
 -- rewards of the treasury's place. The condition of his reward reply calls
 -- this when the game shows that reply, so it runs at once: the scene after
 -- the reply clears every queued action and takes the party away for good.
--- The payee is the one he talks to (LastTalkedToBy), else the first living
--- party member, marked so that a reward not placed yet follows the payment
--- to the payee (Adapter:_target). Each reward still in the treasury goes to
+-- The payee is the one he talks to (LastTalkedToBy) where it is a living party
+-- member, else the first living party member (Adapter:_mark_payee), marked so
+-- that a reward not placed yet follows the payment to the payee
+-- (Adapter:_target). Each reward still in the treasury goes to
 -- the payee, or to the first party member after it with room: a new copy is
 -- queued with the source's flags (GiveItemCreate, which drops it at a full
 -- backpack's feet), then DestroyItem takes one equal copy out of the
@@ -1010,15 +1040,19 @@ function Adapter:hand_over_container_reward(speaker, target_id, assignments, pha
     return self:_hand_over(target_id,endpoint,payee,assignments,phases)
 end
 
--- The one a reward reply's speaker talks to (LastTalkedToBy), else the first
--- living party member, marked with the LOCALS <mark> at once: the reply marks
--- it too, but through an action of another actor that the scene after it may
--- clear. Nil if there is no one; <failure> if the mark does not hold.
+-- The one a reward reply's speaker talks to (LastTalkedToBy) where it is a
+-- living party member (a mark outside the party counts for nothing,
+-- Adapter:_recipient), else the first living party member, marked with the
+-- LOCALS <mark> at once: the reply marks it too, but through an action of
+-- another actor that the scene after it may clear. Nil if there is no one;
+-- <failure> if the mark does not hold.
 function Adapter:_mark_payee(speaker, mark, failure)
     local api=self.api
     local talked=api.EEex_Object_EvalStringAsAIBase('LastTalkedToBy',speaker)
     local payee=talked and api.EEex_GameObject_CastUserType(talked)
-    if payee and self:_creature_state(payee,true) then payee=nil end
+    if payee and (self:_creature_state(payee,true) or api.EEex_Sprite_GetPortraitIndex(payee)==-1) then
+        payee=nil
+    end
     for index=0,5 do
         local member=not payee and api.EEex_Sprite_GetInPortrait(index)
         if member and not self:_creature_state(member,true) then payee=member end
@@ -1060,8 +1094,9 @@ end
 -- be observed (perhaps a reward on its way into the treasury), a reward of the
 -- same name was parked there, or the treasury could not be found: the rest is
 -- retried on the host's steps, at once when nothing is
--- pending and then every HANDOVER_RETRY_TICKS, to the payee the reply marked,
--- while the treasury's area is loaded. Session only, as the reply's moment is.
+-- pending and then every HANDOVER_RETRY_TICKS, to the payee the reply marked
+-- (Adapter:_recipient), while the treasury's area is loaded. Session only, as
+-- the reply's moment is.
 function Adapter:retry_handovers(assignments, phases)
     if next(self.owed_handovers)==nil or self.pending or not self.tick or
         self.tick<(self.handover_retry or 0) then return true end
@@ -1070,7 +1105,7 @@ function Adapter:retry_handovers(assignments, phases)
     for target_id in pairs(self.owed_handovers) do
         local endpoint=self.targets[target_id]
         if area and text(area.m_resref)==endpoint.area then
-            local payee=self:_marked(area,endpoint.handover.recipient_local)
+            local payee=self:_recipient(area,endpoint.handover.recipient_local)
             if payee and not self:_creature_state(payee,true) then
                 self:_hand_over(target_id,endpoint,payee,assignments,phases)
             end
@@ -1325,9 +1360,8 @@ function Adapter:_inspect(endpoint, id, source, source_id, unit, member, paid)
         if #empty == 0 then return nil, "TARGET_INVENTORY_FULL" end
         if creature_conflict(self:_queue(), owner.id, self.source_resrefs) then return nil, "TARGET_QUEUE_BUSY" end
         -- Where its death drop could put the reward (Adapter:execute), and its
-        -- count there. A party recipient keeps its items wherever it dies; a
-        -- quest recipient outside the party is found only in the visible area,
-        -- where it would die (Adapter:_resolve).
+        -- count there. A party member keeps its items wherever it dies, and a
+        -- quest's recipient is one (Adapter:_recipient).
         local piles, count = {}, 0
         for pile_id, pile in pairs(reward and self:_piles(reward.resref) or {}) do
             piles[pile_id], count = { pointer = pile.pointer, items = pile.items }, count + #pile.items
@@ -1786,7 +1820,7 @@ end
 function Adapter:on_observation_boundary(tick)
     if not integer(tick, 0, 9007199254740991) then return nil, "OBSERVATION_CLOCK_INVALID" end
     if self.tick and tick <= self.tick then return nil, "LATER_GAME_TICK_REQUIRED" end
-    self.tick = tick
+    self.tick, self.steps = tick, self.steps + 1
     return true
 end
 
@@ -1991,12 +2025,19 @@ end
 
 -- The creature a reward is on its way to, as at its execution: the creature
 -- and "alive", its corpse and "dead". One that is no longer found (no sprite
--- of its script name in its area, or none marked there and in the party) is
--- "vanished": it left alive, or it died and left no body, or a script removed
--- it. CIR then follows its object while that is still the same one
--- (Adapter:_tracked), else nil. Anything else: nil and why it cannot be told.
+-- of its script name in its area) is "vanished": it left alive, or it died
+-- and left no body, or a script removed it. CIR then follows its object while
+-- that is still the same one (Adapter:_tracked), else nil. A quest's recipient
+-- is followed by its object from the start: neither its mark nor the party
+-- changing meanwhile makes another one the recipient (Adapter:_recipient).
+-- Anything else: nil and why it cannot be told.
 function Adapter:_delivery_owner(pending)
-    local owner, reason, unusable = self:_resolve(pending.endpoint, "target", nil, true)
+    if pending.endpoint.quest_event then
+        local owner = self:_tracked(pending.owner)
+        if not owner then return nil, "vanished" end
+        return owner, self.api.EEex_GameObject_IsSprite(owner.object, false) == true and "alive" or "dead"
+    end
+    local owner, reason, unusable = self:_resolve(pending.endpoint, "target")
     local state = owner and "alive" or "dead"
     owner = owner or (reason == "TARGET_NOT_ALIVE" and unusable) or nil
     if owner then
@@ -2117,7 +2158,8 @@ function Adapter:_observe_creature(pending, receipt)
         return receipt
     end
     -- Held by its creature in its backpack, or dropped with it as it died.
-    -- That is not proof of lootability: the death drop is the engine's.
+    -- That is not proof of lootability: the death drop is the engine's. A quest
+    -- reward's recipient that left the party on its way holds it too.
     receipt.lootable, receipt.held, receipt.holder = 0, 1, "creature"
     if state == "alive" then
         -- Session-only provenance. A save reload cannot reconstruct this record
@@ -2490,7 +2532,7 @@ function Adapter:diagnostics()
                 local members = {}
                 for _, group in ipairs(endpoint.groups) do
                     for _, member in ipairs(group.members) do
-                        local owner, reason, unusable = self:_resolve(member, "target")
+                        local owner, reason, unusable = self:_resolve(member, "target", nil, nil, true)
                         local seen = owner or unusable
                         members[#members + 1] = { area = member.area, script_name = member.script_name,
                             object_id = seen and seen.id, pointer = seen and seen.pointer, unavailable = reason }
@@ -2499,7 +2541,7 @@ function Adapter:diagnostics()
                 result[kind][id] = { members = members }
             else
                 local label = kind == "sources" and "source" or "target"
-                local owner, reason, unusable = self:_resolve(endpoint, label)
+                local owner, reason, unusable = self:_resolve(endpoint, label, nil, nil, true)
                 -- A dead or party-owned creature's inventory is evidence, not a target.
                 local seen = owner or unusable
                 result[kind][id] = seen and { object_id = seen.id, pointer = seen.pointer, unavailable = reason,
@@ -2513,7 +2555,7 @@ end
 function Adapter:destroy()
     self.pending, self.tick, self.last_error = nil, nil, nil
     self.reservations, self.attempted, self.held, self.container_latched = {}, {}, {}, {}
-    self.placed, self.owed_handovers, self.handover_retry = {}, {}, nil
+    self.placed, self.owed_handovers, self.handover_retry, self.unmarked = {}, {}, nil, {}
 end
 
 return Native

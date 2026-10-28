@@ -171,6 +171,11 @@ function cases.the_payee_is_the_one_he_talks_to_else_the_party(N,Core)
     familiar.m_typeAI.m_EnemyAlly=3;f.king.last_talked=familiar
     assert(f:hand_over()==1 and f:given()[1].m_targetId==3)
     assert(f.payee.locals.FLPR_RA_SAHROD==1 and familiar.locals.FLPR_RA_SAHROD==nil)
+    -- So is one outside the party (it left): a mark there counts for nothing.
+    f=treasury_world(N,Core)
+    local former=f.sprite(207,'XNPC',{});former.m_id=7;former.locals={};f.king.last_talked=former
+    assert(f:hand_over()==1 and f:given()[1].m_targetId==3)
+    assert(f.payee.locals.FLPR_RA_SAHROD==1 and former.locals.FLPR_RA_SAHROD==nil)
     -- No one at all: nothing moves and nothing is marked.
     f=treasury_world(N,Core)
     f.king.last_talked=nil;f.party={}
@@ -236,6 +241,19 @@ function cases.a_pending_mutation_or_missing_treasury_owes_the_handover(N,Core)
     f.payee.alive=true
     for _=1,N.HANDOVER_RETRY_TICKS do f.boundary();f:retry() end
     assert(not f.adapter:owes_handover() and #f.calls==3)
+    -- Its marked payee left the party: the protagonist gets it. No one marked
+    -- at all: after RECIPIENT_GRACE_STEPS host steps.
+    for _,variant in ipairs({'left','unmarked'}) do
+        f=treasury_world(N,Core);f.king.last_talked=f.member
+        f.adapter.pending={};f:hand_over();f.adapter.pending=nil
+        assert(f.member.locals.FLPR_RA_SAHROD==1,variant)
+        if variant=='left' then f.party[1],f.member.portrait=nil,-1 else f.member.locals.FLPR_RA_SAHROD=nil end
+        local steps=0
+        repeat f.boundary();f:retry();steps=steps+1
+        until not f.adapter:owes_handover() or steps>N.RECIPIENT_GRACE_STEPS+N.HANDOVER_RETRY_TICKS
+        assert(not f.adapter:owes_handover() and #f:given()==1 and f:given()[1].m_targetId==3,variant)
+        assert((variant=='left' and steps==1) or (variant=='unmarked' and steps>N.RECIPIENT_GRACE_STEPS),variant)
+    end
     -- A reward on its way into the treasury when the king pays follows him.
     f=treasury_world(N,Core)
     f.treasury.m_lstItems={f.item('MISCBI',401,0)}
@@ -328,14 +346,27 @@ function cases.after_payment_a_reward_not_placed_yet_goes_to_the_payee(N,Core)
     -- A save made while it was on its way counts it at the payee, anywhere.
     receipt=assert(f.adapter:settle_parked(settle_request(f,witness)))
     assert(receipt.arrived==1 and receipt.holder=='party')
-    -- Two marked: no guess.
-    f.member.locals.FLPR_RA_SAHROD=1
+    -- The marked party member, the first in portrait order where two are.
+    local function owner()
+        assert(f.adapter:inspect_target(f.target_id,f.source_ids[2],2))
+        return f.adapter.reservations[string.rep('c',64)].owner.id
+    end
+    f.payee.locals.FLPR_RA_SAHROD=nil;f.member.locals.FLPR_RA_SAHROD=1
+    assert(owner()==6)
+    f.payee.locals.FLPR_RA_SAHROD=1
+    assert(owner()==3)
+    -- The one marked left the party: someone else gets it (Chris asked so on
+    -- 2026-10-28), the protagonist.
+    f.payee.locals.FLPR_RA_SAHROD=nil;f.party[1],f.member.portrait=nil,-1
+    assert(owner()==3)
+    -- Not marked yet: the reward waits, RECIPIENT_GRACE_STEPS host steps at most.
+    f.member.locals.FLPR_RA_SAHROD=nil
     local ready;ready,reason=f.adapter:inspect_target(f.target_id,f.source_ids[2],2)
-    fail(ready,reason,'OWNER_AMBIGUOUS')
-    -- Not marked yet: the reward waits.
-    f.member.locals.FLPR_RA_SAHROD=nil;f.payee.locals.FLPR_RA_SAHROD=nil
+    fail(ready,reason,'OWNER_MISSING')
+    for _=1,N.RECIPIENT_GRACE_STEPS-1 do f.boundary() end
     ready,reason=f.adapter:inspect_target(f.target_id,f.source_ids[2],2)
     fail(ready,reason,'OWNER_MISSING')
+    f.boundary();assert(owner()==3)
 end
 
 function cases.a_presets_row_stands_for_the_treasurys_place(N,Core)
@@ -495,11 +526,15 @@ function cases.the_kings_place_goes_to_the_one_he_pays(N)
         assert(receipt.holder=='party' and receipt.slot==18 and f.payee.slots[18].cResRef:get()=='FLPRI1')
         corpse_as_before(f)
     end
-    -- Not marked yet: the reward waits; two marked: no guess.
+    -- Not marked yet: the reward waits. A mark outside the party (the king's)
+    -- counts for nothing: the protagonist is paid, at once.
     local f=king_world(N);f.globals.FLPR_EM2_57=1
     local x,e=f.adapter:inspect_target(f.target_id,f.source_ids[1],1);fail(x,e,'OWNER_MISSING')
-    f.payee.locals.FLPR_RM2_57=1;f.creature.locals={FLPR_RM2_57=1}
-    x,e=f.adapter:inspect_target(f.target_id,f.source_ids[1],1);fail(x,e,'OWNER_AMBIGUOUS')
+    for _,payee_marked in ipairs({false,true}) do
+        f.payee.locals.FLPR_RM2_57=payee_marked and 1 or nil;f.creature.locals={FLPR_RM2_57=1}
+        assert(f.adapter:inspect_target(f.target_id,f.source_ids[1],1))
+        assert(f.adapter.reservations[string.rep('c',64)].owner.id==6)
+    end
     assert(#f.calls==0)
 end
 

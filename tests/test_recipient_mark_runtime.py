@@ -90,12 +90,16 @@ function cases.another_ones_earlier_mark_is_taken_away(N)
     assert(f:mark_now()==nil and f.member.locals.FLPR_RA_SAHROD==1)
 end
 
--- As the Sahuagin king's payee: the one she talks to, else the first living
--- party member; no one, and nothing is marked.
+-- As the Sahuagin king's payee: the one she talks to where it is in the
+-- party, else the first living party member; no one, and nothing is marked.
 function cases.the_recipient_is_the_one_she_talks_to_else_the_party(N)
     local f=egg_world(N)
     f.adalon.last_talked=nil
     assert(f:mark_now()==nil and f.payee.locals.FLPR_RA_EGGDEALIO==1)
+    f=egg_world(N)
+    local former=f.sprite(207,'XNPC',{});former.m_id=7;former.locals={};f.adalon.last_talked=former
+    f.payee.alive=false
+    assert(f:mark_now()==nil and f.member.locals.FLPR_RA_EGGDEALIO==1 and former.locals.FLPR_RA_EGGDEALIO==nil)
     f=egg_world(N)
     f.payee.alive=false
     assert(f:mark_now()==nil and f.member.locals.FLPR_RA_EGGDEALIO==1 and f.payee.locals.FLPR_RA_EGGDEALIO==nil)

@@ -75,7 +75,8 @@ The Codex continuation above records the subsequent bounded native acceptance.
   pointer and slot across two later ticks. The result is **held**, not lootable.
   A death during delivery is terminal, with no receipt and no replay.
 - `FLPRCore.lua` records held deliveries as phase 4, for creature-kind targets
-  only. `FLPRHost.lua` defers unavailable targets instead of disabling.
+  only (since 1.0.3 also quest rewards whose recipient left the party on their
+  way). `FLPRHost.lua` defers unavailable targets instead of disabling.
 - `tests/test_campaign_native_creature.py` covers every row of the table below
   that synthetic tests can reach, in Lua 5.1, Lua 5.3 and LuaJIT.
 - `tools/build_mode1_fixture.py --variant creatures` builds the disposable
