@@ -569,6 +569,25 @@ input::placeholder {
   color: var(--ink);
 }
 
+/* A place whose item may not show up, as the player plays (carrier_hints.py). */
+.hint-badge {
+  display: inline-block;
+  border: 1px solid var(--error);
+  border-radius: 3px;
+  background: #f6e9e6;
+  color: #7f3a33;
+  font-size: .74rem;
+  font-weight: 600;
+  line-height: 1.5;
+  padding: 0 6px;
+  vertical-align: 1px;
+  white-space: nowrap;
+}
+
+.hint-note {
+  color: #7f3a33;
+}
+
 .chosen-row summary {
   list-style: none;
   display: flex;

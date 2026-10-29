@@ -296,27 +296,63 @@ class OriginalConfigurationTests(unittest.TestCase):
         self.assertNotIn("original-target:hidden-guard",
                          {row["id"] for row in result["plan"]["target_registrations"]})
 
-    def test_a_place_on_a_creature_that_can_go_missing_is_left_out_and_named(self):
-        for count, note in ((1, "1 place from the lists is on a creature that may leave, vanish or never appear, "
+    def test_a_place_on_a_creature_that_always_goes_missing_is_left_out_and_named(self):
+        for count, note in ((1, "1 place from the lists is on a creature that is never there or always escapes, "
                                 "so it is left out"),
-                            (2, "2 places from the lists are on creatures that may leave, vanish or never appear, "
+                            (2, "2 places from the lists are on creatures that are never there or always escape, "
                                 "so they are left out")):
             with self.subTest(count=count):
                 draft = self._draft()
                 for index in range(count):
                     gone = target_row(f"gone-guard-{index}", "x", "24")
                     gone.update(target="guard.cre", creature_resource="cre:guard", container_name=None,
-                                endpoint_kind=None, binding_problem="creature-can-go-missing")
+                                endpoint_kind=None, binding_problem="creature-always-goes-missing")
                     draft["targets"].append(gone)
                 with patch("flir_config.original_configuration.resolve_template", return_value=draft):
                     result = build_original_configuration(self.catalog, self.world, "eet-original")
                 self.assertEqual(result["not_used"], [{"id": f"gone-guard-{index}",
                                                        "row": "lists/locations/base/bg1.2da:1", "kind": "place",
-                                                       "reason": "creature-can-go-missing"}
+                                                       "reason": "creature-always-goes-missing"}
                                                       for index in range(count)])
                 self.assertIn(note, result["not_used_notes"])
                 self.assertFalse({row["id"] for row in result["plan"]["target_registrations"]}
                                  & {f"original-target:gone-guard-{index}" for index in range(count)})
+
+    def test_places_whose_item_may_not_show_up_are_kept_and_counted(self):
+        # Arkushule leaves after the talk (lists/carriers/bg1.2da, Shows
+        # "maybe"): his places stay, as Item Randomiser has them, and the
+        # notes say how many places the editor marks; a group's place counts
+        # when one of its members may not show up.
+        (self.root / "override" / "bg3600.are").write_bytes(make_are([], []))
+        (self.root / "override" / "bg0704.are").write_bytes(make_are([], []))
+        catalog = scan_game(self.root)
+        world = scan_world(catalog)
+        note = ("{} marked “May not show up”: {} carrier may leave, flee or not appear, "
+                "depending on how you play")
+        for count, expected in ((0, None), (1, note.format("1 place is", "its")),
+                                (2, note.format("2 places are", "their")), (3, note.format("3 places are", "their"))):
+            with self.subTest(count=count):
+                draft = self._draft()
+                for index in range(min(count, 2)):
+                    place = target_row(f"arkushule-{index}", "x", "24")
+                    place.update(target="arkush.cre", area="ar3600", area_resource="are:bg3600",
+                                 creature_resource="cre:arkush", container_name=None, endpoint_kind=None,
+                                 binding_problem="creature-not-static-in-area")
+                    draft["targets"].append(place)
+                if count == 3:
+                    place = target_row("zhentarim", "x", "24")
+                    place.update(target="zhents.flg", area="ar0704", area_resource="are:bg0704",
+                                 container_name=None, endpoint_kind="group",
+                                 members=["cre:william_", "cre:wheber"],
+                                 binding_problem="group-requires-runtime-selection")
+                    draft["targets"].append(place)
+                with patch("flir_config.original_configuration.resolve_template", return_value=draft):
+                    result = build_original_configuration(catalog, world, "eet-original")
+                self.assertEqual(result["not_used"], [])
+                marked = [line for line in result["not_used_notes"] if "May not show up" in line]
+                self.assertEqual(marked, [expected] if expected else [])
+                kept = {row["id"] for row in result["plan"]["target_registrations"]}
+                self.assertTrue({f"original-target:arkushule-{index}" for index in range(min(count, 2))} <= kept)
 
     def test_eet_without_its_rename_lists_is_named_and_uses_cirs_copy(self):
         shutil.rmtree(self.root / "EET")

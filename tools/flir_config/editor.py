@@ -9,7 +9,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 from uuid import uuid4
 
-from . import special_places
+from . import carrier_hints, special_places
 from .campaigns import compile_campaign, write_campaign
 from .native_export import _compile as compile_native
 from .profiles import (PROFILE_ID, ProfileError, ensure_output_outside_game,
@@ -59,6 +59,8 @@ class Editor:
                 name = row["selector"].get("name")
                 if isinstance(name, str) and name and name not in self.actor_names[row["resource"], template]:
                     self.actor_names[row["resource"], template].append(name)
+        # The creatures whose place's item may not show up (carrier_hints).
+        self.hints = carrier_hints.hints(world)
         # The special places this game can deliver, as search records, or why
         # they cannot be listed; found on the first search for them.
         self.special: list[tuple[str, dict]] | ProfileError | None = None
@@ -125,9 +127,20 @@ class Editor:
                  "cre-template": "Creature definition; choosing a specific spawn still needs runtime support.",
                  "container": "Container destination; existing contents, locks and traps are preserved.",
                  "store": "Shop destination; prototype delivery is available when this configuration passes its check."}
-        return {"id": row["id"], "label": self.label(row), "kind": row["kind"],
-                "kind_label": KIND_LABELS[row["kind"]], "note": notes[row["kind"]],
-                "parts": self.parts(row["resource"])}
+        record = {"id": row["id"], "label": self.label(row), "kind": row["kind"],
+                  "kind_label": KIND_LABELS[row["kind"]], "note": notes[row["kind"]],
+                  "parts": self.parts(row["resource"])}
+        # The scan's creature in an area; a creature template is not one place.
+        if row["kind"] == "actor":
+            self.add_hint(record, row["resource"], [row["selector"].get("template_resource")])
+        return record
+
+    def add_hint(self, record: dict, area: object, creatures: list) -> None:
+        """Mark <record> when its item may not show up (carrier_hints.mark)."""
+        hint = carrier_hints.mark(area, [creature for creature in creatures if isinstance(creature, str)],
+                                  self.hints, self.member_names)
+        if hint is not None:
+            record["hint"] = hint
 
     def area_parts(self, resource: str) -> set[str]:
         kind, _, name = resource.partition(":")
@@ -187,9 +200,11 @@ class Editor:
         described = special_places.describe(authored, self.member_names) if isinstance(authored, dict) else None
         if described is None:
             return None
-        return {"id": identity, "label": described["label"], "kind": special_places.KIND,
-                "kind_label": special_places.KIND_LABEL, "note": described["note"],
-                "place": described["place"], "parts": self.special_parts(authored)}
+        record = {"id": identity, "label": described["label"], "kind": special_places.KIND,
+                  "kind_label": special_places.KIND_LABEL, "note": described["note"],
+                  "place": described["place"], "parts": self.special_parts(authored)}
+        self.add_hint(record, authored.get("area_resource"), carrier_hints.carried_by(authored))
+        return record
 
     def special_places(self) -> list[tuple[str, dict]]:
         """The special places this game can deliver (fit_special_places): the
@@ -239,6 +254,7 @@ class Editor:
                 label = {"id": choice["id"], "label": f"{name} ({area})",
                          "kind": "original", "kind_label": "Original recipient",
                          "parts": self.parts(registration.get("resource"))}
+                self.add_hint(label, authored.get("area_resource"), carrier_hints.carried_by(authored))
             else:
                 label = {"id": choice["id"], "label": choice["id"], "kind": "missing", "parts": []}
             targets.append({**label,

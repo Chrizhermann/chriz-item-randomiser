@@ -62,6 +62,8 @@ pub struct Editor {
     template_parts: HashMap<String, HashSet<Part>>,
     /// The names each creature template's actors have in each area.
     actor_names: HashMap<(String, String), Vec<String>>,
+    /// The creatures whose place's item may not show up (`carrier_hints`).
+    hints: crate::carrier_hints::Hints,
     /// The special places this game can deliver, as search records, or why
     /// they cannot be listed; found on the first search for them.
     special: Option<std::result::Result<Vec<(String, Value)>, String>>,
@@ -202,6 +204,7 @@ impl Editor {
                 }
             }
         }
+        let hints = crate::carrier_hints::hints(&world)?;
         if profile.is_none() != plan.is_none() {
             return Err(Error::profile("Supply both an initial profile and its binding plan"));
         }
@@ -216,6 +219,7 @@ impl Editor {
             platform,
             template_parts,
             actor_names,
+            hints,
             special: None,
             draft: Value::Null,
         };
@@ -419,10 +423,26 @@ impl Editor {
             "store" => "Shop destination; prototype delivery is available when this configuration passes its check.",
             other => return Err(Error::key(other)),
         };
-        Ok(Value::Dict(crate::dict! {
+        let mut record = crate::dict! {
             "id" => identity, "label" => label, "kind" => kind, "kind_label" => kind_label, "note" => note,
             "parts" => self.parts_value(row.get("resource")),
-        }))
+        };
+        // The scan's creature in an area; a creature template is not one place.
+        if kind == "actor" {
+            let template = row.get("selector").and_then(|selector| selector.get("template_resource"));
+            let creatures: Vec<String> = template.and_then(Value::as_str).map(str::to_string).into_iter().collect();
+            self.add_hint(&mut record, row.get("resource").and_then(Value::as_str), &creatures)?;
+        }
+        Ok(Value::Dict(record))
+    }
+
+    /// Mark `record` when its item may not show up (`carrier_hints::mark`).
+    fn add_hint(&self, record: &mut Dict, area: Option<&str>, creatures: &[String]) -> Result<()> {
+        let names: &crate::special_places::Names<'_> = &|area, member| self.member_names(area, member);
+        if let Some(hint) = crate::carrier_hints::mark(area, creatures, &self.hints, Some(names))? {
+            record.insert("hint", Value::Dict(hint));
+        }
+        Ok(())
     }
 
     pub fn search_text(&self, row: &Value) -> Result<String> {
@@ -483,13 +503,16 @@ impl Editor {
         let Some(described) = crate::special_places::describe(authored, Some(names))? else {
             return Ok(None);
         };
-        Ok(Some(crate::dict! {
+        let mut record = crate::dict! {
             "id" => identity.clone(), "label" => described.get("label").cloned().unwrap_or(Value::Null),
             "kind" => crate::special_places::KIND, "kind_label" => crate::special_places::KIND_LABEL,
             "note" => described.get("note").cloned().unwrap_or(Value::Null),
             "place" => described.get("place").cloned().unwrap_or(Value::Null),
             "parts" => self.special_parts(authored)?,
-        }))
+        };
+        let area = authored.get("area_resource").and_then(Value::as_str);
+        self.add_hint(&mut record, area, &crate::carrier_hints::carried_by(authored))?;
+        Ok(Some(record))
     }
 
     /// The special places this game can deliver (`fit_special_places`): the
@@ -590,12 +613,15 @@ impl Editor {
                 };
                 let name = pick(&["target", "endpoint_id"], identity);
                 let area = pick(&["area_resource", "area"], &Value::from(""));
-                crate::dict! {
+                let mut record = crate::dict! {
                     "id" => identity.clone(),
                     "label" => format!("{} ({})", crate::json::py_str(&name), crate::json::py_str(&area)),
                     "kind" => "original", "kind_label" => "Original recipient",
                     "parts" => self.parts_value(registration.and_then(|row| row.get("resource"))),
-                }
+                };
+                let area = authored.get("area_resource").and_then(Value::as_str);
+                self.add_hint(&mut record, area, &crate::carrier_hints::carried_by(&authored))?;
+                record
             } else {
                 crate::dict! {
                     "id" => identity.clone(), "label" => identity.clone(), "kind" => "missing",

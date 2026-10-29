@@ -1,30 +1,30 @@
-Area   Creature  Reason        Reviewed  Comment
+Area   Creature  Reason        Shows  Reviewed  Comment
 
-ar0406 beast     story         20261026  Beastmaster: leaves when the slaver quest says so (SlavingJerk)
-ar0411 obshal03  difficulty    20261026  Necre: LOWBYE.BCS destroys her on the easiest difficulty
-ar0411 obshal06  difficulty    20261026  Taibela: LOWBYE.BCS destroys her on the easiest difficulty
-ar0529 neb       story         20261026  Neb: leaves the area in a cutscene
-ar0701 berkref   conversation  20261026  Zorl: as Tarnor
-ar0701 draug     conversation  20261026  Draug Fea: as Tarnor
-ar0701 gaius     conversation  20261026  Gaius: as Tarnor
-ar0701 gall      conversation  20261026  Gallchobhair: as Tarnor
-ar0701 rengaa    conversation  20261026  Rengaard: as Tarnor
-ar0701 tarnor    conversation  20261026  Tarnor: leaves with his gang when the party gives in
-ar0712 sevpat05  flees         20261026  Brennan Risling: flees below half his hit points
-ar0802 nevaziah  story         20261026  Nevaziah: the crypt goes away after a time limit
-ar0907 hlketta   story         20261026  Ketta: leaves when Sion accepts the apology
-ar1202 tazok     story         20261026  Tazok: flees in a talk with Kivan
-ar1515 ppworker  story         20261026  Spellhold worker: removed during the asylum quest
-ar1900 cedruid2  story         20261026  Dalok: removed as the druid grove quest goes
-ar2209 jael03    story         20261026  Ist'tar Jae'llat: leaves once Ust Natha turns hostile
-ar2402 uddoor09  story         20261026  Ust Natha gate guard: leaves after the talk, removed when the city opens
-ar2807 dragblac  conversation  20261026  Nizidramanii'yt: takes the party's gold and goes
-ar3001 gorsta03  party         20261026  statue: AR3001.BCS destroys it on entry for a party under 5 members, under level 14 or with XPGiven above 500000
-ar3001 gorsta04  party         20261026  statue: as gorsta03
-ar3001 gorsta05  party         20261026  statue: as gorsta03
-ar3001 gorsta11  party         20261026  statue: as gorsta03
-ar5203 yaga01    story         20261026  Yaga-Shura: escapes the first fight while invulnerable
-ar5500 amarch01  story         20261026  Captain Erelon: removed during the enclave quest
-ar6004 bazdra03  reward        20261026  Fll'Yissetat: leaves after his trade
-ar6105 senpri01  story         20261026  Diaytha: removed in a cutscene
-ar6107 senill02  story         20261026  Mithykyl: removed in a cutscene
+ar0406 beast     story         maybe  20261029  Beastmaster: destroyed when the slaver quest says so (SlavingJerk)
+ar0411 obshal03  difficulty    maybe  20261029  Necre: LOWBYE.BCS destroys her on the easiest difficulty
+ar0411 obshal06  difficulty    maybe  20261029  Taibela: LOWBYE.BCS destroys her on the easiest difficulty
+ar0417 borinall  reward        maybe  20261029  Borinall: gives the ring and goes (BORINALL.DLG state 9)
+ar0701 berkref   conversation  maybe  20261029  Zorl: as Tarnor
+ar0701 draug     conversation  maybe  20261029  Draug Fea: as Tarnor
+ar0701 gaius     conversation  maybe  20261029  Gaius: as Tarnor
+ar0701 gall      conversation  maybe  20261029  Gallchobhair: as Tarnor
+ar0701 rengaa    conversation  maybe  20261029  Rengaard: as Tarnor
+ar0701 tarnor    conversation  maybe  20261029  Tarnor: leaves with his gang when the party gives in
+ar0705 bheye     elsewhere     never  20261029  Unseeing Eye: created by AR0202.BCS or AR0205.BCS, never in AR0705
+ar0712 sevpat05  flees         maybe  20261029  Brennan Risling: flees below half his hit points
+ar0802 nevaziah  story         maybe  20261029  Nevaziah: created only with Edwin in the party, destroyed when the crypt's timer runs out
+ar0907 hlketta   story         maybe  20261029  Ketta: leaves when Sion accepts the apology
+ar1515 ppworker  story         maybe  20261029  Lonk the Sane: AR1515.BCS replaces him with a new Lonk during the asylum quest
+ar1900 cedruid2  story         maybe  20261029  Dalok: destroyed when the druid at the grove calls him or Faldorn dies (DALOKDIE.BCS)
+ar2100 udtrap02  reward        maybe  20261029  Raevilin Strathi: gives his sword and goes when freed (UDTRAP02.DLG states 10, 12)
+ar2209 jael03    story         maybe  20261029  Ist'tar Jae'llat: leaves once Ust Natha turns hostile
+ar2402 uddoor09  elsewhere     never  20261029  Ust Natha gate guard: created and destroyed in AR2200 (AR2200.BCS), never in AR2402
+ar2807 dragblac  conversation  maybe  20261029  Nizidramanii'yt: takes the party's gold and goes
+ar3001 gorsta03  party         maybe  20261029  statue: AR3001.BCS destroys it on entry for a party under 5 members, under level 14 or with XPGiven above 500000
+ar3001 gorsta04  party         maybe  20261029  statue: as gorsta03
+ar3001 gorsta05  party         maybe  20261029  statue: as gorsta03
+ar3001 gorsta11  party         maybe  20261029  statue: as gorsta03
+ar5203 yaga01    story         never  20261029  Yaga-Shura: invulnerable and kept at 1 hit point (sureHP1), he always escapes the first fights; only the one AR5203.BCS creates later can die
+ar5500 amarch01  story         maybe  20261029  Captain Erelon: destroyed during the enclave quest
+ar5509 amlich01  conversation  maybe  20261029  Vongoethe: vanishes alive (POOF_GONE) when the party lets him go after Marlowe's deal
+ar6004 bazdra03  reward        maybe  20261029  Fll'Yissetat: leaves after his trade

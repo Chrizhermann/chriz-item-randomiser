@@ -13,8 +13,9 @@ from copy import deepcopy
 from pathlib import Path
 
 from .campaigns import OVERFLOW_TARGET_KINDS
+from . import carrier_hints
 from .game_names import convert_resource, eet_names
-from .original_catalog import (CARRIER_CAN_GO_MISSING, NO_ROUTE, UNREADABLE_PLACE_PROBLEMS, mode2_route_source,
+from .original_catalog import (CARRIER_GOES_MISSING, NO_ROUTE, UNREADABLE_PLACE_PROBLEMS, mode2_route_source,
                                resolve_template)
 from .original_options import is_spell_shield_row, spell_shield_randomized, spell_shield_spec, tome_variants
 from .platform import game_platform, preset_campaigns, preset_game
@@ -382,7 +383,7 @@ def _build(catalog: dict, world: dict, template_id: str, exclude: dict[str, str]
             leave_out(row, "place", "area-resource-absent")
         elif row["binding_problem"] in UNREADABLE_PLACE_PROBLEMS:
             leave_out(row, "place", row["binding_problem"])
-        elif row["binding_problem"] in ("creature-never-appears", CARRIER_CAN_GO_MISSING):
+        elif row["binding_problem"] in ("creature-never-appears", CARRIER_GOES_MISSING):
             leave_out(row, "place", row["binding_problem"])
         else:
             places.append(row)
@@ -471,6 +472,7 @@ def _build(catalog: dict, world: dict, template_id: str, exclude: dict[str, str]
                             for mod, count in sorted(absent_mods.items())],
             "not_used": not_used,
             "not_used_notes": (unreadable_notes(world) + list(names.notes if names else ())
+                               + _hint_notes(places, game, names)
                                + _not_used_notes(not_used)),
             "row_ids": row_ids}
 
@@ -487,12 +489,24 @@ def _absent_mod_note(mod: str, count: int, catalog_items) -> str:
             f"that this game does not have, so {'it is' if count == 1 else 'they are'} left out")
 
 
+def _hint_notes(places: list[dict], game: str, names) -> list[str]:
+    """How many of the places kept the editor marks as places whose item may
+    not show up (carrier_hints), by the tables of their rows."""
+    hints = carrier_hints.found(dict.fromkeys(row["campaign"] for row in places), game, names)
+    count = sum(any((row["area_resource"], creature) in hints for creature in carrier_hints.carried_by(row))
+                for row in places)
+    if not count:
+        return []
+    return [f"{count} {'place is' if count == 1 else 'places are'} marked “{carrier_hints.LABEL}”: "
+            f"{'its' if count == 1 else 'their'} carrier may leave, flee or not appear, depending on how you play"]
+
+
 def _not_used_notes(rows: list[dict]) -> list[str]:
     """What the left-out rows are: those this game cannot use, the places on
-    creatures that can go missing, those whose quest CIR cannot change yet, then
-    what becomes of a left-out reward."""
-    unusable = [row for row in rows if row["reason"] not in (NO_ROUTE, CARRIER_CAN_GO_MISSING)]
-    missing = [row for row in rows if row["reason"] == CARRIER_CAN_GO_MISSING]
+    creatures that always go missing, those whose quest CIR cannot change yet,
+    then what becomes of a left-out reward."""
+    unusable = [row for row in rows if row["reason"] not in (NO_ROUTE, CARRIER_GOES_MISSING)]
+    missing = [row for row in rows if row["reason"] == CARRIER_GOES_MISSING]
     waiting = [row for row in rows if row["reason"] == NO_ROUTE]
     notes = []
     if unusable:
@@ -500,9 +514,9 @@ def _not_used_notes(rows: list[dict]) -> list[str]:
                      + ("it is" if len(unusable) == 1 else "they are") + " left out")
     if missing:
         notes.append(f"{_counted(missing)} from the lists "
-                     + ("is on a creature" if len(missing) == 1 else "are on creatures")
-                     + " that may leave, vanish or never appear, so "
-                     + ("it is" if len(missing) == 1 else "they are") + " left out")
+                     + ("is on a creature that is never there or always escapes" if len(missing) == 1
+                        else "are on creatures that are never there or always escape")
+                     + ", so " + ("it is" if len(missing) == 1 else "they are") + " left out")
     if waiting:
         notes.append(f"{_counted(waiting)} from the lists "
                      + ("belongs to a quest" if len(waiting) == 1 else "belong to quests")

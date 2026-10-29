@@ -617,6 +617,45 @@ class SpecialPlaceEditorTests(SpecialPlaceGame):
                          {"label": LABELS[OGRE]["label"], "kind": "special", "place": LABELS[OGRE]["place"],
                           "parts": ["soa"], "capacity": 1})
 
+    def test_places_whose_item_may_not_show_up_are_marked(self):
+        # Necre (OBSHAL03) is gone on the easiest difficulty and Tarnor's gang
+        # may leave after the talk (lists/carriers/bg2.2da, Shows "maybe"): the
+        # editor marks each place where they carry the item, of any kind;
+        # Togan (OBSHAL01) and a chest are not marked.
+        self.build("bg2ee")
+        override = self.game / "override"
+        for name in ("obshal01", "obshal03", "tarnor", "gaius"):
+            (override / f"{name}.cre").write_bytes(make_cre())
+        (override / "ar0411.are").write_bytes(make_are(actors=[("Necre", "OBSHAL03"), ("Togan", "OBSHAL01")]))
+        (override / "ar0701.are").write_bytes(make_are(actors=[("Tarnor", "TARNOR"), ("Gaius", "GAIUS")]))
+        self.rescan()
+        mark = {"label": "May not show up", "note": "Necre may not appear, depending on the difficulty."}
+        editor = self.editor()
+        found = {row["label"]: row for row in editor.get("/api/targets", {"q": "ar0411", "kind": "creature"})["records"]}
+        self.assertEqual(found["Necre (AR0411)"]["hint"], mark)
+        self.assertNotIn("hint", found["Togan (AR0411)"])
+        self.assertNotIn("hint", editor.get("/api/targets", {"q": "place2"})["records"][0])
+        necre = next(row["id"] for row in self.world["targets"] if row["selector"].get("name") == "Necre")
+        # Taibela (OBSHAL06) has no actor in this area: the line names no one.
+        alone = {"area_resource": "are:ar0411", "creature_resource": "cre:obshal06", "members": [],
+                 "target": "obshal06.cre", "campaign": "bg2"}
+        gang = {"area_resource": "are:ar0701", "creature_resource": None, "endpoint_kind": "group",
+                "members": ["cre:tarnor", "cre:gaius", "cre:rengaa"], "target": "tarnor.flg", "campaign": "bg2"}
+        draft = deepcopy(editor.draft)
+        plan = draft["plan"]
+        plan["target_registrations"] = [{"id": "original-target:alone", "authored": alone},
+                                        {"id": "original-target:gang", "authored": gang}]
+        plan["targets"] = [{"id": identity, "capacity": 1, "optional": False}
+                           for identity in (necre, "original-target:alone", "original-target:gang")]
+        targets = {row["id"]: row for row in editor.post("/api/save", draft)["targets"]}
+        self.assertEqual(targets[necre]["hint"], mark)
+        self.assertEqual((targets["original-target:alone"]["kind"], targets["original-target:alone"]["hint"]),
+                         ("original", {"label": "May not show up",
+                                       "note": "The carrier may not appear, depending on the difficulty."}))
+        self.assertEqual((targets["original-target:gang"]["kind"], targets["original-target:gang"]["hint"]),
+                         ("special", {"label": "May not show up",
+                                      "note": "Tarnor, Gaius and RENGAA may leave after a conversation."}))
+
     def test_special_places_that_cannot_be_listed_leave_the_other_recipients(self):
         self.build("bg2ee")
         editor = self.editor()

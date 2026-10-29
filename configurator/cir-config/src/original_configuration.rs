@@ -11,7 +11,7 @@ use crate::duplicates::{expected_copies, holdings, reviewed};
 use crate::error::{Error, ErrorKind, Result};
 use crate::game_names::{convert_resource, eet_names, EetNames};
 use crate::json::{Dict, Value};
-use crate::original_catalog::{resolve_template, CARRIER_CAN_GO_MISSING, NO_ROUTE, UNREADABLE_PLACE_PROBLEMS};
+use crate::original_catalog::{resolve_template, CARRIER_GOES_MISSING, NO_ROUTE, UNREADABLE_PLACE_PROBLEMS};
 use crate::original_registrations::{
     is_unreferenced_creature_source, source_lookup, target_record, SourceLookup, PAYLOAD_FIELDS, SHIPPED_REPLACEMENT,
     SOURCE_FIELDS, TARGET_FIELDS,
@@ -311,13 +311,44 @@ fn absent_mod_note(module: &str, count: usize, catalog_items: &ItemIndex) -> Str
     )
 }
 
+/// How many of the places kept the editor marks as places whose item may not
+/// show up (`carrier_hints`), by the tables of their rows.
+fn hint_notes(places: &[&Value], game: &str, names: Option<&EetNames>) -> Result<Vec<String>> {
+    let mut tables: Vec<&str> = Vec::new();
+    for row in places {
+        let table = s(row, "campaign");
+        if !tables.contains(&table) {
+            tables.push(table);
+        }
+    }
+    let hints = crate::carrier_hints::found(tables, game, names)?;
+    let count = places
+        .iter()
+        .filter(|row| {
+            let area = s(row, "area_resource");
+            crate::carrier_hints::carried_by(row)
+                .into_iter()
+                .any(|creature| hints.contains_key(&(area.to_string(), creature)))
+        })
+        .count();
+    if count == 0 {
+        return Ok(Vec::new());
+    }
+    Ok(vec![format!(
+        "{count} {} marked “{}”: {} carrier may leave, flee or not appear, depending on how you play",
+        if count == 1 { "place is" } else { "places are" },
+        crate::carrier_hints::LABEL,
+        if count == 1 { "its" } else { "their" }
+    )])
+}
+
 /// What the left-out rows are: those this game cannot use, the places on
-/// creatures that can go missing, those whose quest CIR cannot change yet,
+/// creatures that always go missing, those whose quest CIR cannot change yet,
 /// then what becomes of a left-out reward.
 fn not_used_notes(rows: &[Value]) -> Vec<String> {
     let (waiting, others): (Vec<&Value>, Vec<&Value>) = rows.iter().partition(|row| s(row, "reason") == NO_ROUTE);
     let (missing, unusable): (Vec<&Value>, Vec<&Value>) =
-        others.into_iter().partition(|row| s(row, "reason") == CARRIER_CAN_GO_MISSING);
+        others.into_iter().partition(|row| s(row, "reason") == CARRIER_GOES_MISSING);
     let it_is = |rows: &[&Value]| if rows.len() == 1 { "it is" } else { "they are" };
     let mut notes = Vec::new();
     if !unusable.is_empty() {
@@ -329,9 +360,13 @@ fn not_used_notes(rows: &[Value]) -> Vec<String> {
     }
     if !missing.is_empty() {
         notes.push(format!(
-            "{} from the lists {} that may leave, vanish or never appear, so {} left out",
+            "{} from the lists {}, so {} left out",
             counted(&missing),
-            if missing.len() == 1 { "is on a creature" } else { "are on creatures" },
+            if missing.len() == 1 {
+                "is on a creature that is never there or always escapes"
+            } else {
+                "are on creatures that are never there or always escape"
+            },
             it_is(&missing)
         ));
     }
@@ -713,7 +748,7 @@ fn build_from(
         } else if row.at("binding_problem")?.as_str().is_some_and(|problem| {
             UNREADABLE_PLACE_PROBLEMS.contains(&problem)
                 || problem == "creature-never-appears"
-                || problem == CARRIER_CAN_GO_MISSING
+                || problem == CARRIER_GOES_MISSING
         }) {
             leave_out(&mut not_used, row, "place", row.at("binding_problem")?)?;
         } else {
@@ -804,6 +839,7 @@ fn build_from(
     let mut target_registrations = Vec::new();
     let mut plan_targets = Vec::new();
     let mut target_rows: Vec<(String, &Value)> = Vec::new();
+    let hinted = hint_notes(&places, game, names.as_ref())?;
     for row in places {
         let sha = index
             .resource(world, s(row, "area_resource"))
@@ -892,6 +928,7 @@ fn build_from(
     let notes: Vec<Value> = unreadable_notes(world)
         .into_iter()
         .chain(names.iter().flat_map(|names| names.notes.iter().cloned()))
+        .chain(hinted)
         .chain(not_used_notes(&not_used))
         .map(Value::from)
         .collect();
