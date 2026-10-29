@@ -13,6 +13,7 @@ use cir_config::editor::{self, Editor};
 use cir_config::game_folder::{cir_installed, find_game, game_language, game_workspace};
 use cir_config::json::{self, Dict, Value};
 use cir_config::{paths, profiles, rebase, resources, sources, Error};
+use std::collections::HashSet;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -155,17 +156,25 @@ fn open_editor(game: &Path) -> Result<(), String> {
     let workspace = game_workspace(&data_folder()?, game);
     let language = game_language(game).map_err(|error| format!("Could not read the game: {}", error.message))?;
     // The world scan of the previous start, which the saved configurations
-    // were made with; this start's scan replaces it.
+    // were made with. It stays until they are carried over to this start's
+    // scan, so a start that ends sooner (its window closed) leaves it for the
+    // next one to carry them over from.
     let earlier = std::fs::read(workspace.join("world.json")).ok();
     println!("Reading the game's items, areas, creatures and shops; this can take a minute.");
-    let (catalog, world) = scans(game, language.as_deref(), &workspace)
+    let (catalog, world, world_path) = scans(game, language.as_deref(), &workspace)
         .map_err(|error| format!("Could not read the game: {}", error.message))?;
     println!("Scans and configurations: {}", paths::display(&workspace));
     // Game files the world scan could not read and left out, as `world scan` names them.
     for note in sources::unreadable_notes(&world) {
         println!("{note}.");
     }
-    let editor = editor(catalog, world, earlier.as_deref(), &workspace.join("configurations"), game)
+    let configurations = workspace.join("configurations");
+    let carried = carry_over(&configurations, &catalog, &world, earlier.as_deref())
+        .map_err(|error| format!("Could not open the editor: {}", error.message))?;
+    carried.report();
+    profiles::write_json(&world_path, &world, false)
+        .map_err(|error| format!("Could not read the game: {}", error.message))?;
+    let editor = editor(catalog, world, &carried, &configurations, game)
         .map_err(|error| format!("Could not open the editor: {}", error.message))?;
     let open_browser = std::env::var_os(NO_BROWSER).is_none();
     server::run(editor, 0, open_browser, Announce::Player)
@@ -173,10 +182,11 @@ fn open_editor(game: &Path) -> Result<(), String> {
     Ok(())
 }
 
-/// The game's item and world scans, written to `catalog.json` and
-/// `world.json` of its workspace as the `scan` and `world scan` commands
-/// write them.
-fn scans(game: &Path, language: Option<&str>, workspace: &Path) -> cir_config::Result<(Value, Value)> {
+/// The game's item and world scans. The item scan is written to
+/// `catalog.json` of its workspace as the `scan` command writes it; the
+/// world scan comes with where `world scan` writes it (`world.json`), which
+/// the caller writes once the configurations are carried over to it.
+fn scans(game: &Path, language: Option<&str>, workspace: &Path) -> cir_config::Result<(Value, Value, PathBuf)> {
     let (catalog_path, world_path) = (workspace.join("catalog.json"), workspace.join("world.json"));
     // As the scan command: checked before the scan and again with its root.
     let mut probe = Dict::new();
@@ -188,64 +198,68 @@ fn scans(game: &Path, language: Option<&str>, workspace: &Path) -> cir_config::R
     profiles::write_json(&destination, &catalog, false)?;
     let destination = profiles::ensure_output_outside_game(&world_path, &catalog)?;
     let world = sources::scan_world(&catalog)?;
-    profiles::write_json(&destination, &world, false)?;
-    Ok((catalog, world))
+    Ok((catalog, world, destination))
 }
 
-/// The editor with Apply for this game. Every start scans the game again,
-/// so after its mods changed, the configurations saved before do not fit the
-/// new scan, and the editor would refuse to list them: they are carried over
-/// to it first (`carry_over`). The editor reopens the configuration applied
-/// last, as the `ui` command does, or starts with a new one when that cannot
-/// be reopened. When it was kept aside, the player is told so once: it is no
-/// longer the one to reopen.
+/// The editor with Apply for this game, once the configurations saved
+/// before the game's mods changed are carried over (`carried`). It reopens
+/// the configuration applied last, as the `ui` command does, or starts with a
+/// new one when that cannot be reopened; the player is told so once, as it
+/// is no longer the one to reopen.
 fn editor(
     catalog: Value,
     world: Value,
-    earlier: Option<&[u8]>,
+    carried: &Carried,
     configurations: &Path,
     game: &Path,
 ) -> cir_config::Result<Editor> {
-    let carried = carry_over(configurations, &catalog, &world, earlier)?;
-    carried.report();
     let applied = configurations.join("prepared").join("last-applied.json");
     if !paths::is_file(&applied).map_err(|error| Error::win(&error, &applied))? {
         return Editor::new(catalog, world, configurations, None, None, Some(game));
     }
-    if let Some(identity) = applied_last(&applied) {
-        let path = configurations.join(format!("{identity}.json"));
-        if !paths::exists(&path).map_err(|error| Error::win(&error, &path))? {
-            match carried.aside.iter().find(|(stem, _, _)| *stem == identity) {
-                Some((_, name, _)) => println!(
-                    "The configuration applied last, \"{name}\", could not be carried over, so the editor starts \
-                     with a new one."
-                ),
-                None => println!(
-                    "The configuration applied last is no longer among the saved configurations, so the editor \
-                     starts with a new one."
-                ),
-            }
-            // Told once: the next start does not look for it again. Apply
-            // names the configuration it applies anew.
-            let _ = std::fs::remove_file(&applied);
-            let (profile, plan) = Editor::new_draft(&catalog, &world, None)?;
-            return Editor::new(catalog, world, configurations, Some(profile), Some(plan), Some(game));
+    let gone = match applied_last(&applied) {
+        None => {
+            Some("Which configuration was applied last cannot be read, so the editor starts with a new one.".into())
         }
+        Some(identity) => {
+            let path = configurations.join(format!("{identity}.json"));
+            if paths::exists(&path).map_err(|error| Error::win(&error, &path))? {
+                None
+            } else {
+                Some(carried.gone(&identity, configurations))
+            }
+        }
+    };
+    if let Some(message) = gone {
+        println!("{message}");
+        return new_editor(catalog, world, configurations, game, &applied);
     }
     match Editor::new(catalog.clone(), world.clone(), configurations, None, None, Some(game)) {
         Ok(editor) => Ok(editor),
-        Err(reopening) => {
+        Err(_) => {
             // Everything before reopening is checked the same way with a new
             // configuration; when it passes, reopening was what failed.
-            let (profile, plan) = Editor::new_draft(&catalog, &world, None)?;
-            let editor = Editor::new(catalog, world, configurations, Some(profile), Some(plan), Some(game))?;
-            println!(
-                "The configuration applied last cannot be reopened ({}); the editor starts with a new one.",
-                reopening.message
-            );
+            let editor = new_editor(catalog, world, configurations, game, &applied)?;
+            println!("The configuration applied last cannot be reopened, so the editor starts with a new one.");
             Ok(editor)
         }
     }
+}
+
+/// The editor with a new configuration, the configuration applied last
+/// forgotten: the player was told once, and the next start does not look for
+/// it again. Apply names the configuration it applies anew.
+fn new_editor(
+    catalog: Value,
+    world: Value,
+    configurations: &Path,
+    game: &Path,
+    applied: &Path,
+) -> cir_config::Result<Editor> {
+    let (profile, plan) = Editor::new_draft(&catalog, &world, None)?;
+    let editor = Editor::new(catalog, world, configurations, Some(profile), Some(plan), Some(game))?;
+    let _ = std::fs::remove_file(applied);
+    Ok(editor)
 }
 
 /// The identity of the configuration applied last, as Apply records it.
@@ -253,6 +267,17 @@ fn applied_last(applied: &Path) -> Option<String> {
     let pointer = profiles::read_json(applied).ok()?;
     let identity = pointer.get("id")?.as_str()?;
     profiles::is_profile_id(identity).then(|| identity.to_string())
+}
+
+/// The name a saved configuration gives itself, if it is one to show, or else
+/// its file's name.
+fn shown_name(draft: &Value, path: &Path) -> String {
+    draft
+        .get("profile")
+        .and_then(|profile| profile.get("name"))
+        .and_then(Value::as_str)
+        .filter(|name| !name.trim().is_empty() && !name.chars().any(char::is_control))
+        .map_or_else(|| paths::name(path), str::to_string)
 }
 
 /// What became of the saved configurations made before the game's mods
@@ -266,6 +291,8 @@ struct Carried {
     part: Vec<(String, Vec<String>)>,
     /// Kept aside: the file's identity, the name and why.
     aside: Vec<(String, String, String)>,
+    /// Carried over, but no longer read-only as before: the name and why.
+    writable: Vec<(String, String)>,
 }
 
 impl Carried {
@@ -291,6 +318,13 @@ impl Carried {
                 notes.join(". ")
             );
         }
+        for (name, error) in &self.writable {
+            println!(
+                "The saved configuration \"{name}\" was read-only, and its carried-over version could not be made \
+                 read-only again ({}).",
+                error.trim_end_matches('.')
+            );
+        }
         for (_, name, reason) in &self.aside {
             println!(
                 "The saved configuration \"{name}\" cannot be carried over to the new scan: {reason}. It was moved \
@@ -298,22 +332,63 @@ impl Carried {
             );
         }
     }
+
+    /// What to tell the player when the configuration applied last (this
+    /// identity) is no longer among the saved configurations: kept aside by
+    /// this start, kept aside by an earlier version, or gone.
+    fn gone(&self, identity: &str, configurations: &Path) -> String {
+        if let Some((_, name, _)) = self.aside.iter().find(|(stem, _, _)| stem == identity) {
+            return format!(
+                "The configuration applied last, \"{name}\", could not be carried over, so the editor starts with a \
+                 new one."
+            );
+        }
+        // An earlier version kept those it could not open in the same folder,
+        // under the same name or numbered after it.
+        let numbered = format!("{identity} (");
+        let kept = editor::saved_files(&self.folder).unwrap_or_default().into_iter().find(|path| {
+            let stem = paths::stem(&paths::name(path)).to_string();
+            stem == identity || stem.strip_prefix(&numbered).is_some_and(|number| number.ends_with(')'))
+        });
+        let Some(kept) = kept else {
+            return "The configuration applied last is no longer among the saved configurations, so the editor \
+                    starts with a new one."
+                .into();
+        };
+        let named = match profiles::read_json(&kept) {
+            Ok(draft) => format!(", \"{}\",", shown_name(&draft, &kept)),
+            Err(_) => String::new(),
+        };
+        format!(
+            "The configuration applied last{named} was set aside in {} by an earlier version, so the editor starts \
+             with a new one. Moved back into {}, it is carried over at the next start.",
+            paths::display(&self.folder),
+            paths::display(configurations)
+        )
+    }
 }
 
 /// Carry the saved configurations this scan cannot open (made before the
 /// game's mods changed) over to it, as `rebase_drafts` does, each in its own
 /// file. What no longer fits is left out; the earlier version of one carried
 /// over in part is kept in the `earlier scans` folder, where the editor does
-/// not look. One that cannot be carried over (or read) is moved there.
-/// `earlier` is the world scan they were made with, if there is one.
+/// not look. One that cannot be carried over (or read, or written) is moved
+/// there, also when the carry-over of it runs into an unexpected error; the
+/// others are carried over all the same. `earlier` is the world scan they
+/// were made with, if there is one.
 fn carry_over(
     configurations: &Path,
     catalog: &Value,
     world: &Value,
     earlier: Option<&[u8]>,
 ) -> cir_config::Result<Carried> {
-    let mut carried =
-        Carried { folder: configurations.join(EARLIER), whole: Vec::new(), part: Vec::new(), aside: Vec::new() };
+    let mut carried = Carried {
+        folder: configurations.join(EARLIER),
+        whole: Vec::new(),
+        part: Vec::new(),
+        aside: Vec::new(),
+        writable: Vec::new(),
+    };
     let mut stale = Vec::new();
     for path in editor::saved_files(configurations)? {
         match profiles::read_json(&path) {
@@ -325,45 +400,106 @@ fn carry_over(
     if stale.is_empty() {
         return Ok(carried);
     }
-    println!("Carrying the saved configurations over to the new scan; this can take a minute.");
+    if stale.iter().any(|(_, draft)| fits(draft, catalog)) {
+        println!("Carrying the saved configurations over to the new scan; this can take a minute.");
+    }
     let earlier = earlier.and_then(|data| json::parse_strict(data, "world.json").ok());
     let drafts: Vec<Value> = stale.iter().map(|(_, draft)| draft.clone()).collect();
-    let results = rebase::rebase_drafts(catalog, world, &drafts, earlier.as_ref(), None)?;
+    let results = rebase::rebase_each(catalog, world, &drafts, earlier.as_ref(), None)?;
     for ((path, saved), result) in stale.iter().zip(results) {
-        let file = paths::name(path);
-        let name = saved
-            .get("profile")
-            .and_then(|profile| profile.get("name"))
-            .and_then(Value::as_str)
-            .filter(|name| !name.trim().is_empty() && !name.chars().any(char::is_control))
-            .map_or_else(|| file.clone(), str::to_string);
-        match result.get("draft").filter(|draft| !draft.is_null()) {
-            Some(draft) => {
-                let left_out = result.get("left_out").is_some_and(Value::truthy);
-                if left_out {
-                    keep_aside(&carried.folder, path)?;
-                }
-                profiles::write_json(path, draft, false)?;
-                if left_out {
-                    let notes = result.get("notes").and_then(Value::as_list).into_iter().flatten();
-                    carried.part.push((name, notes.filter_map(Value::as_str).map(str::to_string).collect()));
-                } else {
-                    carried.whole.push(name);
-                }
+        let name = shown_name(saved, path);
+        let result = match result {
+            Ok(result) => result,
+            Err(error) => {
+                let reason = format!("an unexpected problem stopped it ({})", error.message.trim_end_matches('.'));
+                carried.set_aside(path, name, reason)?;
+                continue;
             }
-            None => {
-                keep_aside(&carried.folder, path)?;
-                let reason = result.get("reason").and_then(Value::as_str).unwrap_or_default().to_string();
-                carried.aside.push((paths::stem(&file).to_string(), name, reason));
+        };
+        let Some(draft) = result.get("draft").filter(|draft| !draft.is_null()) else {
+            let reason = result.get("reason").and_then(Value::as_str).unwrap_or_default().to_string();
+            carried.set_aside(path, name, reason)?;
+            continue;
+        };
+        let left_out = result.get("left_out").is_some_and(Value::truthy);
+        // The earlier version is kept first; then the carried-over one takes
+        // its place in one step. When either cannot be written, the
+        // configuration is kept aside as it was.
+        let copy = match left_out.then(|| keep_copy(&carried.folder, path)).transpose() {
+            Ok(copy) => copy,
+            Err(error) => {
+                let reason = format!("its earlier version could not be kept ({})", error.message.trim_end_matches('.'));
+                carried.set_aside(path, name, reason)?;
+                continue;
             }
+        };
+        match replace_saved(path, draft) {
+            Ok(None) => {}
+            Ok(Some(error)) => carried.writable.push((name.clone(), error)),
+            Err(error) => {
+                if let Some(copy) = copy {
+                    let _ = std::fs::remove_file(copy);
+                }
+                let reason = format!("its new version could not be written ({})", error.message.trim_end_matches('.'));
+                carried.set_aside(path, name, reason)?;
+                continue;
+            }
+        }
+        if left_out {
+            let notes = result.get("notes").and_then(Value::as_list).into_iter().flatten();
+            carried.part.push((name, notes.filter_map(Value::as_str).map(str::to_string).collect()));
+        } else {
+            carried.whole.push(name);
         }
     }
     Ok(carried)
 }
 
-/// Move a saved configuration into the folder of those kept aside, under a
-/// name not taken there.
-fn keep_aside(folder: &Path, path: &Path) -> cir_config::Result<()> {
+impl Carried {
+    /// Move a saved configuration that is not carried over into the folder
+    /// of those kept aside. When it cannot be moved, it would stay where the
+    /// editor cannot list it: the start stops and says why, after what became
+    /// of the others so far.
+    fn set_aside(&mut self, path: &Path, name: String, reason: String) -> cir_config::Result<()> {
+        if let Err(error) = keep_aside(&self.folder, path) {
+            self.report();
+            return Err(Error::profile(format!(
+                "The saved configuration \"{name}\" cannot be carried over to the new scan ({reason}), and it could \
+                 not be moved to {}: {}. Close any program that has it open, then start again",
+                paths::display(&self.folder),
+                error.message
+            )));
+        }
+        self.aside.push((paths::stem(&paths::name(path)).to_string(), name, reason));
+        Ok(())
+    }
+}
+
+/// Whether carrying a saved configuration over fits a preset or the game's
+/// special places again, which can take a while: one with any of its items
+/// still in the game.
+fn fits(draft: &Value, catalog: &Value) -> bool {
+    let Some(plan) = draft.get("plan") else { return false };
+    if plan.get("original_template_id").is_none() && !plan.get("target_registrations").is_some_and(Value::truthy) {
+        return false;
+    }
+    let items: HashSet<&str> = catalog
+        .get("items")
+        .and_then(Value::as_list)
+        .into_iter()
+        .flatten()
+        .filter_map(|row| row.get("resref").and_then(Value::as_str))
+        .collect();
+    draft
+        .get("profile")
+        .and_then(|profile| profile.get("items"))
+        .and_then(Value::as_list)
+        .is_some_and(|chosen| chosen.iter().filter_map(Value::as_str).any(|item| items.contains(item)))
+}
+
+/// A name in the folder of those kept aside for a saved configuration, not
+/// taken there.
+fn aside_name(folder: &Path, path: &Path) -> cir_config::Result<PathBuf> {
     profiles::make_dirs(folder)?;
     let name = paths::name(path);
     let mut target = folder.join(&name);
@@ -372,7 +508,42 @@ fn keep_aside(folder: &Path, path: &Path) -> cir_config::Result<()> {
         target = folder.join(format!("{} ({number}).json", paths::stem(&name)));
         number += 1;
     }
-    profiles::replace(path, &target)
+    Ok(target)
+}
+
+/// Move a saved configuration into the folder of those kept aside.
+fn keep_aside(folder: &Path, path: &Path) -> cir_config::Result<()> {
+    profiles::replace(path, &aside_name(folder, path)?)
+}
+
+/// Copy a saved configuration into the folder of those kept aside; the copy.
+fn keep_copy(folder: &Path, path: &Path) -> cir_config::Result<PathBuf> {
+    let target = aside_name(folder, path)?;
+    std::fs::copy(path, &target).map_err(|error| Error::win_pair(&error, path, &target))?;
+    Ok(target)
+}
+
+/// Put a saved configuration's new version in its place in one step, as the
+/// editor saves one; Err when it is not, and the earlier version stays as it
+/// was. A read-only one stays read-only; Windows replaces it only while that
+/// is lifted. When it cannot be made read-only again, the new version is in
+/// place all the same: why comes back.
+#[allow(clippy::permissions_set_readonly_false)] // Only the read-only attribute, on Windows.
+fn replace_saved(path: &Path, draft: &Value) -> cir_config::Result<Option<String>> {
+    let permissions = std::fs::metadata(path).map_err(|error| Error::win(&error, path))?.permissions();
+    if !permissions.readonly() {
+        return profiles::write_json(path, draft, false).map(|()| None);
+    }
+    if cfg!(windows) {
+        let mut writable = permissions.clone();
+        writable.set_readonly(false);
+        std::fs::set_permissions(path, writable).map_err(|error| Error::win(&error, path))?;
+    }
+    let written = profiles::write_json(path, draft, false);
+    // Read-only again: the new version, or the earlier one when it stayed.
+    let restored = std::fs::set_permissions(path, permissions).map_err(|error| Error::win(&error, path));
+    written?;
+    Ok(restored.err().map(|error| error.message))
 }
 
 /// Whether this program has the console window to itself, as when it was

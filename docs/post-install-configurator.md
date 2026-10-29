@@ -184,27 +184,39 @@ new scans before the editor opens (`rebase.rebase_drafts`, in the executable
   and options; a row of its lists stays the same choice when the new version moves it
   in another way (another dialogue, another record of the same creature). A special
   place comes from those the game can deliver now, the pool's reward from the prepared
-  pool script, a record or recipient chosen in the editor from the new world scan. A
-  creature or container chosen in an area is kept only when the scan the
-  configuration was made with (the previous start's `world.json`) shows the same one
-  in the same place.
+  pool script, a record or recipient chosen in the editor from the new world scan.
+- A creature or container of an area, and a record in one, is found as the game finds
+  it: a container by its name, a creature by its script name (by its name and CRE
+  when it has none), as the scan the configuration was made with (the previous start's
+  `world.json`) shows them, wherever it stands now and whatever its number in the area
+  file. Only among several of one name does the place where it stood choose the
+  nearest; two as near cannot be told apart, and the choice is left out. A record is
+  the same one of its holder's records of that item. Without the scan it was made
+  with, a creature or container chosen in an area is left out, as it cannot be checked.
 - What no longer fits is left out, with the reasons a preset's fit gives (a creature
   that can go missing, a quest CIR cannot change yet, a route the game no longer
   has) and those of the carry-over (an item or record no longer in the game, a place
-  that changed or cannot be used, a tier left without a place). Nothing is added: a
-  preset's new rows wait for the player to choose the preset again.
+  that is gone, cannot be told apart or cannot be used, a tier left without a place).
+  Nothing is added: a preset's new rows wait for the player to choose the preset again.
 - A configuration that cannot be read, whose preset no longer fits the game (or that
   this version no longer has), or of which no reward remains is not carried over.
 
+The previous start's `world.json` is replaced only once every configuration is carried
+over, so a start that ends sooner (its window closed) leaves it for the next start.
 The console names each configuration carried over and, for one carried over in part,
 what was left out in plain words; its earlier version is kept in
-`configurations\earlier scans\`. One that is not carried over is moved there, and
-the console says why. When that is the configuration applied last, the start says so
+`configurations\earlier scans\`, copied there before the carried-over version takes
+its place in one step. A read-only configuration stays read-only (when it cannot be
+made read-only again, it is carried over all the same and the console says so). One
+that is not carried over (also when it cannot be written, or the carry-over of it runs
+into an unexpected error) is moved there, and the console says why; the others are
+carried over all the same. When that is the configuration applied last, the start says so
 once and the editor starts with a new configuration; it is no longer the one to
 reopen. Configurations that an earlier version of CIR already moved to
-`configurations\earlier scans\` stay there; moved back into `configurations\`, the
-next start carries them over (an editor-chosen creature or container in an area is
-then left out, as the scan they were made with is gone).
+`configurations\earlier scans\` stay there; when one of them is the configuration
+applied last, the start says so once. Moved back into `configurations\`, the next
+start carries them over (an editor-chosen creature or container in an area is then
+left out, as the scan they were made with is gone).
 
 ## Prepared draft storage
 

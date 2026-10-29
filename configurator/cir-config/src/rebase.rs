@@ -14,8 +14,10 @@
 //! choice when the new version moves it in another way), a special place from
 //! those this game can deliver, the pool's reward from the prepared pool
 //! script, a record or recipient chosen in the editor from the new world
-//! scan. A creature or container chosen in an area is kept when the scan the
-//! configuration was made with (`earlier_world`) shows the same one there.
+//! scan. A creature or container of an area, and a record in one, is found
+//! as the game finds it: by the name the scan the configuration was made with
+//! (`earlier_world`) shows, wherever it stands now; where it stood only tells
+//! several of one name apart.
 //!
 //! What no longer fits is left out and named; nothing is added. A
 //! configuration that cannot be read, whose preset no longer fits the game,
@@ -34,6 +36,7 @@ use crate::original_registrations::{target_record, SOURCE_ADAPTER};
 use crate::platform::preset_game;
 use crate::prepared::applied;
 use crate::profiles::{validate_catalog, validate_profile, ItemIndex};
+use crate::py::lower;
 use crate::scripted_sources::{
     blpool_registration, ADAPTER_ID as POOL_ADAPTER, ITEM as POOL_ITEM, RESOURCE as POOL_RESOURCE,
     SOURCE_ID as POOL_SOURCE,
@@ -51,9 +54,10 @@ use std::rc::Rc;
 pub const ITEM_ABSENT: &str = "item-absent";
 pub const NOT_AVAILABLE: &str = "not-available";
 pub const SOURCE_ABSENT: &str = "source-record-absent";
+pub const SOURCE_AMBIGUOUS: &str = "source-record-ambiguous";
 pub const SOURCE_UNUSABLE: &str = "source-record-unusable";
 pub const TARGET_ABSENT: &str = "target-absent";
-pub const TARGET_CHANGED: &str = "target-changed";
+pub const TARGET_AMBIGUOUS: &str = "target-ambiguous";
 pub const TARGET_UNVERIFIED: &str = "target-unverified";
 pub const TARGET_UNUSABLE: &str = "target-unusable";
 pub const NO_PLACE: &str = NO_PLACE_IN_TIER;
@@ -64,6 +68,8 @@ pub const PRESET_UNFIT: &str = "its preset cannot be used with the game as it is
 const PRESET_FIELDS: [&str; 3] = ["original_template_id", "original_choices", "original_options"];
 /// A place's reward slots, as the binding check allows them.
 const MAX_CAPACITY: i64 = 0xFFFF_FFFF;
+/// Where an area's creature or container stands, as the area file keeps it.
+const MAX_COORDINATE: i64 = 0xFFFF;
 
 /// Each saved configuration carried over to these scans, in order.
 ///
@@ -82,6 +88,18 @@ pub fn rebase_drafts(
     earlier_world: Option<&Value>,
     scans: Option<&Scans>,
 ) -> Result<Vec<Value>> {
+    rebase_with(catalog, world, drafts, earlier_world, scans, None)?.into_iter().collect()
+}
+
+/// `rebase_drafts` with each configuration's own outcome: an error the
+/// carry-over of one runs into does not stop the others.
+pub fn rebase_each(
+    catalog: &Value,
+    world: &Value,
+    drafts: &[Value],
+    earlier_world: Option<&Value>,
+    scans: Option<&Scans>,
+) -> Result<Vec<Result<Value>>> {
     rebase_with(catalog, world, drafts, earlier_world, scans, None)
 }
 
@@ -95,7 +113,7 @@ pub fn rebase_drafts_from(
     draft: &Value,
     scans: Option<&Scans>,
 ) -> Result<Vec<Value>> {
-    rebase_with(catalog, world, drafts, earlier_world, scans, Some(draft))
+    rebase_with(catalog, world, drafts, earlier_world, scans, Some(draft))?.into_iter().collect()
 }
 
 fn rebase_with(
@@ -105,7 +123,7 @@ fn rebase_with(
     earlier_world: Option<&Value>,
     scans: Option<&Scans>,
     draft: Option<&Value>,
-) -> Result<Vec<Value>> {
+) -> Result<Vec<Result<Value>>> {
     let validated;
     let own;
     let scans = match scans {
@@ -129,8 +147,9 @@ fn rebase_with(
         presets: RefCell::new(HashMap::new()),
         special: OnceCell::new(),
         earlier: OnceCell::new(),
+        now: OnceCell::new(),
     };
-    drafts.iter().map(|draft| carrier.rebase(draft)).collect()
+    Ok(drafts.iter().map(|draft| carrier.rebase(draft)).collect())
 }
 
 fn text<'a>(value: &'a Value, key: &str) -> &'a str {
@@ -159,8 +178,9 @@ struct Preset {
     items: HashMap<String, Value>,
     uses: HashMap<String, String>,
     reasons: HashMap<String, String>,
-    /// The rows of the preset's lists by the records they move, the pool's
-    /// row, and the places its options enable.
+    /// The rows of the preset's lists the fit considers (those its options
+    /// enable) by the records they move, the pool's row, and the places its
+    /// options enable.
     records: HashMap<String, String>,
     pool: Option<String>,
     place_rows: HashSet<String>,
@@ -198,6 +218,9 @@ impl Preset {
         let mut records = HashMap::new();
         let mut pool = None;
         for row in resolved.at("items")?.as_list().into_iter().flatten() {
+            if !row.get("enabled").is_some_and(Value::truthy) {
+                continue;
+            }
             if let Some(identities) = row.get("source_ids").and_then(Value::as_list) {
                 for identity in identities.iter().filter_map(Value::as_str) {
                     if !records.contains_key(identity) {
@@ -253,6 +276,52 @@ type Fitted = Rc<std::result::Result<Preset, String>>;
 /// What a kept reward choice moves now: its records and its registrations;
 /// None for a choice that adds its item.
 type Moves = Option<(Vec<String>, Vec<String>)>;
+/// What the game finds an area's creature or container by (`handle`).
+type Handle = (String, &'static str, String, String);
+
+/// A world scan as the carry-over looks things up in it: recipients and
+/// records by identity, each holder's records in the scan's order, and an
+/// area's creatures and containers by what the game finds them by.
+struct Scan<'v> {
+    targets: HashMap<&'v str, &'v Value>,
+    sources: HashMap<&'v str, &'v Value>,
+    records: HashMap<&'v str, Vec<&'v Value>>,
+    alike: HashMap<Handle, Vec<&'v Value>>,
+}
+
+impl<'v> Scan<'v> {
+    fn new(world: &'v Value) -> Scan<'v> {
+        let mut targets: HashMap<&str, &Value> = HashMap::new();
+        let mut rows = Vec::new();
+        for row in listed(world, "targets") {
+            if let Some(identity) = row.get("id").and_then(Value::as_str) {
+                if !targets.contains_key(identity) {
+                    targets.insert(identity, row);
+                    rows.push(row);
+                }
+            }
+        }
+        let mut sources: HashMap<&str, &Value> = HashMap::new();
+        let mut records: HashMap<&str, Vec<&Value>> = HashMap::new();
+        for row in listed(world, "sources") {
+            let field = |key: &str| row.get(key).and_then(Value::as_str);
+            let (Some(identity), Some(owner), Some(_)) = (field("id"), field("owner"), field("item")) else {
+                continue;
+            };
+            if !sources.contains_key(identity) {
+                sources.insert(identity, row);
+                records.entry(owner).or_default().push(row);
+            }
+        }
+        let mut alike: HashMap<Handle, Vec<&Value>> = HashMap::new();
+        for row in rows {
+            if let Some(handle) = handle(row, &targets) {
+                alike.entry(handle).or_default().push(row);
+            }
+        }
+        Scan { targets, sources, records, alike }
+    }
+}
 
 struct Carrier<'a, 's> {
     catalog: &'a Value,
@@ -265,7 +334,8 @@ struct Carrier<'a, 's> {
     draft: Option<&'a Value>,
     presets: RefCell<HashMap<String, Fitted>>,
     special: OnceCell<HashMap<String, Value>>,
-    earlier: OnceCell<HashMap<String, &'a Value>>,
+    earlier: OnceCell<Scan<'a>>,
+    now: OnceCell<Scan<'a>>,
 }
 
 impl<'a, 's> Carrier<'a, 's> {
@@ -346,23 +416,82 @@ impl<'a, 's> Carrier<'a, 's> {
         Ok(self.special.get_or_init(|| special))
     }
 
-    /// The recipients of the scan a configuration was made with, if that is
-    /// the earlier world.
-    fn earlier_targets(&self, fingerprint: &str) -> Option<&HashMap<String, &'a Value>> {
-        let world = self.earlier_world?;
-        let targets = world.get("targets").and_then(Value::as_list)?;
+    /// The scan a configuration was made with, if that is the earlier world.
+    fn earlier_scan(&self, fingerprint: &str) -> Option<&Scan<'a>> {
+        let world = self.earlier_world.filter(|world| world.is_dict())?;
         if !world.get("fingerprint").is_some_and(|value| value.py_eq(&Value::from(fingerprint))) {
             return None;
         }
-        Some(self.earlier.get_or_init(|| {
-            let mut earlier = HashMap::new();
-            for row in targets {
-                if let Some(identity) = row.get("id").and_then(Value::as_str) {
-                    earlier.entry(identity.to_string()).or_insert(row);
-                }
-            }
-            earlier
-        }))
+        Some(self.earlier.get_or_init(|| Scan::new(world)))
+    }
+
+    /// The new world scan, as the carry-over looks things up in it.
+    fn scan(&self) -> &Scan<'a> {
+        self.now.get_or_init(|| Scan::new(self.world))
+    }
+
+    /// Where an area's creature or container of the earlier scan is in the
+    /// new one: its identity now, or why it is left out. The one the game
+    /// finds by the same name is it, wherever it stands now. Of several of
+    /// that name, it is the one nearest to where it stood, unless that one
+    /// stands nearer to another of the earlier scan; two as near cannot be
+    /// told apart.
+    fn same(&self, identity: &str, earlier: &Scan<'a>) -> std::result::Result<String, &'static str> {
+        let Some(row) = earlier.targets.get(identity).copied() else {
+            return Err(TARGET_ABSENT);
+        };
+        let Some(handle) = handle(row, &earlier.targets) else {
+            return Err(TARGET_ABSENT);
+        };
+        let none = Vec::new();
+        let now = self.scan().alike.get(&handle).unwrap_or(&none);
+        let before = earlier.alike.get(&handle).unwrap_or(&none);
+        if now.is_empty() {
+            return Err(TARGET_ABSENT);
+        }
+        if now.len() == 1 && before.len() == 1 {
+            return Ok(text(now[0], "id").to_string());
+        }
+        let found = nearest(row, now);
+        match (found, found.and_then(|found| nearest(found, before))) {
+            (Some(found), Some(back)) if text(back, "id") == identity => Ok(text(found, "id").to_string()),
+            (Some(_), Some(_)) => Err(TARGET_ABSENT),
+            _ => Err(TARGET_AMBIGUOUS),
+        }
+    }
+
+    /// Where a saved record is in the new scan: its identity now, or why it
+    /// is left out. Its holder is found as a recipient is (an area's creature
+    /// or container by name), the record among the holder's records of that
+    /// item in the scan's order. Without the scan it was made with, the record
+    /// keeps its identity when that still holds the item.
+    fn record(&self, identity: &str, item: &str, fingerprint: &str) -> Result<std::result::Result<String, &'static str>> {
+        let earlier = self.earlier_scan(fingerprint);
+        let before = earlier
+            .and_then(|earlier| earlier.sources.get(identity).copied())
+            .filter(|before| text(before, "item") == item);
+        let (Some(earlier), Some(before)) = (earlier, before) else {
+            let same = match self.index.source(self.world, identity) {
+                Some(row) => row.at("item")?.as_str() == Some(item),
+                None => false,
+            };
+            return Ok(if same { Ok(identity.to_string()) } else { Err(SOURCE_ABSENT) });
+        };
+        let first = text(before, "owner");
+        let mut owner = first.to_string();
+        if earlier.targets.get(first).is_some_and(|holder| handle(holder, &earlier.targets).is_some()) {
+            owner = match self.same(first, earlier) {
+                Ok(owner) => owner,
+                Err(reason) => return Ok(Err(if reason == TARGET_AMBIGUOUS { SOURCE_AMBIGUOUS } else { SOURCE_ABSENT })),
+            };
+        }
+        let of_item = |rows: Option<&Vec<&'a Value>>| -> Vec<String> {
+            rows.into_iter().flatten().filter(|row| text(row, "item") == item).map(|row| text(row, "id").to_string()).collect()
+        };
+        let alike = of_item(earlier.records.get(first));
+        let now = of_item(self.scan().records.get(owner.as_str()));
+        let place = alike.iter().position(|row| row == identity).unwrap_or(usize::MAX);
+        Ok(now.get(place).cloned().ok_or(SOURCE_ABSENT))
     }
 
     fn source(
@@ -372,9 +501,11 @@ impl<'a, 's> Carrier<'a, 's> {
         registered: bool,
         saved: Option<&Value>,
         preset: Option<&Preset>,
+        fingerprint: &str,
     ) -> Result<Reward> {
-        if let Some(preset) = preset {
-            if let Some(row) = preset.row(identity, registered, saved) {
+        let current = if registered { Ok(identity.to_string()) } else { self.record(identity, item, fingerprint)? };
+        if let (Some(preset), Ok(current)) = (preset, &current) {
+            if let Some(row) = preset.row(current, registered, saved) {
                 if let Some(used) = preset.uses.get(&row) {
                     if preset.items.get(used).and_then(Value::as_str) == Some(item) {
                         return Ok(Reward::Kept(used.clone(), preset.registrations.get(used).cloned()));
@@ -383,17 +514,16 @@ impl<'a, 's> Carrier<'a, 's> {
                 return Ok(Reward::LeftOut(preset.reasons.get(&row).map_or(NOT_AVAILABLE, String::as_str).to_string()));
             }
         }
+        let current = match current {
+            Ok(current) => current,
+            Err(reason) => return Ok(Reward::LeftOut(reason.into())),
+        };
         if !registered {
-            let Some(row) = self.index.source(self.world, identity) else {
-                return Ok(Reward::LeftOut(SOURCE_ABSENT.into()));
-            };
-            if row.at("item")?.as_str() != Some(item) {
-                return Ok(Reward::LeftOut(SOURCE_ABSENT.into()));
-            }
+            let row = self.index.source(self.world, &current).ok_or_else(|| Error::key(&current))?;
             if texts_of(row.at("concerns")?).any(|concern| UNUSABLE_SOURCE.contains(&concern)) {
                 return Ok(Reward::LeftOut(SOURCE_UNUSABLE.into()));
             }
-            return Ok(Reward::Kept(identity.to_string(), None));
+            return Ok(Reward::Kept(current, None));
         }
         // The pool's reward, as the editor offers it for the pool's mace.
         if saved.is_some_and(|saved| saved.get("adapter_id").and_then(Value::as_str) == Some(POOL_ADAPTER))
@@ -407,44 +537,60 @@ impl<'a, 's> Carrier<'a, 's> {
         Ok(Reward::LeftOut(NOT_AVAILABLE.into()))
     }
 
-    /// A saved recipient for these scans: its registration, or None for a
-    /// recipient of the world scan; or why it is left out.
+    /// A saved recipient for these scans: its identity now, with its
+    /// registration or None for a recipient of the world scan; or why it is
+    /// left out.
     fn place(
         &self,
         identity: &str,
         saved: Option<&Value>,
         fingerprint: &str,
         preset: Option<&Preset>,
-    ) -> Result<std::result::Result<Option<Value>, String>> {
+    ) -> Result<std::result::Result<(String, Option<Value>), String>> {
         if let Some(saved) = saved {
             let row = saved.get("selector").and_then(Value::as_str);
             if let Some(preset) = preset {
                 if let Some(place) = preset.places.get(identity) {
-                    return Ok(Ok(Some(place.clone())));
+                    return Ok(Ok((identity.to_string(), Some(place.clone()))));
                 }
                 if let Some(row) = row.filter(|row| preset.place_rows.contains(*row)) {
                     return Ok(Err(preset.reasons.get(row).map_or(NOT_AVAILABLE, String::as_str).to_string()));
                 }
             }
             return Ok(match self.special_places()?.get(identity) {
-                Some(place) => Ok(Some(place.clone())),
+                Some(place) => Ok((identity.to_string(), Some(place.clone()))),
                 None => Err(NOT_AVAILABLE.into()),
             });
         }
-        let Some(row) = self.index.target(self.world, identity) else {
-            return Ok(Err(TARGET_ABSENT.into()));
+        let mut identity = identity.to_string();
+        let row = match self.earlier_scan(fingerprint) {
+            Some(earlier)
+                if earlier
+                    .targets
+                    .get(identity.as_str())
+                    .is_some_and(|before| handle(before, &earlier.targets).is_some()) =>
+            {
+                // An area's creature or container: the one of the same name now.
+                match self.same(&identity, earlier) {
+                    Ok(now) => identity = now,
+                    Err(reason) => return Ok(Err(reason.into())),
+                }
+                self.index.target(self.world, &identity).ok_or_else(|| Error::key(&identity))?
+            }
+            _ => {
+                let Some(row) = self.index.target(self.world, &identity) else {
+                    return Ok(Err(TARGET_ABSENT.into()));
+                };
+                let kind = row.at("kind")?.as_str().unwrap_or("");
+                if kind == "actor" || kind == "container" {
+                    // Without the scan it was made with, it cannot be told
+                    // which one was chosen.
+                    return Ok(Err(TARGET_UNVERIFIED.into()));
+                }
+                row
+            }
         };
         let kind = row.at("kind")?.as_str().unwrap_or("");
-        if kind == "actor" || kind == "container" {
-            // A record of an area: the same creature or container only when
-            // the earlier scan shows it.
-            let Some(earlier) = self.earlier_targets(fingerprint) else {
-                return Ok(Err(TARGET_UNVERIFIED.into()));
-            };
-            if !same_place(earlier.get(identity).copied(), row)? {
-                return Ok(Err(TARGET_CHANGED.into()));
-            }
-        }
         if texts_of(row.at("concerns")?)
             .any(|concern| [UNRESOLVED_STORAGE, DANGLING_INVENTORY, INVALID_INVENTORY].contains(&concern))
         {
@@ -457,7 +603,7 @@ impl<'a, 's> Carrier<'a, 's> {
                 return Ok(Err(TARGET_UNUSABLE.into()));
             }
         }
-        Ok(Ok(None))
+        Ok(Ok((identity, None)))
     }
 
     fn carry(&self, profile: &Value, plan: &Value) -> Result<Value> {
@@ -484,14 +630,17 @@ impl<'a, 's> Carrier<'a, 's> {
         } else {
             None
         };
+        let fingerprint = text(plan, "world_fingerprint");
         let mut saved_registrations: HashMap<&str, &Value> = HashMap::new();
         for row in plan.at("registrations")?.as_list().into_iter().flatten() {
             saved_registrations.entry(text(row, "id")).or_insert(row);
         }
-        // Each kept choice with what it moves now: (choice, records, registrations).
+        // Each kept choice with what it moves now: (choice, records,
+        // registrations), and the identity each saved reward has now.
         let mut choices: Vec<(&Value, Moves)> = Vec::new();
         let mut evidence: HashMap<String, Option<Value>> = HashMap::new();
         let mut seen: HashSet<String> = HashSet::new();
+        let mut moves: HashMap<String, String> = HashMap::new();
         for choice in plan.at("sources")?.as_list().into_iter().flatten() {
             let item = text(choice, "item");
             if !items.contains(item) {
@@ -505,7 +654,7 @@ impl<'a, 's> Carrier<'a, 's> {
             for (registered, field) in [(false, "source_ids"), (true, "registration_ids")] {
                 for identity in texts_of(choice.at(field)?) {
                     let saved = if registered { saved_registrations.get(identity).copied() } else { None };
-                    match self.source(identity, item, registered, saved, preset)? {
+                    match self.source(identity, item, registered, saved, preset, fingerprint)? {
                         Reward::LeftOut(reason) => left.push(left_out(identity, "reward", &reason)),
                         Reward::Kept(kept, registration) => {
                             if seen.insert(kept.clone()) {
@@ -514,6 +663,7 @@ impl<'a, 's> Carrier<'a, 's> {
                                 } else {
                                     registrations.push(kept.clone());
                                 }
+                                moves.insert(identity.to_string(), kept.clone());
                                 evidence.insert(kept, registration);
                             }
                         }
@@ -528,32 +678,39 @@ impl<'a, 's> Carrier<'a, 's> {
                 saved_places.insert(text(row, "id"), row);
             }
         }
-        let fingerprint = text(plan, "world_fingerprint");
+        // The places kept, by their identity now, and the identity each saved
+        // place has now.
         let (mut targets, mut places) = (Vec::new(), Vec::new());
         let mut capacity: Vec<(String, i64)> = Vec::new();
-        let mut capacities: HashMap<String, i64> = HashMap::new();
+        let mut done: HashSet<&str> = HashSet::new();
+        let mut renamed: HashMap<String, String> = HashMap::new();
         for choice in plan.at("targets")?.as_list().into_iter().flatten() {
             let identity = text(choice, "id");
-            if capacities.contains_key(identity) {
+            if !done.insert(identity) {
                 continue;
             }
             let slots = choice.at("capacity")?.as_int().unwrap_or(0);
-            match self.place(identity, saved_places.get(identity).copied(), fingerprint, preset)? {
+            let now = match self.place(identity, saved_places.get(identity).copied(), fingerprint, preset)? {
                 Err(reason) => {
                     left.push(left_out(identity, "place", &reason));
                     continue;
                 }
-                Ok(Some(mut registration)) => {
+                Ok((now, Some(mut registration))) => {
                     if let Some(row) = registration.as_dict_mut() {
                         row.insert("capacity", choice.at("capacity")?.clone());
                     }
                     places.push(registration);
+                    now
                 }
-                Ok(None) => {}
+                Ok((now, None)) => now,
+            };
+            let mut choice = choice.clone();
+            if let Some(row) = choice.as_dict_mut() {
+                row.insert("id", now.as_str());
             }
-            targets.push(choice.clone());
-            capacity.push((identity.to_string(), slots));
-            capacities.insert(identity.to_string(), slots);
+            targets.push(choice);
+            capacity.push((now.clone(), slots));
+            renamed.insert(identity.to_string(), now);
         }
         let mut moved: Vec<String> = choices
             .iter()
@@ -568,7 +725,8 @@ impl<'a, 's> Carrier<'a, 's> {
                 Some(preset) => Some(preset.plan.at("randomization")?),
                 None => None,
             };
-            let mut table = randomization(plan.get("randomization").unwrap_or(&empty), fresh, &moved, &capacity)?;
+            let own = renamed_rules(plan.get("randomization").unwrap_or(&empty), &moves, &renamed);
+            let mut table = randomization(&own, fresh, &moved, &capacity)?;
             if preset.is_some() {
                 // A tier whose places are all left out keeps no reward, as the
                 // preset's fit has it.
@@ -664,12 +822,21 @@ impl<'a, 's> Carrier<'a, 's> {
         let fresh = preset.map_or(plan, |preset| &preset.plan);
         let records: HashSet<&str> =
             sources.iter().flat_map(|choice| choice.get("source_ids").into_iter().flat_map(texts_of)).collect();
-        let mut replacements = Dict::new();
+        // A preset's creature replacements as it gives them now; the player's
+        // own for their records.
+        let mut offered = Dict::new();
         if let Some(rows) = fresh.get("replacements").and_then(Value::as_dict) {
             for (identity, replacement) in rows.iter() {
-                if records.contains(identity) {
-                    replacements.insert(identity, replacement.clone());
+                let now = if preset.is_some() { Some(identity) } else { moves.get(identity).map(String::as_str) };
+                if let Some(now) = now {
+                    offered.insert(now, replacement.clone());
                 }
+            }
+        }
+        let mut replacements = Dict::new();
+        for (identity, replacement) in offered.iter() {
+            if records.contains(identity) {
+                replacements.insert(identity, replacement.clone());
             }
         }
         let duplicates: Vec<Value> = fresh
@@ -799,26 +966,104 @@ fn rules_table<'v>(rules: &'v Value, name: &str) -> Option<&'v Dict> {
     rules.get(name).and_then(Value::as_dict)
 }
 
-/// Whether an area's creature or container in the earlier scan is the same
-/// one now.
-fn same_place(before: Option<&Value>, row: &Value) -> Result<bool> {
-    let Some(before) = before.filter(|before| before.is_dict()) else {
-        return Ok(false);
+/// A configuration's own rules with its rewards and places as the new scans
+/// name them (`sources`, `targets`: saved identity to the one now); those
+/// left out are no longer in them.
+fn renamed_rules(rules: &Value, sources: &HashMap<String, String>, targets: &HashMap<String, String>) -> Value {
+    let mut renamed = rules.clone();
+    let rename = |table: &mut Value, names: &HashMap<String, String>| {
+        if let Some(rows) = table.as_dict() {
+            let mut kept = Dict::new();
+            for (identity, value) in rows.iter() {
+                if let Some(name) = names.get(identity) {
+                    kept.insert(name.as_str(), value.clone());
+                }
+            }
+            *table = Value::Dict(kept);
+        }
     };
-    let null = Value::Null;
-    let field = |value: &Value, key: &str| value.get(key).cloned().unwrap_or(Value::Null);
-    if !field(before, "kind").py_eq(row.at("kind")?) || !field(before, "resource").py_eq(row.at("resource")?) {
-        return Ok(false);
+    for (name, names) in [("sources", sources), ("targets", targets)] {
+        if let Some(table) = renamed.get_mut(name) {
+            rename(table, names);
+        }
+        if let Some(table) = renamed.get_mut("row_filters").and_then(|filters| filters.get_mut(name)) {
+            rename(table, names);
+        }
     }
-    let Some(selector) = before.get("selector").filter(|selector| selector.is_dict()) else {
-        return Ok(false);
+    if let Some(rules) = renamed.get_mut("sources").and_then(Value::as_dict_mut) {
+        for rule in rules.values_mut() {
+            let Some(rule) = rule.as_dict_mut() else { continue };
+            let mut kept = Vec::new();
+            for entry in rule.get("exclude_targets").and_then(Value::as_list).into_iter().flatten() {
+                if let Some(now) = entry.get("id").and_then(Value::as_str).and_then(|identity| targets.get(identity)) {
+                    let mut entry = entry.clone();
+                    if let Some(fields) = entry.as_dict_mut() {
+                        fields.insert("id", now.as_str());
+                    }
+                    kept.push(entry);
+                }
+            }
+            rule.insert("exclude_targets", kept);
+        }
+    }
+    renamed
+}
+
+/// The objects of one of a scan's lists, as a scan read from a file has them.
+fn listed<'v>(world: &'v Value, key: &str) -> impl Iterator<Item = &'v Value> {
+    world.get(key).and_then(Value::as_list).into_iter().flatten().filter(|row| row.is_dict())
+}
+
+/// What the game finds an area's creature or container by, letter case
+/// aside: a container's name, a creature's script name (its own CRE's or its
+/// template's), or for a creature without one (blank or None) its name in
+/// the area with its CRE. None for another kind of recipient.
+fn handle(row: &Value, targets: &HashMap<&str, &Value>) -> Option<Handle> {
+    let kind = row.get("kind").and_then(Value::as_str).filter(|kind| *kind == "actor" || *kind == "container")?;
+    let selector = row.get("selector").filter(|selector| selector.is_dict())?;
+    let resource = row.get("resource").and_then(Value::as_str)?;
+    let name = selector.get("name").and_then(Value::as_str)?;
+    if kind == "container" {
+        return Some((resource.to_string(), "container", lower(name), String::new()));
+    }
+    let template = selector.get("template_resource").and_then(Value::as_str).and_then(|identity| targets.get(identity));
+    let script = match template.and_then(|template| template.get("selector")).filter(|own| own.is_dict()) {
+        Some(own) => own.get("script_name"),
+        None => selector.get("script_name"),
     };
-    let keys: &[&str] =
-        if row.at("kind")?.as_str() == Some("actor") { &["name", "cre_resref", "script_name"] } else { &["name", "type"] };
-    let current = row.at("selector")?;
-    Ok(keys.iter().all(|key| {
-        selector.get(key).unwrap_or(&null).py_eq(current.get(key).unwrap_or(&null))
-    }))
+    if let Some(script) = script.and_then(Value::as_str).filter(|script| !script.is_empty() && lower(script) != "none") {
+        return Some((resource.to_string(), "creature", lower(script), String::new()));
+    }
+    let creature = selector.get("cre_resref").and_then(Value::as_str).map(lower).unwrap_or_default();
+    Some((resource.to_string(), "actor", lower(name), creature))
+}
+
+/// Where an area's creature or container stands, if the scan says.
+fn position(row: &Value) -> Option<(i64, i64)> {
+    let selector = row.get("selector").filter(|selector| selector.is_dict())?;
+    let coordinate =
+        |key: &str| selector.get(key).and_then(Value::as_int).filter(|value| (0..=MAX_COORDINATE).contains(value));
+    Some((coordinate("x")?, coordinate("y")?))
+}
+
+/// The one of these rows nearest to where this one stands; None when two
+/// are as near, or where one stands is not known.
+fn nearest<'v>(row: &Value, rows: &[&'v Value]) -> Option<&'v Value> {
+    let here = position(row);
+    let (mut least, mut found) = (None, None);
+    for &other in rows {
+        let (here, there) = (here?, position(other)?);
+        let distance = (here.0 - there.0).pow(2) + (here.1 - there.1).pow(2);
+        match least {
+            Some(shortest) if distance > shortest => {}
+            Some(shortest) if distance == shortest => found = None,
+            _ => {
+                least = Some(distance);
+                found = Some(other);
+            }
+        }
+    }
+    found
 }
 
 fn is_texts(value: Option<&Value>) -> bool {
@@ -926,9 +1171,10 @@ fn readable(draft: &Value) -> bool {
 }
 
 /// What the left-out choices are, in plain words: the items no longer in
-/// the game, the rewards and places this game cannot use as it is now, those
-/// on creatures that can go missing, those whose quest CIR cannot change yet,
-/// then what becomes of a left-out reward.
+/// the game, the rewards and places this game cannot use as it is now, the
+/// places that could not be checked, those on creatures that can go missing,
+/// those whose quest CIR cannot change yet, then what becomes of a left-out
+/// reward.
 fn notes(rows: &[Value]) -> Vec<Value> {
     let kind = |row: &Value| text(row, "kind").to_string();
     let reason = |row: &Value| text(row, "reason").to_string();
@@ -936,10 +1182,11 @@ fn notes(rows: &[Value]) -> Vec<Value> {
     let choices: Vec<&Value> = rows.iter().filter(|row| kind(row) != "item").collect();
     let missing: Vec<&Value> = choices.iter().copied().filter(|row| reason(row) == CARRIER_CAN_GO_MISSING).collect();
     let waiting: Vec<&Value> = choices.iter().copied().filter(|row| reason(row) == NO_ROUTE).collect();
+    let unverified: Vec<&Value> = choices.iter().copied().filter(|row| reason(row) == TARGET_UNVERIFIED).collect();
     let unusable: Vec<&Value> = choices
         .iter()
         .copied()
-        .filter(|row| reason(row) != CARRIER_CAN_GO_MISSING && reason(row) != NO_ROUTE)
+        .filter(|row| ![CARRIER_CAN_GO_MISSING, NO_ROUTE, TARGET_UNVERIFIED].contains(&reason(row).as_str()))
         .collect();
     let it_is = |rows: &[&Value]| if rows.len() == 1 { "it is" } else { "they are" };
     let mut notes = Vec::new();
@@ -958,6 +1205,13 @@ fn notes(rows: &[Value]) -> Vec<Value> {
             "{} from it cannot be used with the game as it is now, so {} left out",
             counted(&unusable),
             it_is(&unusable)
+        ));
+    }
+    if !unverified.is_empty() {
+        notes.push(format!(
+            "{} from it could not be checked against the scan it was made with, so {} left out",
+            counted(&unverified),
+            it_is(&unverified)
         ));
     }
     if !missing.is_empty() {
@@ -1075,7 +1329,8 @@ mod tests {
         let rows = vec![
             left_out("helm21", "item", ITEM_ABSENT),
             left_out("original-source:bg2:mode2:item:14", "reward", "The route cannot be used"),
-            left_out("are:ar0200/container/1", "place", TARGET_CHANGED),
+            left_out("are:ar0200/container/1", "place", TARGET_AMBIGUOUS),
+            left_out("are:ar0200/container/2", "place", TARGET_UNVERIFIED),
             left_out("original-target:bg2:base:target:9002", "place", CARRIER_CAN_GO_MISSING),
             left_out("original-target:bg2:base:target:9003", "place", CARRIER_CAN_GO_MISSING),
             left_out("original-source:bg2:mode2:item:33", "reward", NO_ROUTE),
@@ -1086,6 +1341,7 @@ mod tests {
             [
                 "1 item from it is no longer in the game, so it is left out",
                 "1 reward and 1 place from it cannot be used with the game as it is now, so they are left out",
+                "1 place from it could not be checked against the scan it was made with, so it is left out",
                 "2 places from it are on creatures that may leave, vanish or never appear, so they are left out",
                 "1 reward from it belongs to a quest that Chriz Item Randomiser cannot change yet, so it is left out",
                 "A left-out reward stays as the game has it",
@@ -1093,5 +1349,40 @@ mod tests {
         );
         let places: Vec<String> = notes(&rows[2..3]).iter().map(py_str).collect();
         assert_eq!(places, ["1 place from it cannot be used with the game as it is now, so it is left out"]);
+    }
+
+    #[test]
+    fn a_configurations_own_rules_follow_its_choices_to_their_identities_now() {
+        // The chest moved on in the area; the second place is left out.
+        let rules = value(
+            r#"{"loss_percent": 0,
+                "sources": {"old": {"tier": "bg2:2", "exclude_targets": [{"id": "chest", "ordinal": 1},
+                                                                          {"id": "gone", "ordinal": 1}]},
+                            "dropped": {"tier": "bg2:2", "exclude_targets": []}},
+                "targets": {"chest": ["bg2:2"], "gone": ["bg2:2"]},
+                "row_filters": {"sources": {"old": {"chance": 50, "group": ""}},
+                                "targets": {"chest": {"chance": 100, "group": ""}}}}"#,
+        );
+        let sources = HashMap::from([("old".to_string(), "new".to_string())]);
+        let targets = HashMap::from([("chest".to_string(), "chest2".to_string())]);
+        assert!(renamed_rules(&rules, &sources, &targets).py_eq(&value(
+            r#"{"loss_percent": 0,
+                "sources": {"new": {"tier": "bg2:2", "exclude_targets": [{"id": "chest2", "ordinal": 1}]}},
+                "targets": {"chest2": ["bg2:2"]},
+                "row_filters": {"sources": {"new": {"chance": 50, "group": ""}},
+                                "targets": {"chest2": {"chance": 100, "group": ""}}}}"#,
+        )));
+    }
+
+    #[test]
+    fn of_several_the_nearest_unless_two_are_as_near() {
+        let at = |x: i64, y: i64| value(&format!(r#"{{"selector": {{"x": {x}, "y": {y}}}}}"#));
+        let (here, near, far, other) = (at(100, 100), at(103, 104), at(500, 500), at(97, 96));
+        assert!(nearest(&here, &[&far, &near]).is_some_and(|found| std::ptr::eq(found, &near)));
+        // As near on two sides, or where one stands not known.
+        assert!(nearest(&here, &[&near, &other, &far]).is_none());
+        assert!(nearest(&here, &[&near, &value(r#"{"selector": {"x": 1}}"#)]).is_none());
+        assert!(nearest(&value(r#"{"selector": {"x": 1, "y": 65536}}"#), &[&near]).is_none());
+        assert!(nearest(&here, &[]).is_none());
     }
 }

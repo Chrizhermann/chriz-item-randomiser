@@ -155,13 +155,16 @@ the new scan first (`rebase::rebase_drafts`, the reference's
 `rebase.rebase_drafts`; see
 [Saved configurations after the mods change](../docs/post-install-configurator.md#saved-configurations-after-the-mods-change)):
 what the player chose stays, what no longer fits is left out, and the console
-names what was left out in plain words. The earlier version of a
-configuration carried over in part is kept in `configurations\earlier scans\`;
-one that cannot be carried over (it cannot be read, its preset no longer fits
-the game, or none of its rewards remains) is moved there, and the console
-says why. When that is the configuration applied last, the start says so
-once and the editor starts with a new configuration; otherwise the editor
-reopens it as carried over. Apply keeps the earlier revisions for existing
+names what was left out in plain words. An area's creature or container is
+found by its name, as the game finds it, not by its number in the area file.
+The earlier version of a configuration carried over in part is kept in
+`configurations\earlier scans\`; one that cannot be carried over (it cannot
+be read or written, its preset no longer fits the game, or none of its
+rewards remains) is moved there, and the console says why. When that is the
+configuration applied last, the start says so once and the editor starts
+with a new configuration; otherwise the editor reopens it as carried over.
+The new `world.json` replaces the one the configurations were made with only
+after they are carried over. Apply keeps the earlier revisions for existing
 saves.
 
 A creature, area or store file the world scan cannot read is left out, and
