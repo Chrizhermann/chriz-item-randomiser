@@ -147,12 +147,22 @@ mods: while they hold what Apply wrote, the scan reads them as the game had
 them before (`randomiser-campaigns\applied-files.json`; see
 [Apply's own files](../docs/post-install-configurator.md#applys-own-files)), so
 the configuration applied last reopens. After the
-game's mods changed, the configurations saved before cannot be opened with the
-new scan, and the editor would refuse to open a workspace that holds them (the
-reference's `ui` answers its state with "Profile belongs to another scan"
-then). They are moved to `configurations\earlier scans\`, where they are kept,
-and the editor starts with a new configuration; Apply keeps the earlier
-revisions for existing saves.
+game's mods changed (a new version of CIR among them), the configurations
+saved before cannot be opened with the new scan, and the editor would refuse
+to open a workspace that holds them (the reference's `ui` answers its state
+with "Profile belongs to another scan" then). The start carries each over to
+the new scan first (`rebase::rebase_drafts`, the reference's
+`rebase.rebase_drafts`; see
+[Saved configurations after the mods change](../docs/post-install-configurator.md#saved-configurations-after-the-mods-change)):
+what the player chose stays, what no longer fits is left out, and the console
+names what was left out in plain words. The earlier version of a
+configuration carried over in part is kept in `configurations\earlier scans\`;
+one that cannot be carried over (it cannot be read, its preset no longer fits
+the game, or none of its rewards remains) is moved there, and the console
+says why. When that is the configuration applied last, the start says so
+once and the editor starts with a new configuration; otherwise the editor
+reopens it as carried over. Apply keeps the earlier revisions for existing
+saves.
 
 A creature, area or store file the world scan cannot read is left out, and
 the console names it with the reason, as `world scan`'s warnings do.
@@ -183,7 +193,8 @@ editor's Apply takes them, then the export into the game) and
 `editor::Editor`, the editor's requests (`get`, `post`) without the HTTP
 server, with
 `editor::{saved_files, checked_draft}` (the configurations the editor lists
-and its check of one against the scans). `game_folder::{find_game,
+and its check of one against the scans) and `rebase::rebase_drafts` (saved
+configurations carried over to new scans of the same game). `game_folder::{find_game,
 cir_installed, game_language, game_workspace}` are the start without
 arguments: the game at or above a folder, whether CIR is installed in it, the
 language WeiDU installed its mods in and its folder for scans and

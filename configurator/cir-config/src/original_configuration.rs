@@ -31,6 +31,8 @@ const USABLE_PROBLEMS: [Option<&str>; 3] =
 const SHIPPED_REPLACEMENT_ROW: &str = "bg2:base:item:86";
 /// Rounds of leaving out rows the runtime check names before giving up.
 const FIT_ROUNDS: usize = 8;
+/// Why a reward is left out when its tier has no place it can go to.
+pub const NO_PLACE_IN_TIER: &str = "no-place-in-tier";
 
 fn s<'a>(row: &'a Value, key: &str) -> &'a str {
     row.get(key).and_then(Value::as_str).unwrap_or("")
@@ -350,7 +352,7 @@ fn not_used_notes(rows: &[Value]) -> Vec<String> {
 }
 
 /// How many rewards and places `rows` are, as "2 rewards and 1 place".
-fn counted(rows: &[&Value]) -> String {
+pub(crate) fn counted(rows: &[&Value]) -> String {
     let rewards = rows.iter().filter(|row| s(row, "kind") == "reward").count();
     [(rewards, "reward"), (rows.len() - rewards, "place")]
         .into_iter()
@@ -901,19 +903,25 @@ fn build_from(
     }))
 }
 
-/// Source identities whose tier lacks a place the campaign check accepts.
-///
-/// With overflow, each tier with rewards needs a place that can take any
-/// reward and, when originals may be kept, one that no reward's home claims.
-/// Without a reward of such a tier its claims go too, so this repeats until
-/// stable.
-fn placeless_sources(plan: &Value) -> Result<Vec<String>> {
-    let randomization = plan.at("randomization")?;
+/// `placeless_sources` of a preset's plan, whose places are its original
+/// recipients.
+fn preset_placeless_sources(plan: &Value) -> Result<Vec<String>> {
     let mut kinds: HashMap<String, String> = HashMap::new();
     for registration in plan.at("target_registrations")?.as_list().into_iter().flatten() {
         let kind = target_record(registration)?.at("kind")?.as_str().unwrap_or("").to_string();
         kinds.insert(s(registration, "id").to_string(), kind);
     }
+    placeless_sources(plan.at("randomization")?, &kinds)
+}
+
+/// Source identities whose tier lacks a place the campaign check accepts;
+/// `kinds` names the kind of each place.
+///
+/// With overflow, each tier with rewards needs a place that can take any
+/// reward and, when originals may be kept, one that no reward's home claims.
+/// Without a reward of such a tier its claims go too, so this repeats until
+/// stable.
+pub fn placeless_sources(randomization: &Value, kinds: &HashMap<String, String>) -> Result<Vec<String>> {
     let mut slots: HashMap<String, HashSet<(String, usize)>> = HashMap::new();
     for (identity, tiers) in randomization.at("targets")?.as_dict().into_iter().flat_map(Dict::iter) {
         if kinds.get(identity).is_some_and(|kind| OVERFLOW_TARGET_KINDS.contains(&kind.as_str())) {
@@ -1114,9 +1122,10 @@ fn special_places_from(
 
 /// How `fit_from` gets a draft: `resolve_template` for (template id, game,
 /// names), or the draft a test patched in.
-type Resolve<'a> = dyn Fn(&str, &str, Option<&EetNames>) -> Result<Value> + 'a;
+pub(crate) type Resolve<'a> = dyn Fn(&str, &str, Option<&EetNames>) -> Result<Value> + 'a;
 
-fn fit_from(
+/// `fit_original_configuration` with the draft from `resolve`.
+pub(crate) fn fit_from(
     catalog: &Value,
     world: &Value,
     template_id: &Value,
@@ -1163,11 +1172,11 @@ fn fit_from(
             }
         })?;
         let row_ids = generated.at("row_ids")?;
-        let placeless = placeless_sources(generated.at("plan")?)?;
+        let placeless = preset_placeless_sources(generated.at("plan")?)?;
         if !placeless.is_empty() {
             for identity in placeless {
                 let row = crate::json::py_str(row_ids.at(&identity)?);
-                exclude.insert(row, "no-place-in-tier".into());
+                exclude.insert(row, NO_PLACE_IN_TIER.into());
             }
             continue;
         }

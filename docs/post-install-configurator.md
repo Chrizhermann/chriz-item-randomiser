@@ -34,7 +34,9 @@ Without Python, use the standalone executable built from `configurator/` (see
 and options as `python tools/randomiser_config.py` and gives the same results.
 Started without arguments in the game's `cir` folder (a double-click), it scans that
 game into the player's own folder and opens the editor with Apply for it; its console
-names any game file the world scan could not read and left out.
+names any game file the world scan could not read and left out. After the game's mods
+changed, it first carries the saved configurations over to the new scan (see
+[Saved configurations after the mods change](#saved-configurations-after-the-mods-change)).
 Choose an explicit game and a separate output directory. The scanner never discovers
 or opens a game implicitly. Do not run this development tool against the owner's
 live game as part of automated validation.
@@ -165,6 +167,44 @@ If mods change, run scan again. A profile referring to an older catalogue cannot
 prepared against the new catalogue without an explicit `profile rebase`. Rebase
 retains selected IDs that still exist; missing selected items cause a clear error
 and are never silently dropped. Review changes before later gameplay activation.
+
+### Saved configurations after the mods change
+
+A configuration names the scans it was made with, and the editor opens only the
+configurations of its own scans. The start without arguments scans the game every
+time; after the game's mods changed (a new version of CIR among them, whose installer
+prepares other dialogues and scripts), it carries each saved configuration over to the
+new scans before the editor opens (`rebase.rebase_drafts`, in the executable
+`rebase::rebase_drafts`):
+
+- What the player chose stays: the items, which of their records move, the places
+  and their reward slots, a preset's pools and options, tiers and shop prices.
+- What the scans decide comes from the new ones, as the editor would offer it now. A
+  preset's rewards and places come from the preset fitted again with the same pools
+  and options; a row of its lists stays the same choice when the new version moves it
+  in another way (another dialogue, another record of the same creature). A special
+  place comes from those the game can deliver now, the pool's reward from the prepared
+  pool script, a record or recipient chosen in the editor from the new world scan. A
+  creature or container chosen in an area is kept only when the scan the
+  configuration was made with (the previous start's `world.json`) shows the same one
+  in the same place.
+- What no longer fits is left out, with the reasons a preset's fit gives (a creature
+  that can go missing, a quest CIR cannot change yet, a route the game no longer
+  has) and those of the carry-over (an item or record no longer in the game, a place
+  that changed or cannot be used, a tier left without a place). Nothing is added: a
+  preset's new rows wait for the player to choose the preset again.
+- A configuration that cannot be read, whose preset no longer fits the game (or that
+  this version no longer has), or of which no reward remains is not carried over.
+
+The console names each configuration carried over and, for one carried over in part,
+what was left out in plain words; its earlier version is kept in
+`configurations\earlier scans\`. One that is not carried over is moved there, and
+the console says why. When that is the configuration applied last, the start says so
+once and the editor starts with a new configuration; it is no longer the one to
+reopen. Configurations that an earlier version of CIR already moved to
+`configurations\earlier scans\` stay there; moved back into `configurations\`, the
+next start carries them over (an editor-chosen creature or container in an area is
+then left out, as the scan they were made with is gone).
 
 ## Prepared draft storage
 
@@ -377,10 +417,11 @@ installer's files as they were keeps the configuration applied last open.
 
 Games where a version of CIR without the record applied the extended pools have no
 record. Their scans read CIR's files as the game's, as that version did, so a
-configuration that version applied there is set aside at the first start, as that
-version would have done, and joins the ones in `configurations\earlier scans\`. The
-first Apply of a later version records only the files it changes, and the scan it was
-made with stays from then on.
+configuration that version applied there no longer fits the first start's scan: it is
+carried over to it, without what that scan cannot use (see
+[Saved configurations after the mods change](#saved-configurations-after-the-mods-change)).
+The first Apply of a later version records only the files it changes, and the scan it
+was made with stays from then on.
 
 ## Original preset drafts
 

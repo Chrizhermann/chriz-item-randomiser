@@ -46,6 +46,8 @@ _USABLE_PROBLEMS = (None, "scripted-source-requires-adapter", "unshey-requires-l
 _SHIPPED_REPLACEMENT_ROW = "bg2:base:item:86"
 # Rounds of leaving out rows the runtime check names before giving up.
 _FIT_ROUNDS = 8
+# Why a reward is left out when its tier has no place it can go to.
+NO_PLACE_IN_TIER = "no-place-in-tier"
 
 
 class _NotUsable(Exception):
@@ -521,15 +523,20 @@ def _counted(rows: list[dict]) -> str:
 
 
 def _placeless_sources(plan: dict) -> list[str]:
-    """Source identities whose tier lacks a place the campaign check accepts.
+    """placeless_sources of a preset's plan, whose places are its original recipients."""
+    kinds = {registration["id"]: original_target_record(registration)["kind"]
+             for registration in plan["target_registrations"]}
+    return placeless_sources(plan["randomization"], kinds)
+
+
+def placeless_sources(randomization: dict, kinds: dict[str, str]) -> list[str]:
+    """Source identities whose tier lacks a place the campaign check accepts;
+    ``kinds`` names the kind of each place.
 
     With overflow, each tier with rewards needs a place that can take any reward
     and, when originals may be kept, one that no reward's home claims. Without a
     reward of such a tier its claims go too, so this repeats until stable.
     """
-    randomization = plan["randomization"]
-    kinds = {registration["id"]: original_target_record(registration)["kind"]
-             for registration in plan["target_registrations"]}
     slots = defaultdict(set)
     for identity, tiers in randomization["targets"].items():
         if kinds.get(identity) in OVERFLOW_TARGET_KINDS:
@@ -627,7 +634,7 @@ def _fit(catalog: dict, world: dict, template_id: str, scans: Scans, resolve) ->
         placeless = _placeless_sources(generated["plan"])
         if placeless:
             for identity in placeless:
-                exclude[generated["row_ids"][identity]] = "no-place-in-tier"
+                exclude[generated["row_ids"][identity]] = NO_PLACE_IN_TIER
             continue
         campaign = compile_campaign(generated["profile"], catalog, world, generated["plan"], scans=scans)
         problems: dict[str, str] = {}
