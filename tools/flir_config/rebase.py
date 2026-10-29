@@ -37,7 +37,7 @@ import json
 from . import original_configuration
 from .editor import checked_draft
 from .game_names import eet_names
-from .original_catalog import CARRIER_CAN_GO_MISSING, NO_ROUTE
+from .original_catalog import CARRIER_GOES_MISSING, NO_ROUTE
 from .original_options import spell_shield_randomized, spell_shield_spec
 from .original_registrations import SOURCE_ADAPTER, target_record
 from .platform import preset_game
@@ -688,15 +688,15 @@ def _readable(draft) -> bool:
 def _notes(rows: list[dict]) -> list[str]:
     """What the left-out choices are, in plain words: the items no longer in
     the game, the rewards and places this game cannot use as it is now, the
-    places that could not be checked, those on creatures that can go missing,
-    those whose quest CIR cannot change yet, then what becomes of a left-out
-    reward."""
+    places that could not be checked, those on creatures that are never there
+    or always escape, those whose quest CIR cannot change yet, then what
+    becomes of a left-out reward."""
     items = [row for row in rows if row["kind"] == "item"]
     choices = [row for row in rows if row["kind"] != "item"]
-    missing = [row for row in choices if row["reason"] == CARRIER_CAN_GO_MISSING]
+    missing = [row for row in choices if row["reason"] == CARRIER_GOES_MISSING]
     waiting = [row for row in choices if row["reason"] == NO_ROUTE]
     unverified = [row for row in choices if row["reason"] == TARGET_UNVERIFIED]
-    unusable = [row for row in choices if row["reason"] not in (CARRIER_CAN_GO_MISSING, NO_ROUTE, TARGET_UNVERIFIED)]
+    unusable = [row for row in choices if row["reason"] not in (CARRIER_GOES_MISSING, NO_ROUTE, TARGET_UNVERIFIED)]
     notes = []
     if items:
         one = len(items) == 1
@@ -710,9 +710,9 @@ def _notes(rows: list[dict]) -> list[str]:
                      "scan it was made with, so " + ("it is" if len(unverified) == 1 else "they are") + " left out")
     if missing:
         notes.append(f"{original_configuration._counted(missing)} from it "
-                     + ("is on a creature" if len(missing) == 1 else "are on creatures")
-                     + " that may leave, vanish or never appear, so "
-                     + ("it is" if len(missing) == 1 else "they are") + " left out")
+                     + ("is on a creature that is never there or always escapes" if len(missing) == 1
+                        else "are on creatures that are never there or always escape")
+                     + ", so " + ("it is" if len(missing) == 1 else "they are") + " left out")
     if waiting:
         notes.append(f"{original_configuration._counted(waiting)} from it "
                      + ("belongs to a quest" if len(waiting) == 1 else "belong to quests")

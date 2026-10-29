@@ -205,8 +205,8 @@ new scans before the editor opens (`rebase.rebase_drafts`, in the executable
   the same one of its holder's records of that item. Without the scan it was made
   with, a creature or container chosen in an area is left out, as it cannot be checked.
 - What no longer fits is left out, with the reasons a preset's fit gives (a creature
-  that can go missing, a quest CIR cannot change yet, a route the game no longer
-  has) and those of the carry-over (an item or record no longer in the game, a place
+  that is never there or always escapes, a quest CIR cannot change yet, a route the
+  game no longer has) and those of the carry-over (an item or record no longer in the game, a place
   that is gone, cannot be told apart or cannot be used, a tier left without a place).
   Nothing is added to a changed configuration. When its preset, fitted now, has rewards
   or places it does not have, one note says so, and that choosing the preset again in

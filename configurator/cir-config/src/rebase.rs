@@ -33,7 +33,7 @@ use crate::editor::checked_draft;
 use crate::error::{Error, ErrorKind, Result};
 use crate::game_names::eet_names;
 use crate::json::{dumps_ascii, py_str, Dict, Value};
-use crate::original_catalog::{resolve_template, CARRIER_CAN_GO_MISSING, NO_ROUTE};
+use crate::original_catalog::{resolve_template, CARRIER_GOES_MISSING, NO_ROUTE};
 use crate::original_configuration::{
     counted, fit_from, fit_special_places, fit_special_places_from, placeless_sources, unchanged, FIT_RECORD,
     NO_PLACE_IN_TIER,
@@ -1256,21 +1256,21 @@ fn readable(draft: &Value) -> bool {
 
 /// What the left-out choices are, in plain words: the items no longer in
 /// the game, the rewards and places this game cannot use as it is now, the
-/// places that could not be checked, those on creatures that can go missing,
-/// those whose quest CIR cannot change yet, then what becomes of a left-out
-/// reward.
+/// places that could not be checked, those on creatures that are never there
+/// or always escape, those whose quest CIR cannot change yet, then what
+/// becomes of a left-out reward.
 fn notes(rows: &[Value]) -> Vec<Value> {
     let kind = |row: &Value| text(row, "kind").to_string();
     let reason = |row: &Value| text(row, "reason").to_string();
     let items: Vec<&Value> = rows.iter().filter(|row| kind(row) == "item").collect();
     let choices: Vec<&Value> = rows.iter().filter(|row| kind(row) != "item").collect();
-    let missing: Vec<&Value> = choices.iter().copied().filter(|row| reason(row) == CARRIER_CAN_GO_MISSING).collect();
+    let missing: Vec<&Value> = choices.iter().copied().filter(|row| reason(row) == CARRIER_GOES_MISSING).collect();
     let waiting: Vec<&Value> = choices.iter().copied().filter(|row| reason(row) == NO_ROUTE).collect();
     let unverified: Vec<&Value> = choices.iter().copied().filter(|row| reason(row) == TARGET_UNVERIFIED).collect();
     let unusable: Vec<&Value> = choices
         .iter()
         .copied()
-        .filter(|row| ![CARRIER_CAN_GO_MISSING, NO_ROUTE, TARGET_UNVERIFIED].contains(&reason(row).as_str()))
+        .filter(|row| ![CARRIER_GOES_MISSING, NO_ROUTE, TARGET_UNVERIFIED].contains(&reason(row).as_str()))
         .collect();
     let it_is = |rows: &[&Value]| if rows.len() == 1 { "it is" } else { "they are" };
     let mut notes = Vec::new();
@@ -1300,9 +1300,13 @@ fn notes(rows: &[Value]) -> Vec<Value> {
     }
     if !missing.is_empty() {
         notes.push(format!(
-            "{} from it {} that may leave, vanish or never appear, so {} left out",
+            "{} from it {}, so {} left out",
             counted(&missing),
-            if missing.len() == 1 { "is on a creature" } else { "are on creatures" },
+            if missing.len() == 1 {
+                "is on a creature that is never there or always escapes"
+            } else {
+                "are on creatures that are never there or always escape"
+            },
             it_is(&missing)
         ));
     }
@@ -1415,8 +1419,8 @@ mod tests {
             left_out("original-source:bg2:mode2:item:14", "reward", "The route cannot be used"),
             left_out("are:ar0200/container/1", "place", TARGET_AMBIGUOUS),
             left_out("are:ar0200/container/2", "place", TARGET_UNVERIFIED),
-            left_out("original-target:bg2:base:target:9002", "place", CARRIER_CAN_GO_MISSING),
-            left_out("original-target:bg2:base:target:9003", "place", CARRIER_CAN_GO_MISSING),
+            left_out("original-target:bg2:base:target:9002", "place", CARRIER_GOES_MISSING),
+            left_out("original-target:bg2:base:target:9003", "place", CARRIER_GOES_MISSING),
             left_out("original-source:bg2:mode2:item:33", "reward", NO_ROUTE),
         ];
         let written: Vec<String> = notes(&rows).iter().map(py_str).collect();
@@ -1426,7 +1430,7 @@ mod tests {
                 "1 item from it is no longer in the game, so it is left out",
                 "1 reward and 1 place from it cannot be used with the game as it is now, so they are left out",
                 "1 place from it could not be checked against the scan it was made with, so it is left out",
-                "2 places from it are on creatures that may leave, vanish or never appear, so they are left out",
+                "2 places from it are on creatures that are never there or always escape, so they are left out",
                 "1 reward from it belongs to a quest that Chriz Item Randomiser cannot change yet, so it is left out",
                 "A left-out reward stays as the game has it",
             ]
