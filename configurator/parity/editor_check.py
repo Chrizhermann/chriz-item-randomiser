@@ -484,9 +484,10 @@ def spell_shield_phase(root: Path, label: str, *, scroll_flags: int = 0x4C,
 
 def add_special_places(game: Path) -> None:
     """Three of Item Randomiser's special places of Shadows of Amn: Madulf's
-    reward, the well's and the Iron Pot's group (two of its members placed,
-    with their names), with a shop's ring of Madulf's tier and a chest of
-    that tier for the rewards no special place takes."""
+    reward, the well's and the Iron Pot's group (three of its members placed,
+    with their names; Necre's item may not show up), with a shop's ring of
+    Madulf's tier and a chest of that tier for the rewards no special place
+    takes."""
     override = game / "override"
     ring = bytearray(make_itm())
     struct.pack_into("<I", ring, 0x18, 0x4C)
@@ -497,9 +498,10 @@ def add_special_places(game: Path) -> None:
     (override / "ddwell.bcs").write_bytes(well_script())
     (override / "ar1100.are").write_bytes(make_are())
     (override / "uhogre01.dlg").write_bytes(ogre_dialogue())
-    for member in ("obshal01", "obshal02"):
+    for member in ("obshal01", "obshal02", "obshal03"):
         (override / f"{member}.cre").write_bytes(make_cre())
-    (override / "ar0411.are").write_bytes(make_are([], [], [("Gorf", "OBSHAL01"), ("Mok", "OBSHAL02")]))
+    (override / "ar0411.are").write_bytes(make_are([], [], [("Gorf", "OBSHAL01"), ("Mok", "OBSHAL02"),
+                                                            ("Necre", "OBSHAL03")]))
     (override / "BGEE.LUA").write_bytes(b"quests = {}\n")
     folder = game / "lang" / "en_US"
     folder.mkdir(parents=True)
@@ -539,6 +541,7 @@ def special_phase(root: Path):
         ("special places by words", get("/api/targets?q=madulf&kind=special")),
         ("special places beside the scan's recipients", get("/api/targets?q=ar1202")),
         ("a group by its members' names", get("/api/targets?q=gorf")),
+        ("places whose item may not show up", get("/api/targets?q=necre")),
         ("recipients without words", get("/api/targets?q=")),
         ("validate", own("/api/validate")),
         ("save", own("/api/save")),

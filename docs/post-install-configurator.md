@@ -205,8 +205,8 @@ new scans before the editor opens (`rebase.rebase_drafts`, in the executable
   the same one of its holder's records of that item. Without the scan it was made
   with, a creature or container chosen in an area is left out, as it cannot be checked.
 - What no longer fits is left out, with the reasons a preset's fit gives (a creature
-  that can go missing, a quest CIR cannot change yet, a route the game no longer
-  has) and those of the carry-over (an item or record no longer in the game, a place
+  that is never there or always escapes, a quest CIR cannot change yet, a route the
+  game no longer has) and those of the carry-over (an item or record no longer in the game, a place
   that is gone, cannot be told apart or cannot be used, a tier left without a place).
   Nothing is added to a changed configuration. When its preset, fitted now, has rewards
   or places it does not have, one note says so, and that choosing the preset again in
@@ -540,28 +540,49 @@ same runtime check as "Check configuration", which then passes. `/api/template`
 also returns the left-out rows with their table line and reason (`not_used_rows`).
 
 Some creatures that Item Randomiser gives an item to can leave alive, turn into another
-creature or never appear. A conversation sends them away (Arkushule, Tarnor's gang), a
-quest or cutscene removes them (Neb, Nevaziah's crypt), they flee (Brennan Risling below
-half his hit points), the easiest difficulty takes them out (`LOWBYE.BCS` for Necre and
-Taibela), or Watcher's Keep removes four of its statues for a party under five members,
-under level 14 or with `XPGiven` above 500000. A reward there could be lost.
+creature or not appear at all, depending on how the game is played. A conversation sends
+them away (Arkushule, Tarnor's gang), they reward the party and go (Degrodel, Cythandria
+when spared), a quest removes them or brings them on one of its paths only (Nevaziah with
+Edwin in the party, Droth when Shoal is hit with a crushing weapon, Nimbul in chapter 3),
+they flee (Brennan Risling below half his hit points), the easiest difficulty takes them
+out (`LOWBYE.BCS` for Necre and Taibela), or Watcher's Keep removes four of its statues
+for a party under five members, under level 14 or with `XPGiven` above 500000.
 `lists/carriers/<campaign>.2da` names these creatures as Item Randomiser's tables do, by
 area and creature file, each with its reason (`difficulty`, `party`, `transformed`,
-`story`, `conversation`, `reward`, `flees`). The table comes from a review of the
-scripts, conversations and spells of EET 2.7.3.0 on 2026-10-26. A place on such a
-creature is left out (`creature-can-go-missing`), and the preset dialog says how many
-("… are on creatures that may leave, vanish or never appear, so they are left out"). A
-group place gives its rewards to its other members only, and is left out when none of the
-members the game has is left (the red wizards' group of AR3000 also names Lasal, whom no
-EE game has). Not listed are creatures that leave only when they die, whose reward drops as loot
-(at the party's feet when no body is left). Also not listed, as reviewed and kept, are
-the Iron Throne's leaders (on the chapter 5 path; chapter 7 removes them), Nyalee (she
-comes back) and Gorion (he dies in the prologue). Four creatures reward the party before
-they leave: Degrodel, Bentha, Tamah and Fll'Yissetat. Their reply could hand over the
-place's reward one day; until then their places are left out too. The table is a review
-of the games without other mods. Another mod's change can make a listed creature stay
-(its places are then left out anyway) or make another creature leave, which the table
-does not see.
+`story`, `conversation`, `reward`, `flees`, `elsewhere`) and whether its place's item can
+show up (`Shows`: `maybe` or `never`). The table comes from a review of the scripts,
+conversations and spells of EET 2.7.3.0 on 2026-10-26, checked again on 2026-10-29 with
+the creatures that a script or conversation creates.
+
+A place on a `maybe` creature stays, as with Item Randomiser: its item arrives while the
+creature is there and leaves with it, so a player who skips the fight or ends the quest
+another way may never see it. The editor marks every record of such a place, the scan's
+creature, an original recipient and a special place or group with such a member alike,
+“May not show up”, with a line that names the creature and why (“Brennan Risling may
+flee.”, “The carrier may reward you and leave.” for a creature that no actor of the area
+names). The preset dialog says how many of the preset's places carry the mark (“117
+places are marked “May not show up”: their carrier may leave, flee or not appear,
+depending on how you play”). The mark is only shown: the configuration, its saved files
+and the runtime are the same as without it.
+
+A place on a `never` creature is left out (`creature-always-goes-missing`), and the
+preset dialog says how many (“3 places from the lists are on creatures that are never
+there or always escape, so they are left out”): two of Yaga-Shura's first form, which
+cannot die (`sureHP1`) and always escapes, and the Unseeing Eye's, which the game creates
+in AR0202 or AR0205 and never in AR0705 (`elsewhere`). A group place gives its rewards to
+its other members only, as the Ust Natha gate guards' group (`uddoor.flg`) does without
+the guard that exists in AR2200 only, and is left out when none of the members the game
+has is left. Not listed are creatures that leave only when they die, whose reward drops as loot
+(at the party's feet when no body is left), and creatures that appear on the usual way
+into their content (Jalantha Mistmyr once the party gives Pumberlie gold, Gretek's gang
+when Gorpel Hind first speaks, the sirine queen with Evalt's quest). Also not listed, as
+reviewed and kept, are the Iron Throne's leaders (on the chapter 5 path; chapter 7
+removes them), Nyalee (she comes back) and Gorion (he dies in the prologue). Eight
+creatures reward the party before they leave: Degrodel, Cythandria, Tranzig, Tamah,
+Bentha, Borinall, Raevilin Strathi and Fll'Yissetat. Their reply could hand over the
+place's reward one day. The table is a review of the games without other mods. Another
+mod's change can make a listed creature stay (its places are marked anyway) or make
+another creature leave, which the table does not see.
 
 The runtime finds a place's creature by its script name in the area. A creature
 without a name of its own (the engine's blank, `None`), or with one that another actor
@@ -570,10 +591,11 @@ of the area has too, cannot be told apart, and its reward would never arrive
 it alone is left out ("Native target needs a unique actor script name in its area", as
 for an actor place). On EET 2.7.3.0 these are 13 places of `eet-original` and 17 of
 `eet-boss-loot`, among them Lendarn's at Firewine Bridge, and the slaver wizard of the
-slavers' group in AR0405. Of them, 11 and 14 remain besides the places the carrier table
-leaves out. With the extended pools, the two rules together leave out 96 places of
-`eet-original` (861 of 957 stay) and 129 of `eet-boss-loot` (1025 of 1154 stay), and 25
-groups of each give their rewards to fewer members.
+slavers' group in AR0405. On a reference scan of EET 2.7.3.0 without other mods, with the
+extended pools and every option, the two rules together leave out 16 places of
+`eet-original` (936 of 952 stay, 117 of them marked; 856 with 1.0.3) and 20 of
+`eet-boss-loot` (1129 of 1149 stay, 151 marked; 1020 with 1.0.3), and three group places
+of each give their rewards to fewer members: the gate guards' two and the slavers'.
 
 Quest rewards and places that Item Randomiser handled with its own conversation and
 script patches (the `.fl` places of its `mode2` tables, and rewards that a conversation

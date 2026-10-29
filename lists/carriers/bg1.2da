@@ -1,40 +1,47 @@
-Area   Creature  Reason        Reviewed  Comment
+Area   Creature  Reason        Shows  Reviewed  Comment
 
-ar0134 desret    conversation  20261026  Desreta: leaves after the talk
-ar0134 vayya     conversation  20261026  Vay-ya: as Desreta
-ar0135 yago      flees         20261026  courtesan mage: gives up at low hit points and goes
-ar0153 resar     flees         20261026  Resar: flees when he hears noise
-ar0161 degrod    reward        20261026  Degrodel: pays for Balduran's helmet and goes
-ar0224 schlum    conversation  20261026  Schlumpsha: leaves after the talk
-ar0506 queen     story         20261026  queen: removed when the king dies
-ar0704 niemai    conversation  20261026  Niemain: leaves after the talk
-ar0704 oulam     conversation  20261026  Oulam: as Niemain
-ar0704 wheber    conversation  20261026  Wheber Ott: as Niemain
-ar0704 william   conversation  20261026  William Garst: as Niemain
-ar1004 baresh2   transformed   20261026  Baresh: becomes a werewolf in his talk with Mendas
-ar1101 wiven     conversation  20261026  Wiven: takes money and goes
-ar3000 brenda    story         20261026  Brendan: as Denak
-ar3000 denak     story         20261026  Denak: leaves with Edwin in the party; without him the group moves to a random area
-ar3000 diana     story         20261026  Diana: as Denak
-ar3500 baerin    conversation  20261026  Baerin: as Kirian
-ar3500 kirian    conversation  20261026  Kirian: leaves when the party gives in
-ar3500 lindin    conversation  20261026  Lindin: as Kirian
-ar3500 peter     conversation  20261026  Peter: as Kirian
-ar3500 tamah     reward        20261026  Tamah: tells of the abandoned house and goes
-ar3600 arkush    conversation  20261026  Arkushule: leaves after the talk
-ar3700 zargal    conversation  20261026  Zargal: lets the party pass and goes
-ar4200 jemby     conversation  20261026  Jemby: as Teyngan
-ar4200 teynga    conversation  20261026  Teyngan: leaves when the party pays
-ar4400 canto     conversation  20261026  Ioin Gallchobhair: robs the party and goes
-ar4500 meilum    conversation  20261026  Meilum: leaves after the talk
-ar4600 nevill    conversation  20261026  Neville: takes some gold and goes
-ar4700 borda     conversation  20261026  Borda: leaves when the party does not buy
-ar4900 gazib     conversation  20261026  Gazib: leaves after his show
-ar4906 bentha    reward        20261026  Bentha: gives an antidote and goes
-ar5000 narcil    conversation  20261026  Narcillicus: leaves after the talk
-ar5100 hairto    conversation  20261026  Hairtooth: leaves after the talk
-ar5300 alexan    conversation  20261026  Alexander: as Sendai
-ar5300 delgod    conversation  20261026  Delgod: as Sendai
-ar5300 sendai    conversation  20261026  Sendai: leaves after the talk
-ar5300 zal       conversation  20261026  Zal: leaves when the party pays
-ar5500 hafiz     conversation  20261026  Hafiz: leaves when treated rudely
+ar0115 marek1    conversation  maybe  20261029  Marek: created with the antidote, he greets first (MAREK.DLG state 0 before state 4) and goes after either reply
+ar0134 desret    conversation  maybe  20261029  Desreta: leaves after the talk
+ar0134 vayya     conversation  maybe  20261029  Vay-ya: as Desreta
+ar0135 yago      flees         maybe  20261029  courtesan mage: gives up at low hit points and goes
+ar0138 ramazi    story         maybe  20261029  Ramazith: lives in AR0137 and comes to AR0138 only for the fight (RAMAZI.DLG states 17, 19)
+ar0153 resar     flees         maybe  20261029  Resar: flees when he hears noise
+ar0161 degrod    reward        maybe  20261029  Degrodel: pays for Balduran's helmet and goes
+ar0224 schlum    conversation  maybe  20261029  Schlumpsha: leaves after the talk
+ar0506 queen     story         maybe  20261029  queen: removed when the king dies (KINGDEAD.BCS)
+ar0615 cythan    reward        maybe  20261029  Cythandria: spared below half her hit points, gives three scrolls and goes
+ar0704 niemai    conversation  maybe  20261029  Niemain: leaves after the talk
+ar0704 oulam     conversation  maybe  20261029  Oulam: as Niemain
+ar0704 wheber    conversation  maybe  20261029  Wheber Ott: as Niemain
+ar0704 william   conversation  maybe  20261029  William Garst: as Niemain
+ar1004 baresh2   transformed   maybe  20261029  Baresh: turns into a werewolf in Mendas's talk (OHWI924: opcode 151, chunked death)
+ar1101 wiven     conversation  maybe  20261029  Wiven: takes money and goes
+ar3000 brenda    story         maybe  20261029  Brendan: as Denak
+ar3000 denak     story         maybe  20261029  Denak: leaves with Edwin in the party; without him the group moves to a random area
+ar3000 diana     story         maybe  20261029  Diana: as Denak
+ar3100 droth     story         maybe  20261029  Droth: created only when Shoal is hit with a crushing weapon and the party listens (SHOAL.DLG)
+ar3352 tranzi    reward        maybe  20261029  Tranzig: gives a scroll and goes when the party lets him go
+ar3500 baerin    conversation  maybe  20261029  Baerin: as Kirian
+ar3500 kirian    conversation  maybe  20261029  Kirian: leaves when the party gives in
+ar3500 lindin    conversation  maybe  20261029  Lindin: as Kirian
+ar3500 peter     conversation  maybe  20261029  Peter: as Kirian
+ar3500 tamah     reward        maybe  20261029  Tamah: tells of the abandoned house and goes
+ar3600 arkush    conversation  maybe  20261029  Arkushule: leaves after the talk
+ar3700 zargal    conversation  maybe  20261029  Zargal: lets the party pass and goes
+ar4200 jemby     conversation  maybe  20261029  Jemby: as Teyngan
+ar4200 teynga    conversation  maybe  20261029  Teyngan: leaves when the party pays
+ar4400 canto     conversation  maybe  20261029  Ioin Gallchobhair: robs the party and goes
+ar4500 meilum    conversation  maybe  20261029  Meilum: leaves after the talk
+ar4600 nevill    conversation  maybe  20261029  Neville: takes some gold and goes
+ar4700 borda     conversation  maybe  20261029  Borda: leaves when the party does not buy
+ar4800 nimbul    story         maybe  20261029  Nimbul: created only in chapter 3 (BG4800.BCS block 5)
+ar4900 gazib     conversation  maybe  20261029  Gazib: leaves after his show
+ar4906 bentha    reward        maybe  20261029  Bentha: gives an antidote and goes
+ar5000 narcil    conversation  maybe  20261029  Narcillicus: leaves after the talk
+ar5100 hairto    conversation  maybe  20261029  Hairtooth: leaves after the talk
+ar5300 alexan    conversation  maybe  20261029  Alexander: as Sendai
+ar5300 delgod    conversation  maybe  20261029  Delgod: as Sendai
+ar5300 sendai    conversation  maybe  20261029  Sendai: leaves after the talk
+ar5300 zal       conversation  maybe  20261029  Zal: leaves when the party pays
+ar5400 greywo    story         maybe  20261029  Greywolf: takes the emerald from Prism's body and goes (GREYWOLF.BCS block 1)
+ar5500 hafiz     conversation  maybe  20261029  Hafiz: leaves when treated rudely

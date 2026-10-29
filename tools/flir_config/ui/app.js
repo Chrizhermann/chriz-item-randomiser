@@ -265,11 +265,18 @@ function partNames(parts) {
   return (parts || []).map((part) => PART_NAMES[part] || part).join(", ");
 }
 
-// A recipient's name, marked when it is one of Item Randomiser's special places.
+// A recipient's name, marked when it is one of Item Randomiser's special places
+// and when its item may not show up.
 function recipientName(text, record) {
   const name = node("div", "record-name", text);
   if (record.kind === "special") name.append(" ", node("span", "special-badge", record.kind_label || "Special place"));
+  if (record.hint) name.append(" ", node("span", "hint-badge", record.hint.label));
   return name;
+}
+
+// Why a recipient's item may not show up, under its other details.
+function hintNote(record) {
+  return record.hint ? node("div", "record-detail hint-note", record.hint.note) : null;
 }
 
 // A recipient's kind for its detail line, which the special places' mark already shows.
@@ -450,7 +457,8 @@ function renderSelected() {
   let shownSlots = 0;
   const shownTargets = targetRows.filter(({ target, data, pairs, chips }) => {
     if (!filter) return true;
-    if (!textMatches(filter, [data.label, target.id, data.kind_label || data.kind, chipText(chips)].join(" "))) return false;
+    if (!textMatches(filter, [data.label, target.id, data.kind_label || data.kind, data.hint ? data.hint.label : "",
+      chipText(chips)].join(" "))) return false;
     if (!filter.part && !filter.tier) {
       shownSlots += Number.isInteger(target.capacity) ? target.capacity : 0;
       return true;
@@ -532,6 +540,7 @@ function renderSelected() {
     main.append(recipientName(data.label || target.id, data),
       node("div", "record-detail", [target.id, recipientKind(data)].filter(Boolean).join(" · ")));
     if (data.kind === "special" && data.note) main.append(node("div", "record-detail special-note", data.note));
+    if (data.hint) main.append(hintNote(data));
     if (chips.length) main.append(chipList(chips, true));
     const remove = node("button", "text-button remove", "Remove");
     remove.type = "button";
@@ -883,6 +892,7 @@ function renderResults() {
     main.append(isItem ? node("div", "record-name", row.name || id) : recipientName(row.label || id, row),
       node("div", "record-detail", `${id}${kind ? ` · ${kind}` : ""}`));
     if (row.note) main.append(node("div", row.kind === "special" ? "record-detail special-note" : "record-detail", row.note));
+    if (!isItem && row.hint) main.append(hintNote(row));
     const button = node("button", "button secondary", chosen ? "Added" : "Add");
     button.type = "button";
     button.disabled = chosen;

@@ -29,10 +29,14 @@ UNREADABLE_PLACE_PROBLEMS = ("area-resource-unreadable", "creature-resource-unre
 # A quest reward or place whose conversation or script CIR cannot change yet:
 # its row is left out in every game, whatever else the game lacks.
 NO_ROUTE = "route-not-supported"
-# A place on a creature that can leave alive, turn into another creature or
-# never appear (lists/carriers, reviewed by hand) could lose its reward: it is
-# left out, and a group place gives its rewards to its other members only.
-CARRIER_CAN_GO_MISSING = "creature-can-go-missing"
+# Item Randomiser's creatures whose place's item may not show up, reviewed by
+# hand (lists/carriers), by their Shows column. "maybe": the creature can
+# leave alive, flee or not appear, as the player plays; the place stays, as
+# Item Randomiser has it, and the editor marks it (carrier_hints). "never":
+# the creature is never in the place's area or always leaves alive; the place
+# is left out, and a group place gives its rewards to its other members only.
+CARRIER_SHOWS = ("maybe", "never")
+CARRIER_GOES_MISSING = "creature-always-goes-missing"
 # Item Randomiser's places of one creature in several versions, by campaign,
 # place and area: its lib/weidu_action.tpa gives the item to each version. The
 # first stands in the area. The others are the classic game's fallen trolls
@@ -249,15 +253,28 @@ def _endpoint_rows(campaign: str) -> dict[str, tuple[str, str, str]]:
     return result
 
 
-def _missing_creatures(campaign: str, game: str, names: EetNames | None) -> set[tuple[str, str]]:
-    """(area, creature) resources of lists/carriers/<campaign>.2da: the creatures
-    that can go missing (CARRIER_CAN_GO_MISSING); none without the table."""
+def carriers(campaign: str, game: str, names: EetNames | None) -> dict[tuple[str, str], tuple[str, str]]:
+    """The (area, creature) resources of lists/carriers/<campaign>.2da, each
+    with its row's reason and Shows (CARRIER_SHOWS); none without the table."""
     path = ROOT / "lists" / "carriers" / f"{campaign}.2da"
     if not path.is_file():
-        return set()
-    return {(f"are:{convert_resource(fields[0], 'are', campaign, game, names)}",
-             f"cre:{convert_resource(fields[1], 'cre', campaign, game, names)}")
-            for _, fields in _table_rows(path, 4)}
+        return {}
+    result = {}
+    for line, fields in _table_rows(path, 5):
+        if fields[3] not in CARRIER_SHOWS:
+            raise ValueError(f"Unknown Shows value in {path}:{line}: {fields[3]}")
+        key = (f"are:{convert_resource(fields[0], 'are', campaign, game, names)}",
+               f"cre:{convert_resource(fields[1], 'cre', campaign, game, names)}")
+        if key in result:
+            raise ValueError(f"Duplicate carrier in {path}:{line}")
+        result[key] = (fields[2], fields[3])
+    return result
+
+
+def _never_carriers(campaign: str, game: str, names: EetNames | None) -> set[tuple[str, str]]:
+    """The (area, creature) resources of the creatures that never keep their
+    place's item (lists/carriers, Shows "never")."""
+    return {key for key, (_, shows) in carriers(campaign, game, names).items() if shows == "never"}
 
 
 def _group_members(campaign: str, group: str, game: str, names: EetNames | None) -> list[str]:
@@ -392,7 +409,7 @@ def _resolve_source(row: dict, catalog_items: set[str], resources: set[str],
 def _resolve_target(row: dict, resources: set[str], unreadable: set[str],
                     targets_by_resource: dict[str, list[dict]], game: str,
                     endpoints: dict[str, dict[str, tuple[str, str, str]]], sources: list[dict],
-                    names: EetNames | None, missing: dict[str, set[tuple[str, str]]]) -> None:
+                    names: EetNames | None, never: dict[str, set[tuple[str, str]]]) -> None:
     campaign = row["campaign"]
     area = convert_resource(row["area"], "are", campaign, game, names)
     row.update(area_resource=f"are:{area}", target_ids=[], creature_resource=None,
@@ -517,8 +534,8 @@ def _resolve_target(row: dict, resources: set[str], unreadable: set[str],
             # Placed for no hour of the day, the creature never appears (how mods
             # such as SoD Remix take a creature out); a reward there would be lost.
             row["binding_problem"] = row["binding_problem"] or "creature-never-appears"
-        elif (row["area_resource"], row["creature_resource"]) in missing[campaign]:
-            row["binding_problem"] = row["binding_problem"] or CARRIER_CAN_GO_MISSING
+        elif (row["area_resource"], row["creature_resource"]) in never[campaign]:
+            row["binding_problem"] = row["binding_problem"] or CARRIER_GOES_MISSING
     elif kind == "store":
         name = convert_resource(raw.rsplit(".", 1)[0], "sto", campaign, game, names)
         identity = f"sto:{name}"
@@ -529,16 +546,16 @@ def _resolve_target(row: dict, resources: set[str], unreadable: set[str],
     elif kind == "group":
         members = _group_members(campaign, raw, game, names)
         row["members"] = [member for member in members
-                          if (row["area_resource"], member) not in missing[campaign]]
+                          if (row["area_resource"], member) not in never[campaign]]
         allowed = set(row["members"])
         matches = [target for target in area_targets if target["kind"] == "actor"
                    and target["selector"].get("template_resource") in allowed]
         # Only an installed, readable member can carry a reward (native_export
-        # skips the others): when every one of them can go missing, the group
-        # has no carrier left, whatever members it names that this game lacks.
+        # skips the others): when every one of them always goes missing, the
+        # group has no carrier left, whatever members it names that this game lacks.
         installed = {member for member in members if member in resources and member not in unreadable}
         row["binding_problem"] = row["binding_problem"] or (
-            CARRIER_CAN_GO_MISSING if installed and not installed & allowed
+            CARRIER_GOES_MISSING if installed and not installed & allowed
             else "group-requires-runtime-selection")
     else:
         matches = []
@@ -579,12 +596,11 @@ def resolve_template(catalog: dict, world: dict, template_id: str, *,
                  for campaign in draft["campaigns"]}
     endpoints = {campaign: _endpoint_rows(campaign)
                  for campaign in draft["campaigns"]}
-    missing = {campaign: _missing_creatures(campaign, game, names)
-               for campaign in draft["campaigns"]}
+    never = {campaign: _never_carriers(campaign, game, names) for campaign in draft["campaigns"]}
     for row in draft["items"]:
         _resolve_source(row, catalog_items, resources, unreadable, sources_by_identity,
                         targets_by_id, game, selectors, names)
     for row in draft["targets"]:
         _resolve_target(row, resources, unreadable, targets_by_resource, game, endpoints,
-                        world["sources"], names, missing)
+                        world["sources"], names, never)
     return draft

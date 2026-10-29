@@ -21,7 +21,7 @@ from flir_config import original_configuration
 from flir_config.campaigns import compile_campaign
 from flir_config.editor import checked_draft
 from flir_config.native_export import _compile
-from flir_config.original_catalog import CARRIER_CAN_GO_MISSING
+from flir_config.original_catalog import CARRIER_GOES_MISSING
 from flir_config.profiles import ProfileError, new_profile, validate_catalog
 from flir_config.rebase import (NO_PLACE, NOT_AVAILABLE, NOTHING_LEFT, PRESET_FOLLOWED, PRESET_HAS_MORE,
                                 PRESET_UNFIT, SOURCE_ABSENT, SOURCE_AMBIGUOUS, TARGET_ABSENT, TARGET_AMBIGUOUS,
@@ -83,7 +83,7 @@ class RebaseTests(RouteGame):
         draft = self.draft()
         for row in draft["targets"]:
             if "original-target:" + row["id"] in carriers:
-                row["binding_problem"] = CARRIER_CAN_GO_MISSING
+                row["binding_problem"] = CARRIER_GOES_MISSING
         draft["targets"] += deepcopy(list(added))
         return draft
 
@@ -192,16 +192,16 @@ class RebaseTests(RouteGame):
         self.assert_checks(draft)
 
     def test_what_the_preset_leaves_out_now_is_left_out(self):
-        # The new lists put the shield's only chest on a creature that may go
-        # missing: the preset fitted now has no place for the shield either.
+        # The new lists put the shield's only chest on a creature that always
+        # goes missing: the preset fitted now has no place for the shield either.
         saved = self.saved()
         self.change(**{"uhogre01.dlg": ogre_dialogue(more=True)})
         [result] = self.rebase([saved], carriers={CHEST_2})
         self.assertEqual(result["left_out"], [{"id": OGRE, "kind": "reward", "reason": NO_PLACE},
-                                              {"id": CHEST_2, "kind": "place", "reason": CARRIER_CAN_GO_MISSING}])
+                                              {"id": CHEST_2, "kind": "place", "reason": CARRIER_GOES_MISSING}])
         self.assertEqual(result["notes"], [
             "1 reward from it cannot be used with the game as it is now, so it is left out",
-            "1 place from it is on a creature that may leave, vanish or never appear, so it is left out",
+            "1 place from it is on a creature that is never there or always escapes, so it is left out",
             "A left-out reward stays as the game has it"])
         draft = result["draft"]
         self.assertEqual(draft["profile"]["items"], ["helm21"])
@@ -272,7 +272,7 @@ class RebaseTests(RouteGame):
     def new_version(self) -> dict:
         """Another version of the game's mods whose lists have a third chest in
         the area of the preset's chests and put the shield's chest on a
-        creature that may go missing; the lists, for rebase."""
+        creature that always goes missing; the lists, for rebase."""
         self.change(**{"uhogre01.dlg": ogre_dialogue(more=True), "ar0100.are": THREE_CHESTS})
         return {"carriers": {CHEST_2}, "added": [place("bg2:base:target:9004", "2", 2)]}
 
@@ -306,9 +306,9 @@ class RebaseTests(RouteGame):
             self.assertEqual(draft, {"profile": {**fresh["profile"], "id": identity, "name": name},
                                      "plan": fresh["plan"]})
             # Only the chest is gone; the shield stays, in the third chest's tier.
-            self.assertEqual(result["left_out"], [{"id": CHEST_2, "kind": "place", "reason": CARRIER_CAN_GO_MISSING}])
+            self.assertEqual(result["left_out"], [{"id": CHEST_2, "kind": "place", "reason": CARRIER_GOES_MISSING}])
             self.assertEqual(result["notes"], [
-                "1 place from it is on a creature that may leave, vanish or never appear, so it is left out",
+                "1 place from it is on a creature that is never there or always escapes, so it is left out",
                 PRESET_FOLLOWED])
             # Still the preset unchanged, for the next time the mods change.
             self.assertTrue(original_configuration.unchanged(draft["profile"], draft["plan"]))
@@ -324,11 +324,11 @@ class RebaseTests(RouteGame):
         lists = self.new_version()
         [result] = self.rebase([saved], **lists)
         # Carried over as before; the player is told that the preset has more now.
-        self.assertEqual(result["left_out"], [{"id": CHEST_2, "kind": "place", "reason": CARRIER_CAN_GO_MISSING},
+        self.assertEqual(result["left_out"], [{"id": CHEST_2, "kind": "place", "reason": CARRIER_GOES_MISSING},
                                               {"id": OGRE, "kind": "reward", "reason": NO_PLACE}])
         self.assertEqual(result["notes"], [
             "1 reward from it cannot be used with the game as it is now, so it is left out",
-            "1 place from it is on a creature that may leave, vanish or never appear, so it is left out",
+            "1 place from it is on a creature that is never there or always escapes, so it is left out",
             "A left-out reward stays as the game has it", PRESET_HAS_MORE])
         plan = result["draft"]["plan"]
         self.assertEqual(sorted((row["id"], row["capacity"]) for row in plan["targets"]),
