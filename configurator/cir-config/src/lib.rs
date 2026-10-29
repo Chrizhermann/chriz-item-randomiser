@@ -53,6 +53,7 @@ pub mod starts;
 pub mod activation;
 mod processes;
 pub mod editor;
+pub mod rebase;
 pub mod game_folder;
 
 pub use error::{Error, ErrorKind, Result};

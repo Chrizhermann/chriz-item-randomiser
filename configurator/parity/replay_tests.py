@@ -3,8 +3,9 @@
 Runs the Python test suite (tests/test_*.py) with the reference implementation
 as usual. Every call the tests make to the configurator library -- game and
 world scans, preset drafts and fitting with left-out rows, the special places
-a game can deliver, the reward routes of table rows, binding, campaign compile
-and publish, native export -- is also run by the Rust port on the same
+a game can deliver, the reward routes of table rows, saved configurations
+carried over to new scans, binding, campaign compile and publish, native
+export -- is also run by the Rust port on the same
 inputs and the same folder state. Results, errors and written files must match
 exactly; the synthetic games are the ones the reference tests build.
 
@@ -170,7 +171,8 @@ def classify(call: str):
                 campaigns_patched = True
                 continue
             if module == "flir_config.original_configuration" and attribute == "resolve_template":
-                if call in ("build_original_configuration", "fit_original_configuration", "fit_special_places"):
+                if call in ("build_original_configuration", "fit_original_configuration", "fit_special_places",
+                            "rebase_drafts"):
                     resolve = getattr(target, attribute)
                 continue
             if module == "flir_config.original_registrations" and attribute == "resolve_template":
@@ -254,7 +256,7 @@ def mocked_draft(resolve, values: dict):
     if effect is None:
         draft = resolve.return_value
     elif "template_id" not in values:
-        # fit_special_places resolves one draft for each list.
+        # fit_special_places (also rebase_drafts) resolves one draft for each list.
         return None, "resolve_template has a side effect for several lists"
     elif callable(effect) and not isinstance(effect, type):
         draft = effect(values["catalog"], values["world"], values["template_id"], items=values.get("items"),
@@ -348,6 +350,12 @@ SPECS = {
     ("flir_config.original_configuration", "fit_special_places"): Spec(
         "fit_special_places", lambda v, d: present(
             catalog=file(v["catalog"]), world=file(v["world"]), draft=None if d is None else file(d))),
+    ("flir_config.rebase", "rebase_drafts"): Spec(
+        "rebase_drafts", lambda v, d: present(
+            catalog=file(v["catalog"]), world=file(v["world"]), drafts=list(v["drafts"]),
+            earlier_world=None if v["earlier_world"] is None else file(v["earlier_world"]),
+            draft=None if d is None else file(d)),
+        sequences=("drafts",)),
     ("flir_config.sources", "new_binding_plan"): Spec(
         "new_binding_plan", lambda v, d: {"profile": file(v["profile"]), "catalog": file(v["catalog"]),
                                           "world": file(v["world"])}),

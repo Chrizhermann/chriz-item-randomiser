@@ -1402,15 +1402,17 @@ fn string_set(values: &[Value]) -> Option<HashSet<&str>> {
 /// A binding plan's fields; binding and the editor's draft check both use them.
 pub const PLAN_FIELDS: [&str; 6] =
     ["schema", "catalog_fingerprint", "world_fingerprint", "sources", "registrations", "targets"];
-/// Creature replacements, randomisation rules, an original preset's settings,
+/// Creature replacements, randomisation rules, an original preset's settings
+/// and the record of what its fit made (`original_configuration::FIT_RECORD`),
 /// the metadata of its options (Spell Shield stock, cursed disguises) and the
 /// second copies of its moved rewards (duplicates.rs).
-pub const PLAN_OPTIONAL_FIELDS: [&str; 9] = [
+pub const PLAN_OPTIONAL_FIELDS: [&str; 10] = [
     "replacements",
     "randomization",
     "original_template_id",
     "original_choices",
     "original_options",
+    "original_fit_sha256",
     "target_registrations",
     "spell_shield",
     "cursed_disguises",

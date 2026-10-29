@@ -31,6 +31,12 @@ const USABLE_PROBLEMS: [Option<&str>; 3] =
 const SHIPPED_REPLACEMENT_ROW: &str = "bg2:base:item:86";
 /// Rounds of leaving out rows the runtime check names before giving up.
 const FIT_ROUNDS: usize = 8;
+/// Why a reward is left out when its tier has no place it can go to.
+pub const NO_PLACE_IN_TIER: &str = "no-place-in-tier";
+/// A fitted preset's record of what its fit made (`fit_record`), kept in its
+/// plan when the editor saves it; a configuration that still matches it is
+/// the preset unchanged.
+pub const FIT_RECORD: &str = "original_fit_sha256";
 
 fn s<'a>(row: &'a Value, key: &str) -> &'a str {
     row.get(key).and_then(Value::as_str).unwrap_or("")
@@ -350,7 +356,7 @@ fn not_used_notes(rows: &[Value]) -> Vec<String> {
 }
 
 /// How many rewards and places `rows` are, as "2 rewards and 1 place".
-fn counted(rows: &[&Value]) -> String {
+pub(crate) fn counted(rows: &[&Value]) -> String {
     let rewards = rows.iter().filter(|row| s(row, "kind") == "reward").count();
     [(rewards, "reward"), (rows.len() - rewards, "place")]
         .into_iter()
@@ -901,19 +907,25 @@ fn build_from(
     }))
 }
 
-/// Source identities whose tier lacks a place the campaign check accepts.
-///
-/// With overflow, each tier with rewards needs a place that can take any
-/// reward and, when originals may be kept, one that no reward's home claims.
-/// Without a reward of such a tier its claims go too, so this repeats until
-/// stable.
-fn placeless_sources(plan: &Value) -> Result<Vec<String>> {
-    let randomization = plan.at("randomization")?;
+/// `placeless_sources` of a preset's plan, whose places are its original
+/// recipients.
+fn preset_placeless_sources(plan: &Value) -> Result<Vec<String>> {
     let mut kinds: HashMap<String, String> = HashMap::new();
     for registration in plan.at("target_registrations")?.as_list().into_iter().flatten() {
         let kind = target_record(registration)?.at("kind")?.as_str().unwrap_or("").to_string();
         kinds.insert(s(registration, "id").to_string(), kind);
     }
+    placeless_sources(plan.at("randomization")?, &kinds)
+}
+
+/// Source identities whose tier lacks a place the campaign check accepts;
+/// `kinds` names the kind of each place.
+///
+/// With overflow, each tier with rewards needs a place that can take any
+/// reward and, when originals may be kept, one that no reward's home claims.
+/// Without a reward of such a tier its claims go too, so this repeats until
+/// stable.
+pub fn placeless_sources(randomization: &Value, kinds: &HashMap<String, String>) -> Result<Vec<String>> {
     let mut slots: HashMap<String, HashSet<(String, usize)>> = HashMap::new();
     for (identity, tiers) in randomization.at("targets")?.as_dict().into_iter().flat_map(Dict::iter) {
         if kinds.get(identity).is_some_and(|kind| OVERFLOW_TARGET_KINDS.contains(&kind.as_str())) {
@@ -968,7 +980,9 @@ fn placeless_sources(plan: &Value) -> Result<Vec<String>> {
 /// cannot drop, a recipient it cannot address); those rows are left out and
 /// listed in `not_used`, and the configuration is built again until the
 /// check passes. The rounds share the validated catalogues (`scans`, if the
-/// caller has them), the resolved tables and the item charges they read.
+/// caller has them), the resolved tables and the item charges they read. The
+/// plan keeps the record of what the fit made (`FIT_RECORD`), so that a
+/// configuration saved unchanged can be told from one changed in the editor.
 pub fn fit_original_configuration(
     catalog: &Value,
     world: &Value,
@@ -1114,9 +1128,34 @@ fn special_places_from(
 
 /// How `fit_from` gets a draft: `resolve_template` for (template id, game,
 /// names), or the draft a test patched in.
-type Resolve<'a> = dyn Fn(&str, &str, Option<&EetNames>) -> Result<Value> + 'a;
+pub(crate) type Resolve<'a> = dyn Fn(&str, &str, Option<&EetNames>) -> Result<Value> + 'a;
 
-fn fit_from(
+/// What a configuration holds, as `FIT_RECORD` keeps it: the SHA-256 of all
+/// of it but its identity, its name and the record itself. Any other change
+/// made in the editor (an item, a reward, a place, its slots, a tier, a
+/// price) gives another one.
+pub fn fit_record(profile: &Value, plan: &Value) -> Result<String> {
+    let mut profile = profile.as_dict().ok_or_else(|| profile.subscript_error())?.clone();
+    profile.remove("id");
+    profile.remove("name");
+    let mut plan = plan.as_dict().ok_or_else(|| plan.subscript_error())?.clone();
+    plan.remove(FIT_RECORD);
+    crate::profiles::digest(&Value::Dict(crate::dict! {"profile" => Value::Dict(profile), "plan" => Value::Dict(plan)}))
+}
+
+/// Whether a configuration is its preset as the fit made it, changed in the
+/// editor at most by its name. One saved without the record (by CIR 1.0.3 or
+/// earlier) counts as changed.
+pub fn unchanged(profile: &Value, plan: &Value) -> Result<bool> {
+    match plan.get(FIT_RECORD).and_then(Value::as_str) {
+        Some(record) => Ok(record == fit_record(profile, plan)?),
+        None => Ok(false),
+    }
+}
+
+/// `fit_original_configuration` with the draft from `resolve`; its plan has
+/// the record of what the fit made (`FIT_RECORD`).
+pub(crate) fn fit_from(
     catalog: &Value,
     world: &Value,
     template_id: &Value,
@@ -1151,7 +1190,7 @@ fn fit_from(
     let mut defaults = HashMap::new();
     let mut exclude: HashMap<String, String> = HashMap::new();
     for _ in 0..FIT_ROUNDS {
-        let generated = build_from(catalog, world, template_id, &exclude, Some(scans), &mut defaults, |game, names| {
+        let mut generated = build_from(catalog, world, template_id, &exclude, Some(scans), &mut defaults, |game, names| {
             // The same template, game and names in every round.
             match &resolved {
                 Some(draft) => Ok(draft.clone()),
@@ -1163,11 +1202,11 @@ fn fit_from(
             }
         })?;
         let row_ids = generated.at("row_ids")?;
-        let placeless = placeless_sources(generated.at("plan")?)?;
+        let placeless = preset_placeless_sources(generated.at("plan")?)?;
         if !placeless.is_empty() {
             for identity in placeless {
                 let row = crate::json::py_str(row_ids.at(&identity)?);
-                exclude.insert(row, "no-place-in-tier".into());
+                exclude.insert(row, NO_PLACE_IN_TIER.into());
             }
             continue;
         }
@@ -1186,6 +1225,9 @@ fn fit_from(
             None,
         )?;
         if problems.is_empty() {
+            let record = fit_record(generated.at("profile")?, generated.at("plan")?)?;
+            let plan = generated.at_mut("plan")?;
+            plan.as_dict_mut().ok_or_else(|| Error::type_error("A fitted plan is not an object"))?.insert(FIT_RECORD, record);
             return Ok(generated);
         }
         let mut sorted: Vec<(&str, &Value)> = problems.iter().collect();

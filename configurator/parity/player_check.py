@@ -12,15 +12,24 @@ appears on the screen; this script answers the folder window there.
   with --apply-game. Nothing is written into the game before Apply; Apply
   works, and the next start reopens the applied configuration from the
   same workspace.
-- After the game's mods changed, the configurations of the earlier scan
-  are kept aside and the editor opens with a new configuration; Apply
-  works again.
+- After the game's mods changed, the saved configurations are carried
+  over to the new scan: the one applied last whole, and the editor reopens
+  it; one whose shop is gone in part, its earlier version kept aside, and
+  read-only as it was. Apply works again. A start that stops before (here a
+  damaged configuration cannot be moved aside) says why and leaves the scan
+  they were made with for the next start. When an earlier version moved the
+  configuration applied last aside, the start says where it is, once.
 - After the player's folder was lost, a new workspace applies; the
   revisions the earlier saves use stay as they were and the source gate
   lists them with the new ones.
 - Apply of the extended reward routes writes their dialogue and script into
   override and their text into the game text; the next start still reopens
   that configuration, as Apply's own files are no change of the game's mods.
+  When a mod then removes its items, nothing of it can be carried over: it
+  is kept aside, and the start says once that the editor starts with a new
+  configuration. Moved back after another mods change, its preset is fitted
+  again (the start says it can take a minute); in this game the shipped
+  lists have no place for it, and the start says so.
 - Outside a game, the folder window asks until a game with CIR is chosen:
   a folder without a game, a game without CIR, then a folder inside a
   game whose WeiDU.log records CIR.
@@ -40,6 +49,7 @@ import os
 from pathlib import Path
 import re
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -487,6 +497,14 @@ def cases(check: Checks, desktop: Desktop, root: Path, starts: list) -> None:
     check("in cir: nothing written into the game before Apply", snapshot_tree(game_a) == before)
     status, text = apply(editor, state, "player-apply")
     check("in cir: Apply", status == 200 and APPLIED in text, text[:600])
+    # Another configuration, saved: the chest's item and the shop's, both to the creature.
+    world_a = json.loads((workspace_a / "world.json").read_text(encoding="utf-8"))
+    shop = next(row["id"] for row in world_a["sources"] if row["resource"] == "sto:shop")
+    partial = bound(state, "player-partial")
+    partial["plan"]["sources"][0]["source_ids"].append(shop)
+    partial["plan"]["targets"][0]["capacity"] = 2
+    status, _, _, body = editor.post("/api/save", partial)
+    check("in cir: Save", status == 200, body[:600])
     first.stop()
 
     # In cir/tools: the same game and workspace; the applied configuration reopens.
@@ -496,27 +514,83 @@ def cases(check: Checks, desktop: Desktop, root: Path, starts: list) -> None:
           state["profile"]["id"])
     second.stop()
 
-    # The game's mods change: the earlier configurations are kept aside. One
-    # mod's area cannot be read: the scan leaves it out and says so.
+    # The game's mods change: a new item, and the shop is gone. One mod's
+    # area cannot be read: the scan leaves it out and says so.
     (game_a / "override" / "synth002.itm").write_bytes((game_a / "override" / "synth001.itm").read_bytes())
     (game_a / "override" / "broken.are").write_bytes(bytes(make_are())[:0x100])
+    (game_a / "override" / "shop.sto").unlink()
+    configurations = workspace_a / "configurations"
+    earlier = configurations / "earlier scans"
+    # A start that stops before the saved configurations are carried over
+    # leaves the scan they were made with: the next start carries them over
+    # from it. Here a damaged configuration comes first and cannot be moved
+    # aside, as a file has the folder's name.
+    world_before = (workspace_a / "world.json").read_bytes()
+    (configurations / "a-damaged.json").write_text("{", encoding="utf-8")
+    earlier.write_text("", encoding="utf-8")
+    stopped, _ = start(game_a / "cir" / EXE, "mods-changed-stopped")
+    code = stopped.wait()
+    errors = stopped.text("err").replace("\r\n", "\n")
+    check("mods changed, stopped: says why",
+          code == 1 and "Could not open the editor: The saved configuration \"a-damaged.json\" cannot be carried "
+          f"over to the new scan (it cannot be read), and it could not be moved to {earlier}: " in errors,
+          f"exit {code}: {stopped.text()}{errors}")
+    check("mods changed, stopped: the scan the configurations were made with stays",
+          (workspace_a / "world.json").read_bytes() == world_before)
+    earlier.unlink()
+    (configurations / "a-damaged.json").unlink()
+    # The saved configurations are carried over to the new scan: the one
+    # applied last whole, the other without the shop's item. That one is
+    # read-only, and stays so.
+    partial_path = configurations / "player-partial.json"
+    os.chmod(partial_path, stat.S_IREAD)
     third, _ = start(game_a / "cir" / EXE, "mods-changed")
     editor, state = found_game(check, "mods changed", third, game_a, workspace_a, None)
-    output = third.text()
-    earlier = workspace_a / "configurations" / "earlier scans"
-    check("mods changed: the earlier configuration is kept aside",
-          "One saved configuration was made before the game's mods changed" in output
-          and (earlier / "player-apply.json").is_file(), output)
-    check("mods changed: a new configuration",
-          "The configuration applied last cannot be reopened; the editor starts with a new one." in output
-          and state["profile"]["id"] != "player-apply" and state["saved"] == [], output)
+    output = third.text().replace("\r\n", "\n")
+    check("mods changed: the configuration applied last is carried over and reopened",
+          "The saved configuration \"Parity player-apply\" was made before the game's mods changed and is "
+          "carried over to the new scan.\n" in output
+          and state["profile"]["id"] == "player-apply" and "cannot be reopened" not in output
+          and not (earlier / "player-apply.json").exists(), output)
+    carried = json.loads(partial_path.read_text(encoding="utf-8"))
+    check("mods changed: the other configuration is carried over without the shop's item",
+          "The saved configuration \"Parity player-partial\" was made before the game's mods changed and is "
+          "carried over to the new scan, but not all of it: 1 reward from it cannot be used with the game as it "
+          "is now, so it is left out. A left-out reward stays as the game has it. Its earlier version is kept in "
+          f"{earlier}.\n" in output
+          and carried["plan"]["sources"][0]["source_ids"] == [partial["plan"]["sources"][0]["source_ids"][0]]
+          and json.loads((earlier / "player-partial.json").read_text(encoding="utf-8")) == partial
+          and sorted(row["id"] for row in state["saved"]) == ["player-apply", "player-partial"], output)
+    check("mods changed: the read-only configuration stays read-only",
+          not partial_path.stat().st_mode & stat.S_IWRITE)
+    check("mods changed: no preset to fit again, so no wait announced",
+          "Carrying the saved configurations" not in output, output)
     check("mods changed: names the area the scan leaves out",
           "BROKEN.ARE (Truncated AREA header) cannot be read, so Chriz Item Randomiser leaves it out: "
-          "its items stay as the game has them and no reward goes there.\n" in output.replace("\r\n", "\n"),
-          output)
+          "its items stay as the game has them and no reward goes there.\n" in output, output)
+    for path in (partial_path, earlier / "player-partial.json"):
+        os.chmod(path, stat.S_IREAD | stat.S_IWRITE)
     status, text = apply(editor, state, "player-apply-again")
     check("mods changed: Apply", status == 200 and APPLIED in text, text[:600])
     third.stop()
+
+    # An earlier version (1.0.2, 1.0.3) moved the configuration applied last
+    # into the earlier scans folder: the start says where it is, once.
+    (configurations / "player-apply-again.json").replace(earlier / "player-apply-again.json")
+    moved, _ = start(game_a / "cir" / EXE, "moved-by-earlier-version")
+    editor, state = found_game(check, "moved by an earlier version", moved, game_a, workspace_a, None)
+    output = moved.text().replace("\r\n", "\n")
+    check("moved by an earlier version: says where it is",
+          "The configuration applied last, \"Parity player-apply-again\", was set aside in "
+          f"{earlier} by an earlier version, so the editor starts with a new one. Moved back into "
+          f"{configurations}, it is carried over at the next start.\n" in output
+          and state["profile"]["id"] != "player-apply-again", output)
+    moved.stop()
+    later, _ = start(game_a / "cir" / EXE, "moved-by-earlier-version-later")
+    editor, state = found_game(check, "moved by an earlier version, later", later, game_a, workspace_a, None)
+    output = later.text()
+    check("moved by an earlier version, later: said once", "configuration applied last" not in output, output)
+    later.stop()
 
     # The player's folder is lost (Windows reinstalled, another PC, AppData
     # cleared): a new workspace applies, and the earlier saves keep their revisions.
@@ -565,6 +639,54 @@ def cases(check: Checks, desktop: Desktop, root: Path, starts: list) -> None:
           and not (workspace_r / "configurations" / "earlier scans").exists(),
           f"{state['profile']['id']}: {output}")
     again.stop()
+
+    # A mod removes the routes' items: nothing of the configuration applied
+    # last can be carried over. It is kept aside, and the start says once
+    # that the editor starts with a new configuration.
+    removed_items = {name: (game_r / "override" / name).read_bytes() for name in ("shld26.itm", "helm21.itm")}
+    for name in removed_items:
+        (game_r / "override" / name).unlink()
+    removed, _ = start(game_r / "cir" / EXE, "items-removed")
+    editor, state = found_game(check, "items removed", removed, game_r, workspace_r, None)
+    output = removed.text().replace("\r\n", "\n")
+    earlier = workspace_r / "configurations" / "earlier scans"
+    check("items removed: the configuration applied last is kept aside",
+          "The saved configuration \"Parity route-apply\" cannot be carried over to the new scan: none of its "
+          f"rewards can be used with the game as it is now. It was moved to {earlier}.\n" in output
+          and (earlier / "route-apply.json").is_file()
+          and "Carrying the saved configurations" not in output, output)
+    check("items removed: the start says so and opens a new configuration",
+          "The configuration applied last, \"Parity route-apply\", could not be carried over, so the editor "
+          "starts with a new one.\n" in output
+          and "cannot be reopened" not in output and "Errno" not in output
+          and state["profile"]["id"] != "route-apply" and state["saved"] == [], output)
+    removed.stop()
+    later, _ = start(game_r / "cir" / EXE, "items-removed-later")
+    editor, state = found_game(check, "items removed, later", later, game_r, workspace_r, None)
+    output = later.text()
+    check("items removed, later: said once",
+          "configuration applied last" not in output and "carried over" not in output and state["saved"] == [],
+          output)
+    later.stop()
+
+    # The items come back with another mod's item, and the player moves the
+    # configuration back: its preset is fitted again, which the start
+    # announces. The reference tests' two places are not in the shipped
+    # lists, so in this game the preset fitted again has no place: the
+    # configuration cannot be carried over, and the start says why.
+    for name, data in removed_items.items():
+        (game_r / "override" / name).write_bytes(data)
+    (game_r / "override" / "synth009.itm").write_bytes((game_r / "override" / "synth001.itm").read_bytes())
+    (earlier / "route-apply.json").replace(workspace_r / "configurations" / "route-apply.json")
+    refit, _ = start(game_r / "cir" / EXE, "preset-refit")
+    editor, state = found_game(check, "preset fitted again", refit, game_r, workspace_r, None)
+    output = refit.text().replace("\r\n", "\n")
+    check("preset fitted again: announced, and why it cannot be carried over",
+          "Carrying the saved configurations over to the new scan; this can take a minute.\n" in output
+          and "The saved configuration \"Parity route-apply\" cannot be carried over to the new scan: its preset "
+          "cannot be used with the game as it is now: Original template has no enabled sources or locations. It "
+          f"was moved to {earlier}.\n" in output and state["saved"] == [], output)
+    refit.stop()
 
     # Outside a game: the folder window asks until a game with CIR is chosen.
     game_b, game_c = games / "Test Game B", games / "Test Game C"
