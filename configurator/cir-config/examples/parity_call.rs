@@ -13,8 +13,8 @@ use cir_config::profiles::{read_json, validate_catalog};
 use cir_config::sources::{validate_world, Scans};
 use cir_config::game_names::{self, EetNames};
 use cir_config::{
-    activation, campaigns, native_export, original_catalog, original_configuration, platform, sources, starts, templates,
-    Error, ErrorKind, Result,
+    activation, campaigns, native_export, original_catalog, original_configuration, platform, rebase, sources, starts,
+    templates, Error, ErrorKind, Result,
 };
 use std::collections::HashMap;
 use std::path::Path;
@@ -191,6 +191,17 @@ fn run(name: &str, args: &Dict) -> Result<Value> {
             with_scans(args, &catalog, &world, |scans| match &draft {
                 Some(draft) => original_configuration::fit_special_places_from(&catalog, &world, draft, scans),
                 None => original_configuration::fit_special_places(&catalog, &world, scans),
+            })
+            .map(Value::List)
+        }
+        "rebase_drafts" => {
+            let (catalog, world) = (required(args, "catalog")?, required(args, "world")?);
+            let drafts = required(args, "drafts")?;
+            let drafts = drafts.as_list().map(Vec::as_slice).unwrap_or(&[]);
+            let (earlier, draft) = (argument(args, "earlier_world")?, argument(args, "draft")?);
+            with_scans(args, &catalog, &world, |scans| match &draft {
+                Some(draft) => rebase::rebase_drafts_from(&catalog, &world, drafts, earlier.as_ref(), draft, scans),
+                None => rebase::rebase_drafts(&catalog, &world, drafts, earlier.as_ref(), scans),
             })
             .map(Value::List)
         }

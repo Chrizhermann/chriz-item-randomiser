@@ -28,6 +28,23 @@ KIND_LABELS = {"actor": "Creature", "cre-template": "Creature template",
 PART_NAMES = {"bg1": "BG1", "sod": "SoD", "soa": "BG2", "wk": "Watcher's Keep", "tob": "ToB"}
 
 
+def checked_draft(catalog: dict, world: dict, data: dict) -> dict:
+    """A configuration (profile and plan) checked against these scans, as the
+    editor checks what it saves and lists. Incomplete drafts may be saved;
+    full binding checks happen on Check."""
+    profile = validate_profile(data["profile"], catalog)
+    plan = deepcopy(data["plan"])
+    # The fields binding accepts: a preset's options add their own.
+    expected = PLAN_FIELDS | (set(plan) & PLAN_OPTIONAL_FIELDS)
+    if (set(plan) != expected or plan["schema"] != "flir-binding-plan-v1" or
+            plan["catalog_fingerprint"] != catalog["fingerprint"] or
+            plan["world_fingerprint"] != world["fingerprint"] or
+            any(not isinstance(plan[k], list) for k in ("sources", "targets", "registrations")) or
+            ("target_registrations" in plan and not isinstance(plan["target_registrations"], list))):
+        raise ProfileError("These selections belong to a different scan or an unsupported draft")
+    return {"profile": profile, "plan": plan}
+
+
 class Editor:
     def __init__(self, catalog: dict, world: dict, workspace: Path,
                  profile: dict | None = None, plan: dict | None = None,
@@ -85,17 +102,7 @@ class Editor:
 
     def checked(self, data: dict) -> dict:
         """Incomplete drafts may be saved; full binding checks happen on Check."""
-        profile = validate_profile(data["profile"], self.catalog)
-        plan = deepcopy(data["plan"])
-        # The fields binding accepts: a preset's options add their own.
-        expected = PLAN_FIELDS | (set(plan) & PLAN_OPTIONAL_FIELDS)
-        if (set(plan) != expected or plan["schema"] != "flir-binding-plan-v1" or
-                plan["catalog_fingerprint"] != self.catalog["fingerprint"] or
-                plan["world_fingerprint"] != self.world["fingerprint"] or
-                any(not isinstance(plan[k], list) for k in ("sources", "targets", "registrations")) or
-                ("target_registrations" in plan and not isinstance(plan["target_registrations"], list))):
-            raise ProfileError("These selections belong to a different scan or an unsupported draft")
-        return {"profile": profile, "plan": plan}
+        return checked_draft(self.catalog, self.world, data)
 
     def check(self, draft: dict, scans: Scans | None = None) -> dict:
         result = {"valid": False, "runtime_supported": False, "reward_units": 0, "target_capacity": 0}
