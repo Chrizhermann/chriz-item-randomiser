@@ -154,9 +154,14 @@ with "Profile belongs to another scan" then). The start carries each over to
 the new scan first (`rebase::rebase_drafts`, the reference's
 `rebase.rebase_drafts`; see
 [Saved configurations after the mods change](../docs/post-install-configurator.md#saved-configurations-after-the-mods-change)):
-what the player chose stays, what no longer fits is left out, and the console
-names what was left out in plain words. An area's creature or container is
-found by its name, as the game finds it, not by its number in the area file.
+one saved unchanged from a preset (the record of what the preset's fit made,
+`original_fit_sha256`, still matches it) becomes that preset as it fits the
+new scan, with the same pools and options and what the preset gained. Of any
+other, what the player chose stays, and a note says when its preset has
+rewards or places it does not have. What no longer fits is left out, and the
+console names what was left out in plain words. An area's creature or
+container is found by its name, as the game finds it, not by its number in
+the area file.
 The earlier version of a configuration carried over in part is kept in
 `configurations\earlier scans\`; one that cannot be carried over (it cannot
 be read or written, its preset no longer fits the game, or none of its

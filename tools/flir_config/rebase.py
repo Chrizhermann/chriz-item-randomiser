@@ -6,21 +6,28 @@ version of Chriz Item Randomiser among them) the start without arguments
 scans the game again; rebase_drafts then carries each configuration of the
 earlier scans over to the new ones.
 
-It keeps what the player chose: the items, which of their records move, the
-places and their reward slots, a preset's pools and options, tiers and shop
-prices. What the scans decide comes from the new ones, as the editor would
-offer it now: a preset's rewards and places from the preset fitted again with
-the same pools and options (a row of its lists stays the same choice when the
-new version moves it in another way), a special place from those this game
-can deliver, the pool's reward from the prepared pool script, a record or
-recipient chosen in the editor from the new world scan. A creature or
-container of an area, and a record in one, is found as the game finds it: by
-the name the scan the configuration was made with (``earlier_world``) shows,
-wherever it stands now; where it stood only tells several of one name apart.
+A configuration saved unchanged from a preset (its plan's record of what the
+preset's fit made still matches it) becomes that preset as it fits the new
+scans, with the same pools and options: what the preset gained, in a new
+version or with the new mods, is added.
 
-What no longer fits is left out and named; nothing is added. A configuration
-that cannot be read, whose preset no longer fits the game, or of which no
-reward remains, is not carried over.
+Any other configuration keeps what the player chose: the items, which of
+their records move, the places and their reward slots, a preset's pools and
+options, tiers and shop prices. What the scans decide comes from the new
+ones, as the editor would offer it now: a preset's rewards and places from
+the preset fitted again with the same pools and options (a row of its lists
+stays the same choice when the new version moves it in another way), a
+special place from those this game can deliver, the pool's reward from the
+prepared pool script, a record or recipient chosen in the editor from the new
+world scan. A creature or container of an area, and a record in one, is
+found as the game finds it: by the name the scan the configuration was made
+with (``earlier_world``) shows, wherever it stands now; where it stood only
+tells several of one name apart. Nothing is added; when its preset has
+rewards or places it does not have, a note says so.
+
+What no longer fits is left out and named. A configuration that cannot be
+read, whose preset no longer fits the game, or of which no reward remains, is
+not carried over.
 """
 from __future__ import annotations
 
@@ -57,6 +64,10 @@ NO_PLACE = original_configuration.NO_PLACE_IN_TIER
 UNREADABLE = "it cannot be read"
 NOTHING_LEFT = "none of its rewards can be used with the game as it is now"
 PRESET_UNFIT = "its preset cannot be used with the game as it is now: "
+# What a configuration made from a preset is told when the preset has more now.
+PRESET_FOLLOWED = "It was saved unchanged from its preset, so the preset's new rewards and places are added to it"
+PRESET_HAS_MORE = ("Its preset has rewards or places that it does not have; choosing the preset again in the editor "
+                   "gives them")
 _PRESET_FIELDS = ("original_template_id", "original_choices", "original_options")
 # A place's reward slots, as the binding check allows them.
 _MAX_CAPACITY = 0xFFFFFFFF
@@ -72,7 +83,8 @@ def rebase_drafts(catalog: dict, world: dict, drafts: list, *, earlier_world: di
     it. Otherwise the result is ``{"draft", "left_out", "notes"}``: the
     configuration for these scans, the choices left out (``{"id", "kind",
     "reason"}``, kind ``item``, ``reward`` or ``place``) and what they are in
-    plain words; or ``{"draft": None, "reason"}`` when it is not carried over.
+    plain words, with what its preset has more now; or ``{"draft": None,
+    "reason"}`` when it is not carried over.
     ``earlier_world`` is the world scan the configurations were made with, if
     the caller has it. The fits of one preset are shared by the configurations
     made from it.
@@ -86,7 +98,7 @@ class _Preset:
     """A preset fitted to the new scans: what moves each of its rows now."""
 
     def __init__(self, resolved: dict, fitted: dict):
-        self.plan = fitted["plan"]
+        self.profile, self.plan = fitted["profile"], fitted["plan"]
         self.registrations = {row["id"]: row for row in self.plan["registrations"]}
         self.places = {row["id"]: row for row in self.plan["target_registrations"]}
         # The item of each identity the fit moves, and the identity of each row it uses.
@@ -330,6 +342,30 @@ class _Carrier:
             preset = self.preset(plan)
             if isinstance(preset, ValueError):
                 return {"draft": None, "reason": PRESET_UNFIT + str(preset)}
+        draft = self._carry(profile, plan, items, preset, left_out)
+        notes = []
+        if preset is not None:
+            more = _more(preset.plan, draft)
+            if original_configuration.unchanged(profile, plan):
+                # The preset as it fits now. A reward of it left out above
+                # (its places gone) is in it when the preset has another place.
+                draft = checked_draft(self.catalog, self.world, {
+                    "profile": {**deepcopy(preset.profile), "id": profile.get("id"), "name": profile.get("name")},
+                    "plan": deepcopy(preset.plan)})
+                rewards = _held(preset.plan)[0]
+                left_out = [row for row in left_out if row["kind"] != "reward" or row["id"] not in rewards]
+                if more:
+                    notes.append(PRESET_FOLLOWED)
+            elif more:
+                notes.append(PRESET_HAS_MORE)
+        if draft is None:
+            return {"draft": None, "reason": NOTHING_LEFT}
+        return {"draft": draft, "left_out": left_out, "notes": _notes(left_out) + notes}
+
+    def _carry(self, profile: dict, plan: dict, items: set[str], preset: _Preset | None,
+               left_out: list[dict]) -> dict | None:
+        """The player's choices for these scans, those left out added to
+        ``left_out``; None when none of its rewards remains."""
         fingerprint = plan["world_fingerprint"]
         saved_registrations: dict[str, dict] = {}
         for row in plan["registrations"]:
@@ -411,7 +447,7 @@ class _Carrier:
             sources.append({**deepcopy(choice), "source_ids": records, "registration_ids": registered})
             registrations += [evidence[identity] for identity in registered]
         if not items and profile["items"]:
-            return {"draft": None, "reason": NOTHING_LEFT}
+            return None
         rebased = deepcopy(profile)
         rebased["items"] = [item for item in profile["items"] if item in items]
         rebased["catalog_fingerprint"] = self.catalog["fingerprint"]
@@ -423,6 +459,8 @@ class _Carrier:
         result["catalog_fingerprint"] = self.catalog["fingerprint"]
         result["world_fingerprint"] = self.world["fingerprint"]
         result["sources"], result["registrations"], result["targets"] = sources, registrations, targets
+        # It is no longer what a preset's fit made.
+        result.pop(original_configuration.FIT_RECORD, None)
         if places or preset is not None:
             result["target_registrations"] = places
         else:
@@ -454,8 +492,24 @@ class _Carrier:
                 result["cursed_disguises"] = deepcopy(fresh["cursed_disguises"])
             else:
                 result.pop("cursed_disguises", None)
-        draft = checked_draft(self.catalog, self.world, {"profile": rebased, "plan": result})
-        return {"draft": draft, "left_out": left_out, "notes": _notes(left_out)}
+        return checked_draft(self.catalog, self.world, {"profile": rebased, "plan": result})
+
+
+def _held(plan: dict) -> tuple[set[str], set[str]]:
+    """The rewards and the places of a configuration, by identity."""
+    rewards = {identity for choice in plan["sources"]
+               for identity in choice.get("source_ids", []) + choice.get("registration_ids", [])}
+    return rewards, {choice["id"] for choice in plan["targets"]}
+
+
+def _more(fresh: dict, draft: dict | None) -> bool:
+    """Whether a preset as it fits now (``fresh``) has rewards or places that
+    a configuration carried over from it does not have (none when None)."""
+    rewards, places = _held(fresh)
+    if draft is None:
+        return bool(rewards or places)
+    own_rewards, own_places = _held(draft["plan"])
+    return bool(rewards - own_rewards or places - own_places)
 
 
 def _rules(saved: dict, fresh: dict | None, moved: list[str], capacity: dict[str, int]) -> dict:

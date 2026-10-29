@@ -26,7 +26,7 @@ from .mode2_rewards import source_spec as mode2_source_spec
 from .cursed_disguises import cursed_disguise_spec, item_revisions_installed
 from .duplicates import expected_copies, holdings, reviewed
 from .prepared import QUEST_CHANGES, applied, applied_changes, left_out
-from .profiles import ProfileError, edit_profile, new_profile, validate_catalog
+from .profiles import ProfileError, _digest, edit_profile, new_profile, validate_catalog
 from .resources import GameResources, RESOURCE_TYPES
 from .scripted_sources import blpool_registration
 from .sources import Scans, UNUSABLE_SOURCE, new_binding_plan, unreadable_notes, validate_world
@@ -48,6 +48,10 @@ _SHIPPED_REPLACEMENT_ROW = "bg2:base:item:86"
 _FIT_ROUNDS = 8
 # Why a reward is left out when its tier has no place it can go to.
 NO_PLACE_IN_TIER = "no-place-in-tier"
+# A fitted preset's record of what its fit made (fit_record), kept in its plan
+# when the editor saves it; a configuration that still matches it is the
+# preset unchanged.
+FIT_RECORD = "original_fit_sha256"
 
 
 class _NotUsable(Exception):
@@ -566,7 +570,9 @@ def fit_original_configuration(catalog: dict, world: dict, template_id: str, *,
     drop, a recipient it cannot address); those rows are left out and listed in
     ``not_used`` and the configuration is built again until the check passes.
     The rounds share the validated catalogues (``scans``, if the caller has
-    them), the resolved tables and the item charges they read.
+    them), the resolved tables and the item charges they read. The plan keeps
+    the record of what the fit made (FIT_RECORD), so that a configuration
+    saved unchanged can be told from one changed in the editor.
     """
     scans = Scans(catalog, world) if scans is None else scans
     drafts: list[dict] = []
@@ -621,8 +627,26 @@ def fit_special_places(catalog: dict, world: dict, *, scans: Scans | None = None
     return [registration for _, registration in sorted(found.values(), key=lambda entry: entry[0])]
 
 
+def fit_record(profile: dict, plan: dict) -> str:
+    """What a configuration holds, as FIT_RECORD keeps it: the SHA-256 of all
+    of it but its identity, its name and the record itself. Any other change
+    made in the editor (an item, a reward, a place, its slots, a tier, a price)
+    gives another one."""
+    return _digest({"profile": {key: value for key, value in profile.items() if key not in ("id", "name")},
+                    "plan": {key: value for key, value in plan.items() if key != FIT_RECORD}})
+
+
+def unchanged(profile: dict, plan: dict) -> bool:
+    """Whether a configuration is its preset as the fit made it, changed in
+    the editor at most by its name. One saved without the record (by CIR 1.0.3
+    or earlier) counts as changed."""
+    record = plan.get(FIT_RECORD)
+    return isinstance(record, str) and record == fit_record(profile, plan)
+
+
 def _fit(catalog: dict, world: dict, template_id: str, scans: Scans, resolve) -> dict:
-    """fit_original_configuration with the draft from ``resolve(game, names)``."""
+    """fit_original_configuration with the draft from ``resolve(game, names)``;
+    its plan has the record of what the fit made (FIT_RECORD)."""
     from .campaigns import compile_campaign
     from .native_export import _compile
 
@@ -640,6 +664,7 @@ def _fit(catalog: dict, world: dict, template_id: str, scans: Scans, resolve) ->
         problems: dict[str, str] = {}
         _compile(campaign, world, index, catalog_items, problems, catalog=catalog)
         if not problems:
+            generated["plan"][FIT_RECORD] = fit_record(generated["profile"], generated["plan"])
             return generated
         for identity, reason in sorted(problems.items()):
             if identity not in generated["row_ids"]:

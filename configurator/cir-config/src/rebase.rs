@@ -6,22 +6,28 @@
 //! arguments scans the game again; `rebase_drafts` then carries each
 //! configuration of the earlier scans over to the new ones.
 //!
-//! It keeps what the player chose: the items, which of their records move,
-//! the places and their reward slots, a preset's pools and options, tiers and
-//! shop prices. What the scans decide comes from the new ones, as the editor
-//! would offer it now: a preset's rewards and places from the preset fitted
-//! again with the same pools and options (a row of its lists stays the same
-//! choice when the new version moves it in another way), a special place from
-//! those this game can deliver, the pool's reward from the prepared pool
-//! script, a record or recipient chosen in the editor from the new world
-//! scan. A creature or container of an area, and a record in one, is found
-//! as the game finds it: by the name the scan the configuration was made with
-//! (`earlier_world`) shows, wherever it stands now; where it stood only tells
-//! several of one name apart.
+//! A configuration saved unchanged from a preset (its plan's record of what
+//! the preset's fit made still matches it) becomes that preset as it fits the
+//! new scans, with the same pools and options: what the preset gained, in a
+//! new version or with the new mods, is added.
 //!
-//! What no longer fits is left out and named; nothing is added. A
-//! configuration that cannot be read, whose preset no longer fits the game,
-//! or of which no reward remains, is not carried over.
+//! Any other configuration keeps what the player chose: the items, which of
+//! their records move, the places and their reward slots, a preset's pools
+//! and options, tiers and shop prices. What the scans decide comes from the
+//! new ones, as the editor would offer it now: a preset's rewards and places
+//! from the preset fitted again with the same pools and options (a row of its
+//! lists stays the same choice when the new version moves it in another way),
+//! a special place from those this game can deliver, the pool's reward from
+//! the prepared pool script, a record or recipient chosen in the editor from
+//! the new world scan. A creature or container of an area, and a record in
+//! one, is found as the game finds it: by the name the scan the configuration
+//! was made with (`earlier_world`) shows, wherever it stands now; where it
+//! stood only tells several of one name apart. Nothing is added; when its
+//! preset has rewards or places it does not have, a note says so.
+//!
+//! What no longer fits is left out and named. A configuration that cannot be
+//! read, whose preset no longer fits the game, or of which no reward remains,
+//! is not carried over.
 
 use crate::editor::checked_draft;
 use crate::error::{Error, ErrorKind, Result};
@@ -29,7 +35,8 @@ use crate::game_names::eet_names;
 use crate::json::{dumps_ascii, py_str, Dict, Value};
 use crate::original_catalog::{resolve_template, CARRIER_CAN_GO_MISSING, NO_ROUTE};
 use crate::original_configuration::{
-    counted, fit_from, fit_special_places, fit_special_places_from, placeless_sources, NO_PLACE_IN_TIER,
+    counted, fit_from, fit_special_places, fit_special_places_from, placeless_sources, unchanged, FIT_RECORD,
+    NO_PLACE_IN_TIER,
 };
 use crate::original_options::{spell_shield_randomized, spell_shield_spec};
 use crate::original_registrations::{target_record, SOURCE_ADAPTER};
@@ -65,6 +72,12 @@ pub const NO_PLACE: &str = NO_PLACE_IN_TIER;
 pub const UNREADABLE: &str = "it cannot be read";
 pub const NOTHING_LEFT: &str = "none of its rewards can be used with the game as it is now";
 pub const PRESET_UNFIT: &str = "its preset cannot be used with the game as it is now: ";
+/// What a configuration made from a preset is told when the preset has more
+/// now.
+pub const PRESET_FOLLOWED: &str =
+    "It was saved unchanged from its preset, so the preset's new rewards and places are added to it";
+pub const PRESET_HAS_MORE: &str =
+    "Its preset has rewards or places that it does not have; choosing the preset again in the editor gives them";
 const PRESET_FIELDS: [&str; 3] = ["original_template_id", "original_choices", "original_options"];
 /// A place's reward slots, as the binding check allows them.
 const MAX_CAPACITY: i64 = 0xFFFF_FFFF;
@@ -77,7 +90,8 @@ const MAX_COORDINATE: i64 = 0xFFFF;
 /// it. Otherwise the result is `{"draft", "left_out", "notes"}`: the
 /// configuration for these scans, the choices left out (`{"id", "kind",
 /// "reason"}`, kind `item`, `reward` or `place`) and what they are in plain
-/// words; or `{"draft": null, "reason"}` when it is not carried over.
+/// words, with what its preset has more now; or `{"draft": null, "reason"}`
+/// when it is not carried over.
 /// `earlier_world` is the world scan the configurations were made with, if
 /// the caller has it. The fits of one preset are shared by the
 /// configurations made from it.
@@ -170,6 +184,7 @@ fn set_aside(reason: &str) -> Value {
 
 /// A preset fitted to the new scans: what moves each of its rows now.
 struct Preset {
+    profile: Value,
     plan: Value,
     registrations: HashMap<String, Value>,
     places: HashMap<String, Value>,
@@ -188,7 +203,7 @@ struct Preset {
 
 impl Preset {
     fn new(resolved: &Value, fitted: &Value) -> Result<Preset> {
-        let plan = fitted.at("plan")?.clone();
+        let (profile, plan) = (fitted.at("profile")?.clone(), fitted.at("plan")?.clone());
         let by_id = |field: &str| -> Result<HashMap<String, Value>> {
             let mut rows = HashMap::new();
             for row in plan.at(field)?.as_list().into_iter().flatten() {
@@ -242,7 +257,7 @@ impl Preset {
                 place_rows.insert(py_str(row.at("id")?));
             }
         }
-        Ok(Preset { plan, registrations, places, items, uses, reasons, records, pool, place_rows })
+        Ok(Preset { profile, plan, registrations, places, items, uses, reasons, records, pool, place_rows })
     }
 
     /// The row of the preset's lists a saved reward choice stands for, if any.
@@ -630,6 +645,49 @@ impl<'a, 's> Carrier<'a, 's> {
         } else {
             None
         };
+        let mut draft = self.carry_choices(profile, plan, &saved_items, &mut items, preset, &mut left)?;
+        let mut told = Vec::new();
+        if let Some(preset) = preset {
+            let more = more(&preset.plan, draft.as_ref())?;
+            if unchanged(profile, plan)? {
+                // The preset as it fits now. A reward of it left out above
+                // (its places gone) is in it when the preset has another place.
+                let mut fresh = preset.profile.clone();
+                if let Some(fields) = fresh.as_dict_mut() {
+                    for key in ["id", "name"] {
+                        fields.insert(key, profile.get(key).cloned().unwrap_or(Value::Null));
+                    }
+                }
+                let candidate = Value::Dict(crate::dict! {"profile" => fresh, "plan" => preset.plan.clone()});
+                draft = Some(checked_draft(self.catalog, self.world, &candidate)?);
+                let (rewards, _) = held(&preset.plan)?;
+                left.retain(|row| text(row, "kind") != "reward" || !rewards.contains(text(row, "id")));
+                if more {
+                    told.push(Value::from(PRESET_FOLLOWED));
+                }
+            } else if more {
+                told.push(Value::from(PRESET_HAS_MORE));
+            }
+        }
+        let Some(draft) = draft else {
+            return Ok(set_aside(NOTHING_LEFT));
+        };
+        let mut notes = notes(&left);
+        notes.extend(told);
+        Ok(Value::Dict(crate::dict! {"draft" => draft, "left_out" => left, "notes" => notes}))
+    }
+
+    /// The player's choices for these scans, those left out added to `left`;
+    /// None when none of its rewards remains.
+    fn carry_choices<'p>(
+        &self,
+        profile: &'p Value,
+        plan: &Value,
+        saved_items: &[&'p str],
+        items: &mut HashSet<&'p str>,
+        preset: Option<&Preset>,
+        left: &mut Vec<Value>,
+    ) -> Result<Option<Value>> {
         let fingerprint = text(plan, "world_fingerprint");
         let mut saved_registrations: HashMap<&str, &Value> = HashMap::new();
         for row in plan.at("registrations")?.as_list().into_iter().flatten() {
@@ -790,7 +848,7 @@ impl<'a, 's> Carrier<'a, 's> {
             }
         }
         if items.is_empty() && !saved_items.is_empty() {
-            return Ok(set_aside(NOTHING_LEFT));
+            return Ok(None);
         }
         let mut rebased = profile.clone();
         let fields = rebased.as_dict_mut().ok_or_else(|| profile.subscript_error())?;
@@ -809,6 +867,8 @@ impl<'a, 's> Carrier<'a, 's> {
         fields.insert("sources", sources.clone());
         fields.insert("registrations", registrations.clone());
         fields.insert("targets", targets);
+        // It is no longer what a preset's fit made.
+        fields.remove(FIT_RECORD);
         if !places.is_empty() || preset.is_some() {
             fields.insert("target_registrations", places);
         } else {
@@ -881,9 +941,33 @@ impl<'a, 's> Carrier<'a, 's> {
             self.world,
             &Value::Dict(crate::dict! {"profile" => rebased, "plan" => result}),
         )?;
-        let notes = notes(&left);
-        Ok(Value::Dict(crate::dict! {"draft" => draft, "left_out" => left, "notes" => notes}))
+        Ok(Some(draft))
     }
+}
+
+/// The rewards and the places of a configuration, by identity.
+fn held(plan: &Value) -> Result<(HashSet<String>, HashSet<String>)> {
+    let mut rewards = HashSet::new();
+    for choice in plan.at("sources")?.as_list().into_iter().flatten() {
+        for field in ["source_ids", "registration_ids"] {
+            if let Some(identities) = choice.get(field) {
+                rewards.extend(texts_of(identities).map(str::to_string));
+            }
+        }
+    }
+    let places = plan.at("targets")?.as_list().into_iter().flatten().map(|choice| text(choice, "id").to_string());
+    Ok((rewards, places.collect()))
+}
+
+/// Whether a preset as it fits now (`fresh`) has rewards or places that a
+/// configuration carried over from it does not have (none when None).
+fn more(fresh: &Value, draft: Option<&Value>) -> Result<bool> {
+    let (rewards, places) = held(fresh)?;
+    let Some(draft) = draft else {
+        return Ok(!rewards.is_empty() || !places.is_empty());
+    };
+    let (own_rewards, own_places) = held(draft.at("plan")?)?;
+    Ok(!rewards.is_subset(&own_rewards) || !places.is_subset(&own_places))
 }
 
 /// The randomisation rules of the rewards and places kept: a preset's rows
@@ -1384,5 +1468,41 @@ mod tests {
         assert!(nearest(&here, &[&near, &value(r#"{"selector": {"x": 1}}"#)]).is_none());
         assert!(nearest(&value(r#"{"selector": {"x": 1, "y": 65536}}"#), &[&near]).is_none());
         assert!(nearest(&here, &[]).is_none());
+    }
+
+    #[test]
+    fn a_preset_is_unchanged_while_it_holds_what_its_fit_made() {
+        let profile = value(r#"{"id": "a", "name": "Boss Loot", "items": ["helm21"]}"#);
+        let mut plan = value(r#"{"targets": [{"id": "t", "capacity": 1}], "sources": []}"#);
+        assert!(!unchanged(&profile, &plan).unwrap()); // Saved by CIR 1.0.3: no record.
+        let record = crate::original_configuration::fit_record(&profile, &plan).unwrap();
+        plan.as_dict_mut().unwrap().insert(FIT_RECORD, record.as_str());
+        assert!(unchanged(&profile, &plan).unwrap());
+        // Another identity and name are the same configuration.
+        let renamed = value(r#"{"id": "b", "name": "Mine", "items": ["helm21"]}"#);
+        assert!(unchanged(&renamed, &plan).unwrap());
+        // Another item or slot is a change.
+        assert!(!unchanged(&value(r#"{"id": "a", "name": "Boss Loot", "items": []}"#), &plan).unwrap());
+        let mut slots = plan.clone();
+        slots.at_mut("targets").unwrap().as_list_mut().unwrap()[0].as_dict_mut().unwrap().insert("capacity", 2);
+        assert!(!unchanged(&profile, &slots).unwrap());
+        plan.as_dict_mut().unwrap().insert(FIT_RECORD, 1);
+        assert!(!unchanged(&profile, &plan).unwrap());
+    }
+
+    #[test]
+    fn a_preset_has_more_than_a_configuration_without_its_rewards_or_places() {
+        let plan = |rewards: &str, places: &str| {
+            value(&format!(
+                r#"{{"sources": [{{"item": "x", "source_ids": [{rewards}], "registration_ids": []}}],
+                    "targets": [{places}]}}"#
+            ))
+        };
+        let fresh = plan(r#""r1", "r2""#, r#"{"id": "p1"}, {"id": "p2"}"#);
+        let draft = |plan: Value| value(&format!(r#"{{"plan": {}}}"#, dumps_ascii(&plan, true)));
+        assert!(!more(&fresh, Some(&draft(plan(r#""r1", "r2", "r3""#, r#"{"id": "p1"}, {"id": "p2"}"#)))).unwrap());
+        assert!(more(&fresh, Some(&draft(plan(r#""r1""#, r#"{"id": "p1"}, {"id": "p2"}"#)))).unwrap());
+        assert!(more(&fresh, Some(&draft(plan(r#""r1", "r2""#, r#"{"id": "p2"}"#)))).unwrap());
+        assert!(more(&fresh, None).unwrap());
     }
 }

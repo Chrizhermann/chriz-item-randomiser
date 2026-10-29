@@ -177,8 +177,19 @@ prepares other dialogues and scripts), it carries each saved configuration over 
 new scans before the editor opens (`rebase.rebase_drafts`, in the executable
 `rebase::rebase_drafts`):
 
-- What the player chose stays: the items, which of their records move, the places
-  and their reward slots, a preset's pools and options, tiers and shop prices.
+- A configuration saved unchanged from a preset becomes that preset as it fits the new
+  scans, with the same pools and options: rewards and places the preset gained (in a
+  new version of CIR or with the new mods) are added, and what it can no longer use is
+  left out. A preset's fit records what it made in the plan (`original_fit_sha256`,
+  the SHA-256 of the configuration but for its identity, its name and the record), and
+  the editor saves the record with it; a configuration that still matches it was
+  changed in the editor at most by its name. Pools and options are the preset choice
+  (choosing them fits the preset again); any change to items, rewards, places, reward
+  slots, tiers or prices makes it a changed one. Configurations saved by CIR 1.0.3 or
+  earlier have no record and count as changed.
+- Of any other configuration, what the player chose stays: the items, which of their
+  records move, the places and their reward slots, a preset's pools and options, tiers
+  and shop prices.
 - What the scans decide comes from the new ones, as the editor would offer it now. A
   preset's rewards and places come from the preset fitted again with the same pools
   and options; a row of its lists stays the same choice when the new version moves it
@@ -197,26 +208,29 @@ new scans before the editor opens (`rebase.rebase_drafts`, in the executable
   that can go missing, a quest CIR cannot change yet, a route the game no longer
   has) and those of the carry-over (an item or record no longer in the game, a place
   that is gone, cannot be told apart or cannot be used, a tier left without a place).
-  Nothing is added: a preset's new rows wait for the player to choose the preset again.
+  Nothing is added to a changed configuration. When its preset, fitted now, has rewards
+  or places it does not have, one note says so, and that choosing the preset again in
+  the editor gives them.
 - A configuration that cannot be read, whose preset no longer fits the game (or that
   this version no longer has), or of which no reward remains is not carried over.
 
 The previous start's `world.json` is replaced only once every configuration is carried
 over, so a start that ends sooner (its window closed) leaves it for the next start.
-The console names each configuration carried over and, for one carried over in part,
-what was left out in plain words; its earlier version is kept in
-`configurations\earlier scans\`, copied there before the carried-over version takes
-its place in one step. A read-only configuration stays read-only (when it cannot be
+The console names each configuration carried over, with the note of its preset, and,
+for one carried over in part, what was left out in plain words; its earlier version is
+kept in `configurations\earlier scans\`, copied there before the carried-over version
+takes its place in one step. A read-only configuration stays read-only (when it cannot be
 made read-only again, it is carried over all the same and the console says so). One
 that is not carried over (also when it cannot be written, or the carry-over of it runs
 into an unexpected error) is moved there, and the console says why; the others are
 carried over all the same. When that is the configuration applied last, the start says so
 once and the editor starts with a new configuration; it is no longer the one to
 reopen. Configurations that an earlier version of CIR already moved to
-`configurations\earlier scans\` stay there; when one of them is the configuration
-applied last, the start says so once. Moved back into `configurations\`, the next
-start carries them over (an editor-chosen creature or container in an area is then
-left out, as the scan they were made with is gone).
+`configurations\earlier scans\` stay there: the configurator does not bring them back.
+When one of them is the configuration applied last, the start says so once. Moved
+back into `configurations\` by hand, the next start carries them over (an
+editor-chosen creature or container in an area is then left out, as the scan they
+were made with is gone).
 
 ## Prepared draft storage
 

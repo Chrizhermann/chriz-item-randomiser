@@ -285,8 +285,9 @@ fn shown_name(draft: &Value, path: &Path) -> String {
 struct Carried {
     /// Where those kept aside are.
     folder: PathBuf,
-    /// Carried over whole: their names.
-    whole: Vec<String>,
+    /// Carried over whole: the name and what its preset is like now, in
+    /// plain words (none for most).
+    whole: Vec<(String, Vec<String>)>,
     /// Carried over in part: the name and what was left out, in plain words.
     part: Vec<(String, Vec<String>)>,
     /// Kept aside: the file's identity, the name and why.
@@ -297,40 +298,57 @@ struct Carried {
 
 impl Carried {
     fn report(&self) {
+        for line in self.lines() {
+            println!("{line}");
+        }
+    }
+
+    /// What the console says of them, one line each.
+    fn lines(&self) -> Vec<String> {
         let folder = paths::display(&self.folder);
-        match self.whole.as_slice() {
+        let mut lines = Vec::new();
+        let plain: Vec<&String> = self.whole.iter().filter(|(_, notes)| notes.is_empty()).map(|(name, _)| name).collect();
+        match plain.as_slice() {
             [] => {}
-            [name] => println!(
+            [name] => lines.push(format!(
                 "The saved configuration \"{name}\" was made before the game's mods changed and is carried over \
                  to the new scan."
-            ),
-            names => println!(
+            )),
+            names => lines.push(format!(
                 "{} saved configurations were made before the game's mods changed and are carried over to the new \
                  scan: {}.",
                 names.len(),
                 names.iter().map(|name| format!("\"{name}\"")).collect::<Vec<_>>().join(", ")
-            ),
+            )),
+        }
+        for (name, notes) in self.whole.iter().filter(|(_, notes)| !notes.is_empty()) {
+            lines.push(format!(
+                "The saved configuration \"{name}\" was made before the game's mods changed and is carried over \
+                 to the new scan. {}.",
+                notes.join(". ")
+            ));
         }
         for (name, notes) in &self.part {
-            println!(
+            lines.push(format!(
                 "The saved configuration \"{name}\" was made before the game's mods changed and is carried over \
                  to the new scan, but not all of it: {}. Its earlier version is kept in {folder}.",
                 notes.join(". ")
-            );
+            ));
         }
         for (name, error) in &self.writable {
-            println!(
+            lines.push(format!(
                 "The saved configuration \"{name}\" was read-only, and its carried-over version could not be made \
                  read-only again ({}).",
                 error.trim_end_matches('.')
-            );
+            ));
         }
         for (_, name, reason) in &self.aside {
-            println!(
+            lines.push(format!(
                 "The saved configuration \"{name}\" cannot be carried over to the new scan: {reason}. It was moved \
                  to {folder}."
-            );
+            ));
         }
+        lines
     }
 
     /// What to tell the player when the configuration applied last (this
@@ -445,11 +463,12 @@ fn carry_over(
                 continue;
             }
         }
+        let notes = result.get("notes").and_then(Value::as_list).into_iter().flatten();
+        let notes = notes.filter_map(Value::as_str).map(str::to_string).collect();
         if left_out {
-            let notes = result.get("notes").and_then(Value::as_list).into_iter().flatten();
-            carried.part.push((name, notes.filter_map(Value::as_str).map(str::to_string).collect()));
+            carried.part.push((name, notes));
         } else {
-            carried.whole.push(name);
+            carried.whole.push((name, notes));
         }
     }
     Ok(carried)
@@ -571,5 +590,38 @@ fn pause() {
         print!("Press Enter to close this window.");
         let _ = std::io::stdout().flush();
         let _ = std::io::stdin().read_line(&mut String::new());
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_configuration_carried_over_whole_is_told_what_its_preset_has_now() {
+        let carried = Carried {
+            folder: PathBuf::from("earlier scans"),
+            whole: vec![
+                ("Mine".into(), Vec::new()),
+                ("Boss Loot".into(), vec![rebase::PRESET_HAS_MORE.into()]),
+                ("Other".into(), Vec::new()),
+            ],
+            part: Vec::new(),
+            aside: Vec::new(),
+            writable: Vec::new(),
+        };
+        assert_eq!(
+            carried.lines(),
+            [
+                "2 saved configurations were made before the game's mods changed and are carried over to the new \
+                 scan: \"Mine\", \"Other\"."
+                    .to_string(),
+                format!(
+                    "The saved configuration \"Boss Loot\" was made before the game's mods changed and is carried \
+                     over to the new scan. {}.",
+                    rebase::PRESET_HAS_MORE
+                ),
+            ]
+        );
     }
 }

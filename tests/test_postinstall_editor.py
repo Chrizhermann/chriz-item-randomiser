@@ -20,7 +20,7 @@ from flir_config.editor import Editor, create_server
 from flir_config.native_export import NEXT_SCHEMA
 from flir_config.original_catalog import resolve_template
 from flir_config.original_options import SPELL_SHIELD_SOURCE, is_spell_shield_row
-from flir_config.profiles import edit_profile, new_profile
+from flir_config.profiles import edit_profile, new_profile, read_json
 from flir_config.profiles import ProfileError
 from flir_config.resources import scan_game
 from flir_config.sources import new_binding_plan, scan_world
@@ -33,7 +33,7 @@ from tests.test_postinstall_blpool_script import write_registry
 from test_postinstall_resources import make_itm
 from tests.test_postinstall_world_formats import make_are, make_cre, make_sto, item_record
 from sod_table_fixtures import sod_tables
-from flir_config.original_configuration import fit_special_places
+from flir_config.original_configuration import FIT_RECORD, fit_special_places, unchanged
 from test_special_places import LABELS, OGRE, WELL, SpecialPlaceGame
 
 
@@ -600,6 +600,23 @@ class SpecialPlaceEditorTests(SpecialPlaceGame):
             self.assertEqual({key: targets[identity][key] for key in ("label", "note", "place", "kind", "kind_label")},
                              {**LABELS[identity], "kind": "special", "kind_label": "Special place"})
         self.assertEqual(targets["original-target:bg2:base:target:9002"]["kind_label"], "Original recipient")
+
+    def test_a_preset_is_saved_with_the_record_of_its_fit(self):
+        """What a preset's fit made is recorded in the saved plan: a new name
+        keeps the configuration the preset unchanged, a changed slot does not."""
+        self.build("bg2ee")
+        with self.tables():
+            editor = self.editor()
+            state = editor.post("/api/template", {"id": self.template, "items": "extended",
+                                                  "targets": "extended"})
+            saved = editor.post("/api/save", {"profile": {**state["profile"], "name": "Renamed"},
+                                              "plan": state["plan"]})
+        stored = read_json(editor.path(saved["profile"]["id"]))
+        self.assertEqual(stored["profile"]["name"], "Renamed")
+        self.assertIn(FIT_RECORD, stored["plan"])
+        self.assertTrue(unchanged(stored["profile"], stored["plan"]))
+        stored["plan"]["targets"][0]["capacity"] = 2
+        self.assertFalse(unchanged(stored["profile"], stored["plan"]))
 
     def test_a_new_draft_gives_a_special_place_a_reward(self):
         self.build("bg2ee")

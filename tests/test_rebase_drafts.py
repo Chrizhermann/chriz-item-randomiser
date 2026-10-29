@@ -2,9 +2,10 @@
 
 After the game's mods change (a new version of Chriz Item Randomiser among
 them) the configurator scans the game again, and the configurations saved
-with the earlier scans no longer open. rebase_drafts carries them over: the
-player's choices stay, the evidence comes from the new scans, and only what
-the new scans no longer offer is left out and named.
+with the earlier scans no longer open. rebase_drafts carries them over: one
+saved unchanged from a preset becomes the preset as it fits now; of any other
+the player's choices stay, the evidence comes from the new scans, and only
+what the new scans no longer offer is left out and named.
 """
 
 from copy import deepcopy
@@ -22,13 +23,13 @@ from flir_config.editor import checked_draft
 from flir_config.native_export import _compile
 from flir_config.original_catalog import CARRIER_CAN_GO_MISSING
 from flir_config.profiles import ProfileError, new_profile, validate_catalog
-from flir_config.rebase import (NO_PLACE, NOT_AVAILABLE, NOTHING_LEFT, PRESET_UNFIT, SOURCE_ABSENT,
-                                SOURCE_AMBIGUOUS, TARGET_ABSENT, TARGET_AMBIGUOUS, TARGET_UNVERIFIED, UNREADABLE,
-                                rebase_drafts)
+from flir_config.rebase import (NO_PLACE, NOT_AVAILABLE, NOTHING_LEFT, PRESET_FOLLOWED, PRESET_HAS_MORE,
+                                PRESET_UNFIT, SOURCE_ABSENT, SOURCE_AMBIGUOUS, TARGET_ABSENT, TARGET_AMBIGUOUS,
+                                TARGET_UNVERIFIED, UNREADABLE, rebase_drafts)
 from flir_config.sources import new_binding_plan, validate_world
 from test_mode2_rewards import layout_dialogue
 from test_postinstall_world_formats import make_are, make_cre
-from test_reward_routes import RouteGame, chest_item
+from test_reward_routes import RouteGame, chest_item, place
 
 OGRE_REWARD = 'TakePartyItem("misc5x")\nGiveItemCreate("SHLD26",LastTalkedToBy,0,0,0)'
 OGRE, WELL = "original-source:bg2:mode2:item:14", "original-source:bg2:mode2:item:27"
@@ -39,6 +40,9 @@ CHESTS = make_are([chest_item("SYNTH001")], [("Chest", 0, 1), ("Other", 1, 0)])
 # A mod adds a chest before the other one: another chest has its place in the area.
 MORE_CHESTS = make_are([chest_item("SYNTH001")], [("Chest", 0, 1), ("New", 1, 0), ("Other", 1, 0)])
 CHEST_ITEM, OTHER_CHEST = "are:ar0200/container/0/item/0", "are:ar0200/container/1"
+# A new version's lists have a third chest in the area of the preset's chests.
+CHEST_4 = "original-target:bg2:base:target:9004"
+THREE_CHESTS = make_are([], [("Place2", 0, 0), ("Place3", 0, 0), ("Place4", 0, 0)])
 
 
 def placed(area: bytes, *points: tuple[int, int]) -> bytes:
@@ -72,19 +76,24 @@ class RebaseTests(RouteGame):
         self.build("bg2ee", extra={"ar0200.are": CHESTS})
         self.earlier = self.world
 
-    def tables(self, *, carriers=()):
+    def tables(self, *, carriers=(), added=()):
         """The preset's rows as the tests resolve them for the current scans;
-        the places named go missing in the new lists."""
+        the places named go missing in the new lists, which add the rows
+        ``added``."""
         draft = self.draft()
         for row in draft["targets"]:
             if "original-target:" + row["id"] in carriers:
                 row["binding_problem"] = CARRIER_CAN_GO_MISSING
+        draft["targets"] += deepcopy(list(added))
         return draft
 
-    def saved(self) -> dict:
-        """The preset fitted to the current scans, as the editor saves it."""
+    def saved(self, *, record: bool = False) -> dict:
+        """The preset fitted to the current scans, as the editor saves it: with
+        the record of what the fit made, or as CIR 1.0.3 saved it, without."""
         fitted = self.fit()
         profile = {**fitted["profile"], "id": "saved-preset", "name": "My preset"}
+        if not record:
+            del fitted["plan"][original_configuration.FIT_RECORD]
         return {"profile": profile, "plan": fitted["plan"]}
 
     def custom(self, place: str = OTHER_CHEST) -> dict:
@@ -133,15 +142,15 @@ class RebaseTests(RouteGame):
                 path.write_bytes(data)
         self.rescan()
 
-    def rebase(self, drafts, *, carriers=(), earlier="scan"):
+    def rebase(self, drafts, *, carriers=(), added=(), earlier="scan"):
         earlier = self.earlier if earlier == "scan" else earlier
-        with self.resolved(self.tables(carriers=carriers)):
+        with self.resolved(self.tables(carriers=carriers, added=added)):
             return rebase_drafts(self.catalog, self.world, drafts, earlier_world=earlier)
 
-    def assert_checks(self, draft: dict, *, carriers=()) -> None:
+    def assert_checks(self, draft: dict, *, carriers=(), added=()) -> None:
         """The carried-over configuration opens and passes the check that Apply runs."""
         self.assertEqual(checked_draft(self.catalog, self.world, draft), draft)
-        with self.resolved(self.tables(carriers=carriers)):
+        with self.resolved(self.tables(carriers=carriers, added=added)):
             campaign = compile_campaign(draft["profile"], self.catalog, self.world, draft["plan"])
         _compile(campaign, self.world, validate_world(self.world, self.catalog), validate_catalog(self.catalog),
                  catalog=self.catalog)
@@ -215,12 +224,13 @@ class RebaseTests(RouteGame):
         self.change(**{"uhogre01.dlg": ogre_dialogue(more=True),
                        "ar0200.are": make_are([chest_item("SYNTH001")], [("Chest", 0, 1)])})
         [result] = self.rebase([saved])
-        # The preset fitted now still has the shield; this configuration has no place for it.
+        # The preset fitted now still has the shield; this configuration has no
+        # place for it. The player is told that the preset has both.
         self.assertEqual(result["left_out"], [{"id": OTHER_CHEST, "kind": "place", "reason": TARGET_ABSENT},
                                               {"id": OGRE, "kind": "reward", "reason": NO_PLACE}])
         self.assertEqual(result["notes"], [
             "1 reward and 1 place from it cannot be used with the game as it is now, so they are left out",
-            "A left-out reward stays as the game has it"])
+            "A left-out reward stays as the game has it", PRESET_HAS_MORE])
         draft = result["draft"]
         self.assertEqual(draft["profile"]["items"], ["helm21"])
         self.assertEqual(sorted(row["id"] for row in draft["plan"]["targets"]), [CHEST_3, OGRE_PLACE, WELL_PLACE])
@@ -258,6 +268,85 @@ class RebaseTests(RouteGame):
         self.assertEqual((result["draft"]["profile"]["id"], result["draft"]["profile"]["name"]),
                          ("saved-preset", "My preset"))
         self.assert_checks(result["draft"])
+
+    def new_version(self) -> dict:
+        """Another version of the game's mods whose lists have a third chest in
+        the area of the preset's chests and put the shield's chest on a
+        creature that may go missing; the lists, for rebase."""
+        self.change(**{"uhogre01.dlg": ogre_dialogue(more=True), "ar0100.are": THREE_CHESTS})
+        return {"carriers": {CHEST_2}, "added": [place("bg2:base:target:9004", "2", 2)]}
+
+    def fitted(self, lists: dict) -> dict:
+        """The preset fitted to the current scans with these lists."""
+        with self.resolved(self.tables(**lists)):
+            return original_configuration.fit_original_configuration(
+                self.catalog, self.world, self.template, items="extended", targets="extended")
+
+    def test_a_preset_saved_unchanged_becomes_the_preset_as_it_is_now(self):
+        saved = self.saved(record=True)
+        renamed = deepcopy(saved)
+        renamed["profile"].update(id="saved-renamed", name="Renamed")
+        self.assertTrue(original_configuration.unchanged(saved["profile"], saved["plan"]))
+        self.assertTrue(original_configuration.unchanged(renamed["profile"], renamed["plan"]))
+        # Mods that change nothing the preset has: the same preset, nothing to say.
+        self.change(**{"uhogre01.dlg": ogre_dialogue(more=True)})
+        fresh = self.fitted({})
+        [result] = self.rebase([saved])
+        self.assertEqual(result, {"draft": {"profile": {**fresh["profile"], "id": "saved-preset", "name": "My preset"},
+                                            "plan": fresh["plan"]}, "left_out": [], "notes": []})
+        # The new version: the third chest takes the shield's tier, whose chest is gone.
+        self.made_with()
+        lists = self.new_version()
+        fresh = self.fitted(lists)
+        self.assertIn(CHEST_4, [row["id"] for row in fresh["plan"]["targets"]])
+        self.assertIn(OGRE, [row["id"] for row in fresh["plan"]["registrations"]])
+        results = self.rebase([saved, renamed], **lists)
+        for result, (identity, name) in zip(results, (("saved-preset", "My preset"), ("saved-renamed", "Renamed"))):
+            draft = result["draft"]
+            self.assertEqual(draft, {"profile": {**fresh["profile"], "id": identity, "name": name},
+                                     "plan": fresh["plan"]})
+            # Only the chest is gone; the shield stays, in the third chest's tier.
+            self.assertEqual(result["left_out"], [{"id": CHEST_2, "kind": "place", "reason": CARRIER_CAN_GO_MISSING}])
+            self.assertEqual(result["notes"], [
+                "1 place from it is on a creature that may leave, vanish or never appear, so it is left out",
+                PRESET_FOLLOWED])
+            # Still the preset unchanged, for the next time the mods change.
+            self.assertTrue(original_configuration.unchanged(draft["profile"], draft["plan"]))
+            self.assert_checks(draft, **lists)
+
+    def test_a_preset_changed_in_the_editor_keeps_its_choices(self):
+        saved = self.saved(record=True)
+        next(row for row in saved["plan"]["targets"] if row["id"] == CHEST_3)["capacity"] = 2
+        next(row for row in saved["plan"]["target_registrations"] if row["id"] == CHEST_3)["capacity"] = 2
+        saved["plan"]["randomization"]["targets"][CHEST_3] = ["bg2:3", "bg2:3"]
+        self.assert_checks(saved)
+        self.assertFalse(original_configuration.unchanged(saved["profile"], saved["plan"]))
+        lists = self.new_version()
+        [result] = self.rebase([saved], **lists)
+        # Carried over as before; the player is told that the preset has more now.
+        self.assertEqual(result["left_out"], [{"id": CHEST_2, "kind": "place", "reason": CARRIER_CAN_GO_MISSING},
+                                              {"id": OGRE, "kind": "reward", "reason": NO_PLACE}])
+        self.assertEqual(result["notes"], [
+            "1 reward from it cannot be used with the game as it is now, so it is left out",
+            "1 place from it is on a creature that may leave, vanish or never appear, so it is left out",
+            "A left-out reward stays as the game has it", PRESET_HAS_MORE])
+        plan = result["draft"]["plan"]
+        self.assertEqual(sorted((row["id"], row["capacity"]) for row in plan["targets"]),
+                         [(CHEST_3, 2), (OGRE_PLACE, 1), (WELL_PLACE, 1)])
+        self.assertNotIn(original_configuration.FIT_RECORD, plan)
+        self.assert_checks(result["draft"], **lists)
+
+    def test_a_preset_configuration_saved_by_1_0_3_keeps_its_choices(self):
+        # Without the record it cannot be told whether it was changed: it is
+        # carried over as one changed in the editor.
+        saved = self.saved()
+        lists = self.new_version()
+        [result] = self.rebase([saved], **lists)
+        self.assertEqual(result["notes"][-1], PRESET_HAS_MORE)
+        plan = result["draft"]["plan"]
+        self.assertEqual(sorted(row["id"] for row in plan["targets"]), [CHEST_3, OGRE_PLACE, WELL_PLACE])
+        self.assertNotIn(original_configuration.FIT_RECORD, plan)
+        self.assert_checks(result["draft"], **lists)
 
     def test_choices_made_in_the_editor_follow_the_world_scan(self):
         custom = self.custom()
@@ -432,9 +521,11 @@ class RebaseTests(RouteGame):
         self.assertTrue(result["reason"].startswith(PRESET_UNFIT + "The flail heads option needs"), result)
 
     def test_one_fit_for_the_configurations_of_one_preset(self):
-        saved = self.saved()
+        # One saved unchanged, its copy as CIR 1.0.3 saved it.
+        saved = self.saved(record=True)
         copy = deepcopy(saved)
         copy["profile"]["id"] = "saved-copy"
+        del copy["plan"][original_configuration.FIT_RECORD]
         self.change(**{"uhogre01.dlg": ogre_dialogue(more=True)})
         with patch.object(original_configuration, "_fit", wraps=original_configuration._fit) as fit:
             results = self.rebase([saved, copy])
