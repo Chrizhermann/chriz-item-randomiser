@@ -30,8 +30,14 @@ from test_postinstall_world_formats import item_record, make_are, make_cre, make
 # (which wrap around the program name) compare exactly. Like the executable
 # built with parity-overrides, it takes the pinned hashes a phase changes from
 # the JSON file CIR_PIN_OVERRIDES names ({"module.TABLE": {key: hash}}).
+#
+# `apply-preset` is the executable's own command, like its start without
+# arguments (player_check.py runs it). Its options are declared for the
+# reference's parser here, as the executable declares them, so that the
+# usage and help of every command still compare; the reference never runs it.
 REFERENCE = f"""\
-import importlib, json, os, sys
+import argparse, importlib, json, os, sys
+from pathlib import Path
 sys.argv[0] = sys.argv[1]
 del sys.argv[1]
 sys.path.insert(0, {str(ROOT / 'tools')!r})
@@ -40,8 +46,33 @@ if os.environ.get("CIR_PIN_OVERRIDES"):
         for table, entries in json.load(stream).items():
             module, name = table.rsplit(".", 1)
             getattr(importlib.import_module("flir_config." + module), name).update(entries)
-from flir_config.cli import main
-raise SystemExit(main())
+from flir_config import cli
+from flir_config.templates import POOL_CHOICES, list_templates
+reference_parser = cli.parser
+
+
+def parser():
+    result = reference_parser()
+    result.description = ("Scan installed EE items and author draft Randomiser profiles. Game changes require "
+                          "the editor's explicit --apply-game opt-in or the apply-preset command.")
+    commands = next(action for action in result._actions if isinstance(action, argparse._SubParsersAction))
+    apply = commands.add_parser("apply-preset",
+                                help="Apply a preset to a game where CIR is installed, without the editor")
+    apply.add_argument("--game", type=Path, required=True,
+                       help="The game folder; the game and its installers must be closed")
+    apply.add_argument("--preset", choices=[row["id"] for row in list_templates()],
+                       help="Default: the game's own preset with Item Randomiser's lists")
+    for pool in ("items", "targets"):
+        apply.add_argument("--" + pool, choices=POOL_CHOICES,
+                           help="standard (default) or extended: also the larger mode2 tables")
+    apply.add_argument("--options", type=Path,
+                       help="JSON object of original component options; others as the editor's preset dialog "
+                            "has them")
+    return result
+
+
+cli.parser = parser
+raise SystemExit(cli.main())
 """
 PYTHON = [sys.executable, "-c", REFERENCE, RUST_CLI.name]
 RUST = [str(RUST_CLI)]
@@ -202,13 +233,19 @@ ARGUMENTS = [
     ["search", "-c", "x"],
     ["search", "--catalog"],
     ["world", "targets", *CATALOG, "--world", "{out}/world.json", "--kind", "bad"],
+    ["apply-preset"],
+    ["apply-preset", "--game"],
+    ["apply-preset", "--game", "{game}", "--preset", "nosuch"],
+    ["apply-preset", "--game", "{game}", "--items", "large"],
+    ["apply-preset", "--g", "{game}", "--pr", "eet-original", "--opt"],
 ]
 
 COMMAND_PATHS = [[], ["templates"], ["scan"], ["search"], ["profile"], ["profile", "create"], ["profile", "edit"],
                  ["profile", "validate"], ["profile", "rebase"], ["prepare"], ["inspect"], ["world"],
                  ["world", "scan"], ["world", "sources"], ["world", "targets"], ["binding"],
                  ["binding", "create"], ["binding", "validate"], ["binding", "prepare"], ["binding", "inspect"],
-                 ["prototype"], ["prototype", "prepare"], ["prototype", "inspect"], ["prototype", "export"]]
+                 ["prototype"], ["prototype", "prepare"], ["prototype", "inspect"], ["prototype", "export"],
+                 ["apply-preset"]]
 # `ui` is left out: the executable adds --no-browser, which shows in its usage.
 HELP = ([(path + ["-h"], columns) for path in COMMAND_PATHS for columns in ("80", "40", "200", "12")] +
         [(path + ["--help"], "80") for path in ([], ["templates"], ["world", "targets"])] +

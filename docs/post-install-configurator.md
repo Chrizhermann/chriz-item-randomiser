@@ -37,6 +37,8 @@ game into the player's own folder and opens the editor with Apply for it; its co
 names any game file the world scan could not read and left out. After the game's mods
 changed, it first carries the saved configurations over to the new scan (see
 [Saved configurations after the mods change](#saved-configurations-after-the-mods-change)).
+An installer applies a preset with the executable's `apply-preset` instead (see
+[Apply a preset from an installer](#apply-a-preset-from-an-installer)).
 Choose an explicit game and a separate output directory. The scanner never discovers
 or opens a game implicitly. Do not run this development tool against the owner's
 live game as part of automated validation.
@@ -129,6 +131,52 @@ Verified with the saved EET scan (3,544 items): search, exact source selection,
 recipient capacities, save/copy/reload, and preparation of the previously tested
 three-item BG1 campaign. The prepared revision matches the existing sample.
 This editor check did not launch or modify the game.
+
+## Apply a preset from an installer
+
+A mod collection's installer, such as Chriz Easy BG's, can apply a preset at the end of
+its installation, so players start with a randomised game without opening the
+configurator. The standalone executable does it without the editor and without asking
+anything (the Python reference has no such command):
+
+```powershell
+cir-configurator apply-preset --game 'D:/EET' --preset eet-boss-loot --items extended --targets extended --options 'D:/Installer/cir-options.json'
+```
+
+- `--game`: the game folder; the nearest folder at or above it with `chitin.key` is the
+  game, as for the start without arguments, and CIR must be installed there. The command
+  refuses while the game, its loader, WeiDU or a mod installer runs from the game (before
+  it scans, and again at Apply), so run it after the last installer has ended.
+- `--preset`: a preset id of `templates`; without it, the game's own preset with Item
+  Randomiser's lists (`eet-original`, `bg1-original` or `bg2-original`), which the preset
+  dialog opens on.
+- `--items` and `--targets`: the item and recipient pools, `standard` (the default) or
+  `extended`.
+- `--options`: a JSON object with the option keys of `templates --options`. Options it
+  leaves out are as the preset dialog opens them: `flail_heads` and `totsc_tome` on, the
+  others off. An option the game cannot apply is off, as the dialog does not offer it,
+  and the result names it in `unavailable` with the reason. Chriz Easy BG's default,
+  Boss Loot with the extended pools as above, has
+  `{"scrolls": true, "kangaxx": false, "flail_heads": true, "totsc_tome": true,
+  "more_spell_shield": false, "cursed_disguise": false}`.
+
+It scans the game into the player's own folder for it, the one the start without
+arguments uses, carrying the configurations saved there before the game's mods changed
+over first. Then it fits the preset as the preset dialog does, saves the configuration
+under the preset's name, checks it and applies it as Apply does: the next start without
+arguments reopens it as the configuration applied last, where the player can change it.
+Each run saves another configuration and leaves the others.
+
+The answer is JSON, as for every command. On success, stdout has `ok: true` and a
+`result` with the game, the player's folder (`workspace`), the configuration's `id` and
+`name`, the preset as fitted (`id`, `items`, `targets`, `options`), `unavailable`, the
+preset dialog's notes (`left_out`, `absent_mods`, `not_used`), Apply's `revision`,
+`starts` and `message`, `notes` (in plain words: game files the scan left out, saved
+configurations it carried over) and `hint`, a sentence that tells the player how to
+change the settings later (null when the executable is not in the game). A refusal is
+`ok: false` with an `error` on stderr and exit status 1; usage errors exit with status 2.
+Nothing else is printed, and no browser or window opens. The configurator's
+[README](../configurator/README.md#applying-a-preset-from-an-installer) has the details.
 
 ## Scan semantics
 

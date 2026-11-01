@@ -2,8 +2,10 @@
 //! standalone executable. The commands, JSON results and messages are those
 //! of the reference `tools/randomiser_config.py`; `ui` also opens the editor
 //! in the browser. Started without arguments (a double-click), it opens the
-//! editor for the game it is installed in (see `player`).
+//! editor for the game it is installed in (see `player`); `apply-preset`
+//! applies a preset there without the editor, as an installer does.
 
+mod apply_preset;
 mod argparse;
 mod dialog;
 mod player;
@@ -17,10 +19,12 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 const DESCRIPTION: &str = "Scan installed EE items and author draft Randomiser profiles. \
-                           Game changes require the editor's explicit --apply-game opt-in.";
+                           Game changes require the editor's explicit --apply-game opt-in \
+                           or the apply-preset command.";
 
-/// The commands and their help, in the reference's order.
-const COMMANDS: [(&str, &str); 10] = [
+/// The commands and their help, in the reference's order, then the
+/// executable's own.
+const COMMANDS: [(&str, &str); 11] = [
     ("templates", "List or export original pool drafts; not playable settings yet"),
     ("ui", "Open the local configuration editor over existing scans"),
     ("scan", "Read the effective installed item resources"),
@@ -31,6 +35,7 @@ const COMMANDS: [(&str, &str); 10] = [
     ("world", "Discover physical sources and candidate targets (contains location information)"),
     ("binding", "Author explicit source and target choices; no game activation"),
     ("prototype", "Compile experimental campaign data; never activates gameplay"),
+    ("apply-preset", "Apply a preset to a game where CIR is installed, without the editor"),
 ];
 
 /// Print one line the way Python's `print` does on this platform.
@@ -76,6 +81,20 @@ fn specs(command: &[&str]) -> Option<Vec<Spec>> {
             Spec::new("apply-game", Path)
                 .help("Enable applying settings to this game folder, where CIR is installed"),
             Spec::new("no-browser", Flag).help("Only print the editor's address; do not open it in the browser"),
+        ],
+        ["apply-preset"] => vec![
+            Spec::new("game", Path).required().help("The game folder; the game and its installers must be closed"),
+            Spec::new("preset", Text)
+                .choices(templates::template_ids())
+                .help("Default: the game's own preset with Item Randomiser's lists"),
+            Spec::new("items", Text)
+                .choices(pool())
+                .help("standard (default) or extended: also the larger mode2 tables"),
+            Spec::new("targets", Text)
+                .choices(pool())
+                .help("standard (default) or extended: also the larger mode2 tables"),
+            Spec::new("options", Path)
+                .help("JSON object of original component options; others as the editor's preset dialog has them"),
         ],
         ["scan"] => vec![
             Spec::new("game", Path).required(),
@@ -288,6 +307,7 @@ fn run(command: &[String], parsed: &Parsed) -> Result<Value> {
         ["inspect"] => profiles::read_prepared(&path(parsed, "store"), parsed.text("revision")),
         ["binding", "inspect"] => sources::read_bound_profile(&path(parsed, "store"), parsed.text("revision")),
         ["prototype", "inspect"] => cir_config::campaigns::read_campaign(&path(parsed, "store"), parsed.text("revision")),
+        ["apply-preset"] => apply_preset::run(parsed),
         _ => run_with_catalog(&names, parsed),
     }
 }
