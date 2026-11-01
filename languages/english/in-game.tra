@@ -748,7 +748,7 @@ Medium green triangle marks the spot. - Lum" //failsafe
 @1702=~Chriz Item Randomiser's settings have nothing to randomise in this campaign.~
 @1703=~Chriz Item Randomiser could not randomise this adventure. Details: randomiser-campaigns\last-error.txt~
 @1704=~Start without randomiser~
-@1705=~Chriz Item Randomiser: this adventure's items are randomised.~
+@1705=~The gods have scattered the treasures of the Realms anew.~
 @1706=~Chriz Item Randomiser stopped working in this adventure. Items it has not placed yet may be missing. Details: randomiser-campaigns\last-error.txt~
 // A reward whose creature died without leaving a body falls at a party member's feet. The runtime puts in the
 // item's name for {item} and the party member's for {member}; keep both as they are.

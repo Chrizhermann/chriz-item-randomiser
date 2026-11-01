@@ -182,7 +182,7 @@ class UiAdapterTests(unittest.TestCase):
                     Infinity_FetchString = function(ref) return ({[12] = "Nie dziala.", [13] = ""})[ref] end''')
                 self.assertEqual(lua.eval('FLPRUI_Text("not_running")'), "Nie dziala.")
                 # Empty or invalid references, and keys without one, keep English.
-                self.assertEqual(lua.eval('FLPRUI_Text("ready")'), "Chriz Item Randomiser: this adventure's items are randomised.")
+                self.assertEqual(lua.eval('FLPRUI_Text("ready")'), "The gods have scattered the treasures of the Realms anew.")
                 self.assertIn("stopped working", lua.eval('FLPRUI_Text("stopped")'))
                 self.assertIn("nothing to randomise in this campaign", lua.eval('FLPRUI_Text("other_campaign")'))
                 lua.execute("Infinity_FetchString = nil")
