@@ -22,7 +22,7 @@ local FALLBACK = {
     setup_failed = "Chriz Item Randomiser could not randomise this adventure. "
         .. "Details: randomiser-campaigns\\last-error.txt",
     start_plain = "Start without randomiser",
-    ready = "Chriz Item Randomiser: this adventure's items are randomised.",
+    ready = "The gods have scattered the treasures of the Realms anew.",
     stopped = "Chriz Item Randomiser stopped working in this adventure. Items it has not placed yet may be "
         .. "missing. Details: randomiser-campaigns\\last-error.txt",
     -- M_FLPR.lua puts in the item's and the party member's names.
