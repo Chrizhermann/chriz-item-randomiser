@@ -26,6 +26,23 @@ const PART_TITLES = {
 // The part a preset table's tiers stand for where a record's place does not tell it.
 const TABLE_PARTS = { bg1: "bg1", sod: "sod", bg2: "soa" };
 const TABLE_ORDER = ["bg1", "sod", "bg2"];
+const TABLE_TITLES = { bg1: "Baldur's Gate", sod: "Siege of Dragonspear", bg2: "Baldur's Gate II" };
+// Readable names of Item Randomiser's tiers, per table and in this order: the
+// numbered tiers from the weakest items to the strongest, counted from 1 in each
+// table, then the spell scroll tiers, counted likewise, then the tiers of one
+// kind of item. Any other tier keeps its code.
+const TIER_NAMES = {
+  bg1: [["24", "Tier 1", "weakest"], ["25", "Tier 2"], ["26", "Tier 3"], ["27", "Tier 4"], ["28", "Tier 5"],
+    ["29", "Tier 6"], ["30", "Tier 7"], ["31", "Tier 8", "strongest"],
+    ["sa", "Spell scrolls · Tier 1"], ["sb", "Spell scrolls · Tier 2"], ["sc", "Spell scrolls · Tier 3"],
+    ["sd", "Spell scrolls · Tier 4"], ["se", "Spell scrolls · Tier 5"], ["ma", "Wizard items"]],
+  bg2: [["1", "Tier 1", "weakest"], ["2", "Tier 2"], ["3", "Tier 3"], ["4", "Tier 4"], ["5", "Tier 5"],
+    ["6", "Tier 6"], ["7", "Tier 7"], ["10", "Tier 8"], ["11", "Tier 9"], ["13", "Tier 10", "strongest"],
+    ["12", "Forging components"],
+    ["s4", "Spell scrolls · Tier 1"], ["s5", "Spell scrolls · Tier 2"], ["s6", "Spell scrolls · Tier 3"],
+    ["s7", "Spell scrolls · Tier 4"], ["s8", "Spell scrolls · Tier 5"], ["s9", "Spell scrolls · Tier 6"],
+    ["fa", "Flail of Ages heads"], ["ka", "Kangaxx items"]]
+};
 // Item types by the category number in their ITM file.
 const ITEM_TYPES = ["Miscellaneous", "Amulet", "Armor", "Belt", "Boots", "Arrows", "Bracers or gauntlets",
   "Headgear", "Key", "Potion", "Ring", "Scroll", "Shield", "Food", "Bullets", "Bow", "Dagger", "Mace", "Sling",
@@ -174,6 +191,9 @@ function acceptState(state, message, preserveSourceChoices = false) {
   applyEnabled = state.apply_enabled === true;
   ui.prepareButton.disabled = true;
   ui.prepareButton.textContent = applyEnabled ? "Apply for next game" : "Prepare test settings";
+  // Applying to the game is the editor's main action where it can.
+  ui.prepareButton.classList.toggle("primary", applyEnabled);
+  ui.prepareButton.classList.toggle("secondary", !applyEnabled);
   ui.applySafetyNote.hidden = !applyEnabled;
   ui.applyDevelopmentNote.hidden = !applyEnabled;
   ui.dirtyMark.hidden = true;
@@ -247,18 +267,50 @@ function tierTable(tier) {
   return colon > 0 ? tier.slice(0, colon) : "";
 }
 
-function tierName(tier) {
-  const table = PART_NAMES[TABLE_PARTS[tierTable(tier)]];
-  return `${table ? `${table} ` : ""}tier ${tierCode(tier)}`;
+// The tier's place among its table's named tiers, -1 when it has no name.
+function tierIndex(tier) {
+  return (TIER_NAMES[tierTable(tier)] || []).findIndex(([code]) => code === tierCode(tier));
 }
 
-// Tables in game order, then their tiers, numbered ones by number.
+// The tier's name in its table ("Tier 3"); <noted> adds its note ("Tier 1 · weakest").
+function tierLabel(tier, noted = false) {
+  const named = (TIER_NAMES[tierTable(tier)] || [])[tierIndex(tier)];
+  if (!named) return `Tier ${tierCode(tier)}`;
+  return noted && named[2] ? `${named[1]} · ${named[2]}` : named[1];
+}
+
+function tierName(tier) {
+  const table = PART_NAMES[TABLE_PARTS[tierTable(tier)]];
+  return `${table ? `${table} · ` : ""}${tierLabel(tier)}`;
+}
+
+// Tables in game order, then their tiers: the named ones in the order of their
+// names, then the others, numbered ones by number.
 function compareTiers(a, b) {
   const rank = (tier) => {
     const index = TABLE_ORDER.indexOf(tierTable(tier));
     return index < 0 ? TABLE_ORDER.length : index;
   };
-  return rank(a) - rank(b) || a.localeCompare(b, undefined, { numeric: true });
+  const named = (tier) => {
+    const index = tierIndex(tier);
+    return index < 0 ? Infinity : index;
+  };
+  return rank(a) - rank(b) || named(a) - named(b) || a.localeCompare(b, undefined, { numeric: true });
+}
+
+// Options for <tiers>, in order, grouped by the game their table stands for.
+function tierOptions(tiers) {
+  const groups = [];
+  for (const tier of tiers) {
+    const title = TABLE_TITLES[tierTable(tier)] || "Other tiers";
+    if (groups.at(-1)?.label !== title) {
+      const group = document.createElement("optgroup");
+      group.label = title;
+      groups.push(group);
+    }
+    groups.at(-1).append(new Option(tierLabel(tier, true), tier));
+  }
+  return groups;
 }
 
 function partNames(parts) {
@@ -328,7 +380,7 @@ function slotPairs(target) {
 
 function chipLabel(chip, counted) {
   const part = chip.part ? PART_NAMES[chip.part] || chip.part : "Place unknown";
-  return `${part}${chip.tier ? ` · tier ${tierCode(chip.tier)}` : ""}${counted && chip.count > 1 ? ` ×${chip.count}` : ""}`;
+  return `${part}${chip.tier ? ` · ${tierLabel(chip.tier)}` : ""}${counted && chip.count > 1 ? ` ×${chip.count}` : ""}`;
 }
 
 function chipList(chips, counted) {
@@ -345,7 +397,18 @@ function chipList(chips, counted) {
 
 function chipText(chips) {
   return chips.map((chip) => [chip.part, PART_NAMES[chip.part], PART_TITLES[chip.part], chip.tier,
-    chip.tier ? `tier ${tierCode(chip.tier)}` : ""].filter(Boolean).join(" ")).join(" ");
+    chip.tier ? tierLabel(chip.tier) : ""].filter(Boolean).join(" ")).join(" ");
+}
+
+// The selected items and recipients start closed; a search in them, a new
+// record or an entry to correct opens their section.
+function openSection(list) {
+  list.closest("details").open = true;
+}
+
+function filterSelection() {
+  if (listFilter()) for (const list of [ui.selectedItems, ui.selectedTargets]) openSection(list);
+  renderSelected();
 }
 
 // The filter over this configuration's lists; null when it shows everything.
@@ -380,7 +443,7 @@ function updateFilterOptions(chips) {
   ui.partFilter.dataset.signature = signature;
   const [part, tier] = [ui.partFilter.value, ui.tierFilter.value];
   ui.partFilter.replaceChildren(new Option("All parts", ""), ...partList.map((name) => new Option(PART_NAMES[name] || name, name)));
-  ui.tierFilter.replaceChildren(new Option("All tiers", ""), ...tierList.map((name) => new Option(tierName(name), name)));
+  ui.tierFilter.replaceChildren(new Option("All tiers", ""), ...tierOptions(tierList));
   ui.partFilter.value = part;
   ui.tierFilter.value = tier;
 }
@@ -393,8 +456,7 @@ function chooseTier(prompt, suggested = "") {
     return Promise.resolve(null);
   }
   ui.tierPrompt.textContent = prompt;
-  ui.tierSelect.replaceChildren(new Option("Choose a tier", ""));
-  for (const tier of tiers) ui.tierSelect.add(new Option(tier, tier));
+  ui.tierSelect.replaceChildren(new Option("Choose a tier", ""), ...tierOptions(tiers));
   ui.tierSelect.value = tiers.includes(suggested) ? suggested : "";
   ui.tierDialog.returnValue = "";
   return new Promise((resolve) => {
@@ -630,7 +692,8 @@ function renderSourcePicker(item, body) {
     const text = node("span");
     const where = partNames(sourceParts.get(registration.id));
     text.append(node("span", "record-name", authored.source || registration.id),
-      node("span", "record-detail", `${authored.campaign || "Original"} · tier ${authored.tier || "?"}${where ? ` · ${where}` : ""} · ${authored.source_ref || registration.id}`));
+      node("span", "record-detail", [authored.tier ? tierName(`${authored.campaign || ""}:${authored.tier}`) : "Original",
+        where, authored.source_ref || registration.id].filter(Boolean).join(" · ")));
     label.append(checkbox, text);
     body.append(label);
   }
@@ -781,6 +844,7 @@ async function addItem(row) {
   plan.sources.sort((a, b) => a.item.localeCompare(b.item));
   selectedItems.set(row.resref, row);
   expandedItems.add(row.resref);
+  openSection(ui.selectedItems);
   changed();
   renderSelected();
   renderResults();
@@ -823,6 +887,7 @@ async function addTarget(row) {
   plan.targets.push({ id: row.id, capacity: 1, optional: false });
   plan.targets.sort((a, b) => a.id.localeCompare(b.id));
   selectedTargets.set(row.id, row);
+  openSection(ui.selectedTargets);
   changed();
   renderSelected();
   renderResults();
@@ -983,6 +1048,7 @@ function localInputValid() {
   const invalidPrice = [...ui.selectedItems.querySelectorAll(".base-price-row input")]
     .find((input) => input.value !== "" && (!input.validity.valid || !wholeNumber(input.value, 0, 4294967295)));
   if (invalidPrice) {
+    openSection(ui.selectedItems);
     invalidPrice.closest("details").open = true;
     invalidPrice.setCustomValidity("Enter a whole gold amount from 0 to 4,294,967,295, or leave it blank.");
     invalidPrice.reportValidity();
@@ -993,6 +1059,7 @@ function localInputValid() {
   const invalid = [...ui.selectedTargets.querySelectorAll(".capacity-row input")]
     .find((input) => !input.validity.valid || !/^\d+$/.test(input.value));
   if (invalid) {
+    openSection(ui.selectedTargets);
     invalid.setCustomValidity("Enter a whole number from 1 to 4096.");
     invalid.reportValidity();
     invalid.setCustomValidity("");
@@ -1067,10 +1134,10 @@ ui.recipientFilterRow.addEventListener("change", () => {
 ui.moreResults.addEventListener("click", () => searchPage(activeTab, true));
 ui.selectionFilter.addEventListener("input", () => {
   clearTimeout(filterTimer);
-  filterTimer = setTimeout(renderSelected, 150);
+  filterTimer = setTimeout(filterSelection, 150);
 });
-ui.partFilter.addEventListener("change", renderSelected);
-ui.tierFilter.addEventListener("change", renderSelected);
+ui.partFilter.addEventListener("change", filterSelection);
+ui.tierFilter.addEventListener("change", filterSelection);
 ui.profileName.addEventListener("input", () => { if (profile) { profile.name = ui.profileName.value; changed(); } });
 ui.shopPercent.addEventListener("input", () => {
   if (!profile) return;

@@ -32,10 +32,11 @@ pub fn default_options() -> Dict {
     }
 }
 
-/// Item Randomiser's lists with the standard pools, no items lost, the Flail
-/// of Ages heads and the randomised Tales of the Sword Coast tome.
+/// Item Randomiser's lists with the standard pools, no items lost, the spell
+/// scrolls, the Flail of Ages heads and the randomised Tales of the Sword
+/// Coast tome.
 pub fn recommended_options() -> Dict {
-    default_options().merged(&crate::dict! {"flail_heads" => true, "totsc_tome" => true})
+    default_options().merged(&crate::dict! {"scrolls" => true, "flail_heads" => true, "totsc_tome" => true})
 }
 
 /// The preset campaigns and their labels. Item Randomiser has tables for BG1

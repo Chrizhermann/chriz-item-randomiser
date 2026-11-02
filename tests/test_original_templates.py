@@ -91,17 +91,18 @@ class OriginalTemplateTests(unittest.TestCase):
         self.assertTrue(all(row["runtime_support"] == "needs-endpoint-adapter"
                             for row in reverse["targets"] if row["family"] == "mode2"))
 
-    def test_recommended_preset_is_standard_without_loss_plus_flail_heads_and_tome(self):
+    def test_recommended_preset_is_standard_without_loss_plus_scrolls_flail_heads_and_tome(self):
         preset = recommended_preset("eet")
         self.assertEqual((preset["id"], preset["items"], preset["targets"]),
                          ("eet-original", "standard", "standard"))
-        self.assertEqual(preset["options"], DEFAULT_OPTIONS | {"flail_heads": True, "totsc_tome": True})
+        self.assertEqual(preset["options"],
+                         DEFAULT_OPTIONS | {"scrolls": True, "flail_heads": True, "totsc_tome": True})
         self.assertEqual(preset["options"]["loss_mode"], "none")
         draft = build_template(preset["id"], items=preset["items"], targets=preset["targets"],
                                options=preset["options"])
-        self.assertTrue(any(row["option_gate"] == "flail_heads" and row["enabled"] for row in draft["items"]))
-        self.assertFalse(any(row["option_gate"] in ("scrolls", "kangaxx") and row["enabled"]
-                             for row in draft["items"]))
+        for gate in ("scrolls", "flail_heads"):
+            self.assertTrue(any(row["option_gate"] == gate and row["enabled"] for row in draft["items"]))
+        self.assertFalse(any(row["option_gate"] == "kangaxx" and row["enabled"] for row in draft["items"]))
         self.assertEqual(recommended_preset("bg1")["id"], "bg1-original")
         preset["options"]["kangaxx"] = True
         self.assertFalse(recommended_preset("eet")["options"]["kangaxx"])
