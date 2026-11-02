@@ -450,7 +450,9 @@ function cases.unstealable_flag_is_set_on_proven_synchronous_container_item(N)
     local receipt=assert(a:observe(command))
     assert(receipt.payload.flags==2 and receipt.created==1)
 end
-function cases.unstealable_identified_flag_is_set_on_bound_queued_container_item(N)
+function cases.unstealable_flag_is_set_on_bound_queued_container_item(N)
+    -- An identified, unstealable source (3): the reward stays unstealable and
+    -- is identified as the engine created it, here not.
     local f=setup(N)
     f.fixture.sources[f.source_id].payload.flags=3
     f.api.EEex_Action_ExecuteResponseStringOnAIBaseInstantly=function(action)
@@ -460,22 +462,26 @@ function cases.unstealable_identified_flag_is_set_on_bound_queued_container_item
     assert(a:inspect_target(f.target_id)); a:on_observation_boundary(1)
     local command=f.command("deliver")
     assert(a:execute(command))
-    assert(f.queue[1].m_item.m_flags==3 and #f.calls==1)
-    f.queue[1]=nil; f.target.m_lstItems[1]=f.item("FLPRI1",701,3)
+    assert(f.queue[1].m_item.m_flags==2 and #f.calls==1)
+    f.queue[1]=nil; f.target.m_lstItems[1]=f.item("FLPRI1",701,2)
     a:on_observation_boundary(2)
     local x,e=a:observe(command); fail(x,e,"DELIVERY_SETTLING")
     a:on_observation_boundary(3)
+    -- The receipt names the reward as the configuration has it.
     local receipt=assert(a:observe(command))
     assert(receipt.payload.flags==3 and receipt.created==1)
 end
-function cases.identified_configuration_rejects_unidentified_source_but_corrects_new_delivery(N)
+function cases.identified_configuration_rejects_unidentified_source_and_delivers_as_the_engine_creates(N)
+    -- Item Randomiser's rewards arrived unidentified unless the item needs no
+    -- identifying; the engine decides, not the source's flag.
     local f=setup(N); f.fixture.sources[f.source_id].payload.flags=1
     local a=N.new(f.api,f.fixture)
     local x,e=a:inspect_source(f.source_id); fail(x,e,"SOURCE_PAYLOAD_MISMATCH")
     assert(a:inspect_target(f.target_id)); a:on_observation_boundary(1)
     local command=f.command("deliver")
     assert(a:execute(command))
-    assert(f.target.m_lstItems[1].m_flags==1)
+    assert(f.target.m_lstItems[1].m_flags==0)
+    -- The receipt names the reward as the configuration has it.
     a:on_observation_boundary(2)
     assert(a:observe(command).payload.flags==1)
 end
@@ -750,14 +756,15 @@ end
 function cases.zero_count_scroll_reaches_creature_as_the_engine_creates_it(N)
     -- Reproduced on BG:EE 2.7.3 (SCS, IWDification): SCRL75 from a container
     -- (0/0/0) for Gorion became 1/1/1 and identified (lore 0); CIR stopped.
+    -- It stays identified, as with Item Randomiser.
     local f=setup(N)
     local a,command,inventory=creature_reward(N,f,{resref="scrl75",charges={0,0,0},flags=0},50,{1,1,1},1)
     assert(a:execute(command))
-    assert(f.queue[1].m_item.m_flags==0)
+    assert(f.queue[1].m_item.m_flags==1)
     f.queue[1]=nil; inventory[18]=f.item("SCRL75",701,1)
     inventory[18].m_useCount1=1; inventory[18].m_useCount2=1; inventory[18].m_useCount3=1
     a:on_observation_boundary(2); local x,e=a:observe(command); fail(x,e,"DELIVERY_SETTLING")
-    assert(inventory[18].m_flags==0)
+    assert(inventory[18].m_flags==1)
     a:on_observation_boundary(3); local receipt=assert(a:observe(command))
     assert(receipt.held==1 and receipt.payload.flags==0 and receipt.payload.charges[1]==0 and
         receipt.payload.charges[3]==0 and inventory[18].m_useCount1==1)
@@ -1038,22 +1045,25 @@ function cases.queued_container_copy_identifying_zero_lore_item_keeps_source_fla
         assert(f.target.m_lstItems[1].m_flags==selected and #f.calls==1)
     end
 end
-function cases.queued_container_copy_of_identified_source_stays_identified(N)
+function cases.queued_container_copy_of_identified_source_keeps_the_engines_identification(N)
+    -- The engine created the reward unidentified; only the source's other flags stay.
     for _,selected in ipairs({1,3}) do
         local f=setup(N); f.fixture.sources[f.source_id].payload.flags=selected
         f.adapter=N.new(f.api,f.fixture)
         local a,command=queued(f)
-        local placed=f.item("FLPRI1",701,selected)
+        assert(f.queue[1].m_item.m_flags==selected-1)
+        local placed=f.item("FLPRI1",701,selected-1)
         f.queue[1]=nil; f.target.m_lstItems[1]=placed
         a:on_observation_boundary(2); local x,e=a:observe(command); fail(x,e,"DELIVERY_SETTLING")
-        assert(placed.m_flags==selected)
+        assert(placed.m_flags==selected-1)
         a:on_observation_boundary(3); local receipt=assert(a:observe(command))
-        assert(receipt.payload.flags==selected and placed.m_flags==selected and #f.calls==1)
+        assert(receipt.payload.flags==selected and placed.m_flags==selected-1 and #f.calls==1)
     end
 end
 function cases.queued_container_copy_with_other_flag_changes_is_rejected(N)
-    -- Only the identified bit of an unidentified source may be added; never removed or another bit.
-    for _,flags in ipairs({{1,0},{0,2},{0,8},{2,1}}) do
+    -- Only the identified bit may be added to what the creation chose; never
+    -- removed or another bit.
+    for _,flags in ipairs({{3,0},{0,2},{0,8},{2,1}}) do
         local f=setup(N); f.fixture.sources[f.source_id].payload.flags=flags[1]
         f.adapter=N.new(f.api,f.fixture)
         local a,command=queued(f)
@@ -1064,7 +1074,10 @@ function cases.queued_container_copy_with_other_flag_changes_is_rejected(N)
 end
 function cases.stolen_and_other_flags_travel_with_the_reward(N)
     -- Baeloth's items are identified and stolen (5); a mod gave Koshi's sword 0x3E7.
+    -- The reward keeps every flag but the identified bit, which the engine chose
+    -- when it created the reward (here: unidentified).
     for _,flags in ipairs({4,5,0x3E6,0x3E7,0x80000004}) do
+        local kept=flags-flags%2
         local f=setup(N); f.fixture.sources[f.source_id].payload.flags=flags; f.slots[21].m_flags=flags
         local a=N.new(f.api,f.fixture)
         assert(a:inspect_source(f.source_id).payload.flags==flags)
@@ -1074,15 +1087,15 @@ function cases.stolen_and_other_flags_travel_with_the_reward(N)
         f=setup(N); f.fixture.sources[f.source_id].payload.flags=flags
         a=N.new(f.api,f.fixture); assert(a:inspect_target(f.target_id)); a:on_observation_boundary(1)
         command=f.command("deliver"); assert(a:execute(command))
-        assert(f.target.m_lstItems[1].m_flags==flags)
+        assert(f.target.m_lstItems[1].m_flags==kept)
         a:on_observation_boundary(2); assert(a:observe(command).payload.flags==flags)
-        -- A queued one on its message, and again when the engine's copy identifies the item.
+        -- A queued one on its message, and again should the engine's copy identify the item.
         f=setup(N); f.fixture.sources[f.source_id].payload.flags=flags
         f.adapter=N.new(f.api,f.fixture); a,command=queued(f)
-        assert(f.queue[1].m_item.m_flags==flags)
-        f.queue[1]=nil; f.target.m_lstItems[1]=f.item("FLPRI1",701,flags%2==0 and flags+1 or flags)
+        assert(f.queue[1].m_item.m_flags==kept)
+        f.queue[1]=nil; f.target.m_lstItems[1]=f.item("FLPRI1",701,kept+1)
         a:on_observation_boundary(2); local x,e=a:observe(command); fail(x,e,"DELIVERY_SETTLING")
-        assert(f.target.m_lstItems[1].m_flags==flags)
+        assert(f.target.m_lstItems[1].m_flags==kept)
         a:on_observation_boundary(3); local receipt=assert(a:observe(command))
         assert(receipt.payload.flags==flags and receipt.created==1 and #f.calls==1)
     end

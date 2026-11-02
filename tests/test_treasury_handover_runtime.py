@@ -140,7 +140,7 @@ function cases.a_taken_or_unequal_reward_stays_where_it_is(N,Core)
     local count,reason,owed=f:hand_over()
     assert(count==0 and reason==nil and owed==false and #f.calls==1 and #f.queue==0)
     -- Another item of its name: DestroyItem could take that one instead.
-    for _,items in ipairs({{f.item('FLPRI1',402,0)},{f.item('FLPRI1',402),f.item('FLPRI1',403,5)}}) do
+    for _,items in ipairs({{f.item('FLPRI1',402,2)},{f.item('FLPRI1',402),f.item('FLPRI1',403,5)}}) do
         f.treasury.m_lstItems=items;f.calls={}
         count,reason,owed=f:hand_over()
         assert(count==0 and reason=='HANDOVER_ITEM_AMBIGUOUS' and owed==false and #f.queue==0)
@@ -150,6 +150,12 @@ function cases.a_taken_or_unequal_reward_stays_where_it_is(N,Core)
     f.treasury.m_lstItems={f.item('FLPRI1',402),f.item('FLPRI1',403)}
     count,reason=f:hand_over()
     assert(count==1 and reason==nil and #f.treasury.m_lstItems==1 and #f:given()==1)
+    -- The engine chose the reward's identification when CIR placed it
+    -- (created_payload): a copy that differs in that alone is the reward.
+    f=treasury_world(N,Core)
+    f.treasury.m_lstItems={f.item('FLPRI1',402,0)}
+    count,reason=f:hand_over()
+    assert(count==1 and reason==nil and #f.treasury.m_lstItems==0 and #f:given()==1)
     -- Each of two rewards, the one taken already apart.
     f=treasury_world(N,Core)
     f.assignments[2]={unit=2,source_id=f.source_ids[2],target_id=f.target_id,delivery_phase=Core.PHASE.confirmed}

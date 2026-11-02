@@ -308,7 +308,11 @@ Live sample `sto:inn3351/item/8` (`chan02`) -> Zargal passed with revision
 the original inventory flag. The adapter now preserves that flag on its exactly
 identified new message before the engine consumes it; other flag bits remain
 unsupported. A corrected run delivered identified armour, ordinary death dropped
-it, and pickup succeeded. Opening INN3351 removed only that row. Save 73
+it, and pickup succeeded. (Superseded on 2026-11-02: Chris decided that rewards
+are identified as Item Randomiser's own scripts left them. The adapter keeps the
+identification the engine chose when it created the reward, unidentified unless
+the item needs no identifying, and sets only the source's other flags; shops
+still sell identified stock.) Opening INN3351 removed only that row. Save 73
 (`IR Shop Complete 0927`) and same-process reload preserved the campaign and
 collected item. Reopening recognized the saved STO and did not repeat removal.
 Independent SAV inspection found all 15 other sale rows byte-for-byte unchanged.
