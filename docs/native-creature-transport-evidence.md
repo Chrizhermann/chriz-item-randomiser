@@ -154,13 +154,28 @@ container adapter:
   - A source still needs the one sprite of its name, dead or alive: its item must be
     taken from the creature that has it.
 - Preflight before the core journals anything: at least one empty backpack slot
-  (18–33), and no queued message addressed to the target other than a
+  (18–33) or a stack the reward merges into (below), and no queued message
+  addressed to the target other than a
   `CMessageSetDialogWait` ([below](#dialog-wait-messages-2026-10-24)). The full-backpack
   displacement would otherwise change unrelated inventory, and a queued producer
   could take the free slot first. Also no queued item-add message of either type
   carrying the fixture resource.
-- Items are nonstackable (maximum stack 1) and droppable, as in the container
-  fixture, so the stack-merge branch cannot apply.
+- Items are droppable. A stackable reward goes where `Run` puts it (since 1.0.5;
+  before, any item of its name in the creature made it wait for ever,
+  `TARGET_STACK_COLLISION`): the first backpack slot, in order, that is empty or
+  holds a stack of its name with room for the reward's usage (`stack_merge`).
+  - Into an empty slot: a new instance, followed as for any reward.
+  - Into a stack: no new instance. The stack is pinned instead (same pointer and
+    slot, its first usage up by the reward's, else unchanged, `merged_into`), and
+    the receipt names the creature as holder. Nothing else of the reward's name may
+    come or change meanwhile. No drop trace is recorded for it.
+  - It still waits where a source of that name in this creature (a live creature
+    source of its script name) may be the stack, since removing that source with
+    `DestroyItem` would take the reward too, and where the stack cannot be dropped
+    (instance flag 8), which would keep the reward in the body.
+  - A parked merge (the party left, or a save was loaded, in the one or two ticks
+    it was on its way) settles by counting items of its name, which a merge does
+    not change: it counts as not arrived, and the reward is given again.
 - After the single `GiveItemCreate`: the inventory must be unchanged, and exactly
   one new type 67/subtype 2 message must exist, with source = target = the
   creature, full expected payload, and communication type 1.

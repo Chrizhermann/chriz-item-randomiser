@@ -450,6 +450,103 @@ function cases.unexpected_placement_is_never_accepted(N)
         f.boundary(); local x, e = a:observe(command); fail(x, e, wants[variant])
     end
 end
+-- A stackable reward (FLPRI1 stacks to <size>) whose creature holds a stack of
+-- its name: CMessageAddItem::Run takes the first backpack slot, in order, that
+-- is empty or holds a stack of its name with room for it, and merges into such
+-- a stack without a new instance (docs/native-creature-transport-evidence.md).
+local function stacking_world(N, size)
+    local f = setup(N)
+    f.header.maxStackable = size or 20
+    function f.update()
+        while #f.queue > 0 do
+            local message = table.remove(f.queue, 1)
+            local target = f.objects[message.m_targetId]
+            if message.virtual_GetMsgSubType() == 2 and target and target.sprite then
+                -- The message's item came from the constructor, which makes a
+                -- usage of 0 one; this fake's messages keep 0, as created_payload allows.
+                local ref, usage = message.m_item.cResRef:get(), math.max(message.m_item.m_useCount1, 1)
+                for slot = 18, 33 do
+                    local held = target.slots[slot]
+                    if not held then
+                        f.next_address = f.next_address + 1
+                        target.slots[slot] = f.item(ref, f.next_address, message.m_item.m_flags)
+                        break
+                    elseif held.cResRef:get() == ref and held.m_useCount1 + usage < f.header.maxStackable then
+                        held.m_useCount1 = held.m_useCount1 + usage
+                        break
+                    end
+                end
+            end
+        end
+    end
+    return f
+end
+local function stack_of(f, slot, usage, address, flags)
+    local stack = f.item("FLPRI1", address or 950, flags == nil and 0 or flags)
+    stack.m_useCount1 = usage
+    f.creature.slots[slot] = stack
+    return stack
+end
+-- The audit of 2026-11-02 (finding 5): it waited for ever before, about ten
+-- rewards in a game of Boss Loot (mages carrying scrolls of their name).
+function cases.a_stackable_reward_merges_into_its_creatures_stack_of_its_name(N)
+    for _, full in ipairs({false, true}) do
+        local f = stacking_world(N); local a = f.adapter
+        local stack = stack_of(f, 18, 2)
+        -- A full backpack keeps no room, but the stack takes the reward in.
+        if full then for slot = 19, 33 do if not f.creature.slots[slot] then f.creature.slots[slot] = f.item("FILL", 500 + slot) end end end
+        local witness = assert(a:inspect_target(f.target_id, f.source_ids[1], 1))
+        assert(witness.settle == 1 + 1)
+        f.boundary()
+        local command = f.command(1); assert(a:execute(command))
+        assert(#f.calls == 1 and f.calls[1] == 'GiveItemCreate("flpri1",Myself,0,0,0)')
+        f.update(); f.boundary(); local x, e = a:observe(command); fail(x, e, "DELIVERY_SETTLING")
+        f.boundary(); local receipt = assert(a:observe(command))
+        assert(receipt.held == 1 and receipt.holder == "creature" and receipt.slot == 18 and receipt.lootable == 0)
+        assert(f.creature.slots[18] == stack and stack.m_useCount1 == 3 and a.held[command.index] == nil)
+        unrelated_intact(f)
+    end
+end
+function cases.a_stack_in_a_later_slot_or_without_room_leaves_the_reward_its_own_instance(N)
+    for _, variant in ipairs({"later", "no-room"}) do
+        local f = stacking_world(N, 3); local a = f.adapter
+        if variant == "later" then stack_of(f, 25, 1) else stack_of(f, 18, 2) end
+        local command = f.start(1)
+        f.update(); f.boundary(); local x, e = a:observe(command); fail(x, e, "DELIVERY_SETTLING")
+        f.boundary(); local receipt = assert(a:observe(command))
+        local slot = variant == "later" and 18 or 19
+        assert(receipt.held == 1 and receipt.slot == slot and f.creature.slots[slot].cResRef:get() == "FLPRI1", variant)
+        assert(a.held[command.index].slot == slot, variant)
+    end
+end
+function cases.a_stack_that_may_be_a_source_or_cannot_be_dropped_keeps_the_reward_waiting(N)
+    for _, variant in ipairs({"source", "undroppable"}) do
+        local f = stacking_world(N); local a = f.adapter
+        stack_of(f, 18, 2, nil, variant == "undroppable" and 8 or 0)
+        if variant == "source" then
+            -- The creature's own FLPRI1 is a source still to be removed: DestroyItem would take the reward too.
+            f.fixture.sources["cre:flprc1/item/1"] = {area="BG2600", script_name="FLPRC1", identity=string.rep("9", 64),
+                payload={resref="flpri1", charges={0, 0, 0}, expiration=0, flags=0}}
+            a = N.new(f.api, f.fixture); f.adapter = a
+        end
+        local x, e = a:inspect_target(f.target_id, f.source_ids[1], 1); fail(x, e, "TARGET_STACK_COLLISION")
+        assert(a:inspect_target(f.target_id)); f.boundary()
+        x, e = a:execute(f.command(1)); fail(x, e, "TARGET_STACK_COLLISION")
+        assert(#f.calls == 0, variant)
+    end
+end
+-- Merged, then changed before its receipt: the stack is no longer the one it went into.
+function cases.a_merged_rewards_stack_must_stay_as_it_went_in(N)
+    for _, variant in ipairs({"used", "taken"}) do
+        local f = stacking_world(N); local a = f.adapter
+        local stack = stack_of(f, 18, 2)
+        local command = f.start(1)
+        f.update(); f.boundary(); local x, e = a:observe(command); fail(x, e, "DELIVERY_SETTLING")
+        if variant == "used" then stack.m_useCount1 = 2 else f.creature.slots[18] = nil end
+        f.boundary(); x, e = a:observe(command); fail(x, e, "CREATED_INSTANCE_CHANGED")
+    end
+end
+
 -- The creature's other items may change while its reward is on its way: a
 -- potion it drinks in a fight, an item it is given first, or the one that the
 -- Run of a full backpack puts on the ground to make room for the reward.

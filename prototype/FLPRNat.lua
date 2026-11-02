@@ -485,6 +485,17 @@ function Adapter:_creature_state(object)
     return nil
 end
 
+-- Whether a source of <resref> is a creature of this target's script name in
+-- its area: an item of that name the creature holds may be that source's,
+-- still to be removed.
+function Adapter:_source_holder(endpoint, resref)
+    for _, source in pairs(self.sources) do
+        if source.sprite and source.area == endpoint.area and source.script_name == endpoint.script_name and
+            source.payload.resref == resref then return true end
+    end
+    return false
+end
+
 -- Every sprite, dead or alive, in the visible area or the party whose
 -- LOCALS <name> is 1.
 function Adapter:_all_marked(area, name)
@@ -812,6 +823,60 @@ local function empty_slots(items, first, last)
 end
 local function empty_backpack(items)
     return empty_slots(items, Native.BACKPACK_FIRST, Native.BACKPACK_LAST)
+end
+
+-- Where CMessageAddItem::Run puts a stackable <reward> in a creature: the
+-- first of its backpack slots, in order, that is empty or holds an item of its
+-- name with room for the reward's usage (their sum below the stack size;
+-- docs/native-creature-transport-evidence.md). Such a stack takes the reward
+-- in, and no instance of its own is made: the stack's slot, pointer and
+-- payload, and the usage the reward adds. Nil where the first such slot is
+-- empty, or there is none.
+local function stack_merge(items, reward, stack_limit)
+    if stack_limit <= 1 then return nil end
+    local by_slot = {}
+    for _, item in ipairs(items) do by_slot[item.slot] = item end
+    -- The engine makes a stackable item's usage of 0 one (created_payload).
+    local usage = reward.charges[1] == 0 and 1 or reward.charges[1]
+    for slot = Native.BACKPACK_FIRST, Native.BACKPACK_LAST do
+        local item = by_slot[slot]
+        if not item then return nil end
+        if item.payload.resref == reward.resref and item.payload.charges[1] + usage < stack_limit then
+            return { slot = slot, pointer = item.pointer, payload = item.payload, usage = usage }
+        end
+    end
+end
+
+-- Whether a reward must not go into the stack <merge> (stack_merge): one that
+-- cannot be dropped (instance flag 8) would keep it in the body when its
+-- creature dies, where nobody can take it.
+local function merge_blocked(merge)
+    return merge ~= nil and math.floor(merge.payload.flags / 8) % 2 == 1
+end
+
+-- The stack a reward was to merge into (stack_merge), now with the reward's
+-- usage added and else as before, while no other item of the reward's name
+-- came or changed. Other items may change meanwhile, as for arrived.
+local function merged_into(before, after, merge)
+    local resref, had, found = merge.payload.resref, {}, nil
+    for _, item in ipairs(before) do
+        if item.payload.resref == resref then had[item.pointer] = item end
+    end
+    local was = merge.payload
+    local expected = { resref = resref, charges = { was.charges[1] + merge.usage, was.charges[2], was.charges[3] },
+        expiration = was.expiration, flags = was.flags }
+    for _, current in ipairs(after) do
+        if current.payload.resref == resref then
+            local previous = had[current.pointer]
+            if current.pointer == merge.pointer then
+                if current.slot ~= merge.slot or not same(current.payload, expected) then return nil end
+                found = current
+            elseif not previous or previous.slot ~= current.slot or not same(previous.payload, current.payload) then
+                return nil
+            end
+        end
+    end
+    return found
 end
 
 -- Every earlier slot must keep its pointer and payload, and exactly one
@@ -1409,24 +1474,31 @@ function Adapter:_inspect(endpoint, id, source, source_id, unit, member, paid)
     if endpoint.corpse_only then return nil, "TARGET_ALIVE" end
     local items = self:_items(owner, endpoint.sprite)
     local reward = source and self:_reward(source_id, unit)
+    local stack_limit = 1
     if reward then
-        local supported, stack_limit
+        local supported
         supported, reason, stack_limit = self:_supported(reward)
         if not supported then return nil, reason end
-        -- CMessageAddItem::Run merges a stackable reward into a backpack stack
-        -- of its name. A container's add appends its own entry and merges
-        -- nothing (docs/native-corpse-ground-evidence.md), so a container
-        -- holding one of its name takes the reward as any other.
-        if stack_limit > 1 and endpoint.kind == "creature" then
-            for _, item in ipairs(items) do
-                if item.payload.resref == reward.resref then return nil, "TARGET_STACK_COLLISION" end
-            end
-        end
     end
     if endpoint.kind == "creature" then
         -- Checked before the core journals anything, so these are deferrals.
         local empty = empty_backpack(items)
-        if #empty == 0 then return nil, "TARGET_INVENTORY_FULL" end
+        local merge
+        if reward and stack_limit > 1 then
+            -- CMessageAddItem::Run merges a stackable reward into a backpack
+            -- stack of its name (stack_merge), as Item Randomiser's ended up
+            -- in its creature; it waited for ever before (the audit of
+            -- 2026-11-02, finding 5). A container's add never merges
+            -- (docs/native-corpse-ground-evidence.md). One of its name may be
+            -- a source of this creature still to be removed, which would take
+            -- the reward with it: it waits for that.
+            if self:_source_holder(endpoint, reward.resref) and count_named(items, reward.resref) > 0 then
+                return nil, "TARGET_STACK_COLLISION"
+            end
+            merge = stack_merge(items, reward, stack_limit)
+            if merge_blocked(merge) then return nil, "TARGET_STACK_COLLISION" end
+        end
+        if #empty == 0 and not merge then return nil, "TARGET_INVENTORY_FULL" end
         if creature_conflict(self:_queue(), owner.id, self.source_resrefs) then return nil, "TARGET_QUEUE_BUSY" end
         -- Where its death drop could put the reward (Adapter:execute), and its
         -- count there. A party member keeps its items wherever it dies, and a
@@ -1437,7 +1509,7 @@ function Adapter:_inspect(endpoint, id, source, source_id, unit, member, paid)
         end
         if self.api.EEex_Sprite_GetPortraitIndex(owner.object) ~= -1 then count = 0 end
         self.reservations[endpoint.identity] = { owner = owner, items = items, kind = "deliver", id = id, empty = empty,
-            endpoint = endpoint, piles = reward and piles }
+            endpoint = endpoint, piles = reward and piles, merge = merge }
         return { identity = endpoint.identity, target_id = id, accepts = 1,
             settle = reward and settle_value(count_named(items, reward.resref), count, member, paid) }
     end
@@ -1700,13 +1772,17 @@ function Adapter:execute(command)
     local supported, stack_limit; supported, reason, stack_limit = self:_supported(source.payload)
     if not supported then return nil, reason end
     local creature = kind == "target" and endpoint.kind == "creature"
+    local merge
     if creature and stack_limit > 1 then
-        -- A creature's stack merge can consume the reward without creating a
-        -- distinct pointer. Reject it before the native action, preserving
-        -- exact units. A container's add never merges (Adapter:_inspect).
-        for _, item in ipairs(before) do
-            if item.payload.resref == source.payload.resref then return nil, "TARGET_STACK_COLLISION" end
+        -- Where Run will put a stackable reward: a stack of its name may take
+        -- it in, where no instance of its own proves it (Adapter:_inspect).
+        -- Never into a source still to be removed. A container's add never
+        -- merges.
+        if self:_source_holder(endpoint, source.payload.resref) and count_named(before, source.payload.resref) > 0 then
+            return nil, "TARGET_STACK_COLLISION"
         end
+        merge = stack_merge(before, source.payload, stack_limit)
+        if merge_blocked(merge) then return nil, "TARGET_STACK_COLLISION" end
     end
     local before_queue
     if creature then
@@ -1770,6 +1846,7 @@ function Adapter:execute(command)
         end
         self:_preserve_message_flags(message, created)
         self.pending.queued, self.pending.empty, self.pending.created = message, reserved.empty, created
+        self.pending.merge = merge
         -- Where the creature's death drop could put the reward, and the area
         -- it is in (Adapter:_find_dropped). A party member keeps its items
         -- when it dies, but not where it leaves no body. Plain values only,
@@ -2198,7 +2275,17 @@ function Adapter:_observe_creature(pending, receipt)
             return nil, "DELIVERY_SETTLING"
         end
         -- The exact message has been consumed. Pin the instance its Run made,
-        -- then demand another later tick before publishing anything.
+        -- then demand another later tick before publishing anything. A reward
+        -- merged into a stack of its name (stack_merge) has no instance of its
+        -- own: the stack it went into is pinned, with the reward's usage added.
+        if items and pending.merge then
+            local merged = merged_into(pending.before, items, pending.merge)
+            if merged then
+                pending.created_pointer, pending.created_slot, pending.pinned_tick = merged.pointer, merged.slot, self.tick
+                pending.merged = merged.payload
+                return nil, "DELIVERY_SETTLING"
+            end
+        end
         local placed, failure = nil, "DELIVERY_MESSAGE_LOST"
         if items then placed, failure = arrived(pending.before, items, created.resref) end
         if not placed then
@@ -2228,10 +2315,11 @@ function Adapter:_observe_creature(pending, receipt)
     if self.tick <= pending.pinned_tick then return nil, "DELIVERY_SETTLING" end
     local kept = items and item_at(items, pending.created_slot)
     if kept and kept.pointer ~= pending.created_pointer then kept = nil end
-    if kept and not same(kept.payload, created) then return nil, "CREATED_INSTANCE_CHANGED" end
+    if kept and not same(kept.payload, pending.merged or created) then return nil, "CREATED_INSTANCE_CHANGED" end
     local party = owner and api.EEex_Sprite_GetPortraitIndex(owner.object) ~= -1
     if (state == "alive" or party) and not kept then return nil, "CREATED_INSTANCE_CHANGED" end
-    if state == "dead" and not party then
+    -- A merged reward is part of its stack, which the death drop takes along.
+    if state == "dead" and not party and not pending.merged then
         if kept then return self:_corpse_reward(pending, owner, items, kept, queue) end
     end
     local supported, reason = self:_supported(receipt.payload)
@@ -2247,7 +2335,8 @@ function Adapter:_observe_creature(pending, receipt)
     -- That is not proof of lootability: the death drop is the engine's. A quest
     -- reward's recipient that left the party on its way holds it too.
     receipt.lootable, receipt.held, receipt.holder = 0, 1, "creature"
-    if state == "alive" then
+    -- A merged reward has no instance of its own to bind a drop trace to.
+    if state == "alive" and not pending.merged then
         -- Session-only provenance. A save reload cannot reconstruct this record
         -- by finding another item with the same name, address, or payload.
         self.held[receipt.index] = { session=receipt.session, revision=receipt.revision,
