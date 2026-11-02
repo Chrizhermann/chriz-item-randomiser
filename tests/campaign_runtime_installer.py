@@ -67,7 +67,7 @@ COMPONENT = 0
 # M_FLPRTXT.lua keys and the in-game.tra strings they name, in installation order.
 MESSAGES = (("not_running", 1700), ("unsupported", 1701), ("other_campaign", 1702),
             ("setup_failed", 1703), ("start_plain", 1704), ("ready", 1705), ("stopped", 1706),
-            ("vanished", 1707))
+            ("vanished", 1707), ("container_gone", 1708))
 MESSAGE_FILE = "override/m_flprtxt.lua"
 MARKER = b"\x01"
 LUAJIT_INI = (b"[General]\r\n; LuaPatchMode=INTERNAL uses the engine's own Lua\r\n"

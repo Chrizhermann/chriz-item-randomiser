@@ -754,4 +754,7 @@ Medium green triangle marks the spot. - Lum" //failsafe
 // item's name for {item} and the party member's for {member}; keep both as they are.
 @1707=~{item} falls to the ground at {member}'s feet. Whoever carried it left no body behind.~
 
+// A reward whose container is not in its area (a mod took it out, or the game removed an emptied pile) falls at a
+// party member's feet. The runtime puts in the item's name for {item} and the party member's for {member}.
+@1708=~{item} falls to the ground at {member}'s feet. Its hiding place is gone.~
 

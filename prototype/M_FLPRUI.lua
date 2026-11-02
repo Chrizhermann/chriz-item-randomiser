@@ -10,7 +10,7 @@
 -- unrandomised silently.
 local NEXT = "randomiser-campaigns/next.lua"
 
--- English fallbacks (languages/english/in-game.tra @1700-@1707). The installed
+-- English fallbacks (languages/english/in-game.tra @1700-@1708). The installed
 -- M_FLPRTXT.lua maps the same keys to the strings the installer added to the
 -- game text in the language chosen at installation.
 local FALLBACK = {
@@ -27,6 +27,7 @@ local FALLBACK = {
         .. "missing. Details: randomiser-campaigns\\last-error.txt",
     -- M_FLPR.lua puts in the item's and the party member's names.
     vanished = "{item} falls to the ground at {member}'s feet. Whoever carried it left no body behind.",
+    container_gone = "{item} falls to the ground at {member}'s feet. Its hiding place is gone.",
 }
 
 function FLPRUI_Text(key)

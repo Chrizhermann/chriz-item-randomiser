@@ -10684,6 +10684,11 @@
      1707,
      "{item} falls to the ground at {member}'s feet. Whoever carried it left no body behind.",
      "{item} falls to the ground at {member}'s feet. Whoever carried it left no body behind."
+    ],
+    [
+     1708,
+     "{item} falls to the ground at {member}'s feet. Its hiding place is gone.",
+     "{item} falls to the ground at {member}'s feet. Its hiding place is gone."
     ]
    ]
   },

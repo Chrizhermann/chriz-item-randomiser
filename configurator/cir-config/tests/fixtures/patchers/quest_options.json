@@ -1325,7 +1325,8 @@
     "1704": "Start without randomiser",
     "1705": "The gods have scattered the treasures of the Realms anew.",
     "1706": "Chriz Item Randomiser stopped working in this adventure. Items it has not placed yet may be missing. Details: randomiser-campaigns\\last-error.txt",
-    "1707": "{item} falls to the ground at {member}'s feet. Whoever carried it left no body behind."
+    "1707": "{item} falls to the ground at {member}'s feet. Whoever carried it left no body behind.",
+    "1708": "{item} falls to the ground at {member}'s feet. Its hiding place is gone."
    }
   },
   {

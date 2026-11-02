@@ -1504,7 +1504,7 @@ function cases.vanish_execute_requires_one_created_instance_and_one_drop_message
         x, e = a:execute(command); fail(x, e, "MUTATION_PENDING")
     end
 end
-function cases.vanish_serves_creature_targets_only(N)
+function cases.vanish_never_takes_a_quest_recipient_for_gone(N)
     -- A quest target's recipient is a party member: none there is no death.
     local f = vanish_world(N)
     f.fixture.targets[f.target_id] = {kind="quest", area="BG2600", identity=string.rep("c", 64),
@@ -1512,13 +1512,6 @@ function cases.vanish_serves_creature_targets_only(N)
     f.globals.FLPR_EPOOL, f.party[0] = 1, nil
     f.adapter = N.new(f.api, f.fixture)
     local x, e = f.adapter:inspect_target(f.target_id, f.source_ids[1], 1); fail(x, e, "OWNER_MISSING")
-    assert(#f.calls == 0 and next(f.adapter.reservations) == nil)
-    -- A container that is gone never died, whatever its name.
-    f = vanish_world(N)
-    f.fixture.targets[f.target_id] = {kind="container", area="BG2600", script_name="FLPRC1", x=500, y=600,
-        container_type=4, identity=string.rep("c", 64)}
-    f.adapter = N.new(f.api, f.fixture)
-    x, e = f.adapter:inspect_target(f.target_id, f.source_ids[1], 1); fail(x, e, "OWNER_MISSING")
     assert(#f.calls == 0 and next(f.adapter.reservations) == nil)
 end
 
@@ -2326,6 +2319,101 @@ function cases.settle_counts_the_piles_where_its_creature_left_no_body(N)
     local _, witness = parked_start(f)
     table.remove(f.queue, 1); f.area.m_lVertSort = {1, 2}; come_back(f); f.boundary()
     local x, e = a:settle_parked(settle_request(f, witness)); fail(x, e, "OWNER_MISSING")
+end
+
+-- A container target its area does not have (Adapter:_gone): a mod took it
+-- out of the area after Apply, or the game removed a pile once it was empty.
+-- Chris, 2026-11-02: its reward falls at a party member's feet with a message,
+-- as for a carrier that left no body ("ok"). The party of vanish_world stands
+-- in the area, and no container there is named FLPRCHEST; f.chest is one that
+-- is, for the area to have once it is listed.
+local function gone_world(N, kind)
+    local f = vanish_world(N)
+    f.globals.SPRITE_IS_DEADFLPRC1 = nil
+    f.fixture.targets[f.target_id] = {kind=kind, area="BG2600", script_name="FLPRCHEST", x=500, y=600,
+        container_type=kind == "container" and 4 or nil, identity=string.rep("c", 64)}
+    f.adapter = N.new(f.api, f.fixture)
+    f.chest = {address=7900, sprite=false, m_containerType=kind == "container" and 1 or 4, m_pos={x=500, y=600},
+        m_lstItems={}, m_scriptName={get=function() return "FLPRCHEST" end}}
+    f.objects[60] = f.chest
+    return f
+end
+function cases.gone_containers_reward_falls_at_the_first_party_members_feet(N)
+    for _, kind in ipairs({"container", "ground-pile"}) do
+        local f = gone_world(N, kind); local a = f.adapter
+        local command = vanish_start(f, 1)
+        assert(#f.calls == 2 and f.calls[1] == 'CreateItem("flpri1",0,0,0)' and
+            f.calls[2] == 'DropItem("flpri1",[-1.-1])', kind)
+        assert(next(f.kara.slots) == nil and next(f.minsc.slots) == nil, kind)
+        local receipt = vanish_receipt(f, command)
+        assert(receipt.created == 1 and receipt.nonce_bound_instance == 1 and receipt.lootable == 1 and
+            receipt.held == nil and receipt.holder == "ground", kind)
+        -- The player is told why: its container is gone.
+        assert(receipt.notice.why == "container" and receipt.notice.member == "Kara" and
+            receipt.notice.item == 7101 and receipt.notice.resref == "flpri1", kind)
+        local pile = f.objects[f.area.m_lVertSortBack[1]]
+        assert(#pile.m_lstItems == 1 and pile.m_lstItems[1].cResRef:get() == "FLPRI1" and
+            pile.m_pos.x == f.kara.m_pos.x and #f.chest.m_lstItems == 0, kind)
+        unrelated_intact(f); assert(a.pending == nil)
+    end
+    -- A creature's that left no body is told as before.
+    local f = vanish_world(N)
+    assert(vanish_receipt(f, vanish_start(f, 1)).notice.why == "vanished")
+end
+function cases.a_container_its_area_has_gets_its_reward_and_two_equally_near_wait(N)
+    local f = gone_world(N, "container")
+    f.area.m_lVertSortBack = {60}
+    local witness = assert(f.adapter:inspect_target(f.target_id, f.source_ids[1], 1))
+    assert(witness.ground == nil and witness.accepts == 1 and #f.calls == 0)
+    -- Two of its name, equally near its place: neither is known to be it.
+    f = gone_world(N, "container")
+    f.objects[61] = {address=7901, sprite=false, m_containerType=1, m_pos={x=500, y=600}, m_lstItems={},
+        m_scriptName={get=function() return "FLPRCHEST" end}}
+    f.area.m_lVertSortBack = {60, 61}
+    local x, e = f.adapter:inspect_target(f.target_id, f.source_ids[1], 1); fail(x, e, "OWNER_AMBIGUOUS")
+    assert(#f.calls == 0 and next(f.adapter.reservations) == nil)
+end
+function cases.gone_containers_reward_waits_while_no_member_can_drop_it(N)
+    local wants = {full="TARGET_INVENTORY_FULL", area="AREA_UNAVAILABLE", sourceless="OWNER_MISSING"}
+    for _, variant in ipairs({"full", "area", "sourceless"}) do
+        local f = gone_world(N, "container")
+        if variant == "full" then
+            for _, member in ipairs({f.kara, f.minsc}) do
+                for slot = 18, 33 do member.slots[slot] = f.item("FILL", 100 * member.m_id + slot) end
+            end
+        elseif variant == "area" then leave(f) end
+        local x, e
+        if variant == "sourceless" then x, e = f.adapter:inspect_target(f.target_id)
+        else x, e = f.adapter:inspect_target(f.target_id, f.source_ids[1], 1) end
+        fail(x, e, wants[variant])
+        assert(#f.calls == 0 and next(f.adapter.reservations) == nil, variant)
+    end
+end
+function cases.gone_containers_drop_is_refused_once_its_container_is_back(N)
+    local f = gone_world(N, "ground-pile"); local a = f.adapter
+    assert(a:inspect_target(f.target_id, f.source_ids[1], 1).ground == true); f.boundary()
+    f.area.m_lVertSortBack = {60}
+    local x, e = a:execute(f.command(1)); fail(x, e, "OWNER_CHANGED")
+    assert(#f.calls == 0)
+end
+-- Parked on its way to a party member's feet: the piles tell on the next
+-- visit, and a container that is back counts its own items.
+function cases.settle_counts_the_piles_where_a_gone_containers_reward_fell(N)
+    for _, variant in ipairs({"arrived", "lost", "back"}) do
+        local f = gone_world(N, "container"); local a = f.adapter
+        local command, witness = witnessed_start(f)
+        assert(witness.ground == true and witness.settle == 1, variant)
+        leave(f); f.boundary()
+        local receipt = assert(a:observe(command))
+        assert(receipt.parked == 1 and a.pending == nil, variant)
+        if variant == "lost" then table.remove(f.queue, 1) else f.update() end
+        if variant == "back" then f.area.m_lVertSortBack[#f.area.m_lVertSortBack + 1] = 60 end
+        come_back(f); f.boundary()
+        receipt = assert(read_only(f, function() return a:settle_parked(settle_request(f, witness)) end))
+        if variant == "arrived" then assert(receipt.arrived == 1 and receipt.holder == "ground", variant)
+        else assert(receipt.arrived == 0 and receipt.holder == nil, variant) end
+        assert(#f.calls == 2, variant)
+    end
 end
 -- A quest reward's recipient is in the party: it is followed into any area
 -- while its reward is on its way, and a parked one is counted wherever it is.

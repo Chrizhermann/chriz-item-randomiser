@@ -142,10 +142,12 @@ local function shown_name(api, item)
     end
 end
 -- What the player is told of the reward <p> at a party member's feet
--- (FLPRHost's notice).
-local function party_notice(api, member, p)
+-- (FLPRHost's notice), and <why> it fell there: its creature "vanished", or
+-- its "container" is not in its area (Adapter:_gone).
+local function party_notice(api, member, p, why)
     local name = api.EEex_Sprite_GetName(member)
-    return { item = shown_name(api, p), resref = p.resref, member = type(name) == "string" and name or nil }
+    return { item = shown_name(api, p), resref = p.resref, member = type(name) == "string" and name or nil,
+        why = why }
 end
 
 function Native.new(api, fixture, seed, reward_payload)
@@ -1379,7 +1381,7 @@ function Adapter:_inspect(endpoint, id, source, source_id, unit, member, paid)
         if reason == "TARGET_NOT_ALIVE" and corpse and source then
             return self:_inspect_ground(endpoint, id, self:_reward(source_id, unit), corpse, member, paid)
         end
-        if reason == "OWNER_MISSING" and source and self:_vanished(endpoint) then
+        if reason == "OWNER_MISSING" and source and self:_gone(endpoint) then
             return self:_inspect_party_ground(endpoint, id, self:_reward(source_id, unit), member, paid)
         end
         return nil, reason
@@ -1472,14 +1474,25 @@ function Adapter:_vanished(endpoint)
     return integer(deaths, 1, 2147483647)
 end
 
--- Such a creature can never hold its reward either. Chris, 2026-10-26:
--- "Einfach das Item auf dem Boden droppen mit einer Nachricht", so clear that
--- nobody overlooks it. It falls to the ground at the feet of a party member in
--- the visible area, the first in portrait order who can drop it, as at a
--- corpse: CreateItem on a party member stores it in the first empty backpack
--- slot at once (docs/native-creature-transport-evidence.md), DropItem moves it
--- into a pile at the member. The receipt names the item and the member for
--- the player (FLPRHost's notice). While no member can drop it, it waits.
+-- A target whose owner Adapter:_resolve did not find in its visible area
+-- (OWNER_MISSING) that can never hold its reward: a creature that vanished,
+-- or any container. A container is part of its area, and none of its script
+-- name is there: a mod took it out of the area after Apply, or the game
+-- removed a pile once it was empty. Item Randomiser's reward would be lost
+-- with it.
+function Adapter:_gone(endpoint)
+    return endpoint.kind == "container" or endpoint.kind == "ground-pile" or self:_vanished(endpoint)
+end
+
+-- Such a target can never hold its reward either. Chris, 2026-10-26, on
+-- creatures: "Einfach das Item auf dem Boden droppen mit einer Nachricht", so
+-- clear that nobody overlooks it; on containers, 2026-11-02, the same ("ok").
+-- It falls to the ground at the feet of a party member in the visible area,
+-- the first in portrait order who can drop it, as at a corpse: CreateItem on a
+-- party member stores it in the first empty backpack slot at once
+-- (docs/native-creature-transport-evidence.md), DropItem moves it into a pile
+-- at the member. The receipt names the item and the member for the player
+-- (FLPRHost's notice). While no member can drop it, it waits.
 function Adapter:_inspect_party_ground(endpoint, id, reward, place_member, paid)
     local supported, reason = self:_supported(reward)
     if not supported then return nil, reason end
@@ -1521,7 +1534,7 @@ end
 
 -- The corpse or party member a ground delivery's reservation names, as long
 -- as it still is: the same corpse, or the same living member in the visible
--- area while the target's creature is still gone without a body.
+-- area while the target is still gone (Adapter:_gone).
 function Adapter:_drop_owner(endpoint, reserved)
     local api = self.api
     local owner, reason, corpse = self:_resolve(endpoint, "target")
@@ -1530,7 +1543,7 @@ function Adapter:_drop_owner(endpoint, reserved)
             corpse.pointer ~= reserved.owner.pointer then return nil end
         return corpse
     end
-    if owner or reason ~= "OWNER_MISSING" or not self:_vanished(endpoint) then return nil end
+    if owner or reason ~= "OWNER_MISSING" or not self:_gone(endpoint) then return nil end
     local member = api.EEex_Sprite_GetInPortrait(reserved.portrait)
     if not member or member.m_id ~= reserved.owner.id or pointer(api, member) ~= reserved.owner.pointer or
         api.EEex_GameObject_IsSprite(member, false) ~= true or
@@ -1792,7 +1805,8 @@ function Adapter:_execute_ground(command, reserved, endpoint, p)
         return nil, "DELIVERY_QUEUE_NOT_EXCLUSIVE"
     end
     -- What the player is told of a reward at a party member's feet.
-    local notice = reserved.portrait and party_notice(api, owner.object, p) or nil
+    local notice = reserved.portrait and party_notice(api, owner.object, p,
+        endpoint.sprite and "vanished" or "container") or nil
     local tried = self.attempted[command.session] or {}
     self.attempted[command.session] = tried; tried[command.nonce] = true
     local receipt = { session = command.session, kind = command.kind, index = command.index,
@@ -2324,7 +2338,7 @@ function Adapter:_lost_reward(pending, queue)
         return nil, self.last_error
     end
     pending.ground, pending.queued, pending.created = true, message, created
-    pending.notice = party_notice(self.api, member.owner.object, p)
+    pending.notice = party_notice(self.api, member.owner.object, p, "vanished")
     pending.pile_before = pile and self:_pile_items(pile, created.resref) or {}
     pending.pile_pointer = pile and pile.pointer or nil
     return nil, "DELIVERY_SETTLING"
@@ -2350,7 +2364,9 @@ end
 -- where it began (Adapter:_settle_endpoint): a living creature its items, a
 -- dead one its body and the ground piles of its area (its death drop puts its
 -- items there), one gone without a body the piles, where its death drop put
--- what it held. A party member keeps its items, alive or dead, in any area.
+-- what it held, and a container its area does not have the piles, where its
+-- reward fell at a party member's feet (Adapter:_gone). A party member keeps
+-- its items, alive or dead, in any area.
 -- A store took its reward at once, and its stock row tells (FLPRShop). Its
 -- holder tells the core where it is. Nothing is created, moved or read in
 -- another area here; while an item of the reward's name is on its way
@@ -2379,9 +2395,16 @@ function Adapter:settle_parked(request)
     end
     local owner, reason, unusable = self:_resolve(endpoint, "target", nil, true)
     if endpoint.kind ~= "creature" then
-        if not owner then return nil, reason end
-        if count_named(self:_items(owner, false), reward.resref) == counts.held + 1 then
-            receipt.arrived, receipt.holder = 1, "container"
+        if owner then
+            if count_named(self:_items(owner, false), reward.resref) == counts.held + 1 then
+                receipt.arrived, receipt.holder = 1, "container"
+            end
+            return receipt
+        end
+        if reason ~= "OWNER_MISSING" or not self:_gone(endpoint) then return nil, reason end
+        -- At a party member's feet (Adapter:_inspect_party_ground).
+        if self:_count_piles(reward.resref) == counts.held + counts.piles + 1 then
+            receipt.arrived, receipt.holder = 1, "ground"
         end
         return receipt
     end
@@ -2400,7 +2423,7 @@ function Adapter:settle_parked(request)
         end
         return receipt
     end
-    if reason == "OWNER_MISSING" and self:_vanished(endpoint) then
+    if reason == "OWNER_MISSING" and self:_gone(endpoint) then
         if self:_count_piles(reward.resref) == counts.held + counts.piles + 1 then
             receipt.arrived, receipt.holder = 1, "ground"
         end

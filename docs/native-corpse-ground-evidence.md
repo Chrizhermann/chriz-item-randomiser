@@ -186,6 +186,34 @@ overlooks it.
 The fake-engine tests cover each of these cases (`tests/test_campaign_native_creature.py`,
 `tests/test_chapter3_runtime.py`, `tests/test_campaign_native_host.py`).
 
+## A container that is not in its area (since 1.0.5)
+
+A container target is part of its area file: Apply takes only a script name that one
+container of the area has, and the runtime finds it by that name (`fixture_container`
+in `FLPRNat.lua`). When its area is the visible one and has no container of that
+name, it is not there any more:
+
+- a mod took it out of the area after Apply, or replaced the area file;
+- the game removed a ground pile once it was empty.
+
+Until 1.0.5 its reward waited for it for the rest of the adventure (`OWNER_MISSING`),
+so it was lost as Item Randomiser's would be. Chris decided on 2026-11-02 that it
+goes to the ground with a message, as for a creature that left no body ("ok").
+
+- **Inspection.** `Adapter:_gone` is true for a container or ground-pile target that
+  `Adapter:_resolve` did not find (`OWNER_MISSING`), and the reward falls at a party
+  member's feet under the same rules as above (`Adapter:_inspect_party_ground`).
+  Two containers of its name, equally near its place, are no proof of anything:
+  that still waits (`OWNER_AMBIGUOUS`).
+- **Execution.** The container must still be missing, else `OWNER_CHANGED`, and the
+  next inspection delivers into it.
+- **Settling a parked reward** (`Adapter:settle_parked`): with its container still
+  missing, the piles of the area are counted as for a creature that left no body;
+  with its container back, its items.
+- **Message.** The notice carries `why = "container"`, and `M_FLPR.lua` uses
+  in-game.tra @1708: "Cloak of Mirroring falls to the ground at Minsc's feet. Its
+  hiding place is gone."
+
 ## A creature that dies while its reward is on its way (since 1.0.3)
 
 `GiveItemCreate` queues the reward's message, and its `Run` puts the reward into the

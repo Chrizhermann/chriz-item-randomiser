@@ -1173,20 +1173,25 @@ function cases.bootstrap_tells_the_player_of_each_reward_at_the_partys_feet(Core
     local shown_info=popupInfo
     popupInfo=function(info) shown_info(info); open=true end
     -- cdtweaks colours a companion's name; an item without a name shows its resref.
-    f.notices={{item=4720,resref="clck07",member="^0xFF8E23FFMinsc^-"},{resref="sw1h54",member="Kara"}}
+    -- The third fell there because its container is not in its area.
+    f.notices={{item=4720,resref="clck07",member="^0xFF8E23FFMinsc^-",why="vanished"},{resref="sw1h54",member="Kara"},
+        {item=4720,resref="clck07",member="Imoen",why="container"}}
     bootstrap_to_complete(f)
     local first=FLPRUI_Text("vanished"):gsub("{item}","Cloak of Mirroring"):gsub("{member}","Minsc")
     local second=FLPRUI_Text("vanished"):gsub("{item}","SW1H54"):gsub("{member}","Kara")
+    local third=FLPRUI_Text("container_gone"):gsub("{item}","Cloak of Mirroring"):gsub("{member}","Imoen")
     assert(first=="Cloak of Mirroring falls to the ground at Minsc's feet. Whoever carried it left no body behind.",
         first)
+    assert(third=="Cloak of Mirroring falls to the ground at Imoen's feet. Its hiding place is gone.",third)
     local logged={}
     for _,line in ipairs(f.shown) do logged[line]=true end
-    assert(logged[first] and logged[second] and #f.shown==3)
+    assert(logged[first] and logged[second] and logged[third] and #f.shown==4)
     assert(#f.infos==1 and f.infos[1]==first)
     local clock=EngineGlobals.g_pBaldurChitin.m_pObjectGame.m_worldTime
     clock.m_gameTime=clock.m_gameTime+1; f.root.Poll(); assert(#f.infos==1)
     open=false; f.root.Poll(); assert(#f.infos==2 and f.infos[2]==second)
-    open=false; f.root.Poll(); f.root.Poll(); assert(#f.infos==2 and f.root.Notices==nil)
+    open=false; f.root.Poll(); assert(#f.infos==3 and f.infos[3]==third)
+    open=false; f.root.Poll(); f.root.Poll(); assert(#f.infos==3 and f.root.Notices==nil)
     Infinity_FetchString=nil
 end
 function cases.bootstrap_notice_failure_is_recorded_and_the_campaign_goes_on(Core,Host,Globals,text)
