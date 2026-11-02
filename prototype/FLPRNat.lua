@@ -1413,7 +1413,11 @@ function Adapter:_inspect(endpoint, id, source, source_id, unit, member, paid)
         local supported, stack_limit
         supported, reason, stack_limit = self:_supported(reward)
         if not supported then return nil, reason end
-        if stack_limit > 1 then
+        -- CMessageAddItem::Run merges a stackable reward into a backpack stack
+        -- of its name. A container's add appends its own entry and merges
+        -- nothing (docs/native-corpse-ground-evidence.md), so a container
+        -- holding one of its name takes the reward as any other.
+        if stack_limit > 1 and endpoint.kind == "creature" then
             for _, item in ipairs(items) do
                 if item.payload.resref == reward.resref then return nil, "TARGET_STACK_COLLISION" end
             end
@@ -1695,14 +1699,15 @@ function Adapter:execute(command)
     if not unchanged(reserved.items, before) then return nil, "INVENTORY_CHANGED" end
     local supported, stack_limit; supported, reason, stack_limit = self:_supported(source.payload)
     if not supported then return nil, reason end
-    if kind == "target" and stack_limit > 1 then
-        -- A stack merge can consume the reward without creating a distinct
-        -- pointer. Reject it before the native action, preserving exact units.
+    local creature = kind == "target" and endpoint.kind == "creature"
+    if creature and stack_limit > 1 then
+        -- A creature's stack merge can consume the reward without creating a
+        -- distinct pointer. Reject it before the native action, preserving
+        -- exact units. A container's add never merges (Adapter:_inspect).
         for _, item in ipairs(before) do
             if item.payload.resref == source.payload.resref then return nil, "TARGET_STACK_COLLISION" end
         end
     end
-    local creature = kind == "target" and endpoint.kind == "creature"
     local before_queue
     if creature then
         before_queue = self:_queue()
