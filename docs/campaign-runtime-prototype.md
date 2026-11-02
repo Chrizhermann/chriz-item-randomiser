@@ -283,6 +283,11 @@ reward waits (`TARGET_INVENTORY_FULL`, `PARTY_ITEM_AMBIGUOUS`,
 `TARGET_QUEUE_BUSY`). A missing creature whose death the engine has not counted
 (not there yet, or gone alive) still waits with `OWNER_MISSING`.
 
+A container target that is not in its visible area (a mod took it out after
+Apply, or the game removed an emptied pile) gets its reward at a party member's
+feet the same way, with in-game.tra @1708 as its message (Chris, 2026-11-02).
+Two of its name equally near its place still wait (`OWNER_AMBIGUOUS`).
+
 A creature target marked `corpse_only` receives only that way: while it lives,
 inspection reports `TARGET_ALIVE` and the reward waits. Such a target always has
 a `handover`: once its reward reply has set the event, the reward goes to the

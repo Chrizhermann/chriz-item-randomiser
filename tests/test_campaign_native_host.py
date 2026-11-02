@@ -112,6 +112,8 @@ local function setup(Core,Host)
         function native:observe(command)
             assert(self.pending==command and self.tick>self.issued,"NATIVE_LATER_BOUNDARY_REQUIRED")
             if f.fail_observe then return nil,"NATIVE_OBSERVATION_FAILED" end
+            -- FLPRNat's observation that cannot tell where a reward went (Host.UNSETTLED).
+            if command.kind=="deliver" and f.unsettled then return nil,f.unsettled end
             if command.kind=="deliver" and (f.delivery_waits or 0)>0 then
                 f.delivery_waits=f.delivery_waits-1
                 return nil,"DELIVERY_SETTLING"
@@ -126,6 +128,13 @@ local function setup(Core,Host)
             else receipt.created,receipt.nonce_bound_instance,receipt.lootable=1,1,1 end
             -- FLPRNat's notice of a reward at a party member's feet, one per delivery.
             if command.kind=="deliver" and f.notices then receipt.notice=table.remove(f.notices,1) end
+            self.pending=nil; return receipt
+        end
+        -- FLPRNat's Adapter:unsettle: the reward on its way parks.
+        function native:unsettle(command,reason)
+            assert(self.pending==command and Host.UNSETTLED[reason],"NATIVE_UNSETTLE_UNEXPECTED")
+            f.unsettled=nil; self.unsettle_reason=reason
+            local receipt=copy(command); receipt.session=command.session; receipt.parked=1
             self.pending=nil; return receipt
         end
         function native:destroy() self.destroyed=true; self.pending=nil end
@@ -396,6 +405,28 @@ function cases.reward_parked_by_leaving_lets_the_others_go_on_and_settles_later(
     f.settle_result={arrived=1,holder="container"}; f:poll()
     assert(f.host:inspect().assignments[1].delivery_phase==Core.PHASE.confirmed and f.values.flpr_b0001==0)
     f:finish(); assert(#f.events==6 and #f.host:inspect().deferred==0)
+end
+-- The audit of 2026-11-02 (finding 4): an observation that cannot tell where a
+-- reward went stopped the randomiser for the adventure. It parks now with its
+-- counts, the others go on, and its settle decides: arrived, or given again.
+function cases.reward_whose_observation_cannot_tell_parks_instead_of_stopping(Core,Host)
+    for _,reason in ipairs({"DELIVERY_QUEUE_CONFLICT","DELIVERY_SETTLING_TIMEOUT","CREATED_INSTANCE_CHANGED"}) do
+        local f=setup(Core,Host); f.settle=5; f.settle_result="AREA_UNAVAILABLE"
+        assert(f:capture())
+        for i=1,8 do f:poll() end
+        assert(#f.events==4 and f.events[4].kind=="deliver" and f.values.flpr_jkind==2)
+        f.unsettled=reason; f:poll()
+        assert(f.host.status=="running" and f.native_instances[#f.native_instances].unsettle_reason==reason,reason)
+        assert(f.host:inspect().assignments[1].delivery_phase==Core.PHASE.parked and f.values.flpr_b0001==5)
+        f.settle_result={arrived=1,holder="container"}; f:finish()
+        assert(f.host:inspect().assignments[1].delivery_phase==Core.PHASE.confirmed,reason)
+    end
+    -- Begun without counts (CIR 1.0.2): it cannot park and still stops.
+    local f=setup(Core,Host)
+    assert(f:capture())
+    for i=1,8 do f:poll() end
+    f.unsettled="DELIVERY_QUEUE_CONFLICT"; f:poll()
+    assert(f.host.status=="disabled" and f.host.error=="DELIVERY_QUEUE_CONFLICT" and f.native_instances[#f.native_instances].unsettle_reason==nil)
 end
 function cases.parked_reward_that_did_not_arrive_is_delivered_again(Core,Host)
     local f=setup(Core,Host); f.settle=5; f.settle_result={arrived=0}; delivery_parked(f)
@@ -1173,20 +1204,25 @@ function cases.bootstrap_tells_the_player_of_each_reward_at_the_partys_feet(Core
     local shown_info=popupInfo
     popupInfo=function(info) shown_info(info); open=true end
     -- cdtweaks colours a companion's name; an item without a name shows its resref.
-    f.notices={{item=4720,resref="clck07",member="^0xFF8E23FFMinsc^-"},{resref="sw1h54",member="Kara"}}
+    -- The third fell there because its container is not in its area.
+    f.notices={{item=4720,resref="clck07",member="^0xFF8E23FFMinsc^-",why="vanished"},{resref="sw1h54",member="Kara"},
+        {item=4720,resref="clck07",member="Imoen",why="container"}}
     bootstrap_to_complete(f)
     local first=FLPRUI_Text("vanished"):gsub("{item}","Cloak of Mirroring"):gsub("{member}","Minsc")
     local second=FLPRUI_Text("vanished"):gsub("{item}","SW1H54"):gsub("{member}","Kara")
+    local third=FLPRUI_Text("container_gone"):gsub("{item}","Cloak of Mirroring"):gsub("{member}","Imoen")
     assert(first=="Cloak of Mirroring falls to the ground at Minsc's feet. Whoever carried it left no body behind.",
         first)
+    assert(third=="Cloak of Mirroring falls to the ground at Imoen's feet. Its hiding place is gone.",third)
     local logged={}
     for _,line in ipairs(f.shown) do logged[line]=true end
-    assert(logged[first] and logged[second] and #f.shown==3)
+    assert(logged[first] and logged[second] and logged[third] and #f.shown==4)
     assert(#f.infos==1 and f.infos[1]==first)
     local clock=EngineGlobals.g_pBaldurChitin.m_pObjectGame.m_worldTime
     clock.m_gameTime=clock.m_gameTime+1; f.root.Poll(); assert(#f.infos==1)
     open=false; f.root.Poll(); assert(#f.infos==2 and f.infos[2]==second)
-    open=false; f.root.Poll(); f.root.Poll(); assert(#f.infos==2 and f.root.Notices==nil)
+    open=false; f.root.Poll(); assert(#f.infos==3 and f.infos[3]==third)
+    open=false; f.root.Poll(); f.root.Poll(); assert(#f.infos==3 and f.root.Notices==nil)
     Infinity_FetchString=nil
 end
 function cases.bootstrap_notice_failure_is_recorded_and_the_campaign_goes_on(Core,Host,Globals,text)

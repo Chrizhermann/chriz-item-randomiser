@@ -79,7 +79,9 @@ local function notice(info)
         local member = type(info.member) == "string" and
             info.member:gsub("%^0x%x%x%x%x%x%x%x%x", ""):gsub("%^%-", "") or ""
         if member == "" then member = "?" end
-        local line = text("vanished"):gsub("{item}", function() return item end)
+        -- Why it fell there (FLPRNat's party_notice): its carrier vanished, or its container is gone.
+        local line = text(info.why == "container" and "container_gone" or "vanished")
+            :gsub("{item}", function() return item end)
             :gsub("{member}", function() return member end)
         Infinity_DisplayString(line)
         root.Notices = root.Notices or {}

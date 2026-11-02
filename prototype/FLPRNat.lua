@@ -142,10 +142,12 @@ local function shown_name(api, item)
     end
 end
 -- What the player is told of the reward <p> at a party member's feet
--- (FLPRHost's notice).
-local function party_notice(api, member, p)
+-- (FLPRHost's notice), and <why> it fell there: its creature "vanished", or
+-- its "container" is not in its area (Adapter:_gone).
+local function party_notice(api, member, p, why)
     local name = api.EEex_Sprite_GetName(member)
-    return { item = shown_name(api, p), resref = p.resref, member = type(name) == "string" and name or nil }
+    return { item = shown_name(api, p), resref = p.resref, member = type(name) == "string" and name or nil,
+        why = why }
 end
 
 function Native.new(api, fixture, seed, reward_payload)
@@ -467,19 +469,31 @@ end
 
 -- Returns nil for a usable creature target, otherwise the reason it cannot
 -- receive a reward now. None of these states permits a substitute recipient.
-function Adapter:_creature_state(object, party_reward)
+-- A party member is one: a quest's recipient, or a creature target that
+-- joined the party, which gets its reward in its backpack as Item
+-- Randomiser's would be in its inventory (the audit of 2026-11-02, finding 9:
+-- it waited for ever).
+function Adapter:_creature_state(object)
     local api = self.api
     if not self:_living(object) then return "TARGET_NOT_ALIVE" end
     local portrait = api.EEex_Sprite_GetPortraitIndex(object)
-    if portrait ~= -1 then
-        assert(integer(portrait, 0, 5), "NATIVE_PORTRAIT_INVALID")
-        if not party_reward then return "TARGET_PARTY_MEMBER" end
-    end
+    assert(portrait == -1 or integer(portrait, 0, 5), "NATIVE_PORTRAIT_INVALID")
     -- CMessageAddItem::Run forwards a familiar's item to the protagonist.
     local typeAI = object.m_typeAI
     assert(typeAI and integer(typeAI.m_EnemyAlly, 0, 255), "NATIVE_ALLEGIANCE_INVALID")
     if typeAI.m_EnemyAlly == FAMILIAR_ALLEGIANCE then return "TARGET_FAMILIAR" end
     return nil
+end
+
+-- Whether a source of <resref> is a creature of this target's script name in
+-- its area: an item of that name the creature holds may be that source's,
+-- still to be removed.
+function Adapter:_source_holder(endpoint, resref)
+    for _, source in pairs(self.sources) do
+        if source.sprite and source.area == endpoint.area and source.script_name == endpoint.script_name and
+            source.payload.resref == resref then return true end
+    end
+    return false
 end
 
 -- Every sprite, dead or alive, in the visible area or the party whose
@@ -586,12 +600,12 @@ function Adapter:_resolve(endpoint, kind, visible_area, observing, peek)
         else object=api.EEex_Sprite_GetInPortrait(0) end
         if not object then return nil,'OWNER_MISSING' end
         local found={object=object,id=object.m_id,pointer=pointer(api,object)}
-        local reason=self:_creature_state(object,true)
+        local reason=self:_creature_state(object)
         -- A recipient that died with its reward on its way (Adapter:_delivery_owner).
         if reason then return nil,reason,observing and found or nil end
         return found
     end
-    local found, matches, seen, containers = nil, 0, {}, {}
+    local found, seen, containers, living, dead = nil, {}, {}, {}, {}
     for _, field in ipairs(lists) do
         assert(area[field], "NATIVE_AREA_LIST_MISSING")
         api.EEex_Utility_IterateCPtrList(area[field], function(id)
@@ -602,11 +616,10 @@ function Adapter:_resolve(endpoint, kind, visible_area, observing, peek)
             if not object then return end
             object = api.EEex_GameObject_CastUserType(object)
             if not object or text(object.m_scriptName) ~= endpoint.script_name then return end
-            -- Dead same-named sprites still count, so a corpse and its
-            -- replacement can never be mistaken for one continuous owner.
             local is_sprite = api.EEex_GameObject_IsSprite(object, true)
             if endpoint.sprite and is_sprite == true then
-                matches, found = matches + 1, { object = object, id = id, pointer = pointer(api, object) }
+                local list = self:_living(object) and living or dead
+                list[#list + 1] = { object = object, id = id, pointer = pointer(api, object) }
             elseif not endpoint.sprite and is_sprite == false and object.m_lstItems ~= nil then
                 containers[#containers + 1] = { object = object, id = id, pointer = pointer(api, object) }
             end
@@ -615,8 +628,27 @@ function Adapter:_resolve(endpoint, kind, visible_area, observing, peek)
     if not endpoint.sprite then
         found = fixture_container(containers, endpoint)
         if not found then return nil, #containers == 0 and "OWNER_MISSING" or "OWNER_AMBIGUOUS" end
-    elseif matches ~= 1 then
-        return nil, matches == 0 and "OWNER_MISSING" or "OWNER_AMBIGUOUS"
+    elseif kind == "target" then
+        -- A target is the one creature of its name that lives, beside the
+        -- corpses of others (an area script may bring it back after it died):
+        -- its reward would wait for ever if these counted. Two living ones
+        -- wait; one of them may be a passing copy (Simulacrum). With none
+        -- alive, the reward goes to the ground at a corpse; with several, at
+        -- the one of the lowest object id, so each look takes the same.
+        found = #living == 1 and living[1] or nil
+        if not found and #living == 0 then
+            for _, corpse in ipairs(dead) do
+                if not found or corpse.id < found.id then found = corpse end
+            end
+        end
+        if not found then return nil, #living + #dead == 0 and "OWNER_MISSING" or "OWNER_AMBIGUOUS" end
+    elseif #living + #dead ~= 1 then
+        -- A source's item must be taken from the one creature that has it:
+        -- dead same-named sprites still count, so a corpse and its replacement
+        -- can never be mistaken for one continuous owner.
+        return nil, #living + #dead == 0 and "OWNER_MISSING" or "OWNER_AMBIGUOUS"
+    else
+        found = living[1] or dead[1]
     end
     if kind == "source" and endpoint.sprite then
         if not self:_living(found.object) then return nil, "SOURCE_NOT_ALIVE" end
@@ -791,6 +823,60 @@ local function empty_slots(items, first, last)
 end
 local function empty_backpack(items)
     return empty_slots(items, Native.BACKPACK_FIRST, Native.BACKPACK_LAST)
+end
+
+-- Where CMessageAddItem::Run puts a stackable <reward> in a creature: the
+-- first of its backpack slots, in order, that is empty or holds an item of its
+-- name with room for the reward's usage (their sum below the stack size;
+-- docs/native-creature-transport-evidence.md). Such a stack takes the reward
+-- in, and no instance of its own is made: the stack's slot, pointer and
+-- payload, and the usage the reward adds. Nil where the first such slot is
+-- empty, or there is none.
+local function stack_merge(items, reward, stack_limit)
+    if stack_limit <= 1 then return nil end
+    local by_slot = {}
+    for _, item in ipairs(items) do by_slot[item.slot] = item end
+    -- The engine makes a stackable item's usage of 0 one (created_payload).
+    local usage = reward.charges[1] == 0 and 1 or reward.charges[1]
+    for slot = Native.BACKPACK_FIRST, Native.BACKPACK_LAST do
+        local item = by_slot[slot]
+        if not item then return nil end
+        if item.payload.resref == reward.resref and item.payload.charges[1] + usage < stack_limit then
+            return { slot = slot, pointer = item.pointer, payload = item.payload, usage = usage }
+        end
+    end
+end
+
+-- Whether a reward must not go into the stack <merge> (stack_merge): one that
+-- cannot be dropped (instance flag 8) would keep it in the body when its
+-- creature dies, where nobody can take it.
+local function merge_blocked(merge)
+    return merge ~= nil and math.floor(merge.payload.flags / 8) % 2 == 1
+end
+
+-- The stack a reward was to merge into (stack_merge), now with the reward's
+-- usage added and else as before, while no other item of the reward's name
+-- came or changed. Other items may change meanwhile, as for arrived.
+local function merged_into(before, after, merge)
+    local resref, had, found = merge.payload.resref, {}, nil
+    for _, item in ipairs(before) do
+        if item.payload.resref == resref then had[item.pointer] = item end
+    end
+    local was = merge.payload
+    local expected = { resref = resref, charges = { was.charges[1] + merge.usage, was.charges[2], was.charges[3] },
+        expiration = was.expiration, flags = was.flags }
+    for _, current in ipairs(after) do
+        if current.payload.resref == resref then
+            local previous = had[current.pointer]
+            if current.pointer == merge.pointer then
+                if current.slot ~= merge.slot or not same(current.payload, expected) then return nil end
+                found = current
+            elseif not previous or previous.slot ~= current.slot or not same(previous.payload, current.payload) then
+                return nil
+            end
+        end
+    end
+    return found
 end
 
 -- Every earlier slot must keep its pointer and payload, and exactly one
@@ -1093,12 +1179,12 @@ function Adapter:_mark_payee(speaker, mark, failure)
     local api=self.api
     local talked=api.EEex_Object_EvalStringAsAIBase('LastTalkedToBy',speaker)
     local payee=talked and api.EEex_GameObject_CastUserType(talked)
-    if payee and (self:_creature_state(payee,true) or api.EEex_Sprite_GetPortraitIndex(payee)==-1) then
+    if payee and (self:_creature_state(payee) or api.EEex_Sprite_GetPortraitIndex(payee)==-1) then
         payee=nil
     end
     for index=0,5 do
         local member=not payee and api.EEex_Sprite_GetInPortrait(index)
-        if member and not self:_creature_state(member,true) then payee=member end
+        if member and not self:_creature_state(member) then payee=member end
     end
     if not payee then return nil end
     api.EEex_Action_ExecuteResponseStringOnAIBaseInstantly('SetGlobal("'..mark..'","LOCALS",1)',payee)
@@ -1149,7 +1235,7 @@ function Adapter:retry_handovers(assignments, phases)
         local endpoint=self.targets[target_id]
         if area and text(area.m_resref)==endpoint.area then
             local payee=self:_recipient(area,endpoint.handover.recipient_local)
-            if payee and not self:_creature_state(payee,true) then
+            if payee and not self:_creature_state(payee) then
                 self:_hand_over(target_id,endpoint,payee,assignments,phases)
             end
         end
@@ -1193,7 +1279,7 @@ function Adapter:_hand_over(target_id, endpoint, payee, assignments, phases)
     local party,seen={payee},{[pointer(api,payee)]=true}
     for index=0,5 do
         local member=api.EEex_Sprite_GetInPortrait(index)
-        if member and not seen[pointer(api,member)] and not self:_creature_state(member,true) then
+        if member and not seen[pointer(api,member)] and not self:_creature_state(member) then
             party[#party+1],seen[pointer(api,member)]=member,true
         end
     end
@@ -1379,7 +1465,7 @@ function Adapter:_inspect(endpoint, id, source, source_id, unit, member, paid)
         if reason == "TARGET_NOT_ALIVE" and corpse and source then
             return self:_inspect_ground(endpoint, id, self:_reward(source_id, unit), corpse, member, paid)
         end
-        if reason == "OWNER_MISSING" and source and self:_vanished(endpoint) then
+        if reason == "OWNER_MISSING" and source and self:_gone(endpoint) then
             return self:_inspect_party_ground(endpoint, id, self:_reward(source_id, unit), member, paid)
         end
         return nil, reason
@@ -1388,20 +1474,31 @@ function Adapter:_inspect(endpoint, id, source, source_id, unit, member, paid)
     if endpoint.corpse_only then return nil, "TARGET_ALIVE" end
     local items = self:_items(owner, endpoint.sprite)
     local reward = source and self:_reward(source_id, unit)
+    local stack_limit = 1
     if reward then
-        local supported, stack_limit
+        local supported
         supported, reason, stack_limit = self:_supported(reward)
         if not supported then return nil, reason end
-        if stack_limit > 1 then
-            for _, item in ipairs(items) do
-                if item.payload.resref == reward.resref then return nil, "TARGET_STACK_COLLISION" end
-            end
-        end
     end
     if endpoint.kind == "creature" then
         -- Checked before the core journals anything, so these are deferrals.
         local empty = empty_backpack(items)
-        if #empty == 0 then return nil, "TARGET_INVENTORY_FULL" end
+        local merge
+        if reward and stack_limit > 1 then
+            -- CMessageAddItem::Run merges a stackable reward into a backpack
+            -- stack of its name (stack_merge), as Item Randomiser's ended up
+            -- in its creature; it waited for ever before (the audit of
+            -- 2026-11-02, finding 5). A container's add never merges
+            -- (docs/native-corpse-ground-evidence.md). One of its name may be
+            -- a source of this creature still to be removed, which would take
+            -- the reward with it: it waits for that.
+            if self:_source_holder(endpoint, reward.resref) and count_named(items, reward.resref) > 0 then
+                return nil, "TARGET_STACK_COLLISION"
+            end
+            merge = stack_merge(items, reward, stack_limit)
+            if merge_blocked(merge) then return nil, "TARGET_STACK_COLLISION" end
+        end
+        if #empty == 0 and not merge then return nil, "TARGET_INVENTORY_FULL" end
         if creature_conflict(self:_queue(), owner.id, self.source_resrefs) then return nil, "TARGET_QUEUE_BUSY" end
         -- Where its death drop could put the reward (Adapter:execute), and its
         -- count there. A party member keeps its items wherever it dies, and a
@@ -1412,7 +1509,7 @@ function Adapter:_inspect(endpoint, id, source, source_id, unit, member, paid)
         end
         if self.api.EEex_Sprite_GetPortraitIndex(owner.object) ~= -1 then count = 0 end
         self.reservations[endpoint.identity] = { owner = owner, items = items, kind = "deliver", id = id, empty = empty,
-            endpoint = endpoint, piles = reward and piles }
+            endpoint = endpoint, piles = reward and piles, merge = merge }
         return { identity = endpoint.identity, target_id = id, accepts = 1,
             settle = reward and settle_value(count_named(items, reward.resref), count, member, paid) }
     end
@@ -1472,14 +1569,25 @@ function Adapter:_vanished(endpoint)
     return integer(deaths, 1, 2147483647)
 end
 
--- Such a creature can never hold its reward either. Chris, 2026-10-26:
--- "Einfach das Item auf dem Boden droppen mit einer Nachricht", so clear that
--- nobody overlooks it. It falls to the ground at the feet of a party member in
--- the visible area, the first in portrait order who can drop it, as at a
--- corpse: CreateItem on a party member stores it in the first empty backpack
--- slot at once (docs/native-creature-transport-evidence.md), DropItem moves it
--- into a pile at the member. The receipt names the item and the member for
--- the player (FLPRHost's notice). While no member can drop it, it waits.
+-- A target whose owner Adapter:_resolve did not find in its visible area
+-- (OWNER_MISSING) that can never hold its reward: a creature that vanished,
+-- or any container. A container is part of its area, and none of its script
+-- name is there: a mod took it out of the area after Apply, or the game
+-- removed a pile once it was empty. Item Randomiser's reward would be lost
+-- with it.
+function Adapter:_gone(endpoint)
+    return endpoint.kind == "container" or endpoint.kind == "ground-pile" or self:_vanished(endpoint)
+end
+
+-- Such a target can never hold its reward either. Chris, 2026-10-26, on
+-- creatures: "Einfach das Item auf dem Boden droppen mit einer Nachricht", so
+-- clear that nobody overlooks it; on containers, 2026-11-02, the same ("ok").
+-- It falls to the ground at the feet of a party member in the visible area,
+-- the first in portrait order who can drop it, as at a corpse: CreateItem on a
+-- party member stores it in the first empty backpack slot at once
+-- (docs/native-creature-transport-evidence.md), DropItem moves it into a pile
+-- at the member. The receipt names the item and the member for the player
+-- (FLPRHost's notice). While no member can drop it, it waits.
 function Adapter:_inspect_party_ground(endpoint, id, reward, place_member, paid)
     local supported, reason = self:_supported(reward)
     if not supported then return nil, reason end
@@ -1521,7 +1629,7 @@ end
 
 -- The corpse or party member a ground delivery's reservation names, as long
 -- as it still is: the same corpse, or the same living member in the visible
--- area while the target's creature is still gone without a body.
+-- area while the target is still gone (Adapter:_gone).
 function Adapter:_drop_owner(endpoint, reserved)
     local api = self.api
     local owner, reason, corpse = self:_resolve(endpoint, "target")
@@ -1530,7 +1638,7 @@ function Adapter:_drop_owner(endpoint, reserved)
             corpse.pointer ~= reserved.owner.pointer then return nil end
         return corpse
     end
-    if owner or reason ~= "OWNER_MISSING" or not self:_vanished(endpoint) then return nil end
+    if owner or reason ~= "OWNER_MISSING" or not self:_gone(endpoint) then return nil end
     local member = api.EEex_Sprite_GetInPortrait(reserved.portrait)
     if not member or member.m_id ~= reserved.owner.id or pointer(api, member) ~= reserved.owner.pointer or
         api.EEex_GameObject_IsSprite(member, false) ~= true or
@@ -1663,14 +1771,19 @@ function Adapter:execute(command)
     if not unchanged(reserved.items, before) then return nil, "INVENTORY_CHANGED" end
     local supported, stack_limit; supported, reason, stack_limit = self:_supported(source.payload)
     if not supported then return nil, reason end
-    if kind == "target" and stack_limit > 1 then
-        -- A stack merge can consume the reward without creating a distinct
-        -- pointer. Reject it before the native action, preserving exact units.
-        for _, item in ipairs(before) do
-            if item.payload.resref == source.payload.resref then return nil, "TARGET_STACK_COLLISION" end
-        end
-    end
     local creature = kind == "target" and endpoint.kind == "creature"
+    local merge
+    if creature and stack_limit > 1 then
+        -- Where Run will put a stackable reward: a stack of its name may take
+        -- it in, where no instance of its own proves it (Adapter:_inspect).
+        -- Never into a source still to be removed. A container's add never
+        -- merges.
+        if self:_source_holder(endpoint, source.payload.resref) and count_named(before, source.payload.resref) > 0 then
+            return nil, "TARGET_STACK_COLLISION"
+        end
+        merge = stack_merge(before, source.payload, stack_limit)
+        if merge_blocked(merge) then return nil, "TARGET_STACK_COLLISION" end
+    end
     local before_queue
     if creature then
         before_queue = self:_queue()
@@ -1733,6 +1846,7 @@ function Adapter:execute(command)
         end
         self:_preserve_message_flags(message, created)
         self.pending.queued, self.pending.empty, self.pending.created = message, reserved.empty, created
+        self.pending.merge = merge
         -- Where the creature's death drop could put the reward, and the area
         -- it is in (Adapter:_find_dropped). A party member keeps its items
         -- when it dies, but not where it leaves no body. Plain values only,
@@ -1792,7 +1906,8 @@ function Adapter:_execute_ground(command, reserved, endpoint, p)
         return nil, "DELIVERY_QUEUE_NOT_EXCLUSIVE"
     end
     -- What the player is told of a reward at a party member's feet.
-    local notice = reserved.portrait and party_notice(api, owner.object, p) or nil
+    local notice = reserved.portrait and party_notice(api, owner.object, p,
+        endpoint.sprite and "vanished" or "container") or nil
     local tried = self.attempted[command.session] or {}
     self.attempted[command.session] = tried; tried[command.nonce] = true
     local receipt = { session = command.session, kind = command.kind, index = command.index,
@@ -2014,6 +2129,22 @@ function Adapter:_left(pending, receipt)
     return receipt
 end
 
+-- A reward on its way whose observation could not tell where it went
+-- (FLPRHost.UNSETTLED <reason>): CIR stops following it, and it parks as for a
+-- party that left (Adapter:_left). Nothing is created or repeated here; the
+-- settle counts the items of its name at its place (Adapter:settle_parked).
+function Adapter:unsettle(command, reason)
+    local pending = self.pending
+    if not pending or pending.kind ~= "target" then return nil, "NO_PENDING_MUTATION" end
+    local receipt = pending.receipt
+    for _, key in ipairs({ "session", "kind", "index", "nonce", "revision", "identity" }) do
+        if receipt[key] ~= command[key] then return nil, "RECEIPT_MISMATCH" end
+    end
+    self.pending, self.last_error, self.unsettled = nil, nil, reason
+    receipt.parked = 1
+    return receipt
+end
+
 -- As a container target's queued add: wait for the bound message, then pin the
 -- one new instance in the pile it named, then publish one later tick on. No
 -- add was queued before this one (Adapter:_drop), so its item is the first
@@ -2071,10 +2202,12 @@ end
 -- and "alive", its corpse and "dead". One that is no longer found (no sprite
 -- of its script name in its area) is "vanished": it left alive, or it died
 -- and left no body, or a script removed it. CIR then follows its object while
--- that is still the same one (Adapter:_tracked), else nil. A quest's recipient
--- is followed by its object from the start: neither its mark nor the party
--- changing meanwhile makes another one the recipient (Adapter:_recipient).
--- Anything else: nil and why it cannot be told.
+-- that is still the same one (Adapter:_tracked), else nil. So it does where
+-- another of its name is the target now (Adapter:_resolve): its own died
+-- beside a living one, or one more came. A quest's recipient is followed by
+-- its object from the start: neither its mark nor the party changing meanwhile
+-- makes another one the recipient (Adapter:_recipient). Anything else: nil and
+-- why it cannot be told.
 function Adapter:_delivery_owner(pending)
     if pending.endpoint.quest_event then
         local owner = self:_tracked(pending.owner)
@@ -2084,11 +2217,13 @@ function Adapter:_delivery_owner(pending)
     local owner, reason, unusable = self:_resolve(pending.endpoint, "target")
     local state = owner and "alive" or "dead"
     owner = owner or (reason == "TARGET_NOT_ALIVE" and unusable) or nil
-    if owner then
-        if owner.id ~= pending.owner.id or owner.pointer ~= pending.owner.pointer then return nil, "OWNER_CHANGED" end
-        return owner, state
-    end
+    if owner and owner.id == pending.owner.id and owner.pointer == pending.owner.pointer then return owner, state end
     if reason == "OWNER_MISSING" then return self:_tracked(pending.owner), "vanished" end
+    if owner or reason == "OWNER_AMBIGUOUS" then
+        local own = self:_tracked(pending.owner)
+        if not own then return nil, "OWNER_CHANGED" end
+        return own, self:_living(own.object) and "alive" or "dead"
+    end
     return nil, reason
 end
 
@@ -2156,7 +2291,17 @@ function Adapter:_observe_creature(pending, receipt)
             return nil, "DELIVERY_SETTLING"
         end
         -- The exact message has been consumed. Pin the instance its Run made,
-        -- then demand another later tick before publishing anything.
+        -- then demand another later tick before publishing anything. A reward
+        -- merged into a stack of its name (stack_merge) has no instance of its
+        -- own: the stack it went into is pinned, with the reward's usage added.
+        if items and pending.merge then
+            local merged = merged_into(pending.before, items, pending.merge)
+            if merged then
+                pending.created_pointer, pending.created_slot, pending.pinned_tick = merged.pointer, merged.slot, self.tick
+                pending.merged = merged.payload
+                return nil, "DELIVERY_SETTLING"
+            end
+        end
         local placed, failure = nil, "DELIVERY_MESSAGE_LOST"
         if items then placed, failure = arrived(pending.before, items, created.resref) end
         if not placed then
@@ -2186,10 +2331,11 @@ function Adapter:_observe_creature(pending, receipt)
     if self.tick <= pending.pinned_tick then return nil, "DELIVERY_SETTLING" end
     local kept = items and item_at(items, pending.created_slot)
     if kept and kept.pointer ~= pending.created_pointer then kept = nil end
-    if kept and not same(kept.payload, created) then return nil, "CREATED_INSTANCE_CHANGED" end
+    if kept and not same(kept.payload, pending.merged or created) then return nil, "CREATED_INSTANCE_CHANGED" end
     local party = owner and api.EEex_Sprite_GetPortraitIndex(owner.object) ~= -1
     if (state == "alive" or party) and not kept then return nil, "CREATED_INSTANCE_CHANGED" end
-    if state == "dead" and not party then
+    -- A merged reward is part of its stack, which the death drop takes along.
+    if state == "dead" and not party and not pending.merged then
         if kept then return self:_corpse_reward(pending, owner, items, kept, queue) end
     end
     local supported, reason = self:_supported(receipt.payload)
@@ -2205,7 +2351,8 @@ function Adapter:_observe_creature(pending, receipt)
     -- That is not proof of lootability: the death drop is the engine's. A quest
     -- reward's recipient that left the party on its way holds it too.
     receipt.lootable, receipt.held, receipt.holder = 0, 1, "creature"
-    if state == "alive" then
+    -- A merged reward has no instance of its own to bind a drop trace to.
+    if state == "alive" and not pending.merged then
         -- Session-only provenance. A save reload cannot reconstruct this record
         -- by finding another item with the same name, address, or payload.
         self.held[receipt.index] = { session=receipt.session, revision=receipt.revision,
@@ -2324,7 +2471,7 @@ function Adapter:_lost_reward(pending, queue)
         return nil, self.last_error
     end
     pending.ground, pending.queued, pending.created = true, message, created
-    pending.notice = party_notice(self.api, member.owner.object, p)
+    pending.notice = party_notice(self.api, member.owner.object, p, "vanished")
     pending.pile_before = pile and self:_pile_items(pile, created.resref) or {}
     pending.pile_pointer = pile and pile.pointer or nil
     return nil, "DELIVERY_SETTLING"
@@ -2350,7 +2497,9 @@ end
 -- where it began (Adapter:_settle_endpoint): a living creature its items, a
 -- dead one its body and the ground piles of its area (its death drop puts its
 -- items there), one gone without a body the piles, where its death drop put
--- what it held. A party member keeps its items, alive or dead, in any area.
+-- what it held, and a container its area does not have the piles, where its
+-- reward fell at a party member's feet (Adapter:_gone). A party member keeps
+-- its items, alive or dead, in any area.
 -- A store took its reward at once, and its stock row tells (FLPRShop). Its
 -- holder tells the core where it is. Nothing is created, moved or read in
 -- another area here; while an item of the reward's name is on its way
@@ -2379,15 +2528,21 @@ function Adapter:settle_parked(request)
     end
     local owner, reason, unusable = self:_resolve(endpoint, "target", nil, true)
     if endpoint.kind ~= "creature" then
-        if not owner then return nil, reason end
-        if count_named(self:_items(owner, false), reward.resref) == counts.held + 1 then
-            receipt.arrived, receipt.holder = 1, "container"
+        if owner then
+            if count_named(self:_items(owner, false), reward.resref) == counts.held + 1 then
+                receipt.arrived, receipt.holder = 1, "container"
+            end
+            return receipt
+        end
+        if reason ~= "OWNER_MISSING" or not self:_gone(endpoint) then return nil, reason end
+        -- At a party member's feet (Adapter:_inspect_party_ground).
+        if self:_count_piles(reward.resref) == counts.held + counts.piles + 1 then
+            receipt.arrived, receipt.holder = 1, "ground"
         end
         return receipt
     end
-    -- An unusable recipient is still the one it was: dead, or in the party.
-    owner = owner or ((reason == "TARGET_NOT_ALIVE" or reason == "TARGET_PARTY_MEMBER" or
-        reason == "TARGET_FAMILIAR") and unusable) or nil
+    -- An unusable recipient is still the one it was: dead, or a familiar.
+    owner = owner or ((reason == "TARGET_NOT_ALIVE" or reason == "TARGET_FAMILIAR") and unusable) or nil
     if owner then
         local api = self.api
         local party = api.EEex_Sprite_GetPortraitIndex(owner.object) ~= -1
@@ -2400,7 +2555,7 @@ function Adapter:settle_parked(request)
         end
         return receipt
     end
-    if reason == "OWNER_MISSING" and self:_vanished(endpoint) then
+    if reason == "OWNER_MISSING" and self:_gone(endpoint) then
         if self:_count_piles(reward.resref) == counts.held + counts.piles + 1 then
             receipt.arrived, receipt.holder = 1, "ground"
         end
@@ -2541,7 +2696,9 @@ end
 function Adapter:_supported(item) return Native.supported(self.api, item) end
 
 function Adapter:diagnostics()
-    local result = { tick = self.tick, last_error = self.last_error, sources = {}, targets = {} }
+    -- unsettled: why the last reward parked that an observation could not tell.
+    local result = { tick = self.tick, last_error = self.last_error, unsettled = self.unsettled,
+        sources = {}, targets = {} }
     local area = self.api.EEex_Area_GetVisible()
     result.area = area and text(area.m_resref) or nil
     for id in pairs(self.owed_handovers) do

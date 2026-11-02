@@ -793,6 +793,12 @@ function Controller:observe(receipt)
     return true
 end
 
+-- Whether the pending delivery can park: it is on its way and began with its
+-- counts (FLPRNat's witness; deliveries of CIR 1.0.2 have none).
+function Controller:parkable()
+    return self:_active() and self:_get(G.journal) == 2 and integer(self:_get(G.settle), 1, 2147483647) or false
+end
+
 -- The pending delivery's observation cannot go on: the party left the place
 -- of its target while the reward was on its way, and the objects there leave
 -- memory with their area (FLPRNat). Nothing is created or repeated. Its counts

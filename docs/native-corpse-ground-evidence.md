@@ -186,6 +186,34 @@ overlooks it.
 The fake-engine tests cover each of these cases (`tests/test_campaign_native_creature.py`,
 `tests/test_chapter3_runtime.py`, `tests/test_campaign_native_host.py`).
 
+## A container that is not in its area (since 1.0.5)
+
+A container target is part of its area file: Apply takes only a script name that one
+container of the area has, and the runtime finds it by that name (`fixture_container`
+in `FLPRNat.lua`). When its area is the visible one and has no container of that
+name, it is not there any more:
+
+- a mod took it out of the area after Apply, or replaced the area file;
+- the game removed a ground pile once it was empty.
+
+Until 1.0.5 its reward waited for it for the rest of the adventure (`OWNER_MISSING`),
+so it was lost as Item Randomiser's would be. Chris decided on 2026-11-02 that it
+goes to the ground with a message, as for a creature that left no body ("ok").
+
+- **Inspection.** `Adapter:_gone` is true for a container or ground-pile target that
+  `Adapter:_resolve` did not find (`OWNER_MISSING`), and the reward falls at a party
+  member's feet under the same rules as above (`Adapter:_inspect_party_ground`).
+  Two containers of its name, equally near its place, are no proof of anything:
+  that still waits (`OWNER_AMBIGUOUS`).
+- **Execution.** The container must still be missing, else `OWNER_CHANGED`, and the
+  next inspection delivers into it.
+- **Settling a parked reward** (`Adapter:settle_parked`): with its container still
+  missing, the piles of the area are counted as for a creature that left no body;
+  with its container back, its items.
+- **Message.** The notice carries `why = "container"`, and `M_FLPR.lua` uses
+  in-game.tra @1708: "Cloak of Mirroring falls to the ground at Minsc's feet. Its
+  hiding place is gone."
+
 ## A creature that dies while its reward is on its way (since 1.0.3)
 
 `GiveItemCreate` queues the reward's message, and its `Run` puts the reward into the
@@ -259,7 +287,13 @@ drop's own adds may get it.
   ([details](campaign-runtime-prototype.md)). A marked member that died before the
   delivery began still waits, as before.
 
-What still stops CIR, since it cannot be told apart or followed:
+What could not be told apart or followed stopped CIR until 1.0.5. Since then such a
+reward parks with its counts, as for a [party that left](#when-the-party-leaves-while-a-reward-is-on-its-way-since-103),
+and the other rewards go on (`FLPRHost.UNSETTLED`, `Adapter:unsettle`; the audit of
+2026-11-02, finding 4). Its settle counts the items of its name at its place: exactly
+one more is the reward, anything else gives it again, so a reward that left its place
+in those ticks can come twice. A delivery begun without counts (CIR 1.0.2) still stops.
+The cases:
 
 - another item of the reward's name on its way to the creature;
 - a new item of the reward's name outside the backpack, two new ones, or one that a
@@ -270,7 +304,8 @@ What still stops CIR, since it cannot be told apart or followed:
 - a reward that cannot be found or placed within the settling time
   (`DELIVERY_SETTLING_TIMEOUT`): one whose creature or corpse is still there without
   it, or a lost one that no party member can drop;
-- a creature target that joins the party or becomes a familiar in those ticks.
+- a creature target that becomes a familiar in those ticks (this one still stops). One
+  that joins the party gets its reward there (since 1.0.5).
 
 ## When the party leaves while a reward is on its way (since 1.0.3)
 

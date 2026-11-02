@@ -11,8 +11,8 @@
 // randomiser-campaigns/) is not tracked.
 
 // Game-text references for the player messages in M_FLPRUI.lua and M_FLPR.lua
-// (in-game.tra @1700-@1707), so they appear in the language chosen here.
-<<<<<<<< ...cir/fl-inlined/M_FLPRTXT.lua
+// (in-game.tra @1700-@1708), so they appear in the language chosen here.
+<<<<<<<< ...cir/fl-inlined/M_FLPRTX.lua
 -- Written by cir.tp2 when installed: game-text references for the
 -- Chriz Item Randomiser messages in M_FLPRUI.lua.
 FLPR_TEXT = {
@@ -24,6 +24,7 @@ FLPR_TEXT = {
     ready = %flir_rt_text_ready%,
     stopped = %flir_rt_text_stopped%,
     vanished = %flir_rt_text_vanished%,
+    container_gone = %flir_rt_text_container_gone%,
 }
 >>>>>>>>
 
@@ -373,7 +374,10 @@ DEFINE_ACTION_MACRO flir_campaign_runtime_install BEGIN
   OUTER_SET flir_rt_text_ready = RESOLVE_STR_REF (@1705)
   OUTER_SET flir_rt_text_stopped = RESOLVE_STR_REF (@1706)
   OUTER_SET flir_rt_text_vanished = RESOLVE_STR_REF (@1707)
-  COPY ~...cir/fl-inlined/M_FLPRTXT.lua~ ~override/M_FLPRTXT.lua~ EVALUATE_BUFFER
+  OUTER_SET flir_rt_text_container_gone = RESOLVE_STR_REF (@1708)
+  // The engine loads override/M_*.lua by resource name, which holds 8 characters:
+  // until 1.0.5 this file was M_FLPRTXT.lua and never loaded (EET 2.7.3.0 lab, 2026-11-03).
+  COPY ~...cir/fl-inlined/M_FLPRTX.lua~ ~override/M_FLPRTX.lua~ EVALUATE_BUFFER
 
   ACTION_PHP_EACH flir_rt_hook AS flir_rt_file => flir_rt_listed BEGIN
     COPY_EXISTING ~%flir_rt_file%~ ~override~

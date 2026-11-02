@@ -329,23 +329,41 @@ function cases.absent_or_elsewhere_target_is_deferred_without_reservation(N)
 end
 -- Without a reward to place; with one, a dead creature's reward goes to the
 -- ground at its corpse (the ground cases below).
-function cases.dead_party_or_familiar_creatures_never_receive(N)
-    for _, variant in ipairs({"dead", "party", "familiar"}) do
+function cases.dead_or_familiar_creatures_never_receive(N)
+    for _, variant in ipairs({"dead", "familiar"}) do
         local f = setup(N)
         if variant == "dead" then f.creature.alive = false
-        elseif variant == "party" then f.creature.portrait = 0
         else f.creature.m_typeAI.m_EnemyAlly = 3 end
-        local want = ({dead="TARGET_NOT_ALIVE", party="TARGET_PARTY_MEMBER", familiar="TARGET_FAMILIAR"})[variant]
+        local want = ({dead="TARGET_NOT_ALIVE", familiar="TARGET_FAMILIAR"})[variant]
         local x, e = f.adapter:inspect_target(f.target_id); fail(x, e, want)
         assert(#f.calls == 0)
     end
 end
-function cases.same_named_corpse_or_duplicate_makes_identity_ambiguous(N)
+-- The audit of 2026-11-02 (finding 9): a creature target that joined the
+-- party waited for ever. It gets its reward in its backpack, as Item
+-- Randomiser's would be in its inventory, and the party holds it.
+function cases.a_creature_target_that_joined_the_party_gets_its_reward(N)
+    local f = setup(N); local a = f.adapter
+    f.creature.portrait = 2
+    local command = f.start(1)
+    assert(#f.calls == 1 and f.calls[1] == 'GiveItemCreate("flpri1",Myself,0,0,0)')
+    f.update(); f.boundary(); local x, e = a:observe(command); fail(x, e, "DELIVERY_SETTLING")
+    f.boundary(); local receipt = assert(a:observe(command))
+    assert(receipt.holder == "party" and receipt.lootable == 1 and receipt.held == nil and receipt.slot == 18)
+    assert(f.creature.slots[18].cResRef:get() == "FLPRI1" and a.held[command.index] == nil)
+    unrelated_intact(f)
+end
+function cases.a_living_namesake_makes_the_target_ambiguous_a_corpse_does_not(N)
     for _, alive in ipairs({false, true}) do
         local f = setup(N)
         local twin = f.sprite(202, "FLPRC1", {}); twin.alive = alive
         f.objects[4] = twin; f.area.m_lVertSortBack = {4}
-        local x, e = f.adapter:inspect_target(f.target_id); fail(x, e, "OWNER_AMBIGUOUS")
+        if alive then
+            local x, e = f.adapter:inspect_target(f.target_id); fail(x, e, "OWNER_AMBIGUOUS")
+        else
+            -- The one that lives is the target (finding 3 of the 2026-11-02 audit).
+            assert(f.adapter:inspect_target(f.target_id).accepts == 1)
+        end
     end
 end
 function cases.full_backpack_is_refused_before_any_journal(N)
@@ -432,6 +450,103 @@ function cases.unexpected_placement_is_never_accepted(N)
         f.boundary(); local x, e = a:observe(command); fail(x, e, wants[variant])
     end
 end
+-- A stackable reward (FLPRI1 stacks to <size>) whose creature holds a stack of
+-- its name: CMessageAddItem::Run takes the first backpack slot, in order, that
+-- is empty or holds a stack of its name with room for it, and merges into such
+-- a stack without a new instance (docs/native-creature-transport-evidence.md).
+local function stacking_world(N, size)
+    local f = setup(N)
+    f.header.maxStackable = size or 20
+    function f.update()
+        while #f.queue > 0 do
+            local message = table.remove(f.queue, 1)
+            local target = f.objects[message.m_targetId]
+            if message.virtual_GetMsgSubType() == 2 and target and target.sprite then
+                -- The message's item came from the constructor, which makes a
+                -- usage of 0 one; this fake's messages keep 0, as created_payload allows.
+                local ref, usage = message.m_item.cResRef:get(), math.max(message.m_item.m_useCount1, 1)
+                for slot = 18, 33 do
+                    local held = target.slots[slot]
+                    if not held then
+                        f.next_address = f.next_address + 1
+                        target.slots[slot] = f.item(ref, f.next_address, message.m_item.m_flags)
+                        break
+                    elseif held.cResRef:get() == ref and held.m_useCount1 + usage < f.header.maxStackable then
+                        held.m_useCount1 = held.m_useCount1 + usage
+                        break
+                    end
+                end
+            end
+        end
+    end
+    return f
+end
+local function stack_of(f, slot, usage, address, flags)
+    local stack = f.item("FLPRI1", address or 950, flags == nil and 0 or flags)
+    stack.m_useCount1 = usage
+    f.creature.slots[slot] = stack
+    return stack
+end
+-- The audit of 2026-11-02 (finding 5): it waited for ever before, about ten
+-- rewards in a game of Boss Loot (mages carrying scrolls of their name).
+function cases.a_stackable_reward_merges_into_its_creatures_stack_of_its_name(N)
+    for _, full in ipairs({false, true}) do
+        local f = stacking_world(N); local a = f.adapter
+        local stack = stack_of(f, 18, 2)
+        -- A full backpack keeps no room, but the stack takes the reward in.
+        if full then for slot = 19, 33 do if not f.creature.slots[slot] then f.creature.slots[slot] = f.item("FILL", 500 + slot) end end end
+        local witness = assert(a:inspect_target(f.target_id, f.source_ids[1], 1))
+        assert(witness.settle == 1 + 1)
+        f.boundary()
+        local command = f.command(1); assert(a:execute(command))
+        assert(#f.calls == 1 and f.calls[1] == 'GiveItemCreate("flpri1",Myself,0,0,0)')
+        f.update(); f.boundary(); local x, e = a:observe(command); fail(x, e, "DELIVERY_SETTLING")
+        f.boundary(); local receipt = assert(a:observe(command))
+        assert(receipt.held == 1 and receipt.holder == "creature" and receipt.slot == 18 and receipt.lootable == 0)
+        assert(f.creature.slots[18] == stack and stack.m_useCount1 == 3 and a.held[command.index] == nil)
+        unrelated_intact(f)
+    end
+end
+function cases.a_stack_in_a_later_slot_or_without_room_leaves_the_reward_its_own_instance(N)
+    for _, variant in ipairs({"later", "no-room"}) do
+        local f = stacking_world(N, 3); local a = f.adapter
+        if variant == "later" then stack_of(f, 25, 1) else stack_of(f, 18, 2) end
+        local command = f.start(1)
+        f.update(); f.boundary(); local x, e = a:observe(command); fail(x, e, "DELIVERY_SETTLING")
+        f.boundary(); local receipt = assert(a:observe(command))
+        local slot = variant == "later" and 18 or 19
+        assert(receipt.held == 1 and receipt.slot == slot and f.creature.slots[slot].cResRef:get() == "FLPRI1", variant)
+        assert(a.held[command.index].slot == slot, variant)
+    end
+end
+function cases.a_stack_that_may_be_a_source_or_cannot_be_dropped_keeps_the_reward_waiting(N)
+    for _, variant in ipairs({"source", "undroppable"}) do
+        local f = stacking_world(N); local a = f.adapter
+        stack_of(f, 18, 2, nil, variant == "undroppable" and 8 or 0)
+        if variant == "source" then
+            -- The creature's own FLPRI1 is a source still to be removed: DestroyItem would take the reward too.
+            f.fixture.sources["cre:flprc1/item/1"] = {area="BG2600", script_name="FLPRC1", identity=string.rep("9", 64),
+                payload={resref="flpri1", charges={0, 0, 0}, expiration=0, flags=0}}
+            a = N.new(f.api, f.fixture); f.adapter = a
+        end
+        local x, e = a:inspect_target(f.target_id, f.source_ids[1], 1); fail(x, e, "TARGET_STACK_COLLISION")
+        assert(a:inspect_target(f.target_id)); f.boundary()
+        x, e = a:execute(f.command(1)); fail(x, e, "TARGET_STACK_COLLISION")
+        assert(#f.calls == 0, variant)
+    end
+end
+-- Merged, then changed before its receipt: the stack is no longer the one it went into.
+function cases.a_merged_rewards_stack_must_stay_as_it_went_in(N)
+    for _, variant in ipairs({"used", "taken"}) do
+        local f = stacking_world(N); local a = f.adapter
+        local stack = stack_of(f, 18, 2)
+        local command = f.start(1)
+        f.update(); f.boundary(); local x, e = a:observe(command); fail(x, e, "DELIVERY_SETTLING")
+        if variant == "used" then stack.m_useCount1 = 2 else f.creature.slots[18] = nil end
+        f.boundary(); x, e = a:observe(command); fail(x, e, "CREATED_INSTANCE_CHANGED")
+    end
+end
+
 -- The creature's other items may change while its reward is on its way: a
 -- potion it drinks in a fight, an item it is given first, or the one that the
 -- Run of a full backpack puts on the ground to make room for the reward.
@@ -667,8 +782,8 @@ function cases.held_methods_reject_malformed_request_payload_without_throwing(N)
 end
 function cases.held_binding_rejects_changed_owner_slot_item_payload_or_duplicate_name(N)
     local wants = {pointer="OWNER_CHANGED", id="OWNER_CHANGED", missing="OWNER_MISSING",
-        renamed="OWNER_MISSING", duplicate="OWNER_AMBIGUOUS", corpse_twin="OWNER_AMBIGUOUS",
-        dead="TARGET_NOT_ALIVE", party="TARGET_PARTY_MEMBER", familiar="TARGET_FAMILIAR"}
+        renamed="OWNER_MISSING", duplicate="OWNER_AMBIGUOUS",
+        dead="TARGET_NOT_ALIVE", familiar="TARGET_FAMILIAR"}
     for _, variant in ipairs({"pointer", "id", "missing", "renamed", "duplicate", "corpse_twin",
         "dead", "party", "familiar", "item-pointer", "slot", "removed", "flags", "charge", "wear", "resref", "item-duplicate"}) do
         local f = setup(N); local request = complete_held(f, 1)
@@ -692,7 +807,11 @@ function cases.held_binding_rejects_changed_owner_slot_item_payload_or_duplicate
         elseif variant == "resref" then placed.cResRef = {get=function() return "OTHER" end}
         else f.creature.slots[19] = f.item("FLPRI1", 992) end
         local x, e = read_only(f, function() return f.adapter:held_binding(request) end)
-        fail(x, e, wants[variant] or "HELD_INSTANCE_CHANGED")
+        -- A corpse of its name beside it leaves the living holder the one, and
+        -- one that joined the party is still it.
+        if variant == "corpse_twin" or variant == "party" then
+            assert(x and x.original_item_pointer == tostring(placed.address), e)
+        else fail(x, e, wants[variant] or "HELD_INSTANCE_CHANGED") end
     end
 end
 function cases.held_binding_rejects_conflicting_queue_and_allows_unrelated_messages(N)
@@ -753,7 +872,13 @@ function cases.verify_held_drop_rejects_missing_or_changed_candidate_binding(N)
     fail(x, e, "DROP_BINDING_MISMATCH")
 end
 function cases.verify_held_drop_rejects_living_replaced_missing_or_ambiguous_owner(N)
-    for _, variant in ipairs({"alive", "pointer", "id", "missing", "renamed", "duplicate", "corpse-twin", "area"}) do
+    -- A living one of its name is the target now; another corpse of a higher
+    -- id beside its own leaves its own the one (Adapter:_resolve).
+    local f, request, candidate = dropped(N)
+    local twin = f.sprite(202, "FLPRC1", {}); twin.alive = false
+    f.objects[7] = twin; f.area.m_lVertSortFlight = {7}
+    assert(read_only(f, function() return f.adapter:verify_held_drop(request, candidate) end))
+    for _, variant in ipairs({"alive", "pointer", "id", "missing", "renamed", "duplicate", "area"}) do
         local f, request, candidate = dropped(N)
         if variant == "alive" then f.creature.alive = true
         elseif variant == "pointer" then f.creature.address = 999
@@ -1504,7 +1629,7 @@ function cases.vanish_execute_requires_one_created_instance_and_one_drop_message
         x, e = a:execute(command); fail(x, e, "MUTATION_PENDING")
     end
 end
-function cases.vanish_serves_creature_targets_only(N)
+function cases.vanish_never_takes_a_quest_recipient_for_gone(N)
     -- A quest target's recipient is a party member: none there is no death.
     local f = vanish_world(N)
     f.fixture.targets[f.target_id] = {kind="quest", area="BG2600", identity=string.rep("c", 64),
@@ -1512,13 +1637,6 @@ function cases.vanish_serves_creature_targets_only(N)
     f.globals.FLPR_EPOOL, f.party[0] = 1, nil
     f.adapter = N.new(f.api, f.fixture)
     local x, e = f.adapter:inspect_target(f.target_id, f.source_ids[1], 1); fail(x, e, "OWNER_MISSING")
-    assert(#f.calls == 0 and next(f.adapter.reservations) == nil)
-    -- A container that is gone never died, whatever its name.
-    f = vanish_world(N)
-    f.fixture.targets[f.target_id] = {kind="container", area="BG2600", script_name="FLPRC1", x=500, y=600,
-        container_type=4, identity=string.rep("c", 64)}
-    f.adapter = N.new(f.api, f.fixture)
-    x, e = f.adapter:inspect_target(f.target_id, f.source_ids[1], 1); fail(x, e, "OWNER_MISSING")
     assert(#f.calls == 0 and next(f.adapter.reservations) == nil)
 end
 
@@ -1797,6 +1915,80 @@ function cases.reward_of_a_creature_that_died_without_a_body(N)
     assert(receipt.held == 1 and receipt.holder == "creature" and receipt.slot == 18 and #f.calls == 1)
     assert(a.held[command.index] == nil and f.creature.slots[18].cResRef:get() == "FLPRI1")
 end
+-- Another sprite of the target's script name in its area (an area script
+-- brought it back after it died, or made one more), id <id>, alive or not.
+local function namesake(f, id, alive, pos)
+    local other = f.sprite(800 + id, "FLPRC1", {})
+    other.alive, other.m_pos = alive, pos or {x=900, y=900}
+    f.objects[id], f.ids[other] = other, id
+    f.area.m_lVertSort[#f.area.m_lVertSort + 1] = id
+    return other
+end
+-- The audit of 2026-11-02 (finding 3): a corpse beside a living one of the
+-- same name made the reward wait for ever (OWNER_AMBIGUOUS).
+function cases.target_is_the_living_one_of_its_name_beside_corpses(N)
+    local f = setup(N)
+    f.creature.alive = false
+    local other = namesake(f, 4, true)
+    namesake(f, 5, false)
+    local command = f.start(1)
+    assert(#f.calls == 1 and f.calls[1] == 'GiveItemCreate("flpri1",Myself,0,0,0)' and f.queue[1].m_targetId == 4)
+    f.update(); f.boundary(); local x, e = f.adapter:observe(command); fail(x, e, "DELIVERY_SETTLING")
+    f.boundary(); local receipt = assert(f.adapter:observe(command))
+    assert(receipt.held == 1 and receipt.holder == "creature" and other.slots[18].cResRef:get() == "FLPRI1")
+    -- Two living ones: one may be a passing copy (Simulacrum), so it waits.
+    f = setup(N)
+    namesake(f, 4, true)
+    x, e = f.adapter:inspect_target(f.target_id); fail(x, e, "OWNER_AMBIGUOUS")
+    assert(#f.calls == 0)
+end
+function cases.with_only_corpses_of_its_name_the_reward_goes_to_the_lowest_ids(N)
+    local f = ground_world(N)
+    namesake(f, 5, false)
+    -- Its own corpse (id 3) has the lower id, wherever the other one lies.
+    local command = ground_start(f, 1)
+    assert(#f.calls == 2 and f.calls[1] == 'CreateItem("flpri1",0,0,0)')
+    local pile = f.objects[f.queue[1].m_targetId]
+    assert(pile.m_pos.x == 500 and pile.m_pos.y == 595)
+    f.update(); f.boundary(); local x, e = f.adapter:observe(command); fail(x, e, "DELIVERY_SETTLING")
+    f.boundary(); local receipt = assert(f.adapter:observe(command))
+    assert(receipt.holder == "ground" and receipt.lootable == 1)
+end
+function cases.a_source_still_needs_the_one_sprite_of_its_name(N)
+    -- Its item must come from the creature that has it: a corpse and another
+    -- of its name are never taken for one owner.
+    local f = setup(N)
+    f.source1.alive = false
+    local twin = f.sprite(804, "FLPRS1", {[21]=f.item("FLPRI1", 401)})
+    f.objects[4], f.ids[twin] = twin, 4
+    f.area.m_lVertSort[#f.area.m_lVertSort + 1] = 4
+    local x, e = f.adapter:inspect_source(f.source_ids[1]); fail(x, e, "OWNER_AMBIGUOUS")
+    assert(#f.calls == 0)
+end
+function cases.reward_on_its_way_follows_its_own_creature_beside_a_living_namesake(N)
+    -- It had reached its creature, which died with its death drop.
+    local f = death_world(N); local a = f.adapter
+    local command = f.start(1)
+    f.update(); f.boundary(); local x, e = a:observe(command); fail(x, e, "DELIVERY_SETTLING")
+    f.die(true); namesake(f, 6, true); f.update(); f.boundary()
+    local receipt = assert(a:observe(command))
+    assert(receipt.held == 1 and receipt.holder == "creature" and #f.calls == 1)
+    -- Never seen in it: found where its death drop put it.
+    f = death_world(N); a = f.adapter
+    command = f.start(1)
+    f.update(); f.die(true); namesake(f, 6, true); f.update(); f.boundary()
+    x, e = a:observe(command); fail(x, e, "DELIVERY_SETTLING")
+    f.boundary(); receipt = assert(a:observe(command))
+    assert(receipt.holder == "ground" and receipt.lootable == 1 and #f.calls == 1)
+    -- Its own object is gone and another of its name is there: it cannot be told.
+    f = death_world(N); a = f.adapter
+    command = f.start(1)
+    namesake(f, 6, true)
+    f.objects[3] = nil; f.ids[f.creature] = nil
+    f.update(); f.boundary()
+    x, e = a:observe(command); fail(x, e, "OWNER_CHANGED")
+end
+
 -- A party member keeps its items when it dies (a quest target's recipient).
 function cases.party_recipient_that_dies_keeps_its_reward(N)
     local f = death_world(N)
@@ -2326,6 +2518,101 @@ function cases.settle_counts_the_piles_where_its_creature_left_no_body(N)
     local _, witness = parked_start(f)
     table.remove(f.queue, 1); f.area.m_lVertSort = {1, 2}; come_back(f); f.boundary()
     local x, e = a:settle_parked(settle_request(f, witness)); fail(x, e, "OWNER_MISSING")
+end
+
+-- A container target its area does not have (Adapter:_gone): a mod took it
+-- out of the area after Apply, or the game removed a pile once it was empty.
+-- Chris, 2026-11-02: its reward falls at a party member's feet with a message,
+-- as for a carrier that left no body ("ok"). The party of vanish_world stands
+-- in the area, and no container there is named FLPRCHEST; f.chest is one that
+-- is, for the area to have once it is listed.
+local function gone_world(N, kind)
+    local f = vanish_world(N)
+    f.globals.SPRITE_IS_DEADFLPRC1 = nil
+    f.fixture.targets[f.target_id] = {kind=kind, area="BG2600", script_name="FLPRCHEST", x=500, y=600,
+        container_type=kind == "container" and 4 or nil, identity=string.rep("c", 64)}
+    f.adapter = N.new(f.api, f.fixture)
+    f.chest = {address=7900, sprite=false, m_containerType=kind == "container" and 1 or 4, m_pos={x=500, y=600},
+        m_lstItems={}, m_scriptName={get=function() return "FLPRCHEST" end}}
+    f.objects[60] = f.chest
+    return f
+end
+function cases.gone_containers_reward_falls_at_the_first_party_members_feet(N)
+    for _, kind in ipairs({"container", "ground-pile"}) do
+        local f = gone_world(N, kind); local a = f.adapter
+        local command = vanish_start(f, 1)
+        assert(#f.calls == 2 and f.calls[1] == 'CreateItem("flpri1",0,0,0)' and
+            f.calls[2] == 'DropItem("flpri1",[-1.-1])', kind)
+        assert(next(f.kara.slots) == nil and next(f.minsc.slots) == nil, kind)
+        local receipt = vanish_receipt(f, command)
+        assert(receipt.created == 1 and receipt.nonce_bound_instance == 1 and receipt.lootable == 1 and
+            receipt.held == nil and receipt.holder == "ground", kind)
+        -- The player is told why: its container is gone.
+        assert(receipt.notice.why == "container" and receipt.notice.member == "Kara" and
+            receipt.notice.item == 7101 and receipt.notice.resref == "flpri1", kind)
+        local pile = f.objects[f.area.m_lVertSortBack[1]]
+        assert(#pile.m_lstItems == 1 and pile.m_lstItems[1].cResRef:get() == "FLPRI1" and
+            pile.m_pos.x == f.kara.m_pos.x and #f.chest.m_lstItems == 0, kind)
+        unrelated_intact(f); assert(a.pending == nil)
+    end
+    -- A creature's that left no body is told as before.
+    local f = vanish_world(N)
+    assert(vanish_receipt(f, vanish_start(f, 1)).notice.why == "vanished")
+end
+function cases.a_container_its_area_has_gets_its_reward_and_two_equally_near_wait(N)
+    local f = gone_world(N, "container")
+    f.area.m_lVertSortBack = {60}
+    local witness = assert(f.adapter:inspect_target(f.target_id, f.source_ids[1], 1))
+    assert(witness.ground == nil and witness.accepts == 1 and #f.calls == 0)
+    -- Two of its name, equally near its place: neither is known to be it.
+    f = gone_world(N, "container")
+    f.objects[61] = {address=7901, sprite=false, m_containerType=1, m_pos={x=500, y=600}, m_lstItems={},
+        m_scriptName={get=function() return "FLPRCHEST" end}}
+    f.area.m_lVertSortBack = {60, 61}
+    local x, e = f.adapter:inspect_target(f.target_id, f.source_ids[1], 1); fail(x, e, "OWNER_AMBIGUOUS")
+    assert(#f.calls == 0 and next(f.adapter.reservations) == nil)
+end
+function cases.gone_containers_reward_waits_while_no_member_can_drop_it(N)
+    local wants = {full="TARGET_INVENTORY_FULL", area="AREA_UNAVAILABLE", sourceless="OWNER_MISSING"}
+    for _, variant in ipairs({"full", "area", "sourceless"}) do
+        local f = gone_world(N, "container")
+        if variant == "full" then
+            for _, member in ipairs({f.kara, f.minsc}) do
+                for slot = 18, 33 do member.slots[slot] = f.item("FILL", 100 * member.m_id + slot) end
+            end
+        elseif variant == "area" then leave(f) end
+        local x, e
+        if variant == "sourceless" then x, e = f.adapter:inspect_target(f.target_id)
+        else x, e = f.adapter:inspect_target(f.target_id, f.source_ids[1], 1) end
+        fail(x, e, wants[variant])
+        assert(#f.calls == 0 and next(f.adapter.reservations) == nil, variant)
+    end
+end
+function cases.gone_containers_drop_is_refused_once_its_container_is_back(N)
+    local f = gone_world(N, "ground-pile"); local a = f.adapter
+    assert(a:inspect_target(f.target_id, f.source_ids[1], 1).ground == true); f.boundary()
+    f.area.m_lVertSortBack = {60}
+    local x, e = a:execute(f.command(1)); fail(x, e, "OWNER_CHANGED")
+    assert(#f.calls == 0)
+end
+-- Parked on its way to a party member's feet: the piles tell on the next
+-- visit, and a container that is back counts its own items.
+function cases.settle_counts_the_piles_where_a_gone_containers_reward_fell(N)
+    for _, variant in ipairs({"arrived", "lost", "back"}) do
+        local f = gone_world(N, "container"); local a = f.adapter
+        local command, witness = witnessed_start(f)
+        assert(witness.ground == true and witness.settle == 1, variant)
+        leave(f); f.boundary()
+        local receipt = assert(a:observe(command))
+        assert(receipt.parked == 1 and a.pending == nil, variant)
+        if variant == "lost" then table.remove(f.queue, 1) else f.update() end
+        if variant == "back" then f.area.m_lVertSortBack[#f.area.m_lVertSortBack + 1] = 60 end
+        come_back(f); f.boundary()
+        receipt = assert(read_only(f, function() return a:settle_parked(settle_request(f, witness)) end))
+        if variant == "arrived" then assert(receipt.arrived == 1 and receipt.holder == "ground", variant)
+        else assert(receipt.arrived == 0 and receipt.holder == nil, variant) end
+        assert(#f.calls == 2, variant)
+    end
 end
 -- A quest reward's recipient is in the party: it is followed into any area
 -- while its reward is on its way, and a parked one is counted wherever it is.

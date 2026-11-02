@@ -809,7 +809,11 @@ function cases.zero_count_stack_reaches_container_as_the_engine_creates_it(N)
     assert(receipt.created==1 and receipt.payload.charges[1]==4 and receipt.payload.charges[2]==0)
     assert(f.target.m_lstItems[1].m_useCount2==1 and #f.calls==1 and f.calls[1]=='CreateItem("potn08",4,0,0)')
 end
-function cases.stackable_scroll_rejects_existing_same_resref_before_native_action(N)
+-- A container's add appends its own entry and merges no stack
+-- (docs/native-corpse-ground-evidence.md, 2.7.3.0 lab): a container that holds
+-- a scroll of the reward's name takes the reward as any other, and keeps its
+-- own. It waited for ever before (the audit of 2026-11-02, finding 5).
+function cases.stackable_scroll_goes_into_a_container_beside_one_of_its_name(N)
     local f=setup(N)
     f.header.maxStackable=20
     local source=f.fixture.sources[f.source_id]
@@ -818,13 +822,19 @@ function cases.stackable_scroll_rejects_existing_same_resref_before_native_actio
     f.fixture.targets[f.target_id].container_type=4
     f.target.m_lstItems[1]=f.item("SCRL66",501)
     f.target.m_lstItems[1].m_useCount1=2
+    f.api.EEex_Action_ExecuteResponseStringOnAIBaseInstantly=function(action,owner)
+        f.calls[#f.calls+1]=action
+        local made=f.item("SCRL66",601)
+        made.m_useCount1=7; made.m_useCount2=1; made.m_useCount3=1
+        owner.m_lstItems[#owner.m_lstItems+1]=made
+    end
     local a=N.new(f.api,f.fixture)
-    local x,e=a:inspect_target(f.target_id,f.source_id)
-    fail(x,e,"TARGET_STACK_COLLISION")
-    assert(#f.calls==0)
-    assert(a:inspect_target(f.target_id)); a:on_observation_boundary(1)
-    x,e=a:execute(f.command("deliver")); fail(x,e,"TARGET_STACK_COLLISION")
-    assert(#f.calls==0 and f.target.m_lstItems[1].m_useCount1==2)
+    assert(a:inspect_target(f.target_id,f.source_id)); a:on_observation_boundary(1)
+    local command=f.command("deliver"); assert(a:execute(command))
+    a:on_observation_boundary(2); local receipt=assert(a:observe(command))
+    assert(receipt.created==1 and receipt.lootable==1 and #f.calls==1 and f.calls[1]=='CreateItem("scrl66",7,0,0)')
+    assert(#f.target.m_lstItems==2 and f.target.m_lstItems[1].address==501 and f.target.m_lstItems[1].m_useCount1==2)
+    assert(f.target.m_lstItems[2].address==601)
 end
 function cases.clock_missing_backwards_and_invalid_rejected(N)
     local f=setup(N); local a=f.adapter; assert(a:inspect_source(f.source_id))
