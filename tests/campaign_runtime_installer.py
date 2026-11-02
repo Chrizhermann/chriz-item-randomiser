@@ -64,11 +64,11 @@ CAMPAIGN_DATA = "randomiser-campaigns"
 MOD_FOLDER = "cir"
 TP2 = "cir/cir.tp2"
 COMPONENT = 0
-# M_FLPRTXT.lua keys and the in-game.tra strings they name, in installation order.
+# M_FLPRTX.lua keys and the in-game.tra strings they name, in installation order.
 MESSAGES = (("not_running", 1700), ("unsupported", 1701), ("other_campaign", 1702),
             ("setup_failed", 1703), ("start_plain", 1704), ("ready", 1705), ("stopped", 1706),
             ("vanished", 1707), ("container_gone", 1708))
-MESSAGE_FILE = "override/m_flprtxt.lua"
+MESSAGE_FILE = "override/m_flprtx.lua"
 MARKER = b"\x01"
 LUAJIT_INI = (b"[General]\r\n; LuaPatchMode=INTERNAL uses the engine's own Lua\r\n"
               b"LuaPatchMode=REPLACE_INTERNAL_WITH_EXTERNAL\r\nLuaLibrary=lua51.dll\r\n"

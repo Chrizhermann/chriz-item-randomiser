@@ -11,7 +11,7 @@
 local NEXT = "randomiser-campaigns/next.lua"
 
 -- English fallbacks (languages/english/in-game.tra @1700-@1708). The installed
--- M_FLPRTXT.lua maps the same keys to the strings the installer added to the
+-- M_FLPRTX.lua maps the same keys to the strings the installer added to the
 -- game text in the language chosen at installation.
 local FALLBACK = {
     not_running = "Chriz Item Randomiser is set up but not running. "
