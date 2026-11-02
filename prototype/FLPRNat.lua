@@ -469,14 +469,15 @@ end
 
 -- Returns nil for a usable creature target, otherwise the reason it cannot
 -- receive a reward now. None of these states permits a substitute recipient.
-function Adapter:_creature_state(object, party_reward)
+-- A party member is one: a quest's recipient, or a creature target that
+-- joined the party, which gets its reward in its backpack as Item
+-- Randomiser's would be in its inventory (the audit of 2026-11-02, finding 9:
+-- it waited for ever).
+function Adapter:_creature_state(object)
     local api = self.api
     if not self:_living(object) then return "TARGET_NOT_ALIVE" end
     local portrait = api.EEex_Sprite_GetPortraitIndex(object)
-    if portrait ~= -1 then
-        assert(integer(portrait, 0, 5), "NATIVE_PORTRAIT_INVALID")
-        if not party_reward then return "TARGET_PARTY_MEMBER" end
-    end
+    assert(portrait == -1 or integer(portrait, 0, 5), "NATIVE_PORTRAIT_INVALID")
     -- CMessageAddItem::Run forwards a familiar's item to the protagonist.
     local typeAI = object.m_typeAI
     assert(typeAI and integer(typeAI.m_EnemyAlly, 0, 255), "NATIVE_ALLEGIANCE_INVALID")
@@ -588,7 +589,7 @@ function Adapter:_resolve(endpoint, kind, visible_area, observing, peek)
         else object=api.EEex_Sprite_GetInPortrait(0) end
         if not object then return nil,'OWNER_MISSING' end
         local found={object=object,id=object.m_id,pointer=pointer(api,object)}
-        local reason=self:_creature_state(object,true)
+        local reason=self:_creature_state(object)
         -- A recipient that died with its reward on its way (Adapter:_delivery_owner).
         if reason then return nil,reason,observing and found or nil end
         return found
@@ -1113,12 +1114,12 @@ function Adapter:_mark_payee(speaker, mark, failure)
     local api=self.api
     local talked=api.EEex_Object_EvalStringAsAIBase('LastTalkedToBy',speaker)
     local payee=talked and api.EEex_GameObject_CastUserType(talked)
-    if payee and (self:_creature_state(payee,true) or api.EEex_Sprite_GetPortraitIndex(payee)==-1) then
+    if payee and (self:_creature_state(payee) or api.EEex_Sprite_GetPortraitIndex(payee)==-1) then
         payee=nil
     end
     for index=0,5 do
         local member=not payee and api.EEex_Sprite_GetInPortrait(index)
-        if member and not self:_creature_state(member,true) then payee=member end
+        if member and not self:_creature_state(member) then payee=member end
     end
     if not payee then return nil end
     api.EEex_Action_ExecuteResponseStringOnAIBaseInstantly('SetGlobal("'..mark..'","LOCALS",1)',payee)
@@ -1169,7 +1170,7 @@ function Adapter:retry_handovers(assignments, phases)
         local endpoint=self.targets[target_id]
         if area and text(area.m_resref)==endpoint.area then
             local payee=self:_recipient(area,endpoint.handover.recipient_local)
-            if payee and not self:_creature_state(payee,true) then
+            if payee and not self:_creature_state(payee) then
                 self:_hand_over(target_id,endpoint,payee,assignments,phases)
             end
         end
@@ -1213,7 +1214,7 @@ function Adapter:_hand_over(target_id, endpoint, payee, assignments, phases)
     local party,seen={payee},{[pointer(api,payee)]=true}
     for index=0,5 do
         local member=api.EEex_Sprite_GetInPortrait(index)
-        if member and not seen[pointer(api,member)] and not self:_creature_state(member,true) then
+        if member and not seen[pointer(api,member)] and not self:_creature_state(member) then
             party[#party+1],seen[pointer(api,member)]=member,true
         end
     end
@@ -2430,9 +2431,8 @@ function Adapter:settle_parked(request)
         end
         return receipt
     end
-    -- An unusable recipient is still the one it was: dead, or in the party.
-    owner = owner or ((reason == "TARGET_NOT_ALIVE" or reason == "TARGET_PARTY_MEMBER" or
-        reason == "TARGET_FAMILIAR") and unusable) or nil
+    -- An unusable recipient is still the one it was: dead, or a familiar.
+    owner = owner or ((reason == "TARGET_NOT_ALIVE" or reason == "TARGET_FAMILIAR") and unusable) or nil
     if owner then
         local api = self.api
         local party = api.EEex_Sprite_GetPortraitIndex(owner.object) ~= -1

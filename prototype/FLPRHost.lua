@@ -16,7 +16,7 @@ Host.REMOVAL_CHECKS = 16
 -- Target inspection failures that describe current availability, reported
 -- before the core journals anything. Every other failure disables the host.
 Host.DEFERRABLE = { AREA_UNAVAILABLE = true, OWNER_MISSING = true, OWNER_AMBIGUOUS = true,
-    TARGET_NOT_ALIVE = true, TARGET_PARTY_MEMBER = true, TARGET_FAMILIAR = true,
+    TARGET_NOT_ALIVE = true, TARGET_FAMILIAR = true,
     TARGET_INVENTORY_FULL = true, TARGET_QUEUE_BUSY = true, TARGET_NOT_EMPTY = true,
     TARGET_STACK_COLLISION = true, QUEST_NOT_CLAIMED = true, CORPSE_ITEM_AMBIGUOUS = true,
     TARGET_ALIVE = true, PARTY_ITEM_AMBIGUOUS = true, TARGET_PARKED = true }

@@ -138,9 +138,12 @@ container adapter:
 
 - Target: exactly one living sprite with the fixture script name in the visible
   area (`EEex_GameObject_IsSprite(object, false)`, or one turned to stone). It must
-  not be a party member (`EEex_Sprite_GetPortraitIndex(object) == -1`) or a familiar
-  (`m_typeAI.m_EnemyAlly ~= 3`), and must have the same object id and pointer at
-  inspection, execution and observation.
+  not be a familiar (`m_typeAI.m_EnemyAlly ~= 3`), and must have the same object id
+  and pointer at inspection, execution and observation.
+  - One that joined the party (`EEex_Sprite_GetPortraitIndex(object) ~= -1`) gets
+    its reward in its backpack, and the party holds it (since 1.0.5; before, it
+    waited for ever with `TARGET_PARTY_MEMBER`). Item Randomiser's would be in its
+    inventory as it joins.
   - Corpses of its name beside it do not count (since 1.0.5): an area script may
     bring a creature back after it died, and its reward waited for ever before
     (`OWNER_AMBIGUOUS`). Two living ones still wait: one may be a passing copy

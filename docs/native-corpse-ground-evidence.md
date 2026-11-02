@@ -298,7 +298,8 @@ What still stops CIR, since it cannot be told apart or followed:
 - a reward that cannot be found or placed within the settling time
   (`DELIVERY_SETTLING_TIMEOUT`): one whose creature or corpse is still there without
   it, or a lost one that no party member can drop;
-- a creature target that joins the party or becomes a familiar in those ticks.
+- a creature target that becomes a familiar in those ticks. One that joins the
+  party gets its reward there (since 1.0.5).
 
 ## When the party leaves while a reward is on its way (since 1.0.3)
 

@@ -329,16 +329,29 @@ function cases.absent_or_elsewhere_target_is_deferred_without_reservation(N)
 end
 -- Without a reward to place; with one, a dead creature's reward goes to the
 -- ground at its corpse (the ground cases below).
-function cases.dead_party_or_familiar_creatures_never_receive(N)
-    for _, variant in ipairs({"dead", "party", "familiar"}) do
+function cases.dead_or_familiar_creatures_never_receive(N)
+    for _, variant in ipairs({"dead", "familiar"}) do
         local f = setup(N)
         if variant == "dead" then f.creature.alive = false
-        elseif variant == "party" then f.creature.portrait = 0
         else f.creature.m_typeAI.m_EnemyAlly = 3 end
-        local want = ({dead="TARGET_NOT_ALIVE", party="TARGET_PARTY_MEMBER", familiar="TARGET_FAMILIAR"})[variant]
+        local want = ({dead="TARGET_NOT_ALIVE", familiar="TARGET_FAMILIAR"})[variant]
         local x, e = f.adapter:inspect_target(f.target_id); fail(x, e, want)
         assert(#f.calls == 0)
     end
+end
+-- The audit of 2026-11-02 (finding 9): a creature target that joined the
+-- party waited for ever. It gets its reward in its backpack, as Item
+-- Randomiser's would be in its inventory, and the party holds it.
+function cases.a_creature_target_that_joined_the_party_gets_its_reward(N)
+    local f = setup(N); local a = f.adapter
+    f.creature.portrait = 2
+    local command = f.start(1)
+    assert(#f.calls == 1 and f.calls[1] == 'GiveItemCreate("flpri1",Myself,0,0,0)')
+    f.update(); f.boundary(); local x, e = a:observe(command); fail(x, e, "DELIVERY_SETTLING")
+    f.boundary(); local receipt = assert(a:observe(command))
+    assert(receipt.holder == "party" and receipt.lootable == 1 and receipt.held == nil and receipt.slot == 18)
+    assert(f.creature.slots[18].cResRef:get() == "FLPRI1" and a.held[command.index] == nil)
+    unrelated_intact(f)
 end
 function cases.a_living_namesake_makes_the_target_ambiguous_a_corpse_does_not(N)
     for _, alive in ipairs({false, true}) do
@@ -673,7 +686,7 @@ end
 function cases.held_binding_rejects_changed_owner_slot_item_payload_or_duplicate_name(N)
     local wants = {pointer="OWNER_CHANGED", id="OWNER_CHANGED", missing="OWNER_MISSING",
         renamed="OWNER_MISSING", duplicate="OWNER_AMBIGUOUS",
-        dead="TARGET_NOT_ALIVE", party="TARGET_PARTY_MEMBER", familiar="TARGET_FAMILIAR"}
+        dead="TARGET_NOT_ALIVE", familiar="TARGET_FAMILIAR"}
     for _, variant in ipairs({"pointer", "id", "missing", "renamed", "duplicate", "corpse_twin",
         "dead", "party", "familiar", "item-pointer", "slot", "removed", "flags", "charge", "wear", "resref", "item-duplicate"}) do
         local f = setup(N); local request = complete_held(f, 1)
@@ -697,8 +710,10 @@ function cases.held_binding_rejects_changed_owner_slot_item_payload_or_duplicate
         elseif variant == "resref" then placed.cResRef = {get=function() return "OTHER" end}
         else f.creature.slots[19] = f.item("FLPRI1", 992) end
         local x, e = read_only(f, function() return f.adapter:held_binding(request) end)
-        -- A corpse of its name beside it leaves the living holder the one.
-        if variant == "corpse_twin" then assert(x and x.original_item_pointer == tostring(placed.address), e)
+        -- A corpse of its name beside it leaves the living holder the one, and
+        -- one that joined the party is still it.
+        if variant == "corpse_twin" or variant == "party" then
+            assert(x and x.original_item_pointer == tostring(placed.address), e)
         else fail(x, e, wants[variant] or "HELD_INSTANCE_CHANGED") end
     end
 end
