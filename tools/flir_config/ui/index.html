@@ -103,11 +103,11 @@
               <select id="tierFilter" aria-label="Tier"><option value="">All tiers</option></select>
             </div>
           </div>
-          <details class="selection-section" open>
+          <details class="selection-section">
             <summary class="section-heading"><h3>Selected items <span id="itemCount" class="count">0 items</span></h3></summary>
             <div id="selectedItems" class="selected-list"></div>
           </details>
-          <details class="selection-section" open>
+          <details class="selection-section">
             <summary class="section-heading"><h3>Reward recipients <span id="targetCount" class="count">0 slots</span></h3></summary>
             <div id="selectedTargets" class="selected-list"></div>
           </details>
@@ -174,6 +174,8 @@
           <label for="presetLossPercent">Loss percentage</label>
           <div class="percent-input"><input id="presetLossPercent" type="number" min="0" max="100" step="1" inputmode="numeric" value="0" disabled><span aria-hidden="true">%</span></div>
         </div>
+      </div>
+      <div class="preset-grid">
         <div>
           <label for="presetUnrandomizedPercent">Leave items in place</label>
           <div class="percent-input"><input id="presetUnrandomizedPercent" type="number" min="0" max="100" step="1" inputmode="numeric" value="0"><span aria-hidden="true">%</span></div>

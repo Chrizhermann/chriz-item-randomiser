@@ -40,7 +40,7 @@ from flir_config.templates import list_templates
 POOLS = ("standard", "extended")
 OPTION_SETS = {
     "default": None,
-    "recommended": {"flail_heads": True, "totsc_tome": True},
+    "recommended": {"scrolls": True, "flail_heads": True, "totsc_tome": True},
     "everything": {"scrolls": True, "kangaxx": True, "flail_heads": True, "totsc_tome": True,
                    "more_spell_shield": True, "cursed_disguise": True, "loss_mode": "some",
                    "loss_percent": 30, "unrandomized_percent": 25},

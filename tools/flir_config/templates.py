@@ -35,9 +35,9 @@ DEFAULT_OPTIONS = {
     "unrandomized_percent": 0,   # component 510, source-bearing items only
 }
 # The default: Item Randomiser's lists with the standard pools, no items lost
-# (component 1100), the Flail of Ages heads (540) and the randomised Tales of the
-# Sword Coast tome (500); every other option off.
-RECOMMENDED_OPTIONS = DEFAULT_OPTIONS | {"flail_heads": True, "totsc_tome": True}
+# (component 1100), the spell scrolls (530), the Flail of Ages heads (540) and the
+# randomised Tales of the Sword Coast tome (500); every other option off.
+RECOMMENDED_OPTIONS = DEFAULT_OPTIONS | {"scrolls": True, "flail_heads": True, "totsc_tome": True}
 # Preset campaigns: the tables of each part of the game a preset reads, in order.
 # Item Randomiser has tables for BG1 and BG2. The tables of each part stay apart
 # (tiers are per part), so a later option can mix them. Siege of Dragonspear's

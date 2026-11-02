@@ -171,6 +171,13 @@ input::placeholder {
   color: #738187;
 }
 
+input:disabled, select:disabled {
+  background: #e3e7e1;
+  border-color: var(--line);
+  color: var(--muted);
+  cursor: not-allowed;
+}
+
 .button {
   min-height: 41px;
   border: 1px solid var(--brass);
