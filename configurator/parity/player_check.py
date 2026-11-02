@@ -35,6 +35,17 @@ appears on the screen; this script answers the folder window there.
   game whose WeiDU.log records CIR.
 - In a game without CIR, closing the folder window opens nothing.
 - An incomplete installation is reported in plain words.
+- `apply-preset`, as an installer runs it once the mods are installed,
+  scans the game into the same player's folder (its scans equal the
+  reference's), fits the preset as the reference editor's preset dialog
+  fits it (the options the game cannot apply off and named), saves and
+  applies it and prints one JSON result; the next start without arguments
+  reopens that configuration as the one applied last. After the game's
+  mods changed, it first carries the saved configurations over and names
+  them. It refuses with a JSON error and exit status 1 while a mod
+  installer runs from the game and with an unknown option (both before the
+  scan), in a game without CIR, outside a game, and with another game's
+  preset.
 
     python configurator/parity/player_check.py
 """
@@ -59,7 +70,7 @@ import time
 import common
 from common import RUST_CLI, snapshot_tree
 from cli_check import PYTHON, build
-from editor_check import Server, bound, commands, masked
+from editor_check import Server, add_option_resources, bound, commands, masked
 
 from flir_config.activation import _gate_revisions  # noqa: E402
 from test_applied_files import AppliedGame  # noqa: E402
@@ -144,10 +155,12 @@ class Desktop:
 
 
 class Start:
-    """The executable started without arguments on the desktop, with its
-    output in files; its own (hidden) console, as a double-click gives it."""
+    """The executable started on the desktop, without arguments unless
+    `args` are given, with its output in files; its own (hidden) console, as
+    a double-click gives it."""
 
-    def __init__(self, desktop: Desktop, exe: Path, cwd: Path, environment: dict, logs: Path, label: str):
+    def __init__(self, desktop: Desktop, exe: Path, cwd: Path, environment: dict, logs: Path, label: str,
+                 args: list[str] = ()):
         self.label = label
         self.out, self.err = logs / f"{label}.out", logs / f"{label}.err"
         files = [open(os.devnull, "rb"), open(self.out, "wb"), open(self.err, "wb")]
@@ -163,7 +176,8 @@ class Start:
             block = "".join(f"{key}={value}\0" for key, value in
                             sorted(environment.items(), key=lambda pair: pair[0].upper())) + "\0"
             variables = (ctypes.c_wchar * len(block))(*block)
-            command = ctypes.create_unicode_buffer(f'"{exe}"')
+            command = ctypes.create_unicode_buffer(" ".join([f'"{exe}"', subprocess.list2cmdline(list(args))])
+                                                   if args else f'"{exe}"')
             process = PROCESS_INFORMATION()
             if not kernel32.CreateProcessW(None, command, None, None, True,
                                            CREATE_NO_WINDOW | CREATE_UNICODE_ENVIRONMENT, variables, str(cwd),
@@ -751,6 +765,176 @@ def cases(check: Checks, desktop: Desktop, root: Path, starts: list) -> None:
           sixth.text())
 
 
+# A preset that fits the synthetic games of add_option_resources, with every
+# option: Kangaxx's items and the flail heads cannot be applied there.
+PRESET = ["--preset", "bg2-original", "--items", "extended", "--targets", "extended"]
+PRESET_OPTIONS = {"scrolls": True, "kangaxx": True, "more_spell_shield": True, "cursed_disguise": True}
+
+
+def answer(text: str) -> dict | None:
+    """The command's JSON, when the text is one JSON document."""
+    try:
+        return json.loads(text)
+    except ValueError:
+        return None
+
+
+def reference_preset(scans: Path, workspace: Path, request: dict) -> dict:
+    """The reference editor's preset draft for this preset dialog request."""
+    catalog, world = scans / "catalog.json", scans / "world.json"
+    server = Server("python", commands(catalog, world, workspace)["python"], workspace)
+    try:
+        status, _, _, body = server.post("/api/template", request)
+    finally:
+        server.stop()
+    if status != 200:
+        raise RuntimeError(f"reference preset: {status} {body[:600]}")
+    return json.loads(body)["result"]
+
+
+def without_id(draft: dict) -> dict:
+    return {"profile": {key: value for key, value in draft["profile"].items() if key != "id"}, "plan": draft["plan"]}
+
+
+def preset_cases(check: Checks, desktop: Desktop, root: Path, starts: list) -> None:
+    """apply-preset, as an installer runs it once the mods are installed."""
+    appdata, games, logs = root / "preset-appdata", root / "Preset Games", root / "preset-logs"
+    logs.mkdir()
+    games.mkdir()
+    environment = {**os.environ, "LOCALAPPDATA": str(appdata), "CIR_NO_BROWSER": "1"}
+
+    def run(exe: Path, label: str, *args: str) -> tuple[int, str, str]:
+        started = Start(desktop, exe, root, environment, logs, label, list(args))
+        starts.append(started)
+        code = started.wait()
+        return code, started.text(), started.text("err")
+
+    def refused(label: str, outcome: tuple[int, str, str], message: str) -> None:
+        code, out, err = outcome
+        check(f"{label}: refused with a JSON error", code == 1 and out == ""
+              and answer(err) == {"ok": False, "error": message}, f"exit {code}: {out}{err}")
+
+    # The game's mods are installed, CIR among them; the installer then
+    # applies the preset with the executable in the game's cir folder.
+    game_p = games / "Test Game P"
+    build(game_p, "eet")
+    add_option_resources(game_p)
+    install_cir(game_p)
+    (game_p / "weidu.conf").write_text("lang_dir = en_us\n")
+    workspace_p = workspace_of(appdata, game_p)
+    scans_p = root / "preset-reference-p"
+    expected_scans, _ = reference(game_p, scans_p, "en_us", root / "preset-reference-p-configurations")
+    exe = place(game_p / "cir")
+    options = root / "preset-options.json"
+    options.write_text(json.dumps(PRESET_OPTIONS), encoding="utf-8")
+    code, out, err = run(exe, "apply-preset", "apply-preset", "--game", str(game_p), *PRESET,
+                         "--options", str(options))
+    applied = answer(out) or {}
+    result = applied.get("result", {})
+    check("apply-preset: one JSON result, nothing else", code == 0 and applied.get("ok") is True and err == "",
+          f"exit {code}: {out[:1200]}{err}")
+    check("apply-preset: the game and the player's folder for it",
+          result.get("game") == str(game_p) and result.get("workspace") == str(workspace_p), str(result)[:600])
+    for name, data in expected_scans.items():
+        check(f"apply-preset: {name} equals the reference scan", (workspace_p / name).read_bytes() == data)
+    unavailable = result.get("unavailable", {})
+    fitted = result.get("preset", {}).get("options", {})
+    check("apply-preset: options the game cannot apply are off and named",
+          sorted(unavailable) == ["flail_heads", "kangaxx"] and fitted.get("kangaxx") is False
+          and fitted.get("flail_heads") is False and fitted.get("scrolls") is True
+          and fitted.get("totsc_tome") is True, f"{unavailable} {fitted}")
+    identity = result.get("configuration", {}).get("id", "")
+    configurations = workspace_p / "configurations"
+    saved = json.loads((configurations / f"{identity}.json").read_text(encoding="utf-8")) if identity else {}
+    draft = reference_preset(scans_p, root / "preset-reference-p-presets",
+                             {"id": "bg2-original", "items": "extended", "targets": "extended", "options": fitted})
+    check("apply-preset: saved the preset as the reference editor's preset dialog fits it, with its notes",
+          bool(saved) and without_id(saved) == without_id(draft)
+          and result["configuration"]["name"] == "BG2: Item Randomiser's lists"
+          and saved["plan"].get("original_fit_sha256")
+          and all(result[key] == draft[key] for key in ("left_out", "absent_mods", "not_used")), identity)
+    revision = result.get("revision", "")
+    check("apply-preset: applied, and remembered as the configuration applied last",
+          result.get("message", "").startswith(APPLIED)
+          and json.loads((configurations / "prepared" / "last-applied.json").read_text(encoding="utf-8"))
+          == {"id": identity}
+          and (game_p / "randomiser-campaigns" / "campaign-store" / "revisions" / f"{revision}.json").is_file(),
+          f"{revision}: {result.get('message')}")
+    check("apply-preset: tells how to change the settings later",
+          result.get("hint") == "To change these settings, close the game and double-click "
+          "cir\\cir-configurator.exe in the game folder: the configurator opens this configuration",
+          str(result.get("hint")))
+
+    # The player's start afterwards reopens it as the configuration applied last.
+    player = Start(desktop, exe, root, environment, logs, "apply-preset-then-player")
+    starts.append(player)
+    editor, state = found_game(check, "apply-preset, then the player", player, game_p, workspace_p, None)
+    output = player.text()
+    check("apply-preset, then the player: reopens the configuration applied",
+          state["profile"]["id"] == identity and "carried over" not in output and "cannot be reopened" not in output,
+          f"{state['profile']['id']}: {output}")
+    player.stop()
+
+    # The mods change: the configuration saved before is carried over first,
+    # as the player's start carries it over, and named.
+    (game_p / "override" / "synth002.itm").write_bytes((game_p / "override" / "synth001.itm").read_bytes())
+    code, out, err = run(exe, "apply-preset-mods-changed", "apply-preset", "--game", str(game_p), *PRESET,
+                         "--options", str(options))
+    result = (answer(out) or {}).get("result", {})
+    later = result.get("configuration", {}).get("id", "")
+    world = json.loads((workspace_p / "world.json").read_text(encoding="utf-8"))
+    carried = json.loads((configurations / f"{identity}.json").read_text(encoding="utf-8"))
+    check("apply-preset, mods changed: the earlier configuration is carried over and named",
+          code == 0 and later not in ("", identity)
+          and result.get("notes") == ["The saved configuration \"BG2: Item Randomiser's lists\" was made before the "
+                                      "game's mods changed and is carried over to the new scan."]
+          and carried["plan"]["world_fingerprint"] == world["fingerprint"], f"exit {code}: {out[:1200]}{err}")
+    check("apply-preset, mods changed: the new configuration is the one applied last",
+          json.loads((configurations / "prepared" / "last-applied.json").read_text(encoding="utf-8")) == {"id": later})
+
+    # Refusals: a JSON error and exit status 1. While a mod installer runs
+    # from the game, before anything is scanned.
+    installer = game_p / "setup-othermod.exe"
+    shutil.copyfile(Path(os.environ["SystemRoot"]) / "System32" / "findstr.exe", installer)
+    waiting = subprocess.Popen([str(installer), "x"], stdin=subprocess.PIPE, stdout=subprocess.DEVNULL,
+                               stderr=subprocess.DEVNULL, creationflags=subprocess.CREATE_NO_WINDOW)
+    try:
+        before = snapshot_tree(workspace_p)
+        outcome = run(exe, "apply-preset-installer-runs", "apply-preset", "--game", str(game_p), *PRESET)
+    finally:
+        waiting.kill()
+        waiting.communicate()
+    installer.unlink()
+    refused("apply-preset while an installer runs", outcome,
+            "Close this game and its installer before applying settings")
+    check("apply-preset while an installer runs: nothing scanned or written", snapshot_tree(workspace_p) == before)
+
+    game_q = games / "Test Game Q"
+    build(game_q, "bgee")
+    refused("apply-preset without CIR", run(exe, "apply-preset-not-installed", "apply-preset", "--game", str(game_q)),
+            f"Chriz Item Randomiser is not installed in {game_q}")
+    check("apply-preset without CIR: no folder for the game", not workspace_of(appdata, game_q).exists())
+    downloads = root / "Preset Downloads"
+    downloads.mkdir()
+    refused("apply-preset outside a game", run(exe, "apply-preset-no-game", "apply-preset", "--game", str(downloads)),
+            f"{downloads} is not a game folder, and no folder above it is one: a game folder has chitin.key")
+
+    game_r = games / "Test Game R"
+    build(game_r, "bg2ee")
+    install_cir(game_r)
+    unknown = root / "preset-unknown-option.json"
+    unknown.write_text(json.dumps({"scrolls": True, "nosuch": True}), encoding="utf-8")
+    refused("apply-preset with an unknown option",
+            run(exe, "apply-preset-unknown-option", "apply-preset", "--game", str(game_r), "--options", str(unknown)),
+            "Unknown original-template option")
+    check("apply-preset with an unknown option: nothing scanned", not workspace_of(appdata, game_r).exists())
+    before = snapshot_tree(game_r)
+    refused("apply-preset with another game's preset",
+            run(exe, "apply-preset-other-game", "apply-preset", "--game", str(game_r), "--preset", "eet-original"),
+            "This preset is for EET; this game is BG2:EE")
+    check("apply-preset with another game's preset: the game is unchanged", snapshot_tree(game_r) == before)
+
+
 def main() -> int:
     if os.name != "nt":
         raise SystemExit("player_check.py starts the executable on a Windows desktop of its own; run it on Windows.")
@@ -763,6 +947,7 @@ def main() -> int:
         with tempfile.TemporaryDirectory(prefix="cir-player-") as temp:
             try:
                 cases(check, desktop, Path(temp).resolve(), starts)
+                preset_cases(check, desktop, Path(temp).resolve(), starts)
             finally:
                 # Before the folder goes: a running executable keeps its file.
                 for started in starts:

@@ -153,33 +153,71 @@ fn data_folder() -> Result<PathBuf, String> {
 
 fn open_editor(game: &Path) -> Result<(), String> {
     println!("Game: {}", paths::display(game));
-    let workspace = game_workspace(&data_folder()?, game);
-    let language = game_language(game).map_err(|error| format!("Could not read the game: {}", error.message))?;
-    // The world scan of the previous start, which the saved configurations
-    // were made with. It stays until they are carried over to this start's
-    // scan, so a start that ends sooner (its window closed) leaves it for the
-    // next one to carry them over from.
-    let earlier = std::fs::read(workspace.join("world.json")).ok();
-    println!("Reading the game's items, areas, creatures and shops; this can take a minute.");
-    let (catalog, world, world_path) = scans(game, language.as_deref(), &workspace)
-        .map_err(|error| format!("Could not read the game: {}", error.message))?;
-    println!("Scans and configurations: {}", paths::display(&workspace));
-    // Game files the world scan could not read and left out, as `world scan` names them.
-    for note in sources::unreadable_notes(&world) {
-        println!("{note}.");
-    }
-    let configurations = workspace.join("configurations");
-    let carried = carry_over(&configurations, &catalog, &world, earlier.as_deref())
-        .map_err(|error| format!("Could not open the editor: {}", error.message))?;
-    carried.report();
-    profiles::write_json(&world_path, &world, false)
-        .map_err(|error| format!("Could not read the game: {}", error.message))?;
-    let editor = editor(catalog, world, &carried, &configurations, game)
+    let scanned = scanned(game, &mut |line| println!("{line}")).map_err(|stopped| match stopped {
+        Stopped::Folder(message) => message,
+        Stopped::Read(error) => format!("Could not read the game: {}", error.message),
+        Stopped::CarryOver(error) => format!("Could not open the editor: {}", error.message),
+    })?;
+    let editor = editor(scanned.catalog, scanned.world, &scanned.carried, &scanned.configurations, game)
         .map_err(|error| format!("Could not open the editor: {}", error.message))?;
     let open_browser = std::env::var_os(NO_BROWSER).is_none();
     server::run(editor, 0, open_browser, Announce::Player)
         .map_err(|error| format!("Could not open the editor: {}", error.message))?;
     Ok(())
+}
+
+/// The game scanned into this player's folder for it, as every start scans
+/// it, with the configurations saved before the game's mods changed carried
+/// over to the new scans.
+pub struct Scanned {
+    /// The game's folder for its scans and configurations.
+    pub workspace: PathBuf,
+    /// The editor's workspace there, with the saved configurations.
+    pub configurations: PathBuf,
+    pub catalog: Value,
+    pub world: Value,
+    /// What became of the configurations saved before the game's mods changed.
+    pub carried: Carried,
+}
+
+/// Why the game was not scanned, or its saved configurations not carried over.
+pub enum Stopped {
+    /// There is no folder to keep the scans in; why, in plain words.
+    Folder(String),
+    /// The game could not be read, or its world scan not written.
+    Read(Error),
+    /// The saved configurations could not be carried over: their folder
+    /// could not be read, or one that cannot be carried over not moved aside.
+    CarryOver(Error),
+}
+
+/// Scan the game into this player's folder for it: the item scan into
+/// `catalog.json`, as the `scan` command writes it, and the world scan into
+/// `world.json`, once the configurations saved before are carried over to
+/// it. `say` gets each line the console shows meanwhile.
+pub fn scanned(game: &Path, say: &mut dyn FnMut(&str)) -> Result<Scanned, Stopped> {
+    let workspace = game_workspace(&data_folder().map_err(Stopped::Folder)?, game);
+    let language = game_language(game).map_err(Stopped::Read)?;
+    // The world scan of the previous start, which the saved configurations
+    // were made with. It stays until they are carried over to this start's
+    // scan, so a start that ends sooner (its window closed) leaves it for the
+    // next one to carry them over from.
+    let earlier = std::fs::read(workspace.join("world.json")).ok();
+    say("Reading the game's items, areas, creatures and shops; this can take a minute.");
+    let (catalog, world, world_path) = scans(game, language.as_deref(), &workspace).map_err(Stopped::Read)?;
+    say(&format!("Scans and configurations: {}", paths::display(&workspace)));
+    // Game files the world scan could not read and left out, as `world scan` names them.
+    for note in sources::unreadable_notes(&world) {
+        say(&format!("{note}."));
+    }
+    let configurations = workspace.join("configurations");
+    let carried =
+        carry_over(&configurations, &catalog, &world, earlier.as_deref(), say).map_err(Stopped::CarryOver)?;
+    for line in carried.lines() {
+        say(&line);
+    }
+    profiles::write_json(&world_path, &world, false).map_err(Stopped::Read)?;
+    Ok(Scanned { workspace, configurations, catalog, world, carried })
 }
 
 /// The game's item and world scans. The item scan is written to
@@ -282,7 +320,7 @@ fn shown_name(draft: &Value, path: &Path) -> String {
 
 /// What became of the saved configurations made before the game's mods
 /// changed.
-struct Carried {
+pub struct Carried {
     /// Where those kept aside are.
     folder: PathBuf,
     /// Carried over whole: the name and what its preset is like now, in
@@ -297,14 +335,8 @@ struct Carried {
 }
 
 impl Carried {
-    fn report(&self) {
-        for line in self.lines() {
-            println!("{line}");
-        }
-    }
-
     /// What the console says of them, one line each.
-    fn lines(&self) -> Vec<String> {
+    pub fn lines(&self) -> Vec<String> {
         let folder = paths::display(&self.folder);
         let mut lines = Vec::new();
         let plain: Vec<&String> = self.whole.iter().filter(|(_, notes)| notes.is_empty()).map(|(name, _)| name).collect();
@@ -393,12 +425,13 @@ impl Carried {
 /// not look. One that cannot be carried over (or read, or written) is moved
 /// there, also when the carry-over of it runs into an unexpected error; the
 /// others are carried over all the same. `earlier` is the world scan they
-/// were made with, if there is one.
+/// were made with, if there is one; `say` gets the lines the console shows.
 fn carry_over(
     configurations: &Path,
     catalog: &Value,
     world: &Value,
     earlier: Option<&[u8]>,
+    say: &mut dyn FnMut(&str),
 ) -> cir_config::Result<Carried> {
     let mut carried = Carried {
         folder: configurations.join(EARLIER),
@@ -419,7 +452,7 @@ fn carry_over(
         return Ok(carried);
     }
     if stale.iter().any(|(_, draft)| fits(draft, catalog)) {
-        println!("Carrying the saved configurations over to the new scan; this can take a minute.");
+        say("Carrying the saved configurations over to the new scan; this can take a minute.");
     }
     let earlier = earlier.and_then(|data| json::parse_strict(data, "world.json").ok());
     let drafts: Vec<Value> = stale.iter().map(|(_, draft)| draft.clone()).collect();
@@ -430,13 +463,13 @@ fn carry_over(
             Ok(result) => result,
             Err(error) => {
                 let reason = format!("an unexpected problem stopped it ({})", error.message.trim_end_matches('.'));
-                carried.set_aside(path, name, reason)?;
+                carried.set_aside(path, name, reason, say)?;
                 continue;
             }
         };
         let Some(draft) = result.get("draft").filter(|draft| !draft.is_null()) else {
             let reason = result.get("reason").and_then(Value::as_str).unwrap_or_default().to_string();
-            carried.set_aside(path, name, reason)?;
+            carried.set_aside(path, name, reason, say)?;
             continue;
         };
         let left_out = result.get("left_out").is_some_and(Value::truthy);
@@ -447,7 +480,7 @@ fn carry_over(
             Ok(copy) => copy,
             Err(error) => {
                 let reason = format!("its earlier version could not be kept ({})", error.message.trim_end_matches('.'));
-                carried.set_aside(path, name, reason)?;
+                carried.set_aside(path, name, reason, say)?;
                 continue;
             }
         };
@@ -459,7 +492,7 @@ fn carry_over(
                     let _ = std::fs::remove_file(copy);
                 }
                 let reason = format!("its new version could not be written ({})", error.message.trim_end_matches('.'));
-                carried.set_aside(path, name, reason)?;
+                carried.set_aside(path, name, reason, say)?;
                 continue;
             }
         }
@@ -478,10 +511,18 @@ impl Carried {
     /// Move a saved configuration that is not carried over into the folder
     /// of those kept aside. When it cannot be moved, it would stay where the
     /// editor cannot list it: the start stops and says why, after what became
-    /// of the others so far.
-    fn set_aside(&mut self, path: &Path, name: String, reason: String) -> cir_config::Result<()> {
+    /// of the others so far (to `say`).
+    fn set_aside(
+        &mut self,
+        path: &Path,
+        name: String,
+        reason: String,
+        say: &mut dyn FnMut(&str),
+    ) -> cir_config::Result<()> {
         if let Err(error) = keep_aside(&self.folder, path) {
-            self.report();
+            for line in self.lines() {
+                say(&line);
+            }
             return Err(Error::profile(format!(
                 "The saved configuration \"{name}\" cannot be carried over to the new scan ({reason}), and it could \
                  not be moved to {}: {}. Close any program that has it open, then start again",

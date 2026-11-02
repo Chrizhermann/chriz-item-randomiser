@@ -12,7 +12,9 @@ results, the error messages and every file written are the same (see
   Easy BG links this crate.
 - `cir-configurator`: the executable with the reference's command line and the
   local editor. Started without arguments in the game's `cir` folder, it opens
-  the editor for that game ([Started without arguments](#started-without-arguments)).
+  the editor for that game ([Started without arguments](#started-without-arguments));
+  `apply-preset` applies a preset to that game without the editor, as an
+  installer does ([Applying a preset from an installer](#applying-a-preset-from-an-installer)).
 
 The mod data the configurator reads (the tables under `lists/`, the BG1 name
 maps, Item Randomiser's texts in every language under `languages/`, the mod's
@@ -103,7 +105,8 @@ cir-configurator ui --catalog 'D:/RandomiserDrafts/catalog.json' --world 'D:/Ran
 `ui` opens the editor in the default browser; `--no-browser` only prints its
 address, like the reference. Ctrl+C closes the editor. Game folders are only
 read; outputs must be outside the scanned game, and `--apply-game` is needed to
-change a game, as with the reference.
+change a game, as with the reference, or the executable's own `apply-preset`
+([Applying a preset from an installer](#applying-a-preset-from-an-installer)).
 
 ### Started without arguments
 
@@ -178,6 +181,62 @@ the console names it with the reason, as `world scan`'s warnings do.
 With any argument the executable is the command line above, unchanged.
 `CIR_NO_BROWSER` (any value) makes the start without arguments only print the
 editor's address.
+
+### Applying a preset from an installer
+
+`apply-preset` does what a player does in the editor's preset dialog and with
+Apply, without the editor and without asking anything. An installer, such as
+Chriz Easy BG's, runs it once the game's mods are installed, so the player can
+start a randomised game at once and never has to open the configurator. Chriz
+Easy BG's default is Boss Loot with the extended pools, spell scrolls, the
+flail heads and the ToTSC tome variant:
+
+```powershell
+cir-configurator apply-preset --game 'D:/EET' --preset eet-boss-loot --items extended --targets extended --options 'D:/Installer/cir-options.json'
+```
+
+with `cir-options.json`:
+
+```json
+{"scrolls": true, "kangaxx": false, "flail_heads": true, "totsc_tome": true, "more_spell_shield": false, "cursed_disguise": false}
+```
+
+1. The game is the nearest folder at or above `--game` that has `chitin.key`,
+   with CIR installed, as the start without arguments finds it. While the
+   game, its loader, WeiDU or a mod installer runs from the game, the command
+   refuses, before it scans and again at Apply, as Apply does.
+2. It scans the game into this player's folder for it, the same folder as the
+   start without arguments uses
+   (`%LOCALAPPDATA%\Chriz Item Randomiser\<game folder name>-<hash>\`), and
+   carries the configurations saved there before the game's mods changed over
+   to the new scans first, as that start does.
+3. It fits the preset (`--preset`, one of `templates`' ids; by default the
+   game's own preset with Item Randomiser's lists, `eet-original`,
+   `bg1-original` or `bg2-original`) with the pools (`--items`, `--targets`:
+   `standard`, the default, or `extended`) and options, as the editor's preset
+   dialog does (`/api/template`). `--options` names a JSON object with the
+   keys of `templates --options`; those it leaves out are as the preset dialog
+   opens them (`flail_heads` and `totsc_tome` on, the others off). An option
+   the game cannot apply is off, as the dialog does not offer it, and the
+   result names it in `unavailable` with the reason.
+4. It saves that configuration under the preset's name, checks it and applies
+   it, as the editor's Apply does. The next start without arguments reopens it
+   as the configuration applied last, and the player can change it there.
+   Each run saves another configuration; the others stay.
+
+The answer is the command line's JSON. On success, stdout has `{"ok": true,
+"result": ...}` with `game`, `workspace` (the player's folder for the game),
+`configuration` (`id`, `name`), `preset` (`id`, `items`, `targets` and the
+`options` as fitted), `unavailable`, the preset dialog's notes (`left_out`,
+`absent_mods`, `not_used`), Apply's `revision`, `starts` and `message`,
+`notes` (in plain words, the game files the scan left out and the saved
+configurations it carried over) and `hint`: how to change the settings later
+("To change these settings, close the game and double-click
+cir\cir-configurator.exe in the game folder: …"), or null when the
+executable is not in the game. A refusal is `{"ok": false, "error": ...}` on
+stderr with exit status 1, also for errors other commands let through as a
+line of their own; a usage error exits with status 2 (`-h` shows the
+options). Nothing else is printed, and no browser or window opens.
 
 ## Library
 
@@ -258,7 +317,9 @@ build with the feature again before the checks.
 - `cli_check.py` runs the command line on a synthetic installation: the whole
   workflow up to the native export, a world scan that leaves out damaged
   files, argparse's handling of unusual arguments, and every command's help at
-  several terminal widths.
+  several terminal widths. The executable's own `apply-preset` is declared for
+  the reference's parser there, as the executable declares it, so that the
+  usage and help still compare; the reference never runs it.
 - `editor_check.py` sends the same session to both editors: static files, every
   request, malformed requests and the files written into the workspace.
 - `player_check.py` (Windows) starts the executable without arguments, copied
@@ -273,7 +334,14 @@ build with the feature again before the checks.
   configuration although Apply wrote into override and the game text, a start
   outside any game (a folder without a game, a game without CIR, then a folder
   inside a game whose `WeiDU.log` records CIR), a game without CIR whose
-  folder window is closed, and an incomplete installation.
+  folder window is closed, and an incomplete installation. It also runs
+  `apply-preset` as an installer does: the scans equal the reference's, the
+  saved configuration equals the reference editor's preset draft (the options
+  the game cannot apply off and named), Apply works, the next start without
+  arguments reopens it, a later run carries the earlier configuration over,
+  and it refuses with its JSON error while a mod installer runs from the game
+  (before the scan), in a game without CIR, outside a game, with an unknown
+  option and with another game's preset.
 - `package_check.py` (Windows) unpacks a standalone package into the installer
   suite's synthetic BG2:EE, BG:EE and EET games, installs CIR with the
   package's `setup-cir.exe` (component 0, as batch installers run it) and
@@ -323,6 +391,10 @@ build.
 
 - Without arguments the reference prints its usage (exit status 2); the
   executable opens the editor for its game instead.
+- `apply-preset` is the executable's own command: it takes the game, the
+  player's folder and the carry-over from the start without arguments, which
+  the reference does not have. What it does with them is the editor's: the
+  preset dialog's fit and Apply, which `editor_check.py` compares.
 - The editor's `Server` header names `cir-configurator` instead of Python's
   `BaseHTTP`.
 - Errors that the reference lets escape as a Python traceback (`KeyError`,
