@@ -20,6 +20,17 @@ Host.DEFERRABLE = { AREA_UNAVAILABLE = true, OWNER_MISSING = true, OWNER_AMBIGUO
     TARGET_INVENTORY_FULL = true, TARGET_QUEUE_BUSY = true, TARGET_NOT_EMPTY = true,
     TARGET_STACK_COLLISION = true, QUEST_NOT_CLAIMED = true, CORPSE_ITEM_AMBIGUOUS = true,
     TARGET_ALIVE = true, PARTY_ITEM_AMBIGUOUS = true, TARGET_PARKED = true }
+-- Observation failures of a reward on its way that only say the world changed
+-- around it (FLPRNat): another item of its name, a lost or reused message, its
+-- pinned instance changed, its holder replaced. Since 1.0.5 such a delivery
+-- parks with its counts, as for a party that left, instead of stopping the
+-- randomiser for the adventure (the audit of 2026-11-02, finding 4): its
+-- settle counts the items of its name at its place, and one more is the
+-- reward, else it is given again. One begun without counts still stops.
+Host.UNSETTLED = { DELIVERY_QUEUE_CONFLICT = true, DELIVERY_EARLY_ITEM = true, DELIVERY_SETTLING_TIMEOUT = true,
+    CREATED_INSTANCE_CHANGED = true, DELIVERY_MESSAGE_LOST = true, DELIVERY_MESSAGE_REUSED = true,
+    DELIVERY_PLACEMENT_UNEXPECTED = true, DELIVERY_PAYLOAD_CHANGED = true, DROPPED_REWARD_AMBIGUOUS = true,
+    OWNER_CHANGED = true, INVENTORY_CHANGED = true }
 
 function Host.new(deps)
     assert(type(deps) == "table" and deps.core and deps.storage)
@@ -252,8 +263,13 @@ function Host:_step(tick)
             assert(self.pending.kind == "deliver", "UNEXPECTED_SETTLING_SOURCE")
             return
         end
+        if receipt == nil and Host.UNSETTLED[reason] and self.pending.kind == "deliver" and self.native.unsettle and
+            self.controller:parkable() then
+            receipt, reason = self.native:unsettle(self.pending, reason)
+        end
         require_result(receipt, reason)
-        -- The party left the place of its target with the reward on its way.
+        -- The party left the place of its target with the reward on its way,
+        -- or the observation could not tell where it went (Host.UNSETTLED).
         if receipt.parked then
             require_result(self.controller:park(receipt))
             self:_refresh_parked()

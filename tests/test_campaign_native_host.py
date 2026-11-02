@@ -112,6 +112,8 @@ local function setup(Core,Host)
         function native:observe(command)
             assert(self.pending==command and self.tick>self.issued,"NATIVE_LATER_BOUNDARY_REQUIRED")
             if f.fail_observe then return nil,"NATIVE_OBSERVATION_FAILED" end
+            -- FLPRNat's observation that cannot tell where a reward went (Host.UNSETTLED).
+            if command.kind=="deliver" and f.unsettled then return nil,f.unsettled end
             if command.kind=="deliver" and (f.delivery_waits or 0)>0 then
                 f.delivery_waits=f.delivery_waits-1
                 return nil,"DELIVERY_SETTLING"
@@ -126,6 +128,13 @@ local function setup(Core,Host)
             else receipt.created,receipt.nonce_bound_instance,receipt.lootable=1,1,1 end
             -- FLPRNat's notice of a reward at a party member's feet, one per delivery.
             if command.kind=="deliver" and f.notices then receipt.notice=table.remove(f.notices,1) end
+            self.pending=nil; return receipt
+        end
+        -- FLPRNat's Adapter:unsettle: the reward on its way parks.
+        function native:unsettle(command,reason)
+            assert(self.pending==command and Host.UNSETTLED[reason],"NATIVE_UNSETTLE_UNEXPECTED")
+            f.unsettled=nil; self.unsettle_reason=reason
+            local receipt=copy(command); receipt.session=command.session; receipt.parked=1
             self.pending=nil; return receipt
         end
         function native:destroy() self.destroyed=true; self.pending=nil end
@@ -396,6 +405,28 @@ function cases.reward_parked_by_leaving_lets_the_others_go_on_and_settles_later(
     f.settle_result={arrived=1,holder="container"}; f:poll()
     assert(f.host:inspect().assignments[1].delivery_phase==Core.PHASE.confirmed and f.values.flpr_b0001==0)
     f:finish(); assert(#f.events==6 and #f.host:inspect().deferred==0)
+end
+-- The audit of 2026-11-02 (finding 4): an observation that cannot tell where a
+-- reward went stopped the randomiser for the adventure. It parks now with its
+-- counts, the others go on, and its settle decides: arrived, or given again.
+function cases.reward_whose_observation_cannot_tell_parks_instead_of_stopping(Core,Host)
+    for _,reason in ipairs({"DELIVERY_QUEUE_CONFLICT","DELIVERY_SETTLING_TIMEOUT","CREATED_INSTANCE_CHANGED"}) do
+        local f=setup(Core,Host); f.settle=5; f.settle_result="AREA_UNAVAILABLE"
+        assert(f:capture())
+        for i=1,8 do f:poll() end
+        assert(#f.events==4 and f.events[4].kind=="deliver" and f.values.flpr_jkind==2)
+        f.unsettled=reason; f:poll()
+        assert(f.host.status=="running" and f.native_instances[#f.native_instances].unsettle_reason==reason,reason)
+        assert(f.host:inspect().assignments[1].delivery_phase==Core.PHASE.parked and f.values.flpr_b0001==5)
+        f.settle_result={arrived=1,holder="container"}; f:finish()
+        assert(f.host:inspect().assignments[1].delivery_phase==Core.PHASE.confirmed,reason)
+    end
+    -- Begun without counts (CIR 1.0.2): it cannot park and still stops.
+    local f=setup(Core,Host)
+    assert(f:capture())
+    for i=1,8 do f:poll() end
+    f.unsettled="DELIVERY_QUEUE_CONFLICT"; f:poll()
+    assert(f.host.status=="disabled" and f.host.error=="DELIVERY_QUEUE_CONFLICT" and f.native_instances[#f.native_instances].unsettle_reason==nil)
 end
 function cases.parked_reward_that_did_not_arrive_is_delivered_again(Core,Host)
     local f=setup(Core,Host); f.settle=5; f.settle_result={arrived=0}; delivery_parked(f)

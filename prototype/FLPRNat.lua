@@ -2129,6 +2129,22 @@ function Adapter:_left(pending, receipt)
     return receipt
 end
 
+-- A reward on its way whose observation could not tell where it went
+-- (FLPRHost.UNSETTLED <reason>): CIR stops following it, and it parks as for a
+-- party that left (Adapter:_left). Nothing is created or repeated here; the
+-- settle counts the items of its name at its place (Adapter:settle_parked).
+function Adapter:unsettle(command, reason)
+    local pending = self.pending
+    if not pending or pending.kind ~= "target" then return nil, "NO_PENDING_MUTATION" end
+    local receipt = pending.receipt
+    for _, key in ipairs({ "session", "kind", "index", "nonce", "revision", "identity" }) do
+        if receipt[key] ~= command[key] then return nil, "RECEIPT_MISMATCH" end
+    end
+    self.pending, self.last_error, self.unsettled = nil, nil, reason
+    receipt.parked = 1
+    return receipt
+end
+
 -- As a container target's queued add: wait for the bound message, then pin the
 -- one new instance in the pile it named, then publish one later tick on. No
 -- add was queued before this one (Adapter:_drop), so its item is the first
@@ -2680,7 +2696,9 @@ end
 function Adapter:_supported(item) return Native.supported(self.api, item) end
 
 function Adapter:diagnostics()
-    local result = { tick = self.tick, last_error = self.last_error, sources = {}, targets = {} }
+    -- unsettled: why the last reward parked that an observation could not tell.
+    local result = { tick = self.tick, last_error = self.last_error, unsettled = self.unsettled,
+        sources = {}, targets = {} }
     local area = self.api.EEex_Area_GetVisible()
     result.area = area and text(area.m_resref) or nil
     for id in pairs(self.owed_handovers) do

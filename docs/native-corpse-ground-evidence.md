@@ -287,7 +287,13 @@ drop's own adds may get it.
   ([details](campaign-runtime-prototype.md)). A marked member that died before the
   delivery began still waits, as before.
 
-What still stops CIR, since it cannot be told apart or followed:
+What could not be told apart or followed stopped CIR until 1.0.5. Since then such a
+reward parks with its counts, as for a [party that left](#when-the-party-leaves-while-a-reward-is-on-its-way-since-103),
+and the other rewards go on (`FLPRHost.UNSETTLED`, `Adapter:unsettle`; the audit of
+2026-11-02, finding 4). Its settle counts the items of its name at its place: exactly
+one more is the reward, anything else gives it again, so a reward that left its place
+in those ticks can come twice. A delivery begun without counts (CIR 1.0.2) still stops.
+The cases:
 
 - another item of the reward's name on its way to the creature;
 - a new item of the reward's name outside the backpack, two new ones, or one that a
@@ -298,8 +304,8 @@ What still stops CIR, since it cannot be told apart or followed:
 - a reward that cannot be found or placed within the settling time
   (`DELIVERY_SETTLING_TIMEOUT`): one whose creature or corpse is still there without
   it, or a lost one that no party member can drop;
-- a creature target that becomes a familiar in those ticks. One that joins the
-  party gets its reward there (since 1.0.5).
+- a creature target that becomes a familiar in those ticks (this one still stops). One
+  that joins the party gets its reward there (since 1.0.5).
 
 ## When the party leaves while a reward is on its way (since 1.0.3)
 
