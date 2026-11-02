@@ -340,12 +340,17 @@ function cases.dead_party_or_familiar_creatures_never_receive(N)
         assert(#f.calls == 0)
     end
 end
-function cases.same_named_corpse_or_duplicate_makes_identity_ambiguous(N)
+function cases.a_living_namesake_makes_the_target_ambiguous_a_corpse_does_not(N)
     for _, alive in ipairs({false, true}) do
         local f = setup(N)
         local twin = f.sprite(202, "FLPRC1", {}); twin.alive = alive
         f.objects[4] = twin; f.area.m_lVertSortBack = {4}
-        local x, e = f.adapter:inspect_target(f.target_id); fail(x, e, "OWNER_AMBIGUOUS")
+        if alive then
+            local x, e = f.adapter:inspect_target(f.target_id); fail(x, e, "OWNER_AMBIGUOUS")
+        else
+            -- The one that lives is the target (finding 3 of the 2026-11-02 audit).
+            assert(f.adapter:inspect_target(f.target_id).accepts == 1)
+        end
     end
 end
 function cases.full_backpack_is_refused_before_any_journal(N)
@@ -667,7 +672,7 @@ function cases.held_methods_reject_malformed_request_payload_without_throwing(N)
 end
 function cases.held_binding_rejects_changed_owner_slot_item_payload_or_duplicate_name(N)
     local wants = {pointer="OWNER_CHANGED", id="OWNER_CHANGED", missing="OWNER_MISSING",
-        renamed="OWNER_MISSING", duplicate="OWNER_AMBIGUOUS", corpse_twin="OWNER_AMBIGUOUS",
+        renamed="OWNER_MISSING", duplicate="OWNER_AMBIGUOUS",
         dead="TARGET_NOT_ALIVE", party="TARGET_PARTY_MEMBER", familiar="TARGET_FAMILIAR"}
     for _, variant in ipairs({"pointer", "id", "missing", "renamed", "duplicate", "corpse_twin",
         "dead", "party", "familiar", "item-pointer", "slot", "removed", "flags", "charge", "wear", "resref", "item-duplicate"}) do
@@ -692,7 +697,9 @@ function cases.held_binding_rejects_changed_owner_slot_item_payload_or_duplicate
         elseif variant == "resref" then placed.cResRef = {get=function() return "OTHER" end}
         else f.creature.slots[19] = f.item("FLPRI1", 992) end
         local x, e = read_only(f, function() return f.adapter:held_binding(request) end)
-        fail(x, e, wants[variant] or "HELD_INSTANCE_CHANGED")
+        -- A corpse of its name beside it leaves the living holder the one.
+        if variant == "corpse_twin" then assert(x and x.original_item_pointer == tostring(placed.address), e)
+        else fail(x, e, wants[variant] or "HELD_INSTANCE_CHANGED") end
     end
 end
 function cases.held_binding_rejects_conflicting_queue_and_allows_unrelated_messages(N)
@@ -753,7 +760,13 @@ function cases.verify_held_drop_rejects_missing_or_changed_candidate_binding(N)
     fail(x, e, "DROP_BINDING_MISMATCH")
 end
 function cases.verify_held_drop_rejects_living_replaced_missing_or_ambiguous_owner(N)
-    for _, variant in ipairs({"alive", "pointer", "id", "missing", "renamed", "duplicate", "corpse-twin", "area"}) do
+    -- A living one of its name is the target now; another corpse of a higher
+    -- id beside its own leaves its own the one (Adapter:_resolve).
+    local f, request, candidate = dropped(N)
+    local twin = f.sprite(202, "FLPRC1", {}); twin.alive = false
+    f.objects[7] = twin; f.area.m_lVertSortFlight = {7}
+    assert(read_only(f, function() return f.adapter:verify_held_drop(request, candidate) end))
+    for _, variant in ipairs({"alive", "pointer", "id", "missing", "renamed", "duplicate", "area"}) do
         local f, request, candidate = dropped(N)
         if variant == "alive" then f.creature.alive = true
         elseif variant == "pointer" then f.creature.address = 999
@@ -1790,6 +1803,80 @@ function cases.reward_of_a_creature_that_died_without_a_body(N)
     assert(receipt.held == 1 and receipt.holder == "creature" and receipt.slot == 18 and #f.calls == 1)
     assert(a.held[command.index] == nil and f.creature.slots[18].cResRef:get() == "FLPRI1")
 end
+-- Another sprite of the target's script name in its area (an area script
+-- brought it back after it died, or made one more), id <id>, alive or not.
+local function namesake(f, id, alive, pos)
+    local other = f.sprite(800 + id, "FLPRC1", {})
+    other.alive, other.m_pos = alive, pos or {x=900, y=900}
+    f.objects[id], f.ids[other] = other, id
+    f.area.m_lVertSort[#f.area.m_lVertSort + 1] = id
+    return other
+end
+-- The audit of 2026-11-02 (finding 3): a corpse beside a living one of the
+-- same name made the reward wait for ever (OWNER_AMBIGUOUS).
+function cases.target_is_the_living_one_of_its_name_beside_corpses(N)
+    local f = setup(N)
+    f.creature.alive = false
+    local other = namesake(f, 4, true)
+    namesake(f, 5, false)
+    local command = f.start(1)
+    assert(#f.calls == 1 and f.calls[1] == 'GiveItemCreate("flpri1",Myself,0,0,0)' and f.queue[1].m_targetId == 4)
+    f.update(); f.boundary(); local x, e = f.adapter:observe(command); fail(x, e, "DELIVERY_SETTLING")
+    f.boundary(); local receipt = assert(f.adapter:observe(command))
+    assert(receipt.held == 1 and receipt.holder == "creature" and other.slots[18].cResRef:get() == "FLPRI1")
+    -- Two living ones: one may be a passing copy (Simulacrum), so it waits.
+    f = setup(N)
+    namesake(f, 4, true)
+    x, e = f.adapter:inspect_target(f.target_id); fail(x, e, "OWNER_AMBIGUOUS")
+    assert(#f.calls == 0)
+end
+function cases.with_only_corpses_of_its_name_the_reward_goes_to_the_lowest_ids(N)
+    local f = ground_world(N)
+    namesake(f, 5, false)
+    -- Its own corpse (id 3) has the lower id, wherever the other one lies.
+    local command = ground_start(f, 1)
+    assert(#f.calls == 2 and f.calls[1] == 'CreateItem("flpri1",0,0,0)')
+    local pile = f.objects[f.queue[1].m_targetId]
+    assert(pile.m_pos.x == 500 and pile.m_pos.y == 595)
+    f.update(); f.boundary(); local x, e = f.adapter:observe(command); fail(x, e, "DELIVERY_SETTLING")
+    f.boundary(); local receipt = assert(f.adapter:observe(command))
+    assert(receipt.holder == "ground" and receipt.lootable == 1)
+end
+function cases.a_source_still_needs_the_one_sprite_of_its_name(N)
+    -- Its item must come from the creature that has it: a corpse and another
+    -- of its name are never taken for one owner.
+    local f = setup(N)
+    f.source1.alive = false
+    local twin = f.sprite(804, "FLPRS1", {[21]=f.item("FLPRI1", 401)})
+    f.objects[4], f.ids[twin] = twin, 4
+    f.area.m_lVertSort[#f.area.m_lVertSort + 1] = 4
+    local x, e = f.adapter:inspect_source(f.source_ids[1]); fail(x, e, "OWNER_AMBIGUOUS")
+    assert(#f.calls == 0)
+end
+function cases.reward_on_its_way_follows_its_own_creature_beside_a_living_namesake(N)
+    -- It had reached its creature, which died with its death drop.
+    local f = death_world(N); local a = f.adapter
+    local command = f.start(1)
+    f.update(); f.boundary(); local x, e = a:observe(command); fail(x, e, "DELIVERY_SETTLING")
+    f.die(true); namesake(f, 6, true); f.update(); f.boundary()
+    local receipt = assert(a:observe(command))
+    assert(receipt.held == 1 and receipt.holder == "creature" and #f.calls == 1)
+    -- Never seen in it: found where its death drop put it.
+    f = death_world(N); a = f.adapter
+    command = f.start(1)
+    f.update(); f.die(true); namesake(f, 6, true); f.update(); f.boundary()
+    x, e = a:observe(command); fail(x, e, "DELIVERY_SETTLING")
+    f.boundary(); receipt = assert(a:observe(command))
+    assert(receipt.holder == "ground" and receipt.lootable == 1 and #f.calls == 1)
+    -- Its own object is gone and another of its name is there: it cannot be told.
+    f = death_world(N); a = f.adapter
+    command = f.start(1)
+    namesake(f, 6, true)
+    f.objects[3] = nil; f.ids[f.creature] = nil
+    f.update(); f.boundary()
+    x, e = a:observe(command); fail(x, e, "OWNER_CHANGED")
+end
+
 -- A party member keeps its items when it dies (a quest target's recipient).
 function cases.party_recipient_that_dies_keeps_its_reward(N)
     local f = death_world(N)

@@ -137,10 +137,19 @@ These follow from the evidence above and the closed-fixture assumptions of the
 container adapter:
 
 - Target: exactly one living sprite with the fixture script name in the visible
-  area (`EEex_GameObject_IsSprite(object, false)`). It must not be a party member
-  (`EEex_Sprite_GetPortraitIndex(object) == -1`) or a familiar
+  area (`EEex_GameObject_IsSprite(object, false)`, or one turned to stone). It must
+  not be a party member (`EEex_Sprite_GetPortraitIndex(object) == -1`) or a familiar
   (`m_typeAI.m_EnemyAlly ~= 3`), and must have the same object id and pointer at
   inspection, execution and observation.
+  - Corpses of its name beside it do not count (since 1.0.5): an area script may
+    bring a creature back after it died, and its reward waited for ever before
+    (`OWNER_AMBIGUOUS`). Two living ones still wait: one may be a passing copy
+    (Simulacrum). With none alive the reward goes to the ground at a corpse, at the
+    one of the lowest object id where there are several.
+  - A reward on its way follows its own creature's object when another of its name
+    is the target meanwhile (`Adapter:_delivery_owner`).
+  - A source still needs the one sprite of its name, dead or alive: its item must be
+    taken from the creature that has it.
 - Preflight before the core journals anything: at least one empty backpack slot
   (18–33), and no queued message addressed to the target other than a
   `CMessageSetDialogWait` ([below](#dialog-wait-messages-2026-10-24)). The full-backpack

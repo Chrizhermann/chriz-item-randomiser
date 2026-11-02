@@ -593,7 +593,7 @@ function Adapter:_resolve(endpoint, kind, visible_area, observing, peek)
         if reason then return nil,reason,observing and found or nil end
         return found
     end
-    local found, matches, seen, containers = nil, 0, {}, {}
+    local found, seen, containers, living, dead = nil, {}, {}, {}, {}
     for _, field in ipairs(lists) do
         assert(area[field], "NATIVE_AREA_LIST_MISSING")
         api.EEex_Utility_IterateCPtrList(area[field], function(id)
@@ -604,11 +604,10 @@ function Adapter:_resolve(endpoint, kind, visible_area, observing, peek)
             if not object then return end
             object = api.EEex_GameObject_CastUserType(object)
             if not object or text(object.m_scriptName) ~= endpoint.script_name then return end
-            -- Dead same-named sprites still count, so a corpse and its
-            -- replacement can never be mistaken for one continuous owner.
             local is_sprite = api.EEex_GameObject_IsSprite(object, true)
             if endpoint.sprite and is_sprite == true then
-                matches, found = matches + 1, { object = object, id = id, pointer = pointer(api, object) }
+                local list = self:_living(object) and living or dead
+                list[#list + 1] = { object = object, id = id, pointer = pointer(api, object) }
             elseif not endpoint.sprite and is_sprite == false and object.m_lstItems ~= nil then
                 containers[#containers + 1] = { object = object, id = id, pointer = pointer(api, object) }
             end
@@ -617,8 +616,27 @@ function Adapter:_resolve(endpoint, kind, visible_area, observing, peek)
     if not endpoint.sprite then
         found = fixture_container(containers, endpoint)
         if not found then return nil, #containers == 0 and "OWNER_MISSING" or "OWNER_AMBIGUOUS" end
-    elseif matches ~= 1 then
-        return nil, matches == 0 and "OWNER_MISSING" or "OWNER_AMBIGUOUS"
+    elseif kind == "target" then
+        -- A target is the one creature of its name that lives, beside the
+        -- corpses of others (an area script may bring it back after it died):
+        -- its reward would wait for ever if these counted. Two living ones
+        -- wait; one of them may be a passing copy (Simulacrum). With none
+        -- alive, the reward goes to the ground at a corpse; with several, at
+        -- the one of the lowest object id, so each look takes the same.
+        found = #living == 1 and living[1] or nil
+        if not found and #living == 0 then
+            for _, corpse in ipairs(dead) do
+                if not found or corpse.id < found.id then found = corpse end
+            end
+        end
+        if not found then return nil, #living + #dead == 0 and "OWNER_MISSING" or "OWNER_AMBIGUOUS" end
+    elseif #living + #dead ~= 1 then
+        -- A source's item must be taken from the one creature that has it:
+        -- dead same-named sprites still count, so a corpse and its replacement
+        -- can never be mistaken for one continuous owner.
+        return nil, #living + #dead == 0 and "OWNER_MISSING" or "OWNER_AMBIGUOUS"
+    else
+        found = living[1] or dead[1]
     end
     if kind == "source" and endpoint.sprite then
         if not self:_living(found.object) then return nil, "SOURCE_NOT_ALIVE" end
@@ -2085,10 +2103,12 @@ end
 -- and "alive", its corpse and "dead". One that is no longer found (no sprite
 -- of its script name in its area) is "vanished": it left alive, or it died
 -- and left no body, or a script removed it. CIR then follows its object while
--- that is still the same one (Adapter:_tracked), else nil. A quest's recipient
--- is followed by its object from the start: neither its mark nor the party
--- changing meanwhile makes another one the recipient (Adapter:_recipient).
--- Anything else: nil and why it cannot be told.
+-- that is still the same one (Adapter:_tracked), else nil. So it does where
+-- another of its name is the target now (Adapter:_resolve): its own died
+-- beside a living one, or one more came. A quest's recipient is followed by
+-- its object from the start: neither its mark nor the party changing meanwhile
+-- makes another one the recipient (Adapter:_recipient). Anything else: nil and
+-- why it cannot be told.
 function Adapter:_delivery_owner(pending)
     if pending.endpoint.quest_event then
         local owner = self:_tracked(pending.owner)
@@ -2098,11 +2118,13 @@ function Adapter:_delivery_owner(pending)
     local owner, reason, unusable = self:_resolve(pending.endpoint, "target")
     local state = owner and "alive" or "dead"
     owner = owner or (reason == "TARGET_NOT_ALIVE" and unusable) or nil
-    if owner then
-        if owner.id ~= pending.owner.id or owner.pointer ~= pending.owner.pointer then return nil, "OWNER_CHANGED" end
-        return owner, state
-    end
+    if owner and owner.id == pending.owner.id and owner.pointer == pending.owner.pointer then return owner, state end
     if reason == "OWNER_MISSING" then return self:_tracked(pending.owner), "vanished" end
+    if owner or reason == "OWNER_AMBIGUOUS" then
+        local own = self:_tracked(pending.owner)
+        if not own then return nil, "OWNER_CHANGED" end
+        return own, self:_living(own.object) and "alive" or "dead"
+    end
     return nil, reason
 end
 

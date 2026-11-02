@@ -587,7 +587,7 @@ another creature leave, which the table does not see.
 The runtime finds a place's creature by its script name in the area. A creature
 without a name of its own (the engine's blank, `None`), or with one that another actor
 of the area has too, cannot be told apart, and its reward would never arrive
-(`OWNER_AMBIGUOUS`). The export leaves such a creature out of its group, and a place on
+(`OWNER_AMBIGUOUS`; since 1.0.5 only another living one counts, not a corpse). The export leaves such a creature out of its group, and a place on
 it alone is left out ("Native target needs a unique actor script name in its area", as
 for an actor place). On EET 2.7.3.0 these are 13 places of `eet-original` and 17 of
 `eet-boss-loot`, among them Lendarn's at Firewine Bridge, and the slaver wizard of the

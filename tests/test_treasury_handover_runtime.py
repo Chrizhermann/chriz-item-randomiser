@@ -506,11 +506,19 @@ function cases.the_kings_place_lies_at_his_corpse_once_he_is_dead(N)
     f.boundary();local receipt=assert(a:observe(command))
     assert(receipt.holder=='ground' and #f.payee.slots==0)
     corpse_as_before(f)
-    -- His corpse beside a living king of the same name: no guess.
+    -- His corpse beside a living king of the same name: the living one is the
+    -- king now, and the place waits while he lives (the audit of 2026-11-02,
+    -- finding 3: before, it waited for ever).
     f=king_world(N);f.creature.alive=false
-    f.objects[7]=f.sprite(207,'FLPRC1',{});f.area.m_lVertSort={1,2,3,7}
-    x,e=f.adapter:inspect_target(f.target_id,f.source_ids[1],1);fail(x,e,'OWNER_AMBIGUOUS')
+    local other=f.sprite(207,'FLPRC1',{});other.m_pos={x=900,y=900}
+    f.objects[7]=other;f.ids[other]=7;f.area.m_lVertSort={1,2,3,7}
+    x,e=f.adapter:inspect_target(f.target_id,f.source_ids[1],1);fail(x,e,'TARGET_ALIVE')
     assert(#f.calls==0)
+    -- Both dead: at the corpse of the lower object id, his own.
+    other.alive=false
+    command=ground_start(f,1)
+    local pile=f.objects[f.queue[1].m_targetId]
+    assert(#f.calls==2 and pile.m_pos.x==f.creature.m_pos.x and pile.m_pos.y==f.creature.m_pos.y-5)
 end
 
 function cases.the_kings_place_goes_to_the_one_he_pays(N)
