@@ -452,11 +452,24 @@ function Native.new(api, fixture, seed, reward_payload)
     return self
 end
 
+-- Whether <object> is a living sprite or one turned to stone: of the death
+-- states (0xFC0), stone death (0x80) alone. A statue keeps its items as the
+-- game keeps its own, and is no corpse: whoever restores it finds its reward
+-- (Tamah in Mutamin's garden starts as one; Chris, 2026-11-02: "Wenn jemand
+-- zum Stein wird, dann sind die Items halt verloren").
+function Adapter:_living(object)
+    local api = self.api
+    if api.EEex_GameObject_IsSprite(object, false) == true then return true end
+    if api.EEex_GameObject_IsSprite(object, true) ~= true then return false end
+    local state = object.m_baseStats and object.m_baseStats.m_generalState
+    return integer(state, 0, 4294967295) and math.floor(state / 0x40) % 64 == 2 or false
+end
+
 -- Returns nil for a usable creature target, otherwise the reason it cannot
 -- receive a reward now. None of these states permits a substitute recipient.
 function Adapter:_creature_state(object, party_reward)
     local api = self.api
-    if api.EEex_GameObject_IsSprite(object, false) ~= true then return "TARGET_NOT_ALIVE" end
+    if not self:_living(object) then return "TARGET_NOT_ALIVE" end
     local portrait = api.EEex_Sprite_GetPortraitIndex(object)
     if portrait ~= -1 then
         assert(integer(portrait, 0, 5), "NATIVE_PORTRAIT_INVALID")
@@ -606,7 +619,7 @@ function Adapter:_resolve(endpoint, kind, visible_area, observing, peek)
         return nil, matches == 0 and "OWNER_MISSING" or "OWNER_AMBIGUOUS"
     end
     if kind == "source" and endpoint.sprite then
-        if api.EEex_GameObject_IsSprite(found.object, false) ~= true then return nil, "SOURCE_NOT_ALIVE" end
+        if not self:_living(found.object) then return nil, "SOURCE_NOT_ALIVE" end
     elseif endpoint.kind == "creature" then
         local reason = self:_creature_state(found.object)
         -- The unusable owner is returned only for read-only diagnostics.
@@ -2066,7 +2079,7 @@ function Adapter:_delivery_owner(pending)
     if pending.endpoint.quest_event then
         local owner = self:_tracked(pending.owner)
         if not owner then return nil, "vanished" end
-        return owner, self.api.EEex_GameObject_IsSprite(owner.object, false) == true and "alive" or "dead"
+        return owner, self:_living(owner.object) and "alive" or "dead"
     end
     local owner, reason, unusable = self:_resolve(pending.endpoint, "target")
     local state = owner and "alive" or "dead"
@@ -2379,7 +2392,7 @@ function Adapter:settle_parked(request)
         local api = self.api
         local party = api.EEex_Sprite_GetPortraitIndex(owner.object) ~= -1
         local body = count_named(self:_items(owner, true), reward.resref)
-        if party or api.EEex_GameObject_IsSprite(owner.object, false) == true then
+        if party or self:_living(owner.object) then
             if body == counts.held + 1 then receipt.arrived, receipt.holder = 1, party and "party" or "creature" end
         elseif body + self:_count_piles(reward.resref) == counts.held + counts.piles + 1 then
             -- In its body where its death drop took nothing after it came.

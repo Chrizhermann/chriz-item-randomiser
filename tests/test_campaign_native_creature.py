@@ -261,6 +261,36 @@ function cases.creature_message_keeps_the_engines_identification_and_the_sources
         unrelated_intact(f)
     end
 end
+-- Tamah in Mutamin's garden starts as a statue (stone death, 0x80). The game
+-- keeps a statue's items in it, and CIR its reward (Chris, 2026-11-02): a
+-- statue is no corpse, so nothing goes to the ground at its feet.
+local function petrify(f, state) f.creature.alive = false; f.creature.m_baseStats = {m_generalState = state} end
+function cases.a_creature_turned_to_stone_gets_its_reward_in_its_inventory(N)
+    local f = setup(N); petrify(f, 0x80)
+    local command = f.start(1)
+    assert(#f.calls == 1 and f.calls[1] == 'GiveItemCreate("flpri1",Myself,0,0,0)')
+    f.update(); f.boundary()
+    local x, e = f.adapter:observe(command); fail(x, e, "DELIVERY_SETTLING")
+    f.boundary(); local receipt = assert(f.adapter:observe(command))
+    assert(receipt.holder == "creature" and receipt.held == 1 and receipt.slot == 18)
+    assert(f.creature.slots[18].cResRef:get() == "FLPRI1" and #f.calls == 1)
+    unrelated_intact(f)
+end
+function cases.a_reward_stays_in_its_creature_when_it_turns_to_stone(N)
+    local f = setup(N)
+    local command = f.start(1); f.update()
+    petrify(f, 0x80 + 0x1000)
+    f.boundary(); local x, e = f.adapter:observe(command); fail(x, e, "DELIVERY_SETTLING")
+    f.boundary(); local receipt = assert(f.adapter:observe(command))
+    assert(receipt.holder == "creature" and receipt.held == 1 and f.creature.slots[18] and #f.calls == 1)
+end
+function cases.a_shattered_frozen_or_dead_creature_is_no_statue(N)
+    -- Stone death with another death state, or another death state alone.
+    for _, state in ipairs({0x80 + 0x800, 0x80 + 0x40, 0x40, 0x800, 0}) do
+        local f = setup(N); petrify(f, state)
+        local x, e = f.adapter:inspect_target(f.target_id); fail(x, e, "TARGET_NOT_ALIVE")
+    end
+end
 function cases.two_rewards_to_one_creature_each_bind_their_own_instance(N)
     local f = setup(N); local a = f.adapter
     local first = f.start(1); f.update(); f.boundary(); a:observe(first); f.boundary()

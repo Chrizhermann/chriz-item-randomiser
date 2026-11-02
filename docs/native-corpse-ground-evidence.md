@@ -8,6 +8,14 @@ ground where the corpse lies, once the party is in that area. Where the creature
 no body, it goes to the ground at a party member's feet
 ([below](#a-creature-that-left-no-body-since-103)).
 
+A creature turned to stone is no corpse (Chris, 2026-11-02, on Tamah in Mutamin's
+garden, who starts as a statue). The game keeps a statue's own items in it, and the
+reward goes there too, as Item Randomiser's `GiveItemCreate` put it: whoever restores
+the statue finds it, otherwise it stays with the statue. CIR tells a statue by its
+death states (`m_baseStats.m_generalState & 0xFC0`): stone death (0x80) alone. Stone
+death with another death state, or another one alone, is a corpse. Not yet checked
+in a lab.
+
 ## What the game does (EET 2.7.3.0 lab, 2026-10-24)
 
 Checked in a BG1 area of a lab game with CIR 1.0.2 running, on a spawned cat and rat
