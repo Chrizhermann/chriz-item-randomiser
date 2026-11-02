@@ -74,6 +74,7 @@ local function hash(value)
 end
 -- A reward keeps its source's flags, except undroppable (8): the export
 -- refuses that source, since such a reward would never leave a creature.
+-- Its identified bit is the engine's (created_payload).
 local function payload(value)
     if type(value) ~= "table" or not resref(value.resref) or value.expiration ~= 0 or
         not integer(value.flags, 0, 4294967295) or value.flags % 16 >= 8 or
@@ -92,11 +93,19 @@ local function same(a, b)
     return a and b and a.resref == b.resref and a.expiration == b.expiration and a.flags == b.flags and
         a.charges[1] == b.charges[1] and a.charges[2] == b.charges[2] and a.charges[3] == b.charges[3]
 end
+-- Whether <a> is the reward <b> but for the identified bit, which the engine
+-- chose when it created the reward (created_payload).
+local function same_reward(a, b)
+    return a and b and a.flags - a.flags % 2 == b.flags - b.flags % 2 and
+        same(a, { resref = b.resref, charges = b.charges, expiration = b.expiration, flags = a.flags })
+end
 -- The reward as CreateItem/GiveItemCreate made it, or nil. They choose
--- identification from the ITM, and they make every usage count 0 of a
--- stackable item 1 (2.7.3.0: SCRL75 0/0/0 is created 1/1/1, POTN08 4/0/0
--- 4/1/1; WAND10 and PLAT01 keep 0/0/0). Every other field is the reward's.
--- The source's flags are then set on the one proven new instance.
+-- identification from the ITM, as they did for Item Randomiser's own scripts:
+-- unidentified unless the item needs no identifying (lore 0). They make every
+-- usage count 0 of a stackable item 1 (2.7.3.0: SCRL75 0/0/0 is created 1/1/1,
+-- POTN08 4/0/0 4/1/1; WAND10 and PLAT01 keep 0/0/0). Every other field is the
+-- reward's, and so are the source's other flags (stolen, unstealable, a mod's
+-- bits), which are then set on the one proven new instance.
 local function created_payload(actual, expected, stack_limit)
     local created = payload(actual)
     if not created or created.resref ~= expected.resref or created.expiration ~= expected.expiration or
@@ -106,7 +115,7 @@ local function created_payload(actual, expected, stack_limit)
         if created.charges[index] ~= count and not (count == 0 and stack_limit > 1 and
             created.charges[index] == 1) then return nil end
     end
-    created.flags = expected.flags
+    created.flags = expected.flags - expected.flags % 2 + created.flags
     return created
 end
 local function pointer(api, object)
@@ -852,9 +861,10 @@ local function holding(items, address, expected)
 end
 
 -- Whether <found> is the reward <created> as an add left it: true for its
--- payload, "identified" for that payload identified again. The adds copy
--- their item with the CItem copy constructor, which can identify a zero-lore
--- item (AMUL12 on EET 2.7.3); CIR then sets the source's flags back.
+-- payload, "identified" for that payload identified. The adds copy their item
+-- with the CItem copy constructor, which can identify a zero-lore item (AMUL12
+-- on EET 2.7.3). Its creation chose that already (created_payload); should the
+-- copy differ, CIR sets the flags its creation chose back.
 local function reward_copy(found, created)
     if same(found, created) then return true end
     local expected = { resref = found.resref, charges = found.charges, expiration = found.expiration,
@@ -1179,11 +1189,12 @@ function Adapter:_hand_over(target_id, endpoint, payee, assignments, phases)
         local items,present,equal=self:_items(owner,false),0,true
         for _,item in ipairs(items) do
             if item.payload.resref==reward.resref then
-                present,equal=present+1,equal and same(item.payload,reward)
+                present,equal=present+1,equal and same_reward(item.payload,reward)
             end
         end
         -- DestroyItem takes an item by its name: every treasury item of that
         -- name must be an equal copy of the reward, or it could take another.
+        -- Whether the engine identified the copy does not make it another.
         if present>0 and not equal then ambiguous=true end
         if present>0 and equal then
             local supported,why,stack_limit=self:_supported(reward)
@@ -1699,9 +1710,9 @@ function Adapter:execute(command)
         end
         local message = #added == 1 and addition_at(after_queue, added[1]) or nil
         local created = message and created_payload(message.payload, p, stack_limit)
-        -- GiveItemCreate chooses identification from the ITM's lore value;
-        -- it does not accept the original inventory's identified flag. Bind
-        -- the newly created message first, then preserve that selected flag.
+        -- GiveItemCreate chooses identification from the ITM's lore value, as
+        -- for Item Randomiser; the reward keeps that. Bind the newly created
+        -- message first, then set the source's other flags on it.
         if not unchanged(reserved.items, after) or not message or message.form ~= "creature" or
             message.target ~= owner.id or message.source ~= owner.id or not created or
             creature_conflict(after_queue, owner.id, self.source_resrefs, message.pointer) then
@@ -1906,8 +1917,8 @@ function Adapter:observe(command)
                 if not same(placed.payload, created) then
                     -- CMessageContainerAddItem::Run copies the message's item with
                     -- the same CItem copy constructor as CMessageAddItem::Run, which
-                    -- can identify a zero-lore item again (AMUL12 on EET 2.7.3).
-                    -- Preserve the source's flags on the one proven new container
+                    -- can identify a zero-lore item (AMUL12 on EET 2.7.3). Set the
+                    -- flags its creation chose on the one proven new container
                     -- instance, just as on its message; nothing else may differ.
                     local found = placed.payload
                     local expected = { resref = found.resref, charges = found.charges,
@@ -2021,7 +2032,7 @@ function Adapter:_observe_ground(pending, receipt)
         local copy = reward_copy(placed.payload, pending.created)
         if not copy then return nil, "DELIVERY_PAYLOAD_CHANGED" end
         -- The add copies the item as for a container target and can identify
-        -- a zero-lore item again; restore the source's flags.
+        -- a zero-lore item; restore the flags its creation chose.
         if copy == "identified" then self:_preserve_container_flags(pile, placed, pending.created) end
         pending.created_pointer, pending.pinned_tick, pending.pile_pointer = placed.pointer, self.tick, pile.pointer
         return nil, "DELIVERY_SETTLING"
@@ -2147,9 +2158,9 @@ function Adapter:_observe_creature(pending, receipt)
         local copy = reward_copy(placed.payload, created)
         if not copy then return nil, "DELIVERY_PAYLOAD_CHANGED" end
         if copy == "identified" then
-            -- CMessageAddItem::Run can identify a zero-lore item again while
-            -- copying it from the message. Preserve the source's flags on the
-            -- one proven new inventory instance, just as on its message.
+            -- CMessageAddItem::Run can identify a zero-lore item while copying
+            -- it from the message. Set the flags its creation chose on the one
+            -- proven new inventory instance, just as on its message.
             local item = owner.object.m_equipment.m_items:get(placed.slot)
             assert(pointer(api, item) == placed.pointer and same(self:_item(item).payload, placed.payload),
                 "CREATED_INSTANCE_CHANGED")

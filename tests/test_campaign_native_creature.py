@@ -212,10 +212,12 @@ function cases.one_reward_is_bound_to_its_message_and_held_after_two_later_ticks
     unrelated_intact(f); assert(#f.calls == 1)
     x, e = a:execute(command); fail(x, e, "ALREADY_ATTEMPTED")
 end
-function cases.creature_message_preserves_the_selected_flags_only(N)
-    -- Identified and stolen (Baeloth's items), and bits a mod set (0x3E7).
+function cases.creature_message_keeps_the_engines_identification_and_the_sources_other_flags(N)
+    -- The engine chooses identification, as for Item Randomiser; the source's
+    -- other flags stay: stolen (Baeloth's items) and bits a mod set (0x3E7).
     for _, values in ipairs({{0, 1}, {1, 0}, {0, 5}, {1, 4}, {1, 0x3E7}, {0, 0x80000004}}) do
         local engine_flag, selected_flag = values[1], values[2]
+        local expected = selected_flag - selected_flag % 2 + engine_flag
         local f = setup(N)
         f.fixture.sources[f.source_ids[1]].payload.flags = selected_flag
         f.adapter = N.new(f.api, f.fixture)
@@ -230,20 +232,25 @@ function cases.creature_message_preserves_the_selected_flags_only(N)
         end
         local command = f.start(1)
         assert(#f.queue == 2 and f.queue[1] == unrelated)
-        assert(unrelated.m_item.m_flags == 8 and f.queue[2].m_item.m_flags == selected_flag)
+        assert(unrelated.m_item.m_flags == 8 and f.queue[2].m_item.m_flags == expected)
         f.update(); f.boundary()
         local result, reason = f.adapter:observe(command); fail(result, reason, "DELIVERY_SETTLING")
         f.boundary(); local receipt = assert(f.adapter:observe(command))
-        assert(receipt.payload.flags == selected_flag and f.creature.slots[18].m_flags == selected_flag)
+        assert(receipt.payload.flags == selected_flag and f.creature.slots[18].m_flags == expected)
         assert(unrelated.m_item.m_flags == 8)
         unrelated_intact(f)
     end
     -- Reproduced with RING43: the engine identifies the later heap copy too.
-    -- Preserve both an unidentified source and its other flags.
+    -- Should a copy identify a reward its creation left unidentified, the
+    -- reward keeps what its creation chose and the source's other flags.
     for _,selected in ipairs({0,2,4,0x3E6,0x80000004}) do
         local f=setup(N)
         f.fixture.sources[f.source_ids[1]].payload.flags=selected
         f.adapter=N.new(f.api,f.fixture)
+        local create=f.api.EEex_Action_ExecuteResponseStringOnAIBaseInstantly
+        f.api.EEex_Action_ExecuteResponseStringOnAIBaseInstantly=function(action, owner)
+            create(action, owner); f.queue[#f.queue].m_item.m_flags=0
+        end
         local command=f.start(1);f.update()
         f.creature.slots[18].m_flags=selected+1
         f.boundary()
@@ -1126,14 +1133,36 @@ function cases.two_rewards_of_one_dead_target_each_bind_their_own_instance(N)
     for _, value in ipairs(pile.m_lstItems) do assert(value.cResRef:get() == "FLPRI1") end
     corpse_as_before(f); assert(#f.calls == 4)
 end
-function cases.ground_keeps_the_sources_identified_and_unstealable_flags(N)
+function cases.ground_keeps_the_engines_identification_and_the_sources_unstealable_flag(N)
+    -- The engine creates this reward identified (lore 0): so it stays.
     for _, selected in ipairs({0, 2}) do
         local f = ground_world(N)
         f.fixture.sources[f.source_ids[1]].payload.flags = selected
         f.adapter = N.new(f.api, f.fixture)
         local command = ground_start(f, 1)
+        assert(f.queue[1].m_item.m_flags == selected + 1)
+        f.update(); local pile = f.objects[f.area.m_lVertSortBack[1]]
+        f.boundary(); local x, e = f.adapter:observe(command); fail(x, e, "DELIVERY_SETTLING")
+        assert(pile.m_lstItems[1].m_flags == selected + 1)
+        f.boundary(); local receipt = assert(f.adapter:observe(command))
+        assert(receipt.payload.flags == selected and receipt.holder == "ground")
+    end
+    -- Created unidentified, the add's copy identifies it, like a container add:
+    -- the reward keeps what its creation chose.
+    for _, selected in ipairs({0, 2}) do
+        local f = ground_world(N)
+        f.fixture.sources[f.source_ids[1]].payload.flags = selected
+        f.adapter = N.new(f.api, f.fixture)
+        local act = f.api.EEex_Action_ExecuteResponseStringOnAIBaseInstantly
+        f.api.EEex_Action_ExecuteResponseStringOnAIBaseInstantly = function(action, owner)
+            act(action, owner)
+            if not action:match("^CreateItem") then return end
+            for _, value in pairs(owner.slots) do
+                if value.address == f.next_address then value.m_flags = 0 end
+            end
+        end
+        local command = ground_start(f, 1)
         assert(f.queue[1].m_item.m_flags == selected)
-        -- The add copies the item and identifies it again, like a container add.
         f.update(); local pile = f.objects[f.area.m_lVertSortBack[1]]
         pile.m_lstItems[1].m_flags = selected + 1
         f.boundary(); local x, e = f.adapter:observe(command); fail(x, e, "DELIVERY_SETTLING")
@@ -1667,8 +1696,8 @@ function cases.reward_never_seen_in_its_dead_creature_is_found_on_the_ground(N)
         local names, pile = nil, nil
         if variant == "identified" then
             names, pile = f.pile()
-            -- The add identified the zero-lore reward again.
-            assert(pile.m_lstItems[2].m_flags == 0); pile.m_lstItems[2].m_flags = 1
+            -- An unidentified source's reward, identified as the engine created it (lore 0).
+            assert(pile.m_lstItems[2].m_flags == 1)
         end
         f.boundary(); local x, e = a:observe(command); fail(x, e, "DELIVERY_SETTLING")
         if flight then
@@ -1679,7 +1708,7 @@ function cases.reward_never_seen_in_its_dead_creature_is_found_on_the_ground(N)
         names, pile = f.pile()
         local reward = pile.m_lstItems[(variant == "reused" or variant == "old-copy") and 3 or 2]
         assert(reward.cResRef:get() == "FLPRI1" and found.pointer == tostring(reward.address), variant)
-        assert(reward.m_flags == (variant == "identified" and 0 or 1))
+        assert(reward.m_flags == 1)
         f.boundary(); local receipt = assert(a:observe(command))
         assert(receipt.holder == "ground" and receipt.lootable == 1 and receipt.held == nil and #f.calls == 1, variant)
         assert(a.pending == nil)
