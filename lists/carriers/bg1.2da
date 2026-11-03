@@ -1,6 +1,6 @@
 Area   Creature  Reason        Shows  Reviewed  Comment
 
-ar0115 marek1    conversation  maybe  20261029  Marek: created with the antidote, he greets first (MAREK.DLG state 0 before state 4) and goes after either reply
+ar0115 marek1    story         maybe  20261103  Marek: created only when Lothander sends the party for the antidote (LOTHAN.DLG states 14, 17); BG0115.BCS sets his talk count, so he fights (MAREK.DLG state 4)
 ar0134 desret    conversation  maybe  20261029  Desreta: leaves after the talk
 ar0134 vayya     conversation  maybe  20261029  Vay-ya: as Desreta
 ar0135 yago      flees         maybe  20261029  courtesan mage: gives up at low hit points and goes
